@@ -47,9 +47,21 @@ export {
 export {
   type ControlInteractionContextValue,
   getControlInteractionContext,
+  recordControlUserEdit,
   setControlInteractionContext,
   tryGetControlInteractionContext,
 } from './control-interaction-context.js';
+export {
+  type ControlProposalOptions,
+  controlProposalInputSchema,
+  controlProposalProperties,
+  controlProposalSchema,
+  controlProposalToolName,
+  isControlProposable,
+  proposableControls,
+  type StageControlProposalsResult,
+  stageControlProposals,
+} from './control-proposals.js';
 export { default as DatePicker } from './DatePicker.svelte';
 export { default as ErrorSummary } from './ErrorSummary.svelte';
 export { default as Fieldset } from './Fieldset.svelte';
@@ -86,3 +98,7 @@ export type {
   RangeSliderValue,
   SegmentedControlOption,
 } from './types.js';
+export {
+  type ControlRegistrationDescriptor,
+  useControlRegistration,
+} from './use-control-registration.svelte.js';

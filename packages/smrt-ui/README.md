@@ -254,6 +254,48 @@ not await a same-control mutation through a captured registry reference: that
 call is indistinguishable from an independent caller in browser runtimes and,
 like any hook that never settles, can hold the ordered queue indefinitely.
 
+### Composite controls and form proposals
+
+A composite field — a place picker, a slug field with its own preview, a
+record picker — registers as ONE control with `useControlRegistration` (call
+it during component init inside any `Form`, rich `Form`, or `FormScope`). Give
+it a stable `controlId`, a plain `label`, and, when its value is not a plain
+string/number/boolean, a `valueSchema` so adapters can describe it:
+
+```svelte
+<script lang="ts">
+  import { useControlRegistration } from '@happyvertical/smrt-ui/forms';
+
+  let { value = $bindable(null) } = $props();
+
+  useControlRegistration(() => ({
+    controlId: 'place',
+    metadata: {
+      kind: 'custom',
+      label: 'Town location',
+      valueSchema: {
+        type: 'object',
+        properties: { name: { type: 'string' }, latitude: { type: 'number' }, longitude: { type: 'number' } },
+      },
+    },
+    getValue: () => value,
+    setValue: (next) => { value = next; },
+  }));
+</script>
+```
+
+Call `recordControlUserEdit(context, controlId, subject)` from the
+composite's own user-event handlers so a staged proposal goes stale when the
+person edits over it (native inputs bubble their events to the Form instead).
+
+`controlProposalInputSchema(registry, formId)` and
+`stageControlProposals(registry, formId, values)` are the transport-neutral
+halves of a "propose values for this form" tool: the schema has one optional
+property per proposable control (never secret/sensitive, unwritable,
+disabled, read-only, file, or password controls), and staging only ever
+creates reviewable proposals. smrt-svelte's `<Form webmcp>` and `FormScope`
+build their `*_stage_changes` tool from these.
+
 ## DataTable controller
 
 `DataTable` can share one headless `DataTableController` between rendered

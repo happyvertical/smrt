@@ -98,6 +98,12 @@ export interface ControlMetadata {
   options?: ControlOption[];
   unit?: string;
   capabilities?: ControlCapability[];
+  /**
+   * JSON Schema for this control's value, for composites whose value is not a
+   * plain string/number/boolean (a place picker's `{ name, latitude, … }`).
+   * Proposal adapters use it verbatim instead of deriving one from `kind`.
+   */
+  valueSchema?: Record<string, unknown>;
 }
 
 export interface ControlRuntimeState {
@@ -981,6 +987,9 @@ export function createControlInteractionRegistry(
         options: registration.metadata.options?.map((option) => ({
           ...option,
         })),
+        ...(registration.metadata.valueSchema
+          ? { valueSchema: cloneValue(registration.metadata.valueSchema) }
+          : {}),
       },
       state: {
         ...runtimeState,
