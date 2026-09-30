@@ -354,9 +354,6 @@ importers:
       '@happyvertical/smrt-users':
         specifier: workspace:*
         version: link:../users
-      '@modelcontextprotocol/client':
-        specifier: 2.0.0
-        version: 2.0.0
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
@@ -364,6 +361,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@modelcontextprotocol/client':
+        specifier: 2.0.0
+        version: 2.0.0
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
