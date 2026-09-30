@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -11,6 +12,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -406,6 +408,47 @@ describe('profile-aware application operations', () => {
     }
   });
 
+  it.each([undefined, 'https://trusted.example'])('passes the effective ORIGIN to a physically copied local controller (%s)', async (origin) => {
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'smrt-origin-')));
+    const source = join(directory, 'app');
+    mkdirSync(source);
+    const socket = createServer();
+    await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
+    const address = socket.address();
+    if (!address || typeof address === 'string') throw new Error('No test port');
+    const port = String(address.port);
+    await new Promise<void>((resolve) => socket.close(() => resolve()));
+    const env: NodeJS.ProcessEnv = { ...process.env, SMRT_APP_ID: 'origin-test', SMRT_RUNTIME_PROFILE: 'local', SMRT_DATA_DIR: join(directory, 'data'), PORT: port };
+    delete env.ORIGIN;
+    if (origin) env.ORIGIN = origin;
+    try {
+      cpSync(join(template, 'scripts'), join(source, 'scripts'), { recursive: true });
+      symlinkSync(join(here, '..', 'node_modules'), join(source, 'node_modules'), 'dir');
+      writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'origin-test', type: 'module' }));
+      writeFileSync(join(source, 'smrt.config.js'), 'export default { runtime: { profile: "local" } };');
+      mkdirSync(join(source, 'build'));
+      writeFileSync(join(source, 'build', 'index.js'), `
+        import { createServer } from 'node:http';
+        import { writeFileSync } from 'node:fs';
+        import { loadConfig, resolveConfiguredApplicationRuntime } from '@happyvertical/smrt-config';
+        import { runtimeConfigurationFingerprint } from '../scripts/smrt-runtime-identity.mjs';
+        await loadConfig({ cache: false });
+        const runtime = resolveConfiguredApplicationRuntime();
+        writeFileSync('observed.json', JSON.stringify({ origin: process.env.ORIGIN }));
+        createServer((request, response) => {
+          response.setHeader('content-type', 'application/json');
+          response.end(JSON.stringify({ status: 'ready', profile: 'local', application: process.env.SMRT_APP_ID, instance: process.env.SMRT_PROCESS_INSTANCE, configuration: runtimeConfigurationFingerprint(runtime) }));
+        }).listen(Number(process.env.PORT), process.env.HOST);
+      `);
+      const started = spawnSync(process.execPath, ['scripts/smrt-app.mjs', 'start'], { cwd: source, env, encoding: 'utf8', timeout: 45000 });
+      expect(started.status, started.stderr).toBe(0);
+      expect(JSON.parse(readFileSync(join(source, 'observed.json'), 'utf8'))).toEqual({ origin: origin ?? `http://127.0.0.1:${port}/` });
+    } finally {
+      spawnSync(process.execPath, ['scripts/smrt-app.mjs', 'stop'], { cwd: source, env, encoding: 'utf8', timeout: 10000 });
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('fingerprints runtime configuration without coupling identity to passwords', () => {
     const runtime = {
       profile: 'self-hosted',
@@ -430,6 +473,7 @@ describe('profile-aware application operations', () => {
         PORT: '3000',
       }),
     ).not.toBe(initial);
+    expect(runtimeConfigurationFingerprint(runtime, { DATABASE_URL: 'postgresql://user:first@db.example/app', HOST: '0.0.0.0', PORT: '3000', ORIGIN: 'https://trusted.example' })).not.toBe(initial);
     const sslRequired = runtimeConfigurationFingerprint(runtime, {
       DATABASE_URL:
         'postgresql://user:first@db.example/app?sslmode=require&password=hidden',

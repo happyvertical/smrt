@@ -33,6 +33,9 @@ describe('getWorkspaceViteAliases', () => {
     expect(replacementFor('@happyvertical/smrt-core/testing')).toMatch(
       /src\/testing\.ts$/,
     );
+    expect(replacementFor('@happyvertical/smrt-core/schema')).toMatch(
+      /src\/schema\/index\.ts$/,
+    );
   });
 
   it('aliases the trusted profiles OIDC integration subpath to source', () => {
