@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { discoverSmrtPackages } from '../../../core/src/manifest/discover-smrt-packages.js';
 import { generateSvelteKitRoutes } from '../../../core/src/vite-plugin/sveltekit-generator.js';
 import { smrtVitestPlugin } from '../index.js';
@@ -89,6 +89,67 @@ it('keeps actual generated registration byte-identical before and after a depend
     rmSync(join(root, '.smrt/discovery-cache.json'));
     expect(await generate()).toBe(before);
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it('uses the configured root for the initial base-class inventory and generated dependencies', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'smrt-vitest-root-provider-'));
+  const provider = '@happyvertical/smrt-plugin-root-only';
+  const installed = join(root, 'node_modules', provider);
+  const log = vi.spyOn(console, 'log');
+  try {
+    mkdirSync(join(installed, 'dist'), { recursive: true });
+    mkdirSync(join(root, 'src'));
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({
+        name: '@test/plugin-root',
+        dependencies: { [provider]: '*' },
+      }),
+    );
+    writeFileSync(
+      join(installed, 'package.json'),
+      JSON.stringify({ name: provider, main: 'index.js' }),
+    );
+    writeFileSync(
+      join(installed, 'index.js'),
+      'export class PluginRootBase {}',
+    );
+    writeFileSync(
+      join(installed, 'dist/manifest.json'),
+      JSON.stringify({
+        moduleType: 'smrt',
+        objects: {
+          PluginRootBase: {
+            className: 'PluginRootBase',
+            fields: {},
+            methods: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(root, 'src/child.ts'),
+      `import { PluginRootBase } from '${provider}'; export class PluginRootChild extends PluginRootBase { title: string = 'root'; }`,
+    );
+    expect(root).not.toBe(process.cwd());
+    expect(discoverSmrtPackages()).not.toContain(provider);
+    await smrtVitestPlugin({ root, verbose: true }).configResolved?.({
+      plugins: [],
+    } as never);
+    expect(log).toHaveBeenCalledWith(
+      '[smrt-vitest] Discovered 4 base classes (including 1 from external packages)',
+    );
+    const manifest = JSON.parse(
+      readFileSync(join(root, '.smrt/manifest.json'), 'utf8'),
+    );
+    expect(manifest.smrtDependencies).toEqual([provider]);
+    expect(
+      Object.values(manifest.objects).map((object: any) => object.className),
+    ).toContain('PluginRootChild');
+  } finally {
+    log.mockRestore();
     rmSync(root, { recursive: true, force: true });
   }
 });
