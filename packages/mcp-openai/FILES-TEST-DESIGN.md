@@ -49,3 +49,9 @@ while unsubscribe is withheld.
 | --- | --- | --- | --- | --- |
 | Subscription survives save notifications | Hold write and read replies, notify twice, finish save then refresh; next write uses v2 | Revoke after refreshed save: deny and dispose | Synthetic authorized owner; existing authority tool and host resource executor; Node | No write retry, fresh ETag; session regression; `pnpm --filter @happyvertical/smrt-mcp-openai test` |
 | Immediate replacement | Subscribe, withhold unsubscribe, dispose and create/read replacement | Old cleanup completion cannot release replacement registration | Same owner, same bridge; host cleanup has no persistent executor; Node | Best-effort host unsubscribe, synchronous local release; session regression; same command |
+
+Current native server safe-error contract: owner-authorized handler failures for
+guessed opaque URIs and filesystem URI inputs resolve with `isError: true` and
+the generic `Workflow execution failed.` content/structured error. Anonymous,
+other-owner, other-tenant and revoked requests fail before handler dispatch and
+still reject; the HTTP fixture asserts the successful execution count stays one.

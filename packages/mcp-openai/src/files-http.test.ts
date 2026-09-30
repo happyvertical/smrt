@@ -108,7 +108,11 @@ it('carries exact file entrypoint over native v2 HTTP and preserves per-request 
           file: { ...input.file, resourceUri: 'host-resource://guessed' },
         },
       }),
-    ).rejects.toThrow();
+    ).resolves.toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: 'Workflow execution failed.' }],
+      structuredContent: { error: { message: 'Workflow execution failed.' } },
+    });
     await expect(
       client.callTool({
         name: 'file_view',
@@ -116,7 +120,11 @@ it('carries exact file entrypoint over native v2 HTTP and preserves per-request 
           file: { ...input.file, resourceUri: 'file:///etc/passwd' },
         },
       }),
-    ).rejects.toThrow();
+    ).resolves.toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: 'Workflow execution failed.' }],
+      structuredContent: { error: { message: 'Workflow execution failed.' } },
+    });
     for (const actor of [
       null,
       { ...owner, id: 'other' },
