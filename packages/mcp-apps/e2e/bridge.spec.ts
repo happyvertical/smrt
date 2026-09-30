@@ -28,6 +28,28 @@ test("renders list/detail, routes through the host and only opens human review",
   expect(calls.find((c: any) => c.method === "ui/open-link").params.url).toBe(
     "https://example.com/opportunities/synthetic-1/review",
   );
+  await view.getByRole("button", { name: "Back to opportunities" }).click();
+  await view.getByRole("button", { name: "Synthetic designer role" }).click();
+  await expect(
+    view.getByRole("link", { name: "Open human review" }),
+  ).toHaveAttribute(
+    "href",
+    "https://example.com/opportunities/synthetic-2/review",
+  );
+  await expect(view.locator("code")).toHaveText(
+    "https://example.com/opportunities/synthetic-2/review",
+  );
+  await view.getByRole("link", { name: "Open human review" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).calls
+            .filter((c: any) => c.method === "ui/open-link")
+            .at(-1)?.params.url,
+      ),
+    )
+    .toBe("https://example.com/opportunities/synthetic-2/review");
   expect((await (await request.get("/metrics")).json()).bytes).toBeLessThan(
     102400,
   );
@@ -266,6 +288,20 @@ test("late superseded detail results cannot replace the current selection", asyn
   await expect(
     view.getByText("Synthetic role details: synthetic-1.", { exact: false }),
   ).toHaveCount(0);
+  await expect(view.locator("code")).toHaveText(
+    "https://example.com/opportunities/synthetic-2/review",
+  );
+  await view.getByRole("link", { name: "Open human review" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).calls
+            .filter((c: any) => c.method === "ui/open-link")
+            .at(-1)?.params.url,
+      ),
+    )
+    .toBe("https://example.com/opportunities/synthetic-2/review");
 });
 
 test("a newly mounted connection ignores prior lifetime response IDs", async ({

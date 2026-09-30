@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { MCP_APPS_PROTOCOL_VERSION, McpAppBridge } from './index.js';
+import { json } from './validation.js';
 
 function fixture(
   hostCapabilities: Record<string, unknown> = {
@@ -736,4 +737,56 @@ it('bounds extension declarations, registrations and listeners', async () => {
   for (let n = 0; n < 32; n++) handle.subscribe(() => {});
   expect(() => handle.subscribe(() => {})).toThrow('limit');
   g.bridge.dispose();
+});
+
+it.each([
+  'context',
+  'notification',
+])('rejects structured-cloned named array properties in %s', async (target) => {
+  const f = fixture(extensionCapabilities);
+  await f.connect();
+  f.notify('ui/notifications/host-context-changed', {
+    theme: 'dark',
+    items: [1, 'safe'],
+  });
+  const previous = f.bridge.snapshot.rawHostContext;
+  const listener = vi.fn();
+  f.bridge.registerExtension(extensionDeclaration()).subscribe(listener);
+  const bad = structuredClone(
+    Object.assign([], { payload: 'x'.repeat(131073) }),
+  );
+  expect(Object.hasOwn(bad, 'payload')).toBe(true);
+  if (target === 'context') {
+    f.notify('ui/notifications/host-context-changed', {
+      theme: 'light',
+      items: bad,
+    });
+    expect(f.bridge.snapshot.rawHostContext).toEqual(previous);
+  } else {
+    f.notify('notifications/resources/updated', { items: bad });
+    expect(listener).not.toHaveBeenCalled();
+  }
+  f.notify('notifications/resources/updated', {
+    items: [1, 'safe', { nested: [true, null] }],
+  });
+  expect(listener).toHaveBeenCalledTimes(1);
+  f.bridge.dispose();
+});
+
+it('validates own array data descriptors without invoking getters or iterators', () => {
+  const getter = vi.fn(() => 'unsafe');
+  const indexed = [0];
+  Object.defineProperty(indexed, '0', { get: getter });
+  expect(() => json(indexed)).toThrow();
+  expect(getter).not.toHaveBeenCalled();
+  const iterator = vi.fn(function* () {
+    yield 'unsafe';
+  });
+  const custom = [1];
+  Object.defineProperty(custom, Symbol.iterator, { value: iterator });
+  expect(() => json(custom)).toThrow();
+  expect(iterator).not.toHaveBeenCalled();
+  expect(() => json(Object.assign([], { extra: 1 }))).toThrow();
+  expect(() => json(new Array(2))).toThrow();
+  expect(() => json([1, 'safe', { nested: [true, null] }])).not.toThrow();
 });
