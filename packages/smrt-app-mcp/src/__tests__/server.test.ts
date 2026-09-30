@@ -335,7 +335,10 @@ describe('createMcpAppServer', () => {
     ]);
   });
 
-  it('does not expose or execute a canonically mutating workflow with a read-like name', async () => {
+  it.each([
+    'write',
+    'destructive',
+  ] as const)('does not expose or execute a canonically %s workflow with a read-like name', async (effect) => {
     generateToolsMock.mockResolvedValue([]);
     const execute = vi.fn();
     const server = createMcpAppServer({
@@ -349,7 +352,7 @@ describe('createMcpAppServer', () => {
           description: 'Apply a mutation',
           inputSchema: { type: 'object' },
           outputSchema: { type: 'object' },
-          effect: 'write',
+          effect,
           idempotent: false,
           openWorld: false,
           execute,
