@@ -51,8 +51,9 @@ size notifications, ping and resource teardown. Tool input/result/cancellation
 and host-context notifications are accepted only after initialization. Exactly one
 complete initial input and terminal result/cancellation are accepted; late or
 out-of-order updates are ignored. Partial input is ignored. No app-tools capability
-is advertised; inbound `tools/call` receives method-not-found. Resource proxying,
-sampling, downloads, binary modalities and host CSS are not supported here.
+is advertised; inbound `tools/call` receives method-not-found. Resource proxying, sampling and downloads have no built-in typed adapter; an
+opt-in extension adapter may register a bounded contract below. Binary content
+in built-in tool results and executable host CSS remain unsupported.
 Unknown capabilities never grant a supported feature. Unsupported tool content
 modalities reject explicitly. Text and structured results remain available without
 interactive capabilities; consumers must retain a normal app/review URL fallback.
@@ -64,8 +65,8 @@ definitions are never applied. `snapshot.rawHostContext` and
 Context notifications merge into the raw context; capabilities remain fixed at
 handshake. Every snapshot/observer receives an isolated clone. Extension adapters
 must validate their own fields and treat raw data as untrusted; raw capabilities
-cannot enable typed methods or bypass their gates. No generic request method is
-exposed. Unknown supported-field enum values fail closed. A missing display-mode
+cannot enable typed methods or bypass their gates. There is no global arbitrary RPC method. Optional adapters must explicitly
+register the capability-gated contract described below. Unknown supported-field enum values fail closed. A missing display-mode
 list permits only inline. Host rejection (`isError: true`) and RPC errors propagate.
 
 Payload limits: 24 nested levels, 4096 array items, 1024 object keys, conservative
@@ -113,3 +114,50 @@ external host compatibility is claimed. M3 resource metadata still requires the
 host to enforce CSP and sandbox permissions; the browser bridge cannot enforce a
 host's policy on its behalf. The reference view only opens a human-review URL and
 contains no candidate records or transmission/approval operation.
+
+
+## Optional extension contracts
+
+`bridge.registerExtension(definition)` returns a `McpAppExtension` only after the
+Apps handshake completes and the declaration's capability path selects a plain
+object in the initialized host capabilities. Declarations are trusted local code;
+never derive capability paths or method lists from host/model input. For example:
+
+```ts
+const resources = bridge.registerExtension({
+  id: 'example.resources',
+  capability: { path: ['experimental', 'example/resources'] },
+  methods: ['resources/read', 'resources/subscribe', 'resources/unsubscribe'],
+  notifications: ['notifications/resources/updated'],
+});
+const unsubscribe = resources.subscribe((method, params) => {
+  // Adapter validates its exact URI/schema/ownership before acting.
+});
+const result = await resources.request('resources/read', { uri: 'test://fixture' });
+// Validate the extension's exact result schema before consuming it.
+unsubscribe();
+resources.dispose();
+```
+
+If a wire capability declares a version, specify
+`capability.version: { key: 'version', supported: ['1'] }`; mismatches reject.
+Omit this field for capabilities without wire versions rather than inventing one.
+The bridge copies declarations and permits at most 16 registrations, 16 request
+methods and 16 notification names per registration, and 32 listeners per handle.
+Duplicate IDs/method ownership, unlisted requests, reserved lifecycle/tool methods
+and malformed JSON reject. Unknown notifications are ignored; host requests never
+invoke notification callbacks. Every observer receives isolated bounded data.
+
+Native `ui/message` and `ui/update-model-context` are narrow allowlist exceptions
+for extension metadata: the core capability and text/structured modality gates,
+user role, text-content shape/limits and failure-result checks still apply in
+addition to the extension capability. No image modality or tool-call bypass is
+introduced. Extension adapters own semantic metadata/result validation and any
+additional application authorization, not this transport API.
+
+The handle shares the existing bound host/origin, JSON budget, 32-pending limit,
+correlated IDs and timeout behavior. `signal` aborts on handle or bridge disposal;
+pending work rejects and later notifications/results cannot revive the handle.
+A new registration has a new lifetime. Adapters should request remote unsubscribe
+before disposal when practical; teardown aborts immediately and does not wait for
+a host acknowledgement. This is cancellation, not a server rollback guarantee.
