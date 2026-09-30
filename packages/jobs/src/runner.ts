@@ -1028,23 +1028,27 @@ export class TaskRunner extends EventEmitter {
     const marker = getMcpTaskMarker(job);
     const continuation = marker?.continuation;
     if (!continuation && !marker?.authorizationRequired) return;
-    if (
-      !job.taskOwnerId ||
-      !(await this.config.authorizeMcpTask(
-        Object.freeze({
-          ownerId: job.taskOwnerId,
-          tenantId: job.tenantId ?? null,
-          taskId: job.taskId ?? '',
-          objectType: job.objectType,
-          objectId: job.objectId ?? '',
-          method: job.method,
-          ...(continuation
-            ? { continuation: Object.freeze({ ...continuation }) }
-            : {}),
-        }),
-      ))
-    )
-      throw new Error('MCP task authorization denied');
+    let authorized = false;
+    try {
+      authorized =
+        !!job.taskOwnerId &&
+        (await this.config.authorizeMcpTask(
+          Object.freeze({
+            ownerId: job.taskOwnerId,
+            tenantId: job.tenantId ?? null,
+            taskId: job.taskId ?? '',
+            objectType: job.objectType,
+            objectId: job.objectId ?? '',
+            method: job.method,
+            ...(continuation
+              ? { continuation: Object.freeze({ ...continuation }) }
+              : {}),
+          }),
+        ));
+    } catch {
+      // Provider failures are internal; never persist their details in tasks/get.
+    }
+    if (!authorized) throw new Error('MCP task authorization denied');
     // Authority lookup may await network I/O; cancellation can win meanwhile.
     const owned = await this.db?.query(
       `SELECT id FROM _smrt_jobs WHERE id = ? AND worker_id = ? AND status = 'running'`,

@@ -245,6 +245,95 @@ describe('durable MCP continuation persistence', () => {
     }
   });
 
+  it('reports working after an accepted answer while resumed application is paused', async () => {
+    const f = await fixture();
+    let release!: () => void;
+    let entered!: () => void;
+    const paused = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const applying = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    try {
+      const first = await f.start();
+      await waitForStatus(f.store, f.task.taskId, 'input_required');
+      await first.stop();
+      await f.store.updateTask(f.task.taskId, { answer: 'accepted' });
+      expect((await f.store.getTask(f.task.taskId)).status).toBe('working');
+      beforeApply = async () => {
+        entered();
+        await paused;
+      };
+      await f.start();
+      await applying;
+      expect(await f.store.getContinuation(f.task.taskId)).toBeNull();
+      const active = await f.store.getTask(f.task.taskId);
+      expect(active.status).toBe('working');
+      expect(active.statusMessage).toBeUndefined();
+      await f.store.updateTask(f.task.taskId, { answer: 'replacement' });
+      release();
+      const result = await waitForStatus(f.store, f.task.taskId, 'completed');
+      expect(result.result?.structuredContent).toMatchObject({
+        data: { answer: 'accepted' },
+      });
+      await f.store.updateTask(f.task.taskId, { answer: 'replay' });
+      expect((await f.store.getTask(f.task.taskId)).result).toEqual(
+        result.result,
+      );
+      expect(applications).toBe(1);
+    } finally {
+      release();
+      await f.stop();
+    }
+  });
+
+  it.each([
+    'start',
+    'resume',
+    'apply',
+  ])('conceals private authority failures at %s', async (stage) => {
+    const f = await fixture(null, stage === 'start');
+    const privateDetail =
+      'Private policy shard marigold: account 9284 has internal risk classification amber';
+    let unavailable = stage === 'start';
+    const authorize = async () => {
+      if (unavailable) throw new Error(privateDetail);
+      return true;
+    };
+    try {
+      const runner = await f.start(authorize);
+      if (stage !== 'start') {
+        await waitForStatus(f.store, f.task.taskId, 'input_required');
+        await runner.stop();
+        if (stage === 'resume') unavailable = true;
+        else
+          beforeApply = async () => {
+            unavailable = true;
+          };
+        await f.store.updateTask(f.task.taskId, { answer: 'yes' });
+        await f.start(authorize);
+      }
+      const failed = await waitForStatus(f.store, f.task.taskId, 'failed');
+      expect(failed.error).toEqual({
+        code: -32603,
+        message: 'MCP task authorization denied',
+      });
+      expect(failed.statusMessage).toBe('MCP task authorization denied');
+      expect(JSON.stringify(failed)).not.toContain(privateDetail);
+      const persisted = await f.db.query(
+        'SELECT last_error FROM _smrt_jobs WHERE task_id = ?',
+        f.task.taskId,
+      );
+      expect(persisted.rows[0].last_error).toBe(
+        'MCP task authorization denied',
+      );
+      expect(applications).toBe(0);
+    } finally {
+      await f.stop();
+    }
+  });
+
   it('fails closed when permission is revoked before resume', async () => {
     const f = await fixture();
     try {
