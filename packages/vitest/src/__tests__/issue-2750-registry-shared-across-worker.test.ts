@@ -103,10 +103,19 @@ describe('issue #2750: ObjectRegistry is shared with the pool: "forks" worker pr
         playbooks: [],
         diagnostics: [],
       };
+      const staleAgentSurface = {
+        ...agentSurface,
+        intents: [
+          {
+            ...agentSurface.intents[0],
+            description: 'Stale declaration that must not be rehashed',
+          },
+        ],
+      };
       const staleManifestHash = 'sha256:stale-production-manifest';
       writeFileSync(
         knowledgeConfigPath,
-        JSON.stringify({ knowledge: { tags: ['vitest-plugin'] } }),
+        JSON.stringify({ knowledge: { tags: ['file-fallback'] } }),
       );
       // Seed the production pair that #3205 left stale after the plugin
       // rewrote the canonical test manifest.
@@ -119,8 +128,11 @@ describe('issue #2750: ObjectRegistry is shared with the pool: "forks" worker pr
       writeFileSync(
         knowledgePath,
         JSON.stringify({
-          sourceHashes: { manifest: staleManifestHash },
-          agentSurface,
+          sourceHashes: {
+            manifest: staleManifestHash,
+            'agentSurface:src/registry-probe.spec.ts': 'old-agent-source-hash',
+          },
+          agentSurface: staleAgentSurface,
         }),
       );
 
@@ -142,7 +154,7 @@ describe('issue #2750: ObjectRegistry is shared with the pool: "forks" worker pr
         manifest,
         rootDir: fixtureRoot,
         manifestPath,
-        config: { tags: ['vitest-plugin'] },
+        config: { enabled: true, tags: ['producer-inline'] },
         agentSurface,
       });
       expect(Object.keys(manifest.objects)).not.toHaveLength(0);
@@ -151,7 +163,8 @@ describe('issue #2750: ObjectRegistry is shared with the pool: "forks" worker pr
       );
       expect(knowledge.sourceHashes.manifest).not.toBe(staleManifestHash);
       expect(knowledge.agentSurface).toEqual(agentSurface);
-      expect(knowledge.tags).toEqual(['vitest-plugin']);
+      expect(knowledge.agentSurface).not.toEqual(staleAgentSurface);
+      expect(knowledge.tags).toEqual(['producer-inline']);
     },
     TEST_TIMEOUT_MS,
   );
