@@ -73,8 +73,18 @@ export class AgentSession extends SmrtObject {
   @field()
   allowedTools: string = '[]';
 
-  /** Conversation context/memory for multi-turn state (JSON string) */
-  @field()
+  /**
+   * Conversation context/memory for multi-turn state (JSON string).
+   *
+   * `sensitive`: it holds suspended assistant turns (the full in-flight loop
+   * transcript, `createSessionContinuationStore`) and the `__sessionKey`
+   * subject. The generated `list`/`get` routes are tenant-bound but NOT
+   * participant-bound, so any other member of the tenant could otherwise read
+   * it; sensitive fields are dropped by `toPublicJSON()` (every generated
+   * REST/MCP response) and rejected as filter keys. Server code reads it
+   * through the model as before.
+   */
+  @field({ sensitive: true })
   sessionContext: string = '{}';
 
   /** System prompt override for this session */

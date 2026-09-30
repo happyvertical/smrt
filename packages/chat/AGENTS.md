@@ -45,7 +45,7 @@ by the module-local `sendAgentReply` function.
 - **ChatParticipant**: `role` (owner/admin/member/viewer), `onlineStatus`, `lastReadMessageId`, `isMuted`. Tenant-scoped (required).
 - **ChatThread**: `rootMessageId`, `isResolved`, `messageCount`. Created via `ChatService.startThread()` (member-checked). Tenant-scoped (required).
 - **ChatReaction**: `messageId`, `profileId`, `emoji`. Added/removed via `ChatService.addReaction()`/`removeReaction()` (member-checked, self-keyed). Tenant-scoped (required).
-- **AgentSession**: `agentId` (application slug, string ref, not FK), `agentProfileId` (nullable `crossPackageRef` to `Profile` — the `bot` profile the agent AUTHORS as, #2995), `allowedTools` (JSON string array), `sessionContext` (JSON), `systemPrompt`, limits (`maxTokens`/`maxMessages`/`expiresAt`). Optional tenancy.
+- **AgentSession**: `agentId` (application slug, string ref, not FK), `agentProfileId` (nullable `crossPackageRef` to `Profile` — the `bot` profile the agent AUTHORS as, #2995), `allowedTools` (JSON string array), `sessionContext` (JSON, sensitive), `systemPrompt`, limits (`maxTokens`/`maxMessages`/`expiresAt`). Optional tenancy.
 - **VoiceSession**: short-lived voice-gateway binding over `(tenant, actorProfileId, personaId, room/thread/agentSession)` plus a persona snapshot, gateway `session_id`, expiry, replay tracking, and metadata. Tenant-scoped (required). Generated surface is read-only; creation and turns go through `createVoiceChatSession()` / `handleVoiceGatewayTurn()`.
 
 ## ChatService
