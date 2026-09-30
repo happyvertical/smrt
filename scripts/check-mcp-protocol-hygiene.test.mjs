@@ -146,3 +146,47 @@ test('trusted base workflow runs standalone without an explicit compiler env var
   assert.match(brokenCompiler.stderr, /compiler initialization failed/);
   assert.equal(check(imported + assertion, { baseWorkflow: true, installTrusted: false }).status, 0, 'workspace compiler remains preferred when available');
 });
+
+const nullAssertion = "expect(response.headers.get('mcp-session-id')).toBeNull();";
+
+test('gate accepts exact asserted null session header in workspace and standalone modes', () => {
+  for (const options of [{}, { isolated: true }, { isolated: true, baseWorkflow: true }]) {
+    const result = check(imported + nullAssertion, options);
+    assert.equal(result.status, 0, result.stderr);
+  }
+});
+
+test('null assertion exemption rejects positive, mixed and structurally unsafe lookalikes', () => {
+  for (const source of [
+    nullAssertion.replace('toBeNull()', 'not.toBeNull()'),
+    nullAssertion.replace('toBeNull()', 'toBeNull(null)'),
+    nullAssertion.replace('toBeNull()', 'toBe(null)'),
+    nullAssertion.replace('headers.get', 'headers.has'),
+    nullAssertion.replace('response.headers', 'getResponse().headers'),
+    nullAssertion.replace('response.headers', 'response?.headers'),
+    nullAssertion.replace('headers.get', 'headers?.get'),
+    nullAssertion.replace("get('mcp-session-id')", "get?.('mcp-session-id')"),
+    nullAssertion.replace("get('mcp-session-id')", "get('mcp-session-id', 'extra')"),
+    nullAssertion.replace("get('mcp-session-id')", "get('mcp-session-id') || null"),
+    nullAssertion.replace('expect(', 'expect?.('),
+    nullAssertion.replace('.toBeNull()', '.toBeNull?.()'),
+    `const result = ${nullAssertion}`,
+    "response.headers.get('mcp-session-id');",
+    `// ${nullAssertion}`,
+    `const documented = ${JSON.stringify(nullAssertion)};`,
+    `${nullAssertion} response.headers.set('mcp-session-id', 'active');`,
+    `${nullAssertion} expect(response.headers.get('mcp-session-id')).not.toBeNull();`,
+    `function sample(expect) { ${nullAssertion} }`,
+    `const expect = fake; ${nullAssertion}`,
+    `expect = fake; ${nullAssertion}`,
+    `${nullAssertion} const invalid = ;`,
+    `${nullAssertion} client.ping();`,
+    `${nullAssertion} const old = 'sampling/createMessage';`,
+  ]) {
+    const result = check(imported + source);
+    assert.equal(result.status, 1, source);
+    assert.match(result.stderr, /protocol hygiene failed/);
+  }
+  assert.equal(check(nullAssertion).status, 1);
+  assert.equal(check(imported + nullAssertion, { filename: 'transport.ts' }).status, 1);
+});
