@@ -143,6 +143,9 @@ describe('Gnode Commands', () => {
         '/tmp/my-app/mcp-apps',
         'my-app',
       );
+      expect(mockGenerate.mock.calls[0]?.[2]).toMatchObject({
+        name: '@smrt-app/my-app',
+      });
       consoleSpy.mockRestore();
     });
 

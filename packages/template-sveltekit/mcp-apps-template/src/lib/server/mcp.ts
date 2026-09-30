@@ -7,7 +7,7 @@ import { openAiDisplayMetadata, withOpenAiEntrypoints } from '@happyvertical/smr
 import { getApplicationDatabaseConfig } from './application-runtime.js';
 
 const ITEM_RESOURCE_URI = 'ui://smrt-app/v1/items.html';
-const itemResourceHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Items</title></head><body><main tabindex="-1"><h1>Items</h1><p>Use the host controls to review your authorized items.</p></main></body></html>`;
+const itemResourceHtml = `<!doctype html><html lang="en"><head><title>Items</title></head><body><main tabindex="-1"><h1>Items</h1><p>Use the host controls to review your authorized items.</p></main></body></html>`;
 
 const itemsOverview: McpWorkflowToolDefinition = withOpenAiEntrypoints(
   {
@@ -68,6 +68,7 @@ export const mcpServer = createMcpAppServer({
       version: 'v1',
       name: 'Items',
       html: itemResourceHtml,
+      csp: {},
       metadata: openAiDisplayMetadata({ availableDisplayModes: ['inline'] }),
     },
   ],

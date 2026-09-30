@@ -12,7 +12,7 @@ describe('opt-in MCP Apps runtime', () => {
     const server = source('src/lib/server/mcp.ts');
     expect(server).toContain('event.locals?.permissions');
     expect(server).toContain("principal.scopes?.includes('items.read')");
-    expect(server).toContain('Content-Security-Policy');
+    expect(server).toContain('csp: {}');
     expect(server).not.toContain('Authorization');
   });
 

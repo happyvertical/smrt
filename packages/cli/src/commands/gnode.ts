@@ -4,6 +4,8 @@
  * Commands for creating and managing gnodes (federated local knowledge bases)
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { CLICommand } from '../cli-generator.js';
 import {
   cleanupGitTemplate,
@@ -31,6 +33,38 @@ interface GnodeCreateOptions {
   timezone?: string;
   mcpApps?: boolean;
   'mcp-apps'?: boolean;
+}
+
+const SCOPED_PACKAGE_NAME = /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
+
+function mcpAppsProjectIdentity(name: string, outputDir: string) {
+  const packagePath = join(outputDir, 'package.json');
+  if (existsSync(packagePath)) {
+    const existing = JSON.parse(readFileSync(packagePath, 'utf8')) as {
+      name?: unknown;
+    };
+    if (
+      typeof existing.name !== 'string' ||
+      !SCOPED_PACKAGE_NAME.test(existing.name)
+    ) {
+      throw new Error(
+        'MCP Apps requires a scoped package identity (for example @smrt-app/my-app); rename the existing project before enabling --mcp-apps',
+      );
+    }
+    return existing.name;
+  }
+  if (SCOPED_PACKAGE_NAME.test(name)) return name;
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!slug)
+    throw new Error('MCP Apps project name must contain a package slug');
+  return `@smrt-app/${slug}`;
+}
+
+function mcpAppsPluginName(packageName: string) {
+  return packageName.split('/').at(-1) ?? packageName;
 }
 
 /**
@@ -83,6 +117,10 @@ export const gnodeCommands: Record<string, CLICommand> = {
 
       const outputDir = options.outputDir || `./${name}`;
       const templateName = options.template || 'sveltekit';
+      const mcpApps = options.mcpApps || options['mcp-apps'];
+      const projectName = mcpApps
+        ? mcpAppsProjectIdentity(name, outputDir)
+        : name;
 
       // Build site options if any site-related flags were provided
       const siteOptions =
@@ -106,16 +144,19 @@ export const gnodeCommands: Record<string, CLICommand> = {
 
         // Generate project
         await generate(source, config, {
-          name,
+          name: projectName,
           template: templateName,
           outputDir,
           site: siteOptions,
         });
 
-        if (options.mcpApps || options['mcp-apps']) {
+        if (mcpApps) {
           addMcpAppsRuntime(source.resolved, outputDir);
           configureMcpAppsConsumerRegistry(outputDir);
-          scaffoldMcpAppsPackage(`${outputDir}/mcp-apps`, name);
+          scaffoldMcpAppsPackage(
+            `${outputDir}/mcp-apps`,
+            mcpAppsPluginName(projectName),
+          );
           console.log(
             '✓ Added MCP Apps metadata and the canonical @happyvertical package registry. Configure the authorized v2 MCP endpoint before deployment.',
           );
