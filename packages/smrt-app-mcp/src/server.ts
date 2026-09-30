@@ -24,6 +24,7 @@ import type {
   MCPConfig,
   MCPResponse,
   MCPTool,
+  MCPToolIdentity,
 } from '@happyvertical/smrt-core/generators/mcp';
 import {
   MCP_STABLE_CATALOG_TTL_MS,
@@ -36,12 +37,7 @@ import {
 } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from './errors.js';
-import {
-  classNamePrefixes,
-  compareMcpToolNames,
-  isAllowedCoreTool,
-  isPublicToolName,
-} from './tools.js';
+import { compareMcpToolNames, isPublicToolName } from './tools.js';
 
 /**
  * Generic authenticated caller information available to app-MCP policy.
@@ -245,10 +241,8 @@ function configuredToolListCacheHint(
   };
 }
 
-function isTenantScopedTool(tool: MCPTool): boolean {
-  const separator = tool.name.indexOf('_');
-  if (separator <= 0) return false;
-  const objectName = tool.name.slice(0, separator).toLowerCase();
+function isTenantScopedTool(identity: MCPToolIdentity): boolean {
+  const objectName = identity.objectName.toLowerCase();
   for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
     const name = classInfo.name || key;
     if (name.toLowerCase() === objectName) {
@@ -282,7 +276,9 @@ function taskOwnerIdFor(principal: McpAppPrincipal): string {
 export function createMcpAppServer(
   options: CreateMcpAppServerOptions,
 ): McpAppServer {
-  const allowedPrefixes = classNamePrefixes(options.allowedClassNames);
+  const allowedClassNames = new Set(
+    options.allowedClassNames.map((className) => className.toLowerCase()),
+  );
   const getPublicPatterns =
     options.publicToolPatterns ?? ((): readonly string[] => []);
   const toolPolicy = options.toolPolicy;
@@ -346,13 +342,35 @@ export function createMcpAppServer(
     return input.user ?? null;
   }
 
-  async function allowedTools(): Promise<MCPTool[]> {
-    const tools = await makeGenerator().generateTools();
+  async function allowedTools(): Promise<
+    Array<{ tool: MCPTool; identity: MCPToolIdentity }>
+  > {
+    const generator = makeGenerator();
+    const tools = await generator.generateTools();
     return tools
-      .filter((tool) =>
-        isAllowedCoreTool(tool.name.toLowerCase(), allowedPrefixes),
+      .map((tool) => ({ tool, identity: generator.getToolIdentity(tool) }))
+      .filter(({ identity }) =>
+        allowedClassNames.has(identity.objectName.toLowerCase()),
       )
-      .sort((left, right) => compareMcpToolNames(left.name, right.name));
+      .sort((left, right) =>
+        compareMcpToolNames(left.tool.name, right.tool.name),
+      );
+  }
+
+  function runWorkflowAssertions(
+    tool: MCPTool,
+    identity: MCPToolIdentity,
+    args: Record<string, unknown>,
+    principal: McpAppPrincipal | null,
+  ): void {
+    const keys =
+      identity.originalName === tool.name
+        ? [tool.name]
+        : [tool.name, identity.originalName];
+    for (const key of keys) {
+      const assertion = workflowAssertions[key];
+      if (assertion) assertion(args, userForGenerator(principal) ?? null);
+    }
   }
 
   function passesBasePolicy(
@@ -385,12 +403,12 @@ export function createMcpAppServer(
     // dynamic source such as an environment-backed configuration.
     const publicPatterns = principal ? undefined : getPublicPatterns();
     const visible = await Promise.all(
-      tools.map(async (tool) => {
+      tools.map(async ({ tool }) => {
         if (!passesBasePolicy(tool, principal, publicPatterns)) return false;
         return passesToolPolicy(tool, principal);
       }),
     );
-    return tools.filter((_, index) => visible[index]);
+    return tools.filter((_, index) => visible[index]).map(({ tool }) => tool);
   }
 
   async function getToolsListCacheHint(): Promise<McpToolListCacheHint> {
@@ -407,9 +425,9 @@ export function createMcpAppServer(
     const isSafePublicCatalog =
       !toolPolicy &&
       tools.every(
-        (tool) =>
+        ({ tool, identity }) =>
           isPublicToolName(tool.name, publicPatterns) &&
-          !isTenantScopedTool(tool),
+          !isTenantScopedTool(identity),
       );
 
     return isSafePublicCatalog
@@ -421,10 +439,13 @@ export function createMcpAppServer(
     const args = input.arguments ?? {};
     const principal = principalForCall(input);
     const tools = await allowedTools();
-    const tool = tools.find((candidate) => candidate.name === input.name);
-    if (!tool) {
+    const resolved = tools.find(
+      (candidate) => candidate.tool.name === input.name,
+    );
+    if (!resolved) {
       throw new McpAccessError(404, 'Unknown MCP tool.');
     }
+    const { tool, identity } = resolved;
 
     const publicPatterns = principal ? undefined : getPublicPatterns();
     if (!passesBasePolicy(tool, principal, publicPatterns)) {
@@ -441,10 +462,7 @@ export function createMcpAppServer(
       });
     }
 
-    const assertion = workflowAssertions[input.name];
-    if (assertion) {
-      assertion(args, userForGenerator(principal) ?? null);
-    }
+    runWorkflowAssertions(tool, identity, args, principal);
 
     return makeGenerator(principal).handleToolCall({
       method: 'tools/call',
@@ -460,8 +478,11 @@ export function createMcpAppServer(
     const args = input.arguments ?? {};
     const principal = principalForCall(input);
     const tools = await allowedTools();
-    const tool = tools.find((candidate) => candidate.name === input.name);
-    if (!tool) throw new McpAccessError(404, 'Unknown MCP tool.');
+    const resolved = tools.find(
+      (candidate) => candidate.tool.name === input.name,
+    );
+    if (!resolved) throw new McpAccessError(404, 'Unknown MCP tool.');
+    const { tool, identity } = resolved;
     const publicPatterns = principal ? undefined : getPublicPatterns();
     if (!passesBasePolicy(tool, principal, publicPatterns)) {
       throw new McpAccessError(
@@ -475,15 +496,14 @@ export function createMcpAppServer(
         retryable: false,
       });
     }
-    const assertion = workflowAssertions[input.name];
-    if (assertion) assertion(args, userForGenerator(principal) ?? null);
+    runWorkflowAssertions(tool, identity, args, principal);
     return { args, principal, tool };
   }
 
   async function hasTaskSupport(): Promise<boolean> {
     const tools = await allowedTools();
     const generator = makeGenerator();
-    for (const tool of tools) {
+    for (const { tool } of tools) {
       if (await generator.supportsTaskTool(tool.name)) return true;
     }
     return false;
@@ -491,7 +511,7 @@ export function createMcpAppServer(
 
   async function isTaskTool(name: string): Promise<boolean> {
     const tools = await allowedTools();
-    if (!tools.some((tool) => tool.name === name)) return false;
+    if (!tools.some(({ tool }) => tool.name === name)) return false;
     return makeGenerator().supportsTaskTool(name);
   }
 
