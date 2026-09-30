@@ -1,12 +1,26 @@
 #!/usr/bin/env node
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { extname, join, relative, resolve } from 'node:path';
+import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const typescriptPath = process.env.SMRT_TYPESCRIPT_PATH;
-const typescriptModule = typescriptPath
-  ? await import(pathToFileURL(typescriptPath).href)
-  : await import('typescript');
+let typescriptSpecifier;
+if (typescriptPath) {
+  typescriptSpecifier = pathToFileURL(typescriptPath).href;
+} else {
+  try {
+    typescriptSpecifier = import.meta.resolve('typescript');
+  } catch (error) {
+    if (error.code !== 'ERR_MODULE_NOT_FOUND' || process.env.GITHUB_ACTIONS !== 'true') throw error;
+    const runnerTemp = process.env.RUNNER_TEMP;
+    if (!runnerTemp || !isAbsolute(runnerTemp)) {
+      throw new Error('Standalone GitHub validation requires an absolute RUNNER_TEMP for the trusted TypeScript artifact.');
+    }
+    typescriptSpecifier = pathToFileURL(join(runnerTemp, 'readme-validator/node_modules/typescript/lib/typescript.js')).href;
+  }
+}
+// Resolve absence separately: compiler load errors must never select another compiler.
+const typescriptModule = await import(typescriptSpecifier);
 const ts = typescriptModule.default;
 
 const args = process.argv.slice(2);
