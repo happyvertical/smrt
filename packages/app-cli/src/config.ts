@@ -64,6 +64,10 @@ export interface CliConfigContext {
    * permitting loopback HTTP for local development.
    */
   requireSecureServerUrl?: boolean;
+  /** Exact expected issuer from trusted deployment configuration/discovery.
+   * When set, legacy and environment credentials without an issuer are denied.
+   */
+  expectedCredentialIssuer?: string;
 }
 
 const DEFAULT_LOCAL_SERVER = 'http://localhost:5173';
@@ -196,11 +200,23 @@ export async function getStoredToken(
     `${context.envPrefix}_SERVER_URL`
   ]?.replace(/\/+$/u, '');
   if (environmentToken) {
+    if (
+      context.expectedCredentialIssuer !== undefined &&
+      process.env[`${context.envPrefix}_TOKEN_ISSUER`] !==
+        context.expectedCredentialIssuer
+    )
+      return undefined;
     return environmentServer === targetServer ? environmentToken : undefined;
   }
 
   const configuredServer = resolved.serverUrl?.replace(/\/+$/u, '');
   if (!configuredServer || configuredServer !== targetServer) return undefined;
+
+  if (
+    context.expectedCredentialIssuer !== undefined &&
+    resolved.credentialIssuer !== context.expectedCredentialIssuer
+  )
+    return undefined;
 
   if (resolved.credentialIssuer) {
     return resolved.tokensByIssuer?.[resolved.credentialIssuer];
