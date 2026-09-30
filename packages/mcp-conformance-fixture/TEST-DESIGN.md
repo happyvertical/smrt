@@ -1,0 +1,30 @@
+# Synthetic Iolaus conformance design (#3217)
+
+Risk: high — cross-tenant workflow and approval integrity. These are new test
+fixtures; a base-failure comparison is N/A because no production behavior is
+changed. All test content is synthetic. Matrix rows run through `test:m8` unless
+another owning gate is named. The same workflow function runs on file-backed
+SQLite/local and real PostgreSQL/self-hosted, with a separate PostgreSQL worker
+connection. No in-memory data provider substitutes for either dialect.
+
+| Behavior/invariant | Reachable trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level / validation |
+|---|---|---|---|---|---|---|---|---|
+| Workflow parity | SDK tools/call over loopback HTTP | Browse, fit, decide, prepare, inspect immutable material | Unknown decision, hidden generated worker tool, decision after freeze | Two real users and owned tenants | Collections on reference runtime DB | Both | Exact SDK 2.0.0 / 2026-07-28 | Integration / test:m8 |
+| Discovery and direct isolation | SDK catalog, direct tools/resources/task reads | Each owner lists only their rows; current resource readable | Foreign owner record/task guessing, unknown resource, anonymous HTTP, active tenant switch | Verified JWT subject plus live membership, row owner and tenant | Denied call preserves decision/materials | Both | Auth/JWKS adapter, public app-MCP policy | Integration / test:m8 |
+| Durable continuation | task input_required, update and restarted worker | Matching owner resumes ordinary input | Other owner cannot answer; generic host confirmation leaves humanReviewOpened false | Persisted owner+tenant and fresh worker authorizer | McpTaskStore / TaskRunner | Both | Tasks extension, no domain approval from host input | Integration / test:m8 |
+| Revocation and cancellation | Queued task, restart | Cancellation persisted; immutable materials unchanged | Revoked membership blocks HTTP and fails deferred execution | Same JWT, revoked live membership | Real membership write + worker public authorization callback | Both | Existing jobs APIs | Integration / test:m8 |
+| Human review integrity | Dedicated agents preview/apply API, absent from MCP catalog | Correct material digest and owner opens review | Fabricated host token, foreign actor, stale digest; concurrent and duplicate apply replay once | Explicit human domain context and active membership | SqlDataSurfaceActionStateStore atomic reservation, transaction-bound collection mutation | Both | Existing agents principal API, no employer operation | Integration / test:m8 |
+| Atomic rollback | DB trigger aborts reservation INSERT | Token remains unconsumed and reservation absent | Injected real DB failure after token update | Same review owner | Owning consumeTokenAndReserveIdempotency transaction | Both | N/A — local SQL failure | Integration / test:m8 |
+| Unknown outcome | New state-store instance retries orphan reservation | Existing reservation retained | New worker cannot take ownership or blindly repeat | Existing reservation scope | Durable agents SQL state | Both | Synthetic unknown outcome, no external send | Integration / test:m8 |
+| Declared UI + headless parity | Resource read then real Chromium iframe bridge | Exact prebuilt bundle browses and inspects via authenticated SDK; same structured materials | Public bridge's wrong-origin/capability/malformed/disposal cases remain its owning tests | Synthetic host peer, real browser and server authority | Read-only UI; N/A transaction | Chromium over both DB profiles | Apps 2026-01-26, static resource digest/CSP | Integration / test:m8; owning mcp-apps test + test:e2e |
+| Optional native projection | Native entrypoint metadata, navigation helper | Authorized target returns identical headless materials | Foreign owner cannot resolve target | Same application principal | N/A — read-only adapter | Node / both | Owning OpenAI adapter; synthetic host only | Integration / test:m8; owning mcp-openai tests |
+| Generated compatibility | Existing generated server fixture + copied #2547 runtime | SDK stdio negotiation, official suite, generated manifest migration | Existing task invalid envelope checks | Local generated fixture | Generated schema + task store | SQLite + native stdio | Pinned conformance CLI baseline | Integration / test |
+| Self-hosted composition | Public deployed runtime with real PG | Real migration hook, SDK local assets write/read/delete, verified JWT/JWKS, protected synthetic file, runtime-owned worker | Unsafe secret mode and revoked membership fail readiness; closed runtime rejects workers | Two tenants, current membership | Separate PG worker connection, runtime shutdown | Self-hosted local execution | No public deployment or separate OS process claim | Integration / test:m8 |
+| Operational cloud / real OpenAI host / real Iolaus | External operator acceptance | Requires actual credentials/platform/version/downstream run | Missing access stays an explicit gap | External operator | Actual managed provider adapters required | Managed cloud, real host | Cannot be substituted by config/mocks | External epic #3202, not claimed here |
+
+The wrapper deliberately requires a PostgreSQL URL and fails before tests if
+none exists. `test:m8` enables the browser branch; ordinary `test` remains a
+portable SQLite/headless root gate. Full logs, toolchain versions and the exact
+reviewed source revision accompany the review packet. No runtime tokens,
+bootstrap invitations, employer records, screenshots or browser traces are
+retained as artifacts.

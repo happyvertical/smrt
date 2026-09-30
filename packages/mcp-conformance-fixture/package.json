@@ -10,13 +10,24 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/iolaus-conformance.test.ts",
+    "test:m8": "node scripts/run-iolaus-conformance.mjs"
   },
   "dependencies": {
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
-    "@modelcontextprotocol/server": "2.0.0"
+    "@modelcontextprotocol/server": "2.0.0",
+    "@happyvertical/smrt-app-mcp": "workspace:*",
+    "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-app-runtime": "workspace:*",
+    "@happyvertical/smrt-mcp-apps": "workspace:*",
+    "@happyvertical/smrt-mcp-openai": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/files": "catalog:"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
@@ -26,7 +37,10 @@
     "@types/node": "24.13.6",
     "tsx": "^4.23.13",
     "typescript": "6.0.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "jose": "^6.2.12",
+    "@playwright/test": "^1.63.0",
+    "vite": "8.1.4"
   },
   "repository": {
     "type": "git",
