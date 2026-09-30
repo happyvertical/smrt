@@ -24,6 +24,10 @@ prints secret-free JSON diagnostics and recovery steps. Individual
 setup/start/doctor/open/stop/backup/export/import operations are available as
 `pnpm app:<operation>`.
 
+`app:start` defaults adapter-node `ORIGIN` to its loopback HTTP URL (including
+the selected `PORT`) and preserves an explicitly configured `ORIGIN`. Origin
+changes invalidate the managed process configuration identity.
+
 `app:install`, `app:start`, `app:stop`, and `app:recover` are local-profile
 operations. Self-hosted and cloud web processes run the production Node build
 or container directly; workers use the separate worker commands below.
