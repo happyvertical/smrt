@@ -85,13 +85,21 @@ describe('createMcpAppServer', () => {
       smrtOptions: () => ({}),
       serverInfo: { name: 'app', version: '0.1.0' },
       allowedClassNames: ['Application'],
+      resources: [
+        {
+          uri: 'ui://application/v1/prepare.html',
+          name: 'Prepare',
+          version: 'v1',
+          html: '<title>Prepare</title>',
+        },
+      ],
       workflowTools: [
         {
           name: 'application_prepare',
           description: 'Prepare an application for review',
           title: 'Prepare application',
           icons: [{ src: 'https://example.test/icon.svg', theme: 'light' }],
-          ui: { resourceUri: 'ui://application/prepare.html' },
+          ui: { resourceUri: 'ui://application/v1/prepare.html' },
           metadata: { 'example.extension': { enabled: true } },
           inputSchema: {
             type: 'object',
@@ -125,7 +133,7 @@ describe('createMcpAppServer', () => {
           },
           _meta: {
             'example.extension': { enabled: true },
-            ui: { resourceUri: 'ui://application/prepare.html' },
+            ui: { resourceUri: 'ui://application/v1/prepare.html' },
           },
         }),
       ]),
