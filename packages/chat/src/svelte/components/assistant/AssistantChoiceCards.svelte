@@ -28,8 +28,12 @@ const { t } = useI18n();
 
 {#each choices.filter((set) => set.status !== 'dismissed') as set (set.id)}
   {@const chosen = set.options.find((option) => option.id === set.chosenOptionId)}
-  <div class="assistant-dock-choices" role="group" aria-label={set.title}>
+  {@const making = set.status === 'waiting' && set.pending ? set.pending : null}
+  <div class="assistant-dock-choices" role="group" aria-label={set.title} aria-busy={making ? 'true' : undefined}>
     <p class="assistant-dock-choices-title">{set.title}</p>
+    {#if making}
+      <p class="assistant-dock-choices-status assistant-dock-choices-making" role="status">{making.message}</p>
+    {/if}
     <ul class="assistant-dock-choice-list">
       {#each set.options as option (option.id)}
         <li>
@@ -52,10 +56,21 @@ const { t } = useI18n();
           </button>
         </li>
       {/each}
+      {#if making}
+        {#each { length: making.expected } as _, index (index)}
+          <li class="assistant-dock-choice-pending" aria-hidden="true">
+            <span class="assistant-dock-choice-placeholder"></span>
+            <span class="assistant-dock-choice-label">{t(M['chat.assistant_dock.choices_making'])}</span>
+          </li>
+        {/each}
+      {/if}
     </ul>
+    {#if set.note && set.status === 'waiting'}
+      <p class="assistant-dock-choices-status">{set.note}</p>
+    {/if}
     {#if set.status === 'waiting'}
       <div class="assistant-dock-choices-actions">
-        <span>{t(M['chat.assistant_dock.choices_pick'])}</span>
+        <span>{set.options.length > 0 ? t(M['chat.assistant_dock.choices_pick']) : ''}</span>
         <Button type="button" size="sm" variant="ghost" onclick={() => ondismiss(set.id)}>
           {t(M['chat.assistant_dock.choices_none'])}
         </Button>
@@ -70,6 +85,15 @@ const { t } = useI18n();
       <p class="assistant-dock-choices-status assistant-dock-choices-error" role="alert">
         {t(M['chat.assistant_dock.choices_failed'], { message: set.error ?? '' })}
       </p>
+    {:else if set.status === 'unavailable'}
+      <div class="assistant-dock-choices-actions">
+        <p class="assistant-dock-choices-status assistant-dock-choices-error" role="alert">
+          {t(M['chat.assistant_dock.choices_unavailable'], { message: set.error ?? '' })}
+        </p>
+        <Button type="button" size="sm" variant="ghost" onclick={() => ondismiss(set.id)}>
+          {t(M['chat.assistant_dock.choices_none'])}
+        </Button>
+      </div>
     {/if}
   </div>
 {/each}
@@ -164,6 +188,37 @@ const { t } = useI18n();
 
   .assistant-dock-choices-error {
     color: var(--smrt-color-error, #b3261e);
+  }
+
+  .assistant-dock-choice-pending {
+    display: grid;
+    gap: 0.25rem;
+    align-content: start;
+    min-height: 44px;
+    padding: 0.35rem;
+    border: 2px dashed var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: 0.6rem;
+    color: var(--smrt-color-on-surface-variant, #44474e);
+  }
+
+  .assistant-dock-choice-placeholder {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    border-radius: 0.4rem;
+    background: var(--smrt-color-surface-container, #eceef4);
+    animation: assistant-dock-choice-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes assistant-dock-choice-pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .assistant-dock-choice-placeholder {
+      animation: none;
+    }
   }
 
 </style>

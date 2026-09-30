@@ -91,6 +91,8 @@ export {
   ASSISTANT_CHOICE_TOOL_PREFIX,
   type AssistantChoiceOffer,
   type AssistantChoiceOption,
+  type AssistantChoicePending,
+  type AssistantChoicePendingUpdate,
   type AssistantChoiceSet,
   type AssistantChoiceSource,
   type AssistantChoiceSourceRegistry,

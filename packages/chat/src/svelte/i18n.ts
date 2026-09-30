@@ -72,6 +72,9 @@ export const M = defineMessages({
   'chat.assistant_dock.choices_applied': 'Used: {label}',
   'chat.assistant_dock.choices_failed':
     'That did not work: {message}. Pick again.',
+  'chat.assistant_dock.choices_making': 'Making…',
+  'chat.assistant_dock.choices_unavailable':
+    'That could not be made: {message}',
   'chat.assistant_dock.tool_request_allow': 'Allow',
   'chat.assistant_dock.tool_request_decline': "Don't allow",
   'chat.assistant_dock.tool_request_destructive': "This can't be undone.",

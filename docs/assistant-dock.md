@@ -625,6 +625,21 @@ offer waits, `status` is `{ state: 'done', label: 'Pick one of the options' }`.
 Each open offer is also a `choice` hold (`holdForUser`, see "Supervised runs"),
 so a supervised run is `waiting` for the person until they pick or dismiss it.
 
+**Options that take a while** (generated pictures, a slow search): `offer`
+returns `pending: { message, expected, fill(update, signal) }` with the ready
+options (possibly none). The cards show the plain `message` and `expected`
+"Making…" placeholders; `fill` calls `update.add(options)` as each finishes
+(normalized, at most 4 in the offer) and `update.status(message)` to change the
+line, and resolves when there are no more. The model gets
+`{ offered, waitingForUser, stillMaking: true, progress, options }` right away,
+so it can tell the person how long it takes. The person can pick any option
+that has arrived; picking, "None of these" or clearing the conversation aborts
+`signal` (stop polling). If `fill` throws, its plain message shows under the
+cards (`note`), or, when nothing arrived, the offer becomes `unavailable` with
+that message. While nothing is ready, `status` is `working` with the progress
+line. Such an offer is not replaced by the person's next message (the work
+cost something); only they dismiss it.
+
 ## Gaps / follow-ups
 
 1. **`AssistantActionClient` has no shipped HTTP implementation.** The

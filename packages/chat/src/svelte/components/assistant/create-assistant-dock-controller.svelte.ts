@@ -1852,6 +1852,11 @@ export function createAssistantDockController(
     if (choices.sets.some((set) => set.status === 'applying')) {
       return { state: 'working', label: 'Making the change…' };
     }
+    // Options still being made, none ready yet: say so, not "pick one".
+    const making = choices.pendingMessage;
+    if (making) {
+      return { state: 'working', label: making };
+    }
     if (choices.waitingCount > 0) {
       return { state: 'done', label: 'Pick one of the options' };
     }

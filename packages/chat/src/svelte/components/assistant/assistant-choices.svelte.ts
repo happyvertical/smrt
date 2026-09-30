@@ -15,6 +15,12 @@
  * Images on the cards are restricted to same-origin paths (`/…`), so a
  * source cannot leak a signed provider URL and an injected prompt cannot make
  * the dock load a remote address.
+ *
+ * Options that take a while (generated pictures) arrive later: the offer
+ * carries `pending`, the cards show "Making…" placeholders and the source's
+ * `fill` adds options as they finish. The person can pick any option that
+ * has arrived. Such an offer is not replaced by the person's next message
+ * (it cost real work); "None of these" stops it.
  */
 
 import type {
@@ -45,11 +51,41 @@ export interface AssistantChoiceOption {
   value?: unknown;
 }
 
+/** How a pending offer reports progress (see {@link AssistantChoicePending}). */
+export interface AssistantChoicePendingUpdate {
+  /** Add finished options (normalized; at most 4 in the whole offer). */
+  add(options: AssistantChoiceOption[]): void;
+  /** Replace the plain progress line. */
+  status(message: string): void;
+}
+
+/** Options still being made, added to the cards as they finish. */
+export interface AssistantChoicePending {
+  /** A plain line while they are made ("Making versions… about a minute"). */
+  message: string;
+  /** How many options are coming, for placeholders (1–4; default 4 less the ready ones). */
+  expected?: number;
+  /**
+   * Called once, after the cards show. Call `update.add` as options finish,
+   * and resolve when there are no more. Throw an `Error` with a plain
+   * message when making them failed; it is shown on the cards. `signal`
+   * aborts when the person dismisses the offer (or picks an option, or the
+   * conversation is cleared): stop polling then.
+   */
+  fill(
+    update: AssistantChoicePendingUpdate,
+    signal: AbortSignal,
+  ): Promise<void>;
+}
+
 /** What a source offers for one request. */
 export interface AssistantChoiceOffer {
   /** A plain heading for the cards ("Pick a crop"). */
   title: string;
+  /** The ready options (may be empty when `pending` is set). */
   options: AssistantChoiceOption[];
+  /** More options are being made; they are added as they finish. */
+  pending?: AssistantChoicePending;
 }
 
 /** A page feature that can offer choices while it is on screen. */
@@ -160,15 +196,29 @@ export interface AssistantChoiceSet {
   title: string;
   options: AssistantChoiceOption[];
   /**
-   * `waiting` for the person; `applying` after a click; `applied` once the
-   * source applied it; `dismissed` when the person said none (or a newer
-   * request replaced it); `failed` when applying failed (they may pick again).
+   * `waiting` for the person (options may still be arriving, see `pending`);
+   * `applying` after a click; `applied` once the source applied it;
+   * `dismissed` when the person said none (or a newer request replaced it);
+   * `failed` when applying failed (they may pick again); `unavailable` when
+   * the pending options could not be made and none arrived.
    */
-  status: 'waiting' | 'applying' | 'applied' | 'dismissed' | 'failed';
+  status:
+    | 'waiting'
+    | 'applying'
+    | 'applied'
+    | 'dismissed'
+    | 'failed'
+    | 'unavailable';
   chosenOptionId?: string;
   /** The source's line about what changed. */
   outcome?: string;
   error?: string;
+  /** Options still being made: the progress line and how many are coming. */
+  pending?: { message: string; expected: number };
+  /** A plain line when some pending options could not be made. */
+  note?: string;
+  /** Kept when the person sends another message (it had pending work). */
+  lasting?: boolean;
 }
 
 /** The dock's choice state: offers from tool calls, and the person's picks. */
@@ -177,6 +227,9 @@ export class AssistantChoices {
 
   /** Release functions of the holds for offers still open. */
   private readonly releases = new Map<string, () => void>();
+
+  /** Abort controllers of pending offers still being filled. */
+  private readonly fills = new Map<string, AbortController>();
 
   /**
    * @param hold Called for each offer while it waits for the person (and
@@ -250,6 +303,15 @@ export class AssistantChoices {
     return this.sets.filter((set) => set.status === 'waiting').length;
   }
 
+  /** The progress line of an offer still being made with nothing to pick yet. */
+  get pendingMessage(): string | null {
+    const making = this.sets.find(
+      (set) =>
+        set.status === 'waiting' && set.pending && set.options.length === 0,
+    );
+    return making?.pending?.message ?? null;
+  }
+
   private update(id: string, patch: Partial<AssistantChoiceSet>) {
     this.sets = this.sets.map((set) =>
       set.id === id ? { ...set, ...patch } : set,
@@ -275,28 +337,124 @@ export class AssistantChoices {
         error: err instanceof Error ? err.message : String(err),
       };
     }
+    const pending =
+      offer?.pending && typeof offer.pending.fill === 'function'
+        ? offer.pending
+        : null;
     const options = normalizeChoiceOptions(offer?.options ?? []);
-    if (options.length === 0) {
+    if (options.length === 0 && !pending) {
       return { id: call.id, ok: false, error: 'Nothing to offer.' };
     }
+    const pendingState = pending
+      ? {
+          message: clean(pending.message, 160) || 'Making options…',
+          expected: Math.min(
+            ASSISTANT_CHOICE_MAX_OPTIONS - options.length,
+            Math.max(1, Math.floor(Number(pending.expected) || 0) || 4),
+          ),
+        }
+      : undefined;
     const set: AssistantChoiceSet = {
       id: call.id,
       sourceId,
       title: clean(offer.title, 120) || 'Pick one',
       options,
       status: 'waiting',
+      ...(pendingState && pendingState.expected > 0
+        ? { pending: pendingState, lasting: true }
+        : {}),
     };
     this.sets = [...this.sets.filter((s) => s.id !== call.id), set];
     this.syncHolds();
+    if (pending && set.pending) this.fill(set.id, pending);
     return {
       id: call.id,
       ok: true,
       result: JSON.stringify({
         offered: true,
         waitingForUser: true,
+        ...(set.pending
+          ? { stillMaking: true, progress: set.pending.message }
+          : {}),
         options: options.map(({ id, label }) => ({ id, label })),
       }),
     };
+  }
+
+  /** Run a pending offer's `fill`, adding its options as they finish. */
+  private fill(setId: string, pending: AssistantChoicePending) {
+    const controller = new AbortController();
+    this.fills.get(setId)?.abort();
+    this.fills.set(setId, controller);
+    const live = () =>
+      !controller.signal.aborted
+        ? this.sets.find((s) => s.id === setId && s.status !== 'dismissed')
+        : undefined;
+    const update: AssistantChoicePendingUpdate = {
+      add: (added) => {
+        const set = live();
+        if (!set) return;
+        const options = normalizeChoiceOptions([
+          ...set.options,
+          ...(Array.isArray(added) ? added : []),
+        ]);
+        const remaining = set.pending
+          ? Math.max(
+              0,
+              Math.min(
+                ASSISTANT_CHOICE_MAX_OPTIONS,
+                set.options.length + set.pending.expected,
+              ) - options.length,
+            )
+          : 0;
+        this.update(setId, {
+          options,
+          ...(set.pending
+            ? { pending: { ...set.pending, expected: remaining } }
+            : {}),
+        });
+      },
+      status: (message) => {
+        const set = live();
+        const text = clean(message, 160);
+        if (set?.pending && text) {
+          this.update(setId, { pending: { ...set.pending, message: text } });
+        }
+      },
+    };
+    const finish = (err: unknown) => {
+      if (this.fills.get(setId) === controller) this.fills.delete(setId);
+      const set = live();
+      if (!set) return;
+      const message =
+        err == null
+          ? null
+          : (err instanceof Error ? err.message : String(err)).slice(0, 200);
+      if (set.options.length === 0) {
+        this.update(setId, {
+          status: 'unavailable',
+          pending: undefined,
+          error: message || 'Nothing came back. Try again.',
+        });
+      } else {
+        this.update(setId, {
+          pending: undefined,
+          ...(message ? { note: message } : {}),
+        });
+      }
+    };
+    Promise.resolve()
+      .then(() => pending.fill(update, controller.signal))
+      .then(
+        () => finish(null),
+        (err) => finish(err ?? 'Nothing came back. Try again.'),
+      );
+  }
+
+  /** Stop filling an offer (it was picked, dismissed or cleared). */
+  private stopFill(setId: string) {
+    this.fills.get(setId)?.abort();
+    this.fills.delete(setId);
   }
 
   /** The person picked `optionId`: apply it through its source. */
@@ -320,8 +478,11 @@ export class AssistantChoices {
     });
     try {
       const outcome = await source.apply(option);
+      // Picked: versions still being made are no longer needed.
+      this.stopFill(setId);
       this.update(setId, {
         status: 'applied',
+        pending: undefined,
         ...(typeof outcome === 'string' && outcome.trim()
           ? { outcome: outcome.trim().slice(0, 200) }
           : {}),
@@ -337,21 +498,34 @@ export class AssistantChoices {
   /** The person wants none of these. */
   dismiss(setId: string) {
     const set = this.sets.find((s) => s.id === setId);
-    if (set && (set.status === 'waiting' || set.status === 'failed')) {
-      this.update(setId, { status: 'dismissed' });
+    if (
+      set &&
+      (set.status === 'waiting' ||
+        set.status === 'failed' ||
+        set.status === 'unavailable')
+    ) {
+      this.stopFill(setId);
+      this.update(setId, { status: 'dismissed', pending: undefined });
     }
   }
 
-  /** A new request replaces offers still waiting. */
+  /**
+   * A new request replaces offers still waiting, except ones that had
+   * options made for them (`lasting`): only the person dismisses those.
+   */
   supersedeWaiting() {
     if (this.waitingCount === 0) return;
     this.sets = this.sets.map((set) =>
-      set.status === 'waiting' ? { ...set, status: 'dismissed' as const } : set,
+      set.status === 'waiting' && !set.lasting
+        ? { ...set, status: 'dismissed' as const }
+        : set,
     );
     this.syncHolds();
   }
 
   clear() {
+    for (const controller of this.fills.values()) controller.abort();
+    this.fills.clear();
     this.sets = [];
     this.syncHolds();
   }
