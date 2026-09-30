@@ -40,3 +40,9 @@ provider or auth implementation.
 
 Dependency provenance and exact heads belong in the review packet; root validation
 and independent high-risk reviews remain coordinator-owned.
+
+## Accepted round-1 regressions
+
+- Navigation A → invalid → A must resolve again whether A completed or remains pending. Browser cases observe cancellation, restore the same route, and prove a late original reply cannot replace the restored result.
+- Settings schema object-key order is immaterial at all nested levels. Changed numeric limits, enum contents, and enum array order remain rejected. Baseline tests fail before either fix and pass after.
+- The reported frozen-install mismatch is rejected with actual clean-archive evidence: workspace Node-type override applies, and both baseline and current frozen installs exit0. No dependency or lockfile change is required.
