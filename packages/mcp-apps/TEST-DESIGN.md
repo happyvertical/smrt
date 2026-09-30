@@ -28,3 +28,16 @@ gate, not evidence of an external host product.
 | Stale call isolation | Two overlapping detail calls | Latest result rendered | Delayed superseded result ignored | Same mounted client | N/A, read-only | Chromium | request correlation + abort | Browser / test:e2e |
 | Reconnect isolation | Dispose/remount new client | New handshake and calls succeed | Old response ID cannot settle new request | New view lifetime | N/A | Chromium | initialize + random ID generation | Browser / test:e2e |
 | Extension observation | Handshake/context notification | Bounded raw context/capabilities, snapshot isolation | Oversize/cycle/prototype/accessor, post-disposal updates, no capability elevation | Configured host vs extension consumer | N/A | Browser + unit fixture | Generic snapshot; extension owns field schemas | Unit / test |
+
+## Optional extension transport seam (pre-review M6 integration)
+
+This extends #3210 before independent review. Extension method/schema ownership
+stays in opt-in adapter packages; the bridge owns one transport and local lifecycle.
+No wire version is invented for capabilities without one. An explicitly declared
+version selector must match. The already negotiated Apps protocol is always required.
+
+| Behavior/invariant | Reachable trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime | Contract edge | Level / command |
+|---|---|---|---|---|---|---|---|---|
+| Extension registration | Initialized bridge registers declaration | Plain-object capability path, explicit copied method/notification allowlists, optional matching version | Missing/malformed cap, unknown version, reserved methods, duplicate/colliding registration, mutated declaration | Trusted app declaration + bound host | N/A; transport only | Browser + unit | Optional extension capability negotiation | test |
+| Guarded requests | Registered handle requests listed method | Correlated bounded plain JSON response; extension metadata on native text methods | Unlisted method, role/modality/base-capability bypass, malformed payload/response/upstream error | Registered owner | N/A; server retains authority | Browser + unit | Existing JSON-RPC transport | test + test:e2e |
+| Notifications/lifetime | Bound host sends listed notification | Isolated params, matching active listeners | Unknown name, wrong window/origin, oversized/cyclic/prototype/accessor, host request pretending to notify, after unsubscribe/dispose/remount | Bound host vs hostile message; mounted owner | N/A | Browser + unit | Notification dispatch and lifecycle cancellation | test + test:e2e |
