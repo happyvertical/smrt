@@ -12,8 +12,10 @@
     "CLAUDE.md",
     "README.md",
     "index.js",
+    "template.config.js",
     "template",
-    "AGENTS.md"
+    "AGENTS.md",
+    "mcp-apps-template"
   ],
   "keywords": [
     "smrt",

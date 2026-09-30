@@ -12,8 +12,13 @@ const mockGenerate = vi.fn();
 const mockCleanupGitTemplate = vi.fn();
 const mockDiscoverInstalledTemplates = vi.fn();
 const mockScaffoldMcpAppsPackage = vi.fn();
+const mockConfigureMcpAppsConsumerRegistry = vi.fn();
+const mockAddMcpAppsRuntime = vi.fn();
 
 vi.mock('./mcp-apps-packaging.js', () => ({
+  addMcpAppsRuntime: (...args: any[]) => mockAddMcpAppsRuntime(...args),
+  configureMcpAppsConsumerRegistry: (...args: any[]) =>
+    mockConfigureMcpAppsConsumerRegistry(...args),
   scaffoldMcpAppsPackage: (...args: any[]) =>
     mockScaffoldMcpAppsPackage(...args),
 }));
@@ -127,10 +132,20 @@ describe('Gnode Commands', () => {
         outputDir: '/tmp/my-app',
         mcpApps: true,
       });
+      expect(mockConfigureMcpAppsConsumerRegistry).toHaveBeenCalledWith(
+        '/tmp/my-app',
+      );
+      expect(mockAddMcpAppsRuntime).toHaveBeenCalledWith(
+        '/node_modules/sveltekit',
+        '/tmp/my-app',
+      );
       expect(mockScaffoldMcpAppsPackage).toHaveBeenCalledWith(
         '/tmp/my-app/mcp-apps',
         'my-app',
       );
+      expect(mockGenerate.mock.calls[0]?.[2]).toMatchObject({
+        name: '@smrt-app/my-app',
+      });
       consoleSpy.mockRestore();
     });
 

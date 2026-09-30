@@ -6,13 +6,14 @@
  * install-plugin manifest.
  */
 import {
+  cpSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { CLICommand } from '../cli-generator.js';
 
 export interface McpAppsFinding {
@@ -28,6 +29,8 @@ export interface McpAppsValidationResult {
 const PLUGIN_SCHEMA =
   'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json';
 const MCP_SCHEMA = 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json';
+const CANONICAL_SCOPE_REGISTRY =
+  '@happyvertical:registry=https://npm.happyvertical.com/';
 const SECRET_KEY =
   /(?:api[_-]?key|secret|token|password|authorization|credential)/i;
 const SAFE_PLUGIN_NAME = /^[a-z0-9][a-z0-9._-]*$/;
@@ -285,6 +288,69 @@ function lstatExists(path: string) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Add the public, credential-free SMRT package route to a generated app.
+ * A pre-existing scope route is an explicit consumer decision and must not be
+ * silently replaced.
+ */
+export function configureMcpAppsConsumerRegistry(appRoot: string) {
+  const npmrcPath = join(resolve(appRoot), '.npmrc');
+  let existing = '';
+  try {
+    const stat = lstatSync(npmrcPath);
+    if (stat.isSymbolicLink() || !stat.isFile())
+      throw new Error('Generated application .npmrc must be a regular file');
+    existing = readFileSync(npmrcPath, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
+  const scopeLines = existing
+    .split(/\r?\n/)
+    .filter((line) => /^\s*@happyvertical:registry\s*=/.test(line));
+  if (scopeLines.length > 0) {
+    if (
+      scopeLines.some(
+        (line) =>
+          line.trim().replace(/\s+/g, '') ===
+          CANONICAL_SCOPE_REGISTRY.replace(/\s+/g, ''),
+      )
+    )
+      return;
+    throw new Error(
+      'Generated application already declares a different @happyvertical registry; refusing to replace it',
+    );
+  }
+
+  writeFileSync(
+    npmrcPath,
+    `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${CANONICAL_SCOPE_REGISTRY}\n`,
+  );
+}
+
+/** Copy the opt-in app route/resources and merge only its declared dependencies. */
+export function addMcpAppsRuntime(sourceRoot: string, appRoot: string) {
+  const resolvedSource = resolve(sourceRoot);
+  const sourceRootPath = lstatSync(resolvedSource).isFile()
+    ? dirname(resolvedSource)
+    : resolvedSource;
+  const source = join(sourceRootPath, 'mcp-apps-template');
+  const dependencies = JSON.parse(
+    readFileSync(join(source, 'package.dependencies.json'), 'utf8'),
+  ) as Record<string, string>;
+  cpSync(join(source, 'src'), join(resolve(appRoot), 'src'), {
+    recursive: true,
+    force: false,
+    errorOnExist: true,
+  });
+  const packagePath = join(resolve(appRoot), 'package.json');
+  const packageJson = JSON.parse(readFileSync(packagePath, 'utf8')) as {
+    dependencies?: Record<string, string>;
+  };
+  packageJson.dependencies = { ...packageJson.dependencies, ...dependencies };
+  writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
 /** Create the minimal local portable package. It intentionally has no .app.json: registered IDs are host-owned. */

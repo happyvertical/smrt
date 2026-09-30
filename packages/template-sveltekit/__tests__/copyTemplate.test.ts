@@ -31,6 +31,7 @@ describe('copyTemplate', () => {
     copyTemplate(tempDir, { name: 'my-app', overwrite: true });
 
     expect(existsSync(join(tempDir, 'package.json'))).toBe(true);
+    expect(existsSync(join(tempDir, 'pnpm-workspace.yaml'))).toBe(true);
     expect(existsSync(join(tempDir, 'src', 'hooks.server.ts'))).toBe(true);
     expect(existsSync(join(tempDir, 'src', 'lib', 'server', 'tenancy.ts'))).toBe(
       true,
@@ -186,8 +187,8 @@ describe('copyTemplate', () => {
       readFileSync(join(tempDir, 'package.json'), 'utf-8'),
     );
     expect(pkg.name).toBe('@smrt-app/my-app');
-    expect(pkg.packageManager).toBe('pnpm@11.11.0');
-    expect(pkg.engines).toEqual({ node: '>=24.18.0', pnpm: '11.11.0' });
+    expect(pkg.packageManager).toBe('pnpm@11.25.0');
+    expect(pkg.engines).toEqual({ node: '>=24.18.0', pnpm: '11.25.0' });
   });
 
   it('preserves an explicitly scoped package identity', () => {

@@ -6,7 +6,7 @@ managed-cloud environments. It does not provision external providers.
 
 ## 1. Install and run
 
-Requirements: Node.js 24.18.0 or newer and pnpm 11.11.0. The exact pnpm version
+Requirements: Node.js 24.18.0 or newer and pnpm 11.25.0. The exact pnpm version
 is declared in `packageManager`.
 
 ```bash
@@ -233,6 +233,13 @@ editing package metadata. It rejects symlinks, traversal paths, missing assets,
 credential-shaped JSON fields, non-portable schemas, and non-loopback HTTP
 server URLs.
 
+The option stages `src/routes/api/mcp/+server.ts`, a session-authorized `mcp`
+server, and a bounded static resource with a restrictive CSP. It also includes
+`McpAppsBridge.svelte` for an application-configured trusted host origin and
+the optional OpenAI display adapter; it stays inert until your UI mounts it.
+The scaffold does not enable remote MCP tasks, so a deployment that adds them
+must supply the durable worker's live authorization callback before publication.
+
 Before changing that URL, mount the native SDK v2 Streamable HTTP endpoint and
 configure the application gateway's verified principal, issuer, audience and
 scopes. Plugin metadata is an install surface only; it neither authenticates a
@@ -393,3 +400,16 @@ production startup must set an explicit loopback `HOST`, and `app:start` is the
 recommended entry point. Stop the app before backup/import. For deployed import, stop
 web/workers and set `SMRT_MAINTENANCE_MODE=true`. Extend
 `scripts/smrt-portability.mjs` for domain-specific transformations.
+
+### Hosted MCP authorization
+
+The opt-in MCP route uses the local signed session only in the `local` profile.
+For `self-hosted` and `cloud`, configure HTTPS `SMRT_MCP_RESOURCE`,
+`SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI`, and space-separated
+`SMRT_MCP_SCOPES` values. Bind `resolveHostedMcpPrincipal` in
+`src/lib/server/mcp-hosted-principal.ts` to an application-owned lookup that
+checks the current account and active tenant membership on every request. It
+must return `null` for disabled, revoked, or unmapped identities. The route
+does not derive tenant authority from JWT claims, request headers, or tool
+arguments; missing configuration or a missing binding fails closed before MCP
+dispatch.
