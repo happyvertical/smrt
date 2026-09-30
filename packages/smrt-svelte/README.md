@@ -438,3 +438,12 @@ all other currencies render their ISO code for deterministic SSR hydration.
 
 - `@happyvertical/smrt-types` -- shared type definitions
 - Peer: `svelte` >=5.18.2, `@happyvertical/smrt-jobs`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-users` (all optional)
+
+## Portable MCP Apps
+
+The opt-in `@happyvertical/smrt-svelte/mcp-apps` entry exports `useMcpApp` for
+mount-owned host negotiation/disposal and `useMcpAppIntent` for component-local
+public registry interactions. It does not require `document.modelContext` or
+export mounted closures to remote MCP. Agent proposals retain trusted human
+staged review. See the [bridge contract](../mcp-apps/README.md) for origin
+configuration, capabilities, fallback and synthetic-browser evidence limits.
