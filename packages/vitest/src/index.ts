@@ -1134,6 +1134,8 @@ async function generateLocalManifest(
       includeStaticMethods: true,
 
       // Output configuration - write to .smrt directory (ManifestManager default)
+      outputMode: 'dev',
+      artifactPurpose: 'test',
       outputDir: '.smrt',
       outputName: 'manifest.json',
       generateTypeStub: false,

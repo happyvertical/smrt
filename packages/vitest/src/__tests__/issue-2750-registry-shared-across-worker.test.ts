@@ -170,6 +170,36 @@ describe('issue #2750: ObjectRegistry is shared with the pool: "forks" worker pr
   );
 
   it(
+    'removes stale knowledge when the producer disables it while keeping test registration',
+    () => {
+      const smrtDir = join(fixtureRoot, '.smrt');
+      const knowledgePath = join(smrtDir, 'smrt-knowledge.json');
+      mkdirSync(smrtDir, { recursive: true });
+      writeFileSync(knowledgePath, JSON.stringify({ stale: true }));
+      execFileSync(
+        process.execPath,
+        [vitestBin, 'run', '--reporter=json', `--outputFile=${jsonReportPath}`],
+        {
+          cwd: fixtureRoot,
+          encoding: 'utf8',
+          env: { ...process.env, SMRT_FIXTURE_KNOWLEDGE_ENABLED: 'false' },
+          timeout: SPAWN_TIMEOUT_MS,
+          killSignal: 'SIGKILL',
+        },
+      );
+      expect(existsSync(knowledgePath)).toBe(false);
+      const manifest = JSON.parse(
+        readFileSync(join(smrtDir, 'manifest.json'), 'utf8'),
+      );
+      expect(Object.keys(manifest.objects)).not.toHaveLength(0);
+      expect(JSON.parse(readFileSync(jsonReportPath, 'utf8')).success).toBe(
+        true,
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
     'a consumer-shaped fixture (smrtVitestPlugin() + setup + pool: forks + singleFork) sees manifest-registered classes in the test worker',
     () => {
       expect(existsSync(vitestBin)).toBe(true);
