@@ -6,6 +6,11 @@ import {
 } from '@happyvertical/smrt-scanner/knowledge';
 
 export {
+  publishArtifactFiles,
+  publishAtomicArtifact,
+} from './consumer-plugin/artifact-publication.js';
+export { resolveFileKnowledgeConfig } from './knowledge-config.js';
+export {
   discoverScopedPackageDirectories,
   readPackageAgentDoc,
   type ScopedPackageDirectory,
