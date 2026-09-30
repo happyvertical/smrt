@@ -53,6 +53,11 @@ import type {
   AssistantStatus,
   AssistantTurnStep,
 } from '../../../assistant-turn-events.js';
+import {
+  type AssistantChoiceSet,
+  type AssistantChoiceSourceRegistry,
+  AssistantChoices,
+} from './assistant-choices.svelte.js';
 import type {
   AssistantAttachmentRef,
   AssistantMessage,
@@ -340,6 +345,12 @@ export interface AssistantDockControllerOptions {
   maxPauseMs?: number;
   /** Called whenever `run` changes (#assistant-watch). */
   onRun?: (run: AssistantRun | null) => void;
+  /**
+   * Features on the page that can offer the person a few options to pick
+   * from (see `./assistant-choices.svelte.ts`). Each is offered to the model
+   * as `assistant_offer_<id>`; the person's click applies the option.
+   */
+  choiceSources?: AssistantChoiceSourceRegistry;
 }
 
 export interface AssistantDockController {
@@ -378,6 +389,12 @@ export interface AssistantDockController {
   readonly streamingText: string;
   /** Browser tool calls that wait for the user's decision (#2908). */
   readonly toolRequests: AssistantToolRequest[];
+  /** Options the assistant offered, newest last (see `choiceSources`). */
+  readonly choices: AssistantChoiceSet[];
+  /** The person picked an option: apply it through its source. */
+  chooseOption(setId: string, optionId: string): Promise<void>;
+  /** The person wants none of the offered options. */
+  dismissChoices(setId: string): void;
   /** Lets a waiting browser tool call run. */
   approveToolRequest(id: string): void;
   /** Refuses a waiting browser tool call; the model is told it was declined. */
@@ -511,6 +528,12 @@ export function createAssistantDockController(
   let toolRequests = $state<AssistantToolRequest[]>([]);
   let turnAbort: AbortController | null = null;
   const decisionWaiters = new Map<string, (approved: boolean) => void>();
+  // An offer waiting for the person's pick is a `choice` hold, so a
+  // supervised run shows "waiting for you" until they pick or dismiss it.
+  const choices = new AssistantChoices(
+    () => options.choiceSources,
+    (set) => holdForUser({ id: `choice:${set.id}`, kind: 'choice', label: set.title }),
+  );
 
   // ---- the supervised run (#assistant-watch) -------------------------------
   interface RunCore {
@@ -928,6 +951,7 @@ export function createAssistantDockController(
     messages = [];
     pendingSends = [];
     actions.clear();
+    choices.clear();
     error = null;
     draftIds.clear();
     // Cycle-4 second final finding 1: `models`/`selectedModel` previously
@@ -1423,6 +1447,7 @@ export function createAssistantDockController(
     steps = [];
     streamingText = '';
     toolRequests = [];
+    choices.supersedeWaiting();
     return controller;
   }
 
@@ -1623,7 +1648,7 @@ export function createAssistantDockController(
   function availableClientTools(): AssistantClientTool[] {
     const fromPage = pageToolsAllowed();
     const propose = proposeActionTool();
-    return propose ? [...fromPage, propose] : fromPage;
+    return [...fromPage, ...(propose ? [propose] : []), ...choices.tools()];
   }
 
   function turnInputs(threadId: string, turn: AbortController, epoch: number) {
@@ -1739,6 +1764,10 @@ export function createAssistantDockController(
         results.push(await proposeFromCall(call));
         continue;
       }
+      if (choices.isChoiceTool(call.name)) {
+        results.push(await choices.offerFromCall(call, turn.signal));
+        continue;
+      }
       // The effect is read from the page's own registry, never from the
       // server's echo of what the page declared.
       const tool = pageToolsAllowed().find((t) => t.name === call.name);
@@ -1818,6 +1847,12 @@ export function createAssistantDockController(
     }
     if (actionStates.some((a) => a.status === 'previewing')) {
       return { state: 'working', label: 'Getting a change ready…' };
+    }
+    if (choices.sets.some((set) => set.status === 'applying')) {
+      return { state: 'working', label: 'Making the change…' };
+    }
+    if (choices.waitingCount > 0) {
+      return { state: 'done', label: 'Pick one of the options' };
     }
     if (pendingSends.some((p) => p.status === 'processing')) {
       return { state: 'working', label: 'Working on it…' };
@@ -2346,6 +2381,12 @@ export function createAssistantDockController(
     acknowledgeRun,
     dismissRun,
     holdForUser,
+    get choices() {
+      return choices.sets;
+    },
+    chooseOption: (setId: string, optionId: string) =>
+      choices.choose(setId, optionId),
+    dismissChoices: (setId: string) => choices.dismiss(setId),
     approveToolRequest: (id: string) => decide(id, true),
     declineToolRequest: (id: string) => decide(id, false),
     cancel,

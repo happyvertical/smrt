@@ -25,6 +25,7 @@ import ModelPicker from '../shared/ModelPicker.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
 import AssistantThreadList from './AssistantThreadList.svelte';
 import { toolCallStatusForAction } from './action-status.js';
+import type { AssistantChoiceSourceRegistry } from './assistant-choices.svelte.js';
 import type {
   AssistantAttachmentRef,
   AssistantMessage,
@@ -147,6 +148,10 @@ export interface Props {
   /** Called whenever the supervised run changes (#assistant-watch). Also
    * readable as `controller.run`. */
   onrun?: (run: AssistantRun | null) => void;
+  /** Page features that can offer a few options for the person to pick
+   * (see `./assistant-choices.svelte.ts`). The options show as cards here;
+   * the person's click applies one. */
+  choiceSources?: AssistantChoiceSourceRegistry;
 }
 
 const {
@@ -168,6 +173,7 @@ const {
   clientToolFilter,
   maxPauseMs,
   onrun,
+  choiceSources,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -209,6 +215,9 @@ const controller: AssistantDockController = createAssistantDockController({
     return maxPauseMs;
   },
   onRun: (run) => onrun?.(run),
+  get choiceSources() {
+    return choiceSources;
+  },
 });
 
 function formatToolArgs(args: Record<string, unknown>): string {
@@ -533,6 +542,54 @@ async function handleConfirmAction(requestId: string) {
           </div>
         {/each}
 
+        {#each controller.choices.filter((set) => set.status !== 'dismissed') as set (set.id)}
+          {@const chosen = set.options.find((option) => option.id === set.chosenOptionId)}
+          <div class="assistant-dock-choices" role="group" aria-label={set.title}>
+            <p class="assistant-dock-choices-title">{set.title}</p>
+            <ul class="assistant-dock-choice-list">
+              {#each set.options as option (option.id)}
+                <li>
+                  <!-- raw-primitive-allow: a picture card that is itself the choice (image, label and description inside one pressable target); Button's single-label layout does not fit -->
+                  <button
+                    type="button"
+                    class="assistant-dock-choice"
+                    class:chosen={set.chosenOptionId === option.id}
+                    aria-pressed={set.chosenOptionId === option.id}
+                    disabled={set.status !== 'waiting' && set.status !== 'failed'}
+                    onclick={() => void controller.chooseOption(set.id, option.id)}
+                  >
+                    {#if option.imageUrl}
+                      <img src={option.imageUrl} alt={option.imageAlt ?? option.label} loading="lazy" />
+                    {/if}
+                    <span class="assistant-dock-choice-label">{option.label}</span>
+                    {#if option.description}
+                      <span class="assistant-dock-choice-description">{option.description}</span>
+                    {/if}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+            {#if set.status === 'waiting'}
+              <div class="assistant-dock-choices-actions">
+                <span>{t(M['chat.assistant_dock.choices_pick'])}</span>
+                <Button type="button" size="sm" variant="ghost" onclick={() => controller.dismissChoices(set.id)}>
+                  {t(M['chat.assistant_dock.choices_none'])}
+                </Button>
+              </div>
+            {:else if set.status === 'applying'}
+              <p class="assistant-dock-choices-status" role="status">{t(M['chat.assistant_dock.choices_applying'])}</p>
+            {:else if set.status === 'applied'}
+              <p class="assistant-dock-choices-status" role="status">
+                {set.outcome ?? t(M['chat.assistant_dock.choices_applied'], { label: chosen?.label ?? '' })}
+              </p>
+            {:else if set.status === 'failed'}
+              <p class="assistant-dock-choices-status assistant-dock-choices-error" role="alert">
+                {t(M['chat.assistant_dock.choices_failed'], { message: set.error ?? '' })}
+              </p>
+            {/if}
+          </div>
+        {/each}
+
         {#if controller.actions.size > 0}
           <ul class="assistant-dock-actions">
             {#each [...controller.actions.entries()] as [requestId, action] (requestId)}
@@ -680,6 +737,97 @@ async function handleConfirmAction(requestId: string) {
 
   .assistant-dock-tool-request p {
     margin: 0 0 0.4rem;
+  }
+
+  .assistant-dock-choices {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+    padding: 0.75rem;
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: 0.75rem;
+    background: var(--smrt-color-surface-container-low, #f7f7fb);
+  }
+
+  .assistant-dock-choices-title {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .assistant-dock-choice-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .assistant-dock-choice {
+    display: grid;
+    gap: 0.25rem;
+    align-content: start;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.35rem;
+    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: 0.6rem;
+    background: var(--smrt-color-surface, #fff);
+    color: var(--smrt-color-on-surface, #1a1c1e);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .assistant-dock-choice:hover:not(:disabled),
+  .assistant-dock-choice:focus-visible {
+    border-color: var(--smrt-color-primary, #3558d6);
+  }
+
+  .assistant-dock-choice.chosen {
+    border-color: var(--smrt-color-primary, #3558d6);
+    background: var(--smrt-color-primary-container, #dde3ff);
+  }
+
+  .assistant-dock-choice:disabled:not(.chosen) {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  .assistant-dock-choice img {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 0.4rem;
+    background: var(--smrt-color-surface-container, #eceef4);
+  }
+
+  .assistant-dock-choice-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .assistant-dock-choice-description {
+    color: var(--smrt-color-on-surface-variant, #44474e);
+    font-size: 0.78rem;
+  }
+
+  .assistant-dock-choices-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .assistant-dock-choices-status {
+    margin: 0;
+    font-size: 0.85rem;
+  }
+
+  .assistant-dock-choices-error {
+    color: var(--smrt-color-error, #b3261e);
   }
 
   .assistant-dock-tool-request-title {

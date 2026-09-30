@@ -86,6 +86,20 @@ export { default as AssistantComposer } from './components/assistant/AssistantCo
 export { default as AssistantDock } from './components/assistant/AssistantDock.svelte';
 export { default as AssistantThreadList } from './components/assistant/AssistantThreadList.svelte';
 export {
+  ASSISTANT_CHOICE_MAX_OPTIONS,
+  ASSISTANT_CHOICE_TOOL_PREFIX,
+  type AssistantChoiceOffer,
+  type AssistantChoiceOption,
+  type AssistantChoiceSet,
+  type AssistantChoiceSource,
+  type AssistantChoiceSourceRegistry,
+  AssistantChoices,
+  choiceToolName,
+  createAssistantChoiceSourceRegistry,
+  normalizeChoiceOptions,
+  safeChoiceImageUrl,
+} from './components/assistant/assistant-choices.svelte.js';
+export {
   type AssistantAttachmentRef,
   type AssistantMessage,
   type AssistantResumeTurnInput,

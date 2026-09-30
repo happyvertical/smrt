@@ -599,6 +599,30 @@ review, never applied.
 Tests: `assistant-dock-run.test.ts`, `assistant-dock-settle.test.ts`,
 `src/assistant-turn.test.ts` (budgets, labels).
 
+## Choices: offer a few options, the person picks one
+
+For work with several good answers ("crop this tighter", "find me a picture of
+the arena") a page registers an `AssistantChoiceSource` on a registry from
+`createAssistantChoiceSourceRegistry()` and passes it to the dock as
+`choiceSources`. Each source is offered to the model as a `read` browser tool,
+`assistant_offer_<source id>` (add `assistant_offer_*` to the server's
+browser-tool allow-list):
+
+- the model calls it with the source's own `inputSchema` arguments;
+- the dock asks the **source** for 1–4 options (`offer`) — the model never
+  supplies them — and shows them as cards in the chat (label, optional
+  description, optional same-origin preview image: anything but a `/…` path
+  is dropped);
+- the model gets back only `{ offered, waitingForUser, options: [{ id, label }] }`;
+- nothing changes until the person clicks a card: the dock then calls the
+  source's `apply(option)` in the page, as the person. "None of these"
+  dismisses, a failed apply can be picked again, and a new message replaces an
+  offer still waiting.
+
+`controller.choices`, `controller.chooseOption(setId, optionId)` and
+`controller.dismissChoices(setId)` expose the same state headlessly. While an
+offer waits, `status` is `{ state: 'done', label: 'Pick one of the options' }`.
+
 ## Gaps / follow-ups
 
 1. **`AssistantActionClient` has no shipped HTTP implementation.** The
