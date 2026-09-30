@@ -64,3 +64,12 @@ install and dependency builds. FILES-TEST-DESIGN.md maps adversarial coverage.
 Synthetic HTTP/browser fixtures use no real files or user data. Actual OpenAI
 product/build/platform access is unavailable here; these tests do not establish
 live OpenAI host compatibility or permit advertising observed host support.
+
+Subscription lifecycle regression (#3214 review round 1): notifications during a
+pending write coalesce into a fresh authorized read after the write settles.
+Superseded refreshes retry a read without disposing the session; authority and
+validation failures still terminate it. Disposal dispatches best-effort host
+unsubscribe and releases local registration synchronously, allowing immediate
+replacement even when the host never replies. Deterministic session tests cover
+delayed read/write completion, the refreshed ETag, revocation, and replacement
+while unsubscribe is withheld.
