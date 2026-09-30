@@ -26,9 +26,16 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildDomainKnowledgeManifest } from '@happyvertical/smrt-core/knowledge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const fixtureRoot = fileURLToPath(
@@ -38,6 +45,7 @@ const vitestBin = fileURLToPath(
   new URL('../../node_modules/vitest/vitest.mjs', import.meta.url),
 );
 const jsonReportPath = join(fixtureRoot, 'vitest-report.json');
+const knowledgeConfigPath = join(fixtureRoot, 'smrt.config.json');
 
 interface VitestJsonReport {
   numTotalTestSuites: number;
@@ -71,7 +79,82 @@ describe('issue #2750: ObjectRegistry is shared with the pool: "forks" worker pr
 
   afterEach(() => {
     cleanGeneratedArtifacts();
+    rmSync(knowledgeConfigPath, { force: true });
   });
+
+  it(
+    'refreshes canonical paired knowledge after the consumer plugin generates a test manifest (#3205)',
+    () => {
+      const smrtDir = join(fixtureRoot, '.smrt');
+      const manifestPath = join(smrtDir, 'manifest.json');
+      const knowledgePath = join(smrtDir, 'smrt-knowledge.json');
+      const agentSurface = {
+        intents: [
+          {
+            id: 'widgets.next_page',
+            description: 'Advance the widget table by one page',
+            capability: { effect: 'read', idempotent: false, openWorld: false },
+            target: { registry: 'dataSurface', controlId: 'next-page' },
+            hasInputSchema: false,
+            planes: ['browser'],
+            sourceFile: 'src/registry-probe.spec.ts',
+          },
+        ],
+        playbooks: [],
+        diagnostics: [],
+      };
+      const staleManifestHash = 'sha256:stale-production-manifest';
+      writeFileSync(
+        knowledgeConfigPath,
+        JSON.stringify({ knowledge: { tags: ['vitest-plugin'] } }),
+      );
+      // Seed the production pair that #3205 left stale after the plugin
+      // rewrote the canonical test manifest.
+      rmSync(smrtDir, { recursive: true, force: true });
+      mkdirSync(smrtDir, { recursive: true });
+      writeFileSync(manifestPath, JSON.stringify({ objects: {} }), {
+        encoding: 'utf8',
+        flag: 'w',
+      });
+      writeFileSync(
+        knowledgePath,
+        JSON.stringify({
+          sourceHashes: { manifest: staleManifestHash },
+          agentSurface,
+        }),
+      );
+
+      execFileSync(
+        process.execPath,
+        [vitestBin, 'run', '--reporter=json', `--outputFile=${jsonReportPath}`],
+        {
+          cwd: fixtureRoot,
+          encoding: 'utf-8',
+          env: { ...process.env },
+          timeout: SPAWN_TIMEOUT_MS,
+          killSignal: 'SIGKILL',
+        },
+      );
+
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      const knowledge = JSON.parse(readFileSync(knowledgePath, 'utf8'));
+      const expected = buildDomainKnowledgeManifest({
+        manifest,
+        rootDir: fixtureRoot,
+        manifestPath,
+        config: { tags: ['vitest-plugin'] },
+        agentSurface,
+      });
+      expect(Object.keys(manifest.objects)).not.toHaveLength(0);
+      expect(knowledge.sourceHashes.manifest).toBe(
+        expected.sourceHashes.manifest,
+      );
+      expect(knowledge.sourceHashes.manifest).not.toBe(staleManifestHash);
+      expect(knowledge.agentSurface).toEqual(agentSurface);
+      expect(knowledge.tags).toEqual(['vitest-plugin']);
+    },
+    TEST_TIMEOUT_MS,
+  );
 
   it(
     'a consumer-shaped fixture (smrtVitestPlugin() + setup + pool: forks + singleFork) sees manifest-registered classes in the test worker',
