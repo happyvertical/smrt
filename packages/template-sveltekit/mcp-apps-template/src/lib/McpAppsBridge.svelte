@@ -8,6 +8,7 @@
   }
 
   let { hostOrigin }: Props = $props();
+  let expandUnavailable = $state(false);
   const app = useMcpApp(() => ({
     appInfo: { name: 'smrt-app', version: '0.1.0' },
     availableDisplayModes: ['inline', 'fullscreen'],
@@ -16,14 +17,19 @@
   }));
 
   async function expand() {
-    if (app.bridge) await requestOpenAiDisplayMode(app.bridge, 'fullscreen');
+    try {
+      if (!app.bridge) throw new Error('Host bridge unavailable');
+      await requestOpenAiDisplayMode(app.bridge, 'fullscreen');
+    } catch {
+      expandUnavailable = true;
+    }
   }
 </script>
 
 <section aria-labelledby="mcp-apps-title" class="mcp-apps-bridge">
   <h1 id="mcp-apps-title">Items</h1>
   <p>Use this view to review the items your signed-in tenant authorizes.</p>
-  {#if app.error}
+  {#if app.error || expandUnavailable}
     <p role="status">Host controls are unavailable; this view remains inline.</p>
   {:else}
     <button type="button" onclick={expand}>Expand view</button>
