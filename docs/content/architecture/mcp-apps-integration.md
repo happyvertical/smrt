@@ -171,16 +171,19 @@ Iolaus compatibility remain unverified.
 ## Protocol hygiene negative assertions
 
 `pnpm check:mcp-protocol-hygiene` rejects retired protocol features in package
-sources and tooling. It recognizes this narrow session-header absence assertion
+sources and tooling. It recognizes these narrow session-header absence assertions
 in `.test`/`.spec` JavaScript or TypeScript files with `expect` imported from Vitest:
 
 ```ts
 expect(responses.every((response) => !response.headers.has('mcp-session-id'))).toBe(true);
+expect(response.headers.get('mcp-session-id')).toBeNull();
 ```
 
 The TypeScript parser must find an expression-statement expectation, a synchronous
 single-parameter arrow callback, that parameter's exact `headers.has` call, and a
-literal `true` matcher. Unbound or locally rebound `expect`, malformed syntax,
+literal `true` matcher. Alternatively, it accepts an identifier receiver's exact
+`headers.get` call with one header literal and a zero-argument `toBeNull` matcher.
+Unbound or locally rebound `expect`, malformed syntax,
 positive/unasserted checks, optional chains, and mixed boolean expressions receive
 no exception. Only the verified header literal is excluded from lexical scanning;
 other retired tokens or actual session uses on the same line still fail. This is a
