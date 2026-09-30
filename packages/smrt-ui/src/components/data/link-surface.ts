@@ -20,6 +20,7 @@ import type {
   DataSurfaceSubject,
   DataSurfaceVisibleCommand,
 } from '@happyvertical/smrt-types';
+import { trackSurfaceNavigation } from './surface-navigation.js';
 
 export interface LinkSurfaceItem {
   /** Stable id, e.g. the nav item or tab id. */
@@ -56,7 +57,13 @@ export interface LinkSurfaceOptions {
   links: readonly LinkSurfaceItem[];
   /** Defaults to one `open` control over the published links. */
   controls?: readonly LinkSurfaceControl[];
-  /** Perform the navigation. Not awaited: the page may unmount this surface. */
+  /**
+   * Perform the navigation. Return its promise (e.g. SvelteKit's `goto`):
+   * the command does not wait for it, since the new page may unmount this
+   * surface, but it is tracked on the registry, so
+   * `whenSurfaceNavigationSettled(registry)` resolves only once it finished
+   * and the new page's surfaces registered.
+   */
   navigate: (href: string) => unknown;
   /** Extra JSON state published alongside the links (e.g. the active id). */
   state?: Record<string, DataSurfaceJsonValue>;
@@ -210,7 +217,7 @@ export function registerLinkSurface(
         links,
       );
       if (!href) return { ok: false };
-      void options.navigate(href);
+      void trackSurfaceNavigation(options.registry, options.navigate(href));
       return undefined;
     },
   });
