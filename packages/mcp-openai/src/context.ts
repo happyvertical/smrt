@@ -129,8 +129,13 @@ export async function updateOpenAiModelContext(options: {
     options.native &&
     hasOpenAiModelContext(options.bridge.snapshot.rawHostCapabilities)
   ) {
-    await options.native(params, options.signal);
-    return 'native';
+    try {
+      await options.native(params, options.signal);
+      return 'native';
+    } catch (error) {
+      // An aborted or disposed request must not be revived on the portable path.
+      if (options.signal?.aborted) throw error;
+    }
   }
   await options.bridge.updateModelContext(
     {
