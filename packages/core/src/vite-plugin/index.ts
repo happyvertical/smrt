@@ -12,7 +12,7 @@ import type {
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
 import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
-import { publishArtifactFiles } from '../consumer-plugin/artifact-publication.js';
+import { publishAtomicArtifact } from '../consumer-plugin/artifact-publication.js';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
@@ -787,9 +787,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     const emitted = deterministic
       ? { ...artifact, generatedAt: DETERMINISTIC_GENERATED_AT }
       : preserveKnowledgeGeneratedAt(outputPath, artifact);
-    publishArtifactFiles([
-      { path: outputPath, content: JSON.stringify(emitted, null, 2) },
-    ]);
+    publishAtomicArtifact({
+      path: outputPath,
+      content: JSON.stringify(emitted, null, 2),
+    });
   }
 
   async function resolveKnowledgeConfig(

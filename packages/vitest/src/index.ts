@@ -1153,7 +1153,7 @@ async function refreshTestKnowledgeArtifact(
   const {
     AGENT_SURFACE_HASH_PREFIX,
     buildDomainKnowledgeManifest,
-    publishArtifactFiles,
+    publishAtomicArtifact,
     resolveFileKnowledgeConfig,
   } = await importSmrtCoreKnowledgeModule();
   const manifestPath = join(root, '.smrt/manifest.json');
@@ -1200,9 +1200,10 @@ async function refreshTestKnowledgeArtifact(
       Object.fromEntries(priorSurfaceHashes),
     );
   }
-  publishArtifactFiles([
-    { path: knowledgePath, content: JSON.stringify(knowledge, null, 2) },
-  ]);
+  publishAtomicArtifact({
+    path: knowledgePath,
+    content: JSON.stringify(knowledge, null, 2),
+  });
 }
 
 /**

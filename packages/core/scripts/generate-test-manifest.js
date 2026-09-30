@@ -68,7 +68,7 @@ async function generateTestManifest() {
       const {
         AGENT_SURFACE_HASH_PREFIX,
         buildDomainKnowledgeManifest,
-        publishArtifactFiles,
+        publishAtomicArtifact,
         resolveFileKnowledgeConfig,
       } = await import(
         pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
@@ -105,9 +105,10 @@ async function generateTestManifest() {
             Object.fromEntries(priorSurfaceHashes),
           );
         }
-        publishArtifactFiles([
-          { path: knowledgePath, content: JSON.stringify(knowledge, null, 2) },
-        ]);
+        publishAtomicArtifact({
+          path: knowledgePath,
+          content: JSON.stringify(knowledge, null, 2),
+        });
       }
     } finally {
       await unregister();
