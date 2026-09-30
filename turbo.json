@@ -61,7 +61,8 @@
       "outputs": [
         "src/manifest/test-manifest.json",
         "src/manifest/test-manifest-stub.ts",
-        ".smrt/manifest.json"
+        ".smrt/manifest.json",
+        ".smrt/smrt-knowledge.json"
       ],
       "cache": true
     },
@@ -87,6 +88,9 @@
         "dist/**",
         ".next/**",
         "docs/**",
+        ".smrt/manifest.json",
+        ".smrt/smrt-knowledge.json",
+        "src/lib/server/smrt-register.ts",
         "tsconfig.*.tsbuildinfo"
       ],
       "cache": true

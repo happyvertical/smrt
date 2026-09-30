@@ -12,6 +12,7 @@ import type {
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
 import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
+import { publishAtomicArtifact } from '../consumer-plugin/artifact-publication.js';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
@@ -724,7 +725,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     rootDir: string,
   ): Promise<void> {
     try {
-      const { writeFileSync, mkdirSync } = await import('node:fs');
+      const { mkdirSync } = await import('node:fs');
       const { resolve } = await import('node:path');
 
       const smrtDir = resolve(rootDir, '.smrt');
@@ -732,7 +733,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       const manifestPath = resolve(smrtDir, 'manifest.json');
       const merged = mergeExternalManifestEntries(m, manifestPath);
-      writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
+      publishAtomicArtifact({
+        path: manifestPath,
+        content: JSON.stringify(merged, null, 2),
+      });
       await writeDomainKnowledgeArtifact(
         merged,
         rootDir,
@@ -773,7 +777,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       return;
     }
 
-    const { mkdirSync, writeFileSync } = await import('node:fs');
+    const { mkdirSync } = await import('node:fs');
     const { dirname } = await import('node:path');
     mkdirSync(dirname(outputPath), { recursive: true });
     const artifact = buildDomainKnowledgeManifest({
@@ -786,7 +790,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     const emitted = deterministic
       ? { ...artifact, generatedAt: DETERMINISTIC_GENERATED_AT }
       : preserveKnowledgeGeneratedAt(outputPath, artifact);
-    writeFileSync(outputPath, JSON.stringify(emitted, null, 2), 'utf-8');
+    publishAtomicArtifact({
+      path: outputPath,
+      content: JSON.stringify(emitted, null, 2),
+    });
   }
 
   async function resolveKnowledgeConfig(
@@ -1400,7 +1407,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         mkdirSync(dirname(manifestPath), { recursive: true });
 
         // Write manifest file
-        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+        publishAtomicArtifact({
+          path: manifestPath,
+          content: JSON.stringify(manifest, null, 2),
+        });
         await writeDomainKnowledgeArtifact(
           manifest,
           projectRoot,
