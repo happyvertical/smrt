@@ -190,3 +190,10 @@ be replaced. Runtime conformance tests remain required.
 The gate's optional `--root <repository>` argument selects a package tree for
 isolated CLI regression fixtures; CI and hooks use the repository default. The
 root `pnpm test:ci-scripts` suite exercises acceptance and retained denials.
+
+For standalone standards CI without workspace dependencies, the gate honors
+`SMRT_TYPESCRIPT_PATH`, like the README and JSDoc validators. The standards job
+passes the TypeScript 5.9.3 artifact installed in the runner's trusted validator
+prefix before PR checkout. Local workspace runs use the normal TypeScript import;
+a configured missing compiler path fails rather than falling back or skipping
+validation. The gate never installs a compiler itself.
