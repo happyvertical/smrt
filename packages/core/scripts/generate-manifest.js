@@ -7,7 +7,7 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
@@ -64,10 +64,13 @@ async function generateManifest() {
         moduleType: 'smrt',
       });
 
-      const { buildDomainKnowledgeManifest, publishAtomicArtifact } =
-        await import(
-          pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
-        );
+      const {
+        buildDomainKnowledgeManifest,
+        publishAtomicArtifact,
+        resolveFileKnowledgeConfig,
+      } = await import(
+        pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
+      );
       const sourceManifestPath = resolve(
         process.cwd(),
         'src/manifest/static-manifest.json',
@@ -116,27 +119,33 @@ async function generateManifest() {
       mkdirSync(localDir, { recursive: true });
       const localManifestPath = resolve(localDir, 'manifest.json');
       const localKnowledgePath = resolve(localDir, 'smrt-knowledge.json');
+      const localConfig = await resolveFileKnowledgeConfig(
+        process.cwd(),
+        manifest.packageName,
+      );
       publishAtomicArtifact({
         path: localManifestPath,
         content: JSON.stringify(manifest, null, 2),
       });
-      publishAtomicArtifact({
-        path: localKnowledgePath,
-        content: JSON.stringify(
-          withDeterministicGeneratedAt(
-            DeterministicGeneratedAt,
-            buildDomainKnowledgeManifest({
-              manifest,
-              rootDir: process.cwd(),
-              packageJson,
-              manifestPath: localManifestPath,
-              config: { includeDocs: true, includePrompts: true },
-            }),
+      if (localConfig.enabled !== false)
+        publishAtomicArtifact({
+          path: localKnowledgePath,
+          content: JSON.stringify(
+            withDeterministicGeneratedAt(
+              DeterministicGeneratedAt,
+              buildDomainKnowledgeManifest({
+                manifest,
+                rootDir: process.cwd(),
+                packageJson,
+                manifestPath: localManifestPath,
+                config: localConfig,
+              }),
+            ),
+            null,
+            2,
           ),
-          null,
-          2,
-        ),
-      });
+        });
+      else if (existsSync(localKnowledgePath)) unlinkSync(localKnowledgePath);
     } finally {
       await unregister();
     }

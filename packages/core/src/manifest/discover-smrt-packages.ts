@@ -41,7 +41,7 @@ const CACHE_FILE = 'discovery-cache.json';
  * and never re-probe a package whose manifest is only at, say,
  * `dist/lib/manifest.json`.
  */
-const CACHE_VERSION = 5;
+const CACHE_VERSION = 6;
 
 /** Timing data for --timing flag */
 interface TimingData {
@@ -216,11 +216,14 @@ export function resolveManifestPath(
   // the search, or it would mask a valid conventional manifest behind it.
   for (const manifestPath of manifestPathCandidates(pkgPath)) {
     try {
-      const manifest = parse<{ moduleType?: string }>(
+      const manifest = parse<{ moduleType?: string; artifactPurpose?: string }>(
         readFileSync(manifestPath, 'utf-8'),
       );
 
-      if (manifest.moduleType === 'smrt') {
+      if (
+        manifest.moduleType === 'smrt' &&
+        manifest.artifactPurpose !== 'test'
+      ) {
         return manifestPath;
       }
     } catch {

@@ -10,7 +10,7 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
@@ -109,6 +109,8 @@ async function generateTestManifest() {
           path: knowledgePath,
           content: JSON.stringify(knowledge, null, 2),
         });
+      } else if (existsSync(knowledgePath)) {
+        unlinkSync(knowledgePath);
       }
     } finally {
       await unregister();
