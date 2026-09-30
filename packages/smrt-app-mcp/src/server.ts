@@ -477,9 +477,17 @@ export function createMcpAppServer(
     return tools.filter((_, index) => visible[index]).map(({ tool }) => tool);
   }
 
+  async function resourceCatalogSnapshot(principal: McpAppPrincipal | null) {
+    return {
+      tools: await catalogTools(),
+      publicPatterns: principal ? undefined : getPublicPatterns(),
+    };
+  }
+
   async function authorizedResource(
     uri: string,
     principal: McpAppPrincipal | null,
+    snapshot?: Awaited<ReturnType<typeof resourceCatalogSnapshot>>,
   ) {
     const resource = resources.get(uri);
     if (
@@ -487,13 +495,13 @@ export function createMcpAppServer(
       (!resource.public && (!principal?.id || !options.resourcePolicy))
     )
       return undefined;
-    const tools = await catalogTools();
+    const { tools, publicPatterns } =
+      snapshot ?? (await resourceCatalogSnapshot(principal));
     const associated = tools.filter(
       ({ tool }) =>
         (tool._meta?.ui as { resourceUri?: string } | undefined)
           ?.resourceUri === uri,
     );
-    const publicPatterns = principal ? undefined : getPublicPatterns();
     // A resource shared by several tools requires access to every associated
     // operation. UI visibility never grants authority to otherwise hidden tools.
     for (const { tool } of associated) {
@@ -523,8 +531,11 @@ export function createMcpAppServer(
     principal?: McpAppPrincipal | null;
   }): Promise<McpAppResource[]> {
     const visible: McpAppResource[] = [];
+    const principal = input.principal ?? null;
+    // Discovery is coherent within this list, while policies still run per resource.
+    const snapshot = await resourceCatalogSnapshot(principal);
     for (const uri of [...resources.keys()].sort()) {
-      const resource = await authorizedResource(uri, input.principal ?? null);
+      const resource = await authorizedResource(uri, principal, snapshot);
       if (resource) visible.push(structuredClone(resource.descriptor));
     }
     return visible;
