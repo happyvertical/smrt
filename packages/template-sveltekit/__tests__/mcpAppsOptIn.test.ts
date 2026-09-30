@@ -14,6 +14,11 @@ describe('opt-in MCP Apps runtime', () => {
     expect(server).toContain("principal.scopes?.includes('items.read')");
     expect(server).toContain('csp: {}');
     expect(server).not.toContain('Authorization');
+    expect(
+      source(
+        'src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts',
+      ),
+    ).toContain('metadataResponse');
   });
 
   it('ships the portable bridge and only its explicit optional dependencies', () => {
