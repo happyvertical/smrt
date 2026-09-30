@@ -97,5 +97,16 @@ describePostgres('UserNotification on PostgreSQL', { timeout: 120_000 }, () => {
     expect(await service.countUnread(userId, { tenantIds: [tenantId] })).toBe(
       0,
     );
+
+    // A malformed id from a request never reaches the native uuid column
+    // (which would raise 22P02 and surface as a 500): it matches nothing.
+    await expect(
+      service.markRead(userId, ['not-a-uuid', "1' OR '1'='1"], { tenantId }),
+    ).resolves.toBe(0);
+    await expect(
+      service.dismiss(userId, ['nope', first.notification.id as string], {
+        tenantId,
+      }),
+    ).resolves.toBe(1);
   });
 });

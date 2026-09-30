@@ -51,6 +51,10 @@ export interface UserNotificationScope {
   tenantId: string;
 }
 
+/** Notification ids are uuids; anything else can match no row. */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
@@ -245,7 +249,16 @@ export class UserNotificationService {
   ): Promise<number> {
     const recipientUserId = requireText(userId, 'recipient');
     const tenantId = requireText(scope.tenantId, 'tenant');
-    const wanted = [...new Set(ids.filter(Boolean))];
+    // Ids come from requests. A malformed one can match no row, and on a
+    // native uuid column (PostgreSQL) it would fail the whole query (22P02)
+    // instead, so drop it before querying.
+    const wanted = [
+      ...new Set(
+        ids.filter(
+          (id): id is string => typeof id === 'string' && UUID_PATTERN.test(id),
+        ),
+      ),
+    ];
     if (wanted.length === 0) return 0;
 
     return withTenant({ tenantId }, async () => {

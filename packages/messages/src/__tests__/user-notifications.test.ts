@@ -1,7 +1,7 @@
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserNotificationCollection } from '../collections/UserNotificationCollection.js';
 import sourceManifest from '../manifest/manifest.json';
 import { UserNotificationService } from '../services/UserNotificationService.js';
@@ -54,6 +54,37 @@ describe('UserNotificationService', () => {
     const b = await service.notify({ ...input, sourceRef: undefined });
     expect(a.created && b.created).toBe(true);
     expect(a.notification.sourceRef).not.toBe(b.notification.sourceRef);
+  });
+
+  it('ignores malformed ids when marking read or dismissing', async () => {
+    const { notification } = await service.notify({
+      tenantId: tenantA,
+      recipientUserId: alice,
+      kind: 'video.failed',
+      title: 'One',
+    });
+    const find = vi.spyOn(UserNotificationCollection.prototype, 'list');
+    try {
+      expect(
+        await service.markRead(alice, ['not-a-uuid', ''], {
+          tenantId: tenantA,
+        }),
+      ).toBe(0);
+      // Nothing valid to look up: no query at all.
+      expect(find).not.toHaveBeenCalled();
+      expect(
+        await service.markRead(alice, ['bogus', notification.id as string], {
+          tenantId: tenantA,
+        }),
+      ).toBe(1);
+      const where = find.mock.calls.at(-1)?.[0]?.where as Record<
+        string,
+        unknown
+      >;
+      expect(where['id in']).toEqual([notification.id]);
+    } finally {
+      find.mockRestore();
+    }
   });
 
   it('lists one recipient across tenants newest first and counts unread', async () => {
