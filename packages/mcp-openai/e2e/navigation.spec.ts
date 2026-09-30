@@ -27,3 +27,21 @@ test('upstream display failure preserves inline UI',async({page})=>{
   await page.goto('/?mode=failure');const frame=page.frameLocator('iframe');
   await frame.getByRole('button').click();await expect(frame.getByRole('button')).toHaveText('inline');
 });
+
+for (const mode of ['present', 'pending']) test(`restores route A after invalidation (${mode})`, async ({ page }) => {
+  await page.goto(`/?mode=${mode}`);
+  const frame = page.frameLocator('iframe');
+  await expect.poll(() => page.evaluate(() => (window as any).calls.filter((m: any) => m.method === 'tools/call').length)).toBe(1);
+  if (mode === 'present') await expect(frame.locator('#status')).toHaveText('/items/owned: Authorized synthetic item');
+  await page.evaluate(() => (window as any).send({ 'openai/deepLink': { url: '//evil.test' } }));
+  await expect(frame.locator('#status')).toHaveText('Inline fallback: invalid');
+  if (mode === 'pending') await expect.poll(() => page.evaluate(() => (window as any).calls.filter((m: any) => m.method === 'notifications/cancelled').length)).toBe(1);
+  await page.evaluate(() => (window as any).send({ 'openai/deepLink': { url: '/items/owned' } }));
+  await expect(frame.locator('#status')).toHaveText('/items/owned: Authorized synthetic item');
+  expect(await page.evaluate(() => (window as any).calls.filter((m: any) => m.method === 'tools/call').length)).toBe(2);
+  if (mode === 'pending') {
+    await page.evaluate(() => (window as any).releaseInitial());
+    await page.waitForTimeout(50);
+    await expect(frame.locator('#status')).toHaveText('/items/owned: Authorized synthetic item');
+  }
+});
