@@ -218,6 +218,24 @@ After a mutation, call `invalidate('smrt:items')`. Only loads that declared
 
 ## 8. Use generated REST, MCP, WebMCP, and CLI interfaces
 
+## Optional portable MCP Apps packaging
+
+The ordinary scaffold does not create a plugin package or add a remote endpoint.
+When you create a project with `smrt gnode create <name> --mcp-apps`, it adds
+`mcp-apps/plugin.json` and `mcp-apps/mcp.json`. The initial server points only
+at loopback (`http://127.0.0.1:3000/api/mcp`) so it cannot silently publish a
+local instance. Run `pnpm mcp-apps:validate` in the generated application after
+editing package metadata. It rejects symlinks, traversal paths, missing assets,
+credential-shaped JSON fields, non-portable schemas, and non-loopback HTTP
+server URLs.
+
+Before changing that URL, mount the native SDK v2 Streamable HTTP endpoint and
+configure the application gateway's verified principal, issuer, audience and
+scopes. Plugin metadata is an install surface only; it neither authenticates a
+request nor grants tenant or workflow authority. Register `.app.json` only
+after the host creates an eligible server ID; do not copy runtime extension
+metadata into the portable manifest.
+
 The Item configuration generates:
 
 - REST: `GET`/`POST /api/items` and

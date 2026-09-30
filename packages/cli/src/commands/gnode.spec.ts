@@ -11,6 +11,12 @@ const mockLoadTemplate = vi.fn();
 const mockGenerate = vi.fn();
 const mockCleanupGitTemplate = vi.fn();
 const mockDiscoverInstalledTemplates = vi.fn();
+const mockScaffoldMcpAppsPackage = vi.fn();
+
+vi.mock('./mcp-apps-packaging.js', () => ({
+  scaffoldMcpAppsPackage: (...args: any[]) =>
+    mockScaffoldMcpAppsPackage(...args),
+}));
 
 vi.mock('../loaders/index.js', () => ({
   resolveTemplate: (...args: any[]) => mockResolveTemplate(...args),
@@ -100,6 +106,31 @@ describe('Gnode Commands', () => {
 
       expect(mockResolveTemplate).toHaveBeenCalledWith('github:user/repo');
 
+      consoleSpy.mockRestore();
+    });
+
+    it('adds portable MCP Apps metadata only when opted in', async () => {
+      mockResolveTemplate.mockResolvedValue({
+        type: 'npm',
+        location: 'sveltekit',
+        resolved: '/node_modules/sveltekit',
+      });
+      mockLoadTemplate.mockResolvedValue({
+        name: 'SvelteKit',
+        description: 'SvelteKit template',
+        dependencies: {},
+      });
+      mockGenerate.mockResolvedValue(undefined);
+      const { gnodeCommands } = await import('./gnode.js');
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await gnodeCommands['gnode create'].handler(['my-app'], {
+        outputDir: '/tmp/my-app',
+        mcpApps: true,
+      });
+      expect(mockScaffoldMcpAppsPackage).toHaveBeenCalledWith(
+        '/tmp/my-app/mcp-apps',
+        'my-app',
+      );
       consoleSpy.mockRestore();
     });
 

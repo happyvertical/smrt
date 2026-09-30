@@ -211,7 +211,7 @@ describe('profile-aware application operations', () => {
         'node --env-file-if-exists=.env scripts/smrt-vite.mjs dev',
       );
       expect(templatePackage.scripts.build).toBe(
-        'node --env-file-if-exists=.env scripts/smrt-vite.mjs build',
+        'node scripts/smrt-mcp-apps.mjs validate-if-present && node --env-file-if-exists=.env scripts/smrt-vite.mjs build',
       );
       expect(viteDriver).not.toContain('node_modules/vite/bin');
       rmSync(join(directory, '.env'));
