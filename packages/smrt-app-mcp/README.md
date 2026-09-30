@@ -180,7 +180,8 @@ const server = createMcpAppServer({
 });
 ```
 
-Resources are private by default and require a stable principal id. Only an
+Resources are private by default and require a stable principal id plus an explicit
+`resourcePolicy`; an omitted policy denies both listing and reads. Only an
 explicit `public: true` declaration permits anonymous reads of a static
 artifact. `resourcePolicy` runs afresh for both catalog and direct reads; errors
 fail closed. Every associated tool must also pass the ordinary tool policy.
