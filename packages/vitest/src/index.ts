@@ -463,6 +463,11 @@ export function getWorkspaceViteAliases(
       );
       addAliasIfPresent(
         aliases,
+        '@happyvertical/smrt-core/schema',
+        join(packageRoot, 'src/schema/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
         '@happyvertical/smrt-core/schema/utils',
         join(packageRoot, 'src/schema/utils.ts'),
       );
