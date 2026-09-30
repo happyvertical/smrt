@@ -31,6 +31,7 @@ describe('copyTemplate', () => {
     copyTemplate(tempDir, { name: 'my-app', overwrite: true });
 
     expect(existsSync(join(tempDir, 'package.json'))).toBe(true);
+    expect(existsSync(join(tempDir, 'pnpm-workspace.yaml'))).toBe(true);
     expect(existsSync(join(tempDir, 'src', 'hooks.server.ts'))).toBe(true);
     expect(existsSync(join(tempDir, 'src', 'lib', 'server', 'tenancy.ts'))).toBe(
       true,
