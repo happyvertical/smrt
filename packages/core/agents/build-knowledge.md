@@ -92,6 +92,14 @@ at that explicit root; omitting the argument retains the current-working-directo
 behavior. Both manifest writers retain declared package dependencies when merging
 their local and consumed-object projections.
 
+Test manifests carry optional `artifactPurpose: 'test'`; dependency discovery
+skips those artifacts, including `.smrt` fallbacks. Unmarked runtime manifests,
+empty published providers, and source-only development providers remain eligible.
+`ManifestBuilder` accepts explicit `outputMode: 'dev' | 'build'`; omitted mode
+retains legacy filename inference. Vitest selects dev mode explicitly, so tests
+never replace a production `dist/manifest.json`. Relative output directories are
+resolved against the builder's project root.
+
 Object-level `knowledge: false` excludes an object from authored context only;
 it must not change runtime manifest registration. Use
 `knowledge: { tags, summary, risks }` for review-sensitive domain objects.
