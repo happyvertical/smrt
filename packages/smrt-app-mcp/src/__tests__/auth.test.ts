@@ -16,6 +16,13 @@ const dispatched = vi.hoisted(() =>
 vi.mock('@happyvertical/smrt-core/generators/mcp', () => ({
   MCP_STABLE_CATALOG_TTL_MS: 86400000,
   MCPGenerator: class {
+    getToolIdentity() {
+      return {
+        objectName: 'Record',
+        action: 'get',
+        originalName: 'record_get',
+      };
+    }
     async generateTools() {
       return [
         {
