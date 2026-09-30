@@ -83,6 +83,18 @@ settings on vite 8.
 
 The manifest is generated once at vitest startup. Restart vitest after adding new `@smrt()` classes or fields.
 
+### Generated Artifact Coherence
+
+Test startup refreshes the canonical `.smrt/manifest.json` and its paired
+`.smrt/smrt-knowledge.json` together. When `smrtPlugin()` is present, the
+Vitest plugin uses its current agent-surface declarations and effective
+knowledge configuration, including inline plugin options. A standalone
+Vitest configuration preserves prior agent-surface source hashes when it
+cannot rescan them, so changed declarations remain stale rather than being
+incorrectly marked fresh. The monorepo build cache restores this pair with the
+generated server registration entry, so `pnpm build`, `pnpm test`, and a
+cached `pnpm build` leave one coherent artifact snapshot.
+
 ### Pool and Isolation
 
 Measured on a 333-file, 3,259-test unit suite, 16 cores (#2897, follow-up to #2893):
