@@ -150,6 +150,9 @@ describe('app MCP Tasks extension', () => {
         event.locals?.principal as { id: string } | undefined,
     });
     const runner = new TaskRunner({
+      authorizeMcpTask: async (authority) =>
+        authority.ownerId === JSON.stringify([null, 'principal-a']) &&
+        authority.tenantId === null,
       queues: ['mcp-tasks'],
       pollInterval: 5,
       concurrency: 1,
@@ -214,12 +217,19 @@ describe('app MCP Tasks extension', () => {
       });
 
       const jobs = await db.query(
-        'SELECT task_id, status FROM _smrt_jobs WHERE task_id = ?',
+        'SELECT task_id, status, args FROM _smrt_jobs WHERE task_id = ?',
         created.result.taskId,
       );
-      expect(jobs.rows).toEqual([
-        { task_id: created.result.taskId, status: 'completed' },
-      ]);
+      expect(jobs.rows).toHaveLength(1);
+      expect(jobs.rows[0]).toMatchObject({
+        task_id: created.result.taskId,
+        status: 'completed',
+      });
+      const persistedArgs =
+        typeof jobs.rows[0].args === 'string'
+          ? JSON.parse(jobs.rows[0].args)
+          : jobs.rows[0].args;
+      expect(persistedArgs._mcpTask.authorizationRequired).toBe(true);
     } finally {
       await runner.stop();
     }
