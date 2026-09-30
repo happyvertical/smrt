@@ -34,6 +34,20 @@ const owner = {
   tenantId: 'tenant-a',
   scopes: ['settings', 'view'],
 };
+async function expectSafeWorkflowFailure(call: Promise<unknown>) {
+  const result = (await call) as {
+    isError?: boolean;
+    content?: unknown;
+    structuredContent?: unknown;
+  };
+  expect(result.isError).toBe(true);
+  expect(result.content).toEqual([
+    { type: 'text', text: 'Workflow execution failed.' },
+  ]);
+  expect(result.structuredContent).toEqual({
+    error: { message: 'Workflow execution failed.' },
+  });
+}
 function fixture() {
   const db = new DatabaseSync(':memory:');
   db.exec(
@@ -254,13 +268,13 @@ describe('existing principal workflow authority', () => {
           principal: owner,
         }),
       ).resolves.toHaveProperty('structuredContent.values.units', 'mm');
-      await expect(
+      await expectSafeWorkflowFailure(
         f.server.callTool({
           name: 'settings_update',
           arguments: { set: { grid: false }, tenantId: 'tenant-b' },
           principal: owner,
         }),
-      ).rejects.toThrow();
+      );
       f.revoke();
       expect(
         f.settings.extensions(await f.server.listTools({ principal: owner })),
@@ -292,10 +306,10 @@ describe('existing principal workflow authority', () => {
       await Promise.all([update({ units: 'in' }), update({ grid: true })]);
       expect(f.values()).toEqual({ units: 'in', grid: true });
       f.fail();
-      await expect(update({ units: 'mm' })).rejects.toThrow('provider');
+      await expectSafeWorkflowFailure(update({ units: 'mm' }));
       expect(f.values()).toEqual({ units: 'in', grid: true });
       f.stale();
-      await expect(update({ grid: false })).rejects.toThrow('revision');
+      await expectSafeWorkflowFailure(update({ grid: false }));
       expect(f.writes()).toBe(4); // No hidden retries by the adapter.
     } finally {
       f.db.close();
@@ -325,14 +339,14 @@ describe('existing principal workflow authority', () => {
           principal: owner,
         }),
       ).resolves.toHaveProperty('structuredContent.id', 'owned');
-      await expect(
+      await expectSafeWorkflowFailure(
         resolveOpenAiNavigationTarget({
           server: f.server,
           tool: 'resolve_target',
           url: '/items/other',
           principal: owner,
         }),
-      ).rejects.toThrow();
+      );
       await expect(
         resolveOpenAiNavigationTarget({
           server: f.server,
@@ -580,12 +594,14 @@ describe('verified M2 gateway and M6 native discovery factory', () => {
         arguments: { set: { units: 'in' } },
       });
       expect(f.values().units).toBe('in');
-      await expect(
+      await expectSafeWorkflowFailure(
         client.callTool({
           name: 'settings_update',
           arguments: { set: { grid: false }, tenantId: 'other' },
         }),
-      ).rejects.toThrow();
+      );
+      expect(f.values()).toEqual({ units: 'in', grid: true });
+      expect(f.writes()).toBe(1);
       const other = await connect(token({ sub: 'synthetic-other' }));
       expect(JSON.stringify(other.getServerCapabilities())).not.toContain(
         'openai/settings',

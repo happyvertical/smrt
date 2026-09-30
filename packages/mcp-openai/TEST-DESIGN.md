@@ -46,3 +46,17 @@ and independent high-risk reviews remain coordinator-owned.
 - Navigation A → invalid → A must resolve again whether A completed or remains pending. Browser cases observe cancellation, restore the same route, and prove a late original reply cannot replace the restored result.
 - Settings schema object-key order is immaterial at all nested levels. Changed numeric limits, enum contents, and enum array order remain rejected. Baseline tests fail before either fix and pass after.
 - The reported frozen-install mismatch is rejected with actual clean-archive evidence: workspace Node-type override applies, and both baseline and current frozen installs exit0. No dependency or lockfile change is required.
+
+## Reviewed workflow error contract integration
+
+Current runtime workflow-handler failures resolve with `isError: true`, one
+`Workflow execution failed.` text item and that same structured error message.
+The integration fixture asserts that exact safe payload for adapter argument
+validation, domain target refusal, provider rollback and stale revision, including
+forged settings arguments over the real authenticated SDK HTTP route. Private
+handler causes never become client-visible error text. Write counts and persisted
+values still prove denied operations and rollback do not mutate state.
+
+Principal/tenant/scope/revocation and catalog authorization remain separate:
+those pre-handler access failures still reject. This fixture update does not
+change navigation, settings, authentication or workflow production code.
