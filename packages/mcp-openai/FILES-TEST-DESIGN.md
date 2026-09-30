@@ -35,3 +35,17 @@ product/build/platform support. Parent owns integrated root gates and final revi
 Private fixture regression: the SDK HTTP resource-read assertion fails without an
 explicit policy under M3 deny-by-default behavior. The fixture policy binds exact
 UI URI, live owner and active tenant and revocation; it never makes UI public.
+
+Subscription lifecycle regression (#3214 review round 1): notifications during a
+pending write coalesce into a fresh authorized read after the write settles.
+Superseded refreshes retry a read without disposing the session; authority and
+validation failures still terminate it. Disposal dispatches best-effort host
+unsubscribe and releases local registration synchronously, allowing immediate
+replacement even when the host never replies. Deterministic session tests cover
+delayed read/write completion, the refreshed ETag, revocation, and replacement
+while unsubscribe is withheld.
+
+| Behavior | Trigger / positive | Negative | Actor / executor / runtime | Contract / level / command |
+| --- | --- | --- | --- | --- |
+| Subscription survives save notifications | Hold write and read replies, notify twice, finish save then refresh; next write uses v2 | Revoke after refreshed save: deny and dispose | Synthetic authorized owner; existing authority tool and host resource executor; Node | No write retry, fresh ETag; session regression; `pnpm --filter @happyvertical/smrt-mcp-openai test` |
+| Immediate replacement | Subscribe, withhold unsubscribe, dispose and create/read replacement | Old cleanup completion cannot release replacement registration | Same owner, same bridge; host cleanup has no persistent executor; Node | Best-effort host unsubscribe, synchronous local release; session regression; same command |

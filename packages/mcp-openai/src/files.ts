@@ -19,6 +19,8 @@ export type {
 } from './file-contracts.js';
 export { validateFileInput } from './file-contracts.js';
 
+class SupersededFileRead extends Error {}
+
 type Extension = ReturnType<McpAppBridge['registerExtension']>;
 export type FileOperation = 'read' | 'write' | 'subscribe' | 'open';
 export interface OpenAiFileOptions {
@@ -54,6 +56,7 @@ export class OpenAiFileSession {
   readonly #lifetime = new AbortController();
   #latest?: FileRead;
   #writing = false;
+  #resumeRefresh?: () => void;
   #subscribed = false;
   #stop?: () => void;
   #generation = 0;
@@ -168,7 +171,8 @@ export class OpenAiFileSession {
       this.#options.mimeTypes,
     );
     await this.#authorize('read');
-    if (generation !== this.#generation) throw new Error('Stale file read');
+    if (generation !== this.#generation)
+      throw new SupersededFileRead('Stale file read');
     this.#latest = file;
     return structuredClone(file);
   }
@@ -203,6 +207,7 @@ export class OpenAiFileSession {
       this.#writing = false;
       this.#latest = undefined;
       ++this.#generation;
+      this.#resumeRefresh?.();
     }
   }
   async subscribe(
@@ -219,7 +224,7 @@ export class OpenAiFileSession {
     let refreshing = false;
     let dirty = false;
     const refresh = async () => {
-      if (refreshing) {
+      if (refreshing || this.#writing) {
         dirty = true;
         return;
       }
@@ -227,9 +232,18 @@ export class OpenAiFileSession {
       try {
         do {
           dirty = false;
-          const result = await this.read();
-          if (!this.signal.aborted && this.#subscribed)
-            onRead(result as FileRead);
+          if (this.#writing) {
+            dirty = true;
+            break;
+          }
+          try {
+            const result = await this.read();
+            if (!this.signal.aborted && this.#subscribed)
+              onRead(result as FileRead);
+          } catch (error) {
+            if (!(error instanceof SupersededFileRead)) throw error;
+            dirty = true;
+          }
         } while (dirty && !this.signal.aborted && this.#subscribed);
       } catch (error) {
         if (!this.signal.aborted) {
@@ -242,6 +256,9 @@ export class OpenAiFileSession {
       } finally {
         refreshing = false;
       }
+    };
+    this.#resumeRefresh = () => {
+      if (dirty && !this.signal.aborted && this.#subscribed) void refresh();
     };
     try {
       await this.#authorize('subscribe');
@@ -272,6 +289,7 @@ export class OpenAiFileSession {
     this.#latest = undefined;
     ++this.#generation;
     this.#stop?.();
+    this.#resumeRefresh = undefined;
     this.#unsubscribeLifecycle?.();
     if (
       this.#subscribed &&
@@ -281,9 +299,10 @@ export class OpenAiFileSession {
       // Host cleanup is best effort. Local authority and callbacks end immediately.
       void this.#extension
         .request('resources/unsubscribe', { uri: this.#input.file.resourceUri })
-        .catch(() => {})
-        .finally(() => this.#extension?.dispose());
-    } else this.#extension?.dispose();
+        .catch(() => {});
+    }
+    // Dispatch cleanup first, then release local registration without waiting for the host.
+    this.#extension?.dispose();
     this.#subscribed = false;
     this.#lifetime.abort();
   }
