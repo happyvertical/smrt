@@ -20,6 +20,11 @@ export interface Props {
 let { dictation, class: className = '' }: Props = $props();
 
 const { t } = useI18n();
+const showLine = $derived(
+  dictation.state === 'starting' ||
+    dictation.state === 'listening' ||
+    dictation.state === 'stopping',
+);
 
 function errorText(kind: DictationErrorKind | null): string {
   switch (kind) {
@@ -36,7 +41,12 @@ function errorText(kind: DictationErrorKind | null): string {
 </script>
 
 <div class={`smrt-dictation-status ${className}`.trim()}>
-  <p class="smrt-dictation-status-line" role="status" aria-live="polite">
+  <p
+    class="smrt-dictation-status-line"
+    class:smrt-dictation-status--empty={!showLine}
+    role="status"
+    aria-live="polite"
+  >
     {#if dictation.state === 'starting'}
       {t(M['ui.dictation.starting'])}
     {:else if dictation.state === 'listening' || dictation.state === 'stopping'}
@@ -47,7 +57,11 @@ function errorText(kind: DictationErrorKind | null): string {
       {/if}
     {/if}
   </p>
-  <p class="smrt-dictation-status-error" role="alert">
+  <p
+    class="smrt-dictation-status-error"
+    class:smrt-dictation-status--empty={dictation.state !== 'error'}
+    role="alert"
+  >
     {#if dictation.state === 'error'}
       {errorText(dictation.errorKind)}
     {/if}
@@ -75,11 +89,16 @@ function errorText(kind: DictationErrorKind | null): string {
     color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
-  /* Kept mounted while empty (live regions must exist before they speak). */
-  .smrt-dictation-status-line:empty,
-  .smrt-dictation-status-error:empty {
+  /* Kept mounted while empty (live regions must exist before they speak),
+     but take no room. */
+  .smrt-dictation-status--empty {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
     padding: 0;
-    background: none;
+    white-space: nowrap;
   }
 
   .smrt-dictation-status-dot {
