@@ -1422,6 +1422,20 @@ function handleEditorDragEnd() {
     height: var(--smrt-content-editor-icon-size, 1.125rem);
   }
 
+  /* Touch screens: 44px targets (WCAG 2.5.5), same icon size. The toolbar
+     wraps rather than scrolling off a phone. */
+  @media (pointer: coarse) {
+    .body-editor-toolbar {
+      flex-wrap: wrap;
+    }
+
+    .body-editor-toolbar :global(.editor-toolbar-button) {
+      width: 2.75rem;
+      height: 2.75rem;
+      min-width: 2.75rem;
+    }
+  }
+
   .body-editor-toolbar :global(.editor-toolbar-button[aria-expanded='true']) {
     border-color: var(--smrt-color-primary);
     background: var(--smrt-color-primary-container, var(--smrt-color-surface-container));

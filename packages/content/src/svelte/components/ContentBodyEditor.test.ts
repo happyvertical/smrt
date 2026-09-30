@@ -73,6 +73,9 @@ describe('ContentBodyEditor toolbar icons', () => {
         source,
       )?.[1] ?? '';
     expect(iconRule).toMatch(/flex-shrink:\s*0;/);
+    expect(source).toMatch(
+      /@media \(pointer: coarse\) \{[\s\S]*?\.editor-toolbar-button\) \{[^}]*width: 2\.75rem;[^}]*height: 2\.75rem;/,
+    );
     expect(iconRule).toMatch(
       /width:\s*var\(--smrt-content-editor-icon-size, 1\.125rem\);/,
     );
