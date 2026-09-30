@@ -1106,7 +1106,7 @@ async function generateLocalManifest(
     const { discoverBaseClasses } = await importDiscoverBaseClassesModule();
 
     // Discover base classes from external SMRT packages
-    const baseClasses = await discoverBaseClasses();
+    const baseClasses = await discoverBaseClasses({ cwd: root });
 
     if (verbose) {
       console.log(
