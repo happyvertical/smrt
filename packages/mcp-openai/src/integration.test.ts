@@ -21,6 +21,10 @@ import {
   resolveOpenAiNavigationTarget,
   withOpenAiEntrypoints,
 } from './index.js';
+import {
+  resolveOpenAiMentionSelection,
+  withOpenAiMentionSearch,
+} from './mentions.js';
 
 const schema = {
   type: 'object' as const,
@@ -34,6 +38,20 @@ const owner = {
   tenantId: 'tenant-a',
   scopes: ['settings', 'view'],
 };
+async function expectSafeWorkflowFailure(call: Promise<unknown>) {
+  const result = (await call) as {
+    isError?: boolean;
+    content?: unknown;
+    structuredContent?: unknown;
+  };
+  expect(result.isError).toBe(true);
+  expect(result.content).toEqual([
+    { type: 'text', text: 'Workflow execution failed.' },
+  ]);
+  expect(result.structuredContent).toEqual({
+    error: { message: 'Workflow execution failed.' },
+  });
+}
 function fixture() {
   const db = new DatabaseSync(':memory:');
   db.exec(
@@ -144,6 +162,29 @@ function fixture() {
     { ...base, ui: { resourceUri: 'ui://synthetic/v1/view' } },
     ['global', 'thread'],
   );
+  const mentions = withOpenAiMentionSearch({
+    ...base,
+    name: 'mention_search',
+    execute: ({ arguments: args, principal }) => {
+      if (principal?.id !== owner.id || principal.tenantId !== owner.tenantId)
+        throw new Error('Mention search denied');
+      return {
+        content: [],
+        structuredContent: {
+          items:
+            args.query === 'owned'
+              ? [
+                  {
+                    type: 'resource',
+                    resourceUri: 'smrt://items/opaque-owned',
+                    title: 'Owned item',
+                  },
+                ]
+              : [],
+        },
+      };
+    },
+  });
   server = createMcpAppServer({
     serverInfo: { name: 'synthetic-navigation', version: '1' },
     smrtOptions: () => ({}),
@@ -162,6 +203,7 @@ function fixture() {
     ],
     workflowTools: [
       view,
+      mentions,
       ...settings.workflows,
       {
         ...base,
@@ -238,6 +280,7 @@ describe('existing principal workflow authority', () => {
           'settings_update',
           'view',
           'resolve_target',
+          'mention_search',
         ])
           await expect(
             f.server.callTool({
@@ -247,6 +290,32 @@ describe('existing principal workflow authority', () => {
             }),
           ).rejects.toThrow();
       }
+      expect(
+        await f.server.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+          principal: owner,
+        }),
+      ).toHaveProperty(
+        'structuredContent.items.0.resourceUri',
+        'smrt://items/opaque-owned',
+      );
+      await expectSafeWorkflowFailure(
+        resolveOpenAiMentionSelection({
+          server: f.server,
+          tool: 'resolve_target',
+          arguments: { url: '/guessed' },
+          principal: owner,
+        }),
+      );
+      await expect(
+        resolveOpenAiMentionSelection({
+          server: f.server,
+          tool: 'resolve_target',
+          arguments: { url: '/items/owned' },
+          principal: { ...owner, tenantId: 'tenant-b' },
+        }),
+      ).rejects.toThrow();
       await expect(
         f.server.callTool({
           name: 'settings_read',
@@ -254,14 +323,21 @@ describe('existing principal workflow authority', () => {
           principal: owner,
         }),
       ).resolves.toHaveProperty('structuredContent.values.units', 'mm');
-      await expect(
+      await expectSafeWorkflowFailure(
         f.server.callTool({
           name: 'settings_update',
           arguments: { set: { grid: false }, tenantId: 'tenant-b' },
           principal: owner,
         }),
-      ).rejects.toThrow();
+      );
       f.revoke();
+      await expect(
+        f.server.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+          principal: owner,
+        }),
+      ).rejects.toThrow();
       expect(
         f.settings.extensions(await f.server.listTools({ principal: owner })),
       ).toEqual({});
@@ -292,10 +368,10 @@ describe('existing principal workflow authority', () => {
       await Promise.all([update({ units: 'in' }), update({ grid: true })]);
       expect(f.values()).toEqual({ units: 'in', grid: true });
       f.fail();
-      await expect(update({ units: 'mm' })).rejects.toThrow('provider');
+      await expectSafeWorkflowFailure(update({ units: 'mm' }));
       expect(f.values()).toEqual({ units: 'in', grid: true });
       f.stale();
-      await expect(update({ grid: false })).rejects.toThrow('revision');
+      await expectSafeWorkflowFailure(update({ grid: false }));
       expect(f.writes()).toBe(4); // No hidden retries by the adapter.
     } finally {
       f.db.close();
@@ -325,14 +401,14 @@ describe('existing principal workflow authority', () => {
           principal: owner,
         }),
       ).resolves.toHaveProperty('structuredContent.id', 'owned');
-      await expect(
+      await expectSafeWorkflowFailure(
         resolveOpenAiNavigationTarget({
           server: f.server,
           tool: 'resolve_target',
           url: '/items/other',
           principal: owner,
         }),
-      ).rejects.toThrow();
+      );
       await expect(
         resolveOpenAiNavigationTarget({
           server: f.server,
@@ -395,6 +471,21 @@ describe('existing principal workflow authority', () => {
           'openai/ui'
         ],
       ).toEqual({ entrypoints: [{ type: 'global' }, { type: 'thread' }] });
+      expect(
+        catalog.tools.find((tool) => tool.name === 'mention_search')?._meta,
+      ).toMatchObject({
+        'openai/extensions': { 'mentions/search': {} },
+        ui: { visibility: ['app'] },
+      });
+      expect(
+        await client.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+        }),
+      ).toHaveProperty(
+        'structuredContent.items.0.resourceUri',
+        'smrt://items/opaque-owned',
+      );
       const initial = await client.callTool({ name: 'view', arguments: {} });
       expect(initial.content).toEqual([
         { type: 'text', text: 'Complete synthetic headless view' },
@@ -580,12 +671,14 @@ describe('verified M2 gateway and M6 native discovery factory', () => {
         arguments: { set: { units: 'in' } },
       });
       expect(f.values().units).toBe('in');
-      await expect(
+      await expectSafeWorkflowFailure(
         client.callTool({
           name: 'settings_update',
           arguments: { set: { grid: false }, tenantId: 'other' },
         }),
-      ).rejects.toThrow();
+      );
+      expect(f.values()).toEqual({ units: 'in', grid: true });
+      expect(f.writes()).toBe(1);
       const other = await connect(token({ sub: 'synthetic-other' }));
       expect(JSON.stringify(other.getServerCapabilities())).not.toContain(
         'openai/settings',

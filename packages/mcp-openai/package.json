@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-mcp-openai",
-  "version": "0.51.36",
+  "version": "0.51.37",
   "description": "Optional OpenAI navigation and settings for authorized SMRT MCP Apps",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,6 +14,29 @@
       "types": "./dist/client.d.ts",
       "browser": "./dist/client.js",
       "import": "./dist/client.js"
+    },
+    "./context": {
+      "types": "./dist/context.d.ts",
+      "browser": "./dist/context.js",
+      "import": "./dist/context.js"
+    },
+    "./messages": {
+      "types": "./dist/messages.d.ts",
+      "browser": "./dist/messages.js",
+      "import": "./dist/messages.js"
+    },
+    "./mentions": {
+      "types": "./dist/mentions.d.ts",
+      "import": "./dist/mentions.js"
+    },
+    "./files": {
+      "types": "./dist/files.d.ts",
+      "browser": "./dist/files.js",
+      "import": "./dist/files.js"
+    },
+    "./files/server": {
+      "types": "./dist/files-server.d.ts",
+      "import": "./dist/files-server.js"
     },
     "./forms": {
       "types": "./dist/forms.d.ts",
@@ -35,6 +58,7 @@
     "README.md",
     "AGENTS.md",
     "CLAUDE.md",
+    "FILES.md",
     "FORMS.md",
     "FORMS-TEST-DESIGN.md"
   ],
@@ -45,6 +69,8 @@
     "test:e2e": "playwright test -c e2e/playwright.config.ts && pnpm test:forms:e2e",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node scripts/verify-boundaries.mjs && pnpm verify:forms:pack",
     "prepack": "node ../../scripts/prepack-package.js",
+    "test:files:e2e": "playwright test -c e2e/files.config.ts",
+    "verify:files:pack": "node scripts/verify-files-pack.mjs",
     "test:forms:e2e": "playwright test -c forms-e2e/playwright.config.ts",
     "verify:forms:pack": "node scripts/verify-forms-boundaries.mjs"
   },
