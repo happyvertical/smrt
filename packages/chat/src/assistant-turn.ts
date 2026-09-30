@@ -268,8 +268,12 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   author?: AssistantTurnAuthor;
   /** Maps a persisted chat message to the wire. Default: its `toJSON()`. */
   serializeMessage?: (message: unknown) => M;
-  /** A plain-language label for a tool, used in steps and the status line. */
-  describeTool?: (name: string) => string;
+  /**
+   * A plain-language label for a tool, used in steps and the status line.
+   * On a tool call it also gets the call's arguments, so a label can name
+   * the target ("Opening Events"); keep it free of ids and raw values.
+   */
+  describeTool?: (name: string, args?: Record<string, unknown>) => string;
   /** Mint continuation ids (tests). Default `crypto.randomUUID()`. */
   createId?: () => string;
   /**
@@ -412,7 +416,7 @@ async function runTurn<M>(
   emit: (event: AssistantTurnEvent<M>) => void,
   status: (value: AssistantStatus) => AssistantTurnEvent<M>,
   serialize: (message: unknown) => M,
-  describe: (name: string) => string,
+  describe: (name: string, args?: Record<string, unknown>) => string,
 ): Promise<AssistantTurnResult> {
   const { principal, author } = options;
   const now = options.now ?? (() => Date.now());
@@ -559,7 +563,12 @@ async function runTurn<M>(
         return;
       }
       if (event.type === 'tool_call') {
-        const label = labelFor(event.slug);
+        let label = labelFor(event.slug);
+        try {
+          label = describe(event.slug, event.args) || label;
+        } catch {
+          // A host label callback never breaks the turn.
+        }
         emit({
           type: 'step',
           step: {
@@ -646,7 +655,14 @@ async function runTurn<M>(
     emit(
       status({
         state: 'working',
-        label: `${labelFor(loop.pendingClientToolCalls[0]?.name ?? 'page tool')}…`,
+        label: `${
+          loop.pendingClientToolCalls[0]
+            ? describe(
+                loop.pendingClientToolCalls[0].name,
+                loop.pendingClientToolCalls[0].args,
+              )
+            : labelFor('page tool')
+        }…`,
         cancellable: true,
       }),
     );

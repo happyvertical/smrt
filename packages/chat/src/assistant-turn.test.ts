@@ -665,6 +665,43 @@ describe('assistant turn', () => {
       });
     });
 
+    it('labels a tool call from its arguments', async () => {
+      const store = createMemoryContinuationStore();
+      const events = await collect(
+        runAssistantTurn({
+          ai: scriptedAI([
+            calls(['smrt_ui_list_form_controls', { target: 'Events' }, 'n1']),
+          ]),
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'open events',
+          clientTools: PAGE_TOOLS,
+          continuations: store,
+          continuationKey: 'thread-label',
+          describeTool: (name, args) =>
+            typeof args?.target === 'string' ? `Opening ${args.target}` : name,
+        }),
+      );
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'step',
+          step: expect.objectContaining({
+            kind: 'tool_call',
+            label: 'Opening Events',
+          }),
+        }),
+      );
+      expect(events).toContainEqual({
+        type: 'status',
+        status: {
+          state: 'working',
+          label: 'Opening Events…',
+          cancellable: true,
+        },
+      });
+    });
+
     it('refuses a resume under another key', async () => {
       const store = createMemoryContinuationStore();
       const ai = scriptedAI([
