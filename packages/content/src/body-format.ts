@@ -1,3 +1,5 @@
+import sanitize from 'sanitize-html';
+
 export type ContentBodyFormat = 'markdown' | 'html';
 export type ContentBodyImagePlacement =
   | 'block'
@@ -22,35 +24,6 @@ export const DEFAULT_CONTENT_BODY_FORMAT: ContentBodyFormat = 'html';
 
 const HTML_TAG_PATTERN =
   /<\/?(?:article|aside|blockquote|br|div|figure|figcaption|h[1-6]|hr|img|li|ol|p|pre|section|span|strong|em|b|i|u|a|ul|table|tbody|td|th|thead|tr)(?:\s[^>]*)?>/i;
-// HTML attribute boundary: the HTML5 tree builder starts a new attribute after
-// whitespace, `/`, OR the closing quote/backtick of the previous value. A naive
-// `\s+`-only boundary lets `src="x"onerror="..."` survive sanitization because
-// `onerror` is glued to the preceding `"` — the browser still parses it as a
-// separate (executing) attribute. Match either runs of whitespace/`/`
-// (captured in group 1 and consumed) OR a non-consuming lookbehind for a
-// quote/backtick (group 1 undefined; the char is the previous value's own
-// closing delimiter and must stay). `reemitSeparator()` turns the captured
-// group back into a single separating space when one was consumed (S5 #1388).
-const ATTR_BOUNDARY = '(?:([\\s/]+)|(?<=["\'`]))';
-
-// Re-emit an attribute separator after a removed/rewritten attribute. When the
-// boundary consumed whitespace/`/` (group 1 present), emit one space so the
-// rebuilt attribute doesn't glue onto the tag name or previous attribute. When
-// the boundary was a non-consumed quote/backtick (group 1 undefined), that
-// delimiter already separates the attributes, so emit nothing.
-function reemitSeparator(consumed: string | undefined): string {
-  return consumed ? ' ' : '';
-}
-
-const URL_ATTRIBUTE_PATTERN = new RegExp(
-  `${ATTR_BOUNDARY}(href|src|xlink:href|formaction|action|poster)\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
-  'gi',
-);
-const SRCSET_ATTRIBUTE_PATTERN = new RegExp(
-  `${ATTR_BOUNDARY}srcset\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
-  'gi',
-);
-
 const BLOCK_TAGS = [
   'address',
   'article',
@@ -192,25 +165,6 @@ function sanitizeUrl(value: string): string {
   return trimmed;
 }
 
-function sanitizeSrcset(value: string): string {
-  return decodeBasicEntities(value)
-    .split(',')
-    .map((candidate) => {
-      const parts = candidate.trim().split(/\s+/);
-      const url = sanitizeUrl(parts.shift() || '');
-      if (!url || url === '#') {
-        return '';
-      }
-
-      const descriptors = parts.filter((part) =>
-        /^(?:\d+(?:\.\d+)?x|\d+w)$/.test(part),
-      );
-      return [url, ...descriptors].join(' ');
-    })
-    .filter(Boolean)
-    .join(', ');
-}
-
 function sanitizeStyle(value: string): string {
   const safeRules: string[] = [];
 
@@ -239,95 +193,355 @@ function sanitizeStyle(value: string): string {
   return safeRules.join('; ');
 }
 
-export function sanitizeHtml(value: string): string {
+// ---------------------------------------------------------------------------
+// Body sanitizer
+//
+// Bodies come from editors, AI drafts and scraped feeds and are rendered with
+// `{@html}` — on public, prerendered pages too — so they go through a real
+// HTML parser (sanitize-html / htmlparser2) with an allowlist, never through
+// tag- or attribute-stripping regexes (nested input such as
+// `<scr<script>ipt>` reassembles after a single regex pass). The parser
+// re-serializes the tree: text and attribute values come out escaped, and no
+// raw-text or foreign-content element (script, style, svg, math, iframe,
+// noscript, template, textarea, …) is ever emitted, so the browser re-parses
+// exactly the tree that was checked.
+// ---------------------------------------------------------------------------
+
+const INLINE_TAGS = [
+  'a',
+  'abbr',
+  'b',
+  'br',
+  'code',
+  'del',
+  'em',
+  'i',
+  'img',
+  'ins',
+  'kbd',
+  'mark',
+  's',
+  'small',
+  'span',
+  'strong',
+  'sub',
+  'sup',
+  'u',
+];
+
+const BLOCK_CONTENT_TAGS = [
+  'article',
+  'aside',
+  'blockquote',
+  'caption',
+  'col',
+  'colgroup',
+  'dd',
+  'div',
+  'dl',
+  'dt',
+  'figcaption',
+  'figure',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'hr',
+  'li',
+  'ol',
+  'p',
+  'pre',
+  'section',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+];
+
+/** Editor layout markers kept on images and their figures. */
+const IMAGE_MARKER_ATTRIBUTES = [
+  'data-smrt-asset-id',
+  'data-smrt-inline-image',
+  'data-smrt-placement',
+  'data-smrt-width',
+  'data-smrt-thumbnail',
+];
+
+const SANITIZER_ALLOWED_ATTRIBUTES: Record<string, string[]> = {
+  a: ['href', 'title', 'rel', 'target'],
+  abbr: ['title'],
+  img: [
+    'src',
+    'srcset',
+    'alt',
+    'title',
+    'width',
+    'height',
+    'loading',
+    'style',
+    ...IMAGE_MARKER_ATTRIBUTES,
+  ],
+  figure: ['style', ...IMAGE_MARKER_ATTRIBUTES],
+  ol: ['start', 'reversed', 'type'],
+  td: ['colspan', 'rowspan'],
+  th: ['colspan', 'rowspan', 'scope'],
+  col: ['span'],
+  colgroup: ['span'],
+};
+
+/**
+ * Disallowed elements whose content is dropped along with the tag (other
+ * disallowed tags keep their text). Covers every raw-text / foreign-content
+ * element where parser differentials (mXSS) live.
+ */
+const SANITIZER_DROP_CONTENT_TAGS = [
+  'script',
+  'style',
+  'textarea',
+  'option',
+  'select',
+  'noscript',
+  'noembed',
+  'noframes',
+  'template',
+  'title',
+  'xmp',
+  'plaintext',
+  'iframe',
+  'object',
+  'embed',
+  'svg',
+  'math',
+  'head',
+];
+
+const LINK_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
+const IMAGE_SCHEMES = new Set(['http', 'https']);
+/**
+ * Raster `data:` images stay allowed in image sources: the editor's upload
+ * path can store an image asset whose source is a data URL. SVG (`image/svg+xml`)
+ * and every other data type are refused.
+ */
+const SAFE_DATA_IMAGE_PATTERN = /^data:image\/(?:png|gif|jpe?g|webp|avif);/;
+const IMAGE_PLACEMENTS = new Set(['block', 'left', 'right', 'center', 'full']);
+
+/**
+ * The URL when it is safe for a link (`http(s)`, `mailto`, `tel`, relative)
+ * or an image (`http(s)`, raster `data:image/*`, relative); otherwise ''.
+ * `value` is the parser-decoded attribute value — exactly what the browser
+ * sees after the escaped re-serialization.
+ */
+function allowedUrl(value: string | undefined, kind: 'link' | 'image'): string {
+  const url = (value || '').trim();
+  if (!url) {
+    return '';
+  }
+
+  let compact = '';
+  for (const char of decodeBasicEntities(url)) {
+    const code = char.charCodeAt(0);
+    if (code <= 0x20 || code === 0x7f) {
+      continue;
+    }
+    compact += char.toLowerCase();
+  }
+
+  const scheme = /^([a-z][a-z0-9+.-]*):/.exec(compact)?.[1];
+  if (!scheme) {
+    // Relative, root-relative, protocol-relative or fragment URL. A colon
+    // before the first `/`, `?` or `#` would make it a scheme, so the regex
+    // above already caught any `javascript:`-style value.
+    return url;
+  }
+
+  if (kind === 'image') {
+    if (IMAGE_SCHEMES.has(scheme)) {
+      return url;
+    }
+    return scheme === 'data' && SAFE_DATA_IMAGE_PATTERN.test(compact)
+      ? url
+      : '';
+  }
+
+  return LINK_SCHEMES.has(scheme) ? url : '';
+}
+
+function allowedSrcset(value: string): string {
+  return value
+    .split(',')
+    .map((candidate) => {
+      const parts = candidate.trim().split(/\s+/);
+      const url = allowedUrl(parts.shift(), 'image');
+      if (!url || url.startsWith('data:')) {
+        return '';
+      }
+      const descriptors = parts.filter((part) =>
+        /^(?:\d+(?:\.\d+)?x|\d+w)$/.test(part),
+      );
+      return [url, ...descriptors].join(' ');
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+const POSITIVE_INTEGER = /^\d{1,5}$/;
+
+/** Attributes whose empty value is meaningful (other empties are dropped). */
+const EMPTY_VALUE_ATTRIBUTES = new Set([
+  'alt',
+  'data-smrt-inline-image',
+  'data-smrt-thumbnail',
+]);
+
+/**
+ * Validate one allowed attribute's value. `null` — or '' outside
+ * {@link EMPTY_VALUE_ATTRIBUTES} — drops the attribute.
+ */
+function allowedAttributeValue(name: string, value: string): string | null {
+  switch (name) {
+    case 'href':
+      return allowedUrl(value, 'link');
+    case 'src':
+      return allowedUrl(value, 'image');
+    case 'srcset':
+      return allowedSrcset(value);
+    case 'style':
+      return sanitizeStyle(value);
+    case 'width':
+    case 'height':
+    case 'start':
+    case 'span':
+    case 'colspan':
+    case 'rowspan':
+    case 'data-smrt-width':
+      return POSITIVE_INTEGER.test(value.trim()) ? value.trim() : '';
+    case 'loading':
+      return value === 'lazy' || value === 'eager' ? value : '';
+    case 'target':
+      return value === '_blank' ? value : '';
+    case 'rel':
+      return value
+        .split(/\s+/)
+        .filter((token) => /^[a-z-]{1,32}$/i.test(token))
+        .join(' ');
+    case 'scope':
+      return /^(?:row|col|rowgroup|colgroup)$/.test(value) ? value : '';
+    case 'type':
+      return /^[1aAiI]$/.test(value) ? value : '';
+    case 'data-smrt-placement':
+      return IMAGE_PLACEMENTS.has(value) ? value : '';
+    case 'data-smrt-inline-image':
+    case 'data-smrt-thumbnail':
+      // Boolean markers: keep the bare / `="true"` forms the editor writes.
+      return value === '' || value === 'true' ? value : null;
+    case 'data-smrt-asset-id':
+      return /^[\w.:-]{1,128}$/.test(value) ? value : '';
+    default:
+      return value;
+  }
+}
+
+interface SanitizeBodyOptions {
+  /** Replace the thumbnail block image's `src` (already URL-checked). */
+  thumbnailSrc?: string;
+}
+
+function transformBodyTag(
+  tagName: string,
+  attribs: Record<string, string>,
+  options: SanitizeBodyOptions,
+): { tagName: string; attribs: Record<string, string> } {
+  const allowed = SANITIZER_ALLOWED_ATTRIBUTES[tagName] || [];
+  const safe: Record<string, string> = {};
+
+  for (const [rawName, rawValue] of Object.entries(attribs)) {
+    const name = rawName.toLowerCase();
+    if (!allowed.includes(name)) {
+      continue;
+    }
+    const value = allowedAttributeValue(name, String(rawValue ?? ''));
+    if (value === null) {
+      continue;
+    }
+    if (value === '' && !EMPTY_VALUE_ATTRIBUTES.has(name)) {
+      continue;
+    }
+    safe[name] = value;
+  }
+
+  if (
+    tagName === 'img' &&
+    options.thumbnailSrc &&
+    BODY_THUMBNAIL_ATTRIBUTE in safe
+  ) {
+    safe.src = options.thumbnailSrc;
+  }
+
+  if (tagName === 'a' && safe.target === '_blank') {
+    const rel = new Set((safe.rel || '').split(/\s+/).filter(Boolean));
+    rel.add('noopener');
+    rel.add('noreferrer');
+    safe.rel = [...rel].join(' ');
+  }
+
+  return { tagName, attribs: safe };
+}
+
+function sanitizeBodyHtml(
+  value: unknown,
+  options: SanitizeBodyOptions = {},
+): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
 
-  let html = value;
-  html = html.replace(/<!--[\s\S]*?-->/g, '');
-  // This lightweight sanitizer intentionally removes SVG/MathML instead of
-  // attempting namespace-aware SVG/MathML sanitization. Consumers needing rich
-  // inline diagrams should run a dedicated sanitizer before storing content.
-  html = html.replace(
-    /<\s*(script|style|iframe|object|embed|link|meta|base|svg|math)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi,
-    '',
-  );
-  html = html.replace(
-    /<\s*(script|style|iframe|object|embed|link|meta|base|svg|math)\b[^>]*\/?>/gi,
-    '',
-  );
-  // Drop event handlers (`onclick`, etc.) and internal editor markers entirely.
-  // A consumed whitespace/`/` separator and a non-consumed quote boundary both
-  // collapse to nothing: the attribute that follows (if any) keeps its own
-  // leading boundary, so removal never needs to leave a separator behind.
-  html = html.replace(
-    new RegExp(
-      `${ATTR_BOUNDARY}on[a-z]+\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]*)`,
-      'gi',
-    ),
-    '',
-  );
-  html = html.replace(
-    new RegExp(
-      `${ATTR_BOUNDARY}data-smrt-(?:selected|moving|resizing)\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]*)`,
-      'gi',
-    ),
-    '',
-  );
-  html = html.replace(
-    new RegExp(
-      `${ATTR_BOUNDARY}style\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
-      'gi',
-    ),
-    (
-      _match,
-      separator: string | undefined,
-      _raw: string,
-      doubleValue = '',
-      singleValue = '',
-      bareValue = '',
-    ) => {
-      const safeStyle = sanitizeStyle(doubleValue || singleValue || bareValue);
-      const sep = reemitSeparator(separator);
-      return safeStyle ? `${sep}style="${escapeAttribute(safeStyle)}"` : sep;
+  const html = sanitize(value, {
+    allowedTags: [...INLINE_TAGS, ...BLOCK_CONTENT_TAGS],
+    allowedAttributes: SANITIZER_ALLOWED_ATTRIBUTES,
+    allowedClasses: {},
+    allowedSchemes: [...LINK_SCHEMES],
+    allowedSchemesByTag: { img: ['http', 'https', 'data'] },
+    allowedSchemesAppliedToAttributes: ['href', 'src', 'cite'],
+    allowProtocolRelative: true,
+    // `style` values are rewritten by `sanitizeStyle` in the transform (a
+    // width / max-width / `height: auto` allowlist), so the library's CSS
+    // parser is not needed.
+    parseStyleAttributes: false,
+    disallowedTagsMode: 'discard',
+    nonTextTags: SANITIZER_DROP_CONTENT_TAGS,
+    transformTags: {
+      '*': (tagName, attribs) =>
+        transformBodyTag(tagName, attribs as Record<string, string>, options),
     },
-  );
-  html = html.replace(
-    SRCSET_ATTRIBUTE_PATTERN,
-    (
-      _match,
-      separator: string | undefined,
-      _raw: string,
-      doubleValue = '',
-      singleValue = '',
-      bareValue = '',
-    ) => {
-      const safeSrcset = sanitizeSrcset(
-        doubleValue || singleValue || bareValue,
-      );
-      const sep = reemitSeparator(separator);
-      return safeSrcset ? `${sep}srcset="${escapeAttribute(safeSrcset)}"` : sep;
-    },
-  );
-  html = html.replace(
-    URL_ATTRIBUTE_PATTERN,
-    (
-      _match,
-      separator: string | undefined,
-      name: string,
-      _raw: string,
-      doubleValue = '',
-      singleValue = '',
-      bareValue = '',
-    ) => {
-      const quote = doubleValue ? '"' : singleValue ? "'" : '"';
-      const rawValue = doubleValue || singleValue || bareValue;
-      return `${reemitSeparator(separator)}${name}=${quote}${escapeAttribute(sanitizeUrl(rawValue))}${quote}`;
-    },
-  );
+    // An image whose source was refused is dropped rather than left broken.
+    exclusiveFilter: (frame) => frame.tag === 'img' && !frame.attribs.src,
+  });
 
-  return html.trim();
+  // sanitize-html serializes void elements XHTML-style (`<br />`). Emit the
+  // HTML5 form the editor writes so bodies round-trip unchanged. Safe on the
+  // serializer's output: `<` and `>` never appear raw inside text or
+  // attribute values there, so this can only match a real tag.
+  return html
+    .replace(/<(img|br|hr|col)((?:\s+[^\s<>][^<>]*?)?)\s*\/>/g, '<$1$2>')
+    .trim();
+}
+
+/**
+ * Allowlist-sanitize body HTML for rendering with `{@html}`: headings,
+ * paragraphs, lists, quotes, links (`http(s)`/`mailto`/`tel`/relative),
+ * images (`http(s)`/relative/raster `data:`) with the editor's layout and
+ * thumbnail markers, figures, tables, code, and inline emphasis. Everything
+ * else — scripts, event handlers, `javascript:` URLs, iframes/embeds,
+ * SVG/MathML, forms, classes, and all CSS except image width — is removed.
+ */
+export function sanitizeHtml(value: string): string {
+  return sanitizeBodyHtml(value);
 }
 
 function renderInlineMarkdown(value: string): string {
@@ -1097,23 +1311,12 @@ export function renderContentBodyHtml(
     return '';
   }
   const resolved = resolveBodyFormat(format, source);
-  let html =
-    resolved === 'markdown'
-      ? renderMarkdownToHtml(source)
-      : sanitizeHtml(source);
-  const replacement = options.thumbnailSrc
-    ? sanitizeUrl(options.thumbnailSrc)
-    : '';
-  if (replacement && replacement !== '#') {
-    html = html.replace(/<img\b[^>]*>/gi, (tag) => {
-      if (!/\bdata-smrt-thumbnail\s*=/i.test(tag)) {
-        return tag;
-      }
-      return tag.replace(
-        /\bsrc\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/i,
-        `src="${escapeAttribute(replacement)}"`,
-      );
-    });
-  }
-  return html;
+  const replacement = allowedUrl(options.thumbnailSrc || '', 'image');
+  // The thumbnail swap happens on the parsed attribute inside the sanitizer,
+  // never by pattern-matching the serialized HTML (an `alt` text containing
+  // `src=` could otherwise be rewritten into a new attribute).
+  return sanitizeBodyHtml(
+    resolved === 'markdown' ? renderMarkdownToHtml(source) : source,
+    replacement ? { thumbnailSrc: replacement } : {},
+  );
 }

@@ -529,6 +529,24 @@ format with `renderContentBodyHtml(body, format, { thumbnailSrc })` (or
 `ContentBodyRenderer`), which sanitizes, turns the Markdown token into the same
 marked `<img>`, and can point the thumbnail at the page's own asset URL.
 
+#### Body sanitizing
+
+`sanitizeHtml`, `renderMarkdownToHtml`, `renderContentBodyHtml`, and the
+editor load/save helpers parse bodies with
+[sanitize-html](https://github.com/apostrophecms/sanitize-html) (htmlparser2,
+no DOM — identical in Node SSR/prerender and the browser) against an
+allowlist: headings, paragraphs, lists, blockquote, `pre`/`code`, tables,
+figures, inline emphasis, links (`http(s)`, `mailto`, `tel`, relative;
+`target="_blank"` gets `rel="noopener noreferrer"`), and images (`http(s)`,
+relative, raster `data:image/*` — never SVG) with the editor's
+`data-smrt-*` layout and thumbnail markers and a `width`/`max-width`/
+`height: auto` style. Everything else is removed: scripts, event handlers,
+`javascript:`/`vbscript:` URLs, iframes and embeds (there is no embed
+feature), SVG/MathML, forms, media, classes, ids, and other CSS. Raw-text and
+foreign-content elements are dropped with their content, and the output is
+re-serialized with escaped text, so nested or malformed markup cannot
+reassemble into a live tag.
+
 ### Governance
 
 | Component | Props | Description |
