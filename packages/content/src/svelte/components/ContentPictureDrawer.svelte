@@ -84,6 +84,14 @@ export interface Props {
   mainPictureId?: string | null;
   /** How the main picture was decided (see `resolveBodyMainPicture`). */
   mainPictureMode?: ContentMainPictureMode;
+  /** The search text (when the host searches; see `onSearch`). */
+  query?: string;
+  /**
+   * The host searches its library for this text (it should wait for typing
+   * to pause and start its paging again). Without it the drawer filters the
+   * pictures it was given.
+   */
+  onSearch?: (query: string) => void;
   /** Insert these pictures at the cursor, in order. */
   onInsert?: (pictures: ContentPicture[]) => void;
   /** Upload these files (then insert them). */
@@ -105,6 +113,8 @@ let {
   inStoryIds = [],
   mainPictureId = null,
   mainPictureMode = 'none',
+  query: hostQuery = '',
+  onSearch,
   onInsert,
   onUpload,
   onLoadMore,
@@ -113,12 +123,14 @@ let {
   onClose,
 }: Props = $props();
 
-let query = $state('');
+// svelte-ignore state_referenced_locally
+let query = $state(hostQuery);
 let selectedIds = $state<string[]>([]);
 let fileInput = $state<HTMLInputElement | null>(null);
 let brokenPreviews = $state<Record<string, true>>({});
 
-const visible = $derived(filterPictures(pictures, query));
+// A searching host already sent only the matches.
+const visible = $derived(onSearch ? pictures : filterPictures(pictures, query));
 const inStory = $derived(new Set(inStoryIds));
 const selected = $derived(
   selectedIds
@@ -194,6 +206,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     <Input
       type="search"
       bind:value={query}
+      oninput={() => onSearch?.(query)}
       placeholder={t(M['content.content_picture_drawer.search'])}
       aria-label={t(M['content.content_picture_drawer.search'])}
     />
@@ -279,7 +292,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     </ul>
   {:else if loading}
     <p class="drawer-hint">{t(M['content.content_picture_drawer.loading'])}</p>
-  {:else if pictures.length > 0}
+  {:else if pictures.length > 0 || (onSearch && query.trim())}
     <p class="drawer-hint">{t(M['content.content_picture_drawer.no_match'])}</p>
   {:else}
     <p class="drawer-hint">{t(M['content.content_picture_drawer.empty'])}</p>

@@ -166,6 +166,32 @@ describe('ContentPictureDrawer', () => {
     expect(root.textContent).toContain('No pictures match.');
   });
 
+  it('hands search to a searching host and shows its results as they are', () => {
+    const onSearch = vi.fn();
+    const root = render({ pictures: PICTURES, onSearch });
+    const search = root.querySelector(
+      'input[type="search"]',
+    ) as HTMLInputElement;
+    search.value = 'council';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+    expect(onSearch).toHaveBeenLastCalledWith('council');
+    // The host re-queries; the drawer does not filter what it was given.
+    expect(root.querySelectorAll('.drawer-picture')).toHaveLength(3);
+  });
+
+  it('says nothing matches a host search with no results, and shows loading first', () => {
+    const loadingRoot = render({
+      pictures: [],
+      loading: true,
+      query: 'zebra',
+      onSearch: vi.fn(),
+    });
+    expect(loadingRoot.textContent).toContain('Loading pictures');
+    const root = render({ pictures: [], query: 'zebra', onSearch: vi.fn() });
+    expect(root.textContent).toContain('No pictures match.');
+  });
+
   it('uploads only picture files', () => {
     const onUpload = vi.fn();
     const root = render({ pictures: [], onUpload });
