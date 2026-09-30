@@ -34,6 +34,10 @@ const CANONICAL_SCOPE_REGISTRY =
 const SECRET_KEY =
   /(?:api[_-]?key|secret|token|password|authorization|credential)/i;
 const SAFE_PLUGIN_NAME = /^[a-z0-9][a-z0-9._-]*$/;
+const ENVIRONMENT_CREDENTIAL_FILE = /^\.env(?:\.|$)/;
+const PRIVATE_KEY_CARRIER =
+  /^(?:id_(?:rsa|dsa|ecdsa|ed25519)|private(?:[._-]key)?|.*\.key)$/i;
+const PRIVATE_KEY_HEADER = /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----/;
 
 function add(result: McpAppsValidationResult, code: string, message: string) {
   result.findings.push({ code, message });
@@ -46,7 +50,7 @@ function readJson(path: string, result: McpAppsValidationResult): unknown {
     add(
       result,
       'json-malformed',
-      `${relative(process.cwd(), path)} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `${relative(process.cwd(), path)} is not valid JSON`,
     );
     return undefined;
   }
@@ -106,6 +110,28 @@ function scanTree(
       );
     } else if (stat.isDirectory()) {
       scanTree(root, path, result);
+    } else if (stat.isFile()) {
+      if (
+        ENVIRONMENT_CREDENTIAL_FILE.test(entry.name) ||
+        PRIVATE_KEY_CARRIER.test(entry.name)
+      ) {
+        add(
+          result,
+          'secret-artifact',
+          `${display} is a credential carrier and cannot be packaged`,
+        );
+      } else {
+        try {
+          if (PRIVATE_KEY_HEADER.test(readFileSync(path, 'utf8')))
+            add(
+              result,
+              'secret-artifact',
+              `${display} contains a private key and cannot be packaged`,
+            );
+        } catch {
+          // Binary assets need no text credential scan.
+        }
+      }
     }
   }
 }
@@ -147,6 +173,13 @@ function validateServerUrl(
       url.hostname === '127.0.0.1' ||
       url.hostname === 'localhost' ||
       url.hostname === '[::1]';
+    if (url.username || url.password) {
+      add(
+        result,
+        'server-url',
+        `mcpServers.${name}.url must not contain credentials`,
+      );
+    }
     if (
       url.protocol !== 'https:' &&
       !(url.protocol === 'http:' && isLoopback)
@@ -185,6 +218,11 @@ export function validateMcpAppsPackage(
     ? readJson(pluginPath, result)
     : undefined;
   const mcp = lstatExists(mcpPath) ? readJson(mcpPath, result) : undefined;
+
+  if (plugin !== undefined && !isObject(plugin))
+    add(result, 'plugin-object', 'plugin.json must contain an object');
+  if (mcp !== undefined && !isObject(mcp))
+    add(result, 'mcp-object', 'mcp.json must contain an object');
 
   if (isObject(plugin)) {
     scanSecrets(plugin, 'plugin.json', result);
@@ -236,16 +274,26 @@ export function validateMcpAppsPackage(
               root,
               result,
             );
-        if (
-          ui.screenshots !== undefined &&
-          (!Array.isArray(ui.screenshots) ||
-            ui.screenshots.some((path) => typeof path !== 'string'))
-        )
-          add(
-            result,
-            'openai-screenshots',
-            'interface.screenshots must be an array of paths',
-          );
+        if (ui.screenshots !== undefined) {
+          if (
+            !Array.isArray(ui.screenshots) ||
+            ui.screenshots.some((path) => typeof path !== 'string')
+          )
+            add(
+              result,
+              'openai-screenshots',
+              'interface.screenshots must be an array of paths',
+            );
+          else
+            ui.screenshots.forEach((path, index) => {
+              safeRelativePath(
+                path,
+                `extensions.com.openai.interface.screenshots[${index}]`,
+                root,
+                result,
+              );
+            });
+        }
       }
     }
   }
