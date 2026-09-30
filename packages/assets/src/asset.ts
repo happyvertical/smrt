@@ -20,7 +20,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { Tag } from '@happyvertical/smrt-tags';
+import { type Tag, TagCollection } from '@happyvertical/smrt-tags';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AssetAssociation } from './asset-association';
 import { AssetAssociationCollection } from './asset-associations';
@@ -209,40 +209,38 @@ export class Asset extends SmrtObject {
   }
 
   /**
-   * Get all tags for this asset from @happyvertical/smrt-tags
+   * Get all tags for this asset from @happyvertical/smrt-tags, through the
+   * `asset_tags` join (`AssetTag`), sorted by name.
    *
    * @returns Array of Tag instances from @happyvertical/smrt-tags package
    */
   async getTags(): Promise<Tag[]> {
-    // Query asset_tags join table and retrieve Tag instances
-    const db = this.db;
-    const rows = await db.list('asset_tags', {
-      where: { asset_id: this.id },
-    });
-
-    const tags: Tag[] = [];
-
-    for (const row of rows as { tag_slug: string }[]) {
-      const tag = await Tag.getBySlug(row.tag_slug);
-      if (tag) tags.push(tag);
-    }
-
-    return tags;
+    if (!this.id) return [];
+    const { AssetTagCollection } = await import('./asset-tags');
+    const links = await AssetTagCollection.create({ db: this.db });
+    const rows = await links.byLeft(this.id);
+    if (rows.length === 0) return [];
+    const tags = await TagCollection.create({ db: this.db });
+    const found = (await tags.listByIds([
+      ...new Set(rows.map((row) => row.tagId)),
+    ])) as Tag[];
+    return found.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**
    * Check if this asset has a specific tag
    *
    * @param tagSlug - The slug of the tag to check
+   * @param context - Tag context; any context when omitted
    * @returns True if the asset has this tag
    */
-  async hasTag(tagSlug: string): Promise<boolean> {
-    const db = this.db;
-    const rows = await db.list('asset_tags', {
-      where: { asset_id: this.id, tag_slug: tagSlug },
-    });
-
-    return rows.length > 0;
+  async hasTag(tagSlug: string, context?: string): Promise<boolean> {
+    const tags = await this.getTags();
+    return tags.some(
+      (tag) =>
+        tag.slug === tagSlug &&
+        (context === undefined || tag.context === context),
+    );
   }
 
   /**

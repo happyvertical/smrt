@@ -26,7 +26,9 @@
  *   derivative points back to the asset it was produced from).
  * - `attachment`: generic "this asset belongs to that object" link —
  *   the default for noun join tables.
- * - `hero`: primary/featured asset for an owner.
+ * - `hero`: primary/featured asset for an owner (e.g. a place's main picture).
+ * - `depicts`: the asset shows the owner — a photo of a place or a person
+ *   (`place_assets`, `profile_assets`).
  */
 export const ASSET_ROLES = {
   SOURCE_DOCUMENT: 'source_document',
@@ -37,6 +39,7 @@ export const ASSET_ROLES = {
   DERIVATION_SOURCE: 'derivation_source',
   ATTACHMENT: 'attachment',
   HERO: 'hero',
+  DEPICTS: 'depicts',
 } as const;
 
 export type AssetRole = (typeof ASSET_ROLES)[keyof typeof ASSET_ROLES];

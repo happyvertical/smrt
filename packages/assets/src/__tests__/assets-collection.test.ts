@@ -1,14 +1,16 @@
 /**
  * Coverage for AssetCollection (assets.ts) — tenant-aware queries, classification
- * filters, the raw `asset_tags` join, and the version chain. Real in-memory
+ * filters, the `asset_tags` join (AssetTag), and the version chain. Real in-memory
  * SQLite per SMRT testing conventions (no DB mocking). Wave-3 coverage uplift
  * to clear the S6 T2 floor and unblock the S10 assets consolidation (#1415).
  */
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import { TagCollection } from '@happyvertical/smrt-tags';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Asset } from '../asset';
-import { AssetCollection } from '../assets';
+import { AssetTagCollection } from '../asset-tags';
+import { ASSET_TAG_CONTEXT, AssetCollection } from '../assets';
 import { FolderCollection } from '../folders';
 
 describe('AssetCollection', () => {
@@ -18,13 +20,6 @@ describe('AssetCollection', () => {
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     collection = await AssetCollection.create({ db });
-    // `asset_tags` is a raw join table (not an SMRT model), so it isn't in the
-    // generated schema — create it for the tag tests, mirroring its production DDL.
-    await db.query(
-      'CREATE TABLE IF NOT EXISTS asset_tags (' +
-        'asset_id TEXT NOT NULL, tag_slug TEXT NOT NULL, created_at TEXT, ' +
-        'PRIMARY KEY (asset_id, tag_slug))',
-    );
   });
 
   afterEach(async () => {
@@ -121,23 +116,100 @@ describe('AssetCollection', () => {
     });
   });
 
-  describe('tags (raw asset_tags join)', () => {
+  describe('tags (asset_tags → smrt-tags Tag)', () => {
     it('addTag / getByTag / removeTag round-trip', async () => {
       const asset = await seed({ name: 'tagged' });
 
       await collection.addTag(asset.id as string, 'nature');
       const tagged = await collection.getByTag('nature');
       expect(tagged.map((a) => a.id)).toEqual([asset.id]);
+      expect(await asset.hasTag('nature')).toBe(true);
 
       await collection.removeTag(asset.id as string, 'nature');
       expect(await collection.getByTag('nature')).toEqual([]);
+      expect(await asset.hasTag('nature')).toBe(false);
     });
 
-    it('addTag upserts on (asset_id, tag_slug) — no duplicates', async () => {
+    it('addTag is idempotent — one link, one tag', async () => {
       const asset = await seed();
-      await collection.addTag(asset.id as string, 'dup');
-      await collection.addTag(asset.id as string, 'dup');
+      const first = await collection.addTag(asset.id as string, 'dup');
+      const second = await collection.addTag(asset.id as string, 'dup');
+      expect(second.id).toBe(first.id);
       expect(await collection.getByTag('dup')).toHaveLength(1);
+      expect(await asset.getTags()).toHaveLength(1);
+    });
+
+    it('accepts a label, stores its slug and keeps the label as the name', async () => {
+      const asset = await seed();
+      const tag = await collection.addTag(asset.id as string, 'Town hall');
+      expect(tag.slug).toBe('town-hall');
+      expect(tag.name).toBe('Town hall');
+      expect(tag.context).toBe(ASSET_TAG_CONTEXT);
+      expect((await collection.getByTag('town-hall')).map((a) => a.id)).toEqual(
+        [asset.id],
+      );
+    });
+
+    it('creates the tag in the asset tenant and never reuses another tenant tag', async () => {
+      const a = await seed({ tenantId: 't1' });
+      const b = await seed({ tenantId: 't2' });
+      const tagA = await collection.addTag(a.id as string, 'park');
+      const tagB = await collection.addTag(b.id as string, 'park');
+      expect(tagA.tenantId).toBe('t1');
+      expect(tagB.tenantId).toBe('t2');
+      expect(tagB.id).not.toBe(tagA.id);
+
+      const links = await AssetTagCollection.create({ db });
+      const rows = await links.list({});
+      expect(
+        rows.map((row) => [row.assetId, row.tagId, row.tenantId]).sort(),
+      ).toEqual(
+        [
+          [a.id, tagA.id, 't1'],
+          [b.id, tagB.id, 't2'],
+        ].sort(),
+      );
+    });
+
+    it('setTags replaces the asset tags; getTagsForAssets batches them', async () => {
+      const one = await seed({ name: 'one' });
+      const two = await seed({ name: 'two' });
+      await collection.setTags(one.id as string, ['Park', 'Spring']);
+      await collection.setTags(one.id as string, ['park', 'Landmark']);
+      await collection.addTag(two.id as string, 'spring');
+
+      const map = await collection.getTagsForAssets([
+        one.id as string,
+        two.id as string,
+        'missing',
+      ]);
+      expect(map.get(one.id as string)?.map((t) => t.slug)).toEqual([
+        'landmark',
+        'park',
+      ]);
+      expect(map.get(two.id as string)?.map((t) => t.slug)).toEqual(['spring']);
+      expect(map.get('missing')).toEqual([]);
+    });
+
+    it('deleting the asset removes its tag links but keeps the tag', async () => {
+      const asset = await seed();
+      const tag = await collection.addTag(asset.id as string, 'gone');
+      await asset.delete();
+
+      const links = await AssetTagCollection.create({ db });
+      expect(await links.list({})).toEqual([]);
+      const tags = await TagCollection.create({ db });
+      expect((await tags.get({ id: tag.id as string }))?.slug).toBe('gone');
+    });
+
+    it('rejects an empty tag and an unknown asset', async () => {
+      const asset = await seed();
+      await expect(
+        collection.addTag(asset.id as string, '  !! '),
+      ).rejects.toThrow(/letter or digit/);
+      await expect(collection.addTag('no-such-asset', 'x')).rejects.toThrow(
+        /not found/,
+      );
     });
   });
 
