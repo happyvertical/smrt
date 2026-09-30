@@ -519,6 +519,9 @@ export class SchemaComparer {
   /** Convergence plan for this run; `null` on non-PostgreSQL engines. */
   private uuidConvergence: UuidConvergencePlan | null = null;
 
+  /** Parents created by this compare() batch, never a standalone compareTable(). */
+  private plannedTables = new Map<string, SchemaDefinition>();
+
   /**
    * Rename-pending advisory findings for this `compare()` run, keyed by
    * table name (#2878). `compareTable()` reads from here when it is being
@@ -623,6 +626,12 @@ export class SchemaComparer {
     try {
       // Get list of existing tables
       const existingTables = await this.getExistingTables();
+      this.plannedTables = new Map(
+        Object.entries(manifestSchemas).filter(
+          ([name, schema]) =>
+            !existingTables.has(name) && schema.tableName === name,
+        ),
+      );
 
       // Every existing manifest table is introspected below (rename probes,
       // uuid convergence, per-table comparison). Read them up front with
@@ -702,6 +711,7 @@ export class SchemaComparer {
 
       return diff;
     } finally {
+      this.plannedTables.clear();
       this.renameDataPendingCache = null;
       this.indexPredicateCache = null;
     }
@@ -1216,7 +1226,11 @@ export class SchemaComparer {
         ? dbSchema
         : await this.getLiveSchema(foreignKey.referencesTable);
     const childType = dbSchema.columns[foreignKey.column]?.type;
-    const parentType = parentSchema?.columns[foreignKey.referencesColumn]?.type;
+    const parentType =
+      parentSchema?.columns[foreignKey.referencesColumn]?.type ??
+      this.plannedTables.get(foreignKey.referencesTable)?.columns[
+        foreignKey.referencesColumn
+      ]?.type;
     // A column this migration is about to add materializes with the manifest
     // type, so there is nothing live to conflict with yet.
     if (!childType || !parentType) return undefined;
@@ -1450,12 +1464,55 @@ export class SchemaComparer {
         continue;
       }
 
+      const plannedParent = this.liveSchemas.get(foreignKey.referencesTable)
+        ? undefined
+        : this.plannedTables.get(foreignKey.referencesTable);
+      if (plannedParent) {
+        // A join cannot read a parent that this batch has not created yet.
+        // Prove the *whole child table* empty, even for a new child column:
+        // its default could otherwise create references on existing rows.
+        // Keep the ordinary NOT VALID + VALIDATE below as the authoritative
+        // transactional check against writes racing this read-only preflight.
+        const parentColumn = plannedParent.columns[foreignKey.referencesColumn];
+        let childEmpty = false;
+        if (parentColumn) {
+          try {
+            const result = await this.db.query(
+              `SELECT 1 FROM ${this.quoteIdentifier(tableName)} LIMIT 1`,
+            );
+            const rows = Array.isArray(result) ? result : result.rows || [];
+            childEmpty = rows.length === 0;
+          } catch (error) {
+            throw new Error(
+              `[SchemaComparer] Cannot prove ${tableName} empty for planned parent ${foreignKey.referencesTable}; refusing automatic constraint addition: ${error instanceof Error ? error.message : String(error)}`,
+              { cause: error },
+            );
+          }
+        }
+        if (!parentColumn || !childEmpty) {
+          changes.push({
+            type: 'add_foreign_key',
+            table: tableName,
+            name: foreignKeyConstraintName(tableName, foreignKey),
+            foreignKey,
+            advisory: {
+              severity: 'warning',
+              message: !parentColumn
+                ? `Cannot add foreign key ${tableName}.${foreignKey.column}: planned parent ${foreignKey.referencesTable} has no column ${foreignKey.referencesColumn}. Correct the manifest, then rerun.`
+                : `Cannot add foreign key ${tableName}.${foreignKey.column}: child table is not empty and planned parent ${foreignKey.referencesTable} does not exist yet. Create and populate the parent deliberately, then rerun the orphan preflight.`,
+            },
+          });
+          continue;
+        }
+      }
+
       // A missing child column is added earlier in this same table diff, so
       // probing the pre-migration schema would fail and be misclassified as
       // an orphan. The subsequent NOT VALID + VALIDATE statements remain the
       // authoritative safety check once the prerequisite column exists.
       const childColumnExists = Boolean(dbSchema.columns[foreignKey.column]);
       if (
+        !plannedParent &&
         childColumnExists &&
         (await this.foreignKeyHasOrphans(tableName, foreignKey, orphanOptions))
       ) {
