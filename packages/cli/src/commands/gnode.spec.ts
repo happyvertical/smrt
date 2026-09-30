@@ -174,7 +174,7 @@ describe('Gnode Commands', () => {
         expect.anything(),
         expect.anything(),
         expect.objectContaining({
-          name: 'my-gnode',
+          name: '@smrt-app/my-gnode',
           outputDir: './my-gnode',
         }),
       );

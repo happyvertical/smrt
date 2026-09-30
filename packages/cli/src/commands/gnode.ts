@@ -37,7 +37,7 @@ interface GnodeCreateOptions {
 
 const SCOPED_PACKAGE_NAME = /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
 
-function mcpAppsProjectIdentity(name: string, outputDir: string) {
+function projectIdentity(name: string, outputDir: string) {
   const packagePath = join(outputDir, 'package.json');
   if (existsSync(packagePath)) {
     const existing = JSON.parse(readFileSync(packagePath, 'utf8')) as {
@@ -48,7 +48,7 @@ function mcpAppsProjectIdentity(name: string, outputDir: string) {
       !SCOPED_PACKAGE_NAME.test(existing.name)
     ) {
       throw new Error(
-        'MCP Apps requires a scoped package identity (for example @smrt-app/my-app); rename the existing project before enabling --mcp-apps',
+        'Generated applications require a scoped package identity (for example @smrt-app/my-app); rename the existing project before generating into it',
       );
     }
     return existing.name;
@@ -118,9 +118,7 @@ export const gnodeCommands: Record<string, CLICommand> = {
       const outputDir = options.outputDir || `./${name}`;
       const templateName = options.template || 'sveltekit';
       const mcpApps = options.mcpApps || options['mcp-apps'];
-      const projectName = mcpApps
-        ? mcpAppsProjectIdentity(name, outputDir)
-        : name;
+      const projectName = projectIdentity(name, outputDir);
 
       // Build site options if any site-related flags were provided
       const siteOptions =

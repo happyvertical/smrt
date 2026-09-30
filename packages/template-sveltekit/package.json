@@ -6,6 +6,7 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js",
+    "./template.config.js": "./template.config.js",
     "./template/*": "./template/*"
   },
   "files": [
