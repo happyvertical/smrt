@@ -8,7 +8,7 @@ import { McpAccessError } from './errors.js';
 import type { McpAppPrincipal } from './server.js';
 import {
   createMcpWorkflowTool,
-  type McpWorkflowTool,
+  type McpWorkflowToolDefinition,
 } from './workflow-tools.js';
 
 /** Server-owned immutable review reference; contains no permission snapshot. */
@@ -71,8 +71,8 @@ export function createMcpContinuationTool(options: {
     principal: McpAppPrincipal,
   ) => Promise<Pick<McpTaskStore, 'getContinuation'>>;
   authorize: (principal: McpAppPrincipal, taskId: string) => Promise<boolean>;
-}): McpWorkflowTool {
-  return createMcpWorkflowTool({
+}): McpWorkflowToolDefinition {
+  const definition: McpWorkflowToolDefinition = {
     name: options.name,
     description:
       'Read the current input form or human review URL for your waiting workflow task.',
@@ -115,5 +115,7 @@ export function createMcpContinuationTool(options: {
         throw new McpAccessError(403, 'Tool access denied');
       }
     },
-  });
+  };
+  createMcpWorkflowTool(definition);
+  return definition;
 }
