@@ -400,3 +400,16 @@ production startup must set an explicit loopback `HOST`, and `app:start` is the
 recommended entry point. Stop the app before backup/import. For deployed import, stop
 web/workers and set `SMRT_MAINTENANCE_MODE=true`. Extend
 `scripts/smrt-portability.mjs` for domain-specific transformations.
+
+### Hosted MCP authorization
+
+The opt-in MCP route uses the local signed session only in the `local` profile.
+For `self-hosted` and `cloud`, configure HTTPS `SMRT_MCP_RESOURCE`,
+`SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI`, and space-separated
+`SMRT_MCP_SCOPES` values. Bind `resolveHostedMcpPrincipal` in
+`src/lib/server/mcp-hosted-principal.ts` to an application-owned lookup that
+checks the current account and active tenant membership on every request. It
+must return `null` for disabled, revoked, or unmapped identities. The route
+does not derive tenant authority from JWT claims, request headers, or tool
+arguments; missing configuration or a missing binding fails closed before MCP
+dispatch.
