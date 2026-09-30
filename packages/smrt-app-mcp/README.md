@@ -161,6 +161,65 @@ unauthenticated for both discovery and calls. If an older mount supplies only
 boolean behavior while calls remain user-less as before; migrate that mount to
 `resolvePrincipal` for one identity across both routes.
 
+## Prebuilt MCP Apps resources
+
+Declare portable HTML resources alongside workflow tools. A URI must contain
+its explicit version as a path segment; tool `ui.resourceUri` references must
+resolve to a declared resource. The server snapshots UTF-8 bytes, a SHA-256
+digest and portable MIME `text/html;profile=mcp-app` at construction time. It
+never compiles source or inserts principal data into templates.
+
+```ts
+const server = createMcpAppServer({
+  smrtOptions: () => ({ db }),
+  serverInfo: { name: 'application', version: '1' },
+  allowedClassNames: [],
+  resources: [{
+    uri: 'ui://application/v1/view.html',
+    version: 'v1',
+    name: 'Application view',
+    html: prebuiltHtml,
+  }],
+  workflowTools: [viewWorkflow], // ui.resourceUri points at the declaration
+  resourcePolicy: ({ principal }) =>
+    principal?.id === ownerId && principal?.tenantId === activeTenantId,
+});
+```
+
+Resources are private by default and require a stable principal id plus an explicit
+`resourcePolicy`; an omitted policy denies both listing and reads. Only an
+explicit `public: true` declaration permits anonymous reads of a static
+artifact. `resourcePolicy` runs afresh for both catalog and direct reads; errors
+fail closed. Every associated tool must also pass the ordinary tool policy.
+Unknown and denied URIs return the same error. The resource policy owns tenant
+and owner restrictions; static templates contain no candidate records, tokens
+or sessions. Retrieve changing data through authorized tools instead.
+
+Optional `metadata` carries extension JSON into catalog/read `_meta`, with a
+64 KiB and 16-level limit. Non-JSON values, accessors, cycles and reserved `ui`
+or `com.happyvertical.smrt/resource` keys are rejected. Metadata grants no access.
+
+The raw HTML budget is 100 KiB. CSP connection, resource, frame and base origins
+default to empty lists; permissions default to none. Origins must be exact HTTPS
+origins (WSS is additionally accepted for connections). Unknown CSP/permission
+fields are rejected. Bundle assets inline or use literal absolute references to
+explicitly declared resource/frame origins. Relative asset references,
+CSS imports/escapes and alternate image/source functions, base/object/embed/meta tags, srcset and srcdoc are rejected
+by the conservative static validation profile. HTML is parsed before validation;
+script raw text and inert comments are not CSS. Decoded attribute URLs must still
+match declared origins. Raster data images are permitted.
+Dynamic JavaScript networking requires host CSP enforcement; declarations are
+not a JavaScript sandbox. Host rendering and enforcement remain M4/M8 gates.
+
+`mountMcpRoute` exposes native `resources/list` and `resources/read`, with
+private, zero-TTL results and no subscriptions or HTTP sessions. Missing UI
+capabilities do not remove ordinary text/structured tool results. The app CLI
+bridge now defaults to this modern `/api/mcp` endpoint; use explicit
+`transport: 'legacy-rest'` (or the generic bin's `--legacy-rest`) only during a
+migration from `/api/mcp/tools` and `/api/mcp/call`. The modern bridge uses SDK v2,
+re-resolves credentials per request, refuses redirects, and forwards resource
+and tool metadata without inventing UI or extension capabilities.
+
 Generated tool allow-lists use the generator-owned original class identity, even
 when the advertised name is a canonical alias. Guards keyed by either the alias
 or original tool name run before both direct and task dispatch. Authored workflows

@@ -114,6 +114,7 @@ function protocolServerForRequest(
   // consistently use the principal on both MCP methods.
   if (!resolved.legacyAuthenticated || resolved.principal) return server;
   return {
+    ...server,
     serverInfo: server.serverInfo,
     listTools: () => server.listTools({ authenticated: true }),
     callTool: (input) => server.callTool(input),
@@ -149,7 +150,7 @@ export function mountMcpRoute(
         // path. This endpoint accepts only the modern MCP protocol.
         legacy: 'reject',
         // The SDK validates every request before consulting its listen router.
-        // Zero capacity keeps this tools-only mount stateless by refusing a
+        // Zero capacity keeps this mount stateless by refusing a
         // listen request before it can open an SSE response.
         maxSubscriptions: 0,
       },

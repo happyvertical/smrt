@@ -32,6 +32,16 @@ export {
   type McpProtocolServerOptions,
 } from './protocol.js';
 export {
+  MCP_APP_RESOURCE_MAX_BYTES,
+  MCP_APP_RESOURCE_MIME,
+  type McpAppResource,
+  type McpAppResourceContent,
+  type McpAppResourceCsp,
+  type McpAppResourceDefinition,
+  type McpResourcePolicy,
+  prepareMcpAppResource,
+} from './resources.js';
+export {
   type CallToolInput,
   type CreateMcpAppServerOptions,
   createMcpAppServer,

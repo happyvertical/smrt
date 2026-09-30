@@ -3,6 +3,7 @@ import { runMcpStdioBridge } from '../../bridge.js';
 const jsonHeaders = { 'content-type': 'application/json' };
 
 await runMcpStdioBridge({
+  transport: 'legacy-rest',
   envPrefix: 'SMRT_APP_CLI_STDIO_TEST',
   defaultServerUrl: 'https://bridge.test',
   serverInfo: { name: 'smrt-app-cli-test', version: '1.0.0' },
