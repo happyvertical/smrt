@@ -1560,6 +1560,9 @@ export class SmrtObject extends SmrtClass {
     // for fields that exist in siblings but not in this class (Issue #391).
     // R5-canon (Copilot follow-up): pass the qualified name so STI
     // sibling discovery is collision-safe across packages.
+    // Fields this class itself declares (own + inherited). Anything the
+    // sibling merge below adds belongs to another class in the hierarchy.
+    const ownFieldKeys = new Set(registeredFields.keys());
     if (isSTI) {
       const descendants = getSTIHierarchyMembers(
         this.getResolvedQualifiedName(),
@@ -1666,10 +1669,14 @@ export class SmrtObject extends SmrtClass {
           }
         } else if (fieldType === 'text') {
           // For regular TEXT fields, convert undefined to an empty string.
+          // A sibling class's TEXT field is not this row's data: it stays
+          // NULL (#3227). Writing '' there stored a value no class owns and
+          // blocked later typed conversions of the shared column (#3226).
+          const emptyValue = isSTI && !ownFieldKeys.has(key) ? null : '';
           if (isSTI && fieldDef?.type === 'meta') {
-            metaData[key] = '';
+            metaData[key] = emptyValue;
           } else {
-            data[key] = '';
+            data[key] = emptyValue;
           }
         } else if (fieldType === 'json') {
           // For JSON fields, use the default value from manifest to prevent:

@@ -1260,7 +1260,8 @@ describe('external runtime field hydration', () => {
     expect(upserts).toHaveLength(1);
     expect(upserts[0]?.width).toBeUndefined();
     expect(upserts[0]?.height).toBeUndefined();
-    expect(upserts[0]?.alt).toBe('');
+    // A descendant's TEXT field stays NULL on the parent's row (#3227).
+    expect(upserts[0]?.alt).toBeNull();
 
     const hydratedWidthField =
       ObjectRegistry.getClass('FixtureRuntimeImage')?.inheritedFields?.get(
