@@ -198,6 +198,17 @@ $effect(() => {
   const label = labelForValue(value);
   if (!typed) query = label;
 });
+// Validity follows the committed `value`, not the visible text: a value whose
+// option has not loaded shows an empty field but is filled in, and text typed
+// without choosing an option is not a value.
+$effect(() => {
+  if (!inputEl) return;
+  inputEl.setCustomValidity(
+    required && !disabled && !value && query.trim() !== ''
+      ? 'Choose an option from the list.'
+      : '',
+  );
+});
 useControlRegistration(() => {
   const root = rootEl;
   const input = inputEl;
@@ -245,7 +256,10 @@ useControlRegistration(() => {
 <div bind:this={rootEl} class="combobox {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
-  <label for={inputId}>{label}</label><input bind:this={inputEl} id={inputId} {name} role="combobox" autocomplete="off" {placeholder} {disabled} {required} value={query}
+  <label for={inputId}>{label}</label>
+  <!-- The form posts the committed value (an option id), never the label the person sees. -->
+  {#if name}<input type="hidden" {name} {value} {disabled} />{/if}
+  <input bind:this={inputEl} id={inputId} role="combobox" autocomplete="off" {placeholder} {disabled} required={required && !value} aria-required={required ? 'true' : undefined} value={query}
     aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
     onfocus={openList} onclick={openList} oninput={handleInput} onkeydown={handleKeydown} />
   {#if open && filtered.length}<div id={listId} class="options" role="listbox">{#each filtered as option, index (option.value)}<button id={`${listId}-${index}`} type="button" role="option"

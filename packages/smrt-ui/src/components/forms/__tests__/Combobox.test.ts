@@ -72,4 +72,37 @@ describe('Combobox labels and reopening', () => {
       '77aa-uuid-blackfalds',
     );
   });
+
+  it('posts the committed id under its name, not the visible label', async () => {
+    const { container } = render(Fixture, {
+      props: { options: towns, value: '77aa-uuid-blackfalds' },
+    });
+    const input = screen.getByRole('combobox', { name: 'Town' });
+    expect(input).not.toHaveAttribute('name');
+    const posted = container.querySelectorAll('input[name="town"]');
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toHaveValue('77aa-uuid-blackfalds');
+
+    await userEvent.click(input);
+    await userEvent.click(screen.getByRole('option', { name: 'Ponoka' }));
+    expect(container.querySelector('input[name="town"]')).toHaveValue(
+      '12cd-uuid-ponoka',
+    );
+  });
+
+  it('a required combobox is valid while its value is committed, even before its option loads', async () => {
+    const view = render(Fixture, {
+      props: { options: [], value: '12cd-uuid-ponoka', required: true },
+    });
+    const input = screen.getByRole('combobox', {
+      name: 'Town',
+    }) as HTMLInputElement;
+    expect(input).toHaveValue('');
+    expect(input.checkValidity()).toBe(true);
+    expect(input).toHaveAttribute('aria-required', 'true');
+
+    await view.rerender({ options: towns, value: '', required: true });
+    await tick();
+    expect(input.checkValidity()).toBe(false);
+  });
 });

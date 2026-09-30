@@ -6,12 +6,14 @@ let {
   options = [],
   value = $bindable(''),
   valueLabel = undefined,
+  required = false,
 }: {
   options?: ControlOption[];
   value?: string;
   valueLabel?: string;
+  required?: boolean;
 } = $props();
 </script>
 
-<Combobox label="Town" name="town" {options} {valueLabel} bind:value />
+<Combobox label="Town" name="town" {options} {valueLabel} {required} bind:value />
 <p data-testid="value">{value}</p>
