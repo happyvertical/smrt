@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 
 export interface ArtifactFile {
@@ -128,7 +129,7 @@ export function publishAtomicArtifact(
   file: ArtifactFile,
   filesystem: ArtifactFilesystem = fs,
 ): void {
-  const stagedPath = `${file.path}.smrt-${process.pid}-${Date.now()}.tmp`;
+  const stagedPath = `${file.path}.smrt-${randomUUID()}.tmp`;
   const exists = filesystem.existsSync(file.path);
   const stats = exists ? filesystem.statSync(file.path) : undefined;
   if (stats && !stats.isFile()) {

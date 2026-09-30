@@ -8,6 +8,8 @@
     "scripts/declarations.ts",
     "vitest.workspace.ts",
     "biome.json",
+    "**/AGENTS.md",
+    "**/agents/**/*.md",
     "**/smrt.config.js",
     "**/smrt.config.mjs",
     "**/smrt.config.cjs",
@@ -95,8 +97,6 @@
         "dist/**",
         ".next/**",
         "docs/**",
-        ".smrt/manifest.json",
-        ".smrt/smrt-knowledge.json",
         "src/lib/server/smrt-register.ts",
         "tsconfig.*.tsbuildinfo"
       ],
