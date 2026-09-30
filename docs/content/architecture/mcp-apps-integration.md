@@ -197,3 +197,12 @@ passes the TypeScript 5.9.3 artifact installed in the runner's trusted validator
 prefix before PR checkout. Local workspace runs use the normal TypeScript import;
 a configured missing compiler path fails rather than falling back or skipping
 validation. The gate never installs a compiler itself.
+
+For the currently deployed `pull_request_target` base workflow, which may not yet
+export that variable, a missing workspace TypeScript package is resolved only in
+GitHub Actions (`GITHUB_ACTIONS=true`) from the fixed
+`$RUNNER_TEMP/readme-validator/node_modules/typescript/lib/typescript.js` prefix.
+`RUNNER_TEMP` must be absolute. An explicit path takes priority; compiler load
+errors, missing trusted artifacts, and other environments fail rather than
+searching or installing a replacement. This supports the trusted base workflow
+while preserving ordinary workspace resolution.
