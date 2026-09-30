@@ -111,6 +111,14 @@ describe('createMcpAppServer', () => {
       smrtOptions: () => ({}),
       serverInfo: { name: 'app', version: '0.1.0' },
       allowedClassNames: ['Application'],
+      resources: [
+        {
+          uri: 'ui://application/v1/prepare.html',
+          name: 'Prepare',
+          version: 'v1',
+          html: '<title>Prepare</title>',
+        },
+      ],
       workflowTools: [
         {
           name: 'application_prepare',
@@ -118,7 +126,7 @@ describe('createMcpAppServer', () => {
           title: 'Prepare application',
           icons: [{ src: 'https://example.test/icon.svg', theme: 'light' }],
           ui: {
-            resourceUri: 'ui://application/prepare.html',
+            resourceUri: 'ui://application/v1/prepare.html',
             visibility: ['app'],
           },
           metadata: { 'example.extension': { enabled: true } },
@@ -155,7 +163,7 @@ describe('createMcpAppServer', () => {
           _meta: {
             'example.extension': { enabled: true },
             ui: {
-              resourceUri: 'ui://application/prepare.html',
+              resourceUri: 'ui://application/v1/prepare.html',
               visibility: ['app'],
             },
           },
