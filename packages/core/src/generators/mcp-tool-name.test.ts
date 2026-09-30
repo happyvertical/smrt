@@ -110,6 +110,18 @@ describe('canonical MCP tool identifiers (#3219)', () => {
     expect(tools.map((tool) => tool.name)).toContain(
       'rolepermissioncollection_record_payment',
     );
+    const canonicalTool = tools.find(
+      (tool) =>
+        instance.getToolIdentity(tool).originalName ===
+        'rolepermissioncollection_seeddefaultrolepersonalizationpermissions',
+    );
+    if (!canonicalTool) throw new Error('Canonical tool was not advertised');
+    expect(instance.getToolIdentity(canonicalTool)).toEqual({
+      objectName: 'RolePermissionCollection',
+      action: 'seeddefaultrolepersonalizationpermissions',
+      originalName:
+        'rolepermissioncollection_seeddefaultrolepersonalizationpermissions',
+    });
     const receivers = [];
     for (const tool of tools) {
       const result = await instance.handleToolCall({

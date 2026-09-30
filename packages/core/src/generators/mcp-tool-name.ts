@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 export interface McpToolTarget {
   objectName: string;
   action: string;
+  /** Original generated name before protocol canonicalization. */
+  originalName?: string;
 }
 
 /**
