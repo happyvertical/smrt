@@ -353,6 +353,20 @@ describe('Issue #2223 - test manifest task ownership', () => {
     });
   }, 180_000);
 
+  it('removes stale local knowledge when production config disables it', () => {
+    withIsolatedCoreFixture((fixtureDir) => {
+      const localKnowledge = resolve(fixtureDir, '.smrt/smrt-knowledge.json');
+      mkdirSync(resolve(fixtureDir, '.smrt'), { recursive: true });
+      writeFileSync(localKnowledge, '{"stale":true}');
+      writeFileSync(
+        resolve(fixtureDir, 'smrt.config.json'),
+        JSON.stringify({ knowledge: { enabled: false } }),
+      );
+      runPnpm(['--dir', fixtureDir, 'run', 'generate']);
+      expect(existsSync(localKnowledge)).toBe(false);
+    });
+  }, 180_000);
+
   it('cleans up an isolated fixture when an assertion fails', () => {
     let fixtureDir = '';
 
