@@ -10,7 +10,16 @@ import { createMcpAppServer } from '../server.js';
 
 const action =
   'performAnExtremelyLongApplicationWorkflowWithExplicitAuthorization';
-@smrt({ mcp: { include: [action], tasks: [action] } })
+@smrt({
+  mcp: {
+    include: [
+      'performAnExtremelyLongApplicationWorkflowWithExplicitAuthorization',
+    ],
+    tasks: [
+      'performAnExtremelyLongApplicationWorkflowWithExplicitAuthorization',
+    ],
+  },
+})
 class $M1Identity extends SmrtObject {
   static performAnExtremelyLongApplicationWorkflowWithExplicitAuthorization() {
     return { source: 'real-canonical-target' };
