@@ -2291,7 +2291,7 @@ ${indent}}`;
 
             case 'create':
               return `${indent}case '${tool.name}': {
-${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget('${objectName}', args, aiConfig);
+${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, args, aiConfig);
 
 ${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
 ${indent}  await newItem.save();

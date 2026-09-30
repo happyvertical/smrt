@@ -234,7 +234,7 @@ describe('generated MCP custom-action runtime (#2182)', () => {
       },
     });
 
-    expect(source).toContain("resolveCreateTarget('animal', args, aiConfig)");
+    expect(source).toContain('resolveCreateTarget("animal", args, aiConfig)');
     expect(source).toContain('const STI_TARGETS');
     expect(source).toContain('"@test/animals:Cat":"@test/animals:Cat"');
     expect(source).toContain('applyWritablePolicy(targetObjectName, args)');
