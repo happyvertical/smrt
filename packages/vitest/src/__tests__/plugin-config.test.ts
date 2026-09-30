@@ -1,9 +1,19 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { setupSmrtManifests, smrtVitestPlugin } from '../index.js';
+import {
+  refreshTestKnowledgeArtifact,
+  setupSmrtManifests,
+  smrtVitestPlugin,
+} from '../index.js';
 
 const mockedModules = vi.hoisted(() => ({
   hasClass: vi.fn<(name: string) => boolean>(),
@@ -339,6 +349,52 @@ describe('smrtVitestPlugin config', () => {
         expect.objectContaining({ className: 'LateClass' }),
         '@test/local-package',
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refreshes paired knowledge from a test manifest while preserving agent surface (#3205)', async () => {
+    const root = createTempProject({ name: '@test/local-package' });
+    const smrtDir = join(root, '.smrt');
+    mkdirSync(smrtDir);
+    mkdirSync(join(root, 'src', 'lib'), { recursive: true });
+    writeFileSync(
+      join(root, 'src', 'lib', 'orders.intents.ts'),
+      'export const intent = true;\n',
+    );
+    const agentSurface = {
+      intents: [
+        {
+          id: 'orders.next_page',
+          description: 'Advance the orders table by one page',
+          capability: { effect: 'read', idempotent: false, openWorld: false },
+          target: { registry: 'dataSurface', controlId: 'next-page' },
+          hasInputSchema: false,
+          planes: ['browser'],
+          sourceFile: 'src/lib/orders.intents.ts',
+        },
+      ],
+      playbooks: [],
+      diagnostics: [],
+    };
+    writeFileSync(
+      join(smrtDir, 'smrt-knowledge.json'),
+      JSON.stringify({ agentSurface }),
+    );
+    const manifest = {
+      version: '1.0.0',
+      packageName: '@test/local-package',
+      objects: {},
+    } as any;
+
+    try {
+      await refreshTestKnowledgeArtifact(root, manifest);
+      const knowledge = JSON.parse(
+        readFileSync(join(smrtDir, 'smrt-knowledge.json'), 'utf8'),
+      );
+      expect(knowledge.sourceHashes.manifest).toBeTruthy();
+      expect(knowledge.agentSurface).toEqual(agentSurface);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

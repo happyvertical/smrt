@@ -1149,7 +1149,7 @@ async function generateLocalManifest(
   }
 }
 
-async function refreshTestKnowledgeArtifact(
+export async function refreshTestKnowledgeArtifact(
   root: string,
   manifest: import('@happyvertical/smrt-core/scanner/types').SmartObjectManifest,
 ): Promise<void> {
