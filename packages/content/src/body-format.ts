@@ -563,9 +563,15 @@ function renderInlineMarkdown(value: string): string {
       const safeSrc = sanitizeUrl(src);
       const safeAlt = escapeAttribute(decodeBasicEntities(alt));
       const decodedTitle = decodeBasicEntities(title);
-      const thumbnailPlacement = parseMarkdownThumbnailTitle(decodedTitle);
-      if (thumbnailPlacement) {
-        return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}" ${BODY_THUMBNAIL_ATTRIBUTE}="true" data-smrt-inline-image="true" data-smrt-placement="${thumbnailPlacement}">`;
+      const markers = parseMarkdownImageTitle(decodedTitle);
+      const assetAttr = markers?.assetId
+        ? ` data-smrt-asset-id="${escapeAttribute(markers.assetId)}"`
+        : '';
+      if (markers?.thumbnail) {
+        return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${assetAttr} ${BODY_THUMBNAIL_ATTRIBUTE}="true" data-smrt-inline-image="true" data-smrt-placement="${markers.thumbnail}">`;
+      }
+      if (markers) {
+        return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${assetAttr}${markers.main ? ` ${BODY_MAIN_IMAGE_ATTRIBUTE}="true"` : ''}>`;
       }
       const titleAttr = decodedTitle
         ? ` title="${escapeAttribute(decodedTitle)}"`
@@ -731,10 +737,12 @@ function fallbackHtmlToMarkdown(html: string): string {
     if (!src) {
       return '';
     }
-    const thumbnailTitle = markdownThumbnailTitle(
-      parsed[BODY_THUMBNAIL_ATTRIBUTE],
-      parsed['data-smrt-placement'],
-    );
+    const thumbnailTitle = markdownImageTitle({
+      thumbnail: parsed[BODY_THUMBNAIL_ATTRIBUTE],
+      placement: parsed['data-smrt-placement'],
+      assetId: parsed['data-smrt-asset-id'],
+      main: parsed[BODY_MAIN_IMAGE_ATTRIBUTE],
+    });
     return `\n\n![${parsed.alt || ''}](${src}${thumbnailTitle})\n\n`;
   });
   markdown = markdown.replace(
@@ -832,10 +840,12 @@ function nodeToMarkdown(node: MarkdownDomNode): string {
         return '';
       }
       const alt = node.getAttribute?.('alt') || '';
-      const thumbnailTitle = markdownThumbnailTitle(
-        node.getAttribute?.(BODY_THUMBNAIL_ATTRIBUTE),
-        node.getAttribute?.('data-smrt-placement'),
-      );
+      const thumbnailTitle = markdownImageTitle({
+        thumbnail: node.getAttribute?.(BODY_THUMBNAIL_ATTRIBUTE),
+        placement: node.getAttribute?.('data-smrt-placement'),
+        assetId: node.getAttribute?.('data-smrt-asset-id'),
+        main: node.getAttribute?.(BODY_MAIN_IMAGE_ATTRIBUTE),
+      });
       return `\n\n![${alt}](${src}${thumbnailTitle})\n\n`;
     }
     case 'li':
@@ -929,13 +939,14 @@ export function extractBodyImages(
         const safeSrc = sanitizeUrl(src);
         if (safeSrc) {
           const decodedTitle = decodeBasicEntities(title);
-          const thumbnailPlacement = parseMarkdownThumbnailTitle(decodedTitle);
+          const markers = parseMarkdownImageTitle(decodedTitle);
+          const thumbnailPlacement = markers?.thumbnail;
           images.push({
             src: safeSrc,
             alt: decodeBasicEntities(alt),
-            ...(decodedTitle && !thumbnailPlacement
-              ? { title: decodedTitle }
-              : {}),
+            ...(decodedTitle && !markers ? { title: decodedTitle } : {}),
+            ...(markers?.assetId ? { assetId: markers.assetId } : {}),
+            ...(markers?.main ? { main: true } : {}),
             ...(thumbnailPlacement
               ? { placement: thumbnailPlacement, thumbnail: true }
               : {}),
@@ -1146,26 +1157,63 @@ function isThumbnailMarker(value: unknown): boolean {
   return value === 'true' || value === '' || value === true;
 }
 
+/**
+ * Editor markers a Markdown image carries in its title (Markdown has no
+ * attributes): `smrt-thumbnail:<placement>[ <asset id>]` for the thumbnail
+ * block, `smrt-image <asset id>[ main]` for a stored picture in the story
+ * (`main`: the chosen main picture). Any other title is an ordinary title.
+ */
+interface MarkdownImageMarkers {
+  thumbnail?: ContentBodyThumbnailPlacement;
+  assetId?: string;
+  main?: boolean;
+}
+
+const MARKDOWN_THUMBNAIL_TITLE_PATTERN =
+  /^smrt-thumbnail:(full|right)(?: ([\w.:-]{1,128}))?$/;
+const MARKDOWN_IMAGE_TITLE_PATTERN = /^smrt-image ([\w.:-]{1,128})( main)?$/;
+
+function parseMarkdownImageTitle(title: string): MarkdownImageMarkers | null {
+  const thumbnail = MARKDOWN_THUMBNAIL_TITLE_PATTERN.exec(title);
+  if (thumbnail) {
+    return {
+      thumbnail: thumbnail[1] as ContentBodyThumbnailPlacement,
+      ...(thumbnail[2] ? { assetId: thumbnail[2] } : {}),
+    };
+  }
+  const image = MARKDOWN_IMAGE_TITLE_PATTERN.exec(title);
+  if (image) {
+    return { assetId: image[1], ...(image[2] ? { main: true } : {}) };
+  }
+  return null;
+}
+
 function parseMarkdownThumbnailTitle(
   title: string,
 ): ContentBodyThumbnailPlacement | undefined {
-  if (!title.startsWith(MARKDOWN_THUMBNAIL_TITLE_PREFIX)) {
-    return undefined;
-  }
-  const placement = title.slice(MARKDOWN_THUMBNAIL_TITLE_PREFIX.length);
-  return placement === 'full' || placement === 'right' ? placement : undefined;
+  return parseMarkdownImageTitle(title)?.thumbnail;
 }
 
-function markdownThumbnailTitle(
-  marker: string | null | undefined,
-  placement: string | null | undefined,
-): string {
-  if (marker !== 'true' && marker !== '') {
+/** The ` "title"` a Markdown image gets for an `<img>`'s editor markers. */
+function markdownImageTitle(attributes: {
+  thumbnail: string | null | undefined;
+  placement: string | null | undefined;
+  assetId: string | null | undefined;
+  main: string | null | undefined;
+}): string {
+  const assetId =
+    attributes.assetId && /^[\w.:-]{1,128}$/.test(attributes.assetId)
+      ? attributes.assetId
+      : '';
+  if (isThumbnailMarker(attributes.thumbnail)) {
+    const placement: ContentBodyThumbnailPlacement =
+      attributes.placement === 'right' ? 'right' : 'full';
+    return ` "${MARKDOWN_THUMBNAIL_TITLE_PREFIX}${placement}${assetId ? ` ${assetId}` : ''}"`;
+  }
+  if (!assetId) {
     return '';
   }
-  const resolved: ContentBodyThumbnailPlacement =
-    placement === 'right' ? 'right' : 'full';
-  return ` "${MARKDOWN_THUMBNAIL_TITLE_PREFIX}${resolved}"`;
+  return ` "smrt-image ${assetId}${isThumbnailMarker(attributes.main) ? ' main' : ''}"`;
 }
 
 const HTML_THUMBNAIL_FIGURE_PATTERN =
@@ -1177,7 +1225,7 @@ const HTML_THUMBNAIL_PARAGRAPH_PATTERN =
 const HTML_THUMBNAIL_IMAGE_PATTERN =
   /\s*<img\b[^>]*\bdata-smrt-thumbnail\s*=[^>]*>\s*/gi;
 const MARKDOWN_THUMBNAIL_LINE_PATTERN =
-  /^[ \t]*!\[[^\]]*\]\([^)\s]+\s+"smrt-thumbnail:(?:full|right)"\)[ \t]*(?:\n|$)/gm;
+  /^[ \t]*!\[[^\]]*\]\([^)\s]+\s+"smrt-thumbnail:(?:full|right)(?: [\w.:-]{1,128})?"\)[ \t]*(?:\n|$)/gm;
 
 /** True when the body already contains a thumbnail block. */
 export function bodyHasThumbnail(
@@ -1243,7 +1291,11 @@ function thumbnailMarkdown(
     return '';
   }
   const alt = String(thumbnail.alt || '').replace(/[[\]\n]/g, ' ');
-  return `![${alt}](${src} "${MARKDOWN_THUMBNAIL_TITLE_PREFIX}${placement}")`;
+  const assetId =
+    thumbnail.assetId && /^[\w.:-]{1,128}$/.test(String(thumbnail.assetId))
+      ? ` ${thumbnail.assetId}`
+      : '';
+  return `![${alt}](${src} "${MARKDOWN_THUMBNAIL_TITLE_PREFIX}${placement}${assetId}")`;
 }
 
 /** Index of the first Markdown paragraph (not a heading, list or image). */
@@ -1353,8 +1405,8 @@ export function renderContentBodyHtml(
 // `data-smrt-main="true"` (`setBodyMainImage`), or a thumbnail block placed
 // for a picture that is not otherwise in the story (`placeThumbnailInBody`).
 // A choice sticks until it is cleared, whatever order the pictures are in.
-// Only pictures with an asset id count; Markdown bodies carry no asset ids,
-// so they resolve to `none`.
+// Only pictures with an asset id count (Markdown images carry theirs in the
+// title, `smrt-image <id>`).
 // ---------------------------------------------------------------------------
 
 /** How the main picture was decided. */
@@ -1410,9 +1462,10 @@ function withoutMainMarker(tag: string): string {
 /**
  * Mark the first picture in the story with `assetId` as the chosen main
  * picture, clearing the mark from every other picture. `null` clears the
- * choice, so the first picture is the main picture again. HTML bodies only;
- * a Markdown body, or one without that picture, is returned with only the
- * old marks cleared.
+ * choice, so the first picture is the main picture again. Works on HTML
+ * bodies and on Markdown ones (where the mark is the image title
+ * `smrt-image <id> main`); a body without that picture is returned with only
+ * the old marks cleared.
  */
 export function setBodyMainImage(
   body: string | null | undefined,
@@ -1420,8 +1473,23 @@ export function setBodyMainImage(
   assetId: string | null,
 ): string {
   const source = body || '';
-  if (!source || resolveBodyFormat(format, source) !== 'html') {
+  if (!source) {
     return source;
+  }
+  if (resolveBodyFormat(format, source) === 'markdown') {
+    let markedMarkdown = false;
+    return source.replace(
+      /!\[([^\]]*)\]\(([^)\s]+)\s+"([^"]*)"\)/g,
+      (image, alt: string, src: string, title: string) => {
+        const markers = parseMarkdownImageTitle(title);
+        if (!markers?.assetId || markers.thumbnail) {
+          return image;
+        }
+        const main = !markedMarkdown && markers.assetId === assetId;
+        markedMarkdown ||= main;
+        return `![${alt}](${src} "smrt-image ${markers.assetId}${main ? ' main' : ''}")`;
+      },
+    );
   }
   const cleared = source.replace(/<(img|figure)\b[^>]*>/gi, withoutMainMarker);
   if (!assetId) {

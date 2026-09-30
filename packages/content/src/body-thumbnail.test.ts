@@ -137,14 +137,14 @@ describe('placeThumbnailInBody (Markdown)', () => {
   it('puts a wide thumbnail first with the header token', () => {
     const next = placeThumbnailInBody(body, 'markdown', WIDE);
     expect(next).toBe(
-      `![](https://cdn.test/wide.jpg "smrt-thumbnail:full")\n\n${body}`,
+      `![](https://cdn.test/wide.jpg "smrt-thumbnail:full a-wide")\n\n${body}`,
     );
   });
 
   it('puts a portrait thumbnail before the first paragraph', () => {
     const next = placeThumbnailInBody(body, 'markdown', PORTRAIT);
     expect(next).toBe(
-      '## Council\n\n![](https://cdn.test/tall.jpg "smrt-thumbnail:right")\n\nFirst paragraph.\n\nSecond.',
+      '## Council\n\n![](https://cdn.test/tall.jpg "smrt-thumbnail:right a-tall")\n\nFirst paragraph.\n\nSecond.',
     );
   });
 
@@ -162,7 +162,7 @@ describe('placeThumbnailInBody (Markdown)', () => {
       'markdown',
     );
     expect(html).toMatch(
-      /<img src="https:\/\/cdn\.test\/tall\.jpg" alt="" data-smrt-thumbnail="true" data-smrt-inline-image="true" data-smrt-placement="right">/,
+      /<img src="https:\/\/cdn\.test\/tall\.jpg" alt="" data-smrt-asset-id="a-tall" data-smrt-thumbnail="true" data-smrt-inline-image="true" data-smrt-placement="right">/,
     );
     expect(html).not.toContain('title=');
   });
@@ -173,7 +173,7 @@ describe('placeThumbnailInBody (Markdown)', () => {
       bodyToEditorHtml(placed, 'markdown'),
       'markdown',
     );
-    expect(roundTrip).toContain('"smrt-thumbnail:right"');
+    expect(roundTrip).toContain('"smrt-thumbnail:right a-tall"');
     expect(bodyHasThumbnail(roundTrip, 'markdown')).toBe(true);
   });
 });

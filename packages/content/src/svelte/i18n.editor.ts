@@ -38,6 +38,7 @@ export const M = defineMessages({
   'content.content_picture_drawer.clear_selection': 'Clear',
   'content.content_picture_drawer.select': 'Pick {name}',
   'content.content_picture_drawer.in_story': 'In the story',
+  'content.content_picture_drawer.no_preview': 'No preview',
   'content.content_picture_drawer.main': 'Main picture',
   'content.content_picture_drawer.use_as_main': 'Use as main picture',
   'content.content_picture_drawer.main_automatic':

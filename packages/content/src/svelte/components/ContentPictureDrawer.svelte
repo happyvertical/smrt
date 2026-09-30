@@ -138,6 +138,13 @@ function insertSelected() {
   selectedIds = [];
 }
 
+function useSelectedAsMain() {
+  const [picture] = selected;
+  if (!picture) return;
+  onUseAsMain?.(picture);
+  selectedIds = [];
+}
+
 function handleDragStart(event: DragEvent, picture: ContentPicture) {
   if (!event.dataTransfer) return;
   // Dragging a picked picture drags every picked one, in pick order.
@@ -249,7 +256,9 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
                 onerror={() => (brokenPreviews = { ...brokenPreviews, [picture.id]: true })}
               />
             {:else}
-              <span class="drawer-picture-missing" aria-hidden="true">?</span>
+              <span class="drawer-picture-missing">
+                {t(M['content.content_picture_drawer.no_preview'])}
+              </span>
             {/if}
             {#if isSelected}
               <span class="drawer-picture-check" aria-hidden="true">
@@ -265,17 +274,6 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
               <span class="tag">{t(M['content.content_picture_drawer.in_story'])}</span>
             {/if}
           </span>
-          {#if onUseAsMain && !isMain}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              class="drawer-picture-main"
-              onclick={() => onUseAsMain?.(picture)}
-            >
-              {t(M['content.content_picture_drawer.use_as_main'])}
-            </Button>
-          {/if}
         </li>
       {/each}
     </ul>
@@ -295,13 +293,20 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     </Button>
   {/if}
 
-  {#if selected.length > 0 && onInsert}
+  {#if selected.length > 0 && (onInsert || onUseAsMain)}
     <div class="drawer-actions">
-      <Button type="button" variant="primary" onclick={insertSelected}>
-        {selected.length === 1
-          ? t(M['content.content_picture_drawer.insert'])
-          : t(M['content.content_picture_drawer.insert_count'], { count: selected.length })}
-      </Button>
+      {#if onInsert}
+        <Button type="button" variant="primary" onclick={insertSelected}>
+          {selected.length === 1
+            ? t(M['content.content_picture_drawer.insert'])
+            : t(M['content.content_picture_drawer.insert_count'], { count: selected.length })}
+        </Button>
+      {/if}
+      {#if selected.length === 1 && onUseAsMain && selected[0].id !== mainPictureId}
+        <Button type="button" variant="secondary" onclick={useSelectedAsMain}>
+          {t(M['content.content_picture_drawer.use_as_main'])}
+        </Button>
+      {/if}
       <Button type="button" variant="ghost" onclick={() => (selectedIds = [])}>
         {t(M['content.content_picture_drawer.clear_selection'])}
       </Button>
@@ -364,6 +369,9 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
   }
 
   .drawer-grid {
+    /* Scrolls on its own so the story stays in reach for dragging. */
+    max-height: min(22rem, 45vh);
+    overflow-y: auto;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
     gap: 0.6rem;
@@ -425,6 +433,12 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     font-weight: 700;
   }
 
+  .drawer-picture-missing {
+    padding: 0.25rem;
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
   .drawer-picture-title {
     overflow: hidden;
     color: var(--smrt-color-on-surface);
@@ -451,16 +465,9 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     color: var(--smrt-color-on-primary);
   }
 
-  .content-picture-drawer :global(.drawer-picture-main) {
-    justify-self: start;
-    min-height: 2.75rem;
-    font-size: 0.78rem;
-  }
-
   .drawer-actions {
-    position: sticky;
-    bottom: 0;
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0.5rem 0;
     background: var(--smrt-color-surface);

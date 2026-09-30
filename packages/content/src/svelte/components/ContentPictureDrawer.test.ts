@@ -135,11 +135,19 @@ describe('ContentPictureDrawer', () => {
     expect(items[0].textContent).toContain('In the story');
     buttonByText(root, 'Use the first picture instead').click();
     expect(onClearMainChoice).toHaveBeenCalled();
-    const useButtons = Array.from(root.querySelectorAll('button')).filter(
-      (button) => button.textContent?.trim() === 'Use as main picture',
+    // "Use as main picture" shows for one picked picture that is not the main one.
+    expect(root.textContent).not.toContain('Use as main picture');
+    const tiles = root.querySelectorAll<HTMLButtonElement>(
+      '.drawer-picture-pick',
     );
-    expect(useButtons).toHaveLength(2);
-    useButtons[1].click();
+    tiles[1].click();
+    flushSync();
+    expect(root.textContent).not.toContain('Use as main picture');
+    tiles[1].click();
+    tiles[2].click();
+    flushSync();
+    buttonByText(root, 'Use as main picture').click();
+    flushSync();
     expect(onUseAsMain).toHaveBeenCalledWith(PICTURES[2]);
   });
 

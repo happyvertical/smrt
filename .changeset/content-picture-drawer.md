@@ -17,3 +17,8 @@ Pictures in the content editor:
   array (inserted in order); `replaceImage(index, asset)` swaps a picture in
   place; `mainImageAssetId` marks the selected picture's "Use as main picture"
   button as pressed. The button now reads "Use as main picture".
+- Markdown bodies keep a stored picture's asset id (and the chosen main
+  picture) in the image title — `smrt-image <id>`, `smrt-image <id> main`,
+  `smrt-thumbnail:<placement> <id>` — so the main-picture rule, "Use as main
+  picture" and picture replacement work for Markdown articles too. Rendering
+  turns the markers back into attributes, never a visible title.
