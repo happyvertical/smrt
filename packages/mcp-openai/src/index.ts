@@ -74,7 +74,11 @@ export function withOpenAiEntrypoints(
 ): McpWorkflowToolDefinition {
   createMcpWorkflowTool(definition);
   acceptsEmpty(definition.inputSchema);
-  if (!definition.ui || definition.effect !== 'read' || !definition.idempotent)
+  if (
+    !definition.ui?.resourceUri ||
+    definition.effect !== 'read' ||
+    !definition.idempotent
+  )
     throw new TypeError('Entrypoints require an idempotent read UI tool');
   if (
     !Array.isArray(entrypoints) ||
