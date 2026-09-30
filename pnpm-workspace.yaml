@@ -81,7 +81,7 @@ overrides:
   # calls (GHSA-2v37-7h3g-55p8). Vite/PostCSS accepts the patched 3.3.x
   # release, so unify the transitive graph on the first fixed version.
   'nanoid@<3.3.18': 3.3.18
-  'axios@>=1.15.2 <1.18.0': 1.18.0
+  'axios@>=1.13.0 <1.20.0': 1.20.0
   'postcss@<=8.5.17': 8.5.18
   # browserslist <=4.28.6 is vulnerable to unbounded query-cache growth and
   # unsafe custom statistics normalization (GHSA-c83g-rgw3-j3cx,
