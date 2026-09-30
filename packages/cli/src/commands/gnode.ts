@@ -12,7 +12,11 @@ import {
   resolveTemplate,
 } from '../loaders/index.js';
 import { generate } from '../utils/generator.js';
-import { scaffoldMcpAppsPackage } from './mcp-apps-packaging.js';
+import {
+  addMcpAppsRuntime,
+  configureMcpAppsConsumerRegistry,
+  scaffoldMcpAppsPackage,
+} from './mcp-apps-packaging.js';
 
 /**
  * Parsed option bag for the `gnode create` handler. The CLI parser produces
@@ -26,6 +30,7 @@ interface GnodeCreateOptions {
   lon?: string;
   timezone?: string;
   mcpApps?: boolean;
+  'mcp-apps'?: boolean;
 }
 
 /**
@@ -107,10 +112,12 @@ export const gnodeCommands: Record<string, CLICommand> = {
           site: siteOptions,
         });
 
-        if (options.mcpApps) {
+        if (options.mcpApps || options['mcp-apps']) {
+          addMcpAppsRuntime(source.resolved, outputDir);
+          configureMcpAppsConsumerRegistry(outputDir);
           scaffoldMcpAppsPackage(`${outputDir}/mcp-apps`, name);
           console.log(
-            '✓ Added MCP Apps metadata. Configure the authorized v2 MCP endpoint before deployment.',
+            '✓ Added MCP Apps metadata and the canonical @happyvertical package registry. Configure the authorized v2 MCP endpoint before deployment.',
           );
         }
 

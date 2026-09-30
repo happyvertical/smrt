@@ -56,6 +56,7 @@ describe('generated project metadata', () => {
 
   it('publishes the gnode configuration needed by installed consumers', () => {
     expect(publishedPackageJson.files).toContain('template.config.js');
+    expect(publishedPackageJson.files).toContain('mcp-apps-template');
   });
 
   it('uses the current migration command rather than deprecated db:setup', () => {

@@ -1464,7 +1464,13 @@ export class CLIGenerator {
       ...workbenchCommands,
     };
 
+    const builtInMatch = matchLeadingCommand(
+      processedArgv,
+      [],
+      builtInCommands,
+    );
     const builtInCommand =
+      builtInMatch.command ??
       builtInCommands[parsed.command] ??
       Object.values(builtInCommands).find(
         (cmd) =>
@@ -1494,7 +1500,16 @@ export class CLIGenerator {
 
       // Re-parse options for built-in command since they weren't in initial parse
       // The initial parseCliArgs only has object commands, not built-in commands
-      const reParsed = parseCliCommandArgs(processedArgv, [builtInCommand], {});
+      const start = firstArgumentIndex(processedArgv);
+      const commandArgv =
+        builtInMatch.command && builtInMatch.wordCount > 1
+          ? [
+              ...processedArgv.slice(0, start),
+              builtInCommand.name,
+              ...processedArgv.slice(start + builtInMatch.wordCount),
+            ]
+          : processedArgv;
+      const reParsed = parseCliCommandArgs(commandArgv, [builtInCommand], {});
 
       try {
         await builtInCommand.handler(reParsed.args, reParsed.options);

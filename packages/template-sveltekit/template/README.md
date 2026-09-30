@@ -229,6 +229,13 @@ editing package metadata. It rejects symlinks, traversal paths, missing assets,
 credential-shaped JSON fields, non-portable schemas, and non-loopback HTTP
 server URLs.
 
+The option stages `src/routes/api/mcp/+server.ts`, a session-authorized `mcp`
+server, and a bounded static resource with a restrictive CSP. It also includes
+`McpAppsBridge.svelte` for an application-configured trusted host origin and
+the optional OpenAI display adapter; it stays inert until your UI mounts it.
+The scaffold does not enable remote MCP tasks, so a deployment that adds them
+must supply the durable worker's live authorization callback before publication.
+
 Before changing that URL, mount the native SDK v2 Streamable HTTP endpoint and
 configure the application gateway's verified principal, issuer, audience and
 scopes. Plugin metadata is an install surface only; it neither authenticates a
