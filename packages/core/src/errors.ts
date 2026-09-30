@@ -778,6 +778,48 @@ export class TenantIsolationError extends SmrtError {
       },
     );
   }
+
+  /**
+   * Builds a {@link TenantIsolationError} for a natural-key save whose
+   * conflict target matched a row owned by a different tenant (or a global
+   * row, or — for a global save — a tenant's row). `save()` refuses instead of
+   * letting `ON CONFLICT … DO UPDATE` rewrite that row's `id` and tenant.
+   *
+   * The other row's owner is deliberately NOT reported: naming it would
+   * disclose another tenant's identity to the caller. Only the caller's own
+   * values appear in the message and details.
+   */
+  static naturalKeyOwnedElsewhere(details: {
+    className: string;
+    tableName: string;
+    conflictColumns: string[];
+    conflictValues: Record<string, unknown>;
+    ownershipColumns: string[];
+    tenantId?: string | null;
+  }): TenantIsolationError {
+    const key = details.conflictColumns
+      .map(
+        (column) =>
+          `${column}=${JSON.stringify(details.conflictValues[column] ?? null)}`,
+      )
+      .join(', ');
+    return new TenantIsolationError(
+      `Refusing to save ${details.className}: its natural key (${key}) on ` +
+        `"${details.tableName}" already belongs to a row with a different owner ` +
+        `(${details.ownershipColumns.join(', ')}). Saving would overwrite that row's ` +
+        `id and owner. Give the table a tenant-inclusive unique key ` +
+        `(declare tenant scope, or drop the explicit conflictColumns that omit ` +
+        `the tenant column, then run \`smrt db:migrate\`), or choose another natural key.`,
+      {
+        tenantId: details.tenantId ?? undefined,
+        className: details.className,
+        tableName: details.tableName,
+        conflictColumns: details.conflictColumns,
+        ownershipColumns: details.ownershipColumns,
+        reason: 'natural_key_owned_elsewhere',
+      },
+    );
+  }
 }
 
 /**

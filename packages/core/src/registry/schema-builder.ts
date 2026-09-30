@@ -11,6 +11,7 @@ import { normalizeBackfill } from '../schema/backfill.js';
 import {
   conflictIndexName,
   nullableConflictIdentity,
+  resolveOwnershipTenantColumn,
 } from '../schema/conflict-target.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
@@ -334,9 +335,13 @@ function withConflictIndex(
   // (#2360) has its stale `<table>_slug_context_idx` REPLACED in place here
   // — the differ then swaps the live index by name — instead of a second,
   // suffixed unique index being appended beside the old global one.
-  const tenantColumn = Object.entries(columns).find(
-    ([, column]) => column.referenceKind === 'tenantId',
-  )?.[0];
+  const tenantColumn =
+    Object.entries(columns).find(
+      ([, column]) => column.referenceKind === 'tenantId',
+    )?.[0] ??
+    resolveOwnershipTenantColumn(undefined, (column) =>
+      Boolean(columns[column]),
+    );
   // The composed name can exceed PostgreSQL's 63-byte limit on a long table.
   // Shortening here (rather than inside conflictIndexName) keeps the generator
   // paths, which run enforceIdentifierLimits() over their whole index list,
@@ -488,6 +493,7 @@ function applyContributorForeignKeys(
       declared: field._meta?.onDelete,
       isConflictColumn: conflictColumns.has(columnName),
       isTenantIdField: false,
+      columnName,
     });
     column.foreignKey = {
       table: targetTable,
@@ -1169,6 +1175,7 @@ export function fieldsToColumns(
           declared: fieldMeta?.onDelete,
           isConflictColumn: conflictColumns.has(toSnakeCase(fieldName)),
           isTenantIdField: false,
+          columnName: toSnakeCase(fieldName),
         }).action,
         onUpdate:
           fieldMeta?.onUpdate === undefined

@@ -19,6 +19,7 @@ import {
   conflictIndexName,
   nullableConflictIdentity,
   resolveConflictColumns,
+  resolveOwnershipTenantColumn,
   resolveTenantColumn,
   servesSlugLookup,
 } from './conflict-target.js';
@@ -310,6 +311,7 @@ export class SchemaGenerator {
         declared: field._meta?.onDelete,
         isConflictColumn: conflictSet.has(columnName),
         isTenantIdField,
+        columnName,
       });
       column.foreignKey = {
         table: targetTable,
@@ -840,7 +842,14 @@ export class SchemaGenerator {
     columns: Record<string, { referenceKind?: string } | undefined>,
     config: SchemaGeneratorConfig | undefined,
   ): { conflictColumns: string[]; tenantColumn: string | undefined } {
-    const tenantColumn = this.findTenantColumn(columns);
+    // The tenant column also names the conflict index: a tenant-led default
+    // key keeps the stable `<table>_slug_context_idx` name. An undeclared
+    // `tenant_id` column counts, matching the implicit ownership default.
+    const tenantColumn =
+      this.findTenantColumn(columns) ??
+      resolveOwnershipTenantColumn(undefined, (column) =>
+        Boolean(columns[column]),
+      );
     if (config?.conflictColumns && config.conflictColumns.length > 0) {
       return { conflictColumns: [...config.conflictColumns], tenantColumn };
     }
@@ -857,7 +866,10 @@ export class SchemaGenerator {
     return {
       conflictColumns: resolveConflictColumns({
         strategy,
-        tenantColumn: configuredTenantColumn,
+        tenantColumn: resolveOwnershipTenantColumn(
+          configuredTenantColumn,
+          (column) => Boolean(columns[column]),
+        ),
       }),
       tenantColumn,
     };

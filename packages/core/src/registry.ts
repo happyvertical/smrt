@@ -165,6 +165,7 @@ import type {
 } from './scanner/types.js';
 import {
   defaultConflictColumns,
+  resolveOwnershipTenantColumn,
   resolveTenantColumn,
 } from './schema/conflict-target.js';
 import type { DatabaseEngine } from './schema/ddl/types.js';
@@ -3232,10 +3233,11 @@ export class ObjectRegistry {
    *    primary-key column(s) — the only unique key such a table has;
    * 4. the strategy default — CTI `['slug', 'context']`, STI
    *    `['slug', 'context', '_meta_type']` — led by the tenant column when
-   *    the schema owner is tenant-scoped (#2360): tenant-scoped rows are
-   *    unique per tenant, and without the tenant column a second tenant's
-   *    `save()` of the same natural key updated the first tenant's row
-   *    through `DO UPDATE SET`.
+   *    the schema owner is tenant-scoped (#2360) or carries an undeclared
+   *    `tenantId` field ({@link ObjectRegistry.getOwnershipTenantColumn}):
+   *    tenant-owned rows are unique per tenant, and without the tenant column
+   *    a second tenant's `save()` of the same natural key updated the first
+   *    tenant's row through `DO UPDATE SET`.
    *
    * STI subclasses share a table, so the discriminator participates in
    * identity — two subtypes can coexist with the same (slug, context). The
@@ -3310,7 +3312,41 @@ export class ObjectRegistry {
 
     return defaultConflictColumns(
       tableStrategy,
-      ObjectRegistry.getTenantColumn(className),
+      ObjectRegistry.getOwnershipTenantColumn(className),
+    );
+  }
+
+  /**
+   * The column that owns a table's rows for natural-key identity: the
+   * declared tenant column ({@link ObjectRegistry.getTenantColumn}), else
+   * `tenant_id` when the schema owner has a `tenantId` field but declares no
+   * tenancy — the shape a consumer registers with the tenancy interceptor at
+   * runtime. The default conflict target and unique index lead with it, so a
+   * second tenant's same-slug row is a second row rather than an upsert onto
+   * the first tenant's. See `resolveOwnershipTenantColumn()`.
+   *
+   * @param className - Name of the class (simple or qualified)
+   * @returns The snake_case ownership column, or `undefined`
+   */
+  static getOwnershipTenantColumn(className: string): string | undefined {
+    const declared = ObjectRegistry.getTenantColumn(className);
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) return declared;
+    const ownerName =
+      ObjectRegistry.getTableStrategy(className) === 'sti'
+        ? ObjectRegistry.getSTIBase(className)
+        : null;
+    const owner =
+      ownerName && ownerName !== className
+        ? (ObjectRegistry.findClass(ownerName) ?? registered)
+        : registered;
+    return resolveOwnershipTenantColumn(declared, (columnName) =>
+      [...owner.fields.entries()].some(
+        ([fieldName, field]) =>
+          field?.type !== 'oneToMany' &&
+          field?.type !== 'manyToMany' &&
+          toSnakeCase(fieldName) === columnName,
+      ),
     );
   }
 

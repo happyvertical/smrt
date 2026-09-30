@@ -183,6 +183,45 @@ export function resolveTenantColumn(
   return toColumn(tenantField);
 }
 
+/**
+ * The field whose mere presence marks a table's rows as tenant-owned when the
+ * class declares no tenancy (`tenantScoped` / `@TenantScoped()` / `@tenantId`).
+ * It is the tenancy default field name, so it is also the field a consumer's
+ * `registerTenantScopedClass(name)` filters and populates at runtime.
+ */
+export const IMPLICIT_TENANT_FIELD = 'tenantId';
+
+/** Column of {@link IMPLICIT_TENANT_FIELD}. */
+export const IMPLICIT_TENANT_COLUMN = 'tenant_id';
+
+/**
+ * The column that owns a table's rows for natural-key identity: the declared
+ * tenant column, otherwise the implicit `tenant_id` column when the schema
+ * owner has a `tenantId` field.
+ *
+ * Before this rule a class that carried `tenantId` but did not DECLARE tenancy
+ * (the consumer registered it with the tenancy interceptor at runtime instead)
+ * kept the global `(slug, context)` key. The interceptor filtered its lookups
+ * by tenant, so tenant B's lookup missed tenant A's same-slug row and B's
+ * `save()` upserted onto it: `DO UPDATE SET` rewrote A's `id` and `tenant_id`
+ * and `ON UPDATE CASCADE` re-pointed A's children at B's row. Rows that carry
+ * a tenant are unique per tenant whether or not reads are filtered, so the
+ * default natural key follows ownership, not the read policy. Only the
+ * DEFAULT key uses this; an explicit `@smrt({ conflictColumns })` is the
+ * author's contract and is never rewritten.
+ *
+ * @param declaredTenantColumn - the column from the class's tenancy
+ *   declaration ({@link resolveTenantColumn}), when it has one
+ * @param hasColumn - whether the schema owner has the given column
+ */
+export function resolveOwnershipTenantColumn(
+  declaredTenantColumn: string | undefined | null,
+  hasColumn: (columnName: string) => boolean,
+): string | undefined {
+  if (declaredTenantColumn) return declaredTenantColumn;
+  return hasColumn(IMPLICIT_TENANT_COLUMN) ? IMPLICIT_TENANT_COLUMN : undefined;
+}
+
 /** Only the framework conflict identity opts into NULL-equal uniqueness. */
 export function nullableConflictIdentity(
   conflictColumns: readonly string[],

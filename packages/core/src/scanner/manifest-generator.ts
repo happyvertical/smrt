@@ -18,6 +18,7 @@ import {
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import {
   defaultConflictColumns,
+  resolveOwnershipTenantColumn,
   resolveTenantColumn,
 } from '../schema/conflict-target.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
@@ -941,8 +942,9 @@ export class ManifestGenerator {
   /**
    * Materialize the tenant-aware default conflict target (#2360).
    *
-   * A tenant-scoped class that declares no `@smrt({ conflictColumns })` keys
-   * on `[tenant column, ...natural key]` — `(tenant_id, slug, context)` for
+   * A tenant-owned class — tenant-scoped, or carrying an undeclared
+   * `tenantId` field (`resolveOwnershipTenantColumn()`) — that declares no
+   * `@smrt({ conflictColumns })` keys on `[tenant column, ...natural key]` — `(tenant_id, slug, context)` for
    * a class-per-table object, `(tenant_id, slug, context, _meta_type)` for a
    * single-table hierarchy — so two tenants can each own the same slug and
    * neither `save()` adopts the other's row. Writing the resolved key into
@@ -967,13 +969,22 @@ export class ManifestGenerator {
       if (this.isSTIChildClass(obj, manifest)) continue;
 
       const tenantScoped = obj.decoratorConfig.tenantScoped;
-      if (!tenantScoped) continue;
-
-      const { tenantConfig } = this.normalizeTenantScopedConfig(tenantScoped);
-      const tenantColumn = resolveTenantColumn(
-        tenantConfig.field,
-        (fieldName) => Boolean(obj.fields[fieldName]),
-        toSnakeCase,
+      const declaredTenantColumn = tenantScoped
+        ? resolveTenantColumn(
+            this.normalizeTenantScopedConfig(tenantScoped).tenantConfig.field,
+            (fieldName) => Boolean(obj.fields[fieldName]),
+            toSnakeCase,
+          )
+        : undefined;
+      // A class that carries `tenantId` without declaring tenancy (a consumer
+      // registers it with the tenancy interceptor at runtime) is still
+      // tenant-OWNED: its natural key is unique per tenant too.
+      const tenantColumn = resolveOwnershipTenantColumn(
+        declaredTenantColumn,
+        (column) =>
+          Object.keys(obj.fields).some(
+            (fieldName) => toSnakeCase(fieldName) === column,
+          ),
       );
       if (!tenantColumn) continue;
 
@@ -1076,6 +1087,7 @@ export class ManifestGenerator {
           declared: field._meta?.onDelete,
           isConflictColumn: conflictColumns.has(columnName),
           isTenantIdField: false,
+          columnName,
         });
 
         for (const sourceSchema of sourceSchemas) {

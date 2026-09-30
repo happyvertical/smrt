@@ -402,6 +402,43 @@ schema does not index is a hard PostgreSQL error (42P10) on the first save,
 and a key the schema indexes without the tenant column is the silent
 cross-tenant overwrite this rule exists for.
 
+### Tenant OWNERSHIP, not tenant scope, leads the default key
+
+A class with a `tenantId` field is tenant-owned even when it declares no
+tenancy — consumers register such classes with the tenancy interceptor at
+runtime (Anytown's Ludis `League`/`Team`, smrt-users `Group`/`Role`/…), which
+core never reads. `resolveOwnershipTenantColumn()` (declared tenant column,
+else `tenant_id`) leads the default natural key on every producer:
+`ObjectRegistry.getOwnershipTenantColumn()` / `getConflictColumns()`,
+`normalizeConflictColumns()`, the generator's `resolveConflictTarget()` and the
+registry schema-builder. The tenancy read policy is still never inferred
+(`getTenantScopedConfig()` stays undefined). Explicit `conflictColumns` are
+never rewritten. The index keeps its stable `<table>_slug_context_idx` name
+(conflict naming treats an unmarked `tenant_id` as the tenant column), so
+`smrt db:migrate` swaps it in place; the new key is a superset and cannot fail
+on existing rows, but old code's `ON CONFLICT (slug, context)` and new code's
+`ON CONFLICT (tenant_id, slug, context)` each need their own index, so deploy
+the code and the migration together. `db:status` names a live global unique on
+a tenant-owned table (`cli/src/commands/tenant-natural-keys.ts`). The implicit
+`tenant_id` column never makes a foreign key identifying
+(`resolveForeignKeyDeleteAction({ columnName })`): a tenant FK stays
+`NO ACTION`, so deleting a tenant does not cascade through tenant-owned tables.
+
+The save path backs this up where the key still omits the owner (an explicit
+key, or a live table not yet migrated): a NEW object's natural-key upsert first
+reads the row its conflict target would hit, bypassing read interceptors
+(`SmrtObject.guardNaturalKeyUpsert()`). A different owner on `tenant_id` or the
+declared tenant column — NULL counts as an owner — raises
+`TenantIsolationError.naturalKeyOwnedElsewhere()` (`TENANT_ISOLATION_VIOLATION`,
+never retried, never naming the other owner), also under `withSystemContext()`.
+A same-owner row is adopted by id, so `DO UPDATE SET` never rewrites a primary
+key (no `ON UPDATE CASCADE` churn). The read and upsert are separate
+statements; the tenant-inclusive unique is what makes a racing cross-tenant
+insert impossible. The junction batch path falls back to per-item saves when
+its conflict target omits an ownership column present in the row. Strict
+inserts (`_insertOnly`) check NULL-bearing keys the same way, because NULLs
+are distinct in the unique index on SQLite, DuckDB and PostgreSQL < 15.
+
 ### Every generated index name is length-guarded before it leaves a path (#2374)
 
 PostgreSQL truncates identifiers beyond 63 bytes; two generated names sharing

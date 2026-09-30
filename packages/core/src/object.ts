@@ -2331,7 +2331,19 @@ export class SmrtObject extends SmrtClass {
     const columns = prepared[0] ? Object.keys(prepared[0].data) : [];
     const conflict = prepared[0]?.conflictColumns ?? [];
     const identities = new Set<string>();
+    // The multi-row `DO UPDATE SET` cannot run save()'s natural-key identity
+    // guard, so a conflict target that omits an ownership column present in
+    // the row takes the per-item path, where a cross-tenant collision is
+    // refused instead of rewriting the other tenant's row.
+    const tenantColumn = ObjectRegistry.getTenantColumn(
+      first.getResolvedQualifiedName(),
+    );
+    const ownershipUncovered = [
+      'tenant_id',
+      ...(tenantColumn ? [tenantColumn] : []),
+    ].some((column) => columns.includes(column) && !conflict.includes(column));
     if (
+      ownershipUncovered ||
       columns.length * added.length > 900 ||
       prepared.some((entry) => {
         if (
@@ -2601,6 +2613,19 @@ export class SmrtObject extends SmrtClass {
     const conflictColumns = ObjectRegistry.getConflictColumns(
       this.getResolvedQualifiedName(),
     );
+    // An unset optional tenant field (`tenantId?: string`) serializes to
+    // nothing, but the tenant-owned conflict target leads with its column: a
+    // global row is keyed by an explicit NULL owner.
+    const ownershipColumn = ObjectRegistry.getOwnershipTenantColumn(
+      this.getResolvedQualifiedName(),
+    );
+    if (
+      ownershipColumn &&
+      conflictColumns.includes(ownershipColumn) &&
+      data[ownershipColumn] === undefined
+    ) {
+      data[ownershipColumn] = null;
+    }
     const derivedColumns = this.getPersistenceDerivedColumns();
     const registeredFields = ObjectRegistry.getFields(
       this.getResolvedQualifiedName(),
@@ -2821,111 +2846,130 @@ export class SmrtObject extends SmrtClass {
       // slip between the compare and upsert and be silently overwritten.
       const serializeEmbeddedWrite = isEmbeddedDatabase(this.db);
 
+      const naturalKeyUpsert =
+        writePlan.type === 'upsert' &&
+        revisionGuard === undefined &&
+        !(this._insertOnly && !this._persisted) &&
+        !(
+          upsertConflictColumns.length === 1 &&
+          upsertConflictColumns[0] === 'id'
+        );
+
       let revisionMatched = true;
-      await withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, () =>
-        ErrorUtils.withRetry(
-          async () => {
-            try {
-              if (
-                writePlan.type === 'updateById' ||
-                revisionGuard !== undefined
-              ) {
-                const { id: _id, ...updateData } = data;
-                // Embedded adapters have no cross-process writers in supported
-                // deployments, and DuckDB cannot type a TIMESTAMP predicate in
-                // this generic UPDATE API. Compare then upsert while holding
-                // the shared per-database embedded-write queue instead.
-                if (useEmbeddedRevisionFallback) {
-                  const current = await this.db.get(this.tableName, {
-                    id: data.id,
-                  });
+      await withEmbeddedWriteQueue(
+        this.db,
+        serializeEmbeddedWrite,
+        async () => {
+          if (naturalKeyUpsert) {
+            await this.guardNaturalKeyUpsert(data, upsertConflictColumns);
+          } else if (this._insertOnly && !this._persisted) {
+            await this.assertNullableNaturalKeyFree(data, conflictColumns);
+          }
+          return ErrorUtils.withRetry(
+            async () => {
+              try {
+                if (
+                  writePlan.type === 'updateById' ||
+                  revisionGuard !== undefined
+                ) {
+                  const { id: _id, ...updateData } = data;
+                  // Embedded adapters have no cross-process writers in supported
+                  // deployments, and DuckDB cannot type a TIMESTAMP predicate in
+                  // this generic UPDATE API. Compare then upsert while holding
+                  // the shared per-database embedded-write queue instead.
+                  if (useEmbeddedRevisionFallback) {
+                    const current = await this.db.get(this.tableName, {
+                      id: data.id,
+                    });
+                    if (
+                      !current ||
+                      !this.revisionsEqual(
+                        (current as Record<string, unknown>).updated_at,
+                        revisionGuard,
+                      )
+                    ) {
+                      revisionMatched = false;
+                      return;
+                    }
+                  }
+                  const updateResult = useEmbeddedRevisionFallback
+                    ? await this.db.upsert(this.tableName, ['id'], data)
+                    : await this.db.update(
+                        this.tableName,
+                        {
+                          id: data.id,
+                          ...(revisionGuard !== undefined
+                            ? this.revisionPredicate(revisionGuard)
+                            : {}),
+                        },
+                        updateData,
+                      );
                   if (
-                    !current ||
-                    !this.revisionsEqual(
-                      (current as Record<string, unknown>).updated_at,
-                      revisionGuard,
-                    )
+                    revisionGuard !== undefined &&
+                    updateResult.affected !== 1
                   ) {
                     revisionMatched = false;
                     return;
                   }
+                  if (writePlan.type === 'updateById') {
+                    this.setMetaType(writePlan.qualifiedMetaType);
+                  }
+                } else if (this._insertOnly && !this._persisted) {
+                  // Strict-insert mode (#1759): row identity is an explicit
+                  // client-supplied id, so never adopt an existing row via
+                  // conflict resolution — any PK/unique collision must raise.
+                  await this.db.insert(this.tableName, data);
+                } else {
+                  await this.db.upsert(
+                    this.tableName,
+                    upsertConflictColumns,
+                    data,
+                  );
                 }
-                const updateResult = useEmbeddedRevisionFallback
-                  ? await this.db.upsert(this.tableName, ['id'], data)
-                  : await this.db.update(
-                      this.tableName,
-                      {
-                        id: data.id,
-                        ...(revisionGuard !== undefined
-                          ? this.revisionPredicate(revisionGuard)
-                          : {}),
-                      },
-                      updateData,
+              } catch (error) {
+                // Detect specific database error types. `@happyvertical/sql` wraps
+                // every driver error as
+                // `DatabaseError('Failed to upsert record into table', { …,
+                // originalError })`, so the constraint wording never reaches
+                // `error.message`. Classify through the whole cause chain — driver
+                // codes first (SQLSTATE / SQLite result codes), dialect wording
+                // only as the DuckDB fallback — to restore the typed-error parity
+                // the docs promise (#1378, #2366).
+                if (error instanceof Error) {
+                  const classification = classifyDatabaseError(error);
+                  if (classification.kind === 'unique_violation') {
+                    const field = this.extractConstraintFieldFromChain(
+                      error,
+                      classification,
                     );
-                if (
-                  revisionGuard !== undefined &&
-                  updateResult.affected !== 1
-                ) {
-                  revisionMatched = false;
-                  return;
+                    throw ValidationError.uniqueConstraint(
+                      field,
+                      this.getFieldValue(field),
+                    );
+                  }
+                  if (classification.kind === 'not_null_violation') {
+                    const field = this.extractConstraintFieldFromChain(
+                      error,
+                      classification,
+                    );
+                    throw ValidationError.requiredField(field, className);
+                  }
+                  const operation =
+                    writePlan.type === 'updateById' ||
+                    revisionGuard !== undefined
+                      ? `UPDATE ${this.tableName} (id-targeted)`
+                      : this._insertOnly && !this._persisted
+                        ? `INSERT INTO ${this.tableName}`
+                        : `UPSERT INTO ${this.tableName}`;
+                  throw DatabaseError.queryFailed(operation, error);
                 }
-                if (writePlan.type === 'updateById') {
-                  this.setMetaType(writePlan.qualifiedMetaType);
-                }
-              } else if (this._insertOnly && !this._persisted) {
-                // Strict-insert mode (#1759): row identity is an explicit
-                // client-supplied id, so never adopt an existing row via
-                // conflict resolution — any PK/unique collision must raise.
-                await this.db.insert(this.tableName, data);
-              } else {
-                await this.db.upsert(
-                  this.tableName,
-                  upsertConflictColumns,
-                  data,
-                );
+                throw error;
               }
-            } catch (error) {
-              // Detect specific database error types. `@happyvertical/sql` wraps
-              // every driver error as
-              // `DatabaseError('Failed to upsert record into table', { …,
-              // originalError })`, so the constraint wording never reaches
-              // `error.message`. Classify through the whole cause chain — driver
-              // codes first (SQLSTATE / SQLite result codes), dialect wording
-              // only as the DuckDB fallback — to restore the typed-error parity
-              // the docs promise (#1378, #2366).
-              if (error instanceof Error) {
-                const classification = classifyDatabaseError(error);
-                if (classification.kind === 'unique_violation') {
-                  const field = this.extractConstraintFieldFromChain(
-                    error,
-                    classification,
-                  );
-                  throw ValidationError.uniqueConstraint(
-                    field,
-                    this.getFieldValue(field),
-                  );
-                }
-                if (classification.kind === 'not_null_violation') {
-                  const field = this.extractConstraintFieldFromChain(
-                    error,
-                    classification,
-                  );
-                  throw ValidationError.requiredField(field, className);
-                }
-                const operation =
-                  writePlan.type === 'updateById' || revisionGuard !== undefined
-                    ? `UPDATE ${this.tableName} (id-targeted)`
-                    : this._insertOnly && !this._persisted
-                      ? `INSERT INTO ${this.tableName}`
-                      : `UPSERT INTO ${this.tableName}`;
-                throw DatabaseError.queryFailed(operation, error);
-              }
-              throw error;
-            }
-          },
-          3,
-          500,
-        ),
+            },
+            3,
+            500,
+          );
+        },
       );
 
       if (!revisionMatched) {
@@ -3139,6 +3183,159 @@ export class SmrtObject extends SmrtClass {
         : Number.NEGATIVE_INFINITY;
     const nextRevisionTime = Math.max(Date.now(), revisionFloor + 1);
     return new Date(nextRevisionTime);
+  }
+
+  /**
+   * Read the row a natural-key write would hit, directly (no read
+   * interceptors), retrying only transient failures like the write itself.
+   */
+  private async readNaturalKeyRow(
+    filter: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    return ErrorUtils.withRetry(
+      async () => {
+        try {
+          return await this.getCanonicalPersistedRow(filter);
+        } catch (error) {
+          if (error instanceof SmrtError) throw error;
+          throw DatabaseError.queryFailed(
+            `get(${this.tableName}, natural-key identity)`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
+      },
+      3,
+      500,
+    );
+  }
+
+  /**
+   * Strict inserts (`_insertOnly`, #1759) rely on the unique conflict index to
+   * reject a natural-key collision. A NULL in that key (a global row of a
+   * tenant-owned table, whose key leads with `tenant_id`) is distinct from
+   * every other NULL on SQLite, DuckDB and PostgreSQL before 15, so the index
+   * admits the duplicate the upsert path would have deduplicated. Check with
+   * the same `IS NULL` match the null-aware upsert uses and raise the unique
+   * violation the index would have.
+   */
+  private async assertNullableNaturalKeyFree(
+    data: Record<string, unknown>,
+    conflictColumns: string[],
+  ): Promise<void> {
+    if (
+      conflictColumns.length === 0 ||
+      (conflictColumns.length === 1 && conflictColumns[0] === 'id') ||
+      !conflictColumns.every((column) => Object.hasOwn(data, column)) ||
+      !conflictColumns.some((column) => data[column] == null)
+    ) {
+      return;
+    }
+    const filter: Record<string, unknown> = {};
+    for (const column of conflictColumns) filter[column] = data[column] ?? null;
+    const existing = await this.readNaturalKeyRow(filter);
+    if (existing && existing.id !== data.id) {
+      const column =
+        conflictColumns.find((name) => data[name] != null) ??
+        conflictColumns[0];
+      throw ValidationError.uniqueConstraint(column, data[column]);
+    }
+  }
+
+  /**
+   * Natural-key upsert identity guard.
+   *
+   * A NEW object upserts on its natural key (`getConflictColumns()`), and the
+   * SDK's `ON CONFLICT (…) DO UPDATE SET` rewrites EVERY column of the matched
+   * row — including `id` and the tenant column. Two failure modes followed:
+   *
+   * - **Cross-tenant takeover.** When the conflict target omits the tenant
+   *   column (an explicit key without it, or a live table still carrying a
+   *   global `(slug, context)` unique), tenant B's save of a slug tenant A
+   *   already owns matched A's row and rewrote its `id` and `tenant_id`; with
+   *   `ON UPDATE CASCADE` A's children followed it into tenant B. The tenancy
+   *   interceptor cannot prevent this: it filters B's LOOKUP, so B never sees
+   *   A's row and never adopts its id.
+   * - **Primary-key churn.** A fresh instance saved over an existing same-owner
+   *   row replaced that row's primary key with the instance's new UUID.
+   *
+   * Before the upsert this reads the row the conflict target would match —
+   * directly, bypassing read interceptors, because the collision is a
+   * storage fact whatever the caller may read. A row with a different owner
+   * on any ownership column (`tenant_id` and the declared tenant column) is
+   * refused with {@link TenantIsolationError} (`TENANT_ISOLATION_VIOLATION`,
+   * never retried) — this holds under `withSystemContext()` too, and a NULL
+   * owner is an owner: a tenant save never adopts a global row and a global
+   * save never adopts a tenant's row. A same-owner row is adopted: its id
+   * replaces the instance's, so `DO UPDATE` leaves the primary key unchanged.
+   *
+   * The read and the upsert are not one statement, so a conflicting insert
+   * that lands between them is still resolved by the database's unique key;
+   * a tenant-inclusive unique (the default for tenant-owned tables) is what
+   * makes cross-tenant collisions impossible rather than detected.
+   */
+  private async guardNaturalKeyUpsert(
+    data: Record<string, unknown>,
+    conflictColumns: string[],
+  ): Promise<void> {
+    if (
+      conflictColumns.length === 0 ||
+      !conflictColumns.every((column) => Object.hasOwn(data, column))
+    ) {
+      return;
+    }
+    const conflictFilter: Record<string, unknown> = {};
+    for (const column of conflictColumns) {
+      const value = data[column];
+      conflictFilter[column] = value === undefined ? null : value;
+    }
+
+    const found = await this.readNaturalKeyRow(conflictFilter);
+    if (!found) return;
+    const existing = found;
+
+    const qualifiedName = this.getResolvedQualifiedName();
+    const ownershipColumns = new Set<string>(['tenant_id']);
+    const declared = ObjectRegistry.getTenantColumn(qualifiedName);
+    if (declared) ownershipColumns.add(declared);
+    for (const [name, field] of ObjectRegistry.getFields(qualifiedName)) {
+      if (
+        field.__tenancy?.isTenantIdField ||
+        field._meta?.__tenancy?.isTenantIdField
+      ) {
+        ownershipColumns.add(toSnakeCase(name));
+      }
+    }
+    const normalizeOwner = (value: unknown): string | null => {
+      if (value === null || value === undefined || value === '') return null;
+      return String(value).trim().toLowerCase();
+    };
+    const differing = [...ownershipColumns].filter(
+      (column) =>
+        Object.hasOwn(data, column) &&
+        Object.hasOwn(existing, column) &&
+        normalizeOwner(data[column]) !== normalizeOwner(existing[column]),
+    );
+    if (differing.length > 0) {
+      const ownTenant = data[differing[0]];
+      throw TenantIsolationError.naturalKeyOwnedElsewhere({
+        className: this.getResolvedClassName(),
+        tableName: this.tableName,
+        conflictColumns,
+        conflictValues: conflictFilter,
+        ownershipColumns: differing,
+        tenantId: typeof ownTenant === 'string' ? ownTenant : null,
+      });
+    }
+
+    const existingId = existing.id;
+    if (
+      typeof existingId === 'string' &&
+      existingId !== '' &&
+      existingId !== data.id
+    ) {
+      data.id = existingId;
+      this.id = existingId;
+    }
   }
 
   /**
