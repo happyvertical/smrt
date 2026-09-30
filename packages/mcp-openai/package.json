@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-mcp-openai",
-  "version": "0.51.36",
+  "version": "0.51.37",
   "description": "Optional OpenAI navigation and settings for authorized SMRT MCP Apps",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,6 +14,20 @@
       "types": "./dist/client.d.ts",
       "browser": "./dist/client.js",
       "import": "./dist/client.js"
+    },
+    "./context": {
+      "types": "./dist/context.d.ts",
+      "browser": "./dist/context.js",
+      "import": "./dist/context.js"
+    },
+    "./messages": {
+      "types": "./dist/messages.d.ts",
+      "browser": "./dist/messages.js",
+      "import": "./dist/messages.js"
+    },
+    "./mentions": {
+      "types": "./dist/mentions.d.ts",
+      "import": "./dist/mentions.js"
     },
     "./files": {
       "types": "./dist/files.d.ts",

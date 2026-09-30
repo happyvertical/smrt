@@ -260,3 +260,9 @@ runtime-template API accepts `toolTargets`; omitting it retains the legacy
 `object_action` convention for existing direct callers. Supply explicit targets
 for canonicalized names or class names containing underscores. This contract
 does not change CLI, REST, or WebMCP identifiers.
+
+`MCPGenerator.getToolIdentity(tool)` exposes the generator-validated original
+class, action, and raw generated name to in-process catalog composers. App MCP
+uses it for class allow-lists, tenant checks, and compatible workflow guards;
+those consumers must not reverse protocol aliases. The alias remains the sole
+wire tool name and is still the key for public patterns and generic tool policy.

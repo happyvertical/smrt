@@ -24,6 +24,7 @@ import type {
   MCPConfig,
   MCPResponse,
   MCPTool,
+  MCPToolIdentity,
 } from '@happyvertical/smrt-core/generators/mcp';
 import {
   MCP_STABLE_CATALOG_TTL_MS,
@@ -43,12 +44,7 @@ import {
   type McpResourcePolicy,
   prepareMcpAppResource,
 } from './resources.js';
-import {
-  classNamePrefixes,
-  compareMcpToolNames,
-  isAllowedCoreTool,
-  isPublicMcpTool,
-} from './tools.js';
+import { compareMcpToolNames, isPublicMcpTool } from './tools.js';
 import {
   createMcpWorkflowTool,
   type McpWorkflowTool,
@@ -274,10 +270,8 @@ function configuredToolListCacheHint(
   };
 }
 
-function isTenantScopedTool(tool: MCPTool): boolean {
-  const separator = tool.name.indexOf('_');
-  if (separator <= 0) return false;
-  const objectName = tool.name.slice(0, separator).toLowerCase();
+function isTenantScopedTool(identity: MCPToolIdentity): boolean {
+  const objectName = identity.objectName.toLowerCase();
   for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
     const name = classInfo.name || key;
     if (name.toLowerCase() === objectName) {
@@ -318,7 +312,9 @@ export function createMcpAppServer(
       throw new TypeError('Duplicate MCP resource URI.');
     resources.set(resource.descriptor.uri, resource);
   }
-  const allowedPrefixes = classNamePrefixes(options.allowedClassNames);
+  const allowedClassNames = new Set(
+    options.allowedClassNames.map((name) => name.toLowerCase()),
+  );
   const getPublicPatterns =
     options.publicToolPatterns ?? ((): readonly string[] => []);
   const toolPolicy = options.toolPolicy;
@@ -396,19 +392,28 @@ export function createMcpAppServer(
     return input.user ?? null;
   }
 
-  async function catalogTools(): Promise<MCPTool[]> {
-    const coreTools = (await makeGenerator().generateTools()).filter((tool) =>
-      isAllowedCoreTool(tool.name.toLowerCase(), allowedPrefixes),
-    );
-    const names = new Set(coreTools.map((tool) => tool.name));
+  async function catalogTools(): Promise<
+    Array<{ tool: MCPTool; identity?: MCPToolIdentity }>
+  > {
+    // Identity is owned by the exact generator that produced each descriptor.
+    const generator = makeGenerator();
+    const coreTools = (await generator.generateTools())
+      .map((tool) => ({ tool, identity: generator.getToolIdentity(tool) }))
+      .filter(({ identity }) =>
+        allowedClassNames.has(identity.objectName.toLowerCase()),
+      );
+    const names = new Set(coreTools.map(({ tool }) => tool.name));
     for (const workflowTool of workflowTools) {
       if (names.has(workflowTool.tool.name)) {
         throw new Error(`Duplicate MCP tool name: ${workflowTool.tool.name}`);
       }
       names.add(workflowTool.tool.name);
     }
-    const allTools = [...coreTools, ...workflowTools.map(({ tool }) => tool)];
-    for (const tool of allTools) {
+    const allTools = [
+      ...coreTools,
+      ...workflowTools.map(({ tool }) => ({ tool })),
+    ];
+    for (const { tool } of allTools) {
       const ui = tool._meta?.ui as { resourceUri?: unknown } | undefined;
       if (
         ui?.resourceUri !== undefined &&
@@ -418,8 +423,24 @@ export function createMcpAppServer(
       }
     }
     return allTools.sort((left, right) =>
-      compareMcpToolNames(left.name, right.name),
+      compareMcpToolNames(left.tool.name, right.tool.name),
     );
+  }
+
+  function runWorkflowAssertions(
+    tool: MCPTool,
+    identity: MCPToolIdentity | undefined,
+    args: Record<string, unknown>,
+    principal: McpAppPrincipal | null,
+  ): void {
+    const keys =
+      identity && identity.originalName !== tool.name
+        ? [tool.name, identity.originalName]
+        : [tool.name];
+    for (const key of keys) {
+      const assertion = workflowAssertions[key];
+      if (assertion) assertion(args, userForGenerator(principal) ?? null);
+    }
   }
 
   function passesBasePolicy(
@@ -452,12 +473,12 @@ export function createMcpAppServer(
     // dynamic source such as an environment-backed configuration.
     const publicPatterns = principal ? undefined : getPublicPatterns();
     const visible = await Promise.all(
-      tools.map(async (tool) => {
+      tools.map(async ({ tool }) => {
         if (!passesBasePolicy(tool, principal, publicPatterns)) return false;
         return passesToolPolicy(tool, principal);
       }),
     );
-    return tools.filter((_, index) => visible[index]);
+    return tools.filter((_, index) => visible[index]).map(({ tool }) => tool);
   }
 
   async function authorizedResource(
@@ -472,14 +493,14 @@ export function createMcpAppServer(
       return undefined;
     const tools = await catalogTools();
     const associated = tools.filter(
-      (tool) =>
+      ({ tool }) =>
         (tool._meta?.ui as { resourceUri?: string } | undefined)
           ?.resourceUri === uri,
     );
     const publicPatterns = principal ? undefined : getPublicPatterns();
     // A resource shared by several tools requires access to every associated
     // operation. UI visibility never grants authority to otherwise hidden tools.
-    for (const tool of associated) {
+    for (const { tool } of associated) {
       if (
         !passesBasePolicy(tool, principal, publicPatterns) ||
         !(await passesToolPolicy(tool, principal))
@@ -541,8 +562,10 @@ export function createMcpAppServer(
     const isSafePublicCatalog =
       !toolPolicy &&
       tools.every(
-        (tool) =>
-          isPublicMcpTool(tool, publicPatterns) && !isTenantScopedTool(tool),
+        ({ tool, identity }) =>
+          isPublicMcpTool(tool, publicPatterns) &&
+          identity !== undefined &&
+          !isTenantScopedTool(identity),
       );
 
     return isSafePublicCatalog
@@ -558,8 +581,11 @@ export function createMcpAppServer(
     const args = input.arguments ?? {};
     const principal = principalForCall(input);
     const tools = await catalogTools();
-    const tool = tools.find((candidate) => candidate.name === input.name);
-    if (!tool) throw new McpAccessError(404, 'Unknown MCP tool.');
+    const resolved = tools.find(
+      (candidate) => candidate.tool.name === input.name,
+    );
+    if (!resolved) throw new McpAccessError(404, 'Unknown MCP tool.');
+    const { tool, identity } = resolved;
     const publicPatterns = principal ? undefined : getPublicPatterns();
     if (!passesBasePolicy(tool, principal, publicPatterns)) {
       throw new McpAccessError(
@@ -573,8 +599,7 @@ export function createMcpAppServer(
         retryable: false,
       });
     }
-    const assertion = workflowAssertions[input.name];
-    if (assertion) assertion(args, userForGenerator(principal) ?? null);
+    runWorkflowAssertions(tool, identity, args, principal);
     return { args, principal, tool };
   }
 
@@ -582,7 +607,18 @@ export function createMcpAppServer(
     const { args, principal } = await authorizeCall(input);
     const workflowTool = workflowToolsByName.get(input.name);
     if (workflowTool) {
-      return workflowTool.execute({ arguments: args, principal });
+      try {
+        return await workflowTool.execute({ arguments: args, principal });
+      } catch (error) {
+        if (error instanceof McpAccessError) throw error;
+        // Handler exceptions may contain credentials or application records.
+        const message = 'Workflow execution failed.';
+        return {
+          isError: true,
+          content: [{ type: 'text', text: message }],
+          structuredContent: { error: { message } },
+        };
+      }
     }
     return makeGenerator(principal).handleToolCall({
       method: 'tools/call',
@@ -593,7 +629,7 @@ export function createMcpAppServer(
   async function hasTaskSupport(): Promise<boolean> {
     const tools = await catalogTools();
     const generator = makeGenerator();
-    for (const tool of tools) {
+    for (const { tool } of tools) {
       if (workflowToolsByName.has(tool.name)) continue;
       if (await generator.supportsTaskTool(tool.name)) return true;
     }
@@ -603,7 +639,7 @@ export function createMcpAppServer(
   async function isTaskTool(name: string): Promise<boolean> {
     if (workflowToolsByName.has(name)) return false;
     const tools = await catalogTools();
-    if (!tools.some((tool) => tool.name === name)) return false;
+    if (!tools.some(({ tool }) => tool.name === name)) return false;
     return makeGenerator().supportsTaskTool(name);
   }
 
