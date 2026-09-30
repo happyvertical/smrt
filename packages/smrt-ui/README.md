@@ -299,6 +299,9 @@ string/number/boolean, a `valueSchema` so adapters can describe it:
 Call `recordControlUserEdit(context, controlId, subject)` from the
 composite's own user-event handlers so a staged proposal goes stale when the
 person edits over it (native inputs bubble their events to the Form instead).
+`focusControl`, `revealControl`, `highlightControl`, and `emitControlChange`
+are the same DOM helpers the built-in primitives use for their `focus`,
+`reveal`, and `highlight` handles.
 
 `controlProposalInputSchema(registry, formId)` and
 `stageControlProposals(registry, formId, values)` are the transport-neutral

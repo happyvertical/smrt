@@ -15,6 +15,12 @@
 export { default as Checkbox } from './Checkbox.svelte';
 export { default as Combobox } from './Combobox.svelte';
 export {
+  emitControlChange,
+  focusControl,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
+export {
   type ControlBatchResult,
   type ControlCapability,
   type ControlCommand,
