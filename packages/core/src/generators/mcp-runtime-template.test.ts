@@ -74,6 +74,28 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     );
   });
 
+  it('binds the task store to the same tenant as task creation (#3211)', () => {
+    for (const tenantScopedObjects of [[], ['report']]) {
+      const source = generateRuntimeBootstrap({
+        tools: [],
+        tenantScopedObjects,
+        taskActions: {
+          report_generate: {
+            objectName: 'Report',
+            objectType: '@test/reports:Report',
+          },
+        },
+      });
+      const tenant = tenantScopedObjects.length
+        ? 'MCP_TENANT_ID ?? null'
+        : 'null';
+      expect(source).toContain(
+        `ownerId: process.env.SMRT_MCP_TENANT_ID || null, tenantId: ${tenant}`,
+      );
+      expect(source).toContain(`tenantId: ${tenant},`);
+    }
+  });
+
   it('emits the Tasks extension only for eligible generated actions', () => {
     const disabled = generateRuntimeBootstrap({ tools: [], taskActions: {} });
     const enabled = generateRuntimeBootstrap({

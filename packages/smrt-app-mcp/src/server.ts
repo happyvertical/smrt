@@ -340,7 +340,10 @@ export function createMcpAppServer(
     if (!db) {
       throw new Error('MCP Tasks requires smrtOptions() to provide a database');
     }
-    return McpTaskStore.create(db, { ownerId: taskOwnerIdFor(principal) });
+    return McpTaskStore.create(db, {
+      ownerId: taskOwnerIdFor(principal),
+      tenantId: principal.tenantId ?? null,
+    });
   }
 
   function makeGenerator(

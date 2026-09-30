@@ -229,3 +229,73 @@ the same queue without duplicate-claiming a pending row.
 - `@happyvertical/logger` -- structured logging
 - `@happyvertical/utils` -- ID generation utilities
 - Peer (optional): `@happyvertical/smrt-svelte`, `svelte`
+
+### Restartable MCP input
+
+For a workflow that must survive process restart, create the task with
+`continuation: { recordId, revision, inputKey }`. These are immutable references
+to an existing application review/action record, not approval or authority.
+Create the store with both `ownerId` and `tenantId`; task creation must match
+that active tenant. The application adapter must derive these values from its
+verified principal, never tool arguments.
+
+Configure `TaskRunner.authorizeMcpTask` to resolve live grants and validate the
+bound actor/tenant against the owning record. It is mandatory for this new path
+and fails closed if absent or unavailable. It runs before each invocation;
+`context.task.assertAuthorized()` repeats it and checks worker ownership before
+apply. A permission snapshot must not be persisted in the job.
+
+`context.task.requestContinuation(binding, inputDescriptor)` stores one input
+round in the existing job row and suspends execution, releasing the worker.
+Waiting rows are not claimable until `updateTask()` atomically stores the first
+complete answer. A new worker starts the method from its beginning and retrieves
+the saved answer. Calls before this seam must be read-only or use the owning
+`runOnce`/action idempotency contract. The binding cannot change between rounds;
+use a new owning action/task for another review revision. JSON input is bounded
+to 64 KiB. Unknown response keys are ignored, incomplete responses do not wake
+the job, and repeated answers cannot overwrite the first accepted response.
+
+`getContinuation(taskId)` exposes the waiting descriptor only through the same
+actor/tenant-scoped store. Use it in an explicitly declared authorized workflow
+tool or application form. It adds no fields to MCP `tasks/get`. The stateless
+HTTP adapter retains no callback; absent elicitation, offer the application's
+review URL/form. OpenAI MRTR is an optional protocol adapter responsibility and
+is not implemented by this job API. The legacy `requestInput()` remains a
+running-handler wait bounded by the job timeout and is not restartable.
+
+Resumed tasks do not automatically retry errors or unknown external outcomes.
+Reconcile those through the owning action state's durable reservation/evidence
+API; never blindly resubmit. Cancellation guards subsequent cooperative work
+and terminal writes, but cannot retract an external side effect already sent.
+The owning apply transaction must revalidate immutable review/revision and
+idempotency. A host answer never creates final human approval; Iolaus continues
+to use its dedicated human review page.
+
+Persistence checks: `pnpm --filter @happyvertical/smrt-jobs test` and
+`pnpm --filter @happyvertical/smrt-jobs test:postgres`. The continuation suite
+also runs against a managed PostgreSQL database with:
+
+```sh
+node scripts/run-with-ci-postgres.mjs -- pnpm --filter @happyvertical/smrt-jobs test src/__tests__/mcp-continuation.optional.test.ts
+```
+
+Supply `CI_POSTGRES_BASE_URL` for a disposable test server; the wrapper creates
+and drops a synthetic database. Do not point destructive fixtures at user data.
+
+Generated stdio servers retain their existing trusted-local-process assumption:
+`SMRT_MCP_TENANT_ID` is a deployment scope and existing task owner namespace,
+not an authenticated human identity. The generated store now also passes the
+same active tenant used by task creation. Multi-user remote workflows require
+the verified application principal path and a live runner authorizer.
+
+The app integration exports `continueMcpWorkflow()` and
+`createMcpContinuationTool()` from `@happyvertical/smrt-app-mcp`.
+The first composes this job seam with an application's `applyReviewed` callback;
+that callback must invoke its owning immutable approval and idempotency API,
+not a raw mutation. The second declares a read-only workflow tool for a host
+without elicitation. Register that tool through the app server's existing
+`workflowTools` option. Supply a `storeFor(verifiedPrincipal)` bound to the same
+owner namespace and tenant used for task creation, and a live `authorize`
+callback. It returns text and structured form/review URL data; no iframe,
+subscription, or host-specific form implementation is required. Review URLs
+must use HTTPS, or HTTP on loopback for a local deployment, without credentials.
