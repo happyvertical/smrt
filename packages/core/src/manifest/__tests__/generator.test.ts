@@ -4,13 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MANIFEST_TIMESTAMP } from '../../scanner/types.js';
@@ -402,42 +396,6 @@ class Item extends SmrtObject {
   });
 
   describe('Output Generation', () => {
-    it('keeps an existing canonical manifest untouched when generating a test manifest (#3205)', async () => {
-      writeFileSync(
-        resolve(testFixturesDir, 'src', 'fixture.test.ts'),
-        `
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-
-@smrt()
-class Fixture extends SmrtObject {
-  name: string = '';
-}
-      `,
-      );
-      const canonicalPath = resolve(testFixturesDir, '.smrt', 'manifest.json');
-      mkdirSync(resolve(testFixturesDir, '.smrt'), { recursive: true });
-      writeFileSync(canonicalPath, '{"canonical":true}');
-      const builder = new ManifestBuilder();
-      const originalCwd = process.cwd();
-
-      try {
-        process.chdir(testFixturesDir);
-        await builder.generate({
-          include: ['src/**/*.ts'],
-          outputDir: '.smrt',
-          outputName: 'test-manifest.json',
-          generateTypeStub: false,
-        });
-
-        expect(
-          existsSync(resolve(testFixturesDir, '.smrt/test-manifest.json')),
-        ).toBe(true);
-        expect(readFileSync(canonicalPath, 'utf8')).toBe('{"canonical":true}');
-      } finally {
-        process.chdir(originalCwd);
-      }
-    });
-
     it('should write JSON manifest to specified location', async () => {
       writeFileSync(
         resolve(testFixturesDir, 'src', 'doc.ts'),

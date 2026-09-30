@@ -365,9 +365,8 @@ export type { FieldDefinition, MethodDefinition };
  * Load local test manifest from current package (synchronous)
  *
  * During test runs, packages can have manifests in two locations:
- * 1. .smrt/test-manifest.json - Vitest-plugin test scans
- * 2. src/manifest/test-manifest.json - package pretest scans
- * 3. canonical development and build manifests when no test scan exists
+ * 1. src/manifest/test-manifest.json - Domain packages during development
+ * 2. dist/manifest.json - Built packages (consuming apps like praeco)
  *
  * This function attempts to load the manifest from either location.
  *
@@ -381,11 +380,10 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     return cached;
   }
 
-  // Test manifests must take priority over the canonical artifact pair:
-  // the canonical development manifest is paired with domain knowledge and
-  // intentionally excludes inline test fixtures (#3205).
+  // Use ManifestManager for unified local loading
+  // This checks: .smrt/manifest.json -> dist/manifest.json
   const manager = new ManifestManager(process.cwd());
-  const manifest = manager.loadForTest();
+  const manifest = manager.loadLocal();
 
   // Fallback location: src/manifest/test-manifest.json
   // This is still used by smrt-core and other packages that generate test manifests here

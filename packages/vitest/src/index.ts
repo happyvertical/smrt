@@ -5,8 +5,8 @@
  * This solves Issue #583 where cross-package integration tests fail because
  * external package classes aren't registered in the test manifest.
  *
- * Uses ManifestManager for test-manifest loading. Test scans stay separate
- * from the canonical .smrt/manifest.json + knowledge artifact pair.
+ * Uses ManifestManager for unified manifest loading, which properly handles
+ * the manifest priority order: .smrt/manifest.json (test) -> dist/manifest.json (production)
  *
  * @example
  * ```typescript
@@ -908,7 +908,8 @@ async function loadAndRegisterManifest(
       return false;
     }
 
-    // Dependencies intentionally prefer their canonical published manifest.
+    // Use ManifestManager to load manifest with proper priority
+    // (.smrt/manifest.json -> dist/manifest.json)
     const manager = new ManifestManager(packageRoot);
     const manifest = manager.loadLocal();
 
@@ -1031,7 +1032,7 @@ async function loadAndRegisterLocalManifest(
     const { ManifestManager } = await importSmrtCoreManifestModule();
 
     const manager = new ManifestManager(root);
-    const manifest = manager.loadForTest();
+    const manifest = manager.loadLocal();
 
     if (!manifest) {
       if (verbose) {
@@ -1106,10 +1107,9 @@ async function generateLocalManifest(
       includePrivateMethods: false,
       includeStaticMethods: true,
 
-      // Output configuration. Test manifests must not overwrite the canonical
-      // .smrt/manifest.json, whose paired knowledge artifact is build-owned.
+      // Output configuration - write to .smrt directory (ManifestManager default)
       outputDir: '.smrt',
-      outputName: 'test-manifest.json',
+      outputName: 'manifest.json',
       generateTypeStub: false,
 
       // Metadata
@@ -1446,7 +1446,7 @@ export function smrtVitestPlugin(
       try {
         const { ManifestManager } = await importSmrtCoreManifestModule();
         const manager = new ManifestManager(root);
-        const localManifest = manager.loadForTest();
+        const localManifest = manager.loadLocal();
 
         if (localManifest) {
           console.log(

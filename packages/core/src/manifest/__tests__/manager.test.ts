@@ -35,26 +35,6 @@ describe('ManifestManager', () => {
       expect(manager.getOutputPath('build')).toBe(
         join(projectRoot, 'dist/manifest.json'),
       );
-      expect(manager.getTestOutputPath()).toBe(
-        join(projectRoot, '.smrt/test-manifest.json'),
-      );
-    });
-  });
-
-  describe('loadForTest', () => {
-    it('prefers the isolated test manifest over the canonical artifact pair', () => {
-      const testPath = join(projectRoot, '.smrt/test-manifest.json');
-      const canonicalPath = join(projectRoot, '.smrt/manifest.json');
-      const testManifest = { version: '1.0.0', objects: { fixture: {} } };
-
-      vi.mocked(fs.existsSync).mockImplementation(
-        (path) => path === testPath || path === canonicalPath,
-      );
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(testManifest));
-
-      expect(manager.loadForTest()).toEqual(testManifest);
-      expect(fs.readFileSync).toHaveBeenCalledWith(testPath, 'utf-8');
-      expect(fs.readFileSync).not.toHaveBeenCalledWith(canonicalPath, 'utf-8');
     });
   });
 

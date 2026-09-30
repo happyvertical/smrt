@@ -397,14 +397,8 @@ export class ManifestBuilder {
       options.stubName?.includes('test');
     const mode = isTest ? 'dev' : 'build';
 
-    // Test manifests include inline fixture classes and must stay separate
-    // from the canonical .smrt/manifest.json + smrt-knowledge.json pair.
-    // Writing them through ManifestManager previously selected the dev path
-    // and left its paired knowledge artifact stale (#3205).
-    const unifiedPath = isTest ? undefined : manager.getOutputPath(mode);
-    if (unifiedPath) {
-      manager.write(manifest, mode);
-    }
+    // 1. Always write to the unified location via ManifestManager
+    manager.write(manifest, mode);
 
     // 2. Legacy/Explicit Output (if requested or for stubs)
     const outputDir = options.outputDir || 'src/manifest';
@@ -415,7 +409,9 @@ export class ManifestBuilder {
 
     // Write JSON manifest to legacy location if different from unified path
     const manifestPath = resolve(outputDir, outputName);
-    if (!unifiedPath || resolve(manifestPath) !== resolve(unifiedPath)) {
+    const unifiedPath = manager.getOutputPath(mode);
+
+    if (resolve(manifestPath) !== resolve(unifiedPath)) {
       writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
     }
 
@@ -429,11 +425,7 @@ export class ManifestBuilder {
 
     const objectCount = Object.keys(manifest.objects).length;
     logger.info(`[smrt] ✅ Generated manifest with ${objectCount} object(s)`);
-    logger.debug(
-      unifiedPath
-        ? `[smrt]    Unified: ${unifiedPath}`
-        : `[smrt]    Test-only: ${manifestPath}`,
-    );
+    logger.debug(`[smrt]    Unified: ${unifiedPath}`);
   }
 
   /**
