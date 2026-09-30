@@ -180,7 +180,7 @@ export interface CreateMcpAppServerOptions {
    */
   workflowTools?: readonly McpWorkflowToolDefinition[];
   resources?: readonly McpAppResourceDefinition[];
-  /** Rechecked on discovery and every direct read; exceptions deny access. */
+  /** Required for private resources; rechecked on catalog/read, errors deny. */
   resourcePolicy?: McpResourcePolicy;
 }
 
@@ -364,7 +364,11 @@ export function createMcpAppServer(
     if (!db) {
       throw new Error('MCP Tasks requires smrtOptions() to provide a database');
     }
-    return McpTaskStore.create(db, { ownerId: taskOwnerIdFor(principal) });
+    return McpTaskStore.create(db, {
+      requireAuthorization: true,
+      ownerId: taskOwnerIdFor(principal),
+      tenantId: principal.tenantId ?? null,
+    });
   }
 
   function makeGenerator(
@@ -461,7 +465,11 @@ export function createMcpAppServer(
     principal: McpAppPrincipal | null,
   ) {
     const resource = resources.get(uri);
-    if (!resource || (!resource.public && !principal?.id)) return undefined;
+    if (
+      !resource ||
+      (!resource.public && (!principal?.id || !options.resourcePolicy))
+    )
+      return undefined;
     const tools = await catalogTools();
     const associated = tools.filter(
       (tool) =>

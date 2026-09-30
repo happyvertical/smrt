@@ -36,6 +36,7 @@ provider or auth implementation.
 | Behavior/invariant | Reachable trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/contract edge | Level/command |
 |---|---|---|---|---|---|---|---|
 | Verified gateway → optional discovery and call | SDK connects to actual JWT-protected HTTP MCP route | Valid issuer/audience/scope maps owner + active tenant; settings advertised and patch persists | Missing/expired/wrong-audience/insufficient-scope token; other subject/active tenant; revoked membership; forged settings tenant | Synthetic owner A tenant A; other actor/tenant/revoked denied; ambient browser user never authoritative | Existing SQLite settings fixture transaction, no new auth store | Node/loopback HTTP, public M2 auth + native SDK2026-07-28 factory | Integration / `pnpm --filter @happyvertical/smrt-mcp-openai test` |
+| Private UI resource policy | SDK reads entrypoint resource over HTTP | Trusted current owner, active tenant, view scope, exact resource URI | Null principal, other subject/tenant, missing scope, revoked membership | Live route principal and fixture membership | Resource policy uses the same fixture authority; no public default | Native SDK HTTP resource read rechecks each request | Integration / `pnpm --filter @happyvertical/smrt-mcp-openai test` |
 
 Dependency provenance and exact heads belong in the review packet; root validation
 and independent high-risk reviews remain coordinator-owned.

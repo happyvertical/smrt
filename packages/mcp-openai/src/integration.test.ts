@@ -214,6 +214,12 @@ function fixture() {
         },
       },
     ],
+    resourcePolicy: ({ principal, resource }) =>
+      !revoked &&
+      principal?.id === owner.id &&
+      principal.tenantId === owner.tenantId &&
+      principal.scopes?.includes('view') === true &&
+      resource.uri === 'ui://synthetic/v1/view',
     toolPolicy: ({ principal, tool }) =>
       !revoked &&
       principal?.id === owner.id &&
@@ -480,6 +486,22 @@ describe('existing principal workflow authority', () => {
       expect(
         await client.callTool({ name: 'settings_read', arguments: {} }),
       ).toHaveProperty('structuredContent.values.units', 'mm');
+      for (const denied of [
+        null,
+        { ...owner, id: 'other' },
+        { ...owner, tenantId: 'other' },
+        { ...owner, scopes: ['settings'] },
+      ]) {
+        principal = denied;
+        await expect(
+          client.readResource({ uri: 'ui://synthetic/v1/view' }),
+        ).rejects.toThrow();
+      }
+      principal = owner;
+      f.revoke();
+      await expect(
+        client.readResource({ uri: 'ui://synthetic/v1/view' }),
+      ).rejects.toThrow();
       principal = { ...owner, tenantId: 'other' };
       // The SDK may cache private descriptors; every call still reauthorizes.
       expect(await f.server.listTools({ principal })).toEqual([]);
