@@ -32,10 +32,14 @@ type LiveIndexLike = {
 /** Live table shape this detector reads. */
 export type LiveTableLike = { indexes?: LiveIndexLike[] } | null | undefined;
 
-/** One tenant natural-key finding, shaped as a `db:status` precondition. */
+/**
+ * One tenant natural-key finding, shaped as a `db:status` precondition.
+ * `global_unique` is an `error` (db:status exits 1): the release that keys
+ * the table by tenant needs its migration, and a rollout must not miss it.
+ */
 export interface TenantNaturalKeyFinding {
   name: string;
-  status: 'warning';
+  status: 'warning' | 'error';
   message: string;
   recommendation: string;
   details: {
@@ -97,7 +101,7 @@ export function checkTenantNaturalKeyUniques(
     if (global) {
       findings.push({
         name: `${tableName}.${global.name ?? '(unnamed unique)'}`,
-        status: 'warning',
+        status: 'error',
         message:
           `Tenant-owned table "${tableName}" (${className}) has a unique index on ` +
           `(${naturalKey.join(', ')}) shared by every tenant, but the model upserts on ${target}. ` +
@@ -107,7 +111,8 @@ export function checkTenantNaturalKeyUniques(
         recommendation:
           'Run `smrt db:migrate`: it swaps the index in place under the same name for the ' +
           'tenant-inclusive key (a superset, so it cannot fail on existing rows). Deploy the ' +
-          'migration together with the release that carries the new upsert target.',
+          'migration together with the release that carries the new upsert target: old code ' +
+          'upserts on the global key and new code on the tenant-led one, and each needs its own index.',
         details: {
           className,
           tableName,

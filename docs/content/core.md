@@ -2245,6 +2245,22 @@ const blog2 = await collection.create({ slug: 'intro', context: '/blog' });
 // throws ValidationError, code 'VALIDATION_UNIQUE_CONSTRAINT'
 ```
 
+**Tenant-owned tables**: a class with a tenancy declaration or a `tenantId`
+field keys on `(tenant_id, slug, context)` instead. A slug is then unique only
+within one owner: two tenants, or a tenant and the global (NULL-tenant) scope,
+may each hold `intro` in `/blog`. A slug-only lookup that is not tenant-filtered
+(`withSystemContext()`, tenancy disabled, a hand-written query) can match
+several rows and `get({ slug })` returns whichever comes first, so scope it:
+run it inside `withTenant(...)`, or put `tenantId` (or `tenantId: null` for the
+global row) in the `where`, and treat more than one match as ambiguous.
+
+**Upgrading an existing database**: deploy the release that introduced the
+tenant-led key and run `smrt db:migrate` together. Old code upserts on
+`ON CONFLICT (slug, context)` and new code on
+`ON CONFLICT (tenant_id, slug, context)`; each needs its own unique index.
+Until the migration runs, `smrt db:status` reports the table as an error and
+exits 1.
+
 **Detecting it**: match the typed error, not the driver text — the adapter
 wraps the driver error, so the constraint wording is not on `error.message`.
 

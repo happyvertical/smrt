@@ -69,7 +69,7 @@ describe('checkTenantNaturalKeyUniques', () => {
     ]);
   });
 
-  it('warns when a tenant-owned table still has the global (slug, context) unique', () => {
+  it('fails (error precondition, exit 1) when a tenant-owned table still has the global (slug, context) unique', () => {
     const findings = forTables(
       checkTenantNaturalKeyUniques(
         live({
@@ -87,7 +87,7 @@ describe('checkTenantNaturalKeyUniques', () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({
       name: 'tnk_leagues.tnk_leagues_slug_context_idx',
-      status: 'warning',
+      status: 'error',
       details: {
         tableName: 'tnk_leagues',
         kind: 'global_unique',
