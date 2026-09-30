@@ -43,7 +43,7 @@ export default defineConfig({
           exclude: [],
         },
         resolveKnowledgeConfig: async () => ({
-          enabled: true,
+          enabled: process.env.SMRT_FIXTURE_KNOWLEDGE_ENABLED !== 'false',
           tags: ['producer-inline'],
         }),
         resolveKnowledgeAgentSurface: async () => agentSurface,
