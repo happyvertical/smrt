@@ -1,7 +1,7 @@
 /** Link tabs: a navigation row of URLs with overflow, badges, active-in-view. */
 import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import Tabs from '../Tabs.svelte';
 import { splitTabs } from '../tabs-overflow.js';
@@ -77,6 +77,48 @@ describe('Tabs with hrefs', () => {
       'href',
       '/c/1/review',
     );
+  });
+
+  it('a disabled link tab never fires onchange', async () => {
+    const onchange = vi.fn();
+    render(Tabs, {
+      props: {
+        tabs: [
+          { id: 'article', label: 'Article', href: '/c/1' },
+          {
+            id: 'locked',
+            label: 'Locked',
+            href: '/c/1/locked',
+            disabled: true,
+          },
+        ],
+        active: 'article',
+        onchange,
+        'aria-label': 'Content sections',
+      },
+    });
+    const locked = screen.getByText('Locked').closest('a') as HTMLElement;
+    await userEvent.click(locked);
+    expect(onchange).not.toHaveBeenCalled();
+  });
+
+  it('does not dot "More" for an empty-string badge, matching the tab itself', () => {
+    const { container } = render(Tabs, {
+      props: {
+        tabs: [
+          { id: 'a', label: 'A', href: '/a' },
+          { id: 'b', label: 'B', href: '/b' },
+          { id: 'c', label: 'C', href: '/c', badge: '' },
+        ],
+        active: 'a',
+        maxVisible: 2,
+        'aria-label': 'Sections',
+      },
+    });
+    const more = container.querySelector('details.tabs-more') as HTMLElement;
+    expect(more).not.toBeNull();
+    expect(more.querySelector('.tab-dot')).toBeNull();
+    expect(more.querySelector('.tab-badge')).toBeNull();
   });
 
   it('is axe-clean', async () => {

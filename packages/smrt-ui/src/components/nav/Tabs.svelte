@@ -68,9 +68,8 @@ const split = $derived(
     ? splitTabs(tabs, active, maxVisible)
     : { visible: tabs, overflow: [] as Tab[] },
 );
-const overflowHasBadge = $derived(
-  split.overflow.some((tab) => tab.badge !== undefined && tab.badge !== null),
-);
+// Same rule as the tab's own badge, so an empty badge dots neither.
+const overflowHasBadge = $derived(split.overflow.some((tab) => hasBadge(tab)));
 let moreMenu = $state<HTMLDetailsElement | null>(null);
 let linkRow = $state<HTMLElement | null>(null);
 
@@ -99,6 +98,9 @@ let tablistEl: HTMLElement | null = $state(null);
 const instanceId = $props.id();
 
 function handleClick(id: string) {
+  // A disabled tab (a link one has no href but is still clickable) never
+  // changes the active tab.
+  if (tabs.find((tab) => tab.id === id)?.disabled) return;
   if (id !== active) {
     onchange?.(id);
   }
@@ -157,7 +159,13 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     aria-current={tab.id === active ? 'page' : undefined}
     aria-disabled={tab.disabled ? 'true' : undefined}
     data-tab-id={tab.id}
-    onclick={() => handleClick(tab.id)}
+    onclick={(event) => {
+      if (tab.disabled) {
+        event.preventDefault();
+        return;
+      }
+      handleClick(tab.id);
+    }}
   >
     <span class="tab-label">{tab.label}</span>
     {#if tab.count !== undefined}
