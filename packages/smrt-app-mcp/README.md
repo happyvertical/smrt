@@ -2,7 +2,7 @@
 
 App-runtime MCP server scaffolding for s-m-r-t apps. Provides:
 
-- **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, toolListCache?, toolPolicy?, workflowAssertions? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
+- **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, toolListCache?, toolPolicy?, workflowAssertions?, workflowTools? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
 - **SvelteKit adapters** (`./sveltekit`) — `mountMcpRoute` mounts a modern
   2026-07-28 stateless Streamable HTTP MCP endpoint. The REST-shaped
   `mountMcpToolsRoute` / `mountMcpCallRoute` aliases remain available for one
@@ -43,6 +43,39 @@ export const mcpServer = createMcpAppServer({
   },
 });
 ```
+
+`workflowTools` composes explicitly declared application workflows into this
+same catalog. Every workflow must declare its canonical `effect`,
+`idempotent`, and `openWorld` values; title, icons, and a portable UI resource
+association are host presentation metadata only. The configured `toolPolicy`
+and `workflowAssertions` run for both discovery and direct calls before the
+workflow handler receives the trusted principal and arguments.
+Authored names must be lowercase snake_case strings of at most 64 characters;
+input and output schemas must both have object roots. Invalid declarations fail
+at server construction. Ordinary handler exceptions return a generic `isError`
+result with text and structured error data; internal exception details are not
+exposed. Intentional `McpAccessError` denials retain the transport's access-error
+contract.
+
+```ts
+workflowTools: [{
+  name: 'application_prepare',
+  description: 'Prepare an application for human review',
+  title: 'Prepare application',
+  inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  outputSchema: { type: 'object', properties: { prepared: { type: 'boolean' } } },
+  effect: 'write', idempotent: true, openWorld: false,
+  ui: { resourceUri: 'ui://application/prepare.html', visibility: ['app'] },
+  async execute({ arguments: args, principal }) {
+    return { content: [{ type: 'text', text: 'Prepared for review.' }], structuredContent: { prepared: true } };
+  },
+}],
+```
+
+The resulting descriptor preserves `_meta.ui.resourceUri` and optional
+`_meta.ui.visibility` through SDK-v2 `tools/list`, while ordinary clients retain the text and structured result.
+The resource implementation itself is staged separately; metadata neither
+loads a resource nor grants an application permission.
 
 ```ts
 // src/routes/api/mcp/+server.ts
@@ -127,3 +160,9 @@ unauthenticated for both discovery and calls. If an older mount supplies only
 `resolveAuthenticated: () => true` and no principal, discovery keeps its old
 boolean behavior while calls remain user-less as before; migrate that mount to
 `resolvePrincipal` for one identity across both routes.
+
+Generated tool allow-lists use the generator-owned original class identity, even
+when the advertised name is a canonical alias. Guards keyed by either the alias
+or original tool name run before both direct and task dispatch. Authored workflows
+retain their explicit names and effect policy; catalogs containing authored
+workflows keep private cache scope because they have no generated tenant identity.

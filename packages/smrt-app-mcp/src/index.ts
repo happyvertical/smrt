@@ -50,7 +50,15 @@ export {
 export {
   classNamePrefixes,
   isAllowedCoreTool,
+  isPublicMcpTool,
   isPublicToolName,
   isReadOnlyToolName,
   matchesToolPattern,
 } from './tools.js';
+export {
+  createMcpWorkflowTool,
+  type McpWorkflowTool,
+  type McpWorkflowToolContext,
+  type McpWorkflowToolDefinition,
+  type McpWorkflowToolVisibility,
+} from './workflow-tools.js';

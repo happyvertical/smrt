@@ -12,6 +12,8 @@ import { createMcpAppServer } from '../server.js';
 
 const generateToolsMock = vi.fn();
 const handleToolCallMock = vi.fn();
+const supportsTaskToolMock = vi.fn();
+const createTaskMock = vi.fn();
 
 vi.mock('@happyvertical/smrt-core/generators/mcp', () => {
   class MCPGenerator {
@@ -33,8 +35,30 @@ vi.mock('@happyvertical/smrt-core/generators/mcp', () => {
     async handleToolCall(request: unknown) {
       return handleToolCallMock(request);
     }
+    async supportsTaskTool(name: string) {
+      return supportsTaskToolMock(name);
+    }
+    async createTask(request: unknown) {
+      return createTaskMock(request);
+    }
   }
-  return { MCPGenerator, MCP_STABLE_CATALOG_TTL_MS: 86_400_000 };
+  return {
+    MCPGenerator,
+    MCP_STABLE_CATALOG_TTL_MS: 86_400_000,
+    assertMcpJsonSchemaSafety() {},
+    mcpToolAnnotationsFor(
+      effect: 'read' | 'write' | 'destructive',
+      idempotent: boolean,
+      openWorld: boolean,
+    ) {
+      return {
+        readOnlyHint: effect === 'read',
+        destructiveHint: effect === 'destructive',
+        idempotentHint: idempotent,
+        openWorldHint: openWorld,
+      };
+    },
+  };
 });
 
 function tool(
@@ -53,6 +77,8 @@ describe('createMcpAppServer', () => {
   beforeEach(() => {
     generateToolsMock.mockReset();
     handleToolCallMock.mockReset();
+    supportsTaskToolMock.mockReset();
+    createTaskMock.mockReset();
   });
 
   it('filters tools to the allow-listed class prefixes', async () => {
@@ -73,6 +99,236 @@ describe('createMcpAppServer', () => {
       'opportunity_create',
       'opportunity_list',
     ]);
+  });
+
+  it('composes an authorized workflow catalog with generated tools and preserves portable UI metadata', async () => {
+    generateToolsMock.mockResolvedValue([tool('application_get')]);
+    const execute = vi.fn(async ({ arguments: args, principal }) => ({
+      content: [{ type: 'text' as const, text: 'prepared' }],
+      structuredContent: { prepared: args.id, tenantId: principal?.tenantId },
+    }));
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['Application'],
+      workflowTools: [
+        {
+          name: 'application_prepare',
+          description: 'Prepare an application for review',
+          title: 'Prepare application',
+          icons: [{ src: 'https://example.test/icon.svg', theme: 'light' }],
+          ui: {
+            resourceUri: 'ui://application/prepare.html',
+            visibility: ['app'],
+          },
+          metadata: { 'example.extension': { enabled: true } },
+          inputSchema: {
+            type: 'object',
+            properties: { id: { type: 'string' } },
+          },
+          outputSchema: {
+            type: 'object',
+            properties: { prepared: { type: 'string' } },
+          },
+          effect: 'write',
+          idempotent: true,
+          openWorld: false,
+          execute,
+        },
+      ],
+      toolPolicy: ({ principal }) =>
+        principal?.id === 'owner-1' && principal.tenantId === 'tenant-a',
+    });
+
+    await expect(
+      server.listTools({ principal: { id: 'owner-1', tenantId: 'tenant-a' } }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'application_prepare',
+          annotations: {
+            readOnlyHint: false,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
+          _meta: {
+            'example.extension': { enabled: true },
+            ui: {
+              resourceUri: 'ui://application/prepare.html',
+              visibility: ['app'],
+            },
+          },
+        }),
+      ]),
+    );
+    await expect(
+      server.callTool({
+        name: 'application_prepare',
+        arguments: { id: 'application-1' },
+        principal: { id: 'owner-1', tenantId: 'tenant-a' },
+      }),
+    ).resolves.toMatchObject({
+      structuredContent: { prepared: 'application-1' },
+    });
+    expect(execute).toHaveBeenCalledWith({
+      arguments: { id: 'application-1' },
+      principal: { id: 'owner-1', tenantId: 'tenant-a' },
+    });
+  });
+
+  it('denies guessed workflow calls before their handler when actor or tenant policy rejects them', async () => {
+    generateToolsMock.mockResolvedValue([]);
+    const execute = vi.fn();
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: [],
+      workflowTools: [
+        {
+          name: 'application_submit',
+          description: 'Submit an application',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          effect: 'write',
+          idempotent: false,
+          openWorld: false,
+          execute,
+        },
+      ],
+      toolPolicy: ({ principal }) =>
+        principal?.id === 'owner-1' && principal.tenantId === 'tenant-a',
+    });
+
+    await expect(server.listTools({ principal: null })).resolves.toEqual([]);
+    await expect(
+      server.callTool({
+        name: 'application_submit',
+        principal: { id: 'owner-1', tenantId: 'tenant-b' },
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed and duplicate authored workflow descriptors', () => {
+    const options = {
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: [],
+    };
+    const workflow = {
+      name: 'application_prepare',
+      description: 'Prepare',
+      inputSchema: { type: 'object' },
+      outputSchema: { type: 'object' },
+      effect: 'read' as const,
+      idempotent: true,
+      openWorld: false,
+      execute: async () => ({
+        content: [{ type: 'text' as const, text: 'ok' }],
+      }),
+    };
+    expect(() =>
+      createMcpAppServer({ ...options, workflowTools: [workflow, workflow] }),
+    ).toThrow('Duplicate MCP workflow tool name');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [{ ...workflow, ui: { resourceUri: 'file:///secret' } }],
+      }),
+    ).toThrow('must be a credential-free ui: URI');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [
+          { ...workflow, metadata: { ui: { resourceUri: 'ui://bad' } } },
+        ],
+      }),
+    ).toThrow('metadata.ui is reserved');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [{ ...workflow, metadata: { value: 1n } }],
+      }),
+    ).toThrow('metadata value must be an object');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [
+          { ...workflow, ui: { visibility: ['app', 'unknown'] as never } },
+        ],
+      }),
+    ).toThrow('contains an unsupported value');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [{ ...workflow, ui: { visibility: ['app', 'app'] } }],
+      }),
+    ).toThrow('must not contain duplicates');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [{ ...workflow, ui: { visibility: 'app' as never } }],
+      }),
+    ).toThrow('must be a non-empty array');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [{ ...workflow, ui: {} }],
+      }),
+    ).toThrow('requires resourceUri or visibility metadata');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [
+          { ...workflow, ui: Object.create({ visibility: ['app'] }) },
+        ],
+      }),
+    ).toThrow('Workflow tool ui must be an object');
+  });
+
+  it('supports inert visibility-only metadata without retaining caller aliases', async () => {
+    generateToolsMock.mockResolvedValue([]);
+    const visibility: Array<'app' | 'model'> = ['app'];
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: [],
+      workflowTools: [
+        {
+          name: 'application_lookup',
+          description: 'Look up an application',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          effect: 'read',
+          idempotent: true,
+          openWorld: false,
+          execute: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+        },
+        {
+          name: 'application_mention',
+          description: 'Mention an application',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          effect: 'read',
+          idempotent: true,
+          openWorld: false,
+          ui: { visibility },
+          execute: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+        },
+      ],
+    });
+    visibility.push('model');
+
+    const tools = await server.listTools({ principal: { id: 'owner-1' } });
+    expect(
+      tools.find((tool) => tool.name === 'application_lookup'),
+    ).not.toHaveProperty('_meta');
+    expect(
+      tools.find((tool) => tool.name === 'application_mention'),
+    ).toMatchObject({
+      _meta: { ui: { visibility: ['app'] } },
+    });
   });
 
   it('keeps canonical aliases for an allowed original class discoverable and callable', async () => {
@@ -143,6 +399,73 @@ describe('createMcpAppServer', () => {
       'opportunity_get',
       'opportunity_list',
     ]);
+  });
+
+  it.each([
+    'write',
+    'destructive',
+  ] as const)('does not expose or execute a canonically %s workflow with a read-like name', async (effect) => {
+    generateToolsMock.mockResolvedValue([]);
+    const execute = vi.fn();
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: [],
+      publicToolPatterns: () => ['application_*'],
+      workflowTools: [
+        {
+          name: 'application_get',
+          description: 'Apply a mutation',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          effect,
+          idempotent: false,
+          openWorld: false,
+          execute,
+        },
+      ],
+    });
+
+    await expect(server.listTools({ principal: null })).resolves.toEqual([]);
+    await expect(
+      server.callTool({ name: 'application_get', principal: null }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('never treats an authored workflow alias as a generated task', async () => {
+    generateToolsMock.mockResolvedValue([]);
+    supportsTaskToolMock.mockResolvedValue(true);
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: [],
+      workflowTools: [
+        {
+          name: 'excludedprobe_slow',
+          description: 'Run the app workflow',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          effect: 'write',
+          idempotent: false,
+          openWorld: false,
+          execute: async () => ({ content: [] }),
+        },
+      ],
+    });
+
+    await expect(server.hasTaskSupport?.()).resolves.toBe(false);
+    await expect(server.isTaskTool?.('excludedprobe_slow')).resolves.toBe(
+      false,
+    );
+    await expect(
+      server.callTask?.({
+        name: 'excludedprobe_slow',
+        principal: { id: 'operator-1' },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(supportsTaskToolMock).not.toHaveBeenCalled();
+    expect(createTaskMock).not.toHaveBeenCalled();
   });
 
   it('applies one principal policy to unauthenticated, human, and scoped-service discovery', async () => {
