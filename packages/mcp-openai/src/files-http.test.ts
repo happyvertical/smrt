@@ -108,7 +108,13 @@ it('carries exact file entrypoint over native v2 HTTP and preserves per-request 
           file: { ...input.file, resourceUri: 'host-resource://guessed' },
         },
       }),
-    ).resolves.toMatchObject({
+    ).resolves.toEqual({
+      _meta: {
+        'io.modelcontextprotocol/serverInfo': {
+          name: 'synthetic-files',
+          version: '1',
+        },
+      },
       isError: true,
       content: [{ type: 'text', text: 'Workflow execution failed.' }],
       structuredContent: { error: { message: 'Workflow execution failed.' } },
@@ -120,7 +126,13 @@ it('carries exact file entrypoint over native v2 HTTP and preserves per-request 
           file: { ...input.file, resourceUri: 'file:///etc/passwd' },
         },
       }),
-    ).resolves.toMatchObject({
+    ).resolves.toEqual({
+      _meta: {
+        'io.modelcontextprotocol/serverInfo': {
+          name: 'synthetic-files',
+          version: '1',
+        },
+      },
       isError: true,
       content: [{ type: 'text', text: 'Workflow execution failed.' }],
       structuredContent: { error: { message: 'Workflow execution failed.' } },
