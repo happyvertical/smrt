@@ -1,11 +1,11 @@
 ---
-
-See the [MCP Apps integration standard](architecture/mcp-apps-integration.md) for portable embedded UI, optional OpenAI extensions, ownership and staged release gates.
 title: WebMCP integration model
 sidebar_position: 3
 ---
 
 # WebMCP integration model
+
+See the [MCP Apps integration standard](architecture/mcp-apps-integration.md) for portable embedded UI, optional OpenAI extensions, ownership and staged release gates.
 
 WebMCP is the browser-facing capability surface for an s-m-r-t application. A
 good integration composes narrowly scoped tools from four sources. The
