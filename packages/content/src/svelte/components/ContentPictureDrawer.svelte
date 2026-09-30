@@ -74,7 +74,10 @@ export interface Props {
   loading?: boolean;
   /** A plain-language load or upload problem, or null. */
   error?: string | null;
-  /** More pictures can be loaded with `onLoadMore`. */
+  /**
+   * More pictures can be loaded with `onLoadMore`: the drawer asks for them
+   * as the list scrolls near its end, or as keyboard focus nears the end.
+   */
   hasMore?: boolean;
   /** An upload is in progress. */
   uploading?: boolean;
@@ -128,6 +131,77 @@ let query = $state(hostQuery);
 let selectedIds = $state<string[]>([]);
 let fileInput = $state<HTMLInputElement | null>(null);
 let brokenPreviews = $state<Record<string, true>>({});
+let gridElement = $state<HTMLElement | null>(null);
+let moreSentinel = $state<HTMLElement | null>(null);
+/** Screen-reader news about loading more ("12 more pictures"). */
+let moreStatus = $state('');
+let countBeforeMore: number | null = null;
+
+/** How close to the end (in tiles) keyboard focus asks for more. */
+const MORE_FOCUS_TILES = 6;
+/** How far below the visible list (px) scrolling asks for more. */
+const MORE_SCROLL_MARGIN = 240;
+
+function requestMore() {
+  // One request at a time: wait for the host to answer (a new page, or
+  // its loading flag going back off) before asking again.
+  if (!hasMore || loading || !onLoadMore || countBeforeMore !== null) return;
+  countBeforeMore = pictures.length;
+  moreStatus = t(M['content.content_picture_drawer.loading_more']);
+  onLoadMore();
+}
+
+function sentinelNearView(): boolean {
+  if (!gridElement || !moreSentinel) return false;
+  const grid = gridElement.getBoundingClientRect();
+  const sentinel = moreSentinel.getBoundingClientRect();
+  return sentinel.top <= grid.bottom + MORE_SCROLL_MARGIN;
+}
+
+// Scrolling near the end of the list loads more.
+$effect(() => {
+  const root = gridElement;
+  const target = moreSentinel;
+  if (!root || !target || typeof IntersectionObserver === 'undefined') return;
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) requestMore();
+    },
+    { root, rootMargin: `0px 0px ${MORE_SCROLL_MARGIN}px 0px` },
+  );
+  observer.observe(target);
+  return () => observer.disconnect();
+});
+
+// After a page arrives: say how many came, and keep going while the list
+// is still too short to scroll (the observer only fires on a change).
+let wasLoading = false;
+$effect(() => {
+  const count = pictures.length;
+  if (loading) {
+    wasLoading = true;
+    return;
+  }
+  const answered = wasLoading || count !== countBeforeMore;
+  wasLoading = false;
+  if (countBeforeMore !== null && answered) {
+    const added = count - countBeforeMore;
+    countBeforeMore = null;
+    moreStatus =
+      added > 0
+        ? t(M['content.content_picture_drawer.more_loaded'], { count: added })
+        : '';
+  }
+  if (hasMore && sentinelNearView()) queueMicrotask(requestMore);
+});
+
+// Keyboard and screen-reader users: focus near the end loads more.
+function handleGridFocus(event: FocusEvent) {
+  const tile = (event.target as Element | null)?.closest('.drawer-picture');
+  if (!tile || !gridElement) return;
+  const tiles = Array.from(gridElement.querySelectorAll('.drawer-picture'));
+  if (tiles.indexOf(tile) >= tiles.length - MORE_FOCUS_TILES) requestMore();
+}
 
 // A searching host already sent only the matches.
 const visible = $derived(onSearch ? pictures : filterPictures(pictures, query));
@@ -240,7 +314,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
   {/if}
 
   {#if visible.length > 0}
-    <ul class="drawer-grid">
+    <ul class="drawer-grid" bind:this={gridElement} onfocusin={handleGridFocus}>
       {#each visible as picture (picture.id)}
         {@const isSelected = selectedIds.includes(picture.id)}
         {@const isMain = mainPictureId === picture.id}
@@ -289,6 +363,11 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
           </span>
         </li>
       {/each}
+      {#if hasMore && onLoadMore}
+        <li class="drawer-more" aria-hidden="true" bind:this={moreSentinel}>
+          {#if loading}{t(M['content.content_picture_drawer.loading_more'])}{/if}
+        </li>
+      {/if}
     </ul>
   {:else if loading}
     <p class="drawer-hint">{t(M['content.content_picture_drawer.loading'])}</p>
@@ -298,13 +377,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     <p class="drawer-hint">{t(M['content.content_picture_drawer.empty'])}</p>
   {/if}
 
-  {#if hasMore && onLoadMore}
-    <Button type="button" variant="ghost" disabled={loading} onclick={onLoadMore}>
-      {loading
-        ? t(M['content.content_picture_drawer.loading'])
-        : t(M['content.content_picture_drawer.more'])}
-    </Button>
-  {/if}
+  <p class="drawer-status" role="status" aria-live="polite">{moreStatus}</p>
 
   {#if selected.length > 0 && (onInsert || onUseAsMain)}
     <div class="drawer-actions">
@@ -395,6 +468,23 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+
+  .drawer-more {
+    grid-column: 1 / -1;
+    min-height: 1.5rem;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+
+  .drawer-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   .drawer-picture {

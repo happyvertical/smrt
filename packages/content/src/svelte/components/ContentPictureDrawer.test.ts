@@ -192,6 +192,46 @@ describe('ContentPictureDrawer', () => {
     expect(root.textContent).toContain('No pictures match.');
   });
 
+  it('has no "Show more" button: scrolling near the end loads more', () => {
+    const observers: Array<{
+      callback: IntersectionObserverCallback;
+      targets: Element[];
+    }> = [];
+    const original = globalThis.IntersectionObserver;
+    globalThis.IntersectionObserver = class {
+      targets: Element[] = [];
+      constructor(callback: IntersectionObserverCallback) {
+        observers.push({ callback, targets: this.targets });
+      }
+      observe(target: Element) {
+        this.targets.push(target);
+      }
+      disconnect() {}
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+    } as unknown as typeof IntersectionObserver;
+    try {
+      const onLoadMore = vi.fn();
+      const root = render({ pictures: PICTURES, hasMore: true, onLoadMore });
+      expect(root.textContent).not.toContain('Show more');
+      expect(root.querySelector('button')?.textContent).not.toContain('more');
+      const observer = observers.at(-1);
+      expect(observer?.targets[0]?.classList.contains('drawer-more')).toBe(
+        true,
+      );
+      onLoadMore.mockClear();
+      observer?.callback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+      expect(onLoadMore).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.IntersectionObserver = original;
+    }
+  });
+
   it('uploads only picture files', () => {
     const onUpload = vi.fn();
     const root = render({ pictures: [], onUpload });

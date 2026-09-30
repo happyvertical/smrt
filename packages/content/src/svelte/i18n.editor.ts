@@ -32,7 +32,8 @@ export const M = defineMessages({
   'content.content_picture_drawer.empty':
     'No pictures yet. Upload one to start.',
   'content.content_picture_drawer.no_match': 'No pictures match.',
-  'content.content_picture_drawer.more': 'Show more pictures',
+  'content.content_picture_drawer.loading_more': 'Loading more pictures…',
+  'content.content_picture_drawer.more_loaded': '{count} more pictures',
   'content.content_picture_drawer.insert': 'Insert',
   'content.content_picture_drawer.insert_count': 'Insert {count} pictures',
   'content.content_picture_drawer.clear_selection': 'Clear',
