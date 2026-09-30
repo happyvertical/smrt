@@ -180,7 +180,8 @@ const server = createMcpAppServer({
 });
 ```
 
-Resources are private by default and require a stable principal id. Only an
+Resources are private by default and require a stable principal id plus an explicit
+`resourcePolicy`; an omitted policy denies both listing and reads. Only an
 explicit `public: true` declaration permits anonymous reads of a static
 artifact. `resourcePolicy` runs afresh for both catalog and direct reads; errors
 fail closed. Every associated tool must also pass the ordinary tool policy.
@@ -212,6 +213,12 @@ bridge now defaults to this modern `/api/mcp` endpoint; use explicit
 migration from `/api/mcp/tools` and `/api/mcp/call`. The modern bridge uses SDK v2,
 re-resolves credentials per request, refuses redirects, and forwards resource
 and tool metadata without inventing UI or extension capabilities.
+
+Generated tool allow-lists use the generator-owned original class identity, even
+when the advertised name is a canonical alias. Guards keyed by either the alias
+or original tool name run before both direct and task dispatch. Authored workflows
+retain their explicit names and effect policy; catalogs containing authored
+workflows keep private cache scope because they have no generated tenant identity.
 
 ## Remote JWT authorization
 

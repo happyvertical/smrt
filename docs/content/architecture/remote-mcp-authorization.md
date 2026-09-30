@@ -1,5 +1,7 @@
 # Remote MCP authorization
 
+See the [MCP Apps integration standard](mcp-apps-integration.md) for portable embedded UI, optional OpenAI extensions, ownership and staged release gates.
+
 This is the deployment contract for Anytown, Ergot, and other applications that
 put a SMRT MCP HTTP surface on the public internet. SMRT currently supplies the
 application-scoped `/api/mcp` stateless Streamable HTTP endpoint and a local
