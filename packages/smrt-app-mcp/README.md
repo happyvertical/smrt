@@ -59,15 +59,15 @@ workflowTools: [{
   inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   outputSchema: { type: 'object', properties: { prepared: { type: 'boolean' } } },
   effect: 'write', idempotent: true, openWorld: false,
-  ui: { resourceUri: 'ui://application/prepare.html' },
+  ui: { resourceUri: 'ui://application/prepare.html', visibility: ['app'] },
   async execute({ arguments: args, principal }) {
     return { content: [{ type: 'text', text: 'Prepared for review.' }], structuredContent: { prepared: true } };
   },
 }],
 ```
 
-The resulting descriptor preserves `_meta.ui.resourceUri` through SDK-v2
-`tools/list`, while ordinary clients retain the text and structured result.
+The resulting descriptor preserves `_meta.ui.resourceUri` and optional
+`_meta.ui.visibility` through SDK-v2 `tools/list`, while ordinary clients retain the text and structured result.
 The resource implementation itself is staged separately; metadata neither
 loads a resource nor grants an application permission.
 
