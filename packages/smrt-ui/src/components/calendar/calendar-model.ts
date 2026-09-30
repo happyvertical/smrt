@@ -156,6 +156,32 @@ export function defaultTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 
+/** Whether `timeZone` is an IANA zone this runtime's `Intl` accepts. */
+export function isValidTimeZone(timeZone: unknown): timeZone is string {
+  if (typeof timeZone !== 'string' || timeZone === '') return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `timeZone` when valid, otherwise the runtime default. `onInvalid` hears
+ * about a rejected non-empty zone (a typo, a zone this runtime lacks), so a
+ * view can warn instead of throwing from its render.
+ */
+export function resolveTimeZone(
+  timeZone: string | undefined,
+  onInvalid?: (timeZone: string) => void,
+): string {
+  if (!timeZone) return defaultTimeZone();
+  if (isValidTimeZone(timeZone)) return timeZone;
+  onInvalid?.(timeZone);
+  return defaultTimeZone();
+}
+
 /**
  * The calendar day of an instant in a time zone.
  *

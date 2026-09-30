@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { act, render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
@@ -231,6 +231,51 @@ describe('CalendarView (agenda)', () => {
       expect(screen.queryByRole('grid')).toBeNull();
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('CalendarView robustness', () => {
+  it('falls back instead of throwing on an invalid time zone', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(() =>
+        renderMonth({ timeZone: 'Mars/Olympus_Mons' }),
+      ).not.toThrow();
+      expect(
+        screen.getByRole('heading', { name: 'September 2026' }),
+      ).toBeTruthy();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Mars/Olympus_Mons'),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('moves the today highlight after midnight without a now prop', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    try {
+      // 23:59 on Sep 29 in Edmonton (05:59Z on the 30th).
+      vi.setSystemTime(new Date('2026-09-30T05:59:00Z'));
+      renderMonth({ now: undefined });
+      const day = (name: string) => screen.getByRole('button', { name });
+      await act(() => {});
+      expect(
+        day('Tuesday, September 29, 2026').getAttribute('aria-current'),
+      ).toBe('date');
+
+      await act(() => {
+        vi.advanceTimersByTime(2 * 60_000);
+      });
+      expect(
+        day('Wednesday, September 30, 2026').getAttribute('aria-current'),
+      ).toBe('date');
+      expect(
+        day('Tuesday, September 29, 2026').getAttribute('aria-current'),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

@@ -35,6 +35,7 @@ import {
   monthOfKey,
   monthWeeks,
   parseKey,
+  resolveTimeZone,
   shiftMonth,
   todayKey,
   toEntries,
@@ -63,7 +64,13 @@ export interface Props {
   maxPerDay?: number;
   /** Heading level of the month title. */
   headingLevel?: 2 | 3 | 4;
-  /** "Now", for today highlighting (tests, server rendering). */
+  /**
+   * "Now", for today highlighting (tests, server rendering). Without it the
+   * calendar reads the clock after mount and moves "today" at midnight in
+   * `timeZone`; before mount (server rendering) nothing is highlighted as
+   * today. Server-rendered pages should pass `timeZone` and `year`/`month`
+   * (or `now`) so the server and the browser pick the same month.
+   */
   now?: Date;
   /** Called when the visible month changes (prev/next/today/keyboard). */
   onNavigate?: (month: CalendarMonth) => void;
@@ -103,14 +110,41 @@ const i18n = useI18n();
 const t = i18n.t;
 const uid = $props.id();
 
-const timeZone = $derived(timeZoneProp || defaultTimeZone());
+// An invalid zone (a typo, one this runtime lacks) would throw a RangeError
+// from every Intl call in the deriveds below; fall back and say so instead.
+const timeZone = $derived(
+  resolveTimeZone(timeZoneProp, (invalid) =>
+    console.warn(
+      `[CalendarView] unknown time zone "${invalid}"; using ${defaultTimeZone()}`,
+    ),
+  ),
+);
 const locale = $derived(localeProp || i18n.locale || 'en');
 const weekStartsOn = $derived(
   weekStartsOnProp === undefined
     ? defaultWeekStart(locale)
     : ((Math.floor(weekStartsOnProp) % 7) + 7) % 7,
 );
-const today = $derived(todayKey(timeZone, now));
+// The clock is read after mount, never during server rendering (the server's
+// clock and zone are not the reader's), and re-read each minute so "today"
+// moves at midnight in `timeZone`.
+let clock = $state<Date | undefined>(undefined);
+$effect(() => {
+  if (now) return;
+  clock = new Date();
+  const timer = setInterval(() => {
+    const next = new Date();
+    if (!clock || todayKey(timeZone, next) !== todayKey(timeZone, clock)) {
+      clock = next;
+    }
+  }, 60_000);
+  return () => clearInterval(timer);
+});
+const reference = $derived(now ?? clock);
+/** Today's key, or '' before the clock is known (nothing is "today"). */
+const today = $derived(reference ? todayKey(timeZone, reference) : '');
+/** The month shown when nothing controls it: today's, else the render clock's. */
+const fallbackKey = $derived(today || todayKey(timeZone));
 
 // Overridable deriveds: follow the controlling props, and take local
 // navigation until those props change again.
@@ -119,13 +153,13 @@ let current = $derived<CalendarMonth>(
     ? { year, month }
     : selectedDate
       ? monthOfKey(selectedDate)
-      : monthOfKey(today),
+      : monthOfKey(fallbackKey),
 );
 let selected = $derived<string | null>(selectedDate ?? null);
 let focusKey = $derived(
   selected && sameMonth(selected, current)
     ? selected
-    : sameMonth(today, current)
+    : today && sameMonth(today, current)
       ? today
       : formatKey(current.year, current.month, 1),
 );
@@ -269,12 +303,13 @@ function navigate(next: CalendarMonth): void {
 }
 
 function goToday(): void {
-  const target = monthOfKey(today);
+  const key = today || todayKey(timeZone);
+  const target = monthOfKey(key);
   if (target.year !== current.year || target.month !== current.month) {
     navigate(target);
   }
-  focusKey = today;
-  if (view === 'agenda') selectDay(today);
+  focusKey = key;
+  if (view === 'agenda') selectDay(key);
 }
 
 function selectDay(key: string): void {
