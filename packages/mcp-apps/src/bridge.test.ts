@@ -324,3 +324,91 @@ it('bounds pending work and rejects non-JSON outgoing tool arguments', async () 
     Array(32).fill('MCP Apps bridge disposed'),
   );
 });
+
+it('preserves bounded extension data as isolated snapshots without granting capabilities', async () => {
+  const f = fixture({ 'example/extension': { version: '1' } });
+  const connecting = f.bridge.connect();
+  f.reply({
+    ...f.initialized,
+    hostContext: { 'example/route': { path: 'list' } },
+  });
+  await connecting;
+  expect(f.bridge.snapshot.rawHostContext).toEqual({
+    'example/route': { path: 'list' },
+  });
+  expect(f.bridge.snapshot.hostContext).toEqual({});
+  expect(f.bridge.snapshot.rawHostCapabilities).toEqual({
+    'example/extension': { version: '1' },
+  });
+  expect(f.bridge.snapshot.hostCapabilities).toEqual({});
+  const first = f.bridge.snapshot.rawHostContext['example/route'] as {
+    path: string;
+  };
+  first.path = 'mutated by consumer';
+  const observed: unknown[] = [];
+  f.bridge.subscribe((snapshot) => {
+    observed.push(snapshot.rawHostContext);
+  });
+  f.notify('ui/notifications/host-context-changed', {
+    theme: 'dark',
+    'example/route': { path: 'detail' },
+  });
+  expect(f.bridge.snapshot.rawHostContext).toEqual({
+    theme: 'dark',
+    'example/route': { path: 'detail' },
+  });
+  expect(observed).toHaveLength(2);
+  await expect(f.bridge.callTool('list')).rejects.toThrow('unavailable');
+  f.bridge.dispose();
+});
+
+it('rejects malicious extension payloads and drops extension changes after disposal', async () => {
+  const f = fixture();
+  await f.connect();
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
+  const malformed = [
+    { 'example/extension': 'x'.repeat(131073) },
+    { 'example/extension': cyclic },
+    JSON.parse('{"example/extension":{"__proto__":{"admin":true}}}'),
+    { 'example/extension': Object.create({ inherited: true }) },
+    {
+      'example/extension': {
+        get unsafe() {
+          throw new Error('Must not execute accessor');
+        },
+      },
+    },
+  ];
+  for (const value of malformed)
+    f.notify('ui/notifications/host-context-changed', value);
+  expect(f.bridge.snapshot.rawHostContext).toEqual({});
+  f.notify('ui/notifications/host-context-changed', {
+    'example/extension': { valid: true },
+  });
+  f.bridge.dispose();
+  f.notify('ui/notifications/host-context-changed', {
+    'example/extension': { stale: true },
+  });
+  expect(f.bridge.snapshot.rawHostContext).toEqual({
+    'example/extension': { valid: true },
+  });
+});
+
+it('bounds accumulated raw context across individually valid updates atomically', async () => {
+  const f = fixture();
+  await f.connect();
+  for (let n = 0; n < 100; n++)
+    f.notify('ui/notifications/host-context-changed', {
+      [`example/key-${n}`]: 'x'.repeat(1000),
+    });
+  expect(Object.keys(f.bridge.snapshot.rawHostContext).length).toBeLessThan(50);
+  const before = f.bridge.snapshot;
+  f.notify('ui/notifications/host-context-changed', {
+    theme: 'dark',
+    'example/overflow': 'x'.repeat(40000),
+  });
+  expect(f.bridge.snapshot.rawHostContext).toEqual(before.rawHostContext);
+  expect(f.bridge.snapshot.hostContext).toEqual(before.hostContext);
+  f.bridge.dispose();
+});

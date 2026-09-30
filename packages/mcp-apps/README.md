@@ -58,8 +58,14 @@ modalities reject explicitly. Text and structured results remain available witho
 interactive capabilities; consumers must retain a normal app/review URL fallback.
 
 Host context exposes only theme, display mode(s), platform, locale and timezone.
-Unknown context fields are ignored; executable CSS/tool definitions are never
-applied. Unknown supported-field enum values fail closed. A missing display-mode
+Unknown context fields are ignored by the typed projection; executable CSS/tool
+definitions are never applied. `snapshot.rawHostContext` and
+`snapshot.rawHostCapabilities` retain bounded JSON for opt-in extension adapters.
+Context notifications merge into the raw context; capabilities remain fixed at
+handshake. Every snapshot/observer receives an isolated clone. Extension adapters
+must validate their own fields and treat raw data as untrusted; raw capabilities
+cannot enable typed methods or bypass their gates. No generic request method is
+exposed. Unknown supported-field enum values fail closed. A missing display-mode
 list permits only inline. Host rejection (`isError: true`) and RPC errors propagate.
 
 Payload limits: 24 nested levels, 4096 array items, 1024 object keys, conservative

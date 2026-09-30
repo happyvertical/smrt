@@ -43,6 +43,10 @@ export interface McpAppSnapshot {
   state: 'idle' | 'connecting' | 'ready' | 'disposed';
   hostCapabilities: HostCapabilities;
   hostContext: HostContext;
+  /** Bounded JSON from the bound host, isolated on every snapshot. Extensions must validate their own fields. */
+  rawHostContext: Readonly<Record<string, unknown>>;
+  /** Informational extension negotiation only; never bypasses the bridge's typed capability gates. */
+  rawHostCapabilities: Readonly<Record<string, unknown>>;
   toolInput?: Record<string, unknown>;
   toolResult?: ToolResult;
   cancelled?: boolean;
@@ -72,6 +76,8 @@ export class McpAppBridge {
     state: 'idle',
     hostCapabilities: {},
     hostContext: {},
+    rawHostContext: {},
+    rawHostCapabilities: {},
   };
 
   constructor(options: McpAppBridgeOptions) {
@@ -204,6 +210,12 @@ export class McpAppBridge {
         string(info.version, 128);
         this.#snapshot.hostCapabilities = capabilities(result.hostCapabilities);
         this.#snapshot.hostContext = context(result.hostContext);
+        this.#snapshot.rawHostContext = structuredClone(
+          object(result.hostContext),
+        );
+        this.#snapshot.rawHostCapabilities = structuredClone(
+          object(result.hostCapabilities),
+        );
         this.#post({ jsonrpc: '2.0', method: 'ui/notifications/initialized' });
         this.#snapshot.state = 'ready';
         this.#emit();
@@ -382,12 +394,18 @@ export class McpAppBridge {
     }
     const params = object(message.params);
     switch (message.method) {
-      case 'ui/notifications/host-context-changed':
+      case 'ui/notifications/host-context-changed': {
+        const projected = context(params);
+        const merged = { ...this.#snapshot.rawHostContext, ...params };
+        // Each notification is bounded, and accumulated extension state must be too.
+        json(merged);
         this.#snapshot.hostContext = {
           ...this.#snapshot.hostContext,
-          ...context(params),
+          ...projected,
         };
+        this.#snapshot.rawHostContext = structuredClone(merged);
         break;
+      }
       case 'ui/notifications/tool-input':
         if (this.#inputReceived || this.#terminalReceived) return;
         this.#snapshot.toolInput =
