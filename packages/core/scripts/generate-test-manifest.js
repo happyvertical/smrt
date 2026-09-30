@@ -10,7 +10,7 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
@@ -65,17 +65,19 @@ async function generateTestManifest() {
         injectPackageInfo: true,
         moduleType: 'smrt',
       });
-      const { buildDomainKnowledgeManifest, resolveFileKnowledgeConfig } =
-        await import(
-          pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
-        );
+      const {
+        AGENT_SURFACE_HASH_PREFIX,
+        buildDomainKnowledgeManifest,
+        publishArtifactFiles,
+        resolveFileKnowledgeConfig,
+      } = await import(
+        pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
+      );
       const manifestPath = resolve(process.cwd(), '.smrt/manifest.json');
       const knowledgePath = resolve(process.cwd(), '.smrt/smrt-knowledge.json');
-      let agentSurface;
+      let priorKnowledge;
       try {
-        agentSurface = JSON.parse(
-          readFileSync(knowledgePath, 'utf8'),
-        ).agentSurface;
+        priorKnowledge = JSON.parse(readFileSync(knowledgePath, 'utf8'));
       } catch {
         // A missing or malformed prior artifact is replaced by current generation.
       }
@@ -84,21 +86,28 @@ async function generateTestManifest() {
         manifest.packageName,
       );
       if (config.enabled !== false) {
-        writeFileSync(
-          knowledgePath,
-          JSON.stringify(
-            buildDomainKnowledgeManifest({
-              manifest,
-              rootDir: process.cwd(),
-              manifestPath,
-              config,
-              agentSurface,
-            }),
-            null,
-            2,
-          ),
-          'utf8',
-        );
+        const knowledge = buildDomainKnowledgeManifest({
+          manifest,
+          rootDir: process.cwd(),
+          manifestPath,
+          config,
+        });
+        const priorSurfaceHashes = Object.entries(
+          priorKnowledge?.sourceHashes ?? {},
+        ).filter(([key]) => key.startsWith(AGENT_SURFACE_HASH_PREFIX));
+        if (priorKnowledge?.agentSurface && priorSurfaceHashes.length) {
+          // This script does not run the producer scanner. Preserve the prior
+          // declaration with its prior hashes so an edited declaration stays
+          // stale instead of being rehashed as a false-fresh artifact.
+          knowledge.agentSurface = priorKnowledge.agentSurface;
+          Object.assign(
+            knowledge.sourceHashes,
+            Object.fromEntries(priorSurfaceHashes),
+          );
+        }
+        publishArtifactFiles([
+          { path: knowledgePath, content: JSON.stringify(knowledge, null, 2) },
+        ]);
       }
     } finally {
       await unregister();
