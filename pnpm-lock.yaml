@@ -2396,6 +2396,9 @@ importers:
       parse5:
         specifier: 8.0.1
         version: 8.0.1
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
     devDependencies:
       '@modelcontextprotocol/client':
         specifier: 2.0.0
