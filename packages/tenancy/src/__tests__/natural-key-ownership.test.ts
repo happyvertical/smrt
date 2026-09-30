@@ -17,7 +17,9 @@
  * - a conflict target that still omits the tenant (explicit key, the
  *   pre-migration live shape) refuses B's save with
  *   `TENANT_ISOLATION_VIOLATION`; A's league and teams are untouched;
- * - a repeated same-tenant create still dedups in place and keeps the id;
+ * - a repeated same-tenant create with an explicit slug still dedups in place
+ *   and keeps the id (a name-derived slug never adopts: core
+ *   `derived-slug-no-adopt.test.ts`);
  * - `auditTenantScopedRegistrations()` reports the runtime-only registrations
  *   and the ones whose natural key is not tenant-scoped.
  */
@@ -267,12 +269,12 @@ for (const engine of engines) {
         expect(seenByA.map((league) => league.id)).toEqual([a.id]);
       });
 
-      it('a repeated same-tenant create still dedups in place and keeps the id', async () => {
+      it('a repeated same-tenant create with an explicit slug still dedups in place and keeps the id', async () => {
         const first = await withTenant({ tenantId: TENANT_A }, () =>
-          leagues.create({ name: 'U13' }),
+          leagues.create({ name: 'U13', slug: 'u13' }),
         );
         const again = await withTenant({ tenantId: TENANT_A }, () =>
-          leagues.create({ name: 'U13' }),
+          leagues.create({ name: 'U13', slug: 'u13' }),
         );
         expect(again.id).toBe(first.id);
         expect(await rawRows(db, 'ludis_nk_leagues')).toHaveLength(1);
@@ -318,9 +320,10 @@ for (const engine of engines) {
             legacy.create({ name: 'U17', tenantId: null }),
           ),
         ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
-        // The same owner, written from system context, updates in place.
+        // The same owner, written from system context with the explicit
+        // natural key, updates in place.
         const again = await withSystemContext(() =>
-          legacy.create({ name: 'U17', tenantId: TENANT_A }),
+          legacy.create({ name: 'U17', slug: 'u17', tenantId: TENANT_A }),
         );
         expect(again.id).toBe(a.id);
         const rows = await rawRows(db, 'ludis_nk_legacy_leagues');

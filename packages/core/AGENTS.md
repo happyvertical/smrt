@@ -47,8 +47,10 @@ and repository rules.
   the default key leads with `tenant_id`. A new object's natural-key save reads
   the row its upsert would hit and refuses a different owner
   (`TENANT_ISOLATION_VIOLATION`) or adopts a same-owner row's id, so
-  `DO UPDATE` never rewrites a primary key or owner. See
-  `agents/schema-paths.md` ("Tenant OWNERSHIP").
+  `DO UPDATE` never rewrites a primary key or owner. Only an explicit natural
+  key adopts: a slug `getSlug()` derived from `name`/`title`/`label` moves to
+  a free `-2`, `-3`, … slug and INSERTs. See `agents/schema-paths.md`
+  ("Tenant OWNERSHIP").
 - Persisted saves use `id` and loaded `updated_at`; new saves use natural keys.
   Preserve revision compare-and-swap ordering through public `save()`,
   `claimRevision()`, and transaction APIs. Embedded saves, deletes, and complete

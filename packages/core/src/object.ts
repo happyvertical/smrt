@@ -563,6 +563,16 @@ export class SmrtObject extends SmrtClass {
   private _insertOnly = false;
 
   /**
+   * The slug {@link getSlug} derived from a human value (`name`, `title` or
+   * `label`), or `null` when the slug was set explicitly or derived from the
+   * id. A human value is not an identity — two pictures named `photo.jpg`, two
+   * articles titled "Council meeting" — so a NEW object whose natural key only
+   * matches an existing row through such a slug never adopts that row: it
+   * saves under a unique slug instead (see {@link guardNaturalKeyUpsert}).
+   */
+  private _derivedSlug: string | null = null;
+
+  /**
    * Override options with SmrtObjectOptions type for proper type narrowing.
    * Initialized by parent constructor via super() call.
    */
@@ -2000,10 +2010,14 @@ export class SmrtObject extends SmrtClass {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)/g, '');
+        // Only a human value can collide with a different record; an
+        // id-derived slug is as unique as the id.
+        this._derivedSlug = sourceField === String(this.id) ? null : this.slug;
       }
     }
 
-    // check for existing slug and make unique?
+    // Uniqueness is settled at save time: a NEW object whose derived slug is
+    // already taken saves under the next free "-2", "-3", … slug.
     return this.slug;
   }
 
@@ -2932,12 +2946,20 @@ export class SmrtObject extends SmrtClass {
         );
 
       let revisionMatched = true;
+      // Set when a NEW object's derived slug was taken and the guard moved it
+      // to a free one: the write is then a plain INSERT, so a concurrent
+      // create that claims the same free slug raises a unique violation
+      // instead of being overwritten.
+      let insertUnderFreshSlug = false;
       await withEmbeddedWriteQueue(
         this.db,
         serializeEmbeddedWrite,
         async () => {
           if (naturalKeyUpsert) {
-            await this.guardNaturalKeyUpsert(data, upsertConflictColumns);
+            insertUnderFreshSlug = await this.guardNaturalKeyUpsert(
+              data,
+              upsertConflictColumns,
+            );
           } else if (this._insertOnly && !this._persisted) {
             await this.assertNullableNaturalKeyFree(data, conflictColumns);
           }
@@ -2990,10 +3012,14 @@ export class SmrtObject extends SmrtClass {
                   if (writePlan.type === 'updateById') {
                     this.setMetaType(writePlan.qualifiedMetaType);
                   }
-                } else if (this._insertOnly && !this._persisted) {
+                } else if (
+                  (this._insertOnly && !this._persisted) ||
+                  insertUnderFreshSlug
+                ) {
                   // Strict-insert mode (#1759): row identity is an explicit
                   // client-supplied id, so never adopt an existing row via
                   // conflict resolution — any PK/unique collision must raise.
+                  // A derived slug moved to a free one inserts the same way.
                   await this.db.insert(this.tableName, data);
                 } else {
                   await this.db.upsert(
@@ -3034,7 +3060,8 @@ export class SmrtObject extends SmrtClass {
                     writePlan.type === 'updateById' ||
                     revisionGuard !== undefined
                       ? `UPDATE ${this.tableName} (id-targeted)`
-                      : this._insertOnly && !this._persisted
+                      : (this._insertOnly && !this._persisted) ||
+                          insertUnderFreshSlug
                         ? `INSERT INTO ${this.tableName}`
                         : `UPSERT INTO ${this.tableName}`;
                   throw DatabaseError.queryFailed(operation, error);
@@ -3342,7 +3369,19 @@ export class SmrtObject extends SmrtClass {
    * never retried) — this holds under `withSystemContext()` too, and a NULL
    * owner is an owner: a tenant save never adopts a global row and a global
    * save never adopts a tenant's row. A same-owner row is adopted: its id
-   * replaces the instance's, so `DO UPDATE` leaves the primary key unchanged.
+   * (and creation time) replace the instance's, so `DO UPDATE` leaves the
+   * primary key and `created_at` unchanged.
+   *
+   * Only an explicit natural key is adopted. When the key matches through a
+   * slug {@link getSlug} derived from `name`/`title`/`label` — a human value,
+   * not an identity — the new object is a different record that happens to
+   * share a name, so it keeps its own id and moves to the first free
+   * `<slug>-2`, `<slug>-3`, … slug (a public URL stays readable), and the
+   * write becomes an INSERT. An explicitly set slug, explicit
+   * `conflictColumns` without `slug` (an external id), and `getOrUpsert()`
+   * (which looks the row up first) still update in place.
+   *
+   * @returns `true` when the slug was moved and the write must INSERT.
    *
    * The read and the upsert are not one statement, so a conflicting insert
    * that lands between them is still resolved by the database's unique key;
@@ -3352,12 +3391,12 @@ export class SmrtObject extends SmrtClass {
   private async guardNaturalKeyUpsert(
     data: Record<string, unknown>,
     conflictColumns: string[],
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (
       conflictColumns.length === 0 ||
       !conflictColumns.every((column) => Object.hasOwn(data, column))
     ) {
-      return;
+      return false;
     }
     const conflictFilter: Record<string, unknown> = {};
     for (const column of conflictColumns) {
@@ -3366,7 +3405,7 @@ export class SmrtObject extends SmrtClass {
     }
 
     const found = await this.readNaturalKeyRow(conflictFilter);
-    if (!found) return;
+    if (!found) return false;
     const existing = found;
 
     const ownershipColumns = SmrtObject.ownershipColumnsFor(
@@ -3400,9 +3439,52 @@ export class SmrtObject extends SmrtClass {
       existingId !== '' &&
       existingId !== data.id
     ) {
+      if (
+        conflictColumns.includes('slug') &&
+        this._derivedSlug !== null &&
+        data.slug === this._derivedSlug
+      ) {
+        await this.moveToFreeDerivedSlug(data, conflictFilter);
+        return true;
+      }
       data.id = existingId;
       this.id = existingId;
+      if (existing.created_at != null && existing.created_at !== '') {
+        data.created_at = existing.created_at;
+        const createdAt = new Date(existing.created_at as string | Date);
+        if (!Number.isNaN(createdAt.getTime())) this.created_at = createdAt;
+      }
     }
+    return false;
+  }
+
+  /**
+   * Moves a NEW object's taken derived slug to the first free `<slug>-2` …
+   * `<slug>-9` under the same natural key (any owner's row counts as taken),
+   * then to `<slug>-<first 8 id characters>`, which only this object's id can
+   * claim. The caller INSERTs, so a concurrent claim of the same slug raises
+   * instead of overwriting.
+   */
+  private async moveToFreeDerivedSlug(
+    data: Record<string, unknown>,
+    conflictFilter: Record<string, unknown>,
+  ): Promise<void> {
+    const base = String(data.slug);
+    let slug = `${base}-${String(data.id).replace(/-/g, '').slice(0, 8)}`;
+    for (let suffix = 2; suffix <= 9; suffix += 1) {
+      const candidate = `${base}-${suffix}`;
+      const taken = await this.readNaturalKeyRow({
+        ...conflictFilter,
+        slug: candidate,
+      });
+      if (!taken) {
+        slug = candidate;
+        break;
+      }
+    }
+    data.slug = slug;
+    this.slug = slug;
+    this._derivedSlug = slug;
   }
 
   /**

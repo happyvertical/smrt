@@ -431,8 +431,14 @@ reads the row its conflict target would hit, bypassing read interceptors
 declared tenant column — NULL counts as an owner — raises
 `TenantIsolationError.naturalKeyOwnedElsewhere()` (`TENANT_ISOLATION_VIOLATION`,
 never retried, never naming the other owner), also under `withSystemContext()`.
-A same-owner row is adopted by id, so `DO UPDATE SET` never rewrites a primary
-key (no `ON UPDATE CASCADE` churn). The read and upsert are separate
+A same-owner row is adopted by id (keeping its `created_at`), so
+`DO UPDATE SET` never rewrites a primary key (no `ON UPDATE CASCADE` churn).
+Adoption needs an explicit natural key: when the match is only through a slug
+`getSlug()` derived from `name`/`title`/`label` (a human value, not an
+identity), the new object keeps its id, moves to the first free `<slug>-2` …
+`<slug>-9` (then `<slug>-<8 id chars>`) and INSERTs, so a racing claim raises
+instead of overwriting. Explicit slugs, `conflictColumns` without `slug`,
+`getOrUpsert()` and persisted saves are unchanged. The read and upsert are separate
 statements; the tenant-inclusive unique is what makes a racing cross-tenant
 insert impossible. The junction batch path falls back to per-item saves when
 its conflict target omits an ownership column present in the row (`tenant_id`,
