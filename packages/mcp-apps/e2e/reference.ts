@@ -13,7 +13,7 @@ status.setAttribute("role", "status");
 const content = document.createElement("main");
 const review = document.createElement("a");
 review.textContent = "Open human review";
-review.href = "https://example.com/opportunities/synthetic-1/review";
+review.href = "https://example.com/opportunities";
 review.target = "_blank";
 review.rel = "noopener noreferrer";
 const reviewUrl = document.createElement("code");
@@ -27,17 +27,40 @@ back.addEventListener("click", () => {
 let currentRequest: AbortController | undefined;
 let generation = 0;
 let initialRendered = false;
-function render(result: {
-  content: { type: "text"; text: string }[];
-  structuredContent?: Record<string, unknown>;
-}): void {
+function opportunityId(value: unknown): value is string {
+  return typeof value === "string" && /^synthetic-[12]$/.test(value);
+}
+function selectReview(id: string): void {
+  review.href = `https://example.com/opportunities/${encodeURIComponent(id)}/review`;
+  reviewUrl.textContent = review.href;
+}
+function render(
+  result: {
+    content: { type: "text"; text: string }[];
+    structuredContent?: Record<string, unknown>;
+  },
+  selection?: string,
+): void {
+  const rows =
+    selection === undefined
+      ? result.structuredContent?.opportunities
+      : undefined;
+  if (selection !== undefined) {
+    if (
+      !opportunityId(selection) ||
+      result.structuredContent?.id !== selection
+    ) {
+      status.textContent = "Tool unavailable. Continue in human review.";
+      return;
+    }
+    selectReview(selection);
+  }
   content.replaceChildren();
   for (const block of result.content) {
     const text = document.createElement("p");
     text.textContent = block.text;
     content.append(text);
   }
-  const rows = result.structuredContent?.opportunities;
   if (!Array.isArray(rows)) {
     if (bridge.snapshot.hostCapabilities.serverTools) {
       content.append(back);
@@ -45,14 +68,19 @@ function render(result: {
     }
     return;
   }
+  let selected = false;
   for (const value of rows) {
     if (
       typeof value !== "object" ||
       !value ||
-      typeof value.id !== "string" ||
+      !opportunityId(value.id) ||
       typeof value.title !== "string"
     )
       continue;
+    if (!selected) {
+      selectReview(value.id);
+      selected = true;
+    }
     const button = document.createElement("button");
     button.textContent = value.title;
     button.disabled = !bridge.snapshot.hostCapabilities.serverTools;
@@ -71,7 +99,13 @@ async function load(
   currentRequest = new AbortController();
   try {
     const result = await bridge.callTool(name, args, currentRequest.signal);
-    if (revision === generation && !bridge.signal.aborted) render(result);
+    if (revision === generation && !bridge.signal.aborted)
+      render(
+        result,
+        name === "opportunity_detail" && opportunityId(args.id)
+          ? args.id
+          : undefined,
+      );
   } catch {
     if (revision === generation && !bridge.signal.aborted)
       status.textContent = "Tool unavailable. Continue in human review.";
