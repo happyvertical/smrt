@@ -3,10 +3,12 @@
  * JobList - Display a filterable, sortable list of background jobs.
  *
  * Sorting follows the list-sort contract (`@happyvertical/smrt-ui/data`):
- * newest created first by default, and every column header toggles its
- * column ascending/descending (dates and counts start with the largest).
- * The rows given are the whole list — a parent that pages on the server
- * passes `sort` + `onSortChange` and supplies rows already in that order.
+ * every column header toggles its column ascending/descending (dates and
+ * counts start with the largest). Rows keep the order they are supplied in
+ * until the host passes `sort` or the person activates a header, so a host
+ * that already orders its jobs is not silently reordered. A parent that pages
+ * on the server passes `sort` + `onSortChange` and supplies rows already in
+ * that order.
  */
 import {
   type ListSort,
@@ -46,7 +48,10 @@ export interface Props {
   onCancel?: (job: JobData) => void;
   /** Empty state snippet */
   empty?: Snippet;
-  /** Current order (default: newest created first). */
+  /**
+   * Current order. Omitted: rows render as supplied (headers show no sort)
+   * until a header is activated.
+   */
   sort?: ListSort;
   /**
    * Called when a header is activated. When given, the parent owns the order
@@ -80,7 +85,7 @@ let {
   onRetry,
   onCancel,
   empty,
-  sort = $bindable({ columnId: 'createdAt', direction: 'desc' }),
+  sort = $bindable<ListSort | undefined>(undefined),
   onSortChange,
 }: Props = $props();
 
@@ -94,11 +99,16 @@ function sortValue(job: JobData, columnId: string) {
 }
 
 const rows = $derived(
-  onSortChange ? jobs : sortListRows(jobs, sort, sortValue),
+  onSortChange || !sort ? jobs : sortListRows(jobs, sort, sortValue),
 );
 
 function handleSort(columnId: string) {
-  const next = toggleListSort(sort, columnId, JOB_LIST_SORT);
+  // With no sort yet, the clicked column starts at its first direction.
+  const next = toggleListSort(
+    sort ?? { columnId: '', direction: 'asc' },
+    columnId,
+    JOB_LIST_SORT,
+  );
   if (onSortChange) onSortChange(next);
   else sort = next;
 }
