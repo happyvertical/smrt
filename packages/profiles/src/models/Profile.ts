@@ -23,6 +23,7 @@ import {
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { normalizeIdentityEmail } from '../auth/normalizeIdentityEmail';
+import type { ProfileLinkInput } from '../collections/ProfileLinkCollection';
 import {
   promptMessageOptions,
   smrtProfilesGenerateBioPrompt,
@@ -31,6 +32,7 @@ import type { ApiKey, GenerateKeyResult } from './ApiKey';
 import type { AuditLog } from './AuditLog';
 import type { NostrIdentity } from './NostrIdentity';
 import type { OidcIdentity } from './OidcIdentity';
+import type { ProfileLink } from './ProfileLink';
 import type { ProfileMetadata } from './ProfileMetadata';
 import type { ProfileMetafield } from './ProfileMetafield';
 import type { ProfileRelationship } from './ProfileRelationship';
@@ -41,6 +43,7 @@ export interface ProfileOptions extends SmrtObjectOptions {
   email?: string;
   name?: string;
   description?: string;
+  isPublic?: boolean;
   tenantId?: string | null;
 }
 
@@ -78,6 +81,15 @@ export class Profile extends SmrtObject {
 
   description?: string; // Short bio or description
 
+  /**
+   * Public-figure flag: the person or organization is publicly known (an
+   * elected official, a public body), so an application may show their
+   * contact details and links to everyone. Defaults to private. The flag only
+   * records the fact; each application decides what it reveals.
+   */
+  @field({ type: 'boolean', default: false })
+  isPublic = false;
+
   // Relationships (not stored as columns)
   @oneToMany('ProfileMetadata')
   metadata: ProfileMetadata[] = [];
@@ -100,6 +112,7 @@ export class Profile extends SmrtObject {
     if (options.name) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
+    if (options.isPublic !== undefined) this.isPublic = options.isPublic;
   }
 
   /** Keep the durable identity key derived from the public email field. */
@@ -285,6 +298,31 @@ export class Profile extends SmrtObject {
       // A tenant-less profile read inside a tenant context only sees that
       // tenant's definitions; keep using them as before.
       (this.tenantId ? null : (candidates[0] ?? null))
+    );
+  }
+
+  private async getProfileLinkCollection() {
+    const { ProfileLinkCollection } = await import(
+      '../collections/ProfileLinkCollection'
+    );
+    return ProfileLinkCollection.create({ db: this.db });
+  }
+
+  /** This profile's web links in display order. */
+  async getLinks(): Promise<ProfileLink[]> {
+    if (!this.id) return [];
+    return (await this.getProfileLinkCollection()).listForProfile(this.id);
+  }
+
+  /**
+   * Replaces this profile's web links with `links`, in that order, in one
+   * transaction (see `ProfileLinkCollection.replaceForProfile`).
+   */
+  async setLinks(links: readonly ProfileLinkInput[]): Promise<ProfileLink[]> {
+    if (!this.id) throw new Error('Cannot set links on an unsaved profile');
+    return (await this.getProfileLinkCollection()).replaceForProfile(
+      this.id,
+      links,
     );
   }
 

@@ -21,6 +21,11 @@ export {
   type CanonicalPersonProfileErrorCode,
   ProfileCollection,
 } from './ProfileCollection';
+export {
+  PROFILE_LINK_LIMIT,
+  ProfileLinkCollection,
+  type ProfileLinkInput,
+} from './ProfileLinkCollection';
 export { ProfileMetadataCollection } from './ProfileMetadataCollection';
 export { ProfileMetafieldCollection } from './ProfileMetafieldCollection';
 export { ProfileRelationshipCollection } from './ProfileRelationshipCollection';
