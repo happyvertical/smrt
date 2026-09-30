@@ -34,6 +34,7 @@ function renderEditor(
     onChange?: (data: any) => void;
     onSave?: (data: any) => void;
     onCancel?: () => void;
+    mode?: 'simple' | 'full';
   } = {},
 ) {
   const target = document.createElement('div');
@@ -56,6 +57,7 @@ function renderEditor(
       onChange: props.onChange ?? vi.fn(),
       onSave: props.onSave ?? vi.fn(),
       onCancel: props.onCancel ?? vi.fn(),
+      mode: props.mode,
     },
   });
 
@@ -148,6 +150,30 @@ beforeEach(() => {
 });
 
 describe('ContentEditor component', () => {
+  it('simple mode hides type, state, and references and collapses Details', () => {
+    const target = renderEditor({ mode: 'simple', hideChat: true });
+    expect(target.querySelector('#type-select')).toBeNull();
+    expect(target.querySelector('#state-select')).toBeNull();
+    expect(target.querySelector('#status-select')).not.toBeNull();
+    expect(target.querySelector('input[name="url"]')).toBeNull();
+    const summaries = Array.from(target.querySelectorAll('summary')).map(
+      (summary) => summary.textContent?.trim(),
+    );
+    expect(summaries).not.toContain('References');
+    const details = Array.from(target.querySelectorAll('details')).find(
+      (element) =>
+        element.querySelector('summary')?.textContent?.trim() === 'Details',
+    );
+    expect(details?.open).toBe(false);
+    expect(target.textContent).toContain('Author (optional)');
+  });
+
+  it('full mode keeps every field', () => {
+    const target = renderEditor({ hideChat: true });
+    expect(target.querySelector('#type-select')).not.toBeNull();
+    expect(target.querySelector('input[name="url"]')).not.toBeNull();
+  });
+
   it('renders governed content facts with the facts drawer open', () => {
     const target = renderGovernedEditor({
       contentId: 'content-1',

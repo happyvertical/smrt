@@ -153,6 +153,11 @@ export type ContentStatusFieldsProps = ComponentProps<
   typeof ContentStatusFields
 >;
 export type ContentTitleFieldProps = ComponentProps<typeof ContentTitleField>;
+export type {
+  ContentFieldMode,
+  ContentMetadataFieldName,
+  ContentStatusFieldName,
+} from './components/content-field-mode.js';
 export type ContentListProps = ComponentProps<typeof ContentList>;
 export type { ContentListUrlStateBinding } from './components/ContentList.svelte';
 // Shared content-list adapter: columns, rows, filters, and the data surface

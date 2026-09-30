@@ -480,6 +480,29 @@ startup and seeds sample content (3 items) for immediate testing.
 `jobId`. The controller retains the failed attempt as immutable history so a
 late event from it cannot overwrite the retry result.
 
+#### Simple mode and agent-ready editor fields
+
+`ContentTitleField`, `ContentStatusFields`, `ContentMetadataFields`, and
+`ContentBodyEditor` render smrt-ui fields with a stable `name`, an `id`, and a
+plain label, so inside any `Form`, rich `<Form webmcp>`, or `FormScope` they
+register with the control registry and an agent can propose a title, status,
+story, author, summary, or tags for the person to review (`ContentBodyEditor`
+registers the whole story as one `body` control in its own HTML/Markdown
+format). `ContentTitleField` registers once you give it a `name` (e.g.
+`name="title"`). Pass `idPrefix` to the status and metadata fields, and
+`id`/`name` to the title and body, when two editors share a page.
+
+`mode` (`'full'` by default, or `'simple'`) sets how much of the editor an
+everyday editor sees; `fields` is an explicit allow-list that overrides it:
+
+| | `full` | `simple` |
+|---|---|---|
+| `ContentStatusFields` | Type, State, Status, Published | Status, Publish date (optional) |
+| `ContentMetadataFields` | Author, Description, Tags, URL, File key | Author, Summary, Tags — each "(optional)" — in a collapsed **Details** section (`details` controls it) |
+| `ContentEditor` | every field and drawer | Type, State and References (with URL/File key) hidden; Metadata becomes a collapsed "Details" |
+
+Simple mode uses plain labels ("Ready for review", "Summary", "Story").
+
 Applications that compose their own article editor can use
 `createContentEditorState`, `getContentEditorAssetImageSource`, and
 `resolveContentEditorImageSelection` to share the same form normalization,

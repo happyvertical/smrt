@@ -1,6 +1,12 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
-import { Select } from '@happyvertical/smrt-ui/forms';
+import {
+  highlightControl,
+  revealControl,
+  Select,
+  tryGetControlInteractionContext,
+  useControlRegistration,
+} from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import {
@@ -32,6 +38,12 @@ export interface Props {
   format?: ContentBodyFormat | null;
   /** Placeholder text shown when the editor is empty. */
   placeholder?: string;
+  /** DOM id of the editable surface (default `content-body-input`). */
+  id?: string;
+  /** Field name; also the control id agents address (default `body`). */
+  name?: string;
+  /** Accessible and agent-facing label (default "Story"). */
+  label?: string;
   /** Index of the currently selected image in the body, or -1 for none. */
   selectedImageIndex?: number;
   /** Fired when the body content or embedded images change. */
@@ -52,6 +64,9 @@ let {
   value,
   format = null,
   placeholder = 'Start writing...',
+  id = 'content-body-input',
+  name = 'body',
+  label = undefined,
   selectedImageIndex = -1,
   onChange = undefined,
   onOpenImageChooser = undefined,
@@ -59,6 +74,11 @@ let {
   onUseImageAsThumbnail = undefined,
   onResolveImage = undefined,
 }: Props = $props();
+
+const resolvedLabel = $derived(label ?? t(M['content.content_fields.body']));
+const interactionContext = tryGetControlInteractionContext();
+/** The body as last received from the parent or emitted by this editor. */
+let currentBody = '';
 
 const MIN_IMAGE_WIDTH = 120;
 const IMAGE_WIDTH_STEP = 80;
@@ -125,6 +145,7 @@ $effect(() => {
   currentFormat = resolvedFormat;
   editorHtml = bodyToEditorHtml(value || '', resolvedFormat);
   lastExternalKey = externalKey;
+  currentBody = value || '';
 
   if (editorElement && !isFocused && editorElement.innerHTML !== editorHtml) {
     editorElement.innerHTML = editorHtml;
@@ -599,6 +620,7 @@ function emitChange(options: { syncDom?: boolean } = {}) {
 
   const body = editorHtmlToBody(normalizedHtml, currentFormat);
   lastExternalKey = makeExternalKey(body, currentFormat);
+  currentBody = body;
   onChange?.({
     body,
     bodyFormat: currentFormat,
@@ -606,6 +628,48 @@ function emitChange(options: { syncDom?: boolean } = {}) {
   });
   refreshSelectedImageChrome();
 }
+
+/** Replace the whole body (an applied agent proposal) in the current format. */
+function replaceBody(next: unknown) {
+  const body = typeof next === 'string' ? next : String(next ?? '');
+  clearPendingInputChange();
+  editorHtml = bodyToEditorHtml(body, currentFormat);
+  if (editorElement) editorElement.innerHTML = editorHtml;
+  lastExternalKey = makeExternalKey(body, currentFormat);
+  currentBody = body;
+  onChange?.({
+    body,
+    bodyFormat: currentFormat,
+    images: extractBodyImages(body, currentFormat),
+  });
+}
+
+// One agent-addressable control for the whole story, in the body's own
+// format (HTML or Markdown). Proposals are staged; a person applies them.
+useControlRegistration(() => {
+  const surface = editorElement;
+  if (!surface || !name) return false;
+  return {
+    controlId: name,
+    metadata: {
+      kind: 'textarea',
+      label: resolvedLabel,
+      description:
+        currentFormat === 'markdown'
+          ? 'The story, in Markdown.'
+          : 'The story, in HTML.',
+    },
+    getValue: () => currentBody,
+    setValue: replaceBody,
+    clear: () => {
+      replaceBody('');
+      return true;
+    },
+    focus: () => surface.focus(),
+    reveal: () => revealControl(surface),
+    highlight: (durationMs) => highlightControl(surface, durationMs),
+  };
+});
 
 function runCommand(command: string, value?: string) {
   restoreSelection();
@@ -1186,7 +1250,10 @@ function handleEditorDragEnd() {
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     bind:this={editorElement}
-    id="content-body-input"
+    {id}
+    aria-label={resolvedLabel}
+    data-smrt-control={name || undefined}
+    data-smrt-form={interactionContext?.formId}
     class="body-editor-surface"
     class:body-editor-surface--dragging={isDragging}
     contenteditable="true"

@@ -43,6 +43,7 @@ import ContentBodyEditor, {
   type ContentBodyEditorChange,
 } from './ContentBodyEditor.svelte';
 import ContentImageChooser from './ContentImageChooser.svelte';
+import type { ContentFieldMode } from './content-field-mode.js';
 
 const { t } = useI18n();
 
@@ -79,6 +80,12 @@ export interface Props {
   onSave: (data: ContentEditorSavePayload) => void;
   /** Fired when the user cancels editing without saving. */
   onCancel: () => void;
+  /**
+   * `full` (default) shows every field. `simple` is for everyday editors:
+   * Type, State and References are hidden, Metadata becomes a collapsed
+   * "Details" section, and optional fields say so.
+   */
+  mode?: ContentFieldMode;
 }
 
 let {
@@ -98,7 +105,15 @@ let {
   onFactAuditChange = undefined,
   onSave,
   onCancel,
+  mode = 'full',
 }: Props = $props();
+
+const simpleMode = $derived(mode === 'simple');
+function optionalLabel(label: string): string {
+  return simpleMode
+    ? t(M['content.content_fields.optional'], { label })
+    : label;
+}
 
 // Unique per-instance form id so triggerSave() targets THIS editor's form even
 // when multiple ContentEditor / GovernedContentEditor instances are mounted
@@ -1009,8 +1024,9 @@ function removeAsset(id: string) {
       {/if}
       <div class="editor-toolbar">
         <div class="editor-toolbar-left">
+          {#if !simpleMode}
           <div class="mui-field">
-            <Select id="type-select" bind:value={formData.type} class="mui-input">
+            <Select id="type-select" name="type" bind:value={formData.type} class="mui-input">
               <option value="article">Article</option>
               <option value="document">Document</option>
               <option value="mirror">Mirror</option>
@@ -1018,15 +1034,16 @@ function removeAsset(id: string) {
             <label for="type-select">Type</label>
           </div>
           <div class="mui-field">
-            <Select id="state-select" bind:value={formData.state} class="mui-input">
+            <Select id="state-select" name="state" bind:value={formData.state} class="mui-input">
               <option value="active">Active</option>
               <option value="highlighted">Highlighted</option>
               <option value="deprecated">Deprecated</option>
             </Select>
             <label for="state-select">State</label>
           </div>
+          {/if}
           <div class="mui-field">
-            <Select id="status-select" bind:value={formData.status} class="mui-input">
+            <Select id="status-select" name="status" aria-label={t(M['content.content_fields.status'])} bind:value={formData.status} class="mui-input">
               <option value="draft">Draft</option>
               <option value="published">Published</option>
               <option value="archived">Archived</option>
@@ -1034,8 +1051,8 @@ function removeAsset(id: string) {
             <label for="status-select">Status</label>
           </div>
           <div class="mui-field">
-            <Input id="publish-date-input" type="datetime-local" bind:value={formData.publish_date} class="mui-input" />
-            <label for="publish-date-input">{t(M['content.content_editor.publish_date'])}</label>
+            <Input id="publish-date-input" name="publish_date" aria-label={simpleMode ? optionalLabel(t(M['content.content_fields.publish_date'])) : t(M['content.content_editor.publish_date'])} type="datetime-local" bind:value={formData.publish_date} class="mui-input" />
+            <label for="publish-date-input">{simpleMode ? optionalLabel(t(M['content.content_fields.publish_date'])) : t(M['content.content_editor.publish_date'])}</label>
           </div>
         </div>
         {#if showActions}
@@ -1054,6 +1071,8 @@ function removeAsset(id: string) {
 
       <Input
          type="text"
+         name="title"
+         aria-label={t(M['content.content_fields.title'])}
          class="document-title-input"
          bind:value={formData.title}
          placeholder={t(M['content.content_editor.document_title_placeholder'])}
@@ -1193,25 +1212,27 @@ function removeAsset(id: string) {
           </div>
       </details>
 
-      <!-- Metadata Panel -->
-      <details class="editor-drawer" open>
+      <!-- Metadata Panel ("Details", collapsed, in simple mode) -->
+      <details class="editor-drawer" open={!simpleMode}>
         <summary class="editor-drawer-header">
-          Metadata
+          {#if simpleMode}{t(M['content.content_fields.details'])}{:else}Metadata{/if}
           <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </summary>
         <div class="editor-drawer-content">
           <label>
-            Author:
-            <Input type="text" bind:value={formData.author} placeholder={t(M['content.content_editor.author_name_placeholder'])} />
+            {simpleMode ? optionalLabel(t(M['content.content_fields.author'])) : 'Author:'}
+            <Input type="text" name="author" aria-label={optionalLabel(t(M['content.content_fields.author']))} bind:value={formData.author} placeholder={t(M['content.content_editor.author_name_placeholder'])} />
           </label>
           <label>
-            Description:
-            <Textarea bind:value={formData.description} rows={2} placeholder={t(M['content.content_editor.brief_summary_placeholder'])}></Textarea>
+            {simpleMode ? optionalLabel(t(M['content.content_fields.summary'])) : 'Description:'}
+            <Textarea name="description" aria-label={simpleMode ? optionalLabel(t(M['content.content_fields.summary'])) : t(M['content.content_fields.description'])} bind:value={formData.description} rows={2} placeholder={t(M['content.content_editor.brief_summary_placeholder'])}></Textarea>
           </label>
           <label>
-            {t(M['content.content_editor.tags_comma_separated'])}
+            {simpleMode ? optionalLabel(t(M['content.content_fields.tags'])) : t(M['content.content_editor.tags_comma_separated'])}
             <Input
               type="text"
+              name="tags"
+              aria-label={optionalLabel(t(M['content.content_fields.tags']))}
               value={(formData.tags || []).join(', ')}
               placeholder={t(M['content.content_editor.tags_placeholder'])}
               oninput={(event) => parseTagsInput((event.currentTarget as HTMLInputElement).value)}
@@ -1220,7 +1241,8 @@ function removeAsset(id: string) {
         </div>
       </details>
 
-      <!-- References Panel -->
+      <!-- References Panel (hidden in simple mode) -->
+      {#if !simpleMode}
       <details class="editor-drawer" open>
           <summary class="editor-drawer-header">
             References
@@ -1427,14 +1449,15 @@ function removeAsset(id: string) {
 
             <label>
               URL:
-              <Input type="url" bind:value={formData.url} />
+              <Input type="url" name="url" aria-label={t(M['content.content_fields.url'])} bind:value={formData.url} />
             </label>
             <label>
               {t(M['content.content_editor.file_key'])}
-              <Input type="text" bind:value={formData.fileKey} />
+              <Input type="text" name="fileKey" aria-label={t(M['content.content_editor.file_key'])} bind:value={formData.fileKey} />
             </label>
           </div>
       </details>
+      {/if}
     </Form>
 
     {#if showChatSidebar}

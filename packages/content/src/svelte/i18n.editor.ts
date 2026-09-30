@@ -88,6 +88,30 @@ export const M = defineMessages({
     'Focus selected body image',
   'content.content_image_chooser.next_body_image': 'Next body image',
 
+  // Editor field labels (ContentTitleField / StatusFields / MetadataFields /
+  // BodyEditor). Simple mode uses the plain everyday labels.
+  'content.content_fields.title': 'Title',
+  'content.content_fields.body': 'Story',
+  'content.content_fields.type': 'Type',
+  'content.content_fields.state': 'State',
+  'content.content_fields.status': 'Status',
+  'content.content_fields.published': 'Published',
+  'content.content_fields.publish_date': 'Publish date',
+  'content.content_fields.author': 'Author',
+  'content.content_fields.description': 'Description',
+  'content.content_fields.summary': 'Summary',
+  'content.content_fields.summary_hint':
+    'One or two sentences shown in lists and when the story is shared.',
+  'content.content_fields.tags': 'Tags',
+  'content.content_fields.tags_hint': 'Separate tags with commas.',
+  'content.content_fields.url': 'URL',
+  'content.content_fields.details': 'Details',
+  'content.content_fields.optional': '{label} (optional)',
+  'content.content_fields.status_draft': 'Draft',
+  'content.content_fields.status_review': 'Ready for review',
+  'content.content_fields.status_published': 'Published',
+  'content.content_fields.status_archived': 'Archived',
+
   // ContentMetadataFields
   'content.content_metadata_fields.file_key': 'File Key',
   'content.content_metadata_fields.tags_placeholder': 'e.g. news, tech',
