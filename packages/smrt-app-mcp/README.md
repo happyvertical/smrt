@@ -154,3 +154,9 @@ unauthenticated for both discovery and calls. If an older mount supplies only
 `resolveAuthenticated: () => true` and no principal, discovery keeps its old
 boolean behavior while calls remain user-less as before; migrate that mount to
 `resolvePrincipal` for one identity across both routes.
+
+Generated tool allow-lists use the generator-owned original class identity, even
+when the advertised name is a canonical alias. Guards keyed by either the alias
+or original tool name run before both direct and task dispatch. Authored workflows
+retain their explicit names and effect policy; catalogs containing authored
+workflows keep private cache scope because they have no generated tenant identity.
