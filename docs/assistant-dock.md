@@ -516,7 +516,7 @@ tool, never the server's echo:
 | Effect | Behaviour |
 |---|---|
 | `read` | runs |
-| `write` from the `ui` or `intent` owner | runs — those tools only stage a value or dispatch a registry command as `source: 'agent'`, so the change stays a proposal the user applies |
+| `write` the registry marks `proposal: true` | runs — only compiled view intents and the fixed `smrt_ui_*` tools carry that module-private brand (`markWebMcpProposalTool`); they only stage a value or dispatch a registry command as `source: 'agent'`, so the change stays a proposal the user applies. The `owner` label (`ui`/`intent`) is diagnostic and never grants this |
 | any other `write` | waits for **Allow** / **Don't allow** in the dock |
 | `destructive` | always waits, whatever `clientToolPolicy` says |
 

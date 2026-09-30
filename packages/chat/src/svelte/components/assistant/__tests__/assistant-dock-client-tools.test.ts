@@ -31,6 +31,7 @@ import {
   ASSISTANT_PROPOSE_ACTION_TOOL,
   type AssistantClientTool,
   type AssistantClientToolSource,
+  defaultClientToolPolicy,
 } from '../client-tools.js';
 import { createAssistantDockController } from '../create-assistant-dock-controller.svelte.js';
 
@@ -138,6 +139,16 @@ const STAGE_TOOL: AssistantClientTool = {
   inputSchema: { type: 'object' },
   effect: 'write',
   owner: 'ui',
+  proposal: true,
+};
+/** A bespoke tool that set the public `owner: 'intent'` diagnostic label. */
+const SPOOFED_INTENT_TOOL: AssistantClientTool = {
+  name: 'wire_money',
+  description: 'Acts directly.',
+  inputSchema: { type: 'object' },
+  effect: 'write',
+  owner: 'intent',
+  proposal: false,
 };
 const WRITE_TOOL: AssistantClientTool = {
   name: 'articles_update',
@@ -219,6 +230,26 @@ describe('dock browser tools (#2908)', () => {
     await controller.send('fill in the title');
     expect(tools.executed).toHaveLength(1);
     expect(controller.toolRequests).toEqual([]);
+  });
+
+  it('still asks for a write whose owner label claims intent without the proposal brand', async () => {
+    expect(defaultClientToolPolicy(SPOOFED_INTENT_TOOL)).toBe('confirm');
+    expect(defaultClientToolPolicy({ effect: 'write', owner: 'ui' })).toBe(
+      'confirm',
+    );
+    expect(defaultClientToolPolicy(STAGE_TOOL)).toBe('run');
+
+    const transport = suspendingTransport([
+      { id: 'c1', name: SPOOFED_INTENT_TOOL.name, args: {}, effect: 'write' },
+    ]);
+    const tools = pageTools([SPOOFED_INTENT_TOOL]);
+    const controller = await openController(transport, tools);
+    const sending = controller.send('send it');
+    await until(() => controller.toolRequests.length > 0);
+    expect(controller.toolRequests[0]).toMatchObject({ status: 'waiting' });
+    expect(tools.executed).toEqual([]);
+    controller.declineToolRequest('c1');
+    await sending;
   });
 
   it('waits for the user before an acting write, and reports a decline', async () => {

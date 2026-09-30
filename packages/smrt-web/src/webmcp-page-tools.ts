@@ -31,6 +31,7 @@
  */
 
 import {
+  isWebMcpProposalTool,
   type WebMcpToolNameOwner,
   webMcpToolNameOwner,
 } from './webmcp-tool-names.js';
@@ -75,11 +76,18 @@ export interface WebMcpPageToolDescriptor {
   effect: WebMcpPageToolEffect;
   /**
    * Which registration path owns the name (the tool-name lock's label), when
-   * known. `ui` and `intent` tools only stage or dispatch through a
-   * consent-gated registry (`source: 'agent'`), so their "writes" are
-   * proposals by construction; `generated` and `bespoke` writes act.
+   * known. DIAGNOSTIC ONLY: a bespoke caller can set this label, so it must
+   * never decide whether a write runs — read {@link proposal} for that.
    */
   owner?: WebMcpToolNameOwner;
+  /**
+   * True only when the registered `execute` carries the module-private
+   * proposal brand (`markWebMcpProposalTool`): a compiled view intent or a
+   * fixed `smrt_ui_*` tool, which can only stage or dispatch through a
+   * consent-gated registry as `source: 'agent'`. Such a "write" is a proposal
+   * by construction; every other write acts.
+   */
+  proposal: boolean;
 }
 
 /** A registration as the registrars hand it to `registerTool`. */
@@ -243,6 +251,7 @@ export function installWebMcpPageToolRegistry(
       // Every SMRT registrar reserves the name before calling registerTool,
       // so the lock already knows who owns it.
       owner: webMcpToolNameOwner(tool.name, { document: doc }),
+      proposal: isWebMcpProposalTool(tool.execute),
     };
     const token = {};
     tools.set(tool.name, { registration: tool, descriptor, token });

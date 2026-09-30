@@ -14,10 +14,14 @@
  *
  * - `read` runs;
  * - `destructive` always waits for the user's own confirmation;
- * - `write` from the `ui` or `intent` owners runs, because those tools only
- *   stage a value or dispatch a registry command as `source: 'agent'` — the
- *   control/surface registry keeps the change a proposal the user applies;
- * - any other `write` waits for the user's confirmation.
+ * - `write` runs only when the registry marks the tool `proposal: true` —
+ *   smrt-web sets that solely from a module-private brand that compiled view
+ *   intents and the fixed `smrt_ui_*` tools carry, because those tools only
+ *   stage a value or dispatch a registry command as `source: 'agent'` (the
+ *   control/surface registry keeps the change a proposal the user applies);
+ * - any other `write` waits for the user's confirmation — including one whose
+ *   `owner` label says `ui` or `intent`: that label is a diagnostic any
+ *   bespoke registration can set, so it never grants auto-run.
  *
  * A host may narrow this with `clientToolPolicy`, but can never make a
  * destructive call run without confirmation.
@@ -34,8 +38,16 @@ export interface AssistantClientTool {
   description: string;
   inputSchema: Record<string, unknown>;
   effect: AssistantToolEffect;
-  /** The registration path (`generated`, `ui`, `intent`, `bespoke`), when known. */
+  /**
+   * The registration path (`generated`, `ui`, `intent`, `bespoke`), when
+   * known. Diagnostic only — it never decides whether a write runs.
+   */
   owner?: string;
+  /**
+   * True only for a registry-branded proposal-only tool (a compiled view
+   * intent or a fixed `smrt_ui_*` tool). Absent or false means a write acts.
+   */
+  proposal?: boolean;
 }
 
 /** Where the dock finds and runs browser tools. */
@@ -54,11 +66,11 @@ export type AssistantClientToolPolicy = 'run' | 'confirm';
 
 /** The default policy described in the module doc. */
 export function defaultClientToolPolicy(
-  tool: Pick<AssistantClientTool, 'effect' | 'owner'>,
+  tool: Pick<AssistantClientTool, 'effect' | 'owner' | 'proposal'>,
 ): AssistantClientToolPolicy {
   if (tool.effect === 'read') return 'run';
   if (tool.effect === 'destructive') return 'confirm';
-  return tool.owner === 'ui' || tool.owner === 'intent' ? 'run' : 'confirm';
+  return tool.proposal === true ? 'run' : 'confirm';
 }
 
 /**

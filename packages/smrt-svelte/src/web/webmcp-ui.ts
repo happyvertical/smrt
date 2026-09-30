@@ -17,6 +17,7 @@ import type {
 } from '@happyvertical/smrt-ui/forms';
 import { WEBMCP_TOOL_EFFECT } from '@happyvertical/smrt-web/webmcp-page-tools';
 import {
+  markWebMcpProposalTool,
   reserveWebMcpToolNames,
   type WebMcpToolNameReservation,
 } from '@happyvertical/smrt-web/webmcp-tool-names';
@@ -671,7 +672,9 @@ export function registerWebMcpUiTools(
       // stamp. The two execute tools are `write`, not destructive: an agent
       // can only stage values or change visible state; apply, clear, and undo
       // need a separate human-confirmed path, so their mutations are
-      // proposals. Their browser annotations are unchanged.
+      // proposals. Their browser annotations are unchanged. The proposal
+      // brand is what lets the in-page assistant run those writes without a
+      // confirmation step; the tool-name lock's `ui` label never does.
       const stamped = Object.assign(
         {
           [WEBMCP_TOOL_EFFECT]: tool.annotations?.readOnlyHint
@@ -679,6 +682,7 @@ export function registerWebMcpUiTools(
             : 'write',
         },
         tool,
+        { execute: markWebMcpProposalTool(tool.execute) },
       );
       const registration = modelContext.registerTool(stamped, {
         signal: controller.signal,

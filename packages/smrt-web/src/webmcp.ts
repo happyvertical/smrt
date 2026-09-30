@@ -51,6 +51,8 @@ import {
 } from './internal.js';
 import { WEBMCP_TOOL_EFFECT } from './webmcp-page-tools.js';
 import {
+  isWebMcpProposalTool,
+  markWebMcpProposalTool,
   reserveWebMcpToolNames,
   type WebMcpToolNameOwner,
 } from './webmcp-tool-names.js';
@@ -188,7 +190,10 @@ export interface RegisterWebMcpBespokeToolOptions {
    * blame a `useWebMcpTool` call that does not exist.
    *
    * Purely a diagnostic label: it grants no capability, narrows no policy,
-   * and changes nothing about how the tool registers or executes.
+   * and changes nothing about how the tool registers or executes. In
+   * particular it does NOT make a write proposal-only for the in-page
+   * assistant: only a compiled view intent's branded `execute` does (see
+   * `markWebMcpProposalTool`).
    */
   owner?: Extract<WebMcpToolNameOwner, 'intent' | 'bespoke'>;
 }
@@ -530,11 +535,14 @@ function registerSingleTool(
         description: spec.description,
         inputSchema: spec.inputSchema,
         annotations: annotationsFor(semantics),
-        execute: guardedExecute(
-          { name: spec.name, effect: semantics.effect },
-          allowedEffects,
-          () => disposed,
+        execute: brandLike(
           spec.execute,
+          guardedExecute(
+            { name: spec.name, effect: semantics.effect },
+            allowedEffects,
+            () => disposed,
+            spec.execute,
+          ),
         ),
       },
       { signal: controller.signal },
@@ -942,6 +950,20 @@ function annotationsFor(
   tool: ToolSemantics,
 ): NonNullable<WebMcpToolRegistration['annotations']> {
   return capabilityAnnotations(tool);
+}
+
+/**
+ * Carry the proposal brand across the guard wrapper: the page registry sees
+ * the wrapper, so it is branded exactly when the spec's own `execute` was.
+ * The `owner` option never brands anything — it is only a diagnostic label.
+ */
+function brandLike<T extends (...args: never[]) => unknown>(
+  original: unknown,
+  wrapper: T,
+): T {
+  return isWebMcpProposalTool(original)
+    ? markWebMcpProposalTool(wrapper)
+    : wrapper;
 }
 
 function guardedExecute(

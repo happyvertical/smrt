@@ -219,12 +219,18 @@ const pageTools = installWebMcpPageToolRegistry(); // undefined during SSR
 It puts a recording `modelContext` on the document that keeps every
 registration from all four sources (and forwards it to the browser's native
 context when there is one, so outside agents are unaffected). `list()`
-returns the live tools with their resolved effect and owner, and
+returns the live tools with their resolved effect, owner, and `proposal`
+flag, and
 `execute(name, args)` runs one through its own registered `execute`, so every
 effect, consent, and REST gate stays where it is. Registrars stamp their
 resolved effect on the registration (`WEBMCP_TOOL_EFFECT`), because the
 annotations they send the browser mark every non-read tool destructive; a
-registration without a stamp falls back to the annotations. Pass the registry
+registration without a stamp falls back to the annotations. `owner` is the
+tool-name lock's diagnostic label, which a bespoke caller can set; only
+`proposal` (a module-private brand that compiled view intents and the fixed
+`smrt_ui_*` tools carry, applied with `markWebMcpProposalTool` from
+`@happyvertical/smrt-web/webmcp-tool-names`) marks a write as a consent-gated
+proposal. Pass the registry
 to `AssistantDock`'s `pageTools` (see `docs/assistant-dock.md`).
 
 ## Lifecycle and verification

@@ -6,13 +6,15 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { registerWebMcpBespokeTool } from './webmcp.js';
+import { defineIntent } from './intents.js';
+import { registerViewIntent, registerWebMcpBespokeTool } from './webmcp.js';
 import {
   getWebMcpPageToolRegistry,
   installWebMcpPageToolRegistry,
   WebMcpPageToolNotFoundError,
   webMcpPageToolEffect,
 } from './webmcp-page-tools.js';
+import { markWebMcpProposalTool } from './webmcp-tool-names.js';
 
 const originalDocument = (globalThis as { document?: unknown }).document;
 
@@ -129,6 +131,77 @@ describe('installWebMcpPageToolRegistry', () => {
   it('is a no-op off-DOM', () => {
     (globalThis as { document?: unknown }).document = undefined;
     expect(installWebMcpPageToolRegistry()).toBeUndefined();
+  });
+});
+
+describe('proposal brand', () => {
+  const writeAnnotations = { readOnlyHint: false, destructiveHint: false };
+
+  it('does not trust a bespoke tool that labels itself an intent', async () => {
+    freshDocument();
+    const registry = installWebMcpPageToolRegistry();
+    registerWebMcpBespokeTool(
+      {
+        name: 'wire_money',
+        description: 'Acts directly.',
+        inputSchema: { type: 'object' },
+        annotations: writeAnnotations,
+        execute: () => 'sent',
+      },
+      { effects: ['read', 'write'], owner: 'intent' },
+    );
+    const descriptor = registry?.get('wire_money');
+    // The lock label is still reported for diagnostics ...
+    expect(descriptor?.owner).toBe('intent');
+    // ... but only a branded registration counts as a proposal.
+    expect(descriptor?.proposal).toBe(false);
+  });
+
+  it('brands a compiled view intent', async () => {
+    freshDocument();
+    const registry = installWebMcpPageToolRegistry();
+    const intent = defineIntent({
+      id: 'brandtest.stage_note',
+      description: 'Propose a note',
+      capability: { effect: 'write', idempotent: true, openWorld: false },
+      target: { registry: 'control', action: 'stage' },
+    });
+    registerViewIntent(
+      intent,
+      {
+        registry: 'control',
+        registryPort: { execute: async () => ({ ok: true }) },
+        identity: { formId: 'f', controlId: 'c' },
+      },
+      { effects: ['read', 'write'] },
+    );
+    const descriptor = registry?.get('brandtest_stage_note');
+    expect(descriptor?.owner).toBe('intent');
+    expect(descriptor?.proposal).toBe(true);
+  });
+
+  it('brands a raw registration only through markWebMcpProposalTool', () => {
+    const doc = freshDocument();
+    const registry = installWebMcpPageToolRegistry();
+    const context = doc.modelContext as {
+      registerTool(tool: Record<string, unknown>): void;
+    };
+    context.registerTool({
+      name: 'raw_unbranded',
+      description: 'x',
+      inputSchema: {},
+      annotations: writeAnnotations,
+      execute: () => 'x',
+    });
+    context.registerTool({
+      name: 'raw_branded',
+      description: 'x',
+      inputSchema: {},
+      annotations: writeAnnotations,
+      execute: markWebMcpProposalTool(() => 'x'),
+    });
+    expect(registry?.get('raw_unbranded')?.proposal).toBe(false);
+    expect(registry?.get('raw_branded')?.proposal).toBe(true);
   });
 });
 
