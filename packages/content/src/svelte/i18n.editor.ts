@@ -71,6 +71,10 @@ export const M = defineMessages({
   'content.content_body_editor.make_image_larger': 'Make image larger',
   'content.content_body_editor.use_as_primary_image': 'Use as main picture',
   'content.content_body_editor.remove_image': 'Remove image',
+  'content.content_body_editor.change_image': 'Change this picture',
+  'content.content_body_editor.change_image_short': 'Change',
+  'content.content_body_editor.change_image_hint':
+    'Change this picture. You can also press and hold a picture and say what you want.',
   'content.content_body_editor.resize_image': 'Resize image',
   'content.content_body_editor.resize_selected_image': 'Resize selected image',
 

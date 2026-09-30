@@ -1,7 +1,9 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import {
+  createLongPress,
   highlightControl,
+  primeReadyBeep,
   revealControl,
   Select,
   tryGetControlInteractionContext,
@@ -9,7 +11,7 @@ import {
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import type { Snippet } from 'svelte';
+import { onDestroy, type Snippet } from 'svelte';
 import { slide } from 'svelte/transition';
 import {
   bodyToEditorHtml,
@@ -31,6 +33,25 @@ export interface ContentBodyEditorChange {
   body: string;
   bodyFormat: ContentBodyFormat;
   images: ContentBodyImage[];
+}
+
+/** The person asked to change a picture in the story (see `onRequestImageChange`). */
+export interface ContentBodyImageChangeRequest {
+  /** The picture's index among the body's images. */
+  index: number;
+  /** Its stored asset id, when it has one. */
+  assetId: string | null;
+  /** Its alt text. */
+  alt: string;
+  /** Its source URL as shown in the editor. */
+  src: string;
+  /**
+   * True when it came from pressing and holding the picture: the host opens
+   * its request box already listening for speech.
+   */
+  listen: boolean;
+  /** Where the picture is on screen (viewport pixels), to anchor a popover. */
+  rect: { top: number; left: number; width: number; height: number };
 }
 
 export interface Props {
@@ -84,6 +105,14 @@ export interface Props {
   imagePanelLabel?: string;
   /** Fired when the panel asks to close (Escape inside it). */
   onCloseImagePanel?: () => void;
+  /**
+   * The person wants a picture changed. With it, a selected or hovered
+   * picture shows a "Change this picture" button, the picture toolbar gets
+   * one too, and pressing and holding a picture (about half a second, without
+   * moving; moving is still a drag) asks with `listen: true`. Without it
+   * none of these show.
+   */
+  onRequestImageChange?: (request: ContentBodyImageChangeRequest) => void;
 }
 
 let {
@@ -105,6 +134,7 @@ let {
   imagePanelOpen = false,
   imagePanelLabel = undefined,
   onCloseImagePanel = undefined,
+  onRequestImageChange = undefined,
 }: Props = $props();
 
 const imagePanelId = $derived(`${id}-image-panel`);
@@ -1326,6 +1356,121 @@ async function handleDrop(event: DragEvent) {
   }
 }
 
+// ---- Change this picture ---------------------------------------------
+
+let hoveredImageBox = $state<ImageBox | null>(null);
+let hoveredImage: HTMLImageElement | null = null;
+
+function imageBoxFor(image: HTMLImageElement): ImageBox | null {
+  if (!rootElement) return null;
+  const frameRect = getImageFrame(image).getBoundingClientRect();
+  const rootRect = rootElement.getBoundingClientRect();
+  return {
+    top: frameRect.top - rootRect.top,
+    left: frameRect.left - rootRect.left,
+    width: frameRect.width,
+    height: frameRect.height,
+  };
+}
+
+function requestImageChange(image: HTMLImageElement | null, listen: boolean) {
+  if (!onRequestImageChange || !image) return;
+  const index = getEditorImages().indexOf(image);
+  if (index < 0) return;
+  const rect = getImageFrame(image).getBoundingClientRect();
+  onRequestImageChange({
+    index,
+    assetId: image.getAttribute('data-smrt-asset-id'),
+    alt: image.getAttribute('alt') ?? '',
+    src: image.getAttribute('src') ?? '',
+    listen,
+    rect: {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    },
+  });
+}
+
+/** The picture the "change" badge is on: the hovered one, else the selected one. */
+const changeBadgeBox = $derived(
+  onRequestImageChange ? (hoveredImageBox ?? selectedImageBox) : null,
+);
+
+function handleSurfacePointerOver(event: PointerEvent) {
+  if (!onRequestImageChange || event.pointerType !== 'mouse') return;
+  const image = (event.target as Element | null)?.closest(
+    'img',
+  ) as HTMLImageElement | null;
+  if (!image || !editorElement?.contains(image)) return;
+  hoveredImage = image;
+  hoveredImageBox = imageBoxFor(image);
+}
+
+function handleRootPointerLeave() {
+  hoveredImage = null;
+  hoveredImageBox = null;
+}
+
+function handleSurfacePointerOut(event: PointerEvent) {
+  if (!hoveredImage) return;
+  const next = event.relatedTarget as Element | null;
+  // Moving onto the badge keeps it; moving elsewhere in the text hides it.
+  if (next?.closest?.('.image-change-badge')) return;
+  if (next && next === hoveredImage) return;
+  hoveredImage = null;
+  hoveredImageBox = null;
+}
+
+function handleChangeBadgeClick() {
+  const image = hoveredImage ?? getSelectedImage();
+  requestImageChange(image, false);
+}
+
+// Press and hold a picture: ask for a change, listening for speech. Moving
+// past the tolerance first is a drag (native picture drag and Move keep
+// working); the context menu is held back only during a press on a picture.
+const pictureLongPress = createLongPress({
+  filter: (event) => {
+    if (!onRequestImageChange) return null;
+    const image = (event.target as Element | null)?.closest('img');
+    return image && editorElement?.contains(image) ? image : null;
+  },
+  onPressStart: () => primeReadyBeep(),
+  onLongPress: ({ target }) => {
+    const image = target as HTMLImageElement;
+    selectImageElement(image);
+    navigator.vibrate?.(15);
+    requestImageChange(image, true);
+  },
+  preventContextMenu: true,
+});
+
+function handleWindowPointerMove(event: PointerEvent) {
+  pictureLongPress.handlePointerMove(event);
+}
+function handleWindowPointerUp(event: PointerEvent) {
+  pictureLongPress.handlePointerUp(event);
+}
+function handleWindowPointerCancel(event: PointerEvent) {
+  pictureLongPress.handlePointerCancel(event);
+}
+
+$effect(() => {
+  if (!onRequestImageChange || typeof window === 'undefined') return;
+  window.addEventListener('pointermove', handleWindowPointerMove);
+  window.addEventListener('pointerup', handleWindowPointerUp);
+  window.addEventListener('pointercancel', handleWindowPointerCancel);
+  return () => {
+    window.removeEventListener('pointermove', handleWindowPointerMove);
+    window.removeEventListener('pointerup', handleWindowPointerUp);
+    window.removeEventListener('pointercancel', handleWindowPointerCancel);
+  };
+});
+
+onDestroy(() => pictureLongPress.cancel());
+
 function handleSurfaceClick(event: MouseEvent) {
   const target = event.target as Element | null;
   const image = target?.closest('img') as HTMLImageElement | null;
@@ -1340,6 +1485,8 @@ function handleSurfaceClick(event: MouseEvent) {
 }
 
 function handleEditorDragStart(event: DragEvent) {
+  pictureLongPress.handleDragStart();
+  hoveredImageBox = null;
   const target = event.target as Element | null;
   const image =
     (target?.closest('img') as HTMLImageElement | null) ||
@@ -1367,7 +1514,8 @@ function handleEditorDragEnd() {
 }
 </script>
 
-<div bind:this={rootElement} class="content-body-editor">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div bind:this={rootElement} class="content-body-editor" onpointerleave={handleRootPointerLeave}>
   <div class="body-editor-toolbar" aria-label={t(M['content.content_body_editor.toolbar'])}>
     <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.bold'])} aria-label={t(M['content.content_body_editor.bold'])} onclick={() => runCommand('bold')}>
       <strong>B</strong>
@@ -1453,6 +1601,16 @@ function handleEditorDragEnd() {
       style={`top: ${Math.max(44, selectedImageBox.top + 8)}px; left: ${selectedImageBox.left + selectedImageBox.width / 2}px;`}
       aria-label={t(M['content.content_body_editor.selected_image_controls'])}
     >
+      {#if onRequestImageChange}
+        <Button variant="ghost" size="sm" class="editor-popover-button editor-popover-button--change" type="button" title={t(M['content.content_body_editor.change_image_hint'])} aria-label={t(M['content.content_body_editor.change_image'])} onclick={() => requestImageChange(getSelectedImage(), false)}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"></path>
+            <path d="M19 15v4"></path>
+            <path d="M17 17h4"></path>
+          </svg>
+          <span class="editor-popover-button-text">{t(M['content.content_body_editor.change_image_short'])}</span>
+        </Button>
+      {/if}
       <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.move_image'])} aria-label={t(M['content.content_body_editor.move_image'])} onpointerdown={startImageMove}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2v20"></path>
@@ -1591,6 +1749,24 @@ function handleEditorDragEnd() {
     </button>
   {/if}
 
+  {#if changeBadgeBox}
+    <!-- raw-primitive-allow: a round 44px icon button pinned to a picture's corner (absolute position over the story); Button's padding and layout do not fit an overlay badge -->
+    <button
+      type="button"
+      class="image-change-badge"
+      title={t(M['content.content_body_editor.change_image_hint'])}
+      aria-label={t(M['content.content_body_editor.change_image'])}
+      style={`top: ${changeBadgeBox.top + changeBadgeBox.height - 52}px; left: ${changeBadgeBox.left + 8}px;`}
+      onclick={handleChangeBadgeClick}
+    >
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"></path>
+        <path d="M19 15v4"></path>
+        <path d="M17 17h4"></path>
+      </svg>
+    </button>
+  {/if}
+
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     bind:this={editorElement}
@@ -1616,6 +1792,11 @@ function handleEditorDragEnd() {
       saveSelection();
     }}
     onclick={handleSurfaceClick}
+    onpointerdown={(event) => pictureLongPress.handlePointerDown(event)}
+    onpointerover={handleSurfacePointerOver}
+    onpointerout={handleSurfacePointerOut}
+    oncontextmenu={(event) => pictureLongPress.handleContextMenu(event)}
+    onclickcapture={(event) => pictureLongPress.handleClick(event)}
     onkeyup={saveSelection}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
@@ -1837,6 +2018,8 @@ function handleEditorDragEnd() {
   }
 
   .body-editor-surface :global(img) {
+    /* iOS: no callout on a long press, which asks for a change instead. */
+    -webkit-touch-callout: none;
     display: block;
     max-width: min(100%, 44rem);
     height: auto;
@@ -1896,6 +2079,38 @@ function handleEditorDragEnd() {
   .body-editor-surface :global([data-smrt-moving='true']),
   .body-editor-surface :global([data-smrt-resizing='true']) {
     opacity: 0.78;
+  }
+
+  .image-change-badge {
+    position: absolute;
+    z-index: 19;
+    display: inline-grid;
+    place-items: center;
+    inline-size: 44px;
+    block-size: 44px;
+    padding: 0;
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-full, 9999px);
+    background: color-mix(in srgb, var(--smrt-color-surface) 94%, transparent);
+    color: var(--smrt-color-primary, #3558d6);
+    box-shadow: var(--smrt-elevation-3, 0 0.4rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent));
+    cursor: pointer;
+  }
+
+  .image-change-badge:hover,
+  .image-change-badge:focus-visible {
+    background: var(--smrt-color-primary-container, #dde3ff);
+  }
+
+  .image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
+    inline-size: auto;
+    min-inline-size: 44px;
+    block-size: 44px;
+    padding: 0 0.7rem 0 0.55rem;
+    gap: 0.3rem;
+    display: inline-flex;
+    color: var(--smrt-color-primary, #3558d6);
+    font-weight: 600;
   }
 
   .image-control-popover {

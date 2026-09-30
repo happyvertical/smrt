@@ -114,7 +114,10 @@ export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
 export type ContentAgentChatProps = ComponentProps<typeof ContentAgentChat>;
 export type ContentBodyEditorProps = ComponentProps<typeof ContentBodyEditor>;
-export type { ContentBodyEditorChange } from './components/ContentBodyEditor.svelte';
+export type {
+  ContentBodyEditorChange,
+  ContentBodyImageChangeRequest,
+} from './components/ContentBodyEditor.svelte';
 export type ContentBodyRendererProps = ComponentProps<
   typeof ContentBodyRenderer
 >;
