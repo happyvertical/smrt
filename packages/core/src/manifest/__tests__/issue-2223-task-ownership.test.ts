@@ -291,6 +291,24 @@ describe('Issue #2223 - test manifest task ownership', () => {
       expect(
         JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
       ).toContain('# @happyvertical/smrt-core');
+
+      appendFileSync(
+        resolve(fixtureDir, 'AGENTS.md'),
+        '\nfixture cache sentinel\n',
+      );
+      const withChangedInstructions = getCoreTask(
+        fixtureWorkspace,
+        'generate:test',
+      );
+      expect(withChangedInstructions.hash).not.toBe(withDocs.hash);
+      runCommand(
+        turbo,
+        ['run', 'generate:test', '--filter=@happyvertical/smrt-core'],
+        fixtureWorkspace,
+      );
+      expect(
+        JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
+      ).toContain('fixture cache sentinel');
     });
   }, 180_000);
 
