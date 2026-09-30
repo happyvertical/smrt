@@ -881,12 +881,12 @@ export async function runToolLoop(
                 observation,
               };
             } catch (error) {
-              const rejected =
+              const kind =
                 error instanceof PrincipalToolNotAllowedError ||
-                error instanceof OperationPermissionError;
-              const kind = rejected
-                ? 'not_permitted'
-                : classifyToolError(error);
+                error instanceof OperationPermissionError
+                  ? 'not_permitted'
+                  : classifyToolError(error);
+              const rejected = kind === 'not_permitted';
               invocation = {
                 slug,
                 args,
@@ -1124,19 +1124,27 @@ function errorStatus(error: unknown): number | undefined {
   return undefined;
 }
 
+/** Statuses meaning the model's arguments were wrong and can be corrected. */
+const INVALID_REQUEST_STATUSES = new Set([400, 404, 409, 422]);
+
 /**
- * Classify an error a tool threw. A validation error or any error carrying a
- * 4xx `status`/`statusCode` means the tool refused the model's arguments —
- * `invalid_request`, which the model can correct and retry. Everything else
- * (5xx, database, network, programming errors) is a real `execution_error`.
- * Permission denials are classified by the caller before this runs.
+ * Classify an error a tool threw.
+ *
+ * - `401`/`403` → `not_permitted`: the caller lacks access, which no change
+ *   of arguments fixes; reported as a rejection.
+ * - A {@link ValidationError}, or `400`/`404`/`409`/`422` → `invalid_request`:
+ *   the tool refused the model's arguments, which it can correct and retry.
+ * - Everything else — `429` (retry later, not a different call), other 4xx,
+ *   5xx, database, network, and programming errors → `execution_error`.
+ *
+ * Permission errors thrown as {@link PrincipalToolNotAllowedError} /
+ * `OperationPermissionError` are classified by the caller before this runs.
  */
-export function classifyToolError(
-  error: unknown,
-): Exclude<ToolErrorKind, 'not_permitted'> {
+export function classifyToolError(error: unknown): ToolErrorKind {
   if (error instanceof ValidationError) return 'invalid_request';
   const status = errorStatus(error);
-  if (status !== undefined && status >= 400 && status < 500) {
+  if (status === 401 || status === 403) return 'not_permitted';
+  if (status !== undefined && INVALID_REQUEST_STATUSES.has(status)) {
     return 'invalid_request';
   }
   return 'execution_error';

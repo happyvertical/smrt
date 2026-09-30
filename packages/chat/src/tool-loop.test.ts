@@ -509,6 +509,48 @@ describe('runToolLoop', () => {
     }
   });
 
+  it('classifies HTTP statuses: 401/403 not permitted, 400/404/409/422 invalid, 429 and others execution', async () => {
+    const withStatus = (status: number) =>
+      Object.assign(new Error(`status ${status}`), { status });
+    for (const status of [401, 403]) {
+      expect(classifyToolError(withStatus(status))).toBe('not_permitted');
+    }
+    for (const status of [400, 404, 409, 422]) {
+      expect(classifyToolError(withStatus(status))).toBe('invalid_request');
+    }
+    for (const status of [405, 418, 429, 500, 503]) {
+      expect(classifyToolError(withStatus(status))).toBe('execution_error');
+    }
+    expect(
+      classifyToolError(
+        Object.assign(new Error('forbidden'), { statusCode: 403 }),
+      ),
+    ).toBe('not_permitted');
+
+    const ai = makeAI((_m, options) =>
+      toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'read' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      maxSteps: 1,
+      executeTool: async () => {
+        throw withStatus(403);
+      },
+      audit: () => {},
+    });
+    expect(result.invocations[0]).toMatchObject({
+      ok: false,
+      rejected: true,
+      error: 'not_permitted',
+    });
+  });
+
   it('terminates at the max-steps ceiling', async () => {
     let executed = 0;
     const executeTool = vi.fn(async () => {
