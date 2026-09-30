@@ -167,3 +167,26 @@ M8 completion, capture host product/build/platform, protocol, asset revision,
 auth profile and actual negotiation/render/interaction outcomes. Until then,
 entrypoint metadata transport is proven locally; host rendering and end-to-end
 Iolaus compatibility remain unverified.
+
+## Protocol hygiene negative assertions
+
+`pnpm check:mcp-protocol-hygiene` rejects retired protocol features in package
+sources and tooling. It recognizes this narrow session-header absence assertion
+in `.test`/`.spec` JavaScript or TypeScript files with `expect` imported from Vitest:
+
+```ts
+expect(responses.every((response) => !response.headers.has('mcp-session-id'))).toBe(true);
+```
+
+The TypeScript parser must find an expression-statement expectation, a synchronous
+single-parameter arrow callback, that parameter's exact `headers.has` call, and a
+literal `true` matcher. Unbound or locally rebound `expect`, malformed syntax,
+positive/unasserted checks, optional chains, and mixed boolean expressions receive
+no exception. Only the verified header literal is excluded from lexical scanning;
+other retired tokens or actual session uses on the same line still fail. This is a
+static syntax rule, not a claim that the test executed or that runtime APIs cannot
+be replaced. Runtime conformance tests remain required.
+
+The gate's optional `--root <repository>` argument selects a package tree for
+isolated CLI regression fixtures; CI and hooks use the repository default. The
+root `pnpm test:ci-scripts` suite exercises acceptance and retained denials.
