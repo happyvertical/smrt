@@ -6,22 +6,53 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./client": { "types": "./dist/client.d.ts", "browser": "./dist/client.js", "import": "./dist/client.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "browser": "./dist/client.js",
+      "import": "./dist/client.js"
+    },
+    "./forms": {
+      "types": "./dist/forms.d.ts",
+      "browser": "./dist/forms.js",
+      "import": "./dist/forms.js"
+    },
+    "./forms/server": {
+      "types": "./dist/forms-server.d.ts",
+      "import": "./dist/forms-server.js"
+    },
+    "./forms/view": {
+      "types": "./dist/forms-view.d.ts",
+      "browser": "./dist/forms-view.js",
+      "import": "./dist/forms-view.js"
+    }
   },
-  "files": ["dist", "README.md", "AGENTS.md", "CLAUDE.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "FORMS.md",
+    "FORMS-TEST-DESIGN.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:e2e": "playwright test -c e2e/playwright.config.ts",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node scripts/verify-boundaries.mjs",
-    "prepack": "node ../../scripts/prepack-package.js"
+    "test:e2e": "playwright test -c e2e/playwright.config.ts && pnpm test:forms:e2e",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node scripts/verify-boundaries.mjs && pnpm verify:forms:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
+    "test:forms:e2e": "playwright test -c forms-e2e/playwright.config.ts",
+    "verify:forms:pack": "node scripts/verify-forms-boundaries.mjs"
   },
   "dependencies": {
     "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-mcp-apps": "workspace:*"
+    "@happyvertical/smrt-mcp-apps": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.0.0",
@@ -32,6 +63,12 @@
   },
   "author": "HappyVertical",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/happyvertical/smrt.git", "directory": "packages/mcp-openai" },
-  "publishConfig": { "access": "public" }
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/mcp-openai"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

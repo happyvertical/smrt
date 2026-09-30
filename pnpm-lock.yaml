@@ -1650,6 +1650,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
       '@happyvertical/smrt-mcp-apps':
         specifier: workspace:*
         version: link:../mcp-apps
@@ -2393,12 +2396,12 @@ importers:
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
-      parse5:
-        specifier: 8.0.1
-        version: 8.0.1
       jose:
         specifier: ^6.2.12
         version: 6.2.12
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
     devDependencies:
       '@modelcontextprotocol/client':
         specifier: 2.0.0
