@@ -328,6 +328,7 @@ interface DbMigrateOptions {
   'dry-run'?: boolean;
   'postgres-safe'?: boolean;
   'postgres-timestamp-legacy-timezone'?: string;
+  'empty-text-as-null'?: boolean;
   force?: boolean;
   'force-migration'?: string | readonly string[];
   'repair-data'?: boolean;
@@ -1681,6 +1682,12 @@ export default testManifest;
         description:
           'Confirm that legacy PostgreSQL timestamp-without-time-zone values are UTC wall times before converting them to timestamptz. Exact value required: UTC; omitted by default.',
       },
+      'empty-text-as-null': {
+        type: 'boolean',
+        description:
+          'Store empty or whitespace-only text as NULL when converging a nullable legacy text column to a typed column (timestamp, JSON, integer). Any other value that does not convert still blocks, and NOT NULL columns are never changed. Off by default.',
+        default: false,
+      },
       force: {
         type: 'boolean',
         description:
@@ -1993,6 +2000,7 @@ export default testManifest;
           includeDroppedColumns: Boolean(options['drop-columns']),
           relaxColumns: Boolean(options['relax-columns']),
           postgresTimestampMigration,
+          emptyTextAsNull: Boolean(options['empty-text-as-null']),
         });
         const diff = await comparer.compare(manifestSchemas);
         const engine = tracker.getEngine();
@@ -2536,7 +2544,7 @@ export default testManifest;
               actionDesc = `Dropped column ${migration.tableName}.${migration.columnName}`;
             } else if (migration.type === 'type_upgrade' && migration.column) {
               migrationSql = migration.sql || '';
-              actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
+              actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}${migration.note ? ` (${migration.note})` : ''}`;
             } else if (migration.type === 'add_index' && migration.index) {
               migrationSql = migration.sql || '';
               actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;

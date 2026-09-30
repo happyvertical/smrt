@@ -36,8 +36,11 @@ import {
 } from '../schema/foreign-key-policy.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
 import {
+  isEmptyTextOnlyProbe,
   maskSampleValue,
   probeCastSafety,
+  renderEmptyTextAsNullExpression,
+  renderEmptyTextPredicate,
   renderJsonbColumnConversion,
   renderTimestamptzColumnConversion,
   type ShapeProbeResult,
@@ -165,6 +168,16 @@ export interface DiffOptions {
    * than reinterpreted automatically.
    */
   postgresTimestampMigration?: { legacyTimezone: 'UTC' };
+  /**
+   * Store empty or whitespace-only text as NULL when converging a legacy
+   * `text` column to a typed PostgreSQL column (#3226): `timestamptz`,
+   * `jsonb`, or an integer. Applies only when the manifest column and the
+   * live column are both nullable, and (for the probed `timestamptz`/`jsonb`
+   * conversions) only when empty text is the sole obstacle -- any other
+   * value that does not cast still blocks. Off by default: the diff then
+   * names the empty-text count in the blocking advisory instead.
+   */
+  emptyTextAsNull?: boolean;
   /**
    * How many live-table introspections `compare()` runs concurrently while
    * prefetching every existing manifest table's schema. Defaults to
@@ -1154,7 +1167,33 @@ export class SchemaComparer {
     columnName: string,
     kind: 'timestamptz' | 'jsonb',
   ): Promise<ShapeProbeResult> {
-    return probeCastSafety(this.db, tableName, columnName, kind);
+    return probeCastSafety(this.db, tableName, columnName, kind, {
+      emptyTextAsNull: this.options.emptyTextAsNull === true,
+    });
+  }
+
+  /**
+   * Explain a probe's empty-text finding (#3226) for a blocking advisory:
+   * how many of the offending values are empty text and what the opt-in
+   * would do with them (or why it cannot).
+   */
+  private describeEmptyTextFinding(
+    probe: Extract<ShapeProbeResult, { status: 'dirty' }>,
+    nullable: boolean,
+  ): string {
+    const emptyCount = probe.emptyCount ?? 0;
+    if (emptyCount === 0) return '';
+    const emptyOnly = emptyCount === probe.count;
+    const subject = emptyOnly
+      ? `All ${emptyCount} are empty text ('').`
+      : `${emptyCount} of them are empty text ('').`;
+    if (!nullable) {
+      return ` ${subject} The column is NOT NULL, so empty text cannot become NULL; store real values instead.`;
+    }
+    if (!emptyOnly) {
+      return ` ${subject} \`--empty-text-as-null\` would store those as NULL, but the other value(s) must be repaired first.`;
+    }
+    return ` ${subject} Rerun with \`smrt db:migrate --empty-text-as-null\` to store them as NULL (the column is nullable).`;
   }
 
   /**
@@ -1862,6 +1901,21 @@ export class SchemaComparer {
           nativeJsonToJsonb &&
           (jsonProbe?.status === 'clean' || jsonProbe?.status === 'dirty');
 
+        // #3226: empty text in a nullable column may be stored as NULL when
+        // the operator opts in and it is the only obstacle to the cast.
+        const emptyTextNullable =
+          colDef.notNull !== true && dbCol.notNull !== true;
+        const convertEmptyText =
+          this.options.emptyTextAsNull === true && emptyTextNullable;
+        const jsonEmptyTextToNull =
+          convertEmptyText && isEmptyTextOnlyProbe(jsonProbe);
+        const timestamptzEmptyTextToNull =
+          convertEmptyText && isEmptyTextOnlyProbe(timestamptzProbe);
+        const jsonConvertible =
+          jsonProbe?.status === 'clean' || jsonEmptyTextToNull;
+        const timestamptzConvertible =
+          timestamptzProbe?.status === 'clean' || timestamptzEmptyTextToNull;
+
         if (
           (normalizedExpected !== normalizedActual || nativeJsonDrift) &&
           !isUuidTextEquivalent &&
@@ -1888,6 +1942,22 @@ export class SchemaComparer {
             hasLiveDefault,
             manifestDefaultValue: colDef.defaultValue,
           };
+          const jsonConversionOptions = {
+            ...conversionOptions,
+            ...(jsonEmptyTextToNull ? { emptyTextAsNull: true } : {}),
+          };
+          const timestamptzConversionOptions = {
+            ...conversionOptions,
+            ...(timestamptzEmptyTextToNull ? { emptyTextAsNull: true } : {}),
+          };
+          const emptyTextNote = (
+            probe: ShapeProbeResult | undefined,
+          ): { note: string } | Record<string, never> =>
+            isEmptyTextOnlyProbe(probe)
+              ? {
+                  note: `${probe.emptyCount} empty-text value(s) become NULL (--empty-text-as-null)`,
+                }
+              : {};
 
           // Review finding: dropping a live default the manifest no longer
           // declares is the same "relaxation" `compareColumnConstraints`
@@ -1915,7 +1985,7 @@ export class SchemaComparer {
 
           if (
             jsonUpgradeCandidate &&
-            jsonProbe?.status === 'clean' &&
+            jsonConvertible &&
             liveOnlyDefaultNeedsRelaxOptIn
           ) {
             changes.push({
@@ -1934,15 +2004,15 @@ export class SchemaComparer {
                 suggestedSql: renderJsonbColumnConversion(
                   tableName,
                   colName,
-                  conversionOptions,
+                  jsonConversionOptions,
                 ),
               },
             });
-          } else if (jsonUpgradeCandidate && jsonProbe?.status === 'clean') {
+          } else if (jsonUpgradeCandidate && jsonConvertible) {
             const statements = renderJsonbColumnConversion(
               tableName,
               colName,
-              conversionOptions,
+              jsonConversionOptions,
             );
             changes.push({
               type: 'type_upgrade',
@@ -1952,6 +2022,7 @@ export class SchemaComparer {
               mismatch: jsonMismatch,
               sql: statements[statements.length - 1],
               sqlStatements: statements,
+              ...(jsonEmptyTextToNull ? emptyTextNote(jsonProbe) : {}),
             });
           } else if (
             jsonUpgradeCandidate &&
@@ -1994,10 +2065,17 @@ export class SchemaComparer {
                             : 'are not valid JSON'
                         }`
                   } (sample: ${
-                    jsonProbe.sample
+                    jsonProbe.sample !== undefined
                       ? maskSampleValue(jsonProbe.sample)
                       : 'unavailable'
-                  }). ${
+                  }).${
+                    jsonProbe.reason === undefined
+                      ? this.describeEmptyTextFinding(
+                          jsonProbe,
+                          emptyTextNullable,
+                        )
+                      : ''
+                  } ${
                     jsonProbe.reason === 'duplicate_keys'
                       ? 'Converting keeps only the last value of each duplicated key; ' +
                         'deduplicate the keys (deciding which value to keep), then rerun '
@@ -2013,6 +2091,8 @@ export class SchemaComparer {
                       suggestedSql: renderJsonbColumnConversion(
                         tableName,
                         colName,
+                        // Never a NULLIF form here: without the opt-in the
+                        // duplicate-key walk has not run over the rest.
                         conversionOptions,
                       ),
                     }),
@@ -2020,7 +2100,7 @@ export class SchemaComparer {
             });
           } else if (
             timestamptzUpgradeCandidate &&
-            timestamptzProbe?.status === 'clean' &&
+            timestamptzConvertible &&
             liveOnlyDefaultNeedsRelaxOptIn
           ) {
             changes.push({
@@ -2039,18 +2119,15 @@ export class SchemaComparer {
                 suggestedSql: renderTimestamptzColumnConversion(
                   tableName,
                   colName,
-                  conversionOptions,
+                  timestamptzConversionOptions,
                 ),
               },
             });
-          } else if (
-            timestamptzUpgradeCandidate &&
-            timestamptzProbe?.status === 'clean'
-          ) {
+          } else if (timestamptzUpgradeCandidate && timestamptzConvertible) {
             const statements = renderTimestamptzColumnConversion(
               tableName,
               colName,
-              conversionOptions,
+              timestamptzConversionOptions,
             );
             changes.push({
               type: 'type_upgrade',
@@ -2060,6 +2137,9 @@ export class SchemaComparer {
               mismatch: { expected: colDef.type, actual: dbCol.type },
               sql: statements[statements.length - 1],
               sqlStatements: statements,
+              ...(timestamptzEmptyTextToNull
+                ? emptyTextNote(timestamptzProbe)
+                : {}),
             });
           } else if (
             timestamptzUpgradeCandidate &&
@@ -2076,25 +2156,42 @@ export class SchemaComparer {
                 message:
                   `blocked: ${tableName}.${colName} is declared TIMESTAMP but ${timestamptzProbe.count} ` +
                   `live value(s) do not parse as an unambiguous timestamp (sample: ${
-                    timestamptzProbe.sample
+                    timestamptzProbe.sample !== undefined
                       ? maskSampleValue(timestamptzProbe.sample)
                       : 'unavailable'
-                  }). Repair the offending value(s), or confirm legacy naive ` +
-                  'wall-clock provenance with `smrt db:migrate --postgres-timestamp-legacy-timezone=UTC`, then rerun.',
+                  }).${this.describeEmptyTextFinding(
+                    timestamptzProbe,
+                    emptyTextNullable,
+                  )}${
+                    isEmptyTextOnlyProbe(timestamptzProbe)
+                      ? ''
+                      : ' Repair the offending value(s), or confirm legacy naive ' +
+                        'wall-clock provenance with `smrt db:migrate --postgres-timestamp-legacy-timezone=UTC`, then rerun.'
+                  }`,
                 suggestedSql: renderTimestamptzColumnConversion(
                   tableName,
                   colName,
-                  conversionOptions,
+                  isEmptyTextOnlyProbe(timestamptzProbe) && emptyTextNullable
+                    ? { ...conversionOptions, emptyTextAsNull: true }
+                    : conversionOptions,
                 ),
               },
             });
           } else if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
             // Generate type upgrade SQL
+            // #3226: TEXT -> INTEGER is the other text-to-typed repair;
+            // under the opt-in its preflight and cast skip empty text too.
+            const integerEmptyTextToNull =
+              convertEmptyText &&
+              this.engine === 'postgres' &&
+              this.normalizeType(colDef.type) === 'INTEGER' &&
+              normalizedActual === 'TEXT';
             const generatedSQL = this.generateTypeUpgradeSQL(
               tableName,
               colName,
               colDef,
               dbCol.type,
+              { emptyTextAsNull: integerEmptyTextToNull },
             );
             changes.push({
               type: 'type_upgrade',
@@ -2108,6 +2205,11 @@ export class SchemaComparer {
               sql: generatedSQL.sql,
               ...(generatedSQL.statements
                 ? { sqlStatements: generatedSQL.statements }
+                : {}),
+              ...(integerEmptyTextToNull
+                ? {
+                    note: 'empty-text value(s), if any, become NULL (--empty-text-as-null)',
+                  }
                 : {}),
             });
           } else if (!this.options.ignoreTypeMismatches) {
@@ -4209,6 +4311,7 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
     dbType: string,
+    options: { emptyTextAsNull?: boolean } = {},
   ): GeneratedTypeUpgradeSQL {
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
@@ -4253,6 +4356,7 @@ export class SchemaComparer {
                 tableName,
                 colName,
                 dbNormalized,
+                options.emptyTextAsNull === true && dbNormalized === 'TEXT',
               )
             : manifestNormalized === 'TIMESTAMP' &&
                 ['TIMESTAMP', 'TEXT', 'JSON'].includes(dbNormalized) &&
@@ -4290,7 +4394,9 @@ export class SchemaComparer {
           manifestNormalized === 'INTEGER' &&
           dbNormalized === 'TEXT'
         ) {
-          typeClause += ` USING trim(${quotedCol}::text)::bigint`;
+          typeClause += options.emptyTextAsNull
+            ? ` USING trim((${renderEmptyTextAsNullExpression(quotedCol)}))::bigint`
+            : ` USING trim(${quotedCol}::text)::bigint`;
         } else if (
           manifestNormalized === 'INTEGER' &&
           dbNormalized === 'REAL'
@@ -4369,11 +4475,15 @@ export class SchemaComparer {
     tableName: string,
     colName: string,
     dbNormalized: string,
+    emptyTextAsNull = false,
   ): string {
+    // #3226: under the opt-in, empty text becomes NULL instead of blocking.
     const invalidCondition =
       dbNormalized === 'REAL'
         ? `${quotedCol} IS NOT NULL AND ${quotedCol} <> trunc(${quotedCol})`
-        : `${quotedCol} IS NOT NULL AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`;
+        : emptyTextAsNull
+          ? `${quotedCol} IS NOT NULL AND NOT ${renderEmptyTextPredicate(quotedCol)} AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`
+          : `${quotedCol} IS NOT NULL AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`;
     const message = `Cannot convert ${tableName}.${colName} to INTEGER: found non-integer values`;
 
     return `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${invalidCondition}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;

@@ -38,6 +38,7 @@ interface DbDiffOptions {
   'drop-columns'?: boolean;
   'relax-columns'?: boolean;
   'postgres-timestamp-legacy-timezone'?: string;
+  'empty-text-as-null'?: boolean;
 }
 
 export const dbDiffCommand: CLICommand = {
@@ -106,6 +107,12 @@ export const dbDiffCommand: CLICommand = {
       type: 'string',
       description:
         'Confirm that legacy PostgreSQL timestamp-without-time-zone values are UTC wall times before previewing their conversion to timestamptz. Exact value required: UTC; omitted by default.',
+    },
+    'empty-text-as-null': {
+      type: 'boolean',
+      description:
+        'Preview storing empty or whitespace-only text as NULL when converging a nullable legacy text column to a typed column (timestamp, JSON, integer). Any other value that does not convert still blocks. Off by default; the diff names the empty-text count instead.',
+      default: false,
     },
   },
   handler: async (_args: string[], options: DbDiffOptions) => {
@@ -215,6 +222,7 @@ export const dbDiffCommand: CLICommand = {
         includeDroppedIndexes: Boolean(options['drop-indexes']),
         relaxColumns: Boolean(options['relax-columns']),
         postgresTimestampMigration,
+        emptyTextAsNull: Boolean(options['empty-text-as-null']),
       });
 
       const diff = await comparer.compare(schemaDefinitions);
@@ -417,6 +425,7 @@ export const dbDiffCommand: CLICommand = {
           console.log(
             `     ⤴ ${change.table}.${change.name}: ${change.mismatch?.actual} → ${change.mismatch?.expected}`,
           );
+          if (change.note) console.log(`       (${change.note})`);
         }
         console.log('     (auto-applied by smrt db:migrate)\n');
       }
