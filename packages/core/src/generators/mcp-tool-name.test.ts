@@ -341,4 +341,86 @@ describe('canonical MCP tool identifiers (#3219)', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it.each([
+    false,
+    true,
+  ])('creates a quote-bearing class in emitted plain Node (modular=%s)', async (modular) => {
+    class QuotedRecord extends SmrtObject {}
+    Object.defineProperty(QuotedRecord, 'name', { value: "Owner'sRecord" });
+    ObjectRegistry.register(QuotedRecord, { mcp: { include: ['create'] } });
+    const dir = await mkdtemp(join(tmpdir(), 'smrt-quoted-class-'));
+    try {
+      await writeFile(join(dir, 'package.json'), '{"type":"module"}');
+      await new MCPGenerator().generateServer({
+        outputPath: join(dir, 'index.js'),
+        modular,
+      });
+      const packages = {
+        '@modelcontextprotocol/server': {
+          'index.js':
+            'export class Server { handlers = {}; setRequestHandler(name, fn) { this.handlers[name] = fn; } }',
+          'stdio.js': 'export function serveStdio() {}',
+        },
+        '@happyvertical/smrt-config': {
+          'index.js': 'export async function loadConfig() { return {}; }',
+        },
+        '@happyvertical/smrt-core': {
+          'index.js': `
+          export const ObjectRegistry = {
+            loadAllManifests() {},
+            getConfig() { return {}; },
+            getFields() { return new Map(); },
+            async getCollection(name) {
+              if (name !== "owner'srecord") throw Error('wrong target '+name);
+              return { async create() { return { async save() {}, toPublicJSON() { return { receiver: "Owner'sRecord" }; } }; } };
+            }
+          };
+          export function normalizeCustomActionFailure() {}
+          export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
+        `,
+        },
+      };
+      for (const [name, files] of Object.entries(packages)) {
+        const directory = join(dir, 'node_modules', name);
+        await mkdir(directory, { recursive: true });
+        await writeFile(
+          join(directory, 'package.json'),
+          JSON.stringify({
+            type: 'module',
+            exports: { '.': './index.js', './stdio': './stdio.js' },
+          }),
+        );
+        for (const [file, content] of Object.entries(files))
+          await writeFile(join(directory, file), content);
+      }
+      await writeFile(
+        join(dir, 'probe.mjs'),
+        `
+        import { createServer } from './index.js';
+        const server = await createServer();
+        const { tools } = await server.handlers['tools/list']({});
+        const tool = tools.find(tool => tool.name.startsWith('owner_srecord_'));
+        const result = await server.handlers['tools/call']({params:{name:tool.name,arguments:{}}});
+        const denied = await server.handlers['tools/call']({params:{name:"owner'srecord_create",arguments:{}}});
+        console.log(JSON.stringify({tool,result,denied}));
+      `,
+      );
+      const { stdout } = await exec(
+        process.execPath,
+        [join(dir, 'probe.mjs')],
+        { cwd: dir },
+      );
+      const { tool, result, denied } = JSON.parse(stdout.trim());
+      expect(tool.name).toMatch(standardName);
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      expect(JSON.parse(result.content[0].text)).toEqual({
+        receiver: "Owner'sRecord",
+      });
+      expect(denied.isError).toBe(true);
+    } finally {
+      ObjectRegistry.register(QuotedRecord, { mcp: false });
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
