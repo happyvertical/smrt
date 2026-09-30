@@ -11,6 +11,7 @@
  * - `createLocalListSort(spec)` — lists that load every row: page state.
  */
 import {
+  isValidListSort,
   type ListSort,
   type ListSortSpec,
   listSortHref,
@@ -25,7 +26,10 @@ export interface ListSortState {
   href(columnId: string): string | undefined;
   /** Activate a header: toggle `columnId` (URL lists: the link navigates). */
   toggle(columnId: string): void | Promise<void>;
-  /** Apply a sort (headers, the "Sort by" picker, agents). */
+  /**
+   * Apply a sort (headers, the "Sort by" picker, agents). A sort naming an
+   * undeclared column or an unknown direction is ignored.
+   */
   set(sort: ListSort): void | Promise<void>;
 }
 
@@ -51,7 +55,10 @@ export function createUrlListSort(
     href: (columnId) =>
       listSortHref(options.url(), toggleListSort(sort, columnId, spec), spec),
     toggle: () => {},
-    set: (next) => options.navigate(listSortHref(options.url(), next, spec)),
+    set: (next) => {
+      if (!isValidListSort(spec, next)) return;
+      return options.navigate(listSortHref(options.url(), next, spec));
+    },
   };
 }
 
@@ -59,7 +66,9 @@ export function createLocalListSort(
   spec: ListSortSpec,
   initial?: ListSort,
 ): ListSortState {
-  let sort = $state<ListSort>(initial ?? { ...spec.default });
+  let sort = $state<ListSort>(
+    isValidListSort(spec, initial) ? { ...initial } : { ...spec.default },
+  );
   return {
     get sort() {
       return sort;
@@ -70,7 +79,8 @@ export function createLocalListSort(
       sort = toggleListSort(sort, columnId, spec);
     },
     set: (next) => {
-      sort = next;
+      if (!isValidListSort(spec, next)) return;
+      sort = { columnId: next.columnId, direction: next.direction };
     },
   };
 }

@@ -37,6 +37,28 @@ describe('list sort state', () => {
     expect(navigate).toHaveBeenCalledWith('/list?sort=published&dir=asc');
   });
 
+  it('ignores an undeclared column or unknown direction on set', async () => {
+    const local = createLocalListSort(spec);
+    local.set({ columnId: 'secret_score', direction: 'asc' });
+    expect(local.sort).toEqual(spec.default);
+    local.set({ columnId: 'title', direction: 'sideways' as never });
+    expect(local.sort).toEqual(spec.default);
+    local.set({ columnId: 'title', direction: 'asc' });
+    expect(local.sort).toEqual({ columnId: 'title', direction: 'asc' });
+
+    // An invalid initial sort starts at the default.
+    expect(
+      createLocalListSort(spec, { columnId: 'nope', direction: 'asc' }).sort,
+    ).toEqual(spec.default);
+
+    const navigate = vi.fn();
+    const url = new URL('https://x.test/list');
+    const remote = createUrlListSort(spec, { url: () => url, navigate });
+    await remote.set({ columnId: 'secret_score', direction: 'desc' });
+    await remote.set(null as never);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it('drives SortableHeader and ListSortSelect through `list`', async () => {
     const list = createLocalListSort(spec);
     render(SortableHeader, {
