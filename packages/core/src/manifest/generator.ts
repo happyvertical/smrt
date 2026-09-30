@@ -249,7 +249,7 @@ export class ManifestBuilder {
     let smrtDependencies: string[] = [];
     if (options.discoverExternalPackages) {
       logger.debug('[smrt] Discovering external SMRT packages...');
-      smrtDependencies = discoverSmrtPackages();
+      smrtDependencies = discoverSmrtPackages({ baseDir: this.root() });
       logger.debug(
         `[smrt] Found ${smrtDependencies.length} SMRT package(s): ${smrtDependencies.join(', ')}`,
       );
@@ -649,7 +649,9 @@ export default ${exportName};
     };
 
     if (options.discoverExternalPackages) {
-      manifest.smrtDependencies = discoverSmrtPackages();
+      manifest.smrtDependencies = discoverSmrtPackages({
+        baseDir: this.root(),
+      });
     }
 
     if (options.injectPackageInfo) {
