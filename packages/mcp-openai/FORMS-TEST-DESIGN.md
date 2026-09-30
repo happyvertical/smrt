@@ -16,3 +16,9 @@ full server/forms/{schema,fields,file-picker,elicitation}.ts. No generated JSON 
 
 Full root gates and final independent review are coordinator-owned after #3205 repair.
 Actual OpenAI host verification remains M8; synthetic tests cannot satisfy it.
+
+Accepted review regression: for both multi-select and free-text arrays, untouched
+optional fields without defaults are omitted; editing then clearing submits an
+explicit empty array, accepted at minItems=0 and rejected at minItems=1. Untouched
+required arrays still undergo minItems validation. Browser fixtures cover each
+case; the two optional-omission cases fail against the pre-fix renderer.

@@ -59,3 +59,42 @@ test('invalid required input cannot submit', async ({ page }) => {
   await page.getByRole('button', { name: 'Submit input' }).click();
   expect(calls).toBe(0);
 });
+
+for (const control of ['select', 'text']) {
+  test(`${control}: untouched optional array is omitted`, async ({ page }) => {
+    await page.goto(`/?mode=array&control=${control}`);
+    const request = page.waitForRequest((r) => r.url().endsWith('/submit'));
+    await page.getByRole('button', { name: 'Submit input' }).click();
+    expect((await request).postDataJSON()).toEqual({ action: 'accept', content: {} });
+  });
+  for (const empty of [false, true]) {
+    test(`${control}: explicit empty selection respects minItems (empty=${empty})`, async ({ page }) => {
+      await page.goto(`/?mode=array&control=${control}${empty ? '&empty' : ''}`);
+      const input = page.getByLabel('Values', { exact: true });
+      if (control === 'select') {
+        await input.selectOption('one');
+        await input.selectOption([]);
+      } else {
+        await input.fill('one');
+        await input.fill('');
+      }
+      let calls = 0;
+      page.on('request', (r) => { if (r.url().endsWith('/submit')) calls++; });
+      const request = empty ? page.waitForRequest((r) => r.url().endsWith('/submit')) : undefined;
+      await page.getByRole('button', { name: 'Submit input' }).click();
+      if (request) expect((await request).postDataJSON()).toEqual({ action: 'accept', content: { values: [] } });
+      else {
+        await expect(page.getByRole('status')).toContainText('Check the form values');
+        expect(calls).toBe(0);
+      }
+    });
+  }
+  test(`${control}: untouched required array is validated`, async ({ page }) => {
+    await page.goto(`/?mode=array&control=${control}&required`);
+    let calls = 0;
+    page.on('request', (r) => { if (r.url().endsWith('/submit')) calls++; });
+    await page.getByRole('button', { name: 'Submit input' }).click();
+    await expect(page.getByRole('status')).toContainText('Check the form values');
+    expect(calls).toBe(0);
+  });
+}

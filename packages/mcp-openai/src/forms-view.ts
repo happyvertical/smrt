@@ -97,6 +97,20 @@ export function renderOpenAiForm(
             : input.value,
       );
     }
+    if (
+      field.type === 'array' &&
+      field.default === undefined &&
+      !schema.required?.includes(name)
+    ) {
+      let touched = false;
+      const markTouched = () => {
+        touched = true;
+      };
+      control.addEventListener('input', markTouched);
+      control.addEventListener('change', markTouched);
+      const read = reads.get(name)!;
+      reads.set(name, () => (touched ? read() : undefined));
+    }
     control.name = name;
     control.setAttribute('aria-label', field.title ?? name);
 
