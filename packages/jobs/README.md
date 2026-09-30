@@ -241,7 +241,9 @@ verified principal, never tool arguments.
 
 Configure `TaskRunner.authorizeMcpTask` to resolve live grants and validate the
 bound actor/tenant against the owning record. It is mandatory for continuation tasks and for every remote app-created task,
-and fails closed if absent or unavailable. It runs before each invocation;
+and fails closed if absent or unavailable. Provider exceptions become the fixed
+`MCP task authorization denied` error before task persistence; internal provider
+details are never exposed through task status. It runs before each invocation;
 `context.task.assertAuthorized()` repeats it and checks worker ownership before
 apply. A permission snapshot must not be persisted in the job.
 
@@ -254,6 +256,8 @@ the saved answer. Calls before this seam must be read-only or use the owning
 use a new owning action/task for another review revision. JSON input is bounded
 to 64 KiB. Unknown response keys are ignored, incomplete responses do not wake
 the job, and repeated answers cannot overwrite the first accepted response.
+Once an answer is accepted, status is `working` while queued or resumed; the
+immutable response remains available for replay without asking for input again.
 
 `getContinuation(taskId)` exposes the waiting descriptor only through the same
 actor/tenant-scoped store. Use it in an explicitly declared authorized workflow
