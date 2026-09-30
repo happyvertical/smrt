@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.37
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - make the system drawer span the footer (#3198) (svelte)
+- @happyvertical/smrt-config@0.51.37
+  - @happyvertical/smrt-scanner@0.51.37
+  - @happyvertical/smrt-types@0.51.37
+
 ## 0.51.36
 
 ### Patch Changes
