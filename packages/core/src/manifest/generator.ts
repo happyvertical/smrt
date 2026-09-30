@@ -60,6 +60,8 @@ export interface ManifestBuilderOptions {
   includeStaticMethods?: boolean;
 
   // Output Configuration
+  /** Explicit output ownership; omitted retains legacy filename inference. */
+  outputMode?: 'dev' | 'build';
   outputDir?: string;
   outputName?: string;
   generateTypeStub?: boolean;
@@ -68,6 +70,8 @@ export interface ManifestBuilderOptions {
   // Metadata
   injectPackageInfo?: boolean;
   moduleType?: string;
+  /** Test artifacts are local inputs, never dependency discovery providers. */
+  artifactPurpose?: 'runtime' | 'test';
 
   // Tree Shaking (External Object Filtering)
   /**
@@ -364,6 +368,13 @@ export class ManifestBuilder {
   ): SmartObjectManifest {
     // Add module type
     manifest.moduleType = options.moduleType || 'smrt';
+    const purpose =
+      options.artifactPurpose ??
+      (options.outputName?.includes('test') ||
+      options.stubName?.includes('test')
+        ? 'test'
+        : undefined);
+    if (purpose) manifest.artifactPurpose = purpose;
 
     // Record dependency references (not their objects) so runtime
     // manifest-loader.ts can discover and load them on demand.
@@ -401,13 +412,13 @@ export class ManifestBuilder {
     const isTest =
       options.outputName?.includes('test') ||
       options.stubName?.includes('test');
-    const mode = isTest ? 'dev' : 'build';
+    const mode = options.outputMode ?? (isTest ? 'dev' : 'build');
 
     // 1. Always write to the unified location via ManifestManager
     manager.write(manifest, mode);
 
     // 2. Legacy/Explicit Output (if requested or for stubs)
-    const outputDir = options.outputDir || 'src/manifest';
+    const outputDir = resolve(this.root(), options.outputDir || 'src/manifest');
     const outputName = options.outputName || 'manifest.json';
 
     // Ensure output directory exists for legacy/stubs
@@ -632,6 +643,9 @@ export default ${exportName};
       timestamp: MANIFEST_TIMESTAMP,
       objects: {},
       moduleType: options.moduleType || 'smrt',
+      ...(options.artifactPurpose
+        ? { artifactPurpose: options.artifactPurpose }
+        : {}),
     };
 
     if (options.discoverExternalPackages) {
