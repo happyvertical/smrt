@@ -41,6 +41,7 @@ import {
   formatSchemaContractFailures,
   type SchemaContractReport,
 } from './schema-contract.js';
+import { checkTenantNaturalKeyUniques } from './tenant-natural-keys.js';
 
 type StatusDrift = {
   name: string;
@@ -614,12 +615,17 @@ export const dbStatusCommand: CLICommand = {
         diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
         status.notes = summarizeSchemaNotes(diff);
-        status.preconditions = await checkTenantIdUuidPreconditions({
-          db,
-          dbType,
-          dbUrl,
-          manifestSchemas,
-        });
+        status.preconditions = [
+          ...(await checkTenantIdUuidPreconditions({
+            db,
+            dbType,
+            dbUrl,
+            manifestSchemas,
+          })),
+          // Tenant-owned tables whose live unique index is still the global
+          // natural key (the Ludis cross-tenant takeover shape).
+          ...checkTenantNaturalKeyUniques(comparer.getLiveSchemaSnapshot()),
+        ];
         status.failedMigrations = summarizeFailedMigrations(
           failed,
           getUnresolvedGeneratedMigrationNames(diff.changes),

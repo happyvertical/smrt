@@ -89,7 +89,7 @@ export function collectRegistryConflictTargets(): Record<
  * registrations stay included so a malformed registry cannot hide a real
  * persistence target from a fail-closed parity check.
  */
-function isCollectionRegistration(className: string): boolean {
+export function isCollectionRegistration(className: string): boolean {
   for (const name of [
     className,
     ...ObjectRegistry.getInheritanceChain(className),
