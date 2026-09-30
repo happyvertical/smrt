@@ -1,9 +1,18 @@
 import { renderOpenAiForm } from '../src/forms-view.js';
 const host = document.createElement('main');
 document.body.append(host);
-const mode = new URLSearchParams(location.search).get('mode');
+const params = new URLSearchParams(location.search);
+const mode = params.get('mode');
 const view = renderOpenAiForm(host, {
-  schema: {
+  schema: mode === 'array' ? {
+    type: 'object',
+    required: params.has('required') ? ['values'] : [],
+    properties: {
+      values: { type: 'array', title: 'Values', minItems: params.has('empty') ? 0 : 1,
+        items: params.get('control') === 'select' ? { type: 'string', enum: ['one', 'two'] } : { type: 'string' },
+      },
+    },
+  } : {
     type: 'object',
     required: ['name', 'resource'],
     properties: {
