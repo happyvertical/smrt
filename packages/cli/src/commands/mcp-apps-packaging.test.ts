@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -300,6 +301,25 @@ describe('portable MCP Apps validator isolated security regressions', () => {
     valid(value);
     writeFileSync(join(value, file), content);
     expect(codes(value)).toContain('secret-artifact');
+  });
+
+  it('fails closed when a regular artifact cannot be read', () => {
+    const value = root();
+    valid(value);
+    const artifact = join(value, 'server.pem');
+    const marker = 'SYNUNREADABLESECRET';
+    writeFileSync(artifact, `-----BEGIN PRIVATE KEY-----\n${marker}`);
+    chmodSync(artifact, 0o000);
+    const findings = validateMcpAppsPackage(value).findings;
+    expect(findings.map((finding) => finding.code)).toContain(
+      'artifact-unreadable',
+    );
+    expect(findings.map((finding) => finding.message).join('\n')).not.toContain(
+      marker,
+    );
+    expect(findings.map((finding) => finding.message).join('\n')).not.toContain(
+      'EACCES',
+    );
   });
 
   it('allows a public certificate without other unsafe content', () => {

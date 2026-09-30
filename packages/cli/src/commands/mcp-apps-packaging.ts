@@ -129,7 +129,11 @@ function scanTree(
               `${display} contains a private key and cannot be packaged`,
             );
         } catch {
-          // Binary assets need no text credential scan.
+          add(
+            result,
+            'artifact-unreadable',
+            `${display} could not be inspected and cannot be packaged`,
+          );
         }
       }
     }
