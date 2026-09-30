@@ -56,6 +56,9 @@ export function createMcpProtocolServer(
   const server = new Server(appServer.serverInfo, {
     capabilities: {
       tools: {},
+      ...(appServer.listResources && appServer.readResource
+        ? { resources: {} }
+        : {}),
       ...(tasksEnabled ? { extensions: { [MCP_TASKS_EXTENSION]: {} } } : {}),
     } as never,
     cacheHints: { 'tools/list': DEFAULT_TOOL_LIST_CACHE_HINT },
@@ -73,6 +76,37 @@ export function createMcpProtocolServer(
       ...cacheHint,
     };
   });
+
+  if (appServer.listResources && appServer.readResource) {
+    server.setRequestHandler('resources/list', async (_request, context) => ({
+      resources: await appServer.listResources!({
+        principal: await resolvePrincipal(options.principal, context),
+      }),
+      ttlMs: 0,
+      cacheScope: 'private',
+    }));
+    server.setRequestHandler('resources/read', async (request, context) => {
+      try {
+        return {
+          contents: [
+            await appServer.readResource!({
+              uri: request.params.uri,
+              principal: await resolvePrincipal(options.principal, context),
+            }),
+          ],
+          ttlMs: 0,
+          cacheScope: 'private',
+        };
+      } catch (error) {
+        if (error instanceof McpAccessError)
+          throw new ProtocolError(
+            ProtocolErrorCode.InvalidParams,
+            'MCP resource is not available.',
+          );
+        throw error;
+      }
+    });
+  }
 
   server.setRequestHandler('tools/call', async (request, context) => {
     try {
