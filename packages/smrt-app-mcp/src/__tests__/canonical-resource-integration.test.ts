@@ -83,6 +83,7 @@ describe('resources beside real canonical generated tools', () => {
           name: 'review_get',
           description: 'Review',
           inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
           effect: 'read',
           idempotent: true,
           openWorld: false,
