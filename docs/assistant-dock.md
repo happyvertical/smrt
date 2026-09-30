@@ -548,6 +548,57 @@ allow-lists, cancel, continuations, SSE round trip) and
 `src/svelte/components/assistant/__tests__/assistant-dock-client-tools.test.ts`
 (effect rules, decline/allow, cancel, status, the proposal tool).
 
+## Supervised runs: "watch it work"
+
+The dock keeps one **run** per send, for hosts that hide the chat while the
+assistant works and show a status instead (Anytown's watch mode).
+
+- **Budgets (server).** `runAssistantTurn` takes `maxTurnTokens` and
+  `maxTurnMs` besides `maxSteps`; all three span every browser round trip
+  (the continuation carries `tokens` and `startedAt`). When one runs out the
+  model gets a last round without tools and the turn ends with
+  `stoppedReason: 'budget'` (or `'max_steps'`). `describeTool(name, args)`
+  also gets a call's arguments, so a step can say "Opening Events".
+- **Settle (browser).** After a step's browser tools ran, the dock waits before
+  resuming: the host `settle` hook (e.g. "SvelteKit is no longer
+  navigating"), navigations tracked on the registry (`registerLinkSurface`
+  tracks its `navigate` promise; bespoke surfaces call
+  `trackSurfaceNavigation`), and a quiet period in the registry and
+  `pageTools` (`whenSurfaceNavigationSettled`, `@happyvertical/smrt-ui/data`),
+  bounded by `settleTimeoutMs` (5 s). The next step is offered the new page's
+  tools.
+- **Run state.** `controller.run` / `onrun`: `{ id, goal, state, step,
+  stepCount, pageTools, waitingFor, stoppedReason, error, startedAt, endedAt }`.
+  `state` is `running`, `paused`, `waiting`, `done`, `failed` or `cancelled`.
+  `waitingFor.kind` says what the person is needed for: `confirm` (a call
+  waits for Allow), `choice` / `review` (a host hold, a previewed action, or
+  a staged proposal-only write), or `continue` (a step or budget limit).
+  `acknowledgeRun()` clears the staged/limit waits once the person has seen
+  them; `dismissRun()` forgets a finished run.
+- **Pause.** `pauseRun()` holds the next step (before the page tools run and
+  before the resume); `continueRun()` releases it. A pause longer than
+  `maxPauseMs` (default 15 min; match the continuation TTL) stops the run with
+  `stoppedReason: 'paused_too_long'`.
+- **Holds: choices the person makes.** `holdForUser({ id, kind: 'choice' |
+  'review' | 'confirm', label })` registers a decision the host waits on; the
+  run is `waiting` until the returned release function runs. This is the seam
+  for "the assistant presents choices, the person picks".
+- **Tool filter.** `clientToolFilter` (option and prop) removes page tools
+  from what the dock declares and runs — for a person's own setting such as
+  "don't move around the site". The server should narrow too.
+- **Focus.** An agent never moves keyboard focus: a control `focus` command
+  from `source: 'agent'` reveals and highlights instead (smrt-ui control
+  registry).
+
+Show the run with smrt-ui `WorkingStrip` (`variant="floating"` or `"strip"`,
+phases `working | paused | waiting | done | failed | cancelled`, `goal`,
+`onpause` / `onresume` / `onreview` / `onstop` / `onopen` / `ondismiss`).
+Propose/apply is unchanged: a run that stages a value ends `waiting` for
+review, never applied.
+
+Tests: `assistant-dock-run.test.ts`, `assistant-dock-settle.test.ts`,
+`src/assistant-turn.test.ts` (budgets, labels).
+
 ## Gaps / follow-ups
 
 1. **`AssistantActionClient` has no shipped HTTP implementation.** The

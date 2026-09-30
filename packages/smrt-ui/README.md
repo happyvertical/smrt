@@ -49,9 +49,16 @@ pnpm add @happyvertical/smrt-ui
   closed (hidden and inert) so its content keeps state. It is
   `position: absolute; inset: 0` — render it in AdminShell's `overlays`.
 - `WorkingStrip` (`/feedback`) shows a transport-neutral `WorkingStatus`
-  (`idle` · `working` · `done`) as a strip above a phone bottom bar or a line
-  at the top of a pane, with an optional reopen action and Stop button and a
-  polite live region.
+  (`idle` · `working` · `paused` · `waiting` · `done` · `failed` ·
+  `cancelled`, a `label` for the current step and an optional `goal`) as a
+  strip above a phone bottom bar, a floating pill (`variant="floating"`, the
+  host positions it), or a line at the top of a pane. Optional controls:
+  reopen (`onopen`), Pause/Continue (`onpause`/`onresume`; Escape pauses),
+  Review while waiting (`onreview`), Stop, and Close once finished
+  (`ondismiss`); all 44px. Done uses the success colors, failed the error
+  colors, always with an icon and text. Step changes are announced politely
+  (throttled by `announceIntervalMs`), `waiting` and `failed` assertively; it
+  never takes focus.
 - `FormActionBar` (`/forms`) groups a form's actions (primary last). On phones
   it is fixed to the bottom, carries `data-form-action-bar` so AdminShell hides
   its phone bottom bar, and hides while `:root[data-keyboard-open]`.
@@ -216,7 +223,8 @@ without coupling controls to a transport:
 
 Controls publish serializable metadata, constraints, options, sensitivity, and
 capabilities. Adapters can focus, reveal, highlight, explain, validate, and
-stage reviewable proposals. Agents cannot apply, discard, clear, or undo;
+stage reviewable proposals. An agent never moves keyboard focus: its `focus`
+reveals and highlights the control instead. Agents cannot apply, discard, clear, or undo;
 those value-changing actions require a trusted local gesture handled by the
 framework review surface. Secret/read-only controls reject agent mutations.
 Staging remains separate so proposals never change user state before review.
@@ -581,6 +589,10 @@ own (an intent only dispatches a registry command):
   and the default `open` control resolves `{ target }` (an id, a label, or a
   unique label prefix) to one of those links and calls `navigate(href)`.
   Nothing an agent sends can become a URL.
+  Return the navigation's promise from `navigate`: the command answers at
+  once, and `whenSurfaceNavigationSettled(registry)` resolves once it
+  finished and the new page's surfaces registered (a bespoke surface that
+  navigates calls `trackSurfaceNavigation(registry, promise)`).
 - `registerStepSurface({ registry, surfaceId, label, description, steps,
   current, next, back, goTo, nextWrites, showNext })` mounts a wizard.
   `state` carries the steps with their status, the current step, and
