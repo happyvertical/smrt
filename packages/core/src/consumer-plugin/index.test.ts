@@ -16,6 +16,7 @@ import { smrtPlugin } from '../vite-plugin/index.js';
 import {
   type ArtifactFilesystem,
   publishArtifactFiles,
+  publishAtomicArtifact,
 } from './artifact-publication.js';
 import { smrtConsumer } from './index';
 
@@ -754,6 +755,46 @@ export class CurrentOrder extends SmrtObject {
     expect(readFileSync(knowledgePath, 'utf-8')).toBe(
       '{"previous":"knowledge"}',
     );
+  });
+
+  it('atomically replaces one artifact without a reader-visible missing path', () => {
+    const path = join(tmpDir, 'knowledge.json');
+    writeFileSync(path, 'before', { mode: 0o640 });
+    const reads: string[] = [];
+    const filesystem: ArtifactFilesystem = {
+      existsSync,
+      statSync: fs.statSync,
+      unlinkSync: fs.unlinkSync,
+      writeFileSync,
+      chmodSync: fs.chmodSync,
+      renameSync: (...args) => {
+        reads.push(readFileSync(path, 'utf8'));
+        return fs.renameSync(...args);
+      },
+    };
+    publishAtomicArtifact({ path, content: 'after' }, filesystem);
+    expect(reads).toEqual(['before']);
+    expect(readFileSync(path, 'utf8')).toBe('after');
+    expect(fs.statSync(path).mode & 0o777).toBe(0o640);
+  });
+
+  it('keeps the old artifact when atomic staging or replacement fails', () => {
+    const path = join(tmpDir, 'knowledge.json');
+    writeFileSync(path, 'before');
+    const failRename: ArtifactFilesystem = {
+      existsSync,
+      statSync: fs.statSync,
+      unlinkSync: fs.unlinkSync,
+      writeFileSync,
+      chmodSync: fs.chmodSync,
+      renameSync: () => {
+        throw new Error('rename failed');
+      },
+    };
+    expect(() =>
+      publishAtomicArtifact({ path, content: 'after' }, failRename),
+    ).toThrow('rename failed');
+    expect(readFileSync(path, 'utf8')).toBe('before');
   });
 
   it('excludes standalone consumer docs and prompts from file configuration', async () => {

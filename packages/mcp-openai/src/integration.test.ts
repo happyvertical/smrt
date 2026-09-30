@@ -1,3 +1,5 @@
+import { generateKeyPairSync, sign } from 'node:crypto';
+import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import {
   createMcpAppServer,
@@ -5,6 +7,7 @@ import {
   type McpAppServer,
   type McpWorkflowToolDefinition,
 } from '@happyvertical/smrt-app-mcp';
+import { createMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
 import { mountMcpRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 import {
   Client,
@@ -408,6 +411,187 @@ describe('existing principal workflow authority', () => {
       ).rejects.toThrow();
     } finally {
       await client.close();
+      f.db.close();
+    }
+  });
+});
+
+describe('verified M2 gateway and M6 native discovery factory', () => {
+  it('binds actual HTTP discovery and settings calls to validated tokens and current membership', async () => {
+    const f = fixture();
+    const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const jwk = {
+      ...pair.publicKey.export({ format: 'jwk' }),
+      kid: 'synthetic-navigation',
+      alg: 'RS256',
+      use: 'sig',
+    };
+    let activeTenant = owner.tenantId;
+    let revoked = false;
+    let origin = '';
+    let authenticate: ReturnType<typeof createMcpResourceAuth>['authenticate'];
+    const projected: (McpAppPrincipal | null)[] = [];
+    const route = mountMcpRoute(f.server, {
+      extensions: ({ tools, principal }) => {
+        projected.push(principal);
+        return f.settings.extensions(tools);
+      },
+    });
+    const server = createServer(async (incoming, outgoing) => {
+      try {
+        if (incoming.url === '/jwks') {
+          outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+          outgoing.end(JSON.stringify({ keys: [jwk] }));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        for await (const chunk of incoming) chunks.push(Buffer.from(chunk));
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(incoming.headers)) {
+          if (Array.isArray(value))
+            for (const item of value) headers.append(name, item);
+          else if (value !== undefined) headers.set(name, value);
+        }
+        const request = new Request(`${origin}${incoming.url}`, {
+          method: incoming.method,
+          headers,
+          ...(incoming.method === 'GET' || incoming.method === 'HEAD'
+            ? {}
+            : { body: Buffer.concat(chunks) }),
+        });
+        const authentication = await authenticate(request);
+        const response = authentication.ok
+          ? await route({
+              request,
+              url: new URL(request.url),
+              locals: { user: authentication.principal },
+            })
+          : authentication.response;
+        outgoing.writeHead(
+          response.status,
+          Object.fromEntries(response.headers),
+        );
+        outgoing.end(Buffer.from(await response.arrayBuffer()));
+      } catch {
+        outgoing.writeHead(500).end();
+      }
+    });
+    const clients: Client[] = [];
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === 'string')
+      throw new Error('Missing synthetic HTTP port');
+    origin = `http://127.0.0.1:${address.port}`;
+    authenticate = createMcpResourceAuth({
+      profile: 'local',
+      issuer: origin,
+      resource: `${origin}/mcp`,
+      jwksUri: `${origin}/jwks`,
+      algorithms: ['RS256'],
+      scopes: ['settings', 'view'],
+      resolvePrincipal: async ({ subject }) =>
+        revoked ? null : { id: subject, tenantId: activeTenant },
+    }).authenticate;
+    const token = (overrides: Record<string, unknown> = {}) => {
+      const header = Buffer.from(
+        JSON.stringify({
+          alg: 'RS256',
+          typ: 'at+jwt',
+          kid: 'synthetic-navigation',
+        }),
+      ).toString('base64url');
+      const claims = Buffer.from(
+        JSON.stringify({
+          iss: origin,
+          aud: `${origin}/mcp`,
+          sub: owner.id,
+          exp: Math.floor(Date.now() / 1000) + 300,
+          scope: 'settings view',
+          ...overrides,
+        }),
+      ).toString('base64url');
+      const payload = `${header}.${claims}`;
+      return `${payload}.${sign('RSA-SHA256', Buffer.from(payload), pair.privateKey).toString('base64url')}`;
+    };
+    const connect = async (bearer: string) => {
+      const client = new Client(
+        { name: 'synthetic-navigation-auth', version: '1' },
+        { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+      );
+      clients.push(client);
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
+          requestInit: { headers: { Authorization: `Bearer ${bearer}` } },
+        }),
+      );
+      return client;
+    };
+    try {
+      expect((await fetch(`${origin}/mcp`, { method: 'POST' })).status).toBe(
+        401,
+      );
+      expect(projected).toEqual([]);
+      for (const claims of [
+        { exp: 1 },
+        { aud: `${origin}/other` },
+        { scope: 'view' },
+      ]) {
+        await expect(connect(token(claims))).rejects.toThrow();
+        expect(projected).toEqual([]);
+      }
+      const client = await connect(token());
+      expect(JSON.stringify(client.getServerCapabilities())).toContain(
+        'openai/settings',
+      );
+      expect(projected[0]).toMatchObject({
+        id: owner.id,
+        tenantId: owner.tenantId,
+        scopes: ['settings', 'view'],
+      });
+      await expect(
+        client.callTool({ name: 'settings_read', arguments: {} }),
+      ).resolves.toHaveProperty('structuredContent.values.units', 'mm');
+      await client.callTool({
+        name: 'settings_update',
+        arguments: { set: { units: 'in' } },
+      });
+      expect(f.values().units).toBe('in');
+      await expect(
+        client.callTool({
+          name: 'settings_update',
+          arguments: { set: { grid: false }, tenantId: 'other' },
+        }),
+      ).rejects.toThrow();
+      const other = await connect(token({ sub: 'synthetic-other' }));
+      expect(JSON.stringify(other.getServerCapabilities())).not.toContain(
+        'openai/settings',
+      );
+      await expect(
+        other.callTool({ name: 'settings_read', arguments: {} }),
+      ).rejects.toThrow();
+      activeTenant = 'tenant-b';
+      const otherTenant = await connect(token());
+      expect(JSON.stringify(otherTenant.getServerCapabilities())).not.toContain(
+        'openai/settings',
+      );
+      await expect(
+        client.callTool({
+          name: 'settings_update',
+          arguments: { set: { grid: false } },
+        }),
+      ).rejects.toThrow();
+      activeTenant = owner.tenantId;
+      revoked = true;
+      await expect(
+        client.callTool({ name: 'settings_read', arguments: {} }),
+      ).rejects.toThrow();
+      expect(f.writes()).toBe(1);
+    } finally {
+      await Promise.all(clients.map((client) => client.close()));
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       f.db.close();
     }
   });
