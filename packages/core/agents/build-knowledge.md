@@ -100,6 +100,11 @@ retains legacy filename inference. Vitest selects dev mode explicitly, so tests
 never replace a production `dist/manifest.json`. Relative output directories are
 resolved against the builder's project root.
 
+Tracked `src/lib/server/smrt-register.ts` belongs to SvelteKit config/type
+generation. Generic library builds consume it but do not cache or restore it
+as an output; otherwise a concurrent config producer's bytes can be replayed
+over a newer registration after dependency eligibility changes.
+
 Object-level `knowledge: false` excludes an object from authored context only;
 it must not change runtime manifest registration. Use
 `knowledge: { tags, summary, risks }` for review-sensitive domain objects.
@@ -148,3 +153,6 @@ module, so it must exist during `svelte-kit sync`, before Vite's `buildStart`.
 Both hosted routes and the legacy `svelteKit: true` mode follow this order.
 The clean-consumer regression fixture ships real provider declarations and
 checks the generated imports with `svelte-check`.
+Core's `generate:test` task depends on its own `build`: both publish the local
+`.smrt` manifest/knowledge pair, so Turbo must serialize production before test
+generation instead of caching an interleaved pair.
