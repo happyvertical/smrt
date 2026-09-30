@@ -532,7 +532,8 @@ export function createAssistantDockController(
   // supervised run shows "waiting for you" until they pick or dismiss it.
   const choices = new AssistantChoices(
     () => options.choiceSources,
-    (set) => holdForUser({ id: `choice:${set.id}`, kind: 'choice', label: set.title }),
+    (set) =>
+      holdForUser({ id: `choice:${set.id}`, kind: 'choice', label: set.title }),
   );
 
   // ---- the supervised run (#assistant-watch) -------------------------------

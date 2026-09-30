@@ -9,3 +9,5 @@ passed as `choiceSources`); each is offered to the model as the read tool
 picture cards in the chat, and only the person's click applies one through the
 source's `apply`. Card images are limited to same-origin paths. See
 `docs/assistant-dock.md` ("Choices").
+Each open offer is a `choice` hold (`holdForUser`), so a supervised run waits
+for the person's pick.

@@ -622,6 +622,8 @@ browser-tool allow-list):
 `controller.choices`, `controller.chooseOption(setId, optionId)` and
 `controller.dismissChoices(setId)` expose the same state headlessly. While an
 offer waits, `status` is `{ state: 'done', label: 'Pick one of the options' }`.
+Each open offer is also a `choice` hold (`holdForUser`, see "Supervised runs"),
+so a supervised run is `waiting` for the person until they pick or dismiss it.
 
 ## Gaps / follow-ups
 
