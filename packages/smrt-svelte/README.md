@@ -201,6 +201,47 @@ hidden data-surface columns are not serialized. Read responses are marked as
 untrusted content. Bespoke `useWebMcpTool` and `<Form webmcp>` tools retain their
 existing lifecycle and submit behavior.
 
+#### `<Form webmcp>` with SvelteKit `enhance` and smrt-ui fields
+
+The rich `Form` renders its own `<form>`, so it forwards every native form
+attribute (`method`, `action`, `enctype`, `novalidate`, `autocomplete`,
+`aria-*`, `data-*`, …) and attachments (`{@attach …}`) to that element. A
+component cannot take `use:`, so pass SvelteKit's `enhance` as a prop — it is
+applied to the rendered `<form>` and torn down with it. Without `onsubmit`
+the Form never prevents submission, so `enhance` (or a native POST) runs as
+usual and an error summary above the fields keeps working:
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+  import { Form } from '@happyvertical/smrt-svelte/forms';
+  import { ErrorSummary, FormGroup, Input } from '@happyvertical/smrt-ui/forms';
+</script>
+
+<Form formId="setup-network" webmcp method="POST" action="?/create" novalidate
+  enhance={(form) => enhance(form, submit)}>
+  <ErrorSummary errors={errors} />
+  <FormGroup label="Network name" id="name"><Input name="name" bind:value={name} /></FormGroup>
+</Form>
+```
+
+Its `<formId>_stage_changes` tool describes rich fields (`TextInput`,
+`MoneyInput`, …) and every other control the registry holds for the form:
+smrt-ui primitives (`FormGroup` + `Input`/`Select`/`Textarea`/`Combobox`/…)
+and composites registered with `useControlRegistration`. Proposals for either
+kind are staged for the person to review and apply; nothing is written or
+submitted by the tool.
+
+`FormScope` (`@happyvertical/smrt-svelte/forms`) is the same tool and review
+surface without a `<form>` element — for a fetch-driven wizard, an editor
+saved in parts, or a page that must keep its own `<form>` markup. It joins
+the nearest Provider's control registry (or a local one) and registers no
+tool until at least one proposable control is mounted.
+
+`tryUseWebMcpUi()` returns the Provider's mounted-UI registries, or `null`
+when there is no Provider or its WebMCP UI is off — use it to fall back to a
+local registry instead of catching `useWebMcpUi()`'s throw (#2915).
+
 Custom rich fields may continue to call `registerField(field)` and later
 `unregisterField(name)`. New code should retain and invoke the disposer returned
 by `registerField`: it is bound to that exact registration, so cleanup cannot

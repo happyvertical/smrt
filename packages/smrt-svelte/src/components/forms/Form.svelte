@@ -6,13 +6,16 @@ import {
   type ControlKind,
   type ControlRuntimeState,
   type ControlSubject,
+  controlProposalProperties,
   createControlInteractionRegistry,
   StagedControlReview,
   setControlInteractionContext,
+  stageControlProposals,
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { onDestroy, untrack } from 'svelte';
+import type { HTMLFormAttributes } from 'svelte/elements';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -28,7 +31,20 @@ import type { LLMModelId, STTAdapterType } from './types.js';
 
 const { t } = useI18n();
 
-export interface Props {
+/**
+ * A SvelteKit-style form action: `enhance` from `$app/forms` fits as-is, or
+ * wrap it to pass a submit function (`(form) => enhance(form, submit)`).
+ */
+export type FormEnhance = (
+  form: HTMLFormElement,
+  // biome-ignore lint/suspicious/noConfusingVoidType: an action may return nothing, like Svelte's own Action type.
+) => void | { destroy?: () => void };
+
+export interface Props
+  extends Omit<
+    HTMLFormAttributes,
+    'children' | 'class' | 'id' | 'name' | 'method' | 'action' | 'onsubmit'
+  > {
   /** Form children */
   children: Snippet;
   /** Show mode toggle button */
@@ -48,7 +64,7 @@ export interface Props {
   /** Collection/model identity used when naming the generated intent. */
   collection?: string;
   /** HTTP method for native form submission (default: GET) */
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'get' | 'post' | 'dialog';
   /** Form action URL for native form submission */
   action?: string;
   /** Stable identity used by control/agent interaction adapters. */
@@ -67,6 +83,14 @@ export interface Props {
   name?: string;
   /** CSS classes to apply to the form element. */
   class?: string;
+  /**
+   * Progressive-enhancement action applied to the rendered `<form>` — pass
+   * SvelteKit's `enhance` (`<Form enhance={enhance}>`). A component cannot
+   * take `use:`, so this is the `use:enhance` equivalent; attachments
+   * (`{@attach …}`) and every other native form attribute (`enctype`,
+   * `novalidate`, `aria-*`, `data-*`, `autocomplete`, …) pass straight through.
+   */
+  enhance?: FormEnhance;
 }
 
 const {
@@ -89,7 +113,26 @@ const {
   id,
   name,
   class: className = '',
+  enhance,
+  ...formAttributes
 }: Props = $props();
+
+/** Apply the consumer's `enhance` action; re-run it when the action changes. */
+function applyEnhance(form: HTMLFormElement, initial: FormEnhance | undefined) {
+  let current = initial;
+  let handle = current?.(form);
+  return {
+    update(next: FormEnhance | undefined) {
+      if (next === current) return;
+      if (handle) handle.destroy?.();
+      current = next;
+      handle = current?.(form);
+    },
+    destroy() {
+      if (handle) handle.destroy?.();
+    },
+  };
+}
 
 const app = useAppState();
 const stt = useSTT();
@@ -291,7 +334,25 @@ function recordDirectUserEdit(event: Event) {
       target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
     ),
   );
-  if (!field) return;
+  if (!field) {
+    // A smrt-ui primitive (Input, Select, Combobox, …) registered itself
+    // through the control context; its element carries the address.
+    const control = target.closest<HTMLElement>('[data-smrt-control]');
+    const controlId = control?.dataset.smrtControl;
+    if (!control || !controlId) return;
+    resolvedInteractionRegistry.recordUserEdit?.({
+      formId: resolvedFormId,
+      controlId,
+      subject:
+        control.dataset.smrtSubjectType && control.dataset.smrtSubjectId
+          ? {
+              type: control.dataset.smrtSubjectType,
+              id: control.dataset.smrtSubjectId,
+            }
+          : undefined,
+    });
+    return;
+  }
   resolvedInteractionRegistry.recordUserEdit?.({
     formId: resolvedFormId,
     controlId: field.controlId ?? field.name,
@@ -812,6 +873,16 @@ function prepareInteractionValue(field: FieldDefinition, value: unknown) {
   return field.prepareValue ? field.prepareValue(preparedValue) : preparedValue;
 }
 
+/** Registry control ids owned by fields registered through this Form. */
+function richFieldControlIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const field of fields.values()) {
+    ids.add(field.controlId ?? field.name);
+    ids.add(field.name);
+  }
+  return ids;
+}
+
 function formInputSchema(): Record<string, unknown> {
   void interactionRegistryRevision;
   const properties: Record<string, unknown> = {};
@@ -828,6 +899,17 @@ function formInputSchema(): Record<string, unknown> {
       continue;
     properties[field.name] = webMcpFieldSchema(field);
     if (field.constraints?.required) required.push(field.name);
+  }
+
+  // Every other control mounted in this form — smrt-ui primitives
+  // (FormGroup + Input/Select/Textarea/Combobox/…) and composites registered
+  // through useControlRegistration — proposes through the same tool.
+  for (const [controlId, schema] of Object.entries(
+    controlProposalProperties(resolvedInteractionRegistry, resolvedFormId, {
+      exclude: richFieldControlIds(),
+    }),
+  )) {
+    if (!Object.hasOwn(properties, controlId)) properties[controlId] = schema;
   }
 
   return {
@@ -879,7 +961,23 @@ async function submitCurrentForm(): Promise<string> {
 }
 
 async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
-  const commands = Object.entries(args).flatMap(([name, value]) => {
+  const richArgs: Record<string, unknown> = {};
+  const controlArgs: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args ?? {})) {
+    if (fields.has(key)) richArgs[key] = value;
+    else controlArgs[key] = value;
+  }
+  const controlResult =
+    Object.keys(controlArgs).length > 0
+      ? await stageControlProposals(
+          resolvedInteractionRegistry,
+          resolvedFormId,
+          controlArgs,
+          { source: 'agent', actorId: 'webmcp' },
+          { exclude: richFieldControlIds() },
+        )
+      : undefined;
+  const commands = Object.entries(richArgs).flatMap(([name, value]) => {
     const field = fields.get(name);
     const state = field ? fieldRuntimeState(field) : undefined;
     if (
@@ -914,11 +1012,17 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
       },
     ];
   });
-  if (commands.length === 0) return 'No reviewable changes provided';
+  const controlStaged = controlResult?.staged ?? 0;
+  const controlRejected = controlResult?.rejected.length ?? 0;
+  if (commands.length === 0 && controlStaged + controlRejected === 0) {
+    return 'No reviewable changes provided';
+  }
 
   const context = { source: 'agent' as const, actorId: 'webmcp' };
   let batch;
-  if (resolvedInteractionRegistry.executeBatch) {
+  if (commands.length === 0) {
+    batch = { ok: true, results: [] };
+  } else if (resolvedInteractionRegistry.executeBatch) {
     batch = await resolvedInteractionRegistry.executeBatch(commands, context);
   } else {
     const results = [];
@@ -927,8 +1031,12 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
     }
     batch = { ok: results.every((result) => result.ok), results };
   }
-  const completed = batch.results.filter((result) => result.ok).length;
-  const rejected = batch.results.length - completed;
+  const completed =
+    batch.results.filter((result) => result.ok).length + controlStaged;
+  const rejected =
+    batch.results.length -
+    batch.results.filter((result) => result.ok).length +
+    controlRejected;
   return rejected === 0
     ? `Staged ${completed} change${completed === 1 ? '' : 's'} for review`
     : `Staged ${completed} changes for review; ${rejected} rejected`;
@@ -1412,6 +1520,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
 </script>
 
 <form
+  {...formAttributes}
   bind:this={formElement}
   {id}
   {name}
@@ -1420,6 +1529,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   onsubmit={handleSubmit}
   {method}
   {action}
+  use:applyEnhance={enhance}
 >
   <!--
     Screen-reader status region (L1 #1420): announces async STT / field-
