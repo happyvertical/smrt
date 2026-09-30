@@ -1589,6 +1589,9 @@ importers:
 
   packages/mcp-apps:
     devDependencies:
+      '@happyvertical/smrt-app-mcp':
+        specifier: workspace:*
+        version: link:../smrt-app-mcp
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core

@@ -1,4 +1,16 @@
 import type {
+  McpAppExtension,
+  McpAppExtensionDefinition,
+  RegisteredExtension,
+} from './extensions.js';
+import { extensionDefinition } from './extensions.js';
+
+export type {
+  McpAppExtension,
+  McpAppExtensionDefinition,
+} from './extensions.js';
+
+import type {
   DisplayMode,
   HostCapabilities,
   HostContext,
@@ -66,6 +78,7 @@ export class McpAppBridge {
   readonly #modes: DisplayMode[];
   readonly #prefix: string;
   readonly #pending = new Map<string, Pending>();
+  readonly #extensions = new Map<string, RegisteredExtension>();
   readonly #subscribers = new Set<(snapshot: McpAppSnapshot) => void>();
   readonly #lifetime = new AbortController();
   #sequence = 0;
@@ -234,6 +247,145 @@ export class McpAppBridge {
     this.#ready();
     if (!this.#snapshot.hostCapabilities[capability])
       throw new Error(`Host capability unavailable: ${capability}`);
+  }
+  /**
+   * Opt in to a finite extension contract after initialization. The adapter must
+   * validate its method-specific schemas; this handle never bypasses transport,
+   * lifecycle, or native text-method capability checks.
+   */
+  registerExtension(declaration: McpAppExtensionDefinition): McpAppExtension {
+    this.#ready();
+    const definition = extensionDefinition(
+      declaration,
+      this.#snapshot.rawHostCapabilities,
+    );
+    if (this.#extensions.size >= 16 || this.#extensions.has(definition.id))
+      throw new Error(
+        'Extension already registered or registration limit reached',
+      );
+    const names = [...definition.methods, ...definition.notifications];
+    if (new Set(names).size !== names.length)
+      throw new Error('Extension request/notification collision');
+    for (const registered of this.#extensions.values()) {
+      const existing = [
+        ...registered.definition.methods,
+        ...registered.definition.notifications,
+      ];
+      if (names.some((name) => existing.includes(name)))
+        throw new Error('Extension method already registered');
+    }
+    const state: RegisteredExtension = {
+      definition,
+      lifetime: new AbortController(),
+      listeners: new Set(),
+    };
+    this.#extensions.set(definition.id, state);
+    const active = () => {
+      this.#ready();
+      if (
+        this.#extensions.get(definition.id) !== state ||
+        state.lifetime.signal.aborted
+      )
+        throw new Error('MCP Apps extension disposed');
+    };
+    const dispose = () => {
+      if (this.#extensions.get(definition.id) !== state) return;
+      this.#extensions.delete(definition.id);
+      state.listeners.clear();
+      state.lifetime.abort();
+    };
+    return Object.freeze({
+      signal: state.lifetime.signal,
+      request: async (
+        method: string,
+        params: Record<string, unknown>,
+        signal?: AbortSignal,
+      ) => {
+        active();
+        if (!definition.methods.includes(method))
+          throw new Error('Extension method is not registered');
+        json(params);
+        object(params);
+        this.#validateNativeExtensionRequest(method, params);
+        const requestSignal = signal
+          ? AbortSignal.any([state.lifetime.signal, signal])
+          : state.lifetime.signal;
+        const result = await this.#request(
+          method,
+          structuredClone(params),
+          requestSignal,
+        );
+        active();
+        if (requestSignal.aborted)
+          throw new Error('MCP Apps extension request cancelled');
+        object(result);
+        if (method === 'ui/message' || method === 'ui/update-model-context')
+          success(result);
+        return structuredClone(result as Record<string, unknown>);
+      },
+      subscribe: (
+        listener: (method: string, params: Record<string, unknown>) => void,
+      ) => {
+        active();
+        if (typeof listener !== 'function' || state.listeners.size >= 32)
+          throw new Error(
+            'Invalid extension listener or listener limit reached',
+          );
+        state.listeners.add(listener);
+        return () => {
+          state.listeners.delete(listener);
+        };
+      },
+      dispose,
+    });
+  }
+  #validateNativeExtensionRequest(
+    method: string,
+    params: Record<string, unknown>,
+  ): void {
+    if (method !== 'ui/message' && method !== 'ui/update-model-context') return;
+    const capability =
+      method === 'ui/message' ? 'message' : 'updateModelContext';
+    this.#require(capability);
+    const caps = this.#snapshot.hostCapabilities[capability];
+    if (
+      method === 'ui/message' &&
+      (params.role !== 'user' || params.content === undefined)
+    )
+      throw new Error('Invalid native message shape');
+    if (params.content !== undefined) {
+      if (!caps?.text) throw new Error('Host text modality unavailable');
+      const blocks = toolResult({ content: params.content }).content;
+      for (const block of blocks) string(block.text, 16384);
+    }
+    if (
+      method === 'ui/update-model-context' &&
+      params.structuredContent !== undefined
+    ) {
+      if (
+        !this.#snapshot.hostCapabilities.updateModelContext?.structuredContent
+      )
+        throw new Error('Host structured modality unavailable');
+      object(params.structuredContent);
+    }
+  }
+  #notifyExtensions(method: string, params: Record<string, unknown>): void {
+    for (const state of [...this.#extensions.values()]) {
+      if (
+        !state.definition.notifications.includes(method) ||
+        state.lifetime.signal.aborted
+      )
+        continue;
+      for (const listener of [...state.listeners]) {
+        if (state.lifetime.signal.aborted || !state.listeners.has(listener))
+          continue;
+        try {
+          listener(method, structuredClone(params));
+        } catch {
+          /* Adapter owns schema and observer errors. */
+        }
+      }
+    }
   }
   /** Calls the server through the host. No credentials, tenant overrides or approval metadata. */
   async callTool(
@@ -424,6 +576,7 @@ export class McpAppBridge {
         this.#terminalReceived = true;
         break;
       default:
+        this.#notifyExtensions(message.method as string, params);
         return;
     }
     this.#emit();
@@ -434,6 +587,11 @@ export class McpAppBridge {
     this.#snapshot.state = 'disposed';
     this.#window.removeEventListener('message', this.#receive);
     this.#lifetime.abort();
+    for (const state of this.#extensions.values()) {
+      state.listeners.clear();
+      state.lifetime.abort();
+    }
+    this.#extensions.clear();
     for (const [requestId, pending] of this.#pending) {
       pending.cleanup();
       pending.reject(new Error('MCP Apps bridge disposed'));
