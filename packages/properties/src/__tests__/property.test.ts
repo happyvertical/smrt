@@ -8,6 +8,7 @@
  * 4. STI polymorphic save/load
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -37,7 +38,7 @@ describe('Property', () => {
   let dbPath: string;
 
   beforeEach(() => {
-    dbPath = join(tmpdir(), `smrt-property-test-${Date.now()}.db`);
+    dbPath = join(tmpdir(), `smrt-property-test-${randomUUID()}.db`);
   });
 
   afterEach(() => {

@@ -7,6 +7,7 @@
  * 3. Tree operations
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,7 +23,7 @@ describe('Zone', () => {
   let testProperty: Property;
 
   beforeEach(async () => {
-    dbPath = join(tmpdir(), `smrt-zone-test-${Date.now()}.db`);
+    dbPath = join(tmpdir(), `smrt-zone-test-${randomUUID()}.db`);
     properties = await PropertyCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
