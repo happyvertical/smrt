@@ -1,4 +1,6 @@
 ---
+
+See the [MCP Apps integration standard](architecture/mcp-apps-integration.md) for portable embedded UI, optional OpenAI extensions, ownership and staged release gates.
 title: WebMCP integration model
 sidebar_position: 3
 ---
