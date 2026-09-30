@@ -43,6 +43,7 @@ import {
   generateRuntimeBootstrap,
   type RuntimeOptions,
 } from './mcp-runtime-template.js';
+import { canonicalMcpToolNames, type McpToolTarget } from './mcp-tool-name.js';
 import { runWithTenantGate } from './tenant-gate.js';
 import {
   buildToolInputSchema,
@@ -334,6 +335,20 @@ function buildTaskActionInvocationArgs(
  * Generate MCP server from smrt objects
  */
 export class MCPGenerator {
+  private readonly toolTargets = new WeakMap<MCPTool, McpToolTarget>();
+
+  private toolTarget(tool: MCPTool): McpToolTarget {
+    const target = this.toolTargets.get(tool);
+    if (!target) throw new Error(`Missing MCP tool target: ${tool.name}`);
+    return target;
+  }
+
+  private runtimeToolTargets(tools: MCPTool[]): Record<string, McpToolTarget> {
+    return Object.fromEntries(
+      tools.map((tool) => [tool.name, this.toolTarget(tool)]),
+    );
+  }
+
   private config: MCPConfig;
   private context: MCPContext;
   private collections = new Map<string, SmrtCollection<SmrtObject>>();
@@ -420,6 +435,12 @@ export class MCPGenerator {
       tools.push(...objectTools);
     }
 
+    const names = canonicalMcpToolNames(
+      tools.map((tool) => ({ name: tool.name, target: this.toolTarget(tool) })),
+    );
+    tools.forEach((tool, index) => {
+      tool.name = names[index];
+    });
     return sortMCPTools(tools);
   }
 
@@ -671,6 +692,12 @@ export class MCPGenerator {
       }
     }
 
+    for (const tool of tools) {
+      this.toolTargets.set(tool, {
+        objectName,
+        action: tool.name.slice(lowerName.length + 1),
+      });
+    }
     return tools;
   }
 
@@ -1011,27 +1038,13 @@ export class MCPGenerator {
     try {
       // Check if tool exists
       const availableTools = await this.generateTools();
-      const toolExists = availableTools.some((t) => t.name === name);
+      const tool = availableTools.find((candidate) => candidate.name === name);
 
-      if (!toolExists) {
+      if (!tool) {
         throw new Error(`Unknown tool: ${name}`);
       }
 
-      // Parse tool name: `objectname_action`. Split on the FIRST underscore
-      // only — a custom method name can itself contain underscores (e.g.
-      // `record_payment` → tool `invoice_record_payment`). A naive
-      // `name.split('_')` would take `action` as just `record` and mis-route
-      // the call. The emitted stdio servers switch on the full tool name, so
-      // splitting greedily here also kept the in-process path divergent (#1378).
-      const firstUnderscore = name.indexOf('_');
-      const objectName =
-        firstUnderscore === -1 ? '' : name.slice(0, firstUnderscore);
-      const action =
-        firstUnderscore === -1 ? '' : name.slice(firstUnderscore + 1);
-
-      if (!objectName || !action) {
-        throw new Error(`Invalid tool name format: ${name}`);
-      }
+      const { objectName, action } = this.toolTarget(tool);
 
       // Find the registered class (case-insensitive)
       const registeredClasses = ObjectRegistry.getAllClasses();
@@ -1157,10 +1170,10 @@ export class MCPGenerator {
     methodName: string;
     invocationArgs: unknown[];
   } | null> {
-    const separator = toolName.indexOf('_');
-    if (separator <= 0) return null;
-    const objectPrefix = toolName.slice(0, separator);
-    const action = toolName.slice(separator + 1);
+    const tools = await this.generateTools();
+    const tool = tools.find((candidate) => candidate.name === toolName);
+    if (!tool) return null;
+    const { objectName: objectPrefix, action } = this.toolTarget(tool);
     if (isCrudToolAction(action)) {
       return null;
     }
@@ -1188,7 +1201,6 @@ export class MCPGenerator {
 
     // The action must already be visible through the normal MCP surface. This
     // keeps `tasks: true` from silently widening a class's configured tool set.
-    const tools = await this.generateTools();
     if (!tools.some((tool) => tool.name === toolName)) return null;
 
     const [resolvedMethodName, method] = resolveCustomActionMethod(
@@ -1490,7 +1502,7 @@ export class MCPGenerator {
 
     const scoped = new Set<string>();
     for (const tool of tools) {
-      const [objectName] = tool.name.split('_');
+      const { objectName } = this.toolTarget(tool);
       if (!objectName) continue;
       // Resolve the registered simple name (case-insensitive) and test scoping.
       for (const [key, info] of ObjectRegistry.getAllClasses()) {
@@ -1518,7 +1530,7 @@ export class MCPGenerator {
     if ((await this.tenantScopedObjectNames(tools)).length > 0) return true;
 
     for (const tool of tools) {
-      const [objectName] = tool.name.split('_');
+      const { objectName } = this.toolTarget(tool);
       if (!objectName) continue;
       for (const [key, info] of ObjectRegistry.getAllClasses()) {
         const simpleName = info.name || key;
@@ -1904,6 +1916,7 @@ export class MCPGenerator {
         context: this.context,
         debug,
         tools,
+        toolTargets: this.runtimeToolTargets(tools),
         customActions: await this.runtimeCustomActions(tools),
         taskActions: await this.runtimeTaskActions(tools),
         tenantScopedObjects,
@@ -1955,10 +1968,9 @@ export class MCPGenerator {
     const classes = ObjectRegistry.getAllClasses();
 
     for (const tool of tools) {
-      const separator = tool.name.indexOf('_');
-      if (separator === -1) continue;
-      const objectPrefix = tool.name.slice(0, separator);
-      const action = tool.name.slice(separator + 1);
+      const target = this.toolTarget(tool);
+      const objectPrefix = target.objectName.toLowerCase();
+      const action = target.action;
       if (isCrudToolAction(action)) continue;
       const matched = Array.from(classes.entries()).find(
         ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
@@ -2004,9 +2016,7 @@ export class MCPGenerator {
     const classes = ObjectRegistry.getAllClasses();
     for (const tool of tools) {
       if (!(await this.supportsTaskTool(tool.name))) continue;
-      const separator = tool.name.indexOf('_');
-      if (separator <= 0) continue;
-      const objectPrefix = tool.name.slice(0, separator).toLowerCase();
+      const objectPrefix = this.toolTarget(tool).objectName.toLowerCase();
       const matched = Array.from(classes.entries()).find(
         ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
       );
@@ -2063,11 +2073,9 @@ export class MCPGenerator {
     const classes = ObjectRegistry.getAllClasses();
 
     for (const tool of tools) {
-      const separator = tool.name.indexOf('_');
-      if (separator === -1 || tool.name.slice(separator + 1) !== 'list') {
-        continue;
-      }
-      const objectPrefix = tool.name.slice(0, separator);
+      const target = this.toolTarget(tool);
+      if (target.action !== 'list') continue;
+      const objectPrefix = target.objectName.toLowerCase();
       if (orderings[objectPrefix]) continue;
       const matched = Array.from(classes.entries()).find(
         ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
@@ -2088,11 +2096,9 @@ export class MCPGenerator {
     const classes = ObjectRegistry.getAllClasses();
 
     for (const tool of tools) {
-      const separator = tool.name.indexOf('_');
-      if (separator === -1 || tool.name.slice(separator + 1) !== 'create') {
-        continue;
-      }
-      const objectPrefix = tool.name.slice(0, separator);
+      const target = this.toolTarget(tool);
+      if (target.action !== 'create') continue;
+      const objectPrefix = target.objectName.toLowerCase();
       const matched = Array.from(classes.entries()).find(
         ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
       );
@@ -2234,15 +2240,12 @@ export const tools: Array<{
   ): Promise<string> {
     const tools = generatedTools ?? (await this.generateTools());
 
-    const capitalize = (str: string) =>
-      str.charAt(0).toUpperCase() + str.slice(1);
-
     const switchCases = (
       await Promise.all(
         tools.map(async (tool) => {
-          const separator = tool.name.indexOf('_');
-          const objectName = tool.name.slice(0, separator);
-          const action = tool.name.slice(separator + 1);
+          const target = this.toolTarget(tool);
+          const objectName = target.objectName.toLowerCase();
+          const action = target.action;
 
           switch (action) {
             case 'list':
@@ -2251,7 +2254,7 @@ ${indent}  const limit = args.limit ?? 50;
 ${indent}  const offset = args.offset ?? 0;
 ${indent}  const where = args.where ?? {};
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(target.objectName)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -2271,7 +2274,7 @@ ${indent}  if (!args.id && !args.slug) {
 ${indent}    throw new Error('Either id or slug is required');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(target.objectName)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -2303,7 +2306,7 @@ ${indent}  if (!id) {
 ${indent}    throw new Error('ID is required for update');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(target.objectName)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -2313,7 +2316,7 @@ ${indent}  if (!existing) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  Object.assign(existing, applyWritablePolicy('${capitalize(objectName)}', updateData));
+${indent}  Object.assign(existing, applyWritablePolicy(${JSON.stringify(target.objectName)}, updateData));
 ${indent}  await existing.save();
 
 ${indent}  return successResult(existing.toPublicJSON(PUBLIC_JSON_OPTIONS));
@@ -2325,7 +2328,7 @@ ${indent}  if (!args.id) {
 ${indent}    throw new Error('ID is required for delete');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(target.objectName)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -2387,10 +2390,10 @@ ${indent}}`;
 ${indent}  const { id, options, ...directArgs } = args;
 
 ${indent}  if (${JSON.stringify(metadata.scope)} === 'item' && !id) {
-${indent}    throw new Error('ID is required for custom action ${action}');
+${indent}    throw new Error(${JSON.stringify(`ID is required for custom action ${action}`)});
 ${indent}  }
 ${indent}  if (${JSON.stringify(metadata.scope)} === 'collection' && id) {
-${indent}    throw new Error('Custom action ${action} is collection-scoped and does not accept an ID');
+${indent}    throw new Error(${JSON.stringify(`Custom action ${action} is collection-scoped and does not accept an ID`)});
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(registeredName)}, {
@@ -2413,7 +2416,7 @@ ${indent}  }
 
 ${indent}  const actionMethod = target[${JSON.stringify(methodName)}];
 ${indent}  if (typeof actionMethod !== 'function') {
-${indent}    throw new Error('Method ${methodName} not found on custom action target');
+${indent}    throw new Error(${JSON.stringify(`Method ${methodName} not found on custom action target`)});
 ${indent}  }
 
 ${indent}  const methodArgs = ${methodArgs.startsWith('[') ? methodArgs : `[${methodArgs}]`};
@@ -2448,6 +2451,7 @@ ${indent}}`;
     const tools = await this.generateTools();
     const switchCases = await this.generateToolSwitchCases('        ', tools);
     const stiTargets = this.runtimeStiTargets(tools);
+    const toolTargets = this.runtimeToolTargets(tools);
     const tenantScopedSet = Array.from(
       new Set(tenantScopedObjects.map((n) => n.toLowerCase())),
     );
@@ -2482,6 +2486,7 @@ const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true
     : ''
 }
 
+const TOOL_TARGETS: Record<string, { objectName: string; action: string }> = ${JSON.stringify(toolTargets)};
 const PUBLIC_JSON_OPTIONS = {
   permissions: (process.env.SMRT_MCP_PERMISSIONS || '')
     .split(',')
@@ -2603,7 +2608,7 @@ ${
   hasTenantScoped
     ? `
     // Fail-closed tenant context for tenant-scoped tools (#1554).
-    const [toolObject] = name.split('_');
+    const toolObject = TOOL_TARGETS[name]?.objectName;
     const result =
       toolObject && TENANT_SCOPED.has(toolObject.toLowerCase())
         ? await runTenantScopedEntryPoint(

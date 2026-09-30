@@ -17,6 +17,7 @@ import {
 } from '../query-bounds.js';
 import type { CustomActionScope } from './custom-action.js';
 import type { MCPConfig, MCPContext } from './mcp.js';
+import type { McpToolTarget } from './mcp-tool-name.js';
 
 /**
  * Helper function to capitalize first letter
@@ -51,6 +52,8 @@ export interface RuntimeOptions {
     inputSchema: Record<string, unknown>;
     outputSchema?: Record<string, unknown>;
   }>;
+  /** Explicit original execution targets for generated protocol aliases. */
+  toolTargets?: Record<string, McpToolTarget>;
   /** Cache hint emitted for deploy-static tools/list results. */
   toolListCacheHint?: {
     ttlMs: number;
@@ -118,6 +121,7 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     description = 'Auto-generated MCP server from SMRT objects',
     debug = false,
     tools = [],
+    toolTargets: explicitToolTargets,
     customActions = {},
     taskActions = {},
     tenantScopedObjects = [],
@@ -125,6 +129,28 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     listOrderBy = {},
     toolListCacheHint = { ttlMs: 86_400_000, cacheScope: 'private' },
   } = options;
+
+  // Direct template callers retain their legacy object_action inputs. The
+  // owning generator always supplies explicit targets, including valid aliases.
+  const toolTargets =
+    explicitToolTargets ??
+    Object.fromEntries(
+      tools.map((tool) => {
+        const separator = tool.name.indexOf('_');
+        return [
+          tool.name,
+          {
+            objectName: capitalize(tool.name.slice(0, separator)),
+            action: tool.name.slice(separator + 1),
+          },
+        ];
+      }),
+    );
+  for (const tool of tools) {
+    if (!Object.hasOwn(toolTargets, tool.name)) {
+      throw new Error(`Missing MCP tool target: ${tool.name}`);
+    }
+  }
 
   // Generate static tool array as TypeScript code
   const toolsCode = tools.length > 0 ? JSON.stringify(tools, null, 2) : '[]';
@@ -142,9 +168,8 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
   const generateSwitchCases = (indent: string) => {
     return tools
       .map((tool) => {
-        const separator = tool.name.indexOf('_');
-        const objectName = tool.name.slice(0, separator);
-        const action = tool.name.slice(separator + 1);
+        const objectName = toolTargets[tool.name].objectName.toLowerCase();
+        const action = toolTargets[tool.name].action;
 
         switch (action) {
           case 'list':
@@ -159,7 +184,7 @@ ${indent}  const orderBy = args.orderBy ?? ${JSON.stringify(
             )};
 ${indent}  const where = args.where ?? {};
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -179,7 +204,7 @@ ${indent}  if (!args.id && !args.slug) {
 ${indent}    throw new Error('Either id or slug is required');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -211,7 +236,7 @@ ${indent}  if (!id) {
 ${indent}    throw new Error('ID is required for update');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -221,7 +246,7 @@ ${indent}  if (!existing) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  Object.assign(existing, applyWritablePolicy('${capitalize(objectName)}', updateData));
+${indent}  Object.assign(existing, applyWritablePolicy(${JSON.stringify(toolTargets[tool.name].objectName)}, updateData));
 ${indent}  await existing.save();
 
 ${indent}  return successResult(existing.toPublicJSON(PUBLIC_JSON_OPTIONS));
@@ -233,7 +258,7 @@ ${indent}  if (!args.id) {
 ${indent}    throw new Error('ID is required for delete');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -256,13 +281,13 @@ ${indent}  const actionMeta = CUSTOM_ACTIONS['${tool.name}'] || { scope: 'item',
 ${indent}  const { id, options, ...directArgs } = args;
 
 ${indent}  if (actionMeta.scope === 'item' && !id) {
-${indent}    throw new Error('ID is required for custom action ${action}');
+${indent}    throw new Error(${JSON.stringify(`ID is required for custom action ${action}`)});
 ${indent}  }
 ${indent}  if (actionMeta.scope === 'collection' && id) {
-${indent}    throw new Error('Custom action ${action} is collection-scoped and does not accept an ID');
+${indent}    throw new Error(${JSON.stringify(`Custom action ${action} is collection-scoped and does not accept an ID`)});
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -270,14 +295,14 @@ ${indent}  });
 ${indent}  const target = actionMeta.scope === 'item'
 ${indent}    ? await collection.get(id)
 ${indent}    : actionMeta.isStatic
-${indent}      ? ObjectRegistry.getClass('${capitalize(objectName)}')?.constructor
+${indent}      ? ObjectRegistry.getClass(${JSON.stringify(toolTargets[tool.name].objectName)})?.constructor
 ${indent}      : collection;
 ${indent}  if (!target) {
 ${indent}    throw new Error(actionMeta.scope === 'item' ? 'Object not found' : 'Custom action target not found');
 ${indent}  }
-${indent}  const actionMethod = target[actionMeta.methodName || '${action}'];
+${indent}  const actionMethod = target[actionMeta.methodName || ${JSON.stringify(action)}];
 ${indent}  if (typeof actionMethod !== 'function') {
-${indent}    throw new Error('Method ${action} not found on custom action target');
+${indent}    throw new Error(${JSON.stringify(`Method ${action} not found on custom action target`)});
 ${indent}  }
 
 ${indent}  const methodArgs = actionMeta.legacyOptions
@@ -347,6 +372,7 @@ const DEBUG = ${debug};
 // Static tool definitions (generated at build time)
 const TOOLS = ${toolsCode};
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
+const TOOL_TARGETS: Record<string, { objectName: string; action: string }> = ${JSON.stringify(toolTargets)};
 const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
 const TASK_ACTIONS = ${JSON.stringify(taskActions)};
 const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
@@ -630,7 +656,7 @@ async function handleTaskExtensionMessage(message: any): Promise<any | null> {
       const task = await store.createTask({
         objectType: action.objectType,
         objectId: params.arguments.id,
-        method: actionMeta.methodName || params.name.slice(params.name.indexOf('_') + 1),
+        method: actionMeta.methodName || TOOL_TARGETS[params.name]?.action,
         invocationArgs: taskInvocationArgs(actionMeta, params.arguments),
         tenantId: ${hasTenantScoped ? 'MCP_TENANT_ID ?? null' : 'null'},
       });
@@ -793,7 +819,7 @@ ${
   hasTenantScoped
     ? `
         // Fail-closed tenant context for tenant-scoped tools (#1554).
-        const [toolObject] = toolName.split('_');
+        const toolObject = TOOL_TARGETS[toolName]?.objectName;
         const result =
           toolObject && TENANT_SCOPED.has(toolObject.toLowerCase())
             ? await runTenantScopedEntryPoint(
