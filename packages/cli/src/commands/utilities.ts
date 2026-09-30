@@ -2553,7 +2553,9 @@ export default testManifest;
               actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;
             } else if (migration.type === 'add_foreign_key') {
               migrationSql = migration.sql || '';
-              actionDesc = `Added foreign-key constraint on ${migration.tableName}`;
+              actionDesc = migration.note
+                ? `Replaced foreign-key constraint on ${migration.tableName} (${migration.note})`
+                : `Added foreign-key constraint on ${migration.tableName}`;
             } else if (migration.type === 'drop_foreign_key') {
               migrationSql = migration.sql || '';
               actionDesc = `Dropped foreign-key constraint on ${migration.tableName}`;

@@ -947,6 +947,24 @@ Write the backfill in SQL that every engine you run accepts (`||`, `CASE`,
 scanner reads it from source. A backfill is not a default: the model still
 has to supply the value on every insert.
 
+### Foreign-key delete actions
+
+`@foreignKey(Target, { onDelete })` sets the constraint's `ON DELETE` action
+(`CASCADE`, `SET NULL`, `RESTRICT` or `NO ACTION`). Without one, a column
+listed in `conflictColumns` defaults to `CASCADE` and any other reference to
+`NO ACTION`. A declared action always wins, including on a `conflictColumns`
+column, and the build-time manifest carries it.
+
+When you change the action of an existing relationship, `db:migrate` on
+PostgreSQL replaces the constraint in the same transaction: it drops it, adds
+it back `NOT VALID` with the new action, and validates it. It does this only
+for a constraint SMRT created: the canonical
+`<table>_<column>_<target>_<target column>_fkey` name, one column, `MATCH
+SIMPLE`, not deferrable, already validated. `db:diff` lists it under
+"Foreign keys" with the old and new action. Any other constraint on that
+column is left for you to drop, and `db:diff` shows it as foreign-key drift
+needing a manual step.
+
 ## Advanced Querying
 
 Collections support flexible querying with multiple operators:

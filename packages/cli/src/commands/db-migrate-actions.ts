@@ -823,6 +823,7 @@ export function partitionSchemaChanges(
           ...(change.engineUnsupported !== undefined
             ? { engineUnsupported: change.engineUnsupported }
             : {}),
+          ...(change.note ? { note: change.note } : {}),
         };
         if (isAdvisoryOnlyChangeLike(change)) {
           manualInterventions.push(action);

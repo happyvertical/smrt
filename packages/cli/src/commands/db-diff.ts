@@ -430,6 +430,23 @@ export const dbDiffCommand: CLICommand = {
         console.log('     (auto-applied by smrt db:migrate)\n');
       }
 
+      // Executable foreign-key changes are applied by db:migrate too, so the
+      // preview lists them (same parity rule as type upgrades above),
+      // including an in-place action replacement (#3023).
+      const foreignKeyChanges = diff.changes.filter(
+        (c) =>
+          c.type === 'add_foreign_key' && (c.sql || c.sqlStatements?.length),
+      );
+      if (foreignKeyChanges.length > 0) {
+        console.log(`  🔗 Foreign keys (${foreignKeyChanges.length}):`);
+        for (const change of foreignKeyChanges) {
+          console.log(
+            `     + ${change.name} on ${change.table}${change.note ? ` (${change.note})` : ''}`,
+          );
+        }
+        console.log();
+      }
+
       if (typeMismatches.length > 0) {
         console.log(`  ⚠️  Type mismatches (${typeMismatches.length}):`);
         for (const change of typeMismatches) {

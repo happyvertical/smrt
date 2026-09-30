@@ -25,6 +25,7 @@ import {
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyAddStatements,
+  renderForeignKeyConstraintDrop,
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
   schemaForeignKeys,
@@ -76,6 +77,12 @@ import {
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+
+/** A framework-owned live foreign key whose actions differ from the manifest (#3023). */
+interface ForeignKeyActionReplacement {
+  constraintName: string;
+  note: string;
+}
 
 /**
  * `mismatch.actual` of the manual change reported when a required column
@@ -1417,7 +1424,20 @@ export class SchemaComparer {
       const sameColumn = liveForeignKeys.some(
         (live) => live.column === foreignKey.column,
       );
-      if (sameColumn) {
+      // #3023: a framework-owned PostgreSQL constraint whose only drift is
+      // its ON DELETE / ON UPDATE action is replaced in place (drop + add in
+      // the migration's transaction) instead of asking for a hand-written
+      // DROP CONSTRAINT. Anything else on the column stays a manual step.
+      let replacement: ForeignKeyActionReplacement | undefined;
+      if (sameColumn && this.engine === 'postgres') {
+        replacement = await this.findReplaceableForeignKey(
+          tableName,
+          liveForeignKeys,
+          foreignKey,
+          { onDelete: expectedDelete, onUpdate: expectedUpdate },
+        );
+      }
+      if (sameColumn && !replacement) {
         changes.push({
           type: 'add_foreign_key',
           table: tableName,
@@ -1591,10 +1611,107 @@ export class SchemaComparer {
         table: tableName,
         name: constraintName,
         foreignKey,
-        sqlStatements: renderForeignKeyAddStatements(tableName, foreignKey),
+        sqlStatements: [
+          ...(replacement
+            ? [
+                renderForeignKeyConstraintDrop(
+                  tableName,
+                  replacement.constraintName,
+                ),
+              ]
+            : []),
+          ...renderForeignKeyAddStatements(tableName, foreignKey),
+        ],
+        ...(replacement ? { note: replacement.note } : {}),
       });
     }
     return changes;
+  }
+
+  /**
+   * Decide whether a live PostgreSQL foreign key on the same column and
+   * target can have its referential actions converged automatically
+   * (#3023). The constraint must be one SMRT rendered: the deterministic
+   * canonical name, one column to one column, MATCH SIMPLE, not deferrable,
+   * already validated, and with default trigger enforcement. Only then is it
+   * dropped and re-added (NOT VALID + VALIDATE) inside the same migration
+   * transaction; everything else keeps the manual advisory, because a
+   * differently named or shaped constraint may be one an operator created on
+   * purpose.
+   */
+  private async findReplaceableForeignKey(
+    tableName: string,
+    liveForeignKeys: SqlTableSchemaInfo['foreignKeys'],
+    foreignKey: import('../schema/types.js').ForeignKeyDefinition,
+    expected: { onDelete: string; onUpdate: string },
+  ): Promise<ForeignKeyActionReplacement | undefined> {
+    const onColumn = (liveForeignKeys || []).filter(
+      (live) => live.column === foreignKey.column,
+    );
+    if (onColumn.length !== 1) return undefined;
+    const [live] = onColumn;
+    if (
+      live.referencesTable !== foreignKey.referencesTable ||
+      live.referencesColumn !== foreignKey.referencesColumn
+    ) {
+      return undefined;
+    }
+    const canonicalName = foreignKeyConstraintName(tableName, foreignKey);
+    let rows: Array<Record<string, unknown>>;
+    try {
+      const result = await this.db.query(
+        `SELECT con.conname AS constraint_name, con.convalidated AS validated, ` +
+          `con.condeferrable AS deferrable, con.confmatchtype AS match_type, ` +
+          `cardinality(con.conkey) AS child_keys, cardinality(con.confkey) AS parent_keys, ` +
+          `child_attr.attname AS child_column, parent.relname AS parent_table, ` +
+          `parent_attr.attname AS parent_column, ` +
+          `EXISTS (SELECT 1 FROM pg_trigger AS trg WHERE trg.tgconstraint = con.oid AND trg.tgenabled <> 'O') AS nondefault_trigger_mode ` +
+          `FROM pg_constraint AS con ` +
+          `JOIN pg_class AS child ON child.oid = con.conrelid ` +
+          `JOIN pg_namespace AS child_ns ON child_ns.oid = child.relnamespace ` +
+          `JOIN pg_class AS parent ON parent.oid = con.confrelid ` +
+          `JOIN pg_attribute AS child_attr ON child_attr.attrelid = con.conrelid AND child_attr.attnum = con.conkey[1] ` +
+          `JOIN pg_attribute AS parent_attr ON parent_attr.attrelid = con.confrelid AND parent_attr.attnum = con.confkey[1] ` +
+          `WHERE con.contype = 'f' AND child_ns.nspname = 'public' ` +
+          `AND child.relname = ${this.quoteLiteral(tableName)} ` +
+          `AND child_attr.attname = ${this.quoteLiteral(foreignKey.column)}`,
+      );
+      rows = (Array.isArray(result) ? result : result.rows || []) as Array<
+        Record<string, unknown>
+      >;
+    } catch {
+      // Without the catalog row there is no proof of ownership; keep the
+      // manual advisory rather than guessing a constraint name.
+      return undefined;
+    }
+    if (rows.length !== 1) return undefined;
+    const [row] = rows;
+    if (
+      row.constraint_name !== canonicalName ||
+      row.parent_table !== foreignKey.referencesTable ||
+      row.parent_column !== foreignKey.referencesColumn ||
+      Number(row.child_keys) !== 1 ||
+      Number(row.parent_keys) !== 1 ||
+      row.validated !== true ||
+      row.deferrable === true ||
+      row.match_type !== 's' ||
+      row.nondefault_trigger_mode === true
+    ) {
+      return undefined;
+    }
+    const liveDelete = normalizeForeignKeyAction(live.onDelete) || 'NO ACTION';
+    const liveUpdate = normalizeForeignKeyAction(live.onUpdate) || 'NO ACTION';
+    const parts: string[] = [];
+    if (liveDelete !== expected.onDelete) {
+      parts.push(`ON DELETE ${liveDelete} → ${expected.onDelete}`);
+    }
+    if (liveUpdate !== expected.onUpdate) {
+      parts.push(`ON UPDATE ${liveUpdate} → ${expected.onUpdate}`);
+    }
+    return {
+      constraintName: canonicalName,
+      note: `replaces ${canonicalName}: ${parts.join(', ')}`,
+    };
   }
 
   private async foreignKeyHasOrphans(
