@@ -6,9 +6,12 @@ import {
   createDataSurfaceTools,
   DATA_DISCOVER_TOOL_SLUG,
   DATA_QUERY_TOOL_SLUG,
+  DataSurfaceRequestError,
 } from '@happyvertical/smrt-agents';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { describe, expect, it, vi } from 'vitest';
 import type { ContentQueryCollection } from '../content-query.js';
+import { CONTENT_QUERY_CLASS_NAME } from '../content-query.js';
 import {
   CONTENT_LIST_DATA_SURFACE_COLLECTION,
   CONTENT_LIST_DATA_SURFACE_ID,
@@ -342,5 +345,54 @@ describe('ContentList agent data surface', () => {
     });
     expect(list).not.toHaveBeenCalled();
     expect(facets).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-UUID id filter as the caller error before any read', async () => {
+    const idIsUuid =
+      String(
+        ObjectRegistry.getSchema(CONTENT_QUERY_CLASS_NAME)?.columns.id?.type,
+      ).toUpperCase() === 'UUID';
+    const list = vi.fn(async () => []);
+    const count = vi.fn(async () => 0);
+    const definition = await createContentListDataSurfaceDefinition({
+      schema: {
+        ...schema,
+        fields: schema.fields.map((field) =>
+          field.id === 'id'
+            ? { ...field, filterOperators: ['eq', 'in'] }
+            : field,
+        ),
+      },
+      collection: async () => ({ list, count }),
+    });
+    const query = createDataSurfaceTools({ surfaces: [definition] }).find(
+      (tool) => tool.slug === DATA_QUERY_TOOL_SLUG,
+    );
+    const run = query?.execute({
+      run: principalRun('tenant-a'),
+      args: {
+        surfaceId: CONTENT_LIST_DATA_SURFACE_ID,
+        request: {
+          mode: 'count',
+          filter: {
+            kind: 'condition',
+            field: 'id',
+            operator: 'eq',
+            value: '5',
+          },
+        },
+      },
+      db: undefined,
+    });
+    if (!idIsUuid) {
+      await expect(run).resolves.toBeDefined();
+      return;
+    }
+    await expect(run).rejects.toBeInstanceOf(DataSurfaceRequestError);
+    await expect(run).rejects.toMatchObject({
+      status: 400,
+      reason: 'DATA_QUERY_VALUE_INVALID',
+    });
+    expect(count).not.toHaveBeenCalled();
   });
 });

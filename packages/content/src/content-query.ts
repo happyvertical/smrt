@@ -24,10 +24,12 @@
 import {
   createDataQueryFingerprint,
   DataQueryValidationError,
+  getClassName,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
   ObjectRegistry,
+  toSnakeCase,
 } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
@@ -338,6 +340,41 @@ function filterOperatorsFor(
   }
 }
 
+/*
+ * Id-column and NULL-ordering rules. These mirror `ID_FIELD_FILTER_OPERATORS`,
+ * `uuidColumnFieldIds` and `dataQueryOrderByTerms` in `@happyvertical/smrt-agents`'
+ * generic collection adapter exactly; they are copied rather than imported
+ * because this module ships on the main content entry, which must not pull in
+ * the agents runtime. Folding this adapter into that one (#2912) removes the
+ * copy. The id-VALUE check lives at the agent/HTTP boundary
+ * (`createContentListDataSurfaceDefinition`), which can import agents.
+ */
+
+/** Operators an id (native `UUID` column) field accepts. */
+const ID_FIELD_FILTER_OPERATORS: DataQueryFilterOperator[] = [
+  'eq',
+  'in',
+  'ne',
+  'notIn',
+];
+
+/** Declared field ids that live in a native `UUID` column (manifest schema). */
+function uuidColumnFieldIds(
+  qualifiedName: string,
+  fieldIds: Iterable<string>,
+): Set<string> {
+  const schema =
+    ObjectRegistry.getSchema(qualifiedName) ??
+    ObjectRegistry.getSchema(getClassName(qualifiedName));
+  const columns = schema?.columns ?? {};
+  const ids = new Set<string>();
+  for (const id of fieldIds) {
+    const column = columns[toSnakeCase(id)] ?? columns[id];
+    if (String(column?.type ?? '').toUpperCase() === 'UUID') ids.add(id);
+  }
+  return ids;
+}
+
 interface RegistryFieldLike {
   type?: unknown;
   sensitive?: unknown;
@@ -399,6 +436,7 @@ async function buildQuerySchemaForClass(
     string,
     RegistryFieldLike
   >;
+  const idFields = uuidColumnFieldIds(qualifiedName, registered.keys());
   const fields: DataQueryFieldDescriptor[] = [];
   for (const [name, field] of registered) {
     if (name.startsWith('_')) continue;
@@ -408,7 +446,9 @@ async function buildQuerySchemaForClass(
     if (isTenantField(name, field)) continue;
     const type = queryFieldType(field.type);
     if (!type) continue;
-    const filterOperators = filterOperatorsFor(type);
+    const filterOperators = idFields.has(name)
+      ? [...ID_FIELD_FILTER_OPERATORS]
+      : filterOperatorsFor(type);
     fields.push({
       id: name,
       type,
@@ -1389,9 +1429,19 @@ export function boundRowBytes(
   return { rows: bounded, truncated: true };
 }
 
+/**
+ * `list()` order terms. The data-query contract sorts an empty (NULL) value
+ * before every other value ascending and after it descending — the order the
+ * query tools verify a page against — while PostgreSQL defaults to the
+ * opposite when descending. The placement is therefore explicit.
+ */
 function orderByTerms(sort: DataQuerySort[] | undefined): string[] | undefined {
   if (!sort || sort.length === 0) return undefined;
-  return sort.map((term) => `${term.field} ${term.direction.toUpperCase()}`);
+  return sort.map((term) =>
+    term.direction === 'desc'
+      ? `${term.field} DESC NULLS LAST`
+      : `${term.field} ASC NULLS FIRST`,
+  );
 }
 
 /**

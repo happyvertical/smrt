@@ -275,15 +275,19 @@ export {
 } from './schedule.js';
 // Generic SmrtObject collection -> DataSurface adapter (#2905).
 export {
+  assertIdFieldConditions,
   assertSmrtCollectionQuerySchema,
   buildDataQuerySchemaForClass,
   type CreateSmrtCollectionDataSurfaceOptions,
   clearSmrtCollectionQuerySchemaCache,
   createSmrtCollectionDataSurfaceDefinition,
+  dataQueryOrderByTerms,
   executeSmrtCollectionQuery,
+  ID_FIELD_FILTER_OPERATORS,
   type SmrtCollectionDataSurfaceAction,
   type SmrtCollectionQueryCollection,
   type SmrtCollectionQueryScope,
+  uuidColumnFieldIds,
 } from './smrt-collection-data-surface.js';
 export type {
   SummaryArticleImage,
