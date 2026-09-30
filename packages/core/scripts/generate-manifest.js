@@ -7,7 +7,7 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
@@ -145,6 +145,7 @@ async function generateManifest() {
             2,
           ),
         });
+      else if (existsSync(localKnowledgePath)) unlinkSync(localKnowledgePath);
     } finally {
       await unregister();
     }

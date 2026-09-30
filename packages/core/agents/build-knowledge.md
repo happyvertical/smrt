@@ -84,6 +84,22 @@ Config precedence for knowledge is defaults → top-level `knowledge` in
 `smrt.config.ts` → `packages[packageName].knowledge` → plugin option →
 object-level `@smrt({ knowledge })`.
 
+Test generation uses that same effective configuration and publishes knowledge
+matching the manifest it generated. Disabling knowledge removes a previous local
+knowledge artifact, so consumers cannot mistake it for current enabled output.
+`new ManifestBuilder(projectRoot)` keeps discovery, package identity, and output
+at that explicit root; omitting the argument retains the current-working-directory
+behavior. Both manifest writers retain declared package dependencies when merging
+their local and consumed-object projections.
+
+Test manifests carry optional `artifactPurpose: 'test'`; dependency discovery
+skips those artifacts, including `.smrt` fallbacks. Unmarked runtime manifests,
+empty published providers, and source-only development providers remain eligible.
+`ManifestBuilder` accepts explicit `outputMode: 'dev' | 'build'`; omitted mode
+retains legacy filename inference. Vitest selects dev mode explicitly, so tests
+never replace a production `dist/manifest.json`. Relative output directories are
+resolved against the builder's project root.
+
 Object-level `knowledge: false` excludes an object from authored context only;
 it must not change runtime manifest registration. Use
 `knowledge: { tags, summary, risks }` for review-sensitive domain objects.
