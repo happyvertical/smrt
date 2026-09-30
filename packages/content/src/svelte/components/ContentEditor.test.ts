@@ -30,6 +30,7 @@ function renderEditor(
     agentChatNotice?: string | null;
     hideActions?: boolean;
     hideChat?: boolean;
+    showBodyFormatPicker?: boolean;
     onAssistantContextChange?: (registration: any) => void;
     onChange?: (data: any) => void;
     onSave?: (data: any) => void;
@@ -53,6 +54,7 @@ function renderEditor(
       agentChatNotice: props.agentChatNotice,
       hideActions: props.hideActions,
       hideChat: props.hideChat,
+      showBodyFormatPicker: props.showBodyFormatPicker,
       onAssistantContextChange: props.onAssistantContextChange,
       onChange: props.onChange ?? vi.fn(),
       onSave: props.onSave ?? vi.fn(),
@@ -464,9 +466,31 @@ describe('ContentEditor component', () => {
     );
   });
 
+  it('hides the body save-format picker unless the host opts in', async () => {
+    const target = renderEditor({
+      content: {
+        title: 'HTML Article',
+        body: '<p>Existing</p>',
+        bodyFormat: 'html',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      onSave: vi.fn(),
+    });
+
+    await vi.waitFor(() =>
+      expect(target.querySelector('.body-editor-surface')?.innerHTML).toContain(
+        'Existing',
+      ),
+    );
+    expect(target.querySelector('.format-select')).toBeNull();
+  });
+
   it('can switch the body save format to markdown', async () => {
     const onSave = vi.fn();
     const target = renderEditor({
+      showBodyFormatPicker: true,
       content: {
         title: 'HTML Article',
         body: '<p>Existing <strong>HTML</strong></p>',

@@ -38,6 +38,12 @@ export interface Props {
   value: string;
   /** Format of the body content: HTML, Markdown, or auto-detected. */
   format?: ContentBodyFormat | null;
+  /**
+   * Show the "Save as" HTML/Markdown picker in the toolbar. Off by default:
+   * the storage format is a technical choice most editors should not face, so
+   * hosts opt in for technical users. The body keeps its `format` either way.
+   */
+  showFormatPicker?: boolean;
   /** Placeholder text shown when the editor is empty. */
   placeholder?: string;
   /** DOM id of the editable surface (default `content-body-input`). */
@@ -78,6 +84,7 @@ export interface Props {
 let {
   value,
   format = null,
+  showFormatPicker = false,
   placeholder = 'Start writing...',
   id = 'content-body-input',
   name = 'body',
@@ -1180,16 +1187,18 @@ function handleEditorDragEnd() {
     </Button>
     </span>
 
-    <label class="format-select">
-      <span>{t(M['content.content_body_editor.save_as'])}</span>
-      <Select
-        value={currentFormat}
-        onchange={(event) => setBodyFormat((event.currentTarget as HTMLSelectElement).value as ContentBodyFormat)}
-      >
-        <option value="html">HTML</option>
-        <option value="markdown">Markdown</option>
-      </Select>
-    </label>
+    {#if showFormatPicker}
+      <label class="format-select">
+        <span>{t(M['content.content_body_editor.save_as'])}</span>
+        <Select
+          value={currentFormat}
+          onchange={(event) => setBodyFormat((event.currentTarget as HTMLSelectElement).value as ContentBodyFormat)}
+        >
+          <option value="html">HTML</option>
+          <option value="markdown">Markdown</option>
+        </Select>
+      </label>
+    {/if}
   </div>
 
   {#if imagePanel && imagePanelOpen}

@@ -68,6 +68,11 @@ export interface Props {
   hideActions?: boolean;
   /** Hide the AI chat sidebar completely. */
   hideChat?: boolean;
+  /**
+   * Show the body editor's "Save as" HTML/Markdown picker. Off by default:
+   * the storage format is a technical choice most editors should not face.
+   */
+  showBodyFormatPicker?: boolean;
   /** Policy object defining which fields the assistant can modify. */
   assistantFieldAllowList?: ContentEditorAssistantFieldUpdateAllowList;
   /** Fired when the assistant context changes (for session tracking). */
@@ -99,6 +104,7 @@ let {
   agentChatNotice = null,
   hideActions = false,
   hideChat = false,
+  showBodyFormatPicker = false,
   assistantFieldAllowList = {},
   onAssistantContextChange = undefined,
   onChange = undefined,
@@ -1104,6 +1110,7 @@ function removeAsset(id: string) {
           bind:this={bodyEditor}
           value={formData.body || ''}
           format={formData.bodyFormat}
+          showFormatPicker={showBodyFormatPicker}
           selectedImageIndex={selectedBodyImageIndex}
           onChange={handleBodyChange}
           onOpenImageChooser={() => showInlineImageUploader = !showInlineImageUploader}

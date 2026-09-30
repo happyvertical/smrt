@@ -85,6 +85,21 @@ describe('ContentBodyEditor toolbar icons', () => {
   });
 });
 
+describe('ContentBodyEditor format picker', () => {
+  it('is hidden by default', () => {
+    const target = renderEditor();
+    expect(target.querySelector('.format-select')).toBeNull();
+  });
+
+  it('shows the HTML/Markdown picker when the host opts in', () => {
+    const target = renderEditor({ showFormatPicker: true });
+    const options = Array.from(
+      target.querySelectorAll('.format-select option'),
+    ).map((option) => option.getAttribute('value'));
+    expect(options).toEqual(['html', 'markdown']);
+  });
+});
+
 describe('ContentBodyEditor image panel', () => {
   it('opens between the toolbar and the text, labelled and linked to its button', async () => {
     const target = renderEditor({ imagePanel: panel, imagePanelOpen: true });

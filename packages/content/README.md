@@ -508,6 +508,13 @@ Applications that compose their own article editor can use
 `resolveContentEditorImageSelection` to share the same form normalization,
 thumbnail selection, and save payload behavior as the package editors.
 
+#### Body format picker
+
+The toolbar's "Save as" HTML/Markdown picker is hidden by default. Pass
+`showFormatPicker` to `ContentBodyEditor` (or `showBodyFormatPicker` to
+`ContentEditor`) to offer it to technical editors. Without it the body keeps
+the `format` it was given.
+
 #### Image panel and thumbnail block
 
 `ContentBodyEditor` takes an `imagePanel` snippet with `imagePanelOpen` and
