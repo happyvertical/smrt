@@ -77,6 +77,7 @@ let {
   sortable = false,
   sort = $bindable({ columnId: null, direction: null }),
   onSortChange,
+  sortClearable = true,
   manualSorting = false,
   filterFn,
   page = $bindable(1),
@@ -648,6 +649,10 @@ function handleSort(column: DataTableColumn<T>, event: MouseEvent) {
     type: 'toggleSorting',
     columnId: column.id,
     multi: event.shiftKey,
+    ...(column.sortFirstDirection
+      ? { firstDirection: column.sortFirstDirection }
+      : {}),
+    ...(sortClearable ? {} : { clearable: false }),
   });
 }
 
@@ -661,10 +666,22 @@ function sortActionLabel(column: DataTableColumn<T>): string {
   const columnSort = tableState.sorting.find(
     (sort) => sort.columnId === column.id,
   );
-  if (!columnSort) {
+  const first = column.sortFirstDirection === 'desc' ? 'desc' : 'asc';
+  const next = !columnSort
+    ? first
+    : !sortClearable
+      ? columnSort.direction === 'asc'
+        ? 'desc'
+        : 'asc'
+      : columnSort.direction === first
+        ? first === 'asc'
+          ? 'desc'
+          : 'asc'
+        : null;
+  if (next === 'asc') {
     return t(M['ui.data_table.sort_ascending'], { column: column.label });
   }
-  if (columnSort.direction === 'asc') {
+  if (next === 'desc') {
     return t(M['ui.data_table.sort_descending'], { column: column.label });
   }
   return t(M['ui.data_table.clear_sort'], { column: column.label });

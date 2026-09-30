@@ -16,7 +16,15 @@
  *   `state.find = { text, matches }`. An empty text clears it. It narrows
  *   only what the agent reads; the page's own list is unchanged.
  *
- * Read-only mirror: no remote filter/sort/page/selection commands are
+ * - sorting (when `sort` and `onSort` are given): the current order is
+ *   published as `state.sort` and in the table snapshot, `sortable` columns
+ *   are declared sortable, and a `set-sorting` control
+ *   (`{ sorting: [{ columnId, direction }] }`, one rule) calls `onSort` — the
+ *   same path the page's own column headers take, so a server-paginated
+ *   list re-queries in that order (see `list-sort` in
+ *   `@happyvertical/smrt-ui/data`).
+ *
+ * Otherwise a read-only mirror: no remote filter/page/selection commands are
  * accepted (the page's own controls stay the source of truth); `refresh` is
  * honoured when supplied. Only declared columns leave the page: never declare
  * a secret (tokens, keys), and mark names/emails the person can see as
@@ -29,6 +37,9 @@ import {
   type DataSurfaceKind,
   type DataSurfaceRegistry,
   type DataSurfaceSubject,
+  type DataTableController,
+  type DataTableViewState,
+  type ListSort,
 } from '@happyvertical/smrt-ui/data';
 import { onDestroy } from 'svelte';
 import {
@@ -49,6 +60,8 @@ export interface ListSurfaceColumn {
   searchable?: boolean;
   /** `personal` for names/emails a person sees on the page; never declare secrets. */
   sensitivity?: 'public' | 'personal';
+  /** The list can be ordered by this column (needs `sort` + `onSort` on the options). */
+  sortable?: boolean;
 }
 
 type JsonPrimitive = string | number | boolean | null;
@@ -67,6 +80,22 @@ export interface ListSurfaceOptions {
   refresh?: () => boolean | Promise<boolean>;
   /** Cap on published rows (default 50). */
   maxRows?: number;
+  /** The list's current order, as the page shows it. */
+  sort?: ListSort | null;
+  /**
+   * Re-order the list (the page's header-click path). Return `false` to deny.
+   * Server-sorted lists navigate to the new `?sort=&dir=` URL here.
+   */
+  onSort?: (
+    sort: ListSort,
+  ) => boolean | undefined | Promise<boolean | undefined>;
+}
+
+function sortEnabled(options: ListSurfaceOptions): boolean {
+  return (
+    typeof options.onSort === 'function' &&
+    options.columns.some((column) => column.sortable)
+  );
 }
 
 const DEFAULT_MAX_ROWS = 50;
@@ -136,13 +165,25 @@ export function listSurfaceDescriptor(
   const searchableIds = options.columns
     .filter((column) => column.searchable)
     .map((column) => column.id);
+  const sortableIds = sortEnabled(options)
+    ? options.columns
+        .filter((column) => column.sortable)
+        .map((column) => column.id)
+    : [];
   const columns: DataSurfaceDescriptor['columns'] = options.columns.map(
     (column) => ({
       id: column.id,
       label: column.label,
       ...(column.description ? { description: column.description } : {}),
       ...(column.sensitivity ? { sensitivity: column.sensitivity } : {}),
-      capabilities: column.searchable ? ['read', 'search'] : ['read'],
+      capabilities: [
+        'read',
+        ...(column.searchable ? (['search'] as const) : []),
+        ...(sortableIds.includes(column.id) ? (['sort'] as const) : []),
+      ],
+      ...(sortableIds.includes(column.id)
+        ? { operators: { sort: ['asc', 'desc'] as const } }
+        : {}),
       ...(column.id === rowKey
         ? { role: 'row-key' as const }
         : column.status
@@ -172,10 +213,19 @@ export function listSurfaceDescriptor(
         ? { searchableColumnIds: searchableIds }
         : {}),
       filterableColumnIds: [],
-      sortableColumnIds: [],
+      sortableColumnIds: sortableIds,
     },
     controls: [
       ...(options.refresh ? [{ id: 'refresh', label: 'Refresh' }] : []),
+      ...(sortableIds.length > 0
+        ? [
+            {
+              id: 'set-sorting',
+              label: 'Sort',
+              description: `Re-order the list the way its column headers do. Payload: { sorting: [{ columnId, direction: 'asc' | 'desc' }] } with exactly one rule; sortable columns: ${sortableIds.join(', ')}. The current order is state.sort.`,
+            },
+          ]
+        : []),
       ...(searchableIds.length > 0
         ? [
             {
@@ -224,6 +274,14 @@ function surfaceContext(
   const rows = projectListRows(visible, options.columns, options.maxRows);
   return {
     ...(options.context ?? {}),
+    ...(options.sort
+      ? {
+          sort: {
+            columnId: options.sort.columnId,
+            direction: options.sort.direction,
+          },
+        }
+      : {}),
     rowCount: options.rows.length,
     rows,
     rowsTruncated: visible.length > rows.length,
@@ -240,11 +298,18 @@ export function useListSurface(
   let mountedKey: string | null = null;
   let mountedRegistry: DataSurfaceRegistry | null = null;
   let latest: ListSurfaceOptions | null = null;
+  let controller: DataTableController | null = null;
   let findText = '';
+
+  const sortingOf = (options: ListSurfaceOptions) =>
+    options.sort
+      ? [{ columnId: options.sort.columnId, direction: options.sort.direction }]
+      : [];
 
   const teardown = () => {
     handle?.destroy();
     handle = null;
+    controller = null;
     mountedKey = null;
     mountedRegistry = null;
     findText = '';
@@ -266,21 +331,54 @@ export function useListSurface(
       options.surfaceId,
       options.kind ?? 'list',
       options.subject ?? null,
-      options.columns.map((column) => [column.id, column.searchable === true]),
+      options.columns.map((column) => [
+        column.id,
+        column.searchable === true,
+        column.sortable === true,
+      ]),
       Boolean(options.refresh),
+      sortEnabled(options),
     ]);
     if (key !== mountedKey || resolved !== mountedRegistry) {
       teardown();
       const context = surfaceContext(options, '');
       delete context.find;
+      const sortable = sortEnabled(options);
+      const columnIds = options.columns.map((column) => column.id);
+      const mountedController = sortable
+        ? createDataTableController({
+            columnIds,
+            // Controlled: the page's `sort` is the source of truth; an agent's
+            // command is only a proposal until `onSort` applies it.
+            state: {
+              ...createDataTableController({ columnIds }).getState(),
+              sorting: sortingOf(options),
+            },
+          })
+        : createDataTableController({ columnIds });
+      controller = mountedController;
       handle = mountListDataSurface({
         registry: resolved,
         descriptor: listSurfaceDescriptor(options),
-        controller: createDataTableController({
-          columnIds: options.columns.map((column) => column.id),
-        }),
+        controller: mountedController,
         context: context as Record<string, DataSurfaceJsonValue>,
-        acceptsTableCommand: () => false,
+        acceptsTableCommand: (command) =>
+          sortable &&
+          command.type === 'setSorting' &&
+          command.sorting.length === 1,
+        ...(sortable
+          ? {
+              applyControlledState: async (next: DataTableViewState) => {
+                const rule = next.sorting[0];
+                if (!rule || !latest?.onSort) return undefined;
+                const result = await latest.onSort({
+                  columnId: rule.columnId,
+                  direction: rule.direction,
+                });
+                return result === false ? undefined : next;
+              },
+            }
+          : {}),
         ...(options.refresh ? { refresh: options.refresh } : {}),
         onControl: (controlId, payload) => {
           if (controlId !== 'find' || !latest || !handle) return false;
@@ -294,6 +392,12 @@ export function useListSurface(
       mountedKey = key;
       mountedRegistry = resolved;
       return;
+    }
+    if (controller?.isControlled()) {
+      controller.replaceState({
+        ...controller.getState(),
+        sorting: sortingOf(options),
+      });
     }
     handle?.update(surfaceContext(options, findText));
   });
