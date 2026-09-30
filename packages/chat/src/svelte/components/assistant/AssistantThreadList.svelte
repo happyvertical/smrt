@@ -99,9 +99,10 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
   :global(.assistant-thread-list-item) {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: var(--smrt-spacing-2, 8px);
     width: 100%;
+    min-width: 0;
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     border: none;
     border-radius: var(--smrt-radius-medium, 8px);
@@ -110,6 +111,16 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     font: var(--smrt-typography-body-medium-font, 0.875rem/1.4 sans-serif);
     text-align: left;
     cursor: pointer;
+  }
+
+  /* The Button's inner row: title left (clipped with an ellipsis), count right. */
+  :global(.assistant-thread-list-item > .content) {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   :global(.assistant-thread-list-item:hover) {
@@ -123,6 +134,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
   }
 
   .title {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

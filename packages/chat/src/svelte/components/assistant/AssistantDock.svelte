@@ -731,6 +731,9 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-shrink: 0;
     min-height: 0;
+    /* A long thread title must not squeeze the conversation (titles clip). */
+    max-width: min(16rem, 40%);
+    min-width: 0;
   }
 
   .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle) {
@@ -783,6 +786,7 @@ async function handleConfirmAction(requestId: string) {
 
     .assistant-dock-layout[data-threads-open] .assistant-dock-threads {
       display: flex;
+      max-width: none;
       max-height: 40%;
       border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     }
