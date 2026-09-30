@@ -136,6 +136,9 @@ let moreSentinel = $state<HTMLElement | null>(null);
 /** Screen-reader news about loading more ("12 more pictures"). */
 let moreStatus = $state('');
 let countBeforeMore: number | null = null;
+let moreRequestedAt = 0;
+/** A host that never answered a request may be asked again after this long. */
+const MORE_RETRY_MS = 1500;
 
 /** How close to the end (in tiles) keyboard focus asks for more. */
 const MORE_FOCUS_TILES = 6;
@@ -145,8 +148,12 @@ const MORE_SCROLL_MARGIN = 240;
 function requestMore() {
   // One request at a time: wait for the host to answer (a new page, or
   // its loading flag going back off) before asking again.
-  if (!hasMore || loading || !onLoadMore || countBeforeMore !== null) return;
+  if (!hasMore || loading || !onLoadMore) return;
+  if (countBeforeMore !== null && Date.now() - moreRequestedAt < MORE_RETRY_MS) {
+    return;
+  }
   countBeforeMore = pictures.length;
+  moreRequestedAt = Date.now();
   moreStatus = t(M['content.content_picture_drawer.loading_more']);
   onLoadMore();
 }
