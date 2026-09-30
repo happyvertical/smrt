@@ -565,6 +565,8 @@ export interface SmartObjectManifest {
    * Key is string for backward compatibility, but should be QualifiedClassName format.
    */
   objects: Record<string, SmartObjectDefinition>;
+  /** Test artifacts must not become dependency providers during discovery. */
+  artifactPurpose?: 'runtime' | 'test';
   moduleType?: string; // Module type identifier (e.g., "smrt") for package discovery
   smrtDependencies?: string[]; // Discovered SMRT packages from dependency tree
 }
