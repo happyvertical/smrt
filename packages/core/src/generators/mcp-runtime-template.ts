@@ -50,6 +50,20 @@ export interface RuntimeOptions {
     description: string;
     inputSchema: Record<string, unknown>;
     outputSchema?: Record<string, unknown>;
+    annotations?: {
+      readOnlyHint: boolean;
+      destructiveHint: boolean;
+      idempotentHint: boolean;
+      openWorldHint: boolean;
+    };
+    title?: string;
+    icons?: Array<{
+      src: string;
+      mimeType?: string;
+      sizes?: string[];
+      theme?: 'light' | 'dark';
+    }>;
+    _meta?: Record<string, unknown>;
   }>;
   /** Cache hint emitted for deploy-static tools/list results. */
   toolListCacheHint?: {

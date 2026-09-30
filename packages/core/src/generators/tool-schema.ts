@@ -428,7 +428,7 @@ export function buildToolDescriptors(opts: {
 
   return actions.map((action) => {
     const customAction = opts.customActions?.[action];
-    const semantics = toolSemantics(action, customAction);
+    const semantics = resolveToolSemantics(action, customAction);
     return {
       action,
       // Custom method names can contain underscores; the runtime splits on the
@@ -447,7 +447,12 @@ export function buildToolDescriptors(opts: {
   });
 }
 
-function toolSemantics(
+/**
+ * Resolve the one canonical capability classification used by generated MCP
+ * and WebMCP descriptors. Consumers that author a tool outside a model must
+ * declare this same shape rather than infer safety from a name or HTTP verb.
+ */
+export function resolveToolSemantics(
   action: string,
   customAction?: CustomActionMetadata,
 ): Pick<ToolDescriptor, 'effect' | 'idempotent' | 'openWorld'> {
