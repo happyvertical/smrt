@@ -24,3 +24,65 @@ All commands below use `pnpm --filter @happyvertical/smrt-mcp-openai`.
 Feature work: base-regression comparison N/A (no previous OpenAI adapter).
 No host registration, deployment, directory publication, or real user data in fixtures.
 Root gates and independent review are scheduled by the coordinator after integration.
+
+## Final dependency composition
+
+M2's public `smrt-app-mcp/auth` gateway is exercised with actual loopback JWKS
+and MCP HTTP sockets plus a scoped SDK client. The gateway overwrites ambient
+browser identity before M6's async discovery factory. One tenant-authorized
+catalog still controls settings discovery and calls. This adds no new identity
+provider or auth implementation.
+
+| Behavior/invariant | Reachable trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/contract edge | Level/command |
+|---|---|---|---|---|---|---|---|
+| Verified gateway → optional discovery and call | SDK connects to actual JWT-protected HTTP MCP route | Valid issuer/audience/scope maps owner + active tenant; settings advertised and patch persists | Missing/expired/wrong-audience/insufficient-scope token; other subject/active tenant; revoked membership; forged settings tenant | Synthetic owner A tenant A; other actor/tenant/revoked denied; ambient browser user never authoritative | Existing SQLite settings fixture transaction, no new auth store | Node/loopback HTTP, public M2 auth + native SDK2026-07-28 factory | Integration / `pnpm --filter @happyvertical/smrt-mcp-openai test` |
+| Private UI resource policy | SDK reads entrypoint resource over HTTP | Trusted current owner, active tenant, view scope, exact resource URI | Null principal, other subject/tenant, missing scope, revoked membership | Live route principal and fixture membership | Resource policy uses the same fixture authority; no public default | Native SDK HTTP resource read rechecks each request | Integration / `pnpm --filter @happyvertical/smrt-mcp-openai test` |
+
+Dependency provenance and exact heads belong in the review packet; root validation
+and independent high-risk reviews remain coordinator-owned.
+
+## M6b context, messages and mentions — #3213
+
+Risk is high: model-visible context crosses a privacy boundary, and composer
+selection crosses principal and active-tenant authorization. Baseline: OpenAI
+extensions `e314720a0daac326217d1f123fcf51647868fa9f`, Apps `2026-01-26`, and
+server MCP `2026-07-28`. Synthetic browser/HTTP evidence does not claim an
+observed OpenAI host.
+
+| Behavior / reachable trigger | Positive | Negative / failure | Actor/context | Executor/transaction | Runtime / external edge | Level / command |
+|---|---|---|---|---|---|---|
+| Model context replacement | Bounded text with title/thumbnail; assistant-only background marked explicitly | Unknown fields, malformed icon, oversize text/cycle, missing capability, disposal or host error | Host metadata is inert; background still reaches model/provider | N/A, idempotent host replacement | Browser native capability / portable text+structured fallback | unit + synthetic browser / `test`, `test:e2e` |
+| Message composition | Active target uses portable text; negotiated host gets exact native target metadata | Unknown capability, unsupported target/modality/resource link, mobile native limitation, upstream error | No principal or private host state accepted from message | N/A | Browser, capability absent or malformed | unit + synthetic browser / `test`, `test:e2e` |
+| Composer discovery/search | Authorized workflow returns <=25 opaque resource handles | Forged tenant/ID, malformed/oversized query/result, anonymous/other owner/tenant/revoked caller denied | Verified principal and active tenant come from app-MCP request context | Existing M1 workflow and its owning read executor | SDK v2 HTTP transport; `app` visibility metadata | unit + HTTP integration / `test` |
+| Selected mention use | Selected opaque handle is routed through current authorized workflow | Revocation after search, guessed/cross-tenant handle and upstream error denied | Principal and active tenant are re-read for selected call | Existing application workflow, no adapter transaction/retry | SDK v2 HTTP | integration / `test` |
+| Package boundary | Node mention entry and browser context/message entries load packed | No v1 helper or OpenAI public types; malformed host never enables native path | Consumer package | N/A | packed Node/browser exports | build/types/pack / `build`, `typecheck`, `verify:pack` |
+
+### Accepted review regressions
+
+The Chromium fixture imports the packed-output context/message helpers instead of
+choosing a status label itself. It records every native and portable wire call.
+
+| Trigger | Required observation | Regression level |
+|---|---|---|
+| Negotiated native context rejects | Helper awaits a second, portable replacement with plain text and structured content; native title/thumbnail/background metadata is absent | Exported-helper unit and Chromium wire/result |
+| Caller aborts or bridge disposes while native context is pending | Late native failure cannot send any portable replacement | Unit abort and Chromium abort/disposal with held failure |
+| New-conversation target with absent/unknown capability or missing native callback | Reject before dispatch; no portable `ui/message` reaches active conversation | Exported-helper unit and Chromium wire count |
+| Active conversation without native support | One successful portable text message | Exported-helper unit and Chromium wire/result |
+| Negotiated new conversation | One native message retains `target: new` and `send: true` metadata | Exported-helper unit and Chromium wire payload |
+
+The same new tests against pre-fix production helpers fail on native rejection
+fallback and all three unsupported new-conversation routes. These tests use a
+synthetic host and do not establish actual OpenAI host compatibility.
+## Reviewed workflow error contract integration
+
+Current runtime workflow-handler failures resolve with `isError: true`, one
+`Workflow execution failed.` text item and that same structured error message.
+The integration fixture asserts that exact safe payload for adapter argument
+validation, domain target refusal, provider rollback and stale revision, including
+forged settings arguments over the real authenticated SDK HTTP route. Private
+handler causes never become client-visible error text. Write counts and persisted
+values still prove denied operations and rollback do not mutate state.
+
+Principal/tenant/scope/revocation and catalog authorization remain separate:
+those pre-handler access failures still reject. This fixture update does not
+change navigation, settings, authentication or workflow production code.

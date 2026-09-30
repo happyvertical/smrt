@@ -116,6 +116,7 @@ export function observeOpenAiNavigation(options: {
     try {
       url = readOpenAiDeepLink(snapshot.rawHostContext);
     } catch {
+      last = undefined;
       generation++;
       pending?.abort();
       options.onFallback('invalid');

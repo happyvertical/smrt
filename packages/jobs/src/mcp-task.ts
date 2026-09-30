@@ -530,7 +530,10 @@ function taskStatusFromJob(job: SmrtJob): McpTaskStatus {
   if (job.status === 'completed') return 'completed';
   if (job.status === 'cancelled') return 'cancelled';
   if (job.status === 'failed') return 'failed';
-  if (Object.keys(asRecord(job.taskInputRequests)).length > 0)
+  if (
+    Object.keys(asRecord(job.taskInputRequests)).length > 0 &&
+    !(getMcpTaskMarker(job)?.continuation && job.taskInputResponses !== null)
+  )
     return 'input_required';
   return 'working';
 }

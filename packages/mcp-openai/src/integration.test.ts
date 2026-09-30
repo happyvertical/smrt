@@ -1,3 +1,5 @@
+import { generateKeyPairSync, sign } from 'node:crypto';
+import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import {
   createMcpAppServer,
@@ -5,6 +7,7 @@ import {
   type McpAppServer,
   type McpWorkflowToolDefinition,
 } from '@happyvertical/smrt-app-mcp';
+import { createMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
 import { mountMcpRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 import {
   Client,
@@ -18,6 +21,10 @@ import {
   resolveOpenAiNavigationTarget,
   withOpenAiEntrypoints,
 } from './index.js';
+import {
+  resolveOpenAiMentionSelection,
+  withOpenAiMentionSearch,
+} from './mentions.js';
 
 const schema = {
   type: 'object' as const,
@@ -31,6 +38,20 @@ const owner = {
   tenantId: 'tenant-a',
   scopes: ['settings', 'view'],
 };
+async function expectSafeWorkflowFailure(call: Promise<unknown>) {
+  const result = (await call) as {
+    isError?: boolean;
+    content?: unknown;
+    structuredContent?: unknown;
+  };
+  expect(result.isError).toBe(true);
+  expect(result.content).toEqual([
+    { type: 'text', text: 'Workflow execution failed.' },
+  ]);
+  expect(result.structuredContent).toEqual({
+    error: { message: 'Workflow execution failed.' },
+  });
+}
 function fixture() {
   const db = new DatabaseSync(':memory:');
   db.exec(
@@ -141,6 +162,29 @@ function fixture() {
     { ...base, ui: { resourceUri: 'ui://synthetic/v1/view' } },
     ['global', 'thread'],
   );
+  const mentions = withOpenAiMentionSearch({
+    ...base,
+    name: 'mention_search',
+    execute: ({ arguments: args, principal }) => {
+      if (principal?.id !== owner.id || principal.tenantId !== owner.tenantId)
+        throw new Error('Mention search denied');
+      return {
+        content: [],
+        structuredContent: {
+          items:
+            args.query === 'owned'
+              ? [
+                  {
+                    type: 'resource',
+                    resourceUri: 'smrt://items/opaque-owned',
+                    title: 'Owned item',
+                  },
+                ]
+              : [],
+        },
+      };
+    },
+  });
   server = createMcpAppServer({
     serverInfo: { name: 'synthetic-navigation', version: '1' },
     smrtOptions: () => ({}),
@@ -159,6 +203,7 @@ function fixture() {
     ],
     workflowTools: [
       view,
+      mentions,
       ...settings.workflows,
       {
         ...base,
@@ -183,6 +228,12 @@ function fixture() {
         },
       },
     ],
+    resourcePolicy: ({ principal, resource }) =>
+      !revoked &&
+      principal?.id === owner.id &&
+      principal.tenantId === owner.tenantId &&
+      principal.scopes?.includes('view') === true &&
+      resource.uri === 'ui://synthetic/v1/view',
     toolPolicy: ({ principal, tool }) =>
       !revoked &&
       principal?.id === owner.id &&
@@ -229,6 +280,7 @@ describe('existing principal workflow authority', () => {
           'settings_update',
           'view',
           'resolve_target',
+          'mention_search',
         ])
           await expect(
             f.server.callTool({
@@ -238,6 +290,32 @@ describe('existing principal workflow authority', () => {
             }),
           ).rejects.toThrow();
       }
+      expect(
+        await f.server.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+          principal: owner,
+        }),
+      ).toHaveProperty(
+        'structuredContent.items.0.resourceUri',
+        'smrt://items/opaque-owned',
+      );
+      await expectSafeWorkflowFailure(
+        resolveOpenAiMentionSelection({
+          server: f.server,
+          tool: 'resolve_target',
+          arguments: { url: '/guessed' },
+          principal: owner,
+        }),
+      );
+      await expect(
+        resolveOpenAiMentionSelection({
+          server: f.server,
+          tool: 'resolve_target',
+          arguments: { url: '/items/owned' },
+          principal: { ...owner, tenantId: 'tenant-b' },
+        }),
+      ).rejects.toThrow();
       await expect(
         f.server.callTool({
           name: 'settings_read',
@@ -245,14 +323,21 @@ describe('existing principal workflow authority', () => {
           principal: owner,
         }),
       ).resolves.toHaveProperty('structuredContent.values.units', 'mm');
-      await expect(
+      await expectSafeWorkflowFailure(
         f.server.callTool({
           name: 'settings_update',
           arguments: { set: { grid: false }, tenantId: 'tenant-b' },
           principal: owner,
         }),
-      ).rejects.toThrow();
+      );
       f.revoke();
+      await expect(
+        f.server.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+          principal: owner,
+        }),
+      ).rejects.toThrow();
       expect(
         f.settings.extensions(await f.server.listTools({ principal: owner })),
       ).toEqual({});
@@ -283,10 +368,10 @@ describe('existing principal workflow authority', () => {
       await Promise.all([update({ units: 'in' }), update({ grid: true })]);
       expect(f.values()).toEqual({ units: 'in', grid: true });
       f.fail();
-      await expect(update({ units: 'mm' })).rejects.toThrow('provider');
+      await expectSafeWorkflowFailure(update({ units: 'mm' }));
       expect(f.values()).toEqual({ units: 'in', grid: true });
       f.stale();
-      await expect(update({ grid: false })).rejects.toThrow('revision');
+      await expectSafeWorkflowFailure(update({ grid: false }));
       expect(f.writes()).toBe(4); // No hidden retries by the adapter.
     } finally {
       f.db.close();
@@ -316,14 +401,14 @@ describe('existing principal workflow authority', () => {
           principal: owner,
         }),
       ).resolves.toHaveProperty('structuredContent.id', 'owned');
-      await expect(
+      await expectSafeWorkflowFailure(
         resolveOpenAiNavigationTarget({
           server: f.server,
           tool: 'resolve_target',
           url: '/items/other',
           principal: owner,
         }),
-      ).rejects.toThrow();
+      );
       await expect(
         resolveOpenAiNavigationTarget({
           server: f.server,
@@ -386,6 +471,21 @@ describe('existing principal workflow authority', () => {
           'openai/ui'
         ],
       ).toEqual({ entrypoints: [{ type: 'global' }, { type: 'thread' }] });
+      expect(
+        catalog.tools.find((tool) => tool.name === 'mention_search')?._meta,
+      ).toMatchObject({
+        'openai/extensions': { 'mentions/search': {} },
+        ui: { visibility: ['app'] },
+      });
+      expect(
+        await client.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+        }),
+      ).toHaveProperty(
+        'structuredContent.items.0.resourceUri',
+        'smrt://items/opaque-owned',
+      );
       const initial = await client.callTool({ name: 'view', arguments: {} });
       expect(initial.content).toEqual([
         { type: 'text', text: 'Complete synthetic headless view' },
@@ -400,6 +500,22 @@ describe('existing principal workflow authority', () => {
       expect(
         await client.callTool({ name: 'settings_read', arguments: {} }),
       ).toHaveProperty('structuredContent.values.units', 'mm');
+      for (const denied of [
+        null,
+        { ...owner, id: 'other' },
+        { ...owner, tenantId: 'other' },
+        { ...owner, scopes: ['settings'] },
+      ]) {
+        principal = denied;
+        await expect(
+          client.readResource({ uri: 'ui://synthetic/v1/view' }),
+        ).rejects.toThrow();
+      }
+      principal = owner;
+      f.revoke();
+      await expect(
+        client.readResource({ uri: 'ui://synthetic/v1/view' }),
+      ).rejects.toThrow();
       principal = { ...owner, tenantId: 'other' };
       // The SDK may cache private descriptors; every call still reauthorizes.
       expect(await f.server.listTools({ principal })).toEqual([]);
@@ -408,6 +524,189 @@ describe('existing principal workflow authority', () => {
       ).rejects.toThrow();
     } finally {
       await client.close();
+      f.db.close();
+    }
+  });
+});
+
+describe('verified M2 gateway and M6 native discovery factory', () => {
+  it('binds actual HTTP discovery and settings calls to validated tokens and current membership', async () => {
+    const f = fixture();
+    const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const jwk = {
+      ...pair.publicKey.export({ format: 'jwk' }),
+      kid: 'synthetic-navigation',
+      alg: 'RS256',
+      use: 'sig',
+    };
+    let activeTenant = owner.tenantId;
+    let revoked = false;
+    let origin = '';
+    let authenticate: ReturnType<typeof createMcpResourceAuth>['authenticate'];
+    const projected: (McpAppPrincipal | null)[] = [];
+    const route = mountMcpRoute(f.server, {
+      extensions: ({ tools, principal }) => {
+        projected.push(principal);
+        return f.settings.extensions(tools);
+      },
+    });
+    const server = createServer(async (incoming, outgoing) => {
+      try {
+        if (incoming.url === '/jwks') {
+          outgoing.writeHead(200, { 'Content-Type': 'application/json' });
+          outgoing.end(JSON.stringify({ keys: [jwk] }));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        for await (const chunk of incoming) chunks.push(Buffer.from(chunk));
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(incoming.headers)) {
+          if (Array.isArray(value))
+            for (const item of value) headers.append(name, item);
+          else if (value !== undefined) headers.set(name, value);
+        }
+        const request = new Request(`${origin}${incoming.url}`, {
+          method: incoming.method,
+          headers,
+          ...(incoming.method === 'GET' || incoming.method === 'HEAD'
+            ? {}
+            : { body: Buffer.concat(chunks) }),
+        });
+        const authentication = await authenticate(request);
+        const response = authentication.ok
+          ? await route({
+              request,
+              url: new URL(request.url),
+              locals: { user: authentication.principal },
+            })
+          : authentication.response;
+        outgoing.writeHead(
+          response.status,
+          Object.fromEntries(response.headers),
+        );
+        outgoing.end(Buffer.from(await response.arrayBuffer()));
+      } catch {
+        outgoing.writeHead(500).end();
+      }
+    });
+    const clients: Client[] = [];
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === 'string')
+      throw new Error('Missing synthetic HTTP port');
+    origin = `http://127.0.0.1:${address.port}`;
+    authenticate = createMcpResourceAuth({
+      profile: 'local',
+      issuer: origin,
+      resource: `${origin}/mcp`,
+      jwksUri: `${origin}/jwks`,
+      algorithms: ['RS256'],
+      scopes: ['settings', 'view'],
+      resolvePrincipal: async ({ subject }) =>
+        revoked ? null : { id: subject, tenantId: activeTenant },
+    }).authenticate;
+    const token = (overrides: Record<string, unknown> = {}) => {
+      const header = Buffer.from(
+        JSON.stringify({
+          alg: 'RS256',
+          typ: 'at+jwt',
+          kid: 'synthetic-navigation',
+        }),
+      ).toString('base64url');
+      const claims = Buffer.from(
+        JSON.stringify({
+          iss: origin,
+          aud: `${origin}/mcp`,
+          sub: owner.id,
+          exp: Math.floor(Date.now() / 1000) + 300,
+          scope: 'settings view',
+          ...overrides,
+        }),
+      ).toString('base64url');
+      const payload = `${header}.${claims}`;
+      return `${payload}.${sign('RSA-SHA256', Buffer.from(payload), pair.privateKey).toString('base64url')}`;
+    };
+    const connect = async (bearer: string) => {
+      const client = new Client(
+        { name: 'synthetic-navigation-auth', version: '1' },
+        { versionNegotiation: { mode: { pin: '2026-07-28' } } },
+      );
+      clients.push(client);
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), {
+          requestInit: { headers: { Authorization: `Bearer ${bearer}` } },
+        }),
+      );
+      return client;
+    };
+    try {
+      expect((await fetch(`${origin}/mcp`, { method: 'POST' })).status).toBe(
+        401,
+      );
+      expect(projected).toEqual([]);
+      for (const claims of [
+        { exp: 1 },
+        { aud: `${origin}/other` },
+        { scope: 'view' },
+      ]) {
+        await expect(connect(token(claims))).rejects.toThrow();
+        expect(projected).toEqual([]);
+      }
+      const client = await connect(token());
+      expect(JSON.stringify(client.getServerCapabilities())).toContain(
+        'openai/settings',
+      );
+      expect(projected[0]).toMatchObject({
+        id: owner.id,
+        tenantId: owner.tenantId,
+        scopes: ['settings', 'view'],
+      });
+      await expect(
+        client.callTool({ name: 'settings_read', arguments: {} }),
+      ).resolves.toHaveProperty('structuredContent.values.units', 'mm');
+      await client.callTool({
+        name: 'settings_update',
+        arguments: { set: { units: 'in' } },
+      });
+      expect(f.values().units).toBe('in');
+      await expectSafeWorkflowFailure(
+        client.callTool({
+          name: 'settings_update',
+          arguments: { set: { grid: false }, tenantId: 'other' },
+        }),
+      );
+      expect(f.values()).toEqual({ units: 'in', grid: true });
+      expect(f.writes()).toBe(1);
+      const other = await connect(token({ sub: 'synthetic-other' }));
+      expect(JSON.stringify(other.getServerCapabilities())).not.toContain(
+        'openai/settings',
+      );
+      await expect(
+        other.callTool({ name: 'settings_read', arguments: {} }),
+      ).rejects.toThrow();
+      activeTenant = 'tenant-b';
+      const otherTenant = await connect(token());
+      expect(JSON.stringify(otherTenant.getServerCapabilities())).not.toContain(
+        'openai/settings',
+      );
+      await expect(
+        client.callTool({
+          name: 'settings_update',
+          arguments: { set: { grid: false } },
+        }),
+      ).rejects.toThrow();
+      activeTenant = owner.tenantId;
+      revoked = true;
+      await expect(
+        client.callTool({ name: 'settings_read', arguments: {} }),
+      ).rejects.toThrow();
+      expect(f.writes()).toBe(1);
+    } finally {
+      await Promise.all(clients.map((client) => client.close()));
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       f.db.close();
     }
   });

@@ -45,11 +45,11 @@ overrides:
   '@happyvertical/spider': ^1.1.13
   '@happyvertical/sql': ^0.96.0
   '@happyvertical/utils': ^0.96.0
-  '@grpc/grpc-js@>=1.14.0 <1.14.4': 1.14.4
+  '@grpc/grpc-js@>=1.14.0 <1.14.5': 1.14.5
   minimatch@>=9.0.0 <10.0.0: 10.2.5
   minimatch@>=10.0.0 <10.2.3: 10.2.5
-  undici@>=7.0.0 <7.29.0: 7.29.0
-  nodemailer@<9.1.0: 9.1.0
+  undici@>=7.0.0 <7.29.1: 7.29.1
+  nodemailer@<=10.0.5: 10.0.6
   tar@>=7.0.0 <7.5.21: 7.5.22
   protobufjs@<7.6.5: 7.6.5
   picomatch@>=2.0.0 <2.3.2: 2.3.2
@@ -73,11 +73,11 @@ overrides:
   fast-xml-builder@>=1.0.0 <1.1.7: 1.2.1
   js-yaml@>=4.0.0 <4.3.2: 4.3.2
   svelte@>=5.0.0 <5.54.0: 5.56.4
-  brace-expansion@>=4.0.0 <5.0.9: 5.0.9
+  brace-expansion@>=4.0.0 <5.0.11: 5.0.11
   js-yaml@>=3.0.0 <3.15.2: 3.15.2
   pdfjs-dist@>=5.6.83 <6.2.108: 6.2.108
   nanoid@<3.3.18: 3.3.18
-  axios@>=1.15.2 <1.18.0: 1.18.0
+  axios@>=1.13.0 <1.20.0: 1.20.0
   postcss@<=8.5.17: 8.5.18
   browserslist@<=4.28.6: 4.28.7
   markdown-it@<14.1.2: 14.3.0
@@ -1589,6 +1589,9 @@ importers:
 
   packages/mcp-apps:
     devDependencies:
+      '@happyvertical/smrt-app-mcp':
+        specifier: workspace:*
+        version: link:../smrt-app-mcp
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -2393,12 +2396,12 @@ importers:
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
-      parse5:
-        specifier: 8.0.1
-        version: 8.0.1
       jose:
         specifier: ^6.2.12
         version: 6.2.12
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
     devDependencies:
       '@modelcontextprotocol/client':
         specifier: 2.0.0
@@ -4420,8 +4423,8 @@ packages:
   '@googlemaps/url-signature@1.0.40':
     resolution: {integrity: sha512-Gme3JxGZWQ4NVpATajSpS2/inQzhUxRvr/FK6IFpcC7AHOAmx8blI0y1/Qi2jqil+WoQ3TkEqq/MaKVtuV68RQ==}
 
-  '@grpc/grpc-js@1.14.4':
-    resolution: {integrity: sha512-k9Dj3DV/itK9D06Y8f190Qgop7/Ui+D0njFV3LHMPwPT75DpXLQohE9Wmz0QElrJnzsjB7KPWiKJbOl7IPDArQ==}
+  '@grpc/grpc-js@1.14.5':
+    resolution: {integrity: sha512-7VZM+SVdEcUUqSQeNI3zM8Qs/BhQKZndPo2h5VkYkAM8Iz0wJIa8mKV5ekQGqG8UUsnkQ0NMxIxwkIHYvj0qOw==}
     engines: {node: '>=12.10.0'}
 
   '@grpc/proto-loader@0.8.1':
@@ -7064,9 +7067,6 @@ packages:
     resolution: {integrity: sha512-UzGt8zg7Ny8djbYMhxl2zuEevVa7r2gJjYY5Lwr1xM7+XU2nd6CkIWFTVcCIbAP63vSz71NaVyyuSk9lHKcy0A==}
     engines: {node: '>=4'}
 
-  axios@1.18.0:
-    resolution: {integrity: sha512-E32NzpYKp++W7XRe52rHiXV2ehxmh3wbdgO7MHeFM+vqxLBYHzt0ElkiImtOBxtOmyp0yoC8C6uESVV84Y2/hw==}
-
   axios@1.20.0:
     resolution: {integrity: sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==}
 
@@ -7124,8 +7124,8 @@ packages:
   bowser@2.14.1:
     resolution: {integrity: sha512-tzPjzCxygAKWFOJP011oxFHs57HzIhOEracIgAePE4pqB3LikALKnSzUyU4MGs9/iCEUuHlAJTjTc5M+u7YEGg==}
 
-  brace-expansion@5.0.9:
-    resolution: {integrity: sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==}
+  brace-expansion@5.0.11:
+    resolution: {integrity: sha512-awigjhi6cLTh90bdw6+QJ9CtmJmyYhEIi70iCbc8Rozn04Fw9FeQIBjv/E22FFGuCGx1bLJyUfB64x/szUSXUg==}
     engines: {node: 20 || >=22}
 
   braces@3.0.3:
@@ -8955,9 +8955,9 @@ packages:
     resolution: {integrity: sha512-YHs7BmmcsdAI5Ozuf8JZo6PT0mv2GIWC9vMfvUC3dp65M8hn7Ux8CPL+2oBI7juNuj9d0ndhTcznq2ODBps9cQ==}
     engines: {node: '>=18'}
 
-  nodemailer@9.1.0:
-    resolution: {integrity: sha512-xj1Ri5Sau3qpPffHJwi2bY0oWVVWYq62Ph17l+2v1xXpxjqTls3YPc3L8dub9mcJpxj+1ucNnuYVqLlgh4pmDA==}
-    engines: {node: '>=6.0.0'}
+  nodemailer@10.0.6:
+    resolution: {integrity: sha512-2u7OHvEQVVGvPo9Yhw/eN3xMO2Gnj2U2fGDP0BDpnRwJR//65AfGRQDiJqxix28gFRBvMqi2USA13x6RrfWuGg==}
+    engines: {node: '>=20.0.0'}
 
   normalize-url@8.1.1:
     resolution: {integrity: sha512-JYc0DPlpGWB40kH5g07gGTrYuMqV653k3uBKY6uITPWds3M0ov3GaWGp9lbE3Bzngx8+XkfzgvASb9vk9JDFXQ==}
@@ -9530,7 +9530,7 @@ packages:
     resolution: {integrity: sha512-pOLi+Gdll3JekwuFjXO3fTq+L9lzMQGcSq7M5gIjExcl3Gu1hd4XXuf5o3+LuSBsaULQH7DiNbsqPd1chVpQGQ==}
     engines: {node: '>=10.7.0'}
     peerDependencies:
-      axios: 1.18.0
+      axios: 1.20.0
 
   retry-request@8.0.3:
     resolution: {integrity: sha512-qqoc4kkGgP9cmQDWELlOpAmfgJOg0Yi7MT82ZjiPWu451ayju4itwomjM4/dBEliify8C1b3tSaeCOldugtwPQ==}
@@ -10094,8 +10094,8 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
-  undici@7.29.0:
-    resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
+  undici@7.29.1:
+    resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
     engines: {node: '>=20.18.1'}
 
   undici@8.10.2:
@@ -11938,9 +11938,9 @@ snapshots:
     dependencies:
       '@googlemaps/url-signature': 1.0.40
       agentkeepalive: 4.6.0
-      axios: 1.18.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      axios: 1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.18.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2))
+      retry-axios: 2.6.0(axios@1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2))
     transitivePeerDependencies:
       - debug
       - supports-color
@@ -11949,7 +11949,7 @@ snapshots:
     dependencies:
       crypto-js: 4.2.0
 
-  '@grpc/grpc-js@1.14.4':
+  '@grpc/grpc-js@1.14.5':
     dependencies:
       '@grpc/proto-loader': 0.8.1
       '@js-sdsl/ordered-map': 4.4.2
@@ -12038,7 +12038,7 @@ snapshots:
       imapflow: 1.4.0
       mailparser: 3.9.9
       node-pop3: 0.11.0
-      nodemailer: 9.1.0
+      nodemailer: 10.0.6
     transitivePeerDependencies:
       - '@sentry/node'
       - supports-color
@@ -12795,7 +12795,7 @@ snapshots:
       eventsource-parser: 3.1.0
       express: 5.2.1(supports-color@10.2.2)
       jose: 6.2.12
-      undici: 7.29.0
+      undici: 7.29.1
       yaml: 2.9.1
       zod: 4.3.6
     transitivePeerDependencies:
@@ -13726,7 +13726,7 @@ snapshots:
       '@slack/types': 2.21.1
       '@types/node': 24.13.2
       '@types/retry': 0.12.0
-      axios: 1.18.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      axios: 1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       eventemitter3: 5.0.4
       form-data: 4.0.6
       is-electron: 2.2.2
@@ -14471,16 +14471,6 @@ snapshots:
 
   axe-core@4.13.0: {}
 
-  axios@1.18.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2):
-    dependencies:
-      follow-redirects: 1.16.0(debug@4.4.3(supports-color@10.2.2))
-      form-data: 4.0.6
-      https-proxy-agent: 5.0.1(supports-color@10.2.2)
-      proxy-from-env: 2.1.0
-    transitivePeerDependencies:
-      - debug
-      - supports-color
-
   axios@1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2):
     dependencies:
       follow-redirects: 1.16.0(debug@4.4.3(supports-color@10.2.2))
@@ -14541,7 +14531,7 @@ snapshots:
 
   bowser@2.14.1: {}
 
-  brace-expansion@5.0.9:
+  brace-expansion@5.0.11:
     dependencies:
       balanced-match: 4.0.4
 
@@ -14678,7 +14668,7 @@ snapshots:
       parse5: 7.3.0
       parse5-htmlparser2-tree-adapter: 7.1.0
       parse5-parser-stream: 7.1.2
-      undici: 7.29.0
+      undici: 7.29.1
       whatwg-mimetype: 4.0.0
 
   chokidar@4.0.3:
@@ -15598,7 +15588,7 @@ snapshots:
 
   google-gax@5.0.7(supports-color@10.2.2):
     dependencies:
-      '@grpc/grpc-js': 1.14.4
+      '@grpc/grpc-js': 1.14.5
       '@grpc/proto-loader': 0.8.1
       duplexify: 4.1.3
       google-auth-library: 10.5.0(supports-color@10.2.2)
@@ -15865,7 +15855,7 @@ snapshots:
       libbase64: 1.3.0
       libmime: 5.3.8
       libqp: 2.1.1
-      nodemailer: 9.1.0
+      nodemailer: 10.0.6
       pino: 10.3.1
       socks: 2.8.9
 
@@ -16163,7 +16153,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.2
-      undici: 7.29.0
+      undici: 7.29.1
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -16190,7 +16180,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.2
-      undici: 7.29.0
+      undici: 7.29.1
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -16509,7 +16499,7 @@ snapshots:
       iconv-lite: 0.7.2
       libmime: 5.3.8
       linkify-it: 5.0.2
-      nodemailer: 9.1.0
+      nodemailer: 10.0.6
       punycode.js: 2.3.1
       tlds: 1.261.0
 
@@ -16562,11 +16552,11 @@ snapshots:
 
   minimatch@10.2.5:
     dependencies:
-      brace-expansion: 5.0.9
+      brace-expansion: 5.0.11
 
   minimatch@10.2.6:
     dependencies:
-      brace-expansion: 5.0.9
+      brace-expansion: 5.0.11
 
   minimist@1.2.8: {}
 
@@ -16665,7 +16655,7 @@ snapshots:
 
   node-releases@2.0.54: {}
 
-  nodemailer@9.1.0: {}
+  nodemailer@10.0.6: {}
 
   normalize-url@8.1.1: {}
 
@@ -17298,9 +17288,9 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.18.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)):
+  retry-axios@2.6.0(axios@1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)):
     dependencies:
-      axios: 1.18.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      axios: 1.20.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
 
   retry-request@8.0.3(supports-color@10.2.2):
     dependencies:
@@ -17958,7 +17948,7 @@ snapshots:
 
   undici-types@7.18.2: {}
 
-  undici@7.29.0: {}
+  undici@7.29.1: {}
 
   undici@8.10.2: {}
 

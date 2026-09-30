@@ -1,7 +1,7 @@
 {
   "name": "@happyvertical/smrt-app-cli",
-  "version": "0.51.36",
-  "description": "Reusable CLI factory for SMRT apps \u2014 branded `<name> <resource> <command>` CLI + stdio MCP bridge with decorator-driven resource discovery",
+  "version": "0.51.37",
+  "description": "Reusable CLI factory for SMRT apps — branded `<name> <resource> <command>` CLI + stdio MCP bridge with decorator-driven resource discovery",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

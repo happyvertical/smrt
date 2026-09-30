@@ -67,6 +67,7 @@ describe('pinned navigation declarations', () => {
     { inputSchema: { type: 'object', minProperties: 1 } },
     { effect: 'write' },
     { ui: undefined },
+    { ui: { visibility: ['app'] } },
     { metadata: { 'openai/ui': {} } },
   ])('rejects unsafe entrypoint definition %j', (change) =>
     expect(() =>
@@ -196,6 +197,46 @@ describe('deep links and capability fallback', () => {
   });
 });
 describe('primitive settings validation', () => {
+  it('accepts reordered schema object keys while preserving array order and limits', () => {
+    const reordered = {
+      properties: {
+        count: { maximum: 10, minimum: 1, title: 'Count', type: 'integer' },
+        grid: { title: 'Grid', type: 'boolean' },
+        units: { enum: ['mm', 'in'], title: 'Units', type: 'string' },
+      },
+      type: 'object',
+    };
+    const values = { units: 'mm', grid: true, count: 1 };
+    expect(
+      validateSettingsRead({ schema: reordered, values }, schema).values,
+    ).toEqual(values);
+    for (const changed of [
+      {
+        ...schema,
+        properties: {
+          ...schema.properties,
+          count: { ...schema.properties.count, maximum: 11 },
+        },
+      },
+      {
+        ...schema,
+        properties: {
+          ...schema.properties,
+          units: { ...schema.properties.units, enum: ['in', 'mm'] },
+        },
+      },
+      {
+        ...schema,
+        properties: {
+          ...schema.properties,
+          units: { ...schema.properties.units, enum: ['mm', 'cm'] },
+        },
+      },
+    ])
+      expect(() =>
+        validateSettingsRead({ schema: changed, values }, schema),
+      ).toThrow('Settings schema changed unexpectedly');
+  });
   it('requires every effective value and validates layout', () => {
     const result = {
       schema,

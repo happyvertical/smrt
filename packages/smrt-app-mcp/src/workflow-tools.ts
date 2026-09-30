@@ -16,6 +16,9 @@ export interface McpWorkflowToolContext {
   principal: McpAppPrincipal | null;
 }
 
+/** Portable UI visibility hints. They are host presentation metadata only. */
+export type McpWorkflowToolVisibility = 'app' | 'model';
+
 /** One explicitly declared, principal-bound application workflow tool. */
 export interface McpWorkflowToolDefinition {
   name: string;
@@ -28,8 +31,14 @@ export interface McpWorkflowToolDefinition {
   openWorld: boolean;
   title?: string;
   icons?: readonly MCPToolIcon[];
-  /** Portable MCP Apps resource association. Resources themselves arrive in M3. */
-  ui?: { resourceUri: string };
+  /**
+   * Portable MCP Apps presentation metadata. Resources themselves arrive in
+   * M3; visibility-only declarations are useful for host entrypoints.
+   */
+  ui?: {
+    resourceUri?: string;
+    visibility?: readonly McpWorkflowToolVisibility[];
+  };
   /** Preserved extension metadata. It is never used as an authorization input. */
   metadata?: Record<string, unknown>;
   execute(context: McpWorkflowToolContext): MCPResponse | Promise<MCPResponse>;
@@ -40,13 +49,19 @@ export interface McpWorkflowTool {
   execute: McpWorkflowToolDefinition['execute'];
 }
 
-const TOOL_NAME = /^[a-z][a-z0-9_]{0,127}$/;
+const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
 
 function assertRecord(
   value: unknown,
   label: string,
 ): asserts value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    (Object.getPrototypeOf(value) !== Object.prototype &&
+      Object.getPrototypeOf(value) !== null)
+  ) {
     throw new TypeError(`${label} must be an object.`);
   }
 }
@@ -133,6 +148,32 @@ function assertResourceUri(resourceUri: string): void {
   }
 }
 
+function normalizeVisibility(
+  visibility: readonly McpWorkflowToolVisibility[] | undefined,
+): McpWorkflowToolVisibility[] | undefined {
+  if (visibility === undefined) return undefined;
+  if (!Array.isArray(visibility) || visibility.length === 0) {
+    throw new TypeError(
+      'Workflow tool ui.visibility must be a non-empty array.',
+    );
+  }
+  const normalized: McpWorkflowToolVisibility[] = [];
+  for (const value of visibility) {
+    if (value !== 'app' && value !== 'model') {
+      throw new TypeError(
+        'Workflow tool ui.visibility contains an unsupported value.',
+      );
+    }
+    if (normalized.includes(value)) {
+      throw new TypeError(
+        'Workflow tool ui.visibility must not contain duplicates.',
+      );
+    }
+    normalized.push(value);
+  }
+  return normalized;
+}
+
 function normalizeIcons(
   icons: readonly MCPToolIcon[] | undefined,
 ): MCPToolIcon[] | undefined {
@@ -171,8 +212,10 @@ function normalizeIcons(
 export function createMcpWorkflowTool(
   definition: McpWorkflowToolDefinition,
 ): McpWorkflowTool {
-  if (!TOOL_NAME.test(definition.name)) {
-    throw new TypeError('Workflow tool name must be lowercase snake_case.');
+  if (typeof definition.name !== 'string' || !TOOL_NAME.test(definition.name)) {
+    throw new TypeError(
+      'Workflow tool name must be lowercase snake_case with at most 64 characters.',
+    );
   }
   if (
     typeof definition.description !== 'string' ||
@@ -202,23 +245,42 @@ export function createMcpWorkflowTool(
   ) {
     throw new TypeError('Workflow tool title must be a non-empty string.');
   }
+  assertRecord(definition.inputSchema, 'Workflow tool input schema');
+  assertRecord(definition.outputSchema, 'Workflow tool output schema');
   assertMcpJsonSchemaSafety(definition.inputSchema);
   assertMcpJsonSchemaSafety(definition.outputSchema);
   const metadata = cloneMetadata(definition.metadata);
-  if (definition.ui) {
+  if (definition.ui !== undefined) {
     assertRecord(definition.ui, 'Workflow tool ui');
-    if (typeof definition.ui.resourceUri !== 'string') {
+    if (
+      definition.ui.resourceUri === undefined &&
+      definition.ui.visibility === undefined
+    ) {
+      throw new TypeError(
+        'Workflow tool ui requires resourceUri or visibility metadata.',
+      );
+    }
+    if (
+      definition.ui.resourceUri !== undefined &&
+      typeof definition.ui.resourceUri !== 'string'
+    ) {
       throw new TypeError('Workflow tool ui.resourceUri must be a string.');
     }
-    assertResourceUri(definition.ui.resourceUri);
+    if (definition.ui.resourceUri !== undefined) {
+      assertResourceUri(definition.ui.resourceUri);
+    }
   }
   const icons = normalizeIcons(definition.icons);
+  const visibility = normalizeVisibility(definition.ui?.visibility);
   const meta = {
     ...(metadata ?? {}),
-    ...(definition.ui
+    ...(definition.ui !== undefined
       ? {
           ui: {
-            resourceUri: definition.ui.resourceUri,
+            ...(definition.ui.resourceUri
+              ? { resourceUri: definition.ui.resourceUri }
+              : {}),
+            ...(visibility ? { visibility } : {}),
           },
         }
       : {}),

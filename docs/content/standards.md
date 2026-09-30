@@ -1,5 +1,7 @@
 # SMRT Monorepo Package Standards
 
+See the [MCP Apps integration standard](architecture/mcp-apps-integration.md) for portable embedded UI, optional OpenAI extensions, ownership and staged release gates.
+
 This document defines the standards every package in `packages/*` must follow. It exists to:
 
 - Make every package look the same so contributors can move between packages without surprise

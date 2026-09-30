@@ -132,6 +132,80 @@ async function waitForStatus(store: McpTaskStore, id: string, status: string) {
 }
 
 describe('durable MCP continuation persistence', () => {
+  it.each([
+    false,
+    true,
+  ])('drains an in-flight claim without dispatching after stop (timeout=%s)', async (timeout) => {
+    const f = await fixture(null, true);
+    const runner = new TaskRunner({
+      queues: ['mcp-tasks'],
+      concurrency: 1,
+      retention: false,
+      shutdownTimeout: timeout ? 10 : 5_000,
+      authorizeMcpTask: async () => true,
+    });
+    await runner.initialize(f.db);
+    const collection = (runner as unknown as { collection: SmrtJobCollection })
+      .collection;
+    const claim = collection.claimReady.bind(collection);
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const claiming = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    collection.claimReady = async (options) => {
+      const result = await claim(options);
+      entered();
+      await blocked;
+      return result;
+    };
+    let stopping: Promise<void> | undefined;
+    try {
+      await runner.start();
+      await claiming;
+      stopping = runner.stop();
+      if (timeout) {
+        await stopping;
+        await expect(runner.start()).rejects.toThrow('still draining');
+      } else {
+        expect(
+          await Promise.race([
+            stopping.then(() => 'stopped'),
+            new Promise((resolve) => setTimeout(() => resolve('draining'), 30)),
+          ]),
+        ).toBe('draining');
+      }
+      release();
+      await stopping;
+      // A timed-out shutdown still forbids the late claim from dispatching.
+      for (let count = 0; count < 300; count++) {
+        const result = await f.db.query(
+          'SELECT status, attempts, worker_id FROM _smrt_jobs WHERE task_id = ?',
+          f.task.taskId,
+        );
+        const row = result.rows[0];
+        if (row.status === 'pending' && row.worker_id === null) {
+          expect(Number(row.attempts)).toBe(0);
+          break;
+        }
+        if (count === 299) throw new Error('Stopped claim was not released');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(applications).toBe(0);
+      await f.start();
+      await waitForStatus(f.store, f.task.taskId, 'completed');
+      expect(applications).toBe(1);
+    } finally {
+      release();
+      await stopping;
+      await runner.stop();
+      await f.stop();
+    }
+  });
+
   it('releases the worker, survives restart, and accepts only the first complete answer', async () => {
     const f = await fixture();
     try {
@@ -166,6 +240,95 @@ describe('durable MCP continuation persistence', () => {
       );
       await restored.updateTask(f.task.taskId, { answer: 'third' });
       expect(applications).toBe(1);
+    } finally {
+      await f.stop();
+    }
+  });
+
+  it('reports working after an accepted answer while resumed application is paused', async () => {
+    const f = await fixture();
+    let release!: () => void;
+    let entered!: () => void;
+    const paused = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const applying = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    try {
+      const first = await f.start();
+      await waitForStatus(f.store, f.task.taskId, 'input_required');
+      await first.stop();
+      await f.store.updateTask(f.task.taskId, { answer: 'accepted' });
+      expect((await f.store.getTask(f.task.taskId)).status).toBe('working');
+      beforeApply = async () => {
+        entered();
+        await paused;
+      };
+      await f.start();
+      await applying;
+      expect(await f.store.getContinuation(f.task.taskId)).toBeNull();
+      const active = await f.store.getTask(f.task.taskId);
+      expect(active.status).toBe('working');
+      expect(active.statusMessage).toBeUndefined();
+      await f.store.updateTask(f.task.taskId, { answer: 'replacement' });
+      release();
+      const result = await waitForStatus(f.store, f.task.taskId, 'completed');
+      expect(result.result?.structuredContent).toMatchObject({
+        data: { answer: 'accepted' },
+      });
+      await f.store.updateTask(f.task.taskId, { answer: 'replay' });
+      expect((await f.store.getTask(f.task.taskId)).result).toEqual(
+        result.result,
+      );
+      expect(applications).toBe(1);
+    } finally {
+      release();
+      await f.stop();
+    }
+  });
+
+  it.each([
+    'start',
+    'resume',
+    'apply',
+  ])('conceals private authority failures at %s', async (stage) => {
+    const f = await fixture(null, stage === 'start');
+    const privateDetail =
+      'Private policy shard marigold: account 9284 has internal risk classification amber';
+    let unavailable = stage === 'start';
+    const authorize = async () => {
+      if (unavailable) throw new Error(privateDetail);
+      return true;
+    };
+    try {
+      const runner = await f.start(authorize);
+      if (stage !== 'start') {
+        await waitForStatus(f.store, f.task.taskId, 'input_required');
+        await runner.stop();
+        if (stage === 'resume') unavailable = true;
+        else
+          beforeApply = async () => {
+            unavailable = true;
+          };
+        await f.store.updateTask(f.task.taskId, { answer: 'yes' });
+        await f.start(authorize);
+      }
+      const failed = await waitForStatus(f.store, f.task.taskId, 'failed');
+      expect(failed.error).toEqual({
+        code: -32603,
+        message: 'MCP task authorization denied',
+      });
+      expect(failed.statusMessage).toBe('MCP task authorization denied');
+      expect(JSON.stringify(failed)).not.toContain(privateDetail);
+      const persisted = await f.db.query(
+        'SELECT last_error FROM _smrt_jobs WHERE task_id = ?',
+        f.task.taskId,
+      );
+      expect(persisted.rows[0].last_error).toBe(
+        'MCP task authorization denied',
+      );
+      expect(applications).toBe(0);
     } finally {
       await f.stop();
     }
