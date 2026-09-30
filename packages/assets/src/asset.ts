@@ -115,6 +115,18 @@ export class Asset extends SmrtObject {
   createdAt = new Date();
   updatedAt = new Date();
 
+  /**
+   * A file's name is not its identity: two pictures named "photo.jpg" are two
+   * assets. Without an explicit slug the default (name-derived) slug would
+   * make the second save adopt the first row through the (tenant, slug,
+   * context) natural key and overwrite it, so an asset's default slug is its
+   * id. An explicit slug is kept.
+   */
+  override async getSlug(): Promise<string | null | undefined> {
+    if (!this.slug && this.id) this.slug = String(this.id);
+    return super.getSlug();
+  }
+
   constructor(options: AssetOptions = {}) {
     super(options);
     if (options.name) this.name = options.name;
