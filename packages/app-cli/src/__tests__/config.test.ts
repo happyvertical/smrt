@@ -33,6 +33,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   delete process.env.TESTCFG_TOKEN;
+  delete process.env.TESTCFG_TOKEN_ISSUER;
   delete process.env.TESTCFG_SERVER_URL;
   if (process.env.TESTCFG_CLI_CONFIG) {
     await rm(process.env.TESTCFG_CLI_CONFIG, { force: true }).catch(() => {});
@@ -554,5 +555,49 @@ describe('requestJson', () => {
       ),
     ).rejects.toThrow(/Not authenticated/);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('expected issuer binding', () => {
+  it('rejects a stored credential after the deployment issuer changes exactly', async () => {
+    await saveAuth(
+      context,
+      'https://api.example/mcp',
+      'secret',
+      'https://issuer.example/',
+    );
+    context.expectedCredentialIssuer = 'https://issuer.example/';
+    expect(await getStoredToken(context)).toBe('secret');
+    context.expectedCredentialIssuer = 'https://issuer.example';
+    expect(await getStoredToken(context)).toBeUndefined();
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response('{}', { headers: { 'content-type': 'application/json' } }),
+    );
+    await requestJson(context, '/tools', {}, { fetch: fetchMock });
+    expect(
+      new Headers(fetchMock.mock.calls[0]?.[1]?.headers).has('authorization'),
+    ).toBe(false);
+  });
+  it('requires explicit environment issuer and rejects legacy unbound credentials', async () => {
+    context.expectedCredentialIssuer = 'https://issuer.example';
+    expect(
+      await getStoredToken(
+        context,
+        { serverUrl: 'https://api.example', token: 'legacy' },
+        'https://api.example',
+      ),
+    ).toBeUndefined();
+    process.env.TESTCFG_TOKEN = 'env-secret';
+    process.env.TESTCFG_SERVER_URL = 'https://api.example/mcp';
+    expect(await getStoredToken(context)).toBeUndefined();
+    process.env.TESTCFG_TOKEN_ISSUER = context.expectedCredentialIssuer;
+    expect(await getStoredToken(context)).toBe('env-secret');
+    expect(
+      await getStoredToken(context, undefined, 'https://api.example/other'),
+    ).toBeUndefined();
+    expect(
+      await getStoredToken(context, undefined, 'https://api.example:8443/mcp'),
+    ).toBeUndefined();
   });
 });
