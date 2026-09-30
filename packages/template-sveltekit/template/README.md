@@ -229,9 +229,10 @@ When you create a project with `smrt gnode create <name> --mcp-apps`, it adds
 `mcp-apps/plugin.json` and `mcp-apps/mcp.json`. The initial server points only
 at loopback (`http://127.0.0.1:3000/api/mcp`) so it cannot silently publish a
 local instance. Run `pnpm mcp-apps:validate` in the generated application after
-editing package metadata. It rejects symlinks, traversal paths, missing assets,
-credential-shaped JSON fields, non-portable schemas, and non-loopback HTTP
-server URLs.
+editing package metadata. It rejects symlinks, traversal paths, missing or linked UI assets (including screenshots),
+non-object or malformed manifests, credential-shaped JSON fields and credential carrier files,
+URL userinfo, non-portable schemas, and non-loopback HTTP server URLs. Diagnostics never
+include malformed manifest content.
 
 The option stages `src/routes/api/mcp/+server.ts`, a session-authorized `mcp`
 server, and a bounded static resource with a restrictive CSP. It also includes

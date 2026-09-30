@@ -156,3 +156,104 @@ describe('portable MCP Apps package validation', () => {
     );
   });
 });
+
+describe('portable MCP Apps validator fail-closed boundaries', () => {
+  const roots: string[] = [];
+  function root() {
+    const value = mkdtempSync(join(tmpdir(), 'smrt-mcp-apps-boundary-'));
+    roots.push(value);
+    return value;
+  }
+  function writeValidPackage(value: string) {
+    scaffoldMcpAppsPackage(value, 'example');
+  }
+  afterEach(() => {
+    roots.splice(0).forEach((value) => {
+      rmSync(value, { recursive: true, force: true });
+    });
+  });
+
+  it('rejects every non-object manifest root while retaining valid ordinary metadata', () => {
+    for (const invalid of [null, [], 'manifest', 1, false]) {
+      const pluginRoot = root();
+      writeValidPackage(pluginRoot);
+      writeFileSync(join(pluginRoot, 'plugin.json'), JSON.stringify(invalid));
+      expect(validateMcpAppsPackage(pluginRoot).valid).toBe(false);
+
+      const mcpRoot = root();
+      writeValidPackage(mcpRoot);
+      writeFileSync(join(mcpRoot, 'mcp.json'), JSON.stringify(invalid));
+      expect(validateMcpAppsPackage(mcpRoot).valid).toBe(false);
+    }
+    const validRoot = root();
+    writeValidPackage(validRoot);
+    expect(validateMcpAppsPackage(validRoot)).toEqual({
+      findings: [],
+      valid: true,
+    });
+  });
+
+  it('never includes malformed JSON content in diagnostics', () => {
+    const value = root();
+    writeValidPackage(value);
+    const marker = 'M7_RAW_SECRET_MARKER_DO_NOT_LOG';
+    writeFileSync(join(value, 'plugin.json'), `{"secret":"${marker}`);
+    const findings = validateMcpAppsPackage(value).findings;
+    expect(findings.map((finding) => finding.code)).toContain('json-malformed');
+    expect(findings.map((finding) => finding.message).join('\n')).not.toContain(
+      marker,
+    );
+  });
+
+  it('rejects credential carriers and URL userinfo without rejecting a public certificate', () => {
+    const value = root();
+    writeValidPackage(value);
+    writeFileSync(join(value, '.env.production'), 'TOKEN=not-logged');
+    writeFileSync(join(value, 'id_rsa'), 'not-a-key');
+    writeFileSync(
+      join(value, 'server.pem'),
+      '-----BEGIN PRIVATE KEY-----\nkey',
+    );
+    writeFileSync(
+      join(value, 'public.pem'),
+      '-----BEGIN CERTIFICATE-----\npublic',
+    );
+    const mcp = JSON.parse(readFileSync(join(value, 'mcp.json'), 'utf8'));
+    mcp.mcpServers.smrt.url = 'https://user:password@example.test/mcp';
+    writeFileSync(join(value, 'mcp.json'), JSON.stringify(mcp));
+    const findings = validateMcpAppsPackage(value).findings;
+    expect(findings.map((finding) => finding.code)).toEqual(
+      expect.arrayContaining(['secret-artifact', 'server-url']),
+    );
+    expect(findings.map((finding) => finding.message).join('\n')).not.toContain(
+      'not-logged',
+    );
+  });
+
+  it('checks every screenshot path as a regular in-root resource', () => {
+    const value = root();
+    writeValidPackage(value);
+    writeFileSync(join(value, 'valid.png'), 'png');
+    writeFileSync(join(value, 'linked.png'), 'png');
+    symlinkSync('linked.png', join(value, 'screenshot-link.png'));
+    const plugin = JSON.parse(readFileSync(join(value, 'plugin.json'), 'utf8'));
+    plugin.extensions['com.openai'].interface.screenshots = [
+      './valid.png',
+      '../outside.png',
+      '/absolute.png',
+      './missing.png',
+      './screenshot-link.png',
+    ];
+    writeFileSync(join(value, 'plugin.json'), JSON.stringify(plugin));
+    const codes = validateMcpAppsPackage(value).findings.map(
+      (finding) => finding.code,
+    );
+    expect(codes).toEqual(
+      expect.arrayContaining([
+        'unsafe-path',
+        'missing-resource',
+        'invalid-resource',
+      ]),
+    );
+  });
+});
