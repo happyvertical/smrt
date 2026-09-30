@@ -69,6 +69,19 @@ export {
   stageControlProposals,
 } from './control-proposals.js';
 export { default as DatePicker } from './DatePicker.svelte';
+export { default as DictationButton } from './DictationButton.svelte';
+export { default as DictationStatus } from './DictationStatus.svelte';
+export {
+  classifyDictationError,
+  Dictation,
+  type DictationErrorKind,
+  type DictationOptions,
+  type DictationSourceProvider,
+  type DictationSpeechResult,
+  type DictationSpeechSource,
+  type DictationStartOptions,
+  type DictationState,
+} from './dictation.svelte.js';
 export { default as ErrorSummary } from './ErrorSummary.svelte';
 export { default as Fieldset } from './Fieldset.svelte';
 export { default as FilePicker } from './FilePicker.svelte';
@@ -83,11 +96,26 @@ export {
 } from './form-group-context.js';
 export { default as Input } from './Input.svelte';
 export { default as InputGroup } from './InputGroup.svelte';
+export { insertTextAtCursor } from './insert-text.js';
 export { default as Listbox } from './Listbox.svelte';
+export {
+  createLongPress,
+  LONG_PRESS_DEFAULT_DELAY_MS,
+  LONG_PRESS_DEFAULT_MOVE_TOLERANCE_PX,
+  type LongPressController,
+  type LongPressDetail,
+  type LongPressOptions,
+  longPress,
+} from './long-press.js';
 export { default as MultiSelect } from './MultiSelect.svelte';
 export { default as Radio } from './Radio.svelte';
 export { default as RadioGroup } from './RadioGroup.svelte';
 export { default as RangeSlider } from './RangeSlider.svelte';
+export {
+  playReadyBeep,
+  primeReadyBeep,
+  type ReadyBeepOptions,
+} from './ready-beep.js';
 export { default as SegmentedControl } from './SegmentedControl.svelte';
 export { default as Select } from './Select.svelte';
 export { default as Slider } from './Slider.svelte';

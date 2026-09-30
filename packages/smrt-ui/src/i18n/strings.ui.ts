@@ -56,6 +56,21 @@ export const M = defineMessages({
   // forms/FormActionBar.svelte
   'ui.form_action_bar.label': 'Form actions',
 
+  // forms/DictationButton.svelte, forms/DictationStatus.svelte
+  'ui.dictation.start': 'Speak instead of typing',
+  'ui.dictation.start_hint':
+    'Speak instead of typing. You can also press and hold the text box.',
+  'ui.dictation.stop': 'Stop listening',
+  'ui.dictation.starting': 'Getting the microphone ready…',
+  'ui.dictation.listening': 'Listening. Tap the microphone when you are done.',
+  'ui.dictation.unsupported':
+    "This browser can't turn speech into text. Please type instead.",
+  'ui.dictation.denied':
+    'The microphone is blocked. Allow it for this site in your browser settings, then try again.',
+  'ui.dictation.no_speech':
+    "Didn't hear anything. Tap the microphone and try again.",
+  'ui.dictation.failed': 'Listening stopped. Tap the microphone to try again.',
+
   // feedback/ProgressBar.svelte
   'ui.progress_bar.label': 'Progress',
   'ui.progress_bar.over_by': 'Over by {amount}',
