@@ -99,7 +99,10 @@ describe('createMcpAppServer', () => {
           description: 'Prepare an application for review',
           title: 'Prepare application',
           icons: [{ src: 'https://example.test/icon.svg', theme: 'light' }],
-          ui: { resourceUri: 'ui://application/v1/prepare.html' },
+          ui: {
+            resourceUri: 'ui://application/v1/prepare.html',
+            visibility: ['app'],
+          },
           metadata: { 'example.extension': { enabled: true } },
           inputSchema: {
             type: 'object',
@@ -133,7 +136,10 @@ describe('createMcpAppServer', () => {
           },
           _meta: {
             'example.extension': { enabled: true },
-            ui: { resourceUri: 'ui://application/v1/prepare.html' },
+            ui: {
+              resourceUri: 'ui://application/v1/prepare.html',
+              visibility: ['app'],
+            },
           },
         }),
       ]),
@@ -227,6 +233,84 @@ describe('createMcpAppServer', () => {
         workflowTools: [{ ...workflow, metadata: { value: 1n } }],
       }),
     ).toThrow('metadata value must be an object');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [
+          { ...workflow, ui: { visibility: ['app', 'unknown'] as never } },
+        ],
+      }),
+    ).toThrow('contains an unsupported value');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [{ ...workflow, ui: { visibility: ['app', 'app'] } }],
+      }),
+    ).toThrow('must not contain duplicates');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [{ ...workflow, ui: { visibility: 'app' as never } }],
+      }),
+    ).toThrow('must be a non-empty array');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [{ ...workflow, ui: {} }],
+      }),
+    ).toThrow('requires resourceUri or visibility metadata');
+    expect(() =>
+      createMcpAppServer({
+        ...options,
+        workflowTools: [
+          { ...workflow, ui: Object.create({ visibility: ['app'] }) },
+        ],
+      }),
+    ).toThrow('Workflow tool ui must be an object');
+  });
+
+  it('supports inert visibility-only metadata without retaining caller aliases', async () => {
+    generateToolsMock.mockResolvedValue([]);
+    const visibility: Array<'app' | 'model'> = ['app'];
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: [],
+      workflowTools: [
+        {
+          name: 'application_lookup',
+          description: 'Look up an application',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          effect: 'read',
+          idempotent: true,
+          openWorld: false,
+          execute: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+        },
+        {
+          name: 'application_mention',
+          description: 'Mention an application',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          effect: 'read',
+          idempotent: true,
+          openWorld: false,
+          ui: { visibility },
+          execute: async () => ({ content: [{ type: 'text', text: 'ok' }] }),
+        },
+      ],
+    });
+    visibility.push('model');
+
+    const tools = await server.listTools({ principal: { id: 'owner-1' } });
+    expect(
+      tools.find((tool) => tool.name === 'application_lookup'),
+    ).not.toHaveProperty('_meta');
+    expect(
+      tools.find((tool) => tool.name === 'application_mention'),
+    ).toMatchObject({
+      _meta: { ui: { visibility: ['app'] } },
+    });
   });
 
   it('drops mutating tools from the unauthenticated view even if pattern matches', async () => {
