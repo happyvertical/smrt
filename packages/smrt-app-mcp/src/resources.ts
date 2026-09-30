@@ -1,5 +1,6 @@
 /** Prebuilt portable MCP Apps resources. This module never compiles source. */
 import { createHash } from 'node:crypto';
+import { type DefaultTreeAdapterMap, parse } from 'parse5';
 import type { McpAppPrincipal } from './server.js';
 
 export const MCP_APP_RESOURCE_MIME = 'text/html;profile=mcp-app';
@@ -18,6 +19,8 @@ export interface McpAppResourceDefinition {
   /** Reproducibly built UTF-8 HTML; never per-user data or credentials. */
   html: string;
   description?: string;
+  /** Bounded JSON extension metadata; portable ui and digest keys are reserved. */
+  metadata?: Record<string, unknown>;
   /** Only explicit static templates may be read without authentication. */
   public?: boolean;
   csp?: McpAppResourceCsp;
@@ -33,7 +36,7 @@ export interface McpAppResource {
   name: string;
   description?: string;
   mimeType: typeof MCP_APP_RESOURCE_MIME;
-  _meta: {
+  _meta: Record<string, unknown> & {
     ui: {
       csp: Required<McpAppResourceCsp>;
       permissions: NonNullable<McpAppResourceDefinition['permissions']>;
@@ -105,39 +108,124 @@ function validateAssets(html: string, csp: Required<McpAppResourceCsp>): void {
       throw new TypeError('Resource contains an undeclared external asset.');
     }
   };
-  if (
-    /<\s*(?:base|object|embed|meta)\b|\bsrcdoc\s*=|\bsrcset\s*=|@import\b/i.test(
-      html,
-    )
-  ) {
-    throw new TypeError(
-      'Resource contains an unsupported asset construct; bundle assets inline.',
-    );
-  }
-  for (const tag of html.matchAll(
-    /<\s*([a-z][a-z0-9:-]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>/gi,
-  )) {
-    for (const attribute of tag[2].matchAll(
-      /\b(src|href|poster|data|action|background|ping)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
-    )) {
-      check(
-        attribute[2] ?? attribute[3] ?? attribute[4],
-        tag[1].toLowerCase() === 'iframe',
-      );
-    }
-  }
-  for (const style of html.matchAll(
-    /<style\b[^>]*>([\s\S]*?)<\/style>|\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
-  )) {
-    if (/[\\&]/.test(style[1] ?? style[2] ?? style[3] ?? style[4]))
+  function checkCss(css: string): void {
+    if (/[\\&]|@import\b|(?:image-set|image|src)\s*\(/i.test(css))
       throw new TypeError(
-        'CSS asset escapes are unsupported; bundle assets inline.',
+        'CSS asset escapes and imports are unsupported; bundle assets inline.',
       );
+    for (const url of css.matchAll(
+      /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi,
+    ))
+      check((url[1] ?? url[2] ?? url[3]).trim());
   }
-  for (const url of html.matchAll(
-    /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi,
-  ))
-    check((url[1] ?? url[2] ?? url[3]).trim());
+  function visit(node: DefaultTreeAdapterMap['node']): void {
+    if ('tagName' in node) {
+      const tag = node.tagName.toLowerCase();
+      if (['base', 'object', 'embed', 'meta'].includes(tag))
+        throw new TypeError(
+          'Resource contains an unsupported asset construct; bundle assets inline.',
+        );
+      for (const attribute of node.attrs) {
+        const name = attribute.name.toLowerCase();
+        if (['srcdoc', 'srcset'].includes(name))
+          throw new TypeError(
+            'Resource contains an unsupported asset construct; bundle assets inline.',
+          );
+        if (
+          [
+            'src',
+            'href',
+            'poster',
+            'data',
+            'action',
+            'formaction',
+            'background',
+            'ping',
+          ].includes(name)
+        )
+          check(attribute.value, tag === 'iframe');
+        if (
+          [
+            'style',
+            'fill',
+            'stroke',
+            'filter',
+            'clip-path',
+            'mask',
+            'cursor',
+          ].includes(name)
+        )
+          checkCss(attribute.value);
+      }
+      if (tag === 'style') {
+        checkCss(
+          node.childNodes
+            .map((child) => ('value' in child ? child.value : ''))
+            .join(''),
+        );
+      }
+      if ('content' in node)
+        visit(node.content as DefaultTreeAdapterMap['documentFragment']);
+    }
+    if ('childNodes' in node) for (const child of node.childNodes) visit(child);
+  }
+  // HTML parsing preserves raw-text script boundaries, decoded attributes and
+  // comments. Never interpret JavaScript new URL(...) or template strings as CSS.
+  visit(parse(html));
+}
+
+/** Clone only inert, bounded JSON; extension data never becomes policy input. */
+function resourceMetadata(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (metadata === undefined) return {};
+  record(metadata, 'Resource metadata');
+  if (
+    Object.hasOwn(metadata, 'ui') ||
+    Object.hasOwn(metadata, 'com.happyvertical.smrt/resource')
+  )
+    throw new TypeError('Resource metadata contains a reserved key.');
+  const ancestors = new WeakSet<object>();
+  function validate(value: unknown, depth = 0): void {
+    if (depth > 16) throw new TypeError('Resource metadata exceeds 16 levels.');
+    if (
+      value === null ||
+      typeof value === 'string' ||
+      typeof value === 'boolean'
+    )
+      return;
+    if (typeof value === 'number' && Number.isFinite(value)) return;
+    if (typeof value !== 'object' || !value)
+      throw new TypeError(
+        'Resource metadata must contain only plain JSON values.',
+      );
+    if (
+      !Array.isArray(value) &&
+      Object.getPrototypeOf(value) !== Object.prototype &&
+      Object.getPrototypeOf(value) !== null
+    )
+      throw new TypeError(
+        'Resource metadata must contain only plain JSON objects.',
+      );
+    if (ancestors.has(value))
+      throw new TypeError('Resource metadata must not contain cycles.');
+    ancestors.add(value);
+    for (const descriptor of Object.values(
+      Object.getOwnPropertyDescriptors(value),
+    )) {
+      if ('get' in descriptor || 'set' in descriptor)
+        throw new TypeError('Resource metadata accessors are not permitted.');
+      validate(descriptor.value, depth + 1);
+    }
+    if (Object.getOwnPropertySymbols(value).length)
+      throw new TypeError('Resource metadata symbol keys are not permitted.');
+    ancestors.delete(value);
+  }
+  validate(metadata);
+  const encoded = JSON.stringify(metadata);
+  if (Buffer.byteLength(encoded, 'utf8') > 65536)
+    throw new RangeError('Resource metadata exceeds 64 KiB.');
+  return JSON.parse(encoded) as Record<string, unknown>;
 }
 
 /** Snapshot and validate a deterministic declaration at application startup/build. */
@@ -227,6 +315,7 @@ export function prepareMcpAppResource(
         ? {}
         : { description: definition.description }),
       _meta: {
+        ...resourceMetadata(definition.metadata),
         ui: { csp, permissions },
         'com.happyvertical.smrt/resource': {
           version: definition.version,
