@@ -180,7 +180,7 @@ export interface CreateMcpAppServerOptions {
    */
   workflowTools?: readonly McpWorkflowToolDefinition[];
   resources?: readonly McpAppResourceDefinition[];
-  /** Rechecked on discovery and every direct read; exceptions deny access. */
+  /** Required for private resources; rechecked on catalog/read, errors deny. */
   resourcePolicy?: McpResourcePolicy;
 }
 
@@ -461,7 +461,11 @@ export function createMcpAppServer(
     principal: McpAppPrincipal | null,
   ) {
     const resource = resources.get(uri);
-    if (!resource || (!resource.public && !principal?.id)) return undefined;
+    if (
+      !resource ||
+      (!resource.public && (!principal?.id || !options.resourcePolicy))
+    )
+      return undefined;
     const tools = await catalogTools();
     const associated = tools.filter(
       (tool) =>
