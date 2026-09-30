@@ -704,6 +704,7 @@ async function handleConfirmAction(requestId: string) {
       gap: var(--smrt-spacing-2, 8px);
       flex-shrink: 0;
       width: 100%;
+      min-height: 44px;
       padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
       border: none;
       border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
