@@ -225,7 +225,12 @@ export function shellPageTrailFor<
     crumbs.push({ label: item.label, href: item.href });
   }
   for (const parent of parents) {
-    if (normalizeShellPath(parent.href) === path) continue;
+    const href = normalizeShellPath(parent.href);
+    if (href === path) continue;
+    // A page that names an ancestor the nav already supplied (a form under
+    // its list's nav item) must not show that crumb twice.
+    if (crumbs.some((crumb) => normalizeShellPath(crumb.href) === href))
+      continue;
     crumbs.push({ label: parent.label, href: parent.href });
   }
   return { sectionHome: false, crumbs, current };

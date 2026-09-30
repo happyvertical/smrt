@@ -238,6 +238,14 @@ describe('shellPageTrailFor', () => {
     });
   });
 
+  it('shows an ancestor once when the page also names it as a parent', () => {
+    expect(
+      labels('/sites/alpha/articles/create', [
+        { label: 'Content', href: '/sites/alpha/articles/' },
+      ]),
+    ).toEqual(['Alpha Times', 'Content']);
+  });
+
   it('lists ancestors only, never the current page', () => {
     expect(labels('/sites/alpha/articles/a1')).toEqual([
       'Alpha Times',
