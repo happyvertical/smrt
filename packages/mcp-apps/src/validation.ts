@@ -12,8 +12,22 @@ export function json(value: unknown): void {
       return;
     }
     if (Array.isArray(v)) {
-      if (v.length > 4096) throw new Error('MCP Apps array exceeds limits');
-      for (const item of v) visit(item, depth + 1);
+      const length = Object.getOwnPropertyDescriptor(v, 'length')?.value;
+      if (!Number.isSafeInteger(length) || length < 0 || length > 4096)
+        throw new Error('MCP Apps array exceeds limits');
+      // Structured clone preserves named array properties. JSON does not: reject
+      // them (including symbol iterators), holes and accessors before any reads.
+      if (Reflect.ownKeys(v).length !== length + 1)
+        throw new Error('Expected dense JSON array');
+      const values: unknown[] = [];
+      for (let index = 0; index < length; index++) {
+        const descriptor = Object.getOwnPropertyDescriptor(v, String(index));
+        if (!descriptor || !('value' in descriptor))
+          throw new Error('Expected JSON array data property');
+        values.push(descriptor.value);
+      }
+      for (let index = 0; index < length; index++)
+        visit(values[index], depth + 1);
       return;
     }
     if (!record(v)) throw new Error('Expected JSON object');
