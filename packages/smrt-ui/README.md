@@ -555,6 +555,30 @@ registry.register({
 });
 ```
 
+### Navigation and step surfaces
+
+Two ready-made surfaces cover interactions a view intent cannot reach on its
+own (an intent only dispatches a registry command):
+
+- `registerLinkSurface({ registry, surfaceId, label, description, links,
+  navigate })` mounts a menu, tab row, or section list. `state.links`
+  publishes each link's id, label, description, and group — never its href —
+  and the default `open` control resolves `{ target }` (an id, a label, or a
+  unique label prefix) to one of those links and calls `navigate(href)`.
+  Nothing an agent sends can become a URL.
+- `registerStepSurface({ registry, surfaceId, label, description, steps,
+  current, next, back, goTo, nextWrites, showNext })` mounts a wizard.
+  `state` carries the steps with their status, the current step, and
+  `nextWrites`. `next`/`back`/`go-to` run the page's own handlers (return
+  `false` to refuse, e.g. when validation fails). When the current step's
+  forward button saves or creates something (`nextWrites`), `next` never
+  presses it: it calls `showNext` to reveal and highlight the button and
+  publishes `awaitingPerson: true` until the flow moves on.
+
+smrt-svelte's `useLinkSurface` / `useStepSurface` / `useListSurface`
+(`@happyvertical/smrt-svelte/web`) bind these to a component's lifetime on
+the Provider's registry.
+
 `inspect()` and command results are deterministic `{ version, descriptor,
 revision, state, selection }` envelopes; neither includes a timestamp, rows,
 functions, authority fields, tenant/principal data, SQL, or a transport handle.
