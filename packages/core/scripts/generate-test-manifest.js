@@ -10,7 +10,7 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
@@ -36,7 +36,7 @@ async function generateTestManifest() {
 
       const builder = new ManifestBuilder();
 
-      await builder.generate({
+      const manifest = await builder.generate({
         // === FILE DISCOVERY ===
         // Scan all source files including test files for test manifest
         // Test classes defined inline need to be in the manifest for proper field detection
@@ -65,6 +65,51 @@ async function generateTestManifest() {
         injectPackageInfo: true,
         moduleType: 'smrt',
       });
+      const {
+        AGENT_SURFACE_HASH_PREFIX,
+        buildDomainKnowledgeManifest,
+        publishAtomicArtifact,
+        resolveFileKnowledgeConfig,
+      } = await import(
+        pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
+      );
+      const manifestPath = resolve(process.cwd(), '.smrt/manifest.json');
+      const knowledgePath = resolve(process.cwd(), '.smrt/smrt-knowledge.json');
+      let priorKnowledge;
+      try {
+        priorKnowledge = JSON.parse(readFileSync(knowledgePath, 'utf8'));
+      } catch {
+        // A missing or malformed prior artifact is replaced by current generation.
+      }
+      const config = await resolveFileKnowledgeConfig(
+        process.cwd(),
+        manifest.packageName,
+      );
+      if (config.enabled !== false) {
+        const knowledge = buildDomainKnowledgeManifest({
+          manifest,
+          rootDir: process.cwd(),
+          manifestPath,
+          config,
+        });
+        const priorSurfaceHashes = Object.entries(
+          priorKnowledge?.sourceHashes ?? {},
+        ).filter(([key]) => key.startsWith(AGENT_SURFACE_HASH_PREFIX));
+        if (priorKnowledge?.agentSurface && priorSurfaceHashes.length) {
+          // This script does not run the producer scanner. Preserve the prior
+          // declaration with its prior hashes so an edited declaration stays
+          // stale instead of being rehashed as a false-fresh artifact.
+          knowledge.agentSurface = priorKnowledge.agentSurface;
+          Object.assign(
+            knowledge.sourceHashes,
+            Object.fromEntries(priorSurfaceHashes),
+          );
+        }
+        publishAtomicArtifact({
+          path: knowledgePath,
+          content: JSON.stringify(knowledge, null, 2),
+        });
+      }
     } finally {
       await unregister();
     }

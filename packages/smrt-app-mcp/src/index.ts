@@ -70,4 +70,5 @@ export {
   type McpWorkflowTool,
   type McpWorkflowToolContext,
   type McpWorkflowToolDefinition,
+  type McpWorkflowToolVisibility,
 } from './workflow-tools.js';

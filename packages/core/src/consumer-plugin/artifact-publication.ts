@@ -122,3 +122,25 @@ export function publishArtifactFiles(
     }
   }
 }
+
+/** Atomically replace one artifact without ever removing its reader-visible path. */
+export function publishAtomicArtifact(
+  file: ArtifactFile,
+  filesystem: ArtifactFilesystem = fs,
+): void {
+  const stagedPath = `${file.path}.smrt-${process.pid}-${Date.now()}.tmp`;
+  const exists = filesystem.existsSync(file.path);
+  const stats = exists ? filesystem.statSync(file.path) : undefined;
+  if (stats && !stats.isFile()) {
+    throw new Error(`Artifact target is not a file: ${file.path}`);
+  }
+  try {
+    filesystem.writeFileSync(stagedPath, file.content, 'utf-8');
+    if (stats) filesystem.chmodSync(stagedPath, stats.mode & 0o777);
+    // POSIX rename replaces the destination atomically: readers see either
+    // the old complete file or the new complete file, never no path/bytes.
+    filesystem.renameSync(stagedPath, file.path);
+  } finally {
+    if (filesystem.existsSync(stagedPath)) filesystem.unlinkSync(stagedPath);
+  }
+}
