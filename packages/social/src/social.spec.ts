@@ -465,6 +465,36 @@ describe('smrt-social models', () => {
     });
   });
 
+  it('records the poster on drafts and keeps it through publish outcomes', async () => {
+    await withSocialTestDb(async (db) => {
+      const account = await seedSocialAccount(db);
+      const posts = await SocialPostCollection.create({ db });
+      const posterId = '5b0c1c9e-8f55-4a4e-9f7e-3c1f0b7f2a11';
+      const mine = await posts.createDraft({
+        socialAccountId: account.id!,
+        description: 'Council recap',
+        createdByUserId: posterId,
+      });
+      const agentPost = await posts.createDraft({
+        socialAccountId: account.id!,
+        description: 'Scheduled by an agent',
+      });
+
+      await posts.recordPublishFailure(mine, 'rate limited');
+      const loaded = await posts.get({ id: mine.id });
+      expect(loaded?.status).toBe('failed');
+      expect(loaded?.createdByUserId).toBe(posterId);
+      expect((await posts.get({ id: agentPost.id }))?.createdByUserId).toBe(
+        null,
+      );
+
+      const failedForPoster = await posts.list({
+        where: { createdByUserId: posterId, status: 'failed' },
+      });
+      expect(failedForPoster.map((post) => post.id)).toEqual([mine.id]);
+    });
+  });
+
   it('finds and deletes expired oauth states through query filters', async () => {
     await withSocialTestDb(async (db) => {
       const states = await OAuthStateCollection.create({ db });
@@ -549,6 +579,15 @@ describe('smrt-social models', () => {
       expect(relationship).toBeDefined();
       expect(relationship?.type).toBe('foreignKey');
       expect(relationship?.targetClass).toBe('SocialPost');
+    });
+
+    it('references the poster as a cross-package User', () => {
+      const relationship = ObjectRegistry.getRelationships('SocialPost').find(
+        (candidate) => candidate.fieldName === 'createdByUserId',
+      );
+
+      expect(relationship?.type).toBe('crossPackageRef');
+      expect(relationship?.targetClass).toBe('@happyvertical/smrt-users:User');
     });
 
     it('keeps the video target a cross-package reference', () => {
