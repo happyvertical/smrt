@@ -11,7 +11,7 @@ const typescriptPath = process.env.SMRT_TYPESCRIPT_PATH || createRequire(import.
 const assertion = "expect(responses.every((response) => !response.headers.has('mcp-session-id'))).toBe(true);";
 const imported = "import { expect } from 'vitest';\n";
 
-function check(source, { filename = 'transport.test.ts', manifest = {}, isolated = false, configuredPath = typescriptPath } = {}) {
+function check(source, { filename = 'transport.test.ts', manifest = {}, isolated = false, configuredPath, baseWorkflow = false, installTrusted = true, githubActions = 'true', runnerTemp, workspaceCompilerSource } = {}) {
   const fixture = mkdtempSync(join(tmpdir(), 'smrt-protocol-hygiene-'));
   try {
     mkdirSync(join(fixture, 'packages', 'fixture'), { recursive: true });
@@ -24,9 +24,29 @@ function check(source, { filename = 'transport.test.ts', manifest = {}, isolated
       script = join(fixture, 'scripts/check-mcp-protocol-hygiene.mjs');
       assert.equal(existsSync(join(fixture, 'node_modules')), false);
     }
+    const env = { ...process.env };
+    if (isolated) env.SMRT_TYPESCRIPT_PATH = configuredPath || typescriptPath;
+    if (baseWorkflow) {
+      env.GITHUB_ACTIONS = githubActions;
+      env.RUNNER_TEMP = runnerTemp === undefined ? join(fixture, 'runner') : runnerTemp;
+      if (runnerTemp === null) delete env.RUNNER_TEMP;
+      delete env.SMRT_TYPESCRIPT_PATH;
+      if (configuredPath) env.SMRT_TYPESCRIPT_PATH = configuredPath;
+      if (installTrusted) {
+        const lib = join(env.RUNNER_TEMP, 'readme-validator/node_modules/typescript/lib');
+        mkdirSync(lib, { recursive: true });
+        copyFileSync(typescriptPath, join(lib, 'typescript.js'));
+      }
+    }
+    if (workspaceCompilerSource) {
+      const compiler = join(fixture, 'node_modules/typescript');
+      mkdirSync(compiler, { recursive: true });
+      writeFileSync(join(compiler, 'package.json'), JSON.stringify({ name: 'typescript', main: 'index.cjs' }));
+      writeFileSync(join(compiler, 'index.cjs'), workspaceCompilerSource);
+    }
     return spawnSync(process.execPath, [script, '--root', fixture], {
       encoding: 'utf8',
-      env: { ...process.env, ...(isolated ? { SMRT_TYPESCRIPT_PATH: configuredPath } : {}) },
+      env,
     });
   } finally {
     rmSync(fixture, { recursive: true, force: true });
@@ -99,4 +119,30 @@ test('standalone standards workflow supplies the existing trusted compiler to th
   const step = job.slice(job.indexOf('      - name: Check MCP 2026-07-28 protocol hygiene')).split('\n      - name:')[0];
   assert.match(step, /SMRT_TYPESCRIPT_PATH: \$\{\{ runner\.temp \}\}\/readme-validator\/node_modules\/typescript\/lib\/typescript\.js/);
   assert.match(step, /run: node scripts\/check-mcp-protocol-hygiene\.mjs/);
+});
+
+
+test('trusted base workflow runs standalone without an explicit compiler env variable', () => {
+  const options = { isolated: true, baseWorkflow: true };
+  const allowed = check(imported + assertion, options);
+  assert.equal(allowed.status, 0, allowed.stderr);
+  for (const source of [assertion.replace('!response', 'response'), `${assertion} response.headers.set('mcp-session-id', 'active');`]) {
+    const denied = check(imported + source, options);
+    assert.equal(denied.status, 1);
+    assert.match(denied.stderr, /protocol hygiene failed/);
+  }
+  const explicitMissing = check(imported + assertion, { ...options, configuredPath: '/nonexistent/smrt-explicit-compiler.js' });
+  assert.notEqual(explicitMissing.status, 0);
+  assert.match(explicitMissing.stderr, /smrt-explicit-compiler/);
+  assert.notEqual(check(imported + assertion, { ...options, installTrusted: false }).status, 0);
+  assert.notEqual(check(imported + assertion, { ...options, githubActions: 'false' }).status, 0);
+  for (const runnerTemp of [null, 'relative-runner-temp']) {
+    const invalid = check(imported + assertion, { ...options, installTrusted: false, runnerTemp });
+    assert.notEqual(invalid.status, 0);
+    assert.match(invalid.stderr, /absolute RUNNER_TEMP/);
+  }
+  const brokenCompiler = check(imported + assertion, { ...options, workspaceCompilerSource: "const error = new Error('compiler initialization failed'); error.code = 'ERR_MODULE_NOT_FOUND'; throw error;" });
+  assert.notEqual(brokenCompiler.status, 0);
+  assert.match(brokenCompiler.stderr, /compiler initialization failed/);
+  assert.equal(check(imported + assertion, { baseWorkflow: true, installTrusted: false }).status, 0, 'workspace compiler remains preferred when available');
 });
