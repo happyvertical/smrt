@@ -60,6 +60,8 @@ export interface ManifestBuilderOptions {
   includeStaticMethods?: boolean;
 
   // Output Configuration
+  /** Explicit output ownership; omitted retains legacy filename inference. */
+  outputMode?: 'dev' | 'build';
   outputDir?: string;
   outputName?: string;
   generateTypeStub?: boolean;
@@ -68,6 +70,8 @@ export interface ManifestBuilderOptions {
   // Metadata
   injectPackageInfo?: boolean;
   moduleType?: string;
+  /** Test artifacts are local inputs, never dependency discovery providers. */
+  artifactPurpose?: 'runtime' | 'test';
 
   // Tree Shaking (External Object Filtering)
   /**
@@ -125,6 +129,11 @@ interface VitePluginProbe {
  * into a single, testable, and maintainable service.
  */
 export class ManifestBuilder {
+  constructor(private readonly projectRoot?: string) {}
+
+  private root(): string {
+    return this.projectRoot ?? process.cwd();
+  }
   /**
    * Generate manifest with specified options
    */
@@ -165,7 +174,7 @@ export class ManifestBuilder {
   }
 
   private normalizeFilePaths(manifest: SmartObjectManifest): void {
-    const workspaceRoot = this.findWorkspaceRoot(process.cwd());
+    const workspaceRoot = this.findWorkspaceRoot(this.root());
 
     for (const obj of Object.values(manifest.objects || {})) {
       if (obj.filePath && isAbsolute(obj.filePath)) {
@@ -206,7 +215,7 @@ export class ManifestBuilder {
     const exclude = options.exclude || ['src/**/*.d.ts', 'node_modules/**'];
     const { discoverSourceFiles } = await importScanner();
     return discoverSourceFiles({
-      cwd: process.cwd(),
+      cwd: this.root(),
       include,
       exclude,
       followSymbolicLinks: options.followSymbolicLinks ?? false,
@@ -240,7 +249,7 @@ export class ManifestBuilder {
     let smrtDependencies: string[] = [];
     if (options.discoverExternalPackages) {
       logger.debug('[smrt] Discovering external SMRT packages...');
-      smrtDependencies = discoverSmrtPackages();
+      smrtDependencies = discoverSmrtPackages({ baseDir: this.root() });
       logger.debug(
         `[smrt] Found ${smrtDependencies.length} SMRT package(s): ${smrtDependencies.join(', ')}`,
       );
@@ -281,7 +290,7 @@ export class ManifestBuilder {
     const { OxcScanner, ManifestAdapter } = await importScanner();
 
     const scanner = new OxcScanner({
-      cwd: process.cwd(),
+      cwd: this.root(),
       include: options.include || ['src/**/*.ts'],
       exclude: options.exclude || ['src/**/*.d.ts', 'node_modules/**'],
       baseClasses: config.baseClasses,
@@ -314,7 +323,7 @@ export class ManifestBuilder {
     let packageVersion: string | undefined;
     let packageJson: { name?: string; version?: string } | undefined;
     try {
-      const pkgPath = resolve(process.cwd(), 'package.json');
+      const pkgPath = resolve(this.root(), 'package.json');
       const pkgContent = readFileSync(pkgPath, 'utf-8');
       packageJson = JSON.parse(pkgContent);
       packageName = packageJson?.name || undefined;
@@ -359,6 +368,13 @@ export class ManifestBuilder {
   ): SmartObjectManifest {
     // Add module type
     manifest.moduleType = options.moduleType || 'smrt';
+    const purpose =
+      options.artifactPurpose ??
+      (options.outputName?.includes('test') ||
+      options.stubName?.includes('test')
+        ? 'test'
+        : undefined);
+    if (purpose) manifest.artifactPurpose = purpose;
 
     // Record dependency references (not their objects) so runtime
     // manifest-loader.ts can discover and load them on demand.
@@ -392,17 +408,17 @@ export class ManifestBuilder {
     manifest: SmartObjectManifest,
     options: ManifestBuilderOptions,
   ): Promise<void> {
-    const manager = new ManifestManager(process.cwd());
+    const manager = new ManifestManager(this.root());
     const isTest =
       options.outputName?.includes('test') ||
       options.stubName?.includes('test');
-    const mode = isTest ? 'dev' : 'build';
+    const mode = options.outputMode ?? (isTest ? 'dev' : 'build');
 
     // 1. Always write to the unified location via ManifestManager
     manager.write(manifest, mode);
 
     // 2. Legacy/Explicit Output (if requested or for stubs)
-    const outputDir = options.outputDir || 'src/manifest';
+    const outputDir = resolve(this.root(), options.outputDir || 'src/manifest');
     const outputName = options.outputName || 'manifest.json';
 
     // Ensure output directory exists for legacy/stubs
@@ -479,7 +495,7 @@ export default ${exportName};
    */
   private async loadViteConfigBaseClasses(): Promise<string[] | null> {
     try {
-      const viteConfigPath = resolve(process.cwd(), 'vite.config.ts');
+      const viteConfigPath = resolve(this.root(), 'vite.config.ts');
       if (!existsSync(viteConfigPath)) {
         logger.debug('[smrt] vite.config.ts not found');
         return null;
@@ -489,7 +505,7 @@ export default ${exportName};
 
       // Use vite to load config which handles TypeScript
       const { loadConfigFromFile } = await importProjectVite(
-        process.cwd(),
+        this.root(),
         'Loading vite.config.ts',
       );
       const loaded = await loadConfigFromFile(
@@ -567,7 +583,7 @@ export default ${exportName};
       // Resolve the manifest the same way discovery does (honors `.smrt/` and
       // `src/manifest/`, not just `dist/`) so source-only workspace packages
       // still contribute base classes (#1378).
-      const manifestPath = resolveManifestPath(pkgName, process.cwd());
+      const manifestPath = resolveManifestPath(pkgName, this.root());
       if (!manifestPath) {
         logger.debug(`[smrt]   ${pkgName}: no SMRT manifest resolved`);
         continue;
@@ -605,7 +621,7 @@ export default ${exportName};
    */
   private readPackageJson(): PackageInfo {
     try {
-      const packageJsonPath = resolve(process.cwd(), 'package.json');
+      const packageJsonPath = resolve(this.root(), 'package.json');
       const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
       return {
         name: packageJson.name,
@@ -627,10 +643,15 @@ export default ${exportName};
       timestamp: MANIFEST_TIMESTAMP,
       objects: {},
       moduleType: options.moduleType || 'smrt',
+      ...(options.artifactPurpose
+        ? { artifactPurpose: options.artifactPurpose }
+        : {}),
     };
 
     if (options.discoverExternalPackages) {
-      manifest.smrtDependencies = discoverSmrtPackages();
+      manifest.smrtDependencies = discoverSmrtPackages({
+        baseDir: this.root(),
+      });
     }
 
     if (options.injectPackageInfo) {

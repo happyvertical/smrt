@@ -39,8 +39,8 @@ overrides:
   # only named exports, all of which minimatch 10 still provides.
   'minimatch@>=9.0.0 <10.0.0': 10.2.5
   'minimatch@>=10.0.0 <10.2.3': 10.2.5
-  'undici@>=7.0.0 <7.29.0': 7.29.0
-  'nodemailer@<9.1.0': 9.1.0
+  'undici@>=7.0.0 <7.29.1': 7.29.1
+  'nodemailer@<=10.0.5': 10.0.6
   'tar@>=7.0.0 <7.5.21': 7.5.22
   # protobufjs 6.x reaches the graph through the optional, deprecated
   # @xenova/transformers peer (onnx-proto -> protobufjs 6) and carries a
@@ -71,7 +71,7 @@ overrides:
   'fast-xml-builder@>=1.0.0 <1.1.7': 1.2.1
   'js-yaml@>=4.0.0 <4.3.2': 4.3.2
   'svelte@>=5.0.0 <5.54.0': 5.56.4
-  'brace-expansion@>=4.0.0 <5.0.9': 5.0.9
+  'brace-expansion@>=4.0.0 <5.0.11': 5.0.11
   'js-yaml@>=3.0.0 <3.15.2': 3.15.2
   # @happyvertical/pdf currently pins pdfjs-dist 6.1.200. The public package
   # has no newer release, so keep the resolved implementation on the first

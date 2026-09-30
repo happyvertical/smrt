@@ -26,7 +26,13 @@
  * @packageDocumentation
  */
 
-import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -460,6 +466,11 @@ export function getWorkspaceViteAliases(
         aliases,
         '@happyvertical/smrt-core/manifest/discover-base-classes',
         join(packageRoot, 'src/manifest/discover-base-classes.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/schema',
+        join(packageRoot, 'src/schema/index.ts'),
       );
       addAliasIfPresent(
         aliases,
@@ -1095,7 +1106,7 @@ async function generateLocalManifest(
     const { discoverBaseClasses } = await importDiscoverBaseClassesModule();
 
     // Discover base classes from external SMRT packages
-    const baseClasses = await discoverBaseClasses();
+    const baseClasses = await discoverBaseClasses({ cwd: root });
 
     if (verbose) {
       console.log(
@@ -1103,7 +1114,7 @@ async function generateLocalManifest(
       );
     }
 
-    const builder = new ManifestBuilder();
+    const builder = new ManifestBuilder(root);
     const manifest = await builder.generate({
       // File discovery
       include: options.include || ['src/**/*.ts'],
@@ -1123,6 +1134,8 @@ async function generateLocalManifest(
       includeStaticMethods: true,
 
       // Output configuration - write to .smrt directory (ManifestManager default)
+      outputMode: 'dev',
+      artifactPurpose: 'test',
       outputDir: '.smrt',
       outputName: 'manifest.json',
       generateTypeStub: false,
@@ -1172,7 +1185,10 @@ async function refreshTestKnowledgeArtifact(
   const config = producerApi
     ? await producerApi.resolveKnowledgeConfig(manifest)
     : await resolveFileKnowledgeConfig(root, manifest.packageName);
-  if (config.enabled === false) return;
+  if (config.enabled === false) {
+    if (existsSync(knowledgePath)) unlinkSync(knowledgePath);
+    return;
+  }
   const agentSurface = producerApi
     ? await producerApi.resolveKnowledgeAgentSurface()
     : undefined;
