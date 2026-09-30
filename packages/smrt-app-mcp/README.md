@@ -2,7 +2,7 @@
 
 App-runtime MCP server scaffolding for s-m-r-t apps. Provides:
 
-- **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, toolListCache?, toolPolicy?, workflowAssertions? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
+- **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, toolListCache?, toolPolicy?, workflowAssertions?, workflowTools? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
 - **SvelteKit adapters** (`./sveltekit`) — `mountMcpRoute` mounts a modern
   2026-07-28 stateless Streamable HTTP MCP endpoint. The REST-shaped
   `mountMcpToolsRoute` / `mountMcpCallRoute` aliases remain available for one
@@ -43,6 +43,33 @@ export const mcpServer = createMcpAppServer({
   },
 });
 ```
+
+`workflowTools` composes explicitly declared application workflows into this
+same catalog. Every workflow must declare its canonical `effect`,
+`idempotent`, and `openWorld` values; title, icons, and a portable UI resource
+association are host presentation metadata only. The configured `toolPolicy`
+and `workflowAssertions` run for both discovery and direct calls before the
+workflow handler receives the trusted principal and arguments.
+
+```ts
+workflowTools: [{
+  name: 'application_prepare',
+  description: 'Prepare an application for human review',
+  title: 'Prepare application',
+  inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  outputSchema: { type: 'object', properties: { prepared: { type: 'boolean' } } },
+  effect: 'write', idempotent: true, openWorld: false,
+  ui: { resourceUri: 'ui://application/prepare.html' },
+  async execute({ arguments: args, principal }) {
+    return { content: [{ type: 'text', text: 'Prepared for review.' }], structuredContent: { prepared: true } };
+  },
+}],
+```
+
+The resulting descriptor preserves `_meta.ui.resourceUri` through SDK-v2
+`tools/list`, while ordinary clients retain the text and structured result.
+The resource implementation itself is staged separately; metadata neither
+loads a resource nor grants an application permission.
 
 ```ts
 // src/routes/api/mcp/+server.ts
