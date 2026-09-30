@@ -55,6 +55,7 @@ export {
   registerWebMcpUiTools,
 } from './webmcp-ui.js';
 export {
+  tryUseWebMcpUi,
   useWebMcpUi,
   type WebMcpUiContext,
 } from './webmcp-ui-context.js';
