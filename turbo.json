@@ -7,7 +7,14 @@
     "vite.config.base.ts",
     "scripts/declarations.ts",
     "vitest.workspace.ts",
-    "biome.json"
+    "biome.json",
+    "**/smrt.config.js",
+    "**/smrt.config.mjs",
+    "**/smrt.config.cjs",
+    "**/smrt.config.ts",
+    "**/smrt.config.mts",
+    "**/smrt.config.cts",
+    "**/smrt.config.json"
   ],
   "globalPassThroughEnv": [
     "PUBLISH_PACK_OUTPUT_DIR",
