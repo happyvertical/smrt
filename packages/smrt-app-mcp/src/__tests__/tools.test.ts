@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classNamePrefixes,
   isAllowedCoreTool,
+  isPublicMcpTool,
   isPublicToolName,
   isReadOnlyToolName,
   matchesToolPattern,
@@ -72,6 +73,23 @@ describe('isPublicToolName', () => {
 
   it('defaults to nothing public when no patterns are configured', () => {
     expect(isPublicToolName('companyresearch_list', [])).toBe(false);
+  });
+});
+
+describe('isPublicMcpTool', () => {
+  it('honors canonical write classification over a read-like legacy name', () => {
+    expect(
+      isPublicMcpTool(
+        { name: 'application_get', annotations: { readOnlyHint: false } },
+        ['application_*'],
+      ),
+    ).toBe(false);
+  });
+
+  it('uses the legacy read-only name fallback only without a classification', () => {
+    expect(
+      isPublicMcpTool({ name: 'application_get' }, ['application_*']),
+    ).toBe(true);
   });
 });
 
