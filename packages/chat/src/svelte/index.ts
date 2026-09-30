@@ -118,6 +118,11 @@ export {
   type AssistantDockControllerOptions,
   type AssistantPendingSend,
   type AssistantPendingSendStatus,
+  type AssistantRun,
+  type AssistantRunState,
+  type AssistantRunStopReason,
+  type AssistantRunWaiting,
+  type AssistantUserHold,
   createAssistantDockController,
 } from './components/assistant/create-assistant-dock-controller.svelte.js';
 export { default as RoomCreateDialog } from './components/dialogs/RoomCreateDialog.svelte';

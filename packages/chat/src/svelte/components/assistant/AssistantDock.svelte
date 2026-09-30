@@ -41,6 +41,7 @@ import {
   type AssistantActionClient,
   type AssistantActionOutcome,
   type AssistantDockController,
+  type AssistantRun,
   createAssistantDockController,
 } from './create-assistant-dock-controller.svelte.js';
 
@@ -138,6 +139,14 @@ export interface Props {
   /** Waits for the page to settle after a step's browser tools ran, before
    * the turn resumes. See `AssistantDockControllerOptions.settle`. */
   settle?: () => Promise<void> | void;
+  /** Narrows the page tools the dock declares and runs (e.g. a person's
+   * setting). See `AssistantDockControllerOptions.clientToolFilter`. */
+  clientToolFilter?: (tool: AssistantClientTool) => boolean;
+  /** How long a paused run may wait before it stops. Default 15 min. */
+  maxPauseMs?: number;
+  /** Called whenever the supervised run changes (#assistant-watch). Also
+   * readable as `controller.run`. */
+  onrun?: (run: AssistantRun | null) => void;
 }
 
 const {
@@ -156,6 +165,9 @@ const {
   clientToolPolicy,
   onstatus,
   settle,
+  clientToolFilter,
+  maxPauseMs,
+  onrun,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -191,6 +203,10 @@ const controller: AssistantDockController = createAssistantDockController({
     (clientToolPolicy ?? defaultClientToolPolicy)(tool),
   onStatus: (status) => onstatus?.(status),
   settle: () => settle?.(),
+  // Read per call so a changed setting applies to the next step.
+  clientToolFilter: (tool) => clientToolFilter?.(tool) ?? true,
+  maxPauseMs: untrack(() => maxPauseMs),
+  onRun: (run) => onrun?.(run),
 });
 
 function formatToolArgs(args: Record<string, unknown>): string {
