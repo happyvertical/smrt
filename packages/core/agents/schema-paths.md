@@ -442,6 +442,14 @@ item's natural key already names a row the batch is not removing; its
 inserts (`_insertOnly`) check NULL-bearing keys the same way, because NULLs
 are distinct in the unique index on SQLite, DuckDB and PostgreSQL < 15.
 
+A save with no owner (`tenantId: null`, typically under `withSystemContext()`)
+is deliberately NOT refused when a tenant row shares its slug under the
+tenant-led key: it lands as a separate global row, the global-default /
+tenant-override shape #2360 keeps. Refusing it would need a cross-owner read on
+every global save and would break that pattern. A model that needs a slug
+unique across every owner declares explicit `conflictColumns` without the
+tenant column; then the guard refuses the colliding save instead.
+
 ### Every generated index name is length-guarded before it leaves a path (#2374)
 
 PostgreSQL truncates identifiers beyond 63 bytes; two generated names sharing

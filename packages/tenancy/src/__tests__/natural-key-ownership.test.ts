@@ -308,6 +308,41 @@ for (const engine of engines) {
         ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
       });
 
+      it('under system context the guard still refuses a global save over a tenant row and adopts a same-owner row', async () => {
+        const a = await withTenant({ tenantId: TENANT_A }, () =>
+          legacy.create({ name: 'U17' }),
+        );
+        // NULL is an owner: a system-context global save never adopts A's row.
+        await expect(
+          withSystemContext(() =>
+            legacy.create({ name: 'U17', tenantId: null }),
+          ),
+        ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
+        // The same owner, written from system context, updates in place.
+        const again = await withSystemContext(() =>
+          legacy.create({ name: 'U17', tenantId: TENANT_A }),
+        );
+        expect(again.id).toBe(a.id);
+        const rows = await rawRows(db, 'ludis_nk_legacy_leagues');
+        expect(rows).toHaveLength(1);
+        expect(rows[0].id).toBe(a.id);
+        expect(rows[0].tenant_id).toBe(TENANT_A);
+      });
+
+      it('with the tenant-led key a system-context global row is a separate row, by design', async () => {
+        const a = await withTenant({ tenantId: TENANT_A }, () =>
+          leagues.create({ name: 'U19' }),
+        );
+        const global = await withSystemContext(() =>
+          leagues.create({ name: 'U19', tenantId: null }),
+        );
+        expect(global.id).not.toBe(a.id);
+        const rows = await rawRows(db, 'ludis_nk_leagues');
+        expect(rows).toHaveLength(2);
+        expect(rows.find((row) => row.id === a.id)?.tenant_id).toBe(TENANT_A);
+        expect(rows.find((row) => row.id === global.id)?.tenant_id).toBeNull();
+      });
+
       it('audits runtime registrations against the model', () => {
         registerTenantScopedClass('LudisNkMismatched', {
           ...LUDIS_POLICY,
