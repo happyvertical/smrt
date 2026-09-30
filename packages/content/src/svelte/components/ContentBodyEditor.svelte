@@ -627,6 +627,18 @@ function refreshSelectedImageChrome() {
   };
   selectedImagePlacement = getImagePlacement(frame);
   selectedImageAssetId = image.getAttribute('data-smrt-asset-id');
+  refreshHoveredImageBox();
+}
+
+/** Keep the change badge on the hovered picture after it moved or resized. */
+function refreshHoveredImageBox() {
+  if (!hoveredImage) return;
+  if (!editorElement?.contains(hoveredImage)) {
+    hoveredImage = null;
+    hoveredImageBox = null;
+    return;
+  }
+  hoveredImageBox = imageBoxFor(hoveredImage);
 }
 
 function placeCaretAfterImage(image: HTMLImageElement) {
@@ -2111,6 +2123,19 @@ function handleEditorDragEnd() {
     display: inline-flex;
     color: var(--smrt-color-primary, #3558d6);
     font-weight: 600;
+  }
+
+  /* Phones: the picture toolbar is already wide; Change is icon-only there
+     (still 44px and named "Change this picture"). */
+  @media (max-width: 48rem) {
+    .image-control-popover :global(.editor-popover-button-text) {
+      display: none;
+    }
+
+    .image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
+      padding: 0;
+      inline-size: 44px;
+    }
   }
 
   .image-control-popover {
