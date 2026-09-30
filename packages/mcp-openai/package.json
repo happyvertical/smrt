@@ -6,17 +6,41 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./client": { "types": "./dist/client.d.ts", "browser": "./dist/client.js", "import": "./dist/client.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "browser": "./dist/client.js",
+      "import": "./dist/client.js"
+    },
+    "./files": {
+      "types": "./dist/files.d.ts",
+      "browser": "./dist/files.js",
+      "import": "./dist/files.js"
+    },
+    "./files/server": {
+      "types": "./dist/files-server.d.ts",
+      "import": "./dist/files-server.js"
+    }
   },
-  "files": ["dist", "README.md", "AGENTS.md", "CLAUDE.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "FILES.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node scripts/verify-boundaries.mjs",
-    "prepack": "node ../../scripts/prepack-package.js"
+    "prepack": "node ../../scripts/prepack-package.js",
+    "test:files:e2e": "playwright test -c e2e/files.config.ts",
+    "verify:files:pack": "node scripts/verify-files-pack.mjs"
   },
   "dependencies": {
     "@happyvertical/smrt-app-mcp": "workspace:*",
@@ -32,6 +56,12 @@
   },
   "author": "HappyVertical",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/happyvertical/smrt.git", "directory": "packages/mcp-openai" },
-  "publishConfig": { "access": "public" }
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/mcp-openai"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
