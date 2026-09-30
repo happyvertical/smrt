@@ -35,7 +35,7 @@
       "@happyvertical/smrt-ledgers",
       "@happyvertical/smrt-manufacturing",
       "@happyvertical/smrt-marketing",
-"@happyvertical/smrt-mcp-apps",
+      "@happyvertical/smrt-mcp-apps",
       "@happyvertical/smrt-mcp-openai",
       "@happyvertical/smrt-messages",
       "@happyvertical/smrt-mobile",

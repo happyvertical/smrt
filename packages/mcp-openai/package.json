@@ -37,21 +37,42 @@
     "./files/server": {
       "types": "./dist/files-server.d.ts",
       "import": "./dist/files-server.js"
+    },
+    "./forms": {
+      "types": "./dist/forms.d.ts",
+      "browser": "./dist/forms.js",
+      "import": "./dist/forms.js"
+    },
+    "./forms/server": {
+      "types": "./dist/forms-server.d.ts",
+      "import": "./dist/forms-server.js"
+    },
+    "./forms/view": {
+      "types": "./dist/forms-view.d.ts",
+      "browser": "./dist/forms-view.js",
+      "import": "./dist/forms-view.js"
     }
   },
   "files": [
     "dist",
     "README.md",
     "AGENTS.md",
-    "CLAUDE.md"
+    "CLAUDE.md",
+    "FILES.md",
+    "FORMS.md",
+    "FORMS-TEST-DESIGN.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "test:e2e": "playwright test -c e2e/playwright.config.ts",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node scripts/verify-boundaries.mjs",
-    "prepack": "node ../../scripts/prepack-package.js"
+    "test:e2e": "playwright test -c e2e/playwright.config.ts && pnpm test:forms:e2e",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node scripts/verify-boundaries.mjs && pnpm verify:forms:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
+    "test:files:e2e": "playwright test -c e2e/files.config.ts",
+    "verify:files:pack": "node scripts/verify-files-pack.mjs",
+    "test:forms:e2e": "playwright test -c forms-e2e/playwright.config.ts",
+    "verify:forms:pack": "node scripts/verify-forms-boundaries.mjs"
   },
   "dependencies": {
     "@happyvertical/smrt-app-mcp": "workspace:*",
