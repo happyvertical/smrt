@@ -56,3 +56,20 @@ observed OpenAI host.
 | Composer discovery/search | Authorized workflow returns <=25 opaque resource handles | Forged tenant/ID, malformed/oversized query/result, anonymous/other owner/tenant/revoked caller denied | Verified principal and active tenant come from app-MCP request context | Existing M1 workflow and its owning read executor | SDK v2 HTTP transport; `app` visibility metadata | unit + HTTP integration / `test` |
 | Selected mention use | Selected opaque handle is routed through current authorized workflow | Revocation after search, guessed/cross-tenant handle and upstream error denied | Principal and active tenant are re-read for selected call | Existing application workflow, no adapter transaction/retry | SDK v2 HTTP | integration / `test` |
 | Package boundary | Node mention entry and browser context/message entries load packed | No v1 helper or OpenAI public types; malformed host never enables native path | Consumer package | N/A | packed Node/browser exports | build/types/pack / `build`, `typecheck`, `verify:pack` |
+
+### Accepted review regressions
+
+The Chromium fixture imports the packed-output context/message helpers instead of
+choosing a status label itself. It records every native and portable wire call.
+
+| Trigger | Required observation | Regression level |
+|---|---|---|
+| Negotiated native context rejects | Helper awaits a second, portable replacement with plain text and structured content; native title/thumbnail/background metadata is absent | Exported-helper unit and Chromium wire/result |
+| Caller aborts or bridge disposes while native context is pending | Late native failure cannot send any portable replacement | Unit abort and Chromium abort/disposal with held failure |
+| New-conversation target with absent/unknown capability or missing native callback | Reject before dispatch; no portable `ui/message` reaches active conversation | Exported-helper unit and Chromium wire count |
+| Active conversation without native support | One successful portable text message | Exported-helper unit and Chromium wire/result |
+| Negotiated new conversation | One native message retains `target: new` and `send: true` metadata | Exported-helper unit and Chromium wire payload |
+
+The same new tests against pre-fix production helpers fail on native rejection
+fallback and all three unsupported new-conversation routes. These tests use a
+synthetic host and do not establish actual OpenAI host compatibility.
