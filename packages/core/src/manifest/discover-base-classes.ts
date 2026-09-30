@@ -108,7 +108,7 @@ export async function discoverBaseClasses(
     : [];
 
   // Discover external SMRT packages
-  const smrtDependencies = discoverSmrtPackages();
+  const smrtDependencies = discoverSmrtPackages({ baseDir: cwd });
 
   // Load external base classes from SMRT package manifests.
   // Resolve each manifest the same way discovery does (honoring `.smrt/` and
@@ -175,7 +175,7 @@ export function discoverBaseClassesSync(
     : [];
 
   // Discover external SMRT packages
-  const smrtDependencies = discoverSmrtPackages();
+  const smrtDependencies = discoverSmrtPackages({ baseDir: cwd });
 
   // Load external base classes from SMRT package manifests. Same resolution as
   // the async variant (honors `.smrt/` and `src/manifest/`, not just `dist/`),
