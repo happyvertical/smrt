@@ -14,7 +14,7 @@ function trackFor(shell: ModuleShellState, edge: ModulePanelEdge): string {
   const config = shell.config.panels[edge];
   if (state === 'hidden') return '0rem';
   if (state === 'collapsed') return config.collapsedSize;
-  if (config.presentation === 'overlay') return config.collapsedSize;
+  if (shell.presentationFor(edge) === 'overlay') return config.collapsedSize;
   return expandedSize(shell, edge);
 }
 
@@ -56,6 +56,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   import {
     installKeyboardWatcher,
     installScrollChrome,
+    installShellOverlayMedia,
     installShellViewport,
     watchFormActionBar,
   } from './mobile-shell-dom.js';
@@ -224,6 +225,56 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     ].join('; '),
   );
 
+  /**
+   * Tablet/desktop: the side edge that is open as an overlay (its
+   * `overlayMedia` matches), laid over the page above a scrim.
+   */
+  const overlayEdge = $derived<SideEdge | null>(
+    isPhone
+      ? null
+      : (SIDE_EDGES.find(
+          (edge) =>
+            panelState(edge) === 'expanded' &&
+            shell.isEdgeShown(edge) &&
+            shell.presentationFor(edge) === 'overlay',
+        ) ?? null),
+  );
+
+  // An overlay takes focus when it opens (unless something inside already
+  // has it) and hands it back to whatever opened it when it closes.
+  let overlayReturnFocus: HTMLElement | null = null;
+  let lastOverlayEdge: SideEdge | null = null;
+  $effect(() => {
+    const edge = overlayEdge;
+    untrack(() => {
+      if (edge === lastOverlayEdge) return;
+      const previous = lastOverlayEdge;
+      lastOverlayEdge = edge;
+      if (typeof document === 'undefined') return;
+      if (edge) {
+        const active = document.activeElement;
+        overlayReturnFocus =
+          active instanceof HTMLElement && active !== document.body
+            ? active
+            : null;
+        // Effects run after the DOM update, so the panel is already shown.
+        const panel = sideElements[edge];
+        if (panel && !panel.contains(document.activeElement)) {
+          panel.focus({ preventScroll: true });
+        }
+        return;
+      }
+      const panel = previous ? sideElements[previous] : undefined;
+      const active = document.activeElement;
+      const lost =
+        !active || active === document.body || Boolean(panel?.contains(active));
+      if (lost && overlayReturnFocus?.isConnected) {
+        overlayReturnFocus.focus({ preventScroll: true });
+      }
+      overlayReturnFocus = null;
+    });
+  });
+
   function collapsePhoneSurfaces(): void {
     for (const edge of SIDE_EDGES) {
       if (panelState(edge) === 'expanded' && shell.isEdgeShown(edge)) {
@@ -233,8 +284,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   onMount(() => {
-    void shell.hydrate();
     const offViewport = installShellViewport(shell);
+    const offOverlayMedia = installShellOverlayMedia(shell);
+    void shell.hydrate().then(() => shell.closeOverlaidEdges());
     const offKeyboard = phoneBottomBar
       ? installKeyboardWatcher((open) => (keyboardOpen = open))
       : () => {};
@@ -280,6 +332,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     return () => {
       window.removeEventListener('keydown', handleKeydown);
       offViewport();
+      offOverlayMedia();
       offKeyboard();
       offFormActions();
       scrollChrome?.destroy();
@@ -342,7 +395,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     return (
       !isPhone &&
       edgeExpanded(edge) &&
-      shell.config.panels[edge].presentation === 'push' &&
+      shell.presentationFor(edge) === 'push' &&
       shell.resizeLimits(edge) !== null
     );
   }
@@ -647,14 +700,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 
   {#if shell.isEdgeShown('left')}
+    <!-- tabindex -1 only while overlaid, so the panel can take focus on open -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <aside
       id="smrt-admin-shell-left-panel"
       class="smrt-admin-shell__edge smrt-admin-shell__edge--left"
       data-state={panelState('left')}
-      data-presentation={shell.config.panels.left.presentation}
+      data-presentation={shell.presentationFor('left')}
       role="navigation"
       aria-label={labelFor('left')}
-      inert={isPhone && !edgeExpanded('left')}
+      tabindex={overlayEdge === 'left' ? -1 : undefined}
+      inert={(isPhone && !edgeExpanded('left')) || overlayEdge === 'right'}
       bind:this={sideElements.left}
       use:swipeDismiss={{
         direction: 'left',
@@ -700,6 +756,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     id="smrt-admin-shell-main"
     class="smrt-admin-shell__main"
     bind:this={mainElement}
+    inert={overlayEdge !== null}
   >
     {@render children()}
   </main>
@@ -724,16 +781,32 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     ></button>
   {/if}
 
+  {#if overlayEdge}
+    {@const scrimEdge = overlayEdge}
+    <!-- raw-primitive-allow: click-catching backdrop behind an overlaid side panel -->
+    <button
+      type="button"
+      class="smrt-admin-shell__overlay-scrim"
+      tabindex="-1"
+      aria-label={t(M['ui.admin_shell.close_panel'], { label: labelFor(scrimEdge) })}
+      data-testid="admin-shell-overlay-scrim"
+      onclick={() => shell.collapsePanel(scrimEdge)}
+    ></button>
+  {/if}
+
   {#if shell.isEdgeShown('right')}
     {@const rightPhone = isPhone ? shell.phonePresentation('right') : undefined}
+    <!-- tabindex -1 only while overlaid, so the panel can take focus on open -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <aside
       id="smrt-admin-shell-right-panel"
       class="smrt-admin-shell__edge smrt-admin-shell__edge--right"
       data-state={panelState('right')}
-      data-presentation={shell.config.panels.right.presentation}
+      data-presentation={shell.presentationFor('right')}
       data-phone={rightPhone}
       aria-label={labelFor('right')}
-      inert={isPhone && !edgeExpanded('right')}
+      tabindex={overlayEdge === 'right' ? -1 : undefined}
+      inert={(isPhone && !edgeExpanded('right')) || overlayEdge === 'left'}
       bind:this={sideElements.right}
       use:swipeDismiss={{
         direction: 'right',
@@ -1372,6 +1445,73 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     background: var(--smrt-color-scrim);
     opacity: 0.36;
     cursor: pointer;
+  }
+
+  /* Tablet/desktop overlay: an expanded side edge whose `overlayMedia`
+     matches slides over the page instead of taking a grid track. */
+  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'],
+  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'] {
+    grid-column: 1 / -1;
+    z-index: 25;
+    box-shadow: var(
+      --smrt-elevation-3,
+      0 0.5rem 1.5rem color-mix(in srgb, var(--smrt-color-shadow, #000) 24%, transparent)
+    );
+    outline: none;
+  }
+
+  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'] {
+    justify-self: start;
+    inline-size: min(var(--smrt-admin-shell-left-expanded), 100%);
+    animation: smrt-admin-shell-slide-from-left
+      var(--smrt-admin-shell-chrome-duration) ease-out;
+  }
+
+  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'] {
+    justify-self: end;
+    inline-size: min(var(--smrt-admin-shell-right-expanded), 100%);
+    animation: smrt-admin-shell-slide-from-right
+      var(--smrt-admin-shell-chrome-duration) ease-out;
+  }
+
+  .smrt-admin-shell__overlay-scrim {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    z-index: 22;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: var(--smrt-color-scrim);
+    opacity: 0.24;
+    cursor: pointer;
+    animation: smrt-admin-shell-scrim-in var(--smrt-admin-shell-chrome-duration)
+      ease-out;
+  }
+
+  @keyframes smrt-admin-shell-slide-from-right {
+    from {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes smrt-admin-shell-slide-from-left {
+    from {
+      transform: translateX(-100%);
+    }
+  }
+
+  @keyframes smrt-admin-shell-scrim-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'],
+    .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'],
+    .smrt-admin-shell__overlay-scrim {
+      animation: none;
+    }
   }
 
   .smrt-admin-shell__sheet-grabber {

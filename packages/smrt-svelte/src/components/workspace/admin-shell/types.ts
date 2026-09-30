@@ -52,6 +52,14 @@ export interface ShellPanelConfig {
   /** Phone presentation of a side edge (default `drawer`). */
   phone?: PhonePanelPresentation;
   /**
+   * Media query under which an expanded `push` side edge is laid over the
+   * page (sliding in above a scrim) instead of pushing it aside, on tablet
+   * and desktop. Above it the edge docks as usual. Phones keep their
+   * `phone` presentation. E.g. `'(max-width: 99.9375rem)'` overlays up to
+   * the Material 3 "Large" window class (under 1600px).
+   */
+  overlayMedia?: string;
+  /**
    * Drag-to-resize for a `push` side edge on tablet/desktop: a separator on
    * the edge's inner border (pointer drag, arrow keys, Home/End, double-click
    * or Enter to reset). `true` uses the default limits.

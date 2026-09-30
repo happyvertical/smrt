@@ -11,6 +11,7 @@ import {
 import type {
   ActivityStatus,
   PanelEdge,
+  PanelPresentation,
   PanelState,
   PhonePanelPresentation,
   ResolvedShellConfig,
@@ -80,6 +81,11 @@ export class ShellState {
   focusTools = $state<ShellFocusTool[]>([]);
   activeFocusToolId = $state<string | null>(null);
   activities = $state<ShellActivity[]>([]);
+  /**
+   * Side edges whose `overlayMedia` currently matches; `AdminShell` keeps
+   * it current. Read it through `presentationFor`.
+   */
+  overlayMatches = $state<Partial<Record<PanelEdge, boolean>>>({});
 
   private activityListeners = new Set<ActivityListener>();
 
@@ -131,6 +137,49 @@ export class ShellState {
   /** How a side edge is presented on phones (`drawer` unless configured). */
   phonePresentation(edge: PanelEdge): PhonePanelPresentation {
     return this.config.panels[edge].phone ?? 'drawer';
+  }
+
+  /**
+   * How an edge is presented right now: its configured presentation, or
+   * `overlay` for a side edge whose `overlayMedia` matches off phones.
+   */
+  presentationFor(edge: PanelEdge): PanelPresentation {
+    const config = this.config.panels[edge];
+    if (
+      (edge === 'left' || edge === 'right') &&
+      this.viewport !== 'phone' &&
+      config.overlayMedia &&
+      this.overlayMatches[edge]
+    ) {
+      return 'overlay';
+    }
+    return config.presentation;
+  }
+
+  /**
+   * Close side edges that would open as overlays (a restored or initial
+   * `expanded` state), without changing the stored preference: an overlay
+   * never covers the page on load, while a docked edge still restores.
+   */
+  closeOverlaidEdges(): void {
+    untrack(() => {
+      for (const edge of ['left', 'right'] as const) {
+        if (
+          this.panels[edge] === 'expanded' &&
+          this.presentationFor(edge) === 'overlay'
+        ) {
+          this.panels[edge] = 'collapsed';
+        }
+      }
+    });
+  }
+
+  /** Record whether a side edge's `overlayMedia` matches. */
+  setOverlayMatch(edge: PanelEdge, matches: boolean): void {
+    untrack(() => {
+      if (Boolean(this.overlayMatches[edge]) === matches) return;
+      this.overlayMatches = { ...this.overlayMatches, [edge]: matches };
+    });
   }
 
   /** Whether an edge is rendered at the current viewport. */

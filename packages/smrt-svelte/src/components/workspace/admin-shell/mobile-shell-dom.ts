@@ -45,6 +45,32 @@ export function installShellViewport(shell: ShellState): () => void {
 }
 
 /**
+ * Keep `shell.overlayMatches` in step with each side edge's `overlayMedia`
+ * query (edges without one are skipped).
+ */
+export function installShellOverlayMedia(shell: ShellState): () => void {
+  if (
+    typeof window === 'undefined' ||
+    typeof window.matchMedia !== 'function'
+  ) {
+    return () => {};
+  }
+  const disposers: Array<() => void> = [];
+  for (const edge of ['left', 'right'] as const) {
+    const query = shell.config.panels[edge].overlayMedia;
+    if (!query) continue;
+    const media = window.matchMedia(query);
+    const sync = () => shell.setOverlayMatch(edge, media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    disposers.push(() => media.removeEventListener('change', sync));
+  }
+  return () => {
+    for (const dispose of disposers) dispose();
+  };
+}
+
+/**
  * Hide-on-scroll for one scroller (AdminShell's main region). Samples once
  * per animation frame and reports changes of the hidden state.
  */

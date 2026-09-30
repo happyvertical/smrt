@@ -439,6 +439,144 @@ describe('AdminShell resizable edges', () => {
   });
 });
 
+describe('AdminShell overlay edges (overlayMedia)', () => {
+  function overlayShell() {
+    return createShellState({
+      config: {
+        ...config,
+        right: {
+          label: 'Assistant',
+          initial: 'collapsed',
+          hotkey: null,
+          collapsedSize: '0rem',
+          expandedSize: '28rem',
+          resizable: { min: 320, max: 640 },
+          overlayMedia: '(max-width: 99.9375rem)',
+        },
+      },
+    });
+  }
+
+  function rightEdge(): HTMLElement {
+    return document.getElementById(ADMIN_SHELL_REGION_IDS.right)!;
+  }
+
+  it('slides over the page below the query and docks above it', async () => {
+    setWidth(1280);
+    const shell = overlayShell();
+    render(AdminShell, {
+      props: { state: shell, children: html('<button>page action</button>') },
+    });
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+
+    expect(shell.presentationFor('right')).toBe('overlay');
+    expect(rightEdge().dataset.presentation).toBe('overlay');
+    // The page keeps its width: the right track stays collapsed.
+    expect(shellRoot().getAttribute('style')).toContain(
+      '--smrt-admin-shell-right-track: 0rem',
+    );
+    expect(screen.getByTestId('admin-shell-overlay-scrim')).toBeTruthy();
+    expect(document.getElementById('smrt-admin-shell-main')?.inert).toBe(true);
+    expect(screen.queryByTestId('admin-shell-resizer-right')).toBeNull();
+
+    setWidth(1600);
+    await settle();
+    expect(shell.presentationFor('right')).toBe('push');
+    expect(rightEdge().dataset.presentation).toBe('push');
+    expect(shellRoot().getAttribute('style')).toContain(
+      '--smrt-admin-shell-right-track: 28rem',
+    );
+    expect(screen.queryByTestId('admin-shell-overlay-scrim')).toBeNull();
+    expect(document.getElementById('smrt-admin-shell-main')?.inert).toBe(false);
+    expect(screen.getByTestId('admin-shell-resizer-right')).toBeTruthy();
+  });
+
+  it('closes on a scrim click or Escape, moving focus in and back', async () => {
+    setWidth(1100);
+    const shell = overlayShell();
+    render(AdminShell, {
+      props: { state: shell, children: html('<p>page</p>') },
+    });
+    await settle();
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    shell.expandPanel('right');
+    await settle();
+    expect(document.activeElement).toBe(rightEdge());
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    await settle();
+    expect(shell.panels.right).toBe('collapsed');
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+
+    shell.expandPanel('right');
+    await settle();
+    await fireEvent.click(screen.getByTestId('admin-shell-overlay-scrim'));
+    await settle();
+    expect(shell.panels.right).toBe('collapsed');
+
+    shell.expandPanel('right');
+    await settle();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    await settle();
+    expect(shell.panels.right).toBe('collapsed');
+  });
+
+  it('does not open an overlay on load, but still restores a docked edge', async () => {
+    const stored: ShellSettingsDelta = { panels: { right: 'expanded' } };
+    const adapter = { read: () => stored, write: vi.fn() };
+    const make = () =>
+      createShellState({
+        config: {
+          ...config,
+          right: {
+            label: 'Assistant',
+            initial: 'collapsed',
+            hotkey: null,
+            overlayMedia: '(max-width: 99.9375rem)',
+          },
+        },
+        settingsAdapter: adapter,
+      });
+
+    setWidth(1280);
+    const narrow = make();
+    const first = render(AdminShell, {
+      props: { state: narrow, children: html('<p>page</p>') },
+    });
+    await settle();
+    await settle();
+    expect(narrow.panels.right).toBe('collapsed');
+    expect(adapter.write).not.toHaveBeenCalled();
+    first.unmount();
+
+    setWidth(1700);
+    const wide = make();
+    render(AdminShell, {
+      props: { state: wide, children: html('<p>page</p>') },
+    });
+    await settle();
+    await settle();
+    expect(wide.panels.right).toBe('expanded');
+  });
+
+  it('keeps the phone presentation on phones', async () => {
+    setWidth(390);
+    const shell = overlayShell();
+    render(AdminShell, {
+      props: { state: shell, children: html('<p>page</p>') },
+    });
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    expect(shell.presentationFor('right')).toBe('push');
+    expect(screen.queryByTestId('admin-shell-overlay-scrim')).toBeNull();
+  });
+});
+
 describe('AdminShell backward compatibility', () => {
   it('adds no header, phone chrome, overlays, or scrim without the new props', async () => {
     setWidth(390);

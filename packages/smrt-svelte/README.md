@@ -412,6 +412,7 @@ keys the shell renders exactly as before.
         resizable: { min: 320, max: 720 }, // drag, arrows, Home/End, double-click resets
         phone: 'sheet', // or 'hidden' when the host shows it elsewhere on phones
         keepMounted: true, // closing the sheet keeps the chat (and its draft) alive
+        overlayMedia: '(max-width: 99.9375rem)', // slide over the page below 1600px
       },
     },
     storageKey: 'my-app-shell',
@@ -464,6 +465,13 @@ keys the shell renders exactly as before.
   Sizes are stored as `ShellSettingsDelta.sizes` through the settings adapter;
   `persist: false` / `{ state?: false, size?: false }` opts an edge out of
   storage.
+- **Overlay edges**: `overlayMedia` on a side edge is a media query under
+  which the expanded edge slides over the page (above a scrim, content keeps
+  its width) instead of pushing it, on tablet and desktop; above it the edge
+  docks. `shell.presentationFor(edge)` reports the live presentation. While
+  an overlay is open the page and the other edge are `inert`, the panel takes
+  focus (unless something inside already has it) and returns it on close;
+  Escape or a scrim click closes it. Resizing applies only while docked.
 - **Kept panels**: `keepMounted: true` keeps a collapsed edge's panel content
   (`appPanel`, `tenantPanel`, the focus panel, `systemPanel`) mounted with the
   `hidden` attribute instead of unmounting it, so component state (a chat
