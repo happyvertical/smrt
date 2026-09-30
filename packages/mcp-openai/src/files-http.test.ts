@@ -67,6 +67,11 @@ it('carries exact file entrypoint over native v2 HTTP and preserves per-request 
         ['.txt'],
       ),
     ],
+    resourcePolicy: ({ principal, resource }) =>
+      !revoked &&
+      principal?.id === owner.id &&
+      principal.tenantId === owner.tenantId &&
+      resource.uri === 'ui://synthetic/v1/file',
     toolPolicy: ({ principal }) =>
       !revoked &&
       principal?.id === owner.id &&
@@ -86,6 +91,9 @@ it('carries exact file entrypoint over native v2 HTTP and preserves per-request 
         },
       }),
     );
+    await expect(
+      client.readResource({ uri: 'ui://synthetic/v1/file' }),
+    ).resolves.toHaveProperty('contents.0.uri', 'ui://synthetic/v1/file');
     const catalog = await client.listTools();
     expect(catalog.tools[0]._meta?.['openai/ui']).toEqual({
       entrypoints: [{ type: 'file', extensions: ['.txt'] }],
@@ -115,6 +123,9 @@ it('carries exact file entrypoint over native v2 HTTP and preserves per-request 
       { ...owner, tenantId: 'other' },
     ]) {
       principal = actor;
+      await expect(
+        client.readResource({ uri: 'ui://synthetic/v1/file' }),
+      ).rejects.toThrow();
       expect(await server.listTools({ principal })).toEqual([]);
       await expect(
         client.callTool({ name: 'file_view', arguments: input }),
@@ -122,6 +133,9 @@ it('carries exact file entrypoint over native v2 HTTP and preserves per-request 
     }
     principal = owner;
     revoked = true;
+    await expect(
+      client.readResource({ uri: 'ui://synthetic/v1/file' }),
+    ).rejects.toThrow();
     await expect(
       client.callTool({ name: 'file_view', arguments: input }),
     ).rejects.toThrow();

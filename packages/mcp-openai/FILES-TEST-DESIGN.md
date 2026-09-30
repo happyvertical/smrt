@@ -19,7 +19,7 @@ Commands use `pnpm --filter @happyvertical/smrt-mcp-openai`.
 
 | Behavior / reachable trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/external edge | Level/command |
 |---|---|---|---|---|---|---|
-| File entrypoint tool | Valid extension + opaque input | Path/name traversal, URI confusion, unknown/missing fields, oversized input | Existing principal + owner + active tenant | Existing workflow handler | Node, pinned FileInput | unit + actual SDK HTTP / test |
+| File entrypoint tool + private UI read | Valid extension + opaque input; exact resource allowed by fresh owner/tenant policy | Path/name traversal, URI confusion, unknown/missing fields, oversized input; anonymous/other owner/tenant/revoked UI reads denied | Existing principal + owner + active tenant | Existing workflow handler | Node, pinned FileInput | unit + actual SDK HTTP / test |
 | Read / every operation | Exact granted file, bounded text/blob MIME | Guessed handle, revoked owner, other tenant, oversize, MIME mismatch, bad base64/representation | Server authority tool then bound host grant | Existing app handler; host reads resource | Browser, resources/read | unit + real browser / test, test:e2e |
 | Write | Read writable ETag then compare/write | Missing writable/etag, stale/conflict, concurrent call, too-large, malformed result, upstream unknown outcome | Same owner/tenant rechecked per write | Host atomic ifMatch; no adapter retry | Browser, openai/resources/write | unit + real browser / test, test:e2e |
 | Subscription | Bounded single active subscription with authorized refresh | Revocation, wrong URI, stale handle, cancellation, late notification, disposal | Fresh app + host checks each refresh | Host subscription, no persistence | Browser, notifications/resources/updated | unit + real browser / test, test:e2e |
@@ -31,3 +31,7 @@ Feature addition: base-regression test N/A. No database dialect changes: host ow
 file transaction; synthetic app authority fixtures use existing workflow policy.
 Actual OpenAI host remains unavailable: synthetic browser evidence cannot establish
 product/build/platform support. Parent owns integrated root gates and final reviews.
+
+Private fixture regression: the SDK HTTP resource-read assertion fails without an
+explicit policy under M3 deny-by-default behavior. The fixture policy binds exact
+UI URI, live owner and active tenant and revocation; it never makes UI public.
