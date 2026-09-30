@@ -67,6 +67,7 @@ describe('pinned navigation declarations', () => {
     { inputSchema: { type: 'object', minProperties: 1 } },
     { effect: 'write' },
     { ui: undefined },
+    { ui: { visibility: ['app'] } },
     { metadata: { 'openai/ui': {} } },
   ])('rejects unsafe entrypoint definition %j', (change) =>
     expect(() =>
