@@ -102,6 +102,19 @@ Form mutations can be staged by an agent, but apply, clear, and undo require a
 separate human-confirmed path. Agent input cannot assert confirmation. Secret
 values and hidden columns are omitted from serialized results.
 
+### Forms, lists, menus, and wizards
+
+- A rich `<Form webmcp>` (or `FormScope` around content with no `<form>`)
+  registers one `<formId>_stage_changes` tool covering every control the
+  form holds: rich fields, smrt-ui primitives, and composites registered with
+  `useControlRegistration`. It only stages proposals; the review panel shows
+  plain field labels and a person applies them. The rich Form forwards native
+  form attributes and takes SvelteKit's `enhance` as a prop.
+- `useListSurface` mirrors a rendered list (with a `find` text lookup over
+  searchable columns), `useLinkSurface` makes a menu or tab row navigable,
+  and `useStepSurface` lets an agent move a wizard forward — revealing, never
+  pressing, a step button that saves.
+
 ## Declared view intents
 
 A view intent is an interaction a component owns that has no model projection

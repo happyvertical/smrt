@@ -182,6 +182,25 @@ default) — except a canonical table-control id (`set-filters`, `reset`,
 reaches `onControl`, even under a custom label. See
 `docs/data-surface-conformance.md` for the full contract.
 
+Three lifecycle hooks cover the common page shapes without any registration
+code; each resolves the nearest Provider's registry (or an explicit one),
+re-mounts on an identity change, and unmounts with the component:
+
+- `useListSurface(() => ({ surfaceId, label, description, columns, rows }))`
+  publishes the page's rendered rows, projected to the declared columns and
+  capped (`maxRows`, default 50), as `state.rows`. Columns marked
+  `searchable` enable a `find` control: `{ text }` publishes the rows whose
+  searchable columns contain the text (any case, accents ignored) across all
+  rows, with `state.find = { text, matches }` — so an agent can look an
+  article up by title on the page. It narrows only what the agent reads;
+  table commands stay refused and the page's own controls stay in charge.
+- `useLinkSurface(() => ({ surfaceId, label, description, links, navigate }))`
+  exposes a menu or tab row as an `open` control (see `registerLinkSurface`
+  in smrt-ui).
+- `useStepSurface(() => ({ surfaceId, …, steps, current, next, back,
+  nextWrites, showNext }))` exposes a wizard's `next`/`back`/`go-to`; a step
+  whose forward button writes is revealed for the person, never pressed.
+
 The default prefix is `smrt_ui_`. Configure `ui.prefix` when multiple Providers
 must coexist in one document; the same prefix cannot be registered twice. The
 six derived names are reserved through the document-global tool-name lock, so
