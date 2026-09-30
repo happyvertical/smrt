@@ -5,6 +5,7 @@ import {
   resolveAgentModuleDocPaths,
 } from '@happyvertical/smrt-scanner/knowledge';
 
+export { resolveFileKnowledgeConfig } from './knowledge-config.js';
 export {
   discoverScopedPackageDirectories,
   readPackageAgentDoc,

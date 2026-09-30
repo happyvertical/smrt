@@ -26,7 +26,13 @@
  * @packageDocumentation
  */
 
-import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -866,6 +872,19 @@ async function importSmrtCoreManifestModule(): Promise<
   }
 }
 
+async function importSmrtCoreKnowledgeModule(): Promise<
+  typeof import('@happyvertical/smrt-core/knowledge')
+> {
+  const specifier = '@happyvertical/smrt-core/knowledge';
+  try {
+    return await import(specifier);
+  } catch {
+    const fallbackHref = new URL('../../core/src/knowledge.ts', import.meta.url)
+      .href;
+    return await importWorkspaceSourceModule(fallbackHref);
+  }
+}
+
 async function importDiscoverBaseClassesModule(): Promise<
   typeof import('@happyvertical/smrt-core/manifest/discover-base-classes')
 > {
@@ -1069,7 +1088,7 @@ async function loadAndRegisterLocalManifest(
  * The ~1-2s overhead is minimal compared to test execution time.
  */
 async function generateLocalManifest(
-  _root: string,
+  root: string,
   options: SmrtVitestPluginOptions,
   verbose: boolean,
 ): Promise<boolean> {
@@ -1118,6 +1137,7 @@ async function generateLocalManifest(
     });
 
     const objectCount = Object.keys(manifest.objects).length;
+    await refreshTestKnowledgeArtifact(root, manifest);
     console.log(
       `[smrt-vitest] ✓ Generated manifest with ${objectCount} object(s)`,
     );
@@ -1127,6 +1147,32 @@ async function generateLocalManifest(
     console.error('[smrt-vitest] Failed to generate manifest:', error);
     return false;
   }
+}
+
+async function refreshTestKnowledgeArtifact(
+  root: string,
+  manifest: import('@happyvertical/smrt-core/scanner/types').SmartObjectManifest,
+): Promise<void> {
+  const { buildDomainKnowledgeManifest, resolveFileKnowledgeConfig } =
+    await importSmrtCoreKnowledgeModule();
+  const manifestPath = join(root, '.smrt/manifest.json');
+  const knowledgePath = join(root, '.smrt/smrt-knowledge.json');
+  let agentSurface: unknown;
+  try {
+    agentSurface = JSON.parse(readFileSync(knowledgePath, 'utf8')).agentSurface;
+  } catch {
+    // A missing or malformed prior artifact is replaced by current generation.
+  }
+  const config = await resolveFileKnowledgeConfig(root, manifest.packageName);
+  if (config.enabled === false) return;
+  const knowledge = buildDomainKnowledgeManifest({
+    manifest,
+    rootDir: root,
+    manifestPath,
+    config,
+    agentSurface: agentSurface as never,
+  });
+  writeFileSync(knowledgePath, JSON.stringify(knowledge, null, 2), 'utf8');
 }
 
 /**
