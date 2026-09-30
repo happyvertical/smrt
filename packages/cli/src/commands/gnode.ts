@@ -12,6 +12,7 @@ import {
   resolveTemplate,
 } from '../loaders/index.js';
 import { generate } from '../utils/generator.js';
+import { scaffoldMcpAppsPackage } from './mcp-apps-packaging.js';
 
 /**
  * Parsed option bag for the `gnode create` handler. The CLI parser produces
@@ -24,6 +25,7 @@ interface GnodeCreateOptions {
   lat?: string;
   lon?: string;
   timezone?: string;
+  mcpApps?: boolean;
 }
 
 /**
@@ -62,6 +64,11 @@ export const gnodeCommands: Record<string, CLICommand> = {
         description: 'IANA timezone (e.g., "America/Edmonton")',
         default: 'America/Edmonton',
       },
+      'mcp-apps': {
+        type: 'boolean',
+        description:
+          'Add opt-in portable MCP Apps plugin metadata under mcp-apps/',
+      },
     },
     handler: async (args: string[], options: GnodeCreateOptions) => {
       const name = args[0];
@@ -99,6 +106,13 @@ export const gnodeCommands: Record<string, CLICommand> = {
           outputDir,
           site: siteOptions,
         });
+
+        if (options.mcpApps) {
+          scaffoldMcpAppsPackage(`${outputDir}/mcp-apps`, name);
+          console.log(
+            '✓ Added MCP Apps metadata. Configure the authorized v2 MCP endpoint before deployment.',
+          );
+        }
 
         // Cleanup git template if needed
         if (source.type === 'git') {

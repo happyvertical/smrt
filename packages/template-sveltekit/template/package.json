@@ -25,6 +25,7 @@
     "app:backup": "node scripts/smrt-app.mjs backup",
     "app:export": "node scripts/smrt-app.mjs export",
     "app:import": "node scripts/smrt-app.mjs import",
+    "mcp-apps:validate": "pnpm exec smrt mcp-apps validate --output-dir ./mcp-apps",
     "worker": "node scripts/smrt-worker.mjs task",
     "worker:schedule": "node scripts/smrt-worker.mjs schedule"
   },
