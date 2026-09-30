@@ -80,6 +80,10 @@ export interface AssistantTurnContinuation {
   pending: PendingClientToolCall[];
   /** The browser tools offered when it suspended. */
   clientTools: ClientToolDefinition[];
+  /** Tokens the turn used so far (for `maxTurnTokens`). Absent: 0. */
+  tokens?: number;
+  /** `Date.now()` when the turn started (for `maxTurnMs`). Absent: `createdAt`. */
+  startedAt?: number;
 }
 
 /**
@@ -236,6 +240,17 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   /** Scope for `continuations` (e.g. the thread id). */
   continuationKey?: string;
   maxSteps?: number;
+  /**
+   * Token budget for the whole turn, across every browser round trip. Once
+   * spent, the model gets one last round without tools to answer, and the
+   * turn ends with `stoppedReason: 'budget'`. Unset: no budget.
+   */
+  maxTurnTokens?: number;
+  /**
+   * Wall-clock budget for the whole turn (ms from its first leg, including
+   * time spent waiting on the browser). Same ending as `maxTurnTokens`.
+   */
+  maxTurnMs?: number;
   model?: string;
   temperature?: number;
   maxTokens?: number;
@@ -412,6 +427,8 @@ async function runTurn<M>(
   // ---- the transcript: a fresh turn, or a resumed suspension -------------
   let messages: AIMessage[];
   let initialSteps = 0;
+  let initialTokens = 0;
+  let startedAt = now();
   let clientTools = options.clientTools ?? [];
   if (options.resume) {
     if (!options.continuations || !options.continuationKey) {
@@ -433,6 +450,8 @@ async function runTurn<M>(
       options.resume.results,
     );
     initialSteps = continuation.steps;
+    initialTokens = Number(continuation.tokens) || 0;
+    startedAt = Number(continuation.startedAt) || continuation.createdAt;
     // A fresh declaration reflects the page as it is now; fall back to what
     // was offered when the turn suspended.
     if (clientTools.length === 0) clientTools = continuation.clientTools;
@@ -509,6 +528,12 @@ async function runTurn<M>(
     principal,
     db: options.db,
     maxSteps: options.maxSteps ?? DEFAULT_MAX_STEPS,
+    ...(options.maxTurnTokens !== undefined
+      ? { maxTotalTokens: options.maxTurnTokens, initialTokens }
+      : {}),
+    ...(options.maxTurnMs !== undefined
+      ? { deadline: startedAt + options.maxTurnMs, now }
+      : {}),
     model: options.model,
     temperature: options.temperature,
     maxTokens: options.maxTokens,
@@ -614,6 +639,8 @@ async function runTurn<M>(
       messages: loop.messages,
       pending: loop.pendingClientToolCalls,
       clientTools,
+      tokens: initialTokens + loop.totalTokens,
+      startedAt,
     };
     await options.continuations.save(options.continuationKey, continuation);
     emit(

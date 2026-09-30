@@ -126,10 +126,15 @@ export interface ToolInvocation {
  *   {@link ToolLoopResult.messages} is the transcript to resume from (see
  *   {@link appendClientToolResults}).
  * - `cancelled`: {@link ToolLoopOptions.signal} aborted.
+ * - `budget`: the token budget ({@link ToolLoopOptions.maxTotalTokens}) or
+ *   the deadline ({@link ToolLoopOptions.deadline}) ran out before
+ *   `maxSteps`; like `max_steps`, the last round is offered no tools, so the
+ *   model answers with what it has.
  */
 export type ToolLoopStopReason =
   | 'stop'
   | 'max_steps'
+  | 'budget'
   | 'no_tools'
   | 'client_tools'
   | 'cancelled';
@@ -289,6 +294,21 @@ export interface ToolLoopOptions {
    * them, so suspending cannot reset the bound. Default 0.
    */
   initialSteps?: number;
+  /**
+   * Token budget for the whole turn, across every leg (#assistant-watch):
+   * once `initialTokens` plus this leg's usage reaches it, the next round is
+   * offered no tools and the loop stops with `budget`. Unset: no budget.
+   */
+  maxTotalTokens?: number;
+  /** Tokens earlier legs of the same turn already used. Default 0. */
+  initialTokens?: number;
+  /**
+   * Wall-clock deadline for the whole turn (epoch ms): past it, the next
+   * round is offered no tools and the loop stops with `budget`.
+   */
+  deadline?: number;
+  /** Clock for {@link deadline} (tests). Default `Date.now`. */
+  now?: () => number;
   /**
    * Cancels the turn. Checked before every model round and every tool call,
    * and forwarded to the AI boundary. An aborted loop returns
@@ -664,6 +684,10 @@ export async function runToolLoop(
     onToken,
     clientTools = [],
     initialSteps = 0,
+    maxTotalTokens,
+    initialTokens = 0,
+    deadline,
+    now = Date.now,
     signal,
     onStep,
     onUsage,
@@ -739,7 +763,12 @@ export async function runToolLoop(
 
       for (;;) {
         if (signal?.aborted) return cancelled();
-        const offerTools = aiTools.length > 0 && executedRounds < maxSteps;
+        const budgetSpent =
+          (maxTotalTokens !== undefined &&
+            initialTokens + totalTokens >= maxTotalTokens) ||
+          (deadline !== undefined && now() >= deadline);
+        const offerTools =
+          aiTools.length > 0 && executedRounds < maxSteps && !budgetSpent;
         onStep?.({ type: 'round', step: executedRounds });
         try {
           response = await ai.chat(working, {
@@ -785,7 +814,9 @@ export async function runToolLoop(
                 ? 'no_tools'
                 : offerTools
                   ? 'stop'
-                  : 'max_steps',
+                  : executedRounds >= maxSteps
+                    ? 'max_steps'
+                    : 'budget',
             invocations,
             messages: working,
             totalTokens,

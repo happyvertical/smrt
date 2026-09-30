@@ -96,6 +96,8 @@ export interface AssistantClientToolResult {
 export type AssistantTurnStopReason =
   | 'stop'
   | 'max_steps'
+  /** The turn's token or time budget ran out (`maxTurnTokens`/`maxTurnMs`). */
+  | 'budget'
   | 'no_tools'
   | 'cancelled';
 

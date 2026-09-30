@@ -567,6 +567,104 @@ describe('assistant turn', () => {
       expect(replay.some((e) => e.type === 'error')).toBe(true);
     });
 
+    it('ends with budget once the turn token budget is spent, across resumes', async () => {
+      const store = createMemoryContinuationStore();
+      // Each tool round reports 12 tokens; the budget allows one round.
+      const ai = scriptedAI([
+        calls(['smrt_ui_list_form_controls', {}, 'r1']),
+        calls(['smrt_ui_list_form_controls', {}, 'r2']),
+        text('Here is what I found so far.'),
+      ]);
+      const first = await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'look around',
+          clientTools: PAGE_TOOLS,
+          continuations: store,
+          continuationKey: 'thread-budget',
+          maxSteps: 20,
+          maxTurnTokens: 12,
+        }),
+      );
+      const suspended = first.at(-1) as Extract<
+        AssistantTurnEvent,
+        { type: 'client_tool_calls' }
+      >;
+      expect(suspended.type).toBe('client_tool_calls');
+      const resumed = await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          resume: {
+            continuationId: suspended.continuationId,
+            results: [{ id: 'r1', ok: true, result: '{}' }],
+          },
+          continuations: store,
+          continuationKey: 'thread-budget',
+          maxSteps: 20,
+          maxTurnTokens: 12,
+        }),
+      );
+      // The resumed leg carried the spent tokens: no tools offered, one reply.
+      expect(ai.offered.at(-1)).toEqual([]);
+      expect(resumed.find((e) => e.type === 'done')).toMatchObject({
+        stoppedReason: 'budget',
+      });
+    });
+
+    it('ends with budget once the turn time budget is spent', async () => {
+      let clock = 1_000;
+      const store = createMemoryContinuationStore({ now: () => clock });
+      const ai = scriptedAI([
+        calls(['smrt_ui_list_form_controls', {}, 'r1']),
+        text('Out of time.'),
+      ]);
+      const first = await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'look around',
+          clientTools: PAGE_TOOLS,
+          continuations: store,
+          continuationKey: 'thread-time',
+          maxTurnMs: 60_000,
+          now: () => clock,
+        }),
+      );
+      const suspended = first.at(-1) as Extract<
+        AssistantTurnEvent,
+        { type: 'client_tool_calls' }
+      >;
+      clock += 61_000;
+      const resumed = await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          resume: {
+            continuationId: suspended.continuationId,
+            results: [{ id: 'r1', ok: true, result: '{}' }],
+          },
+          continuations: store,
+          continuationKey: 'thread-time',
+          maxTurnMs: 60_000,
+          now: () => clock,
+        }),
+      );
+      expect(ai.offered.at(-1)).toEqual([]);
+      expect(resumed.find((e) => e.type === 'done')).toMatchObject({
+        stoppedReason: 'budget',
+      });
+    });
+
     it('refuses a resume under another key', async () => {
       const store = createMemoryContinuationStore();
       const ai = scriptedAI([
