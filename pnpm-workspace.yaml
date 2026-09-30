@@ -32,7 +32,7 @@ overrides:
   '@happyvertical/spider': ^1.1.13
   '@happyvertical/sql': ^0.96.0
   '@happyvertical/utils': ^0.96.0
-  '@grpc/grpc-js@>=1.14.0 <1.14.4': 1.14.4
+  '@grpc/grpc-js@>=1.14.0 <1.14.5': 1.14.5
   # minimatch 9 is the last consumer of brace-expansion 2.x, which has no
   # patched 2.x line for GHSA-mh99-v99m-4gvg (first patch is 5.0.8). Its
   # remaining consumers here (@crawlee/core, glob@10, @vue/language-core) use
