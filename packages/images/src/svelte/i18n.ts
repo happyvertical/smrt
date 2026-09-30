@@ -2,14 +2,12 @@ import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   // AssetsGallery
-  'images.assets_gallery.title': 'Asset Gallery',
-  'images.assets_gallery.search_placeholder':
-    'Search images (name, alt text)...',
-  'images.assets_gallery.any_orientation': 'Any Orientation',
-  'images.assets_gallery.min_width_placeholder': 'Min Width (px)',
-  'images.assets_gallery.min_height_placeholder': 'Min Height (px)',
-  'images.assets_gallery.no_images_found':
-    'No images found matching your criteria.',
+  'images.assets_gallery.title': 'Pictures',
+  'images.assets_gallery.search_placeholder': 'Search pictures',
+  'images.assets_gallery.any_orientation': 'Any shape',
+  'images.assets_gallery.min_width_placeholder': 'Wider than (pixels)',
+  'images.assets_gallery.min_height_placeholder': 'Taller than (pixels)',
+  'images.assets_gallery.no_images_found': 'No pictures match.',
 
   // ImageEditor
   'images.image_editor.title': 'Image Editor',
@@ -27,7 +25,7 @@ export const M = defineMessages({
     'e.g. Change the background to a sunset...',
 
   // ImageUploader
-  'images.image_uploader.select_image': 'Select Image',
+  'images.image_uploader.select_image': 'Use this picture',
   'images.image_uploader.create_variation': 'Create Variation',
   'images.image_uploader.variation_hint':
     'Describe how this image should be changed. A new derivative will be created from the original.',
@@ -35,15 +33,14 @@ export const M = defineMessages({
     'e.g. Change the sky to show heavy rain and overcast clouds...',
   'images.image_uploader.generating': 'Generating…',
   'images.image_uploader.generate_variation': 'Generate Variation',
-  'images.image_uploader.choose_image': 'Choose Image',
-  'images.image_uploader.external_url': 'External URL',
-  'images.image_uploader.drag_and_drop': 'Drag and drop an image here',
-  'images.image_uploader.browse_files': 'Browse Files',
+  'images.image_uploader.choose_image': 'Choose a picture',
+  'images.image_uploader.external_url': 'Web address',
+  'images.image_uploader.drag_and_drop': 'Drop a picture here',
+  'images.image_uploader.browse_files': 'Choose from your device',
   'images.image_uploader.try_again': 'Try Again',
   'images.image_uploader.starting_camera': 'Starting camera...',
   'images.image_uploader.take_picture': 'Take Picture',
-  'images.image_uploader.external_hint':
-    'Enter a direct URL to an image or a supported provider link.',
+  'images.image_uploader.external_hint': 'Paste the web address of a picture.',
   'images.image_uploader.external_url_placeholder':
     'https://example.com/image.jpg',
 

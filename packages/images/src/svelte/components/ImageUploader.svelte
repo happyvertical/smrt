@@ -298,7 +298,7 @@ onDestroy(() => {
       
       <div class="confirm-info">
         <span class="confirm-name">{selectedImage.name}</span>
-        <span class="confirm-meta">{selectedImage.width}×{selectedImage.height} · {selectedImage.mimeType}</span>
+        <span class="confirm-meta">{selectedImage.width} × {selectedImage.height}</span>
       </div>
 
       <div class="confirm-actions">
@@ -364,7 +364,7 @@ onDestroy(() => {
           variant="ghost"
           class={activeTab === 'gallery' ? 'uploader-tab uploader-tab--active' : 'uploader-tab'}
           onclick={() => (activeTab = 'gallery')}
-        >Gallery</Button>
+        >Pictures</Button>
       {/if}
       {#if allowedTabs.includes('upload')}
         <Button
