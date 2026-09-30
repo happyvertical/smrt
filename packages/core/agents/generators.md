@@ -239,3 +239,24 @@ Core never imports smrt-dev-mcp; only the generated file does, at consumer
 runtime. The route carries the auto-generated header so the sweep owns it.
 
 Generated SvelteKit write routes (#2977) call `requireRoutePermission(locals, action)` after `requireRouteAuth`: CRUD writes need `<collection>.create|update|delete` and mutating custom actions `<collection>.<method>` in the session permission snapshot on `locals`, else 403 (fail-closed; `api.public: true` stays open, `tenantContext.superAdminBypass` skips). See `packages/users/agents/permissions.md`.
+
+## MCP protocol identifiers (#3219)
+
+MCP discovery preserves existing names matching `[A-Za-z0-9_.-]{1,64}`.
+Previously invalid names use their first 31 sanitized ASCII characters, `_`,
+and the first 32 hex characters of SHA-256 over the JSON tuple
+`[original class name, lowercased action name, original raw tool name]`.
+This makes long or punctuation-bearing identifiers deterministic without
+collapsing common prefixes. Discovery reserves compliant names first and fails
+closed on any duplicate raw name or final alias collision instead of advertising
+ambiguous dispatch (including class names differing only by case across packages).
+Consumers must use the advertised name rather than constructing one.
+
+The generator retains a separate class/action binding for each descriptor and
+emits that mapping for generated runtimes. Dispatch, task eligibility, tenant
+scoping, ordering, and STI metadata use this binding; protocol aliases are not
+execution identities. The advertised catalog still gates execution. The direct
+runtime-template API accepts `toolTargets`; omitting it retains the legacy
+`object_action` convention for existing direct callers. Supply explicit targets
+for canonicalized names or class names containing underscores. This contract
+does not change CLI, REST, or WebMCP identifiers.
