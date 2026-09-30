@@ -35,6 +35,7 @@ import { isTestFile } from './test-file-patterns.js';
 import type {
   AgentAdminRouteManifest,
   AgentComponentDeclaration,
+  AgentCreateEntryManifest,
   AgentFeature,
   AgentManifest,
   AgentMenuItem,
@@ -3180,6 +3181,12 @@ ${fields}
           | AgentAdminRouteManifest[]
           | undefined) ?? [];
 
+      // Capture createEntries (agent-contributed create options)
+      const createEntries: AgentCreateEntryManifest[] =
+        (obj.staticProperties?.createEntries as
+          | AgentCreateEntryManifest[]
+          | undefined) ?? [];
+
       // Capture signalSubscriptions from static property
       const signalSubscriptions: string[] =
         (obj.staticProperties?.signalSubscriptions as string[] | undefined) ??
@@ -3193,6 +3200,7 @@ ${fields}
         description: agentConfig.description,
         uiSlots,
         ...(adminRoutes.length > 0 ? { adminRoutes } : {}),
+        ...(createEntries.length > 0 ? { createEntries } : {}),
         ...(signalSubscriptions.length > 0 ? { signalSubscriptions } : {}),
         permissions,
         features,

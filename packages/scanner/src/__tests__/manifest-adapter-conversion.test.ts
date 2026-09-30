@@ -434,6 +434,31 @@ describe('ManifestAdapter conversion', () => {
       );
       expect(def.staticProperties?.uiSlots).toEqual({ main: ['card'] });
     });
+
+    it('captures static createEntries (agent create options)', () => {
+      const createEntries = field({
+        name: 'createEntries',
+        isStatic: true,
+        initializer:
+          '[{ id: "meeting", type: "news/politics", label: "Write about a meeting", route: "articles/new/source?for=meeting", availability: { accessLevels: ["admin", "editor"] } }]',
+      });
+      const def = adapter.toSmartObjectDefinition(
+        resolved({
+          className: 'Widget',
+          fields: [createEntries],
+          allFields: [createEntries],
+        }),
+      );
+      expect(def.staticProperties?.createEntries).toEqual([
+        {
+          id: 'meeting',
+          type: 'news/politics',
+          label: 'Write about a meeting',
+          route: 'articles/new/source?for=meeting',
+          availability: { accessLevels: ['admin', 'editor'] },
+        },
+      ]);
+    });
   });
 
   describe('collection pluralization', () => {

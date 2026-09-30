@@ -36,6 +36,8 @@ export interface SerializedAgent {
   slots?: AgentUISlots;
   /** Admin route declarations from manifest */
   adminRoutes?: AgentAdminRoute[];
+  /** Create options from manifest (see `resolveAgentCreateEntries`) */
+  createEntries?: AgentCreateEntry[];
   /** How this agent was resolved for the tenant */
   source?: 'explicit' | 'inherited';
   /** Which tenant the binding came from */
@@ -85,6 +87,7 @@ export function serializeResolvedAgent(
     _meta_type: resolved.agentType,
     slots: manifest?.uiSlots as AgentUISlots | undefined,
     adminRoutes: manifest?.adminRoutes as AgentAdminRoute[] | undefined,
+    createEntries: manifest?.createEntries,
     source: resolved.source,
     sourceTenantId: resolved.sourceTenantId,
     permissions: resolved.permissions,

@@ -303,6 +303,10 @@ export {
   type AgentAdminNavItem,
   type AgentAdminRootProps,
   type AgentAdminRoute,
+  type AgentCreateEntry,
+  type AgentCreateEntryAvailability,
+  type AgentCreateEntryContext,
+  type AgentCreateEntrySource,
   type AgentManifestInfo,
   type AgentRouteLoadContext,
   type AgentRouteLoadFn,
@@ -312,4 +316,7 @@ export {
   type AgentUISlots,
   type ComponentType,
   createUIRegistry,
+  isAgentCreateEntryAvailable,
+  type ResolvedAgentCreateEntry,
+  resolveAgentCreateEntries,
 } from './ui.js';

@@ -475,7 +475,12 @@ export class ManifestAdapter {
     // child-wins semantics (static override), not parent-wins like STI columns.
     // Fall back to allFields for inherited static props not redeclared by child.
     let staticProperties: Record<string, unknown> | undefined;
-    const knownStaticProps = ['uiSlots', 'adminRoutes', 'signalSubscriptions'];
+    const knownStaticProps = [
+      'uiSlots',
+      'adminRoutes',
+      'signalSubscriptions',
+      'createEntries',
+    ];
     const ownStaticNames = new Set<string>();
     // First pass: own fields (child overrides win)
     for (const field of classDef.fields) {

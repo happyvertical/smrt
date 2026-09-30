@@ -73,6 +73,16 @@ counted totals, blocked rows (two spellings of one binding/slot) refuse the
 apply, one transaction with a ledger and a post-check; idempotent. Register the
 host's agent classes (or pass `aliases`) before running it.
 
+## Create entries
+
+`static createEntries: AgentCreateEntry[]` (literal array; the scanner captures
+it into `agent.createEntries`) lets an agent contribute "create" options: `id`,
+`type`, `format`, `label`, `description`, `icon`, `route` (relative to the
+host base path), `order`, `availability` (`permission`, `accessLevels`,
+`requires`). `SerializedAgent.createEntries` carries them;
+`resolveAgentCreateEntries(agents, { basePath, accessLevel, capabilities })`
+from `./ui` filters, builds `href`, and sorts. Non-relative routes are dropped.
+
 ## AgentSchedule
 
 Cron-based scheduling stored in `_smrt_agent_schedules`. Fields: `agentType`, `cron`, `method` (default: 'run'), `maxConcurrent`, `timeout`. Executed by ScheduleRunner from smrt-jobs.
