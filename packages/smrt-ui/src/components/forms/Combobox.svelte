@@ -1,4 +1,5 @@
 <script lang="ts">
+import { untrack } from 'svelte';
 import {
   emitControlChange,
   highlightControl,
@@ -36,6 +37,12 @@ export interface Props {
   allowCustom?: boolean;
   /** Interaction options or false to disable all. */
   interaction?: ControlInteractionOptions | false;
+  /**
+   * Label for `value` while its option is not in `options` yet (options load
+   * asynchronously, or only the current record is known). Without it the
+   * field stays empty rather than flashing the raw value (an id).
+   */
+  valueLabel?: string;
   /** Callback when the selected value changes. */
   onvaluechange?: (value: string) => void;
   /** CSS class to apply to the combobox container. */
@@ -51,6 +58,7 @@ let {
   required = false,
   allowCustom = false,
   interaction,
+  valueLabel,
   onvaluechange,
   class: className = '',
 }: Props = $props();
@@ -61,12 +69,24 @@ const interactionContext = tryGetControlInteractionContext();
 let rootEl = $state<HTMLDivElement | null>(null);
 let inputEl = $state<HTMLInputElement | null>(null);
 let open = $state(false);
-let query = $state(value);
+/** The text for a value: its option's label, never a raw id (see valueLabel). */
+function labelForValue(candidate: string): string {
+  if (!candidate) return '';
+  const option = options.find((item) => String(item.value) === candidate);
+  if (option) return option.label;
+  if (valueLabel) return valueLabel;
+  return allowCustom ? candidate : '';
+}
+let query = $state(untrack(() => labelForValue(value)));
+/** The person has typed since opening: only then does the list filter. */
+let typed = $state(false);
 let activeIndex = $state(0);
 const filtered = $derived(
-  options.filter((option) =>
-    option.label.toLowerCase().includes(query.toLowerCase()),
-  ),
+  typed
+    ? options.filter((option) =>
+        option.label.toLowerCase().includes(query.toLowerCase()),
+      )
+    : options,
 );
 const controlId = $derived(
   interaction === false ? undefined : (interaction?.id ?? name ?? inputId),
@@ -76,6 +96,7 @@ function commit(option: ControlOption, userEdit = false) {
   const changed = String(option.value) !== value;
   value = String(option.value);
   query = option.label;
+  typed = false;
   open = false;
   onvaluechange?.(value);
   if (userEdit && changed) {
@@ -94,6 +115,7 @@ function setValue(next: unknown) {
   else if (allowCustom) {
     value = candidate;
     query = candidate;
+    typed = false;
     onvaluechange?.(candidate);
   }
 }
@@ -104,8 +126,24 @@ function prepareValue(next: unknown) {
   if (allowCustom) return candidate;
   return candidate;
 }
+function openList() {
+  if (open) return;
+  open = true;
+  // Reopening shows every option, starting at the current choice.
+  typed = false;
+  const selected = options.findIndex(
+    (option) => String(option.value) === value,
+  );
+  activeIndex = selected >= 0 ? selected : 0;
+}
+function closeList() {
+  open = false;
+  // Leaving without choosing puts the chosen label back.
+  typed = false;
+}
 function handleInput(event: Event & { currentTarget: HTMLInputElement }) {
   query = event.currentTarget.value;
+  typed = true;
   open = true;
   activeIndex = 0;
   if (allowCustom) {
@@ -116,7 +154,10 @@ function handleInput(event: Event & { currentTarget: HTMLInputElement }) {
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'ArrowDown') {
     event.preventDefault();
-    open = true;
+    if (!open) {
+      openList();
+      return;
+    }
     const enabled = filtered
       .map((option, index) => (option.disabled ? -1 : index))
       .filter((index) => index >= 0);
@@ -134,16 +175,16 @@ function handleKeydown(event: KeyboardEvent) {
     event.preventDefault();
     commit(filtered[activeIndex], true);
   } else if (event.key === 'Escape') {
-    open = false;
+    closeList();
   }
 }
 $effect(() => {
   if (!open) return;
   const dismissPointer = (event: PointerEvent) => {
-    if (rootEl && !rootEl.contains(event.target as Node)) open = false;
+    if (rootEl && !rootEl.contains(event.target as Node)) closeList();
   };
   const dismissFocus = (event: FocusEvent) => {
-    if (rootEl && !rootEl.contains(event.target as Node)) open = false;
+    if (rootEl && !rootEl.contains(event.target as Node)) closeList();
   };
   document.addEventListener('pointerdown', dismissPointer, true);
   document.addEventListener('focusin', dismissFocus, true);
@@ -152,9 +193,10 @@ $effect(() => {
     document.removeEventListener('focusin', dismissFocus, true);
   };
 });
+// Follow the value (and options that load later) unless the person is typing.
 $effect(() => {
-  const option = options.find((item) => String(item.value) === value);
-  if (option && document.activeElement !== inputEl) query = option.label;
+  const label = labelForValue(value);
+  if (!typed) query = label;
 });
 useControlRegistration(() => {
   const root = rootEl;
@@ -205,7 +247,7 @@ useControlRegistration(() => {
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   <label for={inputId}>{label}</label><input bind:this={inputEl} id={inputId} {name} role="combobox" autocomplete="off" {placeholder} {disabled} {required} value={query}
     aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
-    onfocus={() => open = true} oninput={handleInput} onkeydown={handleKeydown} />
+    onfocus={openList} onclick={openList} oninput={handleInput} onkeydown={handleKeydown} />
   {#if open && filtered.length}<div id={listId} class="options" role="listbox">{#each filtered as option, index (option.value)}<button id={`${listId}-${index}`} type="button" role="option"
       aria-selected={String(option.value) === value} class:active={index === activeIndex} disabled={option.disabled} onpointerdown={(event) => event.preventDefault()} onclick={() => commit(option, true)}>{option.label}</button>{/each}</div>{/if}
 </div>
