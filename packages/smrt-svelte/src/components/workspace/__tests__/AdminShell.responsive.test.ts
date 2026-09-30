@@ -278,7 +278,7 @@ describe('AdminShell resizable edges', () => {
       },
       settingsAdapter: adapter,
     });
-    render(AdminShell, {
+    const view = render(AdminShell, {
       props: {
         state: shell,
         focusPanel: html('<p>chat</p>'),
@@ -286,7 +286,7 @@ describe('AdminShell resizable edges', () => {
       },
     });
     flushSync();
-    return { shell, adapter };
+    return { shell, adapter, view };
   }
 
   it('does not render a separator unless the edge is resizable (backward compatible)', () => {
@@ -350,6 +350,36 @@ describe('AdminShell resizable edges', () => {
 
     await fireEvent.dblClick(separator);
     expect(shell.panelSize('right')).toBeNull();
+  });
+
+  it('ends the drag when pointer capture is lost, persisting once', async () => {
+    const { shell, adapter } = renderResizable();
+    const separator = screen.getByTestId('admin-shell-resizer-right');
+    const before = adapter.writes.length;
+    await fireEvent.pointerDown(separator, { button: 0, clientX: 800 });
+    await fireEvent.pointerMove(separator, { clientX: 760 });
+    expect(shellRoot().dataset.resizing).toBe('right');
+    // The browser took the capture away (a system gesture, a window switch)
+    // without a pointerup.
+    await fireEvent(separator, new Event('lostpointercapture'));
+    expect(shellRoot().dataset.resizing).toBeUndefined();
+    expect(adapter.writes.length).toBe(before + 1);
+    await fireEvent.pointerMove(separator, { clientX: 600 });
+    expect(shell.panelSize('right')).toBe(488);
+    await fireEvent.pointerUp(separator, { clientX: 600 });
+    expect(adapter.writes.length).toBe(before + 1);
+  });
+
+  it('drops an in-flight drag when the shell unmounts', async () => {
+    const { shell, view } = renderResizable();
+    const separator = screen.getByTestId('admin-shell-resizer-right');
+    await fireEvent.pointerDown(separator, { button: 0, clientX: 800 });
+    await fireEvent.pointerMove(separator, { clientX: 760 });
+    expect(shell.panelSize('right')).toBe(488);
+    view.unmount();
+    // The detached handle no longer drives the (still live) shell state.
+    await fireEvent.pointerMove(separator, { clientX: 600 });
+    expect(shell.panelSize('right')).toBe(488);
   });
 
   it('grows a left edge to the right', async () => {

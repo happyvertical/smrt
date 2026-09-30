@@ -364,9 +364,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     shell.setPanelSize(edge, next);
   }
 
+  /** Tears down the drag in progress, if any (see onResizePointerdown). */
+  let stopActiveResize: ((commit: boolean) => void) | null = null;
+
+  // Unmounting mid-drag must not leave the handle's listeners driving a shell
+  // state that outlives this component, nor a stale `resizing` flag.
+  $effect(() => () => stopActiveResize?.(false));
+
   function onResizePointerdown(event: PointerEvent, edge: SideEdge): void {
     if (event.button !== 0 || !shell.resizeLimits(edge)) return;
     event.preventDefault();
+    stopActiveResize?.(true);
     const handle = event.currentTarget as HTMLElement;
     const pointerId = event.pointerId;
     if (pointerId !== undefined) handle.setPointerCapture?.(pointerId);
@@ -381,20 +389,32 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       shell.setPanelSize(edge, latest, { persist: false });
     }
 
-    function onEnd(): void {
+    function stop(commit: boolean): void {
+      if (stopActiveResize !== stop) return;
+      stopActiveResize = null;
       handle.removeEventListener('pointermove', onMove);
       handle.removeEventListener('pointerup', onEnd);
       handle.removeEventListener('pointercancel', onEnd);
+      handle.removeEventListener('lostpointercapture', onEnd);
       if (pointerId !== undefined && handle.hasPointerCapture?.(pointerId)) {
         handle.releasePointerCapture(pointerId);
       }
       resizing = null;
-      if (latest !== startSize) shell.setPanelSize(edge, latest);
+      if (commit && latest !== startSize) shell.setPanelSize(edge, latest);
     }
 
+    // pointerup/pointercancel end a drag normally; losing the capture (a
+    // system gesture, the element leaving the DOM) ends it too, or the shell
+    // would stay in its resizing state with nothing to release it.
+    function onEnd(): void {
+      stop(true);
+    }
+
+    stopActiveResize = stop;
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', onEnd);
     handle.addEventListener('pointercancel', onEnd);
+    handle.addEventListener('lostpointercapture', onEnd);
   }
 
   const layoutStyle = $derived(buildLayoutStyle(shell));
