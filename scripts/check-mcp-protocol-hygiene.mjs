@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
-import ts from 'typescript';
+import { pathToFileURL } from 'node:url';
+
+const typescriptPath = process.env.SMRT_TYPESCRIPT_PATH;
+const typescriptModule = typescriptPath
+  ? await import(pathToFileURL(typescriptPath).href)
+  : await import('typescript');
+const ts = typescriptModule.default;
 
 const args = process.argv.slice(2);
 if (args.length && (args.length !== 2 || args[0] !== '--root')) {
