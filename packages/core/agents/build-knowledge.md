@@ -132,3 +132,6 @@ module, so it must exist during `svelte-kit sync`, before Vite's `buildStart`.
 Both hosted routes and the legacy `svelteKit: true` mode follow this order.
 The clean-consumer regression fixture ships real provider declarations and
 checks the generated imports with `svelte-check`.
+Core's `generate:test` task depends on its own `build`: both publish the local
+`.smrt` manifest/knowledge pair, so Turbo must serialize production before test
+generation instead of caching an interleaved pair.
