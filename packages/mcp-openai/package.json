@@ -56,7 +56,8 @@
   "dependencies": {
     "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-mcp-apps": "workspace:*"
+    "@happyvertical/smrt-mcp-apps": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.0.0",
