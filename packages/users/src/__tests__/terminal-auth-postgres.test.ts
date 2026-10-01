@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   createIsolatedTestDbFromManifest,
   type IsolatedTestDbResult,
@@ -18,13 +19,53 @@ const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
 describePostgres('TerminalAuthService on PostgreSQL', () => {
   let isolated: IsolatedTestDbResult | undefined;
+  let userIds: string[] = [];
+  let tenantIdForCleanup: string | undefined;
+  let userCodeForCleanup: string | undefined;
 
   afterEach(async () => {
-    await isolated?.cleanup();
-    isolated = undefined;
+    try {
+      // Service instances intentionally open independent connections. Their
+      // committed writes are outside isolated.db's rollback transaction.
+      if (isolated) {
+        if (userCodeForCleanup)
+          await isolated.baseDb.query(
+            'DELETE FROM users_cli_auth_requests WHERE user_code = ?',
+            userCodeForCleanup,
+          );
+        for (const id of userIds) {
+          await isolated.baseDb.query(
+            'DELETE FROM users_cli_auth_requests WHERE user_id = ?',
+            id,
+          );
+          await isolated.baseDb.query(
+            'DELETE FROM sessions WHERE user_id = ?',
+            id,
+          );
+          await isolated.baseDb.query(
+            'DELETE FROM users_cli_auth_approve_limits WHERE user_id = ?',
+            id,
+          );
+          await isolated.baseDb.query('DELETE FROM users WHERE id = ?', id);
+        }
+        if (tenantIdForCleanup)
+          await isolated.baseDb.query(
+            'DELETE FROM tenants WHERE id = ?',
+            tenantIdForCleanup,
+          );
+      }
+    } finally {
+      await isolated?.cleanup();
+      isolated = undefined;
+      userIds = [];
+      tenantIdForCleanup = undefined;
+      userCodeForCleanup = undefined;
+    }
   });
 
-  it('uses UUID references and permits exactly one concurrent token exchange', async () => {
+  it.each([
+    1, 2,
+  ])('uses UUID references and permits exactly one concurrent token exchange (fixture cycle %i)', async () => {
     isolated = await createIsolatedTestDbFromManifest({
       includeObjects: [
         'User',
@@ -48,9 +89,17 @@ describePostgres('TerminalAuthService on PostgreSQL', () => {
       sessionTtlSeconds: 3600,
     });
 
-    const user = await users.create({ email: 'terminal-postgres@example.com' });
+    userIds = [randomUUID(), randomUUID()];
+    tenantIdForCleanup = randomUUID();
+    const user = await users.create({
+      id: userIds[0],
+      email: 'terminal-postgres@example.com',
+    });
     await user.save();
-    const tenant = await tenants.create({ name: 'Terminal PostgreSQL' });
+    const tenant = await tenants.create({
+      id: tenantIdForCleanup,
+      name: 'Terminal PostgreSQL',
+    });
     await tenant.save();
     const userId = user.id;
     const tenantId = tenant.id;
@@ -58,6 +107,7 @@ describePostgres('TerminalAuthService on PostgreSQL', () => {
       throw new Error('Expected persisted terminal user and tenant.');
     }
     const started = await service.createRequest('https://example.com');
+    userCodeForCleanup = started.userCode;
     const approvals = await Promise.all(
       Array.from({ length: 8 }, () =>
         service.approveRequest({
@@ -100,6 +150,7 @@ describePostgres('TerminalAuthService on PostgreSQL', () => {
       approveAttemptWindowSeconds: 60,
     });
     const attacker = await users.create({
+      id: userIds[1],
       email: 'terminal-postgres-attacker@example.com',
     });
     await attacker.save();
@@ -126,5 +177,6 @@ describePostgres('TerminalAuthService on PostgreSQL', () => {
         (error) => error instanceof TerminalAuthRateLimitError,
       ),
     ).toHaveLength(7);
+    expect(await sessions.findByUser(attackerId)).toHaveLength(0);
   });
 });

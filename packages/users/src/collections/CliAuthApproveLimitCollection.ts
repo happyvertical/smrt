@@ -29,6 +29,9 @@ export class UsersCliAuthApproveLimitCollection extends SmrtCollection<UsersCliA
     const windowFloorIso = new Date(
       now.getTime() - input.windowMs,
     ).toISOString();
+    // user_id is the UPSERT arbiter. A per-user slug creates a second unique
+    // conflict during concurrent first inserts that PostgreSQL cannot arbitrate.
+    const id = randomUUID();
     const reserved = await this.db.query(
       `INSERT INTO ${this.tableName} (
          id, slug, context, user_id, attempt_count, window_started_at,
@@ -48,8 +51,8 @@ export class UsersCliAuthApproveLimitCollection extends SmrtCollection<UsersCliA
        WHERE ${this.tableName}.window_started_at <= ?
           OR ${this.tableName}.attempt_count < ?
        RETURNING attempt_count, window_started_at`,
-      randomUUID(),
-      `terminal-auth-${input.userId}`,
+      id,
+      `terminal-auth-${id}`,
       input.userId,
       nowIso,
       nowIso,
