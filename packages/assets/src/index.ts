@@ -118,6 +118,7 @@ export {
   type AssetOwnerCollection,
   type AssetOwnerRecord,
   addOwnedAssetFromCollection,
+  assertAssetLinkable,
   assertValidOwnedAssetRelationship,
   assertValidOwnedAssetSortOrder,
   getOwnedAssetsFromCollection,

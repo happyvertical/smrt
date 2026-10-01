@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AssetCollection } from '@happyvertical/smrt-assets';
+import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import { describe, expect, it } from 'vitest';
 import {
   ProfileAssetCollection,
@@ -149,6 +149,36 @@ describe('Profile owned assets', () => {
     ).toEqual([globalAsset.id]);
   });
 
+  it("a shared (global) profile cannot link a tenant's picture", async () => {
+    const dbUrl = getTestDbUrl('profile-assets-global-owner');
+    const { profiles, assets, profile } = await createProfileFixture(dbUrl);
+    const shared = await profiles.create({
+      typeId: profile.typeId,
+      name: 'Town Hall',
+      email: `town-${randomUUID()}@example.com`,
+      tenantId: null,
+    });
+    const tenantPhoto = await assets.create({
+      name: 'private.jpg',
+      sourceUri: 'file:///tmp/private.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: 'tenant-a',
+    });
+    await expect(shared.addAsset(tenantPhoto, 'depicts')).rejects.toThrow(
+      /shared profile/,
+    );
+    const publicPhoto = await assets.create({
+      name: 'public.jpg',
+      sourceUri: 'file:///tmp/public.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: null,
+    });
+    await shared.addAsset(publicPhoto, 'depicts');
+    expect((await shared.getAssets('depicts')).map((a) => a.id)).toEqual([
+      publicPhoto.id,
+    ]);
+  });
+
   it('refuses a picture from another tenant and drops links with the picture', async () => {
     const dbUrl = getTestDbUrl('profile-assets-tenant-cascade');
     const { assets, profile } = await createProfileFixture(dbUrl);
@@ -165,6 +195,15 @@ describe('Profile owned assets', () => {
     await expect(profile.addAsset(foreign, 'depicts')).rejects.toThrow(
       /another tenant/,
     );
+    // The check reads the stored row: a hand-built object that only carries
+    // the foreign id (no tenant) is refused too.
+    const forged = { id: foreign.id } as Asset;
+    await expect(profile.addAsset(forged, 'depicts')).rejects.toThrow(
+      /another tenant/,
+    );
+    await expect(
+      profile.addAsset({ id: randomUUID() } as Asset, 'depicts'),
+    ).rejects.toThrow(/does not exist/);
 
     const photo = await assets.create({
       name: 'photo.jpg',

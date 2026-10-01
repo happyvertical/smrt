@@ -7,6 +7,7 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import {
+  assertAssetLinkable,
   assertValidOwnedAssetRelationship,
   assertValidOwnedAssetSortOrder,
   resolveOwnedAssetsById,
@@ -358,15 +359,8 @@ export class Profile extends SmrtObject {
     if (!this.id || !asset.id) {
       throw new Error('Cannot associate unsaved profile or asset');
     }
-    if (
-      asset.tenantId &&
-      this.tenantId &&
-      String(asset.tenantId) !== String(this.tenantId)
-    ) {
-      throw new Error(
-        'Cannot associate an asset from another tenant with this profile',
-      );
-    }
+    // The asset's tenant comes from storage, not from the caller's object.
+    await assertAssetLinkable(this.db, asset.id, this.tenantId, 'profile');
 
     assertValidOwnedAssetRelationship(relationship);
     assertValidOwnedAssetSortOrder(sortOrder);

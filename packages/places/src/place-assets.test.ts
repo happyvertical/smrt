@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AssetCollection } from '@happyvertical/smrt-assets';
+import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import { describe, expect, it } from 'vitest';
 import {
   PLACE_MAIN_ASSET_RELATIONSHIP,
@@ -187,6 +187,11 @@ describe('Place owned assets', () => {
       /another tenant/,
     );
     await expect(place.setMainAsset(foreign)).rejects.toThrow(/another tenant/);
+    // The stored row decides, not the caller's object: a hand-built asset
+    // carrying only the foreign id is refused too.
+    await expect(
+      place.addAsset({ id: foreign.id } as Asset, 'depicts'),
+    ).rejects.toThrow(/another tenant/);
     expect(await place.getAssets()).toEqual([]);
   });
 
