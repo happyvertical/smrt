@@ -1,5 +1,21 @@
 # @happyvertical/smrt-template-sveltekit
 
+## 0.52.0
+
+### Patch Changes
+
+- 0259083: Generated projects now pin pnpm 11.25.0 through `packageManager` and `engines`.
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-core@0.52.0
+
 ## 0.51.39
 
 ### Patch Changes

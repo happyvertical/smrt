@@ -1,5 +1,51 @@
 # @happyvertical/smrt-projects
 
+## 0.52.0
+
+### Patch Changes
+
+- 0259083: `Repository.createIssue()` / `createPullRequest()` no longer copy any of the
+  repository's own columns (`id`, `slug`, `created_at`, its other fields) into
+  the new issue when the repository was loaded from the database, so each
+  created issue is its own row instead of overwriting the previous one. The
+  repository's tenant still carries over.
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-svelte@0.52.0
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-prompts@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+  - @happyvertical/smrt-subscriptions@0.52.0
+  - @happyvertical/smrt-config@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
 ## 0.51.39
 
 ### Patch Changes

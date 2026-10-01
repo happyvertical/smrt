@@ -1,5 +1,62 @@
 # @happyvertical/smrt-agents
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: - Agents contribute "create" entries through their manifest: a static
+    `createEntries` (id, type, format, label, description, icon, route relative
+    to the host base path, order, availability) that the scanner captures;
+    `resolveAgentCreateEntries()` (from `./ui`) filters, links and sorts them.
+  - `tenantAgentConfigOwnerId()` / `parseTenantAgentConfigOwnerId()`, and
+    `repairTenantAgentConfigKeys(db, { aliases, apply })`, which moves
+    `agent_configs` rows keyed by pre-#1092 `<tenant>:<Class>` ids (and stale
+    `tenant_agents` bindings) to the canonical type: a counted dry run by
+    default, one transaction on apply, refusing when any row is blocked.
+  - `data.query` states its request grammar in the tool schema and explains
+    invalid requests; id (uuid) fields offer only `eq`/`ne`/`in`/`notIn` and
+    reject non-uuid values before they reach PostgreSQL.
+
+### Patch Changes
+
+- 0259083: `registerDataSurfaceBackgroundActionHandler` (and `createJobsDataSurfaceBackgroundQueue`) accept an optional `owner`. Re-registering a `handlerId` from the same owner, such as a host module re-evaluated by Vite hot reload, replaces the previous handler instead of throwing "Data-surface action handler already registered"; a different owner still throws. The handler registry now lives on `globalThis` so re-evaluated copies of this module share it. Its `globalThis` key is versioned with the entry shape, so a module copy from another installed version keeps its own map instead of calling into entries it cannot read.
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-jobs@0.52.0
+  - @happyvertical/smrt-playbooks@0.52.0
+  - @happyvertical/smrt-secrets@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+  - @happyvertical/smrt-users@0.52.0
+  - @happyvertical/smrt-reports@0.52.0
+  - @happyvertical/smrt-config@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
 ## 0.51.39
 
 ### Patch Changes

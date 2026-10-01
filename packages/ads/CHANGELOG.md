@@ -1,5 +1,21 @@
 # @happyvertical/smrt-ads
 
+## 0.52.0
+
+### Patch Changes
+
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+
 ## 0.51.39
 
 ### Patch Changes

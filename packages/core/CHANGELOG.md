@@ -1,5 +1,165 @@
 # @happyvertical/smrt-core
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: List `orderBy` terms accept `NULLS FIRST` / `NULLS LAST`, so a caller can state
+  an engine-independent NULL placement (PostgreSQL sorts NULLs first when
+  descending). `toSnakeCase` is exported.
+- 0259083: A name is not an identity: a NEW object whose slug `getSlug()` derived from
+  `name`, `title` or `label` no longer adopts (and overwrites) an existing row
+  that happens to share that slug. It keeps its own id and saves under the first
+  free `<slug>-2` … `<slug>-9` (found with one query), then
+  `<slug>-<first 8 id characters>`, as a plain INSERT, whoever owns the taken
+  row (it is never refused as another tenant's). Before, two "New conversation"
+  chat threads, two people called "John Smith" or two articles titled "Council
+  meeting" in one tenant collapsed into one row. (Assets no longer derive their
+  slug from the file name at all: see the smrt-assets change; their default slug
+  is the asset's id.)
+  
+  **Behaviour change for idempotent importers.** A plain `create({ name, … })` or
+  `new X({ name }).save()` repeated for the same name now adds `<slug>-2`,
+  `<slug>-3`, … instead of updating the first row. Pass `slug` explicitly, use
+  `conflictColumns` with an external id, or use `getOrUpsert()`.
+  
+  Explicit natural keys still upsert in place: an explicitly set `slug`,
+  `conflictColumns` without `slug` (external ids) and persisted objects are
+  unchanged. `getOrUpsert()` keeps its contract: when its lookup misses (for
+  example a non-key field such as `color` differs), the create is keyed by the
+  natural key the data names, a derived slug included, so the row that key names
+  is updated in place rather than duplicated. An adopted same-owner row keeps
+  its `id` and `created_at`.
+  
+  On PostgreSQL a new object with no NULL in its natural key is written with
+  `INSERT … ON CONFLICT DO NOTHING` first, so concurrent first creates never
+  collapse into one row or rewrite a primary key: the loser adopts the winner's
+  row (explicit key) or moves to a free slug (derived slug).
+- 0259083: Converging a legacy `text` column to `timestamptz`, `jsonb` or an integer can now store empty or whitespace-only text as NULL (#3226). Opt in with `smrt db:migrate --empty-text-as-null` (preview with `smrt db:diff --empty-text-as-null`), or `emptyTextAsNull` on `SchemaComparer`/`migrateSmrtSchemas`. It applies only when the manifest and live columns are nullable and, for timestamps and JSON, only when empty text is the sole obstacle; any other value that does not cast still blocks. Without the opt-in, the blocking advisory for `timestamptz`/`jsonb` names the empty-text count, and the sample shows `(empty)` instead of `unavailable`; `text` -> integer is not probed at diff time, so a non-integer value fails only when the migration applies. `db:status` and `db:history` accept `--empty-text-as-null` so they report the same convergence as `db:migrate`. Changes that store empty text as NULL carry a `note` that `db:diff`/`db:migrate` print.
+- 0259083: **Behaviour change: live ON DELETE / ON UPDATE actions change on `db:migrate`.**
+  A declared `@foreignKey(..., { onDelete })` now reaches the build-time
+  manifest, so a foreign key that is also a `conflictColumns` entry keeps its
+  declared action instead of being emitted `ON DELETE CASCADE`. On PostgreSQL,
+  `db:migrate` converges an existing SMRT-owned constraint whose only drift is
+  its ON DELETE / ON UPDATE action; constraints SMRT did not create stay a manual
+  step.
+  
+  What this means for an existing database:
+  
+  - Constraints that were `CASCADE` only because the manifest lost the declared
+    action become `RESTRICT`, `SET NULL` or `NO ACTION`. A parent delete (raw
+    SQL, admin tooling, a tenant purge) that used to cascade now fails, or nulls
+    the child column, until the children are removed first.
+  - The replacement can also go the other way, toward `CASCADE` / `SET NULL`
+    (a foreign key that joins `conflictColumns`, or a declared `CASCADE` that
+    now reaches the manifest). Such a change carries a **DESTRUCTIVE** warning in
+    `db:diff`, `db:status` and at the top of `db:migrate`; review it before
+    migrating, and declare a different action to keep the old one.
+  - The replacement is build-then-swap: a staged constraint is added
+    `NOT VALID`, validated, and only then is the old one dropped and the staged
+    one renamed, so no ACCESS EXCLUSIVE lock is held while the child table is
+    scanned. Under `--postgres-safe` the validation and swap run outside the
+    batch transaction (VALIDATE holds SHARE UPDATE EXCLUSIVE; reads and writes
+    continue). `--postgres-safe` also moves the `VALIDATE CONSTRAINT` of a newly
+    added foreign key out of the transaction.
+  
+  Fixes #3023
+- 0259083: `TagCollection.mergeTag()` re-points every row that references the merged tag
+  (`asset_tags` links, and any other `@foreignKey` / `@crossPackageRef` to Tag)
+  at the target tag before deleting it. Before, the delete cascaded and silently
+  stripped the tag from every picture that carried it. A row that would become a
+  duplicate (a picture tagged with both tags) is removed instead.
+  
+  New in `@happyvertical/smrt-core`: `ObjectRegistry.getIncomingReferences(className)`
+  lists the typed references that point at a class (referencing class, table,
+  column and resolved `onDelete`), resolved the same way `delete()` resolves
+  cascades.
+- 0259083: **BREAKING: a save can no longer take over another tenant's row, and tables
+  that carry `tenantId` are keyed per tenant.** Run `smrt db:migrate` with this
+  release, in the order below.
+  
+  - A class with a `tenantId` field is tenant-owned even without a tenancy
+    declaration (the shape a consumer registers with
+    `registerTenantScopedClass()` at runtime, such as Anytown's Ludis
+    League/Team). Its default natural key and unique index lead with
+    `tenant_id`: `(tenant_id, slug, context)`. Explicit `conflictColumns` are
+    never rewritten, the read policy is never inferred, and the implicit
+    `tenant_id` never turns a tenant foreign key into a delete CASCADE.
+  - **A slug is no longer unique across tenants** (or between a tenant and the
+    global scope) on those tables. A slug-only lookup outside a tenant filter
+    (`withSystemContext()`, a hand-written query) can match several rows: scope
+    it by `tenantId` and treat more than one match as ambiguous.
+  - **A save that collides with another owner's row now throws**
+    `TenantIsolationError` (`TENANT_ISOLATION_VIOLATION`, never naming the other
+    owner) instead of overwriting it, under `withSystemContext()` too. Every
+    ownership column counts: `tenant_id`, the declared tenant column,
+    `@tenantId` fields, and runtime registrations on a custom field
+    (`registerTenantScopedClass('Team', { field: 'organizationId' })`, reported
+    to core through the new `ObjectRegistry.registerOwnershipColumnSource()`;
+    `ObjectRegistry.getOwnershipColumns()` lists them). An owner the save leaves
+    unset counts as NULL. A same-owner row is adopted by id, so `DO UPDATE`
+    never rewrites a primary key. A slug derived from a name moves to a free
+    slug instead of throwing.
+  - The junction batch path never rewrites an existing row's primary key: it
+    probes the natural keys and falls back to per-item saves when one names a
+    row it is not removing, and its `DO UPDATE SET` never lists `id`,
+    `created_at` or an ownership column.
+  - `db:status` reports tenant-owned tables whose live unique is still the
+    global `(slug, context)`: **it exits 1** while the tenant-led unique is
+    missing, and warns while the legacy global unique survives beside it.
+  - `@happyvertical/smrt-tenancy`: `registerTenantScopedClass()` audits the model
+    a selector resolves to and logs once (an error when the model has no such
+    field, a warning when its natural key omits the tenant column);
+    `auditTenantScopedRegistrations()` returns every finding.
+  
+  **Rollout (expand, then contract).** Old code upserts on
+  `ON CONFLICT (slug, context)`, new code on `ON CONFLICT (tenant_id, slug,
+  context)`, and PostgreSQL rejects each (42P10) unless a unique index over
+  exactly those columns exists.
+  
+  1. Before deploying: `smrt db:migrate` with this release's manifests. It builds
+     the tenant-led unique under its own name (`<table>_tenant_id_slug_idx`) and
+     keeps the global `<table>_slug_context_idx`; the new key is a superset, so it
+     cannot fail on existing rows. In the default atomic mode the build holds a
+     SHARE lock (writes wait, reads continue); `--postgres-safe` builds it
+     `CONCURRENTLY` but refuses a nullable `tenant_id` (that NULL-equal index
+     needs the atomic mode), so schedule a quiet window for large tables.
+  2. Deploy. While the legacy unique stands, a second tenant's save of a slug
+     another tenant uses fails with a unique violation (nothing is overwritten).
+  3. Once no old code runs: `smrt db:migrate --drop-legacy-natural-key` (also
+     `db:diff --drop-legacy-natural-key`, `DiffOptions.dropLegacyNaturalKey`)
+     drops the global index. `--drop-indexes` alone never drops it.
+  
+  A database migrated by a pre-release build that already holds the tenant-led
+  columns under the old `<table>_slug_context_idx` name is matched by columns (no
+  new index is built) and, on PostgreSQL, renamed to `<table>_tenant_id_slug_idx`
+  by `db:migrate`; `--drop-legacy-natural-key` only ever drops an index whose
+  columns are the legacy, tenant-less key.
+  
+  `--postgres-safe` now also rebuilds any same-name unique index
+  build-then-swap (temporary name, drop, rename), so a table never runs without
+  a unique index.
+
+### Patch Changes
+
+- 0259083: `ObjectRegistry.registerPackageManifest` reads a manifest named by a Vite dev-server URL (`http://host/@fs/<absolute path>`), which is what a package's register shim's `import.meta.url` is under `vite dev` and vitest's browser-like environments. It no longer fails with `PACKAGE_MANIFEST_READ_FAILED` ("The URL must be of scheme file").
+- 0259083: Saving one STI class no longer writes `''` into the TEXT columns another class in the hierarchy owns; they stay NULL (#3227). A class's own unset TEXT fields still serialize as `''`.
+  
+  A database created by an old generator that made those TEXT columns
+  `NOT NULL` now rejects such inserts (`VALIDATION_REQUIRED_FIELD`) where `''`
+  used to pass: run `smrt db:status --parity` and relax them with
+  `smrt db:migrate --relax-columns`.
+- 0259083: A field typed UUID (`sqlType` or a reference) whose class initializer is `''`
+  no longer gets `DEFAULT ''`. PostgreSQL stored that default as
+  `(''::text)::uuid` without evaluating it, so every INSERT that omitted the
+  column failed with 22P02. This is a schema change: `smrt db:migrate` drops the
+  `''` default from existing uuid columns.
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-scanner@0.52.0
+  - @happyvertical/smrt-config@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
 ## 0.51.39
 
 ### Patch Changes
