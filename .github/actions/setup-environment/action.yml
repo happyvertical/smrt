@@ -294,7 +294,15 @@ runs:
         fi
 
         echo "Installing ONNX Runtime system dependencies..."
-        sudo apt-get update && sudo apt-get install -y \
+        node_path="$(command -v node)"
+        sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
+          --stage 'apt-get update' \
+          --timeout-seconds 300 \
+          -- apt-get update && \
+        sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
+          --stage 'apt-get install' \
+          --timeout-seconds 900 \
+          -- apt-get install -y \
           libstdc++6 \
           libc6-dev \
           build-essential \
