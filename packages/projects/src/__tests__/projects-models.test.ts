@@ -291,11 +291,23 @@ describe('smrt-projects models', () => {
         }),
       );
 
+      // Distinct timestamps, so an inherited created_at is detectable.
+      await new Promise((resolve) => setTimeout(resolve, 5));
       const first = await repo.createIssue({ title: 'One' } as any);
       const second = await repo.createIssue({ title: 'Two' } as any);
       const pr = await repo.createPullRequest({ title: 'Three' } as any);
 
       expect(new Set([first.id, second.id, pr.id, repo.id]).size).toBe(4);
+      // None of the repository's own columns leak into the new rows.
+      const repoCreatedAt = new Date(repo.created_at as Date).getTime();
+      for (const child of [first, second, pr]) {
+        expect(new Date(child.created_at as Date).getTime()).not.toBe(
+          repoCreatedAt,
+        );
+        expect(
+          (child as unknown as { tokenConfigKey?: string }).tokenConfigKey,
+        ).toBeUndefined();
+      }
       const issues = await IssueCollection.create({ db });
       expect((await issues.findByNumber(repo.id as string, 21))?.id).toBe(
         first.id,

@@ -86,7 +86,7 @@ export class ProfileLinkCollection extends SmrtCollection<ProfileLink> {
           sortOrder: index,
           ...(tenantId ? { tenantId } : {}),
         });
-        await created.save();
+        // create() already persisted it.
         result.push(created);
       }
 

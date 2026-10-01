@@ -40,10 +40,13 @@ interface HandlerEntry {
 /**
  * Process-wide registry. Keyed on `globalThis` so a hot-reloaded or
  * re-evaluated copy of this module sees the registrations made by the
- * previous copy instead of starting an empty map.
+ * previous copy instead of starting an empty map. The key carries the entry
+ * shape's version: a module copy that stores a different shape (another
+ * installed version) gets its own map instead of calling into entries it
+ * cannot read. Bump it whenever {@link HandlerEntry} changes.
  */
 const HANDLERS_KEY = Symbol.for(
-  '@happyvertical/smrt-agents/data-surface-action-handlers',
+  '@happyvertical/smrt-agents/data-surface-action-handlers@2',
 );
 const globalRegistry = globalThis as unknown as Record<
   symbol,
