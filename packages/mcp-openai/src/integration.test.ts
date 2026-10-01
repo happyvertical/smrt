@@ -21,6 +21,10 @@ import {
   resolveOpenAiNavigationTarget,
   withOpenAiEntrypoints,
 } from './index.js';
+import {
+  resolveOpenAiMentionSelection,
+  withOpenAiMentionSearch,
+} from './mentions.js';
 
 const schema = {
   type: 'object' as const,
@@ -62,6 +66,8 @@ function fixture() {
   );
   let revoked = false;
   let writes = 0;
+  let selections = 0;
+  let selectionExecutions = 0;
   let providerFailure = false;
   let stale = false;
   const values = () => {
@@ -158,6 +164,29 @@ function fixture() {
     { ...base, ui: { resourceUri: 'ui://synthetic/v1/view' } },
     ['global', 'thread'],
   );
+  const mentions = withOpenAiMentionSearch({
+    ...base,
+    name: 'mention_search',
+    execute: ({ arguments: args, principal }) => {
+      if (principal?.id !== owner.id || principal.tenantId !== owner.tenantId)
+        throw new Error('Mention search denied');
+      return {
+        content: [],
+        structuredContent: {
+          items:
+            args.query === 'owned'
+              ? [
+                  {
+                    type: 'resource',
+                    resourceUri: 'smrt://items/opaque-owned',
+                    title: 'Owned item',
+                  },
+                ]
+              : [],
+        },
+      };
+    },
+  });
   server = createMcpAppServer({
     serverInfo: { name: 'synthetic-navigation', version: '1' },
     smrtOptions: () => ({}),
@@ -176,6 +205,31 @@ function fixture() {
     ],
     workflowTools: [
       view,
+      mentions,
+      {
+        ...base,
+        name: 'select_mention',
+        inputSchema: {
+          type: 'object',
+          properties: { resourceUri: { type: 'string' } },
+          required: ['resourceUri'],
+          additionalProperties: false,
+        },
+        execute: ({ arguments: args, principal }) => {
+          selectionExecutions++;
+          if (
+            principal?.id !== owner.id ||
+            principal.tenantId !== owner.tenantId ||
+            args.resourceUri !== 'smrt://items/opaque-owned'
+          )
+            throw new Error('Mention selection denied: private synthetic item');
+          selections++;
+          return {
+            content: [{ type: 'text', text: 'Owned synthetic item' }],
+            structuredContent: { resourceUri: args.resourceUri },
+          };
+        },
+      },
       ...settings.workflows,
       {
         ...base,
@@ -220,6 +274,8 @@ function fixture() {
     db,
     values,
     writes: () => writes,
+    selections: () => selections,
+    selectionExecutions: () => selectionExecutions,
     revoke: () => {
       revoked = true;
     },
@@ -252,6 +308,7 @@ describe('existing principal workflow authority', () => {
           'settings_update',
           'view',
           'resolve_target',
+          'mention_search',
         ])
           await expect(
             f.server.callTool({
@@ -261,6 +318,42 @@ describe('existing principal workflow authority', () => {
             }),
           ).rejects.toThrow();
       }
+      const search = await f.server.callTool({
+        name: 'mention_search',
+        arguments: { query: 'owned' },
+        principal: owner,
+      });
+      if (!search.structuredContent) throw new Error('Missing search results');
+      const resourceUri = (
+        search.structuredContent.items as Array<{ resourceUri: string }>
+      )[0].resourceUri;
+      expect(resourceUri).toBe('smrt://items/opaque-owned');
+      const select = (
+        principal: McpAppPrincipal | null,
+        handle = resourceUri,
+      ) =>
+        resolveOpenAiMentionSelection({
+          server: f.server,
+          tool: 'select_mention',
+          arguments: { resourceUri: handle },
+          principal,
+        });
+      await expect(select(owner)).resolves.toHaveProperty(
+        'structuredContent.resourceUri',
+        resourceUri,
+      );
+      expect(f.selections()).toBe(1);
+      await expectSafeWorkflowFailure(select(owner, 'smrt://items/guessed'));
+      expect(f.selections()).toBe(1);
+      const executions = f.selectionExecutions();
+      for (const principal of [
+        null,
+        { ...owner, id: 'other' },
+        { ...owner, tenantId: 'tenant-b' },
+        { ...owner, scopes: [] },
+      ])
+        await expect(select(principal)).rejects.toThrow();
+      expect(f.selectionExecutions()).toBe(executions);
       await expect(
         f.server.callTool({
           name: 'settings_read',
@@ -276,6 +369,16 @@ describe('existing principal workflow authority', () => {
         }),
       );
       f.revoke();
+      await expect(select(owner)).rejects.toThrow();
+      expect(f.selectionExecutions()).toBe(executions);
+      expect(f.selections()).toBe(1);
+      await expect(
+        f.server.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+          principal: owner,
+        }),
+      ).rejects.toThrow();
       expect(
         f.settings.extensions(await f.server.listTools({ principal: owner })),
       ).toEqual({});
@@ -409,6 +512,21 @@ describe('existing principal workflow authority', () => {
           'openai/ui'
         ],
       ).toEqual({ entrypoints: [{ type: 'global' }, { type: 'thread' }] });
+      expect(
+        catalog.tools.find((tool) => tool.name === 'mention_search')?._meta,
+      ).toMatchObject({
+        'openai/extensions': { 'mentions/search': {} },
+        ui: { visibility: ['app'] },
+      });
+      expect(
+        await client.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+        }),
+      ).toHaveProperty(
+        'structuredContent.items.0.resourceUri',
+        'smrt://items/opaque-owned',
+      );
       const initial = await client.callTool({ name: 'view', arguments: {} });
       expect(initial.content).toEqual([
         { type: 'text', text: 'Complete synthetic headless view' },
