@@ -476,6 +476,13 @@ startup and seeds sample content (3 items) for immediate testing.
 | `ImageThumbnail` | `src`, `alt` | Thumbnail image display |
 | `Markdown` | `source` | Markdown renderer |
 
+The governance panels (`ContentGovernancePanel`, the corrections, versions and
+transparency tools, `ContentTransparencyReport`) lay out by their own width:
+each is a `container-type: inline-size` container. A size container takes its
+width from its host, not its content, so inside a shrink-to-fit host (an
+absolutely positioned popover, an `auto` grid track, an inline-block) give the
+panel or its host a definite width, or it collapses.
+
 `ContentList` retry handlers must return a new job attempt with a distinct
 `jobId`. The controller retains the failed attempt as immutable history so a
 late event from it cannot overwrite the retry result.

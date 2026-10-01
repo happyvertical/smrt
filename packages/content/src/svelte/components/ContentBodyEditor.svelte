@@ -469,10 +469,43 @@ function setCaretAfterNode(node: Node) {
 }
 
 // Pictures shown only as a preview (see `previewImage`): picture -> the `src`
-// it really has. A preview is never part of the body: `editorInnerHtml` reads
-// the surface with every picture back at its real `src`, so no change event
-// can carry a previewed picture out of the editor.
-const imagePreviews = new Map<HTMLImageElement, string | null>();
+// and `srcset` it really has. A preview is never part of the body:
+// `editorInnerHtml` reads the surface with every picture back at its real
+// `src`/`srcset`, so no change event can carry a previewed picture out of the
+// editor, and a copy or cut puts the real pictures on the clipboard.
+interface ImageOriginal {
+  src: string | null;
+  srcset: string | null;
+}
+const imagePreviews = new Map<HTMLImageElement, ImageOriginal>();
+
+function setOrRemove(image: Element, name: string, value: string | null) {
+  if (value === null) image.removeAttribute(name);
+  else image.setAttribute(name, value);
+}
+
+function restoreImage(image: Element, original: ImageOriginal) {
+  setOrRemove(image, 'src', original.src);
+  setOrRemove(image, 'srcset', original.srcset);
+}
+
+// Copy and cut read the live surface: put the real pictures back for the
+// clipboard, then show the previews again.
+function handleClipboardWithPreviews() {
+  if (imagePreviews.size === 0) return;
+  const shown = [...imagePreviews].map(([image]) => ({
+    image,
+    src: image.getAttribute('src'),
+  }));
+  for (const [image, original] of imagePreviews) restoreImage(image, original);
+  setTimeout(() => {
+    for (const { image, src } of shown) {
+      if (!image.isConnected || !imagePreviews.has(image)) continue;
+      setOrRemove(image, 'src', src);
+      image.removeAttribute('srcset');
+    }
+  }, 0);
+}
 
 /** The surface's HTML as the body has it: previews put back. */
 function editorInnerHtml(): string {
@@ -487,10 +520,10 @@ function editorInnerHtml(): string {
     .importNode(editorElement, true) as HTMLElement;
   const copies = inert.querySelectorAll('img');
   originals.forEach((image, index) => {
-    if (!imagePreviews.has(image)) return;
-    const src = imagePreviews.get(image) ?? null;
-    if (src === null) copies[index]?.removeAttribute('src');
-    else copies[index]?.setAttribute('src', src);
+    const original = imagePreviews.get(image);
+    const copy = copies[index];
+    if (!original || !copy) return;
+    restoreImage(copy, original);
   });
   return inert.innerHTML;
 }
@@ -912,9 +945,12 @@ export function replaceImage(
   if (!image || !src) {
     return false;
   }
-  // Accepting a picture replaces any preview of it.
+  // Accepting a picture replaces any preview of it, and the old picture's
+  // responsive sources go with it.
   imagePreviews.delete(image);
   image.setAttribute('src', src);
+  setOrRemove(image, 'srcset', next?.getAttribute('srcset') ?? null);
+  setOrRemove(image, 'sizes', next?.getAttribute('sizes') ?? null);
   const assetId = next?.getAttribute('data-smrt-asset-id');
   if (assetId) {
     image.setAttribute('data-smrt-asset-id', assetId);
@@ -935,10 +971,9 @@ export function previewImage(index: number, src: string | null): boolean {
   const image = getEditorImages()[index];
   if (!image) return false;
   if (src === null) {
-    if (imagePreviews.has(image)) {
-      const original = imagePreviews.get(image) ?? null;
-      if (original === null) image.removeAttribute('src');
-      else image.setAttribute('src', original);
+    const original = imagePreviews.get(image);
+    if (original) {
+      restoreImage(image, original);
       imagePreviews.delete(image);
       refreshSelectedImageChrome();
     }
@@ -946,7 +981,12 @@ export function previewImage(index: number, src: string | null): boolean {
   }
   if (!/^\/(?![/\\])/.test(src) || /[\s\\]/.test(src)) return false;
   if (!imagePreviews.has(image))
-    imagePreviews.set(image, image.getAttribute('src'));
+    imagePreviews.set(image, {
+      src: image.getAttribute('src'),
+      srcset: image.getAttribute('srcset'),
+    });
+  // A srcset would keep showing the real picture: the preview is `src` only.
+  image.removeAttribute('srcset');
   image.setAttribute('src', src);
   refreshSelectedImageChrome();
   return true;
@@ -954,11 +994,7 @@ export function previewImage(index: number, src: string | null): boolean {
 
 /** Put every previewed picture back (see `previewImage`). */
 export function clearImagePreviews() {
-  for (const image of [...imagePreviews.keys()]) {
-    const original = imagePreviews.get(image) ?? null;
-    if (original === null) image.removeAttribute('src');
-    else image.setAttribute('src', original);
-  }
+  for (const [image, original] of imagePreviews) restoreImage(image, original);
   imagePreviews.clear();
 }
 
@@ -1885,6 +1921,8 @@ function handleEditorDragEnd() {
     ondragstart={handleEditorDragStart}
     ondragend={handleEditorDragEnd}
     ondrop={(event) => void handleDrop(event)}
+    oncopy={handleClipboardWithPreviews}
+    oncut={handleClipboardWithPreviews}
   >
     {@html editorHtml}
   </div>

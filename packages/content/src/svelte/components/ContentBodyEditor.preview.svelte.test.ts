@@ -21,13 +21,13 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-function renderStory() {
+function renderStory(story = STORY) {
   const bodies: string[] = [];
   const onChange = vi.fn((change: { body: string }) => {
     bodies.push(change.body);
     props.value = change.body;
   });
-  const props = $state({ value: STORY, format: 'html', onChange });
+  const props = $state({ value: story, format: 'html', onChange });
   const target = document.createElement('div');
   document.body.appendChild(target);
   let editor: {
@@ -71,6 +71,37 @@ describe('ContentBodyEditor previewImage', () => {
     expect(editor.previewImage(0, null)).toBe(true);
     expect(image.getAttribute('src')).toBe('/a/1.jpg');
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('previews a picture that has a srcset and puts the srcset back', () => {
+    const { surface, editor, onChange } = renderStory(
+      '<p>one</p><img src="/a/1.jpg" srcset="/a/1-400.jpg 400w, /a/1-800.jpg 800w" alt="Town hall" data-smrt-asset-id="a-1" data-smrt-inline-image="true" data-smrt-placement="block">',
+    );
+    const image = surface.querySelector('img') as HTMLImageElement;
+    expect(editor.previewImage(0, '/a/2.jpg')).toBe(true);
+    // Without dropping the srcset the browser would keep showing the original.
+    expect(image.hasAttribute('srcset')).toBe(false);
+    expect(image.getAttribute('src')).toBe('/a/2.jpg');
+    expect(editor.previewImage(0, null)).toBe(true);
+    expect(image.getAttribute('srcset')).toBe(
+      '/a/1-400.jpg 400w, /a/1-800.jpg 800w',
+    );
+    expect(image.getAttribute('src')).toBe('/a/1.jpg');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('a copy during a preview puts the real picture on the clipboard, then shows the preview again', async () => {
+    const { surface, editor } = renderStory();
+    const image = surface.querySelector('img') as HTMLImageElement;
+    editor.previewImage(0, '/a/2.jpg');
+    let copiedSrc: string | null = null;
+    surface.addEventListener('copy', () => {
+      copiedSrc = image.getAttribute('src');
+    });
+    surface.dispatchEvent(new Event('copy', { bubbles: true }));
+    expect(copiedSrc).toBe('/a/1.jpg');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(image.getAttribute('src')).toBe('/a/2.jpg');
   });
 
   it('never lets a preview into the body, even when another edit happens', async () => {
