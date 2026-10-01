@@ -74,9 +74,10 @@ by authorized exposure, never by a global authenticated/unauthenticated boolean.
 
 ## Security and deployment invariants
 
-Follow [remote MCP authorization](remote-mcp-authorization.md). The application
-gateway owns OAuth; SMRT validates the resulting principal at every protected
-operation. OAuth discovery, authorization code with PKCE, issuer/resource/scope
+Follow [remote MCP authorization](remote-mcp-authorization.md). The operator owns the OAuth
+issuer. Validate tokens at the application gateway or server-only JWT adapter;
+resolve fresh application membership and tenant authority on every request.
+SMRT enforces the resulting principal at every protected operation. OAuth discovery, authorization code with PKCE, issuer/resource/scope
 validation and token lifecycle must be exercised against a real issuer in M2.
 Browser login alone does not satisfy remote MCP authorization.
 
