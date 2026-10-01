@@ -1,5 +1,5 @@
 /** Bounded OpenAI form wire profile; pinned upstream sources are in FORMS.md. */
-import { json, keys, record, text } from './validation.js';
+import { json, jsonSnapshot, keys, record, text } from './validation.js';
 
 export interface FormIcon {
   src: string;
@@ -97,9 +97,10 @@ export type OpenAiFormReply =
   | { action: 'accept'; content: Record<string, FormValue> }
   | { action: 'cancel' | 'decline' };
 function boundedJson(v: unknown) {
-  json(v);
-  if (new TextEncoder().encode(JSON.stringify(v)).length > 65536)
+  const snapshot = jsonSnapshot(v);
+  if (new TextEncoder().encode(JSON.stringify(snapshot)).length > 65536)
     throw new TypeError('Form exceeds byte limit');
+  return snapshot;
 }
 const common = ['type', 'title', 'description', 'default'];
 const strings = ['minLength', 'maxLength', 'format', 'x-openai-suggestions'];
@@ -353,8 +354,8 @@ function field(raw: unknown): void {
 }
 /** Parse a detached inert snapshot. Unknown semantics are rejected, never stripped. */
 export function validateOpenAiForm(value: unknown): OpenAiForm {
-  boundedJson(value);
-  const form = record(value);
+  const snapshot = boundedJson(value);
+  const form = record(snapshot);
   keys(form, ['$schema', 'type', 'properties', 'required']);
   optionalText(form, ['$schema'], 256);
   if (form.type !== 'object') throw new TypeError('Expected form object');
@@ -373,7 +374,7 @@ export function validateOpenAiForm(value: unknown): OpenAiForm {
     )
       throw new TypeError('Invalid required fields');
   }
-  return structuredClone(value) as OpenAiForm;
+  return structuredClone(snapshot) as OpenAiForm;
 }
 function validateValue(f: Record<string, unknown>, value: unknown): void {
   if (f.type === 'array') {
@@ -413,14 +414,24 @@ function validateValue(f: Record<string, unknown>, value: unknown): void {
         new Date(value).toISOString().slice(0, 10) !== value)
     )
       throw new TypeError('Invalid date');
-    if (
-      f.format === 'date-time' &&
-      (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
-        value,
-      ) ||
-        Number.isNaN(Date.parse(value)))
-    )
-      throw new TypeError('Invalid date-time');
+    if (f.format === 'date-time') {
+      const match =
+        /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(
+          value,
+        );
+      if (
+        !match ||
+        Number.isNaN(Date.parse(match[1])) ||
+        new Date(match[1]).toISOString().slice(0, 10) !== match[1] ||
+        Number(match[2]) > 23 ||
+        Number(match[3]) > 59 ||
+        Number(match[4]) > 59 ||
+        Number(match[5] ?? 0) > 23 ||
+        Number(match[6] ?? 0) > 59 ||
+        Number.isNaN(Date.parse(value))
+      )
+        throw new TypeError('Invalid date-time');
+    }
   } else if (f.type === 'boolean') {
     if (typeof value !== 'boolean')
       throw new TypeError('Invalid boolean value');
@@ -450,8 +461,8 @@ export function validateOpenAiFormReply(
   value: unknown,
 ): OpenAiFormReply {
   const form = validateOpenAiForm(schema);
-  boundedJson(value);
-  const reply = record(value);
+  const snapshot = boundedJson(value);
+  const reply = record(snapshot);
   if (reply.action === 'cancel' || reply.action === 'decline') {
     keys(reply, ['action']);
     return { action: reply.action };
@@ -468,7 +479,7 @@ export function validateOpenAiFormReply(
     throw new TypeError('Invalid form fields');
   for (const [name, v] of Object.entries(content))
     validateValue(record(form.properties[name]), v);
-  return structuredClone(value) as OpenAiFormReply;
+  return structuredClone(snapshot) as OpenAiFormReply;
 }
 /** Enumerate selections for the owning live authorization callback, never fetch. */
 export function formResourceSelections(

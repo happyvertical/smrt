@@ -87,3 +87,26 @@ In the application form, an untouched optional array without a default is
 omitted from the reply. Editing then clearing an array submits an explicit
 empty array, which must satisfy `minItems`. Required arrays and declared
 defaults always remain subject to the schema's normal reply validation.
+
+### Inert inputs and reversible fallback values
+
+Form schemas and replies are interpreted and serialized from a detached snapshot
+of own enumerable data descriptors. Accessors, sparse/custom-prototype arrays,
+custom array properties/iterators, hidden fields and serialization hooks are
+rejected without invoking supplied callbacks. The shared JSON validator retains
+its validation-only return contract and existing depth/node/byte bounds; ordinary
+JSON data remains supported. Native, context, messages, mentions, settings, file
+and continuation callers share this boundary. Host callbacks/functions belong in
+adapter options, never in wire JSON.
+
+The free string-array fallback uses an explicitly labeled JSON array editor:
+`["first", "second"]`, `["a\nb"]`, `[""]` and `[]` remain distinct. Each item and
+the complete reply retain their existing limits; the editor allows up to 65,536
+characters and wire validation enforces the byte limit. Invalid JSON remains
+editable and does not submit. Untouched optional arrays/text remain omitted;
+intentional empty choices and empty defaults are retained. A blank array editor
+means an intentional empty list after interaction, preserving minItems checks.
+
+Date-time replies require a real calendar date, hours 00–23, minutes/seconds
+00–59 and offset hours/minutes 00–23/00–59, in the existing `T` and `Z`/offset
+profile. Invalid dates normalized by JavaScript's Date parser are rejected.

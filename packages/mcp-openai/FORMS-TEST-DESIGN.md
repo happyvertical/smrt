@@ -22,3 +22,21 @@ optional fields without defaults are omitted; editing then clearing submits an
 explicit empty array, accepted at minItems=0 and rejected at minItems=1. Untouched
 required arrays still undergo minItems validation. Browser fixtures cover each
 case; the two optional-omission cases fail against the pre-fix renderer.
+
+## PR3283 accepted round-3 corrections
+
+| Invariant | Reachable trigger | Positive | Negative/failure | Actor/context and executor | Runtime/contract edge | Level and command |
+|---|---|---|---|---|---|---|
+| Inert shared JSON | form schema/reply and shared native/context/message/mention/settings/file parsers | ordinary nested JSON; validation returns void | array getter/iterator/custom prototype, hidden getter/toJSON, inherited toJSON: zero callbacks; sparse/custom/symbol fields rejected | untrusted caller; no domain executor | Node and browser; pinned bounded JSON schema, unknown non-JSON rejected | full `test`, installed forms/shared-boundary probes |
+| Reversible string arrays | free array form editor defaults and edited values | newline item, empty item, >4096 total with bounded items | invalid JSON, non-string/oversized item, minItems empty | local form input; submission spy/HTTP fixture only, no domain approval | Chromium; existing 64-item/4096-item/65536-byte profile | `test:forms:e2e`, installed validator |
+| Optional empty choice | enum/oneOf selection/default | defined empty choice survives | untouched optional text omitted | local form; authenticated route still owns execution | Chromium select placeholder vs explicit empty option | `test:forms:e2e` |
+| Real date-time | reply/default string validation | leap day, fractional second, offsets crossing date boundary | February31/nonleapFebruary29/April31, hour24, minute/second60, offset overflow | untrusted input; no persistence mutation | Node/public installed API; existing RFC3339-style profile | `test`, installed forms probe |
+
+Baseline production48bc with test-only overlays: descriptor/date unit regressions
+and actual Chromium round-trip/choice regressions fail before fixes; overlay hashes
+and exact logs are retained externally in round-3-pr-feedback. Shared `json()`
+callers were audited in validation, index, client, settings, context, messages,
+mentions, file-contracts, files and forms-server: all call the boundary before
+interpreting wire values; stricter descriptor rejection has full owning-package
+unit/browser/installed coverage. SQL/PG/root-wide replay is N/A for these parser
+and presentation-only corrections; existing durable authority remains unchanged.

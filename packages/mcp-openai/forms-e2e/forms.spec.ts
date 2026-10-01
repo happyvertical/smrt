@@ -98,3 +98,41 @@ for (const control of ['select', 'text']) {
     expect(calls).toBe(0);
   });
 }
+
+for (const value of ['newline', 'empty', 'large']) {
+  test(`free string array round-trip ${value}`, async ({ page }) => {
+    await page.goto(`/?mode=roundtrip&value=${value}`);
+    if (value === 'large') {
+      await page.getByRole('textbox', { name: 'Values' }).fill(JSON.stringify(['a'.repeat(3000), 'b'.repeat(3000)]));
+      expect(await page.getByRole('textbox', { name: 'Values' }).inputValue()).toBe(JSON.stringify(['a'.repeat(3000), 'b'.repeat(3000)]));
+    }
+    const request = page.waitForRequest((r) => r.url().endsWith('/submit'));
+    await page.getByRole('button', { name: 'Submit input' }).click();
+    expect((await request).postDataJSON()).toEqual({ action: 'accept', content: { values: value === 'newline' ? ['a\nb'] : value === 'empty' ? [''] : ['a'.repeat(3000), 'b'.repeat(3000)] } });
+  });
+}
+for (const oneOf of [false, true]) for (const useDefault of [false, true]) {
+  test(`optional empty choice survives (oneOf=${oneOf}, default=${useDefault})`, async ({ page }) => {
+    await page.goto(`/?mode=empty-choice${oneOf ? '&oneOf' : ''}${useDefault ? '&default' : ''}`);
+    if (!useDefault) await page.getByRole('combobox', { name: 'Choice' }).selectOption({ label: 'Empty choice' });
+    const request = page.waitForRequest((r) => r.url().endsWith('/submit'));
+    await page.getByRole('button', { name: 'Submit input' }).click();
+    expect((await request).postDataJSON()).toEqual({ action: 'accept', content: { choice: '' } });
+  });
+}
+
+test('invalid JSON array and oversized items stay editable without submitting', async ({ page }) => {
+  await page.goto('/?mode=array&control=text&empty');
+  let calls = 0;
+  page.on('request', r => { if (r.url().endsWith('/submit')) calls++; });
+  for (const value of ['not an array', '[1]', JSON.stringify(['x'.repeat(4097)])]) {
+    await page.getByRole('textbox', { name: 'Values' }).fill(value);
+    await page.getByRole('button', { name: 'Submit input' }).click();
+    await expect(page.getByRole('status')).toContainText('Check the form values');
+    expect(calls).toBe(0);
+  }
+  await page.getByRole('textbox', { name: 'Values' }).fill('["", "a\\nb"]');
+  const request = page.waitForRequest(r => r.url().endsWith('/submit'));
+  await page.getByRole('button', { name: 'Submit input' }).click();
+  expect((await request).postDataJSON()).toEqual({action: 'accept', content: {values: ['', 'a\nb']}});
+});

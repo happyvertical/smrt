@@ -66,10 +66,15 @@ export function renderOpenAiForm(
       );
     } else if (field.type === 'array') {
       const area = doc.createElement('textarea');
-      area.value = field.default?.join('\n') ?? '';
-      area.maxLength = 4096;
+      area.value =
+        field.default === undefined ? '' : JSON.stringify(field.default);
+      area.maxLength = 65536;
+      const help = doc.createElement('span');
+      help.textContent =
+        'Enter a JSON array of strings, for example ["first", "second"]. Use [] for an empty list.';
+      label.append(help);
       control = area;
-      reads.set(name, () => (area.value ? area.value.split('\n') : []));
+      reads.set(name, () => (area.value.trim() ? JSON.parse(area.value) : []));
     } else {
       const input = doc.createElement('input');
       input.type =
@@ -87,6 +92,13 @@ export function renderOpenAiForm(
       } else if (field.type === 'string' && 'maxLength' in field)
         input.maxLength = field.maxLength ?? 4096;
       control = input;
+      let touched = false;
+      input.addEventListener('input', () => {
+        touched = true;
+      });
+      input.addEventListener('change', () => {
+        touched = true;
+      });
       reads.set(name, () =>
         field.type === 'boolean'
           ? input.checked
@@ -94,7 +106,12 @@ export function renderOpenAiForm(
             ? input.value === ''
               ? undefined
               : Number(input.value)
-            : input.value,
+            : !touched &&
+                input.value === '' &&
+                field.default === undefined &&
+                !schema.required?.includes(name)
+              ? undefined
+              : input.value,
       );
     }
     if (
@@ -153,13 +170,12 @@ export function renderOpenAiForm(
   }
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    const content: Record<string, unknown> = {};
-    for (const [name, read] of reads) {
-      const v = read();
-      if (v !== undefined && (v !== '' || schema.required?.includes(name)))
-        content[name] = v;
-    }
     try {
+      const content: Record<string, unknown> = {};
+      for (const [name, read] of reads) {
+        const v = read();
+        if (v !== undefined) content[name] = v;
+      }
       void send(validateOpenAiFormReply(schema, { action: 'accept', content }));
     } catch {
       status.textContent = 'Check the form values before submitting.';
