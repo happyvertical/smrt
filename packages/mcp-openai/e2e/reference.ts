@@ -6,7 +6,10 @@ link.href = openAiNavigationLink('unknown', { pluginId: 'synthetic', toolName: '
 const button = document.createElement('button'); button.textContent = 'Expand';
 document.body.append(status, link, button);
 const bridge = new McpAppBridge({ hostWindow: parent, hostOrigin: 'http://127.0.0.1:47865', appInfo: { name: 'synthetic-openai-navigation', version: '1' }, availableDisplayModes: ['inline', 'fullscreen'], timeoutMs: 200 });
-const stop = observeOpenAiNavigation({ bridge, resolveTool: 'resolve_target', onResult: (result, url) => { status.textContent = `${url}: ${result.content[0]?.text}`; }, onFallback: reason => { status.textContent = `Inline fallback: ${reason}`; } });
+const events: string[] = []; const failures: string[] = [];
+Object.assign(window, { navigationEvents: events, callbackFailures: failures, throwCallback: '' });
+window.addEventListener('unhandledrejection', event => { failures.push(String(event.reason)); event.preventDefault(); });
+const stop = observeOpenAiNavigation({ bridge, resolveTool: 'resolve_target', onResult: (result, url) => { events.push(`result:${url}`); if ((window as any).throwCallback === 'result') throw new Error('render failed'); status.textContent = `${url}: ${result.content[0]?.text}`; }, onFallback: reason => { events.push(`fallback:${reason}`); if ((window as any).throwCallback === 'fallback') throw new Error('fallback failed'); status.textContent = `Inline fallback: ${reason}`; } });
 button.onclick = async () => { button.textContent = await requestOpenAiDisplayMode(bridge, 'fullscreen'); };
 void bridge.connect();
 window.addEventListener('pagehide', () => { stop(); bridge.dispose(); });

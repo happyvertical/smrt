@@ -45,3 +45,29 @@ for (const mode of ['present', 'pending']) test(`restores route A after invalida
     await expect(frame.locator('#status')).toHaveText('/items/owned: Authorized synthetic item');
   }
 });
+
+
+test('encoded query delimiter cannot hide traversal from the resolver', async ({ page }) => {
+  await page.goto('/');
+  const frame = page.frameLocator('iframe');
+  await expect(frame.locator('#status')).toContainText('/items/owned:');
+  await page.evaluate(() => (window as any).send({ 'openai/deepLink': { url: '/safe%3F/../admin' } }));
+  await expect(frame.locator('#status')).toHaveText('Inline fallback: invalid');
+  expect(await page.evaluate(() => (window as any).calls.filter((m: any) => m.method === 'tools/call').length)).toBe(1);
+  await page.evaluate(() => (window as any).send({ 'openai/deepLink': { url: '/safe?next=/a/../b' } }));
+  await expect(frame.locator('#status')).toContainText('/safe?next=/a/../b:');
+});
+for (const outcome of ['result', 'denied', 'rejected']) test(`callback failure after ${outcome} is reported without a false or repeated denial`, async ({ page }) => {
+  await page.goto('/');
+  const frame = page.frameLocator('iframe');
+  await expect(frame.locator('#status')).toContainText('/items/owned:');
+  const child = page.frames().find(f => f.url().endsWith('/view'))!;
+  await child.evaluate(outcome => { (window as any).navigationEvents.length = 0; (window as any).throwCallback = outcome === 'result' ? 'result' : 'fallback'; }, outcome);
+  await page.evaluate(outcome => (window as any).send({ 'openai/deepLink': { url: `/items/${outcome}` } }), outcome);
+  await expect.poll(() => child.evaluate(() => (window as any).callbackFailures)).toEqual([`Error: ${outcome === 'result' ? 'render' : 'fallback'} failed`]);
+  expect(await child.evaluate(() => (window as any).navigationEvents)).toEqual([outcome === 'result' ? 'result:/items/result' : 'fallback:denied']);
+  expect(await page.evaluate(() => (window as any).calls.filter((m: any) => m.method === 'tools/call').length)).toBe(2);
+  await child.evaluate(() => { (window as any).throwCallback = ''; });
+  await page.evaluate(() => (window as any).send({ 'openai/deepLink': { url: '/items/recovered' } }));
+  await expect(frame.locator('#status')).toContainText('/items/recovered:');
+});
