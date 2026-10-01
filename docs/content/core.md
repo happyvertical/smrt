@@ -2272,12 +2272,30 @@ several rows and `get({ slug })` returns whichever comes first, so scope it:
 run it inside `withTenant(...)`, or put `tenantId` (or `tenantId: null` for the
 global row) in the `where`, and treat more than one match as ambiguous.
 
-**Upgrading an existing database**: deploy the release that introduced the
-tenant-led key and run `smrt db:migrate` together. Old code upserts on
+**Upgrading an existing database** (expand, then contract). Old code upserts on
 `ON CONFLICT (slug, context)` and new code on
-`ON CONFLICT (tenant_id, slug, context)`; each needs its own unique index.
-Until the migration runs, `smrt db:status` reports the table as an error and
-exits 1.
+`ON CONFLICT (tenant_id, slug, context)`; PostgreSQL binds each only to a
+unique index over exactly those columns (otherwise every save fails with
+42P10), so during a rolling deploy both indexes must exist:
+
+1. **Expand — before the new code rolls out**: run `smrt db:migrate` with the
+   new release's manifests. It builds the tenant-led unique under its own name
+   (`<table>_tenant_id_slug_idx`) and keeps the global `<table>_slug_context_idx`.
+   The new key is a superset of the old one, so the build cannot fail on
+   existing rows. Old and new code both keep saving.
+2. **Roll out** the new release. While the legacy index stands, a second
+   tenant cannot store a slug another tenant already uses: that save fails
+   with a unique violation (nothing is overwritten).
+3. **Contract — once no old code is running**: run
+   `smrt db:migrate --drop-legacy-natural-key` to drop the global index.
+
+Until step 1 runs, `smrt db:status` reports the table as an error and exits 1;
+between steps 1 and 3 it reports the legacy index as a warning. Locking: in
+the default atomic mode the build holds a SHARE lock (writes to the table wait,
+reads continue) for the length of the build. `--postgres-safe` builds it
+`CONCURRENTLY` instead, but refuses a key with a nullable column (a nullable
+`tenant_id` needs the NULL-equal index, which only the atomic mode can build);
+schedule a quiet window for large tables in that case.
 
 **Detecting it**: match the typed error, not the driver text — the adapter
 wraps the driver error, so the constraint wording is not on `error.message`.

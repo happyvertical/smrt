@@ -8,7 +8,7 @@ CLI with lazy-loaded commands, manifest discovery, and class introspection.
 smrt introspect              # Discover SMRT objects in project
 smrt doctor                  # Umbrella diagnostics; can verify a generation snapshot
 smrt doctor --db             # Add the live-schema parity section (see below)
-smrt db:status               # Pending schema changes + failed migration classification (+ tenant natural-key findings, a live global unique exits 1: src/commands/tenant-natural-keys.ts)
+smrt db:status               # Pending schema changes + failed migration classification (+ tenant natural-key findings: a missing tenant-led unique exits 1, a surviving legacy global unique warns until `db:migrate --drop-legacy-natural-key`: src/commands/tenant-natural-keys.ts)
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
 smrt db:migrate              # agents/type-drift.md
@@ -73,7 +73,9 @@ back instead of holding the locks it already took against every writer.
 `--postgres-safe` selects **concurrent-index mode**: non-index DDL still commits
 in one transaction, then each index statement runs
 `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` on one pinned session
-after that commit. This is the mode for large index rollouts.
+after that commit. This is the mode for large index rollouts. A same-name
+UNIQUE recreate runs build-then-swap (temporary name, drop, `ALTER INDEX …
+RENAME`; `swapUniqueIndexRecreates()`), so the table never lacks a unique index.
 
 - **Concurrent mode is not atomic.** Committed column/table changes survive a
   later index failure; unfinished index migrations are recorded `failed`, and

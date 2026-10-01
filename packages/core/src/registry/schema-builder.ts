@@ -11,7 +11,6 @@ import { normalizeBackfill } from '../schema/backfill.js';
 import {
   conflictIndexName,
   nullableConflictIdentity,
-  resolveOwnershipTenantColumn,
 } from '../schema/conflict-target.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
@@ -333,15 +332,14 @@ function withConflictIndex(
   // Same stable naming as SchemaGenerator (`schema/conflict-target.ts`), so
   // a manifest built before the runtime learned the tenant-aware default
   // (#2360) has its stale `<table>_slug_context_idx` REPLACED in place here
-  // — the differ then swaps the live index by name — instead of a second,
-  // suffixed unique index being appended beside the old global one.
-  const tenantColumn =
-    Object.entries(columns).find(
-      ([, column]) => column.referenceKind === 'tenantId',
-    )?.[0] ??
-    resolveOwnershipTenantColumn(undefined, (column) =>
-      Boolean(columns[column]),
-    );
+  // for a DECLARED tenant column. Only the declared column names the index:
+  // an inferred ownership column (an undeclared `tenant_id`) gets the
+  // custom-key name, so its tenant-led unique is built BESIDE the legacy
+  // global one (expand, then contract) and old code's
+  // `ON CONFLICT (slug, context)` keeps binding during a rolling deploy.
+  const tenantColumn = Object.entries(columns).find(
+    ([, column]) => column.referenceKind === 'tenantId',
+  )?.[0];
   // The composed name can exceed PostgreSQL's 63-byte limit on a long table.
   // Shortening here (rather than inside conflictIndexName) keeps the generator
   // paths, which run enforceIdentifierLimits() over their whole index list,

@@ -297,3 +297,72 @@ describe('parsePostgresTimeoutMs', () => {
     expect(parsePostgresTimeoutMs(0, 30_000)).toBe(0);
   });
 });
+
+describe('--postgres-safe unique recreate is build-then-swap', () => {
+  it('builds the new unique under a temporary name before dropping the old one (one definition)', () => {
+    const { concurrent, regular } = planPostgresStatements(
+      [
+        'DROP INDEX IF EXISTS "t_slug_context_idx"',
+        'CREATE UNIQUE INDEX IF NOT EXISTS "t_slug_context_idx" ON "t" ("tenant_id", "slug", "context")',
+      ],
+      true,
+    );
+    expect(regular).toEqual([]);
+    expect(concurrent).toEqual([
+      'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_slug_context_idx_smrt_swap" ON "t" ("tenant_id", "slug", "context")',
+      'DROP INDEX CONCURRENTLY IF EXISTS "t_slug_context_idx"',
+      'ALTER INDEX IF EXISTS "t_slug_context_idx_smrt_swap" RENAME TO "t_slug_context_idx"',
+      'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_slug_context_idx" ON "t" ("tenant_id", "slug", "context")',
+    ]);
+  });
+
+  it("pairs the drop and the create across the differ's two definitions", () => {
+    const plan = buildConcurrentIndexPlan(
+      [
+        definition('drop_index_t_slug_context_idx', [
+          'DROP INDEX IF EXISTS "t_slug_context_idx"',
+        ]),
+        definition('add_index_t_slug_context_idx', [
+          'CREATE UNIQUE INDEX IF NOT EXISTS "t_slug_context_idx" ON "t" ("slug", "context")',
+        ]),
+      ],
+      true,
+    );
+    expect(plan.get('drop_index_t_slug_context_idx')?.concurrent).toEqual([
+      'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_slug_context_idx_smrt_swap" ON "t" ("slug", "context")',
+      'DROP INDEX CONCURRENTLY IF EXISTS "t_slug_context_idx"',
+      'ALTER INDEX IF EXISTS "t_slug_context_idx_smrt_swap" RENAME TO "t_slug_context_idx"',
+    ]);
+    expect(plan.get('add_index_t_slug_context_idx')?.concurrent).toEqual([
+      'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_slug_context_idx" ON "t" ("slug", "context")',
+    ]);
+  });
+
+  it('leaves a plain drop, a non-unique recreate and the atomic path alone', () => {
+    expect(
+      planPostgresStatements(['DROP INDEX IF EXISTS "orphan_idx"'], true)
+        .concurrent,
+    ).toEqual(['DROP INDEX CONCURRENTLY IF EXISTS "orphan_idx"']);
+    expect(
+      planPostgresStatements(
+        [
+          'DROP INDEX IF EXISTS "t_a_idx"',
+          'CREATE INDEX IF NOT EXISTS "t_a_idx" ON "t" ("a")',
+        ],
+        true,
+      ).concurrent,
+    ).toEqual([
+      'DROP INDEX CONCURRENTLY IF EXISTS "t_a_idx"',
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "t_a_idx" ON "t" ("a")',
+    ]);
+    expect(
+      planPostgresStatements(
+        [
+          'DROP INDEX IF EXISTS "t_slug_context_idx"',
+          'CREATE UNIQUE INDEX IF NOT EXISTS "t_slug_context_idx" ON "t" ("slug", "context")',
+        ],
+        false,
+      ).concurrent,
+    ).toEqual([]);
+  });
+});

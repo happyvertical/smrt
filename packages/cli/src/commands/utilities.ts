@@ -334,6 +334,7 @@ interface DbMigrateOptions {
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
+  'drop-legacy-natural-key'?: boolean;
   'drop-columns'?: boolean;
   'relax-columns'?: boolean;
   'apply-unblocked'?: boolean;
@@ -1717,6 +1718,12 @@ export default testManifest;
           'Drop orphan indexes (in DB but not in manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default.',
         default: false,
       },
+      'drop-legacy-natural-key': {
+        type: 'boolean',
+        description:
+          'Drop the legacy global (slug, context) unique index a tenant-led natural key superseded on a table that is tenant-owned by its tenantId field. Off by default: db:migrate builds the tenant-led index beside it so code still on the previous release keeps upserting. Pass this once every instance runs the release that upserts on the tenant-led key.',
+        default: false,
+      },
       'drop-columns': {
         type: 'boolean',
         description:
@@ -1998,6 +2005,7 @@ export default testManifest;
         const comparer = new SchemaComparer(db, {
           includeDroppedIndexes: Boolean(options['drop-indexes']),
           includeDroppedColumns: Boolean(options['drop-columns']),
+          dropLegacyNaturalKey: Boolean(options['drop-legacy-natural-key']),
           relaxColumns: Boolean(options['relax-columns']),
           postgresTimestampMigration,
           emptyTextAsNull: Boolean(options['empty-text-as-null']),

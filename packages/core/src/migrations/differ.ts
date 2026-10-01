@@ -17,7 +17,10 @@ import {
   resolveRenameDataPendingCandidates,
   uuidInvalidShapePredicate,
 } from '../schema/column-data-probes.js';
-import { conflictIndexName } from '../schema/conflict-target.js';
+import {
+  conflictIndexName,
+  isLegacyNaturalKeyIndex,
+} from '../schema/conflict-target.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import { renderNullEqualConflictIndex } from '../schema/ddl/null-equal-index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
@@ -185,6 +188,22 @@ export interface DiffOptions {
    * names the empty-text count in the blocking advisory instead.
    */
   emptyTextAsNull?: boolean;
+  /**
+   * Drop the LEGACY global natural-key unique index — `(slug, context)` /
+   * `(slug, context, _meta_type)` — of a table whose default key is now
+   * tenant-led (an undeclared `tenantId` field makes the table tenant-owned).
+   *
+   * Off by default: `db:migrate` builds the tenant-led unique under its own
+   * name and KEEPS the legacy one, because code still running the previous
+   * release upserts `ON CONFLICT (slug, context)` and PostgreSQL rejects that
+   * (42P10) unless a unique index over exactly those columns exists. Run
+   * `smrt db:migrate --drop-legacy-natural-key` once every instance runs the
+   * release that upserts on the tenant-led key (expand, then contract). The
+   * drop is planned only when the tenant-led unique is already live or is
+   * created earlier in the same batch, so the table always keeps a unique
+   * index.
+   */
+  dropLegacyNaturalKey?: boolean;
   /**
    * How many live-table introspections `compare()` runs concurrently while
    * prefetching every existing manifest table's schema. Defaults to
@@ -4094,6 +4113,22 @@ export class SchemaComparer {
             // the table never loses its only conflict arbiter.
             declared.columns.every((column) => column in dbSchema.columns),
         );
+      // Expand, then contract: the legacy global natural key a tenant-led
+      // default key superseded stays until the operator opts in. Old code
+      // still upserts `ON CONFLICT (slug, context)` against it during a
+      // rolling deploy; dropping it in the same migrate turns every such save
+      // into 42P10.
+      const legacyNaturalKey =
+        supersededConflictIndex &&
+        manifestIndexes.some(
+          (declared) =>
+            declared.unique === true &&
+            !declared.where &&
+            isLegacyNaturalKeyIndex(idx.columns, declared.columns),
+        );
+      if (legacyNaturalKey && !this.options.dropLegacyNaturalKey) {
+        continue;
+      }
       if (
         !redundantPrimaryKeyIndex &&
         !supersededConflictIndex &&

@@ -35,6 +35,7 @@ interface DbDiffOptions {
   json?: boolean;
   verbose?: boolean;
   'drop-indexes'?: boolean;
+  'drop-legacy-natural-key'?: boolean;
   'drop-columns'?: boolean;
   'relax-columns'?: boolean;
   'postgres-timestamp-legacy-timezone'?: string;
@@ -89,6 +90,12 @@ export const dbDiffCommand: CLICommand = {
       type: 'boolean',
       description:
         'Include orphan-index drops in the diff (indexes in DB but not in the manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default for safety.',
+      default: false,
+    },
+    'drop-legacy-natural-key': {
+      type: 'boolean',
+      description:
+        'Include the drop of the legacy global (slug, context) unique index a tenant-led natural key superseded (see db:migrate --drop-legacy-natural-key).',
       default: false,
     },
     'drop-columns': {
@@ -220,6 +227,7 @@ export const dbDiffCommand: CLICommand = {
         includeDroppedTables: false,
         includeDroppedColumns: Boolean(options['drop-columns']),
         includeDroppedIndexes: Boolean(options['drop-indexes']),
+        dropLegacyNaturalKey: Boolean(options['drop-legacy-natural-key']),
         relaxColumns: Boolean(options['relax-columns']),
         postgresTimestampMigration,
         emptyTextAsNull: Boolean(options['empty-text-as-null']),

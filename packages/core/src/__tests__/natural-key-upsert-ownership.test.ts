@@ -183,12 +183,111 @@ describe('natural-key upsert ownership', () => {
       ]);
     });
 
-    it('emits the tenant-led unique index under the stable name', () => {
-      const conflict = ObjectRegistry.getSchema('NkLeague')?.indexes.find(
-        (index) => index.name === 'nk_leagues_slug_context_idx',
+    it('emits the tenant-led unique index under its own name, beside the legacy one', () => {
+      const indexes = ObjectRegistry.getSchema('NkLeague')?.indexes ?? [];
+      const conflict = indexes.find(
+        (index) => index.name === 'nk_leagues_tenant_id_slug_idx',
       );
       expect(conflict?.unique).toBe(true);
       expect(conflict?.columns).toEqual(['tenant_id', 'slug', 'context']);
+      // The legacy name is not reused, so db:migrate never swaps the global
+      // unique away in place (expand, then contract).
+      expect(
+        indexes.some((index) => index.name === 'nk_leagues_slug_context_idx'),
+      ).toBe(false);
+    });
+
+    it('old and new code both upsert while the legacy and tenant-led uniques coexist', async () => {
+      const schema = ObjectRegistry.getSchema('NkLeague');
+      if (!schema) throw new Error('missing schema');
+      // The pre-release live shape: only the global unique.
+      await db.query('DROP TABLE IF EXISTS nk_leagues_rollout');
+      await db.query(
+        `CREATE TABLE nk_leagues_rollout (id TEXT PRIMARY KEY, slug TEXT, context TEXT,
+           name TEXT, tenant_id TEXT, created_at TEXT, updated_at TEXT)`,
+      );
+      await db.query(
+        'CREATE UNIQUE INDEX nk_leagues_rollout_slug_context_idx ON nk_leagues_rollout (slug, context)',
+      );
+      const rolloutSchema = {
+        ...schema,
+        tableName: 'nk_leagues_rollout',
+        indexes: schema.indexes.map((index) => ({
+          ...index,
+          name: index.name.replace('nk_leagues_', 'nk_leagues_rollout_'),
+        })),
+      };
+
+      // Expand: the tenant-led unique is added, the legacy one is kept.
+      const { SchemaComparer } = await import('../migrations/differ.js');
+      const expand = await new SchemaComparer(db).compare({
+        nk_leagues_rollout: rolloutSchema,
+      });
+      const indexEvents = expand.changes
+        .filter((c) => c.type === 'drop_index' || c.type === 'add_index')
+        .filter((c) => c.name?.includes('slug'))
+        .map((c) => `${c.type}:${c.name}`);
+      expect(indexEvents).toEqual([
+        'add_index:nk_leagues_rollout_tenant_id_slug_idx',
+      ]);
+      for (const change of expand.changes) {
+        if (change.type === 'add_index' && change.sql) {
+          await db.query(change.sql);
+        }
+      }
+
+      // Old code: ON CONFLICT (slug, context).
+      await db.upsert('nk_leagues_rollout', ['slug', 'context'], {
+        id: 'a-1',
+        slug: 'u13',
+        context: '',
+        name: 'U13',
+        tenant_id: TENANT_A,
+      });
+      await db.upsert('nk_leagues_rollout', ['slug', 'context'], {
+        id: 'a-1',
+        slug: 'u13',
+        context: '',
+        name: 'U13 (old code)',
+        tenant_id: TENANT_A,
+      });
+      // New code: ON CONFLICT (tenant_id, slug, context).
+      await db.upsert('nk_leagues_rollout', ['tenant_id', 'slug', 'context'], {
+        id: 'a-1',
+        slug: 'u13',
+        context: '',
+        name: 'U13 (new code)',
+        tenant_id: TENANT_A,
+      });
+      const rows = (await db.list('nk_leagues_rollout', {})) as Row[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.name).toBe('U13 (new code)');
+
+      // Contract: only on the explicit opt-in.
+      const kept = await new SchemaComparer(db).compare({
+        nk_leagues_rollout: rolloutSchema,
+      });
+      expect(kept.changes.some((c) => c.type === 'drop_index')).toBe(false);
+      const contract = await new SchemaComparer(db, {
+        dropLegacyNaturalKey: true,
+      }).compare({ nk_leagues_rollout: rolloutSchema });
+      expect(
+        contract.changes
+          .filter((c) => c.type === 'drop_index')
+          .map((c) => c.name),
+      ).toEqual(['nk_leagues_rollout_slug_context_idx']);
+      // `--drop-indexes` alone never contracts the legacy key.
+      const dropIndexesOnly = await new SchemaComparer(db, {
+        includeDroppedIndexes: true,
+      }).compare({ nk_leagues_rollout: rolloutSchema });
+      expect(
+        dropIndexesOnly.changes.some(
+          (c) =>
+            c.type === 'drop_index' &&
+            c.name === 'nk_leagues_rollout_slug_context_idx',
+        ),
+      ).toBe(false);
+      await db.query('DROP TABLE nk_leagues_rollout');
     });
 
     it('a tenant foreign key leads the key without becoming a delete CASCADE', () => {

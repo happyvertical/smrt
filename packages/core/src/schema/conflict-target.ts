@@ -28,13 +28,23 @@
  * themselves exactly as every row did before, and per-tenant rows dedup per
  * tenant.
  *
- * Index NAMES stay stable across this change — the tenant-led default key
- * keeps `<table>_slug_context_idx` (CTI) / `<table>_slug_context_meta_type_idx`
- * (STI) — so `SchemaComparer`'s same-name shape-drift repair swaps the columns
- * in place (`DROP INDEX` + `CREATE UNIQUE INDEX`) instead of leaving the old
- * global unique index behind to keep blocking cross-tenant duplicates. The new
- * key is a superset of the old one, so creating it cannot fail on existing
- * data.
+ * Index names:
+ *
+ * - A DECLARED tenant-scoped class (#2360) keeps `<table>_slug_context_idx`
+ *   (CTI) / `<table>_slug_context_meta_type_idx` (STI) for its tenant-led key.
+ *   That swap shipped long ago; live databases carry the tenant-led columns
+ *   under that name, and `db:migrate-null-equal-indexes` targets it.
+ * - A class that is tenant-owned only by INFERENCE (an undeclared `tenantId`
+ *   field, {@link resolveOwnershipTenantColumn}) gets its tenant-led key under
+ *   a NEW name, `<table>_tenant_id_slug_idx`, created beside the legacy global
+ *   `<table>_slug_context_idx` (expand, then contract). Old code upserts
+ *   `ON CONFLICT (slug, context)` and new code `ON CONFLICT (tenant_id, slug,
+ *   context)`; PostgreSQL binds each only to a unique index over exactly those
+ *   columns, so during a rolling deploy both indexes must exist. The differ
+ *   keeps the legacy index ({@link isLegacyNaturalKeyIndex}) until the operator
+ *   runs `smrt db:migrate --drop-legacy-natural-key` once no old code is left.
+ *   The new key is a superset of the old one, so creating it cannot fail on
+ *   existing data.
  */
 
 /** Default natural key of a class-per-table (CTI) object. */
@@ -116,14 +126,18 @@ export function isDefaultNaturalKey(
  * - default CTI key `(slug, context)` → `<table>_slug_context_idx`
  * - default STI key `(slug, context, _meta_type)` →
  *   `<table>_slug_context_meta_type_idx`
- * - either default led by the tenant column → the SAME name as without it
- *   (#2360: the differ swaps the columns in place by name)
+ * - either default led by the DECLARED tenant column → the SAME name as
+ *   without it (#2360: the differ swapped the columns in place by name)
+ * - either default led by an INFERRED ownership column (pass no
+ *   `tenantColumn`) → the custom-key rule, `<table>_tenant_id_slug_idx`, so it
+ *   is created beside the legacy global index instead of replacing it
  * - any custom key → `<table>_<first two columns>_idx` (the historical rule;
  *   a longer key keeps the two-column name so existing databases are not
  *   renamed)
  *
- * @param tenantColumn - the table's tenant column, when the schema owner is
- *   tenant-scoped; only consulted to recognize a tenant-led default key
+ * @param tenantColumn - the table's DECLARED tenant column, when the schema
+ *   owner is tenant-scoped; only consulted to recognize a tenant-led default
+ *   key. Never pass an inferred ownership column here.
  */
 export function conflictIndexName(
   tableName: string,
@@ -141,6 +155,34 @@ export function conflictIndexName(
   }
   const nameColumns = key.length > 2 ? key.slice(0, 2) : key;
   return `${tableName}_${nameColumns.join('_')}_idx`;
+}
+
+/**
+ * Whether a live unique index over `indexColumns` is the LEGACY global natural
+ * key that a tenant-led default key superseded: its columns are exactly a
+ * default natural key (CTI `(slug, context)` / STI `(slug, context,
+ * _meta_type)`) and `widerColumns` is that same key led by one ownership
+ * column.
+ *
+ * The differ keeps such an index (expand, then contract) so code still
+ * upserting `ON CONFLICT (slug, context)` keeps working while a release that
+ * upserts on the tenant-led key rolls out; it is dropped only on
+ * `smrt db:migrate --drop-legacy-natural-key`.
+ */
+export function isLegacyNaturalKeyIndex(
+  indexColumns: readonly string[],
+  widerColumns: readonly string[],
+): boolean {
+  if (
+    !sameColumns(indexColumns, DEFAULT_CTI_CONFLICT_COLUMNS) &&
+    !sameColumns(indexColumns, DEFAULT_STI_CONFLICT_COLUMNS)
+  ) {
+    return false;
+  }
+  return (
+    widerColumns.length === indexColumns.length + 1 &&
+    sameColumns(widerColumns.slice(1), indexColumns)
+  );
 }
 
 /**

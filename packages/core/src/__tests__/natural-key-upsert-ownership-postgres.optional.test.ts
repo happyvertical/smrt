@@ -11,9 +11,13 @@
  * 2. `save()` now refuses the cross-tenant collision on a conflict target
  *    that omits the owner, leaving A's row and A's children untouched;
  * 3. a same-owner natural-key save keeps the primary key (no cascade churn);
- * 4. a class with an undeclared `tenantId` field gets the tenant-led unique,
- *    and the pre-migration global unique is swapped in place by name — until
- *    then its creates fail loudly instead of overwriting.
+ * 4. a class with an undeclared `tenantId` field gets the tenant-led unique
+ *    under its own name BESIDE the pre-migration global unique (expand), so
+ *    old `ON CONFLICT (slug, context)` and new `ON CONFLICT (tenant_id, slug,
+ *    context)` upserts both bind during a rollout; the global unique goes
+ *    only on `dropLegacyNaturalKey` (contract);
+ * 5. `--postgres-safe` rebuilds a unique index build-then-swap, so the table
+ *    is never without one.
  *
  * Runs only when `SMRT_TEST_POSTGRES_URL` is set (`pnpm test:postgres`).
  */
@@ -221,7 +225,7 @@ describe.skipIf(!pgUrl)('natural-key upsert ownership on PostgreSQL', () => {
     expect(teamRow.league_id).toBe(league.id);
   });
 
-  it('an undeclared tenantId field gets the tenant-led unique; the global one is swapped in place', async () => {
+  it('rollout: old and new code both upsert while the legacy and tenant-led uniques coexist', async () => {
     const className = registrationName(NkPgLeague);
     expect(ObjectRegistry.getConflictColumns(className)).toEqual([
       'tenant_id',
@@ -242,31 +246,133 @@ describe.skipIf(!pgUrl)('natural-key upsert ownership on PostgreSQL', () => {
       [existingId, TENANT_A],
     );
 
-    // Before the migration the runtime target has no matching unique index:
-    // the create fails loudly (42P10) and tenant A's row is never touched.
+    // Before the migration the new runtime target has no matching unique
+    // index: the create fails loudly (42P10) and tenant A's row is untouched.
     const leagues = await NkPgLeagueCollection.create({ db });
     await expect(
       leagues.create({ name: 'U13', tenantId: TENANT_B }),
     ).rejects.toThrow();
     expect((await rows(db, LEAGUES))[0].id).toBe(existingId);
 
-    const comparer = new SchemaComparer(db, { includeDroppedIndexes: false });
-    const diff = await comparer.compare({ [LEAGUES]: schema });
-    const events = diff.changes
+    // Expand: the tenant-led unique is built under its own name; the legacy
+    // global unique is kept.
+    const expand = await new SchemaComparer(db).compare({ [LEAGUES]: schema });
+    const events = expand.changes
       .filter((c) => c.type === 'drop_index' || c.type === 'add_index')
       .map((c) => `${c.type}:${c.name}`);
-    expect(events).toContain(`drop_index:${LEAGUES}_slug_context_idx`);
-    expect(events).toContain(`add_index:${LEAGUES}_slug_context_idx`);
-    for (const sql of getSQLFromDiff(diff)) {
+    expect(events).toContain(`add_index:${LEAGUES}_tenant_id_slug_idx`);
+    expect(events.some((event) => event.startsWith('drop_index:'))).toBe(false);
+    for (const sql of getSQLFromDiff(expand)) {
+      await db.query(sql);
+    }
+
+    // Old code (ON CONFLICT (slug, context)) and new code
+    // (ON CONFLICT (tenant_id, slug, context)) both bind while both exist.
+    await db.upsert(LEAGUES, ['slug', 'context'], {
+      id: existingId,
+      slug: 'u13',
+      context: '',
+      name: 'U13 (old code)',
+      tenant_id: TENANT_A,
+    });
+    const sameOwner = await leagues.create({
+      name: 'U13',
+      slug: 'u13',
+      tenantId: TENANT_A,
+    });
+    expect(sameOwner.id).toBe(existingId);
+    const c = await leagues.create({ name: 'U15', tenantId: TENANT_B });
+    expect(c.id).not.toBe(existingId);
+    // While the legacy unique stands, a second tenant's same-slug create is
+    // rejected by it (loud, never an overwrite).
+    await expect(
+      leagues.create({ name: 'Hawks', slug: 'u13', tenantId: TENANT_B }),
+    ).rejects.toThrow();
+    expect(
+      (await rows(db, LEAGUES)).find((row) => row.id === existingId)?.tenant_id,
+    ).toBe(TENANT_A);
+
+    // A plain re-run keeps the legacy index; the opt-in contracts it.
+    const kept = await new SchemaComparer(db).compare({ [LEAGUES]: schema });
+    expect(kept.changes.some((c) => c.type === 'drop_index')).toBe(false);
+    const contract = await new SchemaComparer(db, {
+      dropLegacyNaturalKey: true,
+    }).compare({ [LEAGUES]: schema });
+    expect(
+      contract.changes
+        .filter((c) => c.type === 'drop_index')
+        .map((c) => c.name),
+    ).toEqual([`${LEAGUES}_slug_context_idx`]);
+    for (const sql of getSQLFromDiff(contract)) {
       await db.query(sql);
     }
 
     const b = await leagues.create({ name: 'U13', tenantId: TENANT_B });
     expect(b.id).not.toBe(existingId);
     const after = await rows(db, LEAGUES);
-    expect(after).toHaveLength(2);
-    expect(after.find((row) => row.tenant_id === TENANT_A)?.id).toBe(
-      existingId,
+    expect(after.filter((row) => row.slug === 'u13')).toHaveLength(2);
+    expect(
+      after.find((row) => row.tenant_id === TENANT_A && row.slug === 'u13')?.id,
+    ).toBe(existingId);
+  });
+
+  it('--postgres-safe recreates a unique index without a window where none exists', async () => {
+    const table = 'nk_pg_swap';
+    await db.query(`DROP TABLE IF EXISTS "${table}"`);
+    await db.query(
+      `CREATE TABLE "${table}" (id UUID PRIMARY KEY, slug TEXT NOT NULL, context TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0)`,
     );
+    // Wrong shape under the canonical name: a non-unique index.
+    await db.query(
+      `CREATE INDEX "${table}_slug_context_idx" ON "${table}" (slug, context)`,
+    );
+    await db.query(
+      `CREATE UNIQUE INDEX "${table}_slug_context_old" ON "${table}" (slug, context)`,
+    );
+    await db.query(`DROP INDEX "${table}_slug_context_idx"`);
+    await db.query(
+      `ALTER INDEX "${table}_slug_context_old" RENAME TO "${table}_slug_context_idx"`,
+    );
+
+    const { planPostgresStatements } = await import('../migrations/tracker.js');
+    const plan = planPostgresStatements(
+      [
+        `DROP INDEX IF EXISTS "${table}_slug_context_idx"`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "${table}_slug_context_idx" ON "${table}" ("slug", "context", "id")`,
+      ],
+      true,
+    );
+    expect(plan.regular).toEqual([]);
+    expect(plan.concurrent[0]).toContain(
+      `"${table}_slug_context_idx_smrt_swap"`,
+    );
+
+    const session = (await getDatabase({
+      type: 'postgres',
+      url: pgUrl,
+      dbid: `smrt-test-nk-swap-ddl-${randomUUID()}`,
+      max: 1,
+    } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
+    try {
+      for (const sql of plan.concurrent) {
+        await session.query(sql);
+        // Between every step a unique index over (slug, context …) exists.
+        const uniques = await session.query(
+          `SELECT count(*)::int AS n FROM pg_index i JOIN pg_class t ON t.oid = i.indrelid
+           WHERE t.relname = $1 AND i.indisunique AND NOT i.indisprimary AND i.indisvalid`,
+          [table],
+        );
+        expect(Number(uniques.rows[0]?.n)).toBeGreaterThan(0);
+      }
+    } finally {
+      await session.close?.();
+    }
+
+    const live = await db.query(
+      `SELECT indexdef FROM pg_indexes WHERE tablename = $1 AND indexname = $2`,
+      [table, `${table}_slug_context_idx`],
+    );
+    expect(String(live.rows[0]?.indexdef)).toContain('(slug, context, id)');
+    await db.query(`DROP TABLE IF EXISTS "${table}"`);
   });
 });

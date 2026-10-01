@@ -17,6 +17,7 @@ import { NULL_EQUAL_INDEX_MARKER } from '../schema/ddl/null-equal-index.js';
 // engine type must include 'json' too — the narrower `migrations/types`
 // alias would reject it.
 import type { DatabaseEngine } from '../schema/ddl/types.js';
+import { shortenIdentifier } from '../schema/index-utils.js';
 import type {
   DriftReport,
   MigrationDefinition,
@@ -1392,14 +1393,108 @@ export function buildConcurrentIndexPlan(
 ): ConcurrentIndexPlan {
   const plan: ConcurrentIndexPlan = new Map();
 
-  for (const definition of definitions) {
-    const split = planPostgresStatements(definition.up, useConcurrentIndexes);
-    if (split.concurrent.length > 0) {
-      plan.set(definition.id, split);
+  const splits = definitions.map((definition) => ({
+    id: definition.id,
+    split: planPostgresStatements(definition.up, useConcurrentIndexes, {
+      swapUniqueRecreates: false,
+    }),
+  }));
+  // A same-name UNIQUE recreate spans two definitions (the differ emits
+  // `drop_index` then `add_index`); phase 2 runs them in batch order.
+  const swapped = swapUniqueIndexRecreates(
+    splits.map(({ split }) => split.concurrent),
+  );
+  splits.forEach(({ id, split }, index) => {
+    const concurrent = swapped[index] ?? split.concurrent;
+    if (concurrent.length > 0) {
+      plan.set(id, { regular: split.regular, concurrent });
     }
-  }
+  });
 
   return plan;
+}
+
+const DROP_INDEX_CONCURRENTLY_RE =
+  /^\s*DROP\s+INDEX\s+CONCURRENTLY\s+(?:IF\s+EXISTS\s+)?(?:"((?:[^"]|"")+)"|([A-Za-z_][\w$]*))\s*;?\s*$/i;
+
+const CREATE_UNIQUE_INDEX_CONCURRENTLY_IF_NOT_EXISTS_RE =
+  /^(\s*CREATE\s+UNIQUE\s+INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+)(?:"((?:[^"]|"")+)"|([A-Za-z_][\w$]*))/i;
+
+function unquoteIndexName(quoted?: string, bare?: string): string | null {
+  if (quoted !== undefined) return quoted.replace(/""/g, '"');
+  return bare ?? null;
+}
+
+/**
+ * Keep a unique index in place while `--postgres-safe` recreates it.
+ *
+ * A same-name shape-drift repair is `DROP INDEX` followed by `CREATE UNIQUE
+ * INDEX` under the same name. Run CONCURRENTLY, the drop commits before the
+ * build starts, leaving a window with NO unique index: every
+ * `ON CONFLICT (…)` upsert fails (42P10) and plain inserts can write
+ * duplicates, which then make the build itself fail. This rewrites the drop
+ * into build-then-swap — `CREATE UNIQUE INDEX CONCURRENTLY` under a
+ * temporary name, then `DROP INDEX CONCURRENTLY` of the old one, then
+ * `ALTER INDEX … RENAME` — so the table always has a unique index over the
+ * old or the new key. The later create keeps its `IF NOT EXISTS` and becomes
+ * a no-op. Only rewritten when the create carries `IF NOT EXISTS` (the
+ * differ's DDL always does).
+ *
+ * @param lists - concurrent statement lists in execution order
+ * @returns the rewritten lists (same length and order)
+ */
+export function swapUniqueIndexRecreates(lists: string[][]): string[][] {
+  const result = lists.map((list) => [...list]);
+  for (let li = 0; li < result.length; li++) {
+    const list = result[li] ?? [];
+    for (let si = 0; si < list.length; si++) {
+      const drop = DROP_INDEX_CONCURRENTLY_RE.exec(list[si] ?? '');
+      if (!drop) continue;
+      const name = unquoteIndexName(drop[1], drop[2]);
+      if (!name) continue;
+      const create = findLaterUniqueCreate(result, li, si, name);
+      if (!create) continue;
+      const temporary = shortenIdentifier(`${name}_smrt_swap`);
+      const buildTemporary = create.replace(
+        CREATE_UNIQUE_INDEX_CONCURRENTLY_IF_NOT_EXISTS_RE,
+        (_match, head: string) => `${head}${quoteIndexName(temporary)}`,
+      );
+      list.splice(
+        si,
+        1,
+        buildTemporary,
+        `DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(name)}`,
+        `ALTER INDEX IF EXISTS ${quoteIndexName(temporary)} RENAME TO ${quoteIndexName(name)}`,
+      );
+      si += 2;
+    }
+  }
+  return result;
+}
+
+function findLaterUniqueCreate(
+  lists: string[][],
+  fromList: number,
+  fromStatement: number,
+  name: string,
+): string | null {
+  for (let li = fromList; li < lists.length; li++) {
+    const list = lists[li] ?? [];
+    const start = li === fromList ? fromStatement + 1 : 0;
+    for (let si = start; si < list.length; si++) {
+      const sql = list[si] ?? '';
+      const match = CREATE_UNIQUE_INDEX_CONCURRENTLY_IF_NOT_EXISTS_RE.exec(sql);
+      if (match && unquoteIndexName(match[2], match[3]) === name) return sql;
+      const created = extractCreatedIndexName(sql);
+      // Any other create/drop of the same name first ends the search.
+      if (created === name) return null;
+      const dropped = DROP_INDEX_CONCURRENTLY_RE.exec(sql);
+      if (dropped && unquoteIndexName(dropped[1], dropped[2]) === name) {
+        return null;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -1418,10 +1513,14 @@ export function buildConcurrentIndexPlan(
  *   the concurrent set. This is what the CLI `--postgres-safe` flag and
  *   the auto-migrate path rely on for issue #1165's shape-drift drops.
  * - All other statements stay in the regular (transaction) set.
+ * - A same-name UNIQUE recreate (`DROP INDEX` then `CREATE UNIQUE INDEX`) is
+ *   rewritten into build-then-swap ({@link swapUniqueIndexRecreates}) so the
+ *   table never runs without a unique index between the two statements.
  */
 export function planPostgresStatements(
   statements: string[],
   useConcurrentIndexes: boolean,
+  options: { swapUniqueRecreates?: boolean } = {},
 ): { concurrent: string[]; regular: string[] } {
   const concurrentRegex = CONCURRENT_INDEX_STATEMENT_RE;
 
@@ -1462,5 +1561,11 @@ export function planPostgresStatements(
     regular.push(sql);
   }
 
-  return { concurrent, regular };
+  if (options.swapUniqueRecreates === false) {
+    return { concurrent, regular };
+  }
+  return {
+    concurrent: swapUniqueIndexRecreates([concurrent])[0] ?? concurrent,
+    regular,
+  };
 }

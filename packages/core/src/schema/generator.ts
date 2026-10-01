@@ -842,14 +842,13 @@ export class SchemaGenerator {
     columns: Record<string, { referenceKind?: string } | undefined>,
     config: SchemaGeneratorConfig | undefined,
   ): { conflictColumns: string[]; tenantColumn: string | undefined } {
-    // The tenant column also names the conflict index: a tenant-led default
-    // key keeps the stable `<table>_slug_context_idx` name. An undeclared
-    // `tenant_id` column counts, matching the implicit ownership default.
-    const tenantColumn =
-      this.findTenantColumn(columns) ??
-      resolveOwnershipTenantColumn(undefined, (column) =>
-        Boolean(columns[column]),
-      );
+    // The DECLARED tenant column names the conflict index: a declared
+    // tenant-led default key keeps the stable `<table>_slug_context_idx` name
+    // (#2360). An inferred ownership column (an undeclared `tenant_id`) does
+    // NOT: its tenant-led key is named by the custom-key rule so it is built
+    // beside the legacy global unique instead of replacing it in place
+    // (expand, then contract — see `conflict-target.ts`).
+    const tenantColumn = this.findTenantColumn(columns);
     if (config?.conflictColumns && config.conflictColumns.length > 0) {
       return { conflictColumns: [...config.conflictColumns], tenantColumn };
     }
@@ -906,7 +905,12 @@ export class SchemaGenerator {
     tableName: string,
   ): void {
     if (!columns.slug || !columns.context) return;
-    const tenantColumn = this.findTenantColumn(columns);
+    // The ownership column — declared, or an inferred `tenant_id` — leads the
+    // tenant-led default key, whose prefix serves tenant-filtered lookups.
+    const tenantColumn = resolveOwnershipTenantColumn(
+      this.findTenantColumn(columns),
+      (column) => Boolean(columns[column]),
+    );
     if (
       indexes.some(
         (index) =>
@@ -1292,8 +1296,9 @@ export class SchemaGenerator {
     const indexes: IndexDefinition[] = [];
 
     if (!hasCustomPK) {
-      // Tenant-scoped tables key on `(tenant_id, slug, context)` under the
-      // stable `<table>_slug_context_idx` name (#2360).
+      // Tenant-scoped tables key on `(tenant_id, slug, context)`: under the
+      // stable `<table>_slug_context_idx` name when tenancy is declared
+      // (#2360), as `<table>_tenant_id_slug_idx` when ownership is inferred.
       const { conflictColumns, tenantColumn } = resolvedConflict;
       if (!this.conflictColumnsArePrimaryKey(conflictColumns, columns)) {
         indexes.push({

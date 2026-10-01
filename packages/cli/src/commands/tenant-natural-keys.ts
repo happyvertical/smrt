@@ -11,8 +11,10 @@
  * refused, and on engines that require an exact ON CONFLICT target the create
  * fails until `smrt db:migrate` swaps the index.
  *
- * The schema diff already reports the index as shape drift; this names the
- * tenant consequence so the drift is not mistaken for cosmetic index churn.
+ * Rollout is expand, then contract: `smrt db:migrate` builds the tenant-led
+ * unique beside the global one (an `error` until it exists, so db:status exits
+ * 1), and the global one stays — reported as a `warning` — until
+ * `smrt db:migrate --drop-legacy-natural-key` once no old code is running.
  * Explicit `@smrt({ conflictColumns })` that omit the tenant column are the
  * author's declared contract and are not reported here (the tenancy
  * package's `auditTenantScopedRegistrations()` flags runtime-registered ones).
@@ -47,7 +49,7 @@ export interface TenantNaturalKeyFinding {
     tableName: string;
     conflictColumns: string[];
     liveIndex?: string;
-    kind: 'global_unique' | 'missing_tenant_unique';
+    kind: 'global_unique' | 'legacy_global_unique' | 'missing_tenant_unique';
   };
 }
 
@@ -83,14 +85,6 @@ export function checkTenantNaturalKeyUniques(
     const uniques = (live.indexes ?? []).filter(
       (index) => index.unique === true && !index.where,
     );
-    if (
-      uniques.some((index) =>
-        sameColumnSet(index.columns ?? [], conflictColumns),
-      )
-    ) {
-      continue;
-    }
-
     const naturalKey = conflictColumns.filter(
       (column) => column !== tenantColumn,
     );
@@ -98,6 +92,38 @@ export function checkTenantNaturalKeyUniques(
       sameColumnSet(index.columns ?? [], naturalKey),
     );
     const target = `(${conflictColumns.join(', ')})`;
+    if (
+      uniques.some((index) =>
+        sameColumnSet(index.columns ?? [], conflictColumns),
+      )
+    ) {
+      // Expanded: the tenant-led unique exists. A surviving global unique is
+      // the legacy key db:migrate keeps for code still on the previous
+      // release; it is a pending contract step, not a failure.
+      if (global) {
+        findings.push({
+          name: `${tableName}.${global.name ?? '(unnamed unique)'}`,
+          status: 'warning',
+          message:
+            `Tenant-owned table "${tableName}" (${className}) still carries the legacy unique ` +
+            `index on (${naturalKey.join(', ')}) beside the tenant-led ${target}. Until it is ` +
+            'dropped, a second tenant cannot store a key another tenant already uses (the save ' +
+            'fails with a unique violation; nothing is overwritten).',
+          recommendation:
+            'Once every running instance is on the release that upserts on the tenant-led key, run ' +
+            '`smrt db:migrate --drop-legacy-natural-key` to drop it.',
+          details: {
+            className,
+            tableName,
+            conflictColumns,
+            liveIndex: global.name,
+            kind: 'legacy_global_unique',
+          },
+        });
+      }
+      continue;
+    }
+
     if (global) {
       findings.push({
         name: `${tableName}.${global.name ?? '(unnamed unique)'}`,
@@ -109,10 +135,11 @@ export function checkTenantNaturalKeyUniques(
           'are refused (TENANT_ISOLATION_VIOLATION), and creates can fail outright until the ' +
           'index matches the upsert target.',
         recommendation:
-          'Run `smrt db:migrate`: it swaps the index in place under the same name for the ' +
-          'tenant-inclusive key (a superset, so it cannot fail on existing rows). Deploy the ' +
-          'migration together with the release that carries the new upsert target: old code ' +
-          'upserts on the global key and new code on the tenant-led one, and each needs its own index.',
+          'Run `smrt db:migrate` BEFORE deploying the release that upserts on the tenant-led ' +
+          'key: it builds the tenant-inclusive unique under its own name (a superset, so it ' +
+          'cannot fail on existing rows) and keeps this one, so old code (ON CONFLICT on the ' +
+          'global key) and new code (ON CONFLICT on the tenant-led key) both keep working. ' +
+          'After the rollout, `smrt db:migrate --drop-legacy-natural-key` drops the legacy index.',
         details: {
           className,
           tableName,

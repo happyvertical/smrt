@@ -116,6 +116,35 @@ describe('checkTenantNaturalKeyUniques', () => {
     ).toEqual([]);
   });
 
+  it('warns (no exit 1) while the legacy global unique survives beside the tenant-led one', () => {
+    const findings = forTables(
+      checkTenantNaturalKeyUniques(
+        live({
+          tnk_leagues: [
+            {
+              name: 'tnk_leagues_slug_context_idx',
+              columns: ['slug', 'context'],
+              unique: true,
+            },
+            {
+              name: 'tnk_leagues_tenant_id_slug_idx',
+              columns: ['tenant_id', 'slug', 'context'],
+              unique: true,
+            },
+          ],
+        }),
+      ),
+      'tnk_',
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      name: 'tnk_leagues.tnk_leagues_slug_context_idx',
+      status: 'warning',
+      details: { kind: 'legacy_global_unique' },
+    });
+    expect(findings[0].recommendation).toContain('--drop-legacy-natural-key');
+  });
+
   it('reports a missing tenant-inclusive unique', () => {
     const findings = forTables(
       checkTenantNaturalKeyUniques(live({ tnk_leagues: [] })),

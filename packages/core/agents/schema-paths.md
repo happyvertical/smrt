@@ -413,13 +413,18 @@ else `tenant_id`) leads the default natural key on every producer:
 `normalizeConflictColumns()`, the generator's `resolveConflictTarget()` and the
 registry schema-builder. The tenancy read policy is still never inferred
 (`getTenantScopedConfig()` stays undefined). Explicit `conflictColumns` are
-never rewritten. The index keeps its stable `<table>_slug_context_idx` name
-(conflict naming treats an unmarked `tenant_id` as the tenant column), so
-`smrt db:migrate` swaps it in place; the new key is a superset and cannot fail
-on existing rows, but old code's `ON CONFLICT (slug, context)` and new code's
-`ON CONFLICT (tenant_id, slug, context)` each need their own index, so deploy
-the code and the migration together. `db:status` names a live global unique on
-a tenant-owned table (`cli/src/commands/tenant-natural-keys.ts`). The implicit
+never rewritten. Old code's `ON CONFLICT (slug, context)` and new code's
+`ON CONFLICT (tenant_id, slug, context)` each need their own unique index, so
+the inferred tenant-led key is named by the custom-key rule
+(`<table>_tenant_id_slug_idx`; only a DECLARED tenant column keeps
+`<table>_slug_context_idx`) and `smrt db:migrate` builds it BESIDE the legacy
+global unique (expand). The differ keeps the legacy index
+(`isLegacyNaturalKeyIndex()`, exempt from the #3126 superseded-index sweep and
+from `--drop-indexes`) until `--drop-legacy-natural-key` /
+`DiffOptions.dropLegacyNaturalKey` (contract). `db:status` exits 1 while the
+tenant-led unique is missing and warns while the legacy one survives
+(`cli/src/commands/tenant-natural-keys.ts`). Deploy order and locking:
+`docs/content/core.md` ("Upgrading an existing database"). The implicit
 `tenant_id` column never makes a foreign key identifying
 (`resolveForeignKeyDeleteAction({ columnName })`): a tenant FK stays
 `NO ACTION`, so deleting a tenant does not cascade through tenant-owned tables.
