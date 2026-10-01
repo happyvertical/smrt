@@ -251,6 +251,12 @@ export interface AssistantChoiceSet {
   original?: AssistantChoiceOption;
   /** The option (or the original) now previewed; nothing is applied yet. */
   previewOptionId?: string;
+  /**
+   * The option whose preview is being shown right now (the source has not
+   * finished). Cards and the commit button wait for it, so what is committed
+   * is always what the page shows.
+   */
+  previewPendingId?: string;
   commitLabel?: string;
   cancelLabel?: string;
 }
@@ -261,6 +267,13 @@ export class AssistantChoices {
 
   /** Release functions of the holds for offers still open. */
   private readonly releases = new Map<string, () => void>();
+  /**
+   * Per-offer preview queue and request counter: previews run one at a time
+   * in click order, so the page ends on the last click, and only the latest
+   * request updates the offer.
+   */
+  private readonly previewQueues = new Map<string, Promise<void>>();
+  private readonly previewRequests = new Map<string, number>();
 
   /** Abort controllers of pending offers still being filled. */
   private readonly fills = new Map<string, AbortController>();
@@ -557,19 +570,39 @@ export class AssistantChoices {
         status: 'dismissed',
         pending: undefined,
         previewOptionId: undefined,
+        previewPendingId: undefined,
       });
     }
   }
 
-  /** Put the page back if this offer is previewing something. */
+  /**
+   * Put the page back if this offer is previewing something (or is about
+   * to). Queued behind any preview still running, and it cancels queued
+   * ones, so a slow preview never lands after the page was restored.
+   */
   private async restorePreview(setId: string): Promise<void> {
     const set = this.sets.find((s) => s.id === setId);
-    if (!set?.previewable || set.previewOptionId === undefined) return;
-    try {
-      await this.source(set.sourceId)?.preview?.(set.original ?? null);
-    } catch {
-      // Nothing more to do: the page is leaving or the picture is gone.
+    if (
+      !set?.previewable ||
+      (set.previewOptionId === undefined && set.previewPendingId === undefined)
+    ) {
+      return;
     }
+    this.previewRequests.set(setId, (this.previewRequests.get(setId) ?? 0) + 1);
+    const { sourceId } = set;
+    const original = set.original ?? null;
+    const restore = async () => {
+      try {
+        await this.source(sourceId)?.preview?.(original);
+      } catch {
+        // Nothing more to do: the page is leaving or the picture is gone.
+      }
+    };
+    const queued = (this.previewQueues.get(setId) ?? Promise.resolve()).then(
+      restore,
+    );
+    this.previewQueues.set(setId, queued);
+    await queued;
   }
 
   /**
@@ -590,26 +623,51 @@ export class AssistantChoices {
         : set.options.find((o) => o.id === optionId);
     const source = this.source(set.sourceId);
     if (!option || !source?.preview) return;
-    // One preview at a time: put back any other offer's first.
-    for (const other of this.sets) {
-      if (other.id !== setId && other.previewOptionId !== undefined) {
-        await this.restorePreview(other.id);
-        this.update(other.id, { previewOptionId: undefined });
+    const request = (this.previewRequests.get(setId) ?? 0) + 1;
+    this.previewRequests.set(setId, request);
+    const latest = () => this.previewRequests.get(setId) === request;
+    this.update(setId, { previewPendingId: optionId });
+    const run = async () => {
+      // A newer click (or a restore) is queued behind this one: let it run
+      // instead. A closed offer previews nothing.
+      const current = this.sets.find((s) => s.id === setId);
+      if (
+        !latest() ||
+        !current ||
+        (current.status !== 'waiting' && current.status !== 'failed')
+      ) {
+        return;
       }
-    }
-    try {
-      await source.preview(option);
-      this.update(setId, {
-        status: 'waiting',
-        previewOptionId: optionId,
-        error: undefined,
-      });
-    } catch (err) {
-      this.update(setId, {
-        status: 'failed',
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+      // One preview at a time: put back any other offer's first.
+      for (const other of this.sets) {
+        if (other.id !== setId && other.previewOptionId !== undefined) {
+          await this.restorePreview(other.id);
+          this.update(other.id, { previewOptionId: undefined });
+        }
+      }
+      try {
+        await source.preview?.(option);
+        if (!latest()) return;
+        this.update(setId, {
+          status: 'waiting',
+          previewOptionId: optionId,
+          previewPendingId: undefined,
+          error: undefined,
+        });
+      } catch (err) {
+        if (!latest()) return;
+        this.update(setId, {
+          status: 'failed',
+          previewPendingId: undefined,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+    const queued = (this.previewQueues.get(setId) ?? Promise.resolve()).then(
+      run,
+    );
+    this.previewQueues.set(setId, queued);
+    await queued;
   }
 
   /**
@@ -619,7 +677,9 @@ export class AssistantChoices {
    */
   async commit(setId: string): Promise<void> {
     const set = this.sets.find((s) => s.id === setId);
-    if (!set?.previewable) return;
+    // Never commit while a preview is still being shown: the option that
+    // would be applied is not yet the one on the page.
+    if (!set?.previewable || set.previewPendingId !== undefined) return;
     const id = set.previewOptionId;
     if (!id || id === set.original?.id) {
       this.cancel(setId);
@@ -646,7 +706,12 @@ export class AssistantChoices {
     }
     this.sets = this.sets.map((set) =>
       set.status === 'waiting' && !set.lasting
-        ? { ...set, status: 'dismissed' as const, previewOptionId: undefined }
+        ? {
+            ...set,
+            status: 'dismissed' as const,
+            previewOptionId: undefined,
+            previewPendingId: undefined,
+          }
         : set,
     );
     this.syncHolds();

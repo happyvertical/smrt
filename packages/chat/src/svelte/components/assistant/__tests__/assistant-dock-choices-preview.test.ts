@@ -210,6 +210,112 @@ describe('previewable choices', () => {
     expect(screen.queryByRole('button', { name: /^Brighter/ })).toBeNull();
   });
 
+  it('waits for a slow preview: cards and commit are off until the page shows it', async () => {
+    const { source, apply } = previewSource();
+    const releases: Array<() => void> = [];
+    const shown: string[] = [];
+    const slow: AssistantChoiceSource = {
+      ...source,
+      preview: (option) =>
+        new Promise<void>((resolve) => {
+          releases.push(() => {
+            shown.push(option?.id ?? 'none');
+            resolve();
+          });
+        }),
+    };
+    const { controller } = await mount(slow);
+    const brighter = screen.getByRole('button', { name: /^Brighter/ });
+    const muchBrighter = screen.getByRole('button', {
+      name: /^Much brighter/,
+    }) as HTMLButtonElement;
+    const use = screen.getByRole('button', {
+      name: 'Use this picture',
+    }) as HTMLButtonElement;
+
+    await userEvent.click(brighter);
+    await until(() => releases.length === 1);
+    // While the page is still changing, nothing else can be picked or committed.
+    expect(muchBrighter.disabled).toBe(true);
+    expect(use.disabled).toBe(true);
+    await userEvent.click(muchBrighter);
+    expect(releases).toHaveLength(1);
+    releases[0]();
+    await until(() => !muchBrighter.disabled);
+    expect(shown).toEqual(['a']);
+    expect(controller.choices[0].previewOptionId).toBe('a');
+    expect(use.disabled).toBe(false);
+    await userEvent.click(use);
+    await until(() => apply.mock.calls.length > 0);
+    expect(apply).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
+  });
+
+  it('back-to-back previews queue, the last one shows, and it is what commits', async () => {
+    const { source, apply } = previewSource();
+    const shown: string[] = [];
+    const releases: Array<() => void> = [];
+    const slow: AssistantChoiceSource = {
+      ...source,
+      preview: (option) =>
+        new Promise<void>((resolve) => {
+          releases.push(() => {
+            shown.push(option?.id ?? 'none');
+            resolve();
+          });
+        }),
+    };
+    const { controller } = await mount(slow);
+    const setId = controller.choices[0].id;
+    // Two programmatic previews (a double click that beat the disabled
+    // state): they queue, a superseded one never reaches the page, the page
+    // and the offer both end on the second, and a commit while a preview is
+    // pending does nothing.
+    const first = controller.previewOption(setId, 'a');
+    const second = controller.previewOption(setId, 'b');
+    await until(() => releases.length === 1);
+    await controller.commitOption(setId);
+    expect(apply).not.toHaveBeenCalled();
+    releases[0]();
+    await Promise.all([first, second]);
+    expect(releases).toHaveLength(1);
+    expect(shown).toEqual(['b']);
+    expect(controller.choices[0].previewOptionId).toBe('b');
+    expect(controller.choices[0].previewPendingId).toBeUndefined();
+    await controller.commitOption(setId);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
+  });
+
+  it('cancelling during a slow preview restores the page after it, never before', async () => {
+    const { source } = previewSource();
+    const shown: Array<string | null> = [];
+    const releases: Array<() => void> = [];
+    const slow: AssistantChoiceSource = {
+      ...source,
+      preview: (option) =>
+        new Promise<void>((resolve) => {
+          releases.push(() => {
+            shown.push(option?.id === 'original' || !option ? null : option.id);
+            resolve();
+          });
+        }),
+    };
+    const { controller } = await mount(slow);
+    const setId = controller.choices[0].id;
+    const pending = controller.previewOption(setId, 'a');
+    await until(() => releases.length === 1);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Keep the original' }),
+    );
+    releases[0]();
+    await pending;
+    await until(() => releases.length === 2);
+    releases[1]();
+    await until(() => shown.length === 2);
+    expect(shown).toEqual(['a', null]);
+    expect(controller.choices[0].status).toBe('dismissed');
+  });
+
   it('cancel restores the original and closes without applying', async () => {
     const { source, shown, apply } = previewSource();
     await mount(source);

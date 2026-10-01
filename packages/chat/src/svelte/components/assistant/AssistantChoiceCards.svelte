@@ -67,6 +67,7 @@ const { t } = useI18n();
   {@const preview = previews(set)}
   {@const open = set.status === 'waiting' || set.status === 'failed'}
   {@const previewed = set.previewOptionId}
+  {@const previewing = preview && set.previewPendingId !== undefined}
   {@const cards = preview && set.original ? [set.original, ...set.options] : set.options}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
@@ -90,7 +91,8 @@ const { t } = useI18n();
             class="assistant-dock-choice"
             class:chosen={preview ? previewed === option.id : set.chosenOptionId === option.id}
             aria-pressed={preview ? previewed === option.id : set.chosenOptionId === option.id}
-            disabled={!open}
+            aria-busy={previewing && set.previewPendingId === option.id ? 'true' : undefined}
+            disabled={!open || previewing}
             onclick={() => (preview ? onpreview?.(set.id, option.id) : onchoose(set.id, option.id))}
           >
             {#if option.imageUrl}
@@ -121,7 +123,7 @@ const { t } = useI18n();
         <Button
           type="button"
           class="assistant-dock-choices-use"
-          disabled={!previewed || previewed === set.original?.id}
+          disabled={previewing || !previewed || previewed === set.original?.id}
           onclick={() => oncommit?.(set.id)}
         >
           {set.commitLabel}
