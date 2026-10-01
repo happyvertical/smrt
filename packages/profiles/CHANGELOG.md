@@ -1,5 +1,62 @@
 # @happyvertical/smrt-profiles
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: Picture links for places and people.
+  
+  - `PlaceAsset` and `ProfileAsset` declare `onDelete: 'CASCADE'` on both sides (the
+    place/profile and the asset). It was already the implied default for these
+    conflict-key columns; now it is explicit. No schema change.
+  - `Place.addAsset()` and `Profile.addAsset()` refuse an asset of another tenant
+    (new shared helper `assertAssetLinkable()` in `@happyvertical/smrt-assets`). The
+    asset's tenant is read from storage by id, so a hand-built `{ id }` or a stale
+    object cannot slip past, and an unknown asset id is refused. A tenant's place or
+    profile may link its own and global assets; a shared (global) place or profile
+    may link only global assets, because its links are visible to every tenant.
+  - `Place.getMainAsset()` / `Place.setMainAsset(asset | null)`: the place's one main
+    picture, stored as its `hero` link (`PLACE_MAIN_ASSET_RELATIONSHIP`). Setting a new
+    one removes the old `hero` link and keeps the asset's other links.
+- 0259083: Profiles can hold ordered web links. New `ProfileLink` model (`profile_links`:
+  `platform` from `PROFILE_LINK_PLATFORMS` — facebook, instagram, x, linkedin,
+  youtube, tiktok, website, other — a validated http(s) `url`, optional `label`,
+  `sortOrder`, tenant-scoped) with `profileId` declared `onDelete: 'CASCADE'`.
+  A link's slug is its id, never its address or label. `ProfileLinkCollection`
+  adds `listForProfile()`, `replaceForProfile()` (ordered add/keep/remove in one
+  transaction, new links take the profile's tenant) and `reorder()`; `Profile`
+  gets `getLinks()` / `setLinks()`. `Profile.isPublic` (boolean, default false)
+  is a new public-figure flag. Additive schema: one new table and one new
+  column; run `db:migrate`.
+
+### Patch Changes
+
+- 0259083: Profile metadata carries its profile's tenant (#3235). `Profile.addMetadata()`
+  now stamps new `ProfileMetadata` rows with the profile's `tenantId` instead of
+  relying on tenant auto-population, which is skipped under a super-admin bypass
+  or system context, and heals a NULL-tenant row on its next update. The
+  `ProfileMetadata` and `ProfileMetafield` constructors keep an explicit
+  `tenantId` option (it was dropped by the class-field initializer), and metafield
+  lookups in `addMetadata()` / `removeMetadata()` prefer the profile tenant's
+  definition, then a global one, never another tenant's.
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-assets@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-prompts@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+
 ## 0.51.39
 
 ### Patch Changes

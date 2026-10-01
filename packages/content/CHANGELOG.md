@@ -1,5 +1,148 @@
 # @happyvertical/smrt-content
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: `ContentBodyEditor` exposes `previewImage(index, src | null)` and `clearImagePreviews()`: show another picture in place in the story without changing it. A preview is never written to the body or reported by `onChange` (even when the person keeps typing), only same-origin paths are shown, `replaceImage` takes its place when the person accepts, and it goes away with the editor.
+  
+  A previewed picture that has a `srcset` shows the preview (the `srcset` is set aside while previewing and put back after), `replaceImage` takes the new picture's `srcset`/`sizes` instead of keeping the old one's, and copying or cutting during a preview puts the real picture on the clipboard.
+- 0259083: `ContentBodyEditor` hides its "Save as" HTML/Markdown picker by default. Pass
+  `showFormatPicker` (or `showBodyFormatPicker` on `ContentEditor`) to show it.
+  The storage format is a technical choice most editors should not face; the
+  body keeps the `format` it was given either way.
+- 0259083: "Change this picture" in `ContentBodyEditor`. With the new
+  `onRequestImageChange` callback, the selected picture's toolbar gets a Change
+  button, a selected or hovered picture shows a 44px change badge, and pressing
+  and holding a picture (about half a second without moving; moving is still a
+  drag) asks with `listen: true` so the host can open its request box already
+  listening. The context menu is held back only during a press on a picture.
+  
+  The change badge follows a picture as it is resized, and on phones the
+  toolbar's Change is icon-only.
+- 0259083: `Content.getAssets(relationship?, { excludeRelationships })` leaves out the
+  listed relationship types (for example a source document's page renders) so a
+  picture picker does not offer them. Excluded links are not resolved and stay
+  in the data.
+  
+  `Content.getAssetIds(relationship?)` returns the linked asset ids without loading
+  the asset rows, so a caller can keep the ids a listing left out (an editor saving
+  `assetIds` must not unlink them).
+- 0259083: Pictures in the content editor:
+  
+  - `ContentPictureDrawer`: one plain "Add pictures" drawer. Search, upload,
+    drag one or several pictures into the story at the drop position, or pick
+    them and press Insert (the keyboard and phone path). It shows and changes
+    the main picture.
+  - Main picture rule: the first picture in the story is the main picture
+    unless the person chose one. `resolveBodyMainPicture`, `setBodyMainImage`
+    (marks a story picture with `data-smrt-main="true"`, so the choice follows
+    the picture when pictures are reordered) and `bodyHasImage`;
+    `ContentEditorState.mainPicture` and `syncMainPictureFromBody()`.
+  - `ContentBodyEditor`: a dragged `application/x-smrt-image` payload may be an
+    array (inserted in order); `replaceImage(index, asset)` swaps a picture in
+    place; `mainImageAssetId` marks the selected picture's "Use as main picture"
+    button as pressed. The button now reads "Use as main picture".
+  - Markdown bodies keep a stored picture's asset id (and the chosen main
+    picture) in the image title — `smrt-image <id>`, `smrt-image <id> main`,
+    `smrt-thumbnail:<placement> <id>` — so the main-picture rule, "Use as main
+    picture" and picture replacement work for Markdown articles too. Rendering
+    turns the markers back into attributes, never a visible title.
+  
+  - The drawer loads more pictures as its list scrolls, and asks again when a
+    load-more request went unanswered; `onSearch` can hand the drawer's search to
+    the host (its own picture search); its Done button is a full-size 44px touch
+    target.
+  - A story picture can be moved anywhere in the story: drag it with a drop line
+    showing where it will land, or use Move up / Move down (keyboard and phone).
+- 0259083: - **Security:** body HTML is allowlist-sanitized with a real HTML parser
+    (`sanitize-html`, the same result in SSR, prerender and the browser).
+    Single-pass regexes let nested input reassemble into a live `<script>`
+    (stored XSS on public pages rendering bodies with `{@html}`). Scripts,
+    handlers, `javascript:` URLs, iframes, SVG/MathML, forms, media, classes, ids
+    and other CSS are removed; links, images (never SVG), tables and the editor's
+    `data-smrt-*` markers are kept. Thumbnail `src` swaps work on the parsed
+    attribute. Images whose only source is refused are dropped; refused hrefs
+    are removed rather than rewritten to `#`.
+  - Agent-ready editor fields: `ContentTitleField`, `ContentStatusFields`,
+    `ContentMetadataFields` and `ContentBodyEditor` name and label every control,
+    so they register with the form control registry and agents can propose
+    edits for review. `mode: 'simple' | 'full'` (and a `fields` allow-list) hides
+    advanced fields for everyday editors.
+  - `ContentBodyEditor`: an `imagePanel` snippet above the story, thumbnail
+    placement helpers (`placeThumbnailInBody`, `removeThumbnailFromBody`,
+    `bodyHasThumbnail`, `thumbnailPlacementForSize`), even toolbar icons, and
+    44px toolbar and review-status buttons on touch screens.
+
+### Patch Changes
+
+- 0259083: Content tolerates a linked picture that no longer exists. `getAssets()` skips a
+  `content_assets` link whose asset row is gone and logs a warning naming it;
+  ContentPictureDrawer and ContentEditor's media list leave out a picture whose
+  preview cannot be loaded (with a console warning) instead of showing a broken
+  tile.
+- 0259083: The governance panels (claim audit, corrections, versions, transparency, the factual workflow panel and the transparency report) lay themselves out by their own width instead of the viewport, so they fit a full page, a side panel, the assistant dock or a phone without host overrides. Each is a size container; narrow toolbars and card footers stack with full-width 44px actions, the claim checkbox and publish toggle have 44px targets, and cards read the shared `--smrt-card-border`, `--smrt-card-background` and `--smrt-card-shadow` tokens. Because each panel is an `inline-size` container, its width comes from its host, not its content: inside a shrink-to-fit host (an absolutely positioned popover, an `auto` grid track, an inline-block) give the panel or its host a definite width, or it collapses.
+- 0259083: `Contents.mirror()` derives the slug from the file name instead of setting it,
+  so two mirrored URLs that end in the same file name (`index.html`) are two
+  rows (`index`, `index-2`) instead of the second overwriting the first.
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-agents@0.52.0
+  - @happyvertical/smrt-assets@0.52.0
+  - @happyvertical/smrt-images@0.52.0
+  - @happyvertical/smrt-chat@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-messages@0.52.0
+  - @happyvertical/smrt-prompts@0.52.0
+  - @happyvertical/smrt-profiles@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+  - @happyvertical/smrt-facts@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
 ## 0.51.39
 
 ### Patch Changes

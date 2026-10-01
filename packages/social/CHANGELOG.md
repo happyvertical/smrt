@@ -1,5 +1,58 @@
 # @happyvertical/smrt-social
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: `SocialPost` records who posted it: a nullable `createdByUserId`
+  (crossPackageRef to smrt-users User, native uuid on PostgreSQL) that
+  `createDraft()` accepts. Publish-outcome helpers never change it; agent and
+  scheduled posts leave it null. **New column: run `smrt db:migrate`.**
+
+### Patch Changes
+
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-content@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-secrets@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+  - @happyvertical/smrt-video@0.52.0
+  - @happyvertical/smrt-config@0.52.0
+
 ## 0.51.39
 
 ### Patch Changes
