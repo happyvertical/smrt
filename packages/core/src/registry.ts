@@ -29,6 +29,7 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
+import { buildCascadePlan } from './cascade.js';
 import { applyOneToManyChildAccessors } from './child-accessors';
 import {
   SmrtCollection,
@@ -3372,6 +3373,31 @@ export class ObjectRegistry {
           field?.type !== 'manyToMany' &&
           toSnakeCase(fieldName) === columnName,
       ),
+    );
+  }
+
+  /**
+   * Every typed reference (`@foreignKey` / `@crossPackageRef`) that points at
+   * `className`, resolved the same way `SmrtObject.delete()` resolves them for
+   * cascades: the referencing class, its table and column, and the resolved
+   * `onDelete` action. Use it to re-point references before replacing one row
+   * with another (a tag merge) instead of letting a delete cascade them away.
+   *
+   * @param className - Name of the referenced class (simple or qualified)
+   */
+  static getIncomingReferences(className: string): Array<{
+    className: string;
+    tableName: string;
+    column: string;
+    onDelete: string;
+  }> {
+    return buildCascadePlan(ObjectRegistry, className).references.map(
+      (reference) => ({
+        className: reference.className,
+        tableName: reference.tableName,
+        column: reference.column,
+        onDelete: reference.action,
+      }),
     );
   }
 

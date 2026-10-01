@@ -32,5 +32,4 @@ release). A database that created `asset_tags` by hand in the old
 `(asset_id, tag_slug)` shape must drop or rename that table before migrating:
 its `tag_slug` column and `(asset_id, tag_slug)` key do not converge onto the
 model, and its rows would need mapping to Tag ids. `TagCollection.mergeTag()`
-deletes the merged tag, which now removes its asset links; re-point them first
-when merging.
+re-points the merged tag's asset links to the target tag before deleting it.

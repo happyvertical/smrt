@@ -202,6 +202,33 @@ describe('AssetCollection', () => {
       expect((await tags.get({ id: tag.id as string }))?.slug).toBe('gone');
     });
 
+    it('merging a tag re-points its pictures instead of dropping them', async () => {
+      const one = await seed({ name: 'one' });
+      const two = await seed({ name: 'two' });
+      await collection.addTag(one.id as string, 'townhall');
+      await collection.addTag(two.id as string, 'townhall');
+      const target = await collection.addTag(two.id as string, 'town-hall');
+
+      const tags = await TagCollection.create({ db });
+      await tags.mergeTag('townhall', 'town-hall', 'asset');
+
+      const map = await collection.getTagsForAssets([
+        one.id as string,
+        two.id as string,
+      ]);
+      expect(map.get(one.id as string)?.map((t) => t.slug)).toEqual([
+        'town-hall',
+      ]);
+      // `two` carried both: one link remains, no duplicate.
+      expect(map.get(two.id as string)?.map((t) => t.slug)).toEqual([
+        'town-hall',
+      ]);
+      const links = await AssetTagCollection.create({ db });
+      const rows = await links.list({});
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => row.tagId === target.id)).toBe(true);
+    });
+
     it('rejects an empty tag and an unknown asset', async () => {
       const asset = await seed();
       await expect(
