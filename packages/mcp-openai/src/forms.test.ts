@@ -238,3 +238,169 @@ describe('bounded pinned OpenAI forms', () => {
     }
   });
 });
+
+describe('reviewed form input boundaries', () => {
+  for (const kind of [
+    'index-getter',
+    'iterator',
+    'hidden-toJSON',
+    'hidden-field',
+    'array-prototype',
+  ]) {
+    it(`rejects ${kind} without invoking supplied code`, () => {
+      let calls = 0;
+      const hook = () => {
+        calls++;
+        return 'safe';
+      };
+      const values = ['safe'];
+      if (kind === 'index-getter')
+        Object.defineProperty(values, '0', { get: hook });
+      if (kind === 'iterator')
+        Object.defineProperty(values, Symbol.iterator, { value: hook });
+      if (kind === 'array-prototype')
+        Object.setPrototypeOf(values, { [Symbol.iterator]: hook });
+      const input = { action: 'accept', content: { values } };
+      if (kind === 'hidden-toJSON')
+        Object.defineProperty(input, 'toJSON', { value: hook });
+      if (kind === 'hidden-field')
+        Object.defineProperty(input.content, 'hidden', { get: hook });
+      expect(() =>
+        validateOpenAiFormReply(
+          {
+            type: 'object',
+            properties: {
+              values: { type: 'array', items: { type: 'string' } },
+            },
+          },
+          input,
+        ),
+      ).toThrow();
+      expect(calls).toBe(0);
+    });
+  }
+  it('rejects inherited serialization hooks without invoking them', () => {
+    let calls = 0;
+    Object.defineProperty(Object.prototype, 'toJSON', {
+      configurable: true,
+      value: () => {
+        calls++;
+        return {};
+      },
+    });
+    try {
+      let rejected = false;
+      try {
+        validateOpenAiForm({ type: 'object', properties: {} });
+      } catch {
+        rejected = true;
+      }
+      if (!rejected || calls !== 0)
+        throw new Error(
+          `inherited hook boundary: rejected=${rejected}, calls=${calls}`,
+        );
+    } finally {
+      delete (Object.prototype as { toJSON?: unknown }).toJSON;
+    }
+  });
+  for (const value of [
+    '2024-02-31T12:00:00Z',
+    '2023-02-29T12:00:00Z',
+    '2024-04-31T12:00:00+01:00',
+    '2024-01-01T24:00:00Z',
+    '2024-01-01T12:60:00Z',
+    '2024-01-01T12:00:60Z',
+    '2024-01-01T12:00:00+24:00',
+    '2024-01-01T12:00:00+01:60',
+  ]) {
+    it(`rejects invalid calendar/time ${value}`, () => {
+      expect(() =>
+        validateOpenAiFormReply(
+          {
+            type: 'object',
+            properties: { timestamp: { type: 'string', format: 'date-time' } },
+          },
+          { action: 'accept', content: { timestamp: value } },
+        ),
+      ).toThrow();
+    });
+  }
+  for (const value of [
+    '2024-02-29T23:59:59Z',
+    '2024-03-01T00:30:00+01:00',
+    '2024-02-29T23:30:00.123-02:00',
+  ]) {
+    it(`preserves valid calendar timestamp ${value}`, () => {
+      expect(
+        validateOpenAiFormReply(
+          {
+            type: 'object',
+            properties: { timestamp: { type: 'string', format: 'date-time' } },
+          },
+          { action: 'accept', content: { timestamp: value } },
+        ),
+      ).toEqual({ action: 'accept', content: { timestamp: value } });
+    });
+  }
+});
+
+it('enforces aggregate byte bounds while allowing bounded multi-item content', () => {
+  const form = {
+    type: 'object',
+    properties: { values: { type: 'array', items: { type: 'string' } } },
+  };
+  expect(
+    validateOpenAiFormReply(form, {
+      action: 'accept',
+      content: { values: ['a'.repeat(3000), 'b'.repeat(3000)] },
+    }),
+  ).toEqual({
+    action: 'accept',
+    content: { values: ['a'.repeat(3000), 'b'.repeat(3000)] },
+  });
+  expect(() =>
+    validateOpenAiFormReply(form, {
+      action: 'accept',
+      content: { values: Array(20).fill('x'.repeat(4096)) },
+    }),
+  ).toThrow();
+});
+it('rejects schema array accessors and array inherited toJSON without callbacks', () => {
+  let calls = 0;
+  const values = ['one'];
+  Object.defineProperty(values, '0', {
+    get: () => {
+      calls++;
+      return 'one';
+    },
+  });
+  expect(() =>
+    validateOpenAiForm({
+      type: 'object',
+      properties: { choice: { type: 'string', enum: values } },
+    }),
+  ).toThrow();
+  expect(calls).toBe(0);
+  Object.defineProperty(Array.prototype, 'toJSON', {
+    configurable: true,
+    value: () => {
+      calls++;
+      return [];
+    },
+  });
+  try {
+    let rejected = false;
+    try {
+      validateOpenAiFormReply(
+        { type: 'object', properties: {} },
+        { action: 'cancel' },
+      );
+    } catch {
+      rejected = true;
+    }
+    if (!rejected || calls !== 0)
+      throw new Error('Inherited array serialization hook was not inert');
+  } finally {
+    delete (Array.prototype as unknown as { toJSON?: unknown }).toJSON;
+  }
+});

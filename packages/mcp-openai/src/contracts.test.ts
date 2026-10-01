@@ -318,3 +318,26 @@ describe('primitive settings validation', () => {
     ).toThrow();
   });
 });
+
+describe('shared inert JSON descriptor boundary', () => {
+  it('keeps validation-only return semantics and accepts ordinary nested JSON', () => {
+    const value = {
+      toJSON: 'ordinary data',
+      values: ['a', null, 1, true, { text: 'safe' }],
+    };
+    expect(json(value)).toBeUndefined();
+    expect(value.values[0]).toBe('a');
+  });
+  it('rejects sparse arrays, custom array properties and hidden/symbol fields', () => {
+    const sparse = new Array(1);
+    const extra = Object.assign(['safe'], { extra: 'unsafe' });
+    const hidden = Object.defineProperty({}, 'hidden', { value: 'unsafe' });
+    for (const value of [
+      sparse,
+      extra,
+      hidden,
+      { [Symbol('hidden')]: 'unsafe' },
+    ])
+      expect(() => json(value)).toThrow();
+  });
+});
