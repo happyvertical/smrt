@@ -248,6 +248,14 @@ const { t } = useI18n();
     font-size: 0.85rem;
   }
 
+  /* The buttons stay in view while the cards scroll. */
+  .assistant-dock-choices-commit {
+    position: sticky;
+    inset-block-end: 0;
+    padding-block: 0.25rem;
+    background: var(--smrt-color-surface-container-low, #f7f7fb);
+  }
+
   .assistant-dock-choices-commit :global(button) {
     min-block-size: 44px;
   }
