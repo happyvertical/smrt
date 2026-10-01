@@ -97,6 +97,19 @@ function negativeSessionHeaderLiterals(path, source) {
     if (ts.isBinaryExpression(node) && named(node.left, 'expect') && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) shadowedExpect = true;
     if (ts.isExpressionStatement(node)) {
       const matcher = node.expression;
+      if (call(matcher, 0) && property(matcher.expression, 'toBeNull')) {
+        const assertion = matcher.expression.expression;
+        if (call(assertion, 1) && named(assertion.expression, 'expect')) {
+          const get = assertion.arguments[0];
+          if (call(get, 1) && property(get.expression, 'get')) {
+            const headers = get.expression.expression;
+            const literal = get.arguments[0];
+            if (property(headers, 'headers') && ts.isIdentifier(headers.expression) && ts.isStringLiteral(literal) && literal.text === 'mcp-session-id') {
+              ranges.push([literal.getStart(file), literal.end]);
+            }
+          }
+        }
+      }
       if (call(matcher, 1) && property(matcher.expression, 'toBe') && matcher.arguments[0].kind === ts.SyntaxKind.TrueKeyword) {
         const assertion = matcher.expression.expression;
         if (call(assertion, 1) && named(assertion.expression, 'expect')) {

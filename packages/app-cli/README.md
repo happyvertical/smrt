@@ -156,10 +156,15 @@ surface is typically mounted with
 The binary rejects non-loopback plaintext HTTP origins before resolving or
 sending stored credentials; use HTTPS for remote application servers.
 
-The bridge canonicalizes its `tools/list` catalog by tool name and emits a
-one-day `private` cache lifetime. The catalog is tied to the configured local
-app credentials, so it never opts into shared caching even when an upstream
-app serves public tools.
+The default native MCP bridge preserves upstream tool catalog order and forwards
+`tools/list`, `tools/call`, `resources/list`, and `resources/read` through SDK v2.
+Tool catalogs and resource responses use a zero TTL with `private` cache scope
+so subsequent requests recheck upstream authorization. The bridge uses the
+configured local app credentials and never opts into shared caching.
+
+Only the explicit `transport: 'legacy-rest'` compatibility mode sorts its
+`tools/list` catalog by tool name and emits a one-day `private` cache lifetime.
+That mode uses the REST-shaped tools endpoints and does not forward resources.
 
 ## Configuration and authentication
 
