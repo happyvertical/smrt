@@ -154,6 +154,50 @@ describe('SignaturePad states', () => {
     expect(root(container)).toHaveAttribute('data-state', 'empty');
   });
 
+  it('locks the pad while the PNG encodes so it commits once and matches the canvas', async () => {
+    let finish!: () => void;
+    vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation(
+      (callback, type) => {
+        finish = () => callback(new Blob(['pixels'], { type }));
+      },
+    );
+    const onCapture = vi.fn();
+    const { container } = render(SignaturePad, { props: { onCapture } });
+    await stroke(canvas(container));
+
+    await fireEvent.click(useButton());
+    expect(useButton()).toBeDisabled();
+    await fireEvent.click(useButton());
+    context.stroke.mockClear();
+    await stroke(canvas(container), 'mouse', 2);
+    expect(context.stroke).not.toHaveBeenCalled();
+
+    finish();
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-state', 'committed'),
+    );
+    expect(onCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards an encoding superseded by Clear', async () => {
+    let finish!: () => void;
+    vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation(
+      (callback, type) => {
+        finish = () => callback(new Blob(['pixels'], { type }));
+      },
+    );
+    const onCapture = vi.fn();
+    const { container } = render(SignaturePad, { props: { onCapture } });
+    await stroke(canvas(container));
+    await fireEvent.click(useButton());
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    finish();
+    await Promise.resolve();
+    expect(onCapture).not.toHaveBeenCalled();
+    expect(root(container)).toHaveAttribute('data-state', 'empty');
+  });
+
   it('accepts label overrides', () => {
     render(SignaturePad, {
       props: { labels: { useSignature: 'Signer', clear: 'Effacer' } },

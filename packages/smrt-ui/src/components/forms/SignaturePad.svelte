@@ -118,6 +118,10 @@ let fieldEl = $state<HTMLInputElement | null>(null);
 let activePointerId: number | null = null;
 let lastPoint: { x: number; y: number } | null = null;
 let committedFile: File | null = null;
+// Set while "Use signature" encodes the PNG: the pad is locked so the posted
+// file always equals the ink on screen, and a second click cannot commit twice.
+let encoding = $state(false);
+let encodeRequest = 0;
 
 function paintPaper(): void {
   const context = canvasEl?.getContext('2d');
@@ -175,7 +179,7 @@ function drawSegment(
 }
 
 function handlePointerDown(event: PointerEvent): void {
-  if (disabled || padState === 'committed') return;
+  if (disabled || encoding || padState === 'committed') return;
   if (!isAcceptedPointerType(event.pointerType, stylusOnly)) return;
   event.preventDefault();
   activePointerId = event.pointerId;
@@ -185,7 +189,7 @@ function handlePointerDown(event: PointerEvent): void {
 
 function handlePointerMove(event: PointerEvent): void {
   if (activePointerId !== event.pointerId) return;
-  if (disabled || padState === 'committed') return;
+  if (disabled || encoding || padState === 'committed') return;
   event.preventDefault();
   const point = canvasPoint(event);
   if (lastPoint) drawSegment(lastPoint, point);
@@ -218,6 +222,8 @@ function clear(): void {
 
 function resetPad(): void {
   const wasCommitted = padState === 'committed';
+  encodeRequest += 1;
+  encoding = false;
   activePointerId = null;
   lastPoint = null;
   paintPaper();
@@ -231,10 +237,17 @@ function resetPad(): void {
 
 function accept(): void {
   const canvas = canvasEl;
-  if (disabled || padState !== 'signed' || !canvas) return;
+  if (disabled || encoding || padState !== 'signed' || !canvas) return;
+  encoding = true;
+  activePointerId = null;
+  lastPoint = null;
+  const request = ++encodeRequest;
   const dataUrl = canvas.toDataURL('image/png');
   canvas.toBlob((blob) => {
-    if (!blob || padState !== 'signed') return;
+    // A Clear (or resize) during encoding superseded this request.
+    if (request !== encodeRequest) return;
+    encoding = false;
+    if (!blob) return;
     committedFile = new File([blob], fileName, { type: 'image/png' });
     writeField(committedFile);
     padState = 'committed';
@@ -302,7 +315,7 @@ useControlRegistration(() => {
       type="button"
       class="action primary"
       onclick={accept}
-      disabled={disabled || padState !== 'signed'}
+      disabled={disabled || encoding || padState !== 'signed'}
     >
       {text.useSignature}
     </button>
