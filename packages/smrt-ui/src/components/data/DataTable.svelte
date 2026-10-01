@@ -1394,10 +1394,18 @@ $effect(() => {
   void displayRows.length;
   if (!container) return;
 
+  let resizeFrame: number | undefined;
+  const scheduleOverflowUpdate = () => {
+    if (resizeFrame !== undefined) return;
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = undefined;
+      updateOverflowState();
+    });
+  };
   const resizeObserver =
     typeof ResizeObserver === 'undefined'
       ? undefined
-      : new ResizeObserver(updateOverflowState);
+      : new ResizeObserver(scheduleOverflowUpdate);
   resizeObserver?.observe(container);
   const table = container.querySelector('table');
   if (table) resizeObserver?.observe(table);
@@ -1406,6 +1414,7 @@ $effect(() => {
 
   return () => {
     resizeObserver?.disconnect();
+    if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
     window.removeEventListener('resize', updateOverflowState);
   };
 });
