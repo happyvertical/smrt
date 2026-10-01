@@ -677,3 +677,19 @@ accepts a content-region element, and `top-center`/`bottom-center` positions cen
 the viewport within that region (or the window). Anchor geometry follows resize
 and scroll. Custom injected Toaster implementations may optionally implement
 `pause(id, reason)` and `resume(id, reason)` to support interaction pausing.
+
+### SegmentedControl forms
+
+SegmentedControl renders native radio inputs. Set `name` to post the selected
+option value with ordinary form submission or FormData; numeric values post as
+strings while bound values retain their declared type. Unselected, unknown,
+disabled-option, disabled-control and disabled-fieldset values are omitted.
+`required` uses native form validation and accepts numeric zero. Nameless controls
+validate without posting a generated field. Arrow keys cycle enabled options;
+Home/End select the first/last enabled option. Touch density applies to the full
+clickable segment.
+
+Native form reset restores the initial bound value if that option is still
+available and enabled; otherwise it clears the selection. Canceling the reset
+event preserves the current selection. Reset does not fire `onvaluechange`,
+matching native controls; bind:value reflects it.
