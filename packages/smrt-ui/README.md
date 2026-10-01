@@ -60,6 +60,16 @@ labels compare it with today's date in the supplied zone (or the browser zone).
 Impossible calendar dates and invalid explicit zones render `fallback` rather
 than throwing during formatting.
 
+### Combobox form submission
+
+A named `Combobox` submits its selected option value through a hidden native
+input. Its visible search text and option label are display-only. With
+`allowCustom`, typed text becomes the submitted value; otherwise searching keeps
+the last committed selection. A named empty selection submits an empty string;
+controls with no name or an empty name are omitted. Disabled controls, including
+those inside disabled fieldsets, are omitted by native `FormData`. Native form
+reset restores the initial selection and its label, unless reset is canceled.
+
 ### Currency display
 
 `CurrencyDisplay` accepts ISO 4217 codes as a public `string` prop so persisted

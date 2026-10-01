@@ -1,4 +1,5 @@
 <script lang="ts">
+import { untrack } from 'svelte';
 import {
   emitControlChange,
   highlightControl,
@@ -61,6 +62,7 @@ const interactionContext = tryGetControlInteractionContext();
 let rootEl = $state<HTMLDivElement | null>(null);
 let inputEl = $state<HTMLInputElement | null>(null);
 let open = $state(false);
+const initialValue = untrack(() => value);
 let query = $state(value);
 let activeIndex = $state(0);
 const filtered = $derived(
@@ -138,6 +140,23 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 $effect(() => {
+  const form = inputEl?.form;
+  if (!form) return;
+  const reset = (event: Event) => {
+    queueMicrotask(() => {
+      if (event.defaultPrevented) return;
+      value = initialValue;
+      query =
+        options.find((option) => String(option.value) === initialValue)
+          ?.label ?? initialValue;
+      open = false;
+      onvaluechange?.(value);
+    });
+  };
+  form.addEventListener('reset', reset);
+  return () => form.removeEventListener('reset', reset);
+});
+$effect(() => {
   if (!open) return;
   const dismissPointer = (event: PointerEvent) => {
     if (rootEl && !rootEl.contains(event.target as Node)) open = false;
@@ -203,7 +222,8 @@ useControlRegistration(() => {
 <div bind:this={rootEl} class="combobox {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
-  <label for={inputId}>{label}</label><input bind:this={inputEl} id={inputId} {name} role="combobox" autocomplete="off" {placeholder} {disabled} {required} value={query}
+  {#if name}<input type="hidden" {name} {value} {disabled} />{/if}
+  <label for={inputId}>{label}</label><input bind:this={inputEl} id={inputId} role="combobox" autocomplete="off" {placeholder} {disabled} {required} value={query}
     aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
     onfocus={() => open = true} oninput={handleInput} onkeydown={handleKeydown} />
   {#if open && filtered.length}<div id={listId} class="options" role="listbox">{#each filtered as option, index (option.value)}<button id={`${listId}-${index}`} type="button" role="option"
