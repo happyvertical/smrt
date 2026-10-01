@@ -4043,6 +4043,31 @@ export class SchemaComparer {
         for (const name of equivalentIndexNames) {
           claimedDbIndexes.add(name);
         }
+        // Name convergence (PostgreSQL): a database migrated by a pre-release
+        // build carries the inferred tenant-led key under the framework's
+        // legacy `<table>_slug_context_idx` name. Same columns, so it already
+        // serves both upserts; rename it to the manifest name so every
+        // database ends up identical (and name-targeted tooling such as
+        // `db:migrate-null-equal-indexes` finds it). Only that exact
+        // framework name is renamed, never an operator's own index.
+        const legacyName = this.legacyTenantLedIndexName(tableName, idx);
+        if (
+          legacyName &&
+          this.engine === 'postgres' &&
+          equivalentIndexNames.has(legacyName) &&
+          !dbIndexesByName.has(idx.name)
+        ) {
+          const renameSql = `ALTER INDEX IF EXISTS ${this.quoteIdentifier(legacyName)} RENAME TO ${this.quoteIdentifier(idx.name)}`;
+          changes.push({
+            type: 'add_index',
+            table: tableName,
+            name: idx.name,
+            index: idx,
+            note: `renames ${legacyName} (same columns)`,
+            sql: renameSql,
+            sqlStatements: [renameSql],
+          });
+        }
         continue;
       }
 
@@ -4197,6 +4222,34 @@ export class SchemaComparer {
     }
 
     return changes;
+  }
+
+  /**
+   * The framework's pre-release name for a manifest's tenant-led default
+   * natural key: `<table>_slug_context_idx` (CTI) or
+   * `<table>_slug_context_meta_type_idx` (STI), when `idx` is a unique,
+   * unqualified default key led by one ownership column and its manifest name
+   * differs (an inferred owner, see `conflictIndexName()`). `undefined`
+   * otherwise.
+   */
+  private legacyTenantLedIndexName(
+    tableName: string,
+    idx: IndexDefinition,
+  ): string | undefined {
+    const columns = idx.columns ?? [];
+    if (
+      idx.unique !== true ||
+      idx.where ||
+      isJsonPathIndex(idx) ||
+      columns.length < 3 ||
+      !isLegacyNaturalKeyIndex(columns.slice(1), columns)
+    ) {
+      return undefined;
+    }
+    const legacyName = shortenIdentifier(
+      conflictIndexName(tableName, columns.slice(1)),
+    );
+    return legacyName === idx.name ? undefined : legacyName;
   }
 
   /**

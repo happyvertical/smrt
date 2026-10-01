@@ -60,6 +60,12 @@ exactly those columns exists.
    `db:diff --drop-legacy-natural-key`, `DiffOptions.dropLegacyNaturalKey`)
    drops the global index. `--drop-indexes` alone never drops it.
 
+A database migrated by a pre-release build that already holds the tenant-led
+columns under the old `<table>_slug_context_idx` name is matched by columns (no
+new index is built) and, on PostgreSQL, renamed to `<table>_tenant_id_slug_idx`
+by `db:migrate`; `--drop-legacy-natural-key` only ever drops an index whose
+columns are the legacy, tenant-less key.
+
 `--postgres-safe` now also rebuilds any same-name unique index
 build-then-swap (temporary name, drop, rename), so a table never runs without
 a unique index.

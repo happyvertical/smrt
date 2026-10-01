@@ -435,4 +435,69 @@ describe.skipIf(!pgUrl)('natural-key upsert ownership on PostgreSQL', () => {
       for (const pool of pools) await pool.close?.();
     }
   });
+
+  it('a pre-release tenant-led index under the legacy name is kept, never dropped, and renamed', async () => {
+    const className = registrationName(NkPgLeague);
+    const schema = ObjectRegistry.getSchema(className);
+    if (!schema) throw new Error('missing schema');
+    // The shape an earlier QA build left: the tenant-led columns under the
+    // framework's legacy name.
+    await createTable(db, NkPgLeague, LEAGUES, { indexes: false });
+    await db.query(
+      `CREATE UNIQUE INDEX "${LEAGUES}_slug_context_idx" ON "${LEAGUES}" (tenant_id, slug, context)`,
+    );
+    const uniques = async () =>
+      (
+        await db.query(
+          `SELECT i.relname AS name, pg_get_indexdef(x.indexrelid) AS def FROM pg_index x
+           JOIN pg_class i ON i.oid = x.indexrelid JOIN pg_class t ON t.oid = x.indrelid
+           WHERE t.relname = $1 AND x.indisunique AND NOT x.indisprimary ORDER BY 1`,
+          [LEAGUES],
+        )
+      ).rows as Array<{ name: string; def: string }>;
+    const slugIndexChanges = (diff: {
+      changes: Array<{ type: string; name?: string; sql?: string }>;
+    }) =>
+      diff.changes.filter(
+        (c) =>
+          (c.type === 'drop_index' || c.type === 'add_index') &&
+          (c.name ?? '').includes('slug'),
+      );
+
+    // (b) No option ever drops it: its columns are tenant-led, not legacy.
+    for (const options of [
+      { dropLegacyNaturalKey: true },
+      { dropLegacyNaturalKey: true, includeDroppedIndexes: true },
+    ]) {
+      const diff = await new SchemaComparer(db, options).compare({
+        [LEAGUES]: schema,
+      });
+      expect(
+        slugIndexChanges(diff).filter((c) => c.type === 'drop_index'),
+      ).toEqual([]);
+    }
+
+    // (c) A plain migrate renames it to the manifest name; nothing is built.
+    const diff = await new SchemaComparer(db).compare({ [LEAGUES]: schema });
+    const changes = slugIndexChanges(diff);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].type).toBe('add_index');
+    expect(changes[0].sql).toBe(
+      `ALTER INDEX IF EXISTS "${LEAGUES}_slug_context_idx" RENAME TO "${LEAGUES}_tenant_id_slug_idx"`,
+    );
+    for (const sql of getSQLFromDiff(diff)) await db.query(sql);
+    const after = await uniques();
+    expect(after.map((row) => row.name)).toEqual([
+      `${LEAGUES}_tenant_id_slug_idx`,
+    ]);
+    expect(after[0].def).toContain('(tenant_id, slug, context)');
+
+    // Converged: nothing more to do, and the drop option still drops nothing.
+    for (const options of [{}, { dropLegacyNaturalKey: true }]) {
+      const again = await new SchemaComparer(db, options).compare({
+        [LEAGUES]: schema,
+      });
+      expect(slugIndexChanges(again)).toEqual([]);
+    }
+  });
 });
