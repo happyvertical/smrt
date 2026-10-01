@@ -1,16 +1,11 @@
 # Continuous integration architecture
 
-SMRT uses hosted runners for lightweight static and control-plane checks and
-the shared `arc-happyvertical-nodocker` broker lane for general builds, tests,
-and publishing.
-There are two build-output caches, split by lane: self-hosted runners use the
-internal Turborepo server, and GitHub-hosted runners use GitHub Actions cache
-entries written through the `caching-for-turbo` shim (key prefix `turbogha_`)
-described under Hosted Turbo cache below. Raw GitHub Actions cache archives of
-`.turbo/cache` remain deliberately unused — the archive model pays full
-upload/download for a mostly unchanged blob and races on save. If either
-remote cache is unavailable, Turbo performs a cold build; a cache outage
-never fails a job.
+All Linux CI, build, test, and publish jobs use the explicit GitHub-hosted
+`ubuntu-latest` runner. The hosted Turbo cache is provided by GitHub Actions
+through the `caching-for-turbo` shim (key prefix `turbogha_`), described below.
+Raw GitHub Actions cache archives of `.turbo/cache` remain deliberately unused:
+the archive model pays full upload/download for a mostly unchanged blob and
+races on save. A cache outage performs a cold build; it never fails a job.
 
 ## Manifest generation
 
@@ -28,96 +23,42 @@ never prevent the tests from running.
 
 ## Runner selection
 
-- `arc-happyvertical-nodocker` is the default selector for general Linux work
-  (happyvertical/iac#1316, #2194). It is the workflow-facing broker lane alias;
-  only runner-pool policy chooses its backing capacity. Its Pods carry no
-  Docker daemon — that is the point: dropping the dind sidecar takes each Pod
-  from 26 GiB to 14 on a memory-bound fleet, and none of the jobs on it speak
-  to Docker.
-- `arc-happyvertical` remains the selector for jobs that need the dind
-  sidecar. Two jobs do: `postgres-tests.yml`'s suite job (#2659, on every
-  same-repository PR and merge group) and `test-suite.yml`'s
-  `m5-reference-gate` (#2579). Both declare a
-  `services:` PostgreSQL container and so need a Docker daemon until the
-  node-level CI Postgres (willgriffin/nixos-config#224) is adopted in its own
-  change. `m5-reference-gate` is the milestone-M5 acceptance gate: the
-  PostgreSQL portability, parity, and external-worker cases are part of what
-  it proves, so it cannot sit behind an opt-in variable without recreating the
-  silent-skip failure it exists to prevent. Both preflight `createdb`/`dropdb`
-  and service reachability before doing any work, so a lane that cannot serve
-  them fails with a named cause rather than deep inside a test wrapper.
-- `arc-happyvertical-node` is retired and must not be selected. Nothing
-  registers it, and because iac quiesced the scale set to `minRunners`/
-  `maxRunners` 0 — GitHub's queue-drain mode — a job naming it is still assigned
-  and then queues until it times out rather than failing. `.github/actionlint.yaml`
-  omits the label so lint rejects it instead. If a node capability lane is ever
-  activated again it needs a fresh, served label.
-- Lightweight lifecycle, policy, stale-management, and mobile jobs remain
-  GitHub-hosted when they do not benefit from a self-hosted cache.
-- Three `test-suite.yml` jobs are pinned to a plain `ubuntu-latest`
-  permanently (#2236, phase 0 of happyvertical/iac#1349): `affected-scope`
-  (checkout plus a paths-filter), `lint` (Biome via `npx`, no workspace
-  install), and `test-packages-result` (no checkout at all — it reads
-  `needs.*.result` and exits). None runs a Turbo task or `setup-environment`,
-  so none can restore from the internal cache or the hosted shim, and the
-  fleet's memory is irrelevant to all three. On the fleet they could instead
-  wait out a netboot of up to 780 s, or queue behind the heavy shards on an
-  8-slot pool. Hosted minutes are free and unmetered on this public
-  repository, so the move costs nothing and returns the slots. This resolves
-  the aggregation asymmetry previously recorded here: `test-packages-result`
-  and `required-ci` are the same shape of job and are now on the same lane.
-  Backing a required status argues for starting promptly, not for queueing.
-- Every job in `test-suite.yml` that is still on the fleet, every self-hosted
-  job in `publish-dry-run.yml`, and every job in the release `publish.yml`
-  selects its runner through the
-  emergency lane selector
-  `${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || '<label>' }}`.
-  Flipping that repository variable moves the merge-blocking validation path
-  onto GitHub-hosted runners without a workflow merge — which would itself
-  need the down fleet. Both files must carry it because `Required CI`
-  aggregates jobs from both; a lever that moved only the test suite would
-  leave the aggregator blocked on queued dry-run jobs. Release jobs use the
-  same lever so a broker outage cannot strand an already-reviewed package
-  release. It is a manual lever, not a dispatcher; automated hosted fallback
-  is tracked separately.
-  The three pinned jobs above carry no lever, and must not be given one: they
-  are already hosted, so a fallback has nothing to move them to, and an
-  expression with one reachable branch invites a reader to believe the other
-  is live. The standalone build and postgres jobs stay on the self-hosted
-  label and queue instead. actionlint does not validate labels inside
-  expressions, so the allowlist in `.github/actionlint.yaml` is unaffected.
-  The variable selects the runner and the matrix `max-parallel`
-  cap (see Pull requests and merge groups), and nothing else — in particular
-  it confers no additional trust: on `pull_request_target`
-  events both main-scoped cache write paths stay closed — the Turbo shim
-  refuses the event and the pnpm-store `actions/cache` step is skipped (see
-  Hosted Turbo cache) — so fallback PR validation builds and installs cold
-  while merge-group fallback runs stay warm. The merge queue, not PR
-  validation, is the gate that decides what lands.
+- Every Linux `runs-on` declaration is the literal `ubuntu-latest`. Do not use
+  ARC labels, `self-hosted`, or a conditional fallback selector. The inventory
+  test in `scripts/ci-runner-inventory.test.mjs` protects this invariant.
+- `postgres-tests.yml` and `test-suite.yml`'s `m5-reference-gate` retain their
+  PostgreSQL `services:` containers and their preflight and unprivileged-role
+  behavior; GitHub-hosted Ubuntu supports those service containers.
+- `mobile.yml`'s `gradle-macos` and `xcode-ios` remain on `macos-latest`
+  because Kotlin/Native iOS compilation and Xcode require macOS.
+- The four three-shard test matrices use literal `max-parallel: 3`.
+
+`CI_HOSTED_FALLBACK_ENABLED` no longer controls a workflow runner or matrix
+cap. It is safe to remove if it has no external use.
 
 The PR caller uses `pull_request_target`, so GitHub loads runner selection from
 the trusted base branch rather than contributor-controlled merge YAML. It passes
 a PR head SHA to reusable general-CI workflows only when the head repository
 equals `github.repository`; merge-group and trusted push workflows use the
-broker normally. External fork PRs keep a base-revision hosted control-plane
-check, while the self-hosted validation call is skipped and `Required CI`
-rejects the run on that skipped result. Broker admission must also deny those
-fork events before making a reservation.
+same hosted runner. External fork PRs keep a base-revision hosted control-plane
+check, while the trusted validation call is skipped and `Required CI` rejects
+the run on that skipped result.
 
 `CI_NODE_RUNNER_ENABLED` is gone from this tree — nothing reads it, and the
 migration it was conditioned on is live. If the repository still defines the
 variable it is inert and can be deleted.
 
-The pnpm store and runner workspace must remain on the same node-local
-filesystem so pnpm can hardlink packages. Do not restore RAM-backed split
-mounts without measuring runner memory and install latency. The shared setup
-action also points `TMPDIR` at the workspace-backed runner temp directory so
-SQLite fixtures and other temporary test files bypass the container overlay
-filesystem. Self-hosted runners can provide `CI_TEST_TMPDIR` to route those
-files to a bounded, test-only scratch volume; other runners retain the
-workspace-backed fallback.
+The shared setup action points `TMPDIR` at the hosted runner temp directory so
+SQLite fixtures and other temporary test files use a writable workspace-local
+path. `CI_TEST_TMPDIR` remains an optional override for a bounded test scratch
+directory.
 
-That volume is **disk-backed, not a tmpfs**. On the metal fleet it is a plain
+### Historical self-hosted runner notes
+
+The following runner-image details are historical context from the retired
+self-hosted lane. They do not describe an active workflow route.
+
+That volume was **disk-backed, not a tmpfs**. On the metal fleet it was a plain
 `emptyDir` with a size limit and no `medium: Memory`, so writes land on the
 node's state disk: 9.5 ms per synced write measured inside a runner Pod on
 `metal-782bcb5e4e67`, 3.8 ms on `pxe-runner`. That latency is why
@@ -135,14 +76,12 @@ Making synced writes cheap belongs in the runner image instead
 
 ## Hosted Turbo cache
 
-GitHub-hosted runners cannot reach the internal Turbo cache server, so the
-shared setup action starts the `rharkor/caching-for-turbo` shim on them: a
+The shared setup action starts the `rharkor/caching-for-turbo` shim on every
+current Linux CI runner: a
 localhost server speaking the Vercel remote-cache API that stores one GitHub
 Actions cache entry per Turbo task hash under the `turbogha_` key prefix. The
-gate is `runner.environment == 'github-hosted'` — the pod-injected `TURBO_*`
-variables are runner process env, which the `env` context in a step `if:`
-cannot see. Self-hosted pods therefore never start the shim and keep the
-internal server. The `turbo-cache-shim` input (`auto`/`on`/`off`) is the
+gate is `runner.environment == 'github-hosted'`. The `turbo-cache-shim` input
+(`auto`/`on`/`off`) is the
 per-call kill switch; `on` is debug-only because the shim's `GITHUB_ENV`
 exports would shadow the pod-injected internal cache env. The step also
 refuses `pull_request_target` events — those runs carry main's cache write
@@ -236,13 +175,10 @@ Run `pnpm test:ci-scripts` locally to exercise successful, nonzero, and stalled
 helper commands, including a SIGTERM-resistant descendant. This is an offline
 boundary test; it does not establish availability of a live hosted apt mirror.
 
-Standalone validation jobs on the self-hosted lanes use
-`timeout-minutes: 45`. The value is a standard, not a per-job estimate: the
-previous spread ran from 5 to 45, mostly unexplained, and the low end was close
-to the pool's own queue wait (p90 1483-1933s measured over 180 jobs, against a
-median execution of 39-50s). A ceiling near that scale is fragile — it leaves
-nothing for a cold Turbo cache or a slow checkout, and it invites cancelling
-healthy work.
+Linux job timeouts are execution ceilings on hosted runners. The heavy jobs in
+`test-suite.yml` use 90 minutes, while bounded standalone and release work uses
+the documented 45-minute ceiling unless a job records a narrower measured
+limit.
 
 The heavy jobs in `test-suite.yml` intentionally use 90 minutes. #2210 raised
 them after healthy merge-group work was cancelled at the old 45-minute ceiling
@@ -262,7 +198,7 @@ reason recorded next to the setting or here:
 - GitHub-hosted jobs that set a timeout (`dependency-audit` at 10,
   `mobile.yml`'s two Linux Gradle jobs at 30, and `test-suite.yml`'s
   `affected-scope` and `lint` at 10). Hosted runners never enter the
-  self-hosted queue, so the fragility above does not apply and their values can
+  retired runner-pool queue, so their values can
   track observed runtime. The last two came down from the 90-minute heavy-suite
   ceiling when they were pinned to hosted (#2236); at 6 s and 18 s measured, ten
   minutes is a hang guard rather than a capacity budget.
@@ -281,13 +217,8 @@ reason recorded next to the setting or here:
   an invalidated merge group is cancelled, preventing the run from becoming
   terminal and making queue-idle checks report phantom work.
 
-`postgres-tests` remains at 45 as a deliberate exception. #2164 retired the unserved
-`arc-happyvertical-node` label, deleted the `node-runner-smoke` workflow that
-ran only there, and moved this job onto the general `arc-happyvertical` pool —
-the pool the 45 was measured on — so the standard applies to it for the same
-reason it applies to every other job there. Its earlier 30 was inherited from a
-label whose scale set was quiesced to zero runners, where `timeout-minutes`
-never governed anything.
+`postgres-tests` remains at 45 because its real PostgreSQL suite needs cold
+dependency installation and an isolated service container.
 
 `publish-release` is at the standalone 45-minute standard, but that value is
 load-bearing independently of it: 45 is the documented sequential-registry
@@ -297,13 +228,10 @@ moving that job.
 
 Two related constraints are deliberately not per-job settings:
 
-- Several GitHub-hosted jobs set no `timeout-minutes` at all and inherit
-  GitHub's 360-minute default. That is a separate gap from this standard; it is
-  not a licence to leave a self-hosted job uncapped.
-- A merge queue configured with a 60-minute timeout measures wall time, which
-  includes queue wait; a chain of self-hosted jobs can exceed it. Tune the queue
-  timeout at the queue, not by shrinking job ceilings back toward the queue
-  wait.
+- Several jobs inherit GitHub's 360-minute default. That is a separate gap from
+  this standard.
+- A merge queue's timeout measures wall time, including queue wait. Tune it at
+  the queue, not by shrinking a healthy job's execution ceiling.
 
 The former synced `agent-policy.yml` lifecycle check was retired in
 happyvertical/have-config#758 and no longer exists in this repository.
@@ -327,26 +255,12 @@ reversal lever.
   `merge_group`.
 
 All four test matrices — `affected-core-tests`, `affected-package-tests`,
-`test-core`, and `test-packages` — throttle themselves on the fleet only:
-`max-parallel` is
-`${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 3 || 2 }}`, the same
-repository variable the `runs-on` expressions read. Two workers per matrix is
-politeness toward an 8-slot pool, not a property of the suite; `3` equals the
-shard count, so the hosted lane runs each matrix flat while the fleet keeps its
-cap. `jobs.<job_id>.strategy` is one of the scopes GitHub documents as
-accepting the `vars` context, so this is one expression rather than two
-literals to keep in sync.
+`test-core`, and `test-packages` — use literal `max-parallel: 3`, matching their
+three deterministic shards.
 
-`affected-package-tests` used to chain behind `affected-core-tests` so the two
-matrices could never overlap the fleet. That chain is gone (#2383). The
-matrices shard disjoint package sets, and a failing core shard already fails
-`Required CI`, so serialising them bought queue politeness at the cost of
-doubling affected-mode wall clock — 30-37 minutes of PR feedback for about ten
-minutes of longest-job work. `affected-package-tests` now depends on
-`affected-test-scope` alone. The trade is that on the fleet the two matrices
-can hold four slots at once instead of two; the per-matrix cap is what bounds
-it. `workbench-browser` still waits on `affected-package-tests` and its `if:`
-already accepts that job's `skipped` result.
+`affected-package-tests` depends on `affected-test-scope` alone and runs with
+`affected-core-tests`; the matrices shard disjoint package sets, while a
+failing core shard already fails `Required CI`.
 
 Coverage Gate and Publish Dry Run are merge-group only (#2214 items 4 and 8).
 Both used to run in both lanes while the merge group re-ran them in full
@@ -360,7 +274,7 @@ instead of reddening the PR; authors can pre-check coverage locally with
 `node scripts/check-coverage.mjs --packages <list>`.
 
 Publish Dry Run's gate lives inside `publish-dry-run.yml`, not on its caller.
-Every reusable or self-hosted job in `on-pull-request.yml` must carry the
+Every reusable job in `on-pull-request.yml` must carry the
 canonical trusted-base admission expression byte-for-byte, so narrowing a lane
 from the caller's `if:` is not available — gate the called workflow instead.
 
@@ -391,8 +305,7 @@ silently leave it un-gated.
 
 Rollout status:
 
-1. Done. The `arc-happyvertical` broker landed in #2124, and every self-hosted
-   job selects it.
+1. Done. #3317 moved every Linux workflow job to explicit `ubuntu-latest`.
 2. Done. `CI_POSTGRES_ENABLED` is gone (#2659): `postgres-tests.yml` runs on
    every same-repository PR, every merge group, and nightly, ungated. If the
    repository still defines the variable it is inert and can be deleted.
@@ -428,10 +341,10 @@ dispatch-only `on-demand-validation.yml`. There is no enabling variable.
 
 - **`scope`** (hosted) decides whether suites run: a same-repository PR runs
   them unless every changed file is Markdown or under `docs/`; merge groups and
-  every other event always run them. External fork PRs never reach the
-  self-hosted lane.
-- **Registered PostgreSQL Suites** runs on `arc-happyvertical` (its
-  `services:` container needs dind) with one shared PostgreSQL 18 service.
+  every other event always run them. External fork PRs never execute trusted
+  PR-head code.
+- **Registered PostgreSQL Suites** runs on `ubuntu-latest` with one shared
+  PostgreSQL 18 service.
   `pnpm turbo run test:postgres --concurrency=2 --continue --summarize` runs
   every package's suite even after one fails, and
   `scripts/postgres-lane-summary.mjs` writes a per-package table to the job
@@ -547,13 +460,9 @@ mode, so only the publication step differs between the two.
 
 ## Acceptance and rollback
 
-Compare ten successful runs before and after each rollout step. Stop if setup
-p95 exceeds 45 seconds, runner memory exceeds 8 GiB, required contexts vanish,
-or retries/failures increase. Target setup p50 below 30 seconds, queue p95 below
-two minutes, and at least 30% fewer self-hosted runner-minutes per PR.
-
-Runner placement remains brokered through `arc-happyvertical`; change backing
-capacity only in runner-pool policy, not workflow labels. Merge-queue rollout
+Verify the first merge-group transit after a runner change: required contexts
+must remain present, the PostgreSQL lane must retain its isolation behavior,
+and the three-shard matrices must schedule all three shards. Merge-queue rollout
 can be reversed independently by clearing `CI_MERGE_QUEUE_ENABLED`, restoring
 the previous required status list, and removing the merge-queue rule.
 PostgreSQL is not part of the `Required CI` aggregator: its lane reports its
@@ -561,15 +470,15 @@ own `postgres-required` status (see PostgreSQL isolation), so adding or
 removing that ruleset context never alters SQLite coverage. The artifact publisher can
 temporarily fall back to Changesets through manual dispatch.
 
-The hosted Turbo cache lane has two independent clearable levers:
-`CI_HOSTED_TURBO_CACHE_ENABLED` stops scheduled and push seeding (entries then
-expire within seven days), and `CI_HOSTED_FALLBACK_ENABLED` returns
-`test-suite.yml`, `publish-dry-run.yml`, and the credential-bearing release
-`publish.yml` jobs (npm, GitHub App, Pages, and OIDC) to the self-hosted label;
-it also returns test matrices to the two-worker cap. Clear the fallback after
-the broker lane recovers so release publication and documentation deployment
-do not remain hosted unintentionally. The per-call `turbo-cache-shim: 'off'`
-input disables the shim for a single caller.
+`CI_HOSTED_TURBO_CACHE_ENABLED` controls scheduled and push cache seeding;
+`turbo-cache-shim: 'off'` disables the shim for a single caller. Neither setting
+changes the hosted runner selection or matrix parallelism.
+
+### Historical runner migration observations (pre #3317)
+
+The following fallback experiments and fleet-capacity measurements are retained
+for incident context. They describe the retired ARC route and do not define
+current runner routing, fallback behavior, or matrix caps.
 
 The fallback lever has been rehearsed. With `CI_HOSTED_FALLBACK_ENABLED` set
 to `true`, PR validation re-resolved every job from the self-hosted label to

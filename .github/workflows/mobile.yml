@@ -51,10 +51,8 @@ jobs:
   gradle-linux:
     name: Gradle build + KMP unit tests
     runs-on: ubuntu-latest
-    # Deliberately below the 45-minute standard. Every job in this workflow is
-    # GitHub-hosted, so none of them sit in the self-hosted queue that makes a
-    # low ceiling fragile on `arc-happyvertical`. These values are calibrated
-    # to observed Gradle runtime and act as hang guards.
+    # Deliberately below the 45-minute standard: this measured Gradle workload
+    # is bounded, and the value acts as a hang guard.
     timeout-minutes: 30
     steps:
       - name: Checkout
