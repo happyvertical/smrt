@@ -693,3 +693,17 @@ Native form reset restores the initial bound value if that option is still
 available and enabled; otherwise it clears the selection. Canceling the reset
 event preserves the current selection. Reset does not fire `onvaluechange`,
 matching native controls; bind:value reflects it.
+
+### Application icons
+
+Icon includes the original menu/search/chevron/action glyphs plus `alert`,
+`warning`, `info`, `home`, `user`, `settings`, `trash`, `edit`, `calendar`,
+`clock`, `camera`, `upload`, and `download`. Import `registerIcons` from
+`@happyvertical/smrt-ui` to install an application SVG path map at startup.
+Registrations update mounted icons; the returned cleanup function removes that
+registration and restores the previous active set. Last active registration wins,
+and an explicit Icon `path` prop wins over every named set. Unknown names retain
+their empty shape. Names and paths must be nonempty strings; invalid mixed sets
+are rejected atomically. Sets are snapshotted, so later caller mutations do not
+change glyphs. Register static application assets, never request or identity data,
+and install the same application set for SSR and client hydration.

@@ -13,5 +13,7 @@ export { default as StatusBadge } from './StatusBadge.svelte';
 // via svelte-package build output but cannot be re-exported here because
 // tsc --noEmit cannot resolve type exports from .svelte files.
 
+export type { IconPathMap } from './icons.svelte.js';
+export { registerIcons } from './icons.svelte.js';
 // Re-export types from types file
 export type { StatusTone, StatusType } from './types.js';
