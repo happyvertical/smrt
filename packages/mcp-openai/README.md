@@ -83,7 +83,14 @@ can use `resolveOpenAiNavigationTarget` to dispatch only an authorized read tool
 Repeated identical routes do not duplicate calls; new routes cancel old requests
 and ignore stale replies. URLs are app-relative, fragment-free, traversal-free,
 and reject protocol-relative, double-encoded and control-character forms. Treat
-query parameters as untrusted input, never as identity or approval.
+query parameters as untrusted input, never as identity or approval. The literal
+query delimiter is separated before pathname decoding, so encoded question marks
+cannot hide traversal segments. Traversal-like text in query values remains legal.
+
+Only a rejected tool call or an `isError` result selects the `denied` fallback.
+Consumer callback exceptions are not authorization failures and never retry a
+fallback. Callbacks should handle their own rendering errors; uncaught exceptions
+in asynchronous result/fallback callbacks surface as unhandled promise rejections.
 
 `createOpenAiAppLink` emits pinned desktop (`codex`), mobile (`chatgpt`) or web
 formats with separately encoded plugin/tool/path components. `openAiNavigationLink`
