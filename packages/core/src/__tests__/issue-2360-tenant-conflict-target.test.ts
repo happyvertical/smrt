@@ -12,7 +12,9 @@
  * `[tenant column, ...natural key]` on both the schema and the upsert, so:
  *
  * - two tenants can each own the same slug (the B1 probe: two rows);
- * - within one tenant the natural key still dedups (ingestion-style upsert);
+ * - within one tenant an explicit natural key still dedups (ingestion-style
+ *   upsert; a slug derived from a name never does — see
+ *   `derived-slug-no-adopt.test.ts`);
  * - NULL-tenant rows keep the SDK's null-aware upsert semantics
  *   (`IS NOT DISTINCT FROM`): global rows dedup among themselves;
  * - STI hierarchies key on the ROOT's target for every class in the table;
@@ -339,15 +341,17 @@ describe('tenant-aware natural keys (#2360)', () => {
       expect(rowB?.id).toBe(b.id);
     });
 
-    it('CTI: within one tenant the natural key still dedups (second create updates in place)', async () => {
+    it('CTI: within one tenant an explicit natural key still dedups (second create updates in place)', async () => {
       const widgets = await Issue2360WidgetCollection.create({ db });
 
       const first = await widgets.create({
         name: 'Widget',
+        slug: 'widget',
         tenantId: TENANT_A,
       });
       const again = await widgets.create({
         name: 'Widget',
+        slug: 'widget',
         tenantId: TENANT_A,
       });
       expect(again.slug).toBe(first.slug);
@@ -363,8 +367,16 @@ describe('tenant-aware natural keys (#2360)', () => {
       const widgets = await Issue2360WidgetCollection.create({ db });
 
       await widgets.create({ name: 'Widget', tenantId: TENANT_A });
-      const g1 = await widgets.create({ name: 'Widget', tenantId: null });
-      const g2 = await widgets.create({ name: 'Widget', tenantId: null });
+      const g1 = await widgets.create({
+        name: 'Widget',
+        slug: 'widget',
+        tenantId: null,
+      });
+      const g2 = await widgets.create({
+        name: 'Widget',
+        slug: 'widget',
+        tenantId: null,
+      });
       expect(g2.slug).toBe(g1.slug);
 
       const rows = (await db.list('issue_2360_widgets', {})) as Array<

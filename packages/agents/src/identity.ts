@@ -50,3 +50,38 @@ export function instanceScopedSubscriber(
 ): string {
   return instanceKey ? `${agentType}#${instanceKey}` : agentType;
 }
+
+/**
+ * The `agent_configs.agent_id` that owns a tenant-bound agent's slot config
+ * when the binding has no persisted Agent row: `<tenantId>:<agentType>`,
+ * with the type canonicalized through {@link getAgentTypeName} (qualified
+ * `@scope/package:Class` when the class is registered).
+ *
+ * `serializeResolvedAgent()` gives a resolved agent this id, and the admin
+ * settings panels read and save slot configs under it, so seeders, schedule
+ * sync, and any other writer must compose it with this helper rather than by
+ * hand. Before smrt #1092 the id used the bare class name
+ * (`<tenant>:Praeco`); `repairTenantAgentConfigKeys()` moves such rows.
+ */
+export function tenantAgentConfigOwnerId(
+  tenantId: string,
+  agentType: string,
+): string {
+  return `${tenantId}:${getAgentTypeName(agentType)}`;
+}
+
+/**
+ * Split a {@link tenantAgentConfigOwnerId} for a known tenant: the stored
+ * agent type after `<tenantId>:`, or null when the owner id is not
+ * tenant-derived (a persona id, an Agent row id, another tenant's key).
+ */
+export function parseTenantAgentConfigOwnerId(
+  ownerId: string,
+  tenantId: string,
+): string | null {
+  if (!tenantId) return null;
+  const prefix = `${tenantId}:`;
+  if (!ownerId.startsWith(prefix)) return null;
+  const agentType = ownerId.slice(prefix.length);
+  return agentType || null;
+}

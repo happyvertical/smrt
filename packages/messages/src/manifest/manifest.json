@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "timestamp": 0,
   "packageName": "@happyvertical/smrt-messages",
-  "packageVersion": "0.49.2",
+  "packageVersion": "0.51.36",
   "objects": {
     "@happyvertical/smrt-messages:AccountCollection": {
       "name": "accountcollection",
@@ -258,7 +258,8 @@
           }
         ],
         "version": "3854ea98"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:AttachmentCollection": {
       "name": "attachmentcollection",
@@ -592,7 +593,8 @@
           }
         ],
         "version": "ee5ae0dd"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:BlacklistCollection": {
       "name": "blacklistcollection",
@@ -716,7 +718,8 @@
           }
         ],
         "version": "04efaa8d"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:EmailAccountCollection": {
       "name": "emailaccountcollection",
@@ -1064,7 +1067,8 @@
           }
         ],
         "version": "3854ea98"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:EmailAttachmentCollection": {
       "name": "emailattachmentcollection",
@@ -1361,7 +1365,8 @@
           }
         ],
         "version": "70291c59"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:EmailCollection": {
       "name": "emailcollection",
@@ -2126,7 +2131,8 @@
           }
         ],
         "version": "6ff29dd9"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:EmailFolderCollection": {
       "name": "emailfoldercollection",
@@ -2511,7 +2517,8 @@
           }
         ],
         "version": "e895818f"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:MessageCollection": {
       "name": "messagecollection",
@@ -3125,7 +3132,8 @@
           }
         ],
         "version": "c03791c7"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:MessagingEndpointCollection": {
       "name": "messagingendpointcollection",
@@ -3244,7 +3252,8 @@
           }
         ],
         "version": "fca5554d"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:PersonaMessageRouteCollection": {
       "name": "personamessageroutecollection",
@@ -3406,7 +3415,158 @@
           }
         ],
         "version": "3dc1d5d0"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
+    },
+    "@happyvertical/smrt-messages:UserNotificationCollection": {
+      "name": "usernotificationcollection",
+      "className": "UserNotificationCollection",
+      "qualifiedName": "@happyvertical/smrt-messages:UserNotificationCollection",
+      "collection": "usernotifications",
+      "filePath": "packages/messages/src/collections/UserNotificationCollection.ts",
+      "packageName": "@happyvertical/smrt-messages",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "user_notifications",
+        "api": false,
+        "mcp": false,
+        "cli": false
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "UserNotification",
+      "exportName": "UserNotificationCollection",
+      "collectionExportName": "UserNotificationCollectionCollection",
+      "schema": {
+        "tableName": "user_notifications",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"user_notifications\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"recipient_user_id\" UUID NOT NULL,\n  \"kind\" TEXT NOT NULL,\n  \"title\" TEXT NOT NULL,\n  \"body\" TEXT,\n  \"href\" TEXT,\n  \"severity\" TEXT DEFAULT 'info',\n  \"source_ref\" TEXT NOT NULL,\n  \"occurred_at\" TEXT,\n  \"read_at\" TIMESTAMP,\n  \"dismissed_at\" TIMESTAMP\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
+          },
+          "recipient_user_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": true,
+            "unique": false
+          },
+          "kind": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "title": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "body": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "href": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "severity": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "info"
+          },
+          "source_ref": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "occurred_at": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "read_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          },
+          "dismissed_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "user_notifications_tenant_id_recipient_user_id_idx",
+            "columns": [
+              "tenant_id",
+              "recipient_user_id",
+              "source_ref"
+            ],
+            "unique": true
+          },
+          {
+            "name": "user_notifications_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ]
+          },
+          {
+            "name": "user_notifications_recipient_occurred_idx",
+            "columns": [
+              "tenant_id",
+              "recipient_user_id",
+              "occurred_at"
+            ]
+          },
+          {
+            "name": "user_notifications_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "user_notifications_recipient_user_id_idx",
+            "columns": [
+              "recipient_user_id"
+            ]
+          }
+        ],
+        "version": "0e68a388"
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:WhitelistCollection": {
       "name": "whitelistcollection",
@@ -3548,7 +3708,8 @@
           }
         ],
         "version": "40a655a1"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:Account": {
       "name": "account",
@@ -3910,7 +4071,8 @@
           }
         ],
         "version": "3854ea98"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:Attachment": {
       "name": "attachment",
@@ -4192,7 +4354,8 @@
           }
         ],
         "version": "ee5ae0dd"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:Blacklist": {
       "name": "blacklist",
@@ -4359,7 +4522,8 @@
           }
         ],
         "version": "04efaa8d"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:Email": {
       "name": "email",
@@ -5281,7 +5445,8 @@
           }
         ],
         "version": "6ff29dd9"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:EmailAccount": {
       "name": "emailaccount",
@@ -5720,7 +5885,8 @@
           }
         ],
         "version": "3854ea98"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:EmailAttachment": {
       "name": "emailattachment",
@@ -5855,7 +6021,8 @@
           }
         ],
         "version": "70291c59"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:EmailFolder": {
       "name": "emailfolder",
@@ -6198,7 +6365,8 @@
           }
         ],
         "version": "e895818f"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:Message": {
       "name": "message",
@@ -6946,7 +7114,8 @@
           }
         ],
         "version": "c03791c7"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:MessagingEndpoint": {
       "name": "messagingendpoint",
@@ -7210,7 +7379,8 @@
           }
         ],
         "version": "fca5554d"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:PersonaMessageRoute": {
       "name": "personamessageroute",
@@ -7480,7 +7650,8 @@
           }
         ],
         "version": "3dc1d5d0"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:SlackAccount": {
       "name": "slackaccount",
@@ -7843,7 +8014,8 @@
           }
         ],
         "version": "3854ea98"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:SlackMessage": {
       "name": "slackmessage",
@@ -8651,7 +8823,8 @@
           }
         ],
         "version": "f91bb49a"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:TelegramAccount": {
       "name": "telegramaccount",
@@ -9002,7 +9175,8 @@
           }
         ],
         "version": "3854ea98"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:Tweet": {
       "name": "tweet",
@@ -9838,7 +10012,8 @@
           }
         ],
         "version": "ffd4cea3"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:TwitterAccount": {
       "name": "twitteraccount",
@@ -10197,7 +10372,266 @@
           }
         ],
         "version": "3854ea98"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
+    },
+    "@happyvertical/smrt-messages:UserNotification": {
+      "name": "usernotification",
+      "className": "UserNotification",
+      "qualifiedName": "@happyvertical/smrt-messages:UserNotification",
+      "collection": "usernotifications",
+      "filePath": "packages/messages/src/models/UserNotification.ts",
+      "packageName": "@happyvertical/smrt-messages",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": true,
+              "autoPopulate": true,
+              "nullable": false,
+              "mode": "required",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
+        },
+        "recipientUserId": {
+          "type": "crossPackageRef",
+          "required": true,
+          "related": "@happyvertical/smrt-users:User"
+        },
+        "kind": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "title": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "body": {
+          "type": "text",
+          "required": false
+        },
+        "href": {
+          "type": "text",
+          "required": false
+        },
+        "severity": {
+          "type": "text",
+          "required": false,
+          "default": "info"
+        },
+        "sourceRef": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "occurredAt": {
+          "type": "text",
+          "required": false
+        },
+        "readAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "dismissedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "user_notifications",
+        "api": false,
+        "mcp": false,
+        "cli": false,
+        "conflictColumns": [
+          "tenant_id",
+          "recipient_user_id",
+          "source_ref"
+        ],
+        "indexes": [
+          {
+            "name": "user_notifications_recipient_occurred_idx",
+            "columns": [
+              "tenantId",
+              "recipientUserId",
+              "occurredAt"
+            ]
+          }
+        ],
+        "tenantScoped": {
+          "mode": "required"
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "UserNotification",
+      "collectionExportName": "UserNotificationCollection",
+      "validationRules": [
+        {
+          "field": "recipientUserId",
+          "rule": "required",
+          "fieldType": "crossPackageRef"
+        },
+        {
+          "field": "kind",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "title",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "sourceRef",
+          "rule": "required",
+          "fieldType": "text"
+        }
+      ],
+      "schema": {
+        "tableName": "user_notifications",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"user_notifications\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"recipient_user_id\" UUID NOT NULL,\n  \"kind\" TEXT NOT NULL,\n  \"title\" TEXT NOT NULL,\n  \"body\" TEXT,\n  \"href\" TEXT,\n  \"severity\" TEXT DEFAULT 'info',\n  \"source_ref\" TEXT NOT NULL,\n  \"occurred_at\" TEXT,\n  \"read_at\" TIMESTAMP,\n  \"dismissed_at\" TIMESTAMP\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
+          },
+          "recipient_user_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": true,
+            "unique": false
+          },
+          "kind": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "title": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "body": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "href": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "severity": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "info"
+          },
+          "source_ref": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "occurred_at": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "read_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          },
+          "dismissed_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "user_notifications_tenant_id_recipient_user_id_idx",
+            "columns": [
+              "tenant_id",
+              "recipient_user_id",
+              "source_ref"
+            ],
+            "unique": true
+          },
+          {
+            "name": "user_notifications_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ]
+          },
+          {
+            "name": "user_notifications_recipient_occurred_idx",
+            "columns": [
+              "tenant_id",
+              "recipient_user_id",
+              "occurred_at"
+            ]
+          },
+          {
+            "name": "user_notifications_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "user_notifications_recipient_user_id_idx",
+            "columns": [
+              "recipient_user_id"
+            ]
+          }
+        ],
+        "version": "0e68a388"
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:Whitelist": {
       "name": "whitelist",
@@ -10362,7 +10796,8 @@
           }
         ],
         "version": "40a655a1"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     },
     "@happyvertical/smrt-messages:ZulipAccount": {
       "name": "zulipaccount",
@@ -10713,16 +11148,16 @@
           }
         ],
         "version": "3854ea98"
-      }
+      },
+      "importPath": "@happyvertical/smrt-messages"
     }
   },
   "moduleType": "smrt",
   "smrtDependencies": [
     "@happyvertical/smrt-core",
+    "@happyvertical/smrt-ledgers",
     "@happyvertical/smrt-secrets",
     "@happyvertical/smrt-tenancy",
-    "@happyvertical/smrt-types",
-    "@happyvertical/smrt-ui",
     "@happyvertical/smrt-users"
   ]
 }

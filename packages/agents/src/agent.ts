@@ -45,7 +45,7 @@ import {
   resolveAgentLearning,
 } from './learning.js';
 import type { AgentStatusType } from './types.js';
-import type { AgentAdminRoute, AgentUISlots } from './ui.js';
+import type { AgentAdminRoute, AgentCreateEntry, AgentUISlots } from './ui.js';
 
 /**
  * Agent constructor options
@@ -211,6 +211,22 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   static adminRoutes: AgentAdminRoute[] = [];
+
+  /**
+   * Create options this agent contributes to the host's "create" menu
+   * (e.g. "Write about a meeting"). Plain data captured into the agent
+   * manifest; hosts read it with `resolveAgentCreateEntries()` from
+   * `@happyvertical/smrt-agents/ui`. Must be a literal array.
+   *
+   * @example
+   * ```typescript
+   * static override createEntries: AgentCreateEntry[] = [
+   *   { id: 'meeting-article', type: 'news/politics', label: 'Write about a meeting',
+   *     route: 'articles/new/source?for=meeting', availability: { accessLevels: ['admin', 'editor'] } },
+   * ];
+   * ```
+   */
+  static createEntries: AgentCreateEntry[] = [];
 
   /**
    * Signal types this agent subscribes to by default

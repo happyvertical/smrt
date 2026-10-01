@@ -411,6 +411,9 @@ export {
   safeStringify,
   stringify,
 } from './utils/json';
+// The field-name -> column-name rule `SchemaGenerator` uses, for adapters that
+// read `ObjectRegistry.getSchema()` column metadata by field id.
+export { toSnakeCase } from './utils/naming';
 // Qualified name utilities
 export {
   createQualifiedName,

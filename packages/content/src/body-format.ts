@@ -1,3 +1,5 @@
+import sanitize from 'sanitize-html';
+
 export type ContentBodyFormat = 'markdown' | 'html';
 export type ContentBodyImagePlacement =
   | 'block'
@@ -13,6 +15,13 @@ export interface ContentBodyImage {
   assetId?: string;
   placement?: ContentBodyImagePlacement;
   width?: number;
+  /** True for the content's thumbnail block (see `placeThumbnailInBody`). */
+  thumbnail?: boolean;
+  /**
+   * True for a picture in the story the person chose as the main picture
+   * (see `setBodyMainImage`).
+   */
+  main?: boolean;
   index: number;
 }
 
@@ -20,35 +29,6 @@ export const DEFAULT_CONTENT_BODY_FORMAT: ContentBodyFormat = 'html';
 
 const HTML_TAG_PATTERN =
   /<\/?(?:article|aside|blockquote|br|div|figure|figcaption|h[1-6]|hr|img|li|ol|p|pre|section|span|strong|em|b|i|u|a|ul|table|tbody|td|th|thead|tr)(?:\s[^>]*)?>/i;
-// HTML attribute boundary: the HTML5 tree builder starts a new attribute after
-// whitespace, `/`, OR the closing quote/backtick of the previous value. A naive
-// `\s+`-only boundary lets `src="x"onerror="..."` survive sanitization because
-// `onerror` is glued to the preceding `"` — the browser still parses it as a
-// separate (executing) attribute. Match either runs of whitespace/`/`
-// (captured in group 1 and consumed) OR a non-consuming lookbehind for a
-// quote/backtick (group 1 undefined; the char is the previous value's own
-// closing delimiter and must stay). `reemitSeparator()` turns the captured
-// group back into a single separating space when one was consumed (S5 #1388).
-const ATTR_BOUNDARY = '(?:([\\s/]+)|(?<=["\'`]))';
-
-// Re-emit an attribute separator after a removed/rewritten attribute. When the
-// boundary consumed whitespace/`/` (group 1 present), emit one space so the
-// rebuilt attribute doesn't glue onto the tag name or previous attribute. When
-// the boundary was a non-consumed quote/backtick (group 1 undefined), that
-// delimiter already separates the attributes, so emit nothing.
-function reemitSeparator(consumed: string | undefined): string {
-  return consumed ? ' ' : '';
-}
-
-const URL_ATTRIBUTE_PATTERN = new RegExp(
-  `${ATTR_BOUNDARY}(href|src|xlink:href|formaction|action|poster)\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
-  'gi',
-);
-const SRCSET_ATTRIBUTE_PATTERN = new RegExp(
-  `${ATTR_BOUNDARY}srcset\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
-  'gi',
-);
-
 const BLOCK_TAGS = [
   'address',
   'article',
@@ -190,25 +170,6 @@ function sanitizeUrl(value: string): string {
   return trimmed;
 }
 
-function sanitizeSrcset(value: string): string {
-  return decodeBasicEntities(value)
-    .split(',')
-    .map((candidate) => {
-      const parts = candidate.trim().split(/\s+/);
-      const url = sanitizeUrl(parts.shift() || '');
-      if (!url || url === '#') {
-        return '';
-      }
-
-      const descriptors = parts.filter((part) =>
-        /^(?:\d+(?:\.\d+)?x|\d+w)$/.test(part),
-      );
-      return [url, ...descriptors].join(' ');
-    })
-    .filter(Boolean)
-    .join(', ');
-}
-
 function sanitizeStyle(value: string): string {
   const safeRules: string[] = [];
 
@@ -237,107 +198,383 @@ function sanitizeStyle(value: string): string {
   return safeRules.join('; ');
 }
 
-export function sanitizeHtml(value: string): string {
+// ---------------------------------------------------------------------------
+// Body sanitizer
+//
+// Bodies come from editors, AI drafts and scraped feeds and are rendered with
+// `{@html}` — on public, prerendered pages too — so they go through a real
+// HTML parser (sanitize-html / htmlparser2) with an allowlist, never through
+// tag- or attribute-stripping regexes (nested input such as
+// `<scr<script>ipt>` reassembles after a single regex pass). The parser
+// re-serializes the tree: text and attribute values come out escaped, and no
+// raw-text or foreign-content element (script, style, svg, math, iframe,
+// noscript, template, textarea, …) is ever emitted, so the browser re-parses
+// exactly the tree that was checked.
+// ---------------------------------------------------------------------------
+
+const INLINE_TAGS = [
+  'a',
+  'abbr',
+  'b',
+  'br',
+  'code',
+  'del',
+  'em',
+  'i',
+  'img',
+  'ins',
+  'kbd',
+  'mark',
+  's',
+  'small',
+  'span',
+  'strong',
+  'sub',
+  'sup',
+  'u',
+];
+
+const BLOCK_CONTENT_TAGS = [
+  'article',
+  'aside',
+  'blockquote',
+  'caption',
+  'col',
+  'colgroup',
+  'dd',
+  'div',
+  'dl',
+  'dt',
+  'figcaption',
+  'figure',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'hr',
+  'li',
+  'ol',
+  'p',
+  'pre',
+  'section',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+];
+
+/** Editor layout markers kept on images and their figures. */
+const IMAGE_MARKER_ATTRIBUTES = [
+  'data-smrt-asset-id',
+  'data-smrt-inline-image',
+  'data-smrt-placement',
+  'data-smrt-width',
+  'data-smrt-thumbnail',
+  'data-smrt-main',
+];
+
+const SANITIZER_ALLOWED_ATTRIBUTES: Record<string, string[]> = {
+  a: ['href', 'title', 'rel', 'target'],
+  abbr: ['title'],
+  img: [
+    'src',
+    'srcset',
+    'alt',
+    'title',
+    'width',
+    'height',
+    'loading',
+    'style',
+    ...IMAGE_MARKER_ATTRIBUTES,
+  ],
+  figure: ['style', ...IMAGE_MARKER_ATTRIBUTES],
+  ol: ['start', 'reversed', 'type'],
+  td: ['colspan', 'rowspan'],
+  th: ['colspan', 'rowspan', 'scope'],
+  col: ['span'],
+  colgroup: ['span'],
+};
+
+/**
+ * Disallowed elements whose content is dropped along with the tag (other
+ * disallowed tags keep their text). Covers every raw-text / foreign-content
+ * element where parser differentials (mXSS) live.
+ */
+const SANITIZER_DROP_CONTENT_TAGS = [
+  'script',
+  'style',
+  'textarea',
+  'option',
+  'select',
+  'noscript',
+  'noembed',
+  'noframes',
+  'template',
+  'title',
+  'xmp',
+  'plaintext',
+  'iframe',
+  'object',
+  'embed',
+  'svg',
+  'math',
+  'head',
+];
+
+const LINK_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
+const IMAGE_SCHEMES = new Set(['http', 'https']);
+/**
+ * Raster `data:` images stay allowed in image sources: the editor's upload
+ * path can store an image asset whose source is a data URL. SVG (`image/svg+xml`)
+ * and every other data type are refused.
+ */
+const SAFE_DATA_IMAGE_PATTERN = /^data:image\/(?:png|gif|jpe?g|webp|avif);/;
+const IMAGE_PLACEMENTS = new Set(['block', 'left', 'right', 'center', 'full']);
+
+/**
+ * The URL when it is safe for a link (`http(s)`, `mailto`, `tel`, relative)
+ * or an image (`http(s)`, raster `data:image/*`, relative); otherwise ''.
+ * `value` is the parser-decoded attribute value — exactly what the browser
+ * sees after the escaped re-serialization.
+ */
+function allowedUrl(value: string | undefined, kind: 'link' | 'image'): string {
+  const url = (value || '').trim();
+  if (!url) {
+    return '';
+  }
+
+  let compact = '';
+  for (const char of decodeBasicEntities(url)) {
+    const code = char.charCodeAt(0);
+    if (code <= 0x20 || code === 0x7f) {
+      continue;
+    }
+    compact += char.toLowerCase();
+  }
+
+  const scheme = /^([a-z][a-z0-9+.-]*):/.exec(compact)?.[1];
+  if (!scheme) {
+    // Relative, root-relative, protocol-relative or fragment URL. A colon
+    // before the first `/`, `?` or `#` would make it a scheme, so the regex
+    // above already caught any `javascript:`-style value.
+    return url;
+  }
+
+  if (kind === 'image') {
+    if (IMAGE_SCHEMES.has(scheme)) {
+      return url;
+    }
+    return scheme === 'data' && SAFE_DATA_IMAGE_PATTERN.test(compact)
+      ? url
+      : '';
+  }
+
+  return LINK_SCHEMES.has(scheme) ? url : '';
+}
+
+function allowedSrcset(value: string): string {
+  return value
+    .split(',')
+    .map((candidate) => {
+      const parts = candidate.trim().split(/\s+/);
+      const url = allowedUrl(parts.shift(), 'image');
+      if (!url || url.startsWith('data:')) {
+        return '';
+      }
+      const descriptors = parts.filter((part) =>
+        /^(?:\d+(?:\.\d+)?x|\d+w)$/.test(part),
+      );
+      return [url, ...descriptors].join(' ');
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+const POSITIVE_INTEGER = /^\d{1,5}$/;
+
+/** Attributes whose empty value is meaningful (other empties are dropped). */
+const EMPTY_VALUE_ATTRIBUTES = new Set([
+  'alt',
+  'data-smrt-inline-image',
+  'data-smrt-thumbnail',
+  'data-smrt-main',
+]);
+
+/**
+ * Validate one allowed attribute's value. `null` — or '' outside
+ * {@link EMPTY_VALUE_ATTRIBUTES} — drops the attribute.
+ */
+function allowedAttributeValue(name: string, value: string): string | null {
+  switch (name) {
+    case 'href':
+      return allowedUrl(value, 'link');
+    case 'src':
+      return allowedUrl(value, 'image');
+    case 'srcset':
+      return allowedSrcset(value);
+    case 'style':
+      return sanitizeStyle(value);
+    case 'width':
+    case 'height':
+    case 'start':
+    case 'span':
+    case 'colspan':
+    case 'rowspan':
+    case 'data-smrt-width':
+      return POSITIVE_INTEGER.test(value.trim()) ? value.trim() : '';
+    case 'loading':
+      return value === 'lazy' || value === 'eager' ? value : '';
+    case 'target':
+      return value === '_blank' ? value : '';
+    case 'rel':
+      return value
+        .split(/\s+/)
+        .filter((token) => /^[a-z-]{1,32}$/i.test(token))
+        .join(' ');
+    case 'scope':
+      return /^(?:row|col|rowgroup|colgroup)$/.test(value) ? value : '';
+    case 'type':
+      return /^[1aAiI]$/.test(value) ? value : '';
+    case 'data-smrt-placement':
+      return IMAGE_PLACEMENTS.has(value) ? value : '';
+    case 'data-smrt-inline-image':
+    case 'data-smrt-thumbnail':
+    case 'data-smrt-main':
+      // Boolean markers: keep the bare / `="true"` forms the editor writes.
+      return value === '' || value === 'true' ? value : null;
+    case 'data-smrt-asset-id':
+      return /^[\w.:-]{1,128}$/.test(value) ? value : '';
+    default:
+      return value;
+  }
+}
+
+interface SanitizeBodyOptions {
+  /** Replace the thumbnail block image's `src` (already URL-checked). */
+  thumbnailSrc?: string;
+}
+
+function transformBodyTag(
+  tagName: string,
+  attribs: Record<string, string>,
+  options: SanitizeBodyOptions,
+): { tagName: string; attribs: Record<string, string> } {
+  const allowed = SANITIZER_ALLOWED_ATTRIBUTES[tagName] || [];
+  const safe: Record<string, string> = {};
+
+  for (const [rawName, rawValue] of Object.entries(attribs)) {
+    const name = rawName.toLowerCase();
+    if (!allowed.includes(name)) {
+      continue;
+    }
+    const value = allowedAttributeValue(name, String(rawValue ?? ''));
+    if (value === null) {
+      continue;
+    }
+    if (value === '' && !EMPTY_VALUE_ATTRIBUTES.has(name)) {
+      continue;
+    }
+    safe[name] = value;
+  }
+
+  if (
+    tagName === 'img' &&
+    options.thumbnailSrc &&
+    BODY_THUMBNAIL_ATTRIBUTE in safe
+  ) {
+    safe.src = options.thumbnailSrc;
+  }
+
+  if (tagName === 'a' && safe.target === '_blank') {
+    const rel = new Set((safe.rel || '').split(/\s+/).filter(Boolean));
+    rel.add('noopener');
+    rel.add('noreferrer');
+    safe.rel = [...rel].join(' ');
+  }
+
+  return { tagName, attribs: safe };
+}
+
+function sanitizeBodyHtml(
+  value: unknown,
+  options: SanitizeBodyOptions = {},
+): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
 
-  let html = value;
-  html = html.replace(/<!--[\s\S]*?-->/g, '');
-  // This lightweight sanitizer intentionally removes SVG/MathML instead of
-  // attempting namespace-aware SVG/MathML sanitization. Consumers needing rich
-  // inline diagrams should run a dedicated sanitizer before storing content.
-  html = html.replace(
-    /<\s*(script|style|iframe|object|embed|link|meta|base|svg|math)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi,
-    '',
-  );
-  html = html.replace(
-    /<\s*(script|style|iframe|object|embed|link|meta|base|svg|math)\b[^>]*\/?>/gi,
-    '',
-  );
-  // Drop event handlers (`onclick`, etc.) and internal editor markers entirely.
-  // A consumed whitespace/`/` separator and a non-consumed quote boundary both
-  // collapse to nothing: the attribute that follows (if any) keeps its own
-  // leading boundary, so removal never needs to leave a separator behind.
-  html = html.replace(
-    new RegExp(
-      `${ATTR_BOUNDARY}on[a-z]+\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]*)`,
-      'gi',
-    ),
-    '',
-  );
-  html = html.replace(
-    new RegExp(
-      `${ATTR_BOUNDARY}data-smrt-(?:selected|moving|resizing)\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]*)`,
-      'gi',
-    ),
-    '',
-  );
-  html = html.replace(
-    new RegExp(
-      `${ATTR_BOUNDARY}style\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
-      'gi',
-    ),
-    (
-      _match,
-      separator: string | undefined,
-      _raw: string,
-      doubleValue = '',
-      singleValue = '',
-      bareValue = '',
-    ) => {
-      const safeStyle = sanitizeStyle(doubleValue || singleValue || bareValue);
-      const sep = reemitSeparator(separator);
-      return safeStyle ? `${sep}style="${escapeAttribute(safeStyle)}"` : sep;
+  const html = sanitize(value, {
+    allowedTags: [...INLINE_TAGS, ...BLOCK_CONTENT_TAGS],
+    allowedAttributes: SANITIZER_ALLOWED_ATTRIBUTES,
+    allowedClasses: {},
+    allowedSchemes: [...LINK_SCHEMES],
+    allowedSchemesByTag: { img: ['http', 'https', 'data'] },
+    allowedSchemesAppliedToAttributes: ['href', 'src', 'cite'],
+    allowProtocolRelative: true,
+    // `style` values are rewritten by `sanitizeStyle` in the transform (a
+    // width / max-width / `height: auto` allowlist), so the library's CSS
+    // parser is not needed.
+    parseStyleAttributes: false,
+    disallowedTagsMode: 'discard',
+    nonTextTags: SANITIZER_DROP_CONTENT_TAGS,
+    transformTags: {
+      '*': (tagName, attribs) =>
+        transformBodyTag(tagName, attribs as Record<string, string>, options),
     },
-  );
-  html = html.replace(
-    SRCSET_ATTRIBUTE_PATTERN,
-    (
-      _match,
-      separator: string | undefined,
-      _raw: string,
-      doubleValue = '',
-      singleValue = '',
-      bareValue = '',
-    ) => {
-      const safeSrcset = sanitizeSrcset(
-        doubleValue || singleValue || bareValue,
-      );
-      const sep = reemitSeparator(separator);
-      return safeSrcset ? `${sep}srcset="${escapeAttribute(safeSrcset)}"` : sep;
-    },
-  );
-  html = html.replace(
-    URL_ATTRIBUTE_PATTERN,
-    (
-      _match,
-      separator: string | undefined,
-      name: string,
-      _raw: string,
-      doubleValue = '',
-      singleValue = '',
-      bareValue = '',
-    ) => {
-      const quote = doubleValue ? '"' : singleValue ? "'" : '"';
-      const rawValue = doubleValue || singleValue || bareValue;
-      return `${reemitSeparator(separator)}${name}=${quote}${escapeAttribute(sanitizeUrl(rawValue))}${quote}`;
-    },
-  );
+    // An image whose source was refused is dropped rather than left broken.
+    exclusiveFilter: (frame) => frame.tag === 'img' && !frame.attribs.src,
+  });
 
-  return html.trim();
+  // sanitize-html serializes void elements XHTML-style (`<br />`). Emit the
+  // HTML5 form the editor writes so bodies round-trip unchanged. Safe on the
+  // serializer's output: `<` and `>` never appear raw inside text or
+  // attribute values there, so this can only match a real tag.
+  return html
+    .replace(/<(img|br|hr|col)((?:\s+[^\s<>][^<>]*?)?)\s*\/>/g, '<$1$2>')
+    .trim();
+}
+
+/**
+ * Allowlist-sanitize body HTML for rendering with `{@html}`: headings,
+ * paragraphs, lists, quotes, links (`http(s)`/`mailto`/`tel`/relative),
+ * images (`http(s)`/relative/raster `data:`) with the editor's layout and
+ * thumbnail markers, figures, tables, code, and inline emphasis. Everything
+ * else — scripts, event handlers, `javascript:` URLs, iframes/embeds,
+ * SVG/MathML, forms, classes, and all CSS except image width — is removed.
+ */
+export function sanitizeHtml(value: string): string {
+  return sanitizeBodyHtml(value);
 }
 
 function renderInlineMarkdown(value: string): string {
   let html = value;
 
+  // Markdown is HTML-escaped before inline rendering, so an image title's
+  // quotes arrive as `&quot;`; accept both spellings.
   html = html.replace(
-    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+(?:"|&quot;)(.*?)(?:"|&quot;))?\)/g,
     (_match, alt: string, src: string, title = '') => {
       const safeSrc = sanitizeUrl(src);
       const safeAlt = escapeAttribute(decodeBasicEntities(alt));
-      const titleAttr = title
-        ? ` title="${escapeAttribute(decodeBasicEntities(title))}"`
+      const decodedTitle = decodeBasicEntities(title);
+      const markers = parseMarkdownImageTitle(decodedTitle);
+      const assetAttr = markers?.assetId
+        ? ` data-smrt-asset-id="${escapeAttribute(markers.assetId)}"`
+        : '';
+      if (markers?.thumbnail) {
+        return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${assetAttr} ${BODY_THUMBNAIL_ATTRIBUTE}="true" data-smrt-inline-image="true" data-smrt-placement="${markers.thumbnail}">`;
+      }
+      if (markers) {
+        return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${assetAttr}${markers.main ? ` ${BODY_MAIN_IMAGE_ATTRIBUTE}="true"` : ''}>`;
+      }
+      const titleAttr = decodedTitle
+        ? ` title="${escapeAttribute(decodedTitle)}"`
         : '';
       return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${titleAttr}>`;
     },
@@ -500,7 +737,13 @@ function fallbackHtmlToMarkdown(html: string): string {
     if (!src) {
       return '';
     }
-    return `\n\n![${parsed.alt || ''}](${src})\n\n`;
+    const thumbnailTitle = markdownImageTitle({
+      thumbnail: parsed[BODY_THUMBNAIL_ATTRIBUTE],
+      placement: parsed['data-smrt-placement'],
+      assetId: parsed['data-smrt-asset-id'],
+      main: parsed[BODY_MAIN_IMAGE_ATTRIBUTE],
+    });
+    return `\n\n![${parsed.alt || ''}](${src}${thumbnailTitle})\n\n`;
   });
   markdown = markdown.replace(
     /<a\b([^>]*)>([\s\S]*?)<\/a>/gi,
@@ -597,7 +840,13 @@ function nodeToMarkdown(node: MarkdownDomNode): string {
         return '';
       }
       const alt = node.getAttribute?.('alt') || '';
-      return `\n\n![${alt}](${src})\n\n`;
+      const thumbnailTitle = markdownImageTitle({
+        thumbnail: node.getAttribute?.(BODY_THUMBNAIL_ATTRIBUTE),
+        placement: node.getAttribute?.('data-smrt-placement'),
+        assetId: node.getAttribute?.('data-smrt-asset-id'),
+        main: node.getAttribute?.(BODY_MAIN_IMAGE_ATTRIBUTE),
+      });
+      return `\n\n![${alt}](${src}${thumbnailTitle})\n\n`;
     }
     case 'li':
       return `- ${trimmedChildren}\n`;
@@ -689,10 +938,18 @@ export function extractBodyImages(
       (_match, alt: string, src: string, title = '') => {
         const safeSrc = sanitizeUrl(src);
         if (safeSrc) {
+          const decodedTitle = decodeBasicEntities(title);
+          const markers = parseMarkdownImageTitle(decodedTitle);
+          const thumbnailPlacement = markers?.thumbnail;
           images.push({
             src: safeSrc,
             alt: decodeBasicEntities(alt),
-            ...(title ? { title: decodeBasicEntities(title) } : {}),
+            ...(decodedTitle && !markers ? { title: decodedTitle } : {}),
+            ...(markers?.assetId ? { assetId: markers.assetId } : {}),
+            ...(markers?.main ? { main: true } : {}),
+            ...(thumbnailPlacement
+              ? { placement: thumbnailPlacement, thumbnail: true }
+              : {}),
             index: images.length,
           });
         }
@@ -734,6 +991,18 @@ export function extractBodyImages(
             : {}),
           ...(placement ? { placement } : {}),
           ...(width ? { width } : {}),
+          ...(isThumbnailMarker(
+            parsedFigure[BODY_THUMBNAIL_ATTRIBUTE] ||
+              parsedImage[BODY_THUMBNAIL_ATTRIBUTE],
+          )
+            ? { thumbnail: true }
+            : {}),
+          ...(isThumbnailMarker(
+            parsedFigure[BODY_MAIN_IMAGE_ATTRIBUTE] ||
+              parsedImage[BODY_MAIN_IMAGE_ATTRIBUTE],
+          )
+            ? { main: true }
+            : {}),
           index: images.length,
         });
       }
@@ -759,6 +1028,12 @@ export function extractBodyImages(
           : {}),
         ...(placement ? { placement } : {}),
         ...(width ? { width } : {}),
+        ...(isThumbnailMarker(parsed[BODY_THUMBNAIL_ATTRIBUTE])
+          ? { thumbnail: true }
+          : {}),
+        ...(isThumbnailMarker(parsed[BODY_MAIN_IMAGE_ATTRIBUTE])
+          ? { main: true }
+          : {}),
         index: images.length,
       });
     }
@@ -811,4 +1086,446 @@ export function imageAssetToHtml(
   );
 
   return `<img src="${escapeAttribute(src)}" alt="${escapeAttribute(getImageAlt(asset))}"${assetId} data-smrt-inline-image="true" data-smrt-placement="block" data-smrt-width="${width}" style="width: ${width}px; max-width: 100%; height: auto">`;
+}
+
+// ---------------------------------------------------------------------------
+// Thumbnail block
+//
+// When content gets a thumbnail (featured image) it is also shown in the body
+// at a standard spot chosen from its shape: a wide picture becomes a
+// full-width header image at the top; a portrait or square one floats at the
+// top right of the first paragraph so the text wraps beside it (renderers
+// stack it full width on phones). The block carries a stable marker so it is
+// replaced — never duplicated — when the thumbnail changes, and removed when
+// the thumbnail is cleared. HTML bodies mark the `<img>` with
+// `data-smrt-thumbnail="true"`; Markdown bodies use the image title
+// `smrt-thumbnail:<placement>`, which the Markdown renderer turns back into
+// the same marked `<img>`.
+// ---------------------------------------------------------------------------
+
+/** Where the thumbnail block sits: header (`full`) or floated `right`. */
+export type ContentBodyThumbnailPlacement = 'full' | 'right';
+
+/** Width ÷ height at or above which a thumbnail counts as wide (a header). */
+export const THUMBNAIL_WIDE_ASPECT_RATIO = 1.3;
+
+/** Attribute that marks the thumbnail block's `<img>` in HTML bodies. */
+export const BODY_THUMBNAIL_ATTRIBUTE = 'data-smrt-thumbnail';
+
+/**
+ * Attribute that marks a picture already in the story as the one the person
+ * chose as the main picture (HTML bodies). It travels with the picture, so a
+ * choice sticks when pictures are moved or reordered.
+ */
+export const BODY_MAIN_IMAGE_ATTRIBUTE = 'data-smrt-main';
+
+const MARKDOWN_THUMBNAIL_TITLE_PREFIX = 'smrt-thumbnail:';
+
+export interface ContentBodyThumbnail {
+  /** Image URL written into the body. */
+  src: string;
+  /** Alternative text (default: empty — the article title usually says it). */
+  alt?: string | null;
+  /** Asset id, kept on the HTML `<img>` as `data-smrt-asset-id`. */
+  assetId?: string | null;
+  /** Natural width in pixels, used with `height` to choose the placement. */
+  width?: number | null;
+  /** Natural height in pixels. */
+  height?: number | null;
+  /** Force a placement instead of deriving it from `width`/`height`. */
+  placement?: ContentBodyThumbnailPlacement;
+}
+
+/**
+ * The standard thumbnail placement for an image of this size: wide
+ * (ratio ≥ {@link THUMBNAIL_WIDE_ASPECT_RATIO}) → `full` header; portrait or
+ * square → `right`. Unknown sizes default to `full`.
+ */
+export function thumbnailPlacementForSize(
+  width: unknown,
+  height: unknown,
+): ContentBodyThumbnailPlacement {
+  const w = Number(width);
+  const h = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return 'full';
+  }
+  return w / h >= THUMBNAIL_WIDE_ASPECT_RATIO ? 'full' : 'right';
+}
+
+function isThumbnailMarker(value: unknown): boolean {
+  return value === 'true' || value === '' || value === true;
+}
+
+/**
+ * Editor markers a Markdown image carries in its title (Markdown has no
+ * attributes): `smrt-thumbnail:<placement>[ <asset id>]` for the thumbnail
+ * block, `smrt-image <asset id>[ main]` for a stored picture in the story
+ * (`main`: the chosen main picture). Any other title is an ordinary title.
+ */
+interface MarkdownImageMarkers {
+  thumbnail?: ContentBodyThumbnailPlacement;
+  assetId?: string;
+  main?: boolean;
+}
+
+const MARKDOWN_THUMBNAIL_TITLE_PATTERN =
+  /^smrt-thumbnail:(full|right)(?: ([\w.:-]{1,128}))?$/;
+const MARKDOWN_IMAGE_TITLE_PATTERN = /^smrt-image ([\w.:-]{1,128})( main)?$/;
+
+function parseMarkdownImageTitle(title: string): MarkdownImageMarkers | null {
+  const thumbnail = MARKDOWN_THUMBNAIL_TITLE_PATTERN.exec(title);
+  if (thumbnail) {
+    return {
+      thumbnail: thumbnail[1] as ContentBodyThumbnailPlacement,
+      ...(thumbnail[2] ? { assetId: thumbnail[2] } : {}),
+    };
+  }
+  const image = MARKDOWN_IMAGE_TITLE_PATTERN.exec(title);
+  if (image) {
+    return { assetId: image[1], ...(image[2] ? { main: true } : {}) };
+  }
+  return null;
+}
+
+function parseMarkdownThumbnailTitle(
+  title: string,
+): ContentBodyThumbnailPlacement | undefined {
+  return parseMarkdownImageTitle(title)?.thumbnail;
+}
+
+/** The ` "title"` a Markdown image gets for an `<img>`'s editor markers. */
+function markdownImageTitle(attributes: {
+  thumbnail: string | null | undefined;
+  placement: string | null | undefined;
+  assetId: string | null | undefined;
+  main: string | null | undefined;
+}): string {
+  const assetId =
+    attributes.assetId && /^[\w.:-]{1,128}$/.test(attributes.assetId)
+      ? attributes.assetId
+      : '';
+  if (isThumbnailMarker(attributes.thumbnail)) {
+    const placement: ContentBodyThumbnailPlacement =
+      attributes.placement === 'right' ? 'right' : 'full';
+    return ` "${MARKDOWN_THUMBNAIL_TITLE_PREFIX}${placement}${assetId ? ` ${assetId}` : ''}"`;
+  }
+  if (!assetId) {
+    return '';
+  }
+  return ` "smrt-image ${assetId}${isThumbnailMarker(attributes.main) ? ' main' : ''}"`;
+}
+
+const HTML_THUMBNAIL_FIGURE_PATTERN =
+  /\s*<figure\b[^>]*>(?:(?!<\/figure>)[\s\S])*?<img\b[^>]*\bdata-smrt-thumbnail\s*=[^>]*>[\s\S]*?<\/figure>\s*/gi;
+const HTML_THUMBNAIL_MARKED_FIGURE_PATTERN =
+  /\s*<figure\b[^>]*\bdata-smrt-thumbnail\s*=[^>]*>[\s\S]*?<\/figure>\s*/gi;
+const HTML_THUMBNAIL_PARAGRAPH_PATTERN =
+  /\s*<p\b[^>]*>\s*(?:<br\s*\/?>\s*)?<img\b[^>]*\bdata-smrt-thumbnail\s*=[^>]*>\s*(?:<br\s*\/?>\s*)?<\/p>\s*/gi;
+const HTML_THUMBNAIL_IMAGE_PATTERN =
+  /\s*<img\b[^>]*\bdata-smrt-thumbnail\s*=[^>]*>\s*/gi;
+const MARKDOWN_THUMBNAIL_LINE_PATTERN =
+  /^[ \t]*!\[[^\]]*\]\([^)\s]+\s+"smrt-thumbnail:(?:full|right)(?: [\w.:-]{1,128})?"\)[ \t]*(?:\n|$)/gm;
+
+/** True when the body already contains a thumbnail block. */
+export function bodyHasThumbnail(
+  body: string | null | undefined,
+  format?: ContentBodyFormat | null,
+): boolean {
+  if (!body) {
+    return false;
+  }
+  return extractBodyImages(body, resolveBodyFormat(format, body)).some(
+    (image) => image.thumbnail,
+  );
+}
+
+/** The body without its thumbnail block (unchanged when it has none). */
+export function removeThumbnailFromBody(
+  body: string | null | undefined,
+  format?: ContentBodyFormat | null,
+): string {
+  const source = body || '';
+  if (!source) {
+    return '';
+  }
+  const resolved = resolveBodyFormat(format, source);
+  if (resolved === 'markdown') {
+    if (!source.match(MARKDOWN_THUMBNAIL_LINE_PATTERN)) {
+      return source;
+    }
+    return source
+      .replace(MARKDOWN_THUMBNAIL_LINE_PATTERN, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+/, '');
+  }
+
+  const stripped = source
+    .replace(HTML_THUMBNAIL_MARKED_FIGURE_PATTERN, '\n')
+    .replace(HTML_THUMBNAIL_FIGURE_PATTERN, '\n')
+    .replace(HTML_THUMBNAIL_PARAGRAPH_PATTERN, '\n')
+    .replace(HTML_THUMBNAIL_IMAGE_PATTERN, '\n');
+  return stripped === source ? source : stripped.trim();
+}
+
+function thumbnailHtml(
+  thumbnail: ContentBodyThumbnail,
+  placement: ContentBodyThumbnailPlacement,
+): string {
+  const src = sanitizeUrl(thumbnail.src || '');
+  if (!src) {
+    return '';
+  }
+  const assetId = thumbnail.assetId
+    ? ` data-smrt-asset-id="${escapeAttribute(String(thumbnail.assetId))}"`
+    : '';
+  return `<img src="${escapeAttribute(src)}" alt="${escapeAttribute(String(thumbnail.alt || ''))}"${assetId} ${BODY_THUMBNAIL_ATTRIBUTE}="true" data-smrt-inline-image="true" data-smrt-placement="${placement}">`;
+}
+
+function thumbnailMarkdown(
+  thumbnail: ContentBodyThumbnail,
+  placement: ContentBodyThumbnailPlacement,
+): string {
+  const src = sanitizeUrl(thumbnail.src || '');
+  if (!src || /\s/.test(src)) {
+    return '';
+  }
+  const alt = String(thumbnail.alt || '').replace(/[[\]\n]/g, ' ');
+  const assetId =
+    thumbnail.assetId && /^[\w.:-]{1,128}$/.test(String(thumbnail.assetId))
+      ? ` ${thumbnail.assetId}`
+      : '';
+  return `![${alt}](${src} "${MARKDOWN_THUMBNAIL_TITLE_PREFIX}${placement}${assetId}")`;
+}
+
+/** Index of the first Markdown paragraph (not a heading, list or image). */
+function firstMarkdownParagraphOffset(markdown: string): number {
+  const blockPattern = /(^|\n\n)([^\n][\s\S]*?)(?=\n\n|$)/g;
+  for (const match of markdown.matchAll(blockPattern)) {
+    const block = match[2] || '';
+    const trimmed = block.trimStart();
+    if (!trimmed || /^(?:#{1,6}\s|[-*]\s|!\[|>)/.test(trimmed)) {
+      continue;
+    }
+    return (match.index ?? 0) + (match[1] || '').length;
+  }
+  return -1;
+}
+
+/**
+ * Put `thumbnail` into `body` at its standard spot, replacing any previous
+ * thumbnail block: `full` goes first in the body; `right` goes immediately
+ * before the first paragraph, floated so that paragraph wraps beside it.
+ * The placement comes from `thumbnail.placement` or its width/height
+ * ({@link thumbnailPlacementForSize}). Returns the body unchanged (minus any
+ * old block) when the image has no usable `src`.
+ */
+export function placeThumbnailInBody(
+  body: string | null | undefined,
+  format: ContentBodyFormat | null | undefined,
+  thumbnail: ContentBodyThumbnail,
+): string {
+  const source = body || '';
+  const resolved = resolveBodyFormat(format, source);
+  const withoutOld = removeThumbnailFromBody(source, resolved);
+  const placement =
+    thumbnail.placement ??
+    thumbnailPlacementForSize(thumbnail.width, thumbnail.height);
+
+  if (resolved === 'markdown') {
+    const block = thumbnailMarkdown(thumbnail, placement);
+    if (!block) {
+      return withoutOld;
+    }
+    const trimmed = withoutOld.replace(/^\n+/, '');
+    if (!trimmed) {
+      return block;
+    }
+    const offset =
+      placement === 'right' ? firstMarkdownParagraphOffset(trimmed) : 0;
+    const at = offset < 0 ? 0 : offset;
+    return `${trimmed.slice(0, at)}${block}\n\n${trimmed.slice(at)}`;
+  }
+
+  const block = thumbnailHtml(thumbnail, placement);
+  if (!block) {
+    return withoutOld;
+  }
+  const trimmed = withoutOld.trim();
+  if (!trimmed) {
+    return block;
+  }
+  let at = 0;
+  if (placement === 'right') {
+    const paragraph = /<p\b/i.exec(trimmed);
+    at = paragraph ? paragraph.index : 0;
+  }
+  return `${trimmed.slice(0, at)}${block}\n${trimmed.slice(at)}`;
+}
+
+export interface RenderContentBodyOptions {
+  /**
+   * Replace the thumbnail block's image URL — for renderers (e.g. a public
+   * site) that serve assets from a different origin than the editor that
+   * wrote the body.
+   */
+  thumbnailSrc?: string | null;
+}
+
+/**
+ * Sanitized HTML for a stored body in either format — what a public page
+ * renders. Markdown thumbnail blocks come out as the same marked `<img>` as
+ * HTML ones, so one stylesheet handles both.
+ */
+export function renderContentBodyHtml(
+  body: string | null | undefined,
+  format?: ContentBodyFormat | null,
+  options: RenderContentBodyOptions = {},
+): string {
+  const source = body || '';
+  if (!source) {
+    return '';
+  }
+  const resolved = resolveBodyFormat(format, source);
+  const replacement = allowedUrl(options.thumbnailSrc || '', 'image');
+  // The thumbnail swap happens on the parsed attribute inside the sanitizer,
+  // never by pattern-matching the serialized HTML (an `alt` text containing
+  // `src=` could otherwise be rewritten into a new attribute).
+  return sanitizeBodyHtml(
+    resolved === 'markdown' ? renderMarkdownToHtml(source) : source,
+    replacement ? { thumbnailSrc: replacement } : {},
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main picture
+//
+// The first picture in the story is the main picture (the thumbnail) unless
+// the person chose one: either a picture in the story marked with
+// `data-smrt-main="true"` (`setBodyMainImage`), or a thumbnail block placed
+// for a picture that is not otherwise in the story (`placeThumbnailInBody`).
+// A choice sticks until it is cleared, whatever order the pictures are in.
+// Only pictures with an asset id count (Markdown images carry theirs in the
+// title, `smrt-image <id>`).
+// ---------------------------------------------------------------------------
+
+/** How the main picture was decided. */
+export type ContentMainPictureMode = 'chosen' | 'automatic' | 'none';
+
+export interface ContentMainPicture {
+  /** The main picture's asset id, or null when there is none. */
+  assetId: string | null;
+  /**
+   * `chosen`: the person picked it. `automatic`: the first picture in the
+   * story. `none`: the story has no pictures with an asset id, so the
+   * current value (passed in) is kept as it is.
+   */
+  mode: ContentMainPictureMode;
+}
+
+/**
+ * The content's main picture according to its body: the chosen picture when
+ * there is one, otherwise the first picture in the story. Returns `none`
+ * with `currentAssetId` when the story has no pictures with asset ids, so
+ * a caller never clears a thumbnail set some other way.
+ */
+export function resolveBodyMainPicture(
+  body: string | null | undefined,
+  format?: ContentBodyFormat | null,
+  currentAssetId: string | null = null,
+): ContentMainPicture {
+  const source = body || '';
+  const images = source
+    ? extractBodyImages(source, resolveBodyFormat(format, source)).filter(
+        (image) => Boolean(image.assetId),
+      )
+    : [];
+  const chosen =
+    images.find((image) => image.thumbnail) ??
+    images.find((image) => image.main);
+  if (chosen?.assetId) {
+    return { assetId: chosen.assetId, mode: 'chosen' };
+  }
+  if (images[0]?.assetId) {
+    return { assetId: images[0].assetId, mode: 'automatic' };
+  }
+  return { assetId: currentAssetId, mode: 'none' };
+}
+
+const MAIN_IMAGE_ATTRIBUTE_PATTERN =
+  /\s+data-smrt-main(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?/gi;
+
+function withoutMainMarker(tag: string): string {
+  return tag.replace(MAIN_IMAGE_ATTRIBUTE_PATTERN, '');
+}
+
+/**
+ * Mark the first picture in the story with `assetId` as the chosen main
+ * picture, clearing the mark from every other picture. `null` clears the
+ * choice, so the first picture is the main picture again. Works on HTML
+ * bodies and on Markdown ones (where the mark is the image title
+ * `smrt-image <id> main`); a body without that picture is returned with only
+ * the old marks cleared.
+ */
+export function setBodyMainImage(
+  body: string | null | undefined,
+  format: ContentBodyFormat | null | undefined,
+  assetId: string | null,
+): string {
+  const source = body || '';
+  if (!source) {
+    return source;
+  }
+  if (resolveBodyFormat(format, source) === 'markdown') {
+    let markedMarkdown = false;
+    return source.replace(
+      /!\[([^\]]*)\]\(([^)\s]+)\s+"([^"]*)"\)/g,
+      (image, alt: string, src: string, title: string) => {
+        const markers = parseMarkdownImageTitle(title);
+        if (!markers?.assetId || markers.thumbnail) {
+          return image;
+        }
+        const main = !markedMarkdown && markers.assetId === assetId;
+        markedMarkdown ||= main;
+        return `![${alt}](${src} "smrt-image ${markers.assetId}${main ? ' main' : ''}")`;
+      },
+    );
+  }
+  const cleared = source.replace(/<(img|figure)\b[^>]*>/gi, withoutMainMarker);
+  if (!assetId) {
+    return cleared;
+  }
+  let marked = false;
+  return cleared.replace(
+    /<img\b([^>]*?)(\s*\/?)>/gi,
+    (tag, attrs: string, end: string) => {
+      if (marked) {
+        return tag;
+      }
+      const parsed = parseHtmlAttributes(attrs);
+      if (
+        parsed['data-smrt-asset-id'] !== assetId ||
+        isThumbnailMarker(parsed[BODY_THUMBNAIL_ATTRIBUTE])
+      ) {
+        return tag;
+      }
+      marked = true;
+      return `<img${attrs} ${BODY_MAIN_IMAGE_ATTRIBUTE}="true"${end}>`;
+    },
+  );
+}
+
+/** True when the story contains the picture with this asset id (not the thumbnail block). */
+export function bodyHasImage(
+  body: string | null | undefined,
+  format: ContentBodyFormat | null | undefined,
+  assetId: string,
+): boolean {
+  const source = body || '';
+  if (!source || !assetId) {
+    return false;
+  }
+  return extractBodyImages(source, resolveBodyFormat(format, source)).some(
+    (image) => !image.thumbnail && image.assetId === assetId,
+  );
 }

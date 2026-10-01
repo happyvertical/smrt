@@ -75,7 +75,9 @@ export class PlaybookOverride extends SmrtObject {
   @field({ required: true })
   key: string = '';
 
-  @field({ type: 'text', nullable: true })
+  // Not tenant-scoped (any scope is writable), but the value is a tenant id:
+  // uuid on Postgres, so it compares with every other tenant_id column.
+  @field({ sqlType: 'UUID', nullable: true })
   tenantId: string | null = null;
 
   @field({ type: 'text', nullable: true })

@@ -12,6 +12,7 @@ import {
   registerWebMcpBespokeTool,
   WebMcpToolNameCollisionError,
 } from '@happyvertical/smrt-web';
+import { isWebMcpProposalTool } from '@happyvertical/smrt-web/webmcp-tool-names';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WebMcpToolSpec } from '../webmcp.svelte.js';
 import { registerWebMcpUiTools } from '../webmcp-ui.js';
@@ -256,6 +257,10 @@ describe('registerWebMcpUiTools', () => {
       }),
       focus: () => {
         throw new Error('never-serialize-this cannot be focused');
+      },
+      // An agent's `focus` reveals instead of moving keyboard focus.
+      reveal: () => {
+        throw new Error('never-serialize-this cannot be revealed');
       },
     });
     registerWebMcpUiTools({
@@ -873,5 +878,19 @@ describe('cross-path tool-name lock (#2613)', () => {
     );
     expect(registered).toHaveLength(19);
     bespokeDisposer();
+  });
+
+  it('brands every fixed UI tool as proposal-only for the in-page assistant', () => {
+    const browser = modelContext();
+    const dispose = registerWebMcpUiTools({
+      controlRegistry: createControlInteractionRegistry(),
+      dataSurfaceRegistry: createDataSurfaceRegistry(),
+      document: browser.document,
+    });
+    expect(browser.registered).toHaveLength(6);
+    for (const tool of browser.registered) {
+      expect(isWebMcpProposalTool(tool.execute)).toBe(true);
+    }
+    dispose();
   });
 });

@@ -7,6 +7,7 @@ import {
   executeLocalControlBatch,
   executeLocalControlCommand,
 } from '../control-interaction.js';
+import StagedControlReview from '../StagedControlReview.svelte';
 import CompositeUserEditFixture from './composite-user-edit.fixture.svelte';
 import SelectFixture from './select-interaction.fixture.svelte';
 import Fixture from './staged-review.fixture.svelte';
@@ -110,7 +111,8 @@ describe('StagedControlReview', () => {
       screen.getByRole('region', { name: 'Review proposed changes' }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Proposed by assistant/)).toBeInTheDocument();
-    expect(screen.getByText('profile/display-name')).toBeInTheDocument();
+    // Plain field labels only: registry addressing never shows (#forms-qa).
+    expect(screen.queryByText(/profile\/display-name/)).not.toBeInTheDocument();
 
     const proposal = screen.getByRole('textbox', {
       name: 'Edit proposed value for Display name',
@@ -134,6 +136,42 @@ describe('StagedControlReview', () => {
     ).toHaveTextContent('Applied proposed change.');
     expect(field).toHaveFocus();
     await expectNoA11yViolations(container);
+  });
+
+  it('shows plain field labels, never registry ids, for unlabeled controls', async () => {
+    const registry = createReviewRegistry();
+    let town = '';
+    registry.register({
+      identity: {
+        formId: 'setup-network',
+        controlId: 'setup-network/town_name',
+        subject: { type: 'site', id: 'site-1', label: 'Lacombe News' },
+      },
+      metadata: { kind: 'text' },
+      getValue: () => town,
+      setValue: (next) => {
+        town = String(next);
+      },
+    });
+    render(StagedControlReview, {
+      props: { registry, formId: 'setup-network' },
+    });
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: {
+          formId: 'setup-network',
+          controlId: 'setup-network/town_name',
+          subject: { type: 'site', id: 'site-1' },
+        },
+        value: 'Lacombe',
+      },
+      { source: 'agent' },
+    );
+    await waitFor(() => expect(screen.getByText('Town name')).toBeVisible());
+    expect(screen.getByText('Lacombe News')).toBeVisible();
+    expect(screen.queryByText(/setup-network/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/site-1/)).not.toBeInTheDocument();
   });
 
   it('keeps Enter in the proposal editor from submitting the form', async () => {
@@ -969,8 +1007,8 @@ describe('StagedControlReview', () => {
       expect(renderedFirst).toHaveAttribute('data-smrt-staged', 'true'),
     );
 
-    expect(screen.getByText('profile/display-name · record:one')).toBeVisible();
-    expect(screen.getByText('profile/display-name · record:two')).toBeVisible();
+    expect(screen.queryByText(/profile\/display-name/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/record:one/)).not.toBeInTheDocument();
     for (const subjectId of ['one', 'two']) {
       const actionName = `Display name record:${subjectId} [identity:["profile","display-name","record","${subjectId}"]]`;
       expect(

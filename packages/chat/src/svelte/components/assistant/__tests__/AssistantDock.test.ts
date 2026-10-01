@@ -72,7 +72,9 @@ describe('AssistantDock (mounted component)', () => {
     render(AssistantDock, { props: { transport, registry } });
 
     expect(
-      await screen.findByText(/No data surfaces are mounted on this route/i),
+      await screen.findByText(
+        /Nothing on this page can be changed from the chat/i,
+      ),
     ).toBeInTheDocument();
     expect(listThreadsSpy).toHaveBeenCalledTimes(1);
 
@@ -100,13 +102,17 @@ describe('AssistantDock (mounted component)', () => {
     // Poll until the notice clears (or fail): the registry event handler
     // runs synchronously, so this should resolve on the very next microtask.
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (!screen.queryByText(/No data surfaces are mounted on this route/i)) {
+      if (
+        !screen.queryByText(
+          /Nothing on this page can be changed from the chat/i,
+        )
+      ) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     expect(
-      screen.queryByText(/No data surfaces are mounted on this route/i),
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
     ).not.toBeInTheDocument();
 
     // loadThreads must still have fired only once for the mount — not once
@@ -139,7 +145,7 @@ describe('AssistantDock (mounted component)', () => {
 
     // R1 has a mounted surface — the empty notice must not show.
     expect(
-      screen.queryByText(/No data surfaces are mounted on this route/i),
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
     ).not.toBeInTheDocument();
 
     // Reassign the prop to a DIFFERENT, empty registry instance (R2).
@@ -147,7 +153,9 @@ describe('AssistantDock (mounted component)', () => {
     await rerender({ transport, registry: r2 });
 
     expect(
-      await screen.findByText(/No data surfaces are mounted on this route/i),
+      await screen.findByText(
+        /Nothing on this page can be changed from the chat/i,
+      ),
     ).toBeInTheDocument();
 
     // Registering a surface on R2 must be discovered — proves the
@@ -158,13 +166,17 @@ describe('AssistantDock (mounted component)', () => {
       getSnapshot: () => ({ revision: 1, state: {} }),
     });
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (!screen.queryByText(/No data surfaces are mounted on this route/i)) {
+      if (
+        !screen.queryByText(
+          /Nothing on this page can be changed from the chat/i,
+        )
+      ) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     expect(
-      screen.queryByText(/No data surfaces are mounted on this route/i),
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
     ).not.toBeInTheDocument();
 
     // F1 guarantee preserved: the registry-scoped effect must not have
@@ -198,7 +210,9 @@ describe('AssistantDock (mounted component)', () => {
     });
 
     expect(
-      await screen.findByText(/No data surfaces are mounted on this route/i),
+      await screen.findByText(
+        /Nothing on this page can be changed from the chat/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -217,7 +231,9 @@ describe('AssistantDock (mounted component)', () => {
     });
 
     expect(
-      await screen.findByText(/No data surfaces are mounted on this route/i),
+      await screen.findByText(
+        /Nothing on this page can be changed from the chat/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -234,7 +250,7 @@ describe('AssistantDock (mounted component)', () => {
     });
 
     expect(
-      screen.queryByText(/No data surfaces are mounted on this route/i),
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
     ).not.toBeInTheDocument();
   });
 
@@ -287,26 +303,32 @@ describe('AssistantDock (mounted component)', () => {
     // gated out even though it's genuinely registered — the "no surfaces"
     // notice must NOT show (the override list is non-empty).
     expect(
-      screen.queryByText(/No data surfaces are mounted on this route/i),
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
     ).not.toBeInTheDocument();
 
     // Narrow the override to an EMPTY list.
     await rerender({ transport, registry, surfaces: [] });
     expect(
-      await screen.findByText(/No data surfaces are mounted on this route/i),
+      await screen.findByText(
+        /Nothing on this page can be changed from the chat/i,
+      ),
     ).toBeInTheDocument();
 
     // Widen back to include the registered `orders` surface — discovery
     // must follow the reassignment and the notice must clear.
     await rerender({ transport, registry, surfaces: [identity] });
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (!screen.queryByText(/No data surfaces are mounted on this route/i)) {
+      if (
+        !screen.queryByText(
+          /Nothing on this page can be changed from the chat/i,
+        )
+      ) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     expect(
-      screen.queryByText(/No data surfaces are mounted on this route/i),
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
     ).not.toBeInTheDocument();
   });
 
@@ -321,7 +343,9 @@ describe('AssistantDock (mounted component)', () => {
     const { rerender } = render(AssistantDock, {
       props: { transport, registry, surfaces: [] },
     });
-    await screen.findByText(/No data surfaces are mounted on this route/i);
+    await screen.findByText(
+      /Nothing on this page can be changed from the chat/i,
+    );
     await rerender({ transport, registry, surfaces: [identity] });
     await rerender({ transport, registry, surfaces: [] });
 
@@ -341,7 +365,9 @@ describe('AssistantDock (mounted component)', () => {
     };
 
     render(AssistantDock, { props: { transport, registry } });
-    await screen.findByText(/No data surfaces are mounted on this route/i);
+    await screen.findByText(
+      /Nothing on this page can be changed from the chat/i,
+    );
 
     await userEvent.click(
       screen.getByRole('button', { name: /New conversation/i }),

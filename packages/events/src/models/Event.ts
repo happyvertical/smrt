@@ -52,6 +52,18 @@ export class Event extends SmrtHierarchical {
   description = '';
   startDate: Date | null = null;
   endDate: Date | null = null;
+  /**
+   * True when the event occupies whole calendar days rather than a time
+   * range. `startDate` is the first day (local midnight in `timeZone`) and
+   * `endDate`, when set, is the exclusive end (midnight after the last day).
+   */
+  allDay: boolean = false;
+  /**
+   * IANA time zone the event is scheduled in (for example
+   * `America/Edmonton`). Empty means "inherit" from the series, place, or
+   * site. Calendars and recurrence expansion compute wall-clock days in it.
+   */
+  timeZone = '';
   status: EventStatus = 'scheduled';
   round: number | null = null; // Sequence/round number in series
   metadata = ''; // JSON metadata (stored as text)
@@ -75,6 +87,8 @@ export class Event extends SmrtHierarchical {
     if (options.startDate !== undefined)
       this.startDate = options.startDate || null;
     if (options.endDate !== undefined) this.endDate = options.endDate || null;
+    if (options.allDay !== undefined) this.allDay = options.allDay;
+    if (options.timeZone !== undefined) this.timeZone = options.timeZone;
     if (options.status !== undefined) this.status = options.status;
     if (options.round !== undefined) this.round = options.round;
     if (options.externalId !== undefined) this.externalId = options.externalId;

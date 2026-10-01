@@ -19,6 +19,34 @@ export const M = defineMessages({
   'content.content_agent_chat.new': 'New',
   'content.content_agent_chat.untitled_topic': 'Untitled Topic',
 
+  // ContentPictureDrawer
+  'content.content_picture_drawer.title': 'Add pictures',
+  'content.content_picture_drawer.close': 'Done',
+  'content.content_picture_drawer.hint':
+    'Drag a picture into the story, or pick some and press Insert.',
+  'content.content_picture_drawer.search': 'Search pictures',
+  'content.content_picture_drawer.upload': 'Upload pictures',
+  'content.content_picture_drawer.upload_hint': 'From your computer or phone',
+  'content.content_picture_drawer.uploading': 'Uploading…',
+  'content.content_picture_drawer.loading': 'Loading pictures…',
+  'content.content_picture_drawer.empty':
+    'No pictures yet. Upload one to start.',
+  'content.content_picture_drawer.no_match': 'No pictures match.',
+  'content.content_picture_drawer.loading_more': 'Loading more pictures…',
+  'content.content_picture_drawer.more_loaded': '{count} more pictures',
+  'content.content_picture_drawer.insert': 'Insert',
+  'content.content_picture_drawer.insert_count': 'Insert {count} pictures',
+  'content.content_picture_drawer.clear_selection': 'Clear',
+  'content.content_picture_drawer.select': 'Pick {name}',
+  'content.content_picture_drawer.in_story': 'In the story',
+  'content.content_picture_drawer.no_preview': 'No preview',
+  'content.content_picture_drawer.main': 'Main picture',
+  'content.content_picture_drawer.use_as_main': 'Use as main picture',
+  'content.content_picture_drawer.main_automatic':
+    'The first picture in the story is the main picture.',
+  'content.content_picture_drawer.main_chosen': 'You chose the main picture.',
+  'content.content_picture_drawer.main_reset': 'Use the first picture instead',
+
   // ContentBodyEditor
   'content.content_body_editor.toolbar': 'Body editor toolbar',
   'content.content_body_editor.bold': 'Bold',
@@ -26,10 +54,13 @@ export const M = defineMessages({
   'content.content_body_editor.heading': 'Heading',
   'content.content_body_editor.bulleted_list': 'Bulleted list',
   'content.content_body_editor.insert_image': 'Insert image',
+  'content.content_body_editor.image_panel': 'Pictures',
   'content.content_body_editor.save_as': 'Save as',
   'content.content_body_editor.selected_image_controls':
     'Selected image controls',
   'content.content_body_editor.move_image': 'Move image',
+  'content.content_body_editor.move_image_up': 'Move up',
+  'content.content_body_editor.move_image_down': 'Move down',
   'content.content_body_editor.wrap_text_on_right': 'Wrap text on right',
   'content.content_body_editor.center_image': 'Center image',
   'content.content_body_editor.wrap_text_on_left': 'Wrap text on left',
@@ -38,8 +69,12 @@ export const M = defineMessages({
   'content.content_body_editor.make_image_smaller': 'Make image smaller',
   'content.content_body_editor.make_larger': 'Make larger',
   'content.content_body_editor.make_image_larger': 'Make image larger',
-  'content.content_body_editor.use_as_primary_image': 'Use as primary image',
+  'content.content_body_editor.use_as_primary_image': 'Use as main picture',
   'content.content_body_editor.remove_image': 'Remove image',
+  'content.content_body_editor.change_image': 'Change this picture',
+  'content.content_body_editor.change_image_short': 'Change',
+  'content.content_body_editor.change_image_hint':
+    'Change this picture. You can also press and hold a picture and say what you want.',
   'content.content_body_editor.resize_image': 'Resize image',
   'content.content_body_editor.resize_selected_image': 'Resize selected image',
 
@@ -87,6 +122,30 @@ export const M = defineMessages({
   'content.content_image_chooser.focus_selected_body_image':
     'Focus selected body image',
   'content.content_image_chooser.next_body_image': 'Next body image',
+
+  // Editor field labels (ContentTitleField / StatusFields / MetadataFields /
+  // BodyEditor). Simple mode uses the plain everyday labels.
+  'content.content_fields.title': 'Title',
+  'content.content_fields.body': 'Story',
+  'content.content_fields.type': 'Type',
+  'content.content_fields.state': 'State',
+  'content.content_fields.status': 'Status',
+  'content.content_fields.published': 'Published',
+  'content.content_fields.publish_date': 'Publish date',
+  'content.content_fields.author': 'Author',
+  'content.content_fields.description': 'Description',
+  'content.content_fields.summary': 'Summary',
+  'content.content_fields.summary_hint':
+    'One or two sentences shown in lists and when the story is shared.',
+  'content.content_fields.tags': 'Tags',
+  'content.content_fields.tags_hint': 'Separate tags with commas.',
+  'content.content_fields.url': 'URL',
+  'content.content_fields.details': 'Details',
+  'content.content_fields.optional': '{label} (optional)',
+  'content.content_fields.status_draft': 'Draft',
+  'content.content_fields.status_review': 'Ready for review',
+  'content.content_fields.status_published': 'Published',
+  'content.content_fields.status_archived': 'Archived',
 
   // ContentMetadataFields
   'content.content_metadata_fields.file_key': 'File Key',

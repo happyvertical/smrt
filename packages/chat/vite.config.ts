@@ -19,6 +19,9 @@ export default defineConfig(async ({ command, mode }) => {
         // side of chat-stream.ts's contract). Dedicated subpath so widget
         // hosts never pull the server runtime into their bundle.
         'client',
+        // Browser-safe assistant-turn wire contract + SSE reader (#2908),
+        // shared by the server engine and the AssistantDock.
+        'assistant-turn-events',
         // Authenticated data-surface command/ack/event transport adapter.
         'data-surface-bridge',
         // Internal agent-runtime surface (S5 #1392): emitted under a dedicated

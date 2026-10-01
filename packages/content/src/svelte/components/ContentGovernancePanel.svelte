@@ -1894,6 +1894,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .factual-workflow {
+    container-type: inline-size;
+    container-name: governance-panel;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
@@ -1904,7 +1906,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     gap: 1.25rem;
   }
 
-  @media (min-width: 900px) {
+  @container governance-panel (min-width: 56rem) {
     .workflow-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -2156,7 +2158,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     gap: 1rem;
   }
 
-  @media (min-width: 900px) {
+  @container governance-panel (min-width: 56rem) {
     .transparency-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

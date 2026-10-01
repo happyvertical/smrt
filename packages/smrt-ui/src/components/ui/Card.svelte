@@ -52,15 +52,24 @@ const {
 </div>
 
 <style>
+  /*
+   * Themeable look (app-level custom properties; defaults keep the stock look):
+   *   --smrt-card-border      edge of default and elevated cards
+   *   --smrt-card-background  card fill
+   *   --smrt-card-shadow      shadow of default cards (elevated keeps its elevation)
+   *   --smrt-card-divider     rule between the header/footer and the content
+   * The `outlined` variant always draws its outline.
+   */
   .card {
-    background: var(--smrt-color-surface);
+    background: var(--smrt-card-background, var(--smrt-color-surface));
     border-radius: var(--smrt-radius-medium);
     transition: all var(--smrt-duration-short2) var(--smrt-easing-standard);
   }
 
   /* Variants */
   .default {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
+    box-shadow: var(--smrt-card-shadow, none);
   }
 
   .outlined {
@@ -68,7 +77,7 @@ const {
   }
 
   .elevated {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
     box-shadow: var(--smrt-elevation-2);
   }
 
@@ -98,7 +107,7 @@ const {
   /* Header */
   .card-header {
     padding: var(--smrt-spacing-6);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    border-bottom: var(--smrt-card-divider, 1px solid var(--smrt-color-outline-variant));
   }
 
   .padding-sm .card-header {
@@ -112,7 +121,7 @@ const {
   /* Footer */
   .card-footer {
     padding: var(--smrt-spacing-6);
-    border-top: 1px solid var(--smrt-color-outline-variant);
+    border-top: var(--smrt-card-divider, 1px solid var(--smrt-color-outline-variant));
     background: var(--smrt-color-surface-container-low);
     border-bottom-left-radius: var(--smrt-radius-medium);
     border-bottom-right-radius: var(--smrt-radius-medium);

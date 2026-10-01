@@ -175,9 +175,9 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
       expect(personDef.decoratorConfig?.tableStrategy).toBe('sti');
 
       // As of v0.17: Manifest includes inherited fields inline (build-time merging)
-      // Person now has 11 fields from Profile in the manifest
+      // Person now has 12 fields from Profile in the manifest
       // (includes tenantId, created_at, updated_at from SmrtObject base)
-      expect(Object.keys(personDef.fields || {}).length).toBe(11);
+      expect(Object.keys(personDef.fields || {}).length).toBe(12);
     }
 
     // Verify Profile is in the manifest (the STI base)
@@ -274,9 +274,9 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
     console.log('Person fields:', Array.from(fields.keys()));
     console.log('Person fields count:', fields.size);
 
-    // FIXED: Person now has 11 fields because manifest includes inherited fields
+    // FIXED: Person now has 12 fields because manifest includes inherited fields
     // (includes tenantId, created_at, updated_at from SmrtObject base)
-    expect(fields.size).toBe(11); // Exactly 11 inherited fields from Profile
+    expect(fields.size).toBe(12); // Exactly 12 inherited fields from Profile
 
     // Check specific fields from Profile (inherited at build time)
     expect(fields.has('created_at')).toBe(true);
@@ -287,6 +287,7 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
     expect(fields.has('emailKey')).toBe(true);
     expect(fields.has('name')).toBe(true);
     expect(fields.has('description')).toBe(true);
+    expect(fields.has('isPublic')).toBe(true);
     expect(fields.has('metadata')).toBe(true);
     expect(fields.has('relationshipsFrom')).toBe(true);
     expect(fields.has('relationshipsTo')).toBe(true);

@@ -35,9 +35,11 @@ interface DbDiffOptions {
   json?: boolean;
   verbose?: boolean;
   'drop-indexes'?: boolean;
+  'drop-legacy-natural-key'?: boolean;
   'drop-columns'?: boolean;
   'relax-columns'?: boolean;
   'postgres-timestamp-legacy-timezone'?: string;
+  'empty-text-as-null'?: boolean;
 }
 
 export const dbDiffCommand: CLICommand = {
@@ -90,6 +92,12 @@ export const dbDiffCommand: CLICommand = {
         'Include orphan-index drops in the diff (indexes in DB but not in the manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default for safety.',
       default: false,
     },
+    'drop-legacy-natural-key': {
+      type: 'boolean',
+      description:
+        'Include the drop of the legacy global (slug, context) unique index a tenant-led natural key superseded (see db:migrate --drop-legacy-natural-key).',
+      default: false,
+    },
     'drop-columns': {
       type: 'boolean',
       description:
@@ -106,6 +114,12 @@ export const dbDiffCommand: CLICommand = {
       type: 'string',
       description:
         'Confirm that legacy PostgreSQL timestamp-without-time-zone values are UTC wall times before previewing their conversion to timestamptz. Exact value required: UTC; omitted by default.',
+    },
+    'empty-text-as-null': {
+      type: 'boolean',
+      description:
+        'Preview storing empty or whitespace-only text as NULL when converging a nullable legacy text column to a typed column (timestamp, JSON, integer). Any other value that does not convert still blocks. Off by default; the diff names the empty-text count instead.',
+      default: false,
     },
   },
   handler: async (_args: string[], options: DbDiffOptions) => {
@@ -213,8 +227,10 @@ export const dbDiffCommand: CLICommand = {
         includeDroppedTables: false,
         includeDroppedColumns: Boolean(options['drop-columns']),
         includeDroppedIndexes: Boolean(options['drop-indexes']),
+        dropLegacyNaturalKey: Boolean(options['drop-legacy-natural-key']),
         relaxColumns: Boolean(options['relax-columns']),
         postgresTimestampMigration,
+        emptyTextAsNull: Boolean(options['empty-text-as-null']),
       });
 
       const diff = await comparer.compare(schemaDefinitions);
@@ -417,8 +433,29 @@ export const dbDiffCommand: CLICommand = {
           console.log(
             `     ⤴ ${change.table}.${change.name}: ${change.mismatch?.actual} → ${change.mismatch?.expected}`,
           );
+          if (change.note) console.log(`       (${change.note})`);
         }
         console.log('     (auto-applied by smrt db:migrate)\n');
+      }
+
+      // Executable foreign-key changes are applied by db:migrate too, so the
+      // preview lists them (same parity rule as type upgrades above),
+      // including an in-place action replacement (#3023).
+      const foreignKeyChanges = diff.changes.filter(
+        (c) =>
+          c.type === 'add_foreign_key' && (c.sql || c.sqlStatements?.length),
+      );
+      if (foreignKeyChanges.length > 0) {
+        console.log(`  🔗 Foreign keys (${foreignKeyChanges.length}):`);
+        for (const change of foreignKeyChanges) {
+          console.log(
+            `     + ${change.name} on ${change.table}${change.note ? ` (${change.note})` : ''}`,
+          );
+          if (change.advisory?.severity === 'warning') {
+            console.log(`       ⚠️  ${change.advisory.message}`);
+          }
+        }
+        console.log();
       }
 
       if (typeMismatches.length > 0) {

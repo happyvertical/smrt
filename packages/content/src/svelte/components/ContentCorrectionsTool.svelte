@@ -254,6 +254,13 @@ async function issueCorrection() {
 </div>
 
 <style>
+  /* The tool lays itself out by its own width, not the viewport, so it
+     fits a full page, a side panel, the assistant dock or a phone. */
+  .governance-tool {
+    container-type: inline-size;
+    container-name: governance-tool;
+  }
+
   .governance-tool,
   .tool-list,
   .workflow-field {
@@ -272,8 +279,9 @@ async function issueCorrection() {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-card-background, var(--smrt-color-surface));
+    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
+    box-shadow: var(--smrt-card-shadow, none);
     border-radius: 0.75rem;
     padding: 0.85rem;
   }
@@ -339,5 +347,19 @@ async function issueCorrection() {
   .tool-notice {
     background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
     color: var(--smrt-color-on-primary-container);
+  }
+
+  .checkbox-row {
+    min-height: 2.75rem;
+  }
+
+  @container governance-tool (max-width: 30rem) {
+    .governance-tool > :global(button) {
+      width: 100%;
+    }
+
+    .tool-card-header {
+      flex-wrap: wrap;
+    }
   }
 </style>

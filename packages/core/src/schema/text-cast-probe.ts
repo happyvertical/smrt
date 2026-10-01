@@ -27,10 +27,22 @@ import { formatDefaultValue, quoteIdentifier } from './sql-identifiers.js';
 
 /** Outcome of a server-side cast-safety probe over one column's non-null values. */
 export type ShapeProbeResult =
-  | { status: 'clean' }
+  | { status: 'clean'; emptyCount?: number }
   | {
       status: 'dirty';
+      /** Every non-null value that does not cast, empty text included. */
       count: number;
+      /**
+       * How many of `count` are empty or whitespace-only text (#3226). When
+       * it equals `count` (and there is no `reason`), empty text is the only
+       * obstacle and the opt-in `emptyTextAsNull` conversion can store those
+       * values as NULL.
+       */
+      emptyCount?: number;
+      /**
+       * One offending value, preferring a non-empty one; `''` when empty
+       * text is the only obstacle. Display it with {@link maskSampleValue}.
+       */
       sample?: string;
       /**
        * `duplicate_keys`: every value casts, but `count` JSON objects carry
@@ -55,6 +67,34 @@ export function maskSampleValue(value: string): string {
   if (value.length <= 6)
     return `${'•'.repeat(value.length)} (length ${value.length})`;
   return `${value.slice(0, 3)}…${value.slice(-3)} (length ${value.length})`;
+}
+
+/**
+ * SQL predicate: the text form of `column` is empty or whitespace-only
+ * (#3226). `column` must already be a quoted identifier.
+ */
+export function renderEmptyTextPredicate(column: string): string {
+  return `btrim(${column}::text, E' \\t\\n\\r') = ''`;
+}
+
+/**
+ * SQL expression: the text form of `column`, with empty or whitespace-only
+ * text as NULL (#3226). The cast target of the opt-in empty-text-as-null
+ * conversions. `column` must already be a quoted identifier.
+ */
+export function renderEmptyTextAsNullExpression(column: string): string {
+  return `CASE WHEN ${renderEmptyTextPredicate(column)} THEN NULL ELSE ${column}::text END`;
+}
+
+/** Options for {@link probeCastSafety}. */
+export interface ProbeCastSafetyOptions {
+  /**
+   * The caller may store empty text as NULL (#3226). For `jsonb`, a column
+   * whose only non-castable values are empty text then still gets the
+   * duplicate-key preservation walk over its remaining values, so the
+   * opt-in conversion is never offered on an unverified column.
+   */
+  emptyTextAsNull?: boolean;
 }
 
 /** Session-scoped helper function name; `pg_temp` keeps it off the real schema. */
@@ -129,11 +169,20 @@ function renderProbeQuerySql(
 ): string {
   const column = quoteIdentifier(columnName);
   const table = quoteIdentifier(tableName);
-  const isValid = `${PROBE_FUNCTION}(${column}::text, '${targetType}')`;
+  // #3226: empty/whitespace-only text is counted on its own (it never casts
+  // to either target) and kept out of the sample, so the diagnostic shows a
+  // genuinely malformed value when there is one. The cast probe runs once
+  // per non-empty value.
+  const isValid = `${PROBE_FUNCTION}(candidate.value, '${targetType}')`;
   return (
-    `SELECT count(*) AS invalid_count, ` +
-    `min(CASE WHEN NOT ${isValid} THEN ${column}::text END) AS sample_value ` +
-    `FROM ${table} WHERE ${column} IS NOT NULL AND NOT ${isValid}`
+    'SELECT ' +
+    'count(*) FILTER (WHERE probe.is_empty OR NOT probe.is_valid) AS invalid_count, ' +
+    'count(*) FILTER (WHERE probe.is_empty) AS empty_count, ' +
+    'min(probe.value) FILTER (WHERE NOT probe.is_empty AND NOT probe.is_valid) AS sample_value ' +
+    'FROM (SELECT candidate.value, candidate.is_empty, ' +
+    `CASE WHEN candidate.is_empty THEN true ELSE ${isValid} END AS is_valid ` +
+    `FROM (SELECT ${column}::text AS value, ${renderEmptyTextPredicate(column)} AS is_empty ` +
+    `FROM ${table} WHERE ${column} IS NOT NULL) AS candidate) AS probe`
   );
 }
 
@@ -150,7 +199,11 @@ function renderSetCastQuerySql(tableName: string, columnName: string): string {
 }
 
 function classifyProbeRows(
-  rows: { invalid_count?: unknown; sample_value?: unknown }[],
+  rows: {
+    invalid_count?: unknown;
+    empty_count?: unknown;
+    sample_value?: unknown;
+  }[],
 ): ShapeProbeResult {
   const count = Number(rows[0]?.invalid_count);
   if (!Number.isFinite(count)) {
@@ -160,11 +213,25 @@ function classifyProbeRows(
     };
   }
   if (count === 0) return { status: 'clean' };
-  const sample = rows[0]?.sample_value;
+  const rawEmptyCount = Number(rows[0]?.empty_count);
+  const emptyCount =
+    rows[0]?.empty_count !== undefined && Number.isFinite(rawEmptyCount)
+      ? rawEmptyCount
+      : undefined;
+  const rawSample = rows[0]?.sample_value;
+  // #3226: when empty text is the only obstacle there is no non-empty
+  // sample; report `''` so the diagnostic names the cause.
+  const sample =
+    typeof rawSample === 'string'
+      ? rawSample
+      : emptyCount !== undefined && emptyCount > 0
+        ? ''
+        : undefined;
   return {
     status: 'dirty',
     count,
-    ...(typeof sample === 'string' ? { sample } : {}),
+    ...(emptyCount !== undefined ? { emptyCount } : {}),
+    ...(sample !== undefined ? { sample } : {}),
   };
 }
 
@@ -190,12 +257,47 @@ export async function probeCastSafety(
   tableName: string,
   columnName: string,
   targetType: 'timestamptz' | 'jsonb',
+  options: ProbeCastSafetyOptions = {},
 ): Promise<ShapeProbeResult> {
   const castResult = await probeCastOnly(db, tableName, columnName, targetType);
-  if (targetType !== 'jsonb' || castResult.status !== 'clean') {
+  if (targetType !== 'jsonb') return castResult;
+  if (castResult.status === 'clean') {
+    return probeJsonbKeyPreservation(db, tableName, columnName);
+  }
+  // #3226: empty text is the only obstacle and the caller may store it as
+  // NULL -- the remaining values still need the preservation walk before a
+  // conversion can be offered.
+  if (options.emptyTextAsNull === true && isEmptyTextOnlyProbe(castResult)) {
+    const preservation = await probeJsonbKeyPreservation(
+      db,
+      tableName,
+      columnName,
+    );
+    if (preservation.status === 'dirty') {
+      return { ...preservation, emptyCount: castResult.emptyCount };
+    }
     return castResult;
   }
-  return probeJsonbKeyPreservation(db, tableName, columnName);
+  return castResult;
+}
+
+/**
+ * Whether a probe found non-castable values that are all empty or
+ * whitespace-only text (#3226) -- the one shape the opt-in
+ * empty-text-as-null conversion can repair.
+ */
+export function isEmptyTextOnlyProbe(
+  result: ShapeProbeResult | undefined,
+): result is Extract<ShapeProbeResult, { status: 'dirty' }> & {
+  emptyCount: number;
+} {
+  return (
+    result?.status === 'dirty' &&
+    result.reason === undefined &&
+    result.emptyCount !== undefined &&
+    result.emptyCount > 0 &&
+    result.emptyCount === result.count
+  );
 }
 
 /**
@@ -262,7 +364,10 @@ function renderDuplicateKeyQuerySql(
   return (
     'WITH RECURSIVE nodes(v) AS (' +
     `SELECT (${column}::text)::json FROM ${table} ` +
-    `WHERE ${column} IS NOT NULL AND json_typeof((${column}::text)::json) IN ('object', 'array') ` +
+    // #3226: empty text (which becomes NULL under the opt-in conversion)
+    // never reaches the json cast; a CASE keeps that evaluation order.
+    `WHERE ${column} IS NOT NULL AND CASE WHEN ${renderEmptyTextPredicate(column)} THEN false ` +
+    `ELSE json_typeof((${column}::text)::json) IN ('object', 'array') END ` +
     'UNION ALL ' +
     'SELECT child.value FROM nodes CROSS JOIN LATERAL (' +
     "SELECT value FROM json_each(CASE WHEN json_typeof(nodes.v) = 'object' THEN nodes.v ELSE '{}'::json END) " +
@@ -373,6 +478,11 @@ async function probeCastOnly(
 interface ColumnConversionOptions {
   hasLiveDefault?: boolean;
   manifestDefaultValue?: unknown;
+  /**
+   * Store empty or whitespace-only text as NULL (#3226). Only for a
+   * nullable column whose probe found empty text as the sole obstacle.
+   */
+  emptyTextAsNull?: boolean;
 }
 
 /**
@@ -393,7 +503,11 @@ export function renderTimestamptzColumnConversion(
     statements.push(`ALTER TABLE ${table} ALTER COLUMN ${column} DROP DEFAULT`);
   }
   statements.push(
-    `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE timestamptz USING ${column}::timestamptz`,
+    `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE timestamptz USING ${
+      options.emptyTextAsNull
+        ? `(${renderEmptyTextAsNullExpression(column)})`
+        : column
+    }::timestamptz`,
   );
   if (hasManifestDefault) {
     const formattedDefault = formatDefaultValue(
@@ -425,7 +539,11 @@ export function renderJsonbColumnConversion(
     statements.push(`ALTER TABLE ${table} ALTER COLUMN ${column} DROP DEFAULT`);
   }
   statements.push(
-    `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE jsonb USING ${column}::jsonb`,
+    `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE jsonb USING ${
+      options.emptyTextAsNull
+        ? `(${renderEmptyTextAsNullExpression(column)})`
+        : column
+    }::jsonb`,
   );
   if (hasManifestDefault) {
     const formattedDefault = formatDefaultValue(

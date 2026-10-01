@@ -6,7 +6,7 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { syncSchema } from '@happyvertical/sql';
 import { makeSlug } from '@happyvertical/utils';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { ContentAssetCollection } from './content-assets';
 import './content-feed-source';
 import { Contents } from './contents';
@@ -481,6 +481,127 @@ it('should persist content assets via content_assets', async () => {
   const assets = await reloaded?.getAssets('thumbnail');
   expect(assets).toHaveLength(1);
   expect(assets?.[0]?.id).toBe(image.id);
+});
+
+it('removes content_assets links when the linked picture is deleted', async () => {
+  const dbUrl = getTestDbUrl('asset-delete-cascade');
+  const contents = await Contents.create({ db: { url: dbUrl } });
+  const images = await ImageCollection.create({ db: { url: dbUrl } });
+  const contentAssets = await ContentAssetCollection.create({
+    db: { url: dbUrl },
+  });
+
+  const content = await contents.create({
+    name: 'asset-delete-cascade',
+    title: 'Asset delete cascade',
+    body: 'Two pictures',
+    status: 'draft',
+  });
+  const kept = await images.create({
+    name: 'kept.jpg',
+    sourceUri: 'file:///tmp/kept.jpg',
+    mimeType: 'image/jpeg',
+  });
+  const removed = await images.create({
+    name: 'removed.jpg',
+    sourceUri: 'file:///tmp/removed.jpg',
+    mimeType: 'image/jpeg',
+  });
+  await content.addAsset(kept, 'inline', 0);
+  await content.addAsset(removed, 'inline', 1);
+
+  await removed.delete();
+
+  // The link cannot outlive the picture (asset_id is part of the junction's
+  // natural key, so the model delete cascades to it).
+  const links = await contentAssets.byLeft(content.id as string);
+  expect(links.map((link) => link.assetId)).toEqual([kept.id]);
+  const assets = await content.getAssets();
+  expect(assets.map((asset) => asset.id)).toEqual([kept.id]);
+});
+
+it('skips a content_assets link whose asset row is gone, with a warning', async () => {
+  const dbUrl = getTestDbUrl('asset-dangling-link');
+  const contents = await Contents.create({ db: { url: dbUrl } });
+  const images = await ImageCollection.create({ db: { url: dbUrl } });
+  const contentAssets = await ContentAssetCollection.create({
+    db: { url: dbUrl },
+  });
+
+  const content = await contents.create({
+    name: 'asset-dangling-link',
+    title: 'Asset dangling link',
+    body: 'One picture, one dangling link',
+    status: 'draft',
+  });
+  const kept = await images.create({
+    name: 'kept-2.jpg',
+    sourceUri: 'file:///tmp/kept-2.jpg',
+    mimeType: 'image/jpeg',
+  });
+  await content.addAsset(kept, 'inline', 0);
+  // A link left behind by a delete outside the model.
+  const missingId = '00000000-0000-4000-8000-00000000dead';
+  await contentAssets
+    .create({
+      contentId: content.id as string,
+      assetId: missingId,
+      relationship: 'inline',
+      sortOrder: 1,
+    })
+    .then((link) => link.save());
+
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const assets = await content.getAssets();
+  expect(assets.map((asset) => asset.id)).toEqual([kept.id]);
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining(missingId));
+  warn.mockRestore();
+});
+
+it('getAssets leaves out excluded relationships but keeps their links', async () => {
+  const dbUrl = getTestDbUrl('asset-excluded-relationships');
+  const contents = await Contents.create({ db: { url: dbUrl } });
+  const images = await ImageCollection.create({ db: { url: dbUrl } });
+  const contentAssets = await ContentAssetCollection.create({
+    db: { url: dbUrl },
+  });
+
+  const content = await contents.create({
+    name: 'asset-excluded-relationships',
+    title: 'Asset excluded relationships',
+    body: 'A story with a photo and a document page render',
+    status: 'draft',
+  });
+  const photo = await images.create({
+    name: 'photo.jpg',
+    sourceUri: 'file:///tmp/photo-excl.jpg',
+    mimeType: 'image/jpeg',
+  });
+  const page = await images.create({
+    name: 'agenda-page-1.png',
+    sourceUri: 'file:///tmp/agenda-page-1.png',
+    mimeType: 'image/png',
+  });
+  await content.addAsset(photo, 'inline', 0);
+  await content.addAsset(page, 'document_image', 1);
+
+  const all = await content.getAssets();
+  expect(all.map((asset) => asset.id).sort()).toEqual(
+    [photo.id, page.id].sort(),
+  );
+
+  const visible = await content.getAssets(undefined, {
+    excludeRelationships: ['document_image', 'source_document'],
+  });
+  expect(visible.map((asset) => asset.id)).toEqual([photo.id]);
+
+  expect(await content.getAssetIds('document_image')).toEqual([page.id]);
+
+  // The link stays in the data; only the listing leaves it out.
+  const links = await contentAssets.byLeft(content.id as string, {
+    relationship: 'document_image',
+  });
+  expect(links).toHaveLength(1);
 });
 
 it('should sync editor-style assetIds on save', async () => {

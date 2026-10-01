@@ -144,6 +144,45 @@ describe('DataTableController', () => {
     ]);
   });
 
+  it('starts a column at its first direction and toggles without clearing when not clearable', () => {
+    const controller = createDataTableController({ initialState: state });
+    const toggle = () =>
+      controller.dispatch({
+        type: 'toggleSorting',
+        columnId: 'age',
+        firstDirection: 'desc',
+        clearable: false,
+      });
+    toggle();
+    expect(controller.snapshot().state.sorting).toEqual([
+      { columnId: 'age', direction: 'desc' },
+    ]);
+    toggle();
+    expect(controller.snapshot().state.sorting).toEqual([
+      { columnId: 'age', direction: 'asc' },
+    ]);
+    toggle();
+    expect(controller.snapshot().state.sorting).toEqual([
+      { columnId: 'age', direction: 'desc' },
+    ]);
+
+    // Clearable (default) with a desc-first column: desc -> asc -> cleared.
+    const cycling = createDataTableController({ initialState: state });
+    const cycle = () =>
+      cycling.dispatch({
+        type: 'toggleSorting',
+        columnId: 'age',
+        firstDirection: 'desc',
+      });
+    cycle();
+    cycle();
+    expect(cycling.snapshot().state.sorting).toEqual([
+      { columnId: 'age', direction: 'asc' },
+    ]);
+    cycle();
+    expect(cycling.snapshot().state.sorting).toEqual([]);
+  });
+
   it('proposes controlled transitions without mutating until the host reconciles state', () => {
     const onStateChange = vi.fn();
     const controller = createDataTableController({ state, onStateChange });

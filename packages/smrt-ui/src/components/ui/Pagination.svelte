@@ -240,7 +240,7 @@ const isLastPage = $derived(currentPage === totalPages);
 
   .page-link.current {
     background: var(--smrt-color-primary, #005ac1);
-    color: white;
+    color: var(--smrt-color-on-primary, white);
     cursor: default;
   }
 

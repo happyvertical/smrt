@@ -1,5 +1,5 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
 export default createPackageConfig('smrt-web', {
-  entries: ['webmcp', 'intents', 'ai', 'webmcp-tool-names'],
+  entries: ['webmcp', 'intents', 'ai', 'webmcp-tool-names', 'webmcp-page-tools'],
 });

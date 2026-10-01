@@ -63,25 +63,71 @@ import MiniChat from './components/tabs/MiniChat.svelte';
 // `@happyvertical/smrt-ui/chat` primitives (consolidated in #1589);
 // ReactionPicker keeps a thin chat-local adapter for the package's i18n + palette.
 export { MessageBubble, TypingIndicator } from '@happyvertical/smrt-ui/chat';
+// The assistant-turn wire contract (#2908), for hosts writing a transport.
+// From the assistant-turn entry: the svelte build only resolves files the
+// library build emits as entries (tool-allow-list.ts is bundled into it).
+export {
+  type AssistantClientToolCall,
+  type AssistantClientToolDeclaration,
+  type AssistantClientToolResult,
+  type AssistantStatus,
+  type AssistantStatusState,
+  type AssistantTurnEvent,
+  type AssistantTurnStep,
+  AssistantTurnStreamError,
+  matchesToolAllowList,
+  readAssistantTurnStream,
+} from '../assistant-turn-events.js';
 export { default as AgentChat } from './components/agent/AgentChat.svelte';
 export { default as AgentSelector } from './components/agent/AgentSelector.svelte';
 export { default as AgentSessionPanel } from './components/agent/AgentSessionPanel.svelte';
 export { default as ToolCallDisplay } from './components/agent/ToolCallDisplay.svelte';
+export { default as AssistantChoiceCards } from './components/assistant/AssistantChoiceCards.svelte';
 export { default as AssistantComposer } from './components/assistant/AssistantComposer.svelte';
 export { default as AssistantDock } from './components/assistant/AssistantDock.svelte';
 export { default as AssistantThreadList } from './components/assistant/AssistantThreadList.svelte';
 export {
+  ASSISTANT_CHOICE_MAX_OPTIONS,
+  ASSISTANT_CHOICE_TOOL_PREFIX,
+  type AssistantChoiceOffer,
+  type AssistantChoiceOption,
+  type AssistantChoicePending,
+  type AssistantChoicePendingUpdate,
+  type AssistantChoiceSet,
+  type AssistantChoiceSource,
+  type AssistantChoiceSourceRegistry,
+  AssistantChoices,
+  choiceToolName,
+  createAssistantChoiceSourceRegistry,
+  normalizeChoiceOptions,
+  safeChoiceImageUrl,
+} from './components/assistant/assistant-choices.svelte.js';
+export {
   type AssistantAttachmentRef,
   type AssistantMessage,
+  type AssistantResumeTurnInput,
   type AssistantSendMessageInput,
   type AssistantSendMessageResult,
   type AssistantThreadSummary,
   type AssistantTransport,
+  type AssistantTransportEvent,
+  type AssistantTurnStreamInput,
   createInMemoryAssistantTransport,
   createSmrtAssistantTransport,
   type InMemoryAssistantTransportOptions,
+  readAssistantTurnResult,
   type SmrtAssistantTransportOptions,
 } from './components/assistant/assistant-transport.js';
+export {
+  ASSISTANT_PROPOSE_ACTION_TOOL,
+  type AssistantClientTool,
+  type AssistantClientToolPolicy,
+  type AssistantClientToolSource,
+  type AssistantToolRequest,
+  declareClientTools,
+  defaultClientToolPolicy,
+  resolveClientToolPolicy,
+} from './components/assistant/client-tools.js';
 export {
   ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS,
   type AssistantActionClient,
@@ -91,6 +137,11 @@ export {
   type AssistantDockControllerOptions,
   type AssistantPendingSend,
   type AssistantPendingSendStatus,
+  type AssistantRun,
+  type AssistantRunState,
+  type AssistantRunStopReason,
+  type AssistantRunWaiting,
+  type AssistantUserHold,
   createAssistantDockController,
 } from './components/assistant/create-assistant-dock-controller.svelte.js';
 export { default as RoomCreateDialog } from './components/dialogs/RoomCreateDialog.svelte';

@@ -35,6 +35,43 @@ export function assertValidOwnedAssetSortOrder(sortOrder: number): void {
   }
 }
 
+/**
+ * Refuse to link an asset to an owner (place, profile, …) of another tenant.
+ *
+ * The asset's tenant is read from STORAGE by id under system context, never
+ * taken from the caller's object: `new Asset({ id: foreignId })` or a stale
+ * copy carries no (or the wrong) tenant and would otherwise pass. Rules:
+ *
+ * - a tenant owner may link its own assets and global (tenantless) ones;
+ * - a global owner may link only global assets — a tenant's asset linked to
+ *   a global owner would be listed to every tenant through the global link;
+ * - an asset id with no stored row is refused.
+ *
+ * @param ownerLabel - plain noun for the error ("place", "profile")
+ */
+export async function assertAssetLinkable(
+  db: SmrtCollectionOptions['db'],
+  assetId: string,
+  ownerTenantId: string | null | undefined,
+  ownerLabel: string,
+): Promise<void> {
+  const assets = await AssetCollection.create({ db });
+  const [stored] = await withSystemContext(async () =>
+    assets.listByIds([assetId]),
+  );
+  if (!stored) {
+    throw new Error(`Cannot associate asset ${assetId}: it does not exist`);
+  }
+  const assetTenant = stored.tenantId ? String(stored.tenantId) : null;
+  const ownerTenant = ownerTenantId ? String(ownerTenantId) : null;
+  if (assetTenant === null || assetTenant === ownerTenant) return;
+  throw new Error(
+    ownerTenant === null
+      ? `Cannot associate a tenant's asset with a shared ${ownerLabel}`
+      : `Cannot associate an asset from another tenant with this ${ownerLabel}`,
+  );
+}
+
 export async function resolveOwnedAssetsById(
   db: SmrtCollectionOptions['db'],
   assetIds: string[],

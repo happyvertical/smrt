@@ -54,6 +54,8 @@ export interface RecurrencePattern {
   byMonthDay?: number[]; // Days of month (e.g., [1, 15])
   byMonth?: number[]; // Months (1-12)
   bySetPos?: number[]; // Specific occurrence (e.g., [2] for second Tuesday)
+  /** IANA zone the pattern repeats in (RRULE `DTSTART;TZID`); expansion falls back to it. */
+  timeZone?: string;
 }
 
 /**
@@ -104,6 +106,10 @@ export interface EventOptions extends SmrtObjectOptions {
   description?: string;
   startDate?: Date | null;
   endDate?: Date | null;
+  /** Whole-day event; `endDate` is the exclusive end (midnight after the last day). */
+  allDay?: boolean;
+  /** IANA time zone (e.g. `America/Edmonton`); empty inherits from series/place/site. */
+  timeZone?: string;
   status?: EventStatus;
   round?: number | null; // Sequence/round number in series
   metadata?: Record<string, unknown> | string;

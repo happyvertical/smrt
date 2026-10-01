@@ -15,7 +15,9 @@ import type {
   ControlInteractionRegistry,
   ControlSnapshot,
 } from '@happyvertical/smrt-ui/forms';
+import { WEBMCP_TOOL_EFFECT } from '@happyvertical/smrt-web/webmcp-page-tools';
 import {
+  markWebMcpProposalTool,
   reserveWebMcpToolNames,
   type WebMcpToolNameReservation,
 } from '@happyvertical/smrt-web/webmcp-tool-names';
@@ -461,7 +463,7 @@ function tools(
     {
       name: `${prefix}execute_form_control`,
       description:
-        'Execute an allowed command on a mounted SMRT form control. Agent mutations are consent-gated.',
+        'Execute an allowed command on a mounted SMRT form control. Agent mutations are consent-gated. An agent never moves keyboard focus: `focus` scrolls the control into view and highlights it.',
       inputSchema: {
         type: 'object',
         required: ['action', 'identity'],
@@ -666,7 +668,23 @@ export function registerWebMcpUiTools(
   };
   try {
     for (const tool of specs) {
-      const registration = modelContext.registerTool(tool, {
+      // The in-page tool registry (#2908) reads the resolved effect from this
+      // stamp. The two execute tools are `write`, not destructive: an agent
+      // can only stage values or change visible state; apply, clear, and undo
+      // need a separate human-confirmed path, so their mutations are
+      // proposals. Their browser annotations are unchanged. The proposal
+      // brand is what lets the in-page assistant run those writes without a
+      // confirmation step; the tool-name lock's `ui` label never does.
+      const stamped = Object.assign(
+        {
+          [WEBMCP_TOOL_EFFECT]: tool.annotations?.readOnlyHint
+            ? 'read'
+            : 'write',
+        },
+        tool,
+        { execute: markWebMcpProposalTool(tool.execute) },
+      );
+      const registration = modelContext.registerTool(stamped, {
         signal: controller.signal,
       });
       if (registration) {

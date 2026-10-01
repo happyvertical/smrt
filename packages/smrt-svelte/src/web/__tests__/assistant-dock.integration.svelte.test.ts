@@ -114,7 +114,7 @@ describe('AssistantDock integration (#2904)', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/No data surfaces are mounted on this route/i),
+        screen.getByText(/Nothing on this page can be changed from the chat/i),
       ).toBeInTheDocument();
     });
   });
@@ -135,7 +135,9 @@ describe('AssistantDock integration (#2904)', () => {
 
     await waitFor(() => {
       expect(
-        screen.queryByText(/No data surfaces are mounted on this route/i),
+        screen.queryByText(
+          /Nothing on this page can be changed from the chat/i,
+        ),
       ).not.toBeInTheDocument();
     });
 

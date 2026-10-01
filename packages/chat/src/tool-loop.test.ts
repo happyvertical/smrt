@@ -26,6 +26,7 @@ import {
   ObjectRegistry,
   SmrtObject,
   smrt,
+  ValidationError,
 } from '@happyvertical/smrt-core';
 import {
   MembershipCollection,
@@ -39,6 +40,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildManifestToolCatalog,
+  classifyToolError,
   type ManifestTool,
   runToolLoop,
   type ToolExecutionContext,
@@ -407,6 +409,142 @@ describe('runToolLoop', () => {
     expect(result.invocations).toHaveLength(1);
     expect(result.invocations[0]).toMatchObject({
       slug: 'tool_loop_notes.delete',
+      ok: false,
+      rejected: true,
+      error: 'not_permitted',
+    });
+  });
+
+  it('reports a validation or 4xx tool error as invalid_request with its message', async () => {
+    class RequestError extends Error {
+      readonly status = 400;
+      readonly code = 'DATA_SURFACE_REQUEST_INVALID';
+    }
+    const cases: Array<[Error, string, string | undefined]> = [
+      [
+        new RequestError(
+          'Unknown field "nme"; filterable fields: name, status.',
+        ),
+        'Unknown field "nme"; filterable fields: name, status.',
+        'DATA_SURFACE_REQUEST_INVALID',
+      ],
+      [
+        new ValidationError('title is required', 'VALIDATION_REQUIRED_FIELD'),
+        'title is required',
+        'VALIDATION_REQUIRED_FIELD',
+      ],
+      [
+        Object.assign(new Error('internal detail'), {
+          statusCode: 422,
+          publicMessage: 'date must be YYYY-MM-DD',
+        }),
+        'date must be YYYY-MM-DD',
+        undefined,
+      ],
+    ];
+    for (const [thrown, message, code] of cases) {
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options)
+          ? toolCall('tool_loop_notes.read', {})
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'read' }],
+        tools: tools(['tool_loop_notes.read']),
+        principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+        maxSteps: 1,
+        executeTool: async () => {
+          throw thrown;
+        },
+        audit: () => {},
+      });
+      const invocation = result.invocations[0];
+      if (!invocation) throw new Error('expected one invocation');
+      expect(invocation).toMatchObject({
+        ok: false,
+        rejected: false,
+        error: 'invalid_request',
+      });
+      expect(invocation.observation).toMatchObject({
+        error: message,
+        kind: 'invalid_request',
+      });
+      expect((invocation.observation as { code?: string }).code).toBe(code);
+      expect(classifyToolError(thrown)).toBe('invalid_request');
+    }
+  });
+
+  it('reports a real tool failure as execution_error', async () => {
+    const failures = [
+      new Error('connection reset'),
+      Object.assign(new Error('upstream failed'), { status: 502 }),
+    ];
+    for (const thrown of failures) {
+      const ai = makeAI((_m, options) =>
+        toolsOffered(options)
+          ? toolCall('tool_loop_notes.read', {})
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'read' }],
+        tools: tools(['tool_loop_notes.read']),
+        principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+        maxSteps: 1,
+        executeTool: async () => {
+          throw thrown;
+        },
+        audit: () => {},
+      });
+      expect(result.invocations[0]).toMatchObject({
+        ok: false,
+        rejected: false,
+        error: 'execution_error',
+        observation: { error: thrown.message },
+      });
+      expect(classifyToolError(thrown)).toBe('execution_error');
+    }
+  });
+
+  it('classifies HTTP statuses: 401/403 not permitted, 400/404/409/422 invalid, 429 and others execution', async () => {
+    const withStatus = (status: number) =>
+      Object.assign(new Error(`status ${status}`), { status });
+    for (const status of [401, 403]) {
+      expect(classifyToolError(withStatus(status))).toBe('not_permitted');
+    }
+    for (const status of [400, 404, 409, 422]) {
+      expect(classifyToolError(withStatus(status))).toBe('invalid_request');
+    }
+    for (const status of [405, 418, 429, 500, 503]) {
+      expect(classifyToolError(withStatus(status))).toBe('execution_error');
+    }
+    expect(
+      classifyToolError(
+        Object.assign(new Error('forbidden'), { statusCode: 403 }),
+      ),
+    ).toBe('not_permitted');
+
+    const ai = makeAI((_m, options) =>
+      toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'read' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      maxSteps: 1,
+      executeTool: async () => {
+        throw withStatus(403);
+      },
+      audit: () => {},
+    });
+    expect(result.invocations[0]).toMatchObject({
       ok: false,
       rejected: true,
       error: 'not_permitted',

@@ -59,7 +59,7 @@ await state.save();
 | Export | Description |
 |--------|------------|
 | `SocialAccount` | Connected platform account with OAuth credentials and publishing settings |
-| `SocialPost` | Scheduled or published post with analytics tracking |
+| `SocialPost` | Scheduled or published post with analytics tracking; `createdByUserId` records the poster |
 | `OAuthState` | Temporary OAuth flow state with CSRF protection and PKCE support |
 
 ### Types

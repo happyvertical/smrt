@@ -200,3 +200,42 @@ export function webMcpToolNameOwner(
   if (!doc) return undefined;
   return tableFor(doc).names.get(name)?.owner;
 }
+
+/**
+ * Proposal brand (#2908 hardening).
+ *
+ * An in-page assistant may run a `write` tool without asking only when that
+ * tool's `execute` can do nothing but stage a value or dispatch a command as
+ * `source: 'agent'` through a consent-gated registry — a compiled view intent
+ * or one of the fixed `smrt_ui_*` tools. The tool-name lock's `owner` label
+ * cannot carry that trust: it is a diagnostic any `registerWebMcpBespokeTool`
+ * / `useWebMcpTool` caller can set.
+ *
+ * The brand is therefore held in this module-private `WeakSet`, keyed by the
+ * `execute` function itself — not a property, and not a `Symbol.for` key a
+ * caller could forge on a spec. A duplicated copy of this module holds its own
+ * set, so a mismatched copy fails CLOSED (the tool asks) rather than open.
+ */
+const proposalExecutes = new WeakSet<object>();
+
+/**
+ * Brand `execute` as proposal-only. FRAMEWORK USE ONLY: call it solely on an
+ * `execute` your own code built so that it can only stage or dispatch through
+ * a consent-gated registry as `source: 'agent'` (smrt-svelte's
+ * `registerWebMcpUiTools` does; `compileViewIntentToolSpec` does internally).
+ * A branded write runs in the in-page assistant without a confirmation step,
+ * so never brand an `execute` that acts on its own. Returns `execute`.
+ */
+export function markWebMcpProposalTool<T extends (...args: never[]) => unknown>(
+  execute: T,
+): T {
+  proposalExecutes.add(execute);
+  return execute;
+}
+
+/** Whether `execute` carries the proposal brand. */
+export function isWebMcpProposalTool(execute: unknown): boolean {
+  return (
+    typeof execute === 'function' && proposalExecutes.has(execute as object)
+  );
+}

@@ -2,6 +2,11 @@
 /**
  * DayView Component
  * Full event list for a specific day with optional weather
+ *
+ * @deprecated Use `CalendarView` (its day panel, agenda mode, or `dayHref`
+ * to a page of your own). This component formats dates as `en-US` in the
+ * browser zone and hard-codes game/meeting routes. See the smrt-ui README,
+ * "Calendar", for the migration.
  */
 
 import { M } from '../../i18n/strings.ui.js';

@@ -8,8 +8,9 @@
  */
 
 import { sanitizeConfig } from '@happyvertical/smrt-config';
+import { tenantAgentConfigOwnerId } from '../identity.js';
 import type { ResolvedAgentAvailability } from '../tenant-agent.js';
-import type { AgentAdminRoute, AgentUISlots } from '../ui.js';
+import type { AgentAdminRoute, AgentCreateEntry, AgentUISlots } from '../ui.js';
 
 /**
  * Serialized agent data for passing to client components.
@@ -18,7 +19,10 @@ import type { AgentAdminRoute, AgentUISlots } from '../ui.js';
  * alongside resolution metadata (source, sourceTenantId).
  */
 export interface SerializedAgent {
-  /** Agent instance ID, or a synthetic key if no instance exists */
+  /**
+   * Agent instance ID, or — when the binding has no agent row — the tenant
+   * config owner id `tenantAgentConfigOwnerId(sourceTenantId, agentType)`.
+   */
   id: string;
   /** Human-readable name from manifest */
   name?: string;
@@ -32,6 +36,8 @@ export interface SerializedAgent {
   slots?: AgentUISlots;
   /** Admin route declarations from manifest */
   adminRoutes?: AgentAdminRoute[];
+  /** Create options from manifest (see `resolveAgentCreateEntries`) */
+  createEntries?: AgentCreateEntry[];
   /** How this agent was resolved for the tenant */
   source?: 'explicit' | 'inherited';
   /** Which tenant the binding came from */
@@ -72,13 +78,16 @@ export function serializeResolvedAgent(
   const manifest = resolved.manifest;
 
   return {
-    id: resolved.agentId || `${resolved.sourceTenantId}:${resolved.agentType}`,
+    id:
+      resolved.agentId ||
+      tenantAgentConfigOwnerId(resolved.sourceTenantId, resolved.agentType),
     name: manifest?.name || resolved.agentClass,
     agentClass: resolved.agentClass,
     agentType: resolved.agentType,
     _meta_type: resolved.agentType,
     slots: manifest?.uiSlots as AgentUISlots | undefined,
     adminRoutes: manifest?.adminRoutes as AgentAdminRoute[] | undefined,
+    createEntries: manifest?.createEntries,
     source: resolved.source,
     sourceTenantId: resolved.sourceTenantId,
     permissions: resolved.permissions,

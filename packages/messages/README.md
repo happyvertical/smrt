@@ -137,6 +137,37 @@ Apps can render `MessagingSettingsPanel` from
 `MessagingSettingsService.list()` and wiring its save callbacks back to the
 service.
 
+### In-app notifications
+
+`UserNotification` stores one notification per person with read state;
+`UserNotificationService` creates, lists, and updates them for one recipient.
+
+```typescript
+import { UserNotificationService } from '@happyvertical/smrt-messages';
+
+const notifications = new UserNotificationService({ db });
+
+// Idempotent per (tenant, recipient, sourceRef).
+await notifications.notify({
+  tenantId,
+  recipientUserId: post.createdByUserId,
+  kind: 'social-post.failed',
+  title: "A post to X didn't go out",
+  href: `/sites/${slug}/social-posts`,
+  severity: 'error',
+  sourceRef: `social-post:${post.id}:failed`,
+});
+
+const items = await notifications.listForUser(userId, { tenantIds });
+const unread = await notifications.countUnread(userId, { tenantIds });
+await notifications.markRead(userId, [id], { tenantId });
+await notifications.dismiss(userId, [id], { tenantId });
+await notifications.markAllRead(userId, { tenantIds });
+```
+
+The generated REST/MCP/CLI surfaces are off; expose host routes that pass the
+signed-in user's id. The table is new: run `db:migrate`.
+
 ### Credential Security
 
 Account credentials are stored via `credentialSecretId` pointing to smrt-secrets envelope encryption. Use `account.setCredentials()` and `account.getCredentials()` -- never store passwords as plain fields.

@@ -18,6 +18,14 @@ export interface Props {
   label?: string;
   /** Custom trigger content. */
   trigger?: Snippet;
+  /** Accessible name of the trigger button when it shows only an icon (`aria-label`); omit to use its visible content (an icon trigger then falls back to `label`). */
+  triggerLabel?: string;
+  /**
+   * Trigger look: `button` (bordered, the default) or `icon`, a borderless 44px
+   * round icon button (a "more" or row-actions menu) that takes the surrounding
+   * text colour.
+   */
+  variant?: 'button' | 'icon';
   /** Menu items. */
   items: MenuItem[];
   /** Menu placement relative to the trigger. */
@@ -31,6 +39,8 @@ export interface Props {
 const {
   label,
   trigger,
+  triggerLabel,
+  variant = 'button',
   items,
   placement = 'bottom-start',
   onselect,
@@ -39,6 +49,16 @@ const {
 
 const instanceId = $props.id();
 const menuId = `smrt-menu-${instanceId}`;
+
+// An icon trigger shows no text, so without triggerLabel or label the button
+// has no accessible name.
+$effect(() => {
+  if (variant === 'icon' && !triggerLabel && !label) {
+    console.warn(
+      '[Dropdown] variant="icon" needs triggerLabel (or label): the trigger button has no accessible name.',
+    );
+  }
+});
 let open = $state(false);
 let wrapEl = $state<HTMLElement | null>(null);
 let triggerEl = $state<HTMLButtonElement | null>(null);
@@ -132,6 +152,8 @@ $effect(() => {
     bind:this={triggerEl}
     type="button"
     class="dropdown__trigger"
+    class:dropdown__trigger--icon={variant === 'icon'}
+    aria-label={triggerLabel ?? (variant === 'icon' ? label : undefined)}
     aria-haspopup="menu"
     aria-expanded={open}
     aria-controls={open ? menuId : undefined}
@@ -160,7 +182,10 @@ $effect(() => {
           tabindex={-1}
           onclick={() => selectItem(item)}
         >
-          {item.label}
+          {#if item.icon}
+            <span class="dropdown__item-icon" aria-hidden="true">{@render item.icon()}</span>
+          {/if}
+          <span class="dropdown__item-label">{item.label}</span>
         </button>
       {/each}
     </div>
@@ -186,6 +211,24 @@ $effect(() => {
   .dropdown__trigger:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
+  }
+  /* Icon trigger: a 44px round "more" button in the surrounding text colour. */
+  .dropdown__trigger--icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    inline-size: 2.75rem;
+    block-size: 2.75rem;
+    padding: 0;
+    border: none;
+    border-radius: var(--smrt-radius-full, 999px);
+    background: transparent;
+    color: inherit;
+  }
+  .dropdown__trigger--icon:hover:not(:disabled),
+  .dropdown__trigger--icon[aria-expanded='true'] {
+    background: color-mix(in srgb, currentColor 10%, transparent);
   }
   .dropdown__trigger:disabled {
     opacity: 0.5;
@@ -226,6 +269,12 @@ $effect(() => {
 
   .dropdown__item {
     appearance: none;
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2, 8px);
+    /* A touch target: menu rows are at least 44px tall. */
+    min-block-size: 2.75rem;
+    box-sizing: border-box;
     font: inherit;
     text-align: left;
     cursor: pointer;
@@ -235,6 +284,11 @@ $effect(() => {
     background: none;
     color: var(--smrt-color-on-surface);
     white-space: nowrap;
+  }
+  .dropdown__item-icon {
+    display: inline-flex;
+    flex: none;
+    color: var(--smrt-color-on-surface-variant);
   }
   .dropdown__item:hover:not(:disabled) {
     background: var(--smrt-color-surface-container-high);

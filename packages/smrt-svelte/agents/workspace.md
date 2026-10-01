@@ -45,6 +45,30 @@ App settings, tenant names and environment badges wrap within narrow drawers.
 system bars never clip wrapped chips. Custom bars must allow this flex child
 to shrink; use safe alignment if aligning its contents to the end.
 
+### Responsive chrome, viewport defaults, resizable edges
+
+The root grid has five rows: `header` · top edge · body · bottom edge · phone
+bottom bar. The header and phone-bar tracks are `0rem` unless their snippets
+render, so hosts that pass none of the new props get the original layout; keep
+that invariant (`AdminShell.responsive.test.ts` "backward compatibility").
+Phone drawers and the bottom drawer offset themselves by the header and phone
+bar tracks. `shell.viewport` comes from `ADMIN_SHELL_PHONE_QUERY` (48rem, the
+same boundary as the CSS media query — never make one configurable without the
+other) and `ADMIN_SHELL_DESKTOP_QUERY` (64rem); `installShellViewport` runs on
+mount and the `ShellState` constructor detects the initial class so the first
+paint is right.
+
+Edge config: `viewportDefaults` (applied per class change; such an edge never
+stores its state), `phone: 'drawer' | 'sheet' | 'hidden'` (`sheet` is right
+edge only), `resizable` (side edges, `push` only, not on phones) and `persist`.
+`stripUnpersistedSettings` runs on both `hydrate()` and adapter writes;
+runtime `applySettings` is never filtered. Resized widths live in
+`ShellSettingsDelta.sizes` (px; `null` = configured size, pruned on write).
+Drags update with `persist: false` and persist once on pointer up.
+
+The resize separator is a focusable `role="separator"`: its svelte-ignore of
+the non-interactive a11y warnings is deliberate (WAI-ARIA window splitter).
+
 Run `pnpm --filter @happyvertical/smrt-svelte test:e2e` after building the
 package dependencies. The package-local fixture exercises real Chromium bounds
 and touch input across mobile widths and desktop panel-state combinations.

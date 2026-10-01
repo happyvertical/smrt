@@ -448,6 +448,12 @@ export interface SchemaChange {
    * so would withhold unrelated DDL on that column permanently.
    */
   engineUnsupported?: boolean;
+  /**
+   * Operator-facing note on an executable change that does more than its
+   * type pair says -- e.g. a `type_upgrade` that stores empty text as NULL
+   * under `emptyTextAsNull` (#3226). Printed by `db:diff`/`db:migrate`.
+   */
+  note?: string;
   /** Generated SQL statement */
   sql?: string;
   /**

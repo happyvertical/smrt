@@ -55,6 +55,38 @@ await series.create({
 });
 ```
 
+### All-day events, time zones, and recurrence expansion
+
+`Event.allDay` marks whole-day events (`startDate` is local midnight of the
+first day, `endDate` the exclusive midnight after the last day) and
+`Event.timeZone` is the IANA zone the event is scheduled in (empty inherits
+from the series, place, or site).
+
+`expandRecurrence(pattern, { start, rangeStart, rangeEnd, timeZone })` turns
+a `RecurrencePattern` (object or stored JSON) into occurrence start instants.
+It supports `frequency` daily/weekly/monthly/yearly, `interval`, `byDay`
+(weekly day lists; monthly ordinals like `2TU` or `-1FR`), `byMonthDay`
+(negative counts from the month end), `byMonth`, `bySetPos`, inclusive
+`until`, and `count` (counted from `start`). The start's wall-clock time is
+kept in `timeZone` (default `pattern.timeZone`, then UTC), so a 19:00 meeting
+stays at 19:00 across daylight-saving changes. `EventSeries.getOccurrences()`
+wraps it with the series' `startDate`/`endDate`.
+
+```typescript
+import { expandRecurrence } from '@happyvertical/smrt-events';
+
+// Council meets the second Tuesday at 19:00 Edmonton time
+const october = expandRecurrence(
+  { frequency: 'monthly', byDay: ['2TU'] },
+  {
+    start: new Date('2026-01-14T02:00:00Z'), // Jan 13 19:00 MST
+    rangeStart: new Date('2026-10-01T00:00:00Z'),
+    rangeEnd: new Date('2026-11-01T00:00:00Z'),
+    timeZone: 'America/Edmonton',
+  },
+);
+```
+
 ### Owned assets
 
 ```typescript
@@ -80,7 +112,7 @@ const galleryAssets = await events.getAssets(game.id!, 'gallery');
 
 | Export | Description |
 |--------|------------|
-| `Event` | Hierarchical event with status lifecycle, STI enabled. Links to series, type, place via string IDs |
+| `Event` | Hierarchical event with status lifecycle, STI enabled. Links to series, type, place via string IDs; `allDay` and IANA `timeZone` fields |
 | `EventSeries` | Recurring event group with recurrence patterns (daily/weekly/monthly/yearly) |
 | `EventType` | Classification with JSON schema for custom fields per type |
 | `EventParticipant` | Junction linking profiles to events with role, placement, and groupId |
@@ -120,7 +152,10 @@ const galleryAssets = await events.getAssets(game.id!, 'gallery');
 | `getEventStatusFromDates` | Auto-detect status from start/end dates |
 | `sortEventsByDate` | Sort events chronologically |
 | `validateEventStatus` | Validate status transition is allowed |
-| `calculateNextOccurrence` | Next date for a recurrence pattern |
+| `calculateNextOccurrence` | Next date for a recurrence pattern (host-local arithmetic; prefer `expandRecurrence`) |
+| `expandRecurrence` | Time-zone-aware occurrence instants for a pattern within a window |
+| `toZonedWallTime` / `fromZonedWallTime` | Convert between an instant and wall-clock fields in an IANA zone |
+| `isValidTimeZone` | Check an IANA zone name against the runtime's `Intl` data |
 | `parseRecurrencePattern` | Parse recurrence from string or object |
 
 ### UI Metadata

@@ -1,9 +1,11 @@
 /** Principal-bound, silent ContentList query discovery and execution (#2456). */
 
-import type {
-  DataSurfaceDefinition,
-  DataSurfaceExecutionContext,
-  DataSurfaceSchema,
+import {
+  assertIdFieldConditions,
+  type DataSurfaceDefinition,
+  type DataSurfaceExecutionContext,
+  type DataSurfaceSchema,
+  uuidColumnFieldIds,
 } from '@happyvertical/smrt-agents';
 import { normalizeDataQueryRequest } from '@happyvertical/smrt-core';
 import type { DataQuerySchema } from '@happyvertical/smrt-types';
@@ -145,7 +147,17 @@ export async function createContentListDataSurfaceDefinition(
     execute: async (_surface, request, context) => {
       // Validate before resolving the host collection. This makes a rejected
       // protected projection a zero-I/O failure, even for hostile descriptors.
-      normalizeDataQueryRequest(request, executableSchema);
+      const normalized = normalizeDataQueryRequest(request, executableSchema);
+      // A non-UUID value for an id column is refused here, as the caller's
+      // error, instead of reaching PostgreSQL as `invalid input syntax for
+      // type uuid` (an opaque query failure to the agent).
+      assertIdFieldConditions(
+        normalized.filter,
+        uuidColumnFieldIds(
+          CONTENT_QUERY_CLASS_NAME,
+          executableSchema.fields.map((field) => field.id),
+        ),
+      );
       return executeContentQuery(
         await resolveCollection(options, context),
         request,

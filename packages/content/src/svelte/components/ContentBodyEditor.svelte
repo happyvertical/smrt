@@ -1,8 +1,18 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
-import { Select } from '@happyvertical/smrt-ui/forms';
+import {
+  createLongPress,
+  highlightControl,
+  primeReadyBeep,
+  revealControl,
+  Select,
+  tryGetControlInteractionContext,
+  useControlRegistration,
+} from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { onDestroy, type Snippet } from 'svelte';
+import { slide } from 'svelte/transition';
 import {
   bodyToEditorHtml,
   type ContentBodyFormat,
@@ -25,13 +35,44 @@ export interface ContentBodyEditorChange {
   images: ContentBodyImage[];
 }
 
+/** The person asked to change a picture in the story (see `onRequestImageChange`). */
+export interface ContentBodyImageChangeRequest {
+  /** The picture's index among the body's images. */
+  index: number;
+  /** Its stored asset id, when it has one. */
+  assetId: string | null;
+  /** Its alt text. */
+  alt: string;
+  /** Its source URL as shown in the editor. */
+  src: string;
+  /**
+   * True when it came from pressing and holding the picture: the host opens
+   * its request box already listening for speech.
+   */
+  listen: boolean;
+  /** Where the picture is on screen (viewport pixels), to anchor a popover. */
+  rect: { top: number; left: number; width: number; height: number };
+}
+
 export interface Props {
   /** The body content string being edited, in HTML or the configured format. */
   value: string;
   /** Format of the body content: HTML, Markdown, or auto-detected. */
   format?: ContentBodyFormat | null;
+  /**
+   * Show the "Save as" HTML/Markdown picker in the toolbar. Off by default:
+   * the storage format is a technical choice most editors should not face, so
+   * hosts opt in for technical users. The body keeps its `format` either way.
+   */
+  showFormatPicker?: boolean;
   /** Placeholder text shown when the editor is empty. */
   placeholder?: string;
+  /** DOM id of the editable surface (default `content-body-input`). */
+  id?: string;
+  /** Field name; also the control id agents address (default `body`). */
+  name?: string;
+  /** Accessible and agent-facing label (default "Story"). */
+  label?: string;
   /** Index of the currently selected image in the body, or -1 for none. */
   selectedImageIndex?: number;
   /** Fired when the body content or embedded images change. */
@@ -42,23 +83,110 @@ export interface Props {
   onSelectImage?: (index: number) => void;
   /** Fired when the user sets an image as the content thumbnail. */
   onUseImageAsThumbnail?: (assetId: string) => void;
+  /**
+   * Asset id of the current main picture (thumbnail). The selected image's
+   * "Use as main picture" button shows as pressed when it is this one.
+   */
+  mainImageAssetId?: string | null;
   /** Resolves an image file, asset, or ID to a persisted image URL or object. */
   onResolveImage?: (
     selected: ImageLike | File | string,
   ) => Promise<unknown> | unknown;
+  /**
+   * The image panel (chooser/editor) the toolbar's image button opens. When
+   * provided it renders between the toolbar and the writing surface, sliding
+   * open above the text, and the image button reports `aria-expanded` /
+   * `aria-controls`. Without it the button only fires `onOpenImageChooser`.
+   */
+  imagePanel?: Snippet;
+  /** Whether the image panel is open (controlled by the parent). */
+  imagePanelOpen?: boolean;
+  /** Accessible name of the image panel region (default "Pictures"). */
+  imagePanelLabel?: string;
+  /** Fired when the panel asks to close (Escape inside it). */
+  onCloseImagePanel?: () => void;
+  /**
+   * The person wants a picture changed. With it, a selected or hovered
+   * picture shows a "Change this picture" button, the picture toolbar gets
+   * one too, and pressing and holding a picture (about half a second, without
+   * moving; moving is still a drag) asks with `listen: true`. Without it
+   * none of these show.
+   */
+  onRequestImageChange?: (request: ContentBodyImageChangeRequest) => void;
 }
 
 let {
   value,
   format = null,
+  showFormatPicker = false,
   placeholder = 'Start writing...',
+  id = 'content-body-input',
+  name = 'body',
+  label = undefined,
   selectedImageIndex = -1,
   onChange = undefined,
   onOpenImageChooser = undefined,
   onSelectImage = undefined,
   onUseImageAsThumbnail = undefined,
+  mainImageAssetId = null,
   onResolveImage = undefined,
+  imagePanel = undefined,
+  imagePanelOpen = false,
+  imagePanelLabel = undefined,
+  onCloseImagePanel = undefined,
+  onRequestImageChange = undefined,
 }: Props = $props();
+
+const imagePanelId = $derived(`${id}-image-panel`);
+const resolvedImagePanelLabel = $derived(
+  imagePanelLabel ?? t(M['content.content_body_editor.image_panel']),
+);
+let imageButtonElement = $state<HTMLElement | null>(null);
+let imagePanelElement = $state<HTMLElement | null>(null);
+let imagePanelWasOpen = false;
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+// Opening moves focus into the panel (its region is focusable) so keyboard and
+// screen-reader users land on what they opened; closing returns focus to the
+// toolbar button that opened it.
+$effect(() => {
+  const open = Boolean(imagePanel && imagePanelOpen);
+  if (open === imagePanelWasOpen) {
+    return;
+  }
+  imagePanelWasOpen = open;
+  if (open) {
+    queueMicrotask(() => imagePanelElement?.focus({ preventScroll: false }));
+  } else if (typeof document !== 'undefined') {
+    const active = document.activeElement;
+    if (
+      !active ||
+      active === document.body ||
+      (active !== editorElement && rootElement?.contains(active))
+    ) {
+      imageButtonElement?.querySelector('button')?.focus();
+    }
+  }
+});
+
+function handleImagePanelKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && onCloseImagePanel) {
+    event.stopPropagation();
+    onCloseImagePanel();
+  }
+}
+
+const resolvedLabel = $derived(label ?? t(M['content.content_fields.body']));
+const interactionContext = tryGetControlInteractionContext();
+/** The body as last received from the parent or emitted by this editor. */
+let currentBody = '';
 
 const MIN_IMAGE_WIDTH = 120;
 const IMAGE_WIDTH_STEP = 80;
@@ -93,6 +221,8 @@ let editorHtml = $state('');
 let lastExternalKey = $state('');
 let isFocused = $state(false);
 let isDragging = $state(false);
+/** Where a moved picture would land (px from the editor's top), while dragging. */
+let dropIndicatorTop = $state<number | null>(null);
 let selectedImageIndexState = $state(-1);
 let selectedImageBox = $state<ImageBox | null>(null);
 let selectedImagePlacement = $state<ContentBodyImagePlacement>('block');
@@ -125,8 +255,9 @@ $effect(() => {
   currentFormat = resolvedFormat;
   editorHtml = bodyToEditorHtml(value || '', resolvedFormat);
   lastExternalKey = externalKey;
+  currentBody = value || '';
 
-  if (editorElement && !isFocused && editorElement.innerHTML !== editorHtml) {
+  if (editorElement && !isFocused && editorInnerHtml() !== editorHtml) {
     editorElement.innerHTML = editorHtml;
   }
 });
@@ -337,6 +468,66 @@ function setCaretAfterNode(node: Node) {
   savedRange = range.cloneRange();
 }
 
+// Pictures shown only as a preview (see `previewImage`): picture -> the `src`
+// and `srcset` it really has. A preview is never part of the body:
+// `editorInnerHtml` reads the surface with every picture back at its real
+// `src`/`srcset`, so no change event can carry a previewed picture out of the
+// editor, and a copy or cut puts the real pictures on the clipboard.
+interface ImageOriginal {
+  src: string | null;
+  srcset: string | null;
+}
+const imagePreviews = new Map<HTMLImageElement, ImageOriginal>();
+
+function setOrRemove(image: Element, name: string, value: string | null) {
+  if (value === null) image.removeAttribute(name);
+  else image.setAttribute(name, value);
+}
+
+function restoreImage(image: Element, original: ImageOriginal) {
+  setOrRemove(image, 'src', original.src);
+  setOrRemove(image, 'srcset', original.srcset);
+}
+
+// Copy and cut read the live surface: put the real pictures back for the
+// clipboard, then show the previews again.
+function handleClipboardWithPreviews() {
+  if (imagePreviews.size === 0) return;
+  const shown = [...imagePreviews].map(([image]) => ({
+    image,
+    src: image.getAttribute('src'),
+  }));
+  for (const [image, original] of imagePreviews) restoreImage(image, original);
+  setTimeout(() => {
+    for (const { image, src } of shown) {
+      if (!image.isConnected || !imagePreviews.has(image)) continue;
+      setOrRemove(image, 'src', src);
+      image.removeAttribute('srcset');
+    }
+  }, 0);
+}
+
+/** The surface's HTML as the body has it: previews put back. */
+function editorInnerHtml(): string {
+  if (!editorElement) return '';
+  for (const image of [...imagePreviews.keys()]) {
+    if (!image.isConnected) imagePreviews.delete(image);
+  }
+  if (imagePreviews.size === 0) return editorElement.innerHTML;
+  const originals = editorElement.querySelectorAll('img');
+  const inert = editorElement.ownerDocument.implementation
+    .createHTMLDocument('')
+    .importNode(editorElement, true) as HTMLElement;
+  const copies = inert.querySelectorAll('img');
+  originals.forEach((image, index) => {
+    const original = imagePreviews.get(image);
+    const copy = copies[index];
+    if (!original || !copy) return;
+    restoreImage(copy, original);
+  });
+  return inert.innerHTML;
+}
+
 function getEditorImages(): HTMLImageElement[] {
   if (!editorElement) {
     return [];
@@ -496,6 +687,18 @@ function refreshSelectedImageChrome() {
   };
   selectedImagePlacement = getImagePlacement(frame);
   selectedImageAssetId = image.getAttribute('data-smrt-asset-id');
+  refreshHoveredImageBox();
+}
+
+/** Keep the change badge on the hovered picture after it moved or resized. */
+function refreshHoveredImageBox() {
+  if (!hoveredImage) return;
+  if (!editorElement?.contains(hoveredImage)) {
+    hoveredImage = null;
+    hoveredImageBox = null;
+    return;
+  }
+  hoveredImageBox = imageBoxFor(hoveredImage);
 }
 
 function placeCaretAfterImage(image: HTMLImageElement) {
@@ -590,15 +793,16 @@ function emitChange(options: { syncDom?: boolean } = {}) {
   }
 
   clearPendingInputChange();
-  const rawHtml = editorElement.innerHTML;
+  const rawHtml = editorInnerHtml();
   const normalizedHtml = normalizeEditorHtml(rawHtml);
-  if (options.syncDom && editorElement.innerHTML !== normalizedHtml) {
+  if (options.syncDom && editorInnerHtml() !== normalizedHtml) {
     editorElement.innerHTML = normalizedHtml;
     editorHtml = normalizedHtml;
   }
 
   const body = editorHtmlToBody(normalizedHtml, currentFormat);
   lastExternalKey = makeExternalKey(body, currentFormat);
+  currentBody = body;
   onChange?.({
     body,
     bodyFormat: currentFormat,
@@ -606,6 +810,48 @@ function emitChange(options: { syncDom?: boolean } = {}) {
   });
   refreshSelectedImageChrome();
 }
+
+/** Replace the whole body (an applied agent proposal) in the current format. */
+function replaceBody(next: unknown) {
+  const body = typeof next === 'string' ? next : String(next ?? '');
+  clearPendingInputChange();
+  editorHtml = bodyToEditorHtml(body, currentFormat);
+  if (editorElement) editorElement.innerHTML = editorHtml;
+  lastExternalKey = makeExternalKey(body, currentFormat);
+  currentBody = body;
+  onChange?.({
+    body,
+    bodyFormat: currentFormat,
+    images: extractBodyImages(body, currentFormat),
+  });
+}
+
+// One agent-addressable control for the whole story, in the body's own
+// format (HTML or Markdown). Proposals are staged; a person applies them.
+useControlRegistration(() => {
+  const surface = editorElement;
+  if (!surface || !name) return false;
+  return {
+    controlId: name,
+    metadata: {
+      kind: 'textarea',
+      label: resolvedLabel,
+      description:
+        currentFormat === 'markdown'
+          ? 'The story, in Markdown.'
+          : 'The story, in HTML.',
+    },
+    getValue: () => currentBody,
+    setValue: replaceBody,
+    clear: () => {
+      replaceBody('');
+      return true;
+    },
+    focus: () => surface.focus(),
+    reveal: () => revealControl(surface),
+    highlight: (durationMs) => highlightControl(surface, durationMs),
+  };
+});
 
 function runCommand(command: string, value?: string) {
   restoreSelection();
@@ -679,6 +925,77 @@ function insertImageHtml(html: string) {
 
 export function insertImageAsset(asset: ImageAssetLike | null | undefined) {
   insertImageHtml(imageAssetToHtml(asset));
+}
+
+/**
+ * Replace the picture at `index` (in story order) with `asset`, keeping its
+ * place, size, and layout: for example a cropped or edited version of the
+ * same picture. Returns false when there is no picture at `index` or the
+ * asset has no usable source.
+ */
+export function replaceImage(
+  index: number,
+  asset: (ImageAssetLike & { height?: unknown }) | null | undefined,
+): boolean {
+  const image = getEditorImages()[index];
+  const template = document.createElement('template');
+  template.innerHTML = imageAssetToHtml(asset).trim();
+  const next = template.content.querySelector('img');
+  const src = next?.getAttribute('src');
+  if (!image || !src) {
+    return false;
+  }
+  // Accepting a picture replaces any preview of it, and the old picture's
+  // responsive sources go with it.
+  imagePreviews.delete(image);
+  image.setAttribute('src', src);
+  setOrRemove(image, 'srcset', next?.getAttribute('srcset') ?? null);
+  setOrRemove(image, 'sizes', next?.getAttribute('sizes') ?? null);
+  const assetId = next?.getAttribute('data-smrt-asset-id');
+  if (assetId) {
+    image.setAttribute('data-smrt-asset-id', assetId);
+  }
+  refreshSelectedImageChrome();
+  emitChange();
+  return true;
+}
+
+/**
+ * Show `src` on the picture at `index` WITHOUT changing the story: a preview
+ * the person can accept (`replaceImage`) or put back (`previewImage(index,
+ * null)`). It is never written to the body, never reported by `onChange`, and
+ * goes away with the editor. Only same-origin paths (`/…`) are shown. Returns
+ * false when there is no picture at `index` or `src` is not allowed.
+ */
+export function previewImage(index: number, src: string | null): boolean {
+  const image = getEditorImages()[index];
+  if (!image) return false;
+  if (src === null) {
+    const original = imagePreviews.get(image);
+    if (original) {
+      restoreImage(image, original);
+      imagePreviews.delete(image);
+      refreshSelectedImageChrome();
+    }
+    return true;
+  }
+  if (!/^\/(?![/\\])/.test(src) || /[\s\\]/.test(src)) return false;
+  if (!imagePreviews.has(image))
+    imagePreviews.set(image, {
+      src: image.getAttribute('src'),
+      srcset: image.getAttribute('srcset'),
+    });
+  // A srcset would keep showing the real picture: the preview is `src` only.
+  image.removeAttribute('srcset');
+  image.setAttribute('src', src);
+  refreshSelectedImageChrome();
+  return true;
+}
+
+/** Put every previewed picture back (see `previewImage`). */
+export function clearImagePreviews() {
+  for (const [image, original] of imagePreviews) restoreImage(image, original);
+  imagePreviews.clear();
 }
 
 export function focusImage(index: number) {
@@ -801,6 +1118,149 @@ function startImageResize(event: PointerEvent) {
   window.addEventListener('pointerup', handleResizePointerUp);
 }
 
+/** A top-level node that shows something (text or a picture). */
+function isSignificantBlock(node: Node): boolean {
+  if (node.nodeType === TEXT_NODE) {
+    return Boolean(node.textContent?.trim());
+  }
+  if (node.nodeType !== ELEMENT_NODE) {
+    return false;
+  }
+  const element = node as HTMLElement;
+  return (
+    Boolean(element.textContent?.trim()) ||
+    Boolean(element.tagName === 'IMG' || element.querySelector('img'))
+  );
+}
+
+function significantBlocks(exclude?: Node | null): Node[] {
+  if (!editorElement) {
+    return [];
+  }
+  return Array.from(editorElement.childNodes).filter(
+    (node) => node !== exclude && isSignificantBlock(node),
+  );
+}
+
+function nodeRect(node: Node): DOMRect | null {
+  if (node.nodeType === ELEMENT_NODE) {
+    return (node as Element).getBoundingClientRect();
+  }
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  return range.getBoundingClientRect();
+}
+
+/** The picture's movable unit: its top-level block, or the picture itself when it sits inside text. */
+function imageMoveUnit(image: HTMLImageElement): HTMLElement {
+  const root = getImageLayoutRoot(image);
+  return root.parentElement === editorElement ? root : getImageFrame(image);
+}
+
+/** The top-level block holding `node`. */
+function topLevelBlockOf(node: Node): Node | null {
+  let current: Node | null = node;
+  while (current && current.parentNode !== editorElement) {
+    current = current.parentNode;
+  }
+  return current;
+}
+
+/**
+ * The gap between top-level blocks nearest to `clientY`: the block to go in
+ * front of (null: the end), and where to draw the drop line.
+ */
+function dropSlotFromPoint(
+  clientY: number,
+  exclude: Node | null,
+): { before: Node | null; top: number } | null {
+  if (!editorElement || !rootElement) {
+    return null;
+  }
+  const rootTop = rootElement.getBoundingClientRect().top;
+  const blocks = significantBlocks(exclude);
+  for (const block of blocks) {
+    const rect = nodeRect(block);
+    if (rect && clientY < rect.top + rect.height / 2) {
+      return { before: block, top: rect.top - rootTop - 2 };
+    }
+  }
+  const last = blocks.at(-1);
+  const lastRect = last ? nodeRect(last) : null;
+  const editorRect = editorElement.getBoundingClientRect();
+  return {
+    before: null,
+    top: (lastRect ? lastRect.bottom : editorRect.top + 8) - rootTop + 2,
+  };
+}
+
+/** Put the picture in front of `before` (null: at the end of the story). */
+function moveImageBefore(image: HTMLImageElement, before: Node | null) {
+  if (!editorElement) {
+    return;
+  }
+  const unit = imageMoveUnit(image);
+  if (before === unit) {
+    return;
+  }
+  editorElement.insertBefore(unit, before);
+  selectImageElement(image);
+  emitChange();
+}
+
+function imageMoveTargets(image: HTMLImageElement): {
+  up: Node | null | undefined;
+  down: Node | null | undefined;
+} {
+  const unit = imageMoveUnit(image);
+  if (unit.parentElement !== editorElement) {
+    // Inside a paragraph: up puts it just above that paragraph, down just below.
+    const block = topLevelBlockOf(unit);
+    return {
+      up: block,
+      down: block ? (block.nextSibling ?? null) : undefined,
+    };
+  }
+  const blocks = significantBlocks();
+  const index = blocks.indexOf(unit);
+  const previous = index > 0 ? blocks[index - 1] : undefined;
+  const next = index >= 0 ? blocks[index + 1] : undefined;
+  return {
+    up: previous,
+    down: next ? (next.nextSibling ?? null) : undefined,
+  };
+}
+
+/** Move the selected picture one block up or down (the keyboard and touch path). */
+function moveSelectedImage(direction: 'up' | 'down') {
+  const image = getSelectedImage();
+  if (!image) {
+    return;
+  }
+  const target = imageMoveTargets(image)[direction];
+  if (target === undefined) {
+    return;
+  }
+  moveImageBefore(image, target);
+  image.scrollIntoView?.({ block: 'nearest' });
+}
+
+const selectedImageMoves = $derived.by(() => {
+  // Recomputed whenever the selection chrome refreshes.
+  void selectedImageBox;
+  const image = selectedImageIndexState >= 0 ? getSelectedImage() : null;
+  if (!image) {
+    return { up: false, down: false };
+  }
+  const targets = imageMoveTargets(image);
+  return { up: targets.up !== undefined, down: targets.down !== undefined };
+});
+
+function showDropIndicator(clientY: number, exclude: Node | null) {
+  const slot = dropSlotFromPoint(clientY, exclude);
+  dropIndicatorTop = slot ? slot.top : null;
+}
+
 function moveImageToRange(
   imageIndex: number,
   range: Range | null,
@@ -847,11 +1307,24 @@ function handleMovePointerUp(event: PointerEvent) {
   const imageIndex = moveState.imageIndex;
   moveState = null;
   window.removeEventListener('pointerup', handleMovePointerUp);
-  moveImageToRange(
-    imageIndex,
-    getRangeFromPoint(event.clientX, event.clientY),
-    event.clientX,
-  );
+  window.removeEventListener('pointermove', handleMovePointerMove);
+  dropIndicatorTop = null;
+  const image = getEditorImages()[imageIndex];
+  if (!image) {
+    return;
+  }
+  const slot = dropSlotFromPoint(event.clientY, imageMoveUnit(image));
+  if (slot) {
+    moveImageBefore(image, slot.before);
+  }
+}
+
+function handleMovePointerMove(event: PointerEvent) {
+  if (!moveState) {
+    return;
+  }
+  const image = getEditorImages()[moveState.imageIndex];
+  showDropIndicator(event.clientY, image ? imageMoveUnit(image) : null);
 }
 
 function startImageMove(event: PointerEvent) {
@@ -870,6 +1343,7 @@ function startImageMove(event: PointerEvent) {
     frame,
   };
   window.addEventListener('pointerup', handleMovePointerUp);
+  window.addEventListener('pointermove', handleMovePointerMove);
 }
 
 async function resolveAndInsertImage(selected: ImageLike | File | string) {
@@ -883,22 +1357,34 @@ async function resolveAndInsertImage(selected: ImageLike | File | string) {
   }
 }
 
-function parseDraggedImage(dataTransfer: DataTransfer): ImageLike | null {
+/**
+ * Images dragged in from a picker: `application/x-smrt-image` carries one
+ * image object, or an array of them when several are dragged together.
+ */
+function parseDraggedImages(dataTransfer: DataTransfer): ImageLike[] {
   const payload = dataTransfer.getData('application/x-smrt-image');
   if (!payload) {
-    return null;
+    return [];
   }
 
   try {
-    return JSON.parse(payload) as ImageLike;
+    const parsed = JSON.parse(payload) as unknown;
+    const list = Array.isArray(parsed) ? parsed : [parsed];
+    return list.filter(
+      (item): item is ImageLike => Boolean(item) && typeof item === 'object',
+    );
   } catch {
-    return null;
+    return [];
   }
 }
 
 function handleDragOver(event: DragEvent) {
   event.preventDefault();
   isDragging = true;
+  if (movingImageIndex !== null) {
+    const image = getEditorImages()[movingImageIndex];
+    showDropIndicator(event.clientY, image ? imageMoveUnit(image) : null);
+  }
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = movingImageIndex === null ? 'copy' : 'move';
   }
@@ -912,11 +1398,13 @@ function handleDragLeave(event: DragEvent) {
   }
 
   isDragging = false;
+  dropIndicatorTop = null;
 }
 
 async function handleDrop(event: DragEvent) {
   event.preventDefault();
   isDragging = false;
+  dropIndicatorTop = null;
   if (!event.dataTransfer) {
     return;
   }
@@ -932,17 +1420,30 @@ async function handleDrop(event: DragEvent) {
     Number.isInteger(parsedBodyImageIndex) &&
     parsedBodyImageIndex >= 0
   ) {
-    moveImageToRange(parsedBodyImageIndex, dropRange, event.clientX);
+    // A picture already in the story goes into the gap between blocks
+    // nearest the pointer: above the first paragraph, between any two, or
+    // at the end.
+    const image = getEditorImages()[parsedBodyImageIndex];
+    const slot = image
+      ? dropSlotFromPoint(event.clientY, imageMoveUnit(image))
+      : null;
+    if (image && slot) {
+      moveImageBefore(image, slot.before);
+    } else {
+      moveImageToRange(parsedBodyImageIndex, dropRange, event.clientX);
+    }
     movingImageIndex = null;
     return;
   }
 
-  const draggedImage = parseDraggedImage(event.dataTransfer);
-  if (draggedImage) {
+  const draggedImages = parseDraggedImages(event.dataTransfer);
+  if (draggedImages.length > 0) {
     if (dropRange) {
       savedRange = dropRange.cloneRange();
     }
-    await resolveAndInsertImage(draggedImage);
+    for (const draggedImage of draggedImages) {
+      await resolveAndInsertImage(draggedImage);
+    }
     return;
   }
 
@@ -970,6 +1471,124 @@ async function handleDrop(event: DragEvent) {
   }
 }
 
+// ---- Change this picture ---------------------------------------------
+
+let hoveredImageBox = $state<ImageBox | null>(null);
+let hoveredImage: HTMLImageElement | null = null;
+
+function imageBoxFor(image: HTMLImageElement): ImageBox | null {
+  if (!rootElement) return null;
+  const frameRect = getImageFrame(image).getBoundingClientRect();
+  const rootRect = rootElement.getBoundingClientRect();
+  return {
+    top: frameRect.top - rootRect.top,
+    left: frameRect.left - rootRect.left,
+    width: frameRect.width,
+    height: frameRect.height,
+  };
+}
+
+function requestImageChange(image: HTMLImageElement | null, listen: boolean) {
+  if (!onRequestImageChange || !image) return;
+  const index = getEditorImages().indexOf(image);
+  if (index < 0) return;
+  const rect = getImageFrame(image).getBoundingClientRect();
+  onRequestImageChange({
+    index,
+    assetId: image.getAttribute('data-smrt-asset-id'),
+    alt: image.getAttribute('alt') ?? '',
+    src: image.getAttribute('src') ?? '',
+    listen,
+    rect: {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    },
+  });
+}
+
+/** The picture the "change" badge is on: the hovered one, else the selected one. */
+const changeBadgeBox = $derived(
+  onRequestImageChange ? (hoveredImageBox ?? selectedImageBox) : null,
+);
+
+function handleSurfacePointerOver(event: PointerEvent) {
+  if (!onRequestImageChange || event.pointerType !== 'mouse') return;
+  const image = (event.target as Element | null)?.closest(
+    'img',
+  ) as HTMLImageElement | null;
+  if (!image || !editorElement?.contains(image)) return;
+  hoveredImage = image;
+  hoveredImageBox = imageBoxFor(image);
+}
+
+function handleRootPointerLeave() {
+  hoveredImage = null;
+  hoveredImageBox = null;
+}
+
+function handleSurfacePointerOut(event: PointerEvent) {
+  if (!hoveredImage) return;
+  const next = event.relatedTarget as Element | null;
+  // Moving onto the badge keeps it; moving elsewhere in the text hides it.
+  if (next?.closest?.('.image-change-badge')) return;
+  if (next && next === hoveredImage) return;
+  hoveredImage = null;
+  hoveredImageBox = null;
+}
+
+function handleChangeBadgeClick() {
+  const image = hoveredImage ?? getSelectedImage();
+  requestImageChange(image, false);
+}
+
+// Press and hold a picture: ask for a change, listening for speech. Moving
+// past the tolerance first is a drag (native picture drag and Move keep
+// working); the context menu is held back only during a press on a picture.
+const pictureLongPress = createLongPress({
+  filter: (event) => {
+    if (!onRequestImageChange) return null;
+    const image = (event.target as Element | null)?.closest('img');
+    return image && editorElement?.contains(image) ? image : null;
+  },
+  onPressStart: () => primeReadyBeep(),
+  onLongPress: ({ target }) => {
+    const image = target as HTMLImageElement;
+    selectImageElement(image);
+    navigator.vibrate?.(15);
+    requestImageChange(image, true);
+  },
+  preventContextMenu: true,
+});
+
+function handleWindowPointerMove(event: PointerEvent) {
+  pictureLongPress.handlePointerMove(event);
+}
+function handleWindowPointerUp(event: PointerEvent) {
+  pictureLongPress.handlePointerUp(event);
+}
+function handleWindowPointerCancel(event: PointerEvent) {
+  pictureLongPress.handlePointerCancel(event);
+}
+
+$effect(() => {
+  if (!onRequestImageChange || typeof window === 'undefined') return;
+  window.addEventListener('pointermove', handleWindowPointerMove);
+  window.addEventListener('pointerup', handleWindowPointerUp);
+  window.addEventListener('pointercancel', handleWindowPointerCancel);
+  return () => {
+    window.removeEventListener('pointermove', handleWindowPointerMove);
+    window.removeEventListener('pointerup', handleWindowPointerUp);
+    window.removeEventListener('pointercancel', handleWindowPointerCancel);
+  };
+});
+
+onDestroy(() => {
+  pictureLongPress.cancel();
+  imagePreviews.clear();
+});
+
 function handleSurfaceClick(event: MouseEvent) {
   const target = event.target as Element | null;
   const image = target?.closest('img') as HTMLImageElement | null;
@@ -984,6 +1603,8 @@ function handleSurfaceClick(event: MouseEvent) {
 }
 
 function handleEditorDragStart(event: DragEvent) {
+  pictureLongPress.handleDragStart();
+  hoveredImageBox = null;
   const target = event.target as Element | null;
   const image =
     (target?.closest('img') as HTMLImageElement | null) ||
@@ -1006,11 +1627,13 @@ function handleEditorDragStart(event: DragEvent) {
 function handleEditorDragEnd() {
   movingImageIndex = null;
   isDragging = false;
+  dropIndicatorTop = null;
   refreshSelectedImageChrome();
 }
 </script>
 
-<div bind:this={rootElement} class="content-body-editor">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div bind:this={rootElement} class="content-body-editor" onpointerleave={handleRootPointerLeave}>
   <div class="body-editor-toolbar" aria-label={t(M['content.content_body_editor.toolbar'])}>
     <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.bold'])} aria-label={t(M['content.content_body_editor.bold'])} onclick={() => runCommand('bold')}>
       <strong>B</strong>
@@ -1022,7 +1645,7 @@ function handleEditorDragEnd() {
       H2
     </Button>
     <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.bulleted_list'])} aria-label={t(M['content.content_body_editor.bulleted_list'])} onclick={() => runCommand('insertUnorderedList')}>
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <line x1="9" y1="6" x2="21" y2="6"></line>
         <line x1="9" y1="12" x2="21" y2="12"></line>
         <line x1="9" y1="18" x2="21" y2="18"></line>
@@ -1031,25 +1654,64 @@ function handleEditorDragEnd() {
         <circle cx="4" cy="18" r="1"></circle>
       </svg>
     </Button>
-    <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.insert_image'])} aria-label={t(M['content.content_body_editor.insert_image'])} onclick={() => onOpenImageChooser?.()}>
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <span class="editor-toolbar-slot" bind:this={imageButtonElement}>
+    <Button
+      variant="ghost"
+      size="sm"
+      class="editor-toolbar-button"
+      type="button"
+      title={t(M['content.content_body_editor.insert_image'])}
+      aria-label={t(M['content.content_body_editor.insert_image'])}
+      aria-expanded={imagePanel ? imagePanelOpen : undefined}
+      aria-controls={imagePanel ? imagePanelId : undefined}
+      onclick={() => onOpenImageChooser?.()}
+    >
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2"></rect>
         <circle cx="8.5" cy="8.5" r="1.5"></circle>
         <polyline points="21 15 16 10 5 21"></polyline>
       </svg>
     </Button>
+    </span>
 
-    <label class="format-select">
-      <span>{t(M['content.content_body_editor.save_as'])}</span>
-      <Select
-        value={currentFormat}
-        onchange={(event) => setBodyFormat((event.currentTarget as HTMLSelectElement).value as ContentBodyFormat)}
-      >
-        <option value="html">HTML</option>
-        <option value="markdown">Markdown</option>
-      </Select>
-    </label>
+    {#if showFormatPicker}
+      <label class="format-select">
+        <span>{t(M['content.content_body_editor.save_as'])}</span>
+        <Select
+          value={currentFormat}
+          onchange={(event) => setBodyFormat((event.currentTarget as HTMLSelectElement).value as ContentBodyFormat)}
+        >
+          <option value="html">HTML</option>
+          <option value="markdown">Markdown</option>
+        </Select>
+      </label>
+    {/if}
   </div>
+
+  {#if imagePanel && imagePanelOpen}
+    <!-- Escape bubbling up from any control inside the panel closes it. -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <section
+      bind:this={imagePanelElement}
+      id={imagePanelId}
+      class="body-editor-image-panel"
+      aria-label={resolvedImagePanelLabel}
+      tabindex="-1"
+      onkeydown={handleImagePanelKeydown}
+      transition:slide={{ duration: prefersReducedMotion() ? 0 : 180 }}
+    >
+      {@render imagePanel()}
+    </section>
+  {/if}
+
+  {#if dropIndicatorTop !== null}
+    <div
+      class="body-drop-indicator"
+      style={`top: ${dropIndicatorTop}px;`}
+      aria-hidden="true"
+      data-testid="body-drop-indicator"
+    ></div>
+  {/if}
 
   {#if selectedImageBox}
     <div
@@ -1057,6 +1719,16 @@ function handleEditorDragEnd() {
       style={`top: ${Math.max(44, selectedImageBox.top + 8)}px; left: ${selectedImageBox.left + selectedImageBox.width / 2}px;`}
       aria-label={t(M['content.content_body_editor.selected_image_controls'])}
     >
+      {#if onRequestImageChange}
+        <Button variant="ghost" size="sm" class="editor-popover-button editor-popover-button--change" type="button" title={t(M['content.content_body_editor.change_image_hint'])} aria-label={t(M['content.content_body_editor.change_image'])} onclick={() => requestImageChange(getSelectedImage(), false)}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"></path>
+            <path d="M19 15v4"></path>
+            <path d="M17 17h4"></path>
+          </svg>
+          <span class="editor-popover-button-text">{t(M['content.content_body_editor.change_image_short'])}</span>
+        </Button>
+      {/if}
       <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.move_image'])} aria-label={t(M['content.content_body_editor.move_image'])} onpointerdown={startImageMove}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2v20"></path>
@@ -1065,6 +1737,18 @@ function handleEditorDragEnd() {
           <path d="m19 9 3 3-3 3"></path>
           <path d="m9 5 3-3 3 3"></path>
           <path d="m9 19 3 3 3-3"></path>
+        </svg>
+      </Button>
+      <Button variant="ghost" size="sm" class="editor-popover-button editor-popover-button--move" type="button" title={t(M['content.content_body_editor.move_image_up'])} aria-label={t(M['content.content_body_editor.move_image_up'])} disabled={!selectedImageMoves.up} onclick={() => moveSelectedImage('up')}>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 19V5"></path>
+          <path d="m5 12 7-7 7 7"></path>
+        </svg>
+      </Button>
+      <Button variant="ghost" size="sm" class="editor-popover-button editor-popover-button--move" type="button" title={t(M['content.content_body_editor.move_image_down'])} aria-label={t(M['content.content_body_editor.move_image_down'])} disabled={!selectedImageMoves.down} onclick={() => moveSelectedImage('down')}>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 5v14"></path>
+          <path d="m19 12-7 7-7-7"></path>
         </svg>
       </Button>
       <span class="image-control-divider"></span>
@@ -1152,7 +1836,7 @@ function handleEditorDragEnd() {
         </svg>
       </Button>
       {#if selectedImageAssetId && onUseImageAsThumbnail}
-        <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.use_as_primary_image'])} aria-label={t(M['content.content_body_editor.use_as_primary_image'])} onclick={useSelectedImageAsThumbnail}>
+        <Button variant="ghost" size="sm" class={`editor-popover-button${mainImageAssetId && selectedImageAssetId === mainImageAssetId ? ' editor-popover-button--active' : ''}`} type="button" title={t(M['content.content_body_editor.use_as_primary_image'])} aria-label={t(M['content.content_body_editor.use_as_primary_image'])} aria-pressed={Boolean(mainImageAssetId) && selectedImageAssetId === mainImageAssetId} onclick={useSelectedImageAsThumbnail}>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
             <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2 7.5 14 3 9.6l6.2-.9L12 3Z"></path>
           </svg>
@@ -1183,10 +1867,31 @@ function handleEditorDragEnd() {
     </button>
   {/if}
 
+  {#if changeBadgeBox}
+    <!-- raw-primitive-allow: a round 44px icon button pinned to a picture's corner (absolute position over the story); Button's padding and layout do not fit an overlay badge -->
+    <button
+      type="button"
+      class="image-change-badge"
+      title={t(M['content.content_body_editor.change_image_hint'])}
+      aria-label={t(M['content.content_body_editor.change_image'])}
+      style={`top: ${changeBadgeBox.top + changeBadgeBox.height - 52}px; left: ${changeBadgeBox.left + 8}px;`}
+      onclick={handleChangeBadgeClick}
+    >
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"></path>
+        <path d="M19 15v4"></path>
+        <path d="M17 17h4"></path>
+      </svg>
+    </button>
+  {/if}
+
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     bind:this={editorElement}
-    id="content-body-input"
+    {id}
+    aria-label={resolvedLabel}
+    data-smrt-control={name || undefined}
+    data-smrt-form={interactionContext?.formId}
     class="body-editor-surface"
     class:body-editor-surface--dragging={isDragging}
     contenteditable="true"
@@ -1205,12 +1910,19 @@ function handleEditorDragEnd() {
       saveSelection();
     }}
     onclick={handleSurfaceClick}
+    onpointerdown={(event) => pictureLongPress.handlePointerDown(event)}
+    onpointerover={handleSurfacePointerOver}
+    onpointerout={handleSurfacePointerOut}
+    oncontextmenu={(event) => pictureLongPress.handleContextMenu(event)}
+    onclickcapture={(event) => pictureLongPress.handleClick(event)}
     onkeyup={saveSelection}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
     ondragstart={handleEditorDragStart}
     ondragend={handleEditorDragEnd}
     ondrop={(event) => void handleDrop(event)}
+    oncopy={handleClipboardWithPreviews}
+    oncut={handleClipboardWithPreviews}
   >
     {@html editorHtml}
   </div>
@@ -1236,9 +1948,16 @@ function handleEditorDragEnd() {
     background: var(--smrt-color-surface-container-low, var(--smrt-color-surface-container));
   }
 
+  /* Icon buttons are a fixed square. smrt-ui's `size="sm"` padding
+     (0.5rem 0.75rem) would leave a 2rem button ~6px of content width, which
+     squeezed the SVG icons (list, image) far below the text glyphs (B, I, H2).
+     Zero the padding and never let an icon shrink: every toolbar glyph renders
+     at the same --smrt-content-editor-icon-size. */
   .body-editor-toolbar :global(.editor-toolbar-button) {
-    width: 2rem;
-    height: 2rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    min-width: 2.25rem;
+    padding: 0;
     display: inline-grid;
     place-items: center;
     border: 1px solid transparent;
@@ -1248,9 +1967,57 @@ function handleEditorDragEnd() {
     cursor: pointer;
   }
 
+  .body-editor-toolbar :global(.editor-toolbar-button svg),
+  .image-control-popover :global(.editor-popover-button svg) {
+    flex-shrink: 0;
+    width: var(--smrt-content-editor-icon-size, 1.125rem);
+    height: var(--smrt-content-editor-icon-size, 1.125rem);
+  }
+
+  /* Touch screens: 44px targets (WCAG 2.5.5), same icon size. The toolbar
+     wraps rather than scrolling off a phone. */
+  @media (pointer: coarse) {
+    .body-editor-toolbar {
+      flex-wrap: wrap;
+    }
+
+    .body-editor-toolbar :global(.editor-toolbar-button) {
+      width: 2.75rem;
+      height: 2.75rem;
+      min-width: 2.75rem;
+    }
+  }
+
+  .body-editor-toolbar :global(.editor-toolbar-button[aria-expanded='true']) {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container, var(--smrt-color-surface-container));
+    color: var(--smrt-color-on-primary-container, var(--smrt-color-primary));
+  }
+
   .body-editor-toolbar :global(.editor-toolbar-button:hover) {
     border-color: var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface-container);
+  }
+
+  .editor-toolbar-slot {
+    display: inline-flex;
+  }
+
+  /* The image panel sits between the toolbar and the text so it opens above
+     the story rather than below it. Full width, in the page flow (no modal),
+     so it works the same on a phone. */
+  .body-editor-image-panel {
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-lowest, var(--smrt-color-surface));
+    padding: 0.75rem;
+    max-height: min(70vh, 40rem);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .body-editor-image-panel:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
   }
 
   .format-select {
@@ -1371,6 +2138,8 @@ function handleEditorDragEnd() {
   }
 
   .body-editor-surface :global(img) {
+    /* iOS: no callout on a long press, which asks for a change instead. */
+    -webkit-touch-callout: none;
     display: block;
     max-width: min(100%, 44rem);
     height: auto;
@@ -1402,6 +2171,26 @@ function handleEditorDragEnd() {
     max-width: 100%;
   }
 
+  .body-editor-surface :global(img[data-smrt-thumbnail][data-smrt-placement='full']) {
+    margin-top: 0;
+  }
+
+  .body-editor-surface :global(img[data-smrt-thumbnail][data-smrt-placement='right']) {
+    margin-top: 0.25rem;
+  }
+
+  /* Phones: wrapped images stack full width, as the published page shows them. */
+  @media (max-width: 36rem) {
+    .body-editor-surface :global(figure[data-smrt-placement='left']),
+    .body-editor-surface :global(figure[data-smrt-placement='right']),
+    .body-editor-surface :global(img[data-smrt-placement='left']),
+    .body-editor-surface :global(img[data-smrt-placement='right']) {
+      float: none;
+      width: 100% !important;
+      margin: 0.75rem 0;
+    }
+  }
+
   .body-editor-surface :global(img[data-smrt-selected='true']) {
     outline: 3px solid var(--smrt-color-primary);
     outline-offset: 3px;
@@ -1410,6 +2199,51 @@ function handleEditorDragEnd() {
   .body-editor-surface :global([data-smrt-moving='true']),
   .body-editor-surface :global([data-smrt-resizing='true']) {
     opacity: 0.78;
+  }
+
+  .image-change-badge {
+    position: absolute;
+    z-index: 19;
+    display: inline-grid;
+    place-items: center;
+    inline-size: 44px;
+    block-size: 44px;
+    padding: 0;
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-full, 9999px);
+    background: color-mix(in srgb, var(--smrt-color-surface) 94%, transparent);
+    color: var(--smrt-color-primary, #3558d6);
+    box-shadow: var(--smrt-elevation-3, 0 0.4rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent));
+    cursor: pointer;
+  }
+
+  .image-change-badge:hover,
+  .image-change-badge:focus-visible {
+    background: var(--smrt-color-primary-container, #dde3ff);
+  }
+
+  .image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
+    inline-size: auto;
+    min-inline-size: 44px;
+    block-size: 44px;
+    padding: 0 0.7rem 0 0.55rem;
+    gap: 0.3rem;
+    display: inline-flex;
+    color: var(--smrt-color-primary, #3558d6);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+
+  /* Phones: the picture toolbar is already wide; Change is icon-only there
+     (still 44px and named "Change this picture"). */
+  @media (max-width: 48rem) {
+    .image-control-popover :global(.editor-popover-button-text) {
+      display: none;
+    }
+
+    .image-control-popover :global(.editor-popover-button.editor-popover-button--change) {
+      padding: 0;
+      inline-size: 44px;
+    }
   }
 
   .image-control-popover {
@@ -1439,9 +2273,35 @@ function handleEditorDragEnd() {
   }
 
   .image-control-popover :global(.editor-popover-button) {
-    width: 1.85rem;
-    height: 1.85rem;
+    width: 2rem;
+    height: 2rem;
+    min-width: 2rem;
+    padding: 0;
     border-radius: var(--smrt-radius-full, 9999px);
+  }
+
+  /* Move up / Move down: full 44px touch targets. */
+  .image-control-popover :global(.editor-popover-button.editor-popover-button--move) {
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .image-control-popover :global(.editor-popover-button:disabled) {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .body-drop-indicator {
+    position: absolute;
+    z-index: 19;
+    left: 1rem;
+    right: 1rem;
+    height: 4px;
+    border-radius: var(--smrt-radius-sm, 2px);
+    background: var(--smrt-color-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 25%, transparent);
+    pointer-events: none;
   }
 
   .image-control-popover :global(.editor-popover-button:hover),

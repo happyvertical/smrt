@@ -133,7 +133,15 @@ export type DataTableCommand =
   | { type: 'setSearch'; search: string }
   | { type: 'setFilters'; filters: DataTableFilter[] }
   | { type: 'setSorting'; sorting: DataTableSortRule[] }
-  | { type: 'toggleSorting'; columnId: string; multi?: boolean }
+  | {
+      type: 'toggleSorting';
+      columnId: string;
+      multi?: boolean;
+      /** Direction when the column is not sorted yet (default `asc`). */
+      firstDirection?: DataTableSortRule['direction'];
+      /** `false` toggles asc ⇄ desc instead of clearing on the third activation. */
+      clearable?: boolean;
+    }
   | { type: 'setPage'; page: number }
   | { type: 'setPageSize'; pageSize: number | null }
   | { type: 'setColumnOrder'; columnIds: string[] }
@@ -727,11 +735,18 @@ export function transitionDataTableState(
         (rule) => rule.columnId === columnId,
       );
       const previous = index >= 0 ? current.sorting[index] : undefined;
+      const firstDirection = command.firstDirection === 'desc' ? 'desc' : 'asc';
+      const lastDirection = firstDirection === 'asc' ? 'desc' : 'asc';
       const toggled: DataTableSortRule | null = !previous
-        ? { columnId, direction: 'asc' }
-        : previous.direction === 'asc'
-          ? { columnId, direction: 'desc' }
-          : null;
+        ? { columnId, direction: firstDirection }
+        : command.clearable === false
+          ? {
+              columnId,
+              direction: previous.direction === 'asc' ? 'desc' : 'asc',
+            }
+          : previous.direction === firstDirection
+            ? { columnId, direction: lastDirection }
+            : null;
       const sorting = command.multi
         ? previous
           ? toggled

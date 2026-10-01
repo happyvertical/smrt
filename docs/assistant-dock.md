@@ -459,6 +459,187 @@ registry or transport swap because it is the user's unsent text.
 />
 ```
 
+## Streamed turns and browser tools (#2908)
+
+The dock can run a real model tool loop and show it live. Three pieces:
+
+**Server engine.** `runAssistantTurn(options)` (`packages/chat/src/assistant-turn.ts`,
+package index) runs one turn over `runToolLoop` and yields
+`AssistantTurnEvent`s; `createAssistantTurnResponse(events)` wraps them as
+`text/event-stream`. The host route authenticates, persists the user message,
+and passes an already-authorized `principal`:
+
+- `extraTools` / `tools` are server tools, narrowed to
+  `principal.allowedTools` (offer gate) and re-asserted by each tool
+  (execution gate). `maxSteps` bounds the turn, `signal` cancels it
+  (pass the request's own abort signal), and `onUsage` reports each model
+  round's tokens for the host's usage attribution.
+- `clientTools` are the page's browser tools, declared by the request body.
+  They are untrusted: pass them through
+  `sanitizeClientToolDeclarations(body.clientTools, allowList)` first
+  (name/schema/size checks, an unknown effect becomes `destructive`, and
+  `allowList` entries match exactly or as `prefix*`). A server tool wins a
+  name clash.
+- When the model calls a browser tool the turn **suspends**: the transcript
+  goes into the host's `AssistantContinuationStore` (for example
+  `createSessionContinuationStore(agentSession)`, which keeps it in the
+  session's `sessionContext`, keyed by thread) and the stream ends with a
+  `client_tool_calls` event. The browser answers with
+  `resume: { continuationId, results }`. Continuations are single-use and
+  expire after 15 minutes; `maxSteps` spans every leg. Results reach the model
+  wrapped `{ untrusted: true, … }`, and the system prompt says so
+  (`CLIENT_TOOL_RESULT_GUIDANCE`).
+- `author` persists through the trusted `sendAgentReply` bridge: the reply,
+  plus any server tool invocation `authorInvocation` maps to a message (its
+  tool name must be on the session's `allowedTools`).
+
+Events (`@happyvertical/smrt-chat/assistant-turn`, browser-safe):
+`status` (`AssistantStatus`), `token` (a live preview only), `step`
+(`thinking`, `tool_call`, `tool_result`, each with a plain label), `message`
+(a persisted message), and exactly one terminal `done`, `error`, or
+`client_tool_calls`.
+
+An `error` event carries a message safe to show the user and a stable
+`code`. Only an `AssistantTurnUserError` (an expired step, an empty message,
+an ended session) reaches the browser verbatim; any other failure is sent as
+`ASSISTANT_TURN_GENERIC_ERROR` with `code: 'internal_error'`, and its detail
+goes to `onError` (on `runAssistantTurn` and `createAssistantTurnResponse`,
+default `console.error`) on the server.
+
+**Transport.** `AssistantSendMessageInput` gains `clientTools`, `onEvent`, and
+`signal`; `AssistantSendMessageResult` gains `messages` and
+`clientToolCalls`; a streaming transport adds `resumeTurn`. A host transport
+whose route answers `text/event-stream` turns the response into a result with
+`readAssistantTurnResult(response, { mapMessage, onEvent })`.
+`createSmrtAssistantTransport` passes `writeEndpoint.resumeTurn` through.
+
+**Dock.** Pass `pageTools` — the page's WebMCP registry from
+`installWebMcpPageToolRegistry()` (`@happyvertical/smrt-web/webmcp-page-tools`,
+see `docs/content/webmcp-integration.md`), so the in-page assistant offers the
+model exactly the tools an outside agent sees. The dock runs each call
+through that registry, deciding from the registry's own description of the
+tool, never the server's echo:
+
+| Effect | Behaviour |
+|---|---|
+| `read` | runs |
+| `write` the registry marks `proposal: true` | runs — only compiled view intents and the fixed `smrt_ui_*` tools carry that module-private brand (`markWebMcpProposalTool`); they only stage a value or dispatch a registry command as `source: 'agent'`, so the change stays a proposal the user applies. The `owner` label (`ui`/`intent`) is diagnostic and never grants this |
+| any other `write` | waits for **Allow** / **Don't allow** in the dock |
+| `destructive` | always waits, whatever `clientToolPolicy` says |
+
+A declined call reaches the model as `{ ok: false, error: 'declined' }`.
+With an `actionClient` and a mounted surface that has actions, the dock also
+offers its own `assistant_propose_action` tool: the model proposes a
+data-surface action, the dock previews it, and it renders with the usual
+Confirm/Reject — nothing changes until the user confirms. Add that name to the
+server's browser-tool allow-list to offer it.
+
+`controller.status` is the generic `AssistantStatus`
+(`{ state: 'idle' | 'working' | 'done' | 'error', label, changes?, cancellable? }`)
+covering turns, waiting tool calls, and action preview/apply; `onstatus`
+reports every change, for a host's own "working" line.
+`controller.cancel()` (the dock's **Stop**) aborts the stream and declines
+waiting calls. `controller.steps` and `controller.streamingText` expose the
+live progress; the dock renders the status line, the reply preview, and the
+waiting calls itself.
+
+Tests: `src/assistant-turn.test.ts` (loop suspension/resume, bounds,
+allow-lists, cancel, continuations, SSE round trip) and
+`src/svelte/components/assistant/__tests__/assistant-dock-client-tools.test.ts`
+(effect rules, decline/allow, cancel, status, the proposal tool).
+
+## Supervised runs: "watch it work"
+
+The dock keeps one **run** per send, for hosts that hide the chat while the
+assistant works and show a status instead (Anytown's watch mode).
+
+- **Budgets (server).** `runAssistantTurn` takes `maxTurnTokens` and
+  `maxTurnMs` besides `maxSteps`; all three span every browser round trip
+  (the continuation carries `tokens` and `startedAt`). When one runs out the
+  model gets a last round without tools and the turn ends with
+  `stoppedReason: 'budget'` (or `'max_steps'`). `describeTool(name, args)`
+  also gets a call's arguments, so a step can say "Opening Events".
+- **Settle (browser).** After a step's browser tools ran, the dock waits before
+  resuming: the host `settle` hook (e.g. "SvelteKit is no longer
+  navigating"), navigations tracked on the registry (`registerLinkSurface`
+  tracks its `navigate` promise; bespoke surfaces call
+  `trackSurfaceNavigation`), and a quiet period in the registry and
+  `pageTools` (`whenSurfaceNavigationSettled`, `@happyvertical/smrt-ui/data`),
+  bounded by `settleTimeoutMs` (5 s). The next step is offered the new page's
+  tools.
+- **Run state.** `controller.run` / `onrun`: `{ id, goal, state, step,
+  stepCount, pageTools, waitingFor, stoppedReason, error, startedAt, endedAt }`.
+  `state` is `running`, `paused`, `waiting`, `done`, `failed` or `cancelled`.
+  `waitingFor.kind` says what the person is needed for: `confirm` (a call
+  waits for Allow), `choice` / `review` (a host hold, a previewed action, or
+  a staged proposal-only write), or `continue` (a step or budget limit).
+  `acknowledgeRun()` clears the staged/limit waits once the person has seen
+  them; `dismissRun()` forgets a finished run.
+- **Pause.** `pauseRun()` holds the next step (before the page tools run and
+  before the resume); `continueRun()` releases it. A pause longer than
+  `maxPauseMs` (default 15 min; match the continuation TTL) stops the run with
+  `stoppedReason: 'paused_too_long'`.
+- **Holds: choices the person makes.** `holdForUser({ id, kind: 'choice' |
+  'review' | 'confirm', label })` registers a decision the host waits on; the
+  run is `waiting` until the returned release function runs. This is the seam
+  for "the assistant presents choices, the person picks".
+- **Tool filter.** `clientToolFilter` (option and prop) removes page tools
+  from what the dock declares and runs — for a person's own setting such as
+  "don't move around the site". The server should narrow too.
+- **Focus.** An agent never moves keyboard focus: a control `focus` command
+  from `source: 'agent'` reveals and highlights instead (smrt-ui control
+  registry).
+
+Show the run with smrt-ui `WorkingStrip` (`variant="floating"` or `"strip"`,
+phases `working | paused | waiting | done | failed | cancelled`, `goal`,
+`onpause` / `onresume` / `onreview` / `onstop` / `onopen` / `ondismiss`).
+Propose/apply is unchanged: a run that stages a value ends `waiting` for
+review, never applied.
+
+Tests: `assistant-dock-run.test.ts`, `assistant-dock-settle.test.ts`,
+`src/assistant-turn.test.ts` (budgets, labels).
+
+## Choices: offer a few options, the person picks one
+
+For work with several good answers ("crop this tighter", "find me a picture of
+the arena") a page registers an `AssistantChoiceSource` on a registry from
+`createAssistantChoiceSourceRegistry()` and passes it to the dock as
+`choiceSources`. Each source is offered to the model as a `read` browser tool,
+`assistant_offer_<source id>` (add `assistant_offer_*` to the server's
+browser-tool allow-list):
+
+- the model calls it with the source's own `inputSchema` arguments;
+- the dock asks the **source** for 1–4 options (`offer`) — the model never
+  supplies them — and shows them as cards in the chat (label, optional
+  description, optional same-origin preview image: anything but a `/…` path
+  is dropped);
+- the model gets back only `{ offered, waitingForUser, options: [{ id, label }] }`;
+- nothing changes until the person clicks a card: the dock then calls the
+  source's `apply(option)` in the page, as the person. "None of these"
+  dismisses, a failed apply can be picked again, and a new message replaces an
+  offer still waiting.
+
+`controller.choices`, `controller.chooseOption(setId, optionId)` and
+`controller.dismissChoices(setId)` expose the same state headlessly. While an
+offer waits, `status` is `{ state: 'done', label: 'Pick one of the options' }`.
+Each open offer is also a `choice` hold (`holdForUser`, see "Supervised runs"),
+so a supervised run is `waiting` for the person until they pick or dismiss it.
+
+**Options that take a while** (generated pictures, a slow search): `offer`
+returns `pending: { message, expected, fill(update, signal) }` with the ready
+options (possibly none). The cards show the plain `message` and `expected`
+"Making…" placeholders; `fill` calls `update.add(options)` as each finishes
+(normalized, at most 4 in the offer) and `update.status(message)` to change the
+line, and resolves when there are no more. The model gets
+`{ offered, waitingForUser, stillMaking: true, progress, options }` right away,
+so it can tell the person how long it takes. The person can pick any option
+that has arrived; picking, "None of these" or clearing the conversation aborts
+`signal` (stop polling). If `fill` throws, its plain message shows under the
+cards (`note`), or, when nothing arrived, the offer becomes `unavailable` with
+that message. While nothing is ready, `status` is `working` with the progress
+line. Such an offer is not replaced by the person's next message (the work
+cost something); only they dismiss it.
+
 ## Gaps / follow-ups
 
 1. **`AssistantActionClient` has no shipped HTTP implementation.** The
@@ -486,7 +667,8 @@ registry or transport swap because it is the user's unsent text.
    own route-discovered `DataSurfaceDescriptor`s, the same pattern
    `PortalChatTool.svelte`'s `assistantStore` already uses for a global dock
    mount. No anytown-specific API was added to this package.
-6. **Streaming remains out of scope**, tracked separately as #2908.
+6. **Streaming shipped with #2908** — see "Streamed turns and browser
+   tools" below.
 7. **`readEndpoint` has no shipped HTTP implementation either** (Copilot PR
    #2919 review, threads jAwqo/jAwrQ/jAwvV). The package now requires a
    host-supplied, member-scoped read endpoint (see "Transport" above) rather

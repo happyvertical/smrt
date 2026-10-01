@@ -29,21 +29,159 @@ pnpm add @happyvertical/smrt-ui
 
 | Area | Components |
 | --- | --- |
-| Fields | `Form`, `Field`/`FormGroup`, `Fieldset`, `InputGroup`, `ErrorSummary` |
-| Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `Listbox`, `MultiSelect`, `TagsInput` |
+| Fields | `Form`, `Field`/`FormGroup`, `Fieldset`, `InputGroup`, `ErrorSummary`, `FormActionBar` |
+| Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `Listbox`, `MultiSelect`, `TagsInput`, `SearchInput` |
 | Choices | `Checkbox`, `RadioGroup`/`Radio`, `Switch`, `Toggle`, `ToggleButton`, `SegmentedControl` |
 | Values and files | `Slider`, `RangeSlider`, `DatePicker`, `TimePicker`, `FilePicker` |
 | Actions and display | `Button`, `Dropdown`/`Menu`, `Badge`, `Chip`, `Avatar`, `Card`, `Skeleton`, `Tooltip`, `Tree` |
-| Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `ConfirmDialog` |
-| Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay` |
+| Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `PhoneSheet`, `ConfirmDialog` |
+| Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay`, `WorkingStrip` |
 | Collections | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable`, `Pagination` |
 | Layout and navigation | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
+| Calendar | `CalendarView` (deprecated: `Calendar`, `DayView`) |
+
+### Phone surfaces
+
+- `PhoneSheet` (`/feedback`) is the phone replacement for drawers and centered
+  modals: `variant="page"` covers the area, `variant="sheet"` rises from the
+  bottom and closes on a swipe down its header. It is non-modal, closes on its
+  button and Escape, returns focus to the opener, and can stay mounted while
+  closed (hidden and inert) so its content keeps state. It is
+  `position: absolute; inset: 0` — render it in AdminShell's `overlays`.
+- `WorkingStrip` (`/feedback`) shows a transport-neutral `WorkingStatus`
+  (`idle` · `working` · `paused` · `waiting` · `done` · `failed` ·
+  `cancelled`, a `label` for the current step and an optional `goal`) as a
+  strip above a phone bottom bar, a floating pill (`variant="floating"`, the
+  host positions it), or a line at the top of a pane. Optional controls:
+  reopen (`onopen`), Pause/Continue (`onpause`/`onresume`; Escape pauses),
+  Review while waiting (`onreview`), Stop, and Close once finished
+  (`ondismiss`); all 44px. Done uses the success colors, failed the error
+  colors, always with an icon and text. Step changes are announced politely
+  (throttled by `announceIntervalMs`), `waiting` and `failed` assertively; it
+  never takes focus.
+- `FormActionBar` (`/forms`) groups a form's actions (primary last). On phones
+  it is fixed to the bottom, carries `data-form-action-bar` so AdminShell hides
+  its phone bottom bar, and hides while `:root[data-keyboard-open]`.
+- `swipeDismiss` / `swipeDismisses` (`/feedback`) are the touch action and pure
+  decision behind swipe-to-close.
+- `Dictation` / `DictationButton` / `DictationStatus` (`/forms`) let people
+  speak into a text field (tap the microphone, or press and hold the field
+  with `longPress`). The speech `source` is normally smrt-svelte's
+  `createSttDictationSource()` (the browser's own speech recognition). Give
+  it a `transcribe` function too (`createHttpTranscriber('/your/route')`)
+  and, where the browser has no speech recognition (Firefox) or no speech
+  service behind it (Brave: `network` / `service-not-allowed`), it records
+  the message with `MediaRecorder` instead (WebM/Opus, MP4 on Safari; at most
+  `maxDurationMs` 2 minutes and `maxBytes` 10 MB), shows "Writing it down…"
+  while the route turns it into text, and puts the text at the cursor.
+  Keep the speech service's key on the server: the route takes the raw audio
+  body (`Content-Type` is the recording's type, `?language=&durationMs=`)
+  and answers `{ text }`; 413, 503 and 401/403 become "too long", "not set
+  up" and "not allowed" messages.
+
+### Link tabs
+
+`Tabs` with an `href` on every tab renders a page's sections as navigation —
+a `<nav>` of links, `aria-current="page"` on the active one, each tab its own
+URL — instead of an ARIA tablist. `maxVisible` moves extra tabs into a "More"
+menu while the active tab always stays in the row (`splitTabs` is the pure
+rule), `badge` marks a tab needing attention (and dots "More" when a hidden
+tab has one), and the row scrolls sideways on phones with the active tab
+kept in view. It carries `data-shell-tabs`, so AdminShell keeps it sticky
+under the phone top bar. Pair it with `useLinkSurface` (smrt-svelte) so
+agents can switch tabs too.
 
 Use the focused subpaths (`/forms`, `/ui`, `/feedback`, `/data`,
 `/data-surface`, `/layout`, `/themes`) to keep imports explicit. The
 Svelte-free `/data-surface` entry exposes the registry contracts and shared
 protocol limits for server adapters. The package root remains a compatibility
 barrel.
+
+### Touch targets for Checkbox, Radio and Switch
+
+`Checkbox`, `Radio` and `Switch` have an invisible 44x44px hit area around the
+visible control (about 18px for a box or mark, the 2.75rem track for a switch).
+A transparent `::before` on the wrapping `<label>` makes it, so a click anywhere
+in the area toggles the input, no layout shifts, and the focus ring stays on the
+visible box. The box and the label text sit above every hit area, so adjacent
+controls never steal each other's clicks.
+
+The hit area paints above plain (unpositioned) content around it, so it is
+constrained to where that cannot cost a neighbour a click:
+
+- **Beside other content.** A `Checkbox` or `Radio` that is not the only element
+  in its parent (a row title or link next to it, a group's other options) keeps
+  its hit area in the box's own column: it grows vertically only, never over the
+  text or link beside it. Only a control standing alone gets the full 44x44.
+- **Table cells.** Inside a `td`/`th` the area never leaves the cell. A
+  `Checkbox` that is the cell's only content uses the whole cell (clipped to its
+  edges). The cell gets `position: relative` at zero specificity (`:where()`), so
+  a sticky header or a pinned column keeps its own positioning.
+- **Stacked controls.** Hit areas of tightly stacked controls overlap in the
+  gaps; the later control wins a gap, never a neighbour's box or text. Content
+  directly above or below a box, closer than 13px, is covered by its hit area:
+  give it room, or shrink the area with `--smrt-control-hit-size`.
+- **Resize or turn off.** `--smrt-control-hit-size` (default `2.75rem`); `0px`
+  gives only the visible control. Pages never add their own padding hacks.
+- `DataTable`'s built-in selection checkboxes and `CollectionList`'s select box
+  are still native inputs and do not use this yet.
+
+## Calendar
+
+`CalendarView` (`@happyvertical/smrt-ui/calendar`) is a generic month grid
+with a phone agenda:
+
+```svelte
+<script lang="ts">
+  import { CalendarView } from '@happyvertical/smrt-ui/calendar';
+  import { goto } from '$app/navigation';
+  let { data } = $props(); // { year, month, items }
+</script>
+
+<CalendarView
+  items={data.items}
+  year={data.year}
+  month={data.month}
+  timeZone="America/Edmonton"
+  onNavigate={({ year, month }) => goto(`?y=${year}&m=${month}`, { keepFocus: true })}
+/>
+```
+
+- **Items** are generic `CalendarItem`s: `{ id, title, start, end?, allDay?,
+  tone?, color?, label?, group?, href? }`. `start`/`end` take a `Date`, an ISO
+  date-time, or a `YYYY-MM-DD` date (all-day). Timed `end` is exclusive; an
+  all-day `YYYY-MM-DD` end is the inclusive last day, and an all-day end
+  instant at local midnight is exclusive. `tone` maps to the theme's color
+  roles; without it, `group` picks a stable tone. Items with `href` render as
+  links, others as buttons; both call `onItemSelect`.
+- **Time zone and locale**: every day is computed in `timeZone` (IANA;
+  defaults to the browser's — pass it explicitly so server and client
+  agree). Month, weekday, date, and time text come from `Intl` in `locale`
+  (defaults to the i18n locale); `weekStartsOn` defaults to the locale's.
+- **Modes**: `month` is a `role="grid"` month with roving focus (arrows,
+  Home/End, PageUp/PageDown cross months). All-day and multi-day items are
+  bands across the days they cover; a day with more than `maxPerDay` rows
+  shows "+N more", which opens the day in a panel under the grid, or follows
+  `dayHref` when given. `agenda` is a horizontally scrolling strip of the
+  month's days (44px targets, arrow keys) above a day-by-day list. `auto`
+  (default) uses the agenda below 48rem, matching AdminShell's phone
+  breakpoint. No modals.
+- **URL state**: `year` + `month` (1-12) and `selectedDate` (`YYYY-MM-DD`) are
+  controlled when passed; changes are reported via `onNavigate` and
+  `onSelectDate`, so a page can keep them in its URL.
+- The Svelte-free date model (`toEntries`, `layoutMonth`, `dateKeyInZone`,
+  `monthWeeks`, `shiftMonth`, …) is exported from the same subpath for
+  server-side range queries and tests.
+
+**Migrating from `Calendar` / `DayView` (deprecated).** They compute days in
+the browser zone, print English-only names, and hard-code game/meeting/event
+emoji and routes. Map each `DayEventDetail` to a `CalendarItem` (`name` →
+`title`, `type` → `group`/`label`, your own route → `href`), replace
+`Calendar`'s `year`/`month` (0-indexed) with `CalendarView`'s `year`/`month`
+(1-12) and `onMonthNavigate` with `onNavigate`, `baseUrl` with a `dayHref`
+function that builds your day route from the `YYYY-MM-DD` key, and a `DayView`
+page with `CalendarView` in agenda mode (`selectedDate` set to the day) or the
+month grid's day panel. They will be removed in a future minor release.
 
 ### Currency display
 
@@ -128,7 +266,8 @@ without coupling controls to a transport:
 
 Controls publish serializable metadata, constraints, options, sensitivity, and
 capabilities. Adapters can focus, reveal, highlight, explain, validate, and
-stage reviewable proposals. Agents cannot apply, discard, clear, or undo;
+stage reviewable proposals. An agent never moves keyboard focus: its `focus`
+reveals and highlights the control instead. Agents cannot apply, discard, clear, or undo;
 those value-changing actions require a trusted local gesture handled by the
 framework review surface. Secret/read-only controls reject agent mutations.
 Staging remains separate so proposals never change user state before review.
@@ -177,6 +316,51 @@ the additive `setValueWithContext(value, extension)` hook instead. A hook must
 not await a same-control mutation through a captured registry reference: that
 call is indistinguishable from an independent caller in browser runtimes and,
 like any hook that never settles, can hold the ordered queue indefinitely.
+
+### Composite controls and form proposals
+
+A composite field — a place picker, a slug field with its own preview, a
+record picker — registers as ONE control with `useControlRegistration` (call
+it during component init inside any `Form`, rich `Form`, or `FormScope`). Give
+it a stable `controlId`, a plain `label`, and, when its value is not a plain
+string/number/boolean, a `valueSchema` so adapters can describe it:
+
+```svelte
+<script lang="ts">
+  import { useControlRegistration } from '@happyvertical/smrt-ui/forms';
+
+  let { value = $bindable(null) } = $props();
+
+  useControlRegistration(() => ({
+    controlId: 'place',
+    metadata: {
+      kind: 'custom',
+      label: 'Town location',
+      valueSchema: {
+        type: 'object',
+        properties: { name: { type: 'string' }, latitude: { type: 'number' }, longitude: { type: 'number' } },
+      },
+    },
+    getValue: () => value,
+    setValue: (next) => { value = next; },
+  }));
+</script>
+```
+
+Call `recordControlUserEdit(context, controlId, subject)` from the
+composite's own user-event handlers so a staged proposal goes stale when the
+person edits over it (native inputs bubble their events to the Form instead).
+`focusControl`, `revealControl`, `highlightControl`, and `emitControlChange`
+are the same DOM helpers the built-in primitives use for their `focus`,
+`reveal`, and `highlight` handles.
+
+`controlProposalInputSchema(registry, formId)` and
+`stageControlProposals(registry, formId, values)` are the transport-neutral
+halves of a "propose values for this form" tool: the schema has one optional
+property per proposable control (never secret/sensitive, unwritable,
+disabled, read-only, file, or password controls), and staging only ever
+creates reviewable proposals. smrt-svelte's `<Form webmcp>` and `FormScope`
+build their `*_stage_changes` tool from these.
 
 ## DataTable controller
 
@@ -437,6 +621,34 @@ registry.register({
 });
 ```
 
+### Navigation and step surfaces
+
+Two ready-made surfaces cover interactions a view intent cannot reach on its
+own (an intent only dispatches a registry command):
+
+- `registerLinkSurface({ registry, surfaceId, label, description, links,
+  navigate })` mounts a menu, tab row, or section list. `state.links`
+  publishes each link's id, label, description, and group — never its href —
+  and the default `open` control resolves `{ target }` (an id, a label, or a
+  unique label prefix) to one of those links and calls `navigate(href)`.
+  Nothing an agent sends can become a URL.
+  Return the navigation's promise from `navigate`: the command answers at
+  once, and `whenSurfaceNavigationSettled(registry)` resolves once it
+  finished and the new page's surfaces registered (a bespoke surface that
+  navigates calls `trackSurfaceNavigation(registry, promise)`).
+- `registerStepSurface({ registry, surfaceId, label, description, steps,
+  current, next, back, goTo, nextWrites, showNext })` mounts a wizard.
+  `state` carries the steps with their status, the current step, and
+  `nextWrites`. `next`/`back`/`go-to` run the page's own handlers (return
+  `false` to refuse, e.g. when validation fails). When the current step's
+  forward button saves or creates something (`nextWrites`), `next` never
+  presses it: it calls `showNext` to reveal and highlight the button and
+  publishes `awaitingPerson: true` until the flow moves on.
+
+smrt-svelte's `useLinkSurface` / `useStepSurface` / `useListSurface`
+(`@happyvertical/smrt-svelte/web`) bind these to a component's lifetime on
+the Provider's registry.
+
 `inspect()` and command results are deterministic `{ version, descriptor,
 revision, state, selection }` envelopes; neither includes a timestamp, rows,
 functions, authority fields, tenant/principal data, SQL, or a transport handle.
@@ -528,6 +740,46 @@ hand-authored, and every text pairing clears WCAG AA.
 
 Run the shared playground to inspect the full catalog under every preset and
 light/dark scheme.
+
+### Card look tokens
+
+`Card` and `CollectionList` rows read these custom properties, so an app can
+change the card look once in its own theme layer instead of per page. Unset,
+they keep the stock look.
+
+| Property | Default | Used for |
+| --- | --- | --- |
+| `--smrt-card-border` | `1px solid var(--smrt-color-outline-variant)` | edge of `default` and `elevated` cards, CollectionList rows |
+| `--smrt-card-background` | `var(--smrt-color-surface)` | card and row fill |
+| `--smrt-card-shadow` | `none` | shadow of `default` cards (`elevated` keeps its elevation) |
+| `--smrt-card-divider` | `1px solid var(--smrt-color-outline-variant)` | rule under a card header / above its footer |
+
+The `outlined` variant always draws its outline. For borderless cards on a
+`surface` page, pair `--smrt-card-border: none` with a tinted background such
+as `var(--smrt-color-surface-variant)` so cards stay distinct in both schemes:
+
+```css
+:root {
+  --smrt-card-border: none;
+  --smrt-card-background: var(--smrt-color-surface-variant);
+}
+```
+
+### Component override hooks
+
+Hooks an app sets once in its own theme layer instead of restyling a component's
+classes. Unset, each keeps its stock look.
+
+| Property | Component | Used for |
+| --- | --- | --- |
+| `--smrt-popover-panel-width` | `Popover` | the panel's width (never wider than the viewport minus 2rem) |
+| `--smrt-popover-panel-padding` | `Popover` | the panel's padding |
+| `--smrt-admin-shell-background` | `AdminShell` (smrt-svelte) | the page background behind the cards |
+| `--smrt-admin-shell-scrollbar-track` / `-thumb` / `-thumb-hover` | `AdminShell` (smrt-svelte) | the themed thin scrollbars inside the shell |
+| `--smrt-shell-title-font-family` | `ShellTitle` (smrt-svelte) | the workspace name's font family |
+
+`IconToggle` takes a `tone` prop (a CSS colour such as `var(--status-draft)`) for
+a toggle that is neutral until pressed and then wears its colour.
 
 ## Development
 
