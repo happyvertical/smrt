@@ -1,5 +1,9 @@
-import type { McpAppBridge } from '@happyvertical/smrt-mcp-apps';
-import { describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import {
+  MCP_APPS_PROTOCOL_VERSION,
+  McpAppBridge,
+} from '@happyvertical/smrt-mcp-apps';
+import { describe, expect, it, vi } from 'vitest';
 import {
   fileContent,
   fileRead,
@@ -56,6 +60,7 @@ function fixture(
         signal: lifecycle.signal,
         request: async (method: string, params: Record<string, unknown>) => {
           calls.push({ method, params });
+          const readContent = content;
           await holds.get(method);
           if (fail) throw new Error('Unknown upstream outcome');
           if (method === 'resources/read')
@@ -65,7 +70,7 @@ function fixture(
                   uri: foreign
                     ? 'host-resource://foreign'
                     : input.file.resourceUri,
-                  text: content,
+                  text: readContent,
                   mimeType: mime,
                   _meta: {
                     'openai/resource': {
@@ -153,9 +158,9 @@ function fixture(
     foreign: () => {
       foreign = true;
     },
-    notify: () =>
+    notify: (uri = input.file.resourceUri) =>
       listener?.('notifications/resources/updated', {
-        uri: input.file.resourceUri,
+        uri,
       }),
   };
 }
@@ -426,5 +431,162 @@ describe('scoped host file sessions', () => {
     expect(
       await openOpenAiFile({ ...options, bridge: fallback.bridge }),
     ).toHaveProperty('content');
+  });
+});
+
+describe('round 4 file boundary regressions', () => {
+  it('rejects Windows drive paths and preserves valid opaque URI bytes', () => {
+    for (const resourceUri of [
+      'C:/Users/alice/file.txt',
+      'z:/file.txt',
+      'C:relative.txt',
+      'C:\\Users\\alice\\file.txt',
+    ]) {
+      expect(() =>
+        validateFileInput({ file: { ...input.file, resourceUri } }),
+      ).toThrow('opaque');
+    }
+    const resourceUri = 'host-resource://opaque/%2F/%25?token=A%2Bb';
+    expect(
+      validateFileInput({ file: { ...input.file, resourceUri } }).file
+        .resourceUri,
+    ).toBe(resourceUri);
+  });
+  for (const invalid of ['cancelled', 'mismatched'] as const) {
+    it(`releases actual bridge listener after synchronous ${invalid} snapshot`, async () => {
+      const listeners = new Set<(event: MessageEvent) => void>();
+      const sent: Record<string, unknown>[] = [];
+      const host = {
+        postMessage: (message: Record<string, unknown>) => sent.push(message),
+      } as unknown as Window;
+      const local = {
+        crypto: { randomUUID },
+        addEventListener: (
+          _: string,
+          listener: (event: MessageEvent) => void,
+        ) => listeners.add(listener),
+        removeEventListener: (
+          _: string,
+          listener: (event: MessageEvent) => void,
+        ) => listeners.delete(listener),
+      } as unknown as Window;
+      const bridge = new McpAppBridge({
+        hostWindow: host,
+        hostOrigin: 'https://host.example',
+        window: local,
+        appInfo: { name: 'files-regression', version: '1' },
+      });
+      const receive = (data: unknown) => {
+        for (const listener of listeners)
+          listener({
+            data,
+            source: host,
+            origin: 'https://host.example',
+          } as MessageEvent);
+      };
+      const connecting = bridge.connect();
+      receive({
+        jsonrpc: '2.0',
+        id: sent.at(-1)?.id,
+        result: {
+          protocolVersion: MCP_APPS_PROTOCOL_VERSION,
+          hostInfo: { name: 'synthetic', version: '1' },
+          hostCapabilities: { experimental: { 'openai/resource': {} } },
+          hostContext: {},
+        },
+      });
+      await connecting;
+      receive({
+        jsonrpc: '2.0',
+        method:
+          invalid === 'cancelled'
+            ? 'ui/notifications/tool-cancelled'
+            : 'ui/notifications/tool-input',
+        params:
+          invalid === 'cancelled'
+            ? {}
+            : {
+                arguments: {
+                  file: { ...input.file, resourceUri: 'host-resource://other' },
+                },
+              },
+      });
+      const callbacks: ReturnType<typeof vi.fn>[] = [];
+      const subscribe = bridge.subscribe.bind(bridge);
+      vi.spyOn(bridge, 'subscribe').mockImplementation((listener) => {
+        const observed = vi.fn(listener);
+        callbacks.push(observed);
+        return subscribe(observed);
+      });
+      const session = new OpenAiFileSession({
+        bridge,
+        input,
+        authorityTool: 'file_authority',
+        fallbackTool: 'file_workflow',
+        maxBytes: 32,
+        mimeTypes: ['text/plain'],
+      });
+      expect(session.signal.aborted).toBe(true);
+      expect(callbacks[0]).toHaveBeenCalledTimes(1);
+      receive({
+        jsonrpc: '2.0',
+        method: 'ui/notifications/host-context-changed',
+        params: { theme: 'dark' },
+      });
+      expect(callbacks[0]).toHaveBeenCalledTimes(1);
+      bridge.dispose();
+      expect(listeners.size).toBe(0);
+    });
+  }
+  it('supersedes a delayed read on matching updates and publishes only the retry', async () => {
+    const f = fixture();
+    const session = f.session();
+    const reads: unknown[] = [];
+    const errors: unknown[] = [];
+    await session.subscribe(
+      (file) => reads.push(file.content),
+      (error) => errors.push(error),
+    );
+    const release = f.hold('resources/read');
+    f.notify();
+    await vi.waitFor(() =>
+      expect(f.calls.filter((c) => c.method === 'resources/read')).toHaveLength(
+        1,
+      ),
+    );
+    f.setContent('newest');
+    f.notify();
+    f.notify();
+    release();
+    await vi.waitFor(() => expect(reads).toEqual([{ text: 'newest' }]));
+    expect(f.calls.filter((c) => c.method === 'resources/read')).toHaveLength(
+      2,
+    );
+    expect(errors).toEqual([]);
+    expect(session.signal.aborted).toBe(false);
+    session.dispose();
+  });
+  it('does not supersede a delayed read for another URI', async () => {
+    const f = fixture();
+    const session = f.session();
+    const reads: unknown[] = [];
+    await session.subscribe(
+      (file) => reads.push(file.content),
+      () => {},
+    );
+    const release = f.hold('resources/read');
+    f.notify();
+    await vi.waitFor(() =>
+      expect(f.calls.filter((c) => c.method === 'resources/read')).toHaveLength(
+        1,
+      ),
+    );
+    f.notify('host-resource://other');
+    release();
+    await vi.waitFor(() => expect(reads).toEqual([{ text: 'synthetic' }]));
+    expect(f.calls.filter((c) => c.method === 'resources/read')).toHaveLength(
+      1,
+    );
+    session.dispose();
   });
 });
