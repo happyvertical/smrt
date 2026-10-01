@@ -18,7 +18,7 @@ export interface Props {
   label?: string;
   /** Custom trigger content. */
   trigger?: Snippet;
-  /** Accessible name of the trigger button when it shows only an icon (`aria-label`); omit to use its visible content. */
+  /** Accessible name of the trigger button when it shows only an icon (`aria-label`); omit to use its visible content (an icon trigger then falls back to `label`). */
   triggerLabel?: string;
   /**
    * Trigger look: `button` (bordered, the default) or `icon`, a borderless 44px
@@ -49,6 +49,16 @@ const {
 
 const instanceId = $props.id();
 const menuId = `smrt-menu-${instanceId}`;
+
+// An icon trigger shows no text, so without triggerLabel or label the button
+// has no accessible name.
+$effect(() => {
+  if (variant === 'icon' && !triggerLabel && !label) {
+    console.warn(
+      '[Dropdown] variant="icon" needs triggerLabel (or label): the trigger button has no accessible name.',
+    );
+  }
+});
 let open = $state(false);
 let wrapEl = $state<HTMLElement | null>(null);
 let triggerEl = $state<HTMLButtonElement | null>(null);
@@ -143,7 +153,7 @@ $effect(() => {
     type="button"
     class="dropdown__trigger"
     class:dropdown__trigger--icon={variant === 'icon'}
-    aria-label={triggerLabel}
+    aria-label={triggerLabel ?? (variant === 'icon' ? label : undefined)}
     aria-haspopup="menu"
     aria-expanded={open}
     aria-controls={open ? menuId : undefined}
