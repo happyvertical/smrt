@@ -28,7 +28,25 @@
  * with a plain `errorKind` (and the raw `errorCode`, and a console warning);
  * a recogniser that ends on its own within `earlyEndMs` of starting without
  * hearing anything (Brave's speech recognition does this) is an error too.
+ *
+ * Recording fallback: give it a `transcribe` function and, when the browser
+ * has no speech recognition (Firefox), or it fails with no speech service
+ * behind it (Brave: Web Speech `network` / `service-not-allowed`, or an end
+ * straight away), it records the message with `MediaRecorder` instead
+ * (WebM/Opus, or MP4 on Safari; capped at `maxDurationMs` and `maxBytes`).
+ * When the person stops, the state is `transcribing` ("Writing it down…")
+ * while `transcribe(audio, { mimeType, language })` turns the recording into
+ * text, which goes to `onText` like a spoken phrase. Once the browser's
+ * recogniser has failed, this `Dictation` records straight away next time.
  */
+import {
+  canCaptureDictationAudio,
+  createMediaRecorderCapture,
+  type DictationAudioCapture,
+  type DictationAudioCaptureFactory,
+  DictationError,
+} from './audio-capture.js';
+import type { DictationTranscribe } from './dictation-transcribe.js';
 import { playReadyBeep } from './ready-beep.js';
 
 export type DictationState =
@@ -36,6 +54,7 @@ export type DictationState =
   | 'starting'
   | 'listening'
   | 'stopping'
+  | 'transcribing'
   | 'error';
 
 /**
@@ -47,6 +66,10 @@ export type DictationState =
  * - `microphone`: no microphone, or it could not be opened (`audio-capture`);
  * - `interrupted`: it stopped straight away without hearing anything
  *   (`aborted`, or an early end with no error);
+ * - `too-long`: the recording was too long or too large to write down;
+ * - `not-transcribed`: the recording could not be written down;
+ * - `unavailable`: writing recordings down is not set up here;
+ * - `forbidden`: this person may not use it here;
  * - `failed`: anything else.
  */
 export type DictationErrorKind =
@@ -55,7 +78,24 @@ export type DictationErrorKind =
   | 'no-speech'
   | 'microphone'
   | 'interrupted'
+  | 'too-long'
+  | 'not-transcribed'
+  | 'unavailable'
+  | 'forbidden'
   | 'failed';
+
+const DICTATION_ERROR_KINDS = new Set<DictationErrorKind>([
+  'unsupported',
+  'denied',
+  'no-speech',
+  'microphone',
+  'interrupted',
+  'too-long',
+  'not-transcribed',
+  'unavailable',
+  'forbidden',
+  'failed',
+]);
 
 export interface DictationSpeechResult {
   text: string;
@@ -121,6 +161,22 @@ export interface DictationOptions {
    * audio or the words heard.
    */
   log?: (event: DictationLogEvent) => void;
+  /**
+   * Turns a recorded message into text. With it, dictation records instead
+   * when the browser cannot recognise speech (see the module comment), and
+   * without a `source` it always records. Normally
+   * `createHttpTranscriber('/your/route')`: the speech service's key stays on
+   * the server.
+   */
+  transcribe?: DictationTranscribe | null;
+  /** Records the message (default: `MediaRecorder`). For tests and hosts. */
+  capture?: DictationAudioCaptureFactory;
+  /** Longest recording, in ms; it stops and is written down then. Default 120000. */
+  maxDurationMs?: number;
+  /** Largest recording, in bytes. Default 10 MB. */
+  maxBytes?: number;
+  /** How long writing a recording down may take. Default 60000ms. */
+  transcribeTimeoutMs?: number;
 }
 
 /** A dictation problem, for logs. */
@@ -129,9 +185,29 @@ export interface DictationLogEvent {
   /** Raw code: the Web Speech error (`network`, …) or the error's name. */
   code: string | null;
   message: string;
-  /** Where it happened: `microphone`, `source`, `start`, `error`, `end`. */
-  stage: 'microphone' | 'source' | 'start' | 'error' | 'end';
+  /**
+   * Where it happened: `microphone`, `source`, `start`, `error`, `end`, or
+   * in the recording fallback `record` / `transcribe`.
+   */
+  stage:
+    | 'microphone'
+    | 'source'
+    | 'start'
+    | 'error'
+    | 'end'
+    | 'record'
+    | 'transcribe';
+  /** Set when dictation carried on by recording instead of stopping. */
+  fallback?: 'recording';
 }
+
+const TRANSCRIBE_ERROR_KINDS = new Set<DictationErrorKind>([
+  'too-long',
+  'not-transcribed',
+  'unavailable',
+  'forbidden',
+  'no-speech',
+]);
 
 const SPEECH_ERROR_KINDS: Record<string, DictationErrorKind> = {
   network: 'unsupported',
@@ -145,6 +221,7 @@ const SPEECH_ERROR_KINDS: Record<string, DictationErrorKind> = {
 
 /** The raw code of a speech or media error, when it has one. */
 export function dictationErrorCode(error: unknown): string | null {
+  if (error instanceof DictationError) return error.code;
   const e = (error ?? {}) as {
     speechError?: unknown;
     error?: unknown;
@@ -165,6 +242,13 @@ export function dictationErrorCode(error: unknown): string | null {
  * `CAPABILITY_NOT_AVAILABLE`) and the Web Speech error names.
  */
 export function classifyDictationError(error: unknown): DictationErrorKind {
+  const known = (error as { dictationKind?: unknown } | null)?.dictationKind;
+  if (
+    typeof known === 'string' &&
+    DICTATION_ERROR_KINDS.has(known as DictationErrorKind)
+  ) {
+    return known as DictationErrorKind;
+  }
   const e = (error ?? {}) as {
     code?: unknown;
     name?: unknown;
@@ -231,7 +315,8 @@ function defaultLog(event: DictationLogEvent): void {
   console.warn(
     `[dictation] stopped (${event.kind}) at ${event.stage}` +
       (event.code ? ` [${event.code}]` : '') +
-      `: ${event.message}`,
+      `: ${event.message}` +
+      (event.fallback === 'recording' ? ' (recording instead)' : ''),
   );
 }
 
@@ -246,6 +331,11 @@ export class Dictation {
   interim = $state('');
   /** The ready beep could not play yet (no user gesture); `unlock` plays it. */
   beepPending = $state(false);
+  /**
+   * `true` while this message is being recorded (the fallback) rather than
+   * recognised by the browser.
+   */
+  recording = $state(false);
 
   #options: DictationOptions;
   #source: DictationSpeechSource | null = null;
@@ -259,14 +349,23 @@ export class Dictation {
   #listeningAt = 0;
   /** A result arrived in this session. */
   #heard = false;
+  /** The browser's recogniser failed for want of a speech service. */
+  #speechBroken = false;
+  /** The recorder for this message, in the recording fallback. */
+  #capture: DictationAudioCapture | null = null;
+  /** The recorder is recording (its `start` resolved). */
+  #captureReady = false;
+  #captureOff: (() => void) | null = null;
+  /** Cancels writing a recording down. */
+  #transcribeAbort: AbortController | null = null;
 
   constructor(options: DictationOptions) {
     this.#options = options;
   }
 
-  /** A speech source was given (the browser may still turn out unable). */
+  /** A speech source or a `transcribe` was given (the browser may still turn out unable). */
   get available(): boolean {
-    return Boolean(this.#options.source);
+    return Boolean(this.#options.source || this.#options.transcribe);
   }
 
   /** Starting or listening. */
@@ -279,17 +378,28 @@ export class Dictation {
     this.#options = { ...this.#options, ...options };
   }
 
-  /** Start listening. A no-op while already starting or listening. */
+  /** Start listening. A no-op while already starting, listening, or writing down. */
   async start(): Promise<void> {
-    if (this.#disposed || this.active || this.state === 'stopping') return;
+    if (
+      this.#disposed ||
+      this.active ||
+      this.state === 'stopping' ||
+      this.state === 'transcribing'
+    )
+      return;
     this.errorKind = null;
     this.errorCode = null;
     this.interim = '';
     this.#heard = false;
     this.#listeningAt = 0;
+    this.recording = false;
     this.state = 'starting';
     const session = ++this.#session;
     const provider = this.#options.source;
+    if (this.#canRecord() && (this.#speechBroken || !provider)) {
+      await this.#startRecording(session);
+      return;
+    }
     if (!provider) {
       this.#fail('unsupported', null, 'No speech source', 'source');
       return;
@@ -298,7 +408,8 @@ export class Dictation {
     try {
       source = await this.#resolveSource(provider);
     } catch (error) {
-      if (session === this.#session) this.#failWith(error, 'source');
+      if (session === this.#session)
+        this.#failOrRecord(error, 'source', session);
       return;
     }
     if (session !== this.#session || this.#disposed) return;
@@ -318,21 +429,29 @@ export class Dictation {
       return;
     try {
       await source.start({
-        language: this.#options.language ?? pageLanguage(),
+        language: this.#language(),
         continuous: true,
         interimResults: true,
       });
     } catch (error) {
-      if (session === this.#session) this.#failWith(error, 'start');
+      if (session === this.#session)
+        this.#failOrRecord(error, 'start', session);
       return;
     }
-    if (session !== this.#session) return;
+    if (session !== this.#session || this.recording) return;
     if (!source.onStart && this.state === 'starting') this.#listening();
   }
 
-  /** Stop listening; the phrase in progress is kept if the source finishes it. */
+  /**
+   * Stop listening; the phrase in progress is kept if the source finishes it.
+   * A recording is written down (`transcribing`) and its text handed over.
+   */
   async stop(): Promise<void> {
     if (!this.active) return;
+    if (this.recording) {
+      await this.#finishRecording();
+      return;
+    }
     this.state = 'stopping';
     const session = this.#session;
     this.#clearStopTimer();
@@ -375,10 +494,215 @@ export class Dictation {
     this.#disposed = true;
     this.#session++;
     this.#clearStopTimer();
-    if (this.active) void this.#source?.stop().catch(() => undefined);
+    if (this.active && !this.recording)
+      void this.#source?.stop().catch(() => undefined);
+    this.#dropCapture(true);
+    this.#transcribeAbort?.abort();
+    this.#transcribeAbort = null;
     for (const off of this.#unsubscribe) off();
     this.#unsubscribe = [];
     this.state = 'idle';
+    this.recording = false;
+  }
+
+  #language(): string {
+    return this.#options.language ?? pageLanguage();
+  }
+
+  /** A `transcribe` was given and this browser (or host) can record. */
+  #canRecord(): boolean {
+    return Boolean(
+      this.#options.transcribe &&
+        (this.#options.capture || canCaptureDictationAudio()),
+    );
+  }
+
+  /**
+   * The browser's recogniser failed in a way that means it has no speech
+   * service (or none at all): record instead, if we can and nothing was
+   * heard yet.
+   */
+  #shouldRecordInstead(
+    kind: DictationErrorKind,
+    stage: DictationLogEvent['stage'],
+  ): boolean {
+    if (!this.#canRecord() || this.#heard) return false;
+    return (
+      kind === 'unsupported' || (kind === 'interrupted' && stage === 'end')
+    );
+  }
+
+  #failOrRecord(
+    error: unknown,
+    stage: DictationLogEvent['stage'],
+    session: number,
+  ): void {
+    const kind = classifyDictationError(error);
+    if (this.#shouldRecordInstead(kind, stage)) {
+      this.#log(
+        kind,
+        dictationErrorCode(error),
+        errorMessage(error),
+        stage,
+        true,
+      );
+      void this.#switchToRecording(session);
+      return;
+    }
+    this.#failWith(error, stage);
+  }
+
+  /** Leave the browser's recogniser and record this message instead. */
+  async #switchToRecording(session: number): Promise<void> {
+    this.#speechBroken = true;
+    this.interim = '';
+    this.#clearStopTimer();
+    const source = this.#source;
+    this.recording = true;
+    if (source) void source.stop().catch(() => undefined);
+    await this.#startRecording(session);
+  }
+
+  async #startRecording(session: number): Promise<void> {
+    this.recording = true;
+    const factory = this.#options.capture ?? createMediaRecorderCapture;
+    let capture: DictationAudioCapture;
+    try {
+      capture = factory({
+        maxDurationMs: this.#options.maxDurationMs,
+        maxBytes: this.#options.maxBytes,
+      });
+    } catch (error) {
+      if (session === this.#session) this.#failWith(error, 'record');
+      return;
+    }
+    this.#dropCapture(true);
+    this.#capture = capture;
+    // Reaching the time cap writes the recording down; growing past the size
+    // cap fails (`stop` then rejects with `too-long`). Either way, stop.
+    this.#captureOff = capture.onLimit(() => {
+      if (session === this.#session && this.state === 'listening') {
+        void this.#finishRecording();
+      }
+    });
+    try {
+      await capture.start();
+      if (this.#capture === capture) this.#captureReady = true;
+    } catch (error) {
+      if (session === this.#session && this.#capture === capture) {
+        this.#dropCapture(true);
+        this.#failWith(error, 'record');
+      } else {
+        capture.cancel();
+      }
+      return;
+    }
+    if (
+      session !== this.#session ||
+      this.#disposed ||
+      this.#capture !== capture ||
+      !this.active
+    ) {
+      if (this.#capture === capture) this.#dropCapture(true);
+      else capture.cancel();
+      return;
+    }
+    // Recording from the start: it is listening now (and beeps). Switched
+    // over mid-message: it already said "Listening…".
+    if (this.state === 'starting') this.#listening();
+  }
+
+  /** Stop recording, write it down, and hand the text over. */
+  async #finishRecording(): Promise<void> {
+    const session = this.#session;
+    const capture = this.#capture;
+    if (!capture || !this.#captureReady) {
+      // Still opening the microphone: nothing recorded yet, just stop.
+      this.#dropCapture(true);
+      this.#session++;
+      this.#idle();
+      return;
+    }
+    this.#dropCapture(false);
+    this.state = 'transcribing';
+    this.interim = '';
+    this.beepPending = false;
+    let recording: Awaited<ReturnType<DictationAudioCapture['stop']>>;
+    try {
+      recording = await capture.stop();
+    } catch (error) {
+      if (session === this.#session) this.#failWith(error, 'record');
+      return;
+    }
+    if (session !== this.#session || this.#disposed) return;
+    if (recording.audio.size === 0) {
+      this.#fail('no-speech', null, 'The recording is empty', 'record');
+      return;
+    }
+    const transcribe = this.#options.transcribe;
+    if (!transcribe) {
+      this.#fail('unavailable', null, 'No transcribe function', 'transcribe');
+      return;
+    }
+    const controller = new AbortController();
+    this.#transcribeAbort = controller;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.#options.transcribeTimeoutMs ?? 60_000);
+    let text = '';
+    try {
+      const result = await transcribe(recording.audio, {
+        mimeType: recording.mimeType,
+        language: this.#language(),
+        durationMs: recording.durationMs,
+        signal: controller.signal,
+      });
+      text = (
+        typeof result === 'string' ? result : (result?.text ?? '')
+      ).trim();
+    } catch (error) {
+      if (session !== this.#session || this.#disposed) return;
+      if (timedOut) {
+        this.#fail(
+          'not-transcribed',
+          'timeout',
+          'Writing the recording down took too long',
+          'transcribe',
+        );
+      } else {
+        // Only the writing-down kinds make sense here; a provider's
+        // "network" error is not the browser lacking speech recognition.
+        const kind = classifyDictationError(error);
+        this.#fail(
+          TRANSCRIBE_ERROR_KINDS.has(kind) ? kind : 'not-transcribed',
+          dictationErrorCode(error),
+          errorMessage(error),
+          'transcribe',
+        );
+      }
+      return;
+    } finally {
+      clearTimeout(timer);
+      if (this.#transcribeAbort === controller) this.#transcribeAbort = null;
+    }
+    if (session !== this.#session || this.#disposed) return;
+    if (!text) {
+      this.#fail('no-speech', null, 'Nothing was written down', 'transcribe');
+      return;
+    }
+    this.#idle();
+    this.#options.onText(text);
+  }
+
+  /** Forget the recorder; `cancel` throws its audio away too. */
+  #dropCapture(cancel: boolean): void {
+    this.#captureOff?.();
+    this.#captureOff = null;
+    if (cancel) this.#capture?.cancel();
+    this.#capture = null;
+    this.#captureReady = false;
   }
 
   async #ensureMicrophone(): Promise<void> {
@@ -414,8 +738,8 @@ export class Dictation {
   #subscribe(source: DictationSpeechSource): void {
     this.#unsubscribe.push(
       source.onResult((result) => {
-        if (this.#disposed || !(this.active || this.state === 'stopping'))
-          return;
+        if (this.#disposed || this.recording) return;
+        if (!(this.active || this.state === 'stopping')) return;
         this.#heard = true;
         if (result.isFinal) {
           this.interim = '';
@@ -428,18 +752,22 @@ export class Dictation {
         }
       }),
       source.onError((error) => {
-        if (this.#disposed || this.state === 'idle' || this.state === 'error')
-          return;
+        if (this.#disposed || this.recording) return;
+        if (this.state === 'idle' || this.state === 'error') return;
         // Cut off after the person asked it to stop: that is the stop.
         if (
           this.state === 'stopping' &&
           classifyDictationError(error) === 'interrupted'
         )
           return;
+        if (this.active) {
+          this.#failOrRecord(error, 'error', this.#session);
+          return;
+        }
         this.#failWith(error, 'error');
       }),
       source.onEnd(() => {
-        if (this.#disposed) return;
+        if (this.#disposed || this.recording) return;
         if (this.state === 'error' || this.state === 'idle') return;
         if (this.state === 'stopping') {
           this.#idle();
@@ -447,18 +775,20 @@ export class Dictation {
         }
         // Ended by itself, with no error. Before it ever listened, or within
         // `earlyEndMs` without hearing anything, it did not really work
-        // (Brave ends like this): say so rather than going quiet.
+        // (Brave ends like this): say so rather than going quiet, or record
+        // instead when we can.
         const early = this.#options.earlyEndMs ?? 1000;
         if (
           this.state === 'starting' ||
           (early > 0 && !this.#heard && Date.now() - this.#listeningAt < early)
         ) {
-          this.#fail(
-            'interrupted',
-            null,
-            'Speech recognition ended straight away',
-            'end',
-          );
+          const message = 'Speech recognition ended straight away';
+          if (this.#shouldRecordInstead('interrupted', 'end')) {
+            this.#log('interrupted', null, message, 'end', true);
+            void this.#switchToRecording(this.#session);
+            return;
+          }
+          this.#fail('interrupted', null, message, 'end');
           return;
         }
         this.#idle();
@@ -467,6 +797,7 @@ export class Dictation {
     if (source.onStart) {
       this.#unsubscribe.push(
         source.onStart(() => {
+          if (this.recording) return;
           if (!this.#disposed && this.state === 'starting') {
             this.#listening();
             return;
@@ -502,17 +833,37 @@ export class Dictation {
     this.state = 'idle';
     this.interim = '';
     this.beepPending = false;
+    this.recording = false;
   }
 
   #failWith(error: unknown, stage: DictationLogEvent['stage']): void {
-    const message =
-      error instanceof Error ? error.message : String(error ?? 'unknown');
     this.#fail(
       classifyDictationError(error),
       dictationErrorCode(error),
-      message,
+      errorMessage(error),
       stage,
     );
+  }
+
+  #log(
+    kind: DictationErrorKind,
+    code: string | null,
+    message: string,
+    stage: DictationLogEvent['stage'],
+    fallback = false,
+  ): void {
+    const log = this.#options.log ?? defaultLog;
+    try {
+      log({
+        kind,
+        code,
+        message,
+        stage,
+        ...(fallback ? { fallback: 'recording' as const } : {}),
+      });
+    } catch {
+      // A broken logger must not hide the error from the person.
+    }
   }
 
   #fail(
@@ -522,21 +873,22 @@ export class Dictation {
     stage: DictationLogEvent['stage'],
   ): void {
     this.#clearStopTimer();
-    const log = this.#options.log ?? defaultLog;
-    try {
-      log({ kind, code, message, stage });
-    } catch {
-      // A broken logger must not hide the error from the person.
-    }
+    this.#dropCapture(true);
+    this.#log(kind, code, message, stage);
     this.errorKind = kind;
     this.errorCode = code;
     this.state = 'error';
     this.interim = '';
     this.beepPending = false;
+    this.recording = false;
   }
 
   #clearStopTimer(): void {
     if (this.#stopTimer) clearTimeout(this.#stopTimer);
     this.#stopTimer = null;
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? 'unknown');
 }

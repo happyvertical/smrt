@@ -2,7 +2,8 @@
 /**
  * DictationStatus — what dictation is doing, in words (see `Dictation`).
  *
- * "Listening…" (with the words heard so far) while the microphone is on, and
+ * "Listening…" (with the words heard so far) while the microphone is on,
+ * "Writing it down…" while a recording is turned into text, and
  * a plain explanation when it cannot listen: the browser cannot turn speech
  * into text, the microphone is blocked, or nothing was heard. Nothing while
  * idle. Listening is announced politely; problems are announced as alerts.
@@ -23,7 +24,8 @@ const { t } = useI18n();
 const showLine = $derived(
   dictation.state === 'starting' ||
     dictation.state === 'listening' ||
-    dictation.state === 'stopping',
+    dictation.state === 'stopping' ||
+    dictation.state === 'transcribing',
 );
 
 function errorText(kind: DictationErrorKind | null): string {
@@ -38,6 +40,14 @@ function errorText(kind: DictationErrorKind | null): string {
       return t(M['ui.dictation.microphone']);
     case 'interrupted':
       return t(M['ui.dictation.interrupted']);
+    case 'too-long':
+      return t(M['ui.dictation.too_long']);
+    case 'not-transcribed':
+      return t(M['ui.dictation.not_transcribed']);
+    case 'unavailable':
+      return t(M['ui.dictation.unavailable']);
+    case 'forbidden':
+      return t(M['ui.dictation.forbidden']);
     default:
       return t(M['ui.dictation.failed']);
   }
@@ -59,6 +69,9 @@ function errorText(kind: DictationErrorKind | null): string {
       {#if dictation.interim}
         <span class="smrt-dictation-status-interim">“{dictation.interim}”</span>
       {/if}
+    {:else if dictation.state === 'transcribing'}
+      <span class="smrt-dictation-status-spinner" aria-hidden="true"></span>
+      {t(M['ui.dictation.transcribing'])}
     {/if}
   </p>
   <p
@@ -113,6 +126,27 @@ function errorText(kind: DictationErrorKind | null): string {
     block-size: 8px;
     border-radius: 50%;
     background: var(--smrt-color-error, #ba1a1a);
+  }
+
+  .smrt-dictation-status-spinner {
+    inline-size: 12px;
+    block-size: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-block-start-color: var(--smrt-color-primary, #2f5ea8);
+    animation: smrt-dictation-spin 0.9s linear infinite;
+  }
+
+  @keyframes smrt-dictation-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-dictation-status-spinner {
+      animation: none;
+    }
   }
 
   .smrt-dictation-status-interim {

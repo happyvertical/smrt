@@ -12,6 +12,19 @@
  * `MoneyInput`, the rich `Form`, …) stay in `@happyvertical/smrt-svelte/forms`.
  */
 
+export {
+  canCaptureDictationAudio,
+  createMediaRecorderCapture,
+  DICTATION_AUDIO_MIME_TYPES,
+  DICTATION_MAX_BYTES,
+  DICTATION_MAX_DURATION_MS,
+  type DictationAudioCapture,
+  type DictationAudioCaptureFactory,
+  type DictationAudioCaptureOptions,
+  DictationError,
+  type DictationRecording,
+  pickDictationMimeType,
+} from './audio-capture.js';
 export { default as Checkbox } from './Checkbox.svelte';
 export { default as Combobox } from './Combobox.svelte';
 export {
@@ -84,6 +97,12 @@ export {
   type DictationState,
   dictationErrorCode,
 } from './dictation.svelte.js';
+export {
+  createHttpTranscriber,
+  type DictationTranscribe,
+  type DictationTranscribeOptions,
+  type HttpTranscriberOptions,
+} from './dictation-transcribe.js';
 export { default as ErrorSummary } from './ErrorSummary.svelte';
 export { default as Fieldset } from './Fieldset.svelte';
 export { default as FilePicker } from './FilePicker.svelte';

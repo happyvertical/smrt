@@ -64,6 +64,20 @@ pnpm add @happyvertical/smrt-ui
   its phone bottom bar, and hides while `:root[data-keyboard-open]`.
 - `swipeDismiss` / `swipeDismisses` (`/feedback`) are the touch action and pure
   decision behind swipe-to-close.
+- `Dictation` / `DictationButton` / `DictationStatus` (`/forms`) let people
+  speak into a text field (tap the microphone, or press and hold the field
+  with `longPress`). The speech `source` is normally smrt-svelte's
+  `createSttDictationSource()` (the browser's own speech recognition). Give
+  it a `transcribe` function too (`createHttpTranscriber('/your/route')`)
+  and, where the browser has no speech recognition (Firefox) or no speech
+  service behind it (Brave: `network` / `service-not-allowed`), it records
+  the message with `MediaRecorder` instead (WebM/Opus, MP4 on Safari; at most
+  `maxDurationMs` 2 minutes and `maxBytes` 10 MB), shows "Writing it down…"
+  while the route turns it into text, and puts the text at the cursor.
+  Keep the speech service's key on the server: the route takes the raw audio
+  body (`Content-Type` is the recording's type, `?language=&durationMs=`)
+  and answers `{ text }`; 413, 503 and 401/403 become "too long", "not set
+  up" and "not allowed" messages.
 
 ### Link tabs
 

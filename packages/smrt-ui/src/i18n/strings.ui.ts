@@ -73,6 +73,14 @@ export const M = defineMessages({
   'ui.dictation.interrupted':
     'Listening stopped straight away. This browser may not support speaking into text; try Chrome, Edge or Safari, or type instead.',
   'ui.dictation.failed': 'Listening stopped. Tap the microphone to try again.',
+  'ui.dictation.transcribing': 'Writing it down…',
+  'ui.dictation.too_long':
+    'That was too long to write down. Try a shorter message, or type instead.',
+  'ui.dictation.not_transcribed':
+    "Couldn't write that down. Tap the microphone to try again, or type instead.",
+  'ui.dictation.unavailable':
+    "Speaking isn't set up here yet. Please type instead.",
+  'ui.dictation.forbidden': "You can't use speaking here. Please type instead.",
 
   // feedback/ProgressBar.svelte
   'ui.progress_bar.label': 'Progress',

@@ -40,6 +40,8 @@ let {
 
 const { t } = useI18n();
 const active = $derived(dictation.active);
+// While a recording is being written down, a tap would do nothing.
+const busy = $derived(dictation.state === 'transcribing');
 const name = $derived(
   active
     ? (stopLabel ?? t(M['ui.dictation.stop']))
@@ -61,8 +63,9 @@ function handleClick() {
   class={`smrt-dictation-button${active ? ' smrt-dictation-button--listening' : ''} ${className}`.trim()}
   aria-label={name}
   aria-pressed={active}
+  aria-busy={busy || undefined}
   title={active ? name : (title ?? t(M['ui.dictation.start_hint']))}
-  {disabled}
+  disabled={disabled || busy}
   onclick={handleClick}
   data-dictation-state={dictation.state}
 >

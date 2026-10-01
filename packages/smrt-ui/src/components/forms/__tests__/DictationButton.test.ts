@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { flushSync } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
+import { DictationError } from '../audio-capture.js';
 import DictationButton from '../DictationButton.svelte';
 import DictationStatus from '../DictationStatus.svelte';
 import { Dictation, type DictationSpeechSource } from '../dictation.svelte.js';
@@ -146,6 +147,53 @@ describe('DictationStatus', () => {
     flushSync();
     expect(screen.getAllByRole('alert').at(-1)).toHaveTextContent(
       "Speech recognition isn't available in this browser",
+    );
+  });
+});
+
+describe('Dictation recording fallback in words', () => {
+  it('says "Writing it down…" while a recording is written down, then explains a failure', async () => {
+    let finish!: (error: Error) => void;
+    const dictation = new Dictation({
+      onText: () => {},
+      beep: false,
+      log: () => {},
+      capture: () => ({
+        start: async () => {},
+        stop: async () => ({
+          audio: new Blob(['x'], { type: 'audio/webm' }),
+          mimeType: 'audio/webm',
+          durationMs: 1000,
+          reachedTimeLimit: false,
+        }),
+        cancel: () => {},
+        onLimit: () => () => {},
+      }),
+      transcribe: () =>
+        new Promise<string>((_resolve, reject) => (finish = reject)),
+    });
+    const { container } = render(DictationStatus, { props: { dictation } });
+    render(DictationButton, { props: { dictation } });
+    await dictation.start();
+    flushSync();
+    expect(screen.getByRole('status')).toHaveTextContent('Listening');
+
+    void dictation.stop();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    flushSync();
+    expect(screen.getByRole('status')).toHaveTextContent('Writing it down…');
+    const button = screen.getByRole('button', {
+      name: 'Speak instead of typing',
+    });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    await expectNoA11yViolations(container);
+
+    finish(new DictationError('unavailable', 'not set up'));
+    await vi.waitFor(() => expect(dictation.state).toBe('error'));
+    flushSync();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      "Speaking isn't set up here yet. Please type instead.",
     );
   });
 });
