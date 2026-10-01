@@ -91,10 +91,11 @@ kept in view. It carries `data-shell-tabs`, so AdminShell keeps it sticky
 under the phone top bar. Pair it with `useLinkSurface` (smrt-svelte) so
 agents can switch tabs too.
 
-Use the focused subpaths (`/forms`, `/ui`, `/feedback`, `/data`,
+Use the focused subpaths (`/forms`, `/form-retry`, `/ui`, `/feedback`, `/data`,
 `/data-surface`, `/layout`, `/themes`) to keep imports explicit. The
 Svelte-free `/data-surface` entry exposes the registry contracts and shared
-protocol limits for server adapters. The package root remains a compatibility
+protocol limits for server adapters; the Svelte-free `/form-retry` entry
+exposes the form-retry helper. The package root remains a compatibility
 barrel.
 
 ### Touch targets for Checkbox, Radio and Switch
@@ -361,6 +362,36 @@ property per proposable control (never secret/sensitive, unwritable,
 disabled, read-only, file, or password controls), and staging only ever
 creates reviewable proposals. smrt-svelte's `<Form webmcp>` and `FormScope`
 build their `*_stage_changes` tool from these.
+
+## Form retry
+
+`createFormRetry()` is the browser half of `runOnce()` (`@happyvertical/smrt-core`)
+for a SvelteKit enhanced form: a per-tab, per-form submission key, a refused
+second submit while one is in flight, typed values kept across a validation or
+transport failure, a reset after success only when the fields are unchanged
+since submit, and opt-in restore after a reload (a file that cannot be restored
+is reported, never silently dropped). It is framework-free and imports neither
+Svelte nor SvelteKit; the submit function is typed against SvelteKit's
+`SubmitFunction` shape structurally.
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+  import { createFormRetry } from '@happyvertical/smrt-ui/form-retry';
+
+  const retry = createFormRetry({ form: 'report' });
+</script>
+
+<form method="POST" use:enhance={retry.enhance()} {@attach retry.attach}>
+  <input name="title" />
+  <button type="submit">Send</button>
+  {#if $retry.status === 'transport-error'}<p role="alert">Send it again unchanged.</p>{/if}
+</form>
+```
+
+`/forms` re-exports the same API as the Svelte-free `/form-retry` entry. See the
+[form retry guide](../../docs/content/form-retry.md) for the server half, the
+per-result table, storage and private-window behaviour, and restore.
 
 ## DataTable controller
 

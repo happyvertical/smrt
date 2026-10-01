@@ -65,6 +65,11 @@
       "import": "./dist/components/forms/index.js",
       "default": "./dist/components/forms/index.js"
     },
+    "./form-retry": {
+      "types": "./dist/components/forms/form-retry/index.d.ts",
+      "import": "./dist/components/forms/form-retry/index.js",
+      "default": "./dist/components/forms/form-retry/index.js"
+    },
     "./i18n": {
       "types": "./dist/i18n/index.d.ts",
       "svelte": "./dist/i18n/index.js",

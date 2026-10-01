@@ -115,6 +115,8 @@ export {
   setFormGroupContext,
   tryGetFormGroupContext,
 } from './form-group-context.js';
+// Form retry (#3291): also published Svelte-free at `@happyvertical/smrt-ui/form-retry`.
+export * from './form-retry/index.js';
 export { default as Input } from './Input.svelte';
 export { default as InputGroup } from './InputGroup.svelte';
 export { insertTextAtCursor } from './insert-text.js';

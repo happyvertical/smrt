@@ -53,6 +53,7 @@ components are exempt — they *are* the primitives.
 | `./calendar` | `CalendarView` (time-zone-aware month grid + phone agenda) and its Svelte-free date model (`toEntries`, `layoutMonth`, `dateKeyInZone`, …); deprecated `Calendar`, `DayView` |
 | `./chat` | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
 | `./forms` | Provider-free fields, choice controls, sliders/ranges, combobox/listbox/multiselect/tags, date/time/file controls, plus the transport-neutral control interaction registry |
+| `./form-retry` | **Svelte-free** form retry (#3291): submission key, in-flight refusal, conditional reset, opt-in restore-after-reload, browser `runOnce()` digest. Also re-exported from `./forms`. Framework-free TS typed structurally against SvelteKit's `SubmitFunction` — never import `@sveltejs/kit` here. Guide: `docs/content/form-retry.md` |
 | `./i18n` | i18n **client**: `useI18n`, `<Trans>`, `defineMessages`, `renderTemplate` (no `smrt-languages` import — the server resolver stays in `smrt-svelte/i18n/server`) |
 | `./registry` | `ModuleUIRegistry` for cross-package component discovery |
 | `./theme` | deprecated compatibility path forwarding to the canonical theme system |
