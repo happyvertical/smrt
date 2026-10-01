@@ -320,6 +320,13 @@ async function recheckFactClaims(claimIds: string[]) {
 </div>
 
 <style>
+  /* The tool lays itself out by its own width, not the viewport, so it
+     fits a full page, a side panel, the assistant dock or a phone. */
+  .governance-tool {
+    container-type: inline-size;
+    container-name: governance-tool;
+  }
+
   .governance-tool,
   .tool-list,
   .tool-card-body {
@@ -349,9 +356,10 @@ async function recheckFactClaims(claimIds: string[]) {
   }
 
   .tool-card {
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
+    box-shadow: var(--smrt-card-shadow, none);
     border-radius: 0.65rem;
-    background: var(--smrt-color-surface);
+    background: var(--smrt-card-background, var(--smrt-color-surface));
     padding: 0.75rem;
   }
 
@@ -432,5 +440,40 @@ async function recheckFactClaims(claimIds: string[]) {
   .tool-warning {
     background: color-mix(in srgb, var(--smrt-color-warning) 12%, transparent);
     color: var(--smrt-color-on-warning-container);
+  }
+
+  .claim-audit-select {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .tool-card summary {
+    min-height: 2.75rem;
+  }
+
+  .tool-card.nested {
+    background: color-mix(in srgb, var(--smrt-color-on-surface) 6%, transparent);
+  }
+
+  @container governance-tool (max-width: 30rem) {
+    .claim-audit-toolbar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .claim-audit-toolbar :global(button),
+    .claim-audit-actions :global(button) {
+      width: 100%;
+    }
+
+    .claim-audit-actions {
+      justify-content: stretch;
+    }
+
+    .tool-card summary {
+      flex-wrap: wrap;
+    }
   }
 </style>
