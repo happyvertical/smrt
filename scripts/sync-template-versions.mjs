@@ -23,7 +23,7 @@
  * version-locked together via changesets).
  */
 
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -73,12 +73,12 @@ function findTemplateDirs() {
 const drift = [];
 
 /** Rewrite smrt-* pins inside a template's package.json (deps + devDeps). */
-function syncTemplatePackageJson(file) {
+function syncTemplatePackageJson(file, dependencyMap = false) {
   const raw = readFileSync(file, 'utf8');
   const pkg = JSON.parse(raw);
   let changed = false;
-  for (const field of ['dependencies', 'devDependencies', 'peerDependencies']) {
-    const deps = pkg[field];
+  for (const field of dependencyMap ? [''] : ['dependencies', 'devDependencies', 'peerDependencies']) {
+    const deps = dependencyMap ? pkg : pkg[field];
     if (!deps) continue;
     for (const name of Object.keys(deps)) {
       if (SMRT_DEP_RE.test(name) && deps[name] !== targetRange) {
@@ -129,6 +129,8 @@ for (const { pkg, templateDir } of templates) {
   if (syncTemplatePackageJson(join(templateDir, 'package.json'))) {
     anyChanged = true;
   }
+  const optional = join(packagesDir, pkg, 'mcp-apps-template', 'package.dependencies.json');
+  if (existsSync(optional) && syncTemplatePackageJson(optional, true)) anyChanged = true;
   // template.config.js lives next to the template/ directory.
   if (syncTemplateConfigJs(join(packagesDir, pkg, 'template.config.js'))) {
     anyChanged = true;

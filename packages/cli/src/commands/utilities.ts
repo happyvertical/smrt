@@ -79,6 +79,10 @@ import { dbStatusCommand } from './db-status.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
 import { devRuntimeCommands } from './dev-runtime.js';
 import { exportCommand } from './export.js';
+import {
+  mcpAppsCommands,
+  validateMcpAppsPackage,
+} from './mcp-apps-packaging.js';
 import { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
 import {
   runRuntimeCheckSafely,
@@ -814,6 +818,7 @@ export function renderAgentSurfaceReport(
  * Utility commands for CLI
  */
 export const utilityCommands: Record<string, CLICommand> = {
+  ...mcpAppsCommands,
   introspect: {
     name: 'introspect',
     description: 'Analyze project and discover SMRT objects',
@@ -3479,6 +3484,21 @@ export default testManifest;
       }
 
       const runtimeCheck = await runRuntimeCheckSafely(cwd);
+
+      // Portable plugin metadata is opt-in. An ordinary SMRT application has
+      // no package directory and remains healthy; once one exists, make its
+      // publication hazards visible without echoing any artifact content.
+      const mcpAppsPath = resolve(cwd, 'mcp-apps');
+      if (existsSync(mcpAppsPath)) {
+        const mcpApps = validateMcpAppsPackage(mcpAppsPath);
+        check(
+          'Portable MCP Apps package',
+          mcpApps.valid,
+          mcpApps.findings
+            .map((finding) => `${finding.code}: ${finding.message}`)
+            .join('; '),
+        );
+      }
 
       // 10.5 Check consumer registration for external SMRT packages
       const projectManifestPath = resolve(cwd, '.smrt', 'manifest.json');

@@ -80,6 +80,14 @@ export function copyTemplate(destination, options = {}) {
   if (!existsSync(destination)) {
     mkdirSync(destination, { recursive: true });
   }
+  if (!pathEntryExists(join(destination, '.npmrc'))) writeFileSync(join(destination, '.npmrc'), '@happyvertical:registry=https://npm.happyvertical.com/\n');
+  else {
+    const npmrc = join(destination, '.npmrc');
+    if (!lstatSync(npmrc).isFile()) throw new Error('Generated application .npmrc must be a regular file');
+    const current = readFileSync(npmrc, 'utf8'), routes = [...current.matchAll(/^\s*@happyvertical:registry\s*=\s*(\S+)(?:\s+[;#].*)?\s*$/gm)].map((match) => match[1]);
+    if (routes.some((route) => route !== 'https://npm.happyvertical.com/')) throw new Error('Generated application .npmrc has a conflicting @happyvertical registry');
+    if (!routes.length) writeFileSync(npmrc, `${current}${current.endsWith('\n') ? '' : '\n'}@happyvertical:registry=https://npm.happyvertical.com/\n`);
+  }
 
   // Copy all template files, skipping internal-only directories
   cpSync(templatePath, destination, {

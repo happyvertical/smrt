@@ -222,6 +222,32 @@ After a mutation, call `invalidate('smrt:items')`. Only loads that declared
 
 ## 8. Use generated REST, MCP, WebMCP, and CLI interfaces
 
+## Optional portable MCP Apps packaging
+
+The ordinary scaffold does not create a plugin package or add a remote endpoint.
+When you create a project with `smrt gnode create <name> --mcp-apps`, it adds
+`mcp-apps/plugin.json` and `mcp-apps/mcp.json`. The initial server points only
+at loopback (`http://127.0.0.1:3000/api/mcp`) so it cannot silently publish a
+local instance. Run `pnpm mcp-apps:validate` in the generated application after
+editing package metadata. It rejects symlinks, traversal paths, missing or linked UI assets (including screenshots),
+non-object or malformed manifests, credential-shaped JSON fields and credential carrier files,
+URL userinfo, non-portable schemas, and non-loopback HTTP server URLs. Diagnostics never
+include malformed manifest content.
+
+The option stages `src/routes/api/mcp/+server.ts`, a session-authorized `mcp`
+server, and a bounded static resource with a restrictive CSP. It also includes
+`McpAppsBridge.svelte` for an application-configured trusted host origin and
+the optional OpenAI display adapter; it stays inert until your UI mounts it.
+The scaffold does not enable remote MCP tasks, so a deployment that adds them
+must supply the durable worker's live authorization callback before publication.
+
+Before changing that URL, mount the native SDK v2 Streamable HTTP endpoint and
+configure the application gateway's verified principal, issuer, audience and
+scopes. Plugin metadata is an install surface only; it neither authenticates a
+request nor grants tenant or workflow authority. Register `.app.json` only
+after the host creates an eligible server ID; do not copy runtime extension
+metadata into the portable manifest.
+
 The Item configuration generates:
 
 - REST: `GET`/`POST /api/items` and
@@ -375,3 +401,16 @@ production startup must set an explicit loopback `HOST`, and `app:start` is the
 recommended entry point. Stop the app before backup/import. For deployed import, stop
 web/workers and set `SMRT_MAINTENANCE_MODE=true`. Extend
 `scripts/smrt-portability.mjs` for domain-specific transformations.
+
+### Hosted MCP authorization
+
+The opt-in MCP route uses the local signed session only in the `local` profile.
+For `self-hosted` and `cloud`, configure HTTPS `SMRT_MCP_RESOURCE`,
+`SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI`, and space-separated
+`SMRT_MCP_SCOPES` values. Bind `resolveHostedMcpPrincipal` in
+`src/lib/server/mcp-hosted-principal.ts` to an application-owned lookup that
+checks the current account and active tenant membership on every request. It
+must return `null` for disabled, revoked, or unmapped identities. The route
+does not derive tenant authority from JWT claims, request headers, or tool
+arguments; missing configuration or a missing binding fails closed before MCP
+dispatch.
