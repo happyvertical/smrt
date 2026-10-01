@@ -1,12 +1,12 @@
 import { mount } from 'svelte';
-import Table from '../src/components/data/__tests__/responsive-table.fixture.svelte';
-import Segments from '../src/components/forms/__tests__/segmented-posting.fixture.svelte';
-import Density from '../src/components/forms/__tests__/touch-density.fixture.svelte';
 
 const target = document.getElementById('app')!;
 const params = new URLSearchParams(location.search);
 switch (params.get('surface')) {
-  case 'table':
+  case 'table': {
+    const { default: Table } = await import(
+      '../src/components/data/__tests__/responsive-table.fixture.svelte',
+    );
     mount(Table, {
       target,
       props: {
@@ -14,7 +14,11 @@ switch (params.get('surface')) {
       },
     });
     break;
-  case 'segments':
+  }
+  case 'segments': {
+    const { default: Segments } = await import(
+      '../src/components/forms/__tests__/segmented-posting.fixture.svelte',
+    );
     mount(Segments, {
       target,
       props: {
@@ -25,7 +29,11 @@ switch (params.get('surface')) {
       },
     });
     break;
-  default:
+  }
+  default: {
+    const { default: Density } = await import(
+      '../src/components/forms/__tests__/touch-density.fixture.svelte',
+    );
     mount(Density, {
       target,
       props: {
@@ -34,4 +42,5 @@ switch (params.get('surface')) {
         target: params.get('target') ?? '48px',
       },
     });
+  }
 }
