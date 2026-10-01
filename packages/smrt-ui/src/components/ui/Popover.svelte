@@ -6,6 +6,8 @@ export interface Props {
   label: string;
   /** Content rendered inside the trigger button in place of the label text. */
   trigger?: Snippet;
+  /** Accessible name of the trigger button when it shows only an icon (`aria-label`); omit to use its visible content. */
+  triggerLabel?: string;
   /** The popover content. */
   children?: Snippet;
   /** Whether the popover is visible. */
@@ -25,6 +27,7 @@ export interface Props {
 let {
   label,
   trigger,
+  triggerLabel,
   children,
   open = $bindable(false),
   disabled = false,
@@ -75,6 +78,7 @@ $effect(() => {
     type="button"
     class="popover__trigger"
     aria-haspopup="dialog"
+    aria-label={triggerLabel}
     aria-expanded={open}
     aria-controls={open ? panelId : undefined}
     {disabled}
