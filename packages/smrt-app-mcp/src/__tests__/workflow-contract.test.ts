@@ -84,6 +84,20 @@ describe('authored workflow runtime contract', () => {
     });
   });
   it.each([
+    ['inputSchema', { type: 'string' }],
+    ['inputSchema', { type: 'array' }],
+    ['inputSchema', {}],
+    ['inputSchema', { type: ['object', 'null'] }],
+    ['outputSchema', { type: 'string' }],
+    ['outputSchema', { type: 'array' }],
+    ['outputSchema', {}],
+    ['outputSchema', { type: ['object', 'null'] }],
+  ] as const)('requires an MCP object root for %s', (key, schema) => {
+    expect(() =>
+      createMcpWorkflowTool({ ...definition, [key]: schema }),
+    ).toThrow(/schema.*type.*object/i);
+  });
+  it.each([
     'sync',
     'async',
     'non-error',

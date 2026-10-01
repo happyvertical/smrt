@@ -137,7 +137,11 @@ export class McpAppBridge {
   subscribe(listener: (snapshot: McpAppSnapshot) => void): () => void {
     if (this.#snapshot.state === 'disposed') return () => {};
     this.#subscribers.add(listener);
-    listener(this.snapshot);
+    try {
+      listener(this.snapshot);
+    } catch {
+      /* Observer owns its error reporting, including initial delivery. */
+    }
     return () => {
       this.#subscribers.delete(listener);
     };
@@ -206,7 +210,6 @@ export class McpAppBridge {
       return Promise.reject(new Error('MCP Apps bridge disposed'));
     this.#snapshot.state = 'connecting';
     this.#window.addEventListener('message', this.#receive);
-    this.#emit();
     this.#connect = this.#request('ui/initialize', {
       protocolVersion: MCP_APPS_PROTOCOL_VERSION,
       appInfo: this.#appInfo,
@@ -237,6 +240,8 @@ export class McpAppBridge {
         this.dispose();
         throw error;
       });
+    // Publish only after reentrant observers can reuse the same negotiation.
+    this.#emit();
     return this.#connect;
   }
   #ready(): void {
