@@ -16,6 +16,13 @@ const dispatched = vi.hoisted(() =>
 vi.mock('@happyvertical/smrt-core/generators/mcp', () => ({
   MCP_STABLE_CATALOG_TTL_MS: 86400000,
   MCPGenerator: class {
+    getToolIdentity() {
+      return {
+        objectName: 'Record',
+        action: 'get',
+        originalName: 'record_get',
+      };
+    }
     async generateTools() {
       return [
         {
@@ -182,6 +189,46 @@ describe('remote protected resource', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ result: { tools: [] } });
     expect(received).toMatchObject({ id: 'alice', tenantId: 'tenant-a' });
+  });
+  it.each([
+    'Bearer ',
+    'Bearer  ',
+    'bEaReR   ',
+  ])('accepts RFC 6750 ASCII spacing with %j', async (prefix) => {
+    const auth = createMcpResourceAuth(options());
+    const result = await auth.authenticate(
+      new Request(`${origin}/mcp`, {
+        headers: { authorization: `${prefix}${await token()}` },
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      principal: { id: 'alice', tenantId: 'tenant-a' },
+    });
+  });
+  it.each([
+    'Bearer\t',
+    'Bearer',
+    'Bearer \t',
+    'Bearer opaque',
+    'Bearer a.b.',
+  ])('rejects invalid bearer separator or token %j before principal resolution', async (prefix) => {
+    let resolutions = 0;
+    const auth = createMcpResourceAuth(
+      options({
+        resolvePrincipal: async () => {
+          resolutions += 1;
+          return { id: 'alice', tenantId: 'tenant-a' };
+        },
+      }),
+    );
+    const result = await auth.authenticate(
+      new Request(`${origin}/mcp`, {
+        headers: { authorization: `${prefix}${await token()}` },
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(resolutions).toBe(0);
   });
   it('verifies signatures and snapshots trusted options', async () => {
     const config = options();

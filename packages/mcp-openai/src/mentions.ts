@@ -42,7 +42,40 @@ export function withOpenAiMentionSearch(
     outputSchema: {
       type: 'object',
       properties: {
-        items: { type: 'array', maxItems: 25, items: { type: 'object' } },
+        items: {
+          type: 'array',
+          maxItems: 25,
+          items: {
+            type: 'object',
+            required: ['type', 'resourceUri', 'title'],
+            additionalProperties: false,
+            properties: {
+              type: { type: 'string', const: 'resource' },
+              resourceUri: { type: 'string', minLength: 1, maxLength: 2048 },
+              title: { type: 'string', minLength: 1, maxLength: 512 },
+              subtitle: { type: 'string', minLength: 1, maxLength: 512 },
+              icons: {
+                type: 'array',
+                maxItems: 8,
+                items: {
+                  type: 'object',
+                  required: ['src'],
+                  additionalProperties: false,
+                  properties: {
+                    src: { type: 'string', minLength: 1, maxLength: 2048 },
+                    mimeType: { type: 'string', minLength: 1, maxLength: 128 },
+                    sizes: {
+                      type: 'array',
+                      maxItems: 8,
+                      items: { type: 'string', minLength: 1, maxLength: 32 },
+                    },
+                    theme: { type: 'string', enum: ['light', 'dark'] },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       required: ['items'],
       additionalProperties: false,
@@ -102,12 +135,23 @@ export function openAiMentionItems(value: unknown): OpenAiMentionResource[] {
         json(icon);
         const i = record(icon);
         keys(i, ['src', 'mimeType', 'sizes', 'theme']);
-        return {
+        const result: NonNullable<OpenAiMentionResource['icons']>[number] = {
           src: text(i.src, 2048),
           ...(i.mimeType === undefined
             ? {}
             : { mimeType: text(i.mimeType, 128) }),
         };
+        if (i.sizes !== undefined) {
+          if (!Array.isArray(i.sizes) || i.sizes.length > 8)
+            throw new TypeError('Invalid icon sizes');
+          result.sizes = i.sizes.map((size) => text(size, 32));
+        }
+        if (i.theme !== undefined) {
+          if (i.theme !== 'light' && i.theme !== 'dark')
+            throw new TypeError('Invalid icon theme');
+          result.theme = i.theme;
+        }
+        return result;
       });
     }
     return result;

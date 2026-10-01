@@ -1,13 +1,13 @@
 # @happyvertical/smrt-mcp-openai
 
-Optional navigation and settings for s-m-r-t MCP Apps. Ordinary s-m-r-t apps do not
+Optional navigation, settings, context, messages and mentions for s-m-r-t MCP Apps. Ordinary s-m-r-t apps do not
 import this package. The `./client` entry is browser-only and depends on the
 portable `@happyvertical/smrt-mcp-apps` bridge; the root entry composes existing
 app-MCP workflows without creating another server or authorization policy.
 
 ## Contract and scope
 
-This package implements the navigation/settings child of [#3202](https://github.com/happyvertical/smrt/issues/3202)
+This package implements the navigation/settings and context/messages/mentions children of [#3202](https://github.com/happyvertical/smrt/issues/3202)
 under the [M0 integration standard](../../docs/content/architecture/mcp-apps-integration.md):
 
 - Global and thread entrypoint metadata on idempotent read UI tools accepting `{}`.
@@ -25,8 +25,7 @@ and [UI guide](https://developers.openai.com/plugins/build/chatgpt-ui). The SDK 
 OpenAI helper is deliberately not a dependency. Server transport uses native
 scoped MCP SDK 2.0.0 / protocol `2026-07-28`; browser Apps uses `2026-01-26`.
 
-Only implemented features are declared. Context/messages/mentions/files/forms are
-separate M6 children. Settings support booleans, strings/enums/length bounds,
+Only implemented features are declared. Files/forms remain separate planned M6 children. Settings support booleans, strings/enums/length bounds,
 numbers/integers/range/multiple bounds. Arbitrary regex patterns are explicitly
 rejected to avoid running unbounded patterns; applications can use an enum or
 an existing domain validator. No silent schema downgrade occurs. Metadata is
@@ -83,7 +82,14 @@ can use `resolveOpenAiNavigationTarget` to dispatch only an authorized read tool
 Repeated identical routes do not duplicate calls; new routes cancel old requests
 and ignore stale replies. URLs are app-relative, fragment-free, traversal-free,
 and reject protocol-relative, double-encoded and control-character forms. Treat
-query parameters as untrusted input, never as identity or approval.
+query parameters as untrusted input, never as identity or approval. The literal
+query delimiter is separated before pathname decoding, so encoded question marks
+cannot hide traversal segments. Traversal-like text in query values remains legal.
+
+Only a rejected tool call or an `isError` result selects the `denied` fallback.
+Consumer callback exceptions are not authorization failures and never retry a
+fallback. Callbacks should handle their own rendering errors; uncaught exceptions
+in asynchronous result/fallback callbacks surface as unhandled promise rejections.
 
 `createOpenAiAppLink` emits pinned desktop (`codex`), mobile (`chatgpt`) or web
 formats with separately encoded plugin/tool/path components. `openAiNavigationLink`
@@ -97,6 +103,49 @@ optional: the same settings tools and application settings page remain usable.
 `requestOpenAiDisplayMode` uses negotiated portable modes; missing/unknown modes
 or a rejected request return `'inline'`. The UI must actually retain its inline
 layout and render an ordinary link when navigation cannot be resolved.
+
+## Context, messages and composer mentions
+
+Browser consumers import `updateOpenAiModelContext` from `./context` and
+`sendOpenAiMessage` from `./messages`. Server consumers import
+`withOpenAiMentionSearch` and `resolveOpenAiMentionSelection` from `./mentions`.
+These subpaths share the existing portable bridge and authorized app-MCP server.
+
+`updateOpenAiModelContext({ bridge, value, native })` replaces context with
+`{ text: { text, title?, thumbnail? }, structuredContent? }`. Text is nonempty and
+at most 16384 characters; titles are limited to 512. Set `background: true` on the text value to emit assistant-only audience
+metadata; background is a presentation
+hint, **not a privacy boundary**: the model/provider still receives the context.
+Only send data authorized for that recipient. Negotiated `openai/modelContext`
+uses the supplied native callback. Missing support or native failure falls back
+to portable text and structured content, without native metadata. Abort/disposal
+prevents a late fallback.
+
+`sendOpenAiMessage({ bridge, value, native })` accepts text and `target: 'active'`
+(the default) or `'new'`. Active conversations can use portable text messages.
+New conversations require negotiated `openai/message` and a native callback;
+missing or malformed support rejects before any message reaches the active
+conversation. Unknown targets/modalities fail closed and sends are not retried.
+
+`withOpenAiMentionSearch(existingReadWorkflow)` declares app-only composer search
+metadata and a `{ query }` input (at most 256 characters, including empty search).
+Its owning handler returns `structuredContent: { items }`, with at most 25
+`{ type: 'resource', resourceUri, title, subtitle?, icons? }` entries. Handles
+are nonempty opaque strings of at most 2048 characters; titles/subtitles are
+nonempty and bounded to 512. Each of at most eight icons requires `src` (2048),
+with optional `mimeType` (128), up to eight nonempty `sizes` strings (32 each),
+and `theme: 'light' | 'dark'`. Unknown fields and malformed values reject.
+The published output schema describes these same closed objects and limits.
+
+Search results are discovery hints, never authorization grants. Pass the exact
+returned `resourceUri` as the existing selection workflow's argument through
+`resolveOpenAiMentionSelection({ server, tool, arguments, principal })`. The
+application supplies the trusted, freshly resolved principal; app-MCP policy
+rechecks actor, active tenant, scopes and membership on every call, and the
+owning workflow rechecks handle ownership. Never derive identity from a handle,
+browser metadata or search-time permission. Guesses, cross-tenant calls and
+revocation after search must not select private data. This helper adds no
+selection handler, identity provider, persistence or authorization policy.
 
 ## Validation and evidence
 

@@ -38,6 +38,20 @@ const owner = {
   tenantId: 'tenant-a',
   scopes: ['settings', 'view'],
 };
+async function expectSafeWorkflowFailure(call: Promise<unknown>) {
+  const result = (await call) as {
+    isError?: boolean;
+    content?: unknown;
+    structuredContent?: unknown;
+  };
+  expect(result.isError).toBe(true);
+  expect(result.content).toEqual([
+    { type: 'text', text: 'Workflow execution failed.' },
+  ]);
+  expect(result.structuredContent).toEqual({
+    error: { message: 'Workflow execution failed.' },
+  });
+}
 function fixture() {
   const db = new DatabaseSync(':memory:');
   db.exec(
@@ -52,6 +66,8 @@ function fixture() {
   );
   let revoked = false;
   let writes = 0;
+  let selections = 0;
+  let selectionExecutions = 0;
   let providerFailure = false;
   let stale = false;
   const values = () => {
@@ -190,6 +206,30 @@ function fixture() {
     workflowTools: [
       view,
       mentions,
+      {
+        ...base,
+        name: 'select_mention',
+        inputSchema: {
+          type: 'object',
+          properties: { resourceUri: { type: 'string' } },
+          required: ['resourceUri'],
+          additionalProperties: false,
+        },
+        execute: ({ arguments: args, principal }) => {
+          selectionExecutions++;
+          if (
+            principal?.id !== owner.id ||
+            principal.tenantId !== owner.tenantId ||
+            args.resourceUri !== 'smrt://items/opaque-owned'
+          )
+            throw new Error('Mention selection denied: private synthetic item');
+          selections++;
+          return {
+            content: [{ type: 'text', text: 'Owned synthetic item' }],
+            structuredContent: { resourceUri: args.resourceUri },
+          };
+        },
+      },
       ...settings.workflows,
       {
         ...base,
@@ -234,6 +274,8 @@ function fixture() {
     db,
     values,
     writes: () => writes,
+    selections: () => selections,
+    selectionExecutions: () => selectionExecutions,
     revoke: () => {
       revoked = true;
     },
@@ -276,32 +318,42 @@ describe('existing principal workflow authority', () => {
             }),
           ).rejects.toThrow();
       }
-      expect(
-        await f.server.callTool({
-          name: 'mention_search',
-          arguments: { query: 'owned' },
-          principal: owner,
-        }),
-      ).toHaveProperty(
-        'structuredContent.items.0.resourceUri',
-        'smrt://items/opaque-owned',
+      const search = await f.server.callTool({
+        name: 'mention_search',
+        arguments: { query: 'owned' },
+        principal: owner,
+      });
+      if (!search.structuredContent) throw new Error('Missing search results');
+      const resourceUri = (
+        search.structuredContent.items as Array<{ resourceUri: string }>
+      )[0].resourceUri;
+      expect(resourceUri).toBe('smrt://items/opaque-owned');
+      const select = (
+        principal: McpAppPrincipal | null,
+        handle = resourceUri,
+      ) =>
+        resolveOpenAiMentionSelection({
+          server: f.server,
+          tool: 'select_mention',
+          arguments: { resourceUri: handle },
+          principal,
+        });
+      await expect(select(owner)).resolves.toHaveProperty(
+        'structuredContent.resourceUri',
+        resourceUri,
       );
-      await expect(
-        resolveOpenAiMentionSelection({
-          server: f.server,
-          tool: 'resolve_target',
-          arguments: { url: '/guessed' },
-          principal: owner,
-        }),
-      ).rejects.toThrow();
-      await expect(
-        resolveOpenAiMentionSelection({
-          server: f.server,
-          tool: 'resolve_target',
-          arguments: { url: '/items/owned' },
-          principal: { ...owner, tenantId: 'tenant-b' },
-        }),
-      ).rejects.toThrow();
+      expect(f.selections()).toBe(1);
+      await expectSafeWorkflowFailure(select(owner, 'smrt://items/guessed'));
+      expect(f.selections()).toBe(1);
+      const executions = f.selectionExecutions();
+      for (const principal of [
+        null,
+        { ...owner, id: 'other' },
+        { ...owner, tenantId: 'tenant-b' },
+        { ...owner, scopes: [] },
+      ])
+        await expect(select(principal)).rejects.toThrow();
+      expect(f.selectionExecutions()).toBe(executions);
       await expect(
         f.server.callTool({
           name: 'settings_read',
@@ -309,14 +361,17 @@ describe('existing principal workflow authority', () => {
           principal: owner,
         }),
       ).resolves.toHaveProperty('structuredContent.values.units', 'mm');
-      await expect(
+      await expectSafeWorkflowFailure(
         f.server.callTool({
           name: 'settings_update',
           arguments: { set: { grid: false }, tenantId: 'tenant-b' },
           principal: owner,
         }),
-      ).rejects.toThrow();
+      );
       f.revoke();
+      await expect(select(owner)).rejects.toThrow();
+      expect(f.selectionExecutions()).toBe(executions);
+      expect(f.selections()).toBe(1);
       await expect(
         f.server.callTool({
           name: 'mention_search',
@@ -354,10 +409,10 @@ describe('existing principal workflow authority', () => {
       await Promise.all([update({ units: 'in' }), update({ grid: true })]);
       expect(f.values()).toEqual({ units: 'in', grid: true });
       f.fail();
-      await expect(update({ units: 'mm' })).rejects.toThrow('provider');
+      await expectSafeWorkflowFailure(update({ units: 'mm' }));
       expect(f.values()).toEqual({ units: 'in', grid: true });
       f.stale();
-      await expect(update({ grid: false })).rejects.toThrow('revision');
+      await expectSafeWorkflowFailure(update({ grid: false }));
       expect(f.writes()).toBe(4); // No hidden retries by the adapter.
     } finally {
       f.db.close();
@@ -387,14 +442,14 @@ describe('existing principal workflow authority', () => {
           principal: owner,
         }),
       ).resolves.toHaveProperty('structuredContent.id', 'owned');
-      await expect(
+      await expectSafeWorkflowFailure(
         resolveOpenAiNavigationTarget({
           server: f.server,
           tool: 'resolve_target',
           url: '/items/other',
           principal: owner,
         }),
-      ).rejects.toThrow();
+      );
       await expect(
         resolveOpenAiNavigationTarget({
           server: f.server,
@@ -657,12 +712,14 @@ describe('verified M2 gateway and M6 native discovery factory', () => {
         arguments: { set: { units: 'in' } },
       });
       expect(f.values().units).toBe('in');
-      await expect(
+      await expectSafeWorkflowFailure(
         client.callTool({
           name: 'settings_update',
           arguments: { set: { grid: false }, tenantId: 'other' },
         }),
-      ).rejects.toThrow();
+      );
+      expect(f.values()).toEqual({ units: 'in', grid: true });
+      expect(f.writes()).toBe(1);
       const other = await connect(token({ sub: 'synthetic-other' }));
       expect(JSON.stringify(other.getServerCapabilities())).not.toContain(
         'openai/settings',

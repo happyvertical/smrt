@@ -283,6 +283,19 @@ export function mcpToolAnnotationsFor(
   };
 }
 
+/**
+ * Generator-validated source identity for an advertised MCP alias.
+ *
+ * `name` remains the sole protocol identifier. Consumers that compose the
+ * generated catalog with application policy use this identity rather than
+ * attempting to reverse a canonical alias.
+ */
+export interface MCPToolIdentity {
+  objectName: string;
+  action: string;
+  originalName: string;
+}
+
 /** Return a copied, canonical tool sequence for byte-stable tools/list output. */
 export function sortMCPTools<T extends Pick<MCPTool, 'name'>>(tools: T[]): T[] {
   return [...tools].sort((left, right) =>
@@ -400,6 +413,16 @@ export class MCPGenerator {
     const target = this.toolTargets.get(tool);
     if (!target) throw new Error(`Missing MCP tool target: ${tool.name}`);
     return target;
+  }
+
+  /** Return the validated source identity for a tool returned by this generator. */
+  getToolIdentity(tool: MCPTool): MCPToolIdentity {
+    const target = this.toolTarget(tool);
+    return {
+      objectName: target.objectName,
+      action: target.action,
+      originalName: target.originalName ?? tool.name,
+    };
   }
 
   private runtimeToolTargets(tools: MCPTool[]): Record<string, McpToolTarget> {
@@ -760,6 +783,7 @@ export class MCPGenerator {
       this.toolTargets.set(tool, {
         objectName,
         action: tool.name.slice(lowerName.length + 1),
+        originalName: tool.name,
       });
     }
     return tools;
@@ -2786,12 +2810,7 @@ export async function createServer() {
       }
 
       return {
-        tools: [...tools].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0).map(tool => ({
-          name: tool.name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-          outputSchema: tool.outputSchema,
-        })),
+        tools: [...tools].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 

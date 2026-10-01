@@ -131,22 +131,22 @@ export function observeOpenAiNavigation(options: {
       return;
     }
     pending = new AbortController();
-    void options.bridge
-      .callTool(name, { url }, pending.signal)
-      .then((result) => {
+    void options.bridge.callTool(name, { url }, pending.signal).then(
+      (result) => {
         if (disposed || current !== generation || options.bridge.signal.aborted)
           return;
         if (result.isError) options.onFallback('denied');
         else options.onResult(result, url);
-      })
-      .catch(() => {
+      },
+      () => {
         if (
           !disposed &&
           current === generation &&
           !options.bridge.signal.aborted
         )
           options.onFallback('denied');
-      });
+      },
+    );
   });
   return () => {
     disposed = true;

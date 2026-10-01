@@ -12,8 +12,11 @@ For piping a deployed app's MCP surface to a local stdio MCP client, see `@happy
 
 For public deployments, follow the
 [remote MCP authorization contract](../../docs/content/architecture/remote-mcp-authorization.md).
-This package trusts the principal supplied by the application adapter; it does
-not implement an OAuth authorization server or validate bearer tokens itself.
+The server trusts the principal supplied by the application adapter. Validate
+bearer tokens at an application gateway or with the server-only `./auth` JWT
+adapter, then resolve fresh application membership and tenant authority on every
+request. The OAuth issuer remains operator-owned; this package does not implement
+an OAuth authorization server.
 
 ```ts
 // src/lib/server/mcp.ts
@@ -50,6 +53,12 @@ same catalog. Every workflow must declare its canonical `effect`,
 association are host presentation metadata only. The configured `toolPolicy`
 and `workflowAssertions` run for both discovery and direct calls before the
 workflow handler receives the trusted principal and arguments.
+Authored names must be lowercase snake_case strings of at most 64 characters;
+input and output schemas must both have object roots. Invalid declarations fail
+at server construction. Ordinary handler exceptions return a generic `isError`
+result with text and structured error data; internal exception details are not
+exposed. Intentional `McpAccessError` denials retain the transport's access-error
+contract.
 
 ```ts
 workflowTools: [{
@@ -213,6 +222,12 @@ bridge now defaults to this modern `/api/mcp` endpoint; use explicit
 migration from `/api/mcp/tools` and `/api/mcp/call`. The modern bridge uses SDK v2,
 re-resolves credentials per request, refuses redirects, and forwards resource
 and tool metadata without inventing UI or extension capabilities.
+
+Generated tool allow-lists use the generator-owned original class identity, even
+when the advertised name is a canonical alias. Guards keyed by either the alias
+or original tool name run before both direct and task dispatch. Authored workflows
+retain their explicit names and effect policy; catalogs containing authored
+workflows keep private cache scope because they have no generated tenant identity.
 
 ## Remote JWT authorization
 

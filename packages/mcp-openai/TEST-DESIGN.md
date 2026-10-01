@@ -78,3 +78,41 @@ choosing a status label itself. It records every native and portable wire call.
 The same new tests against pre-fix production helpers fail on native rejection
 fallback and all three unsupported new-conversation routes. These tests use a
 synthetic host and do not establish actual OpenAI host compatibility.
+## Reviewed workflow error contract integration
+
+Current runtime workflow-handler failures resolve with `isError: true`, one
+`Workflow execution failed.` text item and that same structured error message.
+The integration fixture asserts that exact safe payload for adapter argument
+validation, domain target refusal, provider rollback and stale revision, including
+forged settings arguments over the real authenticated SDK HTTP route. Private
+handler causes never become client-visible error text. Write counts and persisted
+values still prove denied operations and rollback do not mutate state.
+
+Principal/tenant/scope/revocation and catalog authorization remain separate:
+those pre-handler access failures still reject. This fixture update does not
+change navigation, settings, authentication or workflow production code.
+
+## Accepted PR3267 regressions
+
+| Behavior / trigger | Positive and negative case | Actor / executor / runtime / edge | Validation |
+|---|---|---|---|
+| Encoded query delimiter in pathname | `/safe%3F/../admin` and encoded dot segments rejected before resolver; literal query values containing `../` accepted | Untrusted host; no database executor; native validator and Chromium bridge wire | Package unit and browser; baseline3 native failures and traversal browser failure |
+| Throwing UI callback after tool result | Successful result render throw is not denied; denied-result fallback throw executes once; transport rejection fallback remains once; later route recovers | Application callback; no transaction; Chromium actual helper and tools/call wire; uncaught callback error observable as unhandled rejection | Browser result/isError/transport-error regressions; baseline result and isError cases fail |
+
+The fixture observes and prevents the browser's unhandled-rejection default only
+to assert callback errors explicitly. Production does not swallow these errors or
+map them to authorization denials. Existing cancellation/disposal/stale-result
+contracts remain covered by the original browser suite. No new wire API is added.
+
+## Accepted PR3271 mention regressions
+
+| Behavior / trigger | Positive | Negative / failure | Authority / executor / runtime | Validation |
+|---|---|---|---|---|
+| Published mention output descriptor | Closed resource and icon fields expose exact required fields/bounds | Unknown fields disallowed; optional presentation does not become required | Static SDK descriptor; no persistence; Node | Unit descriptor and installed public runtime |
+| Icon serialization | Optional sizes/theme retained, absent optional fields accepted | Non-array sizes, invalid elements, empty/oversize/more than eight sizes, unknown theme reject | Presentation only; no principal or transaction; Node | Baseline two failures/62 passes, then current package + installed |
+| Returned mention selection | Exact searched resourceUri reaches existing authorized selection workflow | Guessed handle returns exact generic safe error; anonymous/other actor/tenant/missing scope/revoked membership never execute owning selection | Existing app-MCP policy plus owning read executor; selections/executions counters; SQLite authority fixture | Integration and fresh installed public workflow probe |
+
+The selection test asserts no unauthorized selection or settings write, including
+revocation after search. No new policy engine or public handler API is introduced.
+The real Chromium context/message/navigation suite remains required. Files/forms
+remain planned; synthetic evidence does not establish actual OpenAI host support.

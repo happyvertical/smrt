@@ -49,7 +49,7 @@ export interface McpWorkflowTool {
   execute: McpWorkflowToolDefinition['execute'];
 }
 
-const TOOL_NAME = /^[a-z][a-z0-9_]{0,127}$/;
+const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
 
 function assertRecord(
   value: unknown,
@@ -63,6 +63,13 @@ function assertRecord(
       Object.getPrototypeOf(value) !== null)
   ) {
     throw new TypeError(`${label} must be an object.`);
+  }
+}
+
+/** MCP tools-list descriptors require input and output schema object roots. */
+function assertMcpToolSchemaRoot(schema: ToolJsonSchema, label: string): void {
+  if (schema.type !== 'object') {
+    throw new TypeError(`${label} must declare type: 'object'.`);
   }
 }
 
@@ -212,8 +219,10 @@ function normalizeIcons(
 export function createMcpWorkflowTool(
   definition: McpWorkflowToolDefinition,
 ): McpWorkflowTool {
-  if (!TOOL_NAME.test(definition.name)) {
-    throw new TypeError('Workflow tool name must be lowercase snake_case.');
+  if (typeof definition.name !== 'string' || !TOOL_NAME.test(definition.name)) {
+    throw new TypeError(
+      'Workflow tool name must be lowercase snake_case with at most 64 characters.',
+    );
   }
   if (
     typeof definition.description !== 'string' ||
@@ -243,8 +252,15 @@ export function createMcpWorkflowTool(
   ) {
     throw new TypeError('Workflow tool title must be a non-empty string.');
   }
+  assertRecord(definition.inputSchema, 'Workflow tool input schema');
+  assertRecord(definition.outputSchema, 'Workflow tool output schema');
   assertMcpJsonSchemaSafety(definition.inputSchema);
   assertMcpJsonSchemaSafety(definition.outputSchema);
+  assertMcpToolSchemaRoot(definition.inputSchema, 'Workflow tool input schema');
+  assertMcpToolSchemaRoot(
+    definition.outputSchema,
+    'Workflow tool output schema',
+  );
   const metadata = cloneMetadata(definition.metadata);
   if (definition.ui !== undefined) {
     assertRecord(definition.ui, 'Workflow tool ui');

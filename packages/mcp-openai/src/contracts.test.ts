@@ -161,6 +161,9 @@ describe('deep links and capability fallback', () => {
     '/\\evil',
     '/x#fragment',
     '/a/../b',
+    '/safe%3F/../admin',
+    '/safe%3f/%2e%2e/admin',
+    '/safe%3F/./admin?next=/legal/../query',
     '/%2e%2e/b',
     '/%252e%252e/b',
     '/%2fexternal',
@@ -169,6 +172,18 @@ describe('deep links and capability fallback', () => {
     `/${'x'.repeat(2048)}`,
   ])('rejects unsafe path %s', (url) =>
     expect(() => appRelativeUrl(url)).toThrow());
+  it('validates the pathname before decoding query delimiters', () => {
+    for (const url of [
+      '/safe%3F/name',
+      '/safe?next=/a/../b',
+      '/safe?next=%3F/a/../b',
+    ]) {
+      expect(appRelativeUrl(url)).toBe(url);
+    }
+    expect(new URL('/safe%3F/../admin', 'https://app.test').pathname).toBe(
+      '/admin',
+    );
+  });
   it('accepts bounded host context and defaults to functional links for absent/unknown capability', () => {
     expect(readOpenAiDeepLink({})).toBeUndefined();
     expect(
