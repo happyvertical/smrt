@@ -790,3 +790,58 @@ it('validates own array data descriptors without invoking getters or iterators',
   expect(() => json(new Array(2))).toThrow();
   expect(() => json([1, 'safe', { nested: [true, null] }])).not.toThrow();
 });
+
+it('returns cleanup even when the initial subscriber callback throws', async () => {
+  const f = fixture();
+  const observer = vi.fn(() => {
+    throw new Error('component observer failed');
+  });
+  const unsubscribe = f.bridge.subscribe(observer);
+  expect(unsubscribe).toBeTypeOf('function');
+  unsubscribe();
+  await f.connect();
+  expect(observer).toHaveBeenCalledTimes(1);
+  f.bridge.dispose();
+});
+
+it('memoizes connect before a finite observer reenters negotiation', async () => {
+  const f = fixture();
+  let reentered: Promise<void> | undefined;
+  let once = false;
+  f.bridge.subscribe((snapshot) => {
+    if (snapshot.state === 'connecting' && !once) {
+      once = true;
+      reentered = f.bridge.connect();
+    }
+  });
+  const connecting = f.bridge.connect();
+  const requests = f.sent.filter(
+    (message) => message.method === 'ui/initialize',
+  );
+  for (const request of requests) f.reply(f.initialized, request);
+  await Promise.all([connecting, reentered]);
+  expect(reentered).toBe(connecting);
+  expect(requests).toHaveLength(1);
+  f.bridge.dispose();
+});
+
+it('disposes from a connecting observer without late notifications or listeners', async () => {
+  const f = fixture();
+  f.bridge.subscribe((snapshot) => {
+    if (snapshot.state === 'connecting') f.bridge.dispose();
+  });
+  const connecting = f.bridge.connect();
+  await expect(connecting).rejects.toThrow(/cancelled|disposed/);
+  for (const request of f.sent.filter(
+    (message) => message.method === 'ui/initialize',
+  ))
+    f.reply(f.initialized, request);
+  await Promise.resolve();
+  expect(f.bridge.snapshot.state).toBe('disposed');
+  expect(f.listeners.size).toBe(0);
+  expect(
+    f.sent.filter(
+      (message) => message.method === 'ui/notifications/initialized',
+    ),
+  ).toHaveLength(0);
+});
