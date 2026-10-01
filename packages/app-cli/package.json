@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-app-cli",
-  "version": "0.51.36",
+  "version": "0.51.39",
   "description": "Reusable CLI factory for SMRT apps — branded `<name> <resource> <command>` CLI + stdio MCP bridge with decorator-driven resource discovery",
   "type": "module",
   "main": "./dist/index.js",
@@ -32,11 +32,11 @@
   },
   "dependencies": {
     "@happyvertical/smrt-users": "workspace:*",
+    "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0"
   },
   "devDependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",
     "vite": "8.1.4",

@@ -62,6 +62,26 @@ export function isPublicToolName(
 }
 
 /**
+ * Check public eligibility using a descriptor's canonical read annotation when
+ * available. The legacy name rule remains for generated catalogs predating
+ * canonical annotations.
+ */
+export function isPublicMcpTool(
+  tool: {
+    name: string;
+    annotations?: { readOnlyHint?: boolean };
+  },
+  patterns: readonly string[],
+): boolean {
+  const readOnly =
+    tool.annotations?.readOnlyHint ?? isReadOnlyToolName(tool.name);
+  return (
+    readOnly &&
+    patterns.some((pattern) => matchesToolPattern(tool.name, pattern))
+  );
+}
+
+/**
  * Lower-case `<class>_` prefixes the app considers "allowed core tools"
  * given a list of SMRT class names. Used to build the allow-list for
  * `McpAppServer.listTools`.

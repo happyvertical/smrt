@@ -1,5 +1,69 @@
 # @happyvertical/smrt-core
 
+## 0.51.39
+
+### Patch Changes
+
+- ### Features
+  
+  - add authorized forms and durable task input (#3283) (openai)
+  - add authorized file entrypoints and resource sessions (#3282) (openai)
+  
+  ### Bug Fixes
+  
+  - bound ONNX provisioning and test stalled setup locally (#3287) (ci)
+  - serve Unicode filenames with safe disposition headers (#3281) (assets)
+  - allow FK preflight for parents created in the same migration (#3272) (core)
+  - anchor ToolsDock live region within its container (#3270) (svelte)
+  - publish linked module guides (#3280) (pack)
+- @happyvertical/smrt-config@0.51.39
+  - @happyvertical/smrt-scanner@0.51.39
+  - @happyvertical/smrt-types@0.51.39
+
+## 0.51.38
+
+### Patch Changes
+
+- ### Features
+  
+  - add context, messages and composer mentions (#3271) (mcp-openai)
+  - add navigation and settings adapter (#3267) (mcp-openai)
+  - persist authorized workflow continuations (#3250) (mcp)
+  - add browser bridge and Svelte binding (#3249) (mcp-apps)
+  - add remote authentication and tenant isolation (#3248) (mcp)
+  - serve authorized MCP Apps UI resources (#3244) (mcp)
+  - add portable tool descriptors and authorized workflows (#3239) (mcp)
+  
+  ### Bug Fixes
+  
+  - preserve concurrent terminal approval rate limits (#3277) (users)
+  - reject non-object workflow schemas (#3251) (app-mcp)
+  - recognize exact null MCP header assertions (#3247) (ci)
+  - recognize negative MCP session-header assertions (#3243) (ci)
+  - preserve canonical tool identifiers and policy identity (#3231) (mcp)
+  - patch gRPC certificate authorization advisory (#3237) (deps)
+  - patch newly disclosed Axios advisories (#3233) (deps)
+  - preserve artifact coherence and remediate audit advisories (#3220)
+  
+  ### Other Changes
+  
+  - test: repair hook budgets and isolate runtime fixtures (#3230)
+  - docs: ratify MCP Apps and OpenAI integration standard (#3229)
+- @happyvertical/smrt-config@0.51.38
+  - @happyvertical/smrt-scanner@0.51.38
+  - @happyvertical/smrt-types@0.51.38
+
+## 0.51.37
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - make the system drawer span the footer (#3198) (svelte)
+- @happyvertical/smrt-config@0.51.37
+  - @happyvertical/smrt-scanner@0.51.37
+  - @happyvertical/smrt-types@0.51.37
+
 ## 0.51.36
 
 ### Patch Changes

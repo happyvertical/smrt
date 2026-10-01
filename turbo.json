@@ -7,7 +7,16 @@
     "vite.config.base.ts",
     "scripts/declarations.ts",
     "vitest.workspace.ts",
-    "biome.json"
+    "biome.json",
+    "**/AGENTS.md",
+    "**/agents/**/*.md",
+    "**/smrt.config.js",
+    "**/smrt.config.mjs",
+    "**/smrt.config.cjs",
+    "**/smrt.config.ts",
+    "**/smrt.config.mts",
+    "**/smrt.config.cts",
+    "**/smrt.config.json"
   ],
   "globalPassThroughEnv": [
     "PUBLISH_PACK_OUTPUT_DIR",
@@ -61,7 +70,8 @@
       "outputs": [
         "src/manifest/test-manifest.json",
         "src/manifest/test-manifest-stub.ts",
-        ".smrt/manifest.json"
+        ".smrt/manifest.json",
+        ".smrt/smrt-knowledge.json"
       ],
       "cache": true
     },

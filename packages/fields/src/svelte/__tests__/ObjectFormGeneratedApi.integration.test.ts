@@ -122,8 +122,9 @@ function generatedDefinitions(): Record<
   string,
   ReturnType<typeof buildWebCollectionDefinition>
 > {
+  // These fixture classes belong to Vitest's local artifact, not production.
   const manifest = JSON.parse(
-    readFileSync(resolve(process.cwd(), 'dist/manifest.json'), 'utf8'),
+    readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
   ) as SmartObjectManifest;
   return Object.fromEntries(
     selectWebCollectionEntries(manifest).map((entry) => [

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.51.36",
+  "version": "0.51.39",
   "smrtJsdoc": "strict",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
@@ -89,6 +89,12 @@
       "svelte": "./dist/data-surface.js",
       "import": "./dist/data-surface.js",
       "default": "./dist/data-surface.js"
+    },
+    "./mcp-apps": {
+      "types": "./dist/mcp-apps/index.d.ts",
+      "svelte": "./dist/mcp-apps/index.js",
+      "import": "./dist/mcp-apps/index.js",
+      "default": "./dist/mcp-apps/index.js"
     }
   },
   "files": [
@@ -135,6 +141,7 @@
   "dependencies": {
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-languages": "workspace:*",
+    "@happyvertical/smrt-mcp-apps": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",

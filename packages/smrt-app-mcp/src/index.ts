@@ -23,14 +23,31 @@
  */
 
 export {
+  continueMcpWorkflow,
+  createMcpContinuationTool,
+  type McpWorkflowContinuation,
+} from './continuation.js';
+export {
   MCP_TOOL_ACCESS_DENIED_CODE,
   McpAccessError,
   type McpAccessErrorMetadata,
 } from './errors.js';
 export {
   createMcpProtocolServer,
+  createMcpProtocolServerForRequest,
+  type McpProtocolRequestOptions,
   type McpProtocolServerOptions,
 } from './protocol.js';
+export {
+  MCP_APP_RESOURCE_MAX_BYTES,
+  MCP_APP_RESOURCE_MIME,
+  type McpAppResource,
+  type McpAppResourceContent,
+  type McpAppResourceCsp,
+  type McpAppResourceDefinition,
+  type McpResourcePolicy,
+  prepareMcpAppResource,
+} from './resources.js';
 export {
   type CallToolInput,
   type CreateMcpAppServerOptions,
@@ -50,7 +67,15 @@ export {
 export {
   classNamePrefixes,
   isAllowedCoreTool,
+  isPublicMcpTool,
   isPublicToolName,
   isReadOnlyToolName,
   matchesToolPattern,
 } from './tools.js';
+export {
+  createMcpWorkflowTool,
+  type McpWorkflowTool,
+  type McpWorkflowToolContext,
+  type McpWorkflowToolDefinition,
+  type McpWorkflowToolVisibility,
+} from './workflow-tools.js';

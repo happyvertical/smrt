@@ -28,6 +28,9 @@ import {
 import {
   createMcpTaskResult,
   getMcpTaskMarker,
+  type McpTaskAuthority,
+  McpTaskSuspendedError,
+  requestMcpTaskContinuation,
   requestMcpTaskInput,
 } from './mcp-task.js';
 import {
@@ -89,6 +92,10 @@ export function getActiveJobExecutionContext():
 export interface TaskRunnerConfig {
   /** Worker ID (auto-generated if not provided) */
   id?: string;
+  /** Resolve live authority for durable tasks at each execution/replay. */
+  authorizeMcpTask?: (
+    authority: Readonly<McpTaskAuthority>,
+  ) => Promise<boolean>;
   /** Number of concurrent jobs to process */
   concurrency?: number;
   /** Queues to process (default: ['default']) */
@@ -176,6 +183,7 @@ export class JobTimeoutError extends Error {
  */
 const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
   id: '',
+  authorizeMcpTask: async () => false,
   concurrency: 5,
   queues: ['default'],
   pollInterval: 1000,
@@ -221,6 +229,8 @@ export class TaskRunner extends EventEmitter {
   /** Over-claimed job ids whose release back to `pending` has not landed. */
   private unreleasedSurplus = new Set<string>();
   private pollTimer: NodeJS.Timeout | null = null;
+  private pollPromise: Promise<boolean> | null = null;
+  private pollGeneration = 0;
   private idlePollDelayMs: number;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private leaseTimer: NodeJS.Timeout | null = null;
@@ -280,6 +290,9 @@ export class TaskRunner extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.running) return;
+    if (this.shutdownPromise || this.pollPromise || this.activeJobs.size > 0) {
+      throw new Error('TaskRunner shutdown is still draining');
+    }
     if (!this.collection || !this.workerCollection) {
       throw new Error('TaskRunner not initialized. Call initialize() first.');
     }
@@ -347,6 +360,7 @@ export class TaskRunner extends EventEmitter {
     if (this.shutdownPromise) return this.shutdownPromise;
 
     this.running = false;
+    this.pollGeneration++;
 
     // Stop polling and the telemetry heartbeat immediately; no new jobs claim.
     if (this.pollTimer) {
@@ -390,7 +404,7 @@ export class TaskRunner extends EventEmitter {
       // still executing past the shutdown timeout, leave the row to lapse
       // naturally (≤ TTL) so a nearly-finished handler keeps its chance to land
       // its own completion before peers can recover it.
-      if (this.activeJobs.size === 0) {
+      if (this.activeJobs.size === 0 && !this.pollPromise) {
         try {
           await this.workerCollection?.expireWorker(this.workerKey);
         } catch {
@@ -424,9 +438,12 @@ export class TaskRunner extends EventEmitter {
 
       let foundWork = true;
       try {
-        foundWork = await this.poll();
+        this.pollPromise = this.poll();
+        foundWork = await this.pollPromise;
       } catch (error) {
         this.emit('runner:error', error as Error);
+      } finally {
+        this.pollPromise = null;
       }
 
       // Schedule next poll
@@ -467,6 +484,7 @@ export class TaskRunner extends EventEmitter {
   }
 
   private async poll(): Promise<boolean> {
+    const generation = this.pollGeneration;
     if (!this.collection || !this.db) return true;
 
     await this.recoverStaleJobs();
@@ -492,7 +510,13 @@ export class TaskRunner extends EventEmitter {
       await this.releaseSurplusClaims(claimed.slice(available));
     }
 
-    for (const job of jobs) {
+    for (const [index, job] of jobs.entries()) {
+      // Shutdown may start during the claim, surplus release, or a previous
+      // job's synchronous started listener. Never dispatch an unstarted claim.
+      if (generation !== this.pollGeneration) {
+        await this.releaseSurplusClaims(jobs.slice(index), false);
+        return false;
+      }
       const jobId = job.id;
       if (!jobId) continue;
 
@@ -523,17 +547,21 @@ export class TaskRunner extends EventEmitter {
    * and once more by `stop()`. If the process dies first, stale recovery fails
    * those rows as orphaned (it does not requeue them).
    */
-  private async releaseSurplusClaims(surplus: SmrtJob[]): Promise<void> {
+  private async releaseSurplusClaims(
+    surplus: SmrtJob[],
+    reportExceededLimit = true,
+  ): Promise<void> {
     const ids = surplus
       .map((job) => job.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
     if (ids.length === 0) return;
-    this.emit(
-      'runner:error',
-      new Error(
-        `claimReady returned ${ids.length} job(s) beyond the concurrency limit (${this.config.concurrency}); releasing them back to pending`,
-      ),
-    );
+    if (reportExceededLimit)
+      this.emit(
+        'runner:error',
+        new Error(
+          `claimReady returned ${ids.length} job(s) beyond the concurrency limit (${this.config.concurrency}); releasing them back to pending`,
+        ),
+      );
     for (const id of ids) this.unreleasedSurplus.add(id);
     await this.retryUnreleasedSurplus();
   }
@@ -756,6 +784,7 @@ export class TaskRunner extends EventEmitter {
       resultPointer?: string;
       taskResult?: Record<string, unknown>;
     }> => {
+      await this.assertMcpTaskAuthority(job);
       // Get the object class from registry
       const registeredClass = ObjectRegistry.getClass(job.objectType);
       if (!registeredClass) {
@@ -915,6 +944,7 @@ export class TaskRunner extends EventEmitter {
    * Handle job execution error
    */
   private async handleJobError(job: SmrtJob, error: Error): Promise<void> {
+    if (error instanceof McpTaskSuspendedError) return;
     const strategy = fromConfig(job.retryStrategy);
     const decision: RetryDecision = strategy.shouldRetry(job.attempts, error);
 
@@ -994,6 +1024,41 @@ export class TaskRunner extends EventEmitter {
     }
   }
 
+  private async assertMcpTaskAuthority(job: SmrtJob): Promise<void> {
+    const marker = getMcpTaskMarker(job);
+    const continuation = marker?.continuation;
+    if (!continuation && !marker?.authorizationRequired) return;
+    let authorized = false;
+    try {
+      authorized =
+        !!job.taskOwnerId &&
+        (await this.config.authorizeMcpTask(
+          Object.freeze({
+            ownerId: job.taskOwnerId,
+            tenantId: job.tenantId ?? null,
+            taskId: job.taskId ?? '',
+            objectType: job.objectType,
+            objectId: job.objectId ?? '',
+            method: job.method,
+            ...(continuation
+              ? { continuation: Object.freeze({ ...continuation }) }
+              : {}),
+          }),
+        ));
+    } catch {
+      // Provider failures are internal; never persist their details in tasks/get.
+    }
+    if (!authorized) throw new Error('MCP task authorization denied');
+    // Authority lookup may await network I/O; cancellation can win meanwhile.
+    const owned = await this.db?.query(
+      `SELECT id FROM _smrt_jobs WHERE id = ? AND worker_id = ? AND status = 'running'`,
+      job.id,
+      job.workerId,
+    );
+    if (owned?.rows.length !== 1)
+      throw new Error('MCP task is no longer active');
+  }
+
   private createExecutionContext(
     job: SmrtJob,
     contextLogger: JobContextLogger,
@@ -1047,12 +1112,24 @@ export class TaskRunner extends EventEmitter {
       ...(job.taskId && this.db
         ? {
             task: {
-              requestInput: (inputRequests: Record<string, unknown>) =>
-                requestMcpTaskInput(
+              assertAuthorized: () => this.assertMcpTaskAuthority(job),
+              requestContinuation: (binding, inputRequest) =>
+                requestMcpTaskContinuation(
+                  this.db as DatabaseInterface,
+                  job,
+                  binding,
+                  inputRequest,
+                ),
+              requestInput: async (inputRequests: Record<string, unknown>) => {
+                await this.assertMcpTaskAuthority(job);
+                const answers = await requestMcpTaskInput(
                   this.db as DatabaseInterface,
                   job,
                   inputRequests,
-                ),
+                );
+                await this.assertMcpTaskAuthority(job);
+                return answers;
+              },
             },
           }
         : {}),
@@ -1401,11 +1478,13 @@ export class TaskRunner extends EventEmitter {
    * Wait for active jobs to complete with timeout
    */
   private async waitForActiveJobs(): Promise<void> {
-    if (this.activeJobs.size === 0) return;
+    // A claim is not in activeJobs yet. Keep the lease while it drains, using
+    // the same shutdown deadline as handlers rather than an unbounded await.
+    if (this.activeJobs.size === 0 && !this.pollPromise) return;
 
     return new Promise((resolve) => {
       const checkInterval = setInterval(() => {
-        if (this.activeJobs.size === 0) {
+        if (this.activeJobs.size === 0 && !this.pollPromise) {
           clearInterval(checkInterval);
           clearTimeout(timeout);
           resolve();

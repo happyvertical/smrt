@@ -59,6 +59,83 @@ describe('serveAsset', () => {
     expect(body.toString()).toBe('hello');
   });
 
+  it.each([
+    ['发票-收据.pdf', '__-__.pdf'],
+    ['📷 receipt.pdf', '_ receipt.pdf'],
+    ['Café résumé.pdf', 'Caf_ r_sum_.pdf'],
+  ])('serves saved Unicode filename %s through native Response headers', async (filename, fallback) => {
+    const bytes = Buffer.from('Unicode receipt fixture');
+    const asset = await runtime.storeSourceAsset(filename, bytes, {
+      mimeType: 'application/pdf',
+      typeSlug: 'document',
+    });
+    const response = await serveAsset({
+      runtime,
+      asset: asset.id!,
+      disposition: 'attachment',
+    });
+    expect(response).toBeInstanceOf(Response);
+    expect(response.headers).toBeInstanceOf(Headers);
+    expect(response.status).toBe(200);
+    const disposition = response.headers.get('content-disposition') ?? '';
+    expect(disposition).toContain(`attachment; filename="${fallback}";`);
+    const encoded = disposition.split("filename*=UTF-8''")[1];
+    expect(decodeURIComponent(encoded)).toBe(filename);
+    expect(
+      [...disposition].every((character) => character.charCodeAt(0) <= 0x7e),
+    ).toBe(true);
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+  });
+
+  it.each([
+    ['broken\uD800name.pdf', 'broken\uFFFDname.pdf'],
+    ['broken\uDC00name.pdf', 'broken\uFFFDname.pdf'],
+    ['paired\uD83D\uDCF7.pdf', 'paired📷.pdf'],
+  ])('normalizes malformed UTF16 without losing valid pairs: %s', async (filename, expected) => {
+    const asset = await runtime.storeSourceAsset(
+      'unicode-fixture.pdf',
+      Buffer.from('x'),
+      {
+        mimeType: 'application/pdf',
+        typeSlug: 'document',
+      },
+    );
+    const response = await serveAsset({ runtime, asset, filename });
+    expect(response.status).toBe(200);
+    const disposition = response.headers.get('content-disposition') ?? '';
+    expect(decodeURIComponent(disposition.split("filename*=UTF-8''")[1])).toBe(
+      expected,
+    );
+    expect(await response.text()).toBe('x');
+  });
+
+  it('encodes extended parameter punctuation and sanitizes hostile names without injecting headers', async () => {
+    const asset = await runtime.storeSourceAsset('safe.pdf', Buffer.from('x'), {
+      mimeType: 'application/pdf',
+      typeSlug: 'document',
+    });
+    const response = await serveAsset({
+      runtime,
+      asset,
+      filename: `  发票"\\/bad\u0000\r\n\t\u007f\u0085'()*!.pdf  `,
+    });
+    expect(response.status).toBe(200);
+    const disposition = response.headers.get('content-disposition') ?? '';
+    const encoded = disposition.split("filename*=UTF-8''")[1];
+    expect(encoded).toMatch(/^(?:[A-Za-z0-9!#$&+.^_`|~-]|%[0-9A-F]{2})*$/);
+    expect(encoded).toContain('%27%28%29%2A!');
+    expect(decodeURIComponent(encoded)).toBe("发票___bad'()*!.pdf");
+    expect(disposition).toContain(`filename="_____bad'()*!.pdf"`);
+    expect(
+      [...disposition].every(
+        (character) =>
+          character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) <= 0x7e,
+      ),
+    ).toBe(true);
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(response.headers.get('bad')).toBeNull();
+  });
+
   it('uses attachment disposition when requested', async () => {
     const asset = await runtime.storeSourceAsset(
       'report.pdf',

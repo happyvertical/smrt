@@ -3,11 +3,29 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ManifestManager } from '../manager';
 
+const files = vi.hoisted(() => new Map<string, string>());
+const renameObservations = vi.hoisted(() => [] as Array<string | undefined>);
+
 vi.mock('node:fs', () => ({
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
+  existsSync: vi.fn((path: string) => files.has(path)),
+  readFileSync: vi.fn((path: string) => files.get(path)),
+  writeFileSync: vi.fn((path: string, content: string) => {
+    files.set(path, content);
+  }),
   mkdirSync: vi.fn(),
+  statSync: vi.fn(() => ({ isFile: () => true, mode: 0o100644 })),
+  chmodSync: vi.fn(),
+  renameSync: vi.fn((from: string, to: string) => {
+    renameObservations.push(files.get(to));
+    const content = files.get(from);
+    if (content === undefined)
+      throw new Error(`Missing staged artifact: ${from}`);
+    files.set(to, content);
+    files.delete(from);
+  }),
+  unlinkSync: vi.fn((path: string) => {
+    files.delete(path);
+  }),
 }));
 
 // Mock ManifestGenerator to avoid deep dependency chain
@@ -24,6 +42,34 @@ describe('ManifestManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    files.clear();
+    renameObservations.length = 0;
+    vi.mocked(fs.existsSync).mockImplementation((path) =>
+      files.has(String(path)),
+    );
+    vi.mocked(fs.readFileSync).mockImplementation(
+      (path) => files.get(String(path)) ?? '',
+    );
+    vi.mocked(fs.writeFileSync).mockImplementation((path, content) => {
+      files.set(String(path), String(content));
+    });
+    vi.mocked(fs.statSync).mockReturnValue({
+      isFile: () => true,
+      mode: 0o100644,
+    } as ReturnType<typeof fs.statSync>);
+    vi.mocked(fs.renameSync).mockImplementation((from, to) => {
+      const target = String(to);
+      renameObservations.push(files.get(target));
+      const content = files.get(String(from));
+      if (content === undefined) {
+        throw new Error(`Missing staged artifact: ${String(from)}`);
+      }
+      files.set(target, content);
+      files.delete(String(from));
+    });
+    vi.mocked(fs.unlinkSync).mockImplementation((path) => {
+      files.delete(String(path));
+    });
     manager = new ManifestManager(projectRoot);
   });
 
@@ -82,9 +128,30 @@ describe('ManifestManager', () => {
 
       expect(fs.mkdirSync).toHaveBeenCalledWith(devDir, { recursive: true });
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        devPath,
+        expect.stringContaining(`${devPath}.smrt-`),
         JSON.stringify(mockManifest, null, 2),
+        'utf-8',
       );
+      expect(fs.renameSync).toHaveBeenCalledWith(
+        expect.stringContaining(`${devPath}.smrt-`),
+        devPath,
+      );
+    });
+
+    it('replaces the manifest without making the previous file disappear', () => {
+      const devPath = join(projectRoot, '.smrt/manifest.json');
+      const previous = JSON.stringify({
+        version: '1.0.0',
+        objects: { old: {} },
+      });
+      const replacement = { version: '1.0.0', objects: { fresh: {} } };
+      files.set(devPath, previous);
+
+      manager.write(replacement as any, 'dev');
+
+      expect(renameObservations).toEqual([previous]);
+      expect(files.get(devPath)).toBe(JSON.stringify(replacement, null, 2));
+      expect(files.has(devPath)).toBe(true);
     });
   });
 
@@ -97,8 +164,11 @@ describe('ManifestManager', () => {
 
       expect(result).toEqual(mockManifest);
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        join(projectRoot, '.smrt/manifest.json'),
+        expect.stringContaining(
+          `${join(projectRoot, '.smrt/manifest.json')}.smrt-`,
+        ),
         JSON.stringify(mockManifest, null, 2),
+        'utf-8',
       );
     });
   });

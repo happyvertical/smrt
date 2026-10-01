@@ -84,6 +84,28 @@ Config precedence for knowledge is defaults → top-level `knowledge` in
 `smrt.config.ts` → `packages[packageName].knowledge` → plugin option →
 object-level `@smrt({ knowledge })`.
 
+Test generation uses that same effective configuration and publishes knowledge
+matching the manifest it generated. Disabling knowledge removes a previous local
+knowledge artifact, so consumers cannot mistake it for current enabled output.
+`new ManifestBuilder(projectRoot)` keeps discovery, package identity, and output
+at that explicit root, including installed providers and external base classes;
+omitting the argument retains the current-working-directory
+behavior. Both manifest writers retain declared package dependencies when merging
+their local and consumed-object projections.
+
+Test manifests carry optional `artifactPurpose: 'test'`; dependency discovery
+skips those artifacts, including `.smrt` fallbacks. Unmarked runtime manifests,
+empty published providers, and source-only development providers remain eligible.
+`ManifestBuilder` accepts explicit `outputMode: 'dev' | 'build'`; omitted mode
+retains legacy filename inference. Vitest selects dev mode explicitly, so tests
+never replace a production `dist/manifest.json`. Relative output directories are
+resolved against the builder's project root.
+
+Tracked `src/lib/server/smrt-register.ts` belongs to SvelteKit config/type
+generation. Generic library builds consume it but do not cache or restore it
+as an output; otherwise a concurrent config producer's bytes can be replayed
+over a newer registration after dependency eligibility changes.
+
 Object-level `knowledge: false` excludes an object from authored context only;
 it must not change runtime manifest registration. Use
 `knowledge: { tags, summary, risks }` for review-sensitive domain objects.
@@ -132,3 +154,6 @@ module, so it must exist during `svelte-kit sync`, before Vite's `buildStart`.
 Both hosted routes and the legacy `svelteKit: true` mode follow this order.
 The clean-consumer regression fixture ships real provider declarations and
 checks the generated imports with `svelte-check`.
+Core's `generate:test` task depends on its own `build`: both publish the local
+`.smrt` manifest/knowledge pair, so Turbo must serialize production before test
+generation instead of caching an interleaved pair.

@@ -2,7 +2,7 @@
 
 App-runtime MCP server scaffolding for s-m-r-t apps. Provides:
 
-- **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, toolListCache?, toolPolicy?, workflowAssertions? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
+- **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, toolListCache?, toolPolicy?, workflowAssertions?, workflowTools? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
 - **SvelteKit adapters** (`./sveltekit`) — `mountMcpRoute` mounts a modern
   2026-07-28 stateless Streamable HTTP MCP endpoint. The REST-shaped
   `mountMcpToolsRoute` / `mountMcpCallRoute` aliases remain available for one
@@ -12,8 +12,11 @@ For piping a deployed app's MCP surface to a local stdio MCP client, see `@happy
 
 For public deployments, follow the
 [remote MCP authorization contract](../../docs/content/architecture/remote-mcp-authorization.md).
-This package trusts the principal supplied by the application adapter; it does
-not implement an OAuth authorization server or validate bearer tokens itself.
+The server trusts the principal supplied by the application adapter. Validate
+bearer tokens at an application gateway or with the server-only `./auth` JWT
+adapter, then resolve fresh application membership and tenant authority on every
+request. The OAuth issuer remains operator-owned; this package does not implement
+an OAuth authorization server.
 
 ```ts
 // src/lib/server/mcp.ts
@@ -43,6 +46,39 @@ export const mcpServer = createMcpAppServer({
   },
 });
 ```
+
+`workflowTools` composes explicitly declared application workflows into this
+same catalog. Every workflow must declare its canonical `effect`,
+`idempotent`, and `openWorld` values; title, icons, and a portable UI resource
+association are host presentation metadata only. The configured `toolPolicy`
+and `workflowAssertions` run for both discovery and direct calls before the
+workflow handler receives the trusted principal and arguments.
+Authored names must be lowercase snake_case strings of at most 64 characters;
+input and output schemas must both have object roots. Invalid declarations fail
+at server construction. Ordinary handler exceptions return a generic `isError`
+result with text and structured error data; internal exception details are not
+exposed. Intentional `McpAccessError` denials retain the transport's access-error
+contract.
+
+```ts
+workflowTools: [{
+  name: 'application_prepare',
+  description: 'Prepare an application for human review',
+  title: 'Prepare application',
+  inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  outputSchema: { type: 'object', properties: { prepared: { type: 'boolean' } } },
+  effect: 'write', idempotent: true, openWorld: false,
+  ui: { resourceUri: 'ui://application/prepare.html', visibility: ['app'] },
+  async execute({ arguments: args, principal }) {
+    return { content: [{ type: 'text', text: 'Prepared for review.' }], structuredContent: { prepared: true } };
+  },
+}],
+```
+
+The resulting descriptor preserves `_meta.ui.resourceUri` and optional
+`_meta.ui.visibility` through SDK-v2 `tools/list`, while ordinary clients retain the text and structured result.
+The resource implementation itself is staged separately; metadata neither
+loads a resource nor grants an application permission.
 
 ```ts
 // src/routes/api/mcp/+server.ts
@@ -127,3 +163,77 @@ unauthenticated for both discovery and calls. If an older mount supplies only
 `resolveAuthenticated: () => true` and no principal, discovery keeps its old
 boolean behavior while calls remain user-less as before; migrate that mount to
 `resolvePrincipal` for one identity across both routes.
+
+## Prebuilt MCP Apps resources
+
+Declare portable HTML resources alongside workflow tools. A URI must contain
+its explicit version as a path segment; tool `ui.resourceUri` references must
+resolve to a declared resource. The server snapshots UTF-8 bytes, a SHA-256
+digest and portable MIME `text/html;profile=mcp-app` at construction time. It
+never compiles source or inserts principal data into templates.
+
+```ts
+const server = createMcpAppServer({
+  smrtOptions: () => ({ db }),
+  serverInfo: { name: 'application', version: '1' },
+  allowedClassNames: [],
+  resources: [{
+    uri: 'ui://application/v1/view.html',
+    version: 'v1',
+    name: 'Application view',
+    html: prebuiltHtml,
+  }],
+  workflowTools: [viewWorkflow], // ui.resourceUri points at the declaration
+  resourcePolicy: ({ principal }) =>
+    principal?.id === ownerId && principal?.tenantId === activeTenantId,
+});
+```
+
+Resources are private by default and require a stable principal id plus an explicit
+`resourcePolicy`; an omitted policy denies both listing and reads. Only an
+explicit `public: true` declaration permits anonymous reads of a static
+artifact. `resourcePolicy` runs afresh for both catalog and direct reads; errors
+fail closed. Every associated tool must also pass the ordinary tool policy.
+Unknown and denied URIs return the same error. The resource policy owns tenant
+and owner restrictions; static templates contain no candidate records, tokens
+or sessions. Retrieve changing data through authorized tools instead.
+
+Optional `metadata` carries extension JSON into catalog/read `_meta`, with a
+64 KiB and 16-level limit. Non-JSON values, accessors, cycles and reserved `ui`
+or `com.happyvertical.smrt/resource` keys are rejected. Metadata grants no access.
+
+The raw HTML budget is 100 KiB. CSP connection, resource, frame and base origins
+default to empty lists; permissions default to none. Origins must be exact HTTPS
+origins (WSS is additionally accepted for connections). Unknown CSP/permission
+fields are rejected. Bundle assets inline or use literal absolute references to
+explicitly declared resource/frame origins. Relative asset references,
+CSS imports/escapes and alternate image/source functions, base/object/embed/meta tags, srcset and srcdoc are rejected
+by the conservative static validation profile. HTML is parsed before validation;
+script raw text and inert comments are not CSS. Decoded attribute URLs must still
+match declared origins. Raster data images are permitted.
+Dynamic JavaScript networking requires host CSP enforcement; declarations are
+not a JavaScript sandbox. Host rendering and enforcement remain M4/M8 gates.
+
+`mountMcpRoute` exposes native `resources/list` and `resources/read`, with
+private, zero-TTL results and no subscriptions or HTTP sessions. Missing UI
+capabilities do not remove ordinary text/structured tool results. The app CLI
+bridge now defaults to this modern `/api/mcp` endpoint; use explicit
+`transport: 'legacy-rest'` (or the generic bin's `--legacy-rest`) only during a
+migration from `/api/mcp/tools` and `/api/mcp/call`. The modern bridge uses SDK v2,
+re-resolves credentials per request, refuses redirects, and forwards resource
+and tool metadata without inventing UI or extension capabilities.
+
+Generated tool allow-lists use the generator-owned original class identity, even
+when the advertised name is a canonical alias. Guards keyed by either the alias
+or original tool name run before both direct and task dispatch. Authored workflows
+retain their explicit names and effect policy; catalogs containing authored
+workflows keep private cache scope because they have no generated tenant identity.
+
+## Remote JWT authorization
+
+The server-only `@happyvertical/smrt-app-mcp/auth` entry exports
+`createMcpResourceAuth` for protected-resource metadata, bearer challenges and
+JWT verification against a configured existing issuer. A required application
+callback rechecks actor and active tenant membership per request. See the
+[remote authorization contract](../../docs/content/architecture/remote-mcp-authorization.md)
+for route wiring, local/hosted profiles and the explicit JWT revocation limits.

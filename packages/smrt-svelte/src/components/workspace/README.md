@@ -15,6 +15,13 @@ presentation, focus tool registration, activity registry/watch components, and
 optional SMRT-fed content seams. It does not depend on jobs, users, tenancy, or
 SvelteKit route APIs; apps pass data, endpoints, and permission-filtered nav in.
 
+The explicit `@happyvertical/smrt-svelte/workspace/legacy` ToolsDock entry keeps
+its polite status live region visually clipped and anchored inside its
+positioning container. Mounting the dock at a flex container's trailing edge
+does not let that hidden region add horizontal scrolling. The package browser
+fixture checks its bounds and preserves announcement updates and Escape focus
+restoration at mobile and desktop widths.
+
 ## Main Exports
 
 - `AdminShell`

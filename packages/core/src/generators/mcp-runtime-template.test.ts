@@ -3,12 +3,37 @@ import { ObjectRegistry } from '../registry.js';
 import {
   MCP_STABLE_CATALOG_TTL_MS,
   MCPGenerator,
+  mcpToolAnnotations,
   resolveMCPToolListCacheHint,
   sortMCPTools,
 } from './mcp.js';
 import { generateRuntimeBootstrap } from './mcp-runtime-template.js';
 
 describe('generated MCP custom-action runtime (#2182)', () => {
+  it('derives advisory MCP annotations from the canonical action classifier', () => {
+    expect(mcpToolAnnotations('list')).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    expect(
+      mcpToolAnnotations('publish', {
+        scope: 'item',
+        idRequired: true,
+        isStatic: false,
+        effect: 'write',
+        idempotent: false,
+        openWorld: true,
+      }),
+    ).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
+  });
+
   it('emits the SDK v2 stateless lifecycle', () => {
     const source = generateRuntimeBootstrap({ tools: [], customActions: {} });
 
@@ -47,6 +72,28 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     expect(source).toContain(
       'tools: [...TOOLS].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)',
     );
+  });
+
+  it('binds the task store to the same tenant as task creation (#3211)', () => {
+    for (const tenantScopedObjects of [[], ['report']]) {
+      const source = generateRuntimeBootstrap({
+        tools: [],
+        tenantScopedObjects,
+        taskActions: {
+          report_generate: {
+            objectName: 'Report',
+            objectType: '@test/reports:Report',
+          },
+        },
+      });
+      const tenant = tenantScopedObjects.length
+        ? 'MCP_TENANT_ID ?? null'
+        : 'null';
+      expect(source).toContain(
+        `ownerId: process.env.SMRT_MCP_TENANT_ID || null, tenantId: ${tenant}`,
+      );
+      expect(source).toContain(`tenantId: ${tenant},`);
+    }
   });
 
   it('emits the Tasks extension only for eligible generated actions', () => {
@@ -107,12 +154,16 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     const generator = new MCPGenerator();
     const detector = generator as unknown as {
       hasTenantScopedTools(tools: Array<{ name: string }>): Promise<boolean>;
+      toolTargets: WeakMap<object, { objectName: string; action: string }>;
     };
 
+    const tool = { name: 'tenantcachedocument_list' };
+    detector.toolTargets.set(tool, {
+      objectName: 'TenantCacheDocument',
+      action: 'list',
+    });
     try {
-      await expect(
-        detector.hasTenantScopedTools([{ name: 'tenantcachedocument_list' }]),
-      ).resolves.toBe(true);
+      await expect(detector.hasTenantScopedTools([tool])).resolves.toBe(true);
     } finally {
       allClasses.mockRestore();
       isTenantScoped.mockRestore();
@@ -200,15 +251,15 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     expect(source).toContain("actionMeta.scope === 'item' && !id");
     expect(source).toContain("actionMeta.scope === 'collection' && id");
     expect(source).toContain(
-      "? ObjectRegistry.getClass('Document')?.constructor",
+      '? ObjectRegistry.getClass("Document")?.constructor',
     );
     expect(source).toContain("parameterName === 'id'");
     expect(source).toContain("? 'actionId'");
     expect(source).toMatch(/actionMeta\.optionsParameter\s+\? \[options\]/);
     expect(source).toContain('actionMethod.call(target, ...methodArgs)');
-    expect(source).toContain("target[actionMeta.methodName || 'apply']");
+    expect(source).toContain('target[actionMeta.methodName || "apply"]');
     expect(source).toContain(
-      "target[actionMeta.methodName || 'restoreintocontent']",
+      'target[actionMeta.methodName || "restoreintocontent"]',
     );
     expect(source).toContain('"methodName":"restoreIntoContent"');
     expect(source).toContain('normalizeCustomActionFailure(result)');
@@ -230,7 +281,7 @@ describe('generated MCP custom-action runtime (#2182)', () => {
       },
     });
 
-    expect(source).toContain("resolveCreateTarget('animal', args, aiConfig)");
+    expect(source).toContain('resolveCreateTarget("animal", args, aiConfig)');
     expect(source).toContain('const STI_TARGETS');
     expect(source).toContain('"@test/animals:Cat":"@test/animals:Cat"');
     expect(source).toContain('applyWritablePolicy(targetObjectName, args)');

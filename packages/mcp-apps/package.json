@@ -1,0 +1,46 @@
+{
+  "name": "@happyvertical/smrt-mcp-apps",
+  "version": "0.51.39",
+  "description": "Framework-neutral browser bridge for portable MCP Apps",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": "./dist/index.js",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
+    "prepack": "node ../../scripts/prepack-package.js"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-app-mcp": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "author": "HappyVertical",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/mcp-apps"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

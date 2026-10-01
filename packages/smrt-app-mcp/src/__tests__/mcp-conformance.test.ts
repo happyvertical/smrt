@@ -111,6 +111,56 @@ describe('smrt-app-mcp MCP 2026-07-28 conformance', () => {
     ).toEqual(['I_list', 'antelope_list', 'i_list', 'zebra_list']);
   });
 
+  it('preserves canonical tool annotations and portable UI metadata over SDK v2', async () => {
+    const metadataServer: McpAppServer = {
+      ...appServer,
+      async listTools() {
+        return [
+          {
+            name: 'application_prepare',
+            title: 'Prepare application',
+            description: 'Prepare an application for human review',
+            inputSchema: { type: 'object' },
+            outputSchema: { type: 'object' },
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: true,
+              openWorldHint: false,
+            },
+            icons: [{ src: 'https://example.test/icon.svg', theme: 'light' }],
+            _meta: {
+              ui: {
+                resourceUri: 'ui://application/prepare.html',
+                visibility: ['app'],
+              },
+              'example.extension': { enabled: true },
+            },
+          },
+        ];
+      },
+    };
+    const metadataHandler = createMcpHandler(() =>
+      createMcpProtocolServer(metadataServer),
+    );
+
+    const response = await modernRequest(metadataHandler, 'tools/list');
+    expect(response.body.result.tools).toEqual([
+      expect.objectContaining({
+        name: 'application_prepare',
+        title: 'Prepare application',
+        annotations: expect.objectContaining({ idempotentHint: true }),
+        _meta: {
+          ui: {
+            resourceUri: 'ui://application/prepare.html',
+            visibility: ['app'],
+          },
+          'example.extension': { enabled: true },
+        },
+      }),
+    ]);
+  });
+
   it('allowlists access-error metadata before exposing it over MCP', async () => {
     const accessErrorServer: McpAppServer = {
       ...appServer,
