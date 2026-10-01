@@ -158,6 +158,15 @@ test('segmented controls post exact values, skip disabled options and honor rese
       .locator('form')
       .evaluate((form) => new FormData(form as HTMLFormElement).get('kind'));
   expect(await posted()).toBe('one');
+  await expect(page.getByRole('radiogroup', { name: 'Kind' })).toHaveAttribute(
+    'tabindex',
+    '-1',
+  );
+  await page.getByRole('button', { name: 'Reset' }).focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('radio', { name: 'One', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Reset' })).toBeFocused();
   await page.getByRole('radio', { name: 'One', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('radio', { name: 'Zero' })).toBeChecked();
