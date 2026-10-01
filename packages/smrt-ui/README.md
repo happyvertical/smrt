@@ -597,3 +597,21 @@ a provider. Customize it globally with ThemeProvider's `overrides`, for example
 `overrides={{ '--smrt-touch-target-min': '56px' }}`. Touch targets grow with larger
 content; normal density keeps existing component sizing. TenantNav sizing is
 tracked separately in [#3246](https://github.com/happyvertical/smrt/issues/3246).
+
+### Narrow DataTable
+
+Set `responsiveMode="hide-columns"` to adapt to the table's container width.
+The default `responsiveBreakpoint={800}` includes both 768px tablets and 390px
+phones. Narrow mode budgets one column per `responsiveColumnMinWidth={160}`
+pixels, after reserving space for selection and expansion controls. Higher
+`column.responsive.priority` values survive first (missing/nonfinite values are
+zero); ties preserve declared display order. `responsive.keepVisible` columns
+always survive responsive collapse, while explicitly hidden columns stay hidden.
+
+Retained cells wrap, and their desktop width and pinning settings resume when
+the container widens. Responsive presentation never changes controller state,
+sorting, selection, or persisted column visibility. Header groups and structural
+row colspans follow the retained columns. If keepVisible columns exceed the
+budget, all remain visible and share the available width. Custom cell/header
+snippets should fit their cells. Default `responsiveMode="scroll"` preserves
+existing horizontal scrolling.

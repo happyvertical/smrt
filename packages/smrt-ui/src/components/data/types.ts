@@ -168,6 +168,12 @@ export interface SortState {
 export interface DataTableProps<T> {
   /** Sort-control target density; omit to inherit ThemeProvider. */
   density?: 'comfortable' | 'touch';
+  /** Opt-in container-width column collapse; default keeps horizontal scrolling. */
+  responsiveMode?: 'scroll' | 'hide-columns';
+  /** Container-width threshold in pixels for narrow mode (default 800). */
+  responsiveBreakpoint?: number;
+  /** Target width per retained column in narrow mode (default 160 pixels). */
+  responsiveColumnMinWidth?: number;
   /** Data rows */
   data: T[];
   /** Column definitions */

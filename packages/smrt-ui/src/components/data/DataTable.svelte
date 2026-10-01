@@ -35,6 +35,7 @@ import {
   type DataTableResolvedColumn,
   resolveDataTableLayout,
 } from './DataTableLayout.js';
+import { responsiveColumns } from './DataTableResponsive.js';
 import {
   maximumDataTableVirtualScrollTop,
   resolveDataTableVirtualWindow,
@@ -103,6 +104,9 @@ let {
   rowClass,
   size = 'md',
   density,
+  responsiveMode = 'scroll',
+  responsiveBreakpoint = 800,
+  responsiveColumnMinWidth = 160,
   striped = false,
   hoverable = true,
   stickyHeader = false,
@@ -758,6 +762,7 @@ function updateOverflowState() {
   const container = tableContainer;
   if (!container) return;
 
+  containerWidth = container.clientWidth;
   const maxScrollLeft = Math.max(
     0,
     container.scrollWidth - container.clientWidth,
@@ -819,8 +824,29 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   };
 }
 
-const dataTableLayout = $derived(
+let containerWidth = $state(0);
+const isNarrow = $derived(
+  responsiveMode === 'hide-columns' &&
+    containerWidth > 0 &&
+    containerWidth <=
+      (Number.isFinite(responsiveBreakpoint) && responsiveBreakpoint > 0
+        ? responsiveBreakpoint
+        : 800),
+);
+const declaredLayout = $derived(
   resolveDataTableLayout(columns, constrainedLayoutState, measuredColumnWidths),
+);
+const dataTableLayout = $derived(
+  isNarrow
+    ? resolveDataTableLayout(
+        responsiveColumns(
+          declaredLayout.columns.map((entry) => entry.column),
+          containerWidth - (selectable ? 48 : 0) - (expandedContent ? 48 : 0),
+          responsiveColumnMinWidth,
+        ),
+        { ...constrainedLayoutState, columnWidths: [], columnPinning: [] },
+      )
+    : declaredLayout,
 );
 const visibleColumns = $derived(dataTableLayout.columns);
 const dataBodyStructuralRows = $derived(
@@ -1199,6 +1225,7 @@ function getCellValue(row: T, column: DataTableColumn<T>): unknown {
 function widthForColumn(
   column: DataTableResolvedColumn<T>,
 ): string | undefined {
+  if (isNarrow) return undefined;
   return column.width === undefined ? column.column.width : `${column.width}px`;
 }
 
@@ -1390,6 +1417,7 @@ $effect(() => {
   bind:this={tableContainer}
   data-density={density}
   class="data-table-container"
+  class:data-table-container--narrow={isNarrow}
   class:data-table-container--sticky={stickyHeader || virtualizedBody}
   class:data-table-container--overflowing={hasHorizontalOverflow}
   class:data-table-container--virtualized={virtualizationWindow.enabled}
@@ -1480,8 +1508,8 @@ $effect(() => {
                 data-keep-visible={column.responsive?.keepVisible ? 'true' : undefined}
                 use:observeColumnWidth={column.id}
                 style:width={widthForColumn(resolvedColumn)}
-                style:min-width={column.minWidth}
-                style:max-width={column.maxWidth}
+                style:min-width={isNarrow ? undefined : column.minWidth}
+                style:max-width={isNarrow ? undefined : column.maxWidth}
                 style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
                 style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
                 style:text-align={column.align}
@@ -1537,7 +1565,7 @@ $effect(() => {
                 {:else}
                   {column.label}
                 {/if}
-                {#if column.resizable}
+                {#if column.resizable && !isNarrow}
                   <!-- svelte-ignore a11y_no_noninteractive_element_interactions: a focusable ARIA separator is the resize control. -->
                   <span
                     class="data-table__resize-handle"
@@ -1662,8 +1690,8 @@ $effect(() => {
                 data-responsive-priority={column.responsive?.priority}
                 data-keep-visible={column.responsive?.keepVisible ? 'true' : undefined}
                 style:width={widthForColumn(resolvedColumn)}
-                style:min-width={column.minWidth}
-                style:max-width={column.maxWidth}
+                style:min-width={isNarrow ? undefined : column.minWidth}
+                style:max-width={isNarrow ? undefined : column.maxWidth}
                 style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
                 style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
                 style:text-align={column.align}
@@ -1719,8 +1747,8 @@ $effect(() => {
                   scope="row"
                   data-column-id={column.id}
                   style:width={widthForColumn(resolvedColumn)}
-                  style:min-width={column.minWidth}
-                  style:max-width={column.maxWidth}
+                  style:min-width={isNarrow ? undefined : column.minWidth}
+                  style:max-width={isNarrow ? undefined : column.maxWidth}
                   style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
                   style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
                   style:text-align={column.align}
@@ -1739,8 +1767,8 @@ $effect(() => {
                   class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                   data-column-id={column.id}
                   style:width={widthForColumn(resolvedColumn)}
-                  style:min-width={column.minWidth}
-                  style:max-width={column.maxWidth}
+                  style:min-width={isNarrow ? undefined : column.minWidth}
+                  style:max-width={isNarrow ? undefined : column.maxWidth}
                   style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
                   style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
                   style:text-align={column.align}
@@ -1782,8 +1810,8 @@ $effect(() => {
                   scope="row"
                   data-column-id={column.id}
                   style:width={widthForColumn(resolvedColumn)}
-                  style:min-width={column.minWidth}
-                  style:max-width={column.maxWidth}
+                  style:min-width={isNarrow ? undefined : column.minWidth}
+                  style:max-width={isNarrow ? undefined : column.maxWidth}
                   style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
                   style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
                   style:text-align={column.align}
@@ -1802,8 +1830,8 @@ $effect(() => {
                   class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                   data-column-id={column.id}
                   style:width={widthForColumn(resolvedColumn)}
-                  style:min-width={column.minWidth}
-                  style:max-width={column.maxWidth}
+                  style:min-width={isNarrow ? undefined : column.minWidth}
+                  style:max-width={isNarrow ? undefined : column.maxWidth}
                   style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
                   style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
                   style:text-align={column.align}
@@ -2219,4 +2247,7 @@ $effect(() => {
   .data-table-container[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
   .data-table-container[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .data-table__sort-button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
+  .data-table-container--narrow .data-table { table-layout: fixed; }
+  .data-table-container--narrow .data-table__cell { white-space: normal; overflow-wrap: anywhere; }
+  .data-table-container--narrow .data-table__sort-button { max-width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 </style>
