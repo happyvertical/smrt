@@ -45,6 +45,7 @@ export const M = defineMessages({
   'ui.admin_shell.close_shortcuts': 'Close shortcuts',
   'ui.admin_shell.shortcuts': 'Shortcuts',
   'ui.admin_shell.close': 'Close',
+  'ui.admin_shell.home': 'Home',
   'ui.activity_toasts.dismiss': 'Dismiss activity notification',
   'ui.activity_toasts.dismiss_action': 'Dismiss',
   'ui.activity_item.view': 'View',

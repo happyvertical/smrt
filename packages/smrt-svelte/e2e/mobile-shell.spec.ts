@@ -165,3 +165,33 @@ test('status chips stay in the footer and scroll to the final chip', async ({
     await client.detach();
   }
 });
+
+for (const width of [390, 1280]) {
+  test(`brand link remains visible and focusable at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('/?brand=1');
+    const home = page
+      .locator('header')
+      .getByRole('link', { name: 'Mobile shell fixture' });
+    await expect(home).toBeInViewport();
+    await expect(home).toHaveAttribute('href', '/home');
+    await page.keyboard.press('Tab');
+    await expect(home).toBeFocused();
+    expect(
+      await home.evaluate((el) => getComputedStyle(el).outlineStyle),
+    ).not.toBe('none');
+    if (width > 768) {
+      const compact = page.locator(
+        '.smrt-admin-shell__edge--left .smrt-admin-shell__brand-link',
+      );
+      await expect(compact).toBeInViewport();
+      const mark = await compact.boundingBox();
+      const rail = await page
+        .locator('.smrt-admin-shell__edge--left')
+        .boundingBox();
+      expect(mark!.width).toBeLessThanOrEqual(rail!.width);
+    }
+  });
+}

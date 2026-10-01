@@ -29,6 +29,7 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
 {#snippet systemBar()}<SystemStatusChips {chips} />{/snippet}
 <div data-theme="smrt" data-color-scheme="light">
 <AdminShell {config} title="Mobile shell fixture" storageKey="mobile-shell-fixture"
+  homeHref={query.has('brand') ? '/home' : undefined} logoSrc={query.has('brand') ? 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"%3E%3Ccircle cx="16" cy="16" r="15"/%3E%3C/svg%3E' : undefined}
   {appPanel} systemPanel={panel} tenantPanel={panel} focusPanel={panel} {systemBar}>
   <p>Main content</p>
 </AdminShell>

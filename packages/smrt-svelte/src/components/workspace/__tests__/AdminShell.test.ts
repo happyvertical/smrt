@@ -29,6 +29,87 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
+  it('links full and compact branding home with an accessible title', async () => {
+    const state = createShellState({
+      config: { left: { initial: 'collapsed' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        title: 'Shop',
+        homeHref: '/home',
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      const links = container.querySelectorAll<HTMLAnchorElement>(
+        '.smrt-admin-shell__brand-link',
+      );
+      expect(links).toHaveLength(2);
+      expect([...links].map((link) => link.getAttribute('href'))).toEqual([
+        '/home',
+        '/home',
+      ]);
+      expect([...links].map((link) => link.getAttribute('aria-label'))).toEqual(
+        ['Shop', 'Shop'],
+      );
+      expect(links[1].textContent?.trim()).toBe('S');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders a logo and keeps default branding unlinked without homeHref', async () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Shop',
+        logoSrc: '/shop.svg',
+        logoAlt: 'Shop mark',
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('img')?.getAttribute('src')).toBe(
+        '/shop.svg',
+      );
+      expect(container.querySelector('img')?.getAttribute('alt')).toBe(
+        'Shop mark',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__brand-link'),
+      ).toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('passes full and compact context to custom brand snippets', async () => {
+    const brand = createRawSnippet<[{ compact: boolean }]>((context) => ({
+      render: () =>
+        `<span>${context().compact ? 'Compact mark' : 'Full mark'}</span>`,
+    }));
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Shop',
+        homeHref: '/',
+        brand,
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.textContent).toContain('Full mark');
+      expect(container.textContent).toContain('Compact mark');
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('renders the four edge shell and body content', () => {
     const component = mount(AdminShell, {
       target: container,

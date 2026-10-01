@@ -92,6 +92,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   let {
     title = 'SMRT',
+    homeHref,
+    logoSrc,
+    logoAlt = '',
+    brand,
     subtitle = '',
     config,
     settings,
@@ -288,6 +292,29 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 {/snippet}
 
+{#snippet brandContent(compact: boolean)}
+  {#if brand}
+    {@render brand({ compact })}
+  {:else}
+    {#if logoSrc}<img class="smrt-admin-shell__logo" src={logoSrc} alt={logoAlt} />{/if}
+    {#if compact}
+      {#if !logoSrc}<span aria-hidden="true">{title.charAt(0)}</span>{/if}
+    {:else}
+      <div class="smrt-admin-shell__brand-text"><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
+    {/if}
+  {/if}
+{/snippet}
+
+{#snippet shellBrand(compact = false)}
+  {#if homeHref}
+    <a class="smrt-admin-shell__brand smrt-admin-shell__brand-link" class:compact href={homeHref} aria-label={title || t(M['ui.admin_shell.home'])}>
+      {@render brandContent(compact)}
+    </a>
+  {:else}
+    <div class="smrt-admin-shell__brand" class:compact>{@render brandContent(compact)}</div>
+  {/if}
+{/snippet}
+
 <div
   class="smrt-admin-shell"
   data-top-state={panelState('top')}
@@ -316,12 +343,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {#if appBar}
           {@render appBar()}
         {:else}
-          <div class="smrt-admin-shell__brand">
-            <strong>{title}</strong>
-            {#if subtitle}
-              <span>{subtitle}</span>
-            {/if}
-          </div>
+          {@render shellBrand()}
           {@render edgeToggle('top')}
         {/if}
       </div>
@@ -357,6 +379,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       aria-label={labelFor('left')}
     >
       <div class="smrt-admin-shell__rail">
+        {#if !edgeExpanded('left') && (homeHref || logoSrc || brand)}{@render shellBrand(true)}{/if}
         {#if edgeExpanded('left')}
           <div class="smrt-admin-shell__tenant-stack">
             <div class="smrt-admin-shell__tenant-content">
@@ -631,9 +654,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   .smrt-admin-shell__brand {
-    display: grid;
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
     min-width: 0;
+    color: inherit;
+    text-decoration: none;
   }
+  .smrt-admin-shell__brand-text { display: grid; min-width: 0; }
+  .smrt-admin-shell__brand.compact { justify-content: center; margin-block-end: var(--smrt-spacing-2); }
+  .smrt-admin-shell__brand-link:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  .smrt-admin-shell__logo { inline-size: 2rem; block-size: 2rem; object-fit: contain; flex-shrink: 0; }
 
   .smrt-admin-shell__brand strong,
   .smrt-admin-shell__brand span {

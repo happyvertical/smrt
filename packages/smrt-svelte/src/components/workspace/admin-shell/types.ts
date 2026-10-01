@@ -165,6 +165,14 @@ export interface ShellStateSnapshot {
 
 export interface AdminShellProps {
   title?: string;
+  /** Optional destination for the default brand and compact rail mark. */
+  homeHref?: string;
+  /** Optional brand logo URL. */
+  logoSrc?: string;
+  /** Alternative text for the logo (decorative by default). */
+  logoAlt?: string;
+  /** Custom brand content, receiving whether it is in the compact rail. */
+  brand?: Snippet<[{ compact: boolean }]>;
   subtitle?: string;
   config?: ShellPanelDefaults;
   settings?: ShellSettingsDelta;

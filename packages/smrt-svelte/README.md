@@ -447,3 +447,9 @@ public registry interactions. It does not require `document.modelContext` or
 export mounted closures to remote MCP. Agent proposals retain trusted human
 staged review. See the [bridge contract](../mcp-apps/README.md) for origin
 configuration, capabilities, fallback and synthetic-browser evidence limits.
+
+AdminShell's optional `homeHref` turns default branding into a named home link.
+Use `logoSrc`/`logoAlt` for a logo or a `brand` snippet receiving `{ compact }`
+for custom marks. A collapsed tenant rail keeps a compact linked logo or initial;
+the default app bar keeps the full brand visible at narrow widths. A custom
+`appBar` continues to own its branding. Without these props, branding stays text.
