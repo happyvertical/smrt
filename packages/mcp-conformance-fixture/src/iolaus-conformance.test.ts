@@ -397,7 +397,13 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
               revision: 1,
               decision: 'transmit',
             }),
-          ).rejects.toThrow();
+          ).resolves.toMatchObject({
+            isError: true,
+            content: [{ type: 'text', text: 'Workflow execution failed.' }],
+            structuredContent: {
+              error: { message: 'Workflow execution failed.' },
+            },
+          });
           expect((await applications.get(String(rows[0].id)))?.decision).toBe(
             'undecided',
           );
@@ -509,13 +515,25 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
           expect(String(materials.structuredContent?.sha256)).toMatch(
             /^[a-f0-9]{64}$/,
           );
+          const frozenDecision = (await applications.get(String(rows[0].id)))
+            ?.decision;
+          expect(frozenDecision).toBe('prepare');
           await expect(
             call('iolaus_decide', {
               id: rows[0].id,
               revision: 1,
               decision: 'pass',
             }),
-          ).rejects.toThrow();
+          ).resolves.toMatchObject({
+            isError: true,
+            content: [{ type: 'text', text: 'Workflow execution failed.' }],
+            structuredContent: {
+              error: { message: 'Workflow execution failed.' },
+            },
+          });
+          expect((await applications.get(String(rows[0].id)))?.decision).toBe(
+            frozenDecision,
+          );
           expect(
             (
               await resolveOpenAiNavigationTarget({
