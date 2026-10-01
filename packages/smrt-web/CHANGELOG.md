@@ -1,5 +1,16 @@
 # @happyvertical/smrt-web
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: `installWebMcpPageToolRegistry()` records every `registerTool` call on a
+  recording `document.modelContext` (forwarding to the native one), so an in-page
+  assistant can list and run the same tools an outside agent sees. Registrars
+  stamp their resolved effect under `WEBMCP_TOOL_EFFECT`. Proposal tools are
+  branded by their execute function, and only branded tools auto-run in the
+  assistant dock.
+
 ## 0.51.39
 
 No changes in this release.

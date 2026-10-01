@@ -1,5 +1,99 @@
 # @happyvertical/smrt-svelte
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: `AdminShell` is themeable without reaching into its classes:
+  
+  - `--smrt-admin-shell-background` sets the page background (default `--smrt-color-surface`).
+  - Every scroller inside the shell gets themed thin scrollbars; retint with `--smrt-admin-shell-scrollbar-track`, `-thumb` and `-thumb-hover`.
+  - A right rail collapsed to `0` no longer paints padding (the rail never pads wider than its track).
+  - `ShellTitle` reads `--smrt-shell-title-font-family` (a serif masthead, say), falling back to the theme's title font.
+- 0259083: Speak into text fields. `@happyvertical/smrt-ui/forms` adds `Dictation` (the
+  listening state machine over any speech source), `DictationButton` (a 44px
+  microphone toggle) and `DictationStatus` (listening and plain-words errors:
+  unsupported browser, blocked microphone, nothing heard), `insertTextAtCursor`,
+  a Web Audio "ready" beep (`playReadyBeep`, no sound files), and `longPress` /
+  `createLongPress` (hold ~500ms; moving past 10px is a drag, not a long press).
+  `@happyvertical/smrt-svelte/browser-ai` adds `createSttDictationSource`, which
+  lends `Dictation` the existing speech-to-text adapters (browser speech by
+  default), created lazily on first use.
+  
+  `DictationStatus` takes no room while it has nothing to say.
+- 0259083: One sorting contract for lists. `@happyvertical/smrt-ui/data` adds `list-sort`
+  helpers (`parseListSort`, `toggleListSort`, `listSortSearchParams`/`listSortHref`
+  for `?sort=&dir=` URL state, `listSortAria`, `sortListRows`, and an allow-listed
+  `listSortOrderBy` for server queries), a `SortableHeader` for hand-rolled tables
+  (link or button, `aria-sort`, arrow indicator), and a `ListSortSelect` "Sort by"
+  picker for card lists. `DataTable` columns take `sortFirstDirection` (e.g. dates
+  start newest first) and the table takes `sortClearable={false}` to toggle asc ⇄ desc
+  without clearing. `useListSurface` publishes the list's `sort`, declares `sortable`
+  columns, and accepts a `set-sorting` command through the page's own `onSort`.
+  
+  `createUrlListSort` / `createLocalListSort` give a page one reactive sort state
+  (`sort`, `href(column)`, `toggle`, `set`) that `SortableHeader list={...}` and
+  `ListSortSelect list={...}` bind to directly; the URL variant takes the router's
+  current URL and navigate function, so it works in any SvelteKit package.
+- 0259083: Earlier QA-branch additions to smrt-svelte:
+  
+  - Responsive `AdminShell` chrome, all opt-in: a full-width `header`,
+    `phoneTopBar` (hides on scroll), `phoneBottomBar` (replaced by a form's
+    `FormActionBar`), overlays, scrim and swipe-to-close, resizable edges, and
+    `ShellState.viewport`. `keepMounted` edges keep their panel mounted (hidden)
+    while collapsed; `ShellNavItem.attention` shows an announced dot.
+    `overlayMedia` slides a side edge over the page below a media query (inert
+    page, focus in and back, Escape or scrim closes, slides back out on close);
+    `shell.presentationFor(edge)`. A closed phone drawer is inert, the header lets
+    menus drop below it, a panel resize ends on lost capture or unmount, and the
+    page trail shows an ancestor once.
+  - `useListSurface`, `useLinkSurface`, `useStepSurface`: one-call data-surface
+    hooks for a rendered list (with a text `find` control), a menu or tab row,
+    and a wizard.
+  - The rich `Form` spreads native form attributes, takes SvelteKit's `enhance`,
+    and its `<formId>_stage_changes` tool stages smrt-ui primitives and
+    `useControlRegistration` composites too; `FormScope` offers the same around
+    content without a `<form>`.
+  - `tryUseWebMcpUi()`: the Provider's mounted-UI registries, or `null` instead of
+    a throw.
+  - WebMCP: only branded proposal tools (view intents and the UI adapter's own
+    tools) auto-run in the assistant dock; a bespoke tool can no longer claim the
+    `intent` owner label to skip confirmation.
+
+### Patch Changes
+
+- 0259083: An agent never moves the person's keyboard focus. A `focus` command from
+  `source: 'agent'` on the control-interaction registry now reveals and
+  highlights the control instead of focusing it; a user-sourced `focus` is
+  unchanged. The `smrt_ui_execute_form_control` tool description says so.
+- 0259083: The browser speech-to-text adapter puts the Web Speech error code on every
+  error it reports (`speechError`: `network`, `service-not-allowed`,
+  `not-allowed`, …), and reports an `aborted` it did not cause itself instead of
+  dropping it, so callers can tell Brave's missing speech service from a blocked
+  microphone.
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-languages@0.52.0
+  - @happyvertical/smrt-web@0.52.0
+  - @happyvertical/smrt-mcp-apps@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
 ## 0.51.39
 
 ### Patch Changes
