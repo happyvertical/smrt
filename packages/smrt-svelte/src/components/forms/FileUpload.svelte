@@ -175,7 +175,9 @@ function addFiles(newFiles: File[]) {
   // Validate accepted types
   const rejected = filtered.filter((f) => !isFileAccepted(f));
   if (rejected.length > 0) {
-    errorMessages.push(`${rejected.length} file(s) rejected: type not allowed`);
+    errorMessages.push(
+      t(M['ui.file_upload.rejected_type'], { count: rejected.length }),
+    );
     filtered = filtered.filter((f) => isFileAccepted(f));
   }
 
@@ -185,7 +187,10 @@ function addFiles(newFiles: File[]) {
     const oversized = filtered.filter((f) => f.size > limit);
     if (oversized.length > 0) {
       errorMessages.push(
-        `${oversized.length} file(s) exceed the maximum size of ${formatFileSize(limit)}`,
+        t(M['ui.file_upload.exceeds_max_size'], {
+          count: oversized.length,
+          size: formatFileSize(limit),
+        }),
       );
       filtered = filtered.filter((f) => f.size <= limit);
     }

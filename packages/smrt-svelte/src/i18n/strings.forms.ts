@@ -25,6 +25,9 @@ export const M = defineMessages({
   // FileUpload
   'ui.file_upload.remove_file': 'Remove {name}',
   'ui.file_upload.required': 'Select a file to upload',
+  'ui.file_upload.rejected_type': '{count} file(s) rejected: type not allowed',
+  'ui.file_upload.exceeds_max_size':
+    '{count} file(s) exceed the maximum size of {size}',
 
   // Form
   'ui.form.extracting': 'Extracting form fields…',
