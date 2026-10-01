@@ -22,7 +22,11 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import { normalizeIdentityEmail } from '../auth/normalizeIdentityEmail';
 import type { ProfileLinkInput } from '../collections/ProfileLinkCollection';
 import {
@@ -277,9 +281,10 @@ export class Profile extends SmrtObject {
 
   /**
    * The metafield a slug names for this profile: the profile tenant's own
-   * definition first, then a global (NULL-tenant) one. A tenant profile never
-   * takes another tenant's definition, which a super-admin or system read
-   * would otherwise return.
+   * definition first, then a global (NULL-tenant) one. A profile never takes
+   * another tenant's definition, which a super-admin or system read would
+   * otherwise return. A tenant-less profile falls back to the active tenant
+   * context's own definition only (none under system context).
    */
   private async resolveMetafield(
     metafields: {
@@ -290,15 +295,16 @@ export class Profile extends SmrtObject {
     },
     slug: string,
   ): Promise<ProfileMetafield | null> {
-    const candidates = await metafields.list({ where: { slug }, limit: 50 });
+    // No limit: one row per tenant that defines this slug, so a cap could
+    // drop the owner's or the global definition before selection.
+    const candidates = await metafields.list({ where: { slug } });
+    const ownerTenantId = this.tenantId || getTenantId();
     return (
       candidates.find(
-        (candidate) => this.tenantId && candidate.tenantId === this.tenantId,
+        (candidate) => ownerTenantId && candidate.tenantId === ownerTenantId,
       ) ??
       candidates.find((candidate) => !candidate.tenantId) ??
-      // A tenant-less profile read inside a tenant context only sees that
-      // tenant's definitions; keep using them as before.
-      (this.tenantId ? null : (candidates[0] ?? null))
+      null
     );
   }
 

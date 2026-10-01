@@ -127,6 +127,28 @@ describe('profile metadata tenancy', () => {
     ]);
   });
 
+  it('a tenant-less profile under system context never takes another tenant metafield', async () => {
+    await seed(TENANT_B);
+    const types = await ProfileTypeCollection.create({ db });
+    const type = await withSystemContext(() =>
+      types.getOrCreateBySlug('person', { name: 'Person' }),
+    );
+    const profiles = await ProfileCollection.create({ db });
+    const globalProfile = await withSystemContext(async () => {
+      const created = await profiles.create({
+        typeId: type.id as string,
+        name: 'Global person',
+      });
+      await created.save();
+      return created;
+    });
+
+    await expect(
+      withSystemContext(() => globalProfile.addMetadata('phone', '555-0105')),
+    ).rejects.toThrow("Metafield 'phone' not found");
+    expect(await rowTenants('profile_metadata')).toEqual([]);
+  });
+
   it('a cross-tenant read does not see the metadata', async () => {
     const { profile } = await seed(TENANT_A);
     await withTenant({ tenantId: TENANT_A }, () =>
