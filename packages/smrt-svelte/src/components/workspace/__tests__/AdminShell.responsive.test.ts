@@ -3,7 +3,7 @@
  * and bottom bars, form action bars, scrim, navigation, phone presentations
  * of the right edge, and resizable side edges.
  */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet, flushSync, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminShell from '../admin-shell/AdminShell.svelte';
@@ -198,6 +198,20 @@ describe('AdminShell on a phone', () => {
     setWidth(1280);
     await settle();
     expect(left.inert).toBe(false);
+  });
+
+  it('moves focus into the phone drawer without animation enumeration', async () => {
+    const { shell } = renderPhone({
+      tenantPanel: html('<a href="/phone-target">Phone navigation target</a>'),
+    });
+    await settle();
+    const left = document.getElementById('smrt-admin-shell-left-panel')!;
+    Object.defineProperty(left, 'getAnimations', { value: undefined });
+    shell.expandPanel('left');
+    await settle();
+    await waitFor(() =>
+      expect(left.contains(document.activeElement)).toBe(true),
+    );
   });
 
   it('closes an open drawer when the path changes', async () => {

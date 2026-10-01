@@ -222,7 +222,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     void tick().then(async () => {
       // Inherited visibility also transitions on primitive buttons; wait for
       // the drawer and its controls to be focusable before moving focus.
-      await Promise.all(panel.getAnimations({ subtree: true }).map((animation) => animation.finished.catch(() => {})));
+      const animations = panel.getAnimations?.({ subtree: true }) ?? [];
+      await Promise.all(animations
+        .filter((animation) => animation.playState !== 'paused' && Number.isFinite(animation.effect?.getComputedTiming().endTime ?? 0))
+        .map((animation) => animation.finished.catch(() => {})));
       if (cancelled || !narrow || !edgeExpanded('left') || !panel.isConnected) return;
       panel.querySelector<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')?.focus();
     });

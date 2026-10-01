@@ -227,6 +227,27 @@ test('bottom drawer stays inside the main area during animation', async ({
   expect(box!.y + box!.height).toBeLessThanOrEqual(footer!.y + 1);
 });
 
+test('continuous drawer animations do not block phone focus', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const drawer = page.locator('.smrt-admin-shell__edge--left');
+  await drawer.evaluate((element) => {
+    element.animate([{ opacity: 0.9 }, { opacity: 1 }], {
+      duration: 1000,
+      iterations: Infinity,
+    });
+  });
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await expect(drawer).toBeVisible();
+  await expect
+    .poll(() =>
+      drawer.evaluate((element) => element.contains(document.activeElement)),
+    )
+    .toBe(true);
+});
+
 test('narrow navigation opens, restores focus and excludes closed drawer controls', async ({
   page,
 }) => {
