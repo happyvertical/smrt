@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><head><title>Svelte MCP Apps fixture</title></head><body><iframe title="Svelte app" src="/mcp-apps-child.html"></iframe><script>
+window.requests = [];
+addEventListener('message', event => {
+ if(event.source !== document.querySelector('iframe').contentWindow) return;
+ window.requests.push(event.data);
+ if(event.data.method === 'ui/initialize') event.source.postMessage({jsonrpc:'2.0',id:event.data.id,result:{protocolVersion:'2026-01-26',hostInfo:{name:'synthetic',version:'1'},hostCapabilities:{},hostContext:{}}}, location.origin);
+});
+</script></body></html>

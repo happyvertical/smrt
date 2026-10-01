@@ -1,6 +1,6 @@
 /**
  * Stdio MCP bridge — pipes a remote SMRT app's HTTP MCP surface
- * (`/api/mcp/tools` + `/api/mcp/call`) to a local stdio MCP server so that
+ * (`/api/mcp`) to a local stdio MCP server so that
  * editors and AI clients can connect to it.
  *
  * Apps wire this up by providing their own bin script:
@@ -23,6 +23,10 @@
 
 import { SMRT_MCP_RESULT_METADATA_KEY as APP_CONTRACT_MCP_RESULT_METADATA_KEY } from '@happyvertical/smrt-users/app-contract';
 import {
+  Client,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
+import {
   type CallToolRequest,
   type CallToolResult,
   type ListToolsRequest,
@@ -38,6 +42,9 @@ import {
 import {
   type AppCliResultMetadata,
   type CliConfigContext,
+  getServerUrl,
+  getStoredToken,
+  loadCliConfig,
   type RequestJsonResult,
   redactTransportValue,
   requestJsonResult,
@@ -70,6 +77,10 @@ export interface McpStdioBridgeOptions extends CliConfigContext {
   };
   /** Override the tools endpoint path. Defaults to `/api/mcp/tools`. */
   toolsPath?: string;
+  /** Modern SDK-v2 HTTP by default. Legacy REST requires explicit opt-in. */
+  transport?: 'mcp' | 'legacy-rest';
+  /** Same-server modern endpoint. Defaults to /api/mcp. */
+  mcpPath?: string;
   /** Override the call endpoint path. Defaults to `/api/mcp/call`. */
   callPath?: string;
   /**
@@ -86,6 +97,7 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
   server: Server;
   connect: () => Promise<void>;
 } {
+  if (options.transport !== 'legacy-rest') return createModernBridge(options);
   const toolsPath = options.toolsPath ?? '/api/mcp/tools';
   const callPath = options.callPath ?? '/api/mcp/call';
 
@@ -136,6 +148,91 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
     server,
     connect: () => server.connect(new StdioServerTransport()),
   };
+}
+
+/** Native SDK-v2 forwarding, with fresh credential resolution for each request. */
+function createModernBridge(options: McpStdioBridgeOptions): {
+  server: Server;
+  connect: () => Promise<void>;
+} {
+  const path = options.mcpPath ?? '/api/mcp';
+  if (
+    !path.startsWith('/') ||
+    path.startsWith('//') ||
+    path.includes('\\') ||
+    path.includes('?') ||
+    path.includes('#')
+  )
+    throw new TypeError('mcpPath must be a same-server absolute path.');
+  const server = new Server(options.serverInfo, {
+    capabilities: { tools: {}, resources: {} },
+    cacheHints: { 'tools/list': { ttlMs: 0, cacheScope: 'private' } },
+  });
+  async function forward<T>(
+    operation: (client: Client) => Promise<T>,
+  ): Promise<T> {
+    const config = await loadCliConfig(options);
+    const serverUrl = await getServerUrl(options, config);
+    const target = new URL(`${serverUrl}${path}`);
+    const token = await getStoredToken(options, config, serverUrl);
+    const client = new Client(options.serverInfo, {
+      versionNegotiation: { mode: { pin: '2026-07-28' } },
+    });
+    const transport = new StreamableHTTPClientTransport(target, {
+      fetch: async (input, init) => {
+        const requested = new URL(
+          input instanceof Request ? input.url : String(input),
+        );
+        if (requested.href !== target.href)
+          throw new Error('MCP upstream target changed.');
+        const headers = new Headers(init?.headers);
+        headers.delete('authorization');
+        if (token) headers.set('authorization', `Bearer ${token}`);
+        return (options.fetch ?? fetch)(input, {
+          ...init,
+          headers,
+          redirect: 'error',
+        });
+      },
+    });
+    try {
+      await client.connect(transport);
+      return await operation(client);
+    } catch {
+      // Remote errors can contain credentials or private upstream diagnostics.
+      throw new ProtocolError(
+        ProtocolErrorCode.InternalError,
+        'MCP upstream request failed.',
+      );
+    } finally {
+      await client.close().catch(() => undefined);
+    }
+  }
+  server.setRequestHandler('tools/list', (request) =>
+    forward(async (client) => ({
+      ...(await client.listTools(request.params)),
+      ttlMs: 0,
+      cacheScope: 'private' as const,
+    })),
+  );
+  server.setRequestHandler('tools/call', (request) =>
+    forward((client) => client.callTool(request.params)),
+  );
+  server.setRequestHandler('resources/list', (request) =>
+    forward(async (client) => ({
+      ...(await client.listResources(request.params)),
+      ttlMs: 0,
+      cacheScope: 'private' as const,
+    })),
+  );
+  server.setRequestHandler('resources/read', (request) =>
+    forward(async (client) => ({
+      ...(await client.readResource(request.params)),
+      ttlMs: 0,
+      cacheScope: 'private' as const,
+    })),
+  );
+  return { server, connect: () => server.connect(new StdioServerTransport()) };
 }
 
 /**

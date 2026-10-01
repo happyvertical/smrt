@@ -54,6 +54,7 @@ const serverVersion =
   readArg('version') ?? process.env.SMRT_MCP_SERVER_VERSION ?? '0.0.0';
 
 await runMcpStdioBridge({
+  transport: process.argv.includes('--legacy-rest') ? 'legacy-rest' : 'mcp',
   envPrefix,
   appSlug,
   defaultServerUrl,

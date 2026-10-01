@@ -38,6 +38,12 @@ principal tools, opaque action preview/apply, and ContentList/report adapters.
 When changing a data-surface wire field or refusal reason, update the
 versioned normalizers and the conformance fixture together.
 
+The explicit `./mcp-apps` subpath owns portable MCP Apps mount/dispose bindings.
+It reuses `compileViewIntentToolSpec` for local registry interactions, never
+advertises browser closures as remote tools, and does not use
+`document.modelContext`. See [bridge contract](../mcp-apps/README.md). Its browser
+gate is `e2e/mcp-apps.spec.ts`, including trusted human staged-review enforcement.
+
 ## The UI split — primitive-adoption contract (#1589)
 
 SMRT's shared UI primitives are split by concern: **`smrt-ui` owns the

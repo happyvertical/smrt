@@ -74,9 +74,10 @@ by authorized exposure, never by a global authenticated/unauthenticated boolean.
 
 ## Security and deployment invariants
 
-Follow [remote MCP authorization](remote-mcp-authorization.md). The application
-gateway owns OAuth; SMRT validates the resulting principal at every protected
-operation. OAuth discovery, authorization code with PKCE, issuer/resource/scope
+Follow [remote MCP authorization](remote-mcp-authorization.md). The operator owns the OAuth
+issuer. Validate tokens at the application gateway or server-only JWT adapter;
+resolve fresh application membership and tenant authority on every request.
+SMRT enforces the resulting principal at every protected operation. OAuth discovery, authorization code with PKCE, issuer/resource/scope
 validation and token lifecycle must be exercised against a real issuer in M2.
 Browser login alone does not satisfy remote MCP authorization.
 
@@ -167,3 +168,45 @@ M8 completion, capture host product/build/platform, protocol, asset revision,
 auth profile and actual negotiation/render/interaction outcomes. Until then,
 entrypoint metadata transport is proven locally; host rendering and end-to-end
 Iolaus compatibility remain unverified.
+
+## Protocol hygiene negative assertions
+
+`pnpm check:mcp-protocol-hygiene` rejects retired protocol features in package
+sources and tooling. It recognizes these narrow session-header absence assertions
+in `.test`/`.spec` JavaScript or TypeScript files with `expect` imported from Vitest:
+
+```ts
+expect(responses.every((response) => !response.headers.has('mcp-session-id'))).toBe(true);
+expect(response.headers.get('mcp-session-id')).toBeNull();
+```
+
+The TypeScript parser must find an expression-statement expectation, a synchronous
+single-parameter arrow callback, that parameter's exact `headers.has` call, and a
+literal `true` matcher. Alternatively, it accepts an identifier receiver's exact
+`headers.get` call with one header literal and a zero-argument `toBeNull` matcher.
+Unbound or locally rebound `expect`, malformed syntax,
+positive/unasserted checks, optional chains, and mixed boolean expressions receive
+no exception. Only the verified header literal is excluded from lexical scanning;
+other retired tokens or actual session uses on the same line still fail. This is a
+static syntax rule, not a claim that the test executed or that runtime APIs cannot
+be replaced. Runtime conformance tests remain required.
+
+The gate's optional `--root <repository>` argument selects a package tree for
+isolated CLI regression fixtures; CI and hooks use the repository default. The
+root `pnpm test:ci-scripts` suite exercises acceptance and retained denials.
+
+For standalone standards CI without workspace dependencies, the gate honors
+`SMRT_TYPESCRIPT_PATH`, like the README and JSDoc validators. The standards job
+passes the TypeScript 5.9.3 artifact installed in the runner's trusted validator
+prefix before PR checkout. Local workspace runs use the normal TypeScript import;
+a configured missing compiler path fails rather than falling back or skipping
+validation. The gate never installs a compiler itself.
+
+For the currently deployed `pull_request_target` base workflow, which may not yet
+export that variable, a missing workspace TypeScript package is resolved only in
+GitHub Actions (`GITHUB_ACTIONS=true`) from the fixed
+`$RUNNER_TEMP/readme-validator/node_modules/typescript/lib/typescript.js` prefix.
+`RUNNER_TEMP` must be absolute. An explicit path takes priority; compiler load
+errors, missing trusted artifacts, and other environments fail rather than
+searching or installing a replacement. This supports the trusted base workflow
+while preserving ordinary workspace resolution.
