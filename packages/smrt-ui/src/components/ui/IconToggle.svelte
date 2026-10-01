@@ -107,11 +107,12 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     min-width: 1.15rem;
     padding: 0 0.3rem;
     border-radius: var(--smrt-radius-full, 999px);
-    /* Theme tokens only: the inverse surface is near-white in dark themes. A
-       surface-coloured ring keeps the badge apart from a pressed (tinted) button. */
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    box-shadow: 0 0 0 2px var(--smrt-color-surface);
+    /* Outlined, not filled: a surface-coloured face (so the button's edge does
+       not show through where the badge overlaps it), a 1px theme outline and
+       neutral text, readable on light and dark themes alike. */
+    border: 1px solid var(--smrt-color-outline);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.68rem;
     font-weight: 700;
     line-height: 1.15rem;
