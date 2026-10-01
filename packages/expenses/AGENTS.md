@@ -1,0 +1,89 @@
+# @happyvertical/smrt-expenses
+
+Incurred costs against a cost object, with deduplicated receipts, an explicit
+review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
+
+## Models
+
+- **Expense** (`expenses`): `costObjectType` (qualified class name) +
+  `costObjectId` (bare string), `category` (lowercase kebab-case; suggestions
+  in `SUGGESTED_EXPENSE_CATEGORIES`), `amount` integer minor units + ISO 4217
+  `currency`, `incurredOn` (`YYYY-MM-DD` text: a calendar date, not an
+  instant), `recordedAt`, `recordedByProfileId`, `paidBy` (`company` |
+  `person`) + `paidByProfileId`, `vendorId`, `commitmentId` /
+  `commitmentLineId`, review fields, `reimbursable` / `reimbursedAt` /
+  `reimbursementReference`.
+- **ExpenseReceipt** (`expense_receipts`): noun-specific asset join
+  (`expenseId` → Expense, `assetId` → smrt-assets Asset) with uploader,
+  `filename`, `mimeType`, `byteCount`, `contentSha256`. Collection extends
+  `SmrtJunction` (left expense, right asset, ordered by `created_at`).
+
+## Invariants
+
+- **Review is method-only.** `review()`, `reject()`, `markDuplicate()`,
+  `reopen()` read the persisted status, check the move, and authorize exactly
+  one save through a module `WeakMap`. `save()` compares every review field
+  (status, reviewer, time, note, `duplicateOfId`) with the stored row and
+  refuses an unauthorized change (`EXPENSE_REVIEW_FIELDS_LOCKED`), including
+  on a brand-new row. Review fields are also `readonly` for generated writes.
+- **Reviewed money is frozen.** While the stored status is `reviewed`,
+  `LOCKED_WHEN_REVIEWED` fields cannot change; `reopen()` first.
+- **Drawdown counts once.** `ExpenseCollection.commitmentPosition()` sums only
+  `reviewed` rows with no `duplicateOfId`, in the commitment's currency, deduped
+  by id. Committed is the contract's `totalAmount` (or the line's `amount`).
+- **Currencies never mix.** A commitment match must share the currency
+  (refused on save, `EXPENSE_COMMITMENT_MISMATCH`); `totalsByCurrency()` keys by
+  currency. Foreign-currency rows that reach a commitment anyway (its currency
+  changed later) land in `otherCurrencies`, never in `drawn`.
+- **Duplicate receipts.** Same `(expense, sha256)` is refused by a pre-insert
+  read plus the unique index `expense_receipts_tenant_expense_sha256_key`
+  `(tenant_id, expense_id, content_sha256)`; a unique violation is rethrown as
+  `DuplicateReceiptError`. NULLs are distinct in that index, so for NULL-tenant
+  (global) rows only the pre-insert check holds. Same hash on different
+  expenses is allowed; `findDuplicateReceipts()` reports it (facet on
+  `contentSha256`, count > 1). Receipt `expenseId`, `assetId` and
+  `contentSha256` are immutable.
+- **Tenancy.** Optional (`@TenantScoped({ mode: 'optional' })`, nullable
+  `tenantId`), like smrt-commerce. A receipt takes its expense's tenant; its
+  expense and asset must be visible in that tenant. A commitment must belong
+  to the expense's tenant; before `super.save()` that is
+  `tenantId ?? getTenantId()`, because the interceptor has not populated it.
+  Consumers make it required with a qualified
+  `registerTenantScopedClass(…, { mode: 'required' })`.
+- **Closed generated surface.** Models AND collections declare
+  `api: { include: [] }`, `mcp: { include: [] }`, `cli: false`. Collection
+  classes are registered too: an undecorated collection publishes its CRUD and
+  public methods as MCP tools. Core has no consumer-side switch to reopen a
+  package model's surface; consumers write their own routes.
+- **Cost object is not dereferenced on save.** `getCostObject()` resolves it
+  through the registry and returns `null` for a foreign-tenant row. One cost
+  object per expense (columns, not a `SmrtPolymorphicAssociation` join) so a
+  cost can never roll up into two jobs.
+
+## Cross-package references
+
+- `vendorId` → `@crossPackageRef('@happyvertical/smrt-commerce:Vendor')`
+- `commitmentId` → `…smrt-commerce:Contract` (usually a `PurchaseOrder`)
+- `commitmentLineId` → `…smrt-commerce:ContractLineItem`
+- `assetId` → `…smrt-assets:Asset`
+- profile ids → `…smrt-profiles:Profile` (no dependency; references only)
+- `expenseId`, `duplicateOfId` → `@foreignKey` within the package
+
+## Scope
+
+Allowance (a planned amount) is not an expense kind; it belongs with
+budget/commitment records. Labour belongs to `@happyvertical/smrt-timesheets`
+(#3288). No OCR, no accounting-provider posting.
+
+## Validation
+
+```bash
+pnpm --filter @happyvertical/smrt-expenses test
+pnpm --filter @happyvertical/smrt-expenses typecheck
+pnpm --filter @happyvertical/smrt-expenses test:postgres
+```
+
+`src/__tests__/helpers/expense-suite.ts` is the shared behaviour suite: the
+SQLite file and the PostgreSQL lane (`*.optional.test.ts`, schema from
+`migrateSmrtSchemas` plus live parity) both run it. Use UUID tenant and
+profile ids in tests: PostgreSQL stores them as `uuid`.
