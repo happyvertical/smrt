@@ -66,6 +66,13 @@ function assertRecord(
   }
 }
 
+/** MCP tools-list descriptors require input and output schema object roots. */
+function assertMcpToolSchemaRoot(schema: ToolJsonSchema, label: string): void {
+  if (schema.type !== 'object') {
+    throw new TypeError(`${label} must declare type: 'object'.`);
+  }
+}
+
 const MAX_METADATA_DEPTH = 16;
 const MAX_METADATA_BYTES = 65_536;
 
@@ -249,6 +256,11 @@ export function createMcpWorkflowTool(
   assertRecord(definition.outputSchema, 'Workflow tool output schema');
   assertMcpJsonSchemaSafety(definition.inputSchema);
   assertMcpJsonSchemaSafety(definition.outputSchema);
+  assertMcpToolSchemaRoot(definition.inputSchema, 'Workflow tool input schema');
+  assertMcpToolSchemaRoot(
+    definition.outputSchema,
+    'Workflow tool output schema',
+  );
   const metadata = cloneMetadata(definition.metadata);
   if (definition.ui !== undefined) {
     assertRecord(definition.ui, 'Workflow tool ui');

@@ -320,3 +320,27 @@ the worker lease until that drain finishes. A claim returning after shutdown
 started is released without dispatch or consuming an attempt, even if the
 shutdown deadline has elapsed; the next incarnation may claim it normally.
 The same runner cannot restart while an earlier poll or handler is still draining.
+
+### Durable continuation ready-index rollout
+
+`_smrt_jobs_ready_idx` is an additive declared nonunique index on `(status,
+run_at)`, restricted to `status = 'pending' AND (task_input_requests IS NULL
+OR task_input_responses IS NOT NULL)`. Both `listReady()` and `claimReady()`
+use this exact eligibility predicate. Suspended already-due jobs remain pending,
+but SQLite/PostgreSQL exclude them from this index until an answer wakes them.
+The original `_smrt_jobs_status_run_at_idx` remains for other status/time reads.
+
+Deploy through the owning schema migration path: run `smrt db:migrate` before
+running the updated workers; for continuously written PostgreSQL queues use
+`smrt db:migrate --postgres-safe` so the index builds concurrently. No runtime
+task/runner API creates the index. The old schema remains functionally correct
+until migration, but polling can scan the suspended backlog. This changes no
+column or task status. DuckDB/JSON use the existing DDL strategy's full-index
+fallback and do **not** gain suspended-backlog exclusion; the readiness filter
+still preserves correctness on those engines.
+
+Task creation snapshots only validated `recordId`, `revision`, and `inputKey`
+values before any awaited enqueue work. Extra caller fields are not persisted,
+and later mutation of the caller's binding cannot change the durable review
+reference. Live authorization still checks the saved reference at execution
+and resume; the snapshot never grants approval.

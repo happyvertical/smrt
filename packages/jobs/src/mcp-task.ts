@@ -157,8 +157,10 @@ export class McpTaskStore {
     }
     if (this.requireAuthorization && !this.ownerId)
       throw new Error('Authorized tasks require an owner');
-    if (input.continuation) {
-      validateContinuation(input.continuation);
+    const continuation = input.continuation
+      ? Object.freeze(validateContinuation(input.continuation))
+      : undefined;
+    if (continuation) {
       if (!this.ownerId)
         throw new Error('Durable continuation requires an owner');
     }
@@ -168,7 +170,7 @@ export class McpTaskStore {
     const marker: McpTaskJobMarker = {
       invocationArgs: input.invocationArgs,
       ...(this.requireAuthorization ? { authorizationRequired: true } : {}),
-      ...(input.continuation ? { continuation: input.continuation } : {}),
+      ...(continuation ? { continuation } : {}),
       pollIntervalMs,
       ttlMs,
     };
@@ -185,9 +187,7 @@ export class McpTaskStore {
       method: input.method,
       args,
       timeout: input.timeout,
-      ...(input.continuation || this.requireAuthorization
-        ? { maxAttempts: 1 }
-        : {}),
+      ...(continuation || this.requireAuthorization ? { maxAttempts: 1 } : {}),
       taskId,
       taskOwnerId: this.ownerId,
       taskInputRequests: null,
@@ -415,7 +415,12 @@ function encodeContinuationJson(value: unknown): string {
 }
 
 function validateContinuation(value: unknown): McpTaskContinuation {
-  const record = asRecord(value);
+  const source = asRecord(value);
+  const record: Record<string, unknown> = {
+    recordId: source.recordId,
+    revision: source.revision,
+    inputKey: source.inputKey,
+  };
   for (const key of ['recordId', 'revision', 'inputKey']) {
     if (
       typeof record[key] !== 'string' ||
