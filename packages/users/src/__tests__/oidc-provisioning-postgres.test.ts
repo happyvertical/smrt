@@ -1208,6 +1208,27 @@ function withFirstIdentityArbiterConflict(
                       return txTarget.upsert(...args);
                     };
                   }
+                  // A new natural-key row is written insert-first on
+                  // PostgreSQL (INSERT … ON CONFLICT DO NOTHING via query),
+                  // so the identity write can arrive here instead of upsert.
+                  if (txProperty === 'query') {
+                    return async (
+                      ...args: Parameters<DatabaseInterface['query']>
+                    ) => {
+                      if (
+                        !injected &&
+                        typeof args[0] === 'string' &&
+                        args[0].startsWith('INSERT INTO "oidc_identities"')
+                      ) {
+                        injected = true;
+                        onConflict();
+                        throw new Error(
+                          'duplicate key violates unique constraint "oidc_identities_identity_key_idx"',
+                        );
+                      }
+                      return txTarget.query(...args);
+                    };
+                  }
                   const value = Reflect.get(txTarget, txProperty, txReceiver);
                   return typeof value === 'function'
                     ? value.bind(txTarget)
