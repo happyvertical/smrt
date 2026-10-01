@@ -751,6 +751,37 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
       });
     });
 
+    it('shows, never draws, actuals left in another currency by a later commitment change', async () => {
+      await world.inTenant(async () => {
+        const reviewer = randomUUID();
+        const award = await world.commitment(460000, 'USD');
+        const actual = await world.expense({
+          amount: 100000,
+          commitmentId: award.id,
+          paidBy: 'person',
+          paidByProfileId: randomUUID(),
+          reimbursable: true,
+        });
+        await actual.review({ reviewerProfileId: reviewer });
+
+        const contract = await world.contracts.get({ id: award.id });
+        if (!contract) throw new Error('commitment not loaded');
+        contract.currency = 'CAD';
+        await contract.save();
+
+        // The match was valid when made; later saves still work.
+        await actual.markReimbursed({ reference: 'payroll-1' });
+
+        const position = await world.expenses.commitmentPosition(award.id);
+        expect(position).toMatchObject({
+          currency: 'CAD',
+          drawn: 0,
+          open: 460000,
+          otherCurrencies: { USD: { amount: 100000, count: 1 } },
+        });
+      });
+    });
+
     it('refuses a commitment from another tenant', async () => {
       const other = await createWorld(getDb());
       const foreign = await other.inTenant(() => other.commitment(1000));

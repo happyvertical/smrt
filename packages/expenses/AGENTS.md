@@ -31,10 +31,12 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
 - **Drawdown counts once.** `ExpenseCollection.commitmentPosition()` sums only
   `reviewed` rows with no `duplicateOfId`, in the commitment's currency, deduped
   by id. Committed is the contract's `totalAmount` (or the line's `amount`).
-- **Currencies never mix.** A commitment match must share the currency
-  (refused on save, `EXPENSE_COMMITMENT_MISMATCH`); `totalsByCurrency()` keys by
-  currency. Foreign-currency rows that reach a commitment anyway (its currency
-  changed later) land in `otherCurrencies`, never in `drawn`.
+- **Currencies never mix.** A commitment match must share the currency and
+  tenant (`EXPENSE_COMMITMENT_MISMATCH`), checked when the match, line or
+  currency is set or changed — not on every save, so a later commitment edit
+  never blocks e.g. `markReimbursed()`. `totalsByCurrency()` keys by currency.
+  Rows left in another currency by a later commitment change land in
+  `otherCurrencies`, never in `drawn`.
 - **Duplicate receipts.** Same `(expense, sha256)` is refused by a pre-insert
   read plus the unique index `expense_receipts_tenant_expense_sha256_key`
   `(tenant_id, expense_id, content_sha256)`; a unique violation is rethrown as

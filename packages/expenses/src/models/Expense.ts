@@ -444,7 +444,7 @@ export class Expense extends SmrtObject {
     const persisted = await this.readPersisted();
     this.assertReviewFields(persisted);
     this.assertReviewedLock(persisted);
-    await this.assertCommitment();
+    await this.assertCommitment(persisted);
 
     if (!this.recordedAt) this.recordedAt = new Date();
     return super.save();
@@ -590,9 +590,24 @@ export class Expense extends SmrtObject {
    * A matched commitment must be visible in this expense's tenant, owned by
    * the same tenant, and in the same currency; a matched line must belong to
    * it. Mixed currencies are refused here rather than summed later.
+   *
+   * Checked when the match is made or changed, not on every save: a later
+   * change to the commitment (its currency, or its deletion) must not stop
+   * an unrelated save such as recording a reimbursement.
    */
-  private async assertCommitment(): Promise<void> {
+  private async assertCommitment(
+    persisted: PersistedRow | null,
+  ): Promise<void> {
     if (!this.commitmentId) return;
+    if (
+      persisted &&
+      asNullableString(persisted.commitment_id) === this.commitmentId &&
+      asNullableString(persisted.commitment_line_id) ===
+        this.commitmentLineId &&
+      String(persisted.currency ?? '') === this.currency
+    ) {
+      return;
+    }
     const contracts = await ContractCollection.create({ db: this.db });
     const commitment = await contracts.get({ id: this.commitmentId });
     // Before super.save() the tenant interceptor has not populated tenantId
