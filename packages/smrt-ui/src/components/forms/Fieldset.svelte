@@ -8,6 +8,8 @@ export interface Props extends Omit<HTMLFieldsetAttributes, 'class'> {
   description?: string;
   /** Optional error message displayed in alert color. */
   error?: string;
+  /** Lays the fields out in one column with a gap between them. */
+  stack?: boolean;
   /** CSS class to apply to the fieldset. */
   class?: string;
   /** Form controls and content inside the fieldset. */
@@ -17,6 +19,7 @@ let {
   legend,
   description,
   error,
+  stack = false,
   class: className = '',
   children,
   ...rest
@@ -28,10 +31,11 @@ const descriptionId = $derived(
 const errorId = $derived(error ? `fieldset-${instanceId}-error` : undefined);
 </script>
 <fieldset class="fieldset {className}" aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined} {...rest}>
-  <legend>{legend}</legend>{#if description}<p id={descriptionId} class="description">{description}</p>{/if}<div class="content">{@render children()}</div>{#if error}<p id={errorId} class="error" role="alert">{error}</p>{/if}
+  <legend>{legend}</legend>{#if description}<p id={descriptionId} class="description">{description}</p>{/if}<div class="content" class:content--stack={stack}>{@render children()}</div>{#if error}<p id={errorId} class="error" role="alert">{error}</p>{/if}
 </fieldset>
 <style>
   .fieldset { margin: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); }
   legend { padding: 0 var(--smrt-spacing-2); color: var(--smrt-color-on-surface); font: var(--smrt-typography-title-small-font); }
+  .content--stack { display: grid; gap: var(--smrt-spacing-4); }
   .description, .error { margin: 0 0 var(--smrt-spacing-3); font: var(--smrt-typography-body-small-font); color: var(--smrt-color-on-surface-variant); } .error { margin: var(--smrt-spacing-3) 0 0; color: var(--smrt-color-error); }
 </style>
