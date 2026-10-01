@@ -6,7 +6,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobExecutionContext } from '../logger-extension.js';
 import { type McpTaskAuthority, McpTaskStore } from '../mcp-task.js';
 import { TaskRunner } from '../runner.js';
@@ -112,6 +112,7 @@ async function fixture(
   };
   return {
     db,
+    probe,
     store,
     task,
     start,
@@ -202,6 +203,79 @@ describe('durable MCP continuation persistence', () => {
       release();
       await stopping;
       await runner.stop();
+      await f.stop();
+    }
+  });
+
+  it('snapshots only validated binding fields before the awaited tenant enqueue', async () => {
+    const tenantId = randomUUID();
+    const f = await fixture(tenantId);
+    await f.store.cancelTask(f.task.taskId);
+    const caller = { ...binding, internalSecret: 'must-not-persist' };
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const counting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const cap = vi
+      .spyOn(SmrtJobCollection.prototype, 'countInFlightForTenant')
+      .mockImplementationOnce(async () => {
+        entered();
+        await blocked;
+        return 0;
+      });
+    try {
+      const creating = f.store.createTask({
+        objectType: 'DurableContinuationProbe',
+        objectId: f.probe.id!,
+        method: 'review',
+        invocationArgs: [{}],
+        tenantId,
+        continuation: caller,
+      });
+      await counting;
+      caller.recordId = 'substituted-review';
+      caller.revision = 'substituted-revision';
+      caller.inputKey = 'substituted-key';
+      release();
+      const task = await creating;
+      const stored = await f.db.query(
+        'SELECT args FROM _smrt_jobs WHERE task_id = ?',
+        task.taskId,
+      );
+      const args =
+        typeof stored.rows[0].args === 'string'
+          ? JSON.parse(stored.rows[0].args)
+          : stored.rows[0].args;
+      expect(args._mcpTask.continuation).toEqual(binding);
+      const checked: McpTaskAuthority[] = [];
+      const authorize = async (authority: Readonly<McpTaskAuthority>) => {
+        checked.push(authority);
+        return (
+          authority.continuation?.recordId === binding.recordId &&
+          authority.continuation?.revision === binding.revision
+        );
+      };
+      const first = await f.start(authorize);
+      await waitForStatus(f.store, task.taskId, 'input_required');
+      await first.stop();
+      await f.store.updateTask(task.taskId, { answer: 'accepted' });
+      await f.start(authorize);
+      await waitForStatus(f.store, task.taskId, 'completed');
+      expect(applications).toBe(1);
+      expect(checked.length).toBeGreaterThanOrEqual(3);
+      expect(
+        checked.every(
+          (authority) =>
+            JSON.stringify(authority.continuation) === JSON.stringify(binding),
+        ),
+      ).toBe(true);
+    } finally {
+      release();
+      cap.mockRestore();
       await f.stop();
     }
   });
