@@ -13,13 +13,8 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import mcpSchema from '@happyvertical/smrt-dev-mcp/schemas/agent-plugins-1.0.0/mcp.schema.json' with {
-  type: 'json',
-};
-import pluginSchema from '@happyvertical/smrt-dev-mcp/schemas/agent-plugins-1.0.0/plugin.schema.json' with {
-  type: 'json',
-};
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { CLICommand } from '../cli-generator.js';
 
@@ -33,6 +28,13 @@ export interface McpAppsValidationResult {
   valid: boolean;
 }
 
+const requireSchema = createRequire(import.meta.url);
+const pluginSchema = requireSchema(
+  '@happyvertical/smrt-dev-mcp/schemas/agent-plugins-1.0.0/plugin.schema.json',
+);
+const mcpSchema = requireSchema(
+  '@happyvertical/smrt-dev-mcp/schemas/agent-plugins-1.0.0/mcp.schema.json',
+);
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validatePluginSchema = ajv.compile(pluginSchema);
 const validateMcpSchema = ajv.compile(mcpSchema);
