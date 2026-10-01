@@ -1218,6 +1218,7 @@ export class SchemaComparer {
   private async describeForeignKeyTypeBlock(
     tableName: string,
     dbSchema: SqlTableSchemaInfo,
+    manifest: SchemaDefinition,
     foreignKey: import('../schema/types.js').ForeignKeyDefinition,
   ): Promise<string | undefined> {
     if (this.engine !== 'postgres') return undefined;
@@ -1225,14 +1226,24 @@ export class SchemaComparer {
       foreignKey.referencesTable === tableName
         ? dbSchema
         : await this.getLiveSchema(foreignKey.referencesTable);
-    const childType = dbSchema.columns[foreignKey.column]?.type;
+    // New columns and planned tables must use the same physical type mapping
+    // as their DDL (TIMESTAMP -> TIMESTAMPTZ, INTEGER -> BIGINT, etc.). Live
+    // columns retain their introspected types until an explicit conversion.
+    const declaredType = (type: string | undefined): string | undefined =>
+      type === undefined
+        ? undefined
+        : this.ddlStrategy.mapType(isValidSQLDataType(type) ? type : 'TEXT');
+    const childType =
+      dbSchema.columns[foreignKey.column]?.type ??
+      declaredType(manifest.columns[foreignKey.column]?.type);
     const parentType =
       parentSchema?.columns[foreignKey.referencesColumn]?.type ??
-      this.plannedTables.get(foreignKey.referencesTable)?.columns[
-        foreignKey.referencesColumn
-      ]?.type;
-    // A column this migration is about to add materializes with the manifest
-    // type, so there is nothing live to conflict with yet.
+      declaredType(
+        this.plannedTables.get(foreignKey.referencesTable)?.columns[
+          foreignKey.referencesColumn
+        ]?.type,
+      );
+    // Missing definitions continue to the ordinary missing-column checks.
     if (!childType || !parentType) return undefined;
 
     const plan = this.uuidConvergence;
@@ -1412,6 +1423,7 @@ export class SchemaComparer {
       const typeBlock = await this.describeForeignKeyTypeBlock(
         tableName,
         dbSchema,
+        manifest,
         foreignKey,
       );
       if (typeBlock) {

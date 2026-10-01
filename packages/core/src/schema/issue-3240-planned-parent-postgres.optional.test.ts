@@ -194,6 +194,65 @@ describe.skipIf(!pgUrl)('planned parent foreign-key preflight (#3240)', () => {
     expect(fk?.advisory?.message).toMatch(/incompatible column types/);
   });
 
+  it('accepts a live TIMESTAMPTZ child against a planned TIMESTAMP parent using its PostgreSQL DDL type', async () => {
+    await db.query(
+      `ALTER TABLE "${child}" ALTER COLUMN parent_id TYPE TIMESTAMPTZ USING NULL`,
+    );
+    manifest[child].columns.parent_id.type = 'TIMESTAMP';
+    manifest[parent].columns.id.type = 'TIMESTAMP';
+    const diff = await new SchemaComparer(db).compare(manifest);
+    const fk = diff.changes.find((change) => change.type === 'add_foreign_key');
+    expect(fk?.sqlStatements).toHaveLength(2);
+    const statements = collectStatementsFromDiff(diff, db, 'postgres');
+    expect(
+      statements.some((sql) => sql.includes('TIMESTAMPTZ PRIMARY KEY')),
+    ).toBe(true);
+    expect((await apply(statements)).every((result) => result.success)).toBe(
+      true,
+    );
+    const instant = '2026-09-30T20:00:00.000Z';
+    await db.query(`INSERT INTO "${parent}" VALUES ($1)`, [instant]);
+    await db.query(`INSERT INTO "${child}" VALUES ($1, $2)`, [
+      randomUUID(),
+      instant,
+    ]);
+    expect((await db.getTableSchema(child))?.foreignKeys).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          column: 'parent_id',
+          referencesTable: parent,
+        }),
+      ]),
+    );
+    expect((await new SchemaComparer(db).compare(manifest)).has_changes).toBe(
+      false,
+    );
+  });
+
+  it('withholds an incompatible INTEGER reference column being added against a planned UUID parent', async () => {
+    await db.query(`ALTER TABLE "${child}" DROP COLUMN parent_id`);
+    manifest[child].columns.parent_id.type = 'INTEGER';
+    const diff = await new SchemaComparer(db).compare(manifest);
+    const fk = diff.changes.find((change) => change.type === 'add_foreign_key');
+    expect(fk?.sqlStatements).toBeUndefined();
+    expect(fk?.advisory?.message).toMatch(/incompatible column types/);
+    expect(fk?.advisory?.message).toMatch(/BIGINT/);
+    const statements = collectStatementsFromDiff(diff, db, 'postgres');
+    expect(
+      statements.some((sql) => sql.includes('ADD COLUMN "parent_id" BIGINT')),
+    ).toBe(true);
+    expect(statements.some((sql) => sql.includes('ADD CONSTRAINT'))).toBe(
+      false,
+    );
+    expect((await apply(statements)).every((result) => result.success)).toBe(
+      true,
+    );
+    expect((await db.getTableSchema(child))?.foreignKeys ?? []).toEqual([]);
+    expect(
+      (await db.getTableSchema(parent))?.columns.id.type.toUpperCase(),
+    ).toBe('UUID');
+  });
+
   it('blocks a planned parent with a missing target column', async () => {
     manifest[parent].columns = { other_id: { type: 'UUID', primaryKey: true } };
     const diff = await new SchemaComparer(db).compare(manifest);

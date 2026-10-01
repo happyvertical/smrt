@@ -574,7 +574,9 @@ without executable repair SQL: create and populate the parent deliberately,
 then rerun the ordinary orphan preflight. The exception never applies to a
 standalone `compareTable()` or an undeclared missing parent, and incompatible
 column types, missing target columns, and existing conflicting constraints stay
-blocked. `NOT VALID` plus `VALIDATE CONSTRAINT` remains the authoritative check;
+blocked. Planned-parent and newly added child-column types are compared using
+the PostgreSQL DDL mapping (for example, `TIMESTAMP` becomes `TIMESTAMPTZ`,
+`INTEGER` becomes `BIGINT`); existing columns retain their live physical types. `NOT VALID` plus `VALIDATE CONSTRAINT` remains the authoritative check;
 a writer racing the preflight causes the atomic migration to roll back.
 SQLite requires a deliberate table rebuild; DuckDB reports the unsupported ALTER
 path. Neither engine treats an unsupported constraint addition as a successful
