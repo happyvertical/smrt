@@ -73,3 +73,16 @@ choosing a status label itself. It records every native and portable wire call.
 The same new tests against pre-fix production helpers fail on native rejection
 fallback and all three unsupported new-conversation routes. These tests use a
 synthetic host and do not establish actual OpenAI host compatibility.
+## Reviewed workflow error contract integration
+
+Current runtime workflow-handler failures resolve with `isError: true`, one
+`Workflow execution failed.` text item and that same structured error message.
+The integration fixture asserts that exact safe payload for adapter argument
+validation, domain target refusal, provider rollback and stale revision, including
+forged settings arguments over the real authenticated SDK HTTP route. Private
+handler causes never become client-visible error text. Write counts and persisted
+values still prove denied operations and rollback do not mutate state.
+
+Principal/tenant/scope/revocation and catalog authorization remain separate:
+those pre-handler access failures still reject. This fixture update does not
+change navigation, settings, authentication or workflow production code.

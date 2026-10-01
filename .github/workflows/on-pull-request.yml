@@ -309,6 +309,8 @@ jobs:
         run: node scripts/check-agents-chain.mjs
 
       - name: Check MCP 2026-07-28 protocol hygiene
+        env:
+          SMRT_TYPESCRIPT_PATH: ${{ runner.temp }}/readme-validator/node_modules/typescript/lib/typescript.js
         run: node scripts/check-mcp-protocol-hygiene.mjs
 
       # Fails if any --smrt-* token consumed by smrt-svelte components is never
