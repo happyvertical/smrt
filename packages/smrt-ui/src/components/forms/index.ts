@@ -137,6 +137,7 @@ export {
   primeReadyBeep,
   type ReadyBeepOptions,
 } from './ready-beep.js';
+export { default as SearchInput } from './SearchInput.svelte';
 export { default as SegmentedControl } from './SegmentedControl.svelte';
 export { default as Select } from './Select.svelte';
 export { default as Slider } from './Slider.svelte';

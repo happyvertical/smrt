@@ -978,3 +978,27 @@ describe('DataTable', () => {
     await expectNoA11yViolations(container);
   });
 });
+
+describe('DataTable phoneLayout', () => {
+  it('keeps the scrolling table unless asked for cards', () => {
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People' },
+    });
+    expect(
+      container.querySelector('.data-table-container--phone-cards'),
+    ).toBeNull();
+  });
+
+  it('marks the container for the phone card layout and keeps the table semantics', () => {
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People', phoneLayout: 'cards' },
+    });
+    expect(
+      container.querySelector(
+        '.data-table-container.data-table-container--phone-cards',
+      ),
+    ).not.toBeNull();
+    expect(screen.getByRole('table', { name: 'People' })).toBeInTheDocument();
+    expect(screen.getAllByRole('row')).toHaveLength(3);
+  });
+});

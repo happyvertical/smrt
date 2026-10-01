@@ -288,6 +288,13 @@ export interface DataTableProps<T> {
   hoverable?: boolean;
   /** Enable sticky header */
   stickyHeader?: boolean;
+  /**
+   * How the table looks on phones (48rem and under): `scroll` keeps the table
+   * (scrolling sideways when it is wider than the screen), `cards` makes each
+   * row its own block of stacked cells and hides the column heads, so give the
+   * page another way to sort (a `ListSortSelect`).
+   */
+  phoneLayout?: 'scroll' | 'cards';
   /** Table caption for accessibility */
   caption?: string;
   /** Dense mode (reduced padding) */

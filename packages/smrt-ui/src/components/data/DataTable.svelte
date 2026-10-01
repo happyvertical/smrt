@@ -106,6 +106,7 @@ let {
   striped = false,
   hoverable = true,
   stickyHeader = false,
+  phoneLayout = 'scroll',
   caption,
   dense = false,
   cell,
@@ -1409,6 +1410,7 @@ $effect(() => {
   class:data-table-container--overflowing={hasHorizontalOverflow}
   class:data-table-container--virtualized={virtualizationWindow.enabled}
   class:data-table-container--highlighted={surfaceHighlighted}
+  class:data-table-container--phone-cards={phoneLayout === 'cards'}
   style:height={virtualContainerHeight === undefined ? undefined : `${virtualContainerHeight}px`}
   tabindex={virtualizationWindow.enabled || hasHorizontalOverflow ? 0 : dataSurface ? -1 : undefined}
   role={virtualizationWindow.enabled || hasHorizontalOverflow ? 'region' : undefined}
@@ -2224,6 +2226,36 @@ $effect(() => {
   /* Loading overlay */
   .data-table--loading {
     opacity: 0.7;
+  }
+
+  /* Phones with phoneLayout="cards": one block of stacked cells per row. */
+  @media (max-width: 48rem) {
+    .data-table-container--phone-cards {
+      overflow: visible;
+    }
+    .data-table-container--phone-cards .data-table,
+    .data-table-container--phone-cards .data-table__body {
+      display: block;
+      width: 100%;
+    }
+    .data-table-container--phone-cards .data-table__head,
+    .data-table-container--phone-cards .data-table__overflow-cue {
+      display: none;
+    }
+    .data-table-container--phone-cards .data-table__row {
+      display: grid;
+      gap: var(--smrt-spacing-1, 0.35rem);
+      padding: var(--smrt-spacing-3, 0.85rem) var(--smrt-spacing-4, 1rem);
+      border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    }
+    .data-table-container--phone-cards .data-table__cell {
+      display: block;
+      padding: 0;
+      border: 0;
+    }
+    .data-table-container--phone-cards .data-table__cell:empty {
+      display: none;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

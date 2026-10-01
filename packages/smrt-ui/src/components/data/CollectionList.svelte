@@ -11,11 +11,13 @@ export interface Props<T> {
   /** Field name or function to extract the description text for each item. */
   description?: keyof T | ((item: T) => string | undefined);
   /**
-   * Display layout: list (single column), grid (multiple columns of cards), or
-   * gallery (picture-first tiles: the `item` snippet fills the tile, the
-   * selection checkbox and `actions` float over its top corners).
+   * Display layout: list (single column of cards), divided (a flat single
+   * column: no card surface, rows separated by a hairline, a selected row shown
+   * by its checkbox), grid (multiple columns of cards), or gallery
+   * (picture-first tiles: the `item` snippet fills the tile, the selection
+   * checkbox and `actions` float over its top corners).
    */
-  layout?: 'list' | 'grid' | 'gallery';
+  layout?: 'list' | 'divided' | 'grid' | 'gallery';
   /** Whether to show checkboxes for selecting multiple items. */
   selectable?: boolean;
   /** Set of currently selected item keys (bindable). */
@@ -111,7 +113,7 @@ function toggle(key: string | number) {
   li { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-3); min-width: 0; padding: var(--smrt-spacing-3); border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant)); border-radius: var(--smrt-radius-medium); background: var(--smrt-card-background, var(--smrt-color-surface)); color: var(--smrt-color-on-surface); }
   li.selected { border-color: var(--smrt-color-primary); background: var(--smrt-color-primary-container); }
   /* The selection box and actions sit above an item's stretched link. */
-  .select { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; }
+  .select { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; min-width: 2.75rem; min-height: 2.75rem; }
   input { width: 1.125rem; height: 1.125rem; accent-color: var(--smrt-color-primary); }
   .main { display: grid; min-width: 0; gap: var(--smrt-spacing-1); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
   button.main { width: 100%; cursor: pointer; }
@@ -119,6 +121,10 @@ function toggle(key: string | number) {
   .main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--smrt-typography-title-small-font); }
   .main span { color: var(--smrt-color-on-surface-variant); }
   .actions { position: relative; z-index: 1; display: flex; gap: var(--smrt-spacing-1); }
+  .collection--divided { --collection-divider: color-mix(in srgb, var(--smrt-color-outline-variant) 55%, transparent); gap: 0; }
+  .collection--divided li { padding-inline: 0; border: none; border-radius: 0; background: transparent; }
+  .collection--divided li + li { border-block-start: 1px solid var(--collection-divider); }
+  .collection--divided li.selected { border-color: var(--collection-divider); background: transparent; }
   .collection--gallery { grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr)); }
   .collection--gallery li { display: block; padding: 0; }
   .collection--gallery .main { gap: 0; }

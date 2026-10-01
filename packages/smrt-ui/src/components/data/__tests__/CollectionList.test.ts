@@ -11,6 +11,7 @@ const items = [
 describe('CollectionList', () => {
   it.each([
     'list',
+    'divided',
     'grid',
     'gallery',
   ] as const)('renders the %s layout', (layout) => {
