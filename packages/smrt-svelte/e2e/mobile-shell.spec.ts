@@ -276,3 +276,34 @@ test('supplied tenant navigation keeps its collapse control and touch rail targe
     page.locator('footer').getByRole('button', { name: /^System/ }),
   ).toBeVisible();
 });
+
+for (const width of [320, 390, 1280]) {
+  test(`account stays reachable with touch targets at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('/?account=1');
+    const account = page.getByRole('button', {
+      name: /Open account menu Dana Welder/,
+    });
+    await expect(account).toBeInViewport();
+    const box = await account.boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(48);
+    expect(box!.width).toBeGreaterThanOrEqual(48);
+    await account.click();
+    const signOut = page.getByRole('menuitem', { name: 'Sign out' });
+    await expect(signOut).toBeInViewport();
+    const item = await signOut.boundingBox();
+    expect(item!.height).toBeGreaterThanOrEqual(48);
+    await signOut.click();
+    await expect(page.getByText('Signed out callback')).toBeVisible();
+    await expect(account).toHaveCount(1);
+    if (width <= 768) {
+      await page.getByRole('button', { name: 'Menu', exact: true }).click();
+      await expect(account).toHaveCount(1);
+      await expect(account).toBeInViewport();
+      await page.keyboard.press('Escape');
+      await expect(account).toBeInViewport();
+    }
+  });
+}

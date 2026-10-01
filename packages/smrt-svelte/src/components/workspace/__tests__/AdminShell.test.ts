@@ -35,6 +35,66 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
+  it('keeps a single tenant footer reachable when the left edge collapses or hides', async () => {
+    const state = createShellState({
+      config: { left: { initial: 'collapsed' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        tenantFooter: textSnippet('Dana account'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('header')?.textContent).toContain(
+        'Dana account',
+      );
+      state.setPanelState('left', 'expanded');
+      flushSync();
+      expect(container.querySelector('header')?.textContent).not.toContain(
+        'Dana account',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-footer')
+          ?.textContent,
+      ).toContain('Dana account');
+      state.setPanelState('left', 'hidden');
+      flushSync();
+      expect(container.querySelector('header')?.textContent).toContain(
+        'Dana account',
+      );
+      expect(container.textContent?.match(/Dana account/g)).toHaveLength(1);
+    } finally {
+      await unmount(component);
+    }
+  });
+
+  it('keeps an explicit account slot in a custom app bar regardless of left state', async () => {
+    const state = createShellState({
+      config: { left: { initial: 'expanded' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        account: textSnippet('Dana account'),
+        appBar: textSnippet('Custom title'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('header')?.textContent).toContain(
+        'Dana account',
+      );
+    } finally {
+      await unmount(component);
+    }
+  });
+
   it('keeps the left collapse control with supplied navigation and permits opt-out', async () => {
     for (const showTenantToggle of [true, false]) {
       const state = createShellState({

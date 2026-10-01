@@ -61,6 +61,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     state?: ShellState;
     /** Content for the top app bar. */
     appBar?: Snippet;
+    /** Account content kept in the app bar in every left-panel state. */
+    account?: Snippet;
     /** Content for the main app panel. */
     appPanel?: Snippet;
     /** Content for the left tenant rail. */
@@ -104,6 +106,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     storageKey = 'smrt-admin-shell',
     state: providedState,
     appBar,
+    account,
     appPanel,
     tenantRail,
     tenantPanel,
@@ -194,6 +197,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     window.addEventListener('keydown', handleKeydown);
     return () => { window.removeEventListener('keydown', handleKeydown); media.removeEventListener('change', updateNarrow); };
   });
+
+  const footerInHeader = $derived(!account && !!tenantFooter && !edgeExpanded('left'));
 
   const layoutStyle = $derived(buildLayoutStyle(shell));
 
@@ -371,6 +376,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {#if shell.config.panels.left.initial !== 'hidden'}
           <div class="smrt-admin-shell__tenant-opener" class:restore-hidden={panelState('left') === 'hidden'}>
             <Button variant="ghost" size="sm" aria-label={t(M['ui.admin_shell.menu'])} aria-expanded={edgeExpanded('left')} aria-controls="smrt-admin-shell-left-panel" onclick={() => shell.setPanelState('left', edgeExpanded('left') ? 'collapsed' : 'expanded')}>{t(M['ui.admin_shell.menu'])}</Button>
+          </div>
+        {/if}
+        {#if account || footerInHeader}
+          <div class="smrt-admin-shell__account">
+            {#if account}{@render account()}{:else if tenantFooter}{@render tenantFooter()}{/if}
           </div>
         {/if}
       </div>
@@ -757,6 +767,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__edge--left[data-state='expanded']
     .smrt-admin-shell__rail {
     overflow: hidden;
+  }
+
+  .smrt-admin-shell__account {
+    min-inline-size: 0;
+    max-inline-size: min(20rem, 45vw);
+    flex: 1 1 12rem;
+  }
+  .smrt-admin-shell__account :global(.smrt-workspace-account-menu .dropdown__menu) {
+    top: 100%; bottom: auto; right: 0; left: auto;
+    inline-size: max-content;
+    max-inline-size: calc(100vw - 2 * var(--smrt-spacing-4));
   }
 
   .smrt-admin-shell__tenant-opener { display: none; flex-shrink: 0; }

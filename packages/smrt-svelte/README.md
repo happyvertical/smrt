@@ -477,3 +477,12 @@ system toggle alongside a custom `systemBar`. Closed narrow drawers are inert;
 opening focuses the first control, and closing or Escape restores the opener.
 TenantNav accepts `density="touch"` for canonical 48px link targets, including
 collapsed rail links; omit density to inherit the theme's control density.
+
+`AdminShell` keeps a supplied `tenantFooter` in the app bar while the left pane
+is collapsed, hidden, or a closed narrow drawer; it moves back to the expanded
+pane without duplicate account controls. Use the optional `account` snippet for
+an account permanently in the app bar (including with a custom `appBar`).
+`WorkspaceAccountMenu density="touch"` sizes its trigger and menu actions to the
+canonical 48px target; omit density to inherit the theme, or choose
+`"comfortable"`. Account menus in the shell app bar open below the bar so the
+existing footer's default placement stays reachable on narrow screens.
