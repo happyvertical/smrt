@@ -199,22 +199,13 @@ export type AssistanceClassification =
   | 'development'
   | 'both';
 
-export type ServiceTimeEntrySource = 'timer' | 'manual' | 'import' | 'agent';
-export type ServiceTimeEntryStatus =
-  | 'draft'
-  | 'submitted'
-  | 'approved'
-  | 'rejected'
-  | 'corrected';
-export type ServiceParticipantKind = 'human' | 'agent';
-
-export interface ServiceEvidence {
-  kind: string;
-  ref?: string;
-  summary?: string;
-  capturedAt?: string;
-  [key: string]: unknown;
-}
+// Shared time-entry vocabulary moved to smrt-timesheets (#3288).
+export type {
+  ServiceEvidence,
+  ServiceParticipantKind,
+  ServiceTimeEntrySource,
+  ServiceTimeEntryStatus,
+} from '@happyvertical/smrt-timesheets';
 
 export interface ManagedAssistanceRequestInput {
   requesterId: string;

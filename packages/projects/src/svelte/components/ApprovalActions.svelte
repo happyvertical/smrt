@@ -7,7 +7,7 @@
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
-import type { ApprovalStatus } from './utils.js';
+import type { ApprovalStatus } from '../utils.js';
 
 const { t } = useI18n();
 

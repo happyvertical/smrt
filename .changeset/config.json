@@ -58,6 +58,7 @@
       "@happyvertical/smrt-support",
       "@happyvertical/smrt-tags",
       "@happyvertical/smrt-tenancy",
+      "@happyvertical/smrt-timesheets",
       "@happyvertical/smrt-template-site-static-json",
       "@happyvertical/smrt-template-sveltekit",
       "@happyvertical/smrt-types",

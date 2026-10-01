@@ -1,4 +1,8 @@
-/** Compatibility mapping for issue #1955. */
+/**
+ * Support's subtype of the shared time entry (#1955, #3288). The base entry
+ * lives in `@happyvertical/smrt-timesheets` with no domain-specific foreign
+ * key; support adds the case and specialist context here.
+ */
 import {
   crossPackageRef,
   field,
@@ -6,19 +10,23 @@ import {
   SmrtCollection,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   type ServiceParticipantKind,
   type ServiceTimeEntrySource,
   type ServiceTimeEntryStatus,
   ServiceTimeEntry as SharedServiceTimeEntry,
-} from '@happyvertical/smrt-projects';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+} from '@happyvertical/smrt-timesheets';
 
 /**
- * Source-compatible support subtype over the shared canonical table. The
- * fields are restated because package-isolated manifest scanning deliberately
- * does not inspect dependency source trees. Runtime behavior remains inherited
- * from the shared model and both packages address the same table and rows.
+ * Support subtype over the shared `service_time_entries` table: the shared
+ * entry plus `caseId` (a `SupportCase`) and `specialistId` (a
+ * `SupportSpecialist`). It directly extends the smrt-timesheets entry (which
+ * smrt-projects re-exports), so the classes on this table stay one two-level
+ * inheritance chain. The shared fields are restated because package-isolated
+ * manifest scanning deliberately does not inspect dependency source trees.
+ * Runtime behavior is inherited from the shared model; every package
+ * addresses the same table and rows.
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -57,6 +65,11 @@ export class ServiceTimeEntry extends SharedServiceTimeEntry {
   @field({ type: 'text' }) rejectionReason: string = '';
   @foreignKey('ServiceTimeEntry') correctionOfId: string | null = null;
   @field({ type: 'text' }) metadata: string = '{}';
+
+  /** The case and specialist are frozen with the rest of approved evidence. */
+  protected override frozenFieldNames(): readonly string[] {
+    return [...super.frozenFieldNames(), 'caseId', 'specialistId'];
+  }
 }
 
 export class ServiceTimeEntryCollection extends SmrtCollection<ServiceTimeEntry> {

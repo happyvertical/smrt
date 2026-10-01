@@ -1,3 +1,7 @@
+import type {
+  TimeEntryList,
+  TimeSummary,
+} from '@happyvertical/smrt-timesheets/svelte';
 import { PROJECTS_MODULE_META } from '../ui.js';
 
 const noop = () => {};
@@ -50,8 +54,15 @@ const pendingEntries = sampleTimeEntries.filter(
 );
 
 const loadApprovalActions = () => import('./components/ApprovalActions.svelte');
-const loadTimeEntryList = () => import('./components/TimeEntryList.svelte');
-const loadTimeSummary = () => import('./components/TimeSummary.svelte');
+// The time-entry components live in smrt-timesheets (#3288).
+const loadTimeEntryList = (): Promise<{ default: typeof TimeEntryList }> =>
+  import('@happyvertical/smrt-timesheets/svelte').then((module) => ({
+    default: module.TimeEntryList,
+  }));
+const loadTimeSummary = (): Promise<{ default: typeof TimeSummary }> =>
+  import('@happyvertical/smrt-timesheets/svelte').then((module) => ({
+    default: module.TimeSummary,
+  }));
 const loadDevelopmentBoard = () => import('./DevelopmentBoard.svelte');
 const loadProjectBoard = () => import('./ProjectBoard.svelte');
 
