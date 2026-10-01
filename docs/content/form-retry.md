@@ -159,8 +159,9 @@ submitted values are kept beside the key and put back after the reload, so the
 retry is byte-identical and is the same claim.
 
 - Restored only under the key it was saved with, only for the same `owner`
-  (never for an empty one), and only while fresh (`maxAgeMs`, default one day,
-  or your own `fresh(savedAt, now)` rule such as "same business day").
+  (never for an empty one, and no draft is stored without one), and only
+  while fresh (`maxAgeMs`, default one day, or your own `fresh(savedAt, now)`
+  rule such as "same business day").
 - Password inputs and names in `restore.exclude` are never written to storage.
   Hidden fields are not restored; carry their source state through `values`.
 - `restore.values` keeps state that is not a form field — an uploaded asset's

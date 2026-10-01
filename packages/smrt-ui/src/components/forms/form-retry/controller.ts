@@ -313,6 +313,12 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
     skip: ReadonlySet<string>,
   ): void {
     if (!restoreOptions) return;
+    if (!restoreOptions.owner) {
+      // A draft can never be restored without an owner, so keeping one would
+      // only leave the person's values on shared hardware for nothing.
+      clearDraft();
+      return;
+    }
     const described = describeFormData(formData, skip);
     let values: unknown;
     if (restoreOptions.values) {

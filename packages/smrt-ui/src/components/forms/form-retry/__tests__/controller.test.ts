@@ -334,6 +334,16 @@ describe('a reload', () => {
     expect(storage.store.has('smrt:form-retry:report:draft')).toBe(false);
   });
 
+  it('never stores a draft without an owner, and clears a stale one', async () => {
+    const storage = memoryStorage();
+    storage.store.set('smrt:form-retry:report:draft', '{"stale":true}');
+    const { form, server, kit } = setup({ storage, restore: { owner: '' } });
+    fill(form, { title: 'Private' });
+    server.next('lost-response');
+    await kit.submit();
+    expect(storage.store.has('smrt:form-retry:report:draft')).toBe(false);
+  });
+
   it('never restores a draft older than maxAgeMs', async () => {
     const storage = memoryStorage();
     let now = new Date('2026-10-01T08:00:00Z');
