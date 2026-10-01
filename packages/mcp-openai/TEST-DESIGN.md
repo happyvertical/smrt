@@ -86,3 +86,15 @@ values still prove denied operations and rollback do not mutate state.
 Principal/tenant/scope/revocation and catalog authorization remain separate:
 those pre-handler access failures still reject. This fixture update does not
 change navigation, settings, authentication or workflow production code.
+
+## Accepted PR3267 regressions
+
+| Behavior / trigger | Positive and negative case | Actor / executor / runtime / edge | Validation |
+|---|---|---|---|
+| Encoded query delimiter in pathname | `/safe%3F/../admin` and encoded dot segments rejected before resolver; literal query values containing `../` accepted | Untrusted host; no database executor; native validator and Chromium bridge wire | Package unit and browser; baseline3 native failures and traversal browser failure |
+| Throwing UI callback after tool result | Successful result render throw is not denied; denied-result fallback throw executes once; transport rejection fallback remains once; later route recovers | Application callback; no transaction; Chromium actual helper and tools/call wire; uncaught callback error observable as unhandled rejection | Browser result/isError/transport-error regressions; baseline result and isError cases fail |
+
+The fixture observes and prevents the browser's unhandled-rejection default only
+to assert callback errors explicitly. Production does not swallow these errors or
+map them to authorization denials. Existing cancellation/disposal/stale-result
+contracts remain covered by the original browser suite. No new wire API is added.
