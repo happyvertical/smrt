@@ -12,8 +12,11 @@ For piping a deployed app's MCP surface to a local stdio MCP client, see `@happy
 
 For public deployments, follow the
 [remote MCP authorization contract](../../docs/content/architecture/remote-mcp-authorization.md).
-This package trusts the principal supplied by the application adapter; it does
-not implement an OAuth authorization server or validate bearer tokens itself.
+The server trusts the principal supplied by the application adapter. Validate
+bearer tokens at an application gateway or with the server-only `./auth` JWT
+adapter, then resolve fresh application membership and tenant authority on every
+request. The OAuth issuer remains operator-owned; this package does not implement
+an OAuth authorization server.
 
 ```ts
 // src/lib/server/mcp.ts
