@@ -12,6 +12,7 @@ export { generateManifest, ManifestGenerator } from './manifest-generator.js';
 export type {
   AgentAdminRouteManifest,
   AgentComponentDeclaration,
+  AgentCreateEntryManifest,
   AgentFeature,
   AgentManifest,
   AgentMenuItem,

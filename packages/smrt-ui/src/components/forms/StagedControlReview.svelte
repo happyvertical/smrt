@@ -83,18 +83,27 @@ function formatValue(value: unknown): string {
   }
 }
 
-function formatIdentity(snapshot: ControlSnapshot): string {
-  const { formId, controlId, subject } = snapshot.identity;
-  return subject
-    ? `${formId}/${controlId} · ${subject.type}:${subject.id}`
-    : `${formId}/${controlId}`;
+/**
+ * The words a person sees for a control: its label, or — for a control that
+ * registered none — its id made readable (`site_name` → "Site name"). The
+ * form id, subject type/id, and other registry addressing never show.
+ */
+function plainLabel(snapshot: ControlSnapshot): string {
+  const label = snapshot.metadata.label?.trim();
+  if (label) return label;
+  const tail = snapshot.identity.controlId.split('/').at(-1) ?? '';
+  const words = tail
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_.:]+/g, ' ')
+    .trim()
+    .toLowerCase();
+  return words ? words[0].toUpperCase() + words.slice(1) : tail;
 }
 
 function actionIdentity(snapshot: ControlSnapshot): string {
-  const label = snapshot.metadata.label ?? snapshot.identity.controlId;
+  const label = plainLabel(snapshot);
   const sameLabel = snapshots.filter(
-    (candidate) =>
-      (candidate.metadata.label ?? candidate.identity.controlId) === label,
+    (candidate) => plainLabel(candidate) === label,
   );
   if (sameLabel.length < 2) return label;
 
@@ -541,11 +550,11 @@ async function discardAll(event: MouseEvent): Promise<void> {
     <ul>
       {#each snapshots as snapshot (keyOf(snapshot))}
         {@const staged = snapshot.state.staged}
-        {@const label = snapshot.metadata.label ?? snapshot.identity.controlId}
+        {@const label = plainLabel(snapshot)}
         {@const actionName = actionIdentity(snapshot)}
         <li data-staged-review-item class:stale={staged?.stale} class:invalid={staged?.valid === false}>
           <div class="proposal-heading">
-            <div><strong>{label}</strong><code>{formatIdentity(snapshot)}</code></div>
+            <div><strong>{label}</strong>{#if snapshot.identity.subject?.label}<span class="subject">{snapshot.identity.subject.label}</span>{/if}</div>
             <span>{text.proposedBy} {staged?.provenance.actorId ?? staged?.provenance.source} · {text.stagedAt} {staged ? new Date(staged.stagedAt).toLocaleString() : ''}</span>
           </div>
           <dl>
@@ -620,8 +629,8 @@ async function discardAll(event: MouseEvent): Promise<void> {
   header, .proposal-heading, .batch-actions, .item-actions { display: flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); }
   header { justify-content: space-between; align-items: flex-start; gap: var(--smrt-spacing-4, 1rem); }
   h2, p { margin: 0; } h2 { font: var(--smrt-typography-title-medium-font, 600 1rem/1.4 system-ui); }
-  header p, .proposal-heading span, .proposal-heading code, dt { color: var(--smrt-color-on-surface-variant, #475569); font-size: .875rem; }
-  .proposal-heading strong, .proposal-heading code { display: block; }
+  header p, .proposal-heading span, dt { color: var(--smrt-color-on-surface-variant, #475569); font-size: .875rem; }
+  .proposal-heading strong, .proposal-heading .subject { display: block; }
   ul { display: grid; gap: var(--smrt-spacing-3, .75rem); padding: 0; list-style: none; }
   li { padding: var(--smrt-spacing-3, .75rem); background: var(--smrt-color-surface, #fff); border: 1px solid var(--smrt-color-outline-variant, #cbd5e1); border-radius: var(--smrt-radius-small, .375rem); }
   li.stale, li.invalid { border-color: var(--smrt-color-error, #b3261e); }

@@ -1,10 +1,9 @@
 <script lang="ts">
 import {
   type ContentBodyFormat,
+  renderContentBodyHtml,
   resolveBodyFormat,
-  sanitizeHtml,
 } from '../../body-format';
-import Markdown from './Markdown.svelte';
 
 export interface Props {
   /** The body content to render as HTML or Markdown. */
@@ -13,21 +12,31 @@ export interface Props {
   format?: ContentBodyFormat | null;
   /** CSS class to apply to the rendered container. */
   class?: string;
+  /** Replace the thumbnail block's image URL (see `renderContentBodyHtml`). */
+  thumbnailSrc?: string | null;
 }
 
-let { content, format = null, class: className = '' }: Props = $props();
+let {
+  content,
+  format = null,
+  class: className = '',
+  thumbnailSrc = null,
+}: Props = $props();
 
 const resolvedFormat = $derived(resolveBodyFormat(format, content));
-const safeHtml = $derived(sanitizeHtml(content || ''));
+// Both formats render through the same sanitizer and into the same container,
+// so image placements (header, wrap left/right) look identical whichever
+// format the body was saved in.
+const safeHtml = $derived(
+  renderContentBodyHtml(content || '', resolvedFormat, { thumbnailSrc }),
+);
 </script>
 
-{#if resolvedFormat === 'markdown'}
-  <Markdown {content} class={className} />
-{:else}
-  <div class="content-body-renderer {className}">
-    {@html safeHtml}
-  </div>
-{/if}
+<div
+  class="content-body-renderer {resolvedFormat === 'markdown' ? 'markdown-content' : ''} {className}"
+>
+  {@html safeHtml}
+</div>
 
 <style>
   .content-body-renderer {
@@ -151,5 +160,21 @@ const safeHtml = $derived(sanitizeHtml(content || ''));
   .content-body-renderer :global(img[data-smrt-inline-image][data-smrt-placement='left']),
   .content-body-renderer :global(img[data-smrt-inline-image][data-smrt-placement='right']) {
     width: min(45%, 22rem);
+  }
+
+  .content-body-renderer :global(img[data-smrt-thumbnail][data-smrt-placement='right']) {
+    margin-top: 0.25rem;
+  }
+
+  /* Phones: wrapped images stack full width above the text they sat beside. */
+  @media (max-width: 36rem) {
+    .content-body-renderer :global(figure[data-smrt-placement='left']),
+    .content-body-renderer :global(figure[data-smrt-placement='right']),
+    .content-body-renderer :global(img[data-smrt-placement='left']),
+    .content-body-renderer :global(img[data-smrt-placement='right']) {
+      float: none;
+      width: 100% !important;
+      margin: var(--spacing-md, 0.75rem) 0;
+    }
   }
 </style>

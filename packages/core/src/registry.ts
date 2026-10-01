@@ -29,6 +29,7 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
+import { buildCascadePlan } from './cascade.js';
 import { applyOneToManyChildAccessors } from './child-accessors';
 import {
   SmrtCollection,
@@ -165,6 +166,7 @@ import type {
 } from './scanner/types.js';
 import {
   defaultConflictColumns,
+  resolveOwnershipTenantColumn,
   resolveTenantColumn,
 } from './schema/conflict-target.js';
 import type { DatabaseEngine } from './schema/ddl/types.js';
@@ -399,13 +401,21 @@ function applyManifestFieldColumnMetadata(
       continue;
     }
 
-    columns[columnName] = {
+    const column: ColumnDefinition = {
       ...existingColumn,
       ...(sqlType
         ? { type: String(sqlType).toUpperCase() as ColumnDefinition['type'] }
         : {}),
       ...(referenceKind ? { referenceKind } : {}),
     };
+    // Same rule as the manifest generator: a uuid column never defaults to ''.
+    // Manifest JSON carries `default`; runtime definitions carry `defaultValue`.
+    if (String(column.type).toUpperCase() === 'UUID') {
+      const loose = column as ColumnDefinition & { default?: unknown };
+      if (loose.default === '') delete loose.default;
+      if (loose.defaultValue === '') delete loose.defaultValue;
+    }
+    columns[columnName] = column;
   }
 }
 
@@ -470,6 +480,24 @@ function resolveManifestByUpwardSearch(
     dir = parent;
   }
   return null;
+}
+
+/**
+ * The absolute filesystem path behind a Vite dev-server URL
+ * (`http(s)://host/@fs/<absolute path>`), or `null` for any other string.
+ */
+function viteFsUrlToPath(urlString: string): string | null {
+  if (!/^https?:\/\//i.test(urlString)) return null;
+  let pathname: string;
+  try {
+    pathname = new URL(urlString).pathname;
+  } catch {
+    return null;
+  }
+  if (!pathname.startsWith('/@fs/')) return null;
+  const decoded = decodeURIComponent(pathname.slice('/@fs'.length));
+  // Windows: `/C:/dir/file` -> `C:/dir/file`.
+  return /^\/[A-Za-z]:\//.test(decoded) ? decoded.slice(1) : decoded;
 }
 
 /**
@@ -1769,8 +1797,15 @@ export class ObjectRegistry {
       // self-registration silently no-op and reintroduce #1132.
       const urlString =
         manifestUrl instanceof URL ? manifestUrl.href : manifestUrl;
+      // Under a Vite dev server (and vitest's browser-like environments)
+      // `import.meta.url` is `http://host/@fs/<absolute path>`, not a `file:`
+      // URL; `fileURLToPath` rejects it ("The URL must be of scheme file"), so
+      // read the absolute path the dev server is serving.
+      const devServerPath = viteFsUrlToPath(urlString);
       let filePath: string;
-      if (manifestUrl instanceof URL) {
+      if (devServerPath) {
+        filePath = devServerPath;
+      } else if (manifestUrl instanceof URL) {
         filePath = builtins.url.fileURLToPath(manifestUrl);
       } else if (urlString.startsWith('file:')) {
         filePath = builtins.url.fileURLToPath(urlString);
@@ -3224,10 +3259,11 @@ export class ObjectRegistry {
    *    primary-key column(s) — the only unique key such a table has;
    * 4. the strategy default — CTI `['slug', 'context']`, STI
    *    `['slug', 'context', '_meta_type']` — led by the tenant column when
-   *    the schema owner is tenant-scoped (#2360): tenant-scoped rows are
-   *    unique per tenant, and without the tenant column a second tenant's
-   *    `save()` of the same natural key updated the first tenant's row
-   *    through `DO UPDATE SET`.
+   *    the schema owner is tenant-scoped (#2360) or carries an undeclared
+   *    `tenantId` field ({@link ObjectRegistry.getOwnershipTenantColumn}):
+   *    tenant-owned rows are unique per tenant, and without the tenant column
+   *    a second tenant's `save()` of the same natural key updated the first
+   *    tenant's row through `DO UPDATE SET`.
    *
    * STI subclasses share a table, so the discriminator participates in
    * identity — two subtypes can coexist with the same (slug, context). The
@@ -3302,8 +3338,134 @@ export class ObjectRegistry {
 
     return defaultConflictColumns(
       tableStrategy,
-      ObjectRegistry.getTenantColumn(className),
+      ObjectRegistry.getOwnershipTenantColumn(className),
     );
+  }
+
+  /**
+   * The column that owns a table's rows for natural-key identity: the
+   * declared tenant column ({@link ObjectRegistry.getTenantColumn}), else
+   * `tenant_id` when the schema owner has a `tenantId` field but declares no
+   * tenancy — the shape a consumer registers with the tenancy interceptor at
+   * runtime. The default conflict target and unique index lead with it, so a
+   * second tenant's same-slug row is a second row rather than an upsert onto
+   * the first tenant's. See `resolveOwnershipTenantColumn()`.
+   *
+   * @param className - Name of the class (simple or qualified)
+   * @returns The snake_case ownership column, or `undefined`
+   */
+  static getOwnershipTenantColumn(className: string): string | undefined {
+    const declared = ObjectRegistry.getTenantColumn(className);
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) return declared;
+    const ownerName =
+      ObjectRegistry.getTableStrategy(className) === 'sti'
+        ? ObjectRegistry.getSTIBase(className)
+        : null;
+    const owner =
+      ownerName && ownerName !== className
+        ? (ObjectRegistry.findClass(ownerName) ?? registered)
+        : registered;
+    return resolveOwnershipTenantColumn(declared, (columnName) =>
+      [...owner.fields.entries()].some(
+        ([fieldName, field]) =>
+          field?.type !== 'oneToMany' &&
+          field?.type !== 'manyToMany' &&
+          toSnakeCase(fieldName) === columnName,
+      ),
+    );
+  }
+
+  /**
+   * Every typed reference (`@foreignKey` / `@crossPackageRef`) that points at
+   * `className`, resolved the same way `SmrtObject.delete()` resolves them for
+   * cascades: the referencing class, its table and column, and the resolved
+   * `onDelete` action. Use it to re-point references before replacing one row
+   * with another (a tag merge) instead of letting a delete cascade them away.
+   *
+   * @param className - Name of the referenced class (simple or qualified)
+   */
+  static getIncomingReferences(className: string): Array<{
+    className: string;
+    tableName: string;
+    column: string;
+    onDelete: string;
+  }> {
+    return buildCascadePlan(ObjectRegistry, className).references.map(
+      (reference) => ({
+        className: reference.className,
+        tableName: reference.tableName,
+        column: reference.column,
+        onDelete: reference.action,
+      }),
+    );
+  }
+
+  /**
+   * Runtime ownership-column sources (see
+   * {@link ObjectRegistry.registerOwnershipColumnSource}).
+   */
+  private static ownershipColumnSources = new Set<
+    (qualifiedName: string) => readonly string[] | undefined
+  >();
+
+  /**
+   * Register a source of RUNTIME ownership columns: columns that record a
+   * row's owner for a class whose manifest does not say so — the tenancy
+   * package's `registerTenantScopedClass('Team', { field: 'organizationId' })`
+   * is the canonical producer.
+   *
+   * Core reads these only to protect ownership on save
+   * ({@link ObjectRegistry.getOwnershipColumns}); they never change the
+   * conflict target or the schema, which are build-time contracts a runtime
+   * registration cannot alter without breaking `ON CONFLICT` binding. The
+   * source is consulted on every lookup, so registrations that bind later (a
+   * selector registered before its class) or are removed take effect
+   * immediately.
+   *
+   * @param source - maps a qualified class name to its runtime ownership
+   *   columns (snake_case), or `undefined` when it has none
+   * @returns a disposer that removes the source
+   */
+  static registerOwnershipColumnSource(
+    source: (qualifiedName: string) => readonly string[] | undefined,
+  ): () => void {
+    ObjectRegistry.ownershipColumnSources.add(source);
+    return () => {
+      ObjectRegistry.ownershipColumnSources.delete(source);
+    };
+  }
+
+  /**
+   * Every column that records a row's owner for natural-key save protection:
+   * `tenant_id`, the declared tenant column, each `@tenantId`-marked field's
+   * column, and every runtime ownership column a registered source reports
+   * ({@link ObjectRegistry.registerOwnershipColumnSource}) — so a runtime
+   * tenancy registration on a custom field (`organizationId`) is compared like
+   * `tenant_id`.
+   *
+   * @param className - Name of the class (simple or qualified)
+   */
+  static getOwnershipColumns(className: string): Set<string> {
+    const columns = new Set<string>(['tenant_id']);
+    const declared = ObjectRegistry.getTenantColumn(className);
+    if (declared) columns.add(declared);
+    for (const [name, field] of ObjectRegistry.getFields(className)) {
+      if (
+        field.__tenancy?.isTenantIdField ||
+        field._meta?.__tenancy?.isTenantIdField
+      ) {
+        columns.add(toSnakeCase(name));
+      }
+    }
+    const registered = ObjectRegistry.findClass(className);
+    const qualifiedName = registered?.qualifiedName ?? className;
+    for (const source of ObjectRegistry.ownershipColumnSources) {
+      for (const column of source(qualifiedName) ?? []) {
+        if (column) columns.add(column);
+      }
+    }
+    return columns;
   }
 
   /**

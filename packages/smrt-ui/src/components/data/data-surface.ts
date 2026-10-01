@@ -1746,3 +1746,4 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
     },
   };
 }
+export * from './surface-navigation.js';

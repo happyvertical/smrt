@@ -1246,6 +1246,11 @@ describe('external runtime field hydration', () => {
       ) => {
         upserts.push(data);
       },
+      // A new object whose slug is derived from its name never adopts a row,
+      // so it is written as a plain INSERT.
+      insert: async (_tableName: string, data: Record<string, unknown>) => {
+        upserts.push(data);
+      },
     };
 
     const asset = await new FixtureRuntimeAsset({
@@ -1260,7 +1265,8 @@ describe('external runtime field hydration', () => {
     expect(upserts).toHaveLength(1);
     expect(upserts[0]?.width).toBeUndefined();
     expect(upserts[0]?.height).toBeUndefined();
-    expect(upserts[0]?.alt).toBe('');
+    // A descendant's TEXT field stays NULL on the parent's row (#3227).
+    expect(upserts[0]?.alt).toBeNull();
 
     const hydratedWidthField =
       ObjectRegistry.getClass('FixtureRuntimeImage')?.inheritedFields?.get(

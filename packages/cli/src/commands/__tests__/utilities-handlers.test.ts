@@ -522,6 +522,17 @@ describe('utility command handlers', () => {
     );
   });
 
+  it('db:migrate forwards the empty-text-as-null opt-in to the comparer (#3226)', async () => {
+    configureMigrate();
+
+    await utilityCommands['db:migrate'].handler([], {
+      'empty-text-as-null': true,
+    });
+    expect(schemaComparerOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ emptyTextAsNull: true }),
+    );
+  });
+
   it('db:migrate rejects non-UTC timestamp conversion provenance', async () => {
     await utilityCommands['db:migrate'].handler([], {
       'postgres-timestamp-legacy-timezone': 'America/Edmonton',

@@ -70,7 +70,9 @@ function listSvelteFiles(dir) {
         entry.name === 'node_modules' ||
         entry.name === 'dist' ||
         entry.name === '.svelte-kit' ||
-        entry.name === '.turbo'
+        entry.name === '.turbo' ||
+        // Test fixtures render no shipped UI; their copy is test data.
+        entry.name === '__tests__'
       ) {
         continue;
       }

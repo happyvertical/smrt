@@ -58,6 +58,7 @@ import {
   type WebMcpCapabilityClassification,
   type WebMcpCapabilityDeclaration,
 } from './capability-classification.js';
+import { markWebMcpProposalTool } from './webmcp-tool-names.js';
 
 // ---------------------------------------------------------------------------
 // Declaration contract
@@ -821,7 +822,9 @@ export function compileViewIntentToolSpec(
     const registry = binding.registryPort;
     return {
       ...spec,
-      execute: async (args) => {
+      // Branded proposal-only (#2908): this execute can only dispatch one
+      // registry command as `source: 'agent'`.
+      execute: markWebMcpProposalTool(async (args) => {
         try {
           const command = buildControlCommand(
             target,
@@ -835,7 +838,7 @@ export function compileViewIntentToolSpec(
         } catch (error) {
           return denied(intentErrorReason(error));
         }
-      },
+      }),
     };
   }
 
@@ -855,7 +858,7 @@ export function compileViewIntentToolSpec(
     const registry = binding.registryPort;
     return {
       ...spec,
-      execute: async (args) => {
+      execute: markWebMcpProposalTool(async (args) => {
         try {
           const input = toolArguments(args);
           const payload =
@@ -882,7 +885,7 @@ export function compileViewIntentToolSpec(
         } catch (error) {
           return denied(intentErrorReason(error));
         }
-      },
+      }),
     };
   }
 

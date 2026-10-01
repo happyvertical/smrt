@@ -33,6 +33,12 @@
       "enabled": false
     },
     {
+      "description": "The svelte peer range is a compatibility floor for consumers, not the version we build with. Bumping it with every weekly devDependency update rejected apps one patch behind (Anytown on 5.57.0 vs a ^5.57.1 peer). Widen on a new major only; raise the floor by hand when smrt starts relying on a newer Svelte feature or fix.",
+      "matchDepTypes": ["peerDependencies"],
+      "matchPackageNames": ["svelte"],
+      "rangeStrategy": "widen"
+    },
+    {
       "description": "jsdom 30 moved event internals to private fields, and smrt-ui's trusted-gesture tests forge isTrusted/eventPhase through them (#3019). Hold jsdom below 30 until those tests are redesigned; remove this rule with #3019.",
       "matchPackageNames": ["jsdom"],
       "allowedVersions": "<30"

@@ -24,6 +24,7 @@ import { writeFile } from 'node:fs/promises';
 import type { Asset, AssetStore } from '@happyvertical/smrt-assets';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import sharp from 'sharp';
 import {
   afterEach,
   beforeEach,
@@ -102,7 +103,6 @@ import * as imagesSdk from '@happyvertical/images';
 const mockedResizeImage = imagesSdk.resizeImage as unknown as Mock;
 const mockedConvertFormat = imagesSdk.convertFormat as unknown as Mock;
 const mockedGenerateThumbnail = imagesSdk.generateThumbnail as unknown as Mock;
-const mockedGetImageProcessor = imagesSdk.getImageProcessor as unknown as Mock;
 const mockedProcessorResize = (
   imagesSdk as unknown as { __processorResize: Mock }
 ).__processorResize;
@@ -116,6 +116,40 @@ const mockedGenerateImage = (aiSdk as unknown as { __generateImage: Mock })
 // a fabricated sourceUri.
 // ---------------------------------------------------------------------------
 const SOURCE_BYTES = Buffer.from('original-source-image-bytes');
+
+/** A PNG, left half red and right half blue. */
+async function twoColourPng(width: number, height: number): Promise<Buffer> {
+  const half = Math.floor(width / 2);
+  const pixels = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 3;
+      pixels[i] = x < half ? 255 : 0;
+      pixels[i + 2] = x < half ? 0 : 255;
+    }
+  }
+  return sharp(pixels, { raw: { width, height, channels: 3 } })
+    .png()
+    .toBuffer();
+}
+
+/** A PNG of one grey level. */
+async function solidPng(
+  width: number,
+  height: number,
+  level: number,
+): Promise<Buffer> {
+  return sharp({
+    create: {
+      width,
+      height,
+      channels: 3,
+      background: { r: level, g: level, b: level },
+    },
+  })
+    .png()
+    .toBuffer();
+}
 
 function makeStoreStub() {
   const read = vi.fn(async (_asset: Asset) => SOURCE_BYTES);
@@ -238,29 +272,79 @@ describe('ImageEditor', () => {
   // crop()
   // -------------------------------------------------------------------------
   describe('crop()', () => {
-    it('creates a derivative sized to the crop region', async () => {
+    it('keeps the region at x/y, not a centred cover resize', async () => {
+      // Left half red, right half blue: a crop of the right half is all blue.
+      readMock.mockResolvedValueOnce(await twoColourPng(40, 20));
       const editor = makeEditor();
-      const result = await editor.crop(source, 10, 20, 300, 200);
+      const result = await editor.crop(source, 20, 0, 20, 20);
 
       expect(result.name).toBe('photo-crop');
-      expect(result.width).toBe(300);
-      expect(result.height).toBe(200);
+      expect(result.width).toBe(20);
+      expect(result.height).toBe(20);
       expect(result.sourceAssetId).toBe(source.id);
-      expect(result.description).toBe('Cropped region 10,20 300x200');
+      expect(result.description).toBe('Cropped region 20,0 20x20');
+      const [, storedData] = storeFileMock.mock.calls[0];
+      const stats = await sharp(Buffer.from(storedData)).stats();
+      expect(stats.channels[0].max).toBeLessThan(10); // no red
+      expect(stats.channels[2].min).toBeGreaterThan(245); // all blue
+      expect(mockedProcessorResize).not.toHaveBeenCalled();
     });
 
-    it('uses the image processor with cover fit and crop dimensions', async () => {
+    it('clamps a region that runs past the picture', async () => {
+      readMock.mockResolvedValueOnce(await twoColourPng(40, 20));
       const editor = makeEditor();
-      await editor.crop(source, 10, 20, 300, 200);
+      const result = await editor.crop(source, 30, 10, 100, 100);
 
-      expect(mockedGetImageProcessor).toHaveBeenCalledTimes(1);
-      expect(mockedProcessorResize).toHaveBeenCalledTimes(1);
-      const [, , opts] = mockedProcessorResize.mock.calls[0];
-      expect(opts).toEqual({ width: 300, height: 200, fit: 'cover' });
+      expect(result.width).toBe(10);
+      expect(result.height).toBe(10);
+      expect(result.description).toBe('Cropped region 30,10 10x10');
+    });
 
-      // The processor output bytes were stored.
+    it('refuses an empty or non-numeric region', async () => {
+      const editor = makeEditor();
+      await expect(editor.crop(source, 0, 0, 0, 10)).rejects.toThrow(
+        'at least one pixel',
+      );
+      await expect(editor.crop(source, Number.NaN, 0, 5, 5)).rejects.toThrow(
+        'left, top, width and height',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // adjust()
+  // -------------------------------------------------------------------------
+  describe('adjust()', () => {
+    it('creates a brighter derivative linked to the source', async () => {
+      readMock.mockResolvedValueOnce(await solidPng(8, 8, 100));
+      const editor = makeEditor();
+      const result = await editor.adjust(source, { brightness: 1.2 });
+
+      expect(result.name).toBe('photo-adjusted');
+      expect(result.sourceAssetId).toBe(source.id);
+      expect(result.description).toBe('Adjusted: 20% brighter');
+      expect(result.mimeType).toBe('image/png');
       const [, storedData] = storeFileMock.mock.calls[0];
-      expect(Buffer.from(storedData).equals(CROP_BYTES)).toBe(true);
+      const stats = await sharp(Buffer.from(storedData)).stats();
+      expect(stats.channels[0].mean).toBeGreaterThan(105);
+    });
+
+    it('turns the picture and reports the new size', async () => {
+      readMock.mockResolvedValueOnce(await twoColourPng(40, 20));
+      const editor = makeEditor();
+      const result = await editor.adjust(source, { rotate: 90 });
+
+      expect(result.width).toBe(20);
+      expect(result.height).toBe(40);
+      expect(result.description).toBe('Adjusted: turned right');
+    });
+
+    it('refuses adjustments that change nothing', async () => {
+      const editor = makeEditor();
+      await expect(editor.adjust(source, { brightness: 1 })).rejects.toThrow(
+        'Nothing to change',
+      );
+      expect(readMock).not.toHaveBeenCalled();
     });
   });
 

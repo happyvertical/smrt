@@ -247,6 +247,19 @@ const dmRoom = await chat.getOrCreateDM({
 });
 ```
 
+### Assistant dock and supervised runs
+
+`AssistantDock` / `createAssistantDockController` (`@happyvertical/smrt-chat/svelte`)
+is an in-page assistant over a host transport; `runAssistantTurn` is its
+server engine (model tools, browser tools that suspend and resume, budgets
+`maxSteps` / `maxTurnTokens` / `maxTurnMs`). For "watch it work" hosts the
+controller keeps a supervised `run` (goal, current step, `running | paused |
+waiting | done | failed | cancelled`), with `pauseRun` / `continueRun`,
+`holdForUser` for choices the person makes, a `clientToolFilter`, and a
+`settle` hook so the step after a navigation sees the new page's tools.
+`matchesToolAllowList` is exported browser-safe. Full guide:
+[`docs/assistant-dock.md`](../../docs/assistant-dock.md).
+
 ## API
 
 ### Models

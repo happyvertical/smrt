@@ -81,9 +81,16 @@ export {
   type ProviderOptions,
   type StoreOptions,
 } from './asset-store';
+export { AssetTag, type AssetTagOptions } from './asset-tag';
+export { AssetTagCollection } from './asset-tags';
 export { AssetType } from './asset-type';
 export { AssetTypeCollection } from './asset-types';
-export { AssetCollection } from './assets';
+export {
+  ASSET_TAG_CONTEXT,
+  AssetCollection,
+  type AssetTagInput,
+  assetTagSlug,
+} from './assets';
 export {
   getFilesystemLazy,
   isFileNotFoundError,
@@ -111,6 +118,7 @@ export {
   type AssetOwnerCollection,
   type AssetOwnerRecord,
   addOwnedAssetFromCollection,
+  assertAssetLinkable,
   assertValidOwnedAssetRelationship,
   assertValidOwnedAssetSortOrder,
   getOwnedAssetsFromCollection,

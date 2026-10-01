@@ -32,6 +32,10 @@
     "./webmcp-tool-names": {
       "types": "./dist/webmcp-tool-names.d.ts",
       "import": "./dist/webmcp-tool-names.js"
+    },
+    "./webmcp-page-tools": {
+      "types": "./dist/webmcp-page-tools.d.ts",
+      "import": "./dist/webmcp-page-tools.js"
     }
   },
   "dependencies": {

@@ -11,7 +11,8 @@ Image management with AI categorization, editing, and metadata extraction. Exten
 - **ImageCollection**: dimension/orientation filters — `getByMinDimensions()`, `getByAspectRatio()`, `getLandscape()`, `getPortrait()`, `getSquare()`, `getHighResolution()`, `getMissingAltText()`
 - **ImageMetadataExtractor**: dimensions, format, EXIF from buffers (via `@happyvertical/images`)
 - **ImageCategorizer**: curated metadata categorization → tags, description, confidence, subjects; optional typed decisions constrain offered tag/subject vocabularies, while image bytes remain unsupported
-- **ImageEditor**: resize/crop/convert/thumbnail + AI editing. Creates new Image records with `parentId` linking to source.
+- **ImageEditor**: resize/crop (a real x/y region, clamped to the picture)/convert/thumbnail/adjust + AI editing. Creates new Image records with `sourceAssetId` linking to source.
+- **Local adjustments** (`src/adjust.ts`, sharp, no GPU): brightness, contrast, colour, black-and-white, rotate, flip, region crop (zoom) and resize. `imageAdjustVariants(operation)` gives 2–4 versions to offer ("10/20/30% brighter"); `encodeImageAdjustments`/`decodeImageAdjustments` make a short URL-safe spec for preview routes (decode refuses anything it did not write); `applyImageAdjustments(buffer, adjustments, { fit })` renders; `ImageEditor.adjust()` saves one as a derivative. Everything but `applyImageAdjustments` is pure.
 - **ImageDeriver**: creates derived images and, when requested, records source provenance through generic `AssetAssociation` links
 - **ImageSearch**: text search across name/description/alt with orientation filters
 - **UpstreamManager**: import from external providers with provenance tracking

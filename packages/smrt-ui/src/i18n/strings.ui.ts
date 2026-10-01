@@ -16,12 +16,71 @@ export const M = defineMessages({
   'ui.calendar.select_month': 'Select month',
   'ui.calendar.select_year': 'Select year',
 
+  // calendar/CalendarView.svelte
+  'ui.calendar.today': 'Today',
+  'ui.calendar.more': '+{count} more',
+  'ui.calendar.more_short': '+{count}',
+  'ui.calendar.all_day': 'All day',
+  'ui.calendar.until': 'Until {date}',
+  'ui.calendar.items_one': '1 item',
+  'ui.calendar.items_other': '{count} items',
+  'ui.calendar.nothing_day': 'Nothing scheduled',
+  'ui.calendar.nothing_month': 'Nothing scheduled this month',
+  'ui.calendar.days_in': 'Days in {month}',
+  'ui.calendar.close_day': 'Close {date}',
+
   // calendar/DayView.svelte
   'ui.day_view.back_to_calendar': 'Back to Calendar',
   'ui.day_view.no_events': 'No events scheduled for this day',
 
   // feedback/Modal.svelte
   'ui.modal.close': 'Close modal',
+
+  // feedback/PhoneSheet.svelte
+  'ui.phone_sheet.close': 'Close {title}',
+
+  // feedback/WorkingStrip.svelte
+  'ui.working_strip.working': 'Working…',
+  'ui.working_strip.done': 'Done',
+  'ui.working_strip.open': 'Open',
+  'ui.working_strip.stop': 'Stop',
+  'ui.working_strip.paused': 'Paused',
+  'ui.working_strip.waiting': 'Waiting for you',
+  'ui.working_strip.failed': "Couldn't finish",
+  'ui.working_strip.cancelled': 'Stopped',
+  'ui.working_strip.pause': 'Pause',
+  'ui.working_strip.resume': 'Continue',
+  'ui.working_strip.review': 'Review',
+  'ui.working_strip.dismiss': 'Close',
+
+  // forms/FormActionBar.svelte
+  'ui.form_action_bar.label': 'Form actions',
+
+  // forms/DictationButton.svelte, forms/DictationStatus.svelte
+  'ui.dictation.start': 'Speak instead of typing',
+  'ui.dictation.start_hint':
+    'Speak instead of typing. You can also press and hold the text box.',
+  'ui.dictation.stop': 'Stop listening',
+  'ui.dictation.starting': 'Getting the microphone ready…',
+  'ui.dictation.listening': 'Listening. Tap the microphone when you are done.',
+  'ui.dictation.unsupported':
+    "Speech recognition isn't available in this browser. Brave blocks it; try Chrome, Edge or Safari, or type instead.",
+  'ui.dictation.denied':
+    'The microphone is blocked. Allow it for this site in your browser settings, then try again.',
+  'ui.dictation.no_speech': "Didn't hear anything. Tap the mic and try again.",
+  'ui.dictation.microphone':
+    "Couldn't use the microphone. Check that one is connected and no other app is using it, then try again.",
+  'ui.dictation.interrupted':
+    'Listening stopped straight away. This browser may not support speaking into text; try Chrome, Edge or Safari, or type instead.',
+  'ui.dictation.failed': 'Listening stopped. Tap the microphone to try again.',
+  'ui.dictation.transcribing': 'Writing it down…',
+  'ui.dictation.too_long':
+    'That was too long to write down. Try a shorter message, or type instead.',
+  'ui.dictation.not_transcribed':
+    "Couldn't write that down. Tap the microphone to try again, or type instead.",
+  'ui.dictation.unavailable':
+    "Speaking isn't set up here yet. Please type instead.",
+  'ui.dictation.forbidden': "You can't use speaking here. Please type instead.",
 
   // feedback/ProgressBar.svelte
   'ui.progress_bar.label': 'Progress',

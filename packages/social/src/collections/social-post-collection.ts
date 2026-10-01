@@ -17,6 +17,11 @@ export interface CreateSocialPostDraftOptions {
   linkUrl?: string | null;
   mediaUrl?: string | null;
   scheduledAt?: Date | null;
+  /**
+   * User creating the post (the poster). Stored as `createdByUserId` so a
+   * failed publish can be reported to them; omit for agent/schedule posts.
+   */
+  createdByUserId?: string | null;
   tenantId?: string | null;
 }
 

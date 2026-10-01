@@ -216,6 +216,8 @@ function getFactLabel(fact: {
 
 <style>
   .transparency-report {
+    container-type: inline-size;
+    container-name: transparency-report;
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -269,7 +271,7 @@ function getFactLabel(fact: {
     gap: 1rem;
   }
 
-  @media (min-width: 900px) {
+  @container transparency-report (min-width: 56rem) {
     .transparency-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

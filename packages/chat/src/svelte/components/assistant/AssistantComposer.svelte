@@ -9,9 +9,20 @@
  * flow, which is sized for a dedicated upload panel, not a one-line composer
  * (#2904 review fix).
  */
-import { Textarea } from '@happyvertical/smrt-ui/forms';
+import {
+  Dictation,
+  DictationButton,
+  type DictationSourceProvider,
+  DictationStatus,
+  type DictationTranscribe,
+  insertTextAtCursor,
+  longPress,
+  primeReadyBeep,
+  Textarea,
+} from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { onDestroy } from 'svelte';
 import { M } from '../../i18n.js';
 import type { AssistantAttachmentRef } from './assistant-transport.js';
 
@@ -38,6 +49,23 @@ export interface Props {
    * the user to edit, and read back what they typed. Setting it never sends.
    * Cleared after `onsend` resolves. */
   value?: string;
+  /**
+   * Speak instead of typing: a speech source (smrt-svelte's
+   * `createSttDictationSource()`). With one, the composer shows a
+   * microphone button, and pressing and holding the message box starts
+   * listening too (it keeps listening after the finger comes up; tap the
+   * microphone, send, or press Escape to stop). Heard words go in at the
+   * cursor. Without one there is no microphone.
+   */
+  dictation?: DictationSourceProvider | null;
+  /**
+   * Writes a recorded message down, for browsers whose speech recognition
+   * is missing or broken (Firefox, Brave): the composer then records the
+   * message and shows "Writing it down…" while this runs. Normally smrt-ui's
+   * `createHttpTranscriber('/your/route')`. Also shows the microphone on its
+   * own, without `dictation`.
+   */
+  transcribe?: DictationTranscribe | null;
 }
 
 let {
@@ -46,7 +74,10 @@ let {
   disabled = false,
   placeholder = 'Ask the assistant…',
   value: content = $bindable(''),
+  dictation: dictationSource = null,
+  transcribe = null,
 }: Props = $props();
+const canDictate = $derived(Boolean(dictationSource || transcribe));
 let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
 let uploading = $state(false);
 let sending = $state(false);
@@ -68,6 +99,35 @@ let textareaEl: HTMLTextAreaElement | undefined;
 let textareaComponent:
   | { getElement(): HTMLTextAreaElement | null }
   | undefined = $state();
+
+function messageField(): HTMLTextAreaElement | null {
+  textareaEl ??= textareaComponent?.getElement() ?? undefined;
+  return textareaEl ?? null;
+}
+
+// One dictation per composer; the source is read when listening starts.
+const dictation = new Dictation({
+  source: () => {
+    if (!dictationSource) throw new Error('Speech input is not available.');
+    return dictationSource();
+  },
+  onText: (text) => {
+    const field = messageField();
+    if (field) insertTextAtCursor(field, text);
+    else content = content ? `${content} ${text}` : text;
+  },
+});
+// The recording fallback follows the prop (a host may set it later).
+$effect.pre(() => {
+  dictation.setOptions({ transcribe });
+});
+
+onDestroy(() => dictation.dispose());
+
+function startDictationFromHold() {
+  if (disabled || uploading || dictation.active) return;
+  void dictation.start();
+}
 
 function resize(el: HTMLTextAreaElement) {
   el.style.height = 'auto';
@@ -127,6 +187,7 @@ async function handleDrop(event: DragEvent) {
 async function handleSend() {
   const trimmed = content.trim();
   if (!trimmed || disabled || sending) return;
+  if (dictation.active) void dictation.stop();
   sendError = null;
   sending = true;
   // #2904 review finding 4: keep the draft text/attachments until onsend
@@ -152,6 +213,11 @@ async function handleSend() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && dictation.active) {
+    event.preventDefault();
+    void dictation.stop();
+    return;
+  }
   // Matches ../messages/MessageInput.svelte's handleKeydown convention:
   // plain Enter sends, Shift+Enter inserts a newline. `isComposing` guards
   // against an IME's confirmation Enter being treated as a send.
@@ -205,6 +271,9 @@ function removeAttachment(id: string) {
       {/each}
     </ul>
   {/if}
+  {#if canDictate}
+    <DictationStatus {dictation} />
+  {/if}
   <div class="assistant-composer-row">
     <!-- raw-primitive-allow: compact icon-only attach control backed by a hidden native file input; opens the OS picker, matching MessageInput's icon-button send control pattern -->
     <Button
@@ -239,17 +308,30 @@ function removeAttachment(id: string) {
       tabindex="-1"
       aria-label={t(M['chat.assistant_composer.attach_files'])}
     />
-    <Textarea
-      bind:this={textareaComponent}
-      bind:value={content}
-      class="assistant-composer-textarea"
-      {placeholder}
-      disabled={disabled || uploading}
-      rows={1}
-      onkeydown={handleKeydown}
-      oninput={handleInput}
-      aria-label={t(M['chat.assistant_composer.message_label'])}
-    />
+    <div
+      class="assistant-composer-field"
+      use:longPress={{
+        onPressStart: () => primeReadyBeep(),
+        onLongPress: startDictationFromHold,
+        onRelease: () => void dictation.unlock(),
+        disabled: !canDictate || disabled || uploading,
+      }}
+    >
+      <Textarea
+        bind:this={textareaComponent}
+        bind:value={content}
+        class="assistant-composer-textarea"
+        {placeholder}
+        disabled={disabled || uploading}
+        rows={1}
+        onkeydown={handleKeydown}
+        oninput={handleInput}
+        aria-label={t(M['chat.assistant_composer.message_label'])}
+      />
+    </div>
+    {#if canDictate}
+      <DictationButton {dictation} disabled={disabled || uploading} />
+    {/if}
     <Button
       type="button"
       class="assistant-composer-send"
@@ -280,8 +362,8 @@ function removeAttachment(id: string) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     padding: 0;
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-full, 9999px);
@@ -307,11 +389,31 @@ function removeAttachment(id: string) {
     clip: rect(0 0 0 0);
   }
 
+  .assistant-composer-field {
+    flex: 1;
+    display: flex;
+    min-inline-size: 0;
+  }
+
   :global(.assistant-composer-textarea) {
     flex: 1;
     resize: none;
     /* #3000: form controls don't inherit font; use the theme's family. */
     font-family: var(--smrt-font-family, inherit);
+  }
+
+  /* Phones: 16px text so iOS Safari doesn't zoom the page when the
+     message field gets focus. */
+  @media (max-width: 48rem) {
+    .assistant-composer-field {
+    flex: 1;
+    display: flex;
+    min-inline-size: 0;
+  }
+
+  :global(.assistant-composer-textarea) {
+      font-size: max(1rem, 16px);
+    }
   }
 
   :global(.assistant-composer-send) {

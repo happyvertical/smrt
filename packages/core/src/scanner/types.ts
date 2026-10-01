@@ -404,6 +404,26 @@ export interface AgentAdminRouteManifest {
 }
 
 /**
+ * A "create" option an agent contributes, declared via `static createEntries`
+ * on the agent class. See `AgentCreateEntry` in `@happyvertical/smrt-agents/ui`.
+ */
+export interface AgentCreateEntryManifest {
+  id: string;
+  type: string;
+  format?: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  route: string;
+  order?: number;
+  availability?: {
+    permission?: string;
+    accessLevels?: string[];
+    requires?: string[];
+  };
+}
+
+/**
  * Auto-generated agent manifest section
  * Produced by the manifest build pipeline for any class with `agent` decorator config
  */
@@ -415,6 +435,8 @@ export interface AgentManifest {
   description?: string;
   uiSlots: Record<string, AgentUISlotManifest>;
   adminRoutes?: AgentAdminRouteManifest[];
+  /** Create options this agent contributes (`static createEntries`) */
+  createEntries?: AgentCreateEntryManifest[];
   /** Default signal subscriptions declared by this agent */
   signalSubscriptions?: string[];
   permissions: AgentPermission[];

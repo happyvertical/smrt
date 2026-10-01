@@ -20,6 +20,7 @@ import {
   ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createSessionContinuationStore } from '../assistant-turn.js';
 import * as chatPackageIndex from '../index.js';
 import { ChatService, sendAgentReply } from '../services/ChatService.js';
 import {
@@ -1609,6 +1610,44 @@ describe('chat security (S5 #1392)', () => {
         'tenant-1',
       );
       expect(membership?.status).toBe('active');
+    });
+  });
+
+  describe('suspended-turn transcripts never reach generated read surfaces', () => {
+    it('marks AgentSession.sessionContext sensitive so REST/MCP list/get omit it', async () => {
+      const { session } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'owner',
+      });
+      const store = createSessionContinuationStore(session);
+      await store.save('thread-1', {
+        id: 'cont-1',
+        createdAt: Date.now(),
+        transcript: [{ role: 'user', content: 'private in-flight text' }],
+      } as never);
+
+      const reloaded = await chat.getAgentSession({
+        agentSessionId: session.id as string,
+        tenantId: 'tenant-1',
+      });
+      // The server-side store still reads it back ...
+      expect(reloaded?.sessionContext).toContain('private in-flight text');
+      // ... but the serializer every generated REST/MCP route uses drops it.
+      const published = reloaded?.toPublicJSON() ?? {};
+      expect(published).not.toHaveProperty('sessionContext');
+      expect(JSON.stringify(published)).not.toContain('private in-flight text');
+
+      const fields = ObjectRegistry.getFields(
+        '@happyvertical/smrt-chat:AgentSession',
+      ) as Map<
+        string,
+        { sensitive?: boolean; _meta?: { sensitive?: boolean } }
+      >;
+      const def = fields.get('sessionContext');
+      expect(def?.sensitive === true || def?._meta?.sensitive === true).toBe(
+        true,
+      );
     });
   });
 });

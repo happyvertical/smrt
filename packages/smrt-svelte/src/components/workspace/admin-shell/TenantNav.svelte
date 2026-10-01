@@ -35,10 +35,30 @@ function isVisibleActive(item: ShellNavItem): boolean {
   return collapsed && !!item.children?.some((child) => isActive(child));
 }
 
+/** Accessible label of an item's attention dot, or null when it has none. */
+function attentionLabel(item: ShellNavItem): string | null {
+  if (!item.attention) return null;
+  return typeof item.attention === 'string' && item.attention.trim()
+    ? item.attention.trim()
+    : t(M['ui.tenant_nav.needs_attention']);
+}
+
 function fallbackIcon(label: string): string {
   return label.trim().charAt(0).toLocaleUpperCase() || '?';
 }
 </script>
+
+{#snippet attention(item: ShellNavItem)}
+  {@const label = attentionLabel(item)}
+  {#if label}
+    <span
+      class="smrt-tenant-nav__attention"
+      data-attention
+      aria-hidden="true"
+    ></span>
+    <span class="smrt-tenant-nav__sr-only">({label})</span>
+  {/if}
+{/snippet}
 
 <nav
   class="smrt-tenant-nav"
@@ -78,6 +98,7 @@ function fallbackIcon(label: string): string {
             <small>{item.badge}</small>
           {/if}
         {/if}
+        {@render attention(item)}
       </a>
       {#if item.children?.length && !collapsed}
         <div class="smrt-tenant-nav__children">
@@ -100,6 +121,7 @@ function fallbackIcon(label: string): string {
               {#if child.badge !== null && child.badge !== undefined}
                 <small>{child.badge}</small>
               {/if}
+              {@render attention(child)}
             </a>
           {/each}
         </div>
@@ -118,7 +140,10 @@ function fallbackIcon(label: string): string {
 
   .smrt-tenant-nav a {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    /* Icon, label, then one auto column per trailing mark (badge, dot). */
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-auto-flow: column;
+    grid-auto-columns: auto;
     align-items: center;
     gap: var(--smrt-spacing-2);
     min-inline-size: 0;
@@ -176,6 +201,26 @@ function fallbackIcon(label: string): string {
 
   .smrt-tenant-nav__children {
     padding-inline-start: var(--smrt-spacing-4);
+  }
+
+  .smrt-tenant-nav a {
+    position: relative;
+  }
+
+  .smrt-tenant-nav__attention {
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-error);
+    justify-self: end;
+  }
+
+  /* Collapsed: the dot sits on the icon's corner. */
+  .smrt-tenant-nav--collapsed .smrt-tenant-nav__attention {
+    position: absolute;
+    inset-block-start: 0.125rem;
+    inset-inline-end: 0.125rem;
+    box-shadow: 0 0 0 2px var(--smrt-color-surface);
   }
 
   .smrt-tenant-nav__sr-only {

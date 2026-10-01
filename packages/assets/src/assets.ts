@@ -5,8 +5,36 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { type Tag, TagCollection } from '@happyvertical/smrt-tags';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Asset } from './asset';
+import type { AssetTag } from './asset-tag';
+import type { AssetTagCollection } from './asset-tags';
+
+/** Tag context used for asset tags unless a caller names another. */
+export const ASSET_TAG_CONTEXT = 'asset';
+
+export interface AssetTagInput {
+  /** Display name for a newly created tag (defaults to the label given). */
+  name?: string;
+  /** Tag context (namespace); defaults to {@link ASSET_TAG_CONTEXT}. */
+  context?: string;
+}
+
+/** The slug a tag label is stored under: `Town hall` → `town-hall`. */
+export function assetTagSlug(label: string): string {
+  return String(label ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+function titleFromSlug(slug: string): string {
+  const words = slug.replace(/-/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 export class AssetCollection extends SmrtCollection<Asset> {
   static readonly _itemClass = Asset;
@@ -51,55 +79,200 @@ export class AssetCollection extends SmrtCollection<Asset> {
     return queryWithGlobals<Asset>(this, tenantId, 'Asset.findWithGlobals');
   }
 
-  /**
-   * Add a tag to an asset (uses @smrt/tags)
-   *
-   * @param assetId - The asset ID to tag
-   * @param tagSlug - The tag slug from @smrt/tags
-   */
-  async addTag(assetId: string, tagSlug: string): Promise<void> {
-    const db = this.db;
-    await db.upsert('asset_tags', ['asset_id', 'tag_slug'], {
-      asset_id: assetId,
-      tag_slug: tagSlug,
-      created_at: new Date().toISOString(),
-    });
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Tags (asset_tags → @happyvertical/smrt-tags Tag)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private async assetTagCollection(): Promise<AssetTagCollection> {
+    const { AssetTagCollection } = await import('./asset-tags');
+    return AssetTagCollection.create({ db: this.db });
+  }
+
+  private async tagCollection(): Promise<TagCollection> {
+    return TagCollection.create({ db: this.db });
+  }
+
+  private async requireAsset(assetId: string): Promise<Asset> {
+    const asset = (await this.get({ id: assetId })) as Asset | null;
+    if (!asset?.id) throw new Error(`Asset '${assetId}' not found`);
+    return asset;
   }
 
   /**
-   * Remove a tag from an asset
-   *
-   * @param assetId - The asset ID
-   * @param tagSlug - The tag slug to remove
+   * Find the asset's tag for `tag` (a slug or a label) in the asset's own
+   * tenant, optionally creating it. A tag of another tenant is never used.
    */
-  async removeTag(assetId: string, tagSlug: string): Promise<void> {
-    const db = this.db;
-    await db.delete('asset_tags', {
-      asset_id: assetId,
-      tag_slug: tagSlug,
-    });
+  private async resolveAssetTag(
+    asset: Asset,
+    tag: string,
+    options: AssetTagInput & { create: boolean },
+  ): Promise<Tag | null> {
+    const slug = assetTagSlug(tag);
+    if (!slug) throw new Error('A tag needs at least one letter or digit');
+    const context = options.context ?? ASSET_TAG_CONTEXT;
+    const tags = await this.tagCollection();
+    const matches = (await tags.list({
+      where: asset.tenantId
+        ? { slug, context, tenantId: asset.tenantId }
+        : { slug, context },
+      limit: 10,
+    })) as Tag[];
+    const existing = matches.find(
+      (candidate) => (candidate.tenantId ?? null) === (asset.tenantId ?? null),
+    );
+    if (existing || !options.create) return existing ?? null;
+
+    const trimmed = tag.trim();
+    return (await tags.create({
+      slug,
+      name:
+        options.name?.trim() ||
+        (trimmed !== slug ? trimmed : titleFromSlug(slug)),
+      context,
+      level: 0,
+      tenantId: asset.tenantId ?? null,
+    })) as Tag;
   }
 
   /**
-   * Get all assets with a specific tag
+   * Add a tag to an asset. `tag` is a slug (`town-hall`) or a label
+   * (`Town hall`); the tag is found or created in the asset's tenant under
+   * `context` (default {@link ASSET_TAG_CONTEXT}). Adding a tag twice is a
+   * no-op. Returns the Tag.
    *
-   * @param tagSlug - The tag slug to filter by
-   * @returns Array of assets with this tag
+   * @throws when the asset does not exist (or is not visible in the active
+   *   tenant context)
    */
-  async getByTag(tagSlug: string): Promise<Asset[]> {
-    const db = this.db;
-    // db.list(table, where) takes the WHERE object directly — not a
-    // `{ where }` wrapper (which would filter on a column literally named
-    // "where" and throw).
-    const rows = await db.list('asset_tags', { tag_slug: tagSlug });
-
-    const assets: Asset[] = [];
-    for (const row of rows as { asset_id: string }[]) {
-      const asset = await this.get({ id: row.asset_id });
-      if (asset) assets.push(asset as Asset);
+  async addTag(
+    assetId: string,
+    tag: string,
+    options: AssetTagInput = {},
+  ): Promise<Tag> {
+    const asset = await this.requireAsset(assetId);
+    const resolved = (await this.resolveAssetTag(asset, tag, {
+      ...options,
+      create: true,
+    })) as Tag;
+    const links = await this.assetTagCollection();
+    const existing = await links.byLeft(asset.id as string, {
+      tagId: resolved.id,
+    });
+    if (existing.length === 0) {
+      await links.attach(asset.id as string, resolved.id as string, {
+        tenantId: asset.tenantId ?? null,
+      });
     }
+    return resolved;
+  }
 
-    return assets;
+  /**
+   * Remove a tag (slug or label) from an asset. Unknown tags are ignored.
+   * The Tag itself is kept; only the link goes.
+   */
+  async removeTag(
+    assetId: string,
+    tag: string,
+    options: Pick<AssetTagInput, 'context'> = {},
+  ): Promise<void> {
+    const asset = await this.requireAsset(assetId);
+    const resolved = await this.resolveAssetTag(asset, tag, {
+      ...options,
+      create: false,
+    });
+    if (!resolved?.id) return;
+    const links = await this.assetTagCollection();
+    await links.detach(asset.id as string, resolved.id);
+  }
+
+  /**
+   * Make the asset's tags (in `context`) exactly `tags`: missing ones are
+   * added, others in the same context removed. Returns the resulting Tags.
+   */
+  async setTags(
+    assetId: string,
+    tags: string[],
+    options: Pick<AssetTagInput, 'context'> = {},
+  ): Promise<Tag[]> {
+    const asset = await this.requireAsset(assetId);
+    const context = options.context ?? ASSET_TAG_CONTEXT;
+    const wanted: Tag[] = [];
+    const seen = new Set<string>();
+    for (const tag of tags) {
+      const slug = assetTagSlug(tag);
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      wanted.push(await this.addTag(asset.id as string, tag, { context }));
+    }
+    const wantedIds = new Set(wanted.map((tag) => tag.id));
+    const current = await asset.getTags();
+    for (const tag of current) {
+      if (tag.context === context && !wantedIds.has(tag.id)) {
+        await this.removeTag(asset.id as string, tag.slug, { context });
+      }
+    }
+    return wanted;
+  }
+
+  /**
+   * Tags for many assets in two queries, keyed by asset id (assets without
+   * tags map to an empty list). Useful for list views.
+   */
+  async getTagsForAssets(assetIds: string[]): Promise<Map<string, Tag[]>> {
+    const result = new Map<string, Tag[]>();
+    const ids = [...new Set(assetIds.filter(Boolean))];
+    for (const id of ids) result.set(id, []);
+    if (ids.length === 0) return result;
+
+    const links = await this.assetTagCollection();
+    const rows = (await links.list({
+      where: { 'assetId in': ids },
+    })) as AssetTag[];
+    if (rows.length === 0) return result;
+
+    const tags = await this.tagCollection();
+    const tagById = new Map(
+      (
+        (await tags.listByIds([
+          ...new Set(rows.map((row) => row.tagId)),
+        ])) as Tag[]
+      )
+        .filter((tag) => tag.id)
+        .map((tag) => [tag.id as string, tag]),
+    );
+    for (const row of rows) {
+      const tag = tagById.get(row.tagId);
+      if (tag) result.get(row.assetId)?.push(tag);
+    }
+    for (const list of result.values()) {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return result;
+  }
+
+  /**
+   * Get all assets with a specific tag (slug or label), within the active
+   * tenant context.
+   */
+  async getByTag(
+    tag: string,
+    options: Pick<AssetTagInput, 'context'> = {},
+  ): Promise<Asset[]> {
+    const slug = assetTagSlug(tag);
+    if (!slug) return [];
+    const tags = await this.tagCollection();
+    const matches = (await tags.list({
+      where: { slug, context: options.context ?? ASSET_TAG_CONTEXT },
+    })) as Tag[];
+    const tagIds = matches.map((match) => match.id).filter(Boolean) as string[];
+    if (tagIds.length === 0) return [];
+
+    const links = await this.assetTagCollection();
+    const rows = (await links.list({
+      where: { 'tagId in': tagIds },
+    })) as AssetTag[];
+    const assetIds = [...new Set(rows.map((row) => row.assetId))];
+    if (assetIds.length === 0) return [];
+    return (await this.listByIds(assetIds)) as Asset[];
   }
 
   /**

@@ -15,7 +15,7 @@ import './__smrt-register__.js';
 export { PlaceAssetCollection } from './collections/PlaceAssetCollection';
 export { PlaceCollection } from './collections/PlaceCollection';
 export { PlaceTypeCollection } from './collections/PlaceTypeCollection';
-export { Place } from './models/Place';
+export { PLACE_MAIN_ASSET_RELATIONSHIP, Place } from './models/Place';
 // Export models
 export type { PlaceAssetOptions } from './models/PlaceAsset';
 export { PlaceAsset } from './models/PlaceAsset';

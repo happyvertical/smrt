@@ -6,8 +6,10 @@ Central identity system with multi-auth, relationships, controlled metadata, and
 
 - **Profile** (STI base → Bot, Organization, Person): email (optional; identity uniqueness is arbitrated by `oidc_profile_email_reservations.email_key`, not a DB constraint — legacy duplicates are tolerated and fail closed, #2359), readonly indexed `emailKey` derived with `normalizeIdentityEmail()` for adapter-independent identity lookup, `typeId` FK to ProfileType, plus a `metadata` `@oneToMany('ProfileMetadata')` relationship for controlled per-profile values.
 - **ProfileAsset**: dedicated owned-asset join in `profile_assets` with `relationship` and `sortOrder`.
+- **ProfileLink**: ordered web links in `profile_links` (`platform` from `PROFILE_LINK_PLATFORMS`, validated http(s) `url`, optional `label`, `sortOrder`). `profileId` FK is `onDelete: 'CASCADE'`. Slug is the id (never url/label, so a new link cannot adopt another row through the natural key). Write through `ProfileLinkCollection.replaceForProfile()` / `reorder()` (one transaction each; resolve the profile in the current tenant context and stamp its tenant) or `Profile.setLinks()` / `getLinks()`.
+- **Profile.isPublic**: optional public-figure flag (boolean, default false). Records the fact only; consumers decide visibility.
 - **ProfileRelationship**: bidirectional — creating one auto-creates reciprocal inverse. `contextProfileId` for tertiary relationships. `ProfileRelationshipTerm` tracks start/end dates.
-- **ProfileMetafield**: controlled vocabulary with `validationSchema`. **ProfileMetadata**: per-profile values linked to metafields.
+- **ProfileMetafield**: controlled vocabulary with `validationSchema`. **ProfileMetadata**: per-profile values linked to metafields. `addMetadata()` stamps new rows with the profile's `tenantId` (never rely on auto-population, which super-admin/system context skips, #3235) and resolves the metafield as profile-tenant first, then global, never another tenant's.
 - **AuditLog**: action, resourceType/Id, `source` (web/cli/ci/webhook/mcp), `onBehalfOfId` for CI pass-through identity. `allowSuperAdminBypass: true`.
 
 ## Auth Methods

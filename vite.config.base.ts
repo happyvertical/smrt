@@ -240,6 +240,9 @@ export function createPackageConfig(
             'uuid',
             '@paralleldrive/cuid2',
             'yaml',
+            // HTML sanitizer (smrt-content body-format): CJS with postcss and
+            // htmlparser2 underneath; the consumer's bundler resolves it.
+            'sanitize-html',
             'jsdom',
             'happy-dom',
             'axios',

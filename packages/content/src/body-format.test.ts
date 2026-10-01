@@ -29,12 +29,13 @@ describe('content body format utilities', () => {
     expect(html).not.toContain('<script');
     expect(html).not.toContain('onclick');
     expect(html).not.toContain('onerror');
-    expect(html).toContain('src="#"');
+    // An image whose only source was refused is dropped, not left broken.
+    expect(html).toBe('<p>Hello</p>');
   });
 
   it('removes slash-prefixed event handlers and risky namespaces', () => {
     const html = sanitizeHtml(
-      '<svg/onload=alert(1)><math href="javascript:alert(1)"></math><img/onerror=alert(2) src="https://example.com/safe.jpg" alt="Safe">',
+      '<svg/onload=alert(1)></svg><math href="javascript:alert(1)"></math><img/onerror=alert(2) src="https://example.com/safe.jpg" alt="Safe">',
     );
 
     expect(html).toContain(
@@ -67,12 +68,10 @@ describe('content body format utilities', () => {
 
   it('neutralizes URL/style attributes glued to a preceding quote (S5 #1388)', () => {
     const href = sanitizeHtml('<a title="x"href="javascript:alert(1)">y</a>');
-    expect(href).not.toMatch(/javascript/i);
-    expect(href).toContain('href="#"');
+    expect(href).toBe('<a title="x">y</a>');
 
     const src = sanitizeHtml('<img alt="x"src="javascript:alert(1)">');
-    expect(src).not.toMatch(/javascript/i);
-    expect(src).toContain('src="#"');
+    expect(src).toBe('');
 
     const formaction = sanitizeHtml(
       '<button title="x"formaction="javascript:alert(1)">go</button>',
@@ -95,9 +94,10 @@ describe('content body format utilities', () => {
 
     expect(html).not.toContain('xlink:href');
     expect(html).not.toContain('<svg');
-    expect(html).toContain('action="#"');
-    expect(html).toContain('formaction="#"');
-    expect(html).toContain('poster="#"');
+    // Forms, buttons and media are not body content: the tags go, text stays.
+    expect(html).not.toMatch(/<(?:form|button|video)\b/);
+    expect(html).not.toMatch(/(?:form)?action=|poster=/);
+    expect(html).toContain('Go');
     expect(html).toContain('srcset="https://example.com/safe.jpg 2x"');
     expect(html).not.toMatch(/javascript/i);
   });

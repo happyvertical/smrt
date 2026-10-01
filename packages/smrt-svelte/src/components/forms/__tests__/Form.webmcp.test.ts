@@ -1750,7 +1750,11 @@ describe('Form WebMCP staged-edit intent', () => {
     const fullname = screen.getByRole('textbox', { name: 'Full name' });
     expect(fullname).toHaveAttribute('data-smrt-subject-type', 'person');
     expect(fullname).toHaveAttribute('data-smrt-subject-id', 'person-1');
-    expect(await screen.findByText(/person:person-1/)).toBeInTheDocument();
+    // The review names the field, not the registry subject (plain labels).
+    expect(
+      await screen.findByRole('button', { name: 'Apply Full name' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/person:person-1/)).not.toBeInTheDocument();
 
     await view.rerender({
       webmcp: true,
@@ -1767,7 +1771,9 @@ describe('Form WebMCP staged-edit intent', () => {
       'Staged 1 change for review',
     );
     expect(fullname).toHaveAttribute('data-smrt-subject-id', 'person-2');
-    expect(await screen.findByText(/person:person-2/)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Apply Full name' }),
+    ).toBeInTheDocument();
 
     await userEvent.click(
       screen.getByRole('button', { name: 'Mutate subject' }),
@@ -1778,7 +1784,7 @@ describe('Form WebMCP staged-edit intent', () => {
     );
     expect(fullname).toHaveAttribute('data-smrt-subject-id', 'person-mutated');
     expect(
-      await screen.findByText(/person:person-mutated/),
+      await screen.findByRole('button', { name: 'Apply Full name' }),
     ).toBeInTheDocument();
   });
 

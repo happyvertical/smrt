@@ -2,7 +2,11 @@
  * Speech-to-Text adapters
  */
 
-export { BrowserSpeechSTTAdapter } from './browser-speech.js';
+export {
+  type BrowserSpeechError,
+  BrowserSpeechSTTAdapter,
+} from './browser-speech.js';
+export { createSttDictationSource } from './dictation-source.js';
 export * from './factory.js';
 export * from './types.js';
 export { WhisperCppSTTAdapter } from './whisper-cpp.js';

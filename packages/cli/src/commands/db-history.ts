@@ -51,6 +51,7 @@ interface DbHistoryOptions {
   status?: string;
   json?: boolean;
   verbose?: boolean;
+  'empty-text-as-null'?: boolean;
 }
 
 function getLegacyFailedMigrationClassification(
@@ -99,6 +100,12 @@ export const dbHistoryCommand: CLICommand = {
       description: 'Show full details including checksums',
       default: false,
       short: 'v',
+    },
+    'empty-text-as-null': {
+      type: 'boolean',
+      description:
+        'Assess the same convergence `db:migrate --empty-text-as-null` would apply: a nullable legacy text column whose only obstacle is empty or whitespace-only text is pending, not blocked. Off by default.',
+      default: false,
     },
   },
   handler: async (_args: string[], options: DbHistoryOptions) => {
@@ -176,7 +183,9 @@ export const dbHistoryCommand: CLICommand = {
         try {
           await autoDiscoverAndLoad();
           const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
-          const comparer = new SchemaComparer(db);
+          const comparer = new SchemaComparer(db, {
+            emptyTextAsNull: Boolean(options['empty-text-as-null']),
+          });
           const diff = await comparer.compare(manifestSchemas);
           liveSchemaCompared = true;
           failedAssessments = assessFailedMigrations(failedHistory, diff);

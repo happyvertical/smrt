@@ -190,6 +190,15 @@ export function getElement(): HTMLSelectElement | null {
 		opacity: 0.7;
 	}
 
+	/* Phones: 16px text so iOS Safari doesn't zoom the page when the field
+	   gets focus, and a 44px touch target. */
+	@media (max-width: 48rem) {
+		.select {
+			font-size: max(var(--smrt-typography-body-medium-size, 0.875rem), 16px);
+			min-height: 2.75rem;
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.select {
 			transition: none;

@@ -4,7 +4,7 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 /**
  * Key status values
@@ -76,8 +76,10 @@ export interface TenantKeyOptions extends SmrtObjectOptions {
 })
 export class TenantKey extends SmrtObject {
   /**
-   * Tenant ID this key belongs to
+   * Tenant ID this key belongs to. Not tenant-scoped (see above), but the value
+   * is a tenant id: uuid on Postgres, like every other tenant_id column.
    */
+  @field({ sqlType: 'UUID' })
   tenantId: string = '';
 
   /**

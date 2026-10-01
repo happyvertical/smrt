@@ -85,6 +85,11 @@ export {
   type CanonicalPersonProfileErrorCode,
   ProfileCollection,
 } from './collections/ProfileCollection';
+export {
+  PROFILE_LINK_LIMIT,
+  ProfileLinkCollection,
+  type ProfileLinkInput,
+} from './collections/ProfileLinkCollection';
 export { ProfileMetadataCollection } from './collections/ProfileMetadataCollection';
 export { ProfileMetafieldCollection } from './collections/ProfileMetafieldCollection';
 export { ProfileRelationshipCollection } from './collections/ProfileRelationshipCollection';
@@ -119,6 +124,18 @@ export { Profile } from './models/Profile';
 // Export models
 export type { ProfileAssetOptions } from './models/ProfileAsset';
 export { ProfileAsset } from './models/ProfileAsset';
+export type {
+  ProfileLinkOptions,
+  ProfileLinkPlatform,
+} from './models/ProfileLink';
+export {
+  isProfileLinkPlatform,
+  normalizeProfileLinkUrl,
+  PROFILE_LINK_MAX_LABEL_LENGTH,
+  PROFILE_LINK_MAX_URL_LENGTH,
+  PROFILE_LINK_PLATFORMS,
+  ProfileLink,
+} from './models/ProfileLink';
 export type { ProfileMetadataOptions } from './models/ProfileMetadata';
 export { ProfileMetadata } from './models/ProfileMetadata';
 export type { ProfileMetafieldOptions } from './models/ProfileMetafield';

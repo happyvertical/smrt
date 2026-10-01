@@ -17,6 +17,16 @@ export {
   type OidcProfileEmailReservationOptions,
 } from './OidcProfileEmailReservation';
 export { Profile } from './Profile';
+export {
+  isProfileLinkPlatform,
+  normalizeProfileLinkUrl,
+  PROFILE_LINK_MAX_LABEL_LENGTH,
+  PROFILE_LINK_MAX_URL_LENGTH,
+  PROFILE_LINK_PLATFORMS,
+  ProfileLink,
+  type ProfileLinkOptions,
+  type ProfileLinkPlatform,
+} from './ProfileLink';
 export { ProfileMetadata } from './ProfileMetadata';
 export { ProfileMetafield } from './ProfileMetafield';
 export { ProfileRelationship } from './ProfileRelationship';

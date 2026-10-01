@@ -145,6 +145,168 @@ export interface AgentAdminRoute {
 }
 
 /**
+ * When an {@link AgentCreateEntry} is offered. Every condition given must
+ * hold; the host supplies the facts through {@link AgentCreateEntryContext}.
+ */
+export interface AgentCreateEntryAvailability {
+  /**
+   * An agent manifest permission id (e.g. `manage:sources`) that must be
+   * granted for the tenant (`SerializedAgent.permissions`).
+   */
+  permission?: string;
+  /** Host access levels allowed to use it (e.g. `['admin', 'editor']`). */
+  accessLevels?: string[];
+  /** Host capability flags that must all be on (e.g. `['video']`). */
+  requires?: string[];
+}
+
+/**
+ * A "create" option an agent contributes to the host's create menu, declared
+ * with `static createEntries` on the agent class and carried in its manifest.
+ * It is plain data: the host decides where the menu lives, groups entries by
+ * `type`/`format`, and builds the link from its own base path.
+ *
+ * @example
+ * ```typescript
+ * static override createEntries: AgentCreateEntry[] = [
+ *   {
+ *     id: 'meeting-article',
+ *     type: 'news/politics',
+ *     format: 'text',
+ *     label: 'Write about a meeting',
+ *     description: 'Pick a council meeting; its papers are linked for you.',
+ *     icon: 'calendar',
+ *     route: 'articles/new/source?for=meeting',
+ *     availability: { accessLevels: ['admin', 'editor'] },
+ *   },
+ * ];
+ * ```
+ */
+export interface AgentCreateEntry {
+  /** Stable id, unique within the agent. */
+  id: string;
+  /** Host content type id the entry creates (e.g. `news/politics`). */
+  type: string;
+  /** Host-defined grouping within a type (e.g. `text`, `video`). */
+  format?: string;
+  /** Plain action name ("Write about a meeting"). */
+  label: string;
+  /** One line saying what happens. */
+  description?: string;
+  /** Icon name the host maps. */
+  icon?: string;
+  /**
+   * Where creation starts, relative to the host's base path (may carry a
+   * query string). Absolute and protocol-relative URLs are rejected.
+   */
+  route: string;
+  /** Sort order within its type (lower first). */
+  order?: number;
+  availability?: AgentCreateEntryAvailability;
+}
+
+/** Facts the host supplies to {@link resolveAgentCreateEntries}. */
+export interface AgentCreateEntryContext {
+  /** Prefix for every entry's `route` (e.g. `/sites/bentley`). */
+  basePath: string;
+  /** The viewer's access level in the host's terms. */
+  accessLevel?: string;
+  /** Capability flags that are on (e.g. `video`). */
+  capabilities?: Iterable<string>;
+}
+
+/** The agent facts `resolveAgentCreateEntries` reads (a `SerializedAgent` fits). */
+export interface AgentCreateEntrySource {
+  agentType: string;
+  agentClass: string;
+  createEntries?: AgentCreateEntry[];
+  permissions?: Record<string, boolean>;
+}
+
+/** An available entry with its link built. */
+export interface ResolvedAgentCreateEntry
+  extends Omit<AgentCreateEntry, 'route' | 'availability'> {
+  /** `<agentType>:<id>`, unique across agents. */
+  key: string;
+  agentType: string;
+  agentClass: string;
+  href: string;
+}
+
+function isRelativeRoute(route: string): boolean {
+  const trimmed = route.trim();
+  return (
+    trimmed.length > 0 &&
+    !trimmed.startsWith('//') &&
+    !/^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+  );
+}
+
+/** Whether an entry is available for these agent permissions and host facts. */
+export function isAgentCreateEntryAvailable(
+  entry: AgentCreateEntry,
+  permissions: Record<string, boolean> | undefined,
+  context: Omit<AgentCreateEntryContext, 'basePath'>,
+): boolean {
+  const availability = entry.availability;
+  if (!availability) return true;
+  if (
+    availability.permission &&
+    permissions?.[availability.permission] !== true
+  ) {
+    return false;
+  }
+  if (
+    availability.accessLevels &&
+    (!context.accessLevel ||
+      !availability.accessLevels.includes(context.accessLevel))
+  ) {
+    return false;
+  }
+  if (availability.requires?.length) {
+    const on = new Set(context.capabilities ?? []);
+    if (!availability.requires.every((flag) => on.has(flag))) return false;
+  }
+  return true;
+}
+
+/**
+ * The create entries a host should offer: every available entry of the given
+ * (already tenant-resolved, enabled) agents, with `href` built from
+ * `basePath`, sorted by type, then `order`, then label. Entries whose route is
+ * not relative are dropped.
+ */
+export function resolveAgentCreateEntries(
+  agents: readonly AgentCreateEntrySource[],
+  context: AgentCreateEntryContext,
+): ResolvedAgentCreateEntry[] {
+  const base = context.basePath.replace(/\/+$/, '');
+  const resolved: ResolvedAgentCreateEntry[] = [];
+  for (const agent of agents) {
+    for (const entry of agent.createEntries ?? []) {
+      if (!isRelativeRoute(entry.route)) continue;
+      if (!isAgentCreateEntryAvailable(entry, agent.permissions, context)) {
+        continue;
+      }
+      const { route, availability: _availability, ...rest } = entry;
+      resolved.push({
+        ...rest,
+        key: `${agent.agentType}:${entry.id}`,
+        agentType: agent.agentType,
+        agentClass: agent.agentClass,
+        href: `${base}/${route.trim().replace(/^\/+/, '')}`,
+      });
+    }
+  }
+  return resolved.sort(
+    (a, b) =>
+      a.type.localeCompare(b.type) ||
+      (a.order ?? 100) - (b.order ?? 100) ||
+      a.label.localeCompare(b.label),
+  );
+}
+
+/**
  * Context passed to agent route load functions
  *
  * A normalized subset of SvelteKit's ServerLoadEvent,
@@ -178,6 +340,8 @@ export interface AgentManifestInfo {
   description?: string;
   uiSlots: Record<string, AgentUISlot>;
   adminRoutes?: AgentAdminRoute[];
+  /** Create options this agent contributes (`static createEntries`) */
+  createEntries?: AgentCreateEntry[];
   /** Default signal subscriptions declared by this agent */
   signalSubscriptions?: string[];
   permissions: Array<{

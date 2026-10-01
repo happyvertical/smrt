@@ -59,6 +59,36 @@ const avatarAssets = await profile.getAssets('avatar');
 const galleryAssets = await profiles.getAssets(profile.id!, 'gallery');
 ```
 
+### Web links
+
+A profile's social accounts and websites, in display order. Several links per
+platform are allowed; the same address is kept once. New links take the
+profile's tenant, and they are removed with the profile.
+
+```typescript
+import { ProfileLinkCollection } from '@happyvertical/smrt-profiles';
+
+await profile.setLinks([
+  { platform: 'facebook', url: 'https://facebook.com/mayor' },
+  { platform: 'website', url: 'https://mayor.example/' },
+  { platform: 'other', url: 'https://blog.example/', label: 'Blog' },
+]); // replaces the whole list in one transaction
+
+const links = await profile.getLinks(); // ordered by sortOrder
+
+const profileLinks = await ProfileLinkCollection.create({ db });
+await profileLinks.reorder(profile.id!, [links[2].id!, links[0].id!, links[1].id!]);
+```
+
+Platforms: `facebook`, `instagram`, `x`, `linkedin`, `youtube`, `tiktok`,
+`website`, `other` (`PROFILE_LINK_PLATFORMS`). Addresses must be `http://` or
+`https://` (`normalizeProfileLinkUrl`). A link's slug is its id, never its
+address or label.
+
+`Profile.isPublic` (default `false`) is a public-figure flag: the profile is
+publicly known (an elected official, a public body). It only records the fact;
+the application decides what it shows.
+
 ## API
 
 ### Models
@@ -76,6 +106,7 @@ const galleryAssets = await profiles.getAssets(profile.id!, 'gallery');
 | `ProfileRelationshipType` | Relationship classification with reciprocal flag |
 | `ProfileRelationshipTerm` | Time-bounded relationship periods |
 | `ProfileAsset` | Dedicated owned-asset join stored in `profile_assets` with `relationship` and `sortOrder` |
+| `ProfileLink` | Ordered web link on a profile (`profile_links`: platform, url, optional label, sortOrder; cascades with the profile) |
 
 ### Auth Models
 
@@ -94,6 +125,7 @@ const galleryAssets = await profiles.getAssets(profile.id!, 'gallery');
 | `ProfileCollection` | CRUD and query for profiles |
 | `ProfileAssetCollection` | Direct access to `profile_assets` rows plus asset helper wrappers |
 | `ProfileTypeCollection` | Profile type management |
+| `ProfileLinkCollection` | `listForProfile`, `replaceForProfile` (ordered replace in one transaction), `reorder` |
 | `ProfileMetadataCollection` | Metadata value operations |
 | `ProfileMetafieldCollection` | Metafield vocabulary management |
 | `ProfileRelationshipCollection` | Relationship queries |
@@ -218,7 +250,7 @@ authorization, the owned Profile still returns `profile_owned`.
 
 ### Key Types
 
-`ProfileOptions`, `ProfileTypeOptions`, `ProfileMetadataOptions`, `ProfileMetafieldOptions`, `ProfileRelationshipOptions`, `ProfileRelationshipTypeOptions`, `ProfileRelationshipTermOptions`, `OidcIdentityOptions`, `CanonicalPersonProfileErrorCode`, `NostrIdentityOptions`, `ApiKeyOptions`, `GenerateKeyResult`, `MagicLinkTokenOptions`, `GenerateTokenResult`, `AuditLogOptions`, `AuditSource`, `AuthContext`, `ResolveIdentityResult`, `InitiateResult`, `VerifyResult`, `MagicLinkConfig`, `MagicLinkService`, `Nip05HandlerConfig`, `Nip05HandlerResult`, `Nip05Request`, `Nip05Response`, `NostrEvent`, `NostrKeypair`, `EncryptedKey`, `ValidationSchema`, `ValidatorFunction`, `ReciprocalHandler`
+`ProfileOptions`, `ProfileTypeOptions`, `ProfileLinkOptions`, `ProfileLinkPlatform`, `ProfileLinkInput`, `ProfileMetadataOptions`, `ProfileMetafieldOptions`, `ProfileRelationshipOptions`, `ProfileRelationshipTypeOptions`, `ProfileRelationshipTermOptions`, `OidcIdentityOptions`, `CanonicalPersonProfileErrorCode`, `NostrIdentityOptions`, `ApiKeyOptions`, `GenerateKeyResult`, `MagicLinkTokenOptions`, `GenerateTokenResult`, `AuditLogOptions`, `AuditSource`, `AuthContext`, `ResolveIdentityResult`, `InitiateResult`, `VerifyResult`, `MagicLinkConfig`, `MagicLinkService`, `Nip05HandlerConfig`, `Nip05HandlerResult`, `Nip05Request`, `Nip05Response`, `NostrEvent`, `NostrKeypair`, `EncryptedKey`, `ValidationSchema`, `ValidatorFunction`, `ReciprocalHandler`
 
 ## Dependencies
 

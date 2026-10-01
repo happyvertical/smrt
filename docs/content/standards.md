@@ -149,7 +149,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
   invariants before publish validation.
 - **Scripts**: every package has `build`, `build:watch`, `dev`, `clean`, `test`, `test:watch`, `typecheck`, `prepack`, `verify:pack`. **No `lint` or `format` scripts** — those are root-level Biome tasks only (`pnpm lint` / `biome ci` / `pnpm format-check`), which already gate every package on PRs; `scripts/check-standards.mjs` **forbids** per-package `lint`/`lint:fix`/`format`/`format-check` scripts so drift back to them is caught (S2, #1374). The presence of `typecheck` is likewise enforced by `scripts/check-standards.mjs`; the only carve-outs are the plain-JS template wrappers (`template-sveltekit`, `template-site-static-json`), whose typecheck obligation lives in their scaffolded `template/package.json` (see §10).
 - **`peerDependencies`**:
-  - Svelte peer always `svelte: ^5.18.0` for packages shipping UI
+  - Svelte peer is one uniform floor (currently `svelte: ^5.57.0`) for packages shipping UI. It is a consumer compatibility floor, not the dev version: Renovate widens it on a new major only (`renovate.json`), and it is raised by hand only when smrt needs a newer Svelte feature or fix
   - Optional peers explicitly marked in `peerDependenciesMeta`
   - Required peers (e.g. `users` requires `profiles`) documented in `AGENTS.md`
 - **`publishConfig.registry`** always `https://registry.npmjs.org` for published packages, with `access: "public"`
@@ -451,7 +451,7 @@ never disable the scan.
 - **`./ui` subpath**: exports `MODULE_META` and `UI_SLOTS` constants. The vite config builds a `ui` entry; the package.json must declare the matching export. (`chat` currently has the entry without the export.)
 - **`./playground` subpath**: exports the package's playground module for use by `smrt-playground`
 - **`./workbench` subpath**: exports package-owned routes and workbench metadata for use by `smrt-workbench`
-- **Svelte peer**: `svelte: ^5.18.0` (uniform). Drop the `^4.0.0 || ^5.0.0` range.
+- **Svelte peer**: one uniform floor (currently `svelte: ^5.57.0`), not bumped with the devDependency. Drop the `^4.0.0 || ^5.0.0` range.
 - **Build script**: `vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json`
 - **Typecheck script**: packages with `./svelte` exports must run both TypeScript and Svelte checks via the a11y wrapper, e.g. `tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json` (see Accessibility enforcement below). SvelteKit-backed packages should run `svelte-kit sync` before both the TypeScript pass and the `svelte-check-a11y` wrapper pass.
 - **`tsconfig.svelte.json`**: extends `tsconfig.package-svelte.json`, includes `ambient.d.ts` and `*.svelte`

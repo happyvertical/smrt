@@ -563,6 +563,25 @@ export class SmrtObject extends SmrtClass {
   private _insertOnly = false;
 
   /**
+   * The slug {@link getSlug} derived from a human value (`name`, `title` or
+   * `label`), or `null` when the slug was set explicitly or derived from the
+   * id. A human value is not an identity — two pictures named `photo.jpg`, two
+   * articles titled "Council meeting" — so a NEW object whose natural key only
+   * matches an existing row through such a slug never adopts that row: it
+   * saves under a unique slug instead (see {@link writeNaturalKeyRow}).
+   */
+  private _derivedSlug: string | null = null;
+
+  /** The slug as first derived, before any free-slug move (see above). */
+  private _derivedSlugBase: string | null = null;
+
+  /**
+   * Set by `getOrUpsert()`'s create path: a derived slug then names the row
+   * to update in place, as an explicit key does, instead of moving.
+   */
+  private _adoptNaturalKey = false;
+
+  /**
    * Override options with SmrtObjectOptions type for proper type narrowing.
    * Initialized by parent constructor via super() call.
    */
@@ -793,6 +812,18 @@ export class SmrtObject extends SmrtClass {
    */
   public requireInsertOnSave(): void {
     this._insertOnly = true;
+  }
+
+  /**
+   * Makes the initial `save()` update the row its natural key names in place
+   * — even when the slug was derived from `name`/`title`/`label` — instead of
+   * moving to a free slug. Set by `collection.getOrUpsert()`'s create path,
+   * whose contract is "update the row this data identifies". The ownership
+   * guard still applies. No effect once the object is persisted.
+   * @internal
+   */
+  public adoptNaturalKeyOnSave(): void {
+    this._adoptNaturalKey = true;
   }
 
   protected async verifyStorageReady(): Promise<void> {
@@ -1560,6 +1591,9 @@ export class SmrtObject extends SmrtClass {
     // for fields that exist in siblings but not in this class (Issue #391).
     // R5-canon (Copilot follow-up): pass the qualified name so STI
     // sibling discovery is collision-safe across packages.
+    // Fields this class itself declares (own + inherited). Anything the
+    // sibling merge below adds belongs to another class in the hierarchy.
+    const ownFieldKeys = new Set(registeredFields.keys());
     if (isSTI) {
       const descendants = getSTIHierarchyMembers(
         this.getResolvedQualifiedName(),
@@ -1666,10 +1700,14 @@ export class SmrtObject extends SmrtClass {
           }
         } else if (fieldType === 'text') {
           // For regular TEXT fields, convert undefined to an empty string.
+          // A sibling class's TEXT field is not this row's data: it stays
+          // NULL (#3227). Writing '' there stored a value no class owns and
+          // blocked later typed conversions of the shared column (#3226).
+          const emptyValue = isSTI && !ownFieldKeys.has(key) ? null : '';
           if (isSTI && fieldDef?.type === 'meta') {
-            metaData[key] = '';
+            metaData[key] = emptyValue;
           } else {
-            data[key] = '';
+            data[key] = emptyValue;
           }
         } else if (fieldType === 'json') {
           // For JSON fields, use the default value from manifest to prevent:
@@ -1993,10 +2031,15 @@ export class SmrtObject extends SmrtClass {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)/g, '');
+        // Only a human value can collide with a different record; an
+        // id-derived slug is as unique as the id.
+        this._derivedSlug = sourceField === String(this.id) ? null : this.slug;
+        this._derivedSlugBase = this._derivedSlug;
       }
     }
 
-    // check for existing slug and make unique?
+    // Uniqueness is settled at save time: a NEW object whose derived slug is
+    // already taken saves under the next free "-2", "-3", … slug.
     return this.slug;
   }
 
@@ -2331,7 +2374,21 @@ export class SmrtObject extends SmrtClass {
     const columns = prepared[0] ? Object.keys(prepared[0].data) : [];
     const conflict = prepared[0]?.conflictColumns ?? [];
     const identities = new Set<string>();
+    // The multi-row `DO UPDATE SET` cannot run save()'s natural-key identity
+    // guard, so a conflict target that omits an ownership column present in
+    // the row takes the per-item path, where a cross-tenant collision is
+    // refused instead of rewriting the other tenant's row.
+    // Every ownership column counts, exactly as in writeNaturalKeyRow():
+    // `tenant_id`, the declared tenant column, and any `@tenantId`-marked
+    // field under its own column name.
+    const ownershipColumns = SmrtObject.ownershipColumnsFor(
+      first.getResolvedQualifiedName(),
+    );
+    const ownershipUncovered = [...ownershipColumns].some(
+      (column) => columns.includes(column) && !conflict.includes(column),
+    );
     if (
+      ownershipUncovered ||
       columns.length * added.length > 900 ||
       prepared.some((entry) => {
         if (
@@ -2348,6 +2405,58 @@ export class SmrtObject extends SmrtClass {
       })
     )
       return false;
+    const quote = (identifier: string) =>
+      `"${identifier.replaceAll('"', '""')}"`;
+    const bindValue = (value: unknown): unknown =>
+      value instanceof Date
+        ? value.toISOString()
+        : value === undefined
+          ? null
+          : value !== null && typeof value === 'object'
+            ? JSON.stringify(value)
+            : typeof value === 'boolean' && engine === 'sqlite'
+              ? Number(value)
+              : value;
+    // A new item whose natural key already names a row (other than one this
+    // batch removes first) takes the per-item path: its guard adopts the
+    // existing id instead of letting `DO UPDATE` rewrite the primary key, and
+    // `ON UPDATE CASCADE` re-point the row's children. Conflict values are
+    // never NULL here (checked above), so plain equality matches the index.
+    if (added.length > 0 && conflict.length > 0) {
+      const probeValues: unknown[] = [];
+      const placeholder = () =>
+        engine === 'postgres' ? `$${probeValues.length}` : '?';
+      const clauses = prepared.map(
+        ({ data }) =>
+          `(${conflict
+            .map((column) => {
+              probeValues.push(bindValue(data[column]));
+              return `${quote(column)} = ${placeholder()}`;
+            })
+            .join(' AND ')})`,
+      );
+      const removedIds = new Set(
+        removed.map((item) => String(item.id).toLowerCase()),
+      );
+      let existingRows: Array<Record<string, unknown>>;
+      try {
+        existingRows =
+          (
+            await first.db.query(
+              `SELECT ${quote('id')} FROM ${quote(first.tableName)} WHERE ${clauses.join(' OR ')}`,
+              ...probeValues,
+            )
+          )?.rows ?? [];
+      } catch {
+        return false;
+      }
+      if (
+        existingRows.some(
+          (row) => !removedIds.has(String(row.id).toLowerCase()),
+        )
+      )
+        return false;
+    }
     const deletions: BulkMutationEntry[] = [];
     for (const instance of removed) {
       const context = createInterceptorContext(
@@ -2396,30 +2505,26 @@ export class SmrtObject extends SmrtClass {
       await GlobalInterceptors.executeBulkAfter('afterDelete', deletions);
     }
     if (added.length > 0) {
-      const quote = (identifier: string) =>
-        `"${identifier.replaceAll('"', '""')}"`;
       const values: unknown[] = [];
       const tuples = prepared.map(
         ({ data }) =>
           `(${columns
             .map((column) => {
-              const value = data[column];
-              values.push(
-                value instanceof Date
-                  ? value.toISOString()
-                  : value === undefined
-                    ? null
-                    : value !== null && typeof value === 'object'
-                      ? JSON.stringify(value)
-                      : typeof value === 'boolean' && engine === 'sqlite'
-                        ? Number(value)
-                        : value,
-              );
+              values.push(bindValue(data[column]));
               return engine === 'postgres' ? `$${values.length}` : '?';
             })
             .join(', ')})`,
       );
+      // Defense in depth for a row inserted between the probe above and this
+      // statement: `DO UPDATE` never rewrites the primary key, the row's
+      // ownership, or its creation time.
       const updates = columns
+        .filter(
+          (column) =>
+            column !== 'id' &&
+            column !== 'created_at' &&
+            !ownershipColumns.has(column),
+        )
         .map((column) => `${quote(column)} = excluded.${quote(column)}`)
         .join(', ');
       const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates}`;
@@ -2466,6 +2571,15 @@ export class SmrtObject extends SmrtClass {
       await GlobalInterceptors.executeBulkAfter('afterSave', completions);
     }
     return true;
+  }
+
+  /**
+   * The columns that record a row's owner — see
+   * {@link ObjectRegistry.getOwnershipColumns} (declared, `@tenantId`-marked
+   * and runtime-registered ownership columns, plus `tenant_id`).
+   */
+  private static ownershipColumnsFor(qualifiedName: string): Set<string> {
+    return ObjectRegistry.getOwnershipColumns(qualifiedName);
   }
 
   /** Shared preparation for ordinary saves and compatible bulk creates. */
@@ -2601,6 +2715,19 @@ export class SmrtObject extends SmrtClass {
     const conflictColumns = ObjectRegistry.getConflictColumns(
       this.getResolvedQualifiedName(),
     );
+    // An unset optional tenant field (`tenantId?: string`) serializes to
+    // nothing, but the tenant-owned conflict target leads with its column: a
+    // global row is keyed by an explicit NULL owner.
+    const ownershipColumn = ObjectRegistry.getOwnershipTenantColumn(
+      this.getResolvedQualifiedName(),
+    );
+    if (
+      ownershipColumn &&
+      conflictColumns.includes(ownershipColumn) &&
+      data[ownershipColumn] === undefined
+    ) {
+      data[ownershipColumn] = null;
+    }
     const derivedColumns = this.getPersistenceDerivedColumns();
     const registeredFields = ObjectRegistry.getFields(
       this.getResolvedQualifiedName(),
@@ -2821,111 +2948,121 @@ export class SmrtObject extends SmrtClass {
       // slip between the compare and upsert and be silently overwritten.
       const serializeEmbeddedWrite = isEmbeddedDatabase(this.db);
 
+      const naturalKeyUpsert =
+        writePlan.type === 'upsert' &&
+        revisionGuard === undefined &&
+        !(this._insertOnly && !this._persisted) &&
+        !(
+          upsertConflictColumns.length === 1 &&
+          upsertConflictColumns[0] === 'id'
+        );
+
       let revisionMatched = true;
-      await withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, () =>
-        ErrorUtils.withRetry(
-          async () => {
-            try {
-              if (
-                writePlan.type === 'updateById' ||
-                revisionGuard !== undefined
-              ) {
-                const { id: _id, ...updateData } = data;
-                // Embedded adapters have no cross-process writers in supported
-                // deployments, and DuckDB cannot type a TIMESTAMP predicate in
-                // this generic UPDATE API. Compare then upsert while holding
-                // the shared per-database embedded-write queue instead.
-                if (useEmbeddedRevisionFallback) {
-                  const current = await this.db.get(this.tableName, {
-                    id: data.id,
-                  });
+      // How a NEW object's natural-key save writes (see writeNaturalKeyRow):
+      // `insert` — a derived slug that must never adopt a row is written as a
+      // plain INSERT, so a concurrent claim raises instead of overwriting;
+      // `done` — PostgreSQL already inserted it (ON CONFLICT DO NOTHING).
+      let naturalKeyWrite: 'done' | 'insert' | 'upsert' = 'upsert';
+      // A same-owner row this save adopts. Applied to the instance only after
+      // the write succeeds, so a failed save never leaves it holding another
+      // row's id (a cleanup delete() would remove that row).
+      const adopted: { id?: string; createdAt?: unknown } = {};
+      await withEmbeddedWriteQueue(
+        this.db,
+        serializeEmbeddedWrite,
+        async () => {
+          if (naturalKeyUpsert) {
+            naturalKeyWrite = await this.writeNaturalKeyRow(
+              data,
+              upsertConflictColumns,
+              adopted,
+            );
+            if (naturalKeyWrite === 'done') return;
+          } else if (this._insertOnly && !this._persisted) {
+            await this.assertNullableNaturalKeyFree(data, conflictColumns);
+          }
+          const insertUnderFreshSlug = naturalKeyWrite === 'insert';
+          return ErrorUtils.withRetry(
+            async () => {
+              try {
+                if (
+                  writePlan.type === 'updateById' ||
+                  revisionGuard !== undefined
+                ) {
+                  const { id: _id, ...updateData } = data;
+                  // Embedded adapters have no cross-process writers in supported
+                  // deployments, and DuckDB cannot type a TIMESTAMP predicate in
+                  // this generic UPDATE API. Compare then upsert while holding
+                  // the shared per-database embedded-write queue instead.
+                  if (useEmbeddedRevisionFallback) {
+                    const current = await this.db.get(this.tableName, {
+                      id: data.id,
+                    });
+                    if (
+                      !current ||
+                      !this.revisionsEqual(
+                        (current as Record<string, unknown>).updated_at,
+                        revisionGuard,
+                      )
+                    ) {
+                      revisionMatched = false;
+                      return;
+                    }
+                  }
+                  const updateResult = useEmbeddedRevisionFallback
+                    ? await this.db.upsert(this.tableName, ['id'], data)
+                    : await this.db.update(
+                        this.tableName,
+                        {
+                          id: data.id,
+                          ...(revisionGuard !== undefined
+                            ? this.revisionPredicate(revisionGuard)
+                            : {}),
+                        },
+                        updateData,
+                      );
                   if (
-                    !current ||
-                    !this.revisionsEqual(
-                      (current as Record<string, unknown>).updated_at,
-                      revisionGuard,
-                    )
+                    revisionGuard !== undefined &&
+                    updateResult.affected !== 1
                   ) {
                     revisionMatched = false;
                     return;
                   }
-                }
-                const updateResult = useEmbeddedRevisionFallback
-                  ? await this.db.upsert(this.tableName, ['id'], data)
-                  : await this.db.update(
-                      this.tableName,
-                      {
-                        id: data.id,
-                        ...(revisionGuard !== undefined
-                          ? this.revisionPredicate(revisionGuard)
-                          : {}),
-                      },
-                      updateData,
-                    );
-                if (
-                  revisionGuard !== undefined &&
-                  updateResult.affected !== 1
+                  if (writePlan.type === 'updateById') {
+                    this.setMetaType(writePlan.qualifiedMetaType);
+                  }
+                } else if (
+                  (this._insertOnly && !this._persisted) ||
+                  insertUnderFreshSlug
                 ) {
-                  revisionMatched = false;
-                  return;
-                }
-                if (writePlan.type === 'updateById') {
-                  this.setMetaType(writePlan.qualifiedMetaType);
-                }
-              } else if (this._insertOnly && !this._persisted) {
-                // Strict-insert mode (#1759): row identity is an explicit
-                // client-supplied id, so never adopt an existing row via
-                // conflict resolution — any PK/unique collision must raise.
-                await this.db.insert(this.tableName, data);
-              } else {
-                await this.db.upsert(
-                  this.tableName,
-                  upsertConflictColumns,
-                  data,
-                );
-              }
-            } catch (error) {
-              // Detect specific database error types. `@happyvertical/sql` wraps
-              // every driver error as
-              // `DatabaseError('Failed to upsert record into table', { …,
-              // originalError })`, so the constraint wording never reaches
-              // `error.message`. Classify through the whole cause chain — driver
-              // codes first (SQLSTATE / SQLite result codes), dialect wording
-              // only as the DuckDB fallback — to restore the typed-error parity
-              // the docs promise (#1378, #2366).
-              if (error instanceof Error) {
-                const classification = classifyDatabaseError(error);
-                if (classification.kind === 'unique_violation') {
-                  const field = this.extractConstraintFieldFromChain(
-                    error,
-                    classification,
-                  );
-                  throw ValidationError.uniqueConstraint(
-                    field,
-                    this.getFieldValue(field),
+                  // Strict-insert mode (#1759): row identity is an explicit
+                  // client-supplied id, so never adopt an existing row via
+                  // conflict resolution — any PK/unique collision must raise.
+                  // A derived slug moved to a free one inserts the same way.
+                  await this.db.insert(this.tableName, data);
+                } else {
+                  await this.db.upsert(
+                    this.tableName,
+                    upsertConflictColumns,
+                    data,
                   );
                 }
-                if (classification.kind === 'not_null_violation') {
-                  const field = this.extractConstraintFieldFromChain(
-                    error,
-                    classification,
-                  );
-                  throw ValidationError.requiredField(field, className);
-                }
-                const operation =
+              } catch (error) {
+                throw this.toTypedWriteError(
+                  error,
                   writePlan.type === 'updateById' || revisionGuard !== undefined
                     ? `UPDATE ${this.tableName} (id-targeted)`
-                    : this._insertOnly && !this._persisted
+                    : (this._insertOnly && !this._persisted) ||
+                        insertUnderFreshSlug
                       ? `INSERT INTO ${this.tableName}`
-                      : `UPSERT INTO ${this.tableName}`;
-                throw DatabaseError.queryFailed(operation, error);
+                      : `UPSERT INTO ${this.tableName}`,
+                );
               }
-              throw error;
-            }
-          },
-          3,
-          500,
-        ),
+            },
+            3,
+            500,
+          );
+        },
       );
 
       if (!revisionMatched) {
@@ -2936,6 +3073,13 @@ export class SmrtObject extends SmrtClass {
         );
       }
       revisionPersisted = true;
+      if (adopted.id) {
+        this.id = adopted.id;
+        if (adopted.createdAt != null) {
+          const createdAt = new Date(adopted.createdAt as string | Date);
+          if (!Number.isNaN(createdAt.getTime())) this.created_at = createdAt;
+        }
+      }
 
       await this.completeSave(interceptorContext);
 
@@ -3139,6 +3283,342 @@ export class SmrtObject extends SmrtClass {
         : Number.NEGATIVE_INFINITY;
     const nextRevisionTime = Math.max(Date.now(), revisionFloor + 1);
     return new Date(nextRevisionTime);
+  }
+
+  /**
+   * Read the row a natural-key write would hit, directly (no read
+   * interceptors), retrying only transient failures like the write itself.
+   */
+  private async readNaturalKeyRow(
+    filter: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    return ErrorUtils.withRetry(
+      async () => {
+        try {
+          return await this.getCanonicalPersistedRow(filter);
+        } catch (error) {
+          if (error instanceof SmrtError) throw error;
+          throw DatabaseError.queryFailed(
+            `get(${this.tableName}, natural-key identity)`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
+      },
+      3,
+      500,
+    );
+  }
+
+  /**
+   * Strict inserts (`_insertOnly`, #1759) rely on the unique conflict index to
+   * reject a natural-key collision. A NULL in that key (a global row of a
+   * tenant-owned table, whose key leads with `tenant_id`) is distinct from
+   * every other NULL on SQLite, DuckDB and PostgreSQL before 15, so the index
+   * admits the duplicate the upsert path would have deduplicated. Check with
+   * the same `IS NULL` match the null-aware upsert uses and raise the unique
+   * violation the index would have.
+   */
+  private async assertNullableNaturalKeyFree(
+    data: Record<string, unknown>,
+    conflictColumns: string[],
+  ): Promise<void> {
+    if (
+      conflictColumns.length === 0 ||
+      (conflictColumns.length === 1 && conflictColumns[0] === 'id') ||
+      !conflictColumns.every((column) => Object.hasOwn(data, column)) ||
+      !conflictColumns.some((column) => data[column] == null)
+    ) {
+      return;
+    }
+    const filter: Record<string, unknown> = {};
+    for (const column of conflictColumns) filter[column] = data[column] ?? null;
+    const existing = await this.readNaturalKeyRow(filter);
+    if (existing && existing.id !== data.id) {
+      const column =
+        conflictColumns.find((name) => data[name] != null) ??
+        conflictColumns[0];
+      throw ValidationError.uniqueConstraint(column, data[column]);
+    }
+  }
+
+  /**
+   * Map a failed write to the typed error contract. `@happyvertical/sql` wraps
+   * every driver error as `DatabaseError('Failed to upsert record into
+   * table', { …, originalError })`, so the constraint wording never reaches
+   * `error.message`. Classify through the whole cause chain — driver codes
+   * first (SQLSTATE / SQLite result codes), dialect wording only as the
+   * DuckDB fallback — to restore the typed-error parity the docs promise
+   * (#1378, #2366).
+   */
+  private toTypedWriteError(error: unknown, operation: string): unknown {
+    if (!(error instanceof Error)) return error;
+    const classification = classifyDatabaseError(error);
+    if (classification.kind === 'unique_violation') {
+      const field = this.extractConstraintFieldFromChain(error, classification);
+      return ValidationError.uniqueConstraint(field, this.getFieldValue(field));
+    }
+    if (classification.kind === 'not_null_violation') {
+      const field = this.extractConstraintFieldFromChain(error, classification);
+      return ValidationError.requiredField(field, this.getResolvedClassName());
+    }
+    return DatabaseError.queryFailed(operation, error);
+  }
+
+  /**
+   * Natural-key write for a NEW object (identity guard).
+   *
+   * A NEW object upserts on its natural key (`getConflictColumns()`), and the
+   * SDK's `ON CONFLICT (…) DO UPDATE SET` rewrites EVERY column of the matched
+   * row — including `id` and the tenant column. Two failure modes followed:
+   *
+   * - **Cross-tenant takeover.** When the conflict target omits the owner (an
+   *   explicit key without it, or a live table still carrying a global
+   *   `(slug, context)` unique), tenant B's save of a key tenant A already
+   *   owns matched A's row and rewrote its `id` and owner; with
+   *   `ON UPDATE CASCADE` A's children followed it into tenant B. The tenancy
+   *   interceptor cannot prevent this: it filters B's LOOKUP only.
+   * - **Primary-key churn.** A fresh instance saved over an existing same-owner
+   *   row replaced that row's primary key with the instance's new UUID.
+   *
+   * The row the conflict target matches is read directly, bypassing read
+   * interceptors (the collision is a storage fact whatever the caller may
+   * read). A different owner on any ownership column
+   * ({@link ObjectRegistry.getOwnershipColumns}: `tenant_id`, the declared
+   * tenant column, `@tenantId` fields and runtime tenancy registrations) is
+   * refused with {@link TenantIsolationError} (`TENANT_ISOLATION_VIOLATION`)
+   * — under `withSystemContext()` too, and an owner the save leaves unset
+   * counts as NULL: a tenant save never adopts a global row and a global save
+   * never adopts a tenant's row. A same-owner row is adopted: its id and
+   * creation time replace the instance's, so `DO UPDATE` keeps the primary
+   * key and `created_at`.
+   *
+   * A slug {@link getSlug} derived from `name`/`title`/`label` is a human
+   * value, not an identity: such an object never adopts a row (whoever owns
+   * it) and moves to the first free `<slug>-2` … `<slug>-9`, then
+   * `<slug>-<id>`, and INSERTs. `getOrUpsert()` opts back into adoption: its
+   * create path is keyed by the natural key it would have found.
+   *
+   * Concurrency. On PostgreSQL, when no conflict value is NULL, the write is
+   * `INSERT … ON CONFLICT (…) DO NOTHING RETURNING id` first: a new key costs
+   * one statement and no pre-read, and two concurrent first creates can never
+   * both take the upsert path — the loser sees the winner's row and adopts it
+   * (explicit key) or moves (derived slug), retrying a bounded number of
+   * times. Elsewhere (embedded engines, serialized by the in-process write
+   * queue, and NULL-bearing keys, which a standard unique index cannot
+   * arbitrate) the row is read first.
+   *
+   * @returns how the caller writes: `'done'` (already inserted), `'insert'`
+   *   (plain INSERT) or `'upsert'` (natural-key upsert, identity adopted).
+   */
+  private async writeNaturalKeyRow(
+    data: Record<string, unknown>,
+    conflictColumns: string[],
+    adopted: { id?: string; createdAt?: unknown },
+  ): Promise<'done' | 'insert' | 'upsert'> {
+    if (
+      conflictColumns.length === 0 ||
+      !conflictColumns.every((column) => Object.hasOwn(data, column))
+    ) {
+      return 'upsert';
+    }
+    const derived =
+      !this._adoptNaturalKey &&
+      conflictColumns.includes('slug') &&
+      this._derivedSlug !== null &&
+      data.slug === this._derivedSlug;
+    const conflictFilterOf = () => {
+      const filter: Record<string, unknown> = {};
+      for (const column of conflictColumns) {
+        const value = data[column];
+        filter[column] = value === undefined ? null : value;
+      }
+      return filter;
+    };
+    const atomic =
+      isPostgresDatabase(this.db) &&
+      conflictColumns.every((column) => data[column] != null);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const conflictFilter = conflictFilterOf();
+      if (atomic) {
+        try {
+          if (await this.insertIfAbsent(data, conflictColumns)) return 'done';
+        } catch (error) {
+          throw this.toTypedWriteError(error, `INSERT INTO ${this.tableName}`);
+        }
+      }
+      const existing = await this.readNaturalKeyRow(conflictFilter);
+      if (!existing) {
+        // Atomic: the conflicting row vanished between the two statements;
+        // try the insert again. Otherwise nothing is there to adopt.
+        if (atomic) continue;
+        return derived ? 'insert' : 'upsert';
+      }
+      if (derived) {
+        // A moved slug INSERTs, so it can never take over anyone's row; no
+        // ownership check is needed (and none may refuse it).
+        // A numbered slug lost to a concurrent create already: take the
+        // id-suffixed slug, which only this object's id can claim.
+        await this.moveToFreeDerivedSlug(data, conflictFilter, attempt > 0);
+        if (atomic) continue;
+        return 'insert';
+      }
+      this.assertSameNaturalKeyOwner(
+        data,
+        existing,
+        conflictColumns,
+        conflictFilter,
+      );
+      const existingId = existing.id;
+      if (
+        typeof existingId === 'string' &&
+        existingId !== '' &&
+        existingId !== data.id
+      ) {
+        data.id = existingId;
+        adopted.id = existingId;
+        if (existing.created_at != null && existing.created_at !== '') {
+          data.created_at = existing.created_at;
+          adopted.createdAt = existing.created_at;
+        }
+      }
+      return 'upsert';
+    }
+    throw DatabaseError.queryFailed(
+      `INSERT INTO ${this.tableName} (natural key)`,
+      new Error(
+        'The natural key kept colliding with concurrent writes; retry the save.',
+      ),
+    );
+  }
+
+  /**
+   * Refuse a natural-key collision with a row owned by someone else. Every
+   * ownership column the stored row carries is compared; one the save leaves
+   * unset counts as NULL (a global save never adopts a tenant's row).
+   */
+  private assertSameNaturalKeyOwner(
+    data: Record<string, unknown>,
+    existing: Record<string, unknown>,
+    conflictColumns: string[],
+    conflictFilter: Record<string, unknown>,
+  ): void {
+    const ownershipColumns = SmrtObject.ownershipColumnsFor(
+      this.getResolvedQualifiedName(),
+    );
+    const normalizeOwner = (value: unknown): string | null => {
+      if (value === null || value === undefined || value === '') return null;
+      return String(value).trim().toLowerCase();
+    };
+    const differing = [...ownershipColumns].filter(
+      (column) =>
+        Object.hasOwn(existing, column) &&
+        normalizeOwner(data[column]) !== normalizeOwner(existing[column]),
+    );
+    if (differing.length === 0) return;
+    const ownTenant = data[differing[0]];
+    throw TenantIsolationError.naturalKeyOwnedElsewhere({
+      className: this.getResolvedClassName(),
+      tableName: this.tableName,
+      conflictColumns,
+      conflictValues: conflictFilter,
+      ownershipColumns: differing,
+      tenantId: typeof ownTenant === 'string' ? ownTenant : null,
+    });
+  }
+
+  /**
+   * PostgreSQL: `INSERT … ON CONFLICT (conflict) DO NOTHING RETURNING id`.
+   * Values are serialized exactly as the SDK's insert does (undefined
+   * omitted, Date → ISO, objects → JSON, buffers as-is). A conflict on the
+   * natural key inserts nothing and returns `false`; any other constraint
+   * error propagates for the caller's typed classification.
+   */
+  private async insertIfAbsent(
+    data: Record<string, unknown>,
+    conflictColumns: string[],
+  ): Promise<boolean> {
+    const quote = (identifier: string) =>
+      `"${identifier.replaceAll('"', '""')}"`;
+    const columns: string[] = [];
+    const values: unknown[] = [];
+    for (const [column, value] of Object.entries(data)) {
+      if (value === undefined) continue;
+      columns.push(quote(column));
+      values.push(
+        value === null
+          ? null
+          : value instanceof Date
+            ? value.toISOString()
+            : Buffer.isBuffer(value) || ArrayBuffer.isView(value)
+              ? value
+              : typeof value === 'object'
+                ? JSON.stringify(value)
+                : value,
+      );
+    }
+    const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
+    const result = await this.db.query(
+      `INSERT INTO ${quote(this.tableName)} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT (${conflictColumns.map(quote).join(', ')}) DO NOTHING RETURNING ${quote('id')}`,
+      ...values,
+    );
+    return (result?.rows?.length ?? 0) > 0;
+  }
+
+  /**
+   * Moves a NEW object's taken derived slug to the first free `<base>-2` …
+   * `<base>-9` under the same natural key (any owner's row counts as taken),
+   * found with ONE query, then to `<base>-<first 8 id characters>`, which only
+   * this object's id can claim (directly, with `idSuffixOnly`, after a
+   * numbered slug was lost to a concurrent create). `<base>` is the slug as first derived, so a
+   * retried save never compounds suffixes (`foo-2-2`). The caller INSERTs,
+   * so a concurrent claim of the same slug raises or retries instead of
+   * overwriting.
+   */
+  private async moveToFreeDerivedSlug(
+    data: Record<string, unknown>,
+    conflictFilter: Record<string, unknown>,
+    idSuffixOnly = false,
+  ): Promise<void> {
+    const base = this._derivedSlugBase ?? String(data.slug);
+    const idSlug = `${base}-${String(data.id).replace(/-/g, '').slice(0, 8)}`;
+    if (idSuffixOnly) {
+      data.slug = idSlug;
+      this.slug = idSlug;
+      this._derivedSlug = idSlug;
+      return;
+    }
+    const candidates = Array.from(
+      { length: 8 },
+      (_, index) => `${base}-${index + 2}`,
+    );
+    const { slug: _slug, ...scope } = conflictFilter;
+    const takenRows = (await ErrorUtils.withRetry(
+      async () => {
+        try {
+          return await this.db.list(this.tableName, {
+            ...scope,
+            'slug in': candidates,
+          });
+        } catch (error) {
+          if (error instanceof SmrtError) throw error;
+          throw DatabaseError.queryFailed(
+            `list(${this.tableName}, free derived slug)`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
+      },
+      3,
+      500,
+    )) as Array<Record<string, unknown>>;
+    const taken = new Set(takenRows.map((row) => String(row.slug)));
+    const slug =
+      candidates.find(
+        (candidate) => candidate !== data.slug && !taken.has(candidate),
+      ) ?? idSlug;
+    data.slug = slug;
+    this.slug = slug;
+    this._derivedSlug = slug;
   }
 
   /**

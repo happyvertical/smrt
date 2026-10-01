@@ -33,6 +33,28 @@ async function makeEvents(name: string) {
 }
 
 describe('Event model', () => {
+  it('persists allDay and timeZone', async () => {
+    const { events } = await makeEvents('event-all-day');
+
+    const created = await events.create({
+      name: 'Fall Fair',
+      allDay: true,
+      timeZone: 'America/Edmonton',
+      startDate: new Date('2026-09-05T06:00:00Z'),
+      endDate: new Date('2026-09-08T06:00:00Z'),
+    });
+    await created.save();
+    const plain = await events.create({ name: 'Plain' });
+    await plain.save();
+
+    const loaded = await events.get({ id: created.id });
+    expect(loaded?.allDay).toBe(true);
+    expect(loaded?.timeZone).toBe('America/Edmonton');
+    const loadedPlain = await events.get({ id: plain.id });
+    expect(loadedPlain?.allDay).toBe(false);
+    expect(loadedPlain?.timeZone).toBe('');
+  });
+
   it('persists core fields and applies defaults', async () => {
     const { events } = await makeEvents('event-persist');
 

@@ -11,7 +11,7 @@
  * With #2360 the default conflict target of a tenant-scoped class is
  * `[tenant_id, ...natural key]` on both the schema and the upsert, so the
  * second create is a second row and tenant A keeps its id. Within a tenant the
- * natural key still dedups; global (NULL-tenant) rows dedup among themselves
+ * explicit natural key still dedups; global (NULL-tenant) rows dedup among themselves
  * through the SDK's null-aware upsert.
  *
  * Uses the real `@TenantScoped()` decorator, `enableTenancy()` interceptor and
@@ -173,17 +173,17 @@ describe('tenant-aware natural keys with the real interceptor (#2360)', () => {
     expect(seenByB.map((row) => row.id)).toEqual([b.id]);
   });
 
-  it('within one tenant the natural key still dedups (ingestion-style upsert, #1472)', async () => {
+  it('within one tenant an explicit natural key still dedups (ingestion-style upsert, #1472)', async () => {
     const first = await withTenant({ tenantId: TENANT_A }, () =>
-      widgets.create({ name: 'Widget' }),
+      widgets.create({ name: 'Widget', slug: 'widget' }),
     );
     const again = await withTenant({ tenantId: TENANT_A }, () =>
-      widgets.create({ name: 'Widget' }),
+      widgets.create({ name: 'Widget', slug: 'widget' }),
     );
     expect(again.slug).toBe(first.slug);
-    // One row for tenant A: the second create took the UPDATE branch of the
-    // upsert (the SDK's `DO UPDATE SET` rewrites every column of the adopted
-    // row, `id` included — the pre-existing same-tenant dedup contract).
+    // One row for tenant A: the second create adopted the row by its explicit
+    // natural key and took the UPDATE branch of the upsert. (A name-derived
+    // slug never adopts; it moves to `widget-2`.)
     const rows = (await db.list('issue_2360_widgets', {})) as Array<
       Record<string, unknown>
     >;
@@ -196,8 +196,8 @@ describe('tenant-aware natural keys with the real interceptor (#2360)', () => {
     await withTenant({ tenantId: TENANT_A }, () =>
       widgets.create({ name: 'Widget' }),
     );
-    const g1 = await widgets.create({ name: 'Widget' });
-    const g2 = await widgets.create({ name: 'Widget' });
+    const g1 = await widgets.create({ name: 'Widget', slug: 'widget' });
+    const g2 = await widgets.create({ name: 'Widget', slug: 'widget' });
     expect(g1.tenantId).toBeNull();
     expect(g2.slug).toBe(g1.slug);
 

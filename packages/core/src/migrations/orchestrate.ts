@@ -79,6 +79,12 @@ export interface MigrateSmrtSchemasOptions {
    * reinterpreting legacy TIMESTAMP/TEXT/JSON columns as TIMESTAMPTZ.
    */
   postgresTimestampMigration?: { legacyTimezone: 'UTC' };
+  /**
+   * Store empty or whitespace-only text as NULL when converging a nullable
+   * legacy `text` column to a typed column (#3226). See
+   * `DiffOptions.emptyTextAsNull`.
+   */
+  emptyTextAsNull?: boolean;
 }
 
 export interface MigrateSmrtSchemasResult {
@@ -144,6 +150,7 @@ export async function getPendingSchemaStatements(
   options: {
     engineHint?: DatabaseEngine;
     postgresTimestampMigration?: { legacyTimezone: 'UTC' };
+    emptyTextAsNull?: boolean;
   } = {},
 ): Promise<PendingSchemaStatementsResult> {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
@@ -155,6 +162,7 @@ export async function getPendingSchemaStatements(
   const diff = await generateSchemaDiff(db, schemas, {
     engineHint: options.engineHint,
     postgresTimestampMigration: options.postgresTimestampMigration,
+    emptyTextAsNull: options.emptyTextAsNull,
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   const unactionableChanges = collectUnactionableChanges(diff);
@@ -209,6 +217,7 @@ export async function migrateSmrtSchemas(
   const pending = await getPendingSchemaStatements(options.db, {
     engineHint: options.engineHint,
     postgresTimestampMigration: options.postgresTimestampMigration,
+    emptyTextAsNull: options.emptyTextAsNull,
   });
   if (!pending.hasChanges || pending.statements.length === 0) {
     return {

@@ -17,6 +17,27 @@ import './__smrt-register__.js';
 import './prompts.js';
 
 // Operations
+export {
+  type AppliedImageAdjustments,
+  applyImageAdjustments,
+  decodeImageAdjustments,
+  describeImageAdjustments,
+  encodeImageAdjustments,
+  IMAGE_ADJUST_OPERATIONS,
+  type ImageAdjustments,
+  type ImageAdjustOperation,
+  type ImageAdjustOutputFormat,
+  type ImageAdjustVariant,
+  type ImageFocus,
+  type ImageRegion,
+  imageAdjustVariants,
+  isEmptyImageAdjustments,
+  isImageAdjustOperation,
+  isImageFocus,
+  normalizeImageAdjustments,
+  regionForFocus,
+  regionToPixels,
+} from './adjust';
 export { ImageCategorizer } from './categorizer';
 export { ImageDeriver } from './deriver';
 export { ImageEditor } from './editor';

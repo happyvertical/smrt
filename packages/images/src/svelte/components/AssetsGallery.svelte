@@ -169,8 +169,8 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
       <div class="filters">
         <Select class="orientation-select" bind:value={orientationFilter}>
           <option value="all">{t(M['images.assets_gallery.any_orientation'])}</option>
-          <option value="landscape">Landscape</option>
-          <option value="portrait">Portrait</option>
+          <option value="landscape">Wide</option>
+          <option value="portrait">Tall</option>
           <option value="square">Square</option>
         </Select>
 
@@ -211,7 +211,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
           </div>
           <div class="item-info">
             <span class="item-name" title={image.name}>{image.name}</span>
-            <span class="item-meta">{image.width}x{image.height} • {image.mimeType}</span>
+            <span class="item-meta">{image.width} × {image.height}</span>
           </div>
         </button>
       {:else}
@@ -221,7 +221,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
           </div>
           <div class="item-info">
             <span class="item-name" title={image.name}>{image.name}</span>
-            <span class="item-meta">{image.width}x{image.height} • {image.mimeType}</span>
+            <span class="item-meta">{image.width} × {image.height}</span>
           </div>
         </div>
       {/if}
