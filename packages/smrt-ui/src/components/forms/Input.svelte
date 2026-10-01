@@ -18,6 +18,8 @@ import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLInputAttributes, 'class' | 'value'> {
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** Input value as string or number (bindable). */
   value?: string | number;
   /** CSS class to apply to the input element. */
@@ -40,6 +42,7 @@ let {
   'aria-label': ariaLabel,
   'aria-describedby': ariaDescribedby,
   'aria-invalid': ariaInvalid,
+  density,
   ...rest
 }: Props = $props();
 
@@ -210,7 +213,7 @@ export function getElement(): HTMLInputElement | null {
 	aria-label={ariaLabel}
 	aria-describedby={resolvedDescribedBy}
 	aria-invalid={resolvedInvalid}
-	class="input {className}"
+	data-density={density} class="input {className}"
 	data-smrt-control={resolvedControlId}
 	data-smrt-form={controlInteraction?.formId}
 	data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
@@ -262,4 +265,8 @@ export function getElement(): HTMLInputElement | null {
 			transition: none;
 		}
 	}
+
+  .input[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .input[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .input { min-height: var(--smrt-control-target-min, 0px); }
 </style>

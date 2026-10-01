@@ -166,6 +166,8 @@ export interface SortState {
  * DataTable props
  */
 export interface DataTableProps<T> {
+  /** Sort-control target density; omit to inherit ThemeProvider. */
+  density?: 'comfortable' | 'touch';
   /** Data rows */
   data: T[];
   /** Column definitions */

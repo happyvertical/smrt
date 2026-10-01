@@ -102,6 +102,7 @@ let {
   empty,
   rowClass,
   size = 'md',
+  density,
   striped = false,
   hoverable = true,
   stickyHeader = false,
@@ -1387,6 +1388,7 @@ $effect(() => {
 <!-- svelte-ignore a11y_no_noninteractive_tabindex: the region provides horizontal or virtual keyboard scrolling. -->
 <div
   bind:this={tableContainer}
+  data-density={density}
   class="data-table-container"
   class:data-table-container--sticky={stickyHeader || virtualizedBody}
   class:data-table-container--overflowing={hasHorizontalOverflow}
@@ -2214,4 +2216,7 @@ $effect(() => {
       animation: none;
     }
   }
+  .data-table-container[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .data-table-container[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .data-table__sort-button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 </style>

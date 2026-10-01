@@ -67,6 +67,8 @@
 }
 
 [data-theme="material"][data-color-scheme="light"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: material;
   --smrt-theme-name: Material;
   --smrt-color-scheme: light;
@@ -292,6 +294,8 @@
 }
 
 [data-theme="material"][data-color-scheme="dark"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: material;
   --smrt-theme-name: Material;
   --smrt-color-scheme: dark;

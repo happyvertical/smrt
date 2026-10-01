@@ -16,6 +16,8 @@ import {
 import type { SegmentedControlOption } from './types.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** The available segments and their values. */
   options: SegmentedControlOption[];
   /** The currently selected option value. */
@@ -45,6 +47,7 @@ let {
   interaction,
   onvaluechange,
   class: className = '',
+  density,
 }: Props = $props();
 const instanceId = $props.id();
 const interactionContext = tryGetControlInteractionContext();
@@ -104,7 +107,7 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div bind:this={rootEl} class="segmented {className}" class:full-width={fullWidth} role="radiogroup" aria-label={label} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<div bind:this={rootEl} data-density={density} class="segmented {className}" class:full-width={fullWidth} role="radiogroup" aria-label={label} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   {#each options as option (option.value)}
@@ -120,4 +123,8 @@ useControlRegistration(() => {
   button:last-child { border-right: 0; } button.selected { background: var(--smrt-color-secondary-container); color: var(--smrt-color-on-secondary-container); }
   button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: -3px; } button:disabled { opacity: .5; cursor: not-allowed; }
   :global(.segmented[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
+
+  .segmented[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .segmented[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  button { min-height: max(2.5rem, var(--smrt-control-target-min, 0px)); min-width: var(--smrt-control-target-min, 0px); }
 </style>

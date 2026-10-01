@@ -20,6 +20,8 @@ export interface Props
     HTMLInputAttributes,
     'type' | 'class' | 'checked' | 'role' | 'size'
   > {
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** Whether the switch is checked. */
   checked?: boolean;
   /** Text displayed next to the switch. */
@@ -48,6 +50,7 @@ let {
   interaction,
   onchange,
   'aria-label': ariaLabel,
+  density,
   ...rest
 }: Props = $props();
 const instanceId = $props.id();
@@ -113,7 +116,7 @@ useControlRegistration(() => {
 });
 </script>
 
-<label class="switch switch--{size} {className}" class:switch--disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<label data-density={density} class="switch switch--{size} {className}" class:switch--disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
   data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}>
   {#if label && labelPosition === 'left'}<span>{label}</span>{/if}
@@ -140,4 +143,8 @@ useControlRegistration(() => {
   .switch--lg .switch__track { transform: scale(1.15); margin-inline: .2rem; }
   .switch[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-full); }
   @media (prefers-reduced-motion: reduce) { .switch__track, .switch__thumb { transition: none; } }
+
+  .switch[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .switch[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .switch { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 </style>

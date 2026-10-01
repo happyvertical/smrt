@@ -17,6 +17,8 @@ import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props
   extends Omit<HTMLInputAttributes, 'type' | 'class' | 'checked'> {
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** Whether the checkbox is checked (bindable). */
   checked?: boolean;
   /** Whether the checkbox shows indeterminate state. */
@@ -43,6 +45,7 @@ let {
   onchange,
   'aria-label': ariaLabel,
   'aria-describedby': ariaDescribedby,
+  density,
   ...rest
 }: Props = $props();
 
@@ -121,7 +124,7 @@ useControlRegistration(() => {
 </script>
 
 <label
-  class="checkbox {className}"
+  data-density={density} class="checkbox {className}"
   class:checkbox--disabled={disabled}
   data-smrt-control={controlId}
   data-smrt-form={interactionContext?.formId}
@@ -160,4 +163,8 @@ useControlRegistration(() => {
   .checkbox__dash { width: .6rem; height: 2px; background: currentColor; }
   .checkbox[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
   @media (prefers-reduced-motion: reduce) { .checkbox__box { transition: none; } }
+
+  .checkbox[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .checkbox[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .checkbox { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 </style>

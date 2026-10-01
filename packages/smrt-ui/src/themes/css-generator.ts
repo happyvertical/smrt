@@ -259,6 +259,9 @@ export function generateThemeVariables(
     isDark && theme.darkElevation ? theme.darkElevation : theme.elevation;
 
   return {
+    // Shared target sizes: density is opt-in, preserving existing defaults.
+    [`${prefix}-touch-target-min`]: '48px',
+    [`${prefix}-control-target-min`]: '0px',
     // Theme identification
     [`${prefix}-theme-id`]: theme.id,
     [`${prefix}-theme-name`]: theme.name,

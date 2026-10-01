@@ -580,3 +580,20 @@ pnpm test
 pnpm build
 pnpm verify:pack
 ```
+
+### Touch density
+
+Set `<ThemeProvider density="touch">` for floor tablets and phones, or set
+`density="touch"` on Input, Select, Textarea, Checkbox, Switch, RadioGroup,
+Button (including links), FilterChips, SegmentedControl, or DataTable. DataTable
+applies density to its sort buttons. Density is independent of existing `size`
+props, including native Input/Select sizes. Omitted density inherits; explicitly
+setting `density="comfortable"` opts that control out and keeps its usual size.
+RadioGroup expands each option's clickable label, and Checkbox/Switch expand
+the label hit area while preserving the visual mark.
+
+`--smrt-touch-target-min` defaults to `48px` across all presets and works without
+a provider. Customize it globally with ThemeProvider's `overrides`, for example
+`overrides={{ '--smrt-touch-target-min': '56px' }}`. Touch targets grow with larger
+content; normal density keeps existing component sizing. TenantNav sizing is
+tracked separately in [#3246](https://github.com/happyvertical/smrt/issues/3246).

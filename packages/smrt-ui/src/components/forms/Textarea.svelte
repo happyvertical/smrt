@@ -15,6 +15,8 @@ import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLTextareaAttributes, 'class' | 'value'> {
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** The text content of the textarea. */
   value?: string;
   /** Number of visible text rows. */
@@ -39,6 +41,7 @@ let {
   'aria-label': ariaLabel,
   'aria-describedby': ariaDescribedby,
   'aria-invalid': ariaInvalid,
+  density,
   ...rest
 }: Props = $props();
 
@@ -133,7 +136,7 @@ export function getElement(): HTMLTextAreaElement | null {
 	{rows}
 	aria-describedby={resolvedDescribedBy}
 	aria-invalid={resolvedInvalid}
-		class="textarea {className}"
+		data-density={density} class="textarea {className}"
 		data-smrt-control={resolvedControlId}
 		data-smrt-form={controlInteraction?.formId}
 		data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
@@ -186,4 +189,8 @@ export function getElement(): HTMLTextAreaElement | null {
 			transition: none;
 		}
 	}
+
+  .textarea[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .textarea[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .textarea { min-height: max(80px, var(--smrt-control-target-min, 0px)); }
 </style>

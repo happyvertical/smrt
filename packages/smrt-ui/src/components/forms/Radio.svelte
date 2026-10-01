@@ -34,4 +34,5 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
   input:checked + .radio__mark { border-color: var(--smrt-color-primary); }
   input:checked + .radio__mark::after { transform: scale(1); }
   input:focus-visible + .radio__mark { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
+  .radio { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 </style>
