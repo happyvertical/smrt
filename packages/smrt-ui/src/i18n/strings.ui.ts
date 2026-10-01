@@ -117,6 +117,36 @@ export const M = defineMessages({
   'ui.reaction_picker.label': 'Add reaction',
   'ui.reaction_picker.react_with': 'React with {emoji}',
 
+  // forms/CameraCapture.svelte
+  'ui.camera_capture.region': 'Camera',
+  'ui.camera_capture.preview': 'Live camera preview',
+  'ui.camera_capture.starting': 'Starting camera…',
+  'ui.camera_capture.off': 'The camera is off.',
+  'ui.camera_capture.unsupported':
+    'This browser cannot use the camera. Open this page over HTTPS in a current browser.',
+  'ui.camera_capture.permission_denied':
+    'Camera access was denied. Allow camera access for this site, then try again.',
+  'ui.camera_capture.no_camera': 'No camera was found on this device.',
+  'ui.camera_capture.error': 'Could not access the camera.',
+  'ui.camera_capture.retry': 'Try again',
+  'ui.camera_capture.capture': 'Take photo',
+  'ui.camera_capture.retake': 'Retake',
+  'ui.camera_capture.use_photo': 'Use photo',
+  'ui.camera_capture.review_alt': 'Captured photo, not yet used',
+  'ui.camera_capture.committed_alt': 'Attached photo',
+  'ui.camera_capture.committed': 'Photo attached.',
+  'ui.camera_capture.choose_photo': 'Take or choose a photo',
+
+  // forms/SignaturePad.svelte
+  'ui.signature_pad.region': 'Signature',
+  'ui.signature_pad.canvas_empty': 'Signature area, not yet signed',
+  'ui.signature_pad.canvas_signed': 'Signature area, signed',
+  'ui.signature_pad.hint_any': 'Sign with a stylus, your finger, or the mouse.',
+  'ui.signature_pad.hint_stylus': 'Sign with the stylus.',
+  'ui.signature_pad.clear': 'Clear',
+  'ui.signature_pad.use_signature': 'Use signature',
+  'ui.signature_pad.committed': 'Signature attached.',
+
   // forms/StagedControlReview.svelte
   'ui.staged_control_review.region': 'Review proposed changes',
   'ui.staged_control_review.heading': 'Proposed changes',

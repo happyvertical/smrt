@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import playground from '../playground.js';
 
 describe('smrt-ui playground', () => {
-  it('publishes themed base-control and data-table previews', () => {
+  it('publishes themed base-control, data-table, and capture previews', () => {
     expect(playground.packageName).toBe('@happyvertical/smrt-ui');
     expect(playground.entries.map((entry) => entry.id)).toEqual([
       'base-controls',
@@ -11,6 +11,7 @@ describe('smrt-ui playground', () => {
       'collections',
       'data-table',
       'calendar',
+      'capture',
     ]);
 
     for (const entry of playground.entries) {
