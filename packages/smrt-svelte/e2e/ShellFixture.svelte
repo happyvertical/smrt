@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Button } from '@happyvertical/smrt-ui';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import AdminShell from '../src/components/workspace/admin-shell/AdminShell.svelte';
 import AppScopePanel from '../src/components/workspace/admin-shell/AppScopePanel.svelte';
 import SystemStatusChips from '../src/components/workspace/admin-shell/SystemStatusChips.svelte';
