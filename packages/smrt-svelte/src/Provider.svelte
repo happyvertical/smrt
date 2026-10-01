@@ -26,12 +26,12 @@ import { setWebMcpUiContext } from './web/webmcp-ui-context.js';
 interface Props {
   /**
    * Initial mode: 'default' | 'smrt'
-   * If not provided, mode is auto-detected based on capabilities
+   * Defaults to standard mode; auto-detection requires autoEnableSmrt=true
    */
   mode?: AppMode;
   /**
    * Whether to auto-enable smrt mode when capabilities are available
-   * @default true
+   * @default false
    */
   autoEnableSmrt?: boolean;
   /**
@@ -98,7 +98,7 @@ interface Props {
 
 const {
   mode,
-  autoEnableSmrt = true,
+  autoEnableSmrt = false,
   user = null,
   permissions = [],
   socket,
@@ -114,18 +114,22 @@ const {
 // Determine if we should show the loading overlay
 const showLoadingOverlay = $derived(ai?.showLoadingOverlay ?? true);
 
-// Create app state
-const appState = createAppState({
-  onCapabilitiesDetected: () => {
-    onReady?.();
-  },
-  onModeChange: (newMode) => {
-    onModeChange?.(newMode);
-  },
-  onAILoadingChange: (state) => {
-    onAILoadingChange?.(state);
-  },
-});
+// Capture initial props once; the effects below own subsequent prop updates.
+const appState = untrack(() =>
+  createAppState({
+    initialMode: mode,
+    session: { preferences: { autoEnableSmrt } },
+    onCapabilitiesDetected: () => {
+      onReady?.();
+    },
+    onModeChange: (newMode) => {
+      onModeChange?.(newMode);
+    },
+    onAILoadingChange: (state) => {
+      onAILoadingChange?.(state);
+    },
+  }),
+);
 
 const localControlRegistry = createControlInteractionRegistry();
 const localDataSurfaceRegistry = createDataSurfaceRegistry();

@@ -453,3 +453,16 @@ Use `logoSrc`/`logoAlt` for a logo or a `brand` snippet receiving `{ compact }`
 for custom marks. A collapsed tenant rail keeps a compact linked logo or initial;
 the default app bar keeps the full brand visible at narrow widths. A custom
 `appBar` continues to own its branding. Without these props, branding stays text.
+
+### Voice mode migration (#3261)
+
+**Changed default:** Provider and standalone `createAppState()` now keep voice
+mode off unless explicitly requested. Omitted `autoEnableSmrt` defaults to
+`false`; speech-capable browsers stay in `default` mode. Apps that relied on
+automatic voice activation must opt in with `autoEnableSmrt={true}`. Use
+`mode="smrt"` for an explicit voice-mode choice. An explicit `mode="default"`
+wins over auto-detection from the start of initialization, including when
+`autoEnableSmrt` is true; no transient voice-mode activation occurs.
+Standalone state callers can opt in through initial session preferences
+(`autoEnableSmrt: true`); `initialMode` takes precedence. Runtime mode prop
+updates retain their existing behavior.
