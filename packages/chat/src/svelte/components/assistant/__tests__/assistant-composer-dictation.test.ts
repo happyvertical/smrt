@@ -168,3 +168,72 @@ describe('AssistantChoiceCards', () => {
     expect(ondismiss).toHaveBeenCalledWith('s1');
   });
 });
+
+describe('AssistantComposer recording fallback', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function stubRecorder() {
+    class FakeMediaRecorder extends EventTarget {
+      static isTypeSupported = (type: string) =>
+        type === 'audio/webm;codecs=opus';
+      state = 'inactive';
+      mimeType: string;
+      constructor(_stream: unknown, options?: { mimeType?: string }) {
+        super();
+        this.mimeType = options?.mimeType ?? '';
+      }
+      start() {
+        this.state = 'recording';
+      }
+      stop() {
+        this.state = 'inactive';
+        this.dispatchEvent(
+          Object.assign(new Event('dataavailable'), {
+            data: new Blob(['opus'], { type: this.mimeType }),
+          }),
+        );
+        this.dispatchEvent(new Event('stop'));
+      }
+    }
+    const track = { stop: vi.fn() };
+    vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
+      },
+    });
+    return track;
+  }
+
+  it('records with only `transcribe` (Firefox), writes it down, and puts the text in the box', async () => {
+    const track = stubRecorder();
+    let finish!: (text: string) => void;
+    const transcribe = vi.fn(
+      () => new Promise<string>((resolve) => (finish = resolve)),
+    );
+    render(AssistantComposer, {
+      props: { onsend: vi.fn(), onupload: vi.fn(), transcribe },
+    });
+    const mic = screen.getByRole('button', { name: 'Speak instead of typing' });
+    await userEvent.click(mic);
+    await screen.findByText(/Listening/);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Stop listening' }),
+    );
+    await screen.findByText('Writing it down…');
+    expect(track.stop).toHaveBeenCalled();
+    expect(transcribe).toHaveBeenCalledWith(expect.any(Blob), {
+      mimeType: 'audio/webm;codecs=opus',
+      language: expect.any(String),
+      durationMs: expect.any(Number),
+      signal: expect.any(AbortSignal),
+    });
+    finish('Show me the arena');
+    const box = screen.getByRole('textbox', { name: /message/i });
+    await vi.waitFor(() =>
+      expect((box as HTMLTextAreaElement).value).toBe('Show me the arena'),
+    );
+  });
+});

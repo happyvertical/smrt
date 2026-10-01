@@ -15,7 +15,10 @@ import type {
   DataSurfaceIdentity,
   DataSurfaceRegistry,
 } from '@happyvertical/smrt-ui/data-surface';
-import type { DictationSourceProvider } from '@happyvertical/smrt-ui/forms';
+import type {
+  DictationSourceProvider,
+  DictationTranscribe,
+} from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { type Snippet, tick, untrack } from 'svelte';
@@ -157,6 +160,10 @@ export interface Props {
   /** Speak instead of typing in the composer (a speech source, e.g.
    * smrt-svelte's `createSttDictationSource()`); see `AssistantComposer`. */
   dictation?: DictationSourceProvider | null;
+  /** Writes a recorded message down when the browser cannot recognise
+   * speech (Firefox, Brave), e.g. smrt-ui's `createHttpTranscriber()`;
+   * see `AssistantComposer`. */
+  transcribe?: DictationTranscribe | null;
 }
 
 const {
@@ -180,6 +187,7 @@ const {
   onrun,
   choiceSources,
   dictation,
+  transcribe,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -659,6 +667,7 @@ async function handleConfirmAction(requestId: string) {
           disabled={!controller.activeThreadId}
           placeholder={composerPlaceholder}
           {dictation}
+          {transcribe}
         />
       </div>
     </div>

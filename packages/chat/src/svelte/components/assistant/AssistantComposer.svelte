@@ -14,6 +14,7 @@ import {
   DictationButton,
   type DictationSourceProvider,
   DictationStatus,
+  type DictationTranscribe,
   insertTextAtCursor,
   longPress,
   primeReadyBeep,
@@ -57,6 +58,14 @@ export interface Props {
    * cursor. Without one there is no microphone.
    */
   dictation?: DictationSourceProvider | null;
+  /**
+   * Writes a recorded message down, for browsers whose speech recognition
+   * is missing or broken (Firefox, Brave): the composer then records the
+   * message and shows "Writing it down…" while this runs. Normally smrt-ui's
+   * `createHttpTranscriber('/your/route')`. Also shows the microphone on its
+   * own, without `dictation`.
+   */
+  transcribe?: DictationTranscribe | null;
 }
 
 let {
@@ -66,7 +75,9 @@ let {
   placeholder = 'Ask the assistant…',
   value: content = $bindable(''),
   dictation: dictationSource = null,
+  transcribe = null,
 }: Props = $props();
+const canDictate = $derived(Boolean(dictationSource || transcribe));
 let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
 let uploading = $state(false);
 let sending = $state(false);
@@ -105,6 +116,10 @@ const dictation = new Dictation({
     if (field) insertTextAtCursor(field, text);
     else content = content ? `${content} ${text}` : text;
   },
+});
+// The recording fallback follows the prop (a host may set it later).
+$effect.pre(() => {
+  dictation.setOptions({ transcribe });
 });
 
 onDestroy(() => dictation.dispose());
@@ -256,7 +271,7 @@ function removeAttachment(id: string) {
       {/each}
     </ul>
   {/if}
-  {#if dictationSource}
+  {#if canDictate}
     <DictationStatus {dictation} />
   {/if}
   <div class="assistant-composer-row">
@@ -299,7 +314,7 @@ function removeAttachment(id: string) {
         onPressStart: () => primeReadyBeep(),
         onLongPress: startDictationFromHold,
         onRelease: () => void dictation.unlock(),
-        disabled: !dictationSource || disabled || uploading,
+        disabled: !canDictate || disabled || uploading,
       }}
     >
       <Textarea
@@ -314,7 +329,7 @@ function removeAttachment(id: string) {
         aria-label={t(M['chat.assistant_composer.message_label'])}
       />
     </div>
-    {#if dictationSource}
+    {#if canDictate}
       <DictationButton {dictation} disabled={disabled || uploading} />
     {/if}
     <Button
