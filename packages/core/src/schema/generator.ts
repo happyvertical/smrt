@@ -181,14 +181,19 @@ export class SchemaGenerator {
     return undefined;
   }
 
+  /**
+   * A uuid column never defaults to '' (same rule as the manifest generator
+   * and the registry schema builder, 9832f70fa): PostgreSQL stores
+   * `(''::text)::uuid` unevaluated and every INSERT that omits the column
+   * fails with 22P02. Judged on the final column type, so a plain
+   * `@field({ sqlType: 'UUID' }) tenantId = ''` (TenantKey) is covered too.
+   */
   private shouldEmitDefault(
-    field: RegistryField,
+    columnType: SQLDataType | string,
     defaultValue: unknown,
   ): boolean {
     return !(
-      this.getReferenceKind(field) === 'tenantId' &&
-      this.getRelationshipColumnType(field) === 'UUID' &&
-      defaultValue === ''
+      String(columnType).toUpperCase() === 'UUID' && defaultValue === ''
     );
   }
 
@@ -1203,7 +1208,7 @@ export class SchemaGenerator {
       // Get default value
       if (
         field._meta?.default !== undefined &&
-        this.shouldEmitDefault(field, field._meta.default)
+        this.shouldEmitDefault(columnDef.type, field._meta.default)
       ) {
         columnDef.defaultValue = field._meta.default;
       }
@@ -1563,7 +1568,7 @@ export class SchemaGenerator {
         // Get default value (but not applied in STI - defaults handled by application)
         if (
           field._meta?.default !== undefined &&
-          this.shouldEmitDefault(field, field._meta.default)
+          this.shouldEmitDefault(columnDef.type, field._meta.default)
         ) {
           columnDef.defaultValue = field._meta.default;
         }
@@ -1887,7 +1892,7 @@ export class SchemaGenerator {
         // Get default value
         if (
           field.default !== undefined &&
-          this.shouldEmitDefault(field, field.default)
+          this.shouldEmitDefault(columnDef.type, field.default)
         ) {
           columnDef.default = field.default;
         }
@@ -2105,7 +2110,7 @@ export class SchemaGenerator {
 
       if (
         field.default !== undefined &&
-        this.shouldEmitDefault(field, field.default)
+        this.shouldEmitDefault(columnDef.type, field.default)
       ) {
         columnDef.default = field.default;
       }

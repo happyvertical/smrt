@@ -161,16 +161,17 @@ function getReferenceKind(
   return undefined;
 }
 
+// A uuid column never defaults to '' (same rule as the manifest generator,
+// 9832f70fa): PostgreSQL stores `(''::text)::uuid` unevaluated and every
+// INSERT that omits the column fails with 22P02. This covers a plain
+// `@field({ sqlType: 'UUID' }) tenantId = ''` (TenantKey) as well as
+// tenant references.
 function shouldEmitDefault(
-  fieldDef: FieldDefinition,
+  _fieldDef: FieldDefinition,
   sqlType: SQLDataType,
   defaultValue: unknown,
 ) {
-  return !(
-    getReferenceKind(fieldDef) === 'tenantId' &&
-    sqlType === 'UUID' &&
-    defaultValue === ''
-  );
+  return !(sqlType === 'UUID' && defaultValue === '');
 }
 
 /**
