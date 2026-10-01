@@ -80,6 +80,7 @@ export function copyTemplate(destination, options = {}) {
   if (!existsSync(destination)) {
     mkdirSync(destination, { recursive: true });
   }
+  if (!pathEntryExists(join(destination, '.npmrc'))) writeFileSync(join(destination, '.npmrc'), '@happyvertical:registry=https://npm.happyvertical.com/\n');
 
   // Copy all template files, skipping internal-only directories
   cpSync(templatePath, destination, {

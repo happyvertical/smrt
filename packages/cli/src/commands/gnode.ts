@@ -148,9 +148,10 @@ export const gnodeCommands: Record<string, CLICommand> = {
           site: siteOptions,
         });
 
+        if (mcpApps || config.name === 'sveltekit')
+          configureMcpAppsConsumerRegistry(outputDir);
         if (mcpApps) {
           addMcpAppsRuntime(source.resolved, outputDir);
-          configureMcpAppsConsumerRegistry(outputDir);
           scaffoldMcpAppsPackage(
             `${outputDir}/mcp-apps`,
             mcpAppsPluginName(projectName),
