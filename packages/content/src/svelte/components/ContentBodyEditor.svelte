@@ -257,7 +257,7 @@ $effect(() => {
   lastExternalKey = externalKey;
   currentBody = value || '';
 
-  if (editorElement && !isFocused && editorElement.innerHTML !== editorHtml) {
+  if (editorElement && !isFocused && editorInnerHtml() !== editorHtml) {
     editorElement.innerHTML = editorHtml;
   }
 });
@@ -466,6 +466,33 @@ function setCaretAfterNode(node: Node) {
   selection.removeAllRanges();
   selection.addRange(range);
   savedRange = range.cloneRange();
+}
+
+// Pictures shown only as a preview (see `previewImage`): picture -> the `src`
+// it really has. A preview is never part of the body: `editorInnerHtml` reads
+// the surface with every picture back at its real `src`, so no change event
+// can carry a previewed picture out of the editor.
+const imagePreviews = new Map<HTMLImageElement, string | null>();
+
+/** The surface's HTML as the body has it: previews put back. */
+function editorInnerHtml(): string {
+  if (!editorElement) return '';
+  for (const image of [...imagePreviews.keys()]) {
+    if (!image.isConnected) imagePreviews.delete(image);
+  }
+  if (imagePreviews.size === 0) return editorElement.innerHTML;
+  const originals = editorElement.querySelectorAll('img');
+  const inert = editorElement.ownerDocument.implementation
+    .createHTMLDocument('')
+    .importNode(editorElement, true) as HTMLElement;
+  const copies = inert.querySelectorAll('img');
+  originals.forEach((image, index) => {
+    if (!imagePreviews.has(image)) return;
+    const src = imagePreviews.get(image) ?? null;
+    if (src === null) copies[index]?.removeAttribute('src');
+    else copies[index]?.setAttribute('src', src);
+  });
+  return inert.innerHTML;
 }
 
 function getEditorImages(): HTMLImageElement[] {
@@ -733,9 +760,9 @@ function emitChange(options: { syncDom?: boolean } = {}) {
   }
 
   clearPendingInputChange();
-  const rawHtml = editorElement.innerHTML;
+  const rawHtml = editorInnerHtml();
   const normalizedHtml = normalizeEditorHtml(rawHtml);
-  if (options.syncDom && editorElement.innerHTML !== normalizedHtml) {
+  if (options.syncDom && editorInnerHtml() !== normalizedHtml) {
     editorElement.innerHTML = normalizedHtml;
     editorHtml = normalizedHtml;
   }
@@ -885,6 +912,8 @@ export function replaceImage(
   if (!image || !src) {
     return false;
   }
+  // Accepting a picture replaces any preview of it.
+  imagePreviews.delete(image);
   image.setAttribute('src', src);
   const assetId = next?.getAttribute('data-smrt-asset-id');
   if (assetId) {
@@ -893,6 +922,44 @@ export function replaceImage(
   refreshSelectedImageChrome();
   emitChange();
   return true;
+}
+
+/**
+ * Show `src` on the picture at `index` WITHOUT changing the story: a preview
+ * the person can accept (`replaceImage`) or put back (`previewImage(index,
+ * null)`). It is never written to the body, never reported by `onChange`, and
+ * goes away with the editor. Only same-origin paths (`/…`) are shown. Returns
+ * false when there is no picture at `index` or `src` is not allowed.
+ */
+export function previewImage(index: number, src: string | null): boolean {
+  const image = getEditorImages()[index];
+  if (!image) return false;
+  if (src === null) {
+    if (imagePreviews.has(image)) {
+      const original = imagePreviews.get(image) ?? null;
+      if (original === null) image.removeAttribute('src');
+      else image.setAttribute('src', original);
+      imagePreviews.delete(image);
+      refreshSelectedImageChrome();
+    }
+    return true;
+  }
+  if (!/^\/(?![/\\])/.test(src) || /[\s\\]/.test(src)) return false;
+  if (!imagePreviews.has(image))
+    imagePreviews.set(image, image.getAttribute('src'));
+  image.setAttribute('src', src);
+  refreshSelectedImageChrome();
+  return true;
+}
+
+/** Put every previewed picture back (see `previewImage`). */
+export function clearImagePreviews() {
+  for (const image of [...imagePreviews.keys()]) {
+    const original = imagePreviews.get(image) ?? null;
+    if (original === null) image.removeAttribute('src');
+    else image.setAttribute('src', original);
+  }
+  imagePreviews.clear();
 }
 
 export function focusImage(index: number) {
@@ -1481,7 +1548,10 @@ $effect(() => {
   };
 });
 
-onDestroy(() => pictureLongPress.cancel());
+onDestroy(() => {
+  pictureLongPress.cancel();
+  imagePreviews.clear();
+});
 
 function handleSurfaceClick(event: MouseEvent) {
   const target = event.target as Element | null;
