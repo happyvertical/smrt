@@ -16,6 +16,7 @@ import {
   executeLocalControlCommand,
 } from '../control-interaction.js';
 import Form from '../Form.svelte';
+import FormAttachmentFixture from './form-attachment.fixture.svelte';
 
 const children = createRawSnippet(() => ({
   render: () => '<button type="submit">Save</button>',
@@ -62,6 +63,53 @@ function dispatchLocalGesture<T>(
 }
 
 describe('Form', () => {
+  it('exposes its native element while mounted and clears it on unmount', async () => {
+    const { component, container, unmount } = render(Form, {
+      props: { children },
+    });
+    expect(component.getFormElement()).toBe(container.querySelector('form'));
+    await unmount();
+    expect(component.getFormElement()).toBeNull();
+  });
+
+  it('forwards an action attachment and preserves form posting and control registration', async () => {
+    const registry = createControlInteractionRegistry();
+    const attached = vi.fn();
+    const destroyed = vi.fn();
+    const submitted = vi.fn();
+    const onsubmit = vi.fn();
+    const enhance = (form: HTMLFormElement) => {
+      attached(form);
+      const submit = (event: SubmitEvent) => {
+        submitted(event.defaultPrevented, new FormData(form));
+        event.preventDefault();
+      };
+      form.addEventListener('submit', submit);
+      return {
+        destroy() {
+          form.removeEventListener('submit', submit);
+          destroyed();
+        },
+      };
+    };
+    const { container, unmount } = render(FormAttachmentFixture, {
+      props: { enhance, registry, onsubmit },
+    });
+    const form = container.querySelector('form');
+    expect(attached).toHaveBeenCalledExactlyOnceWith(form);
+    expect(form).toHaveAttribute('method', 'POST');
+    expect(form).toHaveAttribute('action', '/profile');
+    expect(registry.list()).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(submitted).toHaveBeenCalledOnce();
+    expect(submitted.mock.calls[0][0]).toBe(false);
+    expect(submitted.mock.calls[0][1].get('displayName')).toBe('Dana');
+    expect(onsubmit).toHaveBeenCalledOnce();
+    await unmount();
+    expect(destroyed).toHaveBeenCalledOnce();
+    expect(registry.list()).toHaveLength(0);
+  });
+
   it('renders a <form> with forwarded attributes and its children', () => {
     const { container } = render(Form, {
       props: { name: 'profile', class: 'profile-form', children },

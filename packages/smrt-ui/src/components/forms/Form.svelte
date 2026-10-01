@@ -92,6 +92,11 @@ export function getFormId(): string {
   return resolvedFormId;
 }
 
+/** Returns the native form while mounted, or null before mount/after unmount. */
+export function getFormElement(): HTMLFormElement | null {
+  return formElement;
+}
+
 function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
   if (preventDefault) event.preventDefault();
   onsubmit?.(event);

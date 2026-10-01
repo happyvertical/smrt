@@ -91,6 +91,34 @@ Application-specific editors, maps, charts, media workbenches, and domain
 records remain composites built from this foundation rather than generic base
 components.
 
+## Native and enhanced forms
+
+`Form` forwards native form attributes and Svelte attachments through its rest
+props to the underlying `<form>`. For a SvelteKit action, adapt `enhance` with
+`fromAction` and set `preventDefault={false}` so the enhancement handles submission:
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+  import { fromAction } from 'svelte/attachments';
+  import { Form, Input } from '@happyvertical/smrt-ui/forms';
+</script>
+
+<Form method="POST" action="?/save" preventDefault={false} {@attach fromAction(enhance)}>
+  <Input name="displayName" />
+  <button type="submit">Save</button>
+</Form>
+```
+
+For a customized enhancement, pass its callback as a getter:
+`{@attach fromAction(enhance, () => submitFunction)}`. The attachment runs on the
+native element and cleans up when it unmounts; the interaction registry and
+staged-review surface remain available. A component reference obtained with
+`bind:this` exposes `getFormElement(): HTMLFormElement | null`, which returns
+`null` before mount and after unmount. For ordinary browser GET/POST forms, use
+`preventDefault={false}` without an attachment. The default remains `true` for
+existing handler-driven forms.
+
 ## Agent-addressable forms
 
 `Form` can expose its controls to a chat, voice, tutorial, or test adapter
