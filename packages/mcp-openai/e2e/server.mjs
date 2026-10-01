@@ -17,6 +17,7 @@ addEventListener('message', e=>{
  if(m.method==='ui/initialize') reply({protocolVersion:'2026-01-26',hostInfo:{name:'synthetic',version:'1'},hostCapabilities:{...(mode==='absent'||mode==='unknown'?{}:{serverTools:{}}),message:{text:{}},updateModelContext:{text:{},structuredContent:{}},experimental:mode==='absent'||mode==='mobile'?{}:mode==='unknown'?{'openai/modelContext':'future','openai/message':'future'}:{'openai/modelContext':{},'openai/message':{}}},hostContext:{availableDisplayModes:mode==='absent'||mode==='unknown'?['inline']:['inline','fullscreen'],'openai/deepLink':{url:'/items/owned'}}});
  if(m.method==='tools/call') {
   if(mode==='pending'&&!initialHeld) { initialHeld=true; window.releaseInitial=()=>reply({content:[{type:'text',text:'Stale initial response'}]}); }
+  else if(m.params.arguments.url==='/items/rejected') e.source.postMessage({jsonrpc:'2.0',id:m.id,error:{code:-32000,message:'Rejected'}},'*');
   else if(m.params.arguments.url==='/items/denied') reply({isError:true,content:[{type:'text',text:'Denied'}]});
   else if(m.params.arguments.url==='/items/slow') setTimeout(()=>reply({content:[{type:'text',text:'Stale'}]}),100);
   else reply({content:[{type:'text',text:'Authorized synthetic item'}]});

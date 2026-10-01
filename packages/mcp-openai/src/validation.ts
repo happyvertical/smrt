@@ -93,7 +93,7 @@ export function appRelativeUrl(value: unknown): string {
     /%[0-9a-f]{2}/i.test(decoded)
   )
     throw new TypeError('Ambiguous app-relative URL');
-  const pathname = decoded.split('?')[0];
+  const pathname = decodeURIComponent(url.split('?')[0]);
   if (pathname.split('/').some((part) => part === '.' || part === '..'))
     throw new TypeError('Path traversal');
   if (new URL(url, 'https://app.invalid').origin !== 'https://app.invalid')
