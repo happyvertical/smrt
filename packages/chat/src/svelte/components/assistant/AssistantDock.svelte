@@ -700,7 +700,7 @@ async function handleConfirmAction(requestId: string) {
     gap: 0.5rem;
     padding: 0.35rem 0.75rem;
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-on-surface-variant, #44474e);
   }
 
@@ -717,7 +717,7 @@ async function handleConfirmAction(requestId: string) {
   }
 
   .assistant-dock-tool-request-title {
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .assistant-dock-tool-request-warning {
@@ -727,7 +727,7 @@ async function handleConfirmAction(requestId: string) {
   .assistant-dock-tool-request-details pre {
     max-height: 10rem;
     overflow: auto;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     white-space: pre-wrap;
     word-break: break-word;
   }

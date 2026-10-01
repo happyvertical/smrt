@@ -214,16 +214,18 @@ function stripComments(source) {
  * `--smrt-typography-*` prefix used to be a blind spot; the repo-wide
  * scripts/check-svelte-tokens.mjs also flags the bad name). Kept in sync with
  * the role scale; check-svelte-tokens.mjs is the source of truth for emitted.
+ * A font-family override hook from check-svelte-tokens.mjs OVERRIDE_HOOKS
+ * passes only when its fallback is itself a valid font-family token.
  */
 const VALID_TOKEN_VAR_RE =
-  /^var\(\s*--smrt-(?:typography-(?:(?:display|headline|title|body|label)-(?:large|medium|small)-(?:size|line-height|weight|tracking|font-family|font)|weight-(?:normal|medium|semibold|bold))|font-family(?:-mono)?)(?![\w-])/;
+  /^var\(\s*--smrt-(?:typography-(?:(?:display|headline|title|body|label)-(?:large|medium|small)-(?:size|line-height|weight|tracking|font-family|font)|weight-(?:normal|medium|semibold|bold))|font-family(?:-mono)?|shell-title-font-family\s*,\s*var\(\s*--smrt-(?:typography-(?:display|headline|title|body|label)-(?:large|medium|small)-font-family|font-family(?:-mono)?))(?![\w-])/;
 
 /** Blank valid typography / font-family token vars so they pass the check. */
 function stripTokenVars(source) {
   let out = '';
   let i = 0;
   while (i < source.length) {
-    const isTokenVar = VALID_TOKEN_VAR_RE.test(source.slice(i, i + 64));
+    const isTokenVar = VALID_TOKEN_VAR_RE.test(source.slice(i, i + 128));
     if (isTokenVar) {
       const start = source.indexOf('(', i);
       let depth = 0;

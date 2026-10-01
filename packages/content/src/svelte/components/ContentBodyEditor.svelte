@@ -2230,7 +2230,7 @@ function handleEditorDragEnd() {
     gap: 0.3rem;
     display: inline-flex;
     color: var(--smrt-color-primary, #3558d6);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   /* Phones: the picture toolbar is already wide; Change is icon-only there

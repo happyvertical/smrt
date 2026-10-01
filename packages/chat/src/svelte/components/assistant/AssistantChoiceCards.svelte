@@ -180,7 +180,7 @@ const { t } = useI18n();
 
   .assistant-dock-choices-title {
     margin: 0;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .assistant-dock-choice-list {
@@ -232,13 +232,13 @@ const { t } = useI18n();
   }
 
   .assistant-dock-choice-label {
-    font-size: 0.85rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .assistant-dock-choice-description {
     color: var(--smrt-color-on-surface-variant, #44474e);
-    font-size: 0.78rem;
+    font-size: var(--smrt-typography-body-small-size, 0.78rem);
   }
 
   .assistant-dock-choices-actions {
@@ -247,7 +247,7 @@ const { t } = useI18n();
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   /* The buttons stay in view while the cards scroll. */
@@ -268,7 +268,7 @@ const { t } = useI18n();
 
   .assistant-dock-choices-status {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .assistant-dock-choices-error {

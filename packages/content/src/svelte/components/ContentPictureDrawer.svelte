@@ -438,7 +438,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
 
   .drawer-header h2 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     color: var(--smrt-color-on-surface);
   }
 
@@ -450,7 +450,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
   .drawer-main {
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .drawer-main {
@@ -478,7 +478,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
   .drawer-error {
     margin: 0;
     color: var(--smrt-color-error);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .drawer-grid {
@@ -497,7 +497,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     grid-column: 1 / -1;
     min-height: 1.5rem;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.8rem;
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
     text-align: center;
   }
 
@@ -559,20 +559,20 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     border-radius: 999px;
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
-    font-size: 0.8rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .drawer-picture-missing {
     padding: 0.25rem;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     text-align: center;
   }
 
   .drawer-picture-title {
     overflow: hidden;
     color: var(--smrt-color-on-surface);
-    font-size: 0.8rem;
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -587,7 +587,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     border-radius: 999px;
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.72rem;
+    font-size: var(--smrt-typography-body-small-size, 0.72rem);
   }
 
   .tag-main {
