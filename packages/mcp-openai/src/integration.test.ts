@@ -66,6 +66,8 @@ function fixture() {
   );
   let revoked = false;
   let writes = 0;
+  let selections = 0;
+  let selectionExecutions = 0;
   let providerFailure = false;
   let stale = false;
   const values = () => {
@@ -204,6 +206,30 @@ function fixture() {
     workflowTools: [
       view,
       mentions,
+      {
+        ...base,
+        name: 'select_mention',
+        inputSchema: {
+          type: 'object',
+          properties: { resourceUri: { type: 'string' } },
+          required: ['resourceUri'],
+          additionalProperties: false,
+        },
+        execute: ({ arguments: args, principal }) => {
+          selectionExecutions++;
+          if (
+            principal?.id !== owner.id ||
+            principal.tenantId !== owner.tenantId ||
+            args.resourceUri !== 'smrt://items/opaque-owned'
+          )
+            throw new Error('Mention selection denied: private synthetic item');
+          selections++;
+          return {
+            content: [{ type: 'text', text: 'Owned synthetic item' }],
+            structuredContent: { resourceUri: args.resourceUri },
+          };
+        },
+      },
       ...settings.workflows,
       {
         ...base,
@@ -248,6 +274,8 @@ function fixture() {
     db,
     values,
     writes: () => writes,
+    selections: () => selections,
+    selectionExecutions: () => selectionExecutions,
     revoke: () => {
       revoked = true;
     },
@@ -290,32 +318,42 @@ describe('existing principal workflow authority', () => {
             }),
           ).rejects.toThrow();
       }
-      expect(
-        await f.server.callTool({
-          name: 'mention_search',
-          arguments: { query: 'owned' },
-          principal: owner,
-        }),
-      ).toHaveProperty(
-        'structuredContent.items.0.resourceUri',
-        'smrt://items/opaque-owned',
-      );
-      await expectSafeWorkflowFailure(
+      const search = await f.server.callTool({
+        name: 'mention_search',
+        arguments: { query: 'owned' },
+        principal: owner,
+      });
+      if (!search.structuredContent) throw new Error('Missing search results');
+      const resourceUri = (
+        search.structuredContent.items as Array<{ resourceUri: string }>
+      )[0].resourceUri;
+      expect(resourceUri).toBe('smrt://items/opaque-owned');
+      const select = (
+        principal: McpAppPrincipal | null,
+        handle = resourceUri,
+      ) =>
         resolveOpenAiMentionSelection({
           server: f.server,
-          tool: 'resolve_target',
-          arguments: { url: '/guessed' },
-          principal: owner,
-        }),
+          tool: 'select_mention',
+          arguments: { resourceUri: handle },
+          principal,
+        });
+      await expect(select(owner)).resolves.toHaveProperty(
+        'structuredContent.resourceUri',
+        resourceUri,
       );
-      await expect(
-        resolveOpenAiMentionSelection({
-          server: f.server,
-          tool: 'resolve_target',
-          arguments: { url: '/items/owned' },
-          principal: { ...owner, tenantId: 'tenant-b' },
-        }),
-      ).rejects.toThrow();
+      expect(f.selections()).toBe(1);
+      await expectSafeWorkflowFailure(select(owner, 'smrt://items/guessed'));
+      expect(f.selections()).toBe(1);
+      const executions = f.selectionExecutions();
+      for (const principal of [
+        null,
+        { ...owner, id: 'other' },
+        { ...owner, tenantId: 'tenant-b' },
+        { ...owner, scopes: [] },
+      ])
+        await expect(select(principal)).rejects.toThrow();
+      expect(f.selectionExecutions()).toBe(executions);
       await expect(
         f.server.callTool({
           name: 'settings_read',
@@ -331,6 +369,9 @@ describe('existing principal workflow authority', () => {
         }),
       );
       f.revoke();
+      await expect(select(owner)).rejects.toThrow();
+      expect(f.selectionExecutions()).toBe(executions);
+      expect(f.selections()).toBe(1);
       await expect(
         f.server.callTool({
           name: 'mention_search',

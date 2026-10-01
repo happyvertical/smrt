@@ -98,3 +98,16 @@ The fixture observes and prevents the browser's unhandled-rejection default only
 to assert callback errors explicitly. Production does not swallow these errors or
 map them to authorization denials. Existing cancellation/disposal/stale-result
 contracts remain covered by the original browser suite. No new wire API is added.
+
+## Accepted PR3271 mention regressions
+
+| Behavior / trigger | Positive | Negative / failure | Authority / executor / runtime | Validation |
+|---|---|---|---|---|
+| Published mention output descriptor | Closed resource and icon fields expose exact required fields/bounds | Unknown fields disallowed; optional presentation does not become required | Static SDK descriptor; no persistence; Node | Unit descriptor and installed public runtime |
+| Icon serialization | Optional sizes/theme retained, absent optional fields accepted | Non-array sizes, invalid elements, empty/oversize/more than eight sizes, unknown theme reject | Presentation only; no principal or transaction; Node | Baseline two failures/62 passes, then current package + installed |
+| Returned mention selection | Exact searched resourceUri reaches existing authorized selection workflow | Guessed handle returns exact generic safe error; anonymous/other actor/tenant/missing scope/revoked membership never execute owning selection | Existing app-MCP policy plus owning read executor; selections/executions counters; SQLite authority fixture | Integration and fresh installed public workflow probe |
+
+The selection test asserts no unauthorized selection or settings write, including
+revocation after search. No new policy engine or public handler API is introduced.
+The real Chromium context/message/navigation suite remains required. Files/forms
+remain planned; synthetic evidence does not establish actual OpenAI host support.
