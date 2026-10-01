@@ -777,15 +777,15 @@ function extractBasename(uri: string): string {
 }
 
 function sanitizeDispositionFilename(filename: string): string {
-  // Strip control characters (C0 + DEL) first — they make the header
-  // invalid in Node's Response constructor and could enable CRLF
-  // injection. Then replace quotes, backslashes, and path separators
-  // so the quoted-string form is safe.
+  // Strip C0/DEL/C1 controls and replace isolated UTF-16 surrogates so
+  // UTF-8 encoding cannot throw. Iteration preserves valid surrogate pairs.
+  // Replace quotes, backslashes, and path separators in both name forms.
   let stripped = '';
   for (const ch of filename) {
     const code = ch.charCodeAt(0);
-    if (code > 0x1f && code !== 0x7f) {
-      stripped += ch;
+    if (code > 0x1f && (code < 0x7f || code > 0x9f)) {
+      stripped +=
+        ch.length === 1 && code >= 0xd800 && code <= 0xdfff ? '\uFFFD' : ch;
     }
   }
   const safe = stripped.replace(/["\\/]/g, '_').trim();
@@ -797,6 +797,15 @@ function buildContentDisposition(
   filename: string,
 ): string {
   const sanitized = sanitizeDispositionFilename(filename);
-  const encoded = encodeURIComponent(sanitized);
-  return `${disposition}; filename="${sanitized}"; filename*=UTF-8''${encoded}`;
+  // Keep the legacy quoted parameter ASCII-safe for native Web Headers.
+  // The extended parameter retains the sanitized Unicode download name.
+  const fallback = Array.from(sanitized, (ch) =>
+    ch.charCodeAt(0) <= 0x7e ? ch : '_',
+  ).join('');
+  // RFC 8187 attr-char excludes these characters left by encodeURIComponent.
+  const encoded = encodeURIComponent(sanitized).replace(
+    /['()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }

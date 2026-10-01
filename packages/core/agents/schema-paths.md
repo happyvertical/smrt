@@ -567,6 +567,17 @@ executable repair suggestion: nullable FKs are cleared, while required FKs
 require an explicit operator decision to reassign the reference or deliberately
 remove a child row after preserving its required data. A probe failure is
 surfaced as a database/framework error, never misreported as orphan data.
+When the referenced parent is absent but scheduled for creation by the same
+`compare()` batch (#3240), PostgreSQL first proves the entire existing child
+table empty instead of querying the absent parent. Nonempty children are blocked
+without executable repair SQL: create and populate the parent deliberately,
+then rerun the ordinary orphan preflight. The exception never applies to a
+standalone `compareTable()` or an undeclared missing parent, and incompatible
+column types, missing target columns, and existing conflicting constraints stay
+blocked. Planned-parent and newly added child-column types are compared using
+the PostgreSQL DDL mapping (for example, `TIMESTAMP` becomes `TIMESTAMPTZ`,
+`INTEGER` becomes `BIGINT`); existing columns retain their live physical types. `NOT VALID` plus `VALIDATE CONSTRAINT` remains the authoritative check;
+a writer racing the preflight causes the atomic migration to roll back.
 SQLite requires a deliberate table rebuild; DuckDB reports the unsupported ALTER
 path. Neither engine treats an unsupported constraint addition as a successful
 no-op.
