@@ -33,6 +33,7 @@ pnpm add @happyvertical/smrt-ui
 | Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `Listbox`, `MultiSelect`, `TagsInput`, `SearchInput` |
 | Choices | `Checkbox`, `RadioGroup`/`Radio`, `Switch`, `Toggle`, `ToggleButton`, `SegmentedControl` |
 | Values and files | `Slider`, `RangeSlider`, `DatePicker`, `TimePicker`, `FilePicker` |
+| Capture | `CameraCapture`, `SignaturePad` |
 | Actions and display | `Button`, `Dropdown`/`Menu`, `Badge`, `Chip`, `Avatar`, `Card`, `Skeleton`, `Tooltip`, `Tree` |
 | Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `PhoneSheet`, `ConfirmDialog` |
 | Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay`, `WorkingStrip` |
@@ -392,6 +393,77 @@ Svelte nor SvelteKit; the submit function is typed against SvelteKit's
 `/forms` re-exports the same API as the Svelte-free `/form-retry` entry. See the
 [form retry guide](../../docs/content/form-retry.md) for the server half, the
 per-result table, storage and private-window behaviour, and restore.
+
+## Camera and signature capture
+
+`CameraCapture` takes a photo from the device camera and `SignaturePad` takes a
+signature, each inside an ordinary form. Both live in `/forms`, need only
+browser APIs, and post their file through a plain multipart form when given a
+`name`; the page wires no hidden input and no submit handler.
+
+```svelte
+<script lang="ts">
+  import { CameraCapture, SignaturePad } from '@happyvertical/smrt-ui/forms';
+</script>
+
+<form method="POST" enctype="multipart/form-data">
+  <CameraCapture name="photo" facingMode="environment" />
+  <SignaturePad name="signature" stylusOnly={settings.signatureStylusOnly} />
+  <button type="submit">Send</button>
+</form>
+```
+
+**CameraCapture** uses `getUserMedia` with a live preview. The user takes a
+photo, reviews it, and can retake it before "Use photo" commits it. Committing
+calls `onCapture({ blob, dataUrl })` and fills the named field (`photo.jpg` by
+default; set `fileName`, `imageType`, and `quality` to change it). "Retake"
+after a commit empties the field and calls `onClear`. The root's `data-state`
+is one of `starting`, `streaming`, `reviewing`, `committed`, `off` (disabled),
+`permission-denied`, `no-camera`, `unsupported`, `error`, or `fallback`. Each
+problem state has its own copy and, where it can help, a "Try again" action.
+`getUserMedia` exists only in a secure context, so a page served over plain
+HTTP renders `unsupported`.
+
+The stream's tracks are stopped on unmount, when `disabled` turns on, when
+`facingMode` changes (the camera is then requested again), and as soon as a
+frame is captured. A permission prompt answered after unmount or disable is
+discarded and its stream released. The lifecycle lives in the framework-free
+`createCameraSession()` (exported with `classifyGetUserMediaError()` and
+`isCameraApiSupported()`), so it can be tested against a fake `MediaDevices`.
+
+`fileInputFallback` is opt-in and off by default. With it on, browsers without
+`getUserMedia` render an `<input type="file" accept="image/*" capture>` that
+carries `name` itself. It opens the operating system's picker, which has no
+live preview and can offer the gallery, so it is not a substitute for the
+camera flow. With it off, those browsers render the `unsupported` state.
+
+**SignaturePad** draws on its own canvas. "Use signature" stays disabled until
+an accepted stroke exists, then returns a PNG through `onCapture({ blob,
+dataUrl })` and fills the named field (`signature.png` by default). A committed
+pad is locked until "Clear", which empties the field and calls `onClear`.
+`stylusOnly` is a prop the caller resolves; with it on, only `pointerType ===
+'pen'` draws. `isAcceptedPointerType()` and `mapPointerToCanvasPoint()` are
+exported as pure functions. The pad is dark ink on white paper in every theme
+and colour scheme, and the exported PNG is opaque white, so it reads the same
+wherever it is shown.
+
+**Native form posting.** The named field is a hidden `<input type="file">`
+filled through `DataTransfer` (Chrome 60+, Firefox 62+, Safari 14.1+). Where
+`DataTransfer` cannot be constructed or assigned, the field drops its `name`
+and a capture-phase `formdata` listener appends the file while the browser
+builds the request, which covers native navigation submits as well as
+`new FormData(form)`. Where neither API exists, nothing is posted and
+`onCapture` is the only channel. The root's `data-smrt-file-field` attribute
+reports `data-transfer`, `formdata-event`, `file-input`, or `none`. Before a
+commit the field posts what an empty native file input posts. `disabled`
+freezes the controls but keeps a committed file in the submission; unmount the
+component to drop it, or put it in a disabled `<fieldset>`.
+
+Text comes from the `ui.camera_capture.*` and `ui.signature_pad.*` i18n keys
+and can be overridden per instance with `labels`. Actions are at least 44px
+(`--smrt-capture-target-size`, to be replaced by the shared touch-target token
+from smrt#3252). Both register with an enclosing `Form`'s interaction registry
+as non-readable, non-writable `file` controls.
 
 ## DataTable controller
 
