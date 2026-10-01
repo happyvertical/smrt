@@ -79,6 +79,14 @@ Empty selections, missing or empty names, and disabled controls (including
 ancestor fieldsets) contribute no entries. Native reset restores the initial
 selection unless reset is canceled.
 
+### Listbox form submission
+
+A named `Listbox` submits one hidden native input containing its selected option
+value, with numeric values encoded as strings. A named listbox without a
+selection submits an empty string. Missing or empty names and disabled controls
+(including ancestor fieldsets) are omitted. Native reset restores the initial
+selection unless reset is canceled.
+
 ### Currency display
 
 `CurrencyDisplay` accepts ISO 4217 codes as a public `string` prop so persisted

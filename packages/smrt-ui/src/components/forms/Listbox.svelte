@@ -1,4 +1,5 @@
 <script lang="ts">
+import { untrack } from 'svelte';
 import {
   emitControlChange,
   highlightControl,
@@ -49,6 +50,7 @@ const instanceId = $props.id();
 const interactionContext = tryGetControlInteractionContext();
 let rootEl = $state<HTMLDivElement | null>(null);
 let optionEls = $state<Array<HTMLButtonElement | null>>([]);
+const initialValue = untrack(() => value);
 const controlId = $derived(
   interaction === false
     ? undefined
@@ -85,6 +87,19 @@ function move(event: KeyboardEvent, index: number) {
         : (next + 1) % options.length;
   optionEls[next]?.focus();
 }
+$effect(() => {
+  const form = rootEl?.closest('form');
+  if (!form) return;
+  const reset = (event: Event) => {
+    queueMicrotask(() => {
+      if (event.defaultPrevented) return;
+      value = initialValue;
+      if (value !== undefined) onvaluechange?.(value);
+    });
+  };
+  form.addEventListener('reset', reset);
+  return () => form.removeEventListener('reset', reset);
+});
 useControlRegistration(() => {
   const root = rootEl;
   if (!root || interaction === false) return false;
@@ -120,6 +135,7 @@ useControlRegistration(() => {
 <div bind:this={rootEl} class="listbox {className}" role="listbox" aria-label={label} aria-disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
+  {#if name}<input type="hidden" {name} value={value ?? ''} {disabled} />{/if}
   {#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" aria-selected={value === option.value}
     disabled={disabled || option.disabled} tabindex={value === option.value || (value === undefined && index === 0) ? 0 : -1}
     onkeydown={(event) => move(event, index)} onclick={() => select(option.value, true)}>{option.label}</button>{/each}
