@@ -13,7 +13,9 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import Ajv2020 from 'ajv/dist/2020.js';
 import type { CLICommand } from '../cli-generator.js';
 
 export interface McpAppsFinding {
@@ -26,6 +28,17 @@ export interface McpAppsValidationResult {
   valid: boolean;
 }
 
+const requireSchema = createRequire(import.meta.url);
+const pluginSchema = requireSchema(
+  '@happyvertical/smrt-dev-mcp/schemas/agent-plugins-1.0.0/plugin.schema.json',
+);
+const mcpSchema = requireSchema(
+  '@happyvertical/smrt-dev-mcp/schemas/agent-plugins-1.0.0/mcp.schema.json',
+);
+const ajv = new Ajv2020({ strict: true, allErrors: true });
+const validatePluginSchema = ajv.compile(pluginSchema);
+const validateMcpSchema = ajv.compile(mcpSchema);
+
 const PLUGIN_SCHEMA =
   'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json';
 const MCP_SCHEMA = 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json';
@@ -33,7 +46,6 @@ const CANONICAL_SCOPE_REGISTRY =
   '@happyvertical:registry=https://npm.happyvertical.com/';
 const SECRET_KEY =
   /(?:api[_-]?key|secret|token|password|authorization|credential)/i;
-const SAFE_PLUGIN_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 const ENVIRONMENT_CREDENTIAL_FILE = /^\.env(?:\.|$)/;
 const PRIVATE_KEY_CARRIER =
   /^(?:id_(?:rsa|dsa|ecdsa|ed25519)|private(?:[._-]key)?|.*\.key)$/i;
@@ -228,6 +240,19 @@ export function validateMcpAppsPackage(
   if (mcp !== undefined && !isObject(mcp))
     add(result, 'mcp-object', 'mcp.json must contain an object');
 
+  if (plugin !== undefined && !validatePluginSchema(plugin))
+    add(
+      result,
+      'plugin-format',
+      'plugin.json violates the pinned Agent Plugins 1.0.0 schema',
+    );
+  if (mcp !== undefined && !validateMcpSchema(mcp))
+    add(
+      result,
+      'mcp-format',
+      'mcp.json violates the pinned Agent Plugins 1.0.0 schema',
+    );
+
   if (isObject(plugin)) {
     scanSecrets(plugin, 'plugin.json', result);
     if (plugin.$schema !== PLUGIN_SCHEMA)
@@ -235,12 +260,6 @@ export function validateMcpAppsPackage(
         result,
         'plugin-schema',
         `plugin.json.$schema must be ${PLUGIN_SCHEMA}`,
-      );
-    if (typeof plugin.name !== 'string' || !SAFE_PLUGIN_NAME.test(plugin.name))
-      add(
-        result,
-        'plugin-name',
-        'plugin.json.name must be a lowercase portable plugin name',
       );
     if (plugin.extensions !== undefined && !isObject(plugin.extensions))
       add(result, 'extensions', 'plugin.json.extensions must be an object');
@@ -361,19 +380,17 @@ export function configureMcpAppsConsumerRegistry(appRoot: string) {
 
   const scopeLines = existing
     .split(/\r?\n/)
-    .filter((line) => /^\s*@happyvertical:registry\s*=/.test(line));
+    .filter((line) => /^\s*@happyvertical:registry(?:\s|=|$)/.test(line));
   if (scopeLines.length > 0) {
-    if (
-      scopeLines.some(
-        (line) =>
-          line.trim().replace(/\s+/g, '') ===
-          CANONICAL_SCOPE_REGISTRY.replace(/\s+/g, ''),
-      )
-    )
-      return;
-    throw new Error(
-      'Generated application already declares a different @happyvertical registry; refusing to replace it',
-    );
+    for (const line of scopeLines) {
+      const match =
+        /^\s*@happyvertical:registry\s*=\s*(\S+?)(?:\s+[;#].*)?\s*$/.exec(line);
+      if (!match || match[1] !== 'https://npm.happyvertical.com/')
+        throw new Error(
+          'Generated application already declares a different or malformed @happyvertical registry; refusing to replace it',
+        );
+    }
+    return;
   }
 
   writeFileSync(
@@ -405,12 +422,20 @@ export function addMcpAppsRuntime(sourceRoot: string, appRoot: string) {
   writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
+export function assertMcpAppsPluginName(name: string) {
+  if (!validatePluginSchema({ $schema: PLUGIN_SCHEMA, name }))
+    throw new Error(
+      'Plugin name must satisfy Agent Plugins 1.0.0 (1–64 lowercase letters, digits, dots or hyphens; no repeated separators).',
+    );
+}
+
 /** Create the minimal local portable package. It intentionally has no .app.json: registered IDs are host-owned. */
 export function scaffoldMcpAppsPackage(
   rootPath: string,
   name: string,
   version = '0.1.0',
 ) {
+  assertMcpAppsPluginName(name);
   const root = resolve(rootPath);
   mkdirSync(root, { recursive: true });
   const pluginPath = join(root, 'plugin.json');

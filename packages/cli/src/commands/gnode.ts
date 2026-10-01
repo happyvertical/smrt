@@ -10,12 +10,15 @@ import type { CLICommand } from '../cli-generator.js';
 import {
   cleanupGitTemplate,
   discoverInstalledTemplates,
+  getGitTemplateDir,
   loadTemplate,
   resolveTemplate,
+  type TemplateConfig,
 } from '../loaders/index.js';
 import { generate } from '../utils/generator.js';
 import {
   addMcpAppsRuntime,
+  assertMcpAppsPluginName,
   configureMcpAppsConsumerRegistry,
   scaffoldMcpAppsPackage,
 } from './mcp-apps-packaging.js';
@@ -119,6 +122,7 @@ export const gnodeCommands: Record<string, CLICommand> = {
       const templateName = options.template || 'sveltekit';
       const mcpApps = options.mcpApps || options['mcp-apps'];
       const projectName = projectIdentity(name, outputDir);
+      if (mcpApps) assertMcpAppsPluginName(mcpAppsPluginName(projectName));
 
       // Build site options if any site-related flags were provided
       const siteOptions =
@@ -131,6 +135,7 @@ export const gnodeCommands: Record<string, CLICommand> = {
             }
           : undefined;
 
+      let gitConfig: TemplateConfig | undefined;
       try {
         // Resolve template source
         console.log(`🔍 Resolving template: ${templateName}...`);
@@ -139,6 +144,7 @@ export const gnodeCommands: Record<string, CLICommand> = {
 
         // Load template configuration
         const config = await loadTemplate(source);
+        if (source.type === 'git') gitConfig = config;
 
         // Generate project
         await generate(source, config, {
@@ -151,7 +157,10 @@ export const gnodeCommands: Record<string, CLICommand> = {
         if (mcpApps || config.name === 'sveltekit')
           configureMcpAppsConsumerRegistry(outputDir);
         if (mcpApps) {
-          addMcpAppsRuntime(source.resolved, outputDir);
+          addMcpAppsRuntime(
+            source.type === 'git' ? getGitTemplateDir(config) : source.resolved,
+            outputDir,
+          );
           scaffoldMcpAppsPackage(
             `${outputDir}/mcp-apps`,
             mcpAppsPluginName(projectName),
@@ -160,16 +169,13 @@ export const gnodeCommands: Record<string, CLICommand> = {
             '✓ Added MCP Apps metadata and the canonical @happyvertical package registry. Configure the authorized v2 MCP endpoint before deployment.',
           );
         }
-
-        // Cleanup git template if needed
-        if (source.type === 'git') {
-          await cleanupGitTemplate(config);
-        }
       } catch (error) {
         throw new Error(
           `Failed to create gnode: ${error instanceof Error ? error.message : 'Unknown error'}`,
           { cause: error },
         );
+      } finally {
+        if (gitConfig) await cleanupGitTemplate(gitConfig);
       }
     },
   },

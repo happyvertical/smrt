@@ -8,11 +8,14 @@ function required(name: string): string {
   return value;
 }
 
+let cachedAuth: ReturnType<typeof createMcpResourceAuth> | undefined;
+
 export function hostedMcpAuth() {
   if (applicationRuntime.profile === 'local') return null;
+  if (cachedAuth) return cachedAuth;
   if (!resolveHostedMcpPrincipal)
     throw new Error('Hosted MCP requires an application-owned resolveHostedMcpPrincipal binding.');
-  return createMcpResourceAuth({
+  cachedAuth = createMcpResourceAuth({
     profile: applicationRuntime.profile,
     resource: required('SMRT_MCP_RESOURCE'),
     issuer: required('SMRT_MCP_ISSUER'),
@@ -21,4 +24,5 @@ export function hostedMcpAuth() {
     algorithms: ['RS256'],
     resolvePrincipal: resolveHostedMcpPrincipal,
   });
+  return cachedAuth;
 }

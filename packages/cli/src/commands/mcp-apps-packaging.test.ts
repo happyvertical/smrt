@@ -94,7 +94,7 @@ describe('portable MCP Apps package validation', () => {
     );
     expect(packageJson.dependencies).toMatchObject({
       existing: '1',
-      '@happyvertical/smrt-app-mcp': '^0.51.36',
+      '@happyvertical/smrt-app-mcp': `^${JSON.parse(readFileSync(join(process.cwd(), '../core/package.json'), 'utf8')).version}`,
     });
     expect(
       existsSync(join(app, 'src', 'routes', 'api', 'mcp', '+server.ts')),

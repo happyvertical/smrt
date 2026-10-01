@@ -29,8 +29,8 @@ describe('opt-in MCP Apps runtime', () => {
     expect(
       JSON.parse(source('package.dependencies.json')),
     ).toEqual({
-      '@happyvertical/smrt-app-mcp': '^0.51.36',
-      '@happyvertical/smrt-mcp-openai': '^0.51.36',
+      '@happyvertical/smrt-app-mcp': `^${JSON.parse(readFileSync(join(process.cwd(), '../core/package.json'), 'utf8')).version}`,
+      '@happyvertical/smrt-mcp-openai': `^${JSON.parse(readFileSync(join(process.cwd(), '../core/package.json'), 'utf8')).version}`,
     });
   });
 });
