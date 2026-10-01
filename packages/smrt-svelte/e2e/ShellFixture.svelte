@@ -3,7 +3,7 @@ import AdminShell from '../src/components/workspace/admin-shell/AdminShell.svelt
 import AppScopePanel from '../src/components/workspace/admin-shell/AppScopePanel.svelte';
 import SystemStatusChips from '../src/components/workspace/admin-shell/SystemStatusChips.svelte';
 import type { PanelState } from '../src/components/workspace/admin-shell/types.js';
-import '@happyvertical/smrt-ui/styles/tokens.css';
+import '@happyvertical/smrt-ui/themes/styles/smrt.css';
 
 const query = new URLSearchParams(window.location.search);
 function state(name: string): PanelState {
@@ -27,10 +27,12 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
 
 {#snippet panel()}<p>Scrollable panel content</p>{/snippet}
 {#snippet systemBar()}<SystemStatusChips {chips} />{/snippet}
+<div data-theme="smrt" data-color-scheme="light">
 <AdminShell {config} title="Mobile shell fixture" storageKey="mobile-shell-fixture"
   {appPanel} systemPanel={panel} tenantPanel={panel} focusPanel={panel} {systemBar}>
   <p>Main content</p>
 </AdminShell>
+</div>
 
 <style>
   :global(body) { margin: 0; font-family: sans-serif; }

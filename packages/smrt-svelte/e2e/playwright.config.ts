@@ -7,6 +7,9 @@ export default defineConfig({
   retries: 0,
   use: {
     baseURL: 'http://127.0.0.1:47851',
+    launchOptions: {
+      executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    },
     hasTouch: true,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
