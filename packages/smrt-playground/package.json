@@ -10,7 +10,8 @@
     "CLAUDE.md",
     "README.md",
     "dist",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "exports": {
     ".": {
