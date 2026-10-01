@@ -1001,4 +1001,39 @@ describe('DataTable phoneLayout', () => {
     expect(screen.getByRole('table', { name: 'People' })).toBeInTheDocument();
     expect(screen.getAllByRole('row')).toHaveLength(3);
   });
+
+  it('gives cards explicit table roles and a visible column label per cell', async () => {
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People', phoneLayout: 'cards' },
+    });
+    // Explicit roles survive the block/grid restyle (WebKit drops implicit
+    // table roles once display changes).
+    expect(container.querySelector('table')).toHaveAttribute('role', 'table');
+    for (const row of container.querySelectorAll('tr')) {
+      expect(row).toHaveAttribute('role', 'row');
+    }
+    for (const header of container.querySelectorAll('thead th')) {
+      expect(header).toHaveAttribute('role', 'columnheader');
+    }
+    const cells = container.querySelectorAll('tbody td[data-column-id]');
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell).toHaveAttribute('role', 'cell');
+      const column = columns.find(
+        (candidate) => candidate.id === cell.getAttribute('data-column-id'),
+      );
+      expect(cell).toHaveAttribute('data-label', column?.label);
+    }
+    // The header stays in the accessibility tree (visually hidden, not removed).
+    expect(screen.getAllByRole('columnheader').length).toBe(columns.length);
+    await expectNoA11yViolations(container);
+  });
+
+  it('adds no explicit roles or labels outside cards mode', () => {
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People' },
+    });
+    expect(container.querySelector('table')).not.toHaveAttribute('role');
+    expect(container.querySelector('[data-label]')).toBeNull();
+  });
 });
