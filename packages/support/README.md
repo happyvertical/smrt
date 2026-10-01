@@ -109,13 +109,16 @@ operations.
 `@happyvertical/smrt-support/svelte` exports presentational `CaseQueue`,
 `CaseDetail`, `TargetList`, `RoutingRationale`, and
 `TimeEntryApprovalQueue` components plus model-to-view adapters. Hosts own data
-loading and actions.
+loading and actions. `TimeEntryApprovalQueue` lives in
+[`smrt-timesheets`](../timesheets/README.md) and is re-exported here.
 
 ## Related packages
 
 - [`smrt-chat`](../chat/README.md) and
   [`smrt-messages`](../messages/README.md) provide transports.
 - [`smrt-jobs`](../jobs/README.md) runs escalation tasks.
+- [`smrt-timesheets`](../timesheets/README.md) owns the shared time entry that
+  support's `ServiceTimeEntry` extends with `caseId` / `specialistId`.
 - [`smrt-users`](../users/README.md) supplies permission resolution.
 - [`smrt-subscriptions`](../subscriptions/README.md) may supply plan keys without
   becoming a runtime dependency.
