@@ -33,8 +33,13 @@ only obstacle and the manifest and live columns are both nullable,
 `USING (CASE WHEN btrim(col) = '' THEN NULL ELSE col END)::<type>` and the
 change carries a `note`. The same opt-in applies to `jsonb` (after the
 duplicate-key walk over the remaining values) and to `text` -> integer.
-Without it, the advisory names the empty-text count and prints the sample as
-`(empty)`.
+Without it, the timestamptz/jsonb advisory names the empty-text count and
+prints the sample as `(empty)`. `text` -> integer has no diff-time probe: its
+note says "if any", and a non-integer value fails only at apply time (the
+preflight `RAISE`). The `--postgres-timestamp-legacy-timezone=UTC` path still
+maps `''` and `'null'` to NULL without the opt-in (`differ.ts`
+`generateTypeUpgradeSQL`). `db:status` / `db:history` accept
+`--empty-text-as-null` too.
 
 ## text -> jsonb convergence and uuid visibility (#2772)
 

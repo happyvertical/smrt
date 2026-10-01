@@ -1478,7 +1478,11 @@ export class SchemaComparer {
             severity: 'warning',
             message:
               `Foreign key ${tableName}.${foreignKey.column} exists with a different target or action. ` +
-              'Drop the old constraint deliberately, repair any orphan rows, then rerun the migration.',
+              (this.engine === 'postgres'
+                ? 'Drop the old constraint deliberately, repair any orphan rows, then rerun the migration.'
+                : this.engine === 'sqlite'
+                  ? 'SQLite cannot drop or alter a foreign key in place: rebuild the table with the generated constraint (repair any orphan rows first).'
+                  : 'DuckDB cannot alter a foreign key in place: rebuild the table with the generated constraint (repair any orphan rows first).'),
             suggestedSql: [detectorSql, repairSql],
           },
         });
