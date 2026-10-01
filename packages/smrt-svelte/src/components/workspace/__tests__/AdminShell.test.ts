@@ -1,5 +1,5 @@
 import { createRawSnippet, flushSync, mount, tick, unmount } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminShell from '../admin-shell/AdminShell.svelte';
 import adminShellSource from '../admin-shell/AdminShell.svelte?raw';
 import { createShellState } from '../admin-shell/state.svelte.js';
@@ -20,15 +20,70 @@ function activeToolSnippet() {
 let container: HTMLDivElement;
 
 beforeEach(() => {
+  vi.stubGlobal('matchMedia', () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   container = document.createElement('div');
   document.body.appendChild(container);
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   container.remove();
 });
 
 describe('AdminShell', () => {
+  it('keeps the left collapse control with supplied navigation and permits opt-out', async () => {
+    for (const showTenantToggle of [true, false]) {
+      const state = createShellState({
+        config: { left: { initial: 'expanded' } },
+      });
+      const component = mount(AdminShell, {
+        target: container,
+        props: {
+          state,
+          showTenantToggle,
+          tenantPanel: textSnippet('supplied nav'),
+          children: textSnippet('main'),
+        },
+      });
+      try {
+        await tick();
+        const toggle = container.querySelector<HTMLButtonElement>(
+          '.smrt-admin-shell__edge--left .smrt-admin-shell__edge-toggle',
+        );
+        expect(!!toggle).toBe(showTenantToggle);
+        if (toggle) {
+          toggle.click();
+          flushSync();
+          expect(state.panels.left).toBe('collapsed');
+        }
+      } finally {
+        await unmount(component);
+      }
+    }
+  });
+
+  it('preserves the system toggle when a custom system bar is supplied', async () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        systemBar: textSnippet('custom status'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(
+        container.querySelector('footer .smrt-admin-shell__edge-toggle'),
+      ).not.toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('links full and compact branding home with an accessible title', async () => {
     const state = createShellState({
       config: { left: { initial: 'collapsed' } },

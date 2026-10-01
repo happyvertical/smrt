@@ -466,3 +466,14 @@ wins over auto-detection from the start of initialization, including when
 Standalone state callers can opt in through initial session preferences
 (`autoEnableSmrt: true`); `initialMode` takes precedence. Runtime mode prop
 updates retain their existing behavior.
+
+### Runtime panel controls (#3246)
+
+Use `shell.setPanelState(edge, 'hidden' | 'collapsed' | 'expanded')` to persist
+runtime panel preferences; app-configured hidden edges remain unavailable.
+AdminShell keeps a discoverable tenant collapse control with supplied navigation
+(`showTenantToggle={false}` opts out), a Menu opener in narrow layouts, and the
+system toggle alongside a custom `systemBar`. Closed narrow drawers are inert;
+opening focuses the first control, and closing or Escape restores the opener.
+TenantNav accepts `density="touch"` for canonical 48px link targets, including
+collapsed rail links; omit density to inherit the theme's control density.

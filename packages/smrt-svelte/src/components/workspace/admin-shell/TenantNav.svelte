@@ -7,6 +7,8 @@ import type { ShellNavItem } from './types.js';
 interface Props {
   /** Navigation items with href, label, icon, and optional children. */
   items: ShellNavItem[];
+  /** Target density; omit to inherit the theme density. */
+  density?: 'comfortable' | 'touch';
   /** Current URL to highlight the active navigation link. */
   currentHref?: string;
   /** Component used to render icon names as SVG or custom icons. */
@@ -19,6 +21,7 @@ interface Props {
 
 let {
   items,
+  density,
   currentHref = '',
   iconComponent: IconComponent,
   collapsed = false,
@@ -42,6 +45,7 @@ function fallbackIcon(label: string): string {
 
 <nav
   class="smrt-tenant-nav"
+  data-density={density}
   class:smrt-tenant-nav--collapsed={collapsed}
   aria-label={t(M['ui.tenant_nav.tenant_navigation'])}
 >
@@ -116,7 +120,11 @@ function fallbackIcon(label: string): string {
     gap: var(--smrt-spacing-1);
   }
 
+  .smrt-tenant-nav[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .smrt-tenant-nav[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .smrt-tenant-nav a {
+    box-sizing: border-box;
+    min-block-size: var(--smrt-control-target-min, 0px);
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
@@ -136,8 +144,8 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav--collapsed a {
     grid-template-columns: minmax(0, 1fr);
     place-items: center;
-    inline-size: 2.25rem;
-    block-size: 2.25rem;
+    inline-size: max(2.25rem, var(--smrt-control-target-min, 0px));
+    block-size: max(2.25rem, var(--smrt-control-target-min, 0px));
     padding: 0;
   }
 

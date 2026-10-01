@@ -39,7 +39,7 @@ export type ShellPanelDefaults = Partial<
 export interface ShellSettingsDelta {
   hotkeysEnabled?: boolean;
   keymap?: Partial<Record<PanelEdge, ShellHotkeyBinding | null>>;
-  panels?: Partial<Record<PanelEdge, VisiblePanelState>>;
+  panels?: Partial<Record<PanelEdge, PanelState>>;
   activeFocusToolId?: string | null;
 }
 
@@ -167,6 +167,8 @@ export interface AdminShellProps {
   title?: string;
   /** Optional destination for the default brand and compact rail mark. */
   homeHref?: string;
+  /** Show the built-in tenant edge collapse/expand control. */
+  showTenantToggle?: boolean;
   /** Optional brand logo URL. */
   logoSrc?: string;
   /** Alternative text for the logo (decorative by default). */

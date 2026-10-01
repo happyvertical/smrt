@@ -39,6 +39,35 @@ function mountMutationEffect(
 }
 
 describe('ShellState', () => {
+  it('persists runtime hide/show and restores hidden preferences on hydration', async () => {
+    const write = vi.fn();
+    const shell = createShellState({
+      settingsAdapter: { read: () => null, write },
+    });
+    shell.setPanelState('left', 'hidden');
+    expect(shell.panels.left).toBe('hidden');
+    expect(write).toHaveBeenLastCalledWith(
+      expect.objectContaining({ panels: { left: 'hidden' } }),
+    );
+    const restored = createShellState({
+      settingsAdapter: { read: () => shell.snapshot().settings, write },
+    });
+    await restored.hydrate();
+    expect(restored.panels.left).toBe('hidden');
+    restored.setPanelState('left', 'expanded');
+    expect(restored.panels.left).toBe('expanded');
+    restored.setPanelState('left', 'collapsed');
+    expect(restored.panels.left).toBe('collapsed');
+  });
+
+  it('keeps app-disabled edges hidden and rejects unknown runtime panel states', () => {
+    const shell = createShellState({ config: { right: false } });
+    shell.setPanelState('right', 'expanded');
+    expect(shell.panels.right).toBe('hidden');
+    shell.setPanelState('left', 'unknown' as 'expanded');
+    expect(shell.panels.left).toBe('collapsed');
+  });
+
   it('allows panels to expand independently by default', () => {
     const shell = createShellState();
     shell.expandPanel('top');

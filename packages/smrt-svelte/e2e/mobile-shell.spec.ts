@@ -195,3 +195,84 @@ for (const width of [390, 1280]) {
     }
   });
 }
+
+test('bottom drawer stays inside the main area during animation', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 667, height: 375 });
+  await page.addInitScript(() => {
+    document.addEventListener('animationstart', (event) => {
+      if (
+        !(event.target instanceof HTMLElement) ||
+        !event.target.classList.contains('smrt-admin-shell__drawer--bottom')
+      )
+        return;
+      const animation = (event.target as HTMLElement).getAnimations()[0];
+      if (!animation) return;
+      animation.pause();
+      animation.currentTime =
+        Number(animation.effect?.getTiming().duration) / 2;
+    });
+  });
+  await page.goto('/?left=expanded&right=expanded&bottom=expanded');
+  const drawer = page.locator('.smrt-admin-shell__drawer--bottom');
+  await expect(drawer).toBeVisible();
+  await expect
+    .poll(() => drawer.evaluate((el) => el.getAnimations()[0]?.playState))
+    .toBe('paused');
+  const box = await drawer.boundingBox();
+  const footer = await page
+    .locator('.smrt-admin-shell__edge--bottom')
+    .boundingBox();
+  expect(box!.y + box!.height).toBeLessThanOrEqual(footer!.y + 1);
+});
+
+test('narrow navigation opens, restores focus and excludes closed drawer controls', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const menu = page.getByRole('button', { name: 'Menu', exact: true });
+  const drawer = page.locator('.smrt-admin-shell__edge--left');
+  await expect(drawer).toHaveAttribute('inert', '');
+  await expect(drawer).not.toBeVisible();
+  await menu.click();
+  await expect(drawer).not.toHaveAttribute('inert');
+  await expect(
+    drawer.getByRole('button', { name: 'Collapse Tenant' }),
+  ).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveAttribute('inert', '');
+  await expect(menu).toBeFocused();
+  await menu.click();
+  await drawer.getByRole('link', { name: 'Queue', exact: true }).click();
+  await expect(drawer).toHaveAttribute('inert', '');
+  await expect(menu).toBeFocused();
+  await page.getByRole('button', { name: 'Hide navigation' }).click();
+  await expect(drawer).toHaveCount(0);
+  await menu.click();
+  await expect(drawer).toBeVisible();
+  await expect(
+    drawer.getByRole('button', { name: 'Collapse Tenant' }),
+  ).toBeFocused();
+});
+
+test('supplied tenant navigation keeps its collapse control and touch rail targets', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/?left=expanded');
+  const drawer = page.locator('.smrt-admin-shell__edge--left');
+  await drawer.getByRole('button', { name: 'Collapse Tenant' }).click();
+  await expect(drawer).toHaveAttribute('data-state', 'collapsed');
+  const bounds = await drawer.boundingBox();
+  for (const link of await drawer.getByRole('link').all()) {
+    const box = await link.boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(48);
+    expect(box!.width).toBeGreaterThanOrEqual(48);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
+  }
+  await expect(
+    page.locator('footer').getByRole('button', { name: /^System/ }),
+  ).toBeVisible();
+});

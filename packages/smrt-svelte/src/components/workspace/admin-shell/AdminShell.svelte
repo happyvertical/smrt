@@ -39,7 +39,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 <script lang="ts">
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
   import { Button } from '@happyvertical/smrt-ui/ui';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import type { Snippet } from 'svelte';
   import { M } from '../../../i18n/strings.workspace.js';
   import ActivityBadge from './ActivityBadge.svelte';
@@ -93,6 +93,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   let {
     title = 'SMRT',
     homeHref,
+    showTenantToggle = true,
     logoSrc,
     logoAlt = '',
     brand,
@@ -133,6 +134,22 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   setAdminShell(shell);
 
   let shortcutsOpen = $state(false);
+  let narrow = $state(false);
+  let leftPanelEl = $state<HTMLElement | null>(null);
+  $effect(() => {
+    const panel = leftPanelEl;
+    if (!narrow || !edgeExpanded('left') || !panel) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    let cancelled = false;
+    void tick().then(async () => {
+      // Inherited visibility also transitions on primitive buttons; wait for
+      // the drawer and its controls to be focusable before moving focus.
+      await Promise.all(panel.getAnimations({ subtree: true }).map((animation) => animation.finished.catch(() => {})));
+      if (cancelled || !narrow || !edgeExpanded('left') || !panel.isConnected) return;
+      panel.querySelector<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')?.focus();
+    });
+    return () => { cancelled = true; queueMicrotask(() => { if (opener?.isConnected) opener.focus(); }); };
+  });
   function resolveActiveFocusTool(): ShellFocusTool | null {
     return (
       shell.focusTools.find((tool) => tool.id === shell.activeFocusToolId) ??
@@ -144,6 +161,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   onMount(() => {
     void shell.hydrate();
+    const media = window.matchMedia('(max-width: 48rem)');
+    const updateNarrow = () => { narrow = media.matches; };
+    updateNarrow();
+    media.addEventListener('change', updateNarrow);
 
     function handleKeydown(event: KeyboardEvent): void {
       if (event.key === 'Escape') {
@@ -171,7 +192,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     }
 
     window.addEventListener('keydown', handleKeydown);
-    return () => window.removeEventListener('keydown', handleKeydown);
+    return () => { window.removeEventListener('keydown', handleKeydown); media.removeEventListener('change', updateNarrow); };
   });
 
   const layoutStyle = $derived(buildLayoutStyle(shell));
@@ -265,12 +286,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     variant="ghost"
     size="sm"
     class="smrt-admin-shell__edge-toggle"
+    aria-label={edge === 'left' ? t(M[edgeExpanded(edge) ? 'ui.admin_shell.collapse_panel' : 'ui.admin_shell.expand_panel'], { panel: labelFor(edge) }) : undefined}
     aria-expanded={edgeExpanded(edge)}
     aria-controls={`smrt-admin-shell-${edge}-panel`}
     onclick={() => shell.togglePanel(edge)}
   >
-    <span>{labelFor(edge)}</span>
-    {#if showsHotkeyFor(edge)}
+    {#if edge === 'left' && !edgeExpanded(edge)}<span aria-hidden="true">›</span>{:else}<span>{labelFor(edge)}</span>{/if}
+    {#if showsHotkeyFor(edge) && (edge !== 'left' || edgeExpanded(edge))}
       <kbd class="smrt-admin-shell__edge-toggle-kbd">{hotkeyFor(edge)}</kbd>
     {/if}
     <ActivityBadge {edge} />
@@ -346,6 +368,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {@render shellBrand()}
           {@render edgeToggle('top')}
         {/if}
+        {#if shell.config.panels.left.initial !== 'hidden'}
+          <div class="smrt-admin-shell__tenant-opener" class:restore-hidden={panelState('left') === 'hidden'}>
+            <Button variant="ghost" size="sm" aria-label={t(M['ui.admin_shell.menu'])} aria-expanded={edgeExpanded('left')} aria-controls="smrt-admin-shell-left-panel" onclick={() => shell.setPanelState('left', edgeExpanded('left') ? 'collapsed' : 'expanded')}>{t(M['ui.admin_shell.menu'])}</Button>
+          </div>
+        {/if}
       </div>
       {#if topRightCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-right">
@@ -372,6 +399,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {#if panelState('left') !== 'hidden'}
     <aside
       id="smrt-admin-shell-left-panel"
+      bind:this={leftPanelEl}
+      inert={narrow && !edgeExpanded('left')}
       class="smrt-admin-shell__edge smrt-admin-shell__edge--left"
       data-state={panelState('left')}
       data-presentation={shell.config.panels.left.presentation}
@@ -380,6 +409,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     >
       <div class="smrt-admin-shell__rail">
         {#if !edgeExpanded('left') && (homeHref || logoSrc || brand)}{@render shellBrand(true)}{/if}
+        {#if showTenantToggle}{@render edgeToggle('left')}{/if}
         {#if edgeExpanded('left')}
           <div class="smrt-admin-shell__tenant-stack">
             <div class="smrt-admin-shell__tenant-content">
@@ -387,8 +417,6 @@ function buildLayoutStyle(shell: ModuleShellState): string {
                 {@render tenantPanel()}
               {:else if tenantRail}
                 {@render tenantRail()}
-              {:else}
-                {@render edgeToggle('left')}
               {/if}
             </div>
             {#if tenantFooter}
@@ -399,8 +427,6 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           </div>
         {:else if tenantRail}
           {@render tenantRail()}
-        {:else}
-          {@render edgeToggle('left')}
         {/if}
       </div>
     </aside>
@@ -413,6 +439,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {#if panelState('right') !== 'hidden'}
     <aside
       id="smrt-admin-shell-right-panel"
+      inert={narrow && !edgeExpanded('right')}
       class="smrt-admin-shell__edge smrt-admin-shell__edge--right"
       data-state={panelState('right')}
       data-presentation={shell.config.panels.right.presentation}
@@ -480,11 +507,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         class="smrt-admin-shell__band smrt-admin-shell__band--bottom"
         style:--band-column={2}
       >
-        {#if systemBar}
-          {@render systemBar()}
-        {:else}
-          {@render edgeToggle('bottom')}
-        {/if}
+        {#if systemBar}{@render systemBar()}{/if}
+        {@render edgeToggle('bottom')}
       </div>
       {#if bottomRightCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-right">
@@ -735,13 +759,23 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     overflow: hidden;
   }
 
+  .smrt-admin-shell__tenant-opener { display: none; flex-shrink: 0; }
+  .smrt-admin-shell__tenant-opener.restore-hidden { display: block; }
+  .smrt-admin-shell__edge--left[data-state='collapsed'] .smrt-admin-shell__rail { padding-inline: var(--smrt-spacing-2); }
+
+  .smrt-admin-shell__edge--left .smrt-admin-shell__rail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2);
+  }
+
   .smrt-admin-shell__tenant-stack {
+    flex: 1;
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
     gap: var(--smrt-spacing-3);
     min-width: 0;
     min-height: 0;
-    block-size: 100%;
   }
 
   .smrt-admin-shell__tenant-content {
@@ -813,7 +847,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   @keyframes smrt-admin-shell-bottom-drawer-in {
     from {
-      transform: translateY(100%);
+      clip-path: inset(100% 0 0);
     }
   }
 
@@ -887,6 +921,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         var(--smrt-admin-shell-bottom-track);
     }
 
+    .smrt-admin-shell__tenant-opener { display: block; }
+    .smrt-admin-shell__edge--left:not([data-state='expanded']),
+    .smrt-admin-shell__edge--right:not([data-state='expanded']) { visibility: hidden; }
     .smrt-admin-shell__edge--left,
     .smrt-admin-shell__edge--right {
       position: absolute;

@@ -15,6 +15,21 @@ afterEach(() => {
 });
 
 describe('TenantNav', () => {
+  it('accepts per-instance touch density while leaving the default inherited', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: { density: 'touch', items: [{ href: '/tasks', label: 'Tasks' }] },
+    });
+    try {
+      expect(container.querySelector('nav')).toHaveAttribute(
+        'data-density',
+        'touch',
+      );
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('renders custom icon components for nav items', () => {
     const component = mount(TenantNav, {
       target: container,
