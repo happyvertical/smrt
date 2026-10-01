@@ -22,7 +22,17 @@ package's tested `copyTemplate()` export is the working scaffold path.
 
 Generated projects require Node.js 24.18.0 or newer and pnpm 11.25.0. They pin
 all directly used `@happyvertical/smrt-*` packages to the current monorepo
-release (synced at publish by `scripts/sync-template-versions.mjs`).
+release, including opt-in MCP Apps dependencies (synced at publish by
+`scripts/sync-template-versions.mjs`; `--check` detects drift).
+
+`smrt gnode create <name> --mcp-apps` supports installed, local, and Git
+subdirectory templates. Plugin names must satisfy the pinned Agent Plugins
+1.0.0 schema before generation starts. `smrt mcp-apps validate` applies the
+official closed plugin/MCP schemas offline, then SMRT endpoint and credential
+checks. Every existing scoped registry directive must be canonical; inline
+`#` and `;` comments are supported. Hosted MCP caches its successfully created
+authenticator for the process, preserving JWKS keys across requests while
+principal resolution and task authorization still run for each request.
 
 For programmatic scaffolding:
 

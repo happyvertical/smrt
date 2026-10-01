@@ -24,7 +24,9 @@
     "./runtime": {
       "types": "./dist/runtime.d.ts",
       "import": "./dist/runtime.js"
-    }
+    },
+    "./schemas/agent-plugins-1.0.0/plugin.schema.json": "./schemas/agent-plugins-1.0.0/plugin.schema.json",
+    "./schemas/agent-plugins-1.0.0/mcp.schema.json": "./schemas/agent-plugins-1.0.0/mcp.schema.json"
   },
   "files": [
     "CLAUDE.md",
