@@ -73,3 +73,5 @@ unsubscribe and releases local registration synchronously, allowing immediate
 replacement even when the host never replies. Deterministic session tests cover
 delayed read/write completion, the refreshed ETag, revocation, and replacement
 while unsubscribe is withheld.
+
+Resource URIs are preserved verbatim and reject Windows drive prefixes as well as URLs and filesystem paths. Matching resource-update notifications invalidate in-flight reads before callbacks publish content; refresh retries still obtain fresh authority. A session invalidated by the bridge's initial synchronous snapshot immediately releases its lifecycle listener.

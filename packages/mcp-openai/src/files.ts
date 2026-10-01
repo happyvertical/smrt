@@ -108,6 +108,8 @@ export class OpenAiFileSession {
         }
       }
     });
+    // subscribe delivers the current snapshot before returning its cleanup.
+    if (this.signal.aborted) this.#unsubscribeLifecycle();
   }
   get native(): boolean {
     return Boolean(this.#extension);
@@ -267,6 +269,7 @@ export class OpenAiFileSession {
           return;
         if (params.uri !== this.#input.file.resourceUri) return;
         this.#latest = undefined;
+        ++this.#generation;
         void refresh();
       });
       emptyResult(

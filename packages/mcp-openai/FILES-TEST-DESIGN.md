@@ -55,3 +55,11 @@ guessed opaque URIs and filesystem URI inputs resolve with `isError: true` and
 the generic `Workflow execution failed.` content/structured error. Anonymous,
 other-owner, other-tenant and revoked requests fail before handler dispatch and
 still reject; the HTTP fixture asserts the successful execution count stays one.
+
+## PR #3282 round 4 regressions
+
+- Opaque file references reject Windows drive prefixes (absolute forward/backslash and drive-relative paths); accepted opaque URI bytes remain verbatim.
+- The actual portable bridge synchronously publishes its current snapshot. Already-cancelled or mismatched-input sessions must release the returned listener immediately; a later host-context notification must not invoke it.
+- A matching resource update supersedes any pending read before delivery. Multiple updates coalesce into one fresh authorized retry; unrelated URIs leave the pending read intact. Existing pending-write refresh/ETag/revocation tests remain required.
+
+Baseline 8735c01 with regression-test overlay reproduced four failing assertions across these three accepted findings, before production edits. Current owning unit tests, real-browser suite, and installed packed boundary probes cover the repair. Real OpenAI host support remains unverified.

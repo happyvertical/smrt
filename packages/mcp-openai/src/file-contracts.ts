@@ -38,6 +38,7 @@ export function validateFileInput(value: unknown): OpenAiFileInput {
   if (
     !/^[a-z][a-z0-9+.-]*:/i.test(uri) ||
     /^(file|https?|data|javascript):/i.test(uri) ||
+    /^[a-z]:/i.test(uri) ||
     /[\s\\]/.test(uri)
   )
     throw new TypeError('Expected opaque resource URI');
