@@ -40,7 +40,7 @@ const isCalendarDate = $derived(
 // Bare dates denote a calendar day, never a browser-local instant.
 const parsedDate = $derived.by(() => {
   if (date === null || date === undefined) return null;
-  if (date instanceof Date) return date;
+  if (date instanceof Date) return Number.isNaN(date.getTime()) ? null : date;
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return null;
   if (isCalendarDate && d.toISOString().slice(0, 10) !== date) return null;

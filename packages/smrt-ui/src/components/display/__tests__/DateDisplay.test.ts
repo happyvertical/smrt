@@ -204,6 +204,11 @@ describe('DateDisplay', () => {
     expect(span).toHaveClass('date-fallback');
   });
 
+  it('renders the fallback for an invalid Date instance', () => {
+    render(DateDisplay, { props: { date: new Date(Number.NaN) } });
+    expect(screen.getByText('N/A')).toBeInTheDocument();
+  });
+
   it('renders the default fallback for an invalid date string', () => {
     render(DateDisplay, { props: { date: 'not-a-date' } });
     expect(screen.getByText('N/A')).toBeInTheDocument();
