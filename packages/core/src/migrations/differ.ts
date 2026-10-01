@@ -28,9 +28,9 @@ import {
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyAddStatements,
-  renderForeignKeyConstraintDrop,
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
+  renderForeignKeyReplaceStatements,
   schemaForeignKeys,
   schemaForeignKeysForEngine,
 } from '../schema/foreign-key-ddl.js';
@@ -85,7 +85,19 @@ const logger = createLogger({ level: 'info' });
 interface ForeignKeyActionReplacement {
   constraintName: string;
   note: string;
+  /**
+   * The new action deletes or rewrites child rows that the live action left
+   * alone (→ CASCADE / SET NULL / SET DEFAULT on DELETE, → CASCADE on UPDATE).
+   */
+  destructive?: string;
 }
+
+/** Actions that change child rows when the parent is deleted or updated. */
+const ROW_CHANGING_FOREIGN_KEY_ACTIONS = new Set([
+  'CASCADE',
+  'SET NULL',
+  'SET DEFAULT',
+]);
 
 /**
  * `mismatch.actual` of the manual change reported when a required column
@@ -1630,18 +1642,25 @@ export class SchemaComparer {
         table: tableName,
         name: constraintName,
         foreignKey,
-        sqlStatements: [
-          ...(replacement
-            ? [
-                renderForeignKeyConstraintDrop(
-                  tableName,
-                  replacement.constraintName,
-                ),
-              ]
-            : []),
-          ...renderForeignKeyAddStatements(tableName, foreignKey),
-        ],
+        sqlStatements: replacement
+          ? renderForeignKeyReplaceStatements(
+              tableName,
+              foreignKey,
+              replacement.constraintName,
+            )
+          : renderForeignKeyAddStatements(tableName, foreignKey),
         ...(replacement ? { note: replacement.note } : {}),
+        // Turning on a row-changing action is applied (the manifest declares
+        // it) but never silently: raw-SQL, admin and tenant-purge deletes of
+        // a parent now delete or rewrite children they used to be blocked by.
+        ...(replacement?.destructive
+          ? {
+              advisory: {
+                severity: 'warning' as const,
+                message: replacement.destructive,
+              },
+            }
+          : {}),
       });
     }
     return changes;
@@ -1653,8 +1672,11 @@ export class SchemaComparer {
    * (#3023). The constraint must be one SMRT rendered: the deterministic
    * canonical name, one column to one column, MATCH SIMPLE, not deferrable,
    * already validated, and with default trigger enforcement. Only then is it
-   * dropped and re-added (NOT VALID + VALIDATE) inside the same migration
-   * transaction; everything else keeps the manual advisory, because a
+   * replaced build-then-swap (`renderForeignKeyReplaceStatements()`: a staged
+   * constraint added NOT VALID and validated before the old one is dropped
+   * and the staged one renamed; `--postgres-safe` validates and swaps outside
+   * the batch transaction). A change that turns on a row-changing action
+   * carries a `warning` advisory. Everything else keeps the manual advisory, because a
    * differently named or shaped constraint may be one an operator created on
    * purpose.
    */
@@ -1727,9 +1749,34 @@ export class SchemaComparer {
     if (liveUpdate !== expected.onUpdate) {
       parts.push(`ON UPDATE ${liveUpdate} → ${expected.onUpdate}`);
     }
+    const destructive: string[] = [];
+    if (
+      liveDelete !== expected.onDelete &&
+      ROW_CHANGING_FOREIGN_KEY_ACTIONS.has(expected.onDelete)
+    ) {
+      destructive.push(
+        `deleting a ${foreignKey.referencesTable} row will now ${expected.onDelete === 'CASCADE' ? 'DELETE' : `${expected.onDelete} on`} its ${tableName} rows (was ${liveDelete})`,
+      );
+    }
+    if (
+      liveUpdate !== expected.onUpdate &&
+      ROW_CHANGING_FOREIGN_KEY_ACTIONS.has(expected.onUpdate)
+    ) {
+      destructive.push(
+        `changing a ${foreignKey.referencesTable}.${foreignKey.referencesColumn} value will now ${expected.onUpdate} ${tableName}.${foreignKey.column} (was ${liveUpdate})`,
+      );
+    }
     return {
       constraintName: canonicalName,
       note: `replaces ${canonicalName}: ${parts.join(', ')}`,
+      ...(destructive.length > 0
+        ? {
+            destructive:
+              `DESTRUCTIVE foreign-key change on ${tableName}.${foreignKey.column}: ${destructive.join('; ')}. ` +
+              'This applies to every delete, including raw SQL, admin tooling and tenant purges. ' +
+              'Review it before migrating; declare a different onDelete/onUpdate to keep the old behaviour.',
+          }
+        : {}),
     };
   }
 

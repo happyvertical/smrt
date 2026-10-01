@@ -1414,6 +1414,8 @@ export function buildConcurrentIndexPlan(
   return plan;
 }
 
+const VALIDATE_CONSTRAINT_RE = /\bVALIDATE\s+CONSTRAINT\b/i;
+
 const DROP_INDEX_CONCURRENTLY_RE =
   /^\s*DROP\s+INDEX\s+CONCURRENTLY\s+(?:IF\s+EXISTS\s+)?(?:"((?:[^"]|"")+)"|([A-Za-z_][\w$]*))\s*;?\s*$/i;
 
@@ -1513,6 +1515,10 @@ function findLaterUniqueCreate(
  *   the concurrent set. This is what the CLI `--postgres-safe` flag and
  *   the auto-migrate path rely on for issue #1165's shape-drift drops.
  * - All other statements stay in the regular (transaction) set.
+ * - `ALTER TABLE … VALIDATE CONSTRAINT` (a foreign key added `NOT VALID`)
+ *   and every later statement of the same migration run outside the
+ *   transaction, in order: the validation scan then holds only SHARE UPDATE
+ *   EXCLUSIVE (reads and writes continue) instead of the batch's locks.
  * - A same-name UNIQUE recreate (`DROP INDEX` then `CREATE UNIQUE INDEX`) is
  *   rewritten into build-then-swap ({@link swapUniqueIndexRecreates}) so the
  *   table never runs without a unique index between the two statements.
@@ -1526,8 +1532,32 @@ export function planPostgresStatements(
 
   const concurrent: string[] = [];
   const regular: string[] = [];
+  // Once a VALIDATE CONSTRAINT leaves the transaction, every later statement
+  // of the same migration follows it, in order (a foreign-key replacement
+  // validates its staged constraint, then drops the old one and renames).
+  let deferRest = false;
 
   for (const sql of statements) {
+    if (
+      useConcurrentIndexes &&
+      !deferRest &&
+      VALIDATE_CONSTRAINT_RE.test(sql)
+    ) {
+      deferRest = true;
+    }
+    if (deferRest && !sql.trimStart().startsWith(NULL_EQUAL_INDEX_MARKER)) {
+      concurrent.push(
+        /DROP\s+INDEX\s+(?!CONCURRENTLY)/i.test(sql)
+          ? sql.replace(/DROP\s+INDEX\s+/i, 'DROP INDEX CONCURRENTLY ')
+          : /CREATE\s+(UNIQUE\s+)?INDEX\s+(?!CONCURRENTLY)/i.test(sql)
+            ? sql.replace(
+                /CREATE\s+(UNIQUE\s+)?INDEX\s+/i,
+                'CREATE $1INDEX CONCURRENTLY ',
+              )
+            : sql,
+      );
+      continue;
+    }
     if (sql.trimStart().startsWith(NULL_EQUAL_INDEX_MARKER)) {
       if (useConcurrentIndexes) {
         throw new Error(

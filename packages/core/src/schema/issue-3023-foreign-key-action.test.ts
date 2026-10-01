@@ -198,17 +198,40 @@ describe('PostgreSQL ON DELETE convergence (#3023)', () => {
   it('replaces a framework-owned constraint whose only drift is its action', async () => {
     const { change, mock } = await diffFor([ownedRow()]);
 
+    // Toward a less destructive action: no warning.
     expect(change?.advisory).toBeUndefined();
+    // Build-then-swap: the staged constraint is validated before the old
+    // one is dropped, so no ACCESS EXCLUSIVE lock is held during the scan.
     expect(change?.sqlStatements).toEqual([
-      `ALTER TABLE "children" DROP CONSTRAINT "${canonicalName}";`,
-      `ALTER TABLE "children" ADD CONSTRAINT "${canonicalName}" FOREIGN KEY ("parent_id") REFERENCES "parents" ("id") ON DELETE NO ACTION ON UPDATE CASCADE NOT VALID`,
-      `ALTER TABLE "children" VALIDATE CONSTRAINT "${canonicalName}"`,
+      `ALTER TABLE "children" ADD CONSTRAINT "${canonicalName}_smrt_new" FOREIGN KEY ("parent_id") REFERENCES "parents" ("id") ON DELETE NO ACTION ON UPDATE CASCADE NOT VALID`,
+      `ALTER TABLE "children" VALIDATE CONSTRAINT "${canonicalName}_smrt_new"`,
+      `ALTER TABLE "children" DROP CONSTRAINT "${canonicalName}"`,
+      `ALTER TABLE "children" RENAME CONSTRAINT "${canonicalName}_smrt_new" TO "${canonicalName}"`,
     ]);
     expect(change?.note).toBe(
       `replaces ${canonicalName}: ON DELETE CASCADE → NO ACTION`,
     );
     // The same orphan probe as a fresh constraint still runs first.
     expect(mock.queries.some((sql) => sql.includes('orphan_key'))).toBe(true);
+  });
+
+  it('warns loudly when the replacement turns on CASCADE', async () => {
+    const mock = postgresMock([ownedRow()]);
+    const live = await mock.db.getTableSchema();
+    live.foreignKeys[0].onDelete = 'NO ACTION';
+    mock.db.getTableSchema = async () => live;
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare({ children: schema('CASCADE') });
+    const change = diff.changes.find(
+      (candidate) => candidate.type === 'add_foreign_key',
+    );
+    expect(change?.sqlStatements?.length).toBe(4);
+    expect(change?.advisory?.severity).toBe('warning');
+    expect(change?.advisory?.message).toMatch(/DESTRUCTIVE/);
+    expect(change?.advisory?.message).toMatch(
+      /deleting a parents row will now DELETE its children rows \(was NO ACTION\)/,
+    );
   });
 
   it.each([

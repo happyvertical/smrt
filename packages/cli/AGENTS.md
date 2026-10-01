@@ -76,6 +76,8 @@ in one transaction, then each index statement runs
 after that commit. This is the mode for large index rollouts. A same-name
 UNIQUE recreate runs build-then-swap (temporary name, drop, `ALTER INDEX …
 RENAME`; `swapUniqueIndexRecreates()`), so the table never lacks a unique index.
+A `VALIDATE CONSTRAINT` (new or replaced foreign key) and the statements after
+it in the same migration also run outside the transaction, in order.
 
 - **Concurrent mode is not atomic.** Committed column/table changes survive a
   later index failure; unfinished index migrations are recorded `failed`, and

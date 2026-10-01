@@ -2231,6 +2231,26 @@ export default testManifest;
         // conversions only rewrite columns that already exist, so leading the
         // batch is always safe. `migrateSmrtSchemas()` partitions on the same
         // marker; this command builds its own tracker batch and must match.
+        // A foreign-key replacement that turns on a row-changing action
+        // (CASCADE / SET NULL / SET DEFAULT) applies because the manifest
+        // declares it, but never silently: parent deletes from raw SQL, admin
+        // tooling or a tenant purge now delete or rewrite children.
+        const destructiveForeignKeys = migrations.filter(
+          (migration) =>
+            migration.type === 'add_foreign_key' &&
+            migration.advisory?.severity === 'warning' &&
+            Boolean(migration.sql || migration.sqlStatements?.length),
+        );
+        if (destructiveForeignKeys.length > 0) {
+          console.log(
+            `\n⚠️  ${destructiveForeignKeys.length} foreign-key change(s) make deletes DESTRUCTIVE:`,
+          );
+          for (const migration of destructiveForeignKeys) {
+            console.log(`   ${migration.advisory?.message}`);
+          }
+          console.log();
+        }
+
         const preForeignKeyMigrations = migrations.filter(
           (migration) => migration.phase === 'pre_foreign_key',
         );

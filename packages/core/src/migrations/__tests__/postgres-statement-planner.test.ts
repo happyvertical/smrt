@@ -366,3 +366,34 @@ describe('--postgres-safe unique recreate is build-then-swap', () => {
     ).toEqual([]);
   });
 });
+
+describe('--postgres-safe foreign-key validation leaves the transaction', () => {
+  it('runs VALIDATE CONSTRAINT and the swap after it outside the batch, in order', () => {
+    const { concurrent, regular } = planPostgresStatements(
+      [
+        'ALTER TABLE "c" ADD CONSTRAINT "fk_smrt_new" FOREIGN KEY ("p") REFERENCES "p" ("id") NOT VALID',
+        'ALTER TABLE "c" VALIDATE CONSTRAINT "fk_smrt_new"',
+        'ALTER TABLE "c" DROP CONSTRAINT "fk"',
+        'ALTER TABLE "c" RENAME CONSTRAINT "fk_smrt_new" TO "fk"',
+      ],
+      true,
+    );
+    expect(regular).toEqual([
+      'ALTER TABLE "c" ADD CONSTRAINT "fk_smrt_new" FOREIGN KEY ("p") REFERENCES "p" ("id") NOT VALID',
+    ]);
+    expect(concurrent).toEqual([
+      'ALTER TABLE "c" VALIDATE CONSTRAINT "fk_smrt_new"',
+      'ALTER TABLE "c" DROP CONSTRAINT "fk"',
+      'ALTER TABLE "c" RENAME CONSTRAINT "fk_smrt_new" TO "fk"',
+    ]);
+  });
+
+  it('keeps VALIDATE in the transaction in atomic mode', () => {
+    expect(
+      planPostgresStatements(
+        ['ALTER TABLE "c" VALIDATE CONSTRAINT "fk"'],
+        false,
+      ).regular,
+    ).toEqual(['ALTER TABLE "c" VALIDATE CONSTRAINT "fk"']);
+  });
+});

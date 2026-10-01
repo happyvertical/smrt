@@ -451,6 +451,9 @@ export const dbDiffCommand: CLICommand = {
           console.log(
             `     + ${change.name} on ${change.table}${change.note ? ` (${change.note})` : ''}`,
           );
+          if (change.advisory?.severity === 'warning') {
+            console.log(`       ⚠️  ${change.advisory.message}`);
+          }
         }
         console.log();
       }

@@ -592,6 +592,16 @@ marker on `FieldMeta` (`smrt-core` reads it structurally so it never depends
 on `smrt-tenancy`). `@tenantId()` exposes no `onDelete` option today, so
 this cannot currently be overridden per field.
 
+On PostgreSQL `db:migrate` converges a live SMRT-owned constraint whose only
+drift is its action (#3023, `SchemaComparer.findReplaceableForeignKey()`):
+build-then-swap via `renderForeignKeyReplaceStatements()` — staged
+`<name>_smrt_new` added `NOT VALID` and validated before the old constraint is
+dropped and the staged one renamed; `--postgres-safe` runs the VALIDATE and the
+swap outside the batch transaction. A change toward `CASCADE` / `SET NULL` /
+`SET DEFAULT` still applies (the manifest declares it) but carries a
+`warning` advisory that `db:diff`, `db:status` and `db:migrate` print as
+DESTRUCTIVE.
+
 `@crossPackageRef()` remains runtime-only: it registers relationship loading
 and indexes but deliberately emits no physical constraint, avoiding circular
 package DDL. Tenant markers follow the same non-constraint rule because a

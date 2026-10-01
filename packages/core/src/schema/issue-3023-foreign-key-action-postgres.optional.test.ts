@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SchemaComparer } from '../migrations/differ.js';
+import { MigrationTracker } from '../migrations/tracker.js';
 import { foreignKeyConstraintName } from './foreign-key-ddl.js';
 import type { ForeignKeyAction, SchemaDefinition } from './types.js';
 
@@ -17,6 +18,7 @@ const suffix = `${process.pid}_${Math.random().toString(36).slice(2, 7)}`;
 const parents = `i3023_parents_${suffix}`;
 const owned = `i3023_owned_${suffix}`;
 const legacy = `i3023_legacy_${suffix}`;
+const tracked = `i3023_tracked_${suffix}`;
 
 function parentSchema(): SchemaDefinition {
   return {
@@ -104,6 +106,14 @@ describe.skipIf(!pgUrl)('ON DELETE convergence on PostgreSQL (#3023)', () => {
     for (const [table, name] of [
       [owned, ownedName],
       [legacy, `${legacy}_parent_fk`],
+      [
+        tracked,
+        foreignKeyConstraintName(tracked, {
+          column: 'parent_id',
+          referencesTable: parents,
+          referencesColumn: 'id',
+        }),
+      ],
     ]) {
       await db.query(
         `CREATE TABLE "${table}" (id UUID PRIMARY KEY, parent_id UUID NOT NULL, ` +
@@ -122,6 +132,10 @@ describe.skipIf(!pgUrl)('ON DELETE convergence on PostgreSQL (#3023)', () => {
     if (!db) return;
     await db.query(`DROP TABLE IF EXISTS "${owned}"`);
     await db.query(`DROP TABLE IF EXISTS "${legacy}"`);
+    await db.query(`DROP TABLE IF EXISTS "${tracked}"`);
+    await db
+      .query(`DELETE FROM _smrt_migrations WHERE name LIKE 'i3023_%'`)
+      .catch(() => undefined);
     await db.query(`DROP TABLE IF EXISTS "${parents}"`);
     await db.close?.();
   });
@@ -153,6 +167,66 @@ describe.skipIf(!pgUrl)('ON DELETE convergence on PostgreSQL (#3023)', () => {
       ownedName,
     ]);
     expect(await foreignKeyChange(owned)).toHaveLength(0);
+  });
+
+  it.each([
+    // CASCADE (seeded) → NO ACTION under --postgres-safe, then back to
+    // CASCADE in atomic mode.
+    ['--postgres-safe', { atomic: true, postgresSafe: true }],
+    ['atomic', { atomic: true }],
+  ] as const)('converges through MigrationTracker.applyAll (%s), validating before the swap', async (mode, options) => {
+    const target = mode === 'atomic' ? 'CASCADE' : 'NO ACTION';
+    const diff = await new SchemaComparer(db as never, {
+      engineHint: 'postgres',
+    }).compare({
+      [parents]: parentSchema(),
+      [tracked]: childSchema(tracked, target),
+    });
+    const [change] = diff.changes.filter(
+      (candidate) =>
+        candidate.type === 'add_foreign_key' && candidate.table === tracked,
+    );
+    if (mode === 'atomic') {
+      // NO ACTION/SET NULL → CASCADE is applied, but never silently.
+      expect(change?.advisory?.severity).toBe('warning');
+    }
+    const statements = change?.sqlStatements ?? [];
+    expect(statements).toHaveLength(4);
+    const tracker = new MigrationTracker({ db: db as never });
+    const results = await tracker.applyAll(
+      [
+        {
+          id: `i3023_${mode.replace(/\W/g, '')}_${suffix}`,
+          description: 'replace fk',
+          version: '1.0.0',
+          up: statements,
+          down: [],
+        },
+      ],
+      options,
+    );
+    expect(results.map((result) => result.error).filter(Boolean)).toEqual([]);
+    const constraints = await db.query(
+      `SELECT conname, convalidated, confdeltype FROM pg_constraint WHERE conrelid = $1::regclass AND contype = 'f'`,
+      [tracked],
+    );
+    expect(constraints.rows).toHaveLength(1);
+    expect(constraints.rows?.[0]?.convalidated).toBe(true);
+    expect(constraints.rows?.[0]?.confdeltype).toBe(
+      target === 'CASCADE' ? 'c' : 'a',
+    );
+    const again = await new SchemaComparer(db as never, {
+      engineHint: 'postgres',
+    }).compare({
+      [parents]: parentSchema(),
+      [tracked]: childSchema(tracked, target),
+    });
+    expect(
+      again.changes.filter(
+        (candidate) =>
+          candidate.type === 'add_foreign_key' && candidate.table === tracked,
+      ),
+    ).toHaveLength(0);
   });
 
   it('leaves an operator-named constraint as a manual step', async () => {
