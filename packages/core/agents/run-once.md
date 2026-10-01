@@ -58,13 +58,21 @@ beside the other write primitives (`object.ts`, `collection.ts`) because:
 - The claim table must exist for every `smrt-core` consumer, not only ones
   that also depend on `smrt-svelte`.
 
-No SvelteKit form-token helper shipped alongside it. The token contract
-(mint a random, unguessable value once per rendered form; carry it as a
-hidden field or equivalent; pass it straight through to `runOnce()`) is a few
-lines any consumer already owns as part of rendering its own form, and there
-was no existing svelte-facing package this fit into without adding one. If a
-second consumer needs the exact same minting/reading helper, add it to
-`smrt-svelte`'s forms module then — do not add a package for one caller.
+The browser half did not ship with it; it now lives in
+`@happyvertical/smrt-ui/form-retry` (`createFormRetry()`, #3291): a per-tab,
+per-form submission key in `sessionStorage` with an in-memory fallback,
+rotated only on a confirmed write that cleared the form, refused while a
+submit is in flight, kept with the typed values across a transport error, and
+optional restore-after-reload so the retry carries byte-identical content. It
+is in `smrt-ui` rather than `smrt-svelte` because smrt-ui is the dependency
+leaf that both `smrt-svelte` and plain SvelteKit apps can use, and its `Form`
+is the one smrt#3265 makes enhanceable; it is typed structurally against
+SvelteKit's `SubmitFunction`, so smrt-ui takes no `@sveltejs/kit`
+dependency. Its `digestSubmissionContent()` is a Web Crypto port of
+`digestRunOnceContent()`; `src/__tests__/issue-3291-digest-vectors.test.ts`
+pins vectors shared with the port, so change both together (and remember a
+digest change re-keys every stored claim). Guide:
+[form retry](../../../docs/content/form-retry.md).
 
 ## Schema: a hand-DDL system table, not an `@smrt()` model
 
