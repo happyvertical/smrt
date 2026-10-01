@@ -24,6 +24,7 @@ export const M = defineMessages({
 
   // FileUpload
   'ui.file_upload.remove_file': 'Remove {name}',
+  'ui.file_upload.required': 'Select a file to upload',
 
   // Form
   'ui.form.extracting': 'Extracting form fields…',
