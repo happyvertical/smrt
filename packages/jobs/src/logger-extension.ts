@@ -1,4 +1,5 @@
 import type { Logger } from '@happyvertical/logger';
+import type { McpTaskContinuation } from './mcp-task.js';
 
 /**
  * Job context for logging
@@ -45,6 +46,13 @@ export interface JobExecutionContext {
    * requested key (or rejects cooperatively if the task is cancelled).
    */
   task?: {
+    /** Recheck live authority and job ownership immediately before apply. */
+    assertAuthorized(): Promise<void>;
+    /** Durable single input round; suspends this execution until a new claim. */
+    requestContinuation(
+      binding: McpTaskContinuation,
+      inputRequest: unknown,
+    ): Promise<unknown>;
     requestInput(
       inputRequests: Record<string, unknown>,
     ): Promise<Record<string, unknown>>;
