@@ -24,6 +24,8 @@ export interface Props
   pressed?: boolean;
   /** Optional count badge; included in the accessible name and tooltip. */
   count?: number;
+  /** A CSS colour (a token such as `var(--status-draft)` or a value) shown when the toggle is pressed. */
+  tone?: string;
   /** The icon. Decorative: it is hidden from assistive technology. */
   children: Snippet;
   /** Where the tooltip opens. */
@@ -36,6 +38,7 @@ const {
   label,
   pressed = false,
   count,
+  tone,
   children,
   tooltipPlacement = 'top',
   disabled = false,
@@ -54,6 +57,8 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     {disabled}
     class="icon-toggle {className}"
     class:pressed
+    class:toned={tone !== undefined}
+    style:--icon-toggle-tone={tone}
     aria-pressed={pressed}
     aria-label={name}
   >
@@ -86,6 +91,15 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
     border-color: transparent;
     background: var(--smrt-color-primary-container, var(--smrt-color-secondary-container));
     color: var(--smrt-color-on-primary-container, var(--smrt-color-on-secondary-container));
+  }
+  /* A toned toggle is neutral until pressed, then wears its tone. */
+  .icon-toggle.toned {
+    color: var(--smrt-color-on-surface-variant, var(--smrt-color-on-surface));
+  }
+  .icon-toggle.toned.pressed {
+    background: color-mix(in srgb, var(--icon-toggle-tone) 16%, var(--smrt-color-surface));
+    color: var(--icon-toggle-tone);
+    box-shadow: inset 0 0 0 2px var(--icon-toggle-tone);
   }
   .icon-toggle:focus-visible {
     outline: 2px solid var(--smrt-color-primary);

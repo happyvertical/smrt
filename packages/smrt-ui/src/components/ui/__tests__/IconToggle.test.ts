@@ -49,3 +49,23 @@ describe('IconToggle', () => {
     await expectNoA11yViolations(container);
   });
 });
+
+describe('IconToggle tone', () => {
+  it('carries its tone as a custom property and a toned class', () => {
+    render(IconToggle, {
+      props: { label: 'Draft', tone: 'var(--status-draft)', children: icon },
+    });
+    const button = screen.getByRole('button', { name: 'Draft' });
+    expect(button).toHaveClass('toned');
+    expect(button.style.getPropertyValue('--icon-toggle-tone')).toBe(
+      'var(--status-draft)',
+    );
+  });
+
+  it('has no tone styling unless asked', () => {
+    render(IconToggle, { props: { label: 'Grid', children: icon } });
+    const button = screen.getByRole('button', { name: 'Grid' });
+    expect(button).not.toHaveClass('toned');
+    expect(button.style.getPropertyValue('--icon-toggle-tone')).toBe('');
+  });
+});

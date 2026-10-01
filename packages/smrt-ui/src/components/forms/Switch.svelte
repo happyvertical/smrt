@@ -129,6 +129,8 @@ useControlRegistration(() => {
 <style>
   .switch { display: inline-flex; align-items: center; gap: var(--smrt-spacing-2, .5rem); cursor: pointer; color: var(--smrt-color-on-surface); }
   .switch--disabled { opacity: .5; cursor: not-allowed; }
+  /* Phones: the whole row (track and label) is at least a 44px touch target. */
+  @media (max-width: 48rem) { .switch { min-block-size: 2.75rem; } }
   .switch__control { position: relative; display: inline-flex; }
   input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .switch__track { width: 2.75rem; height: 1.5rem; padding: 2px; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-highest); border: 1px solid var(--smrt-color-outline); transition: background var(--smrt-duration-short2); }

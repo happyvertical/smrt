@@ -8,6 +8,12 @@ export interface Props {
   trigger?: Snippet;
   /** Accessible name of the trigger button when it shows only an icon (`aria-label`); omit to use its visible content. */
   triggerLabel?: string;
+  /**
+   * Trigger look: `button` (bordered, the default) or `icon`, a borderless
+   * 44px round icon button that takes the surrounding text colour (set the
+   * colour on the popover's `class`).
+   */
+  variant?: 'button' | 'icon';
   /** The popover content. */
   children?: Snippet;
   /** Whether the popover is visible. */
@@ -28,6 +34,7 @@ let {
   label,
   trigger,
   triggerLabel,
+  variant = 'button',
   children,
   open = $bindable(false),
   disabled = false,
@@ -77,6 +84,7 @@ $effect(() => {
     bind:this={triggerEl}
     type="button"
     class="popover__trigger"
+    class:popover__trigger--icon={variant === 'icon'}
     aria-haspopup="dialog"
     aria-label={triggerLabel}
     aria-expanded={open}
@@ -107,7 +115,11 @@ $effect(() => {
   .popover__trigger { appearance: none; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); font: inherit; cursor: pointer; }
   .popover__trigger:focus-visible, .popover__panel:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .popover__trigger:disabled { opacity: .5; cursor: not-allowed; }
-  .popover__panel { position: absolute; z-index: var(--smrt-z-index-popover, 1000); min-width: 16rem; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large); background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface); box-shadow: var(--smrt-elevation-3); }
+  /* Icon trigger: a 44px round glyph in the surrounding colour. Hover and open nudge the glyph; focus draws a soft ring in the same colour. */
+  .popover__trigger--icon { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; inline-size: 2.75rem; block-size: 2.75rem; padding: 0; border: none; border-radius: var(--smrt-radius-full, 999px); background: transparent; color: inherit; }
+  .popover__trigger--icon:hover:not(:disabled), .popover__trigger--icon[aria-expanded='true'] { background: transparent; color: color-mix(in srgb, currentColor 80%, var(--smrt-color-on-surface)); }
+  .popover__trigger--icon:focus-visible { background: transparent; outline: 2px solid color-mix(in srgb, currentColor 40%, transparent); outline-offset: -4px; }
+  .popover__panel { position: absolute; z-index: var(--smrt-z-index-popover, 1000); box-sizing: border-box; inline-size: var(--smrt-popover-panel-width, auto); min-width: min(16rem, calc(100vw - 2rem)); max-width: calc(100vw - 2rem); padding: var(--smrt-popover-panel-padding, var(--smrt-spacing-4)); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large); background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface); box-shadow: var(--smrt-elevation-3); }
   .popover__panel--bottom-start { top: calc(100% + var(--smrt-spacing-1)); left: 0; }
   .popover__panel--bottom-end { top: calc(100% + var(--smrt-spacing-1)); right: 0; }
   .popover__panel--top-start { bottom: calc(100% + var(--smrt-spacing-1)); left: 0; }
