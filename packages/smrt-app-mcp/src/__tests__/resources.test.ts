@@ -220,6 +220,92 @@ describe('prebuilt resource declarations', () => {
 });
 
 describe('principal-bound resource catalog and reads', () => {
+  it('uses one discovery snapshot per list and refreshes the next list and each direct read', async () => {
+    const second = { ...definition, uri: 'ui://app/v1/second.html' };
+    const smrtOptions = vi.fn(() => ({}));
+    let discovery = 0;
+    const publicToolPatterns = vi.fn(() => (++discovery % 2 ? ['view*'] : []));
+    const resourcePolicy = vi.fn(() => true);
+    const toolPolicy = vi.fn(() => true);
+    const app = createMcpAppServer({
+      ...base,
+      smrtOptions,
+      publicToolPatterns,
+      resourcePolicy,
+      toolPolicy,
+      resources: [
+        { ...definition, public: true },
+        { ...second, public: true },
+      ],
+      workflowTools: [
+        workflow,
+        { ...workflow, name: 'view_second', ui: { resourceUri: second.uri } },
+      ],
+    });
+    expect((await app.listResources!({})).map(({ uri }) => uri)).toEqual([
+      second.uri,
+      definition.uri,
+    ]);
+    expect(publicToolPatterns).toHaveBeenCalledTimes(1);
+    expect(smrtOptions).toHaveBeenCalledTimes(1);
+    expect(resourcePolicy).toHaveBeenCalledTimes(2);
+    expect(toolPolicy).toHaveBeenCalledTimes(2);
+    expect(await app.listResources!({})).toEqual([]);
+    expect(publicToolPatterns).toHaveBeenCalledTimes(2);
+    expect(smrtOptions).toHaveBeenCalledTimes(2);
+    expect((await app.readResource!({ uri: definition.uri })).text).toBe(
+      definition.html,
+    );
+    await expect(app.readResource!({ uri: second.uri })).rejects.toThrow(
+      'not available',
+    );
+    expect(publicToolPatterns).toHaveBeenCalledTimes(4);
+    expect(smrtOptions).toHaveBeenCalledTimes(4);
+  });
+  it('rechecks every associated tool and each resource policy within and across list requests', async () => {
+    const second = { ...definition, uri: 'ui://app/v1/second.html' };
+    let allowed = true;
+    const visited: string[] = [];
+    const app = createMcpAppServer({
+      ...base,
+      publicToolPatterns: () => ['view*'],
+      resources: [
+        { ...definition, public: true },
+        { ...second, public: true },
+      ],
+      workflowTools: [
+        workflow,
+        {
+          ...workflow,
+          name: 'view_guard',
+          ui: { resourceUri: definition.uri },
+        },
+      ],
+      toolPolicy: ({ tool }) => {
+        visited.push(tool.name);
+        return tool.name !== 'view_guard' || allowed;
+      },
+      resourcePolicy: ({ resource }) => resource.uri !== second.uri,
+    });
+    expect((await app.listResources!({})).map(({ uri }) => uri)).toEqual([
+      definition.uri,
+    ]);
+    expect(visited).toEqual(['view', 'view_guard']);
+    allowed = false;
+    expect(await app.listResources!({})).toEqual([]);
+    await expect(app.readResource!({ uri: definition.uri })).rejects.toThrow(
+      'not available',
+    );
+    expect(visited).toEqual([
+      'view',
+      'view_guard',
+      'view',
+      'view_guard',
+      'view',
+      'view_guard',
+    ]);
+  });
+
   it.each([
     false,
     true,
