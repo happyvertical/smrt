@@ -10,3 +10,6 @@ export type StatusType =
   | 'time'
   | 'compliance'
   | 'estimate';
+
+/** Semantic tone for custom status vocabulary. */
+export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';

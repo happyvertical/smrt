@@ -87,6 +87,16 @@ selection submits an empty string. Missing or empty names and disabled controls
 (including ancestor fieldsets) are omitted. Native reset restores the initial
 selection unless reset is canceled.
 
+### Status badge tones
+
+`StatusBadge` accepts `tone="success"`, `"warning"`, `"danger"`, `"info"`, or
+`"neutral"` for custom status vocabulary such as `awaiting_cert`. An explicit
+tone overrides the built-in domain scheme while label, size, and outline variant
+continue to work independently. Tones use the active theme's paired container
+and text tokens. Without a tone, known domain statuses retain their existing
+colors and unknown statuses retain the neutral fallback. `StatusTone` is exported
+as a TypeScript type from the package root.
+
 ### Currency display
 
 `CurrencyDisplay` accepts ISO 4217 codes as a public `string` prop so persisted

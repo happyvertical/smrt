@@ -13,6 +13,82 @@ import { expectNoA11yViolations } from '../../../test-support/a11y';
 import StatusBadge from '../StatusBadge.svelte';
 
 describe('StatusBadge', () => {
+  it.each([
+    ['success', 'success'],
+    ['warning', 'warning'],
+    ['danger', 'error'],
+    ['info', 'primary'],
+    ['neutral', 'surface-container-highest'],
+  ] as const)('applies %s tone to a custom status', (tone, token) => {
+    const { container } = render(StatusBadge, {
+      props: { status: 'awaiting_cert', tone },
+    });
+    const span = container.querySelector('span') as HTMLElement;
+    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+      `var(--smrt-color-${token}${tone === 'neutral' ? '' : '-container'})`,
+    );
+    expect(span.style.getPropertyValue('--badge-text')).toBe(
+      tone === 'neutral'
+        ? 'var(--smrt-color-on-surface-variant)'
+        : `var(--smrt-color-on-${token}-container)`,
+    );
+    expect(screen.getByText('awaiting cert')).toBeInTheDocument();
+  });
+
+  it('lets explicit tone override a domain scheme and updates reactively', async () => {
+    const { container, rerender } = render(StatusBadge, {
+      props: {
+        status: 'overdue',
+        type: 'invoice',
+        tone: 'success',
+        variant: 'outline',
+        size: 'sm',
+        label: 'Reviewed',
+      },
+    });
+    const span = container.querySelector('span') as HTMLElement;
+    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+      'var(--smrt-color-success-container)',
+    );
+    expect(span).toHaveClass('outline', 'sm');
+    expect(screen.getByText('Reviewed')).toBeInTheDocument();
+    await rerender({ status: 'overdue', type: 'invoice', tone: 'warning' });
+    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+      'var(--smrt-color-warning-container)',
+    );
+    await rerender({ status: 'overdue', type: 'invoice', tone: undefined });
+    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+      'var(--smrt-color-error-container)',
+    );
+  });
+
+  it.each([
+    'unknown',
+    '__proto__',
+    'constructor',
+  ])('safely ignores invalid runtime tone %s', (tone) => {
+    const { container } = render(StatusBadge, {
+      props: { status: 'paid', type: 'invoice', tone: tone as 'success' },
+    });
+    const span = container.querySelector('span') as HTMLElement;
+    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+      'var(--smrt-color-primary-container)',
+    );
+  });
+
+  it.each([
+    'success',
+    'warning',
+    'danger',
+    'info',
+    'neutral',
+  ] as const)('is axe-clean for custom status tone=%s', async (tone) => {
+    const { container } = render(StatusBadge, {
+      props: { status: 'awaiting_cert', tone },
+    });
+    await expectNoA11yViolations(container);
+  });
+
   it('renders the status value as its label', () => {
     render(StatusBadge, { props: { status: 'active' } });
     expect(screen.getByText('active')).toBeInTheDocument();

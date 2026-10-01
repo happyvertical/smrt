@@ -14,4 +14,4 @@ export { default as StatusBadge } from './StatusBadge.svelte';
 // tsc --noEmit cannot resolve type exports from .svelte files.
 
 // Re-export types from types file
-export type { StatusType } from './types.js';
+export type { StatusTone, StatusType } from './types.js';
