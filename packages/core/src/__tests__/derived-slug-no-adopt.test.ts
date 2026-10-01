@@ -290,4 +290,49 @@ describe('a derived slug never adopts another record', () => {
     expect(again.id).toBe(first.id);
     expect((await db.list('ds_labels', {})) as Row[]).toHaveLength(1);
   });
+
+  it('getOrUpsert updates the row its name keys when another field differs', async () => {
+    const pictures = await DsPictureCollection.create({ db });
+    const first = await pictures.getOrUpsert({
+      name: 'Rink.jpg',
+      sourceUri: 's3://blue',
+      tenantId: TENANT_A,
+    });
+    // The all-field lookup misses (sourceUri differs); the create is keyed by
+    // the derived slug and updates the same row instead of adding rink-jpg-2.
+    const again = await pictures.getOrUpsert({
+      name: 'Rink.jpg',
+      sourceUri: 's3://red',
+      tenantId: TENANT_A,
+    });
+    expect(again.id).toBe(first.id);
+    expect(again.slug).toBe(first.slug);
+    const rows = (await db.list('ds_pictures', {})) as Row[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].source_uri).toBe('s3://red');
+    // Running the importer again is idempotent.
+    await pictures.getOrUpsert({
+      name: 'Rink.jpg',
+      sourceUri: 's3://red',
+      tenantId: TENANT_A,
+    });
+    expect((await db.list('ds_pictures', {})) as Row[]).toHaveLength(1);
+  });
+
+  it("getOrUpsert never adopts another tenant's row through its name", async () => {
+    const pictures = await DsPictureCollection.create({ db });
+    const a = await pictures.getOrUpsert({
+      name: 'Rink.jpg',
+      sourceUri: 's3://a',
+      tenantId: TENANT_A,
+    });
+    const b = await pictures.getOrUpsert({
+      name: 'Rink.jpg',
+      sourceUri: 's3://b',
+      tenantId: TENANT_B,
+    });
+    expect(b.id).not.toBe(a.id);
+    const rows = (await db.list('ds_pictures', {})) as Row[];
+    expect(rows.find((row) => row.id === a.id)?.source_uri).toBe('s3://a');
+  });
 });

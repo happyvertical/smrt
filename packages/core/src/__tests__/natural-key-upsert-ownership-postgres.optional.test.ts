@@ -186,7 +186,7 @@ describe.skipIf(!pgUrl)('natural-key upsert ownership on PostgreSQL', () => {
   it('save() refuses the cross-tenant collision and leaves tenant A and its teams untouched', async () => {
     const { leagues, league, teamId } = await seedTenantA();
     const error = await leagues
-      .create({ name: 'U13', tenantId: TENANT_B })
+      .create({ name: 'U13', slug: 'u13', tenantId: TENANT_B })
       .then(
         () => null,
         (caught: unknown) => caught,
@@ -374,5 +374,65 @@ describe.skipIf(!pgUrl)('natural-key upsert ownership on PostgreSQL', () => {
     );
     expect(String(live.rows[0]?.indexdef)).toContain('(slug, context, id)');
     await db.query(`DROP TABLE IF EXISTS "${table}"`);
+  });
+
+  it('concurrent first creates never collapse rows or rewrite a primary key', async () => {
+    await createTable(db, NkPgLeague, LEAGUES, { indexes: true });
+    // Separate pools so the creates really run on different connections.
+    const pools = await Promise.all(
+      Array.from(
+        { length: 4 },
+        async () =>
+          (await getDatabase({
+            type: 'postgres',
+            url: pgUrl,
+            dbid: `smrt-test-nk-race-${randomUUID()}`,
+            max: 2,
+          } as Parameters<typeof getDatabase>[0])) as DatabaseInterface,
+      ),
+    );
+    try {
+      const collections = await Promise.all(
+        pools.map((pool) => NkPgLeagueCollection.create({ db: pool })),
+      );
+      // Derived slug: every create is its own row, under its own slug.
+      const derived = await Promise.all(
+        Array.from({ length: 12 }, (_, i) =>
+          collections[i % collections.length].create({
+            name: 'New conversation',
+            tenantId: TENANT_A,
+          }),
+        ),
+      );
+      const derivedRows = (await rows(db, LEAGUES)).filter((row) =>
+        String(row.slug).startsWith('new-conversation'),
+      );
+      expect(derivedRows).toHaveLength(12);
+      expect(new Set(derivedRows.map((row) => row.slug)).size).toBe(12);
+      const rowIds = new Set(derivedRows.map((row) => String(row.id)));
+      for (const created of derived) {
+        expect(rowIds.has(String(created.id))).toBe(true);
+      }
+
+      // Explicit key, same owner: one row; every caller holds its real id.
+      const explicit = await Promise.all(
+        Array.from({ length: 12 }, (_, i) =>
+          collections[i % collections.length].create({
+            name: `Hawks ${i}`,
+            slug: 'hawks',
+            tenantId: TENANT_A,
+          }),
+        ),
+      );
+      const hawks = (await rows(db, LEAGUES)).filter(
+        (row) => row.slug === 'hawks',
+      );
+      expect(hawks).toHaveLength(1);
+      for (const created of explicit) {
+        expect(created.id).toBe(hawks[0].id);
+      }
+    } finally {
+      for (const pool of pools) await pool.close?.();
+    }
   });
 });

@@ -359,6 +359,14 @@ export type SmrtCreateInput<T extends SmrtObject> = Partial<
    * identity is an explicit client-supplied `id` (sync-apply, #1759).
    */
   _insertOnly?: boolean;
+  /**
+   * Update the row the natural key identifies in place on the initial save,
+   * even when the slug is derived from `name`/`title`/`label` (which otherwise
+   * moves to a free `<slug>-2`). Set by `getOrUpsert()`; the ownership guard
+   * still applies.
+   * @internal
+   */
+  _adoptNaturalKey?: boolean;
   /** Allow arbitrary additional fields for dynamic usage */
   [key: string]: unknown;
 };
@@ -3609,6 +3617,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       if (options._insertOnly === true) {
         instance.requireInsertOnSave();
       }
+      if (options._adoptNaturalKey === true) {
+        instance.adoptNaturalKeyOnSave();
+      }
       return instance;
     }
 
@@ -3647,6 +3658,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     if (options._insertOnly === true) {
       instance.requireInsertOnSave();
+    }
+    if (options._adoptNaturalKey === true) {
+      instance.adoptNaturalKeyOnSave();
     }
     return instance;
   }
@@ -3793,9 +3807,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
       return existing;
     }
+    // The lookup missed (a non-key field differs, or no row exists). The
+    // create is keyed by the natural key the data names: a row that key
+    // already identifies — including through a slug derived from `name` —
+    // is updated in place (same-owner only), never duplicated as `<slug>-2`.
     const createData = {
       ...logicalDefaults,
       ...logicalData,
+      _adoptNaturalKey: true,
     } as SmrtCreateInput<ModelType>;
 
     return await this.create(createData);

@@ -430,22 +430,32 @@ tenant-led unique is missing and warns while the legacy one survives
 `NO ACTION`, so deleting a tenant does not cascade through tenant-owned tables.
 
 The save path backs this up where the key still omits the owner (an explicit
-key, or a live table not yet migrated): a NEW object's natural-key upsert first
-reads the row its conflict target would hit, bypassing read interceptors
-(`SmrtObject.guardNaturalKeyUpsert()`). A different owner on `tenant_id` or the
-declared tenant column — NULL counts as an owner — raises
+key, or a live table not yet migrated) — `SmrtObject.writeNaturalKeyRow()`. The
+row a NEW object's conflict target matches is read directly, bypassing read
+interceptors. A different owner on any ownership column
+(`ObjectRegistry.getOwnershipColumns()`: `tenant_id`, the declared tenant
+column, `@tenantId` fields and runtime registrations reported through
+`ObjectRegistry.registerOwnershipColumnSource()` — the tenancy package reports
+`registerTenantScopedClass(…, { field })` columns) raises
 `TenantIsolationError.naturalKeyOwnedElsewhere()` (`TENANT_ISOLATION_VIOLATION`,
-never retried, never naming the other owner), also under `withSystemContext()`.
-A same-owner row is adopted by id (keeping its `created_at`), so
-`DO UPDATE SET` never rewrites a primary key (no `ON UPDATE CASCADE` churn).
-Adoption needs an explicit natural key: when the match is only through a slug
-`getSlug()` derived from `name`/`title`/`label` (a human value, not an
-identity), the new object keeps its id, moves to the first free `<slug>-2` …
-`<slug>-9` (then `<slug>-<8 id chars>`) and INSERTs, so a racing claim raises
-instead of overwriting. Explicit slugs, `conflictColumns` without `slug`,
-`getOrUpsert()` and persisted saves are unchanged. The read and upsert are separate
-statements; the tenant-inclusive unique is what makes a racing cross-tenant
-insert impossible. The junction batch path falls back to per-item saves when
+never retried, never naming the other owner), also under `withSystemContext()`;
+NULL — or an ownership column the save leaves unset — counts as an owner. A
+same-owner row is adopted by id (keeping its `created_at`, applied to the
+instance only after the write succeeds), so `DO UPDATE SET` never rewrites a
+primary key (no `ON UPDATE CASCADE` churn). Adoption needs an explicit natural
+key: when the match is only through a slug `getSlug()` derived from
+`name`/`title`/`label` (a human value, not an identity), the new object keeps
+its id, moves to the first free `<base>-2` … `<base>-9` (one `slug IN (…)`
+probe; then `<base>-<8 id chars>`) and INSERTs — whoever owns the taken row, so
+it is never refused. `getOrUpsert()`'s create path opts back into adoption
+(`_adoptNaturalKey`): a miss on a non-key field updates the row the derived
+slug names instead of adding `<slug>-2`. On PostgreSQL with no NULL conflict
+value the write is `INSERT … ON CONFLICT (…) DO NOTHING RETURNING id` first, so
+a new key costs one statement and no pre-read, and concurrent first creates
+never collapse: the loser re-reads and adopts (explicit key) or moves (derived
+slug, then straight to the id suffix), bounded retries. Embedded engines
+(serialized by the in-process write queue) and NULL-bearing keys read first.
+The junction batch path falls back to per-item saves when
 its conflict target omits an ownership column present in the row (`tenant_id`,
 the declared tenant column, or any `@tenantId`-marked field), and when any new
 item's natural key already names a row the batch is not removing; its

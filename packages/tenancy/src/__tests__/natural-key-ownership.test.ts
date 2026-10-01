@@ -114,6 +114,31 @@ class LudisNkLegacyLeagueCollection extends SmrtCollection<LudisNkLegacyLeague> 
   static readonly _itemClass = LudisNkLegacyLeague;
 }
 
+/**
+ * Registered at runtime on a CUSTOM field: `organizationId`, no `tenant_id`
+ * column, so the default key stays the global `(slug, context)`.
+ */
+@smrt({ tableName: 'ludis_nk_org_teams' })
+class LudisNkOrgTeam extends SmrtObject {
+  @field({ type: 'text' })
+  name: string = '';
+
+  @field({ sqlType: 'UUID', nullable: true })
+  organizationId: string | null = null;
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.name !== undefined) this.name = options.name;
+    if (options.organizationId !== undefined) {
+      this.organizationId = options.organizationId;
+    }
+  }
+}
+
+class LudisNkOrgTeamCollection extends SmrtCollection<LudisNkOrgTeam> {
+  static readonly _itemClass = LudisNkOrgTeam;
+}
+
 /** Registered on a field the model does not have. */
 @smrt({ tableName: 'ludis_nk_mismatched' })
 class LudisNkMismatched extends SmrtObject {
@@ -130,6 +155,7 @@ const LUDIS_POLICY = {
 };
 
 const TABLES = [
+  'ludis_nk_org_teams',
   'ludis_nk_teams',
   'ludis_nk_leagues',
   'ludis_nk_legacy_leagues',
@@ -175,6 +201,7 @@ for (const engine of engines) {
       let leagues: LudisNkLeagueCollection;
       let teams: LudisNkTeamCollection;
       let legacy: LudisNkLegacyLeagueCollection;
+      let orgTeams: LudisNkOrgTeamCollection;
 
       beforeAll(async () => {
         ObjectRegistry.registerCollection(
@@ -185,6 +212,10 @@ for (const engine of engines) {
         ObjectRegistry.registerCollection(
           'LudisNkLegacyLeague',
           LudisNkLegacyLeagueCollection,
+        );
+        ObjectRegistry.registerCollection(
+          'LudisNkOrgTeam',
+          LudisNkOrgTeamCollection,
         );
         const connection = await engine.connect();
         if (engine.name === 'PostgreSQL') {
@@ -198,13 +229,19 @@ for (const engine of engines) {
             'LudisNkLeague',
             'LudisNkTeam',
             'LudisNkLegacyLeague',
+            'LudisNkOrgTeam',
             'LudisNkMismatched',
           ],
         });
         leagues = await LudisNkLeagueCollection.create({ db });
         teams = await LudisNkTeamCollection.create({ db });
         legacy = await LudisNkLegacyLeagueCollection.create({ db });
+        orgTeams = await LudisNkOrgTeamCollection.create({ db });
         enableTenancy();
+        registerTenantScopedClass('LudisNkOrgTeam', {
+          ...LUDIS_POLICY,
+          field: 'organizationId',
+        });
         for (const className of [
           'LudisNkLeague',
           'LudisNkTeam',
@@ -219,6 +256,7 @@ for (const engine of engines) {
           'LudisNkLeague',
           'LudisNkTeam',
           'LudisNkLegacyLeague',
+          'LudisNkOrgTeam',
           'LudisNkMismatched',
         ]) {
           unregisterTenantScopedClass(className);
@@ -285,7 +323,7 @@ for (const engine of engines) {
           legacy.create({ name: 'U13' }),
         );
         const error = await withTenant({ tenantId: TENANT_B }, () =>
-          legacy.create({ name: 'U13' }),
+          legacy.create({ name: 'U13', slug: 'u13' }),
         ).then(
           () => null,
           (caught: unknown) => caught,
@@ -297,6 +335,46 @@ for (const engine of engines) {
         expect(rows).toHaveLength(1);
         expect(rows[0].id).toBe(a.id);
         expect(rows[0].tenant_id).toBe(TENANT_A);
+
+        // A slug derived from the name moves instead of being refused.
+        const moved = await withTenant({ tenantId: TENANT_B }, () =>
+          legacy.create({ name: 'U13' }),
+        );
+        expect(moved.slug).toBe('u13-2');
+        expect(
+          (await rawRows(db, 'ludis_nk_legacy_leagues')).find(
+            (row) => row.id === a.id,
+          )?.tenant_id,
+        ).toBe(TENANT_A);
+      });
+
+      it('a runtime registration on a custom field is guarded too: org B cannot take over org A', async () => {
+        const a = await withTenant({ tenantId: TENANT_A }, () =>
+          orgTeams.create({ name: 'Hawks', slug: 'hawks' }),
+        );
+        expect(a.organizationId).toBe(TENANT_A);
+        const error = await withTenant({ tenantId: TENANT_B }, () =>
+          orgTeams.create({ name: 'Hawks', slug: 'hawks' }),
+        ).then(
+          () => null,
+          (caught: unknown) => caught,
+        );
+        expect(error).toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
+        expect(String((error as Error).message)).not.toContain(TENANT_A);
+        const rows = await rawRows(db, 'ludis_nk_org_teams');
+        expect(rows).toHaveLength(1);
+        expect(rows[0].id).toBe(a.id);
+        expect(rows[0].organization_id).toBe(TENANT_A);
+        expect(
+          ObjectRegistry.getOwnershipColumns('LudisNkOrgTeam').has(
+            'organization_id',
+          ),
+        ).toBe(true);
+        // A same-organization save with the explicit key still updates in place.
+        const again = await withTenant({ tenantId: TENANT_A }, () =>
+          orgTeams.create({ name: 'Hawks (renamed)', slug: 'hawks' }),
+        );
+        expect(again.id).toBe(a.id);
       });
 
       it('system context cannot take over a tenant row through the natural key either', async () => {
@@ -305,7 +383,7 @@ for (const engine of engines) {
         );
         await expect(
           withSystemContext(() =>
-            legacy.create({ name: 'U15', tenantId: TENANT_B }),
+            legacy.create({ name: 'U15', slug: 'u15', tenantId: TENANT_B }),
           ),
         ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
       });
@@ -317,7 +395,7 @@ for (const engine of engines) {
         // NULL is an owner: a system-context global save never adopts A's row.
         await expect(
           withSystemContext(() =>
-            legacy.create({ name: 'U17', tenantId: null }),
+            legacy.create({ name: 'U17', slug: 'u17', tenantId: null }),
           ),
         ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
         // The same owner, written from system context with the explicit

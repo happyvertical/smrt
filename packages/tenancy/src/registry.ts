@@ -439,6 +439,20 @@ export function getTenantScopedConfig(
 }
 
 /**
+ * Tell core which column records a row's owner for every tenant-scoped class,
+ * including runtime registrations on a custom field
+ * (`registerTenantScopedClass('Team', { field: 'organizationId' })`) that the
+ * manifest knows nothing about. Core's natural-key save guard compares these
+ * columns, so a save whose key collides with another organization's row is
+ * refused (`TENANT_ISOLATION_VIOLATION`) instead of adopting it. Resolved on
+ * every lookup, so selectors that bind later or are unregistered are honoured.
+ */
+ObjectRegistry.registerOwnershipColumnSource((qualifiedName) => {
+  const config = getTenantScopedConfig(qualifiedName);
+  return config ? [toSnakeCase(config.field)] : undefined;
+});
+
+/**
  * Return `true` if the named class is tenant-scoped — directly (via
  * `@TenantScoped()` / `@smrt({ tenantScoped: true })`) or by inheriting from a
  * tenant-scoped STI ancestor (#1596).
@@ -580,8 +594,11 @@ function auditSelector(
       message:
         `${className} is registered tenant-scoped, but its natural key ` +
         `(${conflictColumns.join(', ')}) omits '${tenantColumn}', so it is ` +
-        'unique across tenants. A second tenant saving the same key collides ' +
-        'with a row it cannot see and is refused (TENANT_ISOLATION_VIOLATION). ' +
+        'unique across tenants: a second tenant cannot store a key another ' +
+        'tenant already uses. A new object saved on such a key is refused ' +
+        '(TENANT_ISOLATION_VIOLATION) when the row it collides with has a ' +
+        `different '${tenantColumn}'; one whose slug was derived from its ` +
+        'name moves to a free slug instead. ' +
         `Include '${tenantColumn}' in the conflict columns (or drop the ` +
         'explicit conflictColumns) and run `smrt db:migrate`.',
     });

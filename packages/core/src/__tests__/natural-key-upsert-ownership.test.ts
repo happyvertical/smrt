@@ -337,7 +337,7 @@ describe('natural-key upsert ownership', () => {
       });
 
       const error = await leagues
-        .create({ name: 'U13', tenantId: TENANT_B })
+        .create({ name: 'U13', slug: 'u13', tenantId: TENANT_B })
         .then(
           () => null,
           (caught: unknown) => caught,
@@ -359,19 +359,33 @@ describe('natural-key upsert ownership', () => {
       const teamRows = (await db.list('nk_legacy_teams', {})) as Row[];
       expect(teamRows[0].id).toBe(broncos.id);
       expect(teamRows[0].league_id).toBe(a.id);
+
+      // A slug derived from the name is not an identity: tenant B's "U13"
+      // moves to a free slug and INSERTs instead of being refused.
+      const moved = await leagues.create({ name: 'U13', tenantId: TENANT_B });
+      expect(moved.slug).toBe('u13-2');
+      expect(moved.id).not.toBe(a.id);
+      const after = (await db.list('nk_legacy_leagues', {})) as Row[];
+      expect(after.find((row) => row.id === a.id)?.tenant_id).toBe(TENANT_A);
     });
 
     it('a tenant save never adopts a global row, and a global save never adopts a tenant row', async () => {
       const leagues = await NkLegacyLeagueCollection.create({ db });
       const global = await leagues.create({ name: 'Open', tenantId: null });
       await expect(
-        leagues.create({ name: 'Open', tenantId: TENANT_A }),
+        leagues.create({ name: 'Open', slug: 'open', tenantId: TENANT_A }),
       ).rejects.toBeInstanceOf(TenantIsolationError);
 
       const owned = await leagues.create({ name: 'U15', tenantId: TENANT_A });
       await expect(
-        leagues.create({ name: 'U15', tenantId: null }),
+        leagues.create({ name: 'U15', slug: 'u15', tenantId: null }),
       ).rejects.toBeInstanceOf(TenantIsolationError);
+      // An owner the save leaves unset counts as NULL (global), too.
+      const unset = new NkLegacyLeague({ db, name: 'U15' });
+      await unset.initialize();
+      unset.slug = 'u15';
+      unset.tenantId = undefined as unknown as null;
+      await expect(unset.save()).rejects.toBeInstanceOf(TenantIsolationError);
 
       const rows = (await db.list('nk_legacy_leagues', {})) as Row[];
       expect(rows.find((row) => row.id === global.id)?.tenant_id).toBeNull();

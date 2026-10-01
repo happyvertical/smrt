@@ -3376,6 +3376,73 @@ export class ObjectRegistry {
   }
 
   /**
+   * Runtime ownership-column sources (see
+   * {@link ObjectRegistry.registerOwnershipColumnSource}).
+   */
+  private static ownershipColumnSources = new Set<
+    (qualifiedName: string) => readonly string[] | undefined
+  >();
+
+  /**
+   * Register a source of RUNTIME ownership columns: columns that record a
+   * row's owner for a class whose manifest does not say so — the tenancy
+   * package's `registerTenantScopedClass('Team', { field: 'organizationId' })`
+   * is the canonical producer.
+   *
+   * Core reads these only to protect ownership on save
+   * ({@link ObjectRegistry.getOwnershipColumns}); they never change the
+   * conflict target or the schema, which are build-time contracts a runtime
+   * registration cannot alter without breaking `ON CONFLICT` binding. The
+   * source is consulted on every lookup, so registrations that bind later (a
+   * selector registered before its class) or are removed take effect
+   * immediately.
+   *
+   * @param source - maps a qualified class name to its runtime ownership
+   *   columns (snake_case), or `undefined` when it has none
+   * @returns a disposer that removes the source
+   */
+  static registerOwnershipColumnSource(
+    source: (qualifiedName: string) => readonly string[] | undefined,
+  ): () => void {
+    ObjectRegistry.ownershipColumnSources.add(source);
+    return () => {
+      ObjectRegistry.ownershipColumnSources.delete(source);
+    };
+  }
+
+  /**
+   * Every column that records a row's owner for natural-key save protection:
+   * `tenant_id`, the declared tenant column, each `@tenantId`-marked field's
+   * column, and every runtime ownership column a registered source reports
+   * ({@link ObjectRegistry.registerOwnershipColumnSource}) — so a runtime
+   * tenancy registration on a custom field (`organizationId`) is compared like
+   * `tenant_id`.
+   *
+   * @param className - Name of the class (simple or qualified)
+   */
+  static getOwnershipColumns(className: string): Set<string> {
+    const columns = new Set<string>(['tenant_id']);
+    const declared = ObjectRegistry.getTenantColumn(className);
+    if (declared) columns.add(declared);
+    for (const [name, field] of ObjectRegistry.getFields(className)) {
+      if (
+        field.__tenancy?.isTenantIdField ||
+        field._meta?.__tenancy?.isTenantIdField
+      ) {
+        columns.add(toSnakeCase(name));
+      }
+    }
+    const registered = ObjectRegistry.findClass(className);
+    const qualifiedName = registered?.qualifiedName ?? className;
+    for (const source of ObjectRegistry.ownershipColumnSources) {
+      for (const column of source(qualifiedName) ?? []) {
+        if (column) columns.add(column);
+      }
+    }
+    return columns;
+  }
+
+  /**
    * The tenant column of the table a class writes to, or `undefined` when its
    * schema owner (the STI root for a single-table hierarchy, the class itself
    * otherwise) is not tenant-scoped (#2360).
