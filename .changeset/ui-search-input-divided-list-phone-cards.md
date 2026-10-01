@@ -8,3 +8,4 @@ New list pieces apps were hand-building:
 - `CollectionList` `layout="divided"`: a flat single column, rows separated by a hairline, a selected row shown by its checkbox. The selection checkbox is now a 44px target in every layout.
 - `DataTable` `phoneLayout="cards"`: on phones each row becomes a block of stacked cells and the column heads hide (pair it with a `ListSortSelect`).
 - `Fieldset` `stack`: lay the fields out in one column with a gap.
+- `SortableHeader` reads `--sortable-header-font-weight` (default 600; `inherit` takes the head row's weight), next to `--sortable-header-padding`.

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import ListSortSelect from '../ListSortSelect.svelte';
@@ -96,5 +98,23 @@ describe('ListSortSelect', () => {
       columnId: 'title',
       direction: 'asc',
     });
+  });
+});
+
+describe('SortableHeader style hooks', () => {
+  it('reads its control weight from --sortable-header-font-weight (default 600)', () => {
+    const source = readFileSync(
+      join(
+        process.cwd().endsWith('packages/smrt-ui')
+          ? process.cwd()
+          : join(process.cwd(), 'packages/smrt-ui'),
+        'src/components/data/SortableHeader.svelte',
+      ),
+      'utf8',
+    );
+    expect(source).toMatch(
+      /font-weight:\s*var\(--sortable-header-font-weight,\s*600\)/,
+    );
+    expect(source).toMatch(/padding:\s*var\(--sortable-header-padding,/);
   });
 });

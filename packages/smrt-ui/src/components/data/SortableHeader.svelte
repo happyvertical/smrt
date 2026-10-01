@@ -12,6 +12,10 @@
 
   Use `as="div"` with `role="columnheader"` semantics for grid layouts that
   are not a `<table>`.
+
+  Style hooks (set on the header or an ancestor): `--sortable-header-padding`
+  (the control's padding) and `--sortable-header-font-weight` (default 600;
+  `inherit` takes the surrounding head row's weight).
 -->
 <script lang="ts">
 import type { Snippet } from 'svelte';
@@ -132,7 +136,7 @@ const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));
     background: transparent;
     color: inherit;
     font: inherit;
-    font-weight: 600;
+    font-weight: var(--sortable-header-font-weight, 600);
     text-align: inherit;
     text-decoration: none;
     cursor: pointer;
