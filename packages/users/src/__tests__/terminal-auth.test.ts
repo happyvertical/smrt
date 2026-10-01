@@ -529,6 +529,43 @@ describe('TerminalAuthService', () => {
     ).toHaveLength(7);
   });
 
+  it('uses distinct insert candidates while one user remains the atomic budget key', async () => {
+    const limits = await UsersCliAuthApproveLimitCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const user = await users.create({ email: 'candidate@example.com' });
+    await user.save();
+    if (!user.id) throw new Error('Expected persisted candidate user.');
+    // Observe real SQL executions: duplicate non-arbiter slug candidates caused
+    // the PostgreSQL concurrent UPSERT failure; user_id must still share a budget.
+    const query = vi.spyOn(limits.db, 'query');
+    for (let i = 0; i < 2; i++)
+      expect(
+        (
+          await limits.reserveAttempt({
+            userId: user.id,
+            maxAttempts: 2,
+            windowMs: 60000,
+          })
+        ).allowed,
+      ).toBe(true);
+    const inserts = query.mock.calls.filter(([sql]) =>
+      String(sql).startsWith('INSERT INTO users_cli_auth_approve_limits'),
+    );
+    expect(inserts).toHaveLength(2);
+    expect(new Set(inserts.map((args) => args[2])).size).toBe(2);
+    expect(new Set(inserts.map((args) => args[3]))).toEqual(new Set([user.id]));
+    expect(
+      (
+        await limits.reserveAttempt({
+          userId: user.id,
+          maxAttempts: 2,
+          windowMs: 60000,
+        })
+      ).allowed,
+    ).toBe(false);
+  });
+
   it('does not let an old-window release erase a new-window failure', async () => {
     const limits = await UsersCliAuthApproveLimitCollection.create({
       db: { type: 'sqlite', url: dbPath },

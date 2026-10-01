@@ -12,6 +12,7 @@ are not prerequisites for unrelated user-package work.
 | `src/services/PermissionResolver.ts` | permission precedence, inherited memberships, guards, RLS, role seeding | [agents/permissions.md](agents/permissions.md) |
 | `src/services/OidcLoginService.ts`, collections and OIDC handlers | identity reconciliation, transaction boundaries, migration readiness | [agents/oidc-provisioning.md](agents/oidc-provisioning.md) |
 | `src/services/MobileAuthService.ts` | mobile handshake, bearer sessions, bootstrap extension boundary | [agents/mobile-auth.md](agents/mobile-auth.md) |
+| `src/services/TerminalAuthService.ts`, `src/collections/CliAuthApproveLimitCollection.ts` | terminal approval concurrency, shared attempt budget, retry-safe database fixtures | [agents/terminal-auth-testing.md](agents/terminal-auth-testing.md) |
 | `src/retention.ts` | expired session/token/CLI-auth reaping and retention sweep wiring | [agents/retention.md](agents/retention.md) |
 
 ## Models and authority
