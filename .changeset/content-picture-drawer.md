@@ -22,3 +22,10 @@ Pictures in the content editor:
   `smrt-thumbnail:<placement> <id>` — so the main-picture rule, "Use as main
   picture" and picture replacement work for Markdown articles too. Rendering
   turns the markers back into attributes, never a visible title.
+
+- The drawer loads more pictures as its list scrolls, and asks again when a
+  load-more request went unanswered; `onSearch` can hand the drawer's search to
+  the host (its own picture search); its Done button is a full-size 44px touch
+  target.
+- A story picture can be moved anywhere in the story: drag it with a drop line
+  showing where it will land, or use Move up / Move down (keyboard and phone).

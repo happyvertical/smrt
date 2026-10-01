@@ -12,3 +12,5 @@ a Web Audio "ready" beep (`playReadyBeep`, no sound files), and `longPress` /
 `@happyvertical/smrt-svelte/browser-ai` adds `createSttDictationSource`, which
 lends `Dictation` the existing speech-to-text adapters (browser speech by
 default), created lazily on first use.
+
+`DictationStatus` takes no room while it has nothing to say.
