@@ -650,3 +650,7 @@ also get standard CRUD + custom collection-level endpoints.
 | `@happyvertical/geo` | Static map thumbnails |
 | `@happyvertical/images` | Headline card rendering |
 | `yaml` | YAML frontmatter parsing |
+
+Browser QA: `pnpm test:e2e` builds package dependencies and runs Playwright.
+Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/path/to/chromium` to use an installed
+Chromium when Playwright's managed browser dependencies are unavailable.
