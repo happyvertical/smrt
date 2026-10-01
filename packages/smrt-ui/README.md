@@ -97,6 +97,27 @@ Svelte-free `/data-surface` entry exposes the registry contracts and shared
 protocol limits for server adapters. The package root remains a compatibility
 barrel.
 
+### Touch targets for Checkbox, Radio and Switch
+
+`Checkbox`, `Radio` and `Switch` have an invisible 44x44px hit area around the
+visible control (about 18px for a box or mark, the 2.75rem track for a switch).
+A transparent `::before` on the wrapping `<label>` makes it, so a click anywhere
+in the area toggles the input, no layout shifts, and the focus ring stays on the
+visible box. The box and the label text sit above every hit area, so adjacent
+controls never steal each other's clicks.
+
+- **Table cells.** Neighbouring cells hold links and other controls, so inside a
+  `td`/`th` the area never leaves the cell. A `Checkbox` that is the cell's only
+  content uses the whole cell (clipped to its edges); otherwise, and for `Radio`,
+  the area grows vertically only.
+- **Elsewhere.** Hit areas of tightly stacked controls overlap in the gaps; the
+  later control wins a gap, never a neighbour's box or text. Next to a link or
+  button in a dense toolbar, shrink it with `--smrt-control-hit-size`.
+- **Resize or turn off.** `--smrt-control-hit-size` (default `2.75rem`); `0px`
+  gives only the visible control. Pages never add their own padding hacks.
+- `DataTable`'s built-in selection checkboxes and `CollectionList`'s select box
+  are still native inputs and do not use this yet.
+
 ## Calendar
 
 `CalendarView` (`@happyvertical/smrt-ui/calendar`) is a generic month grid

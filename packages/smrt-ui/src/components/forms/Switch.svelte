@@ -113,17 +113,17 @@ useControlRegistration(() => {
 });
 </script>
 
-<label class="switch switch--{size} {className}" class:switch--disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+<label class="switch switch--{size} {className}" class:switch--disabled={disabled} data-smrt-hit-target data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
   data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}>
-  {#if label && labelPosition === 'left'}<span>{label}</span>{/if}
+  {#if label && labelPosition === 'left'}<span class="switch__label">{label}</span>{/if}
   <span class="switch__control">
     <input bind:this={inputEl} id={resolvedId} type="checkbox" role="switch" {name} {value} {disabled} {required} checked={checked}
       aria-label={ariaLabel ?? label ?? formGroup?.().label} aria-describedby={formGroup?.().describedBy}
       aria-invalid={formGroup?.().invalid ? 'true' : undefined} onchange={handleChange} {...rest} />
     <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
   </span>
-  {#if label && labelPosition === 'right'}<span>{label}</span>{/if}
+  {#if label && labelPosition === 'right'}<span class="switch__label">{label}</span>{/if}
 </label>
 
 <style>
@@ -131,9 +131,13 @@ useControlRegistration(() => {
   .switch--disabled { opacity: .5; cursor: not-allowed; }
   /* Phones: the whole row (track and label) is at least a 44px touch target. */
   @media (max-width: 48rem) { .switch { min-block-size: 2.75rem; } }
-  .switch__control { position: relative; display: inline-flex; }
+  /* The 2.75rem-wide track gets a transparent 44px-tall ::before hit area (see Checkbox); the
+     track and label sit above every hit area. --smrt-control-hit-size resizes it (0px = off). */
+  .switch__control { --_hit: max(var(--smrt-control-hit-size, 2.75rem), 1.5rem); position: relative; display: inline-flex; }
+  .switch__control::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline: calc((100% - var(--_hit)) / 2); block-size: var(--_hit); margin-block-start: calc(var(--_hit) / -2); }
+  .switch__label { position: relative; z-index: 1; }
   input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  .switch__track { width: 2.75rem; height: 1.5rem; padding: 2px; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-highest); border: 1px solid var(--smrt-color-outline); transition: background var(--smrt-duration-short2); }
+  .switch__track { position: relative; z-index: 1; width: 2.75rem; height: 1.5rem; padding: 2px; border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-highest); border: 1px solid var(--smrt-color-outline); transition: background var(--smrt-duration-short2); }
   .switch__thumb { display: block; width: 1.125rem; height: 1.125rem; border-radius: 50%; background: var(--smrt-color-outline); transition: transform var(--smrt-duration-short2), background var(--smrt-duration-short2); }
   input:checked + .switch__track { background: var(--smrt-color-primary); border-color: var(--smrt-color-primary); }
   input:checked + .switch__track .switch__thumb { transform: translateX(1.25rem); background: var(--smrt-color-on-primary); }
