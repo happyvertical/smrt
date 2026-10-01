@@ -298,7 +298,7 @@ runs:
         sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
           --stage 'apt-get update' \
           --timeout-seconds 300 \
-          -- apt-get update && \
+          -- apt-get update -o APT::Update::Error-Mode=any && \
         sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
           --stage 'apt-get install' \
           --timeout-seconds 900 \

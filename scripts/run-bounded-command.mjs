@@ -71,13 +71,15 @@ if (commandStart === -1 || commandStart === arguments_.length - 1) {
       });
       child.once('close', (code, signal) => {
         clearTimeout(timeoutTimer);
-        clearTimeout(forceKillTimer);
         if (timedOut) {
           process.exitCode = 124;
         } else if (code !== 0) {
+          clearTimeout(forceKillTimer);
           const result = signal ? `signal ${signal}` : `exit code ${code}`;
           console.error(`::error::ONNX system dependency ${stage} failed with ${result}`);
           process.exitCode = 1;
+        } else {
+          clearTimeout(forceKillTimer);
         }
       });
     }

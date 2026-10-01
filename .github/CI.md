@@ -227,6 +227,8 @@ helper runs the already-selected absolute Node interpreter under the existing
 `sudo` boundary and terminates the command's owned root process group,
 escalating from `SIGTERM` to `SIGKILL`, so a stalled mirror cannot consume the
 rest of a job's ceiling.
+The update command sets `APT::Update::Error-Mode=any`, so partial index
+downloads fail closed rather than allowing an install from incomplete metadata.
 An update or install failure stops the action before project dependencies run;
 the verified `CI_ONNX_DEPS_READY=true` runner-image path remains untouched.
 
