@@ -60,6 +60,7 @@ export type {
   ShellFocusTool,
   ShellFocusToolSubject,
   ShellHotkeyBinding,
+  ShellNavGroup,
   ShellNavItem,
   ShellPanelConfig,
   ShellPanelDefaults,

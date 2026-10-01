@@ -307,3 +307,34 @@ for (const width of [320, 390, 1280]) {
     }
   });
 }
+
+test('grouped navigation keeps labelled keyboard-collapsible touch controls in the rail', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/?groups=1');
+  const nav = page.getByRole('navigation', {
+    name: 'Shop navigation',
+    exact: true,
+  });
+  const floor = nav.getByRole('group', { name: 'Floor', exact: true });
+  const summary = floor.locator('summary');
+  await expect(summary).toHaveAccessibleName('Floor');
+  const bounds = await summary.boundingBox();
+  expect(bounds!.width).toBeGreaterThanOrEqual(48);
+  expect(bounds!.height).toBeGreaterThanOrEqual(48);
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  await expect(floor.getByRole('link', { name: 'Orders' })).not.toBeVisible();
+  await page.keyboard.press('Space');
+  await expect(floor.getByRole('link', { name: 'Orders' })).toBeVisible();
+  await expect(
+    nav
+      .getByRole('group', { name: 'Office' })
+      .getByRole('link', { name: 'Billing' }),
+  ).toBeVisible();
+  const rail = await page
+    .locator('.smrt-admin-shell__edge--left')
+    .boundingBox();
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(rail!.x + rail!.width);
+});

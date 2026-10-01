@@ -58,6 +58,12 @@ export interface ShellFocusToolSubject {
   label?: string;
 }
 
+/** Labelled, collapsible group of tenant navigation links. */
+export interface ShellNavGroup {
+  heading: string;
+  items: ShellNavItem[];
+}
+
 export interface ShellNavItem {
   href: string;
   label: string;

@@ -486,3 +486,11 @@ an account permanently in the app bar (including with a custom `appBar`).
 canonical 48px target; omit density to inherit the theme, or choose
 `"comfortable"`. Account menus in the shell app bar open below the bar so the
 existing footer's default placement stays reachable on narrow screens.
+
+`TenantNav` accepts optional `groups: ShellNavGroup[]` (`{ heading, items }`)
+next to its existing flat `items`. Each group has a labelled `role="group"` and
+native disclosure summary; keyboard and touch users can collapse it even in the
+icon rail. Groups start open, preserve nested links and active-route markers,
+and inherit the navigation density. Supply `aria-label="Shop navigation"` for
+an instance-specific landmark name; omission uses the localized default.
+`ShellNavGroup` is exported from `@happyvertical/smrt-svelte/workspace`.

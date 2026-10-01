@@ -22,6 +22,10 @@ const config = {
 };
 const shell = createShellState({ config, storageKey: 'mobile-shell-fixture' });
 let signedOut = $state(false);
+const navGroups = [
+  { heading: 'Floor', items: [{ href: '#orders', label: 'Orders' }] },
+  { heading: 'Office', items: [{ href: '#billing', label: 'Billing' }] },
+];
 const navItems = [
   { href: '#queue', label: 'Queue' },
   { href: '#reports', label: 'Reports' },
@@ -36,8 +40,8 @@ const chips = Array.from({ length: 8 }, (_, index) => ({
 {#snippet appPanel()}<AppScopePanel appName="Mobile fixture" tenantName="mobile-qa@example.invalid" environment="Tenant 01234567-0123-4567-8901-012345678901" />{/snippet}
 
 {#snippet panel()}<p>Scrollable panel content</p>{/snippet}
-{#snippet navigation()}<TenantNav items={navItems} density="touch" onNavigate={() => shell.setPanelState('left', 'collapsed')} />{/snippet}
-{#snippet navigationRail()}<TenantNav items={navItems} density="touch" collapsed />{/snippet}
+{#snippet navigation()}<TenantNav items={navItems} groups={query.has('groups') ? navGroups : []} aria-label="Shop navigation" density="touch" onNavigate={() => shell.setPanelState('left', 'collapsed')} />{/snippet}
+{#snippet navigationRail()}<TenantNav items={navItems} groups={query.has('groups') ? navGroups : []} aria-label="Shop navigation" density="touch" collapsed />{/snippet}
 {#snippet account()}<WorkspaceAccountMenu userName="Dana" roleLabel="Welder" density="touch" onSignOut={() => { signedOut = true; }} />{/snippet}
 {#snippet systemBar()}<SystemStatusChips {chips} />{/snippet}
 <div data-theme="smrt" data-color-scheme="light">
