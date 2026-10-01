@@ -12,6 +12,7 @@ export { default as Card } from './Card.svelte';
 export { default as Chip } from './Chip.svelte';
 export { default as Disclosure } from './Disclosure.svelte';
 export { default as Dropdown, default as Menu } from './Dropdown.svelte';
+export { default as IconToggle } from './IconToggle.svelte';
 export { default as Pagination } from './Pagination.svelte';
 export { default as Popover } from './Popover.svelte';
 export { default as Skeleton } from './Skeleton.svelte';
