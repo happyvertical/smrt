@@ -16,7 +16,7 @@ export default defineConfig({
   },
   webServer: {
     command:
-      'pnpm exec vite --config e2e/vite.config.ts --host 127.0.0.1 --port 47851 --strictPort',
+      'pnpm exec vite build --config e2e/vite.config.ts && pnpm exec vite preview --config e2e/vite.config.ts --host 127.0.0.1 --port 47851 --strictPort',
     cwd: new URL('..', import.meta.url).pathname,
     url: 'http://127.0.0.1:47851',
     reuseExistingServer: false,
