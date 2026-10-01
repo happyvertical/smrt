@@ -4,7 +4,7 @@ document.body.append(host);
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode');
 const view = renderOpenAiForm(host, {
-  schema: mode === 'array' ? {
+  schema: mode === 'roundtrip' ? { type: 'object', properties: { values: { type: 'array', title: 'Values', items: { type: 'string' }, default: params.get('value') === 'newline' ? ['a\nb'] : params.get('value') === 'empty' ? [''] : ['a'.repeat(3000), 'b'.repeat(3000)] } } } : mode === 'empty-choice' ? { type: 'object', properties: { choice: { type: 'string', title: 'Choice', ...(params.has('oneOf') ? { oneOf: [{const: '', title: 'Empty choice'}, {const: 'x', title: 'X'}] } : { enum: ['', 'x'], enumNames: ['Empty choice', 'X'] }), ...(params.has('default') ? {default: ''} : {}) }, text: {type: 'string', title: 'Text'} } } : mode === 'array' ? {
     type: 'object',
     required: params.has('required') ? ['values'] : [],
     properties: {
