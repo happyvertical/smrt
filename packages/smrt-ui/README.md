@@ -652,3 +652,17 @@ row colspans follow the retained columns. If keepVisible columns exceed the
 budget, all remain visible and share the available width. Custom cell/header
 snippets should fit their cells. Default `responsiveMode="scroll"` preserves
 existing horizontal scrolling.
+
+ConfirmDialog opens a native modal dialog above existing Modal and Drawer surfaces.
+Its `message` accepts plain text or a Svelte snippet (including lists and emphasis);
+each instance owns its accessible title and description ids. Escape and backdrop
+clicks request `oncancel`; the parent controls `open`. The opener regains focus
+on close. Buttons remain disabled while `loading`, and Escape stays available.
+The native top layer replaces the previous fixed div; confirmation now stacks
+above an already open modal and makes its background inert. Escape is scoped to
+the active dialog rather than handled globally. Existing `open`, `loading` and
+action callbacks retain their controlled-state contracts.
+
+Browser feedback contracts run with `pnpm --filter @happyvertical/smrt-ui test:e2e`
+(after installing Playwright Chromium, or setting
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a local Chromium executable).

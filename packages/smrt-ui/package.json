@@ -116,6 +116,7 @@
     "generate:themes": "tsx scripts/generate-theme-styles.ts",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
