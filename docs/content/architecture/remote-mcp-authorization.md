@@ -7,14 +7,16 @@ put a SMRT MCP HTTP surface on the public internet. SMRT currently supplies the
 application-scoped `/api/mcp` stateless Streamable HTTP endpoint and a local
 stdio bridge. The REST-shaped `/api/mcp/tools` and `/api/mcp/call` adapters are
 deprecated compatibility routes for one release. SMRT does **not** supply an
-OAuth authorization server. Terminate OAuth at the application gateway and
-populate the authenticated SvelteKit principal only after token validation.
+OAuth authorization server. Use an application gateway or the server-only JWT
+adapter below to validate tokens before supplying an authenticated principal.
+The issuer remains operator-owned; resolve current application membership and
+tenant authority on every request.
 
 ## Authorization-server contract
 
-Use one stable HTTPS issuer identifier per authorization server. The gateway
+Use one stable HTTPS issuer identifier per authorization server. The application gateway or server-only JWT adapter
 must validate token signature, `iss`, audience/resource, expiry, and scopes
-before a request reaches the MCP route. Never accept a token minted for another
+before protected MCP operations run. Never accept a token minted for another
 issuer or resource.
 
 The authorization server metadata must:
@@ -58,10 +60,12 @@ fallback includes `application_type`, `grant_types`, `response_types`, and
 
 For the application MCP route:
 
-1. Protect `/api/mcp` at the gateway. During the one-release compatibility
+1. Protect `/api/mcp` with the gateway or server-only JWT adapter. During the one-release compatibility
    window, apply the same policy to `/api/mcp/tools` and `/api/mcp/call`.
-2. Validate the bearer token at the gateway and populate `event.locals.user`,
-   `tenantId`, and permissions from the validated principal on every request.
+2. Validate the bearer token at the selected boundary and resolve fresh
+   application membership, tenant, and permissions on every request. Gateway
+   integrations populate `event.locals.user`; the JWT adapter passes its trusted
+   mapped principal to the route as shown below.
    `mountMcpRoute` uses that principal for discovery and calls; header presence
    is not authentication.
 3. Keep `publicToolPatterns` empty unless anonymous read access is deliberate.
@@ -101,7 +105,7 @@ control. Never place client secrets or bearer tokens in the repository.
 `@happyvertical/smrt-app-mcp/auth` supplies `createMcpResourceAuth`. It verifies
 JWT access tokens using the configured issuer's JWKS with an explicit RS256 or
 ES256 allow-list, exact issuer and resource audience, required subject and expiry,
-`nbf`, and required scopes. Its default token type is `at+jwt` (RFC 9068). Select
+required scopes, and `nbf` when present. `nbf` is optional. Its default token type is `at+jwt` (RFC 9068). Select
 `tokenType: 'JWT'` only when the configured provider uses that type for access
 tokens; ensure that provider cannot issue an ID token with this resource's
 audience. Opaque access tokens and introspection are not implemented by this
