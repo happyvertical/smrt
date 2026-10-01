@@ -19,6 +19,7 @@ export type {
   Toast,
   ToastAction,
   Toaster,
+  ToasterOptions,
   ToastInput,
   ToastVariant,
 } from './toast.js';

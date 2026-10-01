@@ -666,3 +666,14 @@ action callbacks retain their controlled-state contracts.
 Browser feedback contracts run with `pnpm --filter @happyvertical/smrt-ui test:e2e`
 (after installing Playwright Chromium, or setting
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a local Chromium executable).
+
+ToastViewport follows the topmost native modal dialog and restores its original
+host when all modals close. Its live region, dismiss buttons and actions stay
+interactive inside Modal, Drawer and ConfirmDialog. Hover and focus independently
+pause auto-dismiss, then resume the remaining duration. Configure
+`createToaster({ successDuration: 0 })` to keep success records until dismissal;
+per-toast `duration: 0` remains supported. `inset` accepts a CSS length, `anchor`
+accepts a content-region element, and `top-center`/`bottom-center` positions center
+the viewport within that region (or the window). Anchor geometry follows resize
+and scroll. Custom injected Toaster implementations may optionally implement
+`pause(id, reason)` and `resume(id, reason)` to support interaction pausing.
