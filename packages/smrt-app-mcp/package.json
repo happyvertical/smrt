@@ -13,6 +13,10 @@
     "./sveltekit": {
       "types": "./dist/sveltekit.d.ts",
       "import": "./dist/sveltekit.js"
+    },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.js"
     }
   },
   "files": [
@@ -59,6 +63,7 @@
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@modelcontextprotocol/server": "2.0.0",
+    "jose": "^6.2.12",
     "parse5": "8.0.1"
   },
   "devDependencies": {

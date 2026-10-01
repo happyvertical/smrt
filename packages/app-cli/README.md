@@ -207,3 +207,10 @@ pnpm --filter @happyvertical/smrt-app-cli build
 
 Maintainer patterns and authentication invariants are documented in
 [`AGENTS.md`](./AGENTS.md).
+
+For remote deployments with a known OAuth issuer, set
+`CliConfigContext.expectedCredentialIssuer` to its exact identifier. Stored
+credentials must match both server and issuer; environment credentials also
+require `${PREFIX}_TOKEN_ISSUER`. This does not replace the terminal device
+flow with browser OAuth. See the
+[remote authorization contract](../../docs/content/architecture/remote-mcp-authorization.md).

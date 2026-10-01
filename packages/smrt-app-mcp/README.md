@@ -12,8 +12,11 @@ For piping a deployed app's MCP surface to a local stdio MCP client, see `@happy
 
 For public deployments, follow the
 [remote MCP authorization contract](../../docs/content/architecture/remote-mcp-authorization.md).
-This package trusts the principal supplied by the application adapter; it does
-not implement an OAuth authorization server or validate bearer tokens itself.
+The server trusts the principal supplied by the application adapter. Validate
+bearer tokens at an application gateway or with the server-only `./auth` JWT
+adapter, then resolve fresh application membership and tenant authority on every
+request. The OAuth issuer remains operator-owned; this package does not implement
+an OAuth authorization server.
 
 ```ts
 // src/lib/server/mcp.ts
@@ -225,3 +228,12 @@ when the advertised name is a canonical alias. Guards keyed by either the alias
 or original tool name run before both direct and task dispatch. Authored workflows
 retain their explicit names and effect policy; catalogs containing authored
 workflows keep private cache scope because they have no generated tenant identity.
+
+## Remote JWT authorization
+
+The server-only `@happyvertical/smrt-app-mcp/auth` entry exports
+`createMcpResourceAuth` for protected-resource metadata, bearer challenges and
+JWT verification against a configured existing issuer. A required application
+callback rechecks actor and active tenant membership per request. See the
+[remote authorization contract](../../docs/content/architecture/remote-mcp-authorization.md)
+for route wiring, local/hosted profiles and the explicit JWT revocation limits.
