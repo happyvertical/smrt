@@ -180,13 +180,14 @@ function addFiles(newFiles: File[]) {
   }
 
   // Validate max size
-  if (maxSize) {
-    const oversized = filtered.filter((f) => f.size > maxSize!);
+  const limit = maxSize;
+  if (limit) {
+    const oversized = filtered.filter((f) => f.size > limit);
     if (oversized.length > 0) {
       errorMessages.push(
-        `${oversized.length} file(s) exceed the maximum size of ${formatFileSize(maxSize)}`,
+        `${oversized.length} file(s) exceed the maximum size of ${formatFileSize(limit)}`,
       );
-      filtered = filtered.filter((f) => f.size <= maxSize!);
+      filtered = filtered.filter((f) => f.size <= limit);
     }
   }
 
