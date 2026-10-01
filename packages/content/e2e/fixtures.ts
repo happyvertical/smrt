@@ -1,7 +1,15 @@
 import { expect, test as base, type Page } from '@playwright/test';
 import { ProfileCollection, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
 import { getDatabase } from '@happyvertical/sql';
-import { SessionService, UserCollection } from '@happyvertical/smrt-users';
+import {
+  MembershipCollection,
+  PermissionCollection,
+  RoleCollection,
+  RolePermissionCollection,
+  SessionService,
+  TenantCollection,
+  UserCollection,
+} from '@happyvertical/smrt-users';
 
 const databaseUrl = '.smrt/e2e-playwright.db';
 const baseURL = 'http://127.0.0.1:4173';
@@ -9,6 +17,19 @@ const testIdentity = {
   email: 'content-browser@example.test',
   name: 'Content browser test user',
 } as const;
+
+const operationPermissions = [
+  'contents.create',
+  'contents.update',
+  'contentgovernancepolicies.create',
+  'contentgovernanceprofiles.create',
+  'contentgovernanceassignments.create',
+  'contentcontributiontypes.create',
+  'contentcontributors.create',
+  'contentcontributions.submitWebContribution',
+  'contentcontributions.requestChangesAction',
+  'contentcontributions.approveAction',
+] as const;
 
 async function createAuthenticatedSession() {
   const db = await getDatabase({ type: 'sqlite', url: databaseUrl });
@@ -33,8 +54,40 @@ async function createAuthenticatedSession() {
       profileId: profile.id as string,
     }));
 
+  const tenants = await TenantCollection.create({ db });
+  const tenant = await tenants.create({
+    slug: 'content-browser',
+    name: 'Content browser QA',
+  });
+  const roles = await RoleCollection.create({ db });
+  const role = await roles.create({
+    tenantId: tenant.id,
+    slug: 'content-browser-editor',
+    name: 'Content browser editor',
+  });
+  const permissions = await PermissionCollection.create({ db });
+  const rolePermissions = await RolePermissionCollection.create({ db });
+  for (const slug of operationPermissions) {
+    const permission = await permissions.findOrCreate(slug);
+    await rolePermissions.addPermission(
+      role.id as string,
+      permission.id as string,
+    );
+  }
+  const memberships = await MembershipCollection.create({ db });
+  await memberships.create({
+    userId: user.id,
+    tenantId: tenant.id,
+    roleId: role.id,
+  });
   const sessions = await SessionService.create({ db });
-  const sessionId = await sessions.createSession(user.id as string);
+  const sessionId = await sessions.createSession(
+    user.id as string,
+    tenant.id as string,
+  );
+  const context = await sessions.loadSessionContext(sessionId);
+  expect(context?.tenantId).toBe(tenant.id);
+  expect(context?.permissions.sort()).toEqual([...operationPermissions].sort());
 
   return {
     sessionId,
@@ -50,12 +103,14 @@ type ContentFixtures = {
 
 type ContentWorkerFixtures = {
   sessionId: string;
+  unprivilegedSessionId: string;
 };
 
 /**
  * Each browser test receives a real SMRT session for a least-privilege test
- * user. The fixture creates no tenant membership, role, or permission grant:
- * the exercised content endpoints require an authenticated principal only.
+ * user in a dedicated tenant with an active membership and custom role. Only
+ * the exact mutation operations exercised below are granted; no admin bypass.
+ * A tenant-less session preserves authenticated-without-permission coverage.
  */
 export const test = base.extend<ContentFixtures, ContentWorkerFixtures>({
   sessionId: [
@@ -71,6 +126,26 @@ export const test = base.extend<ContentFixtures, ContentWorkerFixtures>({
         await use(session.sessionId);
       } finally {
         await session.cleanup();
+      }
+    },
+    { scope: 'worker' },
+  ],
+
+  unprivilegedSessionId: [
+    async ({ sessionId }, use) => {
+      const db = await getDatabase({ type: 'sqlite', url: databaseUrl });
+      const sessions = await SessionService.create({ db });
+      const context = await sessions.loadSessionContext(sessionId);
+      const unprivileged = await sessions.createSession(
+        context!.user.id as string,
+      );
+      expect(
+        (await sessions.loadSessionContext(unprivileged))?.permissions,
+      ).toEqual([]);
+      try {
+        await use(unprivileged);
+      } finally {
+        await sessions.destroySession(unprivileged);
       }
     },
     { scope: 'worker' },
