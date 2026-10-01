@@ -100,14 +100,18 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
   }
   .count {
     position: absolute;
+    z-index: 2;
     top: -0.3rem;
     right: -0.3rem;
     box-sizing: border-box;
     min-width: 1.15rem;
     padding: 0 0.3rem;
     border-radius: var(--smrt-radius-full, 999px);
-    background: var(--smrt-color-inverse-surface, var(--smrt-color-on-surface));
-    color: var(--smrt-color-inverse-on-surface, var(--smrt-color-surface));
+    /* Theme tokens only: the inverse surface is near-white in dark themes. A
+       surface-coloured ring keeps the badge apart from a pressed (tinted) button. */
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    box-shadow: 0 0 0 2px var(--smrt-color-surface);
     font-size: 0.68rem;
     font-weight: 700;
     line-height: 1.15rem;
