@@ -628,6 +628,23 @@ describe('createMediaRecorderCapture', () => {
     expect((error as DictationError).dictationKind).toBe('too-long');
   });
 
+  it('stops waiting when the browser never fires the recorder stop event', async () => {
+    vi.useFakeTimers();
+    stubMedia();
+    const capture = createMediaRecorderCapture({});
+    await capture.start();
+    const recorder = FakeMediaRecorder.last!;
+    recorder.stop = () => {
+      recorder.state = 'inactive';
+    };
+    recorder.emitData(42);
+    const pending = capture.stop();
+    await vi.advanceTimersByTimeAsync(3000);
+    const recording = await pending;
+    expect(recording.audio.size).toBe(42);
+    vi.useRealTimers();
+  });
+
   it('reports a browser that cannot record', async () => {
     vi.stubGlobal('MediaRecorder', undefined);
     const capture = createMediaRecorderCapture({});

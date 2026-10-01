@@ -87,10 +87,13 @@ const name = $derived(count === undefined ? label : `${label} (${count})`);
   .icon-toggle:hover:not(:disabled) {
     background: var(--smrt-color-surface-container-high, var(--smrt-color-surface-container));
   }
+  /* Pressed is not told by colour alone (WCAG 1.4.1): it also draws a 2px ring
+     in its text colour, where unpressed has a 1px outline. */
   .icon-toggle.pressed {
     border-color: transparent;
     background: var(--smrt-color-primary-container, var(--smrt-color-secondary-container));
     color: var(--smrt-color-on-primary-container, var(--smrt-color-on-secondary-container));
+    box-shadow: inset 0 0 0 2px currentColor;
   }
   /* A toned toggle is neutral until pressed, then wears its tone. */
   .icon-toggle.toned {

@@ -85,6 +85,9 @@ export class DictationError extends Error {
   }
 }
 
+/** How long `stop()` waits for the recorder's `stop` event. */
+const STOP_EVENT_TIMEOUT_MS = 3000;
+
 function captureError(kind: CaptureErrorKind, message: string): DictationError {
   return new DictationError(kind, message);
 }
@@ -217,7 +220,17 @@ export const createMediaRecorderCapture: DictationAudioCaptureFactory = (
         throw captureError('unsupported', 'Recording never started.');
       }
       halt();
-      await stopped;
+      // A browser that never fires the recorder's `stop` event must not leave
+      // the field stuck "writing it down": give up waiting and use the audio
+      // that has arrived.
+      let giveUp: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        stopped,
+        new Promise<void>((resolve) => {
+          giveUp = setTimeout(resolve, STOP_EVENT_TIMEOUT_MS);
+        }),
+      ]);
+      if (giveUp) clearTimeout(giveUp);
       const type =
         recorder.mimeType || pickDictationMimeType(options.mimeTypes);
       const recording: DictationRecording = {

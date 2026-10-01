@@ -24,3 +24,5 @@ away. New error kinds with plain messages: `too-long`, `not-transcribed`,
 `AssistantComposer` and `AssistantDock` take a `transcribe` prop for the
 same fallback; with only `transcribe` the microphone shows and always
 records.
+
+`stop()` stops waiting for the recorder's `stop` event after 3 seconds and returns the audio that arrived, so a browser that never fires it cannot leave the field stuck.

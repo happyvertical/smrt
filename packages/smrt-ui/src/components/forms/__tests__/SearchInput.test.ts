@@ -67,6 +67,35 @@ describe('SearchInput', () => {
     expect(screen.getByRole('searchbox')).toHaveValue('parks');
   });
 
+  it('inside a host form, Enter searches and never submits the host form', async () => {
+    const onsearch = vi.fn();
+    const onsubmit = vi.fn((event: Event) => event.preventDefault());
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const host = document.createElement('form');
+    host.addEventListener('submit', onsubmit);
+    document.body.append(host);
+    render(SearchInput, { target: host, props: { value: '', onsearch } });
+    expect(host.querySelector('form')).toBeNull();
+    await user.type(screen.getByRole('searchbox'), 'roads{Enter}');
+    expect(onsearch).toHaveBeenCalledWith('roads');
+    expect(onsubmit).not.toHaveBeenCalled();
+    host.remove();
+  });
+
+  it('a value the host normalized differently does not swallow a later one', async () => {
+    const onsearch = vi.fn();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const view = render(SearchInput, { props: { value: '', onsearch } });
+    await user.type(screen.getByRole('searchbox'), 'Roads{Enter}');
+    expect(onsearch).toHaveBeenCalledWith('Roads');
+    // The host applies its own normalization, then later navigates to the
+    // exact text the box once sent: the box must follow both.
+    await view.rerender({ value: 'roads', onsearch });
+    expect(screen.getByRole('searchbox')).toHaveValue('roads');
+    await view.rerender({ value: 'Roads', onsearch });
+    expect(screen.getByRole('searchbox')).toHaveValue('Roads');
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(SearchInput, {
       props: { value: 'roads', onsearch: vi.fn() },

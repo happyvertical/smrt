@@ -58,6 +58,10 @@ $effect(() => {
     sent = null;
     return;
   }
+  // Any other applied value supersedes what this box last sent (the host may
+  // have normalized it, or the search failed): never let a stale `sent`
+  // swallow a later value.
+  sent = null;
   text = next;
 });
 
@@ -75,7 +79,15 @@ function search(raw: string) {
   const query = normalized(raw);
   if (query === normalized(value)) return;
   sent = query;
-  void onsearch(query);
+  // A failed search is not the applied one.
+  const forget = () => {
+    if (sent === query) sent = null;
+  };
+  try {
+    void Promise.resolve(onsearch(query)).catch(forget);
+  } catch {
+    forget();
+  }
 }
 
 function handleInput() {
@@ -83,7 +95,10 @@ function handleInput() {
   timer = setTimeout(() => search(text), debounceMs);
 }
 
-function handleSubmit(event: SubmitEvent) {
+// Enter searches at once. The box is not a <form>: inside a host form a
+// nested form is invalid and Enter would submit the outer one.
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.isComposing) return;
   event.preventDefault();
   search(text);
 }
@@ -97,7 +112,7 @@ function clear() {
 onDestroy(cancel);
 </script>
 
-<form class="search-input {className}" role="search" onsubmit={handleSubmit}>
+<div class="search-input {className}" role="search">
   <label class="search-input__label" for={inputId}>{label}</label>
   <span class="search-input__icon" aria-hidden="true">
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
@@ -112,13 +127,14 @@ onDestroy(cancel);
     class="search-input__field"
     bind:value={text}
     oninput={handleInput}
+    onkeydown={handleKeydown}
   />
   {#if text}
     <button type="button" class="search-input__clear" aria-label={clearLabel} onclick={clear}>
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
     </button>
   {/if}
-</form>
+</div>
 
 <style>
   .search-input {
