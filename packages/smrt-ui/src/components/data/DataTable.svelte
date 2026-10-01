@@ -2267,7 +2267,7 @@ $effect(() => {
       /* The header already names the cell for assistive technology. */
       content: attr(data-label) / '';
       display: block;
-      font-size: var(--smrt-typescale-label-small-size, 0.75rem);
+      font-size: var(--smrt-typography-label-small-size, 0.75rem);
       font-weight: 600;
       color: var(--smrt-color-on-surface-variant, #4b5563);
     }

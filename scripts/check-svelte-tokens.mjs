@@ -338,6 +338,7 @@ const OVERRIDE_HOOKS = new Set([
   '--smrt-admin-shell-scrollbar-thumb-hover',
   '--smrt-admin-shell-scrollbar-track',
   '--smrt-shell-title-font-family',
+  '--smrt-control-hit-size',
   '--smrt-popover-panel-padding',
   '--smrt-popover-panel-width',
 ]);
