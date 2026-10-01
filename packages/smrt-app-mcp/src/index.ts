@@ -34,6 +34,8 @@ export {
 } from './errors.js';
 export {
   createMcpProtocolServer,
+  createMcpProtocolServerForRequest,
+  type McpProtocolRequestOptions,
   type McpProtocolServerOptions,
 } from './protocol.js';
 export {
