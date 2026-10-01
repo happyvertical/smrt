@@ -17,6 +17,8 @@ export interface Props {
   showTime?: boolean;
   /** Locale for formatting (defaults to en-CA) */
   locale?: string;
+  /** IANA zone for timestamps and relative calendar-day boundaries. */
+  timeZone?: string;
   /** Optional CSS class */
   class?: string;
 }
@@ -27,15 +29,22 @@ const {
   fallback = 'N/A',
   showTime = false,
   locale = 'en-CA',
+  timeZone,
   class: className = '',
 }: Props = $props();
 
-// Parse the date
+const isCalendarDate = $derived(
+  typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date),
+);
+
+// Bare dates denote a calendar day, never a browser-local instant.
 const parsedDate = $derived.by(() => {
   if (date === null || date === undefined) return null;
   if (date instanceof Date) return date;
   const d = new Date(date);
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (Number.isNaN(d.getTime())) return null;
+  if (isCalendarDate && d.toISOString().slice(0, 10) !== date) return null;
+  return d;
 });
 
 // Format options for Intl.DateTimeFormat
@@ -45,8 +54,52 @@ const dateOptions: Record<string, Intl.DateTimeFormatOptions> = {
   long: { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' },
 };
 
-// Format relative time
+// Convert zone-local Gregorian dates to ordinals so DST does not alter day counts.
+function calendarDay(d: Date, zone?: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: zone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(d);
+  const part = (type: string) =>
+    Number(parts.find((entry) => entry.type === type)?.value);
+  const midnight = new Date(0);
+  midnight.setUTCFullYear(part('year'), part('month') - 1, part('day'));
+  return midnight.getTime() / 86400000;
+}
+
+function formatCalendarRelative(d: Date): string {
+  const now = new Date();
+  const days =
+    calendarDay(now, timeZone) -
+    (isCalendarDate ? d.getTime() / 86400000 : calendarDay(d, timeZone));
+  if (days === 0) {
+    if (isCalendarDate || d > now) return 'today';
+    const minutes = Math.floor((now.getTime() - d.getTime()) / 60000);
+    if (minutes === 0) return 'just now';
+    return minutes < 60
+      ? `${minutes}m ago`
+      : `${Math.floor(minutes / 60)}h ago`;
+  }
+  if (days === 1) return 'yesterday';
+  if (days === -1) return 'tomorrow';
+  const count = Math.abs(days);
+  const [amount, unit] =
+    count < 7
+      ? [count, 'days']
+      : count < 30
+        ? [Math.floor(count / 7), 'weeks']
+        : count < 365
+          ? [Math.floor(count / 30), 'months']
+          : [Math.floor(count / 365), 'years'];
+  return days < 0 ? `in ${amount} ${unit}` : `${amount} ${unit} ago`;
+}
+
+// Preserve duration-based relative defaults for instant inputs without a zone.
 function formatRelative(d: Date): string {
+  if (timeZone !== undefined || isCalendarDate)
+    return formatCalendarRelative(d);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffSec = Math.floor(diffMs / 1000);
@@ -83,21 +136,30 @@ function formatRelative(d: Date): string {
 const formatted = $derived.by(() => {
   if (!parsedDate) return fallback;
 
-  if (format === 'relative') {
-    return formatRelative(parsedDate);
-  }
+  try {
+    if (format === 'relative') return formatRelative(parsedDate);
 
-  const options = { ...dateOptions[format] };
-  if (showTime) {
-    options.hour = 'numeric';
-    options.minute = '2-digit';
+    const options = {
+      ...dateOptions[format],
+      timeZone: isCalendarDate ? 'UTC' : timeZone,
+    };
+    if (showTime && !isCalendarDate) {
+      options.hour = 'numeric';
+      options.minute = '2-digit';
+    }
+    return new Intl.DateTimeFormat(locale, options).format(parsedDate);
+  } catch (error) {
+    if (error instanceof RangeError) return fallback;
+    throw error;
   }
-
-  return new Intl.DateTimeFormat(locale, options).format(parsedDate);
 });
 
 // ISO string for datetime attribute
-const isoString = $derived(parsedDate?.toISOString() ?? '');
+const isoString = $derived(
+  isCalendarDate && parsedDate
+    ? String(date)
+    : (parsedDate?.toISOString() ?? ''),
+);
 </script>
 
 {#if parsedDate}

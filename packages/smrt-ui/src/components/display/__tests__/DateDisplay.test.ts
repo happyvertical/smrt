@@ -8,7 +8,7 @@
  * offsets from `now`. Tests assert the real API from DateDisplay.svelte.
  */
 import { render, screen } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import DateDisplay from '../DateDisplay.svelte';
 
@@ -33,6 +33,105 @@ const LONG = {
 } as const;
 
 describe('DateDisplay', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    'America/Edmonton',
+    'UTC',
+    'Asia/Tokyo',
+  ])('formats timestamp dates and times in %s', (timeZone) => {
+    const instant = '2026-10-01T04:00:00Z';
+    const { container } = render(DateDisplay, {
+      props: { date: instant, timeZone, showTime: true },
+    });
+    expect(container.querySelector('time')?.textContent?.trim()).toBe(
+      expected(new Date(instant), {
+        ...MEDIUM,
+        timeZone,
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+    );
+  });
+
+  it.each([
+    'America/Edmonton',
+    'Asia/Tokyo',
+  ])('keeps a bare calendar date in %s', (timeZone) => {
+    const { container } = render(DateDisplay, {
+      props: { date: '2026-09-30', timeZone },
+    });
+    expect(container.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-09-30',
+    );
+    expect(container.querySelector('time')?.textContent?.trim()).toBe(
+      expected(new Date('2026-09-30T00:00:00Z'), {
+        ...MEDIUM,
+        timeZone: 'UTC',
+      }),
+    );
+  });
+
+  it('keeps date-only values stable in the default browser zone', () => {
+    render(DateDisplay, { props: { date: '2026-09-30' } });
+    expect(
+      screen.getByText(
+        expected(new Date('2026-09-30T00:00:00Z'), {
+          ...MEDIUM,
+          timeZone: 'UTC',
+        }),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    '2026-02-30',
+    '2025-02-29',
+    '2026-13-01',
+  ])('rejects impossible calendar date %s', (date) => {
+    render(DateDisplay, { props: { date, fallback: 'Invalid date' } });
+    expect(screen.getByText('Invalid date')).toBeInTheDocument();
+  });
+
+  it('accepts a leap day', () => {
+    const { container } = render(DateDisplay, {
+      props: { date: '2028-02-29' },
+    });
+    expect(container.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2028-02-29',
+    );
+  });
+
+  it.each([
+    ['2026-10-01T06:30:00Z', '2026-10-01T05:30:00Z', 'yesterday'],
+    ['2026-10-01T05:30:00Z', '2026-10-01T06:30:00Z', 'tomorrow'],
+    ['2026-10-01T06:30:00Z', '2026-10-01T07:30:00Z', 'today'],
+    ['2026-03-09T06:30:00Z', '2026-03-08T07:30:00Z', 'yesterday'],
+    ['2026-10-01T05:30:00Z', '2026-09-30', 'today'],
+    ['2026-10-01T05:30:00Z', '2026-10-01', 'tomorrow'],
+    ['2026-10-01T05:30:00Z', '2026-09-29', 'yesterday'],
+  ])('uses calendar boundaries for %s → %s', (now, date, text) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(now));
+    render(DateDisplay, {
+      props: { date, format: 'relative', timeZone: 'America/Edmonton' },
+    });
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  it('uses the fallback for an invalid explicit zone', () => {
+    render(DateDisplay, {
+      props: {
+        date: '2026-09-30T00:00:00Z',
+        timeZone: 'not/a/zone',
+        fallback: 'Invalid date',
+      },
+    });
+    expect(screen.getByText('Invalid date')).toBeInTheDocument();
+  });
+
   // Use a fixed local-noon date so date-part is timezone-stable.
   const sample = new Date(2024, 0, 15, 12, 0, 0); // 15 Jan 2024, local noon
 

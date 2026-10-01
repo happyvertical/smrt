@@ -45,6 +45,21 @@ Svelte-free `/data-surface` entry exposes the registry contracts and shared
 protocol limits for server adapters. The package root remains a compatibility
 barrel.
 
+### Calendar dates and shop time
+
+`DateDisplay` accepts `timeZone` (an IANA id such as `America/Edmonton`) for
+instant inputs (`Date`, numeric timestamps, and timestamp strings). Omit it to
+keep browser-local absolute formatting and the existing duration-based relative
+format. With an explicit zone, relative today/yesterday/tomorrow boundaries use
+calendar days in that zone, including daylight saving transitions.
+
+A bare `YYYY-MM-DD` string always denotes that calendar date, independent of the
+viewer or shop zone. It formats in UTC, retains a date-only `datetime` attribute,
+and ignores `showTime` because it contains no time. Relative calendar-date
+labels compare it with today's date in the supplied zone (or the browser zone).
+Impossible calendar dates and invalid explicit zones render `fallback` rather
+than throwing during formatting.
+
 ### Currency display
 
 `CurrencyDisplay` accepts ISO 4217 codes as a public `string` prop so persisted
