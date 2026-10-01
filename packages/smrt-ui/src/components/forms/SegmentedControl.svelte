@@ -125,8 +125,16 @@ $effect(() => {
   let form: HTMLFormElement | null = null;
   let disposed = false;
   const reset = (event: Event) => {
-    queueMicrotask(async () => {
-      if (event.defaultPrevented || !rootEl?.isConnected) return;
+    const valueAtDispatch = value;
+    // Native event dispatch may checkpoint microtasks between listeners; wait
+    // for the next task so a later form listener can still cancel the reset.
+    setTimeout(async () => {
+      if (
+        event.defaultPrevented ||
+        !rootEl?.isConnected ||
+        !Object.is(value, valueAtDispatch)
+      )
+        return;
       const resetOption = options.find(
         (option) => option.value === initialValue && !option.disabled,
       );
