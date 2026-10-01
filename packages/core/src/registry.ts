@@ -482,6 +482,24 @@ function resolveManifestByUpwardSearch(
 }
 
 /**
+ * The absolute filesystem path behind a Vite dev-server URL
+ * (`http(s)://host/@fs/<absolute path>`), or `null` for any other string.
+ */
+function viteFsUrlToPath(urlString: string): string | null {
+  if (!/^https?:\/\//i.test(urlString)) return null;
+  let pathname: string;
+  try {
+    pathname = new URL(urlString).pathname;
+  } catch {
+    return null;
+  }
+  if (!pathname.startsWith('/@fs/')) return null;
+  const decoded = decodeURIComponent(pathname.slice('/@fs'.length));
+  // Windows: `/C:/dir/file` -> `C:/dir/file`.
+  return /^\/[A-Za-z]:\//.test(decoded) ? decoded.slice(1) : decoded;
+}
+
+/**
  * Central registry for all SMRT objects
  *
  * Uses globalThis for cross-module state sharing, ensuring all module instances
@@ -1778,8 +1796,15 @@ export class ObjectRegistry {
       // self-registration silently no-op and reintroduce #1132.
       const urlString =
         manifestUrl instanceof URL ? manifestUrl.href : manifestUrl;
+      // Under a Vite dev server (and vitest's browser-like environments)
+      // `import.meta.url` is `http://host/@fs/<absolute path>`, not a `file:`
+      // URL; `fileURLToPath` rejects it ("The URL must be of scheme file"), so
+      // read the absolute path the dev server is serving.
+      const devServerPath = viteFsUrlToPath(urlString);
       let filePath: string;
-      if (manifestUrl instanceof URL) {
+      if (devServerPath) {
+        filePath = devServerPath;
+      } else if (manifestUrl instanceof URL) {
         filePath = builtins.url.fileURLToPath(manifestUrl);
       } else if (urlString.startsWith('file:')) {
         filePath = builtins.url.fileURLToPath(urlString);

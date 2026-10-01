@@ -185,6 +185,32 @@ describe('ObjectRegistry.registerPackageManifest', () => {
     void FixtureLateWidget;
   });
 
+  it('reads a manifest named by a Vite dev-server /@fs/ URL', () => {
+    // Under vitest's browser-like environments and `vite dev`, the register
+    // shim's import.meta.url is http://host/@fs/<absolute path>, not file:.
+    const packageName = '@happyvertical/smrt-self-register-fixture-devserver';
+    const manifestPath = writeManifest(tempRoot, packageName, {
+      FixtureDevServerWidget: {
+        decoratorConfig: {
+          tableName: 'fixture_devserver_widgets',
+          api: false,
+          cli: false,
+          mcp: false,
+        },
+        fields: { sku: { type: 'text' } },
+      },
+    });
+    ObjectRegistry.clearDiagnostics();
+
+    const result = ObjectRegistry.registerPackageManifest(
+      new URL(`http://localhost:3000/@fs${manifestPath}`),
+    );
+
+    expect(result.loaded).toBe(true);
+    expect(result.packageName).toBe(packageName);
+    expect(result.objectsRegistered).toBe(1);
+  });
+
   it('silently no-ops when the manifest file is missing', () => {
     const missingPath = join(tempRoot, 'does-not-exist.json');
     ObjectRegistry.clearDiagnostics();
