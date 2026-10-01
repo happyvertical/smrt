@@ -15,7 +15,8 @@ const mockScaffoldMcpAppsPackage = vi.fn();
 const mockConfigureMcpAppsConsumerRegistry = vi.fn();
 const mockAddMcpAppsRuntime = vi.fn();
 
-vi.mock('./mcp-apps-packaging.js', () => ({
+vi.mock('./mcp-apps-packaging.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./mcp-apps-packaging.js')>()),
   addMcpAppsRuntime: (...args: any[]) => mockAddMcpAppsRuntime(...args),
   configureMcpAppsConsumerRegistry: (...args: any[]) =>
     mockConfigureMcpAppsConsumerRegistry(...args),
