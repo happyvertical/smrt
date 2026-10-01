@@ -1,5 +1,171 @@
 # @happyvertical/smrt-chat
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: Choice offers can arrive a little at a time. A source's `offer` may return
+  `pending: { message, expected, fill(update, signal) }`: the cards show the
+  plain progress line and "Making…" placeholders, `fill` adds options as they
+  finish, and the person can pick any that arrived. The model is told right away
+  (`stillMaking`, `progress`) so it can say how long it takes. A failure is shown
+  in plain words (a note under the cards, or the new `unavailable` status when
+  nothing arrived). Picking, "None of these" or clearing the conversation aborts
+  `signal`, and the person's next message does not replace such an offer. The
+  dock status is `working` with the progress line while nothing is ready.
+- 0259083: Choice offers can be previewed before they are applied. A source that implements `preview` shows a clicked card in place on the page without applying it; another click swaps the preview, the offer's `original` card puts the page back, and only the primary button (`commitOption`) applies the previewed option and resolves the offer. Cancel (`cancelChoices`), Escape, dismissing, clearing and disposing restore the original. Sources without `preview` keep "click applies". `AssistantChoiceCards` takes `onpreview`, `oncommit` and `oncancel`; the dock controller gains `previewOption`, `commitOption` and `cancelChoices`. Previews run one at a time in click order: while one is being shown the cards and the commit button wait (`previewPendingId` on the offer), a superseded queued preview never reaches the page, a restore waits for a preview still running, and `commitOption` does nothing until the page shows the option it would apply.
+- 0259083: `AssistantDock` can offer the person a few options to pick from. A page
+  registers an `AssistantChoiceSource` (`createAssistantChoiceSourceRegistry`,
+  passed as `choiceSources`); each is offered to the model as the read tool
+  `assistant_offer_<id>`. The source builds 1–4 options, the dock shows them as
+  picture cards in the chat, and only the person's click applies one through the
+  source's `apply`. Card images are limited to same-origin paths. See
+  `docs/assistant-dock.md` ("Choices").
+  Each open offer is a `choice` hold (`holdForUser`), so a supervised run waits
+  for the person's pick.
+- 0259083: Speak to the assistant. `AssistantDock` and `AssistantComposer` take a
+  `dictation` speech source (for example smrt-svelte's
+  `createSttDictationSource()`): the composer then shows a microphone button,
+  and pressing and holding the message box starts listening too; heard words go
+  in at the cursor, and Send or Escape stops listening. The offered-options cards
+  are now their own component, `AssistantChoiceCards`, so a host can show a
+  second, focused conversation's options next to the page.
+- 0259083: The assistant dock keeps a supervised run for "watch it work" hosts:
+  `controller.run` (and the `onRun` option / `onrun` prop) gives the goal (the
+  person's message, one line), the current step, the step count, the browser
+  tools that ran, and a state — `running`, `paused`, `waiting` (with
+  `waitingFor.kind`: `confirm`, `choice`, `review` or `continue`), `done`,
+  `failed` or `cancelled`, plus `stoppedReason` (`max_steps`, `budget`,
+  `paused_too_long`, `user`, `error`). New controls: `pauseRun()` /
+  `continueRun()` (the next step waits, bounded by `maxPauseMs`, default
+  15 min), `acknowledgeRun()`, `dismissRun()`, and `holdForUser({ id, kind,
+  label })`, the generic seam for "the assistant presents choices, the person
+  picks": while a hold is registered the run is `waiting`. A run that staged a
+  proposal ends `waiting` for review; propose/apply is unchanged. New
+  `clientToolFilter` option/prop: a tool it rejects is never declared to the
+  model, and a call to one is refused as `not_available`.
+- 0259083: The assistant dock waits for the page to settle before it resumes a turn
+  after a step's browser tools ran: the host's new `settle` hook (option and
+  `AssistantDock` prop, e.g. "SvelteKit is no longer navigating"), then the
+  navigations tracked on the registry and a quiet period for the registry and
+  the page tools, bounded by `settleTimeoutMs` (default 5 s). The resumed step
+  is offered the new page's tools instead of the old page's or none.
+  `matchesToolAllowList` moves to a browser-safe module and is also exported
+  from `@happyvertical/smrt-chat/svelte` and `/assistant-turn`, so a host can
+  narrow the tools it declares with the server's own matcher.
+- 0259083: `runAssistantTurn` takes a per-turn token budget (`maxTurnTokens`) and a
+  wall-clock budget (`maxTurnMs`), both spanning every browser round trip (the
+  continuation now carries `tokens` and `startedAt`). When either runs out, the
+  model gets one last round without tools and the turn ends with the new
+  `stoppedReason: 'budget'` (also on `runToolLoop`: `maxTotalTokens`,
+  `initialTokens`, `deadline`). Unset, nothing changes.
+- 0259083: `runAssistantTurn`'s `describeTool(name, args)` now also gets the tool call's
+  arguments on a call step and on the status line while the browser runs it,
+  so a host can label a step by its target ("Opening Events"). A one-argument
+  callback is unchanged.
+- 0259083: Earlier QA-branch additions and fixes in smrt-chat:
+  
+  - Streamed assistant turns (`runAssistantTurn`, `createAssistantTurnResponse`
+    as SSE) that suspend on browser tool calls into a single-use, expiring
+    continuation store and resume with the browser's results; the wire contract
+    ships as `@happyvertical/smrt-chat/assistant-turn`. The tool loop offers
+    browser-executed `clientTools` (validated against a server allow-list),
+    cancellation, `initialSteps`, `onStep` and `onUsage`. Each streamed step runs
+    in the caller's async (tenant) context, and continuation writes re-read the
+    session first.
+  - `AssistantDock` runs the page's WebMCP tools (reads run, consent-gated writes
+    run, other writes wait for Allow, destructive always waits), previews
+    data-surface actions for confirmation, and shows streamed status with Stop.
+  - **Security:** a turn sends a generic error and code to the browser, never
+    raw error messages (`AssistantTurnUserError` codes excepted; details go to a
+    server-side `onError`). Generated `AgentSession` reads never return
+    `sessionContext` (the in-flight transcript). Tool errors are classified:
+    401/403 → not permitted, 400/404/409/422 and validation errors →
+    invalid request with an actionable message, 429 and the rest → execution
+    error.
+  - Touch targets: the composer's attach button and the narrow dock's
+    Conversations toggle are 44px; message text is 16px on phones.
+- 0259083: Dictation records when the browser cannot recognise speech. Give `Dictation`
+  a `transcribe(audio, { mimeType, language, durationMs, signal })` function
+  (new `createHttpTranscriber(url)` posts the raw audio to your own server
+  route and reads `{ text }`). When there is no speech source or no Web Speech
+  API (Firefox), or the recogniser fails with `network` /
+  `service-not-allowed` / ends straight away before hearing anything (Brave),
+  it records the message with `MediaRecorder` instead (WebM/Opus, MP4 on
+  Safari; `maxDurationMs` default 2 minutes, after which it is written down,
+  and `maxBytes` default 10 MB, past which it fails as too long). Stopping
+  moves to the new `transcribing` state ("Writing it down…" in
+  `DictationStatus`; the microphone is busy meanwhile), then the text goes in
+  at the cursor. After one such failure the same `Dictation` records straight
+  away. New error kinds with plain messages: `too-long`, `not-transcribed`,
+  `unavailable` (not set up), `forbidden`. New `recording` flag,
+  `DictationError`, `createMediaRecorderCapture` (injectable as `capture`),
+  `pickDictationMimeType`, `canCaptureDictationAudio`. Log events carry
+  `fallback: 'recording'` when it carried on by recording.
+  
+  `AssistantComposer` and `AssistantDock` take a `transcribe` prop for the
+  same fallback; with only `transcribe` the microphone shows and always
+  records.
+  
+  `stop()` stops waiting for the recorder's `stop` event after 3 seconds and returns the audio that arrived, so a browser that never fires it cannot leave the field stuck.
+
+### Patch Changes
+
+- 0259083: A long thread title no longer squeezes the assistant conversation: the dock's
+  thread list is capped at 16rem (40% of the dock) beside the conversation, and
+  titles clip with an ellipsis from the left edge.
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-agents@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-profiles@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+  - @happyvertical/smrt-personas@0.52.0
+  - @happyvertical/smrt-users@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
+## 0.51.39
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.39
+  - @happyvertical/smrt-agents@0.51.39
+  - @happyvertical/smrt-personas@0.51.39
+  - @happyvertical/smrt-profiles@0.51.39
+  - @happyvertical/smrt-tenancy@0.51.39
+  - @happyvertical/smrt-users@0.51.39
+  - @happyvertical/smrt-ui@0.51.39
+  - @happyvertical/smrt-types@0.51.39
+
 ## 0.51.38
 
 ### Patch Changes

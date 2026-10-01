@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-features",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "description": "Code-first feature flags and tenant-aware overrides for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -71,7 +71,7 @@
     "directory": "packages/features"
   },
   "peerDependencies": {
-    "svelte": "^5.57.1"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "svelte": {

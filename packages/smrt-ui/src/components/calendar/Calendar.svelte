@@ -2,6 +2,11 @@
 /**
  * Calendar Component
  * Month view calendar with event indicators and day navigation
+ *
+ * @deprecated Use `CalendarView`. This component computes days in the
+ * browser's zone, prints English-only names, hard-codes game/meeting/event
+ * emoji and `/events/y/m/d` links, and has no phone agenda. See the
+ * smrt-ui README, "Calendar", for the migration.
  */
 
 import { M } from '../../i18n/strings.ui.js';

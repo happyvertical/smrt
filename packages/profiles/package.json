@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-profiles",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -32,7 +32,7 @@
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "test": "vitest run",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/agent-profile-postgres.test.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/agent-profile-postgres.test.ts src/__tests__/profile-links-postgres.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

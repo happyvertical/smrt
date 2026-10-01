@@ -110,6 +110,7 @@ export const MESSAGES_MODULE_META: SmrtModuleMeta = {
     'ZulipAccount',
     'MessagingEndpoint',
     'PersonaMessageRoute',
+    'UserNotification',
     'Attachment',
   ],
   collections: [
@@ -120,5 +121,6 @@ export const MESSAGES_MODULE_META: SmrtModuleMeta = {
     'AttachmentCollection',
     'MessagingEndpointCollection',
     'PersonaMessageRouteCollection',
+    'UserNotificationCollection',
   ],
 };

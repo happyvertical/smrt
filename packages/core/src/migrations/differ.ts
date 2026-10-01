@@ -17,7 +17,10 @@ import {
   resolveRenameDataPendingCandidates,
   uuidInvalidShapePredicate,
 } from '../schema/column-data-probes.js';
-import { conflictIndexName } from '../schema/conflict-target.js';
+import {
+  conflictIndexName,
+  isLegacyNaturalKeyIndex,
+} from '../schema/conflict-target.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import { renderNullEqualConflictIndex } from '../schema/ddl/null-equal-index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
@@ -27,6 +30,7 @@ import {
   renderForeignKeyAddStatements,
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
+  renderForeignKeyReplaceStatements,
   schemaForeignKeys,
   schemaForeignKeysForEngine,
 } from '../schema/foreign-key-ddl.js';
@@ -36,8 +40,11 @@ import {
 } from '../schema/foreign-key-policy.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
 import {
+  isEmptyTextOnlyProbe,
   maskSampleValue,
   probeCastSafety,
+  renderEmptyTextAsNullExpression,
+  renderEmptyTextPredicate,
   renderJsonbColumnConversion,
   renderTimestamptzColumnConversion,
   type ShapeProbeResult,
@@ -73,6 +80,24 @@ import {
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+
+/** A framework-owned live foreign key whose actions differ from the manifest (#3023). */
+interface ForeignKeyActionReplacement {
+  constraintName: string;
+  note: string;
+  /**
+   * The new action deletes or rewrites child rows that the live action left
+   * alone (→ CASCADE / SET NULL / SET DEFAULT on DELETE, → CASCADE on UPDATE).
+   */
+  destructive?: string;
+}
+
+/** Actions that change child rows when the parent is deleted or updated. */
+const ROW_CHANGING_FOREIGN_KEY_ACTIONS = new Set([
+  'CASCADE',
+  'SET NULL',
+  'SET DEFAULT',
+]);
 
 /**
  * `mismatch.actual` of the manual change reported when a required column
@@ -165,6 +190,32 @@ export interface DiffOptions {
    * than reinterpreted automatically.
    */
   postgresTimestampMigration?: { legacyTimezone: 'UTC' };
+  /**
+   * Store empty or whitespace-only text as NULL when converging a legacy
+   * `text` column to a typed PostgreSQL column (#3226): `timestamptz`,
+   * `jsonb`, or an integer. Applies only when the manifest column and the
+   * live column are both nullable, and (for the probed `timestamptz`/`jsonb`
+   * conversions) only when empty text is the sole obstacle -- any other
+   * value that does not cast still blocks. Off by default: the diff then
+   * names the empty-text count in the blocking advisory instead.
+   */
+  emptyTextAsNull?: boolean;
+  /**
+   * Drop the LEGACY global natural-key unique index — `(slug, context)` /
+   * `(slug, context, _meta_type)` — of a table whose default key is now
+   * tenant-led (an undeclared `tenantId` field makes the table tenant-owned).
+   *
+   * Off by default: `db:migrate` builds the tenant-led unique under its own
+   * name and KEEPS the legacy one, because code still running the previous
+   * release upserts `ON CONFLICT (slug, context)` and PostgreSQL rejects that
+   * (42P10) unless a unique index over exactly those columns exists. Run
+   * `smrt db:migrate --drop-legacy-natural-key` once every instance runs the
+   * release that upserts on the tenant-led key (expand, then contract). The
+   * drop is planned only when the tenant-led unique is already live or is
+   * created earlier in the same batch, so the table always keeps a unique
+   * index.
+   */
+  dropLegacyNaturalKey?: boolean;
   /**
    * How many live-table introspections `compare()` runs concurrently while
    * prefetching every existing manifest table's schema. Defaults to
@@ -519,6 +570,9 @@ export class SchemaComparer {
   /** Convergence plan for this run; `null` on non-PostgreSQL engines. */
   private uuidConvergence: UuidConvergencePlan | null = null;
 
+  /** Parents created by this compare() batch, never a standalone compareTable(). */
+  private plannedTables = new Map<string, SchemaDefinition>();
+
   /**
    * Rename-pending advisory findings for this `compare()` run, keyed by
    * table name (#2878). `compareTable()` reads from here when it is being
@@ -623,6 +677,12 @@ export class SchemaComparer {
     try {
       // Get list of existing tables
       const existingTables = await this.getExistingTables();
+      this.plannedTables = new Map(
+        Object.entries(manifestSchemas).filter(
+          ([name, schema]) =>
+            !existingTables.has(name) && schema.tableName === name,
+        ),
+      );
 
       // Every existing manifest table is introspected below (rename probes,
       // uuid convergence, per-table comparison). Read them up front with
@@ -702,6 +762,7 @@ export class SchemaComparer {
 
       return diff;
     } finally {
+      this.plannedTables.clear();
       this.renameDataPendingCache = null;
       this.indexPredicateCache = null;
     }
@@ -1144,7 +1205,33 @@ export class SchemaComparer {
     columnName: string,
     kind: 'timestamptz' | 'jsonb',
   ): Promise<ShapeProbeResult> {
-    return probeCastSafety(this.db, tableName, columnName, kind);
+    return probeCastSafety(this.db, tableName, columnName, kind, {
+      emptyTextAsNull: this.options.emptyTextAsNull === true,
+    });
+  }
+
+  /**
+   * Explain a probe's empty-text finding (#3226) for a blocking advisory:
+   * how many of the offending values are empty text and what the opt-in
+   * would do with them (or why it cannot).
+   */
+  private describeEmptyTextFinding(
+    probe: Extract<ShapeProbeResult, { status: 'dirty' }>,
+    nullable: boolean,
+  ): string {
+    const emptyCount = probe.emptyCount ?? 0;
+    if (emptyCount === 0) return '';
+    const emptyOnly = emptyCount === probe.count;
+    const subject = emptyOnly
+      ? `All ${emptyCount} are empty text ('').`
+      : `${emptyCount} of them are empty text ('').`;
+    if (!nullable) {
+      return ` ${subject} The column is NOT NULL, so empty text cannot become NULL; store real values instead.`;
+    }
+    if (!emptyOnly) {
+      return ` ${subject} \`--empty-text-as-null\` would store those as NULL, but the other value(s) must be repaired first.`;
+    }
+    return ` ${subject} Rerun with \`smrt db:migrate --empty-text-as-null\` to store them as NULL (the column is nullable).`;
   }
 
   /**
@@ -1208,6 +1295,7 @@ export class SchemaComparer {
   private async describeForeignKeyTypeBlock(
     tableName: string,
     dbSchema: SqlTableSchemaInfo,
+    manifest: SchemaDefinition,
     foreignKey: import('../schema/types.js').ForeignKeyDefinition,
   ): Promise<string | undefined> {
     if (this.engine !== 'postgres') return undefined;
@@ -1215,10 +1303,24 @@ export class SchemaComparer {
       foreignKey.referencesTable === tableName
         ? dbSchema
         : await this.getLiveSchema(foreignKey.referencesTable);
-    const childType = dbSchema.columns[foreignKey.column]?.type;
-    const parentType = parentSchema?.columns[foreignKey.referencesColumn]?.type;
-    // A column this migration is about to add materializes with the manifest
-    // type, so there is nothing live to conflict with yet.
+    // New columns and planned tables must use the same physical type mapping
+    // as their DDL (TIMESTAMP -> TIMESTAMPTZ, INTEGER -> BIGINT, etc.). Live
+    // columns retain their introspected types until an explicit conversion.
+    const declaredType = (type: string | undefined): string | undefined =>
+      type === undefined
+        ? undefined
+        : this.ddlStrategy.mapType(isValidSQLDataType(type) ? type : 'TEXT');
+    const childType =
+      dbSchema.columns[foreignKey.column]?.type ??
+      declaredType(manifest.columns[foreignKey.column]?.type);
+    const parentType =
+      parentSchema?.columns[foreignKey.referencesColumn]?.type ??
+      declaredType(
+        this.plannedTables.get(foreignKey.referencesTable)?.columns[
+          foreignKey.referencesColumn
+        ]?.type,
+      );
+    // Missing definitions continue to the ordinary missing-column checks.
     if (!childType || !parentType) return undefined;
 
     const plan = this.uuidConvergence;
@@ -1353,7 +1455,20 @@ export class SchemaComparer {
       const sameColumn = liveForeignKeys.some(
         (live) => live.column === foreignKey.column,
       );
-      if (sameColumn) {
+      // #3023: a framework-owned PostgreSQL constraint whose only drift is
+      // its ON DELETE / ON UPDATE action is replaced in place (drop + add in
+      // the migration's transaction) instead of asking for a hand-written
+      // DROP CONSTRAINT. Anything else on the column stays a manual step.
+      let replacement: ForeignKeyActionReplacement | undefined;
+      if (sameColumn && this.engine === 'postgres') {
+        replacement = await this.findReplaceableForeignKey(
+          tableName,
+          liveForeignKeys,
+          foreignKey,
+          { onDelete: expectedDelete, onUpdate: expectedUpdate },
+        );
+      }
+      if (sameColumn && !replacement) {
         changes.push({
           type: 'add_foreign_key',
           table: tableName,
@@ -1363,7 +1478,11 @@ export class SchemaComparer {
             severity: 'warning',
             message:
               `Foreign key ${tableName}.${foreignKey.column} exists with a different target or action. ` +
-              'Drop the old constraint deliberately, repair any orphan rows, then rerun the migration.',
+              (this.engine === 'postgres'
+                ? 'Drop the old constraint deliberately, repair any orphan rows, then rerun the migration.'
+                : this.engine === 'sqlite'
+                  ? 'SQLite cannot drop or alter a foreign key in place: rebuild the table with the generated constraint (repair any orphan rows first).'
+                  : 'DuckDB cannot alter a foreign key in place: rebuild the table with the generated constraint (repair any orphan rows first).'),
             suggestedSql: [detectorSql, repairSql],
           },
         });
@@ -1398,6 +1517,7 @@ export class SchemaComparer {
       const typeBlock = await this.describeForeignKeyTypeBlock(
         tableName,
         dbSchema,
+        manifest,
         foreignKey,
       );
       if (typeBlock) {
@@ -1450,12 +1570,55 @@ export class SchemaComparer {
         continue;
       }
 
+      const plannedParent = this.liveSchemas.get(foreignKey.referencesTable)
+        ? undefined
+        : this.plannedTables.get(foreignKey.referencesTable);
+      if (plannedParent) {
+        // A join cannot read a parent that this batch has not created yet.
+        // Prove the *whole child table* empty, even for a new child column:
+        // its default could otherwise create references on existing rows.
+        // Keep the ordinary NOT VALID + VALIDATE below as the authoritative
+        // transactional check against writes racing this read-only preflight.
+        const parentColumn = plannedParent.columns[foreignKey.referencesColumn];
+        let childEmpty = false;
+        if (parentColumn) {
+          try {
+            const result = await this.db.query(
+              `SELECT 1 FROM ${this.quoteIdentifier(tableName)} LIMIT 1`,
+            );
+            const rows = Array.isArray(result) ? result : result.rows || [];
+            childEmpty = rows.length === 0;
+          } catch (error) {
+            throw new Error(
+              `[SchemaComparer] Cannot prove ${tableName} empty for planned parent ${foreignKey.referencesTable}; refusing automatic constraint addition: ${error instanceof Error ? error.message : String(error)}`,
+              { cause: error },
+            );
+          }
+        }
+        if (!parentColumn || !childEmpty) {
+          changes.push({
+            type: 'add_foreign_key',
+            table: tableName,
+            name: foreignKeyConstraintName(tableName, foreignKey),
+            foreignKey,
+            advisory: {
+              severity: 'warning',
+              message: !parentColumn
+                ? `Cannot add foreign key ${tableName}.${foreignKey.column}: planned parent ${foreignKey.referencesTable} has no column ${foreignKey.referencesColumn}. Correct the manifest, then rerun.`
+                : `Cannot add foreign key ${tableName}.${foreignKey.column}: child table is not empty and planned parent ${foreignKey.referencesTable} does not exist yet. Create and populate the parent deliberately, then rerun the orphan preflight.`,
+            },
+          });
+          continue;
+        }
+      }
+
       // A missing child column is added earlier in this same table diff, so
       // probing the pre-migration schema would fail and be misclassified as
       // an orphan. The subsequent NOT VALID + VALIDATE statements remain the
       // authoritative safety check once the prerequisite column exists.
       const childColumnExists = Boolean(dbSchema.columns[foreignKey.column]);
       if (
+        !plannedParent &&
         childColumnExists &&
         (await this.foreignKeyHasOrphans(tableName, foreignKey, orphanOptions))
       ) {
@@ -1483,10 +1646,142 @@ export class SchemaComparer {
         table: tableName,
         name: constraintName,
         foreignKey,
-        sqlStatements: renderForeignKeyAddStatements(tableName, foreignKey),
+        sqlStatements: replacement
+          ? renderForeignKeyReplaceStatements(
+              tableName,
+              foreignKey,
+              replacement.constraintName,
+            )
+          : renderForeignKeyAddStatements(tableName, foreignKey),
+        ...(replacement ? { note: replacement.note } : {}),
+        // Turning on a row-changing action is applied (the manifest declares
+        // it) but never silently: raw-SQL, admin and tenant-purge deletes of
+        // a parent now delete or rewrite children they used to be blocked by.
+        ...(replacement?.destructive
+          ? {
+              advisory: {
+                severity: 'warning' as const,
+                message: replacement.destructive,
+              },
+            }
+          : {}),
       });
     }
     return changes;
+  }
+
+  /**
+   * Decide whether a live PostgreSQL foreign key on the same column and
+   * target can have its referential actions converged automatically
+   * (#3023). The constraint must be one SMRT rendered: the deterministic
+   * canonical name, one column to one column, MATCH SIMPLE, not deferrable,
+   * already validated, and with default trigger enforcement. Only then is it
+   * replaced build-then-swap (`renderForeignKeyReplaceStatements()`: a staged
+   * constraint added NOT VALID and validated before the old one is dropped
+   * and the staged one renamed; `--postgres-safe` validates and swaps outside
+   * the batch transaction). A change that turns on a row-changing action
+   * carries a `warning` advisory. Everything else keeps the manual advisory, because a
+   * differently named or shaped constraint may be one an operator created on
+   * purpose.
+   */
+  private async findReplaceableForeignKey(
+    tableName: string,
+    liveForeignKeys: SqlTableSchemaInfo['foreignKeys'],
+    foreignKey: import('../schema/types.js').ForeignKeyDefinition,
+    expected: { onDelete: string; onUpdate: string },
+  ): Promise<ForeignKeyActionReplacement | undefined> {
+    const onColumn = (liveForeignKeys || []).filter(
+      (live) => live.column === foreignKey.column,
+    );
+    if (onColumn.length !== 1) return undefined;
+    const [live] = onColumn;
+    if (
+      live.referencesTable !== foreignKey.referencesTable ||
+      live.referencesColumn !== foreignKey.referencesColumn
+    ) {
+      return undefined;
+    }
+    const canonicalName = foreignKeyConstraintName(tableName, foreignKey);
+    let rows: Array<Record<string, unknown>>;
+    try {
+      const result = await this.db.query(
+        `SELECT con.conname AS constraint_name, con.convalidated AS validated, ` +
+          `con.condeferrable AS deferrable, con.confmatchtype AS match_type, ` +
+          `cardinality(con.conkey) AS child_keys, cardinality(con.confkey) AS parent_keys, ` +
+          `child_attr.attname AS child_column, parent.relname AS parent_table, ` +
+          `parent_attr.attname AS parent_column, ` +
+          `EXISTS (SELECT 1 FROM pg_trigger AS trg WHERE trg.tgconstraint = con.oid AND trg.tgenabled <> 'O') AS nondefault_trigger_mode ` +
+          `FROM pg_constraint AS con ` +
+          `JOIN pg_class AS child ON child.oid = con.conrelid ` +
+          `JOIN pg_namespace AS child_ns ON child_ns.oid = child.relnamespace ` +
+          `JOIN pg_class AS parent ON parent.oid = con.confrelid ` +
+          `JOIN pg_attribute AS child_attr ON child_attr.attrelid = con.conrelid AND child_attr.attnum = con.conkey[1] ` +
+          `JOIN pg_attribute AS parent_attr ON parent_attr.attrelid = con.confrelid AND parent_attr.attnum = con.confkey[1] ` +
+          `WHERE con.contype = 'f' AND child_ns.nspname = 'public' ` +
+          `AND child.relname = ${this.quoteLiteral(tableName)} ` +
+          `AND child_attr.attname = ${this.quoteLiteral(foreignKey.column)}`,
+      );
+      rows = (Array.isArray(result) ? result : result.rows || []) as Array<
+        Record<string, unknown>
+      >;
+    } catch {
+      // Without the catalog row there is no proof of ownership; keep the
+      // manual advisory rather than guessing a constraint name.
+      return undefined;
+    }
+    if (rows.length !== 1) return undefined;
+    const [row] = rows;
+    if (
+      row.constraint_name !== canonicalName ||
+      row.parent_table !== foreignKey.referencesTable ||
+      row.parent_column !== foreignKey.referencesColumn ||
+      Number(row.child_keys) !== 1 ||
+      Number(row.parent_keys) !== 1 ||
+      row.validated !== true ||
+      row.deferrable === true ||
+      row.match_type !== 's' ||
+      row.nondefault_trigger_mode === true
+    ) {
+      return undefined;
+    }
+    const liveDelete = normalizeForeignKeyAction(live.onDelete) || 'NO ACTION';
+    const liveUpdate = normalizeForeignKeyAction(live.onUpdate) || 'NO ACTION';
+    const parts: string[] = [];
+    if (liveDelete !== expected.onDelete) {
+      parts.push(`ON DELETE ${liveDelete} → ${expected.onDelete}`);
+    }
+    if (liveUpdate !== expected.onUpdate) {
+      parts.push(`ON UPDATE ${liveUpdate} → ${expected.onUpdate}`);
+    }
+    const destructive: string[] = [];
+    if (
+      liveDelete !== expected.onDelete &&
+      ROW_CHANGING_FOREIGN_KEY_ACTIONS.has(expected.onDelete)
+    ) {
+      destructive.push(
+        `deleting a ${foreignKey.referencesTable} row will now ${expected.onDelete === 'CASCADE' ? 'DELETE' : `${expected.onDelete} on`} its ${tableName} rows (was ${liveDelete})`,
+      );
+    }
+    if (
+      liveUpdate !== expected.onUpdate &&
+      ROW_CHANGING_FOREIGN_KEY_ACTIONS.has(expected.onUpdate)
+    ) {
+      destructive.push(
+        `changing a ${foreignKey.referencesTable}.${foreignKey.referencesColumn} value will now ${expected.onUpdate} ${tableName}.${foreignKey.column} (was ${liveUpdate})`,
+      );
+    }
+    return {
+      constraintName: canonicalName,
+      note: `replaces ${canonicalName}: ${parts.join(', ')}`,
+      ...(destructive.length > 0
+        ? {
+            destructive:
+              `DESTRUCTIVE foreign-key change on ${tableName}.${foreignKey.column}: ${destructive.join('; ')}. ` +
+              'This applies to every delete, including raw SQL, admin tooling and tenant purges. ' +
+              'Review it before migrating; declare a different onDelete/onUpdate to keep the old behaviour.',
+          }
+        : {}),
+    };
   }
 
   private async foreignKeyHasOrphans(
@@ -1793,6 +2088,21 @@ export class SchemaComparer {
           nativeJsonToJsonb &&
           (jsonProbe?.status === 'clean' || jsonProbe?.status === 'dirty');
 
+        // #3226: empty text in a nullable column may be stored as NULL when
+        // the operator opts in and it is the only obstacle to the cast.
+        const emptyTextNullable =
+          colDef.notNull !== true && dbCol.notNull !== true;
+        const convertEmptyText =
+          this.options.emptyTextAsNull === true && emptyTextNullable;
+        const jsonEmptyTextToNull =
+          convertEmptyText && isEmptyTextOnlyProbe(jsonProbe);
+        const timestamptzEmptyTextToNull =
+          convertEmptyText && isEmptyTextOnlyProbe(timestamptzProbe);
+        const jsonConvertible =
+          jsonProbe?.status === 'clean' || jsonEmptyTextToNull;
+        const timestamptzConvertible =
+          timestamptzProbe?.status === 'clean' || timestamptzEmptyTextToNull;
+
         if (
           (normalizedExpected !== normalizedActual || nativeJsonDrift) &&
           !isUuidTextEquivalent &&
@@ -1819,6 +2129,22 @@ export class SchemaComparer {
             hasLiveDefault,
             manifestDefaultValue: colDef.defaultValue,
           };
+          const jsonConversionOptions = {
+            ...conversionOptions,
+            ...(jsonEmptyTextToNull ? { emptyTextAsNull: true } : {}),
+          };
+          const timestamptzConversionOptions = {
+            ...conversionOptions,
+            ...(timestamptzEmptyTextToNull ? { emptyTextAsNull: true } : {}),
+          };
+          const emptyTextNote = (
+            probe: ShapeProbeResult | undefined,
+          ): { note: string } | Record<string, never> =>
+            isEmptyTextOnlyProbe(probe)
+              ? {
+                  note: `${probe.emptyCount} empty-text value(s) become NULL (--empty-text-as-null)`,
+                }
+              : {};
 
           // Review finding: dropping a live default the manifest no longer
           // declares is the same "relaxation" `compareColumnConstraints`
@@ -1846,7 +2172,7 @@ export class SchemaComparer {
 
           if (
             jsonUpgradeCandidate &&
-            jsonProbe?.status === 'clean' &&
+            jsonConvertible &&
             liveOnlyDefaultNeedsRelaxOptIn
           ) {
             changes.push({
@@ -1865,15 +2191,15 @@ export class SchemaComparer {
                 suggestedSql: renderJsonbColumnConversion(
                   tableName,
                   colName,
-                  conversionOptions,
+                  jsonConversionOptions,
                 ),
               },
             });
-          } else if (jsonUpgradeCandidate && jsonProbe?.status === 'clean') {
+          } else if (jsonUpgradeCandidate && jsonConvertible) {
             const statements = renderJsonbColumnConversion(
               tableName,
               colName,
-              conversionOptions,
+              jsonConversionOptions,
             );
             changes.push({
               type: 'type_upgrade',
@@ -1883,6 +2209,7 @@ export class SchemaComparer {
               mismatch: jsonMismatch,
               sql: statements[statements.length - 1],
               sqlStatements: statements,
+              ...(jsonEmptyTextToNull ? emptyTextNote(jsonProbe) : {}),
             });
           } else if (
             jsonUpgradeCandidate &&
@@ -1925,10 +2252,17 @@ export class SchemaComparer {
                             : 'are not valid JSON'
                         }`
                   } (sample: ${
-                    jsonProbe.sample
+                    jsonProbe.sample !== undefined
                       ? maskSampleValue(jsonProbe.sample)
                       : 'unavailable'
-                  }). ${
+                  }).${
+                    jsonProbe.reason === undefined
+                      ? this.describeEmptyTextFinding(
+                          jsonProbe,
+                          emptyTextNullable,
+                        )
+                      : ''
+                  } ${
                     jsonProbe.reason === 'duplicate_keys'
                       ? 'Converting keeps only the last value of each duplicated key; ' +
                         'deduplicate the keys (deciding which value to keep), then rerun '
@@ -1944,6 +2278,8 @@ export class SchemaComparer {
                       suggestedSql: renderJsonbColumnConversion(
                         tableName,
                         colName,
+                        // Never a NULLIF form here: without the opt-in the
+                        // duplicate-key walk has not run over the rest.
                         conversionOptions,
                       ),
                     }),
@@ -1951,7 +2287,7 @@ export class SchemaComparer {
             });
           } else if (
             timestamptzUpgradeCandidate &&
-            timestamptzProbe?.status === 'clean' &&
+            timestamptzConvertible &&
             liveOnlyDefaultNeedsRelaxOptIn
           ) {
             changes.push({
@@ -1970,18 +2306,15 @@ export class SchemaComparer {
                 suggestedSql: renderTimestamptzColumnConversion(
                   tableName,
                   colName,
-                  conversionOptions,
+                  timestamptzConversionOptions,
                 ),
               },
             });
-          } else if (
-            timestamptzUpgradeCandidate &&
-            timestamptzProbe?.status === 'clean'
-          ) {
+          } else if (timestamptzUpgradeCandidate && timestamptzConvertible) {
             const statements = renderTimestamptzColumnConversion(
               tableName,
               colName,
-              conversionOptions,
+              timestamptzConversionOptions,
             );
             changes.push({
               type: 'type_upgrade',
@@ -1991,6 +2324,9 @@ export class SchemaComparer {
               mismatch: { expected: colDef.type, actual: dbCol.type },
               sql: statements[statements.length - 1],
               sqlStatements: statements,
+              ...(timestamptzEmptyTextToNull
+                ? emptyTextNote(timestamptzProbe)
+                : {}),
             });
           } else if (
             timestamptzUpgradeCandidate &&
@@ -2007,25 +2343,42 @@ export class SchemaComparer {
                 message:
                   `blocked: ${tableName}.${colName} is declared TIMESTAMP but ${timestamptzProbe.count} ` +
                   `live value(s) do not parse as an unambiguous timestamp (sample: ${
-                    timestamptzProbe.sample
+                    timestamptzProbe.sample !== undefined
                       ? maskSampleValue(timestamptzProbe.sample)
                       : 'unavailable'
-                  }). Repair the offending value(s), or confirm legacy naive ` +
-                  'wall-clock provenance with `smrt db:migrate --postgres-timestamp-legacy-timezone=UTC`, then rerun.',
+                  }).${this.describeEmptyTextFinding(
+                    timestamptzProbe,
+                    emptyTextNullable,
+                  )}${
+                    isEmptyTextOnlyProbe(timestamptzProbe)
+                      ? ''
+                      : ' Repair the offending value(s), or confirm legacy naive ' +
+                        'wall-clock provenance with `smrt db:migrate --postgres-timestamp-legacy-timezone=UTC`, then rerun.'
+                  }`,
                 suggestedSql: renderTimestamptzColumnConversion(
                   tableName,
                   colName,
-                  conversionOptions,
+                  isEmptyTextOnlyProbe(timestamptzProbe) && emptyTextNullable
+                    ? { ...conversionOptions, emptyTextAsNull: true }
+                    : conversionOptions,
                 ),
               },
             });
           } else if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
             // Generate type upgrade SQL
+            // #3226: TEXT -> INTEGER is the other text-to-typed repair;
+            // under the opt-in its preflight and cast skip empty text too.
+            const integerEmptyTextToNull =
+              convertEmptyText &&
+              this.engine === 'postgres' &&
+              this.normalizeType(colDef.type) === 'INTEGER' &&
+              normalizedActual === 'TEXT';
             const generatedSQL = this.generateTypeUpgradeSQL(
               tableName,
               colName,
               colDef,
               dbCol.type,
+              { emptyTextAsNull: integerEmptyTextToNull },
             );
             changes.push({
               type: 'type_upgrade',
@@ -2039,6 +2392,11 @@ export class SchemaComparer {
               sql: generatedSQL.sql,
               ...(generatedSQL.statements
                 ? { sqlStatements: generatedSQL.statements }
+                : {}),
+              ...(integerEmptyTextToNull
+                ? {
+                    note: 'empty-text value(s), if any, become NULL (--empty-text-as-null)',
+                  }
                 : {}),
             });
           } else if (!this.options.ignoreTypeMismatches) {
@@ -3685,6 +4043,31 @@ export class SchemaComparer {
         for (const name of equivalentIndexNames) {
           claimedDbIndexes.add(name);
         }
+        // Name convergence (PostgreSQL): a database migrated by a pre-release
+        // build carries the inferred tenant-led key under the framework's
+        // legacy `<table>_slug_context_idx` name. Same columns, so it already
+        // serves both upserts; rename it to the manifest name so every
+        // database ends up identical (and name-targeted tooling such as
+        // `db:migrate-null-equal-indexes` finds it). Only that exact
+        // framework name is renamed, never an operator's own index.
+        const legacyName = this.legacyTenantLedIndexName(tableName, idx);
+        if (
+          legacyName &&
+          this.engine === 'postgres' &&
+          equivalentIndexNames.has(legacyName) &&
+          !dbIndexesByName.has(idx.name)
+        ) {
+          const renameSql = `ALTER INDEX IF EXISTS ${this.quoteIdentifier(legacyName)} RENAME TO ${this.quoteIdentifier(idx.name)}`;
+          changes.push({
+            type: 'add_index',
+            table: tableName,
+            name: idx.name,
+            index: idx,
+            note: `renames ${legacyName} (same columns)`,
+            sql: renameSql,
+            sqlStatements: [renameSql],
+          });
+        }
         continue;
       }
 
@@ -3806,6 +4189,22 @@ export class SchemaComparer {
             // the table never loses its only conflict arbiter.
             declared.columns.every((column) => column in dbSchema.columns),
         );
+      // Expand, then contract: the legacy global natural key a tenant-led
+      // default key superseded stays until the operator opts in. Old code
+      // still upserts `ON CONFLICT (slug, context)` against it during a
+      // rolling deploy; dropping it in the same migrate turns every such save
+      // into 42P10.
+      const legacyNaturalKey =
+        supersededConflictIndex &&
+        manifestIndexes.some(
+          (declared) =>
+            declared.unique === true &&
+            !declared.where &&
+            isLegacyNaturalKeyIndex(idx.columns, declared.columns),
+        );
+      if (legacyNaturalKey && !this.options.dropLegacyNaturalKey) {
+        continue;
+      }
       if (
         !redundantPrimaryKeyIndex &&
         !supersededConflictIndex &&
@@ -3823,6 +4222,34 @@ export class SchemaComparer {
     }
 
     return changes;
+  }
+
+  /**
+   * The framework's pre-release name for a manifest's tenant-led default
+   * natural key: `<table>_slug_context_idx` (CTI) or
+   * `<table>_slug_context_meta_type_idx` (STI), when `idx` is a unique,
+   * unqualified default key led by one ownership column and its manifest name
+   * differs (an inferred owner, see `conflictIndexName()`). `undefined`
+   * otherwise.
+   */
+  private legacyTenantLedIndexName(
+    tableName: string,
+    idx: IndexDefinition,
+  ): string | undefined {
+    const columns = idx.columns ?? [];
+    if (
+      idx.unique !== true ||
+      idx.where ||
+      isJsonPathIndex(idx) ||
+      columns.length < 3 ||
+      !isLegacyNaturalKeyIndex(columns.slice(1), columns)
+    ) {
+      return undefined;
+    }
+    const legacyName = shortenIdentifier(
+      conflictIndexName(tableName, columns.slice(1)),
+    );
+    return legacyName === idx.name ? undefined : legacyName;
   }
 
   /**
@@ -4140,6 +4567,7 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
     dbType: string,
+    options: { emptyTextAsNull?: boolean } = {},
   ): GeneratedTypeUpgradeSQL {
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
@@ -4184,6 +4612,7 @@ export class SchemaComparer {
                 tableName,
                 colName,
                 dbNormalized,
+                options.emptyTextAsNull === true && dbNormalized === 'TEXT',
               )
             : manifestNormalized === 'TIMESTAMP' &&
                 ['TIMESTAMP', 'TEXT', 'JSON'].includes(dbNormalized) &&
@@ -4221,7 +4650,9 @@ export class SchemaComparer {
           manifestNormalized === 'INTEGER' &&
           dbNormalized === 'TEXT'
         ) {
-          typeClause += ` USING trim(${quotedCol}::text)::bigint`;
+          typeClause += options.emptyTextAsNull
+            ? ` USING trim((${renderEmptyTextAsNullExpression(quotedCol)}))::bigint`
+            : ` USING trim(${quotedCol}::text)::bigint`;
         } else if (
           manifestNormalized === 'INTEGER' &&
           dbNormalized === 'REAL'
@@ -4300,11 +4731,15 @@ export class SchemaComparer {
     tableName: string,
     colName: string,
     dbNormalized: string,
+    emptyTextAsNull = false,
   ): string {
+    // #3226: under the opt-in, empty text becomes NULL instead of blocking.
     const invalidCondition =
       dbNormalized === 'REAL'
         ? `${quotedCol} IS NOT NULL AND ${quotedCol} <> trunc(${quotedCol})`
-        : `${quotedCol} IS NOT NULL AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`;
+        : emptyTextAsNull
+          ? `${quotedCol} IS NOT NULL AND NOT ${renderEmptyTextPredicate(quotedCol)} AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`
+          : `${quotedCol} IS NOT NULL AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`;
     const message = `Cannot convert ${tableName}.${colName} to INTEGER: found non-integer values`;
 
     return `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${invalidCondition}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;

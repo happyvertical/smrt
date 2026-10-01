@@ -9,7 +9,6 @@ import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import type { DataQueryResult } from '@happyvertical/smrt-types';
-import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { htmlToMarkdown, resolveBodyFormat } from './body-format';
 import { Content } from './content';
@@ -445,7 +444,6 @@ export class Contents extends SmrtCollection<Content> {
     const filename = url.pathname.split('/').pop();
     const nameWithoutExtension = filename?.replace(/\.[^/.]+$/, '');
     const title = nameWithoutExtension?.replace(/[-_]/g, ' ');
-    const slug = makeSlug(title as string);
 
     // Extract text from all document parts
     const body = doc.parts.map((part) => part.content).join('\n\n');
@@ -454,11 +452,14 @@ export class Contents extends SmrtCollection<Content> {
         url: options.url,
         type: 'mirror',
         title,
-        slug,
         context: options.context || '',
         body,
       });
       await content.initialize();
+      // The file name is not an identity (two sites' `index.html`), so the
+      // slug is derived, not set: a taken one moves to `-2` on save instead
+      // of overwriting the other mirror (the URL lookup above is the dedup).
+      await content.getSlug();
       await content.save();
       return content;
     }

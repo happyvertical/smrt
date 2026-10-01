@@ -28,12 +28,43 @@ import type {
   DataSurfaceBackgroundQueue,
 } from './data-surface-actions.js';
 
-const handlers = new Map<
-  string,
-  (
-    envelope: DataSurfaceBackgroundActionEnvelope,
-  ) => Promise<DataSurfaceActionResult>
->();
+type DataSurfaceActionHandler = (
+  envelope: DataSurfaceBackgroundActionEnvelope,
+) => Promise<DataSurfaceActionResult>;
+
+interface HandlerEntry {
+  execute: DataSurfaceActionHandler;
+  owner?: string;
+}
+
+/**
+ * Process-wide registry. Keyed on `globalThis` so a hot-reloaded or
+ * re-evaluated copy of this module sees the registrations made by the
+ * previous copy instead of starting an empty map. The key carries the entry
+ * shape's version: a module copy that stores a different shape (another
+ * installed version) gets its own map instead of calling into entries it
+ * cannot read. Bump it whenever {@link HandlerEntry} changes.
+ */
+const HANDLERS_KEY = Symbol.for(
+  '@happyvertical/smrt-agents/data-surface-action-handlers@2',
+);
+const globalRegistry = globalThis as unknown as Record<
+  symbol,
+  Map<string, HandlerEntry> | undefined
+>;
+const handlers: Map<string, HandlerEntry> =
+  globalRegistry[HANDLERS_KEY] ?? new Map<string, HandlerEntry>();
+globalRegistry[HANDLERS_KEY] = handlers;
+
+export interface DataSurfaceBackgroundActionHandlerOptions {
+  /**
+   * Stable identity of the registering host module. A re-registration of the
+   * same `handlerId` by the same owner (a re-evaluated module after a hot
+   * reload) replaces the previous handler; a different owner, or an anonymous
+   * registration with a different function, is a conflict and throws.
+   */
+  owner?: string;
+}
 
 export interface DataSurfaceActionJobArgs {
   version: 1;
@@ -43,6 +74,8 @@ export interface DataSurfaceActionJobArgs {
 export interface JobsDataSurfaceBackgroundQueueOptions {
   db: DatabaseInterface;
   handlerId: string;
+  /** See {@link DataSurfaceBackgroundActionHandlerOptions.owner}. */
+  owner?: string;
   execute(
     envelope: DataSurfaceBackgroundActionEnvelope,
   ): Promise<DataSurfaceActionResult>;
@@ -113,7 +146,7 @@ export class SmrtDataSurfaceActionTask extends SmrtObject {
         `No data-surface action handler registered for ${envelope.handlerId}`,
       );
     }
-    const result = await handler(envelope);
+    const result = await handler.execute(envelope);
     if (!result.ok && result.reason === 'idempotency_in_progress') {
       throw new Error('Data-surface action outcome requires reconciliation');
     }
@@ -130,6 +163,7 @@ export function registerDataSurfaceBackgroundActionHandler(
   execute: (
     envelope: DataSurfaceBackgroundActionEnvelope,
   ) => Promise<DataSurfaceActionResult>,
+  options: DataSurfaceBackgroundActionHandlerOptions = {},
 ): () => void {
   if (!handlerId || handlerId.length > 256) {
     throw new Error(
@@ -137,14 +171,19 @@ export function registerDataSurfaceBackgroundActionHandler(
     );
   }
   const existing = handlers.get(handlerId);
-  if (existing && existing !== execute) {
-    throw new Error(
-      `Data-surface action handler already registered: ${handlerId}`,
-    );
+  if (existing && existing.execute !== execute) {
+    const sameOwner =
+      options.owner !== undefined && existing.owner === options.owner;
+    if (!sameOwner) {
+      throw new Error(
+        `Data-surface action handler already registered: ${handlerId}`,
+      );
+    }
   }
-  handlers.set(handlerId, execute);
+  const entry: HandlerEntry = { execute, owner: options.owner };
+  handlers.set(handlerId, entry);
   return () => {
-    if (handlers.get(handlerId) === execute) handlers.delete(handlerId);
+    if (handlers.get(handlerId) === entry) handlers.delete(handlerId);
   };
 }
 
@@ -154,6 +193,7 @@ export function createJobsDataSurfaceBackgroundQueue(
   const unregister = registerDataSurfaceBackgroundActionHandler(
     options.handlerId,
     options.execute,
+    { owner: options.owner },
   );
   return {
     unregister,

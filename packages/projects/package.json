@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-projects",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "smrtJsdoc": "strict",
   "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
   "type": "module",
@@ -64,7 +64,7 @@
     "@happyvertical/utils": "catalog:"
   },
   "peerDependencies": {
-    "svelte": "^5.57.1"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "svelte": {

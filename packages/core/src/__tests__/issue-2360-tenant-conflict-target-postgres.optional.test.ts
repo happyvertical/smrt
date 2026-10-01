@@ -225,12 +225,17 @@ describe.skipIf(!pgUrl)(
       expect(rows.find((row) => row.tenant_id === TENANT_A)?.id).toBe(a.id);
       expect(rows.find((row) => row.tenant_id === TENANT_B)?.id).toBe(b.id);
 
-      await widgets.create({ name: 'Widget', tenantId: TENANT_A });
+      // An explicit natural key dedups; a name-derived slug never adopts.
+      await widgets.create({
+        name: 'Widget',
+        slug: 'widget',
+        tenantId: TENANT_A,
+      });
       rows = await listRows(db, WIDGETS);
       expect(rows).toHaveLength(2);
 
-      await widgets.create({ name: 'Widget', tenantId: null });
-      await widgets.create({ name: 'Widget', tenantId: null });
+      await widgets.create({ name: 'Widget', slug: 'widget', tenantId: null });
+      await widgets.create({ name: 'Widget', slug: 'widget', tenantId: null });
       rows = await listRows(db, WIDGETS);
       expect(rows).toHaveLength(3);
       expect(rows.filter((row) => row.tenant_id == null)).toHaveLength(1);

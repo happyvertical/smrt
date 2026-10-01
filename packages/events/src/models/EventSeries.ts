@@ -11,6 +11,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { expandRecurrence } from '../recurrence';
 import type { EventSeriesOptions, RecurrencePattern } from '../types';
 
 @TenantScoped({ mode: 'optional' })
@@ -97,6 +98,38 @@ export class EventSeries extends SmrtObject {
    */
   setRecurrence(pattern: RecurrencePattern): void {
     this.recurrence = JSON.stringify(pattern);
+  }
+
+  /**
+   * Expand this series' recurrence into occurrence start instants within a
+   * window. The first occurrence is `startDate` (or `options.start`); its
+   * wall-clock time in the time zone is kept for every occurrence, and
+   * `endDate` caps the series like an inclusive `until`.
+   *
+   * @param rangeStart - Inclusive window start
+   * @param rangeEnd - Inclusive window end
+   * @param options - Time zone (defaults to the pattern's `timeZone`, then UTC) and optional first occurrence
+   * @returns Occurrence start instants, or an empty array without a pattern or start
+   */
+  getOccurrences(
+    rangeStart: Date,
+    rangeEnd: Date,
+    options: { timeZone?: string; start?: Date; limit?: number } = {},
+  ): Date[] {
+    const pattern = this.getRecurrence();
+    const start = options.start ?? this.startDate;
+    if (!pattern || !start) return [];
+    const end =
+      this.endDate && this.endDate.getTime() < rangeEnd.getTime()
+        ? this.endDate
+        : rangeEnd;
+    return expandRecurrence(pattern, {
+      start,
+      rangeStart,
+      rangeEnd: end,
+      timeZone: options.timeZone,
+      limit: options.limit,
+    });
   }
 
   /**

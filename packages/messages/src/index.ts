@@ -24,12 +24,19 @@ export { AttachmentCollection } from './collections/AttachmentCollection';
 export { MessageCollection } from './collections/MessageCollection';
 export { MessagingEndpointCollection } from './collections/MessagingEndpointCollection.js';
 export { PersonaMessageRouteCollection } from './collections/PersonaMessageRouteCollection.js';
+export { UserNotificationCollection } from './collections/UserNotificationCollection.js';
 export { Account } from './models/Account';
 export { Attachment } from './models/Attachment';
 // Base models
 export { Message } from './models/Message';
 export { MessagingEndpoint } from './models/MessagingEndpoint.js';
 export { PersonaMessageRoute } from './models/PersonaMessageRoute.js';
+export {
+  USER_NOTIFICATION_SEVERITIES,
+  UserNotification,
+  type UserNotificationOptions,
+  type UserNotificationSeverity,
+} from './models/UserNotification.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Email (backward-compatible)
@@ -108,6 +115,13 @@ export {
   type PersonaMessageSendResult,
   PersonaMessagingService,
 } from './services/PersonaMessagingService.js';
+export {
+  type UserNotificationInput,
+  type UserNotificationListOptions,
+  type UserNotificationNotifyResult,
+  type UserNotificationScope,
+  UserNotificationService,
+} from './services/UserNotificationService.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Types

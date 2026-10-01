@@ -475,7 +475,12 @@ export class ManifestAdapter {
     // child-wins semantics (static override), not parent-wins like STI columns.
     // Fall back to allFields for inherited static props not redeclared by child.
     let staticProperties: Record<string, unknown> | undefined;
-    const knownStaticProps = ['uiSlots', 'adminRoutes', 'signalSubscriptions'];
+    const knownStaticProps = [
+      'uiSlots',
+      'adminRoutes',
+      'signalSubscriptions',
+      'createEntries',
+    ];
     const ownStaticNames = new Set<string>();
     // First pass: own fields (child overrides win)
     for (const field of classDef.fields) {
@@ -909,6 +914,11 @@ export class ManifestAdapter {
         'description',
         'default',
         'constraint',
+        // #3023: the declared delete policy must reach the manifest, or the
+        // manifest generator falls back to the natural-key default (CASCADE
+        // for a conflictColumns member) and the DDL disagrees with the
+        // runtime decorator.
+        'onDelete',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {
@@ -983,6 +993,9 @@ export class ManifestAdapter {
         'default',
         'indexed',
         'idType',
+        // #3023: keep the declared app-side delete policy for manifest-only
+        // consumers, matching the runtime decorator.
+        'onDelete',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-vitest",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "description": "Vitest plugin for automatic cross-package manifest loading in SMRT tests",
   "type": "module",
   "main": "dist/index.js",
@@ -71,7 +71,7 @@
     "tsx": "^4.23.13"
   },
   "peerDependencies": {
-    "svelte": ">=5.57.1",
+    "svelte": ">=5.57.0",
     "vitest": ">=2.1.9"
   },
   "peerDependenciesMeta": {

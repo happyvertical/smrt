@@ -1,5 +1,58 @@
 # @happyvertical/smrt-jobs
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: `JobList` sorts: every column header is a sortable control (`SortableHeader`
+  from `@happyvertical/smrt-ui/data`, with `aria-sort`) that toggles its column.
+  Rows keep the order they are supplied in until a header is activated or the
+  host passes `sort`. Pass `sort` + `onSortChange` to own the order (e.g. a
+  server-sorted list).
+
+### Patch Changes
+
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+  - @happyvertical/smrt-config@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
+## 0.51.39
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.39
+  - @happyvertical/smrt-tenancy@0.51.39
+  - @happyvertical/smrt-config@0.51.39
+  - @happyvertical/smrt-ui@0.51.39
+  - @happyvertical/smrt-types@0.51.39
+
 ## 0.51.38
 
 ### Patch Changes

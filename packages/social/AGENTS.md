@@ -5,7 +5,7 @@ Social media account management with OAuth and post scheduling. Supports YouTube
 ## Models
 
 - **SocialAccount** (STI): `platform`, `accessToken`/`refreshToken`, `tokenExpiresAt`, `status` (connected/expired/error), `linkBehavior` (description/reply/none). `isTokenExpired` checks with 5-min buffer. `isReady` gate checks active + connected + token present + not expired.
-- **SocialPost**: `scheduledAt`, `publishedAt`, `status` (draft/scheduled/publishing/published/failed), `analytics` JSON (views/likes/comments/shares/clicks).
+- **SocialPost**: `scheduledAt`, `publishedAt`, `status` (draft/scheduled/publishing/published/failed), `analytics` JSON (views/likes/comments/shares/clicks). `createdByUserId` (nullable `@crossPackageRef` to `smrt-users:User`, uuid on PostgreSQL) records the poster; pass it to `createDraft()` so a failed publish can be reported to that person. Agent/schedule posts leave it null; `recordPublishSuccess`/`Failure` never change it. Adding the column is additive: consumers run `db:migrate`.
 - **OAuthState** (STI): CSRF token + PKCE `codeVerifier` with 10-min TTL.
 
 ## Gotchas

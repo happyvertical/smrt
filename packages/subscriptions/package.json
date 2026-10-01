@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-subscriptions",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "description": "Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT",
   "type": "module",
   "smrtRawPrimitives": "strict",
@@ -45,7 +45,7 @@
     "@happyvertical/sql": "catalog:"
   },
   "peerDependencies": {
-    "svelte": "^5.57.1"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "svelte": {

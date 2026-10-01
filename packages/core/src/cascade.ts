@@ -285,6 +285,7 @@ export function buildCascadePlan(
         declared: relationship.options?.onDelete,
         isConflictColumn: conflictColumns.has(column),
         isTenantIdField: false,
+        columnName: column,
       });
 
       if (

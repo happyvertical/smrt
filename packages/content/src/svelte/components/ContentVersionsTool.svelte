@@ -241,6 +241,13 @@ async function restoreVersion(versionNumber: number) {
 />
 
 <style>
+  /* The tool lays itself out by its own width, not the viewport, so it
+     fits a full page, a side panel, the assistant dock or a phone. */
+  .governance-tool {
+    container-type: inline-size;
+    container-name: governance-tool;
+  }
+
   .governance-tool,
   .tool-list,
   .tool-card {
@@ -263,8 +270,9 @@ async function restoreVersion(versionNumber: number) {
   }
 
   .tool-card {
-    background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-card-background, var(--smrt-color-surface));
+    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
+    box-shadow: var(--smrt-card-shadow, none);
     border-radius: 0.75rem;
     padding: 0.85rem;
   }
@@ -308,5 +316,21 @@ async function restoreVersion(versionNumber: number) {
   .tool-notice {
     background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
     color: var(--smrt-color-on-primary-container);
+  }
+
+  @container governance-tool (max-width: 30rem) {
+    .tool-toolbar {
+      justify-content: stretch;
+    }
+
+    .tool-toolbar :global(button),
+    .tool-card-footer :global(button) {
+      width: 100%;
+    }
+
+    .tool-card-footer {
+      flex-direction: column;
+      align-items: stretch;
+    }
   }
 </style>

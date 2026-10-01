@@ -1,7 +1,22 @@
 <script lang="ts">
 /**
- * JobList - Display a filterable, sortable list of background jobs
+ * JobList - Display a filterable, sortable list of background jobs.
+ *
+ * Sorting follows the list-sort contract (`@happyvertical/smrt-ui/data`):
+ * every column header toggles its column ascending/descending (dates and
+ * counts start with the largest). Rows keep the order they are supplied in
+ * until the host passes `sort` or the person activates a header, so a host
+ * that already orders its jobs is not silently reordered. A parent that pages
+ * on the server passes `sort` + `onSortChange` and supplies rows already in
+ * that order.
  */
+import {
+  type ListSort,
+  type ListSortSpec,
+  SortableHeader,
+  sortListRows,
+  toggleListSort,
+} from '@happyvertical/smrt-ui/data';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
@@ -33,7 +48,31 @@ export interface Props {
   onCancel?: (job: JobData) => void;
   /** Empty state snippet */
   empty?: Snippet;
+  /**
+   * Current order. Omitted: rows render as supplied (headers show no sort)
+   * until a header is activated.
+   */
+  sort?: ListSort;
+  /**
+   * Called when a header is activated. When given, the parent owns the order
+   * (e.g. a server-sorted list) and `jobs` are rendered as supplied.
+   */
+  onSortChange?: (sort: ListSort) => void;
 }
+
+const JOB_LIST_SORT: ListSortSpec = {
+  columns: [
+    'status',
+    'queue',
+    'objectType',
+    'method',
+    { id: 'priority', firstDirection: 'desc' },
+    { id: 'attempts', firstDirection: 'desc' },
+    { id: 'createdAt', firstDirection: 'desc' },
+    { id: 'runAt', firstDirection: 'desc' },
+  ],
+  default: { columnId: 'createdAt', direction: 'desc' },
+};
 
 let {
   jobs = [],
@@ -46,7 +85,33 @@ let {
   onRetry,
   onCancel,
   empty,
+  sort = $bindable<ListSort | undefined>(undefined),
+  onSortChange,
 }: Props = $props();
+
+function sortValue(job: JobData, columnId: string) {
+  const value = job[columnId as keyof JobData];
+  return value instanceof Date ||
+    typeof value === 'string' ||
+    typeof value === 'number'
+    ? value
+    : null;
+}
+
+const rows = $derived(
+  onSortChange || !sort ? jobs : sortListRows(jobs, sort, sortValue),
+);
+
+function handleSort(columnId: string) {
+  // With no sort yet, the clicked column starts at its first direction.
+  const next = toggleListSort(
+    sort ?? { columnId: '', direction: 'asc' },
+    columnId,
+    JOB_LIST_SORT,
+  );
+  if (onSortChange) onSortChange(next);
+  else sort = next;
+}
 
 // Handle row click
 function handleRowClick(job: JobData) {
@@ -103,6 +168,18 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     },
   };
 }
+
+// Sortable header columns (labels routed through i18n where keyed).
+const sortColumns = $derived([
+  { id: 'status', label: 'Status' },
+  { id: 'queue', label: 'Queue' },
+  { id: 'objectType', label: 'Object' },
+  { id: 'method', label: 'Method' },
+  { id: 'priority', label: 'Priority' },
+  { id: 'attempts', label: 'Attempts' },
+  { id: 'createdAt', label: 'Created' },
+  { id: 'runAt', label: t(M['jobs.job_list.run_at']) },
+]);
 </script>
 
 <div class="job-list-container">
@@ -121,14 +198,16 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             />
           </th>
         {/if}
-        <th class="job-list__cell">Status</th>
-        <th class="job-list__cell">Queue</th>
-        <th class="job-list__cell">Object</th>
-        <th class="job-list__cell">Method</th>
-        <th class="job-list__cell">Priority</th>
-        <th class="job-list__cell">Attempts</th>
-        <th class="job-list__cell">Created</th>
-        <th class="job-list__cell">{t(M['jobs.job_list.run_at'])}</th>
+        {#each sortColumns as column (column.id)}
+          <SortableHeader
+            class="job-list__cell job-list__cell--sortable"
+            columnId={column.id}
+            label={column.label}
+            {sort}
+            spec={JOB_LIST_SORT}
+            onSort={handleSort}
+          />
+        {/each}
         {#if showActions}
           <th class="job-list__cell">Actions</th>
         {/if}
@@ -158,7 +237,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
           </td>
         </tr>
       {:else}
-        {#each jobs as job (job.id)}
+        {#each rows as job (job.id)}
           {@const isSelected = selected.has(job.id)}
           <tr
             class="job-list__row"
@@ -249,12 +328,20 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     background: var(--smrt-color-surface-container, #f3f4f6);
   }
 
-  .job-list__head th {
+  /* Sortable headers are SortableHeader's own <th>: :global, and their
+     control carries the padding. */
+  .job-list__head :global(th) {
     padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+  }
+
+  .job-list__head :global(th.sortable-header) {
+    padding: 0;
+    --sortable-header-padding: var(--smrt-spacing-sm, 0.5rem)
+      var(--smrt-spacing-md, 1rem);
   }
 
   .job-list__body tr {

@@ -76,6 +76,9 @@ export class ProfileMetafield extends SmrtObject {
     if (options.description !== undefined)
       this.description = options.description;
     if (options.validation !== undefined) this.validation = options.validation;
+    // The class-field initializer above runs after super(), so an explicit
+    // tenant must be re-applied here or it is silently dropped.
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 
   /**

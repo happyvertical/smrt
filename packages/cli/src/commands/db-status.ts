@@ -41,6 +41,7 @@ import {
   formatSchemaContractFailures,
   type SchemaContractReport,
 } from './schema-contract.js';
+import { checkTenantNaturalKeyUniques } from './tenant-natural-keys.js';
 
 type StatusDrift = {
   name: string;
@@ -83,6 +84,7 @@ interface DbStatusOptions {
   json?: boolean;
   verbose?: boolean;
   parity?: boolean;
+  'empty-text-as-null'?: boolean;
 }
 
 const CANONICAL_UUID_RE =
@@ -485,6 +487,12 @@ export const dbStatusCommand: CLICommand = {
       default: false,
       short: 'p',
     },
+    'empty-text-as-null': {
+      type: 'boolean',
+      description:
+        'Assess the same convergence `db:migrate --empty-text-as-null` would apply: a nullable legacy text column whose only obstacle is empty or whitespace-only text is pending, not blocked. Off by default.',
+      default: false,
+    },
   },
   handler: async (_args: string[], options: DbStatusOptions) => {
     let db: DatabaseInterface | undefined;
@@ -610,16 +618,23 @@ export const dbStatusCommand: CLICommand = {
       const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
       let comparer: SchemaComparer | undefined;
       if (typeof db.getTableSchema === 'function') {
-        comparer = new SchemaComparer(db);
+        comparer = new SchemaComparer(db, {
+          emptyTextAsNull: Boolean(options['empty-text-as-null']),
+        });
         diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
         status.notes = summarizeSchemaNotes(diff);
-        status.preconditions = await checkTenantIdUuidPreconditions({
-          db,
-          dbType,
-          dbUrl,
-          manifestSchemas,
-        });
+        status.preconditions = [
+          ...(await checkTenantIdUuidPreconditions({
+            db,
+            dbType,
+            dbUrl,
+            manifestSchemas,
+          })),
+          // Tenant-owned tables whose live unique index is still the global
+          // natural key (the Ludis cross-tenant takeover shape).
+          ...checkTenantNaturalKeyUniques(comparer.getLiveSchemaSnapshot()),
+        ];
         status.failedMigrations = summarizeFailedMigrations(
           failed,
           getUnresolvedGeneratedMigrationNames(diff.changes),

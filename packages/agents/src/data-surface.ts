@@ -7,7 +7,7 @@
  * tenant, projection, ordering, and result-boundary enforcement around them.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { AITool } from '@happyvertical/ai';
 import {
   createDataQueryFingerprint,
@@ -216,23 +216,164 @@ export class DataSurfaceQueryError extends Error {
 // second time when it unwinds through the outer executor catch.
 const reportedFailureErrors = new WeakSet<object>();
 
-/** Stable public failure for requests that name hidden schema capabilities. */
+/**
+ * A caller's query request was malformed or named something the surface does
+ * not offer.
+ *
+ * The message says what was wrong and what is allowed instead, so an agent can
+ * correct its next call rather than retry blind. It is built only from the
+ * caller's own input and the schema already visible to that caller: a hidden
+ * (`sensitive`/`readPermission`) field is absent from that schema, so naming
+ * one produces exactly the message a field that does not exist produces, and
+ * the allowed-value lists never include it.
+ */
 export class DataSurfaceRequestError extends Error {
   readonly status = 400;
   readonly code = 'DATA_SURFACE_REQUEST_INVALID';
+  /** The underlying `DataQueryValidationError` code, when there was one. */
+  readonly reason?: string;
 
-  constructor() {
-    super('Data surface query request is invalid.');
+  constructor(
+    message = 'Data surface query request is invalid.',
+    reason?: string,
+  ) {
+    super(message);
     this.name = 'DataSurfaceRequestError';
+    if (reason !== undefined) this.reason = reason;
   }
 }
 
-const HIDDEN_SCHEMA_REQUEST_CODES = new Set([
-  'DATA_QUERY_FIELD_NOT_ALLOWED',
-  'DATA_QUERY_PROJECTION_NOT_ALLOWED',
-  'DATA_QUERY_SORT_NOT_ALLOWED',
-  'DATA_QUERY_FACET_NOT_ALLOWED',
+/** Compact request grammar appended to structural request errors. */
+const DATA_QUERY_REQUEST_SHAPE_HINT =
+  'Request shape: {"mode":"rows"|"count"|"facets", "projection":[field], ' +
+  '"filter":{"kind":"condition","field":f,"operator":op,"value":v} | ' +
+  '{"kind":"all"|"any","filters":[filter]} | {"kind":"not","filter":filter}, ' +
+  '"sort":[{"field":f,"direction":"asc"|"desc"}], ' +
+  '"page":{"kind":"offset","offset":0,"limit":n}, "facets":[{"field":f,"limit":n}]}. ' +
+  'projection/sort/page are for rows mode only; facets for facets mode only. ' +
+  'Datetime values are RFC 3339 instants such as 2026-09-01T00:00:00Z. ' +
+  'Call data.inspect for the fields and operators this surface accepts.';
+
+/**
+ * Codes an adapter/executor may raise for a problem with the caller's request
+ * (as opposed to its own result). They cross the boundary as a 400 with the
+ * adapter's public message instead of collapsing into `DataSurfaceQueryError`.
+ */
+const EXECUTOR_REQUEST_ERROR_CODES = new Set([
+  'DATA_QUERY_VALUE_INVALID',
+  'DATA_QUERY_OPERATOR_NOT_ALLOWED',
+  'DATA_QUERY_UNSUPPORTED',
 ]);
+
+function fieldList(
+  schema: DataQuerySchema,
+  predicate: (field: DataQuerySchema['fields'][number]) => boolean,
+): string[] {
+  return schema.fields.filter(predicate).map((field) => field.id);
+}
+
+function listOrNone(label: string, ids: readonly string[], none: string) {
+  return ids.length > 0 ? `${label}: ${ids.join(', ')}.` : none;
+}
+
+/** The first condition in a raw filter whose operator its field does not allow. */
+function disallowedCondition(
+  filter: unknown,
+  schema: DataQuerySchema,
+  depth = 0,
+): { field: string; allowed: readonly string[] } | undefined {
+  if (!isRecord(filter) || depth > 16) return undefined;
+  if (filter.kind === 'condition' && typeof filter.field === 'string') {
+    const descriptor = schema.fields.find((field) => field.id === filter.field);
+    const allowed = descriptor?.filterOperators ?? [];
+    return descriptor && !allowed.includes(filter.operator as never)
+      ? { field: filter.field, allowed }
+      : undefined;
+  }
+  const children = Array.isArray(filter.filters)
+    ? filter.filters
+    : [filter.filter];
+  for (const child of children) {
+    const found = disallowedCondition(child, schema, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Turn a core `DataQueryValidationError` into an actionable
+ * `DataSurfaceRequestError`: the original reason plus what the visible schema
+ * does allow in its place.
+ */
+function explainRequestError(
+  error: DataQueryValidationError,
+  schema: DataQuerySchema,
+  request: unknown,
+): DataSurfaceRequestError {
+  const reason = error.publicMessage.replace(/\.?$/, '.');
+  let hint: string;
+  switch (error.code) {
+    case 'DATA_QUERY_FIELD_NOT_ALLOWED':
+      hint = listOrNone(
+        'Filterable fields',
+        fieldList(schema, (field) => (field.filterOperators?.length ?? 0) > 0),
+        'This surface has no filterable fields; omit filter.',
+      );
+      break;
+    case 'DATA_QUERY_OPERATOR_NOT_ALLOWED': {
+      const found = isRecord(request)
+        ? disallowedCondition(request.filter, schema)
+        : undefined;
+      hint = found
+        ? found.allowed.length > 0
+          ? `Allowed operators for ${found.field}: ${found.allowed.join(', ')}.`
+          : `${found.field} cannot be filtered.`
+        : 'Call data.inspect for each field’s filterOperators.';
+      break;
+    }
+    case 'DATA_QUERY_PROJECTION_NOT_ALLOWED':
+      hint = listOrNone(
+        'Projectable fields',
+        fieldList(
+          schema,
+          (field) =>
+            field.projectable !== false || field.id === schema.identityField,
+        ),
+        'Omit projection.',
+      );
+      break;
+    case 'DATA_QUERY_SORT_NOT_ALLOWED':
+      hint = listOrNone(
+        'Sortable fields',
+        fieldList(
+          schema,
+          (field) =>
+            field.sortable === true || field.id === schema.identityField,
+        ),
+        'Omit sort.',
+      );
+      break;
+    case 'DATA_QUERY_FACET_NOT_ALLOWED':
+      hint = listOrNone(
+        'Facetable fields',
+        fieldList(schema, (field) => field.facetable === true),
+        'This surface has no facetable fields; use mode "count" or "rows".',
+      );
+      break;
+    case 'DATA_QUERY_UNSUPPORTED': {
+      const supports = schema.supports ?? {};
+      hint = `This surface supports offset paging${
+        supports.cursorPagination ? ', cursor paging' : ''
+      }${supports.facets ? ', facets' : ''}${
+        supports.consistency ? ', consistency options' : ''
+      }.`;
+      break;
+    }
+    default:
+      hint = DATA_QUERY_REQUEST_SHAPE_HINT;
+  }
+  return new DataSurfaceRequestError(`${reason} ${hint}`, error.code);
+}
 
 function normalizeSurfaceRequest(
   value: unknown,
@@ -241,11 +382,8 @@ function normalizeSurfaceRequest(
   try {
     return normalizeDataQueryRequest(value, schema);
   } catch (error) {
-    if (
-      error instanceof DataQueryValidationError &&
-      HIDDEN_SCHEMA_REQUEST_CODES.has(error.code)
-    ) {
-      throw new DataSurfaceRequestError();
+    if (error instanceof DataQueryValidationError) {
+      throw explainRequestError(error, schema, value);
     }
     throw error;
   }
@@ -815,9 +953,183 @@ async function bounded<T>(
   }
 }
 
+/**
+ * The model-facing request, with envelope defaults filled in.
+ *
+ * `version` and `requestId` are transport correlation, meaningless to an
+ * agent, and `mode`/`page.kind`/`page.offset` have one obvious default; an
+ * agent that omits them should not burn a step learning the envelope. Nothing
+ * here widens what a request can ask for — every value still goes through
+ * `normalizeDataQueryRequest` against the visible schema. A flat call (the
+ * request's keys beside `surfaceId`, no `request` object) is accepted too.
+ */
 function requestFromArgs(args: Record<string, unknown>): unknown {
-  return args.request ?? args;
+  let raw: unknown;
+  if (Object.hasOwn(args, 'request')) {
+    raw = args.request;
+  } else {
+    const { surfaceId: _surfaceId, ...rest } = args;
+    raw = rest;
+  }
+  if (!isRecord(raw)) return raw;
+  const request: Record<string, unknown> = {
+    ...raw,
+    version: raw.version ?? 1,
+    requestId: raw.requestId ?? `dq_${randomUUID()}`,
+    mode: raw.mode ?? (raw.facets !== undefined ? 'facets' : 'rows'),
+  };
+  if (isRecord(raw.page)) {
+    const kind = raw.page.kind ?? 'offset';
+    request.page = {
+      ...raw.page,
+      kind,
+      ...(kind === 'offset' ? { offset: raw.page.offset ?? 0 } : {}),
+    };
+  }
+  return request;
 }
+
+const DATA_QUERY_OPERATORS = [
+  'eq',
+  'ne',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'in',
+  'notIn',
+  'like',
+] as const;
+
+const DATA_QUERY_SCALAR_SCHEMA = [
+  { type: 'string' },
+  { type: 'number' },
+  { type: 'boolean' },
+  { type: 'null' },
+];
+
+/**
+ * JSON schema for `data.query`'s arguments: the exact request grammar
+ * `normalizeDataQueryRequest` accepts. Per-surface capability (which fields
+ * are projectable/sortable/facetable, each field's operators, page limits)
+ * comes from `data.inspect`, which the description points at.
+ */
+export const DATA_QUERY_TOOL_PARAMETERS: Record<string, unknown> = {
+  type: 'object',
+  required: ['surfaceId', 'request'],
+  additionalProperties: false,
+  properties: {
+    surfaceId: {
+      type: 'string',
+      description: 'A surface id from data.discover.',
+    },
+    request: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        mode: {
+          type: 'string',
+          enum: ['rows', 'count', 'facets'],
+          description:
+            'rows (default): matching records. count: only the total (no projection, sort, or page). facets: value counts for facetable fields.',
+        },
+        projection: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: 50,
+          description:
+            'rows only. Projectable fields to return; the identity field is always included.',
+        },
+        filter: {
+          type: 'object',
+          description:
+            'Optional. A condition {"kind":"condition","field":f,"operator":op,"value":v}; ' +
+            '{"kind":"all"|"any","filters":[...]} to AND/OR nested filters; or {"kind":"not","filter":{...}}. ' +
+            'field must list op in its filterOperators (data.inspect). value is a scalar, or a non-empty array (max 100) for in/notIn. ' +
+            'like takes SQL wildcards (%council%) on string fields. Datetimes are RFC 3339 instants (2026-09-01T00:00:00Z). ' +
+            'String fields whose only operators are eq/ne/in/notIn hold ids: compare them with complete id values.',
+          properties: {
+            kind: { type: 'string', enum: ['condition', 'all', 'any', 'not'] },
+            field: { type: 'string' },
+            operator: { type: 'string', enum: [...DATA_QUERY_OPERATORS] },
+            value: {
+              anyOf: [
+                ...DATA_QUERY_SCALAR_SCHEMA,
+                {
+                  type: 'array',
+                  items: { anyOf: DATA_QUERY_SCALAR_SCHEMA },
+                },
+              ],
+            },
+            filters: { type: 'array', items: { type: 'object' } },
+            filter: { type: 'object' },
+          },
+          required: ['kind'],
+        },
+        sort: {
+          type: 'array',
+          description:
+            'rows only. Sortable fields, earlier terms first. Empty values sort first ascending and last descending.',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['field', 'direction'],
+            properties: {
+              field: { type: 'string' },
+              direction: { type: 'string', enum: ['asc', 'desc'] },
+            },
+          },
+        },
+        page: {
+          type: 'object',
+          additionalProperties: false,
+          description:
+            'rows only. {"kind":"offset","offset":0,"limit":10}; kind defaults to offset and offset to 0. limit is capped at the surface maxPageLimit. ' +
+            'Use {"kind":"cursor","after":nextCursor,"limit":n} only where supports.cursorPagination.',
+          properties: {
+            kind: { type: 'string', enum: ['offset', 'cursor'] },
+            offset: { type: 'integer', minimum: 0 },
+            limit: { type: 'integer', minimum: 1 },
+            after: { type: 'string' },
+          },
+          required: ['limit'],
+        },
+        facets: {
+          type: 'array',
+          description:
+            'facets mode only (supports.facets). One entry per facetable field.',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['field', 'limit'],
+            properties: {
+              field: { type: 'string' },
+              limit: { type: 'integer', minimum: 1 },
+            },
+          },
+        },
+        version: {
+          type: 'integer',
+          enum: [1],
+          description: 'Optional; defaults to 1.',
+        },
+        requestId: {
+          type: 'string',
+          description: 'Optional correlation id; generated when omitted.',
+        },
+      },
+    },
+  },
+};
+
+const DATA_QUERY_TOOL_DESCRIPTION =
+  'Run a bounded, read-only query against one data surface. Call data.inspect first: ' +
+  'only the fields, operators, sort fields, facets, and page limits it lists are accepted. ' +
+  'Use mode "count" for how-many questions and mode "facets" for breakdowns by value. ' +
+  'Example request: {"mode":"rows","projection":["title","updated_at"],' +
+  '"filter":{"kind":"condition","field":"status","operator":"eq","value":"published"},' +
+  '"sort":[{"field":"updated_at","direction":"desc"}],"page":{"kind":"offset","offset":0,"limit":10}}. ' +
+  'An invalid request fails with a message naming what was wrong and what is allowed.';
 
 function tool(
   slug: string,
@@ -909,16 +1221,8 @@ export function createDataSurfaceTools(
   const query = tool(
     DATA_QUERY_TOOL_SLUG,
     DATA_QUERY_FUNCTION_NAME,
-    'Run a bounded read query against one readable data surface.',
-    {
-      type: 'object',
-      required: ['surfaceId', 'request'],
-      properties: {
-        surfaceId: { type: 'string' },
-        request: { type: 'object' },
-      },
-      additionalProperties: false,
-    },
+    DATA_QUERY_TOOL_DESCRIPTION,
+    DATA_QUERY_TOOL_PARAMETERS,
     async ({ run, args, db }) => {
       run.assertToolAllowed(DATA_QUERY_TOOL_SLUG);
       const entry = findSurface(await catalog(run, 'query'), args.surfaceId);
@@ -939,6 +1243,20 @@ export function createDataSurfaceTools(
             principal,
             db: run.context.database ?? db,
             signal: signal.signal,
+          }).catch((error: unknown) => {
+            // An adapter refusing the caller's request (e.g. a non-id value
+            // for an id column) is the caller's error, not a failed query:
+            // pass its public reason through instead of an opaque 502.
+            if (
+              error instanceof DataQueryValidationError &&
+              EXECUTOR_REQUEST_ERROR_CODES.has(error.code)
+            ) {
+              throw new DataSurfaceRequestError(
+                error.publicMessage,
+                error.code,
+              );
+            }
+            throw error;
           }),
           deadlineMs,
           signal,
@@ -1041,6 +1359,8 @@ export function createDataSurfaceTools(
         );
         return result;
       } catch (error) {
+        // The caller's own mistake: not a server-side failure to report.
+        if (error instanceof DataSurfaceRequestError) throw error;
         const alreadyReported =
           (typeof error === 'object' && error !== null) ||
           typeof error === 'function'

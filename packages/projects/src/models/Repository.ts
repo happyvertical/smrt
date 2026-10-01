@@ -8,9 +8,11 @@
 import { getRepository } from '@happyvertical/repos';
 import { getModuleConfig } from '@happyvertical/smrt-config';
 import {
+  ObjectRegistry,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
+  toSnakeCase,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { SYNC_THROTTLE_MS } from '../constants';
@@ -234,6 +236,43 @@ export class Repository extends SmrtObject {
   }
 
   /**
+   * Options for an issue or pull request created from this repository: the
+   * database connection and tenant context, without any of this repository's
+   * own columns (identity, timestamps, data). A repository loaded from the database holds its row's
+   * `id`/`slug` in `this.options`; spread into a new issue they would give
+   * every issue the repository's primary key and slug, so each save would
+   * overwrite the previous issue.
+   */
+  private childOptions(): Record<string, unknown> {
+    const rest = { ...(this.options as Record<string, unknown>) };
+    // Every column of the repository's own row goes, not just a known few: a
+    // loaded repository's `created_at` (or any other field) would otherwise
+    // be copied onto each new issue.
+    const ownKeys = new Set([
+      'id',
+      'slug',
+      'context',
+      '_skipLoad',
+      'created_at',
+      'updated_at',
+      'createdAt',
+      'updatedAt',
+    ]);
+    for (const fieldName of ObjectRegistry.getFields(
+      this.getResolvedQualifiedName(),
+    ).keys()) {
+      ownKeys.add(fieldName);
+      ownKeys.add(toSnakeCase(fieldName));
+    }
+    // The tenant is context, not identity: issues belong to the
+    // repository's tenant.
+    ownKeys.delete('tenantId');
+    ownKeys.delete('tenant_id');
+    for (const key of ownKeys) delete rest[key];
+    return rest;
+  }
+
+  /**
    * Create a new issue in this repository
    *
    * @param data - Issue creation data
@@ -251,7 +290,7 @@ export class Repository extends SmrtObject {
     // Create SMRT Issue from remote data
     const { Issue } = await import('./Issue');
     const issue = new Issue({
-      ...this.options,
+      ...this.childOptions(),
       repositoryId,
       number: created.number,
       nodeId: created.id,
@@ -290,7 +329,7 @@ export class Repository extends SmrtObject {
     // Create SMRT PullRequest from remote data
     const { PullRequest } = await import('./PullRequest');
     const pr = new PullRequest({
-      ...this.options,
+      ...this.childOptions(),
       repositoryId,
       number: created.number,
       nodeId: created.id,

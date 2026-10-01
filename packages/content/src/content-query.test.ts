@@ -16,6 +16,7 @@ import {
   MAX_DATA_QUERY_WARNINGS,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
+  ObjectRegistry,
   SmrtCollection,
   SmrtObject,
   smrt,
@@ -39,6 +40,7 @@ import {
   boundRowBytes,
   buildContentQuerySchema,
   buildDataQuerySchemaForClass,
+  CONTENT_QUERY_CLASS_NAME,
   CONTENT_QUERY_DEFAULT_PAGE_LIMIT,
   CONTENT_QUERY_DEFAULT_SORT,
   CONTENT_QUERY_IDENTITY_FIELD,
@@ -682,6 +684,48 @@ describe('executeContentQuery', () => {
         { schema: { ...base, maxResultBytes: CONTENT_QUERY_MIN_RESULT_BYTES } },
       ),
     ).rejects.toMatchObject({ code: 'DATA_QUERY_RESULT_TOO_LARGE' });
+  });
+
+  it('asks the collection for the contract NULL placement on every sort term', async () => {
+    // PostgreSQL sorts NULLs first when descending; the data-query tools
+    // verify a page against "NULL is smallest", so a newest-first page that
+    // held an undated article failed as a 502 until the placement was explicit.
+    await seed(contents, [
+      {
+        name: 'dated',
+        status: 'published',
+        publish_date: new Date('2026-09-01T00:00:00Z'),
+      },
+      { name: 'undated', status: 'draft' },
+    ]);
+    const list = vi.spyOn(contents, 'list');
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        projection: ['name'],
+        sort: [{ field: 'publish_date', direction: 'desc' }],
+        page: { kind: 'offset', offset: 0, limit: 5 },
+      }),
+    );
+    expect(list.mock.calls[0][0]).toMatchObject({
+      orderBy: ['publish_date DESC NULLS LAST', 'id ASC NULLS FIRST'],
+    });
+    expect(result.rows.map((row) => row.name)).toEqual(['dated', 'undated']);
+  });
+
+  it('offers only equality operators on a native UUID id column', async () => {
+    const schema = await buildContentQuerySchema();
+    const idField = schema.fields.find((entry) => entry.id === 'id');
+    const idColumnIsUuid =
+      String(
+        ObjectRegistry.getSchema(CONTENT_QUERY_CLASS_NAME)?.columns.id?.type,
+      ).toUpperCase() === 'UUID';
+    // PostgreSQL has no `uuid ~~ text`; a text id keeps every operator.
+    expect(idField?.filterOperators).toEqual(
+      idColumnIsUuid
+        ? ['eq', 'in', 'ne', 'notIn']
+        : expect.arrayContaining(['like']),
+    );
   });
 
   it('pages deterministically across a tie-broken sort', async () => {

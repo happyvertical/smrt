@@ -15,6 +15,13 @@ presentation, focus tool registration, activity registry/watch components, and
 optional SMRT-fed content seams. It does not depend on jobs, users, tenancy, or
 SvelteKit route APIs; apps pass data, endpoints, and permission-filtered nav in.
 
+The explicit `@happyvertical/smrt-svelte/workspace/legacy` ToolsDock entry keeps
+its polite status live region visually clipped and anchored inside its
+positioning container. Mounting the dock at a flex container's trailing edge
+does not let that hidden region add horizontal scrolling. The package browser
+fixture checks its bounds and preserves announcement updates and Escape focus
+restoration at mobile and desktop widths.
+
 ## Main Exports
 
 - `AdminShell`
@@ -24,6 +31,17 @@ SvelteKit route APIs; apps pass data, endpoints, and permission-filtered nav in.
 - `ActivityBadge`, `ActivityList`, `ActivityItem`, `ActivityToasts`
 - `AppScopePanel`, `SystemStatusChips`, `SystemScopePanel`
 - `tenantNavFromManifest`
+- Responsive chrome: `ShellNavToggle`, `ShellTitle`, `PhoneTopBar`,
+  `PhoneBottomBar`, the pure `mobile-shell` helpers (`ScrollChrome`,
+  `shellPageTrailFor`, `phoneTopBarFor`, `bottomBarMode`, `keyboardLikelyOpen`, …) and their DOM
+  installers (`installShellViewport`, `installScrollChrome`,
+  `installKeyboardWatcher`, `watchFormActionBar`)
+
+`AdminShell` takes `header`, `phoneTopBar`, `phoneBottomBar` and `overlays`
+snippets plus `phone`, `pinChrome` and `path` props; edges take
+`viewportDefaults`, `phone`, `resizable`, `persist` and `keepMounted`; nav
+items take `attention`. See the package README
+("Responsive chrome and resizable edges") for the contract.
 
 Use `AdminShell`'s `tenantFooter` snippet with `WorkspaceAccountMenu` to keep a
 single-line tenant/account control pinned below scrolling tenant navigation.

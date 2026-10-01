@@ -16,6 +16,12 @@ import { join } from 'node:path';
 import type { AIClientOptions } from '@happyvertical/ai';
 import type { ImageFormat } from '@happyvertical/images';
 import type { AssetStore } from '@happyvertical/smrt-assets';
+import {
+  applyImageAdjustments,
+  describeImageAdjustments,
+  type ImageAdjustments,
+  normalizeImageAdjustments,
+} from './adjust';
 import type { Image } from './image';
 import type { ImageCollection } from './images';
 
@@ -73,7 +79,8 @@ export class ImageEditor {
   }
 
   /**
-   * Crop an image to the specified region
+   * Crop an image to the specified region (in pixels of the picture as it is
+   * seen, after its EXIF orientation). The region is clamped to the picture.
    *
    * @param image - Source image
    * @param x - Left offset
@@ -89,36 +96,60 @@ export class ImageEditor {
     w: number,
     h: number,
   ): Promise<Image> {
-    const { getImageProcessor } = await import('@happyvertical/images');
-    const processor = await getImageProcessor();
-    const sourceData = await this.store.read(image);
-
-    const inputPath = join(tmpdir(), `smrt-crop-in-${randomUUID()}.bin`);
-    const outputPath = join(tmpdir(), `smrt-crop-out-${randomUUID()}.bin`);
-
-    try {
-      await writeFile(inputPath, sourceData);
-      // TODO: @happyvertical/images does not yet expose a direct x,y extract API.
-      // The x/y offset params are accepted but unused — this is a resize-with-cover-fit,
-      // not a true x,y crop. When the `extract(x, y, w, h)` API is available, replace this.
-      // Tracked in: https://github.com/happyvertical/smrt/issues/TODO
-      await processor.resize(inputPath, outputPath, {
-        width: w,
-        height: h,
-        fit: 'cover',
-      });
-      const cropped = await readFile(outputPath);
-
-      return this.createDerivative(image, cropped, {
-        name: `${image.name}-crop`,
-        width: w,
-        height: h,
-        description: `Cropped region ${x},${y} ${w}x${h}`,
-      });
-    } finally {
-      await unlink(inputPath).catch(() => {});
-      await unlink(outputPath).catch(() => {});
+    const values = [x, y, w, h];
+    if (values.some((value) => !Number.isFinite(value))) {
+      throw new Error('Crop needs a left, top, width and height in pixels.');
     }
+    if (w < 1 || h < 1) {
+      throw new Error('A crop must be at least one pixel wide and tall.');
+    }
+    const sourceData = await this.store.read(image);
+    const { default: sharp } = await import('sharp');
+    const oriented = await sharp(sourceData)
+      .rotate()
+      .toBuffer({ resolveWithObject: true });
+    const { width, height } = oriented.info;
+    const left = Math.min(Math.max(Math.round(x), 0), width - 1);
+    const top = Math.min(Math.max(Math.round(y), 0), height - 1);
+    const cropWidth = Math.min(Math.round(w), width - left);
+    const cropHeight = Math.min(Math.round(h), height - top);
+    const cropped = await sharp(oriented.data)
+      .extract({ left, top, width: cropWidth, height: cropHeight })
+      .toBuffer();
+
+    return this.createDerivative(image, cropped, {
+      name: `${image.name}-crop`,
+      width: cropWidth,
+      height: cropHeight,
+      description: `Cropped region ${left},${top} ${cropWidth}x${cropHeight}`,
+    });
+  }
+
+  /**
+   * Brightness, contrast, colour, black-and-white, rotate, flip, region crop
+   * or resize, in one pass (see `./adjust.ts`). The source is unchanged; the
+   * result is a new derivative linked to it.
+   *
+   * @param image - Source image
+   * @param adjustments - What to change (checked and clamped)
+   * @returns New derivative Image
+   */
+  async adjust(image: Image, adjustments: ImageAdjustments): Promise<Image> {
+    const normalized = normalizeImageAdjustments(adjustments);
+    if (Object.keys(normalized).length === 0) {
+      throw new Error(
+        'Nothing to change: the adjustments leave the picture as it is.',
+      );
+    }
+    const sourceData = await this.store.read(image);
+    const adjusted = await applyImageAdjustments(sourceData, normalized);
+    return this.createDerivative(image, adjusted.data, {
+      name: `${image.name}-adjusted`,
+      width: adjusted.width,
+      height: adjusted.height,
+      mimeType: adjusted.mimeType,
+      description: `Adjusted: ${describeImageAdjustments(normalized)}`,
+    });
   }
 
   /**

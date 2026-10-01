@@ -9,4 +9,11 @@ export { default as Grid } from './Grid.svelte';
 export { default as Header } from './Header.svelte';
 export { default as Masthead } from './Masthead.svelte';
 export { default as PageHeader } from './PageHeader.svelte';
+export {
+  getPageHeaderContext,
+  type PageHeaderContext,
+  type PageHeaderCrumb,
+  type PageHeaderReport,
+  setPageHeaderContext,
+} from './page-header-context.js';
 export { default as SummaryCard } from './SummaryCard.svelte';

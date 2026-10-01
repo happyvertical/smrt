@@ -1,5 +1,106 @@
 # @happyvertical/smrt-assets
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: **Behaviour change: a new asset's default slug is its id, not its file name.**
+  Two pictures with the same file name (`photo.jpg`,
+  `generated-content-image-001.jpg`) shared a name-derived slug, so saving the
+  second adopted the first row through the `(tenant_id, slug, context)` natural
+  key and overwrote its bytes and metadata. An explicitly set slug is still kept.
+  This applies to every `Asset` subclass (smrt-images `Image`, the smrt-video
+  assets, …), and `createNewVersion()` now produces `<uuid>-v2`-style slugs.
+  Existing rows keep their slugs; code that looked assets up by a file-name slug
+  must look them up by id (or set the slug explicitly when creating).
+- 0259083: Asset tags are real now. `asset_tags` is backed by a new `AssetTag` model
+  (`AssetTagCollection` junction): `assetId` → Asset and `tagId` →
+  `@happyvertical/smrt-tags` Tag, both `onDelete: 'CASCADE'`, conflict key
+  `(asset_id, tag_id)`, rows carry the asset's tenant. Before, `addTag()` and
+  friends wrote raw rows to an `asset_tags` table that no manifest declared, so
+  `smrt db:migrate` never created it and every call failed.
+  
+  - `AssetCollection.addTag(assetId, tag, { name?, context? })` takes a slug or a
+    label (`Town hall` → `town-hall`), finds or creates the Tag in the asset's own
+    tenant (context `ASSET_TAG_CONTEXT` = `'asset'` by default) and returns it. A tag
+    of another tenant is never reused.
+  - New: `setTags(assetId, tags)`, `getTagsForAssets(assetIds)` (batched, for lists),
+    `assetTagSlug(label)`.
+  - `removeTag`, `getByTag`, `Asset.getTags()` and `Asset.hasTag(slug, context?)` go
+    through the join. `hasTag` takes an optional context.
+  - `ASSET_ROLES.DEPICTS` (`'depicts'`): the asset shows its owner (a photo of a place
+    or a person) on `place_assets` / `profile_assets`.
+  
+  - `@happyvertical/smrt-images`: `ImageCategorizer.autoTag()` stores the AI's
+    labels through `addTag()`, so they become slugified Tags (`Golden hour` →
+    `golden-hour`) in context `asset`, linked by `asset_tags.tag_id`.
+  
+  Migration: `smrt db:migrate` creates `asset_tags`. No manifest ever declared the
+  table, so no framework-built database has one and there is no data to move
+  (checked: Anytown's production snapshot and QA databases had none before this
+  release). A database that created `asset_tags` by hand in the old
+  `(asset_id, tag_slug)` shape must drop or rename that table before migrating:
+  its `tag_slug` column and `(asset_id, tag_slug)` key do not converge onto the
+  model, and its rows would need mapping to Tag ids. `TagCollection.mergeTag()`
+  re-points the merged tag's asset links to the target tag before deleting it.
+- 0259083: Picture links for places and people.
+  
+  - `PlaceAsset` and `ProfileAsset` declare `onDelete: 'CASCADE'` on both sides (the
+    place/profile and the asset). It was already the implied default for these
+    conflict-key columns; now it is explicit. No schema change.
+  - `Place.addAsset()` and `Profile.addAsset()` refuse an asset of another tenant
+    (new shared helper `assertAssetLinkable()` in `@happyvertical/smrt-assets`). The
+    asset's tenant is read from storage by id, so a hand-built `{ id }` or a stale
+    object cannot slip past, and an unknown asset id is refused. A tenant's place or
+    profile may link its own and global assets; a shared (global) place or profile
+    may link only global assets, because its links are visible to every tenant.
+  - `Place.getMainAsset()` / `Place.setMainAsset(asset | null)`: the place's one main
+    picture, stored as its `hero` link (`PLACE_MAIN_ASSET_RELATIONSHIP`). Setting a new
+    one removes the old `hero` link and keeps the asset's other links.
+
+### Patch Changes
+
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-tags@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
+## 0.51.39
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.39
+  - @happyvertical/smrt-tags@0.51.39
+  - @happyvertical/smrt-tenancy@0.51.39
+  - @happyvertical/smrt-ui@0.51.39
+  - @happyvertical/smrt-types@0.51.39
+
 ## 0.51.38
 
 ### Patch Changes

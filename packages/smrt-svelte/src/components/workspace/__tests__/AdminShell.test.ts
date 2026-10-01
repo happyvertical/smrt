@@ -166,6 +166,106 @@ describe('AdminShell', () => {
     }
   });
 
+  it('keeps a keepMounted focus panel (and its draft) mounted while collapsed', async () => {
+    const state = createShellState({
+      config: { right: { initial: 'expanded', keepMounted: true } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        children: textSnippet('main work'),
+        focusPanel: createRawSnippet(() => ({
+          render: () => '<textarea aria-label="Message"></textarea>',
+        })),
+      },
+    });
+
+    try {
+      const draft = container.querySelector('textarea');
+      if (!draft) throw new Error('focus panel did not render');
+      draft.value = 'half-typed question';
+
+      state.collapsePanel('right');
+      await tick();
+      const panel = container.querySelector<HTMLElement>(
+        '.smrt-admin-shell__panel--right',
+      );
+      expect(panel?.hidden).toBe(true);
+      expect(container.querySelector('textarea')).toBe(draft);
+
+      state.expandPanel('right');
+      await tick();
+      expect(panel?.hidden).toBe(false);
+      expect(container.querySelector('textarea')).toBe(draft);
+      expect(draft.value).toBe('half-typed question');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('unmounts a collapsed panel without keepMounted', async () => {
+    const state = createShellState({
+      config: { right: { initial: 'expanded' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        children: textSnippet('main work'),
+        focusPanel: textSnippet('focus panel'),
+      },
+    });
+
+    try {
+      expect(
+        container.querySelector('.smrt-admin-shell__panel--right'),
+      ).not.toBeNull();
+      state.collapsePanel('right');
+      await tick();
+      expect(
+        container.querySelector('.smrt-admin-shell__panel--right'),
+      ).toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('keeps a keepMounted tenant panel beside the collapsed rail', async () => {
+    const state = createShellState({
+      config: { left: { initial: 'collapsed', keepMounted: true } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        children: textSnippet('main work'),
+        tenantRail: textSnippet('tenant rail'),
+        tenantPanel: textSnippet('tenant navigation'),
+      },
+    });
+
+    try {
+      const stack = container.querySelector<HTMLElement>(
+        '.smrt-admin-shell__tenant-stack',
+      );
+      expect(stack?.hidden).toBe(true);
+      expect(stack?.textContent).toContain('tenant navigation');
+      const rail = container.querySelector('.smrt-admin-shell__rail');
+      expect(rail?.textContent).toContain('tenant rail');
+
+      state.expandPanel('left');
+      await tick();
+      expect(container.querySelector('.smrt-admin-shell__tenant-stack')).toBe(
+        stack,
+      );
+      expect(stack?.hidden).toBe(false);
+      expect(rail?.textContent).not.toContain('tenant rail');
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('pins a tenant footer below the scrolling tenant panel', () => {
     const state = createShellState({
       config: { left: { initial: 'expanded' } },

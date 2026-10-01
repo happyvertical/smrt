@@ -1,3 +1,4 @@
+import { IMPLICIT_TENANT_COLUMN } from './conflict-target.js';
 import type { ForeignKeyAction } from './types.js';
 
 const FOREIGN_KEY_ACTIONS = new Set<ForeignKeyAction>([
@@ -43,6 +44,14 @@ export function resolveForeignKeyDeleteAction(options: {
   declared?: unknown;
   isConflictColumn: boolean;
   isTenantIdField: boolean;
+  /**
+   * The referencing column. The implicit tenant ownership column
+   * (`tenant_id`) leads a tenant-owned table's default natural key without
+   * identifying the row, so like a `@tenantId()` marker it never turns a
+   * reference into an ownership CASCADE (deleting a tenant must not silently
+   * cascade through every tenant-owned table).
+   */
+  columnName?: string;
 }): { action: ForeignKeyAction; declared: boolean } {
   const declaredAction =
     options.declared === undefined
@@ -53,7 +62,9 @@ export function resolveForeignKeyDeleteAction(options: {
   }
   return {
     action:
-      !options.isTenantIdField && options.isConflictColumn
+      !options.isTenantIdField &&
+      options.columnName !== IMPLICIT_TENANT_COLUMN &&
+      options.isConflictColumn
         ? 'CASCADE'
         : 'NO ACTION',
     declared: false,

@@ -1,5 +1,72 @@
 # @happyvertical/smrt-events
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: - `Event` gains `allDay` and `timeZone` (IANA). **New columns: run
+    `smrt db:migrate`.**
+  - `expandRecurrence()` expands a `RecurrencePattern` (daily/weekly/monthly/
+    yearly, interval, byDay with monthly ordinals, byMonthDay, byMonth, bySetPos,
+    until, count) into occurrence instants within a window, keeping the first
+    occurrence's wall-clock time in its zone across daylight-saving changes;
+    `EventSeries.getOccurrences()` wraps it, and the zoned wall-time helpers are
+    exported.
+  - A wall time skipped by a spring-forward jump resolves forward (02:30 →
+    03:30), and a repeated fall-back hour resolves to its first occurrence.
+
+### Patch Changes
+
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-assets@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-places@0.52.0
+  - @happyvertical/smrt-profiles@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
+## 0.51.39
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.39
+  - @happyvertical/smrt-assets@0.51.39
+  - @happyvertical/smrt-places@0.51.39
+  - @happyvertical/smrt-profiles@0.51.39
+  - @happyvertical/smrt-tenancy@0.51.39
+  - @happyvertical/smrt-ui@0.51.39
+  - @happyvertical/smrt-types@0.51.39
+
 ## 0.51.38
 
 ### Patch Changes

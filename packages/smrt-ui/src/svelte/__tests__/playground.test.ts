@@ -10,6 +10,7 @@ describe('smrt-ui playground', () => {
       'feedback-overlays',
       'collections',
       'data-table',
+      'calendar',
     ]);
 
     for (const entry of playground.entries) {

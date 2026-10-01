@@ -1,3 +1,4 @@
+import { createLogger } from '@happyvertical/logger';
 import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import type {
   SmrtObjectOptions,
@@ -68,6 +69,8 @@ import {
 } from './serialization';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';
+
+const logger = createLogger({ level: 'info' });
 
 const USED_FACT_RELATIONSHIPS = new Set<FactContentRelationship>([
   'supports',
@@ -1658,6 +1661,7 @@ export class Content
 
   private async getContentAssetLinks(
     relationship?: string,
+    excludeRelationships: readonly string[] = [],
   ): Promise<Array<{ assetId: string; sortOrder: number }>> {
     if (!this.id) {
       return [];
@@ -1670,8 +1674,10 @@ export class Content
         relationship ? { relationship } : {},
       );
 
+      const excluded = new Set(excludeRelationships);
       return links
         .filter((link) => link.assetId)
+        .filter((link) => !excluded.has(link.relationship))
         .map((link) => ({
           assetId: link.assetId,
           sortOrder: link.sortOrder ?? 0,
@@ -1700,6 +1706,15 @@ export class Content
         .filter((asset) => asset.id)
         .map((asset) => [asset.id as string, asset]),
     );
+
+    const missing = assetIds.filter((assetId) => !assetsById.has(assetId));
+    if (missing.length > 0) {
+      // A link whose asset row is gone (deleted outside the model) is skipped.
+      logger.warn(
+        '[smrt-content] Content links assets that no longer exist; skipping them',
+        { contentId: this.id, assetIds: missing },
+      );
+    }
 
     return links
       .map((link) => assetsById.get(link.assetId))
@@ -4091,16 +4106,39 @@ export class Content
   /**
    * Get all assets associated with this content
    * @param relationship - Optional filter by relationship type (e.g., 'thumbnail', 'attachment')
+   * @param options.excludeRelationships - Relationship types to leave out
+   *   (e.g. page renders of a source document that a picture picker should
+   *   not offer). Their links are not resolved, and stay in the data.
    * @returns Promise resolving to array of assets
    */
-  async getAssets(relationship?: string): Promise<Asset[]> {
+  async getAssets(
+    relationship?: string,
+    options: { excludeRelationships?: readonly string[] } = {},
+  ): Promise<Asset[]> {
     if (!this.id) {
       return [];
     }
 
     return this.resolveAssetsForLinks(
-      await this.getContentAssetLinks(relationship),
+      await this.getContentAssetLinks(
+        relationship,
+        options.excludeRelationships ?? [],
+      ),
     );
+  }
+
+  /**
+   * The ids of the assets linked to this content, without loading the asset
+   * rows (a link whose asset row is gone is included). Use it to learn which
+   * assets a listing left out with `getAssets(..., { excludeRelationships })`.
+   * @param relationship - Optional filter by relationship type
+   */
+  async getAssetIds(relationship?: string): Promise<string[]> {
+    if (!this.id) {
+      return [];
+    }
+    const links = await this.getContentAssetLinks(relationship);
+    return [...new Set(links.map((link) => link.assetId))];
   }
 
   /**

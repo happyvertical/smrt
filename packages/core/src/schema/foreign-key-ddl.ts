@@ -18,6 +18,7 @@ export function foreignKeyConstraintName(
 export function renderForeignKeyConstraint(
   tableName: string,
   foreignKey: ForeignKeyDefinition,
+  constraintName?: string,
 ): string {
   const action = (value: unknown, clause: 'DELETE' | 'UPDATE') => {
     if (value === undefined) return undefined;
@@ -28,7 +29,8 @@ export function renderForeignKeyConstraint(
   };
   const onDelete = action(foreignKey.onDelete, 'DELETE');
   const onUpdate = action(foreignKey.onUpdate, 'UPDATE');
-  const name = foreignKeyConstraintName(tableName, foreignKey);
+  const name =
+    constraintName ?? foreignKeyConstraintName(tableName, foreignKey);
   const parts = [
     `CONSTRAINT ${quoteIdentifier(name)}`,
     `FOREIGN KEY (${quoteIdentifier(foreignKey.column)})`,
@@ -54,6 +56,37 @@ export function renderForeignKeyAddStatements(
   return [
     `ALTER TABLE ${quoteIdentifier(tableName)} ADD ${renderForeignKeyConstraint(tableName, foreignKey)} NOT VALID`,
     `ALTER TABLE ${quoteIdentifier(tableName)} VALIDATE CONSTRAINT ${quoteIdentifier(constraintName)}`,
+  ];
+}
+
+/**
+ * Replace a framework-owned PostgreSQL foreign key whose only drift is its
+ * referential action, without re-scanning the child table under the
+ * migration's locks (#3023 review):
+ *
+ * 1. `ADD CONSTRAINT <name>_smrt_new … NOT VALID` — catalog only, no scan;
+ * 2. `VALIDATE CONSTRAINT <name>_smrt_new` — the scan, before any
+ *    ACCESS EXCLUSIVE lock is taken; under `--postgres-safe` the planner runs
+ *    it (and the swap after it) outside the batch transaction, where
+ *    VALIDATE holds only SHARE UPDATE EXCLUSIVE and reads and writes go on;
+ * 3. `DROP CONSTRAINT <name>` and `RENAME CONSTRAINT <name>_smrt_new TO
+ *    <name>` — catalog only.
+ *
+ * The child column is enforced by one of the two constraints at every step.
+ */
+export function renderForeignKeyReplaceStatements(
+  tableName: string,
+  foreignKey: ForeignKeyDefinition,
+  liveConstraintName: string,
+): string[] {
+  const constraintName = foreignKeyConstraintName(tableName, foreignKey);
+  const staged = shortenIdentifier(`${constraintName}_smrt_new`);
+  const table = quoteIdentifier(tableName);
+  return [
+    `ALTER TABLE ${table} ADD ${renderForeignKeyConstraint(tableName, foreignKey, staged)} NOT VALID`,
+    `ALTER TABLE ${table} VALIDATE CONSTRAINT ${quoteIdentifier(staged)}`,
+    `ALTER TABLE ${table} DROP CONSTRAINT ${quoteIdentifier(liveConstraintName)}`,
+    `ALTER TABLE ${table} RENAME CONSTRAINT ${quoteIdentifier(staged)} TO ${quoteIdentifier(constraintName)}`,
   ];
 }
 

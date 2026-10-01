@@ -15,15 +15,22 @@ import type {
   DataSurfaceIdentity,
   DataSurfaceRegistry,
 } from '@happyvertical/smrt-ui/data-surface';
+import type {
+  DictationSourceProvider,
+  DictationTranscribe,
+} from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { type Snippet, tick, untrack } from 'svelte';
+import type { AssistantStatus } from '../../../assistant-turn-events.js';
 import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
+import AssistantChoiceCards from './AssistantChoiceCards.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
 import AssistantThreadList from './AssistantThreadList.svelte';
 import { toolCallStatusForAction } from './action-status.js';
+import type { AssistantChoiceSourceRegistry } from './assistant-choices.svelte.js';
 import type {
   AssistantAttachmentRef,
   AssistantMessage,
@@ -31,9 +38,16 @@ import type {
 } from './assistant-transport.js';
 import { safeAttachmentHref } from './attachment-href.js';
 import {
+  type AssistantClientTool,
+  type AssistantClientToolPolicy,
+  type AssistantClientToolSource,
+  defaultClientToolPolicy,
+} from './client-tools.js';
+import {
   type AssistantActionClient,
   type AssistantActionOutcome,
   type AssistantDockController,
+  type AssistantRun,
   createAssistantDockController,
 } from './create-assistant-dock-controller.svelte.js';
 
@@ -117,6 +131,39 @@ export interface Props {
   /** Placeholder for the composer's empty textarea (#2991). Defaults to the
    * composer's own placeholder. */
   composerPlaceholder?: string;
+  /** The page's browser tools (#2908) — typically
+   * `installWebMcpPageToolRegistry()` from
+   * `@happyvertical/smrt-web/webmcp-page-tools`. Offered to the model each
+   * turn; see `./client-tools.ts` for when a call waits for the user. */
+  pageTools?: AssistantClientToolSource;
+  /** Narrows when a browser tool call waits for the user (#2908).
+   * Destructive calls always wait. */
+  clientToolPolicy?: (tool: AssistantClientTool) => AssistantClientToolPolicy;
+  /** Called whenever the assistant's generic status changes (#2908), for a
+   * host's own "working" line. Also readable as `controller.status`. */
+  onstatus?: (status: AssistantStatus) => void;
+  /** Waits for the page to settle after a step's browser tools ran, before
+   * the turn resumes. See `AssistantDockControllerOptions.settle`. */
+  settle?: () => Promise<void> | void;
+  /** Narrows the page tools the dock declares and runs (e.g. a person's
+   * setting). See `AssistantDockControllerOptions.clientToolFilter`. */
+  clientToolFilter?: (tool: AssistantClientTool) => boolean;
+  /** How long a paused run may wait before it stops. Default 15 min. */
+  maxPauseMs?: number;
+  /** Called whenever the supervised run changes (#assistant-watch). Also
+   * readable as `controller.run`. */
+  onrun?: (run: AssistantRun | null) => void;
+  /** Page features that can offer a few options for the person to pick
+   * (see `./assistant-choices.svelte.ts`). The options show as cards here;
+   * the person's click applies one. */
+  choiceSources?: AssistantChoiceSourceRegistry;
+  /** Speak instead of typing in the composer (a speech source, e.g.
+   * smrt-svelte's `createSttDictationSource()`); see `AssistantComposer`. */
+  dictation?: DictationSourceProvider | null;
+  /** Writes a recorded message down when the browser cannot recognise
+   * speech (Firefox, Brave), e.g. smrt-ui's `createHttpTranscriber()`;
+   * see `AssistantComposer`. */
+  transcribe?: DictationTranscribe | null;
 }
 
 const {
@@ -131,6 +178,16 @@ const {
   onactionsettled,
   initialDraft,
   composerPlaceholder,
+  pageTools,
+  clientToolPolicy,
+  onstatus,
+  settle,
+  clientToolFilter,
+  maxPauseMs,
+  onrun,
+  choiceSources,
+  dictation,
+  transcribe,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -157,7 +214,33 @@ const controller: AssistantDockController = createAssistantDockController({
   onActionSettled: (request, outcome) => onactionsettled?.(request, outcome),
   // Read once, on mount, like the controller itself.
   initialDraft: untrack(() => initialDraft),
+  get pageTools() {
+    return pageTools;
+  },
+  // Read per call so a reassigned prop is observed; the controller still
+  // forces `confirm` for a destructive tool whatever this returns.
+  clientToolPolicy: (tool) =>
+    (clientToolPolicy ?? defaultClientToolPolicy)(tool),
+  onStatus: (status) => onstatus?.(status),
+  settle: () => settle?.(),
+  // Read per call so a changed setting applies to the next step.
+  clientToolFilter: (tool) => clientToolFilter?.(tool) ?? true,
+  get maxPauseMs() {
+    return maxPauseMs;
+  },
+  onRun: (run) => onrun?.(run),
+  get choiceSources() {
+    return choiceSources;
+  },
 });
+
+function formatToolArgs(args: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(args, null, 2);
+  } catch {
+    return '';
+  }
+}
 
 // F1 (#2904 review): the whole body runs under `untrack` so the effect takes
 // NO dependency on any $state read transitively by loadThreads/loadModels/
@@ -365,7 +448,18 @@ async function handleConfirmAction(requestId: string) {
         </p>
       {/if}
 
-      {#if controller.surfaces.length === 0}
+      {#if controller.status.state === 'working'}
+        <div class="assistant-dock-status" role="status" aria-live="polite">
+          <span class="assistant-dock-status-label">{controller.status.label}</span>
+          {#if controller.status.cancellable}
+            <Button type="button" size="sm" variant="ghost" onclick={() => controller.cancel()}>
+              {t(M['chat.assistant_dock.stop'])}
+            </Button>
+          {/if}
+        </div>
+      {/if}
+
+      {#if controller.surfaces.length === 0 && !pageTools}
         <p class="assistant-dock-empty">
           {t(M['chat.assistant_dock.no_surfaces'])}
         </p>
@@ -422,6 +516,54 @@ async function handleConfirmAction(requestId: string) {
             </li>
           {/each}
         </ul>
+
+        {#if controller.streamingText}
+          <div
+            class="assistant-dock-streaming"
+            aria-label={t(M['chat.assistant_dock.reply_in_progress'])}
+          >
+            <MessageBubble variant="agent" own={false}>
+              {#snippet children()}
+                <p class="assistant-dock-message-content">{controller.streamingText}</p>
+              {/snippet}
+            </MessageBubble>
+          </div>
+        {/if}
+
+        {#each controller.toolRequests.filter((r) => r.status === 'waiting') as request (request.id)}
+          <div class="assistant-dock-tool-request" role="group" aria-label={t(M['chat.assistant_dock.tool_request_title'])}>
+            <p class="assistant-dock-tool-request-title">
+              {t(M['chat.assistant_dock.tool_request_title'])}
+            </p>
+            <p class="assistant-dock-tool-request-description">{request.description || request.name}</p>
+            {#if request.effect === 'destructive'}
+              <p class="assistant-dock-tool-request-warning">
+                {t(M['chat.assistant_dock.tool_request_destructive'])}
+              </p>
+            {/if}
+            <details class="assistant-dock-tool-request-details">
+              <summary>{t(M['chat.assistant_dock.tool_request_details'])}</summary>
+              <pre>{formatToolArgs(request.args)}</pre>
+            </details>
+            <div class="assistant-dock-tool-request-actions">
+              <Button type="button" size="sm" onclick={() => controller.approveToolRequest(request.id)}>
+                {t(M['chat.assistant_dock.tool_request_allow'])}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onclick={() => controller.declineToolRequest(request.id)}>
+                {t(M['chat.assistant_dock.tool_request_decline'])}
+              </Button>
+            </div>
+          </div>
+        {/each}
+
+        <AssistantChoiceCards
+          choices={controller.choices}
+          onchoose={(setId, optionId) => void controller.chooseOption(setId, optionId)}
+          ondismiss={(setId) => controller.dismissChoices(setId)}
+          onpreview={(setId, optionId) => void controller.previewOption(setId, optionId)}
+          oncommit={(setId) => void controller.commitOption(setId)}
+          oncancel={(setId) => controller.cancelChoices(setId)}
+        />
 
         {#if controller.actions.size > 0}
           <ul class="assistant-dock-actions">
@@ -524,6 +666,8 @@ async function handleConfirmAction(requestId: string) {
           onupload={handleUpload}
           disabled={!controller.activeThreadId}
           placeholder={composerPlaceholder}
+          {dictation}
+          {transcribe}
         />
       </div>
     </div>
@@ -549,10 +693,59 @@ async function handleConfirmAction(requestId: string) {
     min-height: 0;
   }
 
+  .assistant-dock-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
+    color: var(--smrt-color-on-surface-variant, #44474e);
+  }
+
+  .assistant-dock-tool-request {
+    margin: 0.5rem 0;
+    padding: 0.75rem;
+    border: 1px solid var(--smrt-color-outline-variant, #c4c7c5);
+    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface-container, #f3f3f3);
+  }
+
+  .assistant-dock-tool-request p {
+    margin: 0 0 0.4rem;
+  }
+
+  .assistant-dock-tool-request-title {
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+
+  .assistant-dock-tool-request-warning {
+    color: var(--smrt-color-error, #b3261e);
+  }
+
+  .assistant-dock-tool-request-details pre {
+    max-height: 10rem;
+    overflow: auto;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .assistant-dock-tool-request-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
   .assistant-dock-threads {
     display: flex;
     flex-shrink: 0;
     min-height: 0;
+    /* A long thread title must not squeeze the conversation (titles clip). */
+    max-width: min(16rem, 40%);
+    min-width: 0;
   }
 
   .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle) {
@@ -571,6 +764,7 @@ async function handleConfirmAction(requestId: string) {
       gap: var(--smrt-spacing-2, 8px);
       flex-shrink: 0;
       width: 100%;
+      min-height: 44px;
       padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
       border: none;
       border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
@@ -604,6 +798,7 @@ async function handleConfirmAction(requestId: string) {
 
     .assistant-dock-layout[data-threads-open] .assistant-dock-threads {
       display: flex;
+      max-width: none;
       max-height: 40%;
       border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     }

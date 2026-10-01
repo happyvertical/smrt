@@ -30,6 +30,16 @@ function getSpeechRecognition(): typeof SpeechRecognition | null {
 }
 
 /**
+ * An error from the browser's speech recognition. `speechError` is the Web
+ * Speech error code (`network`, `not-allowed`, `service-not-allowed`,
+ * `no-speech`, `audio-capture`, `aborted`, `language-not-supported`, …).
+ */
+export type BrowserSpeechError = Error & {
+  speechError?: string;
+  speechMessage?: string;
+};
+
+/**
  * Browser Speech Recognition adapter
  */
 export class BrowserSpeechSTTAdapter implements STTAdapter {
@@ -39,6 +49,8 @@ export class BrowserSpeechSTTAdapter implements STTAdapter {
   private recognition: SpeechRecognition | null = null;
   private options: BrowserSpeechSTTOptions;
   private _isListening = false;
+  /** Set while our own `abort()` runs, so its `aborted` error is not reported. */
+  private aborting = false;
 
   // Event listeners
   private resultListeners = new Set<(result: STTResult) => void>();
@@ -124,9 +136,14 @@ export class BrowserSpeechSTTAdapter implements STTAdapter {
     };
 
     this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      const code = event.error;
+      if (code === 'aborted' && this.aborting) {
+        // We called abort() ourselves: not an error.
+        return;
+      }
       let error: Error;
 
-      switch (event.error) {
+      switch (code) {
         case 'not-allowed':
         case 'service-not-allowed':
           error = new PermissionDeniedError('microphone', 'browser-speech');
@@ -141,11 +158,18 @@ export class BrowserSpeechSTTAdapter implements STTAdapter {
           error = new Error('Network error during speech recognition');
           break;
         case 'aborted':
-          // User aborted, not really an error
-          return;
+          // Not our abort(): the browser (or another tab) cut it off.
+          error = new Error('Speech recognition was aborted');
+          break;
         default:
-          error = new Error(`Speech recognition error: ${event.error}`);
+          error = new Error(`Speech recognition error: ${code}`);
       }
+      // The Web Speech error code, so callers can tell `service-not-allowed`
+      // (the browser has no speech service, e.g. Brave) from `not-allowed`
+      // (the microphone is blocked), and `network` from everything else.
+      (error as BrowserSpeechError).speechError = code;
+      if (event.message)
+        (error as BrowserSpeechError).speechMessage = event.message;
 
       for (const cb of this.errorListeners) {
         cb(error);
@@ -161,6 +185,7 @@ export class BrowserSpeechSTTAdapter implements STTAdapter {
 
     this.recognition.onend = () => {
       this._isListening = false;
+      this.aborting = false;
       for (const cb of this.endListeners) {
         cb();
       }
@@ -223,6 +248,7 @@ export class BrowserSpeechSTTAdapter implements STTAdapter {
 
   abort(): void {
     if (this.recognition && this._isListening) {
+      this.aborting = true;
       this.recognition.abort();
     }
   }

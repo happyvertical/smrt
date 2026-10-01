@@ -94,6 +94,8 @@ export interface MigrationAction {
   sql?: string;
   sqlStatements?: string[];
   advisory?: SchemaChangeAdvisoryLike;
+  /** Operator-facing note carried from `SchemaChangeLike.note` (#3226). */
+  note?: string;
   /** Set on `add_foreign_key` / `drop_foreign_key` actions (#2748). */
   foreignKey?: ForeignKeyDefinitionLike;
   /** See `SchemaChangeLike.orphanBlocked` (#2748). */
@@ -161,6 +163,11 @@ export interface SchemaChangeLike {
   /** See `MigrationAction.phase` (#2608). */
   phase?: 'pre_foreign_key';
   advisory?: SchemaChangeAdvisoryLike;
+  /**
+   * Operator-facing note on an executable change (mirrors core's
+   * `SchemaChange.note`), e.g. empty text stored as NULL (#3226).
+   */
+  note?: string;
   sql?: string;
   sqlStatements?: string[];
   /** Set on `add_foreign_key` / `drop_foreign_key` changes (#2748). */
@@ -816,6 +823,7 @@ export function partitionSchemaChanges(
           ...(change.engineUnsupported !== undefined
             ? { engineUnsupported: change.engineUnsupported }
             : {}),
+          ...(change.note ? { note: change.note } : {}),
         };
         if (isAdvisoryOnlyChangeLike(change)) {
           manualInterventions.push(action);
@@ -904,6 +912,7 @@ export function partitionSchemaChanges(
           ...(change.sqlStatements
             ? { sqlStatements: change.sqlStatements }
             : {}),
+          ...(change.note ? { note: change.note } : {}),
         };
         const executionKind = classifyTypeUpgradeSql(change.sql);
 

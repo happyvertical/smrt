@@ -7,6 +7,7 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import {
+  assertAssetLinkable,
   assertValidOwnedAssetRelationship,
   assertValidOwnedAssetSortOrder,
   resolveOwnedAssetsById,
@@ -21,8 +22,13 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import { normalizeIdentityEmail } from '../auth/normalizeIdentityEmail';
+import type { ProfileLinkInput } from '../collections/ProfileLinkCollection';
 import {
   promptMessageOptions,
   smrtProfilesGenerateBioPrompt,
@@ -31,7 +37,9 @@ import type { ApiKey, GenerateKeyResult } from './ApiKey';
 import type { AuditLog } from './AuditLog';
 import type { NostrIdentity } from './NostrIdentity';
 import type { OidcIdentity } from './OidcIdentity';
+import type { ProfileLink } from './ProfileLink';
 import type { ProfileMetadata } from './ProfileMetadata';
+import type { ProfileMetafield } from './ProfileMetafield';
 import type { ProfileRelationship } from './ProfileRelationship';
 import { ProfileType } from './ProfileType';
 
@@ -40,6 +48,7 @@ export interface ProfileOptions extends SmrtObjectOptions {
   email?: string;
   name?: string;
   description?: string;
+  isPublic?: boolean;
   tenantId?: string | null;
 }
 
@@ -77,6 +86,15 @@ export class Profile extends SmrtObject {
 
   description?: string; // Short bio or description
 
+  /**
+   * Public-figure flag: the person or organization is publicly known (an
+   * elected official, a public body), so an application may show their
+   * contact details and links to everyone. Defaults to private. The flag only
+   * records the fact; each application decides what it reveals.
+   */
+  @field({ type: 'boolean', default: false })
+  isPublic = false;
+
   // Relationships (not stored as columns)
   @oneToMany('ProfileMetadata')
   metadata: ProfileMetadata[] = [];
@@ -99,6 +117,7 @@ export class Profile extends SmrtObject {
     if (options.name) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
+    if (options.isPublic !== undefined) this.isPublic = options.isPublic;
   }
 
   /** Keep the durable identity key derived from the public email field. */
@@ -145,13 +164,10 @@ export class Profile extends SmrtObject {
       '../collections/ProfileMetadataCollection'
     );
 
-    // Get or create metafield collection
-    const metafieldCollection = await ProfileMetafieldCollection.create(
-      this.options,
+    const metafield = await this.resolveMetafield(
+      await ProfileMetafieldCollection.create(this.options),
+      metafieldSlug,
     );
-
-    // Find the metafield by slug
-    const metafield = await metafieldCollection.getBySlug(metafieldSlug);
     if (!metafield) {
       throw new Error(`Metafield '${metafieldSlug}' not found`);
     }
@@ -174,6 +190,11 @@ export class Profile extends SmrtObject {
       // Update existing
       const metadata = existing[0];
       metadata.value = String(value);
+      // A row written before metadata inherited its profile's tenant is
+      // healed on its next write.
+      if (!metadata.tenantId && this.tenantId) {
+        metadata.tenantId = this.tenantId;
+      }
       await metadata.save();
     } else {
       // Create new
@@ -182,10 +203,14 @@ export class Profile extends SmrtObject {
           'Profile.addMetadata requires a persisted profile and metafield (missing id)',
         );
       }
+      // Metadata belongs to its profile's tenant. Relying on tenant
+      // auto-population left it NULL whenever the write ran under a
+      // super-admin bypass or system context (smrt#3235).
       const metadata = await metadataCollection.create({
         profileId: this.id,
         metafieldId: metafield.id,
         value: String(value),
+        ...(this.tenantId ? { tenantId: this.tenantId } : {}),
       });
       await metadata.save();
     }
@@ -232,11 +257,10 @@ export class Profile extends SmrtObject {
       '../collections/ProfileMetadataCollection'
     );
 
-    const metafieldCollection = await ProfileMetafieldCollection.create(
-      this.options,
+    const metafield = await this.resolveMetafield(
+      await ProfileMetafieldCollection.create(this.options),
+      metafieldSlug,
     );
-
-    const metafield = await metafieldCollection.getBySlug(metafieldSlug);
     if (!metafield) {
       throw new Error(`Metafield '${metafieldSlug}' not found`);
     }
@@ -253,6 +277,60 @@ export class Profile extends SmrtObject {
     if (existing.length > 0) {
       await existing[0].delete();
     }
+  }
+
+  /**
+   * The metafield a slug names for this profile: the profile tenant's own
+   * definition first, then a global (NULL-tenant) one. A profile never takes
+   * another tenant's definition, which a super-admin or system read would
+   * otherwise return. A tenant-less profile falls back to the active tenant
+   * context's own definition only (none under system context).
+   */
+  private async resolveMetafield(
+    metafields: {
+      list(options: {
+        where: Record<string, unknown>;
+        limit?: number;
+      }): Promise<ProfileMetafield[]>;
+    },
+    slug: string,
+  ): Promise<ProfileMetafield | null> {
+    // No limit: one row per tenant that defines this slug, so a cap could
+    // drop the owner's or the global definition before selection.
+    const candidates = await metafields.list({ where: { slug } });
+    const ownerTenantId = this.tenantId || getTenantId();
+    return (
+      candidates.find(
+        (candidate) => ownerTenantId && candidate.tenantId === ownerTenantId,
+      ) ??
+      candidates.find((candidate) => !candidate.tenantId) ??
+      null
+    );
+  }
+
+  private async getProfileLinkCollection() {
+    const { ProfileLinkCollection } = await import(
+      '../collections/ProfileLinkCollection'
+    );
+    return ProfileLinkCollection.create({ db: this.db });
+  }
+
+  /** This profile's web links in display order. */
+  async getLinks(): Promise<ProfileLink[]> {
+    if (!this.id) return [];
+    return (await this.getProfileLinkCollection()).listForProfile(this.id);
+  }
+
+  /**
+   * Replaces this profile's web links with `links`, in that order, in one
+   * transaction (see `ProfileLinkCollection.replaceForProfile`).
+   */
+  async setLinks(links: readonly ProfileLinkInput[]): Promise<ProfileLink[]> {
+    if (!this.id) throw new Error('Cannot set links on an unsaved profile');
+    return (await this.getProfileLinkCollection()).replaceForProfile(
+      this.id,
+      links,
+    );
   }
 
   private async getProfileAssetCollection() {
@@ -287,6 +365,8 @@ export class Profile extends SmrtObject {
     if (!this.id || !asset.id) {
       throw new Error('Cannot associate unsaved profile or asset');
     }
+    // The asset's tenant comes from storage, not from the caller's object.
+    await assertAssetLinkable(this.db, asset.id, this.tenantId, 'profile');
 
     assertValidOwnedAssetRelationship(relationship);
     assertValidOwnedAssetSortOrder(sortOrder);

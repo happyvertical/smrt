@@ -223,6 +223,13 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
 </div>
 
 <style>
+  /* The tool lays itself out by its own width, not the viewport, so it
+     fits a full page, a side panel, the assistant dock or a phone. */
+  .governance-tool {
+    container-type: inline-size;
+    container-name: governance-tool;
+  }
+
   .governance-tool,
   .tool-list,
   .tool-list-section,
@@ -235,14 +242,15 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
   .transparency-stats {
     display: grid;
     gap: 0.75rem;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
   }
 
   .transparency-stat,
   .transparency-card,
   .transparency-list-item {
-    background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-card-background, var(--smrt-color-surface));
+    border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant));
+    box-shadow: var(--smrt-card-shadow, none);
     border-radius: 0.75rem;
   }
 
@@ -265,6 +273,7 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
   }
 
   .transparency-list-item {
+    background: color-mix(in srgb, var(--smrt-color-on-surface) 6%, transparent);
     padding: 0.7rem 0.8rem;
     display: flex;
     flex-direction: column;
@@ -315,5 +324,11 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     color: var(--smrt-color-on-error-container);
     font-size: var(--smrt-typography-body-medium-size, 0.9rem);
+  }
+
+  @container governance-tool (max-width: 30rem) {
+    .tool-card-header {
+      flex-wrap: wrap;
+    }
   }
 </style>

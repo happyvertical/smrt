@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-agents",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "smrtJsdoc": "strict",
   "type": "module",
   "smrtRawPrimitives": "strict",
@@ -62,7 +62,7 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "peerDependencies": {
-    "svelte": "^5.57.1"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "svelte": {

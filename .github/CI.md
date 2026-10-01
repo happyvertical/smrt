@@ -219,6 +219,23 @@ its own. Manual inspection remains `gh cache list --key turbogha_`.
 
 ## Job timeouts
 
+### ONNX system-dependency provisioning
+
+The shared setup action gives `apt-get update` five minutes and `apt-get
+install` fifteen minutes before failing with the named provisioning stage. The
+helper runs the already-selected absolute Node interpreter under the existing
+`sudo` boundary and terminates the command's owned root process group,
+escalating from `SIGTERM` to `SIGKILL`, so a stalled mirror cannot consume the
+rest of a job's ceiling.
+The update command sets `APT::Update::Error-Mode=any`, so partial index
+downloads fail closed rather than allowing an install from incomplete metadata.
+An update or install failure stops the action before project dependencies run;
+the verified `CI_ONNX_DEPS_READY=true` runner-image path remains untouched.
+
+Run `pnpm test:ci-scripts` locally to exercise successful, nonzero, and stalled
+helper commands, including a SIGTERM-resistant descendant. This is an offline
+boundary test; it does not establish availability of a live hosted apt mirror.
+
 Standalone validation jobs on the self-hosted lanes use
 `timeout-minutes: 45`. The value is a standard, not a per-job estimate: the
 previous spread ran from 5 to 45, mostly unexplained, and the low end was close

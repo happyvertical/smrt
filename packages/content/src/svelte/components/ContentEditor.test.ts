@@ -30,10 +30,12 @@ function renderEditor(
     agentChatNotice?: string | null;
     hideActions?: boolean;
     hideChat?: boolean;
+    showBodyFormatPicker?: boolean;
     onAssistantContextChange?: (registration: any) => void;
     onChange?: (data: any) => void;
     onSave?: (data: any) => void;
     onCancel?: () => void;
+    mode?: 'simple' | 'full';
   } = {},
 ) {
   const target = document.createElement('div');
@@ -52,10 +54,12 @@ function renderEditor(
       agentChatNotice: props.agentChatNotice,
       hideActions: props.hideActions,
       hideChat: props.hideChat,
+      showBodyFormatPicker: props.showBodyFormatPicker,
       onAssistantContextChange: props.onAssistantContextChange,
       onChange: props.onChange ?? vi.fn(),
       onSave: props.onSave ?? vi.fn(),
       onCancel: props.onCancel ?? vi.fn(),
+      mode: props.mode,
     },
   });
 
@@ -148,6 +152,30 @@ beforeEach(() => {
 });
 
 describe('ContentEditor component', () => {
+  it('simple mode hides type, state, and references and collapses Details', () => {
+    const target = renderEditor({ mode: 'simple', hideChat: true });
+    expect(target.querySelector('#type-select')).toBeNull();
+    expect(target.querySelector('#state-select')).toBeNull();
+    expect(target.querySelector('#status-select')).not.toBeNull();
+    expect(target.querySelector('input[name="url"]')).toBeNull();
+    const summaries = Array.from(target.querySelectorAll('summary')).map(
+      (summary) => summary.textContent?.trim(),
+    );
+    expect(summaries).not.toContain('References');
+    const details = Array.from(target.querySelectorAll('details')).find(
+      (element) =>
+        element.querySelector('summary')?.textContent?.trim() === 'Details',
+    );
+    expect(details?.open).toBe(false);
+    expect(target.textContent).toContain('Author (optional)');
+  });
+
+  it('full mode keeps every field', () => {
+    const target = renderEditor({ hideChat: true });
+    expect(target.querySelector('#type-select')).not.toBeNull();
+    expect(target.querySelector('input[name="url"]')).not.toBeNull();
+  });
+
   it('renders governed content facts with the facts drawer open', () => {
     const target = renderGovernedEditor({
       contentId: 'content-1',
@@ -438,9 +466,31 @@ describe('ContentEditor component', () => {
     );
   });
 
+  it('hides the body save-format picker unless the host opts in', async () => {
+    const target = renderEditor({
+      content: {
+        title: 'HTML Article',
+        body: '<p>Existing</p>',
+        bodyFormat: 'html',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      onSave: vi.fn(),
+    });
+
+    await vi.waitFor(() =>
+      expect(target.querySelector('.body-editor-surface')?.innerHTML).toContain(
+        'Existing',
+      ),
+    );
+    expect(target.querySelector('.format-select')).toBeNull();
+  });
+
   it('can switch the body save format to markdown', async () => {
     const onSave = vi.fn();
     const target = renderEditor({
+      showBodyFormatPicker: true,
       content: {
         title: 'HTML Article',
         body: '<p>Existing <strong>HTML</strong></p>',
@@ -742,7 +792,7 @@ describe('ContentEditor component', () => {
       (button) => button.getAttribute('title') === 'Make larger',
     );
     const primaryButton = Array.from(target.querySelectorAll('button')).find(
-      (button) => button.getAttribute('title') === 'Use as primary image',
+      (button) => button.getAttribute('title') === 'Use as main picture',
     );
     expect(wrapRightButton).toBeDefined();
     expect(largerButton).toBeDefined();

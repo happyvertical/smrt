@@ -320,6 +320,32 @@ describe('partitionSchemaChanges', () => {
     );
   });
 
+  it('carries the replacement note of an in-place action change (#3023)', () => {
+    const replacement = {
+      type: 'add_foreign_key' as const,
+      table: 'children',
+      name: 'children_parent_id_parents_id_fkey',
+      note: 'replaces children_parent_id_parents_id_fkey: ON DELETE CASCADE → NO ACTION',
+      sqlStatements: [
+        'ALTER TABLE "children" DROP CONSTRAINT "children_parent_id_parents_id_fkey";',
+        'ALTER TABLE "children" ADD CONSTRAINT "children_parent_id_parents_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "parents" ("id") ON DELETE NO ACTION ON UPDATE CASCADE NOT VALID',
+        'ALTER TABLE "children" VALIDATE CONSTRAINT "children_parent_id_parents_id_fkey"',
+      ],
+    };
+
+    const result = partitionSchemaChanges([replacement], () => 'Child');
+
+    expect(result.manualInterventions).toEqual([]);
+    expect(result.migrations).toEqual([
+      expect.objectContaining({
+        type: 'add_foreign_key',
+        tableName: 'children',
+        note: replacement.note,
+        sqlStatements: replacement.sqlStatements,
+      }),
+    ]);
+  });
+
   it('keeps disabled foreign-key removals manual when no exact drop SQL exists', () => {
     const advisory = {
       severity: 'warning' as const,

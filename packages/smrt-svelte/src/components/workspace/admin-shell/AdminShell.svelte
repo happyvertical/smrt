@@ -2,17 +2,20 @@
 import type { ShellState as ModuleShellState } from './state.svelte.js';
 import type { PanelEdge as ModulePanelEdge } from './types.js';
 
+function expandedSize(shell: ModuleShellState, edge: ModulePanelEdge): string {
+  const resized = shell.panelSize(edge);
+  return resized !== null
+    ? `${resized}px`
+    : shell.config.panels[edge].expandedSize;
+}
+
 function trackFor(shell: ModuleShellState, edge: ModulePanelEdge): string {
   const state = shell.panels[edge];
   const config = shell.config.panels[edge];
   if (state === 'hidden') return '0rem';
   if (state === 'collapsed') return config.collapsedSize;
-  if (config.presentation === 'overlay') return config.collapsedSize;
-  return config.expandedSize;
-}
-
-function expandedSize(shell: ModuleShellState, edge: ModulePanelEdge): string {
-  return shell.config.panels[edge].expandedSize;
+  if (shell.presentationFor(edge) === 'overlay') return config.collapsedSize;
+  return expandedSize(shell, edge);
 }
 
 function collapsedSize(shell: ModuleShellState, edge: ModulePanelEdge): string {
@@ -37,6 +40,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 </script>
 
 <script lang="ts">
+  import { swipeDismiss } from '@happyvertical/smrt-ui/feedback';
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
   import { Button } from '@happyvertical/smrt-ui/ui';
   import { onMount, untrack } from 'svelte';
@@ -48,12 +52,22 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     formatHotkeyBinding,
     shellActionFromKeyboardEvent,
   } from './hotkeys.js';
-  import { resolveHotkey } from './settings.js';
+  import { type BottomBarMode, bottomBarMode } from './mobile-shell.js';
+  import {
+    installKeyboardWatcher,
+    installScrollChrome,
+    installShellOverlayMedia,
+    installShellViewport,
+    watchFormActionBar,
+  } from './mobile-shell-dom.js';
+  import { clampPanelSize, resolveHotkey } from './settings.js';
   import { createShellState, type ShellState } from './state.svelte.js';
   import type {
+    AdminShellPhoneOptions,
     AdminShellProps,
     PanelEdge,
     ShellFocusTool,
+    ShellViewport,
   } from './types.js';
 
   interface Props extends AdminShellProps {
@@ -87,6 +101,39 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     bottomRightCorner?: Snippet;
     /** Content for the keyboard shortcuts overlay. */
     shortcutsOverlay?: Snippet;
+    /**
+     * A full-width header row above every edge (`#smrt-admin-shell-header`,
+     * 3.5rem; override `--smrt-admin-shell-header-size`). Shown at every
+     * width except on phones when `phoneTopBar` is given.
+     */
+    header?: Snippet<[{ viewport: ShellViewport }]>;
+    /**
+     * Phone-only context bar over the top of the main region. Hides while
+     * scrolling down and returns on the first scroll up (see
+     * `phone.hideOnScroll`); pinned while `pinChrome` or a drawer is open.
+     */
+    phoneTopBar?: Snippet<[{ hidden: boolean }]>;
+    /**
+     * Phone-only bottom bar row. Replaced by a form's action bar
+     * (`[data-form-action-bar]` inside main) and hidden while the on-screen
+     * keyboard is open.
+     */
+    phoneBottomBar?: Snippet;
+    /**
+     * Host surfaces laid over the shell above the phone bottom bar (phone
+     * sheets, status strips). The layer ignores pointer events; its direct
+     * children receive them.
+     */
+    overlays?: Snippet<[{ viewport: ShellViewport; bottomBar: BottomBarMode }]>;
+    /** Phone behavior switches (scrim, swipe to close, hide on scroll). */
+    phone?: AdminShellPhoneOptions;
+    /** Keep the phone top bar shown (e.g. while a banner is visible). */
+    pinChrome?: boolean;
+    /**
+     * Current location. When it changes on a phone, open side drawers and
+     * sheets close and the phone top bar comes back.
+     */
+    path?: string;
     children: Snippet;
   }
 
@@ -112,6 +159,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     bottomLeftCorner,
     bottomRightCorner,
     shortcutsOverlay,
+    header,
+    phoneTopBar,
+    phoneBottomBar,
+    overlays,
+    phone,
+    pinChrome = false,
+    path,
     children,
   }: Props = $props();
 
@@ -138,8 +192,162 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
   const shortcutEdges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 
+  const SIDE_EDGES = ['left', 'right'] as const;
+  type SideEdge = (typeof SIDE_EDGES)[number];
+
+  let mainElement: HTMLElement | undefined = $state();
+  let keyboardOpen = $state(false);
+  let formActions = $state(false);
+  let chromeHidden = $state(false);
+  let resizing = $state<SideEdge | null>(null);
+  const sideElements = $state<Partial<Record<SideEdge, HTMLElement>>>({});
+  let scrollChrome: ReturnType<typeof installScrollChrome> | null = null;
+
+  const viewport = $derived(shell.viewport);
+  const isPhone = $derived(viewport === 'phone');
+  const showPhoneTop = $derived(isPhone && Boolean(phoneTopBar));
+  const showHeader = $derived(Boolean(header) && !showPhoneTop);
+  const bottomBar = $derived<BottomBarMode>(
+    isPhone && phoneBottomBar
+      ? bottomBarMode({ formActions, keyboardOpen })
+      : 'none',
+  );
+  const phoneSurfaceOpen = $derived(
+    isPhone &&
+      SIDE_EDGES.some(
+        (edge) => panelState(edge) === 'expanded' && shell.isEdgeShown(edge),
+      ),
+  );
+  const chromeStyle = $derived(
+    [
+      `--smrt-admin-shell-header-track: ${showHeader ? 'var(--smrt-admin-shell-header-size)' : '0rem'}`,
+      `--smrt-admin-shell-phone-bar-track: ${bottomBar === 'nav' ? 'var(--smrt-admin-shell-phone-bar-size)' : '0rem'}`,
+    ].join('; '),
+  );
+
+  /**
+   * Tablet/desktop: the side edge that is open as an overlay (its
+   * `overlayMedia` matches), laid over the page above a scrim.
+   */
+  const overlayEdge = $derived<SideEdge | null>(
+    isPhone
+      ? null
+      : (SIDE_EDGES.find(
+          (edge) =>
+            panelState(edge) === 'expanded' &&
+            shell.isEdgeShown(edge) &&
+            shell.presentationFor(edge) === 'overlay',
+        ) ?? null),
+  );
+
+  // An overlay takes focus when it opens (unless something inside already
+  // has it) and hands it back to whatever opened it when it closes.
+  let overlayReturnFocus: HTMLElement | null = null;
+  let lastOverlayEdge: SideEdge | null = null;
+  /**
+   * An overlay that was just closed and is sliding back out: it keeps its
+   * expanded look (inert, above a fading scrim) until the animation ends.
+   */
+  let closingEdge = $state<SideEdge | null>(null);
+  let closingTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function endClosing(): void {
+    if (closingTimer) clearTimeout(closingTimer);
+    closingTimer = null;
+    closingEdge = null;
+  }
+
+  function prefersReducedMotion(): boolean {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
+  /** An edge shown open: expanded, or an overlay still sliding out. */
+  function shownOpen(edge: PanelEdge): boolean {
+    return edgeExpanded(edge) || closingEdge === edge;
+  }
+
+  $effect(() => {
+    const edge = overlayEdge;
+    untrack(() => {
+      if (edge === lastOverlayEdge) return;
+      const previous = lastOverlayEdge;
+      lastOverlayEdge = edge;
+      if (typeof document === 'undefined') return;
+      if (edge) {
+        endClosing();
+        const active = document.activeElement;
+        overlayReturnFocus =
+          active instanceof HTMLElement && active !== document.body
+            ? active
+            : null;
+        // Effects run after the DOM update, so the panel is already shown.
+        const panel = sideElements[edge];
+        if (panel && !panel.contains(document.activeElement)) {
+          panel.focus({ preventScroll: true });
+        }
+        return;
+      }
+      const panel = previous ? sideElements[previous] : undefined;
+      const active = document.activeElement;
+      const lost =
+        !active || active === document.body || Boolean(panel?.contains(active));
+      if (lost && overlayReturnFocus?.isConnected) {
+        overlayReturnFocus.focus({ preventScroll: true });
+      }
+      overlayReturnFocus = null;
+      // Closed (not just docked by a wider window): slide back out.
+      if (
+        previous &&
+        panelState(previous) !== 'expanded' &&
+        shell.presentationFor(previous) === 'overlay' &&
+        !isPhone &&
+        !prefersReducedMotion()
+      ) {
+        endClosing();
+        closingEdge = previous;
+        // Fallback when animationend never fires (hidden tab, no CSS).
+        closingTimer = setTimeout(endClosing, 600);
+      }
+    });
+  });
+
+  function onEdgeAnimationEnd(event: AnimationEvent, edge: SideEdge): void {
+    if (closingEdge === edge && event.target === event.currentTarget) {
+      endClosing();
+    }
+  }
+
+  function collapsePhoneSurfaces(): void {
+    for (const edge of SIDE_EDGES) {
+      if (panelState(edge) === 'expanded' && shell.isEdgeShown(edge)) {
+        shell.collapsePanel(edge);
+      }
+    }
+  }
+
   onMount(() => {
-    void shell.hydrate();
+    const offViewport = installShellViewport(shell);
+    const offOverlayMedia = installShellOverlayMedia(shell);
+    void shell.hydrate().then(() => shell.closeOverlaidEdges());
+    const offKeyboard = phoneBottomBar
+      ? installKeyboardWatcher((open) => (keyboardOpen = open))
+      : () => {};
+    const offFormActions =
+      phoneBottomBar && mainElement
+        ? watchFormActionBar(mainElement, (present) => (formActions = present))
+        : () => {};
+    scrollChrome =
+      phoneTopBar && phone?.hideOnScroll !== false && mainElement
+        ? installScrollChrome(mainElement, {
+            onChange: (hidden) => (chromeHidden = hidden),
+            isPinned: () =>
+              pinChrome || phoneSurfaceOpen || shell.viewport !== 'phone',
+          })
+        : null;
 
     function handleKeydown(event: KeyboardEvent): void {
       if (event.key === 'Escape') {
@@ -167,8 +375,147 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     }
 
     window.addEventListener('keydown', handleKeydown);
-    return () => window.removeEventListener('keydown', handleKeydown);
+    return () => {
+      window.removeEventListener('keydown', handleKeydown);
+      offViewport();
+      offOverlayMedia();
+      if (closingTimer) clearTimeout(closingTimer);
+      offKeyboard();
+      offFormActions();
+      scrollChrome?.destroy();
+      scrollChrome = null;
+    };
   });
+
+  // Pinning (a banner appears, a drawer opens, leaving phone) shows the bar.
+  $effect(() => {
+    if (pinChrome || phoneSurfaceOpen || !isPhone) chromeHidden = false;
+  });
+
+  // Navigating on a phone closes drawers/sheets and brings the top bar back.
+  let lastPath: string | undefined;
+  $effect(() => {
+    const current = path;
+    untrack(() => {
+      if (lastPath !== undefined && current !== lastPath) {
+        if (shell.viewport === 'phone') collapsePhoneSurfaces();
+        scrollChrome?.reset();
+        chromeHidden = false;
+      }
+      lastPath = current;
+    });
+  });
+
+  // ---- Resizable side edges ------------------------------------------------
+
+  function remInPx(): number {
+    if (typeof window === 'undefined') return 16;
+    const size = Number.parseFloat(
+      window.getComputedStyle(document.documentElement).fontSize,
+    );
+    return Number.isFinite(size) && size > 0 ? size : 16;
+  }
+
+  function cssLengthToPx(length: string): number | null {
+    const match = /^\s*(-?\d*\.?\d+)(px|rem|em)?\s*$/.exec(length);
+    if (!match) return null;
+    const value = Number.parseFloat(match[1]);
+    return match[2] === 'rem' || match[2] === 'em' ? value * remInPx() : value;
+  }
+
+  /**
+   * The edge's expanded width in px: the resized width, else the configured
+   * `expandedSize` (measured when it is not a plain px/rem length).
+   */
+  function currentSize(edge: SideEdge): number {
+    const limits = shell.resizeLimits(edge);
+    const resized = shell.panelSize(edge);
+    if (resized !== null) return resized;
+    const width =
+      cssLengthToPx(shell.config.panels[edge].expandedSize) ??
+      sideElements[edge]?.getBoundingClientRect().width ??
+      0;
+    return limits ? clampPanelSize(width, limits) : Math.round(width);
+  }
+
+  function canResize(edge: SideEdge): boolean {
+    return (
+      !isPhone &&
+      edgeExpanded(edge) &&
+      shell.presentationFor(edge) === 'push' &&
+      shell.resizeLimits(edge) !== null
+    );
+  }
+
+  function onResizeKeydown(event: KeyboardEvent, edge: SideEdge): void {
+    const limits = shell.resizeLimits(edge);
+    if (!limits) return;
+    const step = limits.step * (event.shiftKey ? 4 : 1);
+    const grow = edge === 'left' ? 'ArrowRight' : 'ArrowLeft';
+    const shrink = edge === 'left' ? 'ArrowLeft' : 'ArrowRight';
+    let next: number | null;
+    if (event.key === grow) next = currentSize(edge) + step;
+    else if (event.key === shrink) next = currentSize(edge) - step;
+    else if (event.key === 'Home') next = limits.min;
+    else if (event.key === 'End') next = limits.max;
+    else if (event.key === 'Enter') next = null;
+    else return;
+    event.preventDefault();
+    shell.setPanelSize(edge, next);
+  }
+
+  /** Tears down the drag in progress, if any (see onResizePointerdown). */
+  let stopActiveResize: ((commit: boolean) => void) | null = null;
+
+  // Unmounting mid-drag must not leave the handle's listeners driving a shell
+  // state that outlives this component, nor a stale `resizing` flag.
+  $effect(() => () => stopActiveResize?.(false));
+
+  function onResizePointerdown(event: PointerEvent, edge: SideEdge): void {
+    if (event.button !== 0 || !shell.resizeLimits(edge)) return;
+    event.preventDefault();
+    stopActiveResize?.(true);
+    const handle = event.currentTarget as HTMLElement;
+    const pointerId = event.pointerId;
+    if (pointerId !== undefined) handle.setPointerCapture?.(pointerId);
+    const startX = event.clientX;
+    const startSize = currentSize(edge);
+    let latest = startSize;
+    resizing = edge;
+
+    function onMove(move: PointerEvent): void {
+      const dx = move.clientX - startX;
+      latest = startSize + (edge === 'left' ? dx : -dx);
+      shell.setPanelSize(edge, latest, { persist: false });
+    }
+
+    function stop(commit: boolean): void {
+      if (stopActiveResize !== stop) return;
+      stopActiveResize = null;
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onEnd);
+      handle.removeEventListener('pointercancel', onEnd);
+      handle.removeEventListener('lostpointercapture', onEnd);
+      if (pointerId !== undefined && handle.hasPointerCapture?.(pointerId)) {
+        handle.releasePointerCapture(pointerId);
+      }
+      resizing = null;
+      if (commit && latest !== startSize) shell.setPanelSize(edge, latest);
+    }
+
+    // pointerup/pointercancel end a drag normally; losing the capture (a
+    // system gesture, the element leaving the DOM) ends it too, or the shell
+    // would stay in its resizing state with nothing to release it.
+    function onEnd(): void {
+      stop(true);
+    }
+
+    stopActiveResize = stop;
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onEnd);
+    handle.addEventListener('pointercancel', onEnd);
+    handle.addEventListener('lostpointercapture', onEnd);
+  }
 
   const layoutStyle = $derived(buildLayoutStyle(shell));
 
@@ -192,6 +539,18 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   function edgeExpanded(edge: PanelEdge): boolean {
     return panelState(edge) === 'expanded';
+  }
+
+  /** Collapsed edge whose panel content stays mounted (`keepMounted`). */
+  function keepsContent(edge: PanelEdge): boolean {
+    return (
+      panelState(edge) === 'collapsed' &&
+      shell.config.panels[edge].keepMounted === true
+    );
+  }
+
+  function panelMounted(edge: PanelEdge): boolean {
+    return shownOpen(edge) || keepsContent(edge);
   }
 
   function labelFor(edge: PanelEdge): string {
@@ -273,6 +632,30 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   </Button>
 {/snippet}
 
+{#snippet resizer(edge: SideEdge)}
+  {#if canResize(edge)}
+    {@const limits = shell.resizeLimits(edge)}
+    <!-- A focusable separator is the WAI-ARIA window-splitter widget; Svelte's
+         role table lists `separator` as non-interactive only in its static form. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+    <div
+      class="smrt-admin-shell__resizer smrt-admin-shell__resizer--{edge}"
+      role="separator"
+      aria-orientation="vertical"
+      aria-controls={`smrt-admin-shell-${edge}-panel`}
+      aria-label={t(M['ui.admin_shell.resize_panel'], { label: labelFor(edge) })}
+      aria-valuemin={limits?.min}
+      aria-valuemax={limits?.max}
+      aria-valuenow={currentSize(edge)}
+      tabindex="0"
+      data-testid={`admin-shell-resizer-${edge}`}
+      onpointerdown={(event) => onResizePointerdown(event, edge)}
+      onkeydown={(event) => onResizeKeydown(event, edge)}
+      ondblclick={() => shell.setPanelSize(edge, null)}
+    ></div>
+  {/if}
+{/snippet}
+
 {#snippet focusContent(tool: ShellFocusTool | null)}
   {#if focusPanel}
     {@render focusPanel({ tool })}
@@ -294,8 +677,23 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   data-left-state={panelState('left')}
   data-right-state={panelState('right')}
   data-bottom-state={panelState('bottom')}
-  style={layoutStyle}
+  data-viewport={viewport}
+  data-bottom-bar={bottomBar}
+  data-phone-top={showPhoneTop ? '' : undefined}
+  data-chrome-hidden={chromeHidden ? '' : undefined}
+  data-resizing={resizing ?? undefined}
+  style={`${layoutStyle}; ${chromeStyle}`}
 >
+  {#if showHeader}
+    <div
+      id="smrt-admin-shell-header"
+      class="smrt-admin-shell__header"
+      data-testid="admin-shell-header"
+    >
+      {@render header?.({ viewport })}
+    </div>
+  {/if}
+
   {#if panelState('top') !== 'hidden'}
     <header
       id="smrt-admin-shell-top-panel"
@@ -330,10 +728,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {@render topRightCorner()}
         </div>
       {/if}
-      {#if edgeExpanded('top')}
+      {#if panelMounted('top')}
         <section
           class="smrt-admin-shell__drawer smrt-admin-shell__drawer--top"
           aria-label={labelFor('top')}
+          hidden={!edgeExpanded('top')}
         >
           {#if appPanel}
             {@render appPanel()}
@@ -347,18 +746,36 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     </header>
   {/if}
 
-  {#if panelState('left') !== 'hidden'}
+  {#if shell.isEdgeShown('left')}
+    <!-- tabindex -1 only while overlaid, so the panel can take focus on open -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <aside
       id="smrt-admin-shell-left-panel"
       class="smrt-admin-shell__edge smrt-admin-shell__edge--left"
-      data-state={panelState('left')}
-      data-presentation={shell.config.panels.left.presentation}
+      data-state={closingEdge === 'left' ? 'expanded' : panelState('left')}
+      data-closing={closingEdge === 'left' ? '' : undefined}
+      data-presentation={shell.presentationFor('left')}
       role="navigation"
       aria-label={labelFor('left')}
+      tabindex={overlayEdge === 'left' ? -1 : undefined}
+      inert={(isPhone && !edgeExpanded('left')) ||
+        overlayEdge === 'right' ||
+        closingEdge === 'left'}
+      onanimationend={(event) => onEdgeAnimationEnd(event, 'left')}
+      bind:this={sideElements.left}
+      use:swipeDismiss={{
+        direction: 'left',
+        onDismiss: () => shell.collapsePanel('left'),
+        enabled: isPhone && Boolean(phone?.swipeToClose) && edgeExpanded('left'),
+      }}
     >
+      {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
-        {#if edgeExpanded('left')}
-          <div class="smrt-admin-shell__tenant-stack">
+        {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
+          <div
+            class="smrt-admin-shell__tenant-stack"
+            hidden={!shownOpen('left')}
+          >
             <div class="smrt-admin-shell__tenant-content">
               {#if tenantPanel}
                 {@render tenantPanel()}
@@ -374,27 +791,104 @@ function buildLayoutStyle(shell: ModuleShellState): string {
               </div>
             {/if}
           </div>
-        {:else if tenantRail}
-          {@render tenantRail()}
-        {:else}
-          {@render edgeToggle('left')}
+        {/if}
+        {#if !shownOpen('left')}
+          {#if tenantRail}
+            {@render tenantRail()}
+          {:else}
+            {@render edgeToggle('left')}
+          {/if}
         {/if}
       </div>
     </aside>
   {/if}
 
-  <main class="smrt-admin-shell__main">
+  <main
+    id="smrt-admin-shell-main"
+    class="smrt-admin-shell__main"
+    bind:this={mainElement}
+    inert={overlayEdge !== null}
+  >
     {@render children()}
   </main>
 
-  {#if panelState('right') !== 'hidden'}
+  {#if showPhoneTop}
+    <div class="smrt-admin-shell__phone-top" data-testid="admin-shell-phone-top">
+      {@render phoneTopBar?.({ hidden: chromeHidden })}
+    </div>
+  {/if}
+
+  {#if isPhone && phone?.scrim && phoneSurfaceOpen}
+    <!-- raw-primitive-allow: click-catching backdrop behind a phone drawer -->
+    <button
+      type="button"
+      class="smrt-admin-shell__scrim"
+      tabindex="-1"
+      aria-label={t(M['ui.admin_shell.close_panel'], {
+        label: labelFor(edgeExpanded('left') && shell.isEdgeShown('left') ? 'left' : 'right'),
+      })}
+      data-testid="admin-shell-scrim"
+      onclick={collapsePhoneSurfaces}
+    ></button>
+  {/if}
+
+  {#if overlayEdge || closingEdge}
+    {@const scrimEdge = (overlayEdge ?? closingEdge) as SideEdge}
+    <!-- raw-primitive-allow: click-catching backdrop behind an overlaid side panel -->
+    <button
+      type="button"
+      class="smrt-admin-shell__overlay-scrim"
+      tabindex="-1"
+      aria-label={t(M['ui.admin_shell.close_panel'], { label: labelFor(scrimEdge) })}
+      data-testid="admin-shell-overlay-scrim"
+      data-closing={overlayEdge ? undefined : ''}
+      onclick={() => {
+        if (overlayEdge) shell.collapsePanel(scrimEdge);
+      }}
+    ></button>
+  {/if}
+
+  {#if shell.isEdgeShown('right')}
+    {@const rightPhone = isPhone ? shell.phonePresentation('right') : undefined}
+    <!-- tabindex -1 only while overlaid, so the panel can take focus on open -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <aside
       id="smrt-admin-shell-right-panel"
       class="smrt-admin-shell__edge smrt-admin-shell__edge--right"
-      data-state={panelState('right')}
-      data-presentation={shell.config.panels.right.presentation}
+      data-state={closingEdge === 'right' ? 'expanded' : panelState('right')}
+      data-closing={closingEdge === 'right' ? '' : undefined}
+      data-presentation={shell.presentationFor('right')}
+      data-phone={rightPhone}
       aria-label={labelFor('right')}
+      tabindex={overlayEdge === 'right' ? -1 : undefined}
+      inert={(isPhone && !edgeExpanded('right')) ||
+        overlayEdge === 'left' ||
+        closingEdge === 'right'}
+      onanimationend={(event) => onEdgeAnimationEnd(event, 'right')}
+      bind:this={sideElements.right}
+      use:swipeDismiss={{
+        direction: 'right',
+        onDismiss: () => shell.collapsePanel('right'),
+        enabled:
+          rightPhone === 'drawer' &&
+          Boolean(phone?.swipeToClose) &&
+          edgeExpanded('right'),
+      }}
     >
+      {@render resizer('right')}
+      {#if rightPhone === 'sheet'}
+        <div
+          class="smrt-admin-shell__sheet-grabber"
+          aria-hidden="true"
+          use:swipeDismiss={{
+            direction: 'down',
+            onDismiss: () => shell.collapsePanel('right'),
+            enabled: edgeExpanded('right'),
+          }}
+        >
+          <span></span>
+        </div>
+      {/if}
       <div class="smrt-admin-shell__rail">
         {#if focusRail}
           {@render focusRail()}
@@ -430,8 +924,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {@render edgeToggle('right')}
         {/if}
       </div>
-      {#if edgeExpanded('right')}
-        <div class="smrt-admin-shell__panel smrt-admin-shell__panel--right">
+      {#if panelMounted('right')}
+        <div
+          class="smrt-admin-shell__panel smrt-admin-shell__panel--right"
+          hidden={!shownOpen('right')}
+        >
           {#key shell.activeFocusToolId}
             {@render focusContent(resolveActiveFocusTool())}
           {/key}
@@ -468,10 +965,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {@render bottomRightCorner()}
         </div>
       {/if}
-      {#if edgeExpanded('bottom')}
+      {#if panelMounted('bottom')}
         <section
           class="smrt-admin-shell__drawer smrt-admin-shell__drawer--bottom"
           aria-label={labelFor('bottom')}
+          hidden={!edgeExpanded('bottom')}
         >
           {#if systemPanel}
             {@render systemPanel()}
@@ -483,6 +981,18 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         </section>
       {/if}
     </footer>
+  {/if}
+
+  {#if overlays}
+    <div class="smrt-admin-shell__overlays">
+      {@render overlays({ viewport, bottomBar })}
+    </div>
+  {/if}
+
+  {#if bottomBar === 'nav'}
+    <div class="smrt-admin-shell__phone-bar" data-testid="admin-shell-phone-bar">
+      {@render phoneBottomBar?.()}
+    </div>
   {/if}
 
   {#if shortcutsOpen}
@@ -537,19 +1047,63 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     --smrt-admin-shell-right-collapsed: 4.25rem;
     --smrt-admin-shell-left-expanded: 16rem;
     --smrt-admin-shell-right-expanded: 20rem;
+    --smrt-admin-shell-header-size: 3.5rem;
+    --smrt-admin-shell-header-track: 0rem;
+    --smrt-admin-shell-phone-top-size: 3.5rem;
+    --smrt-admin-shell-phone-bar-size: calc(3.5rem + env(safe-area-inset-bottom));
+    --smrt-admin-shell-phone-bar-track: 0rem;
+    --smrt-admin-shell-chrome-duration: var(--smrt-duration-short4, 200ms);
     position: relative;
     display: grid;
     grid-template-columns:
       var(--smrt-admin-shell-left-track) minmax(0, 1fr)
       var(--smrt-admin-shell-right-track);
+    /* header · top edge · body · bottom edge · phone bottom bar. The extra
+       rows are 0 unless the header / phone bar render. */
     grid-template-rows:
+      var(--smrt-admin-shell-header-track)
       var(--smrt-admin-shell-top-track) minmax(0, 1fr)
-      var(--smrt-admin-shell-bottom-track);
+      var(--smrt-admin-shell-bottom-track)
+      var(--smrt-admin-shell-phone-bar-track);
     min-block-size: 100svh;
     block-size: 100svh;
-    background: var(--smrt-color-surface);
+    /* Themeable: an app sets --smrt-admin-shell-background on the shell or an
+       ancestor (a tinted page behind cards, for instance). */
+    background: var(--smrt-admin-shell-background, var(--smrt-color-surface));
     color: var(--smrt-color-on-surface);
     overflow: hidden;
+    /* Themed, thin scrollbars for every scroller inside the shell. Override
+       --smrt-admin-shell-scrollbar-track / -thumb / -thumb-hover to retint. */
+    scrollbar-color: var(--smrt-admin-shell-scrollbar-thumb, color-mix(in srgb, var(--smrt-color-on-surface) 26%, transparent))
+      var(--smrt-admin-shell-scrollbar-track, color-mix(in srgb, var(--smrt-color-surface-container-low) 88%, transparent));
+  }
+
+  .smrt-admin-shell :global(*) {
+    scrollbar-width: thin;
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar {
+    width: 0.7rem;
+    height: 0.7rem;
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-track {
+    background: var(--smrt-admin-shell-scrollbar-track, color-mix(in srgb, var(--smrt-color-surface-container-low) 88%, transparent));
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb {
+    background-color: var(--smrt-admin-shell-scrollbar-thumb, color-mix(in srgb, var(--smrt-color-on-surface) 26%, transparent));
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: var(--smrt-radius-full, 999px);
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb:hover {
+    background-color: var(--smrt-admin-shell-scrollbar-thumb-hover, color-mix(in srgb, var(--smrt-color-on-surface) 38%, transparent));
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
   .smrt-admin-shell__edge {
@@ -560,9 +1114,30 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     border-color: var(--smrt-color-outline-variant);
   }
 
-  .smrt-admin-shell__edge--top {
+  .smrt-admin-shell__header {
     grid-column: 1 / -1;
     grid-row: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    box-sizing: border-box;
+    min-inline-size: 0;
+    min-block-size: 0;
+    padding: 0 var(--smrt-spacing-3) 0 var(--smrt-spacing-2);
+    /* Clip long titles sideways only: menus and popovers opened from the
+       header's actions (a notifications bell, an account menu) must be able
+       to drop below it. `clip` (unlike `hidden`) allows a visible block axis. */
+    overflow-x: clip;
+    overflow-y: visible;
+    border-block-end: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+    z-index: 30;
+  }
+
+  .smrt-admin-shell__edge--top {
+    grid-column: 1 / -1;
+    grid-row: 2;
     display: grid;
     grid-template-columns: var(
       --edge-columns,
@@ -574,15 +1149,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   .smrt-admin-shell__edge--left {
+    position: relative;
     grid-column: 1;
-    grid-row: 2;
+    grid-row: 3;
     border-inline-end: 1px solid var(--smrt-color-outline-variant);
     z-index: 20;
   }
 
   .smrt-admin-shell__edge--right {
+    position: relative;
     grid-column: 3;
-    grid-row: 2;
+    grid-row: 3;
     border-inline-start: 1px solid var(--smrt-color-outline-variant);
     z-index: 20;
   }
@@ -596,7 +1173,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__edge--bottom {
     grid-column: 1 / -1;
-    grid-row: 3;
+    grid-row: 4;
     display: grid;
     grid-template-columns: var(
       --edge-columns,
@@ -609,7 +1186,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__main {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 3;
     min-width: 0;
     min-height: 0;
     overflow: auto;
@@ -654,6 +1231,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     block-size: 100%;
     overflow: auto;
     padding: var(--smrt-spacing-3);
+  }
+
+  /* A right rail never pads wider than its own track: a rail collapsed to 0
+     (an app that shows nothing there) paints no padding. */
+  .smrt-admin-shell__edge--right .smrt-admin-shell__rail {
+    padding-inline: min(
+      var(--smrt-spacing-3),
+      calc(var(--smrt-admin-shell-right-collapsed) / 4)
+    );
   }
 
   .smrt-admin-shell__focus-rail {
@@ -702,6 +1288,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__edge--left[data-state='expanded']
     .smrt-admin-shell__rail {
     overflow: hidden;
+  }
+
+  /* A collapsed `keepMounted` edge keeps its panel in the DOM but hidden;
+     the panel classes set `display`, which would otherwise win over the
+     `hidden` attribute. */
+  .smrt-admin-shell__tenant-stack[hidden],
+  .smrt-admin-shell__panel[hidden],
+  .smrt-admin-shell__drawer[hidden] {
+    display: none !important;
   }
 
   .smrt-admin-shell__tenant-stack {
@@ -764,14 +1359,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   .smrt-admin-shell__drawer--top {
-    inset-block-start: var(--smrt-admin-shell-top-track);
+    inset-block-start: calc(
+      var(--smrt-admin-shell-header-track) + var(--smrt-admin-shell-top-track)
+    );
     inset-inline: var(--smrt-admin-shell-left-track)
       var(--smrt-admin-shell-right-track);
     max-block-size: var(--smrt-admin-shell-top-expanded);
   }
 
   .smrt-admin-shell__drawer--bottom {
-    inset-block-end: var(--smrt-admin-shell-bottom-track);
+    inset-block-end: calc(
+      var(--smrt-admin-shell-bottom-track) +
+        var(--smrt-admin-shell-phone-bar-track)
+    );
     /* The system scope is the application footer. Its expanded drawer must
        remain footer-wide while it rises above every desktop pane. */
     inset-inline: 0;
@@ -848,20 +1448,332 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     font-family: var(--smrt-font-family-mono);
   }
 
+  /* ---- Resizable side edges ------------------------------------------ */
+
+  .smrt-admin-shell__resizer {
+    position: absolute;
+    inset-block: 0;
+    z-index: 2;
+    inline-size: 0.75rem;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .smrt-admin-shell__resizer--left {
+    inset-inline-end: -0.375rem;
+  }
+
+  .smrt-admin-shell__resizer--right {
+    inset-inline-start: -0.375rem;
+  }
+
+  .smrt-admin-shell__resizer::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: calc(50% - 1px);
+    inline-size: 2px;
+    background: var(--smrt-color-primary);
+    opacity: 0;
+    transition: opacity var(--smrt-duration-short2, 100ms)
+      var(--smrt-easing-standard, ease);
+  }
+
+  .smrt-admin-shell__resizer:hover::after,
+  .smrt-admin-shell__resizer:focus-visible::after,
+  .smrt-admin-shell[data-resizing] .smrt-admin-shell__resizer::after {
+    opacity: 1;
+  }
+
+  .smrt-admin-shell__resizer:focus-visible {
+    outline: none;
+  }
+
+  .smrt-admin-shell[data-resizing] {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  /* ---- Phone chrome ----------------------------------------------------- */
+
+  .smrt-admin-shell__phone-top {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    align-self: start;
+    z-index: 10;
+    min-inline-size: 0;
+    transition: transform var(--smrt-admin-shell-chrome-duration)
+      var(--smrt-easing-standard, ease);
+  }
+
+  .smrt-admin-shell[data-chrome-hidden] .smrt-admin-shell__phone-top {
+    transform: translateY(-100%);
+  }
+
+  .smrt-admin-shell[data-phone-top] .smrt-admin-shell__main {
+    padding-block-start: var(--smrt-admin-shell-phone-top-size);
+    scroll-padding-block-start: var(--smrt-admin-shell-phone-top-size);
+  }
+
+  .smrt-admin-shell__phone-bar {
+    grid-column: 1 / -1;
+    grid-row: 5;
+    z-index: 30;
+    min-inline-size: 0;
+  }
+
+  .smrt-admin-shell__overlays {
+    position: relative;
+    grid-column: 1 / -1;
+    grid-row: 1 / 5;
+    z-index: 35;
+    min-inline-size: 0;
+    min-block-size: 0;
+    pointer-events: none;
+  }
+
+  .smrt-admin-shell__overlays > :global(*) {
+    pointer-events: auto;
+  }
+
+  .smrt-admin-shell__scrim {
+    grid-column: 1 / -1;
+    grid-row: 1 / 5;
+    z-index: 19;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: var(--smrt-color-scrim);
+    opacity: 0.36;
+    cursor: pointer;
+  }
+
+  /* Tablet/desktop overlay: an expanded side edge whose `overlayMedia`
+     matches slides over the page instead of taking a grid track. */
+  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'],
+  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'] {
+    grid-column: 1 / -1;
+    z-index: 25;
+    box-shadow: var(
+      --smrt-elevation-3,
+      0 0.5rem 1.5rem color-mix(in srgb, var(--smrt-color-shadow, #000) 24%, transparent)
+    );
+    outline: none;
+  }
+
+  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'] {
+    justify-self: start;
+    inline-size: min(var(--smrt-admin-shell-left-expanded), 100%);
+    animation: smrt-admin-shell-slide-from-left
+      var(--smrt-admin-shell-chrome-duration) ease-out;
+  }
+
+  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'] {
+    justify-self: end;
+    inline-size: min(var(--smrt-admin-shell-right-expanded), 100%);
+    animation: smrt-admin-shell-slide-from-right
+      var(--smrt-admin-shell-chrome-duration) ease-out;
+  }
+
+  .smrt-admin-shell__overlay-scrim {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    z-index: 22;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: var(--smrt-color-scrim);
+    opacity: 0.24;
+    cursor: pointer;
+    animation: smrt-admin-shell-scrim-in var(--smrt-admin-shell-chrome-duration)
+      ease-out;
+  }
+
+  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-closing] {
+    animation: smrt-admin-shell-slide-to-left
+      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
+  }
+
+  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-closing] {
+    animation: smrt-admin-shell-slide-to-right
+      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
+  }
+
+  .smrt-admin-shell__overlay-scrim[data-closing] {
+    pointer-events: none;
+    animation: smrt-admin-shell-scrim-out
+      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
+  }
+
+  @keyframes smrt-admin-shell-slide-to-right {
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes smrt-admin-shell-slide-to-left {
+    to {
+      transform: translateX(-100%);
+    }
+  }
+
+  @keyframes smrt-admin-shell-scrim-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes smrt-admin-shell-slide-from-right {
+    from {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes smrt-admin-shell-slide-from-left {
+    from {
+      transform: translateX(-100%);
+    }
+  }
+
+  @keyframes smrt-admin-shell-scrim-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'],
+    .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'],
+    .smrt-admin-shell__edge[data-presentation='overlay'][data-closing],
+    .smrt-admin-shell__overlay-scrim {
+      animation: none;
+    }
+  }
+
+  .smrt-admin-shell__sheet-grabber {
+    display: grid;
+    place-items: center;
+    block-size: 1.5rem;
+    touch-action: pan-x;
+  }
+
+  .smrt-admin-shell__sheet-grabber span {
+    inline-size: 2.5rem;
+    block-size: 0.25rem;
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-outline-variant);
+  }
+
+  /* Phone page contracts: breadcrumbs give way to the top bar, and so does
+     the page title (visually hidden: screen readers and the outline keep
+     it); page tabs stick under it and slide away with it; a form's action
+     row is fixed to the bottom and replaces the bottom bar. */
+  .smrt-admin-shell[data-viewport='phone'] :global([data-shell-breadcrumbs]) {
+    display: none;
+  }
+
+  .smrt-admin-shell[data-phone-top] :global([data-shell-page-title]) {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Tabs inside a page header (a content item's tabs under its title) stick
+     like any page tabs: the header's boxes step aside on phones so the tabs'
+     sticky range is the page, not the header. */
+  .smrt-admin-shell[data-phone-top]
+    :global([data-page-header]:has([data-shell-tabs])),
+  .smrt-admin-shell[data-phone-top]
+    :global([data-page-header-extra]:has([data-shell-tabs])) {
+    display: contents;
+  }
+
+  .smrt-admin-shell[data-phone-top] :global([data-shell-tabs]) {
+    position: sticky;
+    inset-block-start: var(--smrt-admin-shell-phone-top-size);
+    z-index: 6;
+    background: var(--smrt-color-surface);
+    transition: transform var(--smrt-admin-shell-chrome-duration)
+      var(--smrt-easing-standard, ease);
+  }
+
+  .smrt-admin-shell[data-phone-top][data-chrome-hidden]
+    :global([data-shell-tabs]) {
+    transform: translateY(
+      calc(-100% - var(--smrt-admin-shell-phone-top-size))
+    );
+  }
+
+  .smrt-admin-shell[data-viewport='phone'] :global([data-form-action-bar]) {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 12;
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    gap: var(--smrt-spacing-2);
+    margin: 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-4)
+      calc(var(--smrt-spacing-2) + env(safe-area-inset-bottom));
+    border-block-start: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
+  }
+
+  .smrt-admin-shell[data-viewport='phone'] :global([data-form-action-bar] > *) {
+    flex: 1 1 0;
+    min-block-size: 2.75rem;
+  }
+
+  :global(:root[data-keyboard-open])
+    .smrt-admin-shell[data-viewport='phone']
+    :global([data-form-action-bar]) {
+    display: none;
+  }
+
+  .smrt-admin-shell[data-bottom-bar='form'] .smrt-admin-shell__main {
+    padding-block-end: calc(5rem + env(safe-area-inset-bottom));
+  }
+
+  /* The phone bottom bar sits at the bottom of the dynamic viewport so the
+     browser's collapsing toolbar never hides it. */
+  .smrt-admin-shell[data-bottom-bar='nav'],
+  .smrt-admin-shell[data-bottom-bar='form'] {
+    min-block-size: 100dvh;
+    block-size: 100dvh;
+  }
+
   @media (max-width: 48rem) {
     .smrt-admin-shell {
       grid-template-columns: 0 minmax(0, 1fr) 0;
       grid-template-rows:
+        var(--smrt-admin-shell-header-track)
         var(--smrt-admin-shell-top-track) minmax(0, 1fr)
-        var(--smrt-admin-shell-bottom-track);
+        var(--smrt-admin-shell-bottom-track)
+        var(--smrt-admin-shell-phone-bar-track);
+    }
+
+    .smrt-admin-shell__resizer {
+      display: none;
     }
 
     .smrt-admin-shell__edge--left,
     .smrt-admin-shell__edge--right {
       position: absolute;
       grid-area: auto;
-      inset-block: var(--smrt-admin-shell-top-track)
-        var(--smrt-admin-shell-bottom-track);
+      inset-block: calc(
+          var(--smrt-admin-shell-header-track) +
+            var(--smrt-admin-shell-top-track)
+        )
+        calc(
+          var(--smrt-admin-shell-bottom-track) +
+            var(--smrt-admin-shell-phone-bar-track)
+        );
       inline-size: min(22rem, 86vw);
       transform: translateX(-100%);
       transition: transform var(--smrt-duration-short2)
@@ -880,6 +1792,46 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     .smrt-admin-shell__edge--left[data-state='expanded'],
     .smrt-admin-shell__edge--right[data-state='expanded'] {
       transform: translateX(0);
+    }
+
+    /* Right edge as a bottom sheet. */
+    .smrt-admin-shell__edge--right[data-phone='sheet'] {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      inset-inline: 0;
+      inset-block-start: calc(
+        var(--smrt-admin-shell-header-track) +
+          var(--smrt-admin-shell-top-track) + var(--smrt-spacing-8)
+      );
+      inline-size: auto;
+      border-inline-start: 0;
+      border-start-start-radius: var(--smrt-radius-lg);
+      border-start-end-radius: var(--smrt-radius-lg);
+      background: var(--smrt-color-surface);
+      box-shadow: var(--smrt-elevation-3);
+      transform: translateY(100%);
+      visibility: hidden;
+      transition:
+        transform var(--smrt-duration-short2) var(--smrt-easing-standard),
+        visibility 0s linear var(--smrt-duration-short2);
+    }
+
+    .smrt-admin-shell__edge--right[data-phone='sheet'][data-state='expanded'] {
+      grid-template-columns: minmax(0, 1fr);
+      transform: none;
+      visibility: visible;
+      transition: transform var(--smrt-duration-short2)
+        var(--smrt-easing-standard);
+    }
+
+    .smrt-admin-shell__edge--right[data-phone='sheet'] .smrt-admin-shell__rail {
+      display: none;
+    }
+
+    .smrt-admin-shell__edge--right[data-phone='sheet'] .smrt-admin-shell__panel--right {
+      grid-column: 1;
+      grid-row: 2;
     }
 
     .smrt-admin-shell__edge--top,
@@ -917,8 +1869,14 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .smrt-admin-shell {
+      --smrt-admin-shell-chrome-duration: 0ms;
+    }
+
     .smrt-admin-shell__edge--left,
-    .smrt-admin-shell__edge--right {
+    .smrt-admin-shell__edge--right,
+    .smrt-admin-shell__edge--right[data-phone='sheet'],
+    .smrt-admin-shell__edge--right[data-phone='sheet'][data-state='expanded'] {
       transition: none;
     }
 

@@ -947,6 +947,24 @@ Write the backfill in SQL that every engine you run accepts (`||`, `CASE`,
 scanner reads it from source. A backfill is not a default: the model still
 has to supply the value on every insert.
 
+### Foreign-key delete actions
+
+`@foreignKey(Target, { onDelete })` sets the constraint's `ON DELETE` action
+(`CASCADE`, `SET NULL`, `RESTRICT` or `NO ACTION`). Without one, a column
+listed in `conflictColumns` defaults to `CASCADE` and any other reference to
+`NO ACTION`. A declared action always wins, including on a `conflictColumns`
+column, and the build-time manifest carries it.
+
+When you change the action of an existing relationship, `db:migrate` on
+PostgreSQL replaces the constraint in the same transaction: it drops it, adds
+it back `NOT VALID` with the new action, and validates it. It does this only
+for a constraint SMRT created: the canonical
+`<table>_<column>_<target>_<target column>_fkey` name, one column, `MATCH
+SIMPLE`, not deferrable, already validated. `db:diff` lists it under
+"Foreign keys" with the old and new action. Any other constraint on that
+column is left for you to drop, and `db:diff` shows it as foreign-key drift
+needing a manual step.
+
 ## Advanced Querying
 
 Collections support flexible querying with multiple operators:
@@ -2244,6 +2262,40 @@ const docs = await collection.create({ slug: 'intro', context: '/docs' });
 const blog2 = await collection.create({ slug: 'intro', context: '/blog' });
 // throws ValidationError, code 'VALIDATION_UNIQUE_CONSTRAINT'
 ```
+
+**Tenant-owned tables**: a class with a tenancy declaration or a `tenantId`
+field keys on `(tenant_id, slug, context)` instead. A slug is then unique only
+within one owner: two tenants, or a tenant and the global (NULL-tenant) scope,
+may each hold `intro` in `/blog`. A slug-only lookup that is not tenant-filtered
+(`withSystemContext()`, tenancy disabled, a hand-written query) can match
+several rows and `get({ slug })` returns whichever comes first, so scope it:
+run it inside `withTenant(...)`, or put `tenantId` (or `tenantId: null` for the
+global row) in the `where`, and treat more than one match as ambiguous.
+
+**Upgrading an existing database** (expand, then contract). Old code upserts on
+`ON CONFLICT (slug, context)` and new code on
+`ON CONFLICT (tenant_id, slug, context)`; PostgreSQL binds each only to a
+unique index over exactly those columns (otherwise every save fails with
+42P10), so during a rolling deploy both indexes must exist:
+
+1. **Expand — before the new code rolls out**: run `smrt db:migrate` with the
+   new release's manifests. It builds the tenant-led unique under its own name
+   (`<table>_tenant_id_slug_idx`) and keeps the global `<table>_slug_context_idx`.
+   The new key is a superset of the old one, so the build cannot fail on
+   existing rows. Old and new code both keep saving.
+2. **Roll out** the new release. While the legacy index stands, a second
+   tenant cannot store a slug another tenant already uses: that save fails
+   with a unique violation (nothing is overwritten).
+3. **Contract — once no old code is running**: run
+   `smrt db:migrate --drop-legacy-natural-key` to drop the global index.
+
+Until step 1 runs, `smrt db:status` reports the table as an error and exits 1;
+between steps 1 and 3 it reports the legacy index as a warning. Locking: in
+the default atomic mode the build holds a SHARE lock (writes to the table wait,
+reads continue) for the length of the build. `--postgres-safe` builds it
+`CONCURRENTLY` instead, but refuses a key with a nullable column (a nullable
+`tenant_id` needs the NULL-equal index, which only the atomic mode can build);
+schedule a quiet window for large tables in that case.
 
 **Detecting it**: match the typed error, not the driver text — the adapter
 wraps the driver error, so the constraint wording is not on `error.message`.

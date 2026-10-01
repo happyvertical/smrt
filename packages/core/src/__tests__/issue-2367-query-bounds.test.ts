@@ -299,6 +299,36 @@ describe('Issue #2367: collection query bounds', () => {
       expect(ordered[1]).toContain('ORDER BY rank ASC');
     });
 
+    it('honours an explicit NULLS FIRST/LAST placement', async () => {
+      // Engines disagree on default NULL placement; the bounded data-query
+      // adapters must state it to agree with the contract's own order.
+      const querySpy = vi.spyOn(db, 'query');
+      let calls: unknown[][];
+      try {
+        await expect(
+          collection.list({
+            limit: 2,
+            orderBy: ['label desc nulls last', 'id ASC NULLS FIRST'],
+          }),
+        ).resolves.toHaveLength(2);
+      } finally {
+        calls = querySpy.mock.calls.map((call) => [...call]);
+        querySpy.mockRestore();
+      }
+      const ordered = calls
+        .map((call) => String(call[0]))
+        .filter((sql) => sql.includes('ORDER BY'));
+      expect(ordered[0]).toContain(
+        'ORDER BY label DESC NULLS LAST, id ASC NULLS FIRST',
+      );
+    });
+
+    it('rejects a malformed NULLS placement', async () => {
+      await expect(
+        collection.list({ orderBy: 'label ASC NULLS MIDDLE' }),
+      ).rejects.toMatchObject({ code: 'INVALID_ORDER_BY', status: 400 });
+    });
+
     it('accepts declared and framework columns', async () => {
       await expect(
         collection.list({ limit: 1, orderBy: 'label ASC' }),

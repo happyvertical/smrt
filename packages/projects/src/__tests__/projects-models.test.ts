@@ -267,6 +267,56 @@ describe('smrt-projects models', () => {
       );
     });
 
+    it('a repository loaded from the database gives each new issue its own row', async () => {
+      const repos = await RepositoryCollection.create({ db });
+      const created = await repos.create({
+        owner: 'acme',
+        name: 'widgets',
+        tokenConfigKey: TOKEN_KEY,
+      });
+      const repo = (await repos.get({
+        id: created.id as string,
+      })) as Repository;
+      let next = 20;
+      vi.mocked(getRepository).mockResolvedValue(
+        repoClient({
+          createIssue: vi.fn(async () => {
+            next += 1;
+            return sdkIssue({ number: next, id: `node-${next}` });
+          }),
+          createPullRequest: vi.fn(async () => {
+            next += 1;
+            return sdkPr({ number: next, id: `node-${next}` });
+          }),
+        }),
+      );
+
+      // Distinct timestamps, so an inherited created_at is detectable.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const first = await repo.createIssue({ title: 'One' } as any);
+      const second = await repo.createIssue({ title: 'Two' } as any);
+      const pr = await repo.createPullRequest({ title: 'Three' } as any);
+
+      expect(new Set([first.id, second.id, pr.id, repo.id]).size).toBe(4);
+      // None of the repository's own columns leak into the new rows.
+      const repoCreatedAt = new Date(repo.created_at as Date).getTime();
+      for (const child of [first, second, pr]) {
+        expect(new Date(child.created_at as Date).getTime()).not.toBe(
+          repoCreatedAt,
+        );
+        expect(
+          (child as unknown as { tokenConfigKey?: string }).tokenConfigKey,
+        ).toBeUndefined();
+      }
+      const issues = await IssueCollection.create({ db });
+      expect((await issues.findByNumber(repo.id as string, 21))?.id).toBe(
+        first.id,
+      );
+      expect((await issues.findByNumber(repo.id as string, 22))?.id).toBe(
+        second.id,
+      );
+    });
+
     it('getIssues()/getPullRequests() delegate discovery to the provider client', async () => {
       const repos = await RepositoryCollection.create({ db });
       const repo = await repos.create({

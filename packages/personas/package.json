@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-personas",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "smrtJsdoc": "strict",
   "description": "Tenant-owned, context-scoped agent personas and resolution for the SMRT framework",
   "type": "module",
@@ -46,7 +46,7 @@
     "@happyvertical/sql": "catalog:"
   },
   "peerDependencies": {
-    "svelte": "^5.57.1"
+    "svelte": "^5.57.0"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",

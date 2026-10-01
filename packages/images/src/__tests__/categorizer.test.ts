@@ -423,13 +423,8 @@ describe('ImageCategorizer', () => {
       db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
       images = await ImageCollection.create({ db });
       assets = await AssetCollection.create({ db });
-      // `asset_tags` is a raw join table (not an SMRT model), so it isn't in
-      // the generated schema — create it, mirroring its production DDL.
-      await db.query(
-        'CREATE TABLE IF NOT EXISTS asset_tags (' +
-          'asset_id TEXT NOT NULL, tag_slug TEXT NOT NULL, created_at TEXT, ' +
-          'PRIMARY KEY (asset_id, tag_slug))',
-      );
+      // `asset_tags` is the AssetTag model (smrt-assets): its table comes
+      // from the generated schema and links each asset to a smrt-tags Tag.
     });
 
     afterEach(async () => {
@@ -468,14 +463,19 @@ describe('ImageCategorizer', () => {
       // alt is the description truncated to 125 chars.
       expect(image.alt).toBe('A scenic mountain landscape at golden hour');
 
-      // Tags were persisted via addTag (asset_tags join table).
-      const rows = (await db.list('asset_tags', {
-        asset_id: image.id,
-      })) as Array<{ tag_slug: string }>;
-      expect(rows.map((r) => r.tag_slug).sort()).toEqual([
+      // Tags were persisted via addTag: AssetTag rows pointing at Tags in the
+      // `asset` context, slugified from the AI labels.
+      const tags =
+        (await assets.getTagsForAssets([image.id as string])).get(
+          image.id as string,
+        ) ?? [];
+      expect(tags.map((tag) => tag.slug).sort()).toEqual([
         'landscape',
         'nature',
       ]);
+      expect(new Set(tags.map((tag) => tag.context))).toEqual(
+        new Set(['asset']),
+      );
     });
 
     it('does not overwrite an existing description or alt', async () => {
@@ -555,9 +555,7 @@ describe('ImageCategorizer', () => {
 
       // Description still applied; no tags persisted (none were returned).
       expect(image.description).toBe('A persisted scene');
-      const rows = (await db.list('asset_tags', {
-        asset_id: image.id,
-      })) as Array<{ tag_slug: string }>;
+      const rows = await db.list('asset_tags', { asset_id: image.id });
       expect(rows).toEqual([]);
     });
   });

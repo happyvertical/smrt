@@ -14,7 +14,10 @@
  * @see https://github.com/happyvertical/smrt/issues/688
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { createLogger } from '@happyvertical/logger';
+import { ObjectRegistry, toSnakeCase } from '@happyvertical/smrt-core';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Resolved tenancy configuration for a single class, as stored in the registry.
@@ -88,6 +91,9 @@ const unregisteredDecoratorRegistrations = new Map<
   TenantScopedConfig
 >();
 
+// Selectors already audited (and warned about) since their last registration.
+const auditedSelectors = new Set<string>();
+
 function isQualifiedClassName(className: string): boolean {
   return className.includes(':');
 }
@@ -113,6 +119,7 @@ function bindDirectSimpleRegistration(className: string): void {
     qualifiedName: matches[0].qualifiedName,
     constructor: matches[0].constructor,
   });
+  warnOnRegistrationMismatch(className);
 }
 
 function getDirectSimpleRegistration(
@@ -190,8 +197,10 @@ export function registerTenantScopedClass(
   };
   tenantScopedClasses.set(className, resolved);
 
+  auditedSelectors.delete(className);
   if (isQualifiedClassName(className)) {
     directQualifiedRegistrations.set(className, resolved);
+    warnOnRegistrationMismatch(className);
     return;
   }
 
@@ -201,6 +210,7 @@ export function registerTenantScopedClass(
     directSimpleBindings.delete(className);
   }
   bindDirectSimpleRegistration(className);
+  warnOnRegistrationMismatch(className);
 }
 
 /**
@@ -215,6 +225,7 @@ export function registerTenantScopedClass(
  * @see registerTenantScopedClass
  */
 export function unregisterTenantScopedClass(className: string): void {
+  auditedSelectors.delete(className);
   tenantScopedClasses.delete(className);
   if (isQualifiedClassName(className)) {
     directQualifiedRegistrations.delete(className);
@@ -259,6 +270,9 @@ function getDirectTenantScopedConfig(
   // 1. Explicit direct qualified selector.
   const directQualified = directQualifiedRegistrations.get(className);
   if (directQualified) {
+    // A qualified selector registered before core learned the class is
+    // audited on first use instead.
+    if (!auditedSelectors.has(className)) warnOnRegistrationMismatch(className);
     return cloneConfig(directQualified);
   }
 
@@ -425,6 +439,20 @@ export function getTenantScopedConfig(
 }
 
 /**
+ * Tell core which column records a row's owner for every tenant-scoped class,
+ * including runtime registrations on a custom field
+ * (`registerTenantScopedClass('Team', { field: 'organizationId' })`) that the
+ * manifest knows nothing about. Core's natural-key save guard compares these
+ * columns, so a save whose key collides with another organization's row is
+ * refused (`TENANT_ISOLATION_VIOLATION`) instead of adopting it. Resolved on
+ * every lookup, so selectors that bind later or are unregistered are honoured.
+ */
+ObjectRegistry.registerOwnershipColumnSource((qualifiedName) => {
+  const config = getTenantScopedConfig(qualifiedName);
+  return config ? [toSnakeCase(config.field)] : undefined;
+});
+
+/**
  * Return `true` if the named class is tenant-scoped — directly (via
  * `@TenantScoped()` / `@smrt({ tenantScoped: true })`) or by inheriting from a
  * tenant-scoped STI ancestor (#1596).
@@ -466,9 +494,155 @@ export function getAllTenantScopedClasses(): Map<string, TenantScopedConfig> {
  * @see unregisterTenantScopedClass
  */
 export function clearTenantScopedRegistry(): void {
+  auditedSelectors.clear();
   tenantScopedClasses.clear();
   directSimpleRegistrations.clear();
   directQualifiedRegistrations.clear();
   directSimpleBindings.clear();
   unregisteredDecoratorRegistrations.clear();
+}
+
+/**
+ * One finding from {@link auditTenantScopedRegistrations}.
+ *
+ * - `missing_tenant_field` (`error`): the class has no field named by the
+ *   registration, so the interceptor filters and populates a column that does
+ *   not exist in the model's manifest/schema.
+ * - `natural_key_not_tenant_scoped` (`warning`): the class's upsert conflict
+ *   target (and so its unique index) omits the tenant column — its natural key
+ *   is unique ACROSS tenants. The interceptor hides other tenants' rows from
+ *   lookups, so a second tenant's same-key save collides with a row it cannot
+ *   see; core refuses that save (`TENANT_ISOLATION_VIOLATION`) instead of
+ *   overwriting the other tenant's row, but the second tenant still cannot
+ *   store the key.
+ * - `undeclared_tenant_scope` (`info`): tenant scope exists only as this
+ *   runtime registration; the model's manifest declares no tenancy. Its
+ *   default natural key is still tenant-led when it has a `tenantId` field,
+ *   but generated surfaces, knowledge, and schema contracts cannot see the
+ *   read policy. Declaring `@smrt({ tenantScoped })` makes it visible.
+ */
+export interface TenantRegistrationFinding {
+  /** The selector passed to `registerTenantScopedClass()`. */
+  selector: string;
+  /** The core class it resolved to (qualified name when known). */
+  className: string;
+  kind:
+    | 'missing_tenant_field'
+    | 'natural_key_not_tenant_scoped'
+    | 'undeclared_tenant_scope';
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+}
+
+function resolveSelectorClass(selector: string) {
+  if (isQualifiedClassName(selector)) {
+    return ObjectRegistry.getClassByQualifiedName(selector);
+  }
+  const bound = directSimpleBindings.get(selector);
+  if (bound) return ObjectRegistry.getClassByQualifiedName(bound.qualifiedName);
+  const matches = ObjectRegistry.findClassesByName(selector);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function auditSelector(
+  selector: string,
+  config: TenantScopedConfig,
+): TenantRegistrationFinding[] {
+  const registered = resolveSelectorClass(selector);
+  if (!registered) return [];
+  const className = registered.qualifiedName || registered.name;
+  const findings: TenantRegistrationFinding[] = [];
+
+  if (!registered.fields.has(config.field)) {
+    findings.push({
+      selector,
+      className,
+      kind: 'missing_tenant_field',
+      severity: 'error',
+      message:
+        `${className} is registered tenant-scoped on field '${config.field}', ` +
+        'but the model declares no such field. Tenant filtering and population ' +
+        'target a column its manifest and schema do not have. Add the field ' +
+        '(or declare `@smrt({ tenantScoped })`) and regenerate the manifest.',
+    });
+    return findings;
+  }
+
+  if (!ObjectRegistry.getTenantScopedConfig(className)) {
+    findings.push({
+      selector,
+      className,
+      kind: 'undeclared_tenant_scope',
+      severity: 'info',
+      message:
+        `${className} is tenant-scoped only by runtime registration; its ` +
+        'manifest declares no tenancy. Declare `@smrt({ tenantScoped })` so ' +
+        'schema, generated surfaces and knowledge agree with the read policy.',
+    });
+  }
+
+  const tenantColumn = toSnakeCase(config.field);
+  const conflictColumns = ObjectRegistry.getConflictColumns(className);
+  const keyedOnPrimaryKey =
+    conflictColumns.length === 1 && conflictColumns[0] === 'id';
+  if (!keyedOnPrimaryKey && !conflictColumns.includes(tenantColumn)) {
+    findings.push({
+      selector,
+      className,
+      kind: 'natural_key_not_tenant_scoped',
+      severity: 'warning',
+      message:
+        `${className} is registered tenant-scoped, but its natural key ` +
+        `(${conflictColumns.join(', ')}) omits '${tenantColumn}', so it is ` +
+        'unique across tenants: a second tenant cannot store a key another ' +
+        'tenant already uses. A new object saved on such a key is refused ' +
+        '(TENANT_ISOLATION_VIOLATION) when the row it collides with has a ' +
+        `different '${tenantColumn}'; one whose slug was derived from its ` +
+        'name moves to a free slug instead. ' +
+        `Include '${tenantColumn}' in the conflict columns (or drop the ` +
+        'explicit conflictColumns) and run `smrt db:migrate`.',
+    });
+  }
+  return findings;
+}
+
+/**
+ * Audit every string-selector registration (`registerTenantScopedClass()`)
+ * against the core model it resolves to. Selectors whose class core has not
+ * registered yet are skipped (they are audited when they bind).
+ *
+ * Registration also runs this per selector and logs `error`/`warning`
+ * findings once, so a mismatch surfaces at startup; call this directly for a
+ * complete report (for example from a health check or a test).
+ */
+export function auditTenantScopedRegistrations(): TenantRegistrationFinding[] {
+  const findings: TenantRegistrationFinding[] = [];
+  for (const [selector, config] of directQualifiedRegistrations) {
+    findings.push(...auditSelector(selector, config));
+  }
+  for (const [selector, config] of directSimpleRegistrations) {
+    findings.push(...auditSelector(selector, config));
+  }
+  return findings;
+}
+
+function warnOnRegistrationMismatch(selector: string): void {
+  if (auditedSelectors.has(selector)) return;
+  const config =
+    directQualifiedRegistrations.get(selector) ??
+    directSimpleRegistrations.get(selector);
+  if (!config) return;
+  let findings: TenantRegistrationFinding[];
+  try {
+    findings = auditSelector(selector, config);
+  } catch {
+    // Ambiguous or stale identities fail closed on use; the audit stays quiet.
+    return;
+  }
+  if (!resolveSelectorClass(selector)) return; // not in core yet; retry later
+  auditedSelectors.add(selector);
+  for (const finding of findings) {
+    if (finding.severity === 'info') continue;
+    logger.warn(`[smrt-tenancy] ${finding.message}`);
+  }
 }

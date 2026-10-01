@@ -12,7 +12,7 @@
  * ambiguous across contexts rather than silently picking one row.
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { ObjectRegistry, SmrtCollection } from '@happyvertical/smrt-core';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Tag } from './tag';
 import type { TagHierarchy } from './types';
@@ -331,8 +331,59 @@ export class TagCollection extends SmrtCollection<Tag> {
       await alias.save();
     }
 
+    // Re-point every row that references fromTag (asset tags, and any other
+    // `@foreignKey` / `@crossPackageRef` to Tag) at toTag before deleting
+    // it; otherwise their `onDelete: 'CASCADE'` silently strips the tag from
+    // every picture that carried it.
+    await this.repointTagReferences(fromTag.id, toTag.id);
+
     // Delete the fromTag
     await fromTag.delete();
+  }
+
+  /**
+   * Move every reference to tag `fromId` onto `toId`. A row whose natural key
+   * includes the tag column and that already exists for `toId` (an asset
+   * tagged with both) is a duplicate after the merge and is removed instead.
+   * Rows are matched by tag id, which is specific to one tenant's tag, so
+   * this reads and writes through the adapter directly.
+   */
+  private async repointTagReferences(fromId: string, toId: string) {
+    const tagClass =
+      ObjectRegistry.getClassByConstructor(Tag)?.qualifiedName ?? 'Tag';
+    const tagTable = ObjectRegistry.getTableName(tagClass);
+    for (const reference of ObjectRegistry.getIncomingReferences(tagClass)) {
+      // Child tags were re-parented above; a referencing class whose table
+      // this database never created has nothing to move.
+      if (reference.tableName === tagTable) continue;
+      if (!(await this.db.tableExists(reference.tableName))) continue;
+      const conflictColumns = ObjectRegistry.getConflictColumns(
+        reference.className,
+      );
+      const keyed =
+        conflictColumns.includes(reference.column) &&
+        !(conflictColumns.length === 1 && conflictColumns[0] === 'id');
+      const rows = (await this.db.list(reference.tableName, {
+        [reference.column]: fromId,
+      })) as Array<Record<string, unknown>>;
+      for (const row of rows) {
+        if (keyed) {
+          const probe: Record<string, unknown> = {};
+          for (const column of conflictColumns) {
+            probe[column] = column === reference.column ? toId : row[column];
+          }
+          if (await this.db.get(reference.tableName, probe)) {
+            await this.db.delete(reference.tableName, { id: row.id });
+            continue;
+          }
+        }
+        await this.db.update(
+          reference.tableName,
+          { id: row.id },
+          { [reference.column]: toId },
+        );
+      }
+    }
   }
 
   /**

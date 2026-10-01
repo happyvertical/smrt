@@ -20,6 +20,9 @@ subpath you are editing. This file keeps what holds in every module.
 | `src/web/webmcp-provider.ts` | Provider config for generated data/model WebMCP tools: definitions, effect policy, namespace, budget, legacy/canonical filters, and fetcher seams (#2520) | — |
 | `src/web/webmcp-ui.ts` | Fixed, low-cardinality WebMCP adapter over the Provider's mounted form-control and data-surface registries (#2521) | — |
 | `src/web/webmcp.svelte.ts` (`useWebMcpTool`) | Component-owned bespoke WebMCP tool. Routes through `@happyvertical/smrt-web`'s `registerWebMcpBespokeTool`, so it shares the fail-closed effect classification and `effects` exposure policy of generated tools — undeclared `annotations` classify destructive and are excluded by default. `namespace` and `maxTools` never apply to a bespoke tool (#2586) | — |
+| `src/web/{list,link,step}-surface.svelte.ts` (`useListSurface`, `useLinkSurface`, `useStepSurface`) | Lifecycle hooks mounting a rendered list (projected `state.rows` + a `find` text lookup), a menu/tab row (`open` → `navigate`, hrefs never published), and a wizard (`next`/`back`/`go-to`; a writing step is revealed via `showNext`, never pressed) on the Provider's data-surface registry. The Svelte-free halves live in `@happyvertical/smrt-ui/data` | — |
+| `src/web/webmcp-ui-context.ts` (`useWebMcpUi`, `tryUseWebMcpUi`) | Provider mounted-UI registries; `tryUseWebMcpUi` returns `null` instead of throwing when there is no Provider or its WebMCP UI is off (#2915) | — |
+| `src/components/forms/Form.svelte` + `FormScope.svelte` | Rich Form spreads native attributes/attachments, takes `enhance`, and its `*_stage_changes` tool covers smrt-ui controls via `controlProposalProperties`/`stageControlProposals` (smrt-ui); `FormScope` is the same without a `<form>` element | — |
 
 The composed WebMCP fixture in
 `src/web/__tests__/webmcp-composed.integration.svelte.test.ts` mounts a real

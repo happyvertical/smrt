@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-messages",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "smrtJsdoc": "strict",
   "description": "Unified multi-channel messaging with STI-based hierarchies",
   "type": "module",
@@ -87,7 +87,7 @@
   },
   "peerDependencies": {
     "@happyvertical/encryption": "*",
-    "svelte": "^5.57.1"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/encryption": {

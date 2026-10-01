@@ -26,6 +26,7 @@ export { default as DateTimeInput } from './DateTimeInput.svelte';
 export { default as FileUpload } from './FileUpload.svelte';
 export { default as Form } from './Form.svelte';
 export { default as FormMicButton } from './FormMicButton.svelte';
+export { default as FormScope } from './FormScope.svelte';
 export { default as MeasurementInput } from './MeasurementInput.svelte';
 export { default as MoneyInput } from './MoneyInput.svelte';
 export { default as NumberInput } from './NumberInput.svelte';

@@ -103,6 +103,7 @@ export {
   DATA_INSPECT_FUNCTION_NAME,
   DATA_INSPECT_TOOL_SLUG,
   DATA_QUERY_FUNCTION_NAME,
+  DATA_QUERY_TOOL_PARAMETERS,
   DATA_QUERY_TOOL_SLUG,
   type DataSurfaceAuditEntry,
   type DataSurfaceAuditSink,
@@ -152,7 +153,15 @@ export {
 // Per-instance dispatch subscriber composition (#1890). Exported so
 // `@happyvertical/smrt-personas` can derive the same identity for a persona
 // without reconstructing an agent.
-export { instanceScopedSubscriber } from './identity.js';
+// Also the tenant agent config owner id `<tenant>:<agent type>` (the id
+// `serializeResolvedAgent()` gives a binding without an Agent row).
+export {
+  getAgentClassName,
+  getAgentTypeName,
+  instanceScopedSubscriber,
+  parseTenantAgentConfigOwnerId,
+  tenantAgentConfigOwnerId,
+} from './identity.js';
 export type {
   AgentWithInterestsOptions,
   AsyncQualifierFn,
@@ -209,6 +218,24 @@ export {
   migrateAgentScheduleSlugs,
   planAgentScheduleSlugMigration,
 } from './migrations/agent-schedule-slugs.js';
+// Re-key legacy `<tenant>:<Class>` agent configs after smrt #1092.
+export {
+  AGENT_CONFIGS_TABLE,
+  type AgentConfigKeyRow,
+  planTenantAgentConfigKeyRepair,
+  planTenantAgentConfigKeyRepairRows,
+  type RawAgentConfigRow,
+  type RawTenantAgentRow,
+  repairTenantAgentConfigKeys,
+  TENANT_AGENTS_TABLE,
+  type TenantAgentConfigKeyLedgerEntry,
+  type TenantAgentConfigKeyPlan,
+  TenantAgentConfigKeyRepairError,
+  type TenantAgentConfigKeyRepairOptions,
+  type TenantAgentConfigKeyRepairReport,
+  type TenantAgentConfigKeyRepairTotals,
+  type TenantAgentKeyRow,
+} from './migrations/tenant-agent-config-keys.js';
 // Server-plane playbook preflight (#2590) — advisory prediction, never a grant.
 export {
   type CreatePlaybookPreflightToolOptions,
@@ -248,15 +275,19 @@ export {
 } from './schedule.js';
 // Generic SmrtObject collection -> DataSurface adapter (#2905).
 export {
+  assertIdFieldConditions,
   assertSmrtCollectionQuerySchema,
   buildDataQuerySchemaForClass,
   type CreateSmrtCollectionDataSurfaceOptions,
   clearSmrtCollectionQuerySchemaCache,
   createSmrtCollectionDataSurfaceDefinition,
+  dataQueryOrderByTerms,
   executeSmrtCollectionQuery,
+  ID_FIELD_FILTER_OPERATORS,
   type SmrtCollectionDataSurfaceAction,
   type SmrtCollectionQueryCollection,
   type SmrtCollectionQueryScope,
+  uuidColumnFieldIds,
 } from './smrt-collection-data-surface.js';
 export type {
   SummaryArticleImage,
@@ -277,6 +308,10 @@ export {
   type AgentAdminNavItem,
   type AgentAdminRootProps,
   type AgentAdminRoute,
+  type AgentCreateEntry,
+  type AgentCreateEntryAvailability,
+  type AgentCreateEntryContext,
+  type AgentCreateEntrySource,
   type AgentManifestInfo,
   type AgentRouteLoadContext,
   type AgentRouteLoadFn,
@@ -286,4 +321,7 @@ export {
   type AgentUISlots,
   type ComponentType,
   createUIRegistry,
+  isAgentCreateEntryAvailable,
+  type ResolvedAgentCreateEntry,
+  resolveAgentCreateEntries,
 } from './ui.js';

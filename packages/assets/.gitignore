@@ -26,9 +26,11 @@ src/routes/api/assets/getByTag/+server.ts
 src/routes/api/assets/getByType/+server.ts
 src/routes/api/assets/getDerivatives/+server.ts
 src/routes/api/assets/getLatestVersion/+server.ts
+src/routes/api/assets/getTagsForAssets/+server.ts
 src/routes/api/assets/listVersions/+server.ts
 src/routes/api/assets/removeTag/+server.ts
 src/routes/api/assets/rollbackToVersion/+server.ts
+src/routes/api/assets/setTags/+server.ts
 src/routes/api/assetstatuses/\[id\]/+server.ts
 src/routes/api/assetstatuses/+server.ts
 src/routes/api/assetstatuses/getOrCreate/+server.ts

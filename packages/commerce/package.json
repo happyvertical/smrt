@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-commerce",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "smrtJsdoc": "strict",
   "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
   "type": "module",
@@ -73,7 +73,7 @@
     "@happyvertical/smrt-ui": "workspace:*"
   },
   "peerDependencies": {
-    "svelte": "^5.57.1"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "svelte": {

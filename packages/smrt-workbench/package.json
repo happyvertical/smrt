@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-workbench",
-  "version": "0.51.38",
+  "version": "0.52.0",
   "smrtJsdoc": "strict",
   "description": "Shared SMRT package and project workbench",
   "type": "module",
@@ -67,7 +67,7 @@
     "vite": "8.1.4"
   },
   "peerDependencies": {
-    "svelte": "^5.57.1",
+    "svelte": "^5.57.0",
     "vite": "^8.1.3"
   },
   "peerDependenciesMeta": {

@@ -1,5 +1,11 @@
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import {
+  type ContentMainPicture,
+  extractBodyImages,
+  resolveBodyFormat,
+  resolveBodyMainPicture,
+} from '../body-format.js';
+import {
   type ContentEditorAsset,
   type ContentEditorFormData,
   type ContentEditorInitialContent,
@@ -16,6 +22,23 @@ export type ContentEditorFieldChange = Partial<ContentEditorFormData> &
   Record<string, unknown>;
 
 type FieldUndoSnapshot = Record<string, unknown>;
+
+/** The asset ids of the story's pictures, in order (the main-picture key). */
+function bodyImageSignature(form: ContentEditorFormData): string {
+  const body = form.body || '';
+  if (!body) {
+    return '';
+  }
+  return extractBodyImages(body, resolveBodyFormat(form.bodyFormat, body))
+    .map((image) =>
+      [
+        image.assetId ?? '',
+        image.thumbnail ? 't' : '',
+        image.main ? 'm' : '',
+      ].join(':'),
+    )
+    .join('|');
+}
 
 function cloneFieldValue(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -72,6 +95,7 @@ export class ContentEditorState {
   private _fieldUndoStack = $state<FieldUndoSnapshot[]>([]);
   private _lastAppliedFields = $state<string[]>([]);
   private _showUndoBanner = $state(false);
+  private _bodyImageSignature = '';
 
   constructor(options: CreateContentEditorStateOptions = {}) {
     this.reset(options.content);
@@ -103,6 +127,7 @@ export class ContentEditorState {
 
   reset(content?: ContentEditorInitialContent | null) {
     this._form = getContentEditorInitialFormData(content);
+    this._bodyImageSignature = bodyImageSignature(this._form);
     this._fieldUndoStack = [];
     this._lastAppliedFields = [];
     this._showUndoBanner = false;
@@ -193,6 +218,41 @@ export class ContentEditorState {
 
   setThumbnailAsset(assetId: string | null) {
     this._form.thumbnailAssetId = assetId;
+  }
+
+  /**
+   * The main picture (thumbnail) as the story decides it: the picture the
+   * person chose, else the first picture in the story (see
+   * `resolveBodyMainPicture`).
+   */
+  get mainPicture(): ContentMainPicture {
+    return resolveBodyMainPicture(
+      this._form.body,
+      this._form.bodyFormat,
+      this._form.thumbnailAssetId,
+    );
+  }
+
+  /**
+   * Apply the main-picture rule after the story changed: the first picture
+   * in the story becomes the thumbnail unless one was chosen. Runs only
+   * when the story's pictures (or the choice) changed since the last call
+   * or `reset`, so editing text never replaces a thumbnail that was set
+   * some other way. A story without pictures keeps the current thumbnail.
+   * Returns true when the thumbnail changed.
+   */
+  syncMainPictureFromBody(): boolean {
+    const signature = bodyImageSignature(this._form);
+    if (signature === this._bodyImageSignature) {
+      return false;
+    }
+    this._bodyImageSignature = signature;
+    const main = this.mainPicture;
+    if (main.mode === 'none' || main.assetId === this._form.thumbnailAssetId) {
+      return false;
+    }
+    this._form.thumbnailAssetId = main.assetId;
+    return true;
   }
 }
 

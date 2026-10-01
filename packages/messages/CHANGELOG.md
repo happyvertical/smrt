@@ -1,5 +1,67 @@
 # @happyvertical/smrt-messages
 
+## 0.52.0
+
+### Minor Changes
+
+- 0259083: Per-user in-app notifications. **New table `user_notifications`: run
+  `smrt db:migrate`.** `UserNotification` stores one notification per recipient
+  (tenant, `recipientUserId` → smrt-users User, kind, title, body, href,
+  severity, `sourceRef`, `occurredAt`, `readAt`, `dismissedAt`), keyed by
+  `(tenant_id, recipient_user_id, source_ref)`. `UserNotificationService` is the
+  access path: `notify` / `notifyMany` dedupe on `sourceRef` without touching read
+  state (a notify that loses the dedupe race returns the stored row untouched,
+  `created: false`), `listForUser` / `countUnread` read one recipient across
+  explicit tenants, and `markRead` / `dismiss` / `markAllRead` change only the
+  recipient's own rows (malformed ids are dropped instead of failing the request
+  with 22P02). Generated REST/MCP/CLI surfaces are off.
+
+### Patch Changes
+
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+- Updated dependencies [0259083]
+  - @happyvertical/smrt-ui@0.52.0
+  - @happyvertical/smrt-core@0.52.0
+  - @happyvertical/smrt-secrets@0.52.0
+  - @happyvertical/smrt-tenancy@0.52.0
+  - @happyvertical/smrt-users@0.52.0
+  - @happyvertical/smrt-types@0.52.0
+
+## 0.51.39
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.39
+  - @happyvertical/smrt-secrets@0.51.39
+  - @happyvertical/smrt-tenancy@0.51.39
+  - @happyvertical/smrt-users@0.51.39
+  - @happyvertical/smrt-ui@0.51.39
+  - @happyvertical/smrt-types@0.51.39
+
 ## 0.51.38
 
 ### Patch Changes

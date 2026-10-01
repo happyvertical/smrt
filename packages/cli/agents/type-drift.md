@@ -25,6 +25,22 @@ stays reserved for ambiguous naive wall-clock strings the probe does not
 accept. SQLite has no distinct storage for `text` vs `timestamptz`, so this
 stays advisory-only there.
 
+### Empty text (#3226)
+
+The probe counts empty or whitespace-only text separately. When it is the
+only obstacle and the manifest and live columns are both nullable,
+`DiffOptions.emptyTextAsNull` (`--empty-text-as-null`) converts with
+`USING (CASE WHEN btrim(col) = '' THEN NULL ELSE col END)::<type>` and the
+change carries a `note`. The same opt-in applies to `jsonb` (after the
+duplicate-key walk over the remaining values) and to `text` -> integer.
+Without it, the timestamptz/jsonb advisory names the empty-text count and
+prints the sample as `(empty)`. `text` -> integer has no diff-time probe: its
+note says "if any", and a non-integer value fails only at apply time (the
+preflight `RAISE`). The `--postgres-timestamp-legacy-timezone=UTC` path still
+maps `''` and `'null'` to NULL without the opt-in (`differ.ts`
+`generateTypeUpgradeSQL`). `db:status` / `db:history` accept
+`--empty-text-as-null` too.
+
 ## text -> jsonb convergence and uuid visibility (#2772)
 
 A `text` column on a table smrt itself creates, backed by a manifest `JSON`
