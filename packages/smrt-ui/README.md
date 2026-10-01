@@ -57,8 +57,8 @@ A bare `YYYY-MM-DD` string always denotes that calendar date, independent of the
 viewer or shop zone. It formats in UTC, retains a date-only `datetime` attribute,
 and ignores `showTime` because it contains no time. Relative calendar-date
 labels compare it with today's date in the supplied zone (or the browser zone).
-Impossible calendar dates and invalid explicit zones render `fallback` rather
-than throwing during formatting.
+Impossible calendar dates render `fallback`. Invalid explicit zones used for
+instant or relative formatting also render `fallback` rather than throwing.
 
 ### Combobox form submission
 
