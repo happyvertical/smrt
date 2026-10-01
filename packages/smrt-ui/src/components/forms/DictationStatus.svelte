@@ -13,6 +13,7 @@ import { useI18n } from '../../i18n/use-i18n.js';
 import type { Dictation, DictationErrorKind } from './dictation.svelte.js';
 
 export interface Props {
+  /** The dictation session whose listening state and messages this shows. */
   dictation: Dictation;
   /** Extra class names. */
   class?: string;

@@ -99,11 +99,13 @@ export interface Props {
   onInsert?: (pictures: ContentPicture[]) => void;
   /** Upload these files (then insert them). */
   onUpload?: (files: File[]) => void;
+  /** Load the next page of pictures into the gallery. */
   onLoadMore?: () => void;
   /** Make this picture the main picture. */
   onUseAsMain?: (picture: ContentPicture) => void;
   /** Clear the choice: the first picture in the story is the main picture. */
   onClearMainChoice?: () => void;
+  /** Close the drawer. */
   onClose?: () => void;
 }
 
@@ -556,7 +558,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     place-items: center;
     min-width: 1.5rem;
     height: 1.5rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 999px);
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     font-size: var(--smrt-typography-body-small-size, 0.8rem);
@@ -584,7 +586,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
   .tag {
     display: inline-block;
     padding: 0.05rem 0.4rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 999px);
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-small-size, 0.72rem);

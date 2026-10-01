@@ -16,13 +16,19 @@ import type {
 import type { ListSortState } from './list-sort-state.svelte.js';
 
 interface Props {
+  /** Sortable columns; each gives two options, one per direction. */
   columns: readonly ListSortSelectColumn[];
   /** The list's sort state; supplies `sort` and `onChange`. */
   list?: ListSortState;
+  /** Current sort of the list, when `list` is not given. */
   sort?: ListSort;
+  /** Called with the chosen sort, when `list` is not given. */
   onChange?: (sort: ListSort) => void;
+  /** Visible label for the picker (default "Sort by"). */
   label?: string;
+  /** Id of the select element, tying the label to it. */
   id?: string;
+  /** Extra class names. */
   class?: string;
 }
 

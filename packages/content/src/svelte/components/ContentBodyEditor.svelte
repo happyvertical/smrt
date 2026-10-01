@@ -2298,7 +2298,7 @@ function handleEditorDragEnd() {
     left: 1rem;
     right: 1rem;
     height: 4px;
-    border-radius: 2px;
+    border-radius: var(--smrt-radius-sm, 2px);
     background: var(--smrt-color-primary);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 25%, transparent);
     pointer-events: none;

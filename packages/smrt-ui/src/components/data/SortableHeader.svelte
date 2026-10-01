@@ -28,7 +28,9 @@ import {
 import type { ListSortState } from './list-sort-state.svelte.js';
 
 interface Props {
+  /** Id of the column this header sorts by. */
   columnId: string;
+  /** Column name shown in the header and used in the sort announcement. */
   label: string;
   /** The list's sort state; supplies `sort`, `spec`, `href`, and `onSort`. */
   list?: ListSortState;
@@ -40,8 +42,11 @@ interface Props {
   onSort?: (columnId: string) => void;
   /** The list's sort spec; gives the column's first direction for the label. */
   spec?: ListSortSpec;
+  /** Render a table `th` (default) or a `div` column header for grid layouts. */
   as?: 'th' | 'div';
+  /** Horizontal alignment of the header content. */
   align?: 'start' | 'center' | 'end';
+  /** Extra class names. */
   class?: string;
   children?: Snippet;
 }
