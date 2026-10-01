@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "timestamp": 0,
   "packageName": "@happyvertical/smrt-profiles",
-  "packageVersion": "0.49.2",
+  "packageVersion": "0.51.36",
   "objects": {
     "@happyvertical/smrt-profiles:ApiKeyCollection": {
       "name": "apikeycollection",
@@ -247,7 +247,8 @@
           }
         ],
         "version": "9b0d49e8"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:AuditLogCollection": {
       "name": "auditlogcollection",
@@ -522,7 +523,8 @@
           }
         ],
         "version": "d2b35971"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:MagicLinkTokenCollection": {
       "name": "magiclinktokencollection",
@@ -794,7 +796,8 @@
           }
         ],
         "version": "d60748fe"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:NostrIdentityCollection": {
       "name": "nostridentitycollection",
@@ -1103,7 +1106,8 @@
           }
         ],
         "version": "92eda375"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:OidcIdentityCollection": {
       "name": "oidcidentitycollection",
@@ -1322,7 +1326,8 @@
           }
         ],
         "version": "925387ea"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:OidcProfileEmailReservationCollection": {
       "name": "oidcprofileemailreservationcollection",
@@ -1407,7 +1412,8 @@
           }
         ],
         "version": "01586e67"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileAssetCollection": {
       "name": "profileassetcollection",
@@ -1709,7 +1715,8 @@
           }
         ],
         "version": "d0d7c2a2"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileCollection": {
       "name": "profilecollection",
@@ -1990,7 +1997,7 @@
       "collectionExportName": "ProfileCollectionCollection",
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"is_public\" BOOLEAN DEFAULT FALSE\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2057,6 +2064,11 @@
           "description": {
             "type": "TEXT",
             "notNull": false
+          },
+          "is_public": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
           }
         },
         "indexes": [
@@ -2097,8 +2109,182 @@
             ]
           }
         ],
-        "version": "fd4497fb"
-      }
+        "version": "f4a7b632"
+      },
+      "importPath": "@happyvertical/smrt-profiles"
+    },
+    "@happyvertical/smrt-profiles:ProfileLinkCollection": {
+      "name": "profilelinkcollection",
+      "className": "ProfileLinkCollection",
+      "qualifiedName": "@happyvertical/smrt-profiles:ProfileLinkCollection",
+      "collection": "profilelinks",
+      "filePath": "packages/profiles/src/collections/ProfileLinkCollection.ts",
+      "packageName": "@happyvertical/smrt-profiles",
+      "fields": {},
+      "methods": {
+        "listForProfile": {
+          "name": "listForProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileLink[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "replaceForProfile": {
+          "name": "replaceForProfile",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "links",
+              "type": "any",
+              "optional": false,
+              "typeUnresolved": true
+            }
+          ],
+          "returnType": "Promise<ProfileLink[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "reorder": {
+          "name": "reorder",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "linkIds",
+              "type": "any",
+              "optional": false,
+              "typeUnresolved": true
+            }
+          ],
+          "returnType": "Promise<ProfileLink[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "profile_links",
+        "api": false,
+        "mcp": false,
+        "cli": false
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ProfileLink",
+      "exportName": "ProfileLinkCollection",
+      "collectionExportName": "ProfileLinkCollectionCollection",
+      "schema": {
+        "tableName": "profile_links",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_links\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"profile_id\" UUID NOT NULL,\n  \"platform\" TEXT NOT NULL DEFAULT 'website',\n  \"url\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "profile_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": true,
+            "unique": false,
+            "foreignKey": {
+              "table": "profiles",
+              "column": "id",
+              "onDelete": "CASCADE",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "platform": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false,
+            "default": "website"
+          },
+          "url": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "label": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "sort_order": {
+            "type": "INTEGER",
+            "notNull": true,
+            "unique": false,
+            "default": 0
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_links_slug_context_idx",
+            "columns": [
+              "tenant_id",
+              "slug",
+              "context"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "profile_links_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "profile_links_profile_id_idx",
+            "columns": [
+              "profile_id"
+            ]
+          }
+        ],
+        "version": "847fd648"
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileMetadataCollection": {
       "name": "profilemetadatacollection",
@@ -2271,7 +2457,8 @@
           }
         ],
         "version": "d3ab1b70"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileMetafieldCollection": {
       "name": "profilemetafieldcollection",
@@ -2408,7 +2595,8 @@
           }
         ],
         "version": "afe420df"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipCollection": {
       "name": "profilerelationshipcollection",
@@ -2644,7 +2832,8 @@
           }
         ],
         "version": "48878dba"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipTermCollection": {
       "name": "profilerelationshiptermcollection",
@@ -2790,7 +2979,8 @@
           }
         ],
         "version": "ef299102"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipTypeCollection": {
       "name": "profilerelationshiptypecollection",
@@ -2932,7 +3122,8 @@
           }
         ],
         "version": "719fe0d9"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileTypeCollection": {
       "name": "profiletypecollection",
@@ -3086,7 +3277,8 @@
           }
         ],
         "version": "0fb37aeb"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ApiKey": {
       "name": "apikey",
@@ -3248,6 +3440,7 @@
       },
       "decoratorConfig": {
         "tableName": "api_keys",
+        "sensitive": true,
         "api": {
           "include": [
             "list",
@@ -3390,7 +3583,8 @@
           }
         ],
         "version": "9b0d49e8"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:AuditLog": {
       "name": "auditlog",
@@ -3662,7 +3856,8 @@
           }
         ],
         "version": "d2b35971"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:MagicLinkToken": {
       "name": "magiclinktoken",
@@ -3825,6 +4020,7 @@
       },
       "decoratorConfig": {
         "tableName": "magic_link_tokens",
+        "sensitive": true,
         "api": {
           "exclude": [
             "*"
@@ -3950,7 +4146,8 @@
           }
         ],
         "version": "d60748fe"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:NostrIdentity": {
       "name": "nostridentity",
@@ -4145,6 +4342,7 @@
       },
       "decoratorConfig": {
         "tableName": "nostr_identities",
+        "sensitive": true,
         "api": {
           "include": [
             "list",
@@ -4291,7 +4489,8 @@
           }
         ],
         "version": "92eda375"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:OidcIdentity": {
       "name": "oidcidentity",
@@ -4585,7 +4784,8 @@
           }
         ],
         "version": "925387ea"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:OidcProfileEmailReservation": {
       "name": "oidcprofileemailreservation",
@@ -4701,7 +4901,8 @@
           }
         ],
         "version": "01586e67"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:Profile": {
       "name": "profile",
@@ -4770,6 +4971,14 @@
         "description": {
           "type": "text",
           "required": false
+        },
+        "isPublic": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "_meta": {
+            "default": false
+          }
         },
         "metadata": {
           "type": "oneToMany",
@@ -4876,6 +5085,29 @@
             }
           ],
           "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getLinks": {
+          "name": "getLinks",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProfileLink[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setLinks": {
+          "name": "setLinks",
+          "async": true,
+          "parameters": [
+            {
+              "name": "links",
+              "type": "any",
+              "optional": false,
+              "typeUnresolved": true
+            }
+          ],
+          "returnType": "Promise<ProfileLink[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -5269,7 +5501,7 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"is_public\" BOOLEAN DEFAULT FALSE\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -5336,6 +5568,11 @@
           "description": {
             "type": "TEXT",
             "notNull": false
+          },
+          "is_public": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
           }
         },
         "indexes": [
@@ -5376,8 +5613,9 @@
             ]
           }
         ],
-        "version": "fd4497fb"
-      }
+        "version": "f4a7b632"
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileAsset": {
       "name": "profileasset",
@@ -5568,7 +5806,258 @@
           }
         ],
         "version": "d0d7c2a2"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
+    },
+    "@happyvertical/smrt-profiles:ProfileLink": {
+      "name": "profilelink",
+      "className": "ProfileLink",
+      "qualifiedName": "@happyvertical/smrt-profiles:ProfileLink",
+      "collection": "profilelinks",
+      "filePath": "packages/profiles/src/models/ProfileLink.ts",
+      "packageName": "@happyvertical/smrt-profiles",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
+        },
+        "profileId": {
+          "type": "foreignKey",
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true,
+            "onDelete": "CASCADE"
+          }
+        },
+        "platform": {
+          "type": "text",
+          "required": true,
+          "default": "website",
+          "maxLength": 32,
+          "_meta": {
+            "required": true,
+            "maxLength": 32
+          }
+        },
+        "url": {
+          "type": "text",
+          "required": true,
+          "maxLength": 2048,
+          "_meta": {
+            "required": true,
+            "maxLength": 2048
+          }
+        },
+        "label": {
+          "type": "text",
+          "required": false,
+          "maxLength": 200,
+          "_meta": {
+            "nullable": true,
+            "maxLength": 200
+          }
+        },
+        "sortOrder": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      },
+      "methods": {
+        "getSlug": {
+          "name": "getSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<string | null | undefined>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [
+            {
+              "name": "...args",
+              "type": "any",
+              "optional": true,
+              "typeUnresolved": true
+            }
+          ],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "profile_links",
+        "api": false,
+        "mcp": false,
+        "cli": false,
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context"
+        ]
+      },
+      "extends": "SmrtObject",
+      "exportName": "ProfileLink",
+      "collectionExportName": "ProfileLinkCollection",
+      "validationRules": [
+        {
+          "field": "profileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
+          "field": "platform",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "platform",
+          "rule": "maxLength",
+          "value": 32,
+          "fieldType": "text"
+        },
+        {
+          "field": "url",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "url",
+          "rule": "maxLength",
+          "value": 2048,
+          "fieldType": "text"
+        },
+        {
+          "field": "label",
+          "rule": "maxLength",
+          "value": 200,
+          "fieldType": "text"
+        },
+        {
+          "field": "sortOrder",
+          "rule": "required",
+          "fieldType": "integer"
+        }
+      ],
+      "schema": {
+        "tableName": "profile_links",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_links\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"profile_id\" UUID NOT NULL,\n  \"platform\" TEXT NOT NULL DEFAULT 'website',\n  \"url\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "profile_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": true,
+            "unique": false,
+            "foreignKey": {
+              "table": "profiles",
+              "column": "id",
+              "onDelete": "CASCADE",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "platform": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false,
+            "default": "website"
+          },
+          "url": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "label": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "sort_order": {
+            "type": "INTEGER",
+            "notNull": true,
+            "unique": false,
+            "default": 0
+          }
+        },
+        "indexes": [
+          {
+            "name": "profile_links_slug_context_idx",
+            "columns": [
+              "tenant_id",
+              "slug",
+              "context"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "profile_links_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "profile_links_profile_id_idx",
+            "columns": [
+              "profile_id"
+            ]
+          }
+        ],
+        "version": "847fd648"
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileMetadata": {
       "name": "profilemetadata",
@@ -5806,7 +6295,8 @@
           }
         ],
         "version": "d3ab1b70"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileMetafield": {
       "name": "profilemetafield",
@@ -6044,7 +6534,8 @@
           }
         ],
         "version": "afe420df"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileRelationship": {
       "name": "profilerelationship",
@@ -6361,7 +6852,8 @@
           }
         ],
         "version": "48878dba"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipTerm": {
       "name": "profilerelationshipterm",
@@ -6554,7 +7046,8 @@
           }
         ],
         "version": "ef299102"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipType": {
       "name": "profilerelationshiptype",
@@ -6751,7 +7244,8 @@
           }
         ],
         "version": "719fe0d9"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:ProfileType": {
       "name": "profiletype",
@@ -6934,7 +7428,8 @@
           }
         ],
         "version": "0fb37aeb"
-      }
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:Person": {
       "name": "person",
@@ -7000,6 +7495,14 @@
         "description": {
           "type": "text",
           "required": false
+        },
+        "isPublic": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "_meta": {
+            "default": false
+          }
         },
         "metadata": {
           "type": "oneToMany",
@@ -7106,6 +7609,29 @@
             }
           ],
           "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getLinks": {
+          "name": "getLinks",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProfileLink[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setLinks": {
+          "name": "setLinks",
+          "async": true,
+          "parameters": [
+            {
+              "name": "links",
+              "type": "any",
+              "optional": false,
+              "typeUnresolved": true
+            }
+          ],
+          "returnType": "Promise<ProfileLink[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -7471,7 +7997,7 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"is_public\" BOOLEAN DEFAULT FALSE\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -7538,6 +8064,11 @@
           "description": {
             "type": "TEXT",
             "notNull": false
+          },
+          "is_public": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
           }
         },
         "indexes": [
@@ -7578,8 +8109,9 @@
             ]
           }
         ],
-        "version": "50218e42"
-      }
+        "version": "2043b736"
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:Organization": {
       "name": "organization",
@@ -7645,6 +8177,14 @@
         "description": {
           "type": "text",
           "required": false
+        },
+        "isPublic": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "_meta": {
+            "default": false
+          }
         },
         "metadata": {
           "type": "oneToMany",
@@ -7751,6 +8291,29 @@
             }
           ],
           "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getLinks": {
+          "name": "getLinks",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProfileLink[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setLinks": {
+          "name": "setLinks",
+          "async": true,
+          "parameters": [
+            {
+              "name": "links",
+              "type": "any",
+              "optional": false,
+              "typeUnresolved": true
+            }
+          ],
+          "returnType": "Promise<ProfileLink[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8116,7 +8679,7 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"is_public\" BOOLEAN DEFAULT FALSE\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -8183,6 +8746,11 @@
           "description": {
             "type": "TEXT",
             "notNull": false
+          },
+          "is_public": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
           }
         },
         "indexes": [
@@ -8223,8 +8791,9 @@
             ]
           }
         ],
-        "version": "b6b91ae1"
-      }
+        "version": "573ebccc"
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     },
     "@happyvertical/smrt-profiles:Bot": {
       "name": "bot",
@@ -8290,6 +8859,14 @@
         "description": {
           "type": "text",
           "required": false
+        },
+        "isPublic": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "_meta": {
+            "default": false
+          }
         },
         "metadata": {
           "type": "oneToMany",
@@ -8396,6 +8973,29 @@
             }
           ],
           "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getLinks": {
+          "name": "getLinks",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<ProfileLink[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setLinks": {
+          "name": "setLinks",
+          "async": true,
+          "parameters": [
+            {
+              "name": "links",
+              "type": "any",
+              "optional": false,
+              "typeUnresolved": true
+            }
+          ],
+          "returnType": "Promise<ProfileLink[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8761,7 +9361,7 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"is_public\" BOOLEAN DEFAULT FALSE\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -8828,6 +9428,11 @@
           "description": {
             "type": "TEXT",
             "notNull": false
+          },
+          "is_public": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
           }
         },
         "indexes": [
@@ -8868,8 +9473,9 @@
             ]
           }
         ],
-        "version": "39683be5"
-      }
+        "version": "2a1c7716"
+      },
+      "importPath": "@happyvertical/smrt-profiles"
     }
   },
   "moduleType": "smrt",

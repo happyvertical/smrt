@@ -76,6 +76,8 @@ export interface MenuItem {
   label: string;
   /** Disable this item. */
   disabled?: boolean;
+  /** Leading icon (any icon set). Decorative: hidden from assistive technology. */
+  icon?: Snippet;
   /** Per-item activation handler. */
   onselect?: () => void;
 }

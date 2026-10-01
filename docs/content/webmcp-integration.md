@@ -102,6 +102,19 @@ Form mutations can be staged by an agent, but apply, clear, and undo require a
 separate human-confirmed path. Agent input cannot assert confirmation. Secret
 values and hidden columns are omitted from serialized results.
 
+### Forms, lists, menus, and wizards
+
+- A rich `<Form webmcp>` (or `FormScope` around content with no `<form>`)
+  registers one `<formId>_stage_changes` tool covering every control the
+  form holds: rich fields, smrt-ui primitives, and composites registered with
+  `useControlRegistration`. It only stages proposals; the review panel shows
+  plain field labels and a person applies them. The rich Form forwards native
+  form attributes and takes SvelteKit's `enhance` as a prop.
+- `useListSurface` mirrors a rendered list (with a `find` text lookup over
+  searchable columns), `useLinkSurface` makes a menu or tab row navigable,
+  and `useStepSurface` lets an agent move a wizard forward — revealing, never
+  pressing, a step button that saves.
+
 ## Declared view intents
 
 A view intent is an interaction a component owns that has no model projection
@@ -189,6 +202,36 @@ exposed. Unlike generated tools, a bespoke tool never receives the
 `namespace` prefix and is never counted against `maxTools` — a component
 author already chose a stable name, and budgeting one intent against a shared
 generated-tool set could make an unrelated tool fail to register.
+
+## The in-page assistant sees the same tools
+
+The browser's `modelContext` is write-only from page script, so an in-page
+assistant cannot list the tools an outside agent sees. Install the page tool
+registry once, early in the app's root layout and before the first
+registration:
+
+```ts
+import { installWebMcpPageToolRegistry } from '@happyvertical/smrt-web/webmcp-page-tools';
+
+const pageTools = installWebMcpPageToolRegistry(); // undefined during SSR
+```
+
+It puts a recording `modelContext` on the document that keeps every
+registration from all four sources (and forwards it to the browser's native
+context when there is one, so outside agents are unaffected). `list()`
+returns the live tools with their resolved effect, owner, and `proposal`
+flag, and
+`execute(name, args)` runs one through its own registered `execute`, so every
+effect, consent, and REST gate stays where it is. Registrars stamp their
+resolved effect on the registration (`WEBMCP_TOOL_EFFECT`), because the
+annotations they send the browser mark every non-read tool destructive; a
+registration without a stamp falls back to the annotations. `owner` is the
+tool-name lock's diagnostic label, which a bespoke caller can set; only
+`proposal` (a module-private brand that compiled view intents and the fixed
+`smrt_ui_*` tools carry, applied with `markWebMcpProposalTool` from
+`@happyvertical/smrt-web/webmcp-tool-names`) marks a write as a consent-gated
+proposal. Pass the registry
+to `AssistantDock`'s `pageTools` (see `docs/assistant-dock.md`).
 
 ## Lifecycle and verification
 

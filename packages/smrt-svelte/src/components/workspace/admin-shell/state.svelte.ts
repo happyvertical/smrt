@@ -1,14 +1,19 @@
 import { untrack } from 'svelte';
 import {
+  clampPanelSize,
   LocalStorageShellSettingsAdapter,
   mergeShellSettingsDelta,
   resolveInitialPanelState,
+  resolvePanelResize,
   resolveShellConfig,
+  stripUnpersistedSettings,
 } from './settings.js';
 import type {
   ActivityStatus,
   PanelEdge,
+  PanelPresentation,
   PanelState,
+  PhonePanelPresentation,
   ResolvedShellConfig,
   ShellActivity,
   ShellActivityBadge,
@@ -16,13 +21,37 @@ import type {
   ShellActivityFilter,
   ShellFocusTool,
   ShellPanelDefaults,
+  ShellPanelResize,
   ShellScope,
   ShellSettingsAdapter,
   ShellSettingsDelta,
   ShellStateSnapshot,
+  ShellViewport,
   VisiblePanelState,
 } from './types.js';
 import { PANEL_EDGES, SCOPE_EDGES } from './types.js';
+
+/**
+ * Phones: up to 48rem (768px itself is a phone). The same boundary the
+ * shell's CSS uses to turn side edges into drawers.
+ */
+export const ADMIN_SHELL_PHONE_QUERY = '(max-width: 48rem)';
+/** Desktop starts at 64rem; between the two queries is a tablet. */
+export const ADMIN_SHELL_DESKTOP_QUERY = '(min-width: 64rem)';
+
+/** The viewport class for the current window (`desktop` without a DOM). */
+export function detectShellViewport(): ShellViewport {
+  if (
+    typeof window === 'undefined' ||
+    typeof window.matchMedia !== 'function'
+  ) {
+    return 'desktop';
+  }
+  if (window.matchMedia(ADMIN_SHELL_PHONE_QUERY).matches) return 'phone';
+  return window.matchMedia(ADMIN_SHELL_DESKTOP_QUERY).matches
+    ? 'desktop'
+    : 'tablet';
+}
 
 type ActivityListener = (event: ShellActivityEvent) => void;
 type ShellActivityPatch = Partial<Omit<ShellActivity, 'id'>>;
@@ -32,6 +61,8 @@ export interface ShellStateOptions {
   settings?: ShellSettingsDelta;
   settingsAdapter?: ShellSettingsAdapter;
   storageKey?: string;
+  /** Initial viewport class (default: detected from `window`, else desktop). */
+  viewport?: ShellViewport;
 }
 
 export class ShellState {
@@ -45,9 +76,16 @@ export class ShellState {
     right: 'collapsed',
     bottom: 'collapsed',
   });
+  /** Width class the shell is laid out for; `AdminShell` keeps it current. */
+  viewport = $state<ShellViewport>('desktop');
   focusTools = $state<ShellFocusTool[]>([]);
   activeFocusToolId = $state<string | null>(null);
   activities = $state<ShellActivity[]>([]);
+  /**
+   * Side edges whose `overlayMedia` currently matches; `AdminShell` keeps
+   * it current. Read it through `presentationFor`.
+   */
+  overlayMatches = $state<Partial<Record<PanelEdge, boolean>>>({});
 
   private activityListeners = new Set<ActivityListener>();
 
@@ -58,23 +96,147 @@ export class ShellState {
       (options.storageKey
         ? new LocalStorageShellSettingsAdapter(options.storageKey)
         : null);
+    this.viewport = options.viewport ?? detectShellViewport();
     this.applySettings(options.settings ?? {}, { persist: false });
   }
 
   async hydrate(): Promise<void> {
     if (!this.adapter) return;
     const delta = await this.adapter.read();
-    if (delta) this.applySettings(delta, { persist: false });
+    if (delta) {
+      this.applySettings(stripUnpersistedSettings(delta, this.config), {
+        persist: false,
+      });
+    }
+  }
+
+  /**
+   * Record the viewport class. When it changes, edges with
+   * `viewportDefaults` switch to their default for the new class (the
+   * user's toggle for the old class is dropped). Not persisted.
+   */
+  setViewport(viewport: ShellViewport): void {
+    untrack(() => {
+      if (viewport === this.viewport) return;
+      this.viewport = viewport;
+      let changed = false;
+      const panels = { ...(this.settings.panels ?? {}) };
+      for (const edge of PANEL_EDGES) {
+        const config = this.config.panels[edge];
+        const next = config.viewportDefaults?.[viewport];
+        if (!next || config.initial === 'hidden') continue;
+        delete panels[edge];
+        changed = true;
+        if (next === 'expanded') this.closeExclusivePeers(edge);
+        this.panels[edge] = next;
+      }
+      if (changed) this.settings = { ...this.settings, panels };
+    });
+  }
+
+  /** How a side edge is presented on phones (`drawer` unless configured). */
+  phonePresentation(edge: PanelEdge): PhonePanelPresentation {
+    return this.config.panels[edge].phone ?? 'drawer';
+  }
+
+  /**
+   * How an edge is presented right now: its configured presentation, or
+   * `overlay` for a side edge whose `overlayMedia` matches off phones.
+   */
+  presentationFor(edge: PanelEdge): PanelPresentation {
+    const config = this.config.panels[edge];
+    if (
+      (edge === 'left' || edge === 'right') &&
+      this.viewport !== 'phone' &&
+      config.overlayMedia &&
+      this.overlayMatches[edge]
+    ) {
+      return 'overlay';
+    }
+    return config.presentation;
+  }
+
+  /**
+   * Close side edges that would open as overlays (a restored or initial
+   * `expanded` state), without changing the stored preference: an overlay
+   * never covers the page on load, while a docked edge still restores.
+   */
+  closeOverlaidEdges(): void {
+    untrack(() => {
+      for (const edge of ['left', 'right'] as const) {
+        if (
+          this.panels[edge] === 'expanded' &&
+          this.presentationFor(edge) === 'overlay'
+        ) {
+          this.panels[edge] = 'collapsed';
+        }
+      }
+    });
+  }
+
+  /** Record whether a side edge's `overlayMedia` matches. */
+  setOverlayMatch(edge: PanelEdge, matches: boolean): void {
+    untrack(() => {
+      if (Boolean(this.overlayMatches[edge]) === matches) return;
+      this.overlayMatches = { ...this.overlayMatches, [edge]: matches };
+    });
+  }
+
+  /** Whether an edge is rendered at the current viewport. */
+  isEdgeShown(edge: PanelEdge): boolean {
+    if (this.panels[edge] === 'hidden') return false;
+    return !(
+      this.viewport === 'phone' && this.phonePresentation(edge) === 'hidden'
+    );
+  }
+
+  /** Resize limits for an edge, or `null` when it is not resizable. */
+  resizeLimits(edge: PanelEdge): Required<ShellPanelResize> | null {
+    return resolvePanelResize(edge, this.config.panels[edge]);
+  }
+
+  /** The user's resized width for an edge in px, or `null` (configured size). */
+  panelSize(edge: PanelEdge): number | null {
+    if (!this.resizeLimits(edge)) return null;
+    const size = this.settings.sizes?.[edge];
+    return typeof size === 'number' && Number.isFinite(size) ? size : null;
+  }
+
+  /**
+   * Resize an edge's expanded width (px, clamped to its limits); `null`
+   * resets it to the configured `expandedSize`. Persisted unless
+   * `persist: false` (use that while a drag is in progress) or the edge
+   * opts out of storing its size.
+   */
+  setPanelSize(
+    edge: PanelEdge,
+    size: number | null,
+    options: { persist?: boolean } = {},
+  ): void {
+    untrack(() => {
+      const limits = this.resizeLimits(edge);
+      if (!limits) return;
+      const next =
+        size === null || !Number.isFinite(size)
+          ? null
+          : clampPanelSize(size, limits);
+      this.settings = mergeShellSettingsDelta(this.settings, {
+        sizes: { [edge]: next },
+      });
+      if (options.persist !== false) void this.persistSettings();
+    });
   }
 
   snapshot(): ShellStateSnapshot {
     return {
       panels: { ...this.panels },
+      viewport: this.viewport,
       activeFocusToolId: this.activeFocusToolId,
       settings: {
         ...this.settings,
         keymap: this.settings.keymap ? { ...this.settings.keymap } : undefined,
         panels: this.settings.panels ? { ...this.settings.panels } : undefined,
+        sizes: this.settings.sizes ? { ...this.settings.sizes } : undefined,
       },
     };
   }
@@ -92,6 +254,7 @@ export class ShellState {
           edge,
           this.config.panels[edge],
           this.settings,
+          this.viewport,
         );
       }
       this.activeFocusToolId =
@@ -160,7 +323,7 @@ export class ShellState {
   closeTopmostExpanded(): boolean {
     return untrack(() => {
       for (const edge of [...PANEL_EDGES].reverse()) {
-        if (this.panels[edge] === 'expanded') {
+        if (this.panels[edge] === 'expanded' && this.isEdgeShown(edge)) {
           this.collapsePanel(edge);
           return true;
         }
@@ -333,7 +496,10 @@ export class ShellState {
   }
 
   private async persistSettings(): Promise<void> {
-    await this.adapter?.write(this.settings);
+    if (!this.adapter) return;
+    await this.adapter.write(
+      stripUnpersistedSettings(this.settings, this.config),
+    );
   }
 
   private emitActivity(event: ShellActivityEvent): void {
@@ -383,6 +549,9 @@ function snapshotShellSettingsDelta(
   }
   if ('panels' in delta) {
     snapshot.panels = delta.panels ? { ...delta.panels } : delta.panels;
+  }
+  if ('sizes' in delta) {
+    snapshot.sizes = delta.sizes ? { ...delta.sizes } : delta.sizes;
   }
   return snapshot;
 }

@@ -193,9 +193,11 @@ describe('tenantId decorator compatibility', () => {
     expect(
       ObjectRegistry.getTenantScopedConfig('@fixture/global-peer:Record'),
     ).toBeUndefined();
+    // No marker or read policy leaks to the peer; its own `tenantId` field
+    // still makes its rows tenant-owned, so its natural key is per tenant.
     expect(
       ObjectRegistry.getConflictColumns('@fixture/global-peer:Record'),
-    ).toEqual(['slug', 'context']);
+    ).toEqual(['tenant_id', 'slug', 'context']);
   });
 
   it('does not give a same-name peer without a tenant field a tenant marker', () => {

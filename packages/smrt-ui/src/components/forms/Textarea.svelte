@@ -184,6 +184,14 @@ export function getElement(): HTMLTextAreaElement | null {
 		color: var(--smrt-color-on-surface-variant, #9ca3af);
 	}
 
+	/* Phones: 16px text so iOS Safari doesn't zoom the page when the field
+	   gets focus. */
+	@media (max-width: 48rem) {
+		.textarea {
+			font-size: max(var(--smrt-typography-body-medium-size, 0.875rem), 16px);
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.textarea {
 			transition: none;

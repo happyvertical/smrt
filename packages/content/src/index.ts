@@ -15,17 +15,36 @@ export type {
   MetadataAccessor,
 } from './asset-associable';
 export { isAssetAssociable, isMetadataAccessor } from './asset-associable';
-export type { ContentBodyFormat, ContentBodyImage } from './body-format';
+export type {
+  ContentBodyFormat,
+  ContentBodyImage,
+  ContentBodyThumbnail,
+  ContentBodyThumbnailPlacement,
+  ContentMainPicture,
+  ContentMainPictureMode,
+  RenderContentBodyOptions,
+} from './body-format';
 export {
+  BODY_MAIN_IMAGE_ATTRIBUTE,
+  BODY_THUMBNAIL_ATTRIBUTE,
+  bodyHasImage,
+  bodyHasThumbnail,
   bodyToEditorHtml,
   DEFAULT_CONTENT_BODY_FORMAT,
   editorHtmlToBody,
   extractBodyImages,
   htmlToMarkdown,
+  placeThumbnailInBody,
+  removeThumbnailFromBody,
+  renderContentBodyHtml,
   renderMarkdownToHtml,
   resolveBodyFormat,
+  resolveBodyMainPicture,
   sanitizeHtml,
+  setBodyMainImage,
   stripHtml,
+  THUMBNAIL_WIDE_ASPECT_RATIO,
+  thumbnailPlacementForSize,
 } from './body-format';
 export type { ContentOptions } from './content';
 export { Content } from './content';

@@ -19,6 +19,7 @@ import {
   conflictIndexName,
   nullableConflictIdentity,
   resolveConflictColumns,
+  resolveOwnershipTenantColumn,
   resolveTenantColumn,
   servesSlugLookup,
 } from './conflict-target.js';
@@ -180,14 +181,19 @@ export class SchemaGenerator {
     return undefined;
   }
 
+  /**
+   * A uuid column never defaults to '' (same rule as the manifest generator
+   * and the registry schema builder, 9832f70fa): PostgreSQL stores
+   * `(''::text)::uuid` unevaluated and every INSERT that omits the column
+   * fails with 22P02. Judged on the final column type, so a plain
+   * `@field({ sqlType: 'UUID' }) tenantId = ''` (TenantKey) is covered too.
+   */
   private shouldEmitDefault(
-    field: RegistryField,
+    columnType: SQLDataType | string,
     defaultValue: unknown,
   ): boolean {
     return !(
-      this.getReferenceKind(field) === 'tenantId' &&
-      this.getRelationshipColumnType(field) === 'UUID' &&
-      defaultValue === ''
+      String(columnType).toUpperCase() === 'UUID' && defaultValue === ''
     );
   }
 
@@ -310,6 +316,7 @@ export class SchemaGenerator {
         declared: field._meta?.onDelete,
         isConflictColumn: conflictSet.has(columnName),
         isTenantIdField,
+        columnName,
       });
       column.foreignKey = {
         table: targetTable,
@@ -840,6 +847,12 @@ export class SchemaGenerator {
     columns: Record<string, { referenceKind?: string } | undefined>,
     config: SchemaGeneratorConfig | undefined,
   ): { conflictColumns: string[]; tenantColumn: string | undefined } {
+    // The DECLARED tenant column names the conflict index: a declared
+    // tenant-led default key keeps the stable `<table>_slug_context_idx` name
+    // (#2360). An inferred ownership column (an undeclared `tenant_id`) does
+    // NOT: its tenant-led key is named by the custom-key rule so it is built
+    // beside the legacy global unique instead of replacing it in place
+    // (expand, then contract — see `conflict-target.ts`).
     const tenantColumn = this.findTenantColumn(columns);
     if (config?.conflictColumns && config.conflictColumns.length > 0) {
       return { conflictColumns: [...config.conflictColumns], tenantColumn };
@@ -857,7 +870,10 @@ export class SchemaGenerator {
     return {
       conflictColumns: resolveConflictColumns({
         strategy,
-        tenantColumn: configuredTenantColumn,
+        tenantColumn: resolveOwnershipTenantColumn(
+          configuredTenantColumn,
+          (column) => Boolean(columns[column]),
+        ),
       }),
       tenantColumn,
     };
@@ -894,7 +910,12 @@ export class SchemaGenerator {
     tableName: string,
   ): void {
     if (!columns.slug || !columns.context) return;
-    const tenantColumn = this.findTenantColumn(columns);
+    // The ownership column — declared, or an inferred `tenant_id` — leads the
+    // tenant-led default key, whose prefix serves tenant-filtered lookups.
+    const tenantColumn = resolveOwnershipTenantColumn(
+      this.findTenantColumn(columns),
+      (column) => Boolean(columns[column]),
+    );
     if (
       indexes.some(
         (index) =>
@@ -1187,7 +1208,7 @@ export class SchemaGenerator {
       // Get default value
       if (
         field._meta?.default !== undefined &&
-        this.shouldEmitDefault(field, field._meta.default)
+        this.shouldEmitDefault(columnDef.type, field._meta.default)
       ) {
         columnDef.defaultValue = field._meta.default;
       }
@@ -1280,8 +1301,9 @@ export class SchemaGenerator {
     const indexes: IndexDefinition[] = [];
 
     if (!hasCustomPK) {
-      // Tenant-scoped tables key on `(tenant_id, slug, context)` under the
-      // stable `<table>_slug_context_idx` name (#2360).
+      // Tenant-scoped tables key on `(tenant_id, slug, context)`: under the
+      // stable `<table>_slug_context_idx` name when tenancy is declared
+      // (#2360), as `<table>_tenant_id_slug_idx` when ownership is inferred.
       const { conflictColumns, tenantColumn } = resolvedConflict;
       if (!this.conflictColumnsArePrimaryKey(conflictColumns, columns)) {
         indexes.push({
@@ -1546,7 +1568,7 @@ export class SchemaGenerator {
         // Get default value (but not applied in STI - defaults handled by application)
         if (
           field._meta?.default !== undefined &&
-          this.shouldEmitDefault(field, field._meta.default)
+          this.shouldEmitDefault(columnDef.type, field._meta.default)
         ) {
           columnDef.defaultValue = field._meta.default;
         }
@@ -1870,7 +1892,7 @@ export class SchemaGenerator {
         // Get default value
         if (
           field.default !== undefined &&
-          this.shouldEmitDefault(field, field.default)
+          this.shouldEmitDefault(columnDef.type, field.default)
         ) {
           columnDef.default = field.default;
         }
@@ -2088,7 +2110,7 @@ export class SchemaGenerator {
 
       if (
         field.default !== undefined &&
-        this.shouldEmitDefault(field, field.default)
+        this.shouldEmitDefault(columnDef.type, field.default)
       ) {
         columnDef.default = field.default;
       }

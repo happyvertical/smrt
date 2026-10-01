@@ -476,14 +476,90 @@ startup and seeds sample content (3 items) for immediate testing.
 | `ImageThumbnail` | `src`, `alt` | Thumbnail image display |
 | `Markdown` | `source` | Markdown renderer |
 
+The governance panels (`ContentGovernancePanel`, the corrections, versions and
+transparency tools, `ContentTransparencyReport`) lay out by their own width:
+each is a `container-type: inline-size` container. A size container takes its
+width from its host, not its content, so inside a shrink-to-fit host (an
+absolutely positioned popover, an `auto` grid track, an inline-block) give the
+panel or its host a definite width, or it collapses.
+
 `ContentList` retry handlers must return a new job attempt with a distinct
 `jobId`. The controller retains the failed attempt as immutable history so a
 late event from it cannot overwrite the retry result.
+
+#### Simple mode and agent-ready editor fields
+
+`ContentTitleField`, `ContentStatusFields`, `ContentMetadataFields`, and
+`ContentBodyEditor` render smrt-ui fields with a stable `name`, an `id`, and a
+plain label, so inside any `Form`, rich `<Form webmcp>`, or `FormScope` they
+register with the control registry and an agent can propose a title, status,
+story, author, summary, or tags for the person to review (`ContentBodyEditor`
+registers the whole story as one `body` control in its own HTML/Markdown
+format). `ContentTitleField` registers once you give it a `name` (e.g.
+`name="title"`). Pass `idPrefix` to the status and metadata fields, and
+`id`/`name` to the title and body, when two editors share a page.
+
+`mode` (`'full'` by default, or `'simple'`) sets how much of the editor an
+everyday editor sees; `fields` is an explicit allow-list that overrides it:
+
+| | `full` | `simple` |
+|---|---|---|
+| `ContentStatusFields` | Type, State, Status, Published | Status, Publish date (optional) |
+| `ContentMetadataFields` | Author, Description, Tags, URL, File key | Author, Summary, Tags — each "(optional)" — in a collapsed **Details** section (`details` controls it) |
+| `ContentEditor` | every field and drawer | Type, State and References (with URL/File key) hidden; Metadata becomes a collapsed "Details" |
+
+Simple mode uses plain labels ("Ready for review", "Summary", "Story").
 
 Applications that compose their own article editor can use
 `createContentEditorState`, `getContentEditorAssetImageSource`, and
 `resolveContentEditorImageSelection` to share the same form normalization,
 thumbnail selection, and save payload behavior as the package editors.
+
+#### Body format picker
+
+The toolbar's "Save as" HTML/Markdown picker is hidden by default. Pass
+`showFormatPicker` to `ContentBodyEditor` (or `showBodyFormatPicker` to
+`ContentEditor`) to offer it to technical editors. Without it the body keeps
+the `format` it was given.
+
+#### Image panel and thumbnail block
+
+`ContentBodyEditor` takes an `imagePanel` snippet with `imagePanelOpen` and
+`onCloseImagePanel`: the application's picture chooser/editor opens between
+the toolbar and the text (full width, in the page flow, no modal), the image
+button reports `aria-expanded`/`aria-controls`, focus moves into the panel on
+open and back to the button on close, and Escape inside it asks to close.
+
+When content gets a thumbnail, `placeThumbnailInBody(body, format, image)`
+also shows it in the body at the standard spot for its shape
+(`thumbnailPlacementForSize`: width ÷ height ≥ 1.3 is a full-width header at
+the top; portrait or square floats right of the first paragraph, stacking full
+width on phones). The block is marked (`data-smrt-thumbnail` in HTML, the
+image title `smrt-thumbnail:<placement>` in Markdown) so placing again
+replaces it and `removeThumbnailFromBody` clears it.
+`resolveContentEditorImageDimensions(asset, src)` reads the size from the
+asset or by loading the image. Public pages render stored bodies of either
+format with `renderContentBodyHtml(body, format, { thumbnailSrc })` (or
+`ContentBodyRenderer`), which sanitizes, turns the Markdown token into the same
+marked `<img>`, and can point the thumbnail at the page's own asset URL.
+
+#### Body sanitizing
+
+`sanitizeHtml`, `renderMarkdownToHtml`, `renderContentBodyHtml`, and the
+editor load/save helpers parse bodies with
+[sanitize-html](https://github.com/apostrophecms/sanitize-html) (htmlparser2,
+no DOM — identical in Node SSR/prerender and the browser) against an
+allowlist: headings, paragraphs, lists, blockquote, `pre`/`code`, tables,
+figures, inline emphasis, links (`http(s)`, `mailto`, `tel`, relative;
+`target="_blank"` gets `rel="noopener noreferrer"`), and images (`http(s)`,
+relative, raster `data:image/*` — never SVG) with the editor's
+`data-smrt-*` layout and thumbnail markers and a `width`/`max-width`/
+`height: auto` style. Everything else is removed: scripts, event handlers,
+`javascript:`/`vbscript:` URLs, iframes and embeds (there is no embed
+feature), SVG/MathML, forms, media, classes, ids, and other CSS. Raw-text and
+foreign-content elements are dropped with their content, and the output is
+re-serialized with escaped text, so nested or malformed markup cannot
+reassemble into a live tag.
 
 ### Governance
 

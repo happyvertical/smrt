@@ -837,6 +837,43 @@ describe('ManifestGenerator', () => {
       expect(secret.validationRules).toEqual([]);
     });
 
+    it("never gives a UUID column the '' default of its initializer", () => {
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/key.ts',
+          objects: [
+            {
+              name: 'key',
+              className: 'Key',
+              collection: 'keys',
+              filePath: '/path/to/key.ts',
+              fields: {
+                tenantId: {
+                  type: 'text',
+                  default: '',
+                  _meta: { sqlType: 'UUID' },
+                },
+                label: { type: 'text', default: '' },
+              },
+              methods: {},
+              decoratorConfig: {},
+              exportName: 'Key',
+              collectionExportName: 'KeyCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const columns = manifest.objects.key.schema?.columns;
+      expect(columns?.tenant_id?.type).toBe('UUID');
+      // `(''::text)::uuid` is stored unevaluated and fails every INSERT.
+      expect(columns?.tenant_id).not.toHaveProperty('default');
+      expect(columns?.label?.default).toBe('');
+    });
+
     it.each([
       [true, false],
       [{ mode: 'required' }, false],

@@ -89,6 +89,12 @@ Three strategies via ThumbnailGenerator:
 ### Content Management
 `ContentList`, `ContentEditor`, `GovernedContentEditor`, `ContentAgentChat`, `ContentTitleField`, `ContentStatusFields`, `ContentMetadataFields`, `ContentReferencesPanel`, `ContentImageBrowser`, `ContentReviewStatusTray`, `ArticleCard`, `ArticleList`, `ImageThumbnail`, `Markdown`
 
+The editor fields (`ContentTitleField`, `ContentStatusFields`,
+`ContentMetadataFields`, `ContentBodyEditor`) must keep a `name`, an `id`, and
+a plain label on every control so they register for agents, and honour
+`mode: 'simple' | 'full'` (+ `fields` allow-list; rules in
+`components/content-field-mode.ts`). `full` stays the default.
+
 ### Governance
 `ContentGovernanceManager`, `ContentGovernancePanel`, `ContentGovernancePolicyEditor`, `ContentGovernanceProfileEditor`, `ContentGovernanceAssignmentEditor`, `ContentTransparencyReport`
 

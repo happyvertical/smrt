@@ -954,7 +954,7 @@ describe('SchemaGenerator tenant_id auto-index (#2356)', () => {
     ).toBe(true);
   });
 
-  it('adds the tenant index on the manifest STI path (the STI conflict index leads with slug)', () => {
+  it('adds the tenant index on the manifest STI path (the STI conflict index is tenant-led)', () => {
     const generator = new SchemaGenerator();
     const m: SmartObjectManifest = {
       version: '1.0.0',
@@ -976,11 +976,16 @@ describe('SchemaGenerator tenant_id auto-index (#2356)', () => {
     const leading = schema.indexes.filter(
       (index) => index.columns[0] === 'tenant_id',
     );
-    expect(leading).toHaveLength(1);
-    // The list-ordering composite (#2363) leads with the tenant column, so it
-    // serves the tenant filter too and no standalone index is added.
-    expect(leading[0].name).toBe('notes_tenant_id_created_at_idx');
-    expect(leading[0].columns).toEqual(['tenant_id', 'created_at']);
+    // A `tenant_id` column makes the rows tenant-owned, so the STI conflict
+    // index leads with it under its stable name; the list-ordering composite
+    // (#2363) leads with it too, and no standalone index is added.
+    expect(leading.map((index) => [index.name, index.columns]).sort()).toEqual([
+      [
+        'notes_slug_context_meta_type_idx',
+        ['tenant_id', 'slug', 'context', '_meta_type'],
+      ],
+      ['notes_tenant_id_created_at_idx', ['tenant_id', 'created_at']],
+    ]);
   });
 
   it('is not suppressed by a PARTIAL index that leads with the reference column', async () => {
@@ -1530,8 +1535,11 @@ describe('SchemaGenerator declared indexes (#2357)', () => {
     // No redundant standalone tenant index — the declared composite already
     // serves the tenant filter. The default list-ordering composite (#2363)
     // stands beside it: `(tenant_id, publish_date)` cannot order a page by
-    // `created_at`, so it is a second access path, not a duplicate.
+    // `created_at`, so it is a second access path, not a duplicate. The
+    // tenant-owned conflict index `(tenant_id, slug, context)` keeps its
+    // stable name.
     expect(leading.map((index) => index.name).sort()).toEqual([
+      'posts_slug_context_idx',
       'posts_tenant_id_created_at_idx',
       'posts_tenant_id_publish_date_idx',
     ]);

@@ -298,6 +298,13 @@ function handleClick(event: MouseEvent) {
     outline-offset: 2px;
   }
 
+  /* Phones: every size is at least a 44px touch target. */
+  @media (max-width: 48rem) {
+    .button {
+      min-block-size: 2.75rem;
+    }
+  }
+
   /* Reduced motion */
   @media (prefers-reduced-motion: reduce) {
     .spinner {

@@ -5,8 +5,10 @@ import type {
   ShellHotkeyBinding,
   ShellPanelConfig,
   ShellPanelDefaults,
+  ShellPanelResize,
   ShellSettingsAdapter,
   ShellSettingsDelta,
+  ShellViewport,
 } from './types.js';
 import { EDGE_SCOPES, PANEL_EDGES } from './types.js';
 
@@ -91,13 +93,102 @@ export function resolveShellConfig(
   return { panels };
 }
 
+/**
+ * An edge's state: hidden edges stay hidden; otherwise the user's setting,
+ * then the edge's default for `viewport` (when it declares
+ * `viewportDefaults`), then its configured initial state.
+ */
 export function resolveInitialPanelState(
   edge: PanelEdge,
   config: ShellPanelConfig,
   settings: ShellSettingsDelta = {},
+  viewport?: ShellViewport,
 ): PanelState {
   if (config.initial === 'hidden') return 'hidden';
-  return settings.panels?.[edge] ?? config.initial;
+  return (
+    settings.panels?.[edge] ??
+    (viewport ? config.viewportDefaults?.[viewport] : undefined) ??
+    config.initial
+  );
+}
+
+/** Default limits for a resizable side edge (CSS px). */
+export const DEFAULT_SHELL_PANEL_RESIZE: Required<ShellPanelResize> = {
+  min: 240,
+  max: 720,
+  step: 16,
+};
+
+/**
+ * Resolved resize limits for an edge, or `null` when it is not resizable.
+ * Only `left` and `right` edges resize.
+ */
+export function resolvePanelResize(
+  edge: PanelEdge,
+  config: ShellPanelConfig,
+): Required<ShellPanelResize> | null {
+  if (edge !== 'left' && edge !== 'right') return null;
+  if (!config.resizable || config.initial === 'hidden') return null;
+  const limits = config.resizable === true ? {} : config.resizable;
+  const min = Math.max(0, limits.min ?? DEFAULT_SHELL_PANEL_RESIZE.min);
+  return {
+    min,
+    max: Math.max(min, limits.max ?? DEFAULT_SHELL_PANEL_RESIZE.max),
+    step: Math.max(1, limits.step ?? DEFAULT_SHELL_PANEL_RESIZE.step),
+  };
+}
+
+/** Clamp a requested width into an edge's resize limits (rounded to px). */
+export function clampPanelSize(
+  size: number,
+  limits: Required<ShellPanelResize>,
+): number {
+  return Math.round(Math.min(limits.max, Math.max(limits.min, size)));
+}
+
+/**
+ * Whether the settings adapter stores an edge's `state` (open/closed) or
+ * `size`. Edges with `viewportDefaults` never store their state: it follows
+ * the viewport class.
+ */
+export function panelPersists(
+  config: ShellPanelConfig,
+  what: 'state' | 'size',
+): boolean {
+  if (what === 'state' && config.viewportDefaults) return false;
+  const persist = config.persist ?? true;
+  if (typeof persist === 'boolean') return persist;
+  return persist[what] ?? true;
+}
+
+/**
+ * Drop the panel states and sizes the config says not to store, so they are
+ * neither written by nor read back from a settings adapter.
+ */
+export function stripUnpersistedSettings(
+  delta: ShellSettingsDelta,
+  config: ResolvedShellConfig,
+): ShellSettingsDelta {
+  const stripped: ShellSettingsDelta = { ...delta };
+  for (const key of ['panels', 'sizes'] as const) {
+    const values = delta[key];
+    if (!values) continue;
+    const kept: Record<string, unknown> = {};
+    for (const edge of PANEL_EDGES) {
+      if (!(edge in values)) continue;
+      if (
+        panelPersists(config.panels[edge], key === 'panels' ? 'state' : 'size')
+      ) {
+        kept[edge] = values[edge];
+      }
+    }
+    if (Object.keys(kept).length > 0) {
+      (stripped as Record<string, unknown>)[key] = kept;
+    } else {
+      delete stripped[key];
+    }
+  }
+  return stripped;
 }
 
 export function resolveHotkey(
@@ -127,6 +218,10 @@ export function mergeShellSettingsDelta(
       base.panels || next.panels
         ? { ...(base.panels ?? {}), ...(next.panels ?? {}) }
         : undefined,
+    sizes:
+      base.sizes || next.sizes
+        ? { ...(base.sizes ?? {}), ...(next.sizes ?? {}) }
+        : undefined,
   };
 }
 
@@ -145,6 +240,14 @@ export function pruneShellSettingsDelta(
   }
   if (delta.panels && Object.keys(delta.panels).length > 0) {
     pruned.panels = delta.panels;
+  }
+  if (delta.sizes) {
+    const sizes = Object.fromEntries(
+      Object.entries(delta.sizes).filter(
+        ([, size]) => typeof size === 'number' && Number.isFinite(size),
+      ),
+    );
+    if (Object.keys(sizes).length > 0) pruned.sizes = sizes;
   }
   return pruned;
 }

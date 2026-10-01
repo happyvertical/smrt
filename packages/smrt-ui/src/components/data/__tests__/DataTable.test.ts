@@ -81,6 +81,42 @@ describe('DataTable', () => {
     expect(nameHeader).not.toHaveAttribute('aria-sort');
   });
 
+  it('starts a date/count column descending and toggles without clearing when not clearable', async () => {
+    render(DataTable, {
+      props: {
+        data,
+        columns: [
+          columns[0],
+          {
+            id: 'age',
+            label: 'Age',
+            accessor: 'age',
+            sortable: true,
+            sortFirstDirection: 'desc' as const,
+          },
+        ],
+        sortable: true,
+        sortClearable: false,
+      },
+    });
+    const ageHeader = screen.getByRole('columnheader', { name: 'Age' });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Age descending' }),
+    );
+    expect(ageHeader).toHaveAttribute('aria-sort', 'descending');
+    const firstCell = () => screen.getAllByRole('row')[1]?.textContent ?? '';
+    expect(firstCell()).toContain('Linus');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Age ascending' }),
+    );
+    expect(ageHeader).toHaveAttribute('aria-sort', 'ascending');
+    expect(firstCell()).toContain('Ada');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Age descending' }),
+    );
+    expect(ageHeader).toHaveAttribute('aria-sort', 'descending');
+  });
+
   it('announces the next action for each rule in a multi-column sort', async () => {
     const multiSortColumns = [columns[0], { ...columns[1], sortable: true }];
     render(DataTable, {
@@ -940,5 +976,64 @@ describe('DataTable', () => {
       props: { data, columns, caption: 'People' },
     });
     await expectNoA11yViolations(container);
+  });
+});
+
+describe('DataTable phoneLayout', () => {
+  it('keeps the scrolling table unless asked for cards', () => {
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People' },
+    });
+    expect(
+      container.querySelector('.data-table-container--phone-cards'),
+    ).toBeNull();
+  });
+
+  it('marks the container for the phone card layout and keeps the table semantics', () => {
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People', phoneLayout: 'cards' },
+    });
+    expect(
+      container.querySelector(
+        '.data-table-container.data-table-container--phone-cards',
+      ),
+    ).not.toBeNull();
+    expect(screen.getByRole('table', { name: 'People' })).toBeInTheDocument();
+    expect(screen.getAllByRole('row')).toHaveLength(3);
+  });
+
+  it('gives cards explicit table roles and a visible column label per cell', async () => {
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People', phoneLayout: 'cards' },
+    });
+    // Explicit roles survive the block/grid restyle (WebKit drops implicit
+    // table roles once display changes).
+    expect(container.querySelector('table')).toHaveAttribute('role', 'table');
+    for (const row of container.querySelectorAll('tr')) {
+      expect(row).toHaveAttribute('role', 'row');
+    }
+    for (const header of container.querySelectorAll('thead th')) {
+      expect(header).toHaveAttribute('role', 'columnheader');
+    }
+    const cells = container.querySelectorAll('tbody td[data-column-id]');
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell).toHaveAttribute('role', 'cell');
+      const column = columns.find(
+        (candidate) => candidate.id === cell.getAttribute('data-column-id'),
+      );
+      expect(cell).toHaveAttribute('data-label', column?.label);
+    }
+    // The header stays in the accessibility tree (visually hidden, not removed).
+    expect(screen.getAllByRole('columnheader').length).toBe(columns.length);
+    await expectNoA11yViolations(container);
+  });
+
+  it('adds no explicit roles or labels outside cards mode', () => {
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People' },
+    });
+    expect(container.querySelector('table')).not.toHaveAttribute('role');
+    expect(container.querySelector('[data-label]')).toBeNull();
   });
 });

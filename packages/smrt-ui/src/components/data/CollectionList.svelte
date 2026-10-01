@@ -10,8 +10,14 @@ export interface Props<T> {
   title?: keyof T | ((item: T) => string);
   /** Field name or function to extract the description text for each item. */
   description?: keyof T | ((item: T) => string | undefined);
-  /** Display layout: list (single column) or grid (multiple columns). */
-  layout?: 'list' | 'grid';
+  /**
+   * Display layout: list (single column of cards), divided (a flat single
+   * column: no card surface, rows separated by a hairline, a selected row shown
+   * by its checkbox), grid (multiple columns of cards), or gallery
+   * (picture-first tiles: the `item` snippet fills the tile, the selection
+   * checkbox and `actions` float over its top corners).
+   */
+  layout?: 'list' | 'divided' | 'grid' | 'gallery';
   /** Whether to show checkboxes for selecting multiple items. */
   selectable?: boolean;
   /** Set of currently selected item keys (bindable). */
@@ -85,7 +91,7 @@ function toggle(key: string | number) {
       {@const isSelected = selected.has(key)}
       {@const itemTitle = textOf(entry, title) ?? `Item ${index + 1}`}
       <li class:selected={isSelected}>
-        {#if selectable}<input type="checkbox" checked={isSelected} aria-label={`Select ${itemTitle}`} onchange={() => toggle(key)} />{/if}
+        {#if selectable}<label class="select"><input type="checkbox" checked={isSelected} aria-label={`Select ${itemTitle}`} onchange={() => toggle(key)} /></label>{/if}
         {#if onitemclick}
           <button type="button" class="main" onclick={() => onitemclick?.(entry, index)}>
             {#if item}{@render item({ item: entry, index, selected: isSelected })}{:else}<strong>{itemTitle}</strong>{#if description}<span>{textOf(entry, description)}</span>{/if}{/if}
@@ -104,15 +110,27 @@ function toggle(key: string | number) {
 <style>
   .collection { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
   .collection--grid { grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr)); }
-  li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-3); min-width: 0; padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
+  li { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-3); min-width: 0; padding: var(--smrt-spacing-3); border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant)); border-radius: var(--smrt-radius-medium); background: var(--smrt-card-background, var(--smrt-color-surface)); color: var(--smrt-color-on-surface); }
   li.selected { border-color: var(--smrt-color-primary); background: var(--smrt-color-primary-container); }
+  /* The selection box and actions sit above an item's stretched link. */
+  .select { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; min-width: 2.75rem; min-height: 2.75rem; }
   input { width: 1.125rem; height: 1.125rem; accent-color: var(--smrt-color-primary); }
   .main { display: grid; min-width: 0; gap: var(--smrt-spacing-1); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
   button.main { width: 100%; cursor: pointer; }
   button.main:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
   .main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--smrt-typography-title-small-font); }
   .main span { color: var(--smrt-color-on-surface-variant); }
-  .actions { display: flex; gap: var(--smrt-spacing-1); }
+  .actions { position: relative; z-index: 1; display: flex; gap: var(--smrt-spacing-1); }
+  .collection--divided { --collection-divider: color-mix(in srgb, var(--smrt-color-outline-variant) 55%, transparent); gap: 0; }
+  .collection--divided li { padding-inline: 0; border: none; border-radius: 0; background: transparent; }
+  .collection--divided li + li { border-block-start: 1px solid var(--collection-divider); }
+  .collection--divided li.selected { border-color: var(--collection-divider); background: transparent; }
+  .collection--gallery { grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr)); }
+  .collection--gallery li { display: block; padding: 0; }
+  .collection--gallery .main { gap: 0; }
+  .collection--gallery .select, .collection--gallery .actions { position: absolute; top: var(--smrt-spacing-1); z-index: 2; min-width: 2.75rem; min-height: 2.75rem; align-items: center; justify-content: center; border-radius: var(--smrt-radius-full, 999px); background: color-mix(in srgb, var(--smrt-color-surface) 82%, transparent); }
+  .collection--gallery .select { left: var(--smrt-spacing-1); }
+  .collection--gallery .actions { right: var(--smrt-spacing-1); }
   .loading, .empty { display: flex; min-height: 8rem; align-items: center; justify-content: center; gap: var(--smrt-spacing-2); color: var(--smrt-color-on-surface-variant); }
   .spinner { width: 1rem; height: 1rem; border: 2px solid var(--smrt-color-outline-variant); border-top-color: var(--smrt-color-primary); border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }

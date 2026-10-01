@@ -5,6 +5,18 @@ export type ShellScope = 'app' | 'tenant' | 'focus' | 'system';
 export type PanelState = 'hidden' | 'collapsed' | 'expanded';
 export type VisiblePanelState = Exclude<PanelState, 'hidden'>;
 export type PanelPresentation = 'push' | 'overlay';
+/**
+ * Width class the shell is laid out for: `phone` up to 48rem (edges become
+ * drawers), `tablet` up to 64rem, `desktop` from 64rem. See
+ * `ADMIN_SHELL_PHONE_QUERY` / `ADMIN_SHELL_DESKTOP_QUERY`.
+ */
+export type ShellViewport = 'phone' | 'tablet' | 'desktop';
+/**
+ * How a side edge is presented on phones: `drawer` (the default, slides in
+ * from its side), `sheet` (right edge only: rises from the bottom), or
+ * `hidden` (not rendered on phones; the host shows its content elsewhere).
+ */
+export type PhonePanelPresentation = 'drawer' | 'sheet' | 'hidden';
 export type ActivityStatus =
   | 'queued'
   | 'running'
@@ -30,6 +42,61 @@ export interface ShellPanelConfig {
   collapsedSize: string;
   expandedSize: string;
   exclusiveGroup?: string;
+  /**
+   * Open/closed state per viewport class, applied on first render and again
+   * whenever the viewport class changes (e.g. `{ phone: 'collapsed', tablet:
+   * 'collapsed', desktop: 'expanded' }`). The user's toggle sticks until the
+   * class changes. An edge with viewport defaults never persists its state.
+   */
+  viewportDefaults?: Partial<Record<ShellViewport, VisiblePanelState>>;
+  /** Phone presentation of a side edge (default `drawer`). */
+  phone?: PhonePanelPresentation;
+  /**
+   * Media query under which an expanded `push` side edge is laid over the
+   * page (sliding in above a scrim) instead of pushing it aside, on tablet
+   * and desktop. Above it the edge docks as usual. Phones keep their
+   * `phone` presentation. E.g. `'(max-width: 99.9375rem)'` overlays up to
+   * the Material 3 "Large" window class (under 1600px).
+   */
+  overlayMedia?: string;
+  /**
+   * Drag-to-resize for a `push` side edge on tablet/desktop: a separator on
+   * the edge's inner border (pointer drag, arrow keys, Home/End, double-click
+   * or Enter to reset). `true` uses the default limits.
+   */
+  resizable?: boolean | ShellPanelResize;
+  /**
+   * What the settings adapter stores for this edge (default: everything).
+   * `false` stores nothing; `{ state: false }` keeps only the size.
+   */
+  persist?: boolean | ShellPanelPersist;
+  /**
+   * Keep the edge's panel content mounted (and hidden) while the edge is
+   * collapsed, instead of unmounting it. Use it when the panel holds state
+   * that must survive closing, such as an assistant chat's draft on the
+   * phone sheet. Applies to the expanded content (`appPanel`,
+   * `tenantPanel`, the focus panel, `systemPanel`); the rail still renders
+   * as usual. A hidden edge unmounts everything.
+   */
+  keepMounted?: boolean;
+}
+
+/** Limits for a resizable side edge, in CSS pixels. */
+export interface ShellPanelResize {
+  /** Smallest expanded width (default 240). */
+  min?: number;
+  /** Largest expanded width (default 720). */
+  max?: number;
+  /** Arrow-key step (default 16; Shift multiplies by 4). */
+  step?: number;
+}
+
+/** Which of an edge's user settings the settings adapter stores. */
+export interface ShellPanelPersist {
+  /** Open/closed state (default true). */
+  state?: boolean;
+  /** Resized width (default true). */
+  size?: boolean;
 }
 
 export type ShellPanelDefaults = Partial<
@@ -40,6 +107,8 @@ export interface ShellSettingsDelta {
   hotkeysEnabled?: boolean;
   keymap?: Partial<Record<PanelEdge, ShellHotkeyBinding | null>>;
   panels?: Partial<Record<PanelEdge, PanelState>>;
+  /** Resized expanded widths in px; `null` resets to the configured size. */
+  sizes?: Partial<Record<PanelEdge, number | null>>;
   activeFocusToolId?: string | null;
 }
 
@@ -70,6 +139,13 @@ export interface ShellNavItem {
   icon?: string;
   description?: string;
   badge?: number | string | null;
+  /**
+   * Show a "needs attention" dot on the item (also over its icon when the
+   * nav is collapsed). `true` announces the default label ("Needs
+   * attention"); a string is the accessible label to announce instead
+   * (e.g. "A background job failed recently").
+   */
+  attention?: boolean | string | null;
   children?: ShellNavItem[];
 }
 
@@ -165,8 +241,19 @@ export interface ShellSystemPanel {
 
 export interface ShellStateSnapshot {
   panels: Record<PanelEdge, PanelState>;
+  viewport: ShellViewport;
   activeFocusToolId: string | null;
   settings: ShellSettingsDelta;
+}
+
+/** Phone behavior switches for `AdminShell` (all off by default). */
+export interface AdminShellPhoneOptions {
+  /** Dim the page behind an open side drawer or sheet; a tap closes it. */
+  scrim?: boolean;
+  /** Close drawers by swiping them away (left drawer left, right drawer right, sheet down). */
+  swipeToClose?: boolean;
+  /** Hide the `phoneTopBar` while scrolling down (default true). */
+  hideOnScroll?: boolean;
 }
 
 export interface AdminShellProps {
@@ -203,3 +290,17 @@ export const SCOPE_EDGES: Record<ShellScope, PanelEdge> = {
   focus: 'right',
   system: 'bottom',
 };
+
+/**
+ * Public element ids of AdminShell's regions, stable for `aria-controls`,
+ * skip links, and host styling. `main` is the page scroller: the shell is
+ * pinned to the viewport and page content scrolls inside it.
+ */
+export const ADMIN_SHELL_REGION_IDS = {
+  header: 'smrt-admin-shell-header',
+  top: 'smrt-admin-shell-top-panel',
+  left: 'smrt-admin-shell-left-panel',
+  right: 'smrt-admin-shell-right-panel',
+  bottom: 'smrt-admin-shell-bottom-panel',
+  main: 'smrt-admin-shell-main',
+} as const;

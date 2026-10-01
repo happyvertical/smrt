@@ -113,3 +113,61 @@ export async function resolveContentEditorImageSelection(
 
   return null;
 }
+
+/** Natural pixel size of an image, as used to choose a thumbnail placement. */
+export interface ContentEditorImageDimensions {
+  width: number;
+  height: number;
+}
+
+function positiveDimension(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+/**
+ * The size of an attached image: from the asset's own `width`/`height` (or
+ * `metadata.width`/`metadata.height`) when recorded, otherwise by loading
+ * `src` in the browser. Resolves `null` when neither is available (no DOM,
+ * load error, or `timeoutMs` elapsed).
+ */
+export async function resolveContentEditorImageDimensions(
+  asset: Record<string, unknown> | null | undefined,
+  src: string,
+  options: { timeoutMs?: number } = {},
+): Promise<ContentEditorImageDimensions | null> {
+  const metadata =
+    asset?.metadata && typeof asset.metadata === 'object'
+      ? (asset.metadata as Record<string, unknown>)
+      : {};
+  const width = positiveDimension(asset?.width ?? metadata.width);
+  const height = positiveDimension(asset?.height ?? metadata.height);
+  if (width && height) {
+    return { width, height };
+  }
+
+  const ImageConstructor = (globalThis as { Image?: typeof Image }).Image;
+  if (!src || typeof ImageConstructor !== 'function') {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const image = new ImageConstructor();
+    const timer = setTimeout(() => resolve(null), options.timeoutMs ?? 8000);
+    image.onload = () => {
+      clearTimeout(timer);
+      const naturalWidth = positiveDimension(image.naturalWidth);
+      const naturalHeight = positiveDimension(image.naturalHeight);
+      resolve(
+        naturalWidth && naturalHeight
+          ? { width: naturalWidth, height: naturalHeight }
+          : null,
+      );
+    };
+    image.onerror = () => {
+      clearTimeout(timer);
+      resolve(null);
+    };
+    image.src = src;
+  });
+}

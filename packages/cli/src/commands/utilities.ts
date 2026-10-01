@@ -328,11 +328,13 @@ interface DbMigrateOptions {
   'dry-run'?: boolean;
   'postgres-safe'?: boolean;
   'postgres-timestamp-legacy-timezone'?: string;
+  'empty-text-as-null'?: boolean;
   force?: boolean;
   'force-migration'?: string | readonly string[];
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
+  'drop-legacy-natural-key'?: boolean;
   'drop-columns'?: boolean;
   'relax-columns'?: boolean;
   'apply-unblocked'?: boolean;
@@ -1681,6 +1683,12 @@ export default testManifest;
         description:
           'Confirm that legacy PostgreSQL timestamp-without-time-zone values are UTC wall times before converting them to timestamptz. Exact value required: UTC; omitted by default.',
       },
+      'empty-text-as-null': {
+        type: 'boolean',
+        description:
+          'Store empty or whitespace-only text as NULL when converging a nullable legacy text column to a typed column (timestamp, JSON, integer). Any other value that does not convert still blocks, and NOT NULL columns are never changed. Off by default.',
+        default: false,
+      },
       force: {
         type: 'boolean',
         description:
@@ -1708,6 +1716,12 @@ export default testManifest;
         type: 'boolean',
         description:
           'Drop orphan indexes (in DB but not in manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default.',
+        default: false,
+      },
+      'drop-legacy-natural-key': {
+        type: 'boolean',
+        description:
+          'Drop the legacy global (slug, context) unique index a tenant-led natural key superseded on a table that is tenant-owned by its tenantId field. Off by default: db:migrate builds the tenant-led index beside it so code still on the previous release keeps upserting. Pass this once every instance runs the release that upserts on the tenant-led key.',
         default: false,
       },
       'drop-columns': {
@@ -1991,8 +2005,10 @@ export default testManifest;
         const comparer = new SchemaComparer(db, {
           includeDroppedIndexes: Boolean(options['drop-indexes']),
           includeDroppedColumns: Boolean(options['drop-columns']),
+          dropLegacyNaturalKey: Boolean(options['drop-legacy-natural-key']),
           relaxColumns: Boolean(options['relax-columns']),
           postgresTimestampMigration,
+          emptyTextAsNull: Boolean(options['empty-text-as-null']),
         });
         const diff = await comparer.compare(manifestSchemas);
         const engine = tracker.getEngine();
@@ -2215,6 +2231,26 @@ export default testManifest;
         // conversions only rewrite columns that already exist, so leading the
         // batch is always safe. `migrateSmrtSchemas()` partitions on the same
         // marker; this command builds its own tracker batch and must match.
+        // A foreign-key replacement that turns on a row-changing action
+        // (CASCADE / SET NULL / SET DEFAULT) applies because the manifest
+        // declares it, but never silently: parent deletes from raw SQL, admin
+        // tooling or a tenant purge now delete or rewrite children.
+        const destructiveForeignKeys = migrations.filter(
+          (migration) =>
+            migration.type === 'add_foreign_key' &&
+            migration.advisory?.severity === 'warning' &&
+            Boolean(migration.sql || migration.sqlStatements?.length),
+        );
+        if (destructiveForeignKeys.length > 0) {
+          console.log(
+            `\n⚠️  ${destructiveForeignKeys.length} foreign-key change(s) make deletes DESTRUCTIVE:`,
+          );
+          for (const migration of destructiveForeignKeys) {
+            console.log(`   ${migration.advisory?.message}`);
+          }
+          console.log();
+        }
+
         const preForeignKeyMigrations = migrations.filter(
           (migration) => migration.phase === 'pre_foreign_key',
         );
@@ -2536,7 +2572,7 @@ export default testManifest;
               actionDesc = `Dropped column ${migration.tableName}.${migration.columnName}`;
             } else if (migration.type === 'type_upgrade' && migration.column) {
               migrationSql = migration.sql || '';
-              actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
+              actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}${migration.note ? ` (${migration.note})` : ''}`;
             } else if (migration.type === 'add_index' && migration.index) {
               migrationSql = migration.sql || '';
               actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
@@ -2545,7 +2581,9 @@ export default testManifest;
               actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;
             } else if (migration.type === 'add_foreign_key') {
               migrationSql = migration.sql || '';
-              actionDesc = `Added foreign-key constraint on ${migration.tableName}`;
+              actionDesc = migration.note
+                ? `Replaced foreign-key constraint on ${migration.tableName} (${migration.note})`
+                : `Added foreign-key constraint on ${migration.tableName}`;
             } else if (migration.type === 'drop_foreign_key') {
               migrationSql = migration.sql || '';
               actionDesc = `Dropped foreign-key constraint on ${migration.tableName}`;

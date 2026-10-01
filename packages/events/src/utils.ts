@@ -4,6 +4,18 @@
 
 import type { EventStatus, RecurrencePattern } from './types';
 
+export type {
+  CivilDate,
+  ExpandRecurrenceOptions,
+  ZonedWallTime,
+} from './recurrence';
+export {
+  expandRecurrence,
+  fromZonedWallTime,
+  isValidTimeZone,
+  toZonedWallTime,
+} from './recurrence';
+
 /**
  * Validate event status transition
  *

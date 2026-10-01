@@ -171,6 +171,11 @@ export interface SocialPostOptions extends SmrtObjectOptions {
   analyticsLastSyncedAt?: Date | null;
 
   /**
+   * User who created (drafted, scheduled, or published) the post
+   */
+  createdByUserId?: string | null;
+
+  /**
    * Tenant ID for multi-tenant isolation
    */
   tenantId?: string | null;
@@ -222,6 +227,19 @@ export class SocialPost extends SmrtObject {
    */
   @foreignKey(SocialAccount)
   socialAccountId: string | null = null;
+
+  /**
+   * User who created the post: drafted it, scheduled it, or published it
+   * directly. Hosts use it to tell the poster when publishing fails.
+   *
+   * A `@crossPackageRef` to `@happyvertical/smrt-users:User`, so a native uuid
+   * column on PostgreSQL with no DDL FK. Null for posts created before the
+   * column existed and for posts an agent or schedule created with no person
+   * behind them. Set through `SocialPostCollection.createDraft()`; the
+   * publish-outcome helpers (`recordPublishSuccess`/`Failure`) never change it.
+   */
+  @crossPackageRef('@happyvertical/smrt-users:User')
+  createdByUserId: string | null = null;
 
   /**
    * Video content to publish
@@ -349,6 +367,8 @@ export class SocialPost extends SmrtObject {
     if (options.analytics !== undefined) this.analytics = options.analytics;
     if (options.analyticsLastSyncedAt !== undefined)
       this.analyticsLastSyncedAt = options.analyticsLastSyncedAt;
+    if (options.createdByUserId !== undefined)
+      this.createdByUserId = options.createdByUserId;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 

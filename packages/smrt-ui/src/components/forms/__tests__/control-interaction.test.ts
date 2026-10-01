@@ -3492,13 +3492,37 @@ describe('control interaction registry', () => {
       highlight,
     });
 
-    await registry.execute({ action: 'focus', identity });
+    await registry.execute({ action: 'focus', identity }, { source: 'user' });
     await registry.execute({ action: 'reveal', identity });
     await registry.execute({ action: 'highlight', identity, durationMs: 400 });
 
     expect(focus).toHaveBeenCalledOnce();
     expect(reveal).toHaveBeenCalledOnce();
     expect(highlight).toHaveBeenCalledWith(400);
+  });
+
+  it('never moves keyboard focus for an agent: focus reveals and highlights instead', async () => {
+    const focus = vi.fn();
+    const reveal = vi.fn();
+    const highlight = vi.fn();
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      focus,
+      reveal,
+      highlight,
+    });
+
+    const result = await registry.execute(
+      { action: 'focus', identity },
+      { source: 'agent' },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(focus).not.toHaveBeenCalled();
+    expect(reveal).toHaveBeenCalledOnce();
+    expect(highlight).toHaveBeenCalledOnce();
   });
 
   it('rejects a recognized factory event retained beyond its dispatch', async () => {

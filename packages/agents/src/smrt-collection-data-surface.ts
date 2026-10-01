@@ -39,11 +39,13 @@ import {
   canonicalizeDataQuery,
   createDataQueryFingerprint,
   DataQueryValidationError,
+  getClassName,
   MAX_DATA_QUERY_OFFSET,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
   ObjectRegistry,
+  toSnakeCase,
 } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
@@ -239,6 +241,106 @@ function filterOperatorsFor(
   }
 }
 
+/**
+ * The operators an id (native `UUID` column) field accepts. Ordered and
+ * pattern comparisons have no meaning on an id — and PostgreSQL has no
+ * `uuid ~~ text` operator at all, so `like` reached the driver as a 500.
+ */
+export const ID_FIELD_FILTER_OPERATORS: DataQueryFilterOperator[] = [
+  'eq',
+  'in',
+  'ne',
+  'notIn',
+];
+
+/** Canonical UUID text: the only value a native UUID column can equal. */
+const UUID_VALUE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The declared field ids of `qualifiedName` that live in a native `UUID`
+ * column, read from the class's manifest schema — the same column metadata
+ * `SmrtCollection` consults for its own UUID handling.
+ */
+export function uuidColumnFieldIds(
+  qualifiedName: string,
+  fieldIds: Iterable<string>,
+): Set<string> {
+  const schema =
+    ObjectRegistry.getSchema(qualifiedName) ??
+    ObjectRegistry.getSchema(getClassName(qualifiedName));
+  const columns = schema?.columns ?? {};
+  const ids = new Set<string>();
+  for (const id of fieldIds) {
+    const column = columns[toSnakeCase(id)] ?? columns[id];
+    if (String(column?.type ?? '').toUpperCase() === 'UUID') ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * Refuse a condition on an id field that could only fail in the database: an
+ * operator other than {@link ID_FIELD_FILTER_OPERATORS} (a host `schema`
+ * override may still declare one), or a value that is not a UUID, which
+ * PostgreSQL rejects with `invalid input syntax for type uuid` and which the
+ * caller could never have matched anyway. Both are the caller's error, so
+ * they fail as a `DataQueryValidationError` with an actionable message.
+ */
+export function assertIdFieldConditions(
+  filter: DataQueryFilter | undefined,
+  idFields: ReadonlySet<string>,
+): void {
+  if (!filter || idFields.size === 0) return;
+  if (filter.kind === 'condition') {
+    if (!idFields.has(filter.field)) return;
+    if (!ID_FIELD_FILTER_OPERATORS.includes(filter.operator)) {
+      queryFail(
+        `Data query operator ${filter.operator} is not allowed for ${filter.field}: it holds ids, which support only ${ID_FIELD_FILTER_OPERATORS.join(', ')}`,
+        'DATA_QUERY_OPERATOR_NOT_ALLOWED',
+      );
+    }
+    const values = Array.isArray(filter.value) ? filter.value : [filter.value];
+    if (
+      values.some(
+        (value) =>
+          value !== null &&
+          (typeof value !== 'string' || !UUID_VALUE.test(value)),
+      )
+    ) {
+      queryFail(
+        `Data query value for ${filter.field} must be a complete id (a UUID such as 123e4567-e89b-12d3-a456-426614174000)`,
+        'DATA_QUERY_VALUE_INVALID',
+      );
+    }
+    return;
+  }
+  if (filter.kind === 'not') {
+    assertIdFieldConditions(filter.filter, idFields);
+    return;
+  }
+  for (const child of filter.filters) assertIdFieldConditions(child, idFields);
+}
+
+/**
+ * `SmrtCollection.list()` order terms for a normalized sort.
+ *
+ * The data-query contract orders an empty (NULL) value before every other
+ * value ascending and after it descending — the order the query tools verify
+ * a returned page against. Database defaults disagree with that and with each
+ * other (PostgreSQL puts NULLs first when descending), so a page containing a
+ * NULL sort value failed the order check as a 502. The placement is explicit.
+ */
+export function dataQueryOrderByTerms(
+  sort: readonly DataQuerySort[] | undefined,
+): string[] | undefined {
+  if (!sort || sort.length === 0) return undefined;
+  return sort.map((term) =>
+    term.direction === 'desc'
+      ? `${term.field} DESC NULLS LAST`
+      : `${term.field} ASC NULLS FIRST`,
+  );
+}
+
 interface RegistryFieldLike {
   type?: unknown;
   sensitive?: unknown;
@@ -358,13 +460,16 @@ async function buildQuerySchemaForClass(
     RegistryFieldLike
   >;
   const tenantField = getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
+  const idFields = uuidColumnFieldIds(qualifiedName, registered.keys());
   const fields: DataQueryFieldDescriptor[] = [];
   for (const [name, field] of registered) {
     if (isPolicyExcludedField(name, field, tenantField, options.exclude))
       continue;
     const type = queryFieldType(field.type);
     if (!type) continue;
-    const filterOperators = filterOperatorsFor(type);
+    const filterOperators = idFields.has(name)
+      ? [...ID_FIELD_FILTER_OPERATORS]
+      : filterOperatorsFor(type);
     fields.push({
       id: name,
       type,
@@ -736,13 +841,6 @@ function mergeQueryScope(
     );
   }
   return merged;
-}
-
-function orderByTerms(sort: DataQuerySort[] | undefined): string[] | undefined {
-  if (!sort || sort.length === 0) return undefined;
-  return sort.map((term) =>
-    term.direction === 'desc' ? `${term.field} desc` : term.field,
-  );
 }
 
 /**
@@ -1183,6 +1281,10 @@ export async function executeSmrtCollectionQuery(
     );
   }
 
+  assertIdFieldConditions(
+    request.filter,
+    uuidColumnFieldIds(options.qualifiedName, declared),
+  );
   const callerWhere = request.filter
     ? filterToDnf(request.filter, declared)
     : undefined;
@@ -1210,7 +1312,7 @@ export async function executeSmrtCollectionQuery(
         : 0;
     const limit =
       request.page?.limit ?? schema.defaultPageLimit ?? DEFAULT_PAGE_LIMIT;
-    const orderBy = orderByTerms(request.sort);
+    const orderBy = dataQueryOrderByTerms(request.sort);
     if (signal) assertNotAborted(signal);
     const listed = await collection.list({
       select: projection,

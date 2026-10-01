@@ -251,6 +251,25 @@ describe('ManifestAdapter conversion', () => {
       expect(result?._meta?.unique).toBe(true);
       expect(result?._meta?.nullable).toBe(true);
     });
+
+    it('carries a declared onDelete into field metadata (#3023)', () => {
+      const result = adapter.convertField(
+        field({
+          name: 'ownerId',
+          typeAnnotation: 'string',
+          decorators: [
+            {
+              name: 'crossPackageRef',
+              arguments: [
+                "'@happyvertical/smrt-profiles:Person'",
+                "{ onDelete: 'SET NULL' }",
+              ],
+            },
+          ],
+        }),
+      );
+      expect(result?._meta?.onDelete).toBe('SET NULL');
+    });
   });
 
   describe('@foreignKey decorator physical constraints', () => {
@@ -274,6 +293,45 @@ describe('ManifestAdapter conversion', () => {
       expect(result?._meta?.constraint).toEqual({
         engines: ['postgres', 'sqlite'],
       });
+    });
+
+    it.each([
+      'NO ACTION',
+      'RESTRICT',
+      'SET NULL',
+      'CASCADE',
+    ])('carries a declared onDelete %s into field metadata (#3023)', (action) => {
+      const result = adapter.convertField(
+        field({
+          name: 'councilId',
+          typeAnnotation: 'string',
+          decorators: [
+            {
+              name: 'foreignKey',
+              arguments: [
+                "'Council'",
+                `{ required: true, onDelete: '${action}' }`,
+              ],
+            },
+          ],
+        }),
+      );
+
+      expect(result?.type).toBe('foreignKey');
+      expect(result?._meta?.onDelete).toBe(action);
+      expect(result?._meta?.required).toBe(true);
+    });
+
+    it('leaves onDelete unset when the decorator does not declare one (#3023)', () => {
+      const result = adapter.convertField(
+        field({
+          name: 'councilId',
+          typeAnnotation: 'string',
+          decorators: [{ name: 'foreignKey', arguments: ["'Council'"] }],
+        }),
+      );
+
+      expect(result?._meta?.onDelete).toBeUndefined();
     });
   });
 
@@ -433,6 +491,31 @@ describe('ManifestAdapter conversion', () => {
         resolved({ className: 'Widget', fields: [], allFields: [uiSlots] }),
       );
       expect(def.staticProperties?.uiSlots).toEqual({ main: ['card'] });
+    });
+
+    it('captures static createEntries (agent create options)', () => {
+      const createEntries = field({
+        name: 'createEntries',
+        isStatic: true,
+        initializer:
+          '[{ id: "meeting", type: "news/politics", label: "Write about a meeting", route: "articles/new/source?for=meeting", availability: { accessLevels: ["admin", "editor"] } }]',
+      });
+      const def = adapter.toSmartObjectDefinition(
+        resolved({
+          className: 'Widget',
+          fields: [createEntries],
+          allFields: [createEntries],
+        }),
+      );
+      expect(def.staticProperties?.createEntries).toEqual([
+        {
+          id: 'meeting',
+          type: 'news/politics',
+          label: 'Write about a meeting',
+          route: 'articles/new/source?for=meeting',
+          availability: { accessLevels: ['admin', 'editor'] },
+        },
+      ]);
     });
   });
 

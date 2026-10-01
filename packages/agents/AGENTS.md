@@ -61,6 +61,28 @@ Junction table (`tenant_agents`) binding agents to tenants with permission overr
 - Inherited: walks up tenant hierarchy (source: 'inherited')
 - Permissions: manifest defaults merged with per-tenant overrides
 
+### Config owner id and the #1092 key repair
+
+A binding with no Agent row owns slot configs under
+`tenantAgentConfigOwnerId(tenantId, type)` = `<tenant>:<canonical type>`
+(`serializeResolvedAgent()` uses it). Seeders and schedule sync must compose it
+with the helper. Rows keyed `<tenant>:<Class>` (pre-#1092) or bindings under a
+bare/renamed type are moved by `repairTenantAgentConfigKeys(db, { aliases,
+apply })` (`src/migrations/tenant-agent-config-keys.ts`): dry run by default,
+counted totals, blocked rows (two spellings of one binding/slot) refuse the
+apply, one transaction with a ledger and a post-check; idempotent. Register the
+host's agent classes (or pass `aliases`) before running it.
+
+## Create entries
+
+`static createEntries: AgentCreateEntry[]` (literal array; the scanner captures
+it into `agent.createEntries`) lets an agent contribute "create" options: `id`,
+`type`, `format`, `label`, `description`, `icon`, `route` (relative to the
+host base path), `order`, `availability` (`permission`, `accessLevels`,
+`requires`). `SerializedAgent.createEntries` carries them;
+`resolveAgentCreateEntries(agents, { basePath, accessLevel, capabilities })`
+from `./ui` filters, builds `href`, and sorts. Non-relative routes are dropped.
+
 ## AgentSchedule
 
 Cron-based scheduling stored in `_smrt_agent_schedules`. Fields: `agentType`, `cron`, `method` (default: 'run'), `maxConcurrent`, `timeout`. Executed by ScheduleRunner from smrt-jobs.

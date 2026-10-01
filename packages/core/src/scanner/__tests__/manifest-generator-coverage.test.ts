@@ -923,6 +923,15 @@ describe('ManifestGenerator coverage', () => {
                   },
                 },
                 adminRoutes: [{ path: '/admin/town', label: 'Town admin' }],
+                createEntries: [
+                  {
+                    id: 'meeting-article',
+                    type: 'news/politics',
+                    label: 'Write about a meeting',
+                    route: 'articles/new/source?for=meeting',
+                    availability: { accessLevels: ['admin', 'editor'] },
+                  },
+                ],
               },
             }),
           ]),
@@ -967,6 +976,16 @@ describe('ManifestGenerator coverage', () => {
       expect(componentTypes).toEqual(['admin', 'town']);
       // adminRoutes captured from the static property.
       expect(agent?.adminRoutes).toHaveLength(1);
+      // createEntries carried through verbatim.
+      expect(agent?.createEntries).toEqual([
+        {
+          id: 'meeting-article',
+          type: 'news/politics',
+          label: 'Write about a meeting',
+          route: 'articles/new/source?for=meeting',
+          availability: { accessLevels: ['admin', 'editor'] },
+        },
+      ]);
     });
 
     it('defaults tier to free and omits adminRoutes when none are declared', () => {
@@ -981,6 +1000,7 @@ describe('ManifestGenerator coverage', () => {
       const agent = manifest.objects.bareagent.agent;
       expect(agent?.tier).toBe('free');
       expect(agent?.adminRoutes).toBeUndefined();
+      expect(agent?.createEntries).toBeUndefined();
       expect(agent?.permissions).toEqual([]);
     });
   });

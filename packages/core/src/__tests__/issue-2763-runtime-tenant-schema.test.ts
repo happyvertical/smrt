@@ -200,7 +200,10 @@ describe('runtime tenant schema registration (#2763)', () => {
     expect(
       ObjectRegistry.getTenantScopedConfig('ManifestSilentTenant'),
     ).toBeUndefined();
+    // No tenancy (read policy) is inferred, but a `tenantId` field still
+    // makes the rows tenant-owned, so the natural key is unique per tenant.
     expect(ObjectRegistry.getConflictColumns('ManifestSilentTenant')).toEqual([
+      'tenant_id',
       'slug',
       'context',
     ]);
@@ -283,9 +286,10 @@ describe('runtime tenant schema registration (#2763)', () => {
     expect(
       ObjectRegistry.getClassByConstructor(GlobalRecord)?.tenantScopedConfig,
     ).toBeUndefined();
+    // Ownership comes from B's own `tenantId` field, not the peer's marker.
     expect(
       ObjectRegistry.getConflictColumns('@fixture/tenant-b:Record'),
-    ).toEqual(['slug', 'context']);
+    ).toEqual(['tenant_id', 'slug', 'context']);
   });
 
   it('adopts a standalone exact-constructor tenancy declaration with an ordinary field', () => {
@@ -570,7 +574,7 @@ describe('runtime tenant schema registration (#2763)', () => {
     ).toBeUndefined();
     expect(
       ObjectRegistry.getConflictColumns('LateManifestSilentTenant'),
-    ).toEqual(['slug', 'context']);
+    ).toEqual(['tenant_id', 'slug', 'context']);
   });
 
   it.each([
@@ -642,7 +646,9 @@ describe('runtime tenant schema registration (#2763)', () => {
     expect(
       ObjectRegistry.getTenantScopedConfig('GlobalRuntimeRecord'),
     ).toBeUndefined();
+    // Ownership, not tenancy: the natural key is unique per tenant_id value.
     expect(ObjectRegistry.getConflictColumns('GlobalRuntimeRecord')).toEqual([
+      'tenant_id',
       'slug',
       'context',
     ]);

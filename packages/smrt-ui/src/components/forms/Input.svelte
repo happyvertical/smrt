@@ -260,6 +260,15 @@ export function getElement(): HTMLInputElement | null {
 		color: var(--smrt-color-on-surface-variant, #9ca3af);
 	}
 
+	/* Phones: 16px text so iOS Safari doesn't zoom the page when the field
+	   gets focus, and a 44px touch target. */
+	@media (max-width: 48rem) {
+		.input {
+			font-size: max(var(--smrt-typography-body-medium-size, 0.875rem), 16px);
+			min-height: 2.75rem;
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.input {
 			transition: none;

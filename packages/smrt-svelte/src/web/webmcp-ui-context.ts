@@ -18,6 +18,17 @@ export function tryGetWebMcpUiContext(): WebMcpUiContext | null {
   return getContext<WebMcpUiContext>(WEBMCP_UI_CONTEXT_KEY) ?? null;
 }
 
+/**
+ * The nearest Provider's mounted-UI registries, or `null` when there is no
+ * Provider or its WebMCP UI is off (#2915). Use this to fall back to a local
+ * registry instead of catching {@link useWebMcpUi}'s throw. Call during
+ * component initialization, like any context read.
+ */
+export function tryUseWebMcpUi(): WebMcpUiContext | null {
+  const context = tryGetWebMcpUiContext();
+  return context?.enabled ? context : null;
+}
+
 /** Return the mounted-UI registries owned by the nearest SMRT Provider. */
 export function useWebMcpUi(): WebMcpUiContext {
   const context = tryGetWebMcpUiContext();

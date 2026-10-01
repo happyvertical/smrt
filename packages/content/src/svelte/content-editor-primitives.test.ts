@@ -106,6 +106,51 @@ describe('content editor primitives', () => {
     expect(editor.form.thumbnailAssetId).toBeNull();
   });
 
+  it('makes the first story picture the main picture unless one is chosen', () => {
+    const img = (id: string, extra = '') =>
+      `<img src="/a/${id}.jpg" alt="" data-smrt-asset-id="${id}"${extra}>`;
+    const editor = createContentEditorState({
+      content: {
+        body: '<p>Text</p>',
+        bodyFormat: 'html',
+        thumbnailAssetId: 'legacy',
+      },
+    });
+
+    // Editing text keeps a thumbnail that was set some other way.
+    editor.update({ body: '<p>Text, edited</p>' });
+    expect(editor.syncMainPictureFromBody()).toBe(false);
+    expect(editor.form.thumbnailAssetId).toBe('legacy');
+
+    // The first picture in the story becomes the main picture.
+    editor.update({ body: `<p>Text</p>${img('a-1')}${img('a-2')}` });
+    expect(editor.syncMainPictureFromBody()).toBe(true);
+    expect(editor.form.thumbnailAssetId).toBe('a-1');
+    expect(editor.mainPicture.mode).toBe('automatic');
+
+    // Reordering follows the first picture…
+    editor.update({ body: `<p>Text</p>${img('a-2')}${img('a-1')}` });
+    editor.syncMainPictureFromBody();
+    expect(editor.form.thumbnailAssetId).toBe('a-2');
+
+    // …until one is chosen; the choice sticks through a reorder.
+    editor.update({
+      body: `<p>Text</p>${img('a-2')}${img('a-1', ' data-smrt-main="true"')}`,
+    });
+    editor.syncMainPictureFromBody();
+    expect(editor.form.thumbnailAssetId).toBe('a-1');
+    editor.update({
+      body: `<p>Text</p>${img('a-1', ' data-smrt-main="true"')}<p>x</p>${img('a-2')}`,
+    });
+    editor.syncMainPictureFromBody();
+    editor.update({
+      body: `${img('a-2')}<p>Text</p>${img('a-1', ' data-smrt-main="true"')}`,
+    });
+    editor.syncMainPictureFromBody();
+    expect(editor.form.thumbnailAssetId).toBe('a-1');
+    expect(editor.mainPicture.mode).toBe('chosen');
+  });
+
   it('resolves preview sources from common asset fields', () => {
     expect(
       getContentEditorAssetImageSource({

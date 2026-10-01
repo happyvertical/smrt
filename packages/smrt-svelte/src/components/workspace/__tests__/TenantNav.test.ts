@@ -120,6 +120,61 @@ describe('TenantNav', () => {
     }
   });
 
+  it('marks items that need attention with a labelled dot', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: {
+        currentHref: '/admin/tasks',
+        items: [
+          { href: '/admin/tasks', label: 'Tasks' },
+          {
+            href: '/admin/jobs',
+            label: 'Jobs',
+            attention: 'A background job failed recently',
+          },
+          { href: '/admin/health', label: 'Health', attention: true },
+        ],
+      },
+    });
+
+    try {
+      const links = [...container.querySelectorAll('a')];
+      expect(links[0].querySelector('[data-attention]')).toBeNull();
+      expect(links[1].querySelector('[data-attention]')).not.toBeNull();
+      expect(
+        links[1].querySelector('[data-attention]')?.getAttribute('aria-hidden'),
+      ).toBe('true');
+      expect(links[1].textContent).toContain(
+        '(A background job failed recently)',
+      );
+      expect(links[2].textContent).toContain('(Needs attention)');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('keeps the attention dot on a collapsed icon link', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: {
+        collapsed: true,
+        iconComponent: TestIcon,
+        items: [
+          { href: '/admin/jobs', icon: 'jobs', label: 'Jobs', attention: true },
+        ],
+      },
+    });
+
+    try {
+      const link = container.querySelector('a');
+      expect(link?.querySelector('[data-attention]')).not.toBeNull();
+      expect(link?.textContent).toContain('Jobs');
+      expect(link?.textContent).toContain('(Needs attention)');
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('uses top-level icon links when collapsed', () => {
     const component = mount(TenantNav, {
       target: container,

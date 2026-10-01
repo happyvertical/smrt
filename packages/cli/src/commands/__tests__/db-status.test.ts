@@ -76,6 +76,8 @@ vi.mock('@happyvertical/sql', () => ({
 vi.mock('@happyvertical/smrt-core', () => ({
   ObjectRegistry: {
     getAllSchemasAsDefinitions: getAllSchemasAsDefinitionsMock,
+    // The tenant natural-key detector walks registered classes; none here.
+    getQualifiedClassNames: () => [],
   },
   SchemaComparer: SchemaComparerMock,
   collectForeignKeyOrphanCounts: collectForeignKeyOrphanCountsMock,

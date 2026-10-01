@@ -38,6 +38,14 @@
  * intentionally line up with `ChatThreadData`/`ChatMessageData` so a future
  * adapter between the two is a narrow mapping, not a rewrite.
  */
+import {
+  type AssistantClientToolCall,
+  type AssistantClientToolDeclaration,
+  type AssistantClientToolResult,
+  type AssistantTurnEvent,
+  readAssistantTurnStream,
+} from '../../../assistant-turn-events.js';
+
 export interface AssistantThreadSummary {
   id: string;
   title: string;
@@ -77,7 +85,23 @@ export interface ModelOption {
   label: string;
 }
 
-export interface AssistantSendMessageInput {
+/** One streamed turn event, with persisted messages already mapped to the
+ * dock's {@link AssistantMessage} shape by the transport (#2908). */
+export type AssistantTransportEvent = AssistantTurnEvent<AssistantMessage>;
+
+/** Streaming inputs shared by a send and a resumed turn (#2908). A transport
+ * that does not stream ignores all three and resolves as before. */
+export interface AssistantTurnStreamInput {
+  /** The page's browser tools to offer the model this turn. The server
+   * validates and allow-lists them; it never runs them. */
+  clientTools?: AssistantClientToolDeclaration[];
+  /** Live turn events (status, steps, token preview, persisted messages). */
+  onEvent?: (event: AssistantTransportEvent) => void;
+  /** Aborts the turn (the dock's Stop). */
+  signal?: AbortSignal;
+}
+
+export interface AssistantSendMessageInput extends AssistantTurnStreamInput {
   threadId: string;
   content: string;
   attachments?: AssistantAttachmentRef[];
@@ -88,6 +112,18 @@ export interface AssistantSendMessageInput {
   model?: string;
 }
 
+/** Resume a turn the server suspended on browser tool calls (#2908). */
+export interface AssistantResumeTurnInput extends AssistantTurnStreamInput {
+  threadId: string;
+  /** The send this turn belongs to. */
+  clientRequestId: string;
+  /** From the suspension (`clientToolCalls.continuationId`). */
+  continuationId: string;
+  /** One result per suspended call. */
+  results: AssistantClientToolResult[];
+  model?: string;
+}
+
 export interface AssistantSendMessageResult {
   /** True when the assistant turn has not resolved yet and the caller should
    * poll `loadMessages` for the reply (mirrors anytown's `payload.inProgress`,
@@ -95,6 +131,15 @@ export interface AssistantSendMessageResult {
   inProgress: boolean;
   userMessage?: AssistantMessage;
   assistantMessage?: AssistantMessage;
+  /** Every message the turn persisted (tool results, the reply), in order,
+   * for a streaming transport. */
+  messages?: AssistantMessage[];
+  /** Set when the turn is waiting on browser tools (#2908). The dock runs
+   * them and calls `resumeTurn`. */
+  clientToolCalls?: {
+    continuationId: string;
+    calls: AssistantClientToolCall[];
+  };
 }
 
 export interface AssistantTransport {
@@ -110,6 +155,11 @@ export interface AssistantTransport {
    * transport that has no model choice (e.g. a single fixed backend model)
    * simply omits this method. */
   listModels?(): Promise<ModelOption[]>;
+  /** Resume a turn suspended on browser tool calls (#2908). Required for a
+   * transport that ever returns `clientToolCalls`. */
+  resumeTurn?(
+    input: AssistantResumeTurnInput,
+  ): Promise<AssistantSendMessageResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +550,11 @@ export interface SmrtAssistantTransportOptions {
       input: AssistantSendMessageInput,
     ) => Promise<AssistantSendMessageResult>;
     uploadAttachment: (file: File) => Promise<AssistantAttachmentRef>;
+    /** Resumes a turn suspended on browser tools (#2908); see
+     * `AssistantTransport.resumeTurn`. */
+    resumeTurn?: (
+      input: AssistantResumeTurnInput,
+    ) => Promise<AssistantSendMessageResult>;
   };
   /** Static model catalog; when supplied, `listModels()` resolves to it and
    * `AssistantDock` renders `ModelPicker`. The `model` field of a `send` is
@@ -589,5 +644,63 @@ export function createSmrtAssistantTransport(
     async uploadAttachment(file: File) {
       return requireWrite('uploadAttachment')(file);
     },
+
+    ...(options.writeEndpoint?.resumeTurn
+      ? { resumeTurn: options.writeEndpoint.resumeTurn }
+      : {}),
+  };
+}
+
+/**
+ * Read a streamed assistant turn response (#2908) into an
+ * {@link AssistantSendMessageResult}, forwarding each event (with persisted
+ * messages mapped by `mapMessage`) to `onEvent`. For a host transport whose
+ * send route answers `text/event-stream` (the server side is
+ * `runAssistantTurn` + `createAssistantTurnResponse`). Rejects on an in-band
+ * `error` or a cut stream.
+ */
+export async function readAssistantTurnResult<W = Record<string, unknown>>(
+  response: Response,
+  options: {
+    mapMessage: (wire: W) => AssistantMessage;
+    onEvent?: (event: AssistantTransportEvent) => void;
+  },
+): Promise<AssistantSendMessageResult> {
+  const mapped: AssistantMessage[] = [];
+  const outcome = await readAssistantTurnStream<W>(response, (event) => {
+    if (!options.onEvent) return;
+    if (event.type === 'message') {
+      options.onEvent({
+        type: 'message',
+        message: options.mapMessage(event.message),
+      });
+    } else if (event.type === 'done') {
+      options.onEvent({
+        type: 'done',
+        stoppedReason: event.stoppedReason,
+        ...(event.message
+          ? { message: options.mapMessage(event.message) }
+          : {}),
+      });
+    } else {
+      options.onEvent(event);
+    }
+  });
+  for (const wire of outcome.messages) mapped.push(options.mapMessage(wire));
+  const assistantMessage = [...mapped]
+    .reverse()
+    .find((m) => m.role === 'assistant');
+  return {
+    inProgress: false,
+    messages: mapped,
+    ...(assistantMessage ? { assistantMessage } : {}),
+    ...(outcome.clientToolCalls
+      ? {
+          clientToolCalls: {
+            continuationId: outcome.clientToolCalls.continuationId,
+            calls: outcome.clientToolCalls.calls,
+          },
+        }
+      : {}),
   };
 }

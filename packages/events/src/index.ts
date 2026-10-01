@@ -24,7 +24,11 @@ export { EventParticipant } from './models/EventParticipant';
 export { EventSeries } from './models/EventSeries';
 // Export models
 export { EventType } from './models/EventType';
-
+export type {
+  CivilDate,
+  ExpandRecurrenceOptions,
+  ZonedWallTime,
+} from './recurrence';
 // Export types
 export type {
   EventOptions,
@@ -46,12 +50,16 @@ export {
   calculateDuration,
   calculateNextOccurrence,
   checkSchedulingConflict,
+  expandRecurrence,
   formatDuration,
   formatEventDateRange,
+  fromZonedWallTime,
   generateEventSlug,
   getEventStatusFromDates,
   isEventNow,
+  isValidTimeZone,
   parseRecurrencePattern,
   sortEventsByDate,
+  toZonedWallTime,
   validateEventStatus,
 } from './utils';

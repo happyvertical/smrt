@@ -183,6 +183,21 @@ describe('utilities', () => {
     expect(parsed.options['postgres-timestamp-legacy-timezone']).toBe('UTC');
   });
 
+  it('offers the empty-text-as-null opt-in to db:migrate and db:diff, off by default (#3226)', () => {
+    for (const name of ['db:migrate', 'db:diff'] as const) {
+      const command = utilityCommands[name];
+      expect(command.options?.['empty-text-as-null']).toMatchObject({
+        type: 'boolean',
+        default: false,
+      });
+      const parsed = parseCliCommandArgs(
+        [name, '--empty-text-as-null'],
+        [command],
+      );
+      expect(parsed.options['empty-text-as-null']).toBe(true);
+    }
+  });
+
   it('parses repeated exact migration flags in argv order', () => {
     const migrate = utilityCommands['db:migrate'];
     const parsed = parseCliCommandArgs(

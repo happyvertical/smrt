@@ -71,6 +71,59 @@ describe('jobs-backed data-surface action queue', () => {
     }
   });
 
+  it('replaces a handler re-registered by the same owner (re-evaluated module)', () => {
+    const first = vi.fn(async () => actionResult());
+    const second = vi.fn(async () => actionResult());
+    const unregisterFirst = registerDataSurfaceBackgroundActionHandler(
+      'reload-actions-v1',
+      first,
+      { owner: 'host-app' },
+    );
+    const unregisterSecond = registerDataSurfaceBackgroundActionHandler(
+      'reload-actions-v1',
+      second,
+      { owner: 'host-app' },
+    );
+    try {
+      // The stale module's disposer must not remove the replacement.
+      unregisterFirst();
+      expect(() =>
+        registerDataSurfaceBackgroundActionHandler(
+          'reload-actions-v1',
+          second,
+          { owner: 'host-app' },
+        )(),
+      ).not.toThrow();
+    } finally {
+      unregisterSecond();
+    }
+  });
+
+  it('still rejects a conflicting duplicate from another owner or an anonymous caller', () => {
+    const unregister = registerDataSurfaceBackgroundActionHandler(
+      'conflict-actions-v1',
+      vi.fn(async () => actionResult()),
+      { owner: 'host-app' },
+    );
+    try {
+      expect(() =>
+        registerDataSurfaceBackgroundActionHandler(
+          'conflict-actions-v1',
+          vi.fn(async () => actionResult()),
+          { owner: 'other-app' },
+        ),
+      ).toThrow('already registered');
+      expect(() =>
+        registerDataSurfaceBackgroundActionHandler(
+          'conflict-actions-v1',
+          vi.fn(async () => actionResult()),
+        ),
+      ).toThrow('already registered');
+    } finally {
+      unregister();
+    }
+  });
+
   it('rejects a persisted tenant mismatch before dispatching the handler', async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const execute = vi.fn(async () => actionResult());

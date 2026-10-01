@@ -402,6 +402,75 @@ schema does not index is a hard PostgreSQL error (42P10) on the first save,
 and a key the schema indexes without the tenant column is the silent
 cross-tenant overwrite this rule exists for.
 
+### Tenant OWNERSHIP, not tenant scope, leads the default key
+
+A class with a `tenantId` field is tenant-owned even when it declares no
+tenancy — consumers register such classes with the tenancy interceptor at
+runtime (Anytown's Ludis `League`/`Team`, smrt-users `Group`/`Role`/…), which
+core never reads. `resolveOwnershipTenantColumn()` (declared tenant column,
+else `tenant_id`) leads the default natural key on every producer:
+`ObjectRegistry.getOwnershipTenantColumn()` / `getConflictColumns()`,
+`normalizeConflictColumns()`, the generator's `resolveConflictTarget()` and the
+registry schema-builder. The tenancy read policy is still never inferred
+(`getTenantScopedConfig()` stays undefined). Explicit `conflictColumns` are
+never rewritten. Old code's `ON CONFLICT (slug, context)` and new code's
+`ON CONFLICT (tenant_id, slug, context)` each need their own unique index, so
+the inferred tenant-led key is named by the custom-key rule
+(`<table>_tenant_id_slug_idx`; only a DECLARED tenant column keeps
+`<table>_slug_context_idx`) and `smrt db:migrate` builds it BESIDE the legacy
+global unique (expand). The differ keeps the legacy index
+(`isLegacyNaturalKeyIndex()`, exempt from the #3126 superseded-index sweep and
+from `--drop-indexes`) until `--drop-legacy-natural-key` /
+`DiffOptions.dropLegacyNaturalKey` (contract). `db:status` exits 1 while the
+tenant-led unique is missing and warns while the legacy one survives
+(`cli/src/commands/tenant-natural-keys.ts`). Deploy order and locking:
+`docs/content/core.md` ("Upgrading an existing database"). The implicit
+`tenant_id` column never makes a foreign key identifying
+(`resolveForeignKeyDeleteAction({ columnName })`): a tenant FK stays
+`NO ACTION`, so deleting a tenant does not cascade through tenant-owned tables.
+
+The save path backs this up where the key still omits the owner (an explicit
+key, or a live table not yet migrated) — `SmrtObject.writeNaturalKeyRow()`. The
+row a NEW object's conflict target matches is read directly, bypassing read
+interceptors. A different owner on any ownership column
+(`ObjectRegistry.getOwnershipColumns()`: `tenant_id`, the declared tenant
+column, `@tenantId` fields and runtime registrations reported through
+`ObjectRegistry.registerOwnershipColumnSource()` — the tenancy package reports
+`registerTenantScopedClass(…, { field })` columns) raises
+`TenantIsolationError.naturalKeyOwnedElsewhere()` (`TENANT_ISOLATION_VIOLATION`,
+never retried, never naming the other owner), also under `withSystemContext()`;
+NULL — or an ownership column the save leaves unset — counts as an owner. A
+same-owner row is adopted by id (keeping its `created_at`, applied to the
+instance only after the write succeeds), so `DO UPDATE SET` never rewrites a
+primary key (no `ON UPDATE CASCADE` churn). Adoption needs an explicit natural
+key: when the match is only through a slug `getSlug()` derived from
+`name`/`title`/`label` (a human value, not an identity), the new object keeps
+its id, moves to the first free `<base>-2` … `<base>-9` (one `slug IN (…)`
+probe; then `<base>-<8 id chars>`) and INSERTs — whoever owns the taken row, so
+it is never refused. `getOrUpsert()`'s create path opts back into adoption
+(`_adoptNaturalKey`): a miss on a non-key field updates the row the derived
+slug names instead of adding `<slug>-2`. On PostgreSQL with no NULL conflict
+value the write is `INSERT … ON CONFLICT (…) DO NOTHING RETURNING id` first, so
+a new key costs one statement and no pre-read, and concurrent first creates
+never collapse: the loser re-reads and adopts (explicit key) or moves (derived
+slug, then straight to the id suffix), bounded retries. Embedded engines
+(serialized by the in-process write queue) and NULL-bearing keys read first.
+The junction batch path falls back to per-item saves when
+its conflict target omits an ownership column present in the row (`tenant_id`,
+the declared tenant column, or any `@tenantId`-marked field), and when any new
+item's natural key already names a row the batch is not removing; its
+`DO UPDATE SET` never lists `id`, `created_at` or an ownership column. Strict
+inserts (`_insertOnly`) check NULL-bearing keys the same way, because NULLs
+are distinct in the unique index on SQLite, DuckDB and PostgreSQL < 15.
+
+A save with no owner (`tenantId: null`, typically under `withSystemContext()`)
+is deliberately NOT refused when a tenant row shares its slug under the
+tenant-led key: it lands as a separate global row, the global-default /
+tenant-override shape #2360 keeps. Refusing it would need a cross-owner read on
+every global save and would break that pattern. A model that needs a slug
+unique across every owner declares explicit `conflictColumns` without the
+tenant column; then the guard refuses the colliding save instead.
+
 ### Every generated index name is length-guarded before it leaves a path (#2374)
 
 PostgreSQL truncates identifiers beyond 63 bytes; two generated names sharing
@@ -522,6 +591,16 @@ junction's foreign key does. Detected via the `__tenancy.isTenantIdField`
 marker on `FieldMeta` (`smrt-core` reads it structurally so it never depends
 on `smrt-tenancy`). `@tenantId()` exposes no `onDelete` option today, so
 this cannot currently be overridden per field.
+
+On PostgreSQL `db:migrate` converges a live SMRT-owned constraint whose only
+drift is its action (#3023, `SchemaComparer.findReplaceableForeignKey()`):
+build-then-swap via `renderForeignKeyReplaceStatements()` — staged
+`<name>_smrt_new` added `NOT VALID` and validated before the old constraint is
+dropped and the staged one renamed; `--postgres-safe` runs the VALIDATE and the
+swap outside the batch transaction. A change toward `CASCADE` / `SET NULL` /
+`SET DEFAULT` still applies (the manifest declares it) but carries a
+`warning` advisory that `db:diff`, `db:status` and `db:migrate` print as
+DESTRUCTIVE.
 
 `@crossPackageRef()` remains runtime-only: it registers relationship loading
 and indexes but deliberately emits no physical constraint, avoiding circular

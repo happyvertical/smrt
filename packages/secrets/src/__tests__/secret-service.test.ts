@@ -456,6 +456,21 @@ describe('SecretService', () => {
       expect(entry.userId).toBeNull();
     });
 
+    it('keeps a non-uuid actor (e.g. an email-login identity) in details instead of failing the insert', () => {
+      const entry = createAuditEntry({
+        secretName: 'api-key',
+        userId: 'editor@example.com',
+        action: 'read',
+        result: 'success',
+        details: { reason: 'deploy' },
+      });
+      expect(entry.userId).toBeNull();
+      expect(entry.details).toEqual({
+        reason: 'deploy',
+        actorId: 'editor@example.com',
+      });
+    });
+
     it('passes a real (UUID) actor id through unchanged', () => {
       const realId = 'a3f1c2d4-0000-4000-8000-000000000001';
       const entry = createAuditEntry({

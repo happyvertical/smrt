@@ -23,6 +23,10 @@ export {
   type ShellActivityInput,
 } from './activity-feed.svelte.js';
 export {
+  type UseLinkSurfaceOptions,
+  useLinkSurface,
+} from './link-surface.svelte.js';
+export {
   type ListDataSurfaceContext,
   type ListDataSurfaceContextPatch,
   type ListDataSurfaceControlResult,
@@ -30,6 +34,14 @@ export {
   type MountListDataSurfaceOptions,
   mountListDataSurface,
 } from './list-data-surface.svelte.js';
+export {
+  findListRows,
+  type ListSurfaceColumn,
+  type ListSurfaceOptions,
+  listSurfaceDescriptor,
+  projectListRows,
+  useListSurface,
+} from './list-surface.svelte.js';
 export {
   type LiveCollection,
   type LiveCollectionMutation,
@@ -41,6 +53,10 @@ export {
   type RemoteQueryBinding,
   remoteQuery,
 } from './remote-query.svelte.js';
+export {
+  type UseStepSurfaceOptions,
+  useStepSurface,
+} from './step-surface.svelte.js';
 export {
   type UpdateAvailableView,
   type UseUpdateAvailableOptions,
@@ -55,6 +71,7 @@ export {
   registerWebMcpUiTools,
 } from './webmcp-ui.js';
 export {
+  tryUseWebMcpUi,
   useWebMcpUi,
   type WebMcpUiContext,
 } from './webmcp-ui-context.js';

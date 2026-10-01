@@ -182,6 +182,25 @@ default) — except a canonical table-control id (`set-filters`, `reset`,
 reaches `onControl`, even under a custom label. See
 `docs/data-surface-conformance.md` for the full contract.
 
+Three lifecycle hooks cover the common page shapes without any registration
+code; each resolves the nearest Provider's registry (or an explicit one),
+re-mounts on an identity change, and unmounts with the component:
+
+- `useListSurface(() => ({ surfaceId, label, description, columns, rows }))`
+  publishes the page's rendered rows, projected to the declared columns and
+  capped (`maxRows`, default 50), as `state.rows`. Columns marked
+  `searchable` enable a `find` control: `{ text }` publishes the rows whose
+  searchable columns contain the text (any case, accents ignored) across all
+  rows, with `state.find = { text, matches }` — so an agent can look an
+  article up by title on the page. It narrows only what the agent reads;
+  table commands stay refused and the page's own controls stay in charge.
+- `useLinkSurface(() => ({ surfaceId, label, description, links, navigate }))`
+  exposes a menu or tab row as an `open` control (see `registerLinkSurface`
+  in smrt-ui).
+- `useStepSurface(() => ({ surfaceId, …, steps, current, next, back,
+  nextWrites, showNext }))` exposes a wizard's `next`/`back`/`go-to`; a step
+  whose forward button writes is revealed for the person, never pressed.
+
 The default prefix is `smrt_ui_`. Configure `ui.prefix` when multiple Providers
 must coexist in one document; the same prefix cannot be registered twice. The
 six derived names are reserved through the document-global tool-name lock, so
@@ -200,6 +219,47 @@ and undo require a separate human-confirmed path. Secret control values and
 hidden data-surface columns are not serialized. Read responses are marked as
 untrusted content. Bespoke `useWebMcpTool` and `<Form webmcp>` tools retain their
 existing lifecycle and submit behavior.
+
+#### `<Form webmcp>` with SvelteKit `enhance` and smrt-ui fields
+
+The rich `Form` renders its own `<form>`, so it forwards every native form
+attribute (`method`, `action`, `enctype`, `novalidate`, `autocomplete`,
+`aria-*`, `data-*`, …) and attachments (`{@attach …}`) to that element. A
+component cannot take `use:`, so pass SvelteKit's `enhance` as a prop — it is
+applied to the rendered `<form>` and torn down with it. Without `onsubmit`
+the Form never prevents submission, so `enhance` (or a native POST) runs as
+usual and an error summary above the fields keeps working:
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+  import { Form } from '@happyvertical/smrt-svelte/forms';
+  import { ErrorSummary, FormGroup, Input } from '@happyvertical/smrt-ui/forms';
+</script>
+
+<Form formId="setup-network" webmcp method="POST" action="?/create" novalidate
+  enhance={(form) => enhance(form, submit)}>
+  <ErrorSummary errors={errors} />
+  <FormGroup label="Network name" id="name"><Input name="name" bind:value={name} /></FormGroup>
+</Form>
+```
+
+Its `<formId>_stage_changes` tool describes rich fields (`TextInput`,
+`MoneyInput`, …) and every other control the registry holds for the form:
+smrt-ui primitives (`FormGroup` + `Input`/`Select`/`Textarea`/`Combobox`/…)
+and composites registered with `useControlRegistration`. Proposals for either
+kind are staged for the person to review and apply; nothing is written or
+submitted by the tool.
+
+`FormScope` (`@happyvertical/smrt-svelte/forms`) is the same tool and review
+surface without a `<form>` element — for a fetch-driven wizard, an editor
+saved in parts, or a page that must keep its own `<form>` markup. It joins
+the nearest Provider's control registry (or a local one) and registers no
+tool until at least one proposable control is mounted.
+
+`tryUseWebMcpUi()` returns the Provider's mounted-UI registries, or `null`
+when there is no Provider or its WebMCP UI is off — use it to fall back to a
+local registry instead of catching `useWebMcpUi()`'s throw (#2915).
 
 Custom rich fields may continue to call `registerField(field)` and later
 `unregisterField(name)`. New code should retain and invoke the disposer returned
@@ -319,6 +379,112 @@ fetch) and mount `AdminShell` in `+layout.svelte`. The `template-sveltekit`
 scaffold adopts AdminShell as its default chrome exactly this way; copy its
 `src/routes/+layout.server.ts` / `+layout.svelte` / `settings/+page.svelte`.
 
+#### Responsive chrome and resizable edges
+
+AdminShell carries the phone/tablet/desktop chrome itself, so hosts do not
+wrap it in a frame. Everything below is opt-in; without these props and config
+keys the shell renders exactly as before.
+
+```svelte
+<script lang="ts">
+  import {
+    AdminShell,
+    createShellState,
+    PhoneBottomBar,
+    PhoneTopBar,
+    ShellNavToggle,
+    ShellTitle,
+    phoneTopBarFor,
+  } from '@happyvertical/smrt-svelte/workspace';
+
+  const shell = createShellState({
+    config: {
+      top: false,
+      bottom: false,
+      left: {
+        label: 'Navigation',
+        // Drawer on phones, icons on tablets, open on desktop.
+        viewportDefaults: { phone: 'collapsed', tablet: 'collapsed', desktop: 'expanded' },
+      },
+      right: {
+        label: 'Assistant',
+        expandedSize: '28rem',
+        resizable: { min: 320, max: 720 }, // drag, arrows, Home/End, double-click resets
+        phone: 'sheet', // or 'hidden' when the host shows it elsewhere on phones
+        keepMounted: true, // closing the sheet keeps the chat (and its draft) alive
+        overlayMedia: '(max-width: 99.9375rem)', // slide over the page below 1600px
+      },
+    },
+    storageKey: 'my-app-shell',
+  });
+</script>
+
+<AdminShell state={shell} path={page.url.pathname} phone={{ scrim: true, swipeToClose: true }}>
+  {#snippet header()}
+    <ShellNavToggle expanded={shell.panels.left === 'expanded'} onclick={() => shell.togglePanel('left')} />
+    <ShellTitle title="Acme" href="/" />
+  {/snippet}
+  {#snippet phoneTopBar()}
+    <PhoneTopBar model={phoneTopBarFor({ path, homeHref: '/', homeTitle: 'Acme', navItems })} homeHref="/" />
+  {/snippet}
+  {#snippet phoneBottomBar()}
+    <PhoneBottomBar {items} />
+  {/snippet}
+  {#snippet overlays({ viewport })}<!-- PhoneSheet, WorkingStrip, … -->{/snippet}
+  …
+</AdminShell>
+```
+
+- **`header`** is a full-width row above every edge (`#smrt-admin-shell-header`,
+  `--smrt-admin-shell-header-size`, default 3.5rem). On phones it is replaced
+  by `phoneTopBar` when one is given.
+- **Viewport classes**: `shell.viewport` is `phone` (≤ 48rem), `tablet`
+  (≤ 64rem) or `desktop`; `ADMIN_SHELL_PHONE_QUERY` / `ADMIN_SHELL_DESKTOP_QUERY`.
+  `viewportDefaults` apply on first render and whenever the class changes; such
+  an edge never persists its open/closed state.
+- **Phone chrome**: `phoneTopBar` overlays the top of the main region and hides
+  on scroll (`phone.hideOnScroll`, pinned by `pinChrome` or an open drawer);
+  `phoneBottomBar` is a bottom row that a form's `[data-form-action-bar]` (see
+  smrt-ui `FormActionBar`) replaces and the on-screen keyboard hides
+  (`:root[data-keyboard-open]`). `phone.scrim` dims the page behind a drawer or
+  sheet, `phone.swipeToClose` closes drawers by swiping. A `path` change on a
+  phone closes open drawers. `overlays` is a layer above the edges (and above
+  the bottom bar's row) for `PhoneSheet`s and status strips.
+- **Page contracts** on phones: `data-shell-breadcrumbs` is hidden,
+  `data-shell-page-title` is visually hidden while the phone top bar shows
+  (the bar carries the title), `data-shell-tabs` sticks under the top bar and
+  slides away with it. smrt-ui's `PageHeader` renders the first two.
+- **Page trail**: `shellPageTrailFor({ path, homeHref, homeTitle, navItems,
+  parents })` is the one source for a page's ancestors: section homes (home
+  and top-level nav pages) have none; other pages get the home, the nav items
+  above them, then page-given `parents`, never the page itself. Pass the
+  `crumbs` to `PageHeader`; `phoneTopBarFor` (same input plus `pageTitle`)
+  sends the phone back arrow to the last crumb.
+- **Resizable edges**: `resizable` on a `push` side edge adds a
+  `role="separator"` (with `aria-valuenow/min/max` in px) on its inner border.
+  Sizes are stored as `ShellSettingsDelta.sizes` through the settings adapter;
+  `persist: false` / `{ state?: false, size?: false }` opts an edge out of
+  storage.
+- **Overlay edges**: `overlayMedia` on a side edge is a media query under
+  which the expanded edge slides over the page (above a scrim, content keeps
+  its width) instead of pushing it, on tablet and desktop; above it the edge
+  docks. `shell.presentationFor(edge)` reports the live presentation. While
+  an overlay is open the page and the other edge are `inert`, the panel takes
+  focus (unless something inside already has it) and returns it on close;
+  Escape or a scrim click closes it, sliding it back out as the scrim fades
+  (no motion under `prefers-reduced-motion`). Resizing applies only while docked.
+- **Kept panels**: `keepMounted: true` keeps a collapsed edge's panel content
+  (`appPanel`, `tenantPanel`, the focus panel, `systemPanel`) mounted with the
+  `hidden` attribute instead of unmounting it, so component state (a chat
+  draft, scroll position) survives closing. The rail renders as usual; the
+  left edge keeps only a `tenantPanel`.
+- **Nav attention**: a `ShellNavItem` with `attention: true` (or a string
+  label) shows a dot in `TenantNav`, over the icon when collapsed, and
+  announces the label ("Needs attention" by default) inside the link.
+- **Public region ids** (`ADMIN_SHELL_REGION_IDS`): `smrt-admin-shell-header`,
+  `smrt-admin-shell-{top,left,right,bottom}-panel`, and
+  `smrt-admin-shell-main`, which is the page scroller.
+
 - **Migration guide** (first-generation `WorkspaceShell`/`RoleShell` →
   `AdminShell`; adoption is additive and non-breaking):
   [`src/components/workspace/MIGRATION.md`](./src/components/workspace/MIGRATION.md)
@@ -357,7 +523,7 @@ resolve against `smrt-ui`:
 | `@happyvertical/smrt-ui` | `PermissionCheck`, `permission` / `hasPermission` / `hasAnyPermission` / `hasAllPermissions` |
 | `@happyvertical/smrt-ui/ui` | UI primitives (Button, Card, Badge, Pagination) |
 | `@happyvertical/smrt-ui/layout` | Layout (Container, Grid, Header, Footer, Masthead, etc.) |
-| `@happyvertical/smrt-ui/calendar` | Calendar and DayView |
+| `@happyvertical/smrt-ui/calendar` | CalendarView (deprecated: Calendar, DayView) |
 | `@happyvertical/smrt-ui/data` | DataTable, CollectionList/ContentList, CollectionToolbar |
 | `@happyvertical/smrt-ui/feedback` | Modal, ConfirmDialog, LoadingOverlay, ProgressBar |
 | `@happyvertical/smrt-ui/chat` | Message bubble, reaction picker, typing indicator |

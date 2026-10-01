@@ -78,6 +78,7 @@ let {
   sortable = false,
   sort = $bindable({ columnId: null, direction: null }),
   onSortChange,
+  sortClearable = true,
   manualSorting = false,
   filterFn,
   page = $bindable(1),
@@ -110,6 +111,7 @@ let {
   striped = false,
   hoverable = true,
   stickyHeader = false,
+  phoneLayout = 'scroll',
   caption,
   dense = false,
   cell,
@@ -653,6 +655,10 @@ function handleSort(column: DataTableColumn<T>, event: MouseEvent) {
     type: 'toggleSorting',
     columnId: column.id,
     multi: event.shiftKey,
+    ...(column.sortFirstDirection
+      ? { firstDirection: column.sortFirstDirection }
+      : {}),
+    ...(sortClearable ? {} : { clearable: false }),
   });
 }
 
@@ -666,10 +672,22 @@ function sortActionLabel(column: DataTableColumn<T>): string {
   const columnSort = tableState.sorting.find(
     (sort) => sort.columnId === column.id,
   );
-  if (!columnSort) {
+  const first = column.sortFirstDirection === 'desc' ? 'desc' : 'asc';
+  const next = !columnSort
+    ? first
+    : !sortClearable
+      ? columnSort.direction === 'asc'
+        ? 'desc'
+        : 'asc'
+      : columnSort.direction === first
+        ? first === 'asc'
+          ? 'desc'
+          : 'asc'
+        : null;
+  if (next === 'asc') {
     return t(M['ui.data_table.sort_ascending'], { column: column.label });
   }
-  if (columnSort.direction === 'asc') {
+  if (next === 'desc') {
     return t(M['ui.data_table.sort_descending'], { column: column.label });
   }
   return t(M['ui.data_table.clear_sort'], { column: column.label });
@@ -1200,6 +1218,12 @@ const errorMessage = $derived.by(() => {
   return message.trim() || t(M['ui.data_table.load_error']);
 });
 const hasRenderedRows = $derived(displayRows.length > 0);
+// Phone cards restyle table, rows and cells as blocks and grids, which drops
+// their table roles in WebKit. Explicit roles keep the table, its column
+// headers (visually hidden, still in the accessibility tree) and every cell
+// announced as such.
+const cardsRole = (role: string) =>
+  phoneLayout === 'cards' ? role : undefined;
 const isInitialLoading = $derived(
   (loading || refreshing) && !hasRenderedRows && !errorMessage,
 );
@@ -1431,6 +1455,7 @@ $effect(() => {
   class:data-table-container--overflowing={hasHorizontalOverflow}
   class:data-table-container--virtualized={virtualizationWindow.enabled}
   class:data-table-container--highlighted={surfaceHighlighted}
+  class:data-table-container--phone-cards={phoneLayout === 'cards'}
   style:height={virtualContainerHeight === undefined ? undefined : `${virtualContainerHeight}px`}
   tabindex={virtualizationWindow.enabled || hasHorizontalOverflow ? 0 : dataSurface ? -1 : undefined}
   role={virtualizationWindow.enabled || hasHorizontalOverflow ? 'region' : undefined}
@@ -1450,7 +1475,7 @@ $effect(() => {
     if (!event.defaultPrevented) handleOverflowKeydown(event);
   }}
 >
-  <table
+  <table role={cardsRole('table')}
     class="data-table {sizeClasses[size]}"
     class:data-table--striped={striped}
     class:data-table--virtualized={virtualizationWindow.enabled}
@@ -1467,16 +1492,16 @@ $effect(() => {
       <caption bind:this={tableCaption} class="data-table__caption">{caption}</caption>
     {/if}
 
-    <thead bind:this={tableHead} class="data-table__head">
+    <thead role={cardsRole('rowgroup')} bind:this={tableHead} class="data-table__head">
       {#each dataTableLayout.headerRows as headerRow, headerIndex (headerIndex)}
-        <tr class="data-table__row data-table__row--header">
+        <tr role={cardsRole('row')} class="data-table__row data-table__row--header">
           {#if headerIndex === 0 && expandedContent}
-            <th class="data-table__cell data-table__cell--expand" scope="col" rowspan={headerRowCount}>
+            <th role={cardsRole('columnheader')} class="data-table__cell data-table__cell--expand" scope="col" rowspan={headerRowCount}>
               <span class="sr-only"><Trans key={M['ui.data_table.expand']} /></span>
             </th>
           {/if}
           {#if headerIndex === 0 && selectable}
-            <th class="data-table__cell data-table__cell--checkbox" scope="col" rowspan={headerRowCount}>
+            <th role={cardsRole('columnheader')} class="data-table__cell data-table__cell--checkbox" scope="col" rowspan={headerRowCount}>
               <input
                 type="checkbox"
                 checked={allSelected}
@@ -1490,7 +1515,7 @@ $effect(() => {
 
           {#each headerRow as headerCell, cellIndex (`${headerIndex}:${cellIndex}`)}
             {#if headerCell.kind === 'group'}
-              <th
+              <th role={cardsRole('columnheader')}
                 class="data-table__cell data-table__cell--header data-table__cell--header-group"
                 class:data-table__cell--pinned-start={headerCell.pin === 'start'}
                 class:data-table__cell--pinned-end={headerCell.pin === 'end'}
@@ -1505,7 +1530,7 @@ $effect(() => {
             {:else}
               {@const resolvedColumn = headerCell.column}
               {@const column = resolvedColumn.column}
-              <th
+              <th role={cardsRole('columnheader')}
                 class="data-table__cell data-table__cell--header"
                 class:data-table__cell--sortable={usesAutomaticSortButton(column)}
                 class:data-table__cell--sorted={currentSort.columnId === column.id}
@@ -1596,10 +1621,10 @@ $effect(() => {
       {/each}
     </thead>
 
-    <tbody bind:this={tableBody} class="data-table__body">
+    <tbody role={cardsRole('rowgroup')} bind:this={tableBody} class="data-table__body">
       {#if errorMessage && !hasRenderedRows}
-        <tr class="data-table__row data-table__row--error">
-          <td
+        <tr role={cardsRole('row')} class="data-table__row data-table__row--error">
+          <td role={cardsRole('cell')}
             class="data-table__cell data-table__cell--error"
             colspan={columnCount}
           >
@@ -1614,8 +1639,8 @@ $effect(() => {
           </td>
         </tr>
       {:else if isInitialLoading}
-        <tr class="data-table__row data-table__row--loading">
-          <td
+        <tr role={cardsRole('row')} class="data-table__row data-table__row--loading">
+          <td role={cardsRole('cell')}
             class="data-table__cell data-table__cell--loading"
             colspan={columnCount}
           >
@@ -1626,8 +1651,8 @@ $effect(() => {
           </td>
         </tr>
       {:else if displayRows.length === 0}
-        <tr class="data-table__row data-table__row--empty">
-          <td
+        <tr role={cardsRole('row')} class="data-table__row data-table__row--empty">
+          <td role={cardsRole('cell')}
             class="data-table__cell data-table__cell--empty"
             colspan={columnCount}
           >
@@ -1642,8 +1667,8 @@ $effect(() => {
         </tr>
       {:else}
         {#if virtualizationWindow.topSpacerHeight > 0}
-          <tr class="data-table__virtual-spacer" aria-hidden="true">
-            <td colspan={columnCount} style:height={`${virtualizationWindow.topSpacerHeight}px`}></td>
+          <tr role={cardsRole('row')} class="data-table__virtual-spacer" aria-hidden="true">
+            <td role={cardsRole('cell')} colspan={columnCount} style:height={`${virtualizationWindow.topSpacerHeight}px`}></td>
           </tr>
         {/if}
         {#each renderedRows as entry, index (entry.rowId)}
@@ -1653,7 +1678,7 @@ $effect(() => {
           {@const isSelected = tableState.selection.scope === 'allMatching' || selectedIds.has(key)}
           {@const isExpanded = expandedIds.has(key)}
           {@const rowCanExpand = canExpand?.(row, displayIndex) ?? true}
-          <tr
+          <tr role={cardsRole('row')}
             class="data-table__row {rowClass?.(row, displayIndex) ?? ''}"
             class:data-table__row--selected={isSelected}
             class:data-table__row--striped={
@@ -1670,12 +1695,12 @@ $effect(() => {
             onkeydown={(event) => handleRowKeydown(event, row, displayIndex)}
           >
             {#if expandedContent}
-              <td class="data-table__cell data-table__cell--expand">
+              <td role={cardsRole('cell')} class="data-table__cell data-table__cell--expand">
                 {#if rowCanExpand}<button type="button" class="data-table__expand-button" aria-label={isExpanded ? t(M['ui.data_table.collapse_row'], { row: getRowLabel(row, displayIndex) }) : t(M['ui.data_table.expand_row'], { row: getRowLabel(row, displayIndex) })} aria-expanded={isExpanded} aria-controls={expansionContentId(key)} onclick={(event) => handleExpanded(key, event)}>{isExpanded ? '−' : '+'}</button>{/if}
               </td>
             {/if}
             {#if selectable}
-              <td class="data-table__cell data-table__cell--checkbox">
+              <td role={cardsRole('cell')} class="data-table__cell data-table__cell--checkbox">
                 <input
                   type="checkbox"
                   checked={isSelected}
@@ -1690,8 +1715,9 @@ $effect(() => {
             {#each visibleColumns as resolvedColumn (resolvedColumn.column.id)}
               {@const column = resolvedColumn.column}
               {@const value = getCellValue(row, column)}
-              <td
+              <td role={cardsRole('cell')}
                 class="data-table__cell {column.className ?? ''}"
+                data-label={phoneLayout === 'cards' ? column.label : undefined}
                 class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
                 class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                 data-column-id={column.id}
@@ -1716,26 +1742,26 @@ $effect(() => {
             {/each}
           </tr>
           {#if expandedContent && isExpanded}
-            <tr id={expansionContentId(key)} class="data-table__row data-table__row--expanded">
-              <td class="data-table__cell data-table__cell--expanded" colspan={columnCount}>{@render expandedContent({ row, index: displayIndex })}</td>
+            <tr role={cardsRole('row')} id={expansionContentId(key)} class="data-table__row data-table__row--expanded">
+              <td role={cardsRole('cell')} class="data-table__cell data-table__cell--expanded" colspan={columnCount}>{@render expandedContent({ row, index: displayIndex })}</td>
             </tr>
           {/if}
         {/each}
         {#if virtualizationWindow.bottomSpacerHeight > 0}
-          <tr class="data-table__virtual-spacer" aria-hidden="true">
-            <td colspan={columnCount} style:height={`${virtualizationWindow.bottomSpacerHeight}px`}></td>
+          <tr role={cardsRole('row')} class="data-table__virtual-spacer" aria-hidden="true">
+            <td role={cardsRole('cell')} colspan={columnCount} style:height={`${virtualizationWindow.bottomSpacerHeight}px`}></td>
           </tr>
         {/if}
       {/if}
     </tbody>
     {#if dataBodyStructuralRows.length > 0}
-      <tbody
+      <tbody role={cardsRole('rowgroup')}
         bind:this={tableStructuralBody}
         class="data-table__body data-table__body--structural"
       >
         {#each dataBodyStructuralRows as structuralRow, structuralIndex (structuralRow.id)}
           {@const labelColumnId = structuralLabelColumnId(structuralRow)}
-          <tr
+          <tr role={cardsRole('row')}
             class="data-table__row data-table__row--structural"
             data-row-kind={structuralRow.kind}
             aria-label={structuralRowLabel(structuralRow)}
@@ -1743,13 +1769,13 @@ $effect(() => {
               ? virtualRowOffset + displayRows.length + headerRowCount + structuralIndex + 1
               : undefined}
           >
-            {#if expandedContent}<td class="data-table__cell data-table__cell--expand"></td>{/if}
-            {#if selectable}<td class="data-table__cell data-table__cell--checkbox"></td>{/if}
+            {#if expandedContent}<td role={cardsRole('cell')} class="data-table__cell data-table__cell--expand"></td>{/if}
+            {#if selectable}<td role={cardsRole('cell')} class="data-table__cell data-table__cell--checkbox"></td>{/if}
             {#each visibleColumns as resolvedColumn (resolvedColumn.column.id)}
               {@const column = resolvedColumn.column}
               {@const value = structuralCellValue(structuralRow, column)}
               {#if column.id === labelColumnId}
-                <th
+                <th role={cardsRole('rowheader')}
                   class="data-table__cell data-table__cell--structural-label {column.className ?? ''}"
                   class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
                   class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
@@ -1770,8 +1796,9 @@ $effect(() => {
                   {/if}
                 </th>
               {:else}
-                <td
+                <td role={cardsRole('cell')}
                   class="data-table__cell {column.className ?? ''}"
+                  data-label={phoneLayout === 'cards' ? column.label : undefined}
                   class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
                   class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                   data-column-id={column.id}
@@ -1795,10 +1822,10 @@ $effect(() => {
       </tbody>
     {/if}
     {#if footer || footerStructuralRows.length > 0}
-      <tfoot bind:this={tableFooter}>
+      <tfoot role={cardsRole('rowgroup')} bind:this={tableFooter}>
         {#each footerStructuralRows as structuralRow, structuralIndex (structuralRow.id)}
           {@const labelColumnId = structuralLabelColumnId(structuralRow)}
-          <tr
+          <tr role={cardsRole('row')}
             class="data-table__row data-table__row--structural data-table__row--footer"
             data-row-kind={structuralRow.kind}
             aria-label={structuralRowLabel(structuralRow)}
@@ -1806,13 +1833,13 @@ $effect(() => {
               ? virtualRowCount + headerRowCount + dataBodyStructuralRows.length + structuralIndex + 1
               : undefined}
           >
-            {#if expandedContent}<td class="data-table__cell data-table__cell--expand"></td>{/if}
-            {#if selectable}<td class="data-table__cell data-table__cell--checkbox"></td>{/if}
+            {#if expandedContent}<td role={cardsRole('cell')} class="data-table__cell data-table__cell--expand"></td>{/if}
+            {#if selectable}<td role={cardsRole('cell')} class="data-table__cell data-table__cell--checkbox"></td>{/if}
             {#each visibleColumns as resolvedColumn (resolvedColumn.column.id)}
               {@const column = resolvedColumn.column}
               {@const value = structuralCellValue(structuralRow, column)}
               {#if column.id === labelColumnId}
-                <th
+                <th role={cardsRole('rowheader')}
                   class="data-table__cell data-table__cell--structural-label {column.className ?? ''}"
                   class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
                   class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
@@ -1833,8 +1860,9 @@ $effect(() => {
                   {/if}
                 </th>
               {:else}
-                <td
+                <td role={cardsRole('cell')}
                   class="data-table__cell {column.className ?? ''}"
+                  data-label={phoneLayout === 'cards' ? column.label : undefined}
                   class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
                   class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
                   data-column-id={column.id}
@@ -1856,10 +1884,10 @@ $effect(() => {
           </tr>
         {/each}
         {#if footer}
-          <tr aria-rowindex={virtualizationWindow.enabled
+          <tr role={cardsRole('row')} aria-rowindex={virtualizationWindow.enabled
             ? virtualRowCount + headerRowCount + structuralRowCount
             : undefined}>
-            <td class="data-table__cell data-table__footer" colspan={columnCount}>
+            <td role={cardsRole('cell')} class="data-table__cell data-table__footer" colspan={columnCount}>
               {@render footer({ rows: displayRows.map(({ row }) => row) })}
             </td>
           </tr>
@@ -2246,6 +2274,56 @@ $effect(() => {
   /* Loading overlay */
   .data-table--loading {
     opacity: 0.7;
+  }
+
+  /* Phones with phoneLayout="cards": one block of stacked cells per row. Each cell shows its
+     column's name (data-label) above its value; the header row stays in the accessibility tree,
+     visually hidden, and the explicit roles keep the table structure announced. */
+  @media (max-width: 48rem) {
+    /* A virtualized body keeps its own scroller. */
+    .data-table-container--phone-cards:not(.data-table-container--virtualized) {
+      overflow: visible;
+    }
+    .data-table-container--phone-cards .data-table,
+    .data-table-container--phone-cards .data-table__body {
+      display: block;
+      width: 100%;
+    }
+    .data-table-container--phone-cards .data-table__head {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .data-table-container--phone-cards .data-table__overflow-cue {
+      display: none;
+    }
+    .data-table-container--phone-cards .data-table__cell[data-label]:not([data-label=''])::before {
+      content: attr(data-label);
+      /* The header already names the cell for assistive technology. */
+      content: attr(data-label) / '';
+      display: block;
+      font-size: var(--smrt-typography-label-small-size, 0.75rem);
+      font-weight: 600;
+      color: var(--smrt-color-on-surface-variant, #4b5563);
+    }
+    .data-table-container--phone-cards .data-table__row {
+      display: grid;
+      gap: var(--smrt-spacing-1, 0.35rem);
+      padding: var(--smrt-spacing-3, 0.85rem) var(--smrt-spacing-4, 1rem);
+      border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    }
+    .data-table-container--phone-cards .data-table__cell {
+      display: block;
+      padding: 0;
+      border: 0;
+    }
+    .data-table-container--phone-cards .data-table__cell:empty {
+      display: none;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

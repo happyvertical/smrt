@@ -48,6 +48,9 @@ export class ProfileMetadata extends SmrtObject {
     if (options.metafieldId !== undefined)
       this.metafieldId = options.metafieldId;
     if (options.value) this.value = options.value;
+    // The class-field initializer above runs after super(), so an explicit
+    // tenant must be re-applied here or it is silently dropped.
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 
   /**

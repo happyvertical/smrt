@@ -308,7 +308,8 @@ describe.each([
       },
       {
         title: 'Historical A',
-        accountKey: '',
+        // A sibling class's TEXT column stays NULL (#3227).
+        accountKey: null,
         _meta_type: HISTORICAL_TYPE,
       },
     ]);
