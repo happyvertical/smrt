@@ -96,6 +96,14 @@ export const SMRT_JOB_PORTABLE_SELECT_COLUMNS = `
   // claiming on a busy deployment.
   indexes: [
     { name: '_smrt_jobs_status_run_at_idx', columns: ['status', 'runAt'] },
+    // Keep suspended, already-due tasks out of the hot ready scan (#3211).
+    // SQLite/PostgreSQL partial index; DuckDB/JSON retain a full index fallback.
+    {
+      name: '_smrt_jobs_ready_idx',
+      columns: ['status', 'runAt'],
+      where:
+        "status = 'pending' AND (task_input_requests IS NULL OR task_input_responses IS NOT NULL)",
+    },
   ],
 })
 // Keep the data model tenant-scoped (defense in depth): even without a generated
