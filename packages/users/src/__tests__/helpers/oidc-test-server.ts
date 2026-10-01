@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS "profiles" (
   "email" TEXT,
   "email_key" TEXT,
   "name" TEXT DEFAULT '',
-  "description" TEXT
+  "description" TEXT,
+  "is_public" BOOLEAN DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "profiles_slug_context_meta_type_idx" ON "profiles" ("tenant_id", "slug", "context", "_meta_type");
 CREATE INDEX IF NOT EXISTS "profiles_meta_type_idx" ON "profiles" ("_meta_type");
