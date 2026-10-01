@@ -1,5 +1,5 @@
 <script lang="ts">
-import { tick } from 'svelte';
+import { tick, untrack } from 'svelte';
 import {
   emitControlChange,
   highlightControl,
@@ -59,6 +59,7 @@ let rootEl = $state<HTMLDivElement | null>(null);
 let triggerEl = $state<HTMLButtonElement | null>(null);
 let optionEls = $state<Array<HTMLButtonElement | null>>([]);
 let open = $state(false);
+const initialValues = untrack(() => [...values]);
 const controlId = $derived(
   interaction === false ? undefined : (interaction?.id ?? name ?? listId),
 );
@@ -137,6 +138,20 @@ function handleOptionsKeydown(event: KeyboardEvent) {
   enabled[next]?.focus();
 }
 $effect(() => {
+  const form = triggerEl?.form;
+  if (!form) return;
+  const reset = (event: Event) => {
+    queueMicrotask(() => {
+      if (event.defaultPrevented) return;
+      values = [...initialValues];
+      closeOptions();
+      onvalueschange?.(values);
+    });
+  };
+  form.addEventListener('reset', reset);
+  return () => form.removeEventListener('reset', reset);
+});
+$effect(() => {
   if (!open) return;
   const dismiss = (event: PointerEvent) => {
     if (rootEl && !rootEl.contains(event.target as Node)) closeOptions();
@@ -178,6 +193,7 @@ useControlRegistration(() => {
 <div bind:this={rootEl} class="multi-select {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
+  {#if name}{#each canonicalValues as value}<input type="hidden" {name} value={String(value)} {disabled} />{/each}{/if}
   <span class="label" id={`${listId}-label`}>{label}</span><button bind:this={triggerEl} id={triggerId} type="button" class="trigger" {disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-labelledby={`${listId}-label ${triggerId}`} onclick={() => open ? closeOptions() : openOptions()} onkeydown={handleTriggerKeydown}>{selectedLabels.length ? selectedLabels.join(', ') : placeholder}</button>
   {#if open}<div id={listId} class="options" role="listbox" tabindex="-1" aria-multiselectable="true" aria-labelledby={`${listId}-label`} onkeydown={handleOptionsKeydown}>{#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" tabindex="-1" aria-selected={canonicalValues.some((value) => Object.is(value, option.value))} disabled={option.disabled} onclick={() => toggle(option)}><span aria-hidden="true">{canonicalValues.some((value) => Object.is(value, option.value)) ? '✓' : ''}</span>{option.label}</button>{/each}</div>{/if}
 </div>

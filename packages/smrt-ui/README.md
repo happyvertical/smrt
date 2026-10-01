@@ -70,6 +70,15 @@ controls with no name or an empty name are omitted. Disabled controls, including
 those inside disabled fieldsets, are omitted by native `FormData`. Native form
 reset restores the initial selection and its label, unless reset is canceled.
 
+### MultiSelect form submission
+
+A named `MultiSelect` submits one hidden native input per selected option value,
+using repeated field names in selection order. Read them with `FormData.getAll`.
+Option labels are display-only, and numeric option values submit as strings.
+Empty selections, missing or empty names, and disabled controls (including
+ancestor fieldsets) contribute no entries. Native reset restores the initial
+selection unless reset is canceled.
+
 ### Currency display
 
 `CurrencyDisplay` accepts ISO 4217 codes as a public `string` prop so persisted
