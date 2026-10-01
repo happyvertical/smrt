@@ -28,7 +28,7 @@ release, including opt-in MCP Apps dependencies (synced at publish by
 `smrt gnode create <name> --mcp-apps` supports installed, local, and Git
 subdirectory templates. Plugin names must satisfy the pinned Agent Plugins
 1.0.0 schema before generation starts. `smrt mcp-apps validate` applies the
-official closed plugin/MCP schemas offline, then SMRT endpoint and credential
+official closed plugin/MCP schemas offline, then s-m-r-t endpoint and credential
 checks. Every existing scoped registry directive must be canonical; inline
 `#` and `;` comments are supported. Hosted MCP caches its successfully created
 authenticator for the process, preserving JWKS keys across requests while
