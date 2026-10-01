@@ -1653,6 +1653,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
       '@happyvertical/smrt-mcp-apps':
         specifier: workspace:*
         version: link:../mcp-apps

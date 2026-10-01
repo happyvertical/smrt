@@ -1,37 +1,68 @@
 /** No transport or host imports: shared bounded, inert wire validation. */
 export const OPENAI_EXTENSIONS_REVISION =
   'e314720a0daac326217d1f123fcf51647868fa9f';
+/** Retains the validation-only public contract; never invokes value callbacks. */
 export function json(value: unknown): void {
+  jsonSnapshot(value);
+}
+/** Copy only own enumerable data descriptors into a detached inert JSON tree. */
+export function jsonSnapshot(value: unknown): unknown {
   let remaining = 65536;
-  const visit = (v: unknown, depth: number): void => {
+  // JSON.stringify consults inherited toJSON, including on arrays. Reject a
+  // polluted intrinsic before inspecting or serializing any caller-owned value.
+  for (const prototype of [Object.prototype, Array.prototype]) {
+    if (Object.getOwnPropertyDescriptor(prototype, 'toJSON'))
+      throw new TypeError('Expected inert JSON');
+  }
+  const visit = (v: unknown, depth: number): unknown => {
     if (--remaining < 0 || depth > 16)
       throw new TypeError('Metadata exceeds limits');
-    if (v === null || typeof v === 'boolean') return;
-    if (typeof v === 'number' && Number.isFinite(v)) return;
+    if (v === null || typeof v === 'boolean') return v;
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
     if (typeof v === 'string') {
       remaining -= new TextEncoder().encode(v).length;
       if (remaining < 0) throw new TypeError('Metadata exceeds limits');
-      return;
+      return v;
     }
-    if (Array.isArray(v)) {
-      if (v.length > 1024) throw new TypeError('Array exceeds limits');
-      for (const item of v) visit(item, depth + 1);
-      return;
-    }
-    const obj = record(v);
-    const keys = Object.keys(obj);
-    if (keys.length > 256) throw new TypeError('Object exceeds limits');
-    for (const key of keys) {
-      if (['__proto__', 'constructor', 'prototype'].includes(key))
+    const array = Array.isArray(v);
+    const obj = array ? v : record(v);
+    if (array && Object.getPrototypeOf(obj) !== Array.prototype)
+      throw new TypeError('Expected plain array');
+    const descriptors = Object.getOwnPropertyDescriptors(obj);
+    const names = Reflect.ownKeys(descriptors);
+    const length = array
+      ? (Object.getOwnPropertyDescriptor(obj, 'length')?.value as number)
+      : 0;
+    if (
+      array ? length > 1024 || names.length !== length + 1 : names.length > 256
+    )
+      throw new TypeError('JSON collection exceeds limits');
+    const result: Record<string, unknown> | unknown[] = array
+      ? []
+      : Object.create(null);
+    for (const key of names) {
+      if (array && key === 'length') continue;
+      if (
+        typeof key !== 'string' ||
+        ['__proto__', 'constructor', 'prototype'].includes(key)
+      )
         throw new TypeError('Unsafe key');
-      const descriptor = Object.getOwnPropertyDescriptor(obj, key);
-      if (!descriptor || !('value' in descriptor))
+      const descriptor = descriptors[key];
+      if (!descriptor.enumerable || !('value' in descriptor))
         throw new TypeError('Expected inert JSON');
-      visit(key, depth + 1);
-      visit(descriptor.value, depth + 1);
+      if (array && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= length))
+        throw new TypeError('Expected array indices');
+      if (!array) visit(key, depth + 1);
+      Object.defineProperty(result, key, {
+        value: visit(descriptor.value, depth + 1),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
+    return result;
   };
-  visit(value, 0);
+  return visit(value, 0);
 }
 export function record(v: unknown): Record<string, unknown> {
   if (

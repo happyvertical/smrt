@@ -146,3 +146,10 @@ describe('OpenAI composer mentions', () => {
     });
   });
 });
+
+it('rejects mention list accessors without invoking them', () => {
+  let calls = 0;
+  const value = Object.defineProperty([], '0', { get: () => calls++ });
+  expect(() => openAiMentionItems(value)).toThrow();
+  expect(calls).toBe(0);
+});

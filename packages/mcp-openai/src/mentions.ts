@@ -113,6 +113,7 @@ export function mentionQuery(value: unknown): string {
 
 /** Native mention result is deliberately limited to resource links and resource handles. */
 export function openAiMentionItems(value: unknown): OpenAiMentionResource[] {
+  json(value);
   if (!Array.isArray(value) || value.length > 25)
     throw new TypeError('Too many mention items');
   return value.map((item) => {
