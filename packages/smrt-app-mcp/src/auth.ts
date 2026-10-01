@@ -155,7 +155,7 @@ export function createMcpResourceAuth(
       const authorization = request.headers.get('authorization');
       if (!authorization) return deny();
       const match =
-        /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/iu.exec(
+        /^Bearer +([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/iu.exec(
           authorization,
         );
       if (!match) return deny('invalid_token');
