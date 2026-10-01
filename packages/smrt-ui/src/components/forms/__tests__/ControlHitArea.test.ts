@@ -40,11 +40,29 @@ describe.each(['Checkbox', 'Radio'])('%s in table cells', (name) => {
   });
 });
 
+describe.each(['Checkbox', 'Radio'])('%s beside other content', (name) => {
+  it('keeps to its own column unless it stands alone, so it never covers a neighbouring link or text', () => {
+    expect(source(name)).toMatch(
+      /\.(checkbox|radio):not\(:only-child\)::before \{ inline-size: var\(--_box\); margin-inline-start: calc\(var\(--_box\) \/ -2\)/,
+    );
+  });
+});
+
 describe('Checkbox table cell fill', () => {
   it('uses the whole cell, clipped to it, when the checkbox is its only content', () => {
     const css = source('Checkbox');
     expect(css).toContain('> [data-smrt-hit-target]:only-child');
     expect(css).toMatch(/::before \{ inset: 0;/);
+  });
+
+  it('positions the cell at zero specificity, so sticky headers and pinned cells keep theirs', () => {
+    const css = source('Checkbox');
+    expect(css).toContain(
+      ':global(:where(td:has(> [data-smrt-hit-target]:only-child), th:has(> [data-smrt-hit-target]:only-child))) { position: relative; }',
+    );
+    expect(css).not.toMatch(
+      /:global\(:is\(td, th\):has\([^)]*\)\)\) \{ position: relative/,
+    );
   });
 });
 

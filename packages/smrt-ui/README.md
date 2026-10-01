@@ -106,13 +106,21 @@ in the area toggles the input, no layout shifts, and the focus ring stays on the
 visible box. The box and the label text sit above every hit area, so adjacent
 controls never steal each other's clicks.
 
-- **Table cells.** Neighbouring cells hold links and other controls, so inside a
-  `td`/`th` the area never leaves the cell. A `Checkbox` that is the cell's only
-  content uses the whole cell (clipped to its edges); otherwise, and for `Radio`,
-  the area grows vertically only.
-- **Elsewhere.** Hit areas of tightly stacked controls overlap in the gaps; the
-  later control wins a gap, never a neighbour's box or text. Next to a link or
-  button in a dense toolbar, shrink it with `--smrt-control-hit-size`.
+The hit area paints above plain (unpositioned) content around it, so it is
+constrained to where that cannot cost a neighbour a click:
+
+- **Beside other content.** A `Checkbox` or `Radio` that is not the only element
+  in its parent (a row title or link next to it, a group's other options) keeps
+  its hit area in the box's own column: it grows vertically only, never over the
+  text or link beside it. Only a control standing alone gets the full 44x44.
+- **Table cells.** Inside a `td`/`th` the area never leaves the cell. A
+  `Checkbox` that is the cell's only content uses the whole cell (clipped to its
+  edges). The cell gets `position: relative` at zero specificity (`:where()`), so
+  a sticky header or a pinned column keeps its own positioning.
+- **Stacked controls.** Hit areas of tightly stacked controls overlap in the
+  gaps; the later control wins a gap, never a neighbour's box or text. Content
+  directly above or below a box, closer than 13px, is covered by its hit area:
+  give it room, or shrink the area with `--smrt-control-hit-size`.
 - **Resize or turn off.** `--smrt-control-hit-size` (default `2.75rem`); `0px`
   gives only the visible control. Pages never add their own padding hacks.
 - `DataTable`'s built-in selection checkboxes and `CollectionList`'s select box

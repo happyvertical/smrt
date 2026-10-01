@@ -28,9 +28,12 @@ function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
 <style>
   /* The visible mark stays 18px; a transparent 44x44 ::before hit area (see Checkbox) makes the
      touch target. Mark and label text sit above every hit area, so neighbours' hit areas never
-     steal their clicks. --smrt-control-hit-size resizes it (0px turns it off). */
+     steal their clicks. Beside other content (a group's other options, text, a link) it keeps to
+     the mark's column and grows vertically only. --smrt-control-hit-size resizes it (0px turns it
+     off). */
   .radio { --_box: 1.15rem; --_hit: max(var(--smrt-control-hit-size, 2.75rem), var(--_box)); position: relative; display: inline-flex; align-items: center; gap: var(--smrt-spacing-2); cursor: pointer; }
   .radio::before { content: ''; position: absolute; z-index: 0; inset-block-start: 50%; inset-inline-start: calc(var(--_box) / 2); inline-size: var(--_hit); block-size: var(--_hit); margin-block-start: calc(var(--_hit) / -2); margin-inline-start: calc(var(--_hit) / -2); }
+  .radio:not(:only-child)::before { inline-size: var(--_box); margin-inline-start: calc(var(--_box) / -2); }
   .radio.disabled { opacity: .5; cursor: not-allowed; }
   input { position: absolute; opacity: 0; width: 1px; height: 1px; }
   .radio__mark { position: relative; z-index: 1; width: 1.15rem; height: 1.15rem; border: 2px solid var(--smrt-color-outline); border-radius: 50%; display: grid; place-items: center; }
