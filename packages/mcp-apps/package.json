@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-mcp-apps",
-  "version": "0.51.38",
+  "version": "0.51.39",
   "description": "Framework-neutral browser bridge for portable MCP Apps",
   "type": "module",
   "main": "./dist/index.js",

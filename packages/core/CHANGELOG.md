@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 0.51.39
+
+### Patch Changes
+
+- ### Features
+  
+  - add authorized forms and durable task input (#3283) (openai)
+  - add authorized file entrypoints and resource sessions (#3282) (openai)
+  
+  ### Bug Fixes
+  
+  - bound ONNX provisioning and test stalled setup locally (#3287) (ci)
+  - serve Unicode filenames with safe disposition headers (#3281) (assets)
+  - allow FK preflight for parents created in the same migration (#3272) (core)
+  - anchor ToolsDock live region within its container (#3270) (svelte)
+  - publish linked module guides (#3280) (pack)
+- @happyvertical/smrt-config@0.51.39
+  - @happyvertical/smrt-scanner@0.51.39
+  - @happyvertical/smrt-types@0.51.39
+
 ## 0.51.38
 
 ### Patch Changes
