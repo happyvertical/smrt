@@ -552,6 +552,9 @@ async function handleConfirmAction(requestId: string) {
           choices={controller.choices}
           onchoose={(setId, optionId) => void controller.chooseOption(setId, optionId)}
           ondismiss={(setId) => controller.dismissChoices(setId)}
+          onpreview={(setId, optionId) => void controller.previewOption(setId, optionId)}
+          oncommit={(setId) => void controller.commitOption(setId)}
+          oncancel={(setId) => controller.cancelChoices(setId)}
         />
 
         {#if controller.actions.size > 0}

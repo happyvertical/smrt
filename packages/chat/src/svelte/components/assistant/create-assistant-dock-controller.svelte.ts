@@ -393,6 +393,12 @@ export interface AssistantDockController {
   readonly choices: AssistantChoiceSet[];
   /** The person picked an option: apply it through its source. */
   chooseOption(setId: string, optionId: string): Promise<void>;
+  /** Show a card of a previewable offer in place on the page (nothing applied). */
+  previewOption(setId: string, optionId: string): Promise<void>;
+  /** Apply the previewed option (the commit button); resolves the offer. */
+  commitOption(setId: string): Promise<void>;
+  /** Restore the original and close the offer (Cancel, Escape). */
+  cancelChoices(setId: string): void;
   /** The person wants none of the offered options. */
   dismissChoices(setId: string): void;
   /** Lets a waiting browser tool call run. */
@@ -2334,6 +2340,8 @@ export function createAssistantDockController(
     stopPolling();
     unsubscribeRegistry?.();
     unsubscribeRegistry = null;
+    // An uncommitted preview never outlives the conversation.
+    choices.clear();
   }
 
   return {
@@ -2392,6 +2400,10 @@ export function createAssistantDockController(
     },
     chooseOption: (setId: string, optionId: string) =>
       choices.choose(setId, optionId),
+    previewOption: (setId: string, optionId: string) =>
+      choices.preview(setId, optionId),
+    commitOption: (setId: string) => choices.commit(setId),
+    cancelChoices: (setId: string) => choices.cancel(setId),
     dismissChoices: (setId: string) => choices.dismiss(setId),
     approveToolRequest: (id: string) => decide(id, true),
     declineToolRequest: (id: string) => decide(id, false),

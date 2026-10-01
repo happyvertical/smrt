@@ -21,6 +21,14 @@
  * `fill` adds options as they finish. The person can pick any option that
  * has arrived. Such an offer is not replaced by the person's next message
  * (it cost real work); "None of these" stops it.
+ *
+ * Previewing: a source that implements `preview` shows a pick in place on
+ * the page WITHOUT applying it. A click on a card only previews (another
+ * click swaps the preview; the offer's `original` card shows the page as it
+ * was); nothing is committed until the person presses the offer's commit
+ * button (`commit`, which applies the previewed option and resolves the
+ * offer). Cancel (`cancel`), dismissing, clearing the conversation and
+ * disposing all restore the original. The model still only offers.
  */
 
 import type {
@@ -86,6 +94,15 @@ export interface AssistantChoiceOffer {
   options: AssistantChoiceOption[];
   /** More options are being made; they are added as they finish. */
   pending?: AssistantChoicePending;
+  /**
+   * The page as it is now, shown as the first card ("Original") when the
+   * source can `preview`: previewing it restores the page. Needs an image.
+   */
+  original?: AssistantChoiceOption;
+  /** The commit button's label when previewing (default "Use this"). */
+  commitLabel?: string;
+  /** The cancel button's label when previewing (default "Cancel"). */
+  cancelLabel?: string;
 }
 
 /** A page feature that can offer choices while it is on screen. */
@@ -111,6 +128,15 @@ export interface AssistantChoiceSource {
   apply(
     option: AssistantChoiceOption,
   ): Promise<string | undefined | void> | string | undefined | void;
+  /**
+   * Show `option` in place on the page WITHOUT saving or applying it, so the
+   * person can see it before committing. `option` is the offer's `original`
+   * to put the page back (or null when the offer had none). Runs in the page
+   * on the person's click; must never persist anything. A source that
+   * implements this gets preview-then-commit cards; one that does not keeps
+   * "click applies".
+   */
+  preview?(option: AssistantChoiceOption | null): Promise<void> | void;
 }
 
 /** Where the dock finds the choice sources the page has registered. */
@@ -219,6 +245,14 @@ export interface AssistantChoiceSet {
   note?: string;
   /** Kept when the person sends another message (it had pending work). */
   lasting?: boolean;
+  /** The source can preview: a click previews, the commit button applies. */
+  previewable?: boolean;
+  /** The page as it is now (previewable offers): the "Original" card. */
+  original?: AssistantChoiceOption;
+  /** The option (or the original) now previewed; nothing is applied yet. */
+  previewOptionId?: string;
+  commitLabel?: string;
+  cancelLabel?: string;
 }
 
 /** The dock's choice state: offers from tool calls, and the person's picks. */
@@ -354,12 +388,24 @@ export class AssistantChoices {
           ),
         }
       : undefined;
+    const previewable = typeof source.preview === 'function';
+    const original = previewable
+      ? normalizeChoiceOptions(offer?.original ? [offer.original] : [])[0]
+      : undefined;
     const set: AssistantChoiceSet = {
       id: call.id,
       sourceId,
       title: clean(offer.title, 120) || 'Pick one',
-      options,
+      options: options.filter((option) => option.id !== original?.id),
       status: 'waiting',
+      ...(previewable
+        ? {
+            previewable: true,
+            ...(original ? { original } : {}),
+            commitLabel: clean(offer.commitLabel, 40) || 'Use this',
+            cancelLabel: clean(offer.cancelLabel, 40) || 'Cancel',
+          }
+        : {}),
       ...(pendingState && pendingState.expected > 0
         ? { pending: pendingState, lasting: true }
         : {}),
@@ -483,6 +529,7 @@ export class AssistantChoices {
       this.update(setId, {
         status: 'applied',
         pending: undefined,
+        previewOptionId: undefined,
         ...(typeof outcome === 'string' && outcome.trim()
           ? { outcome: outcome.trim().slice(0, 200) }
           : {}),
@@ -505,8 +552,85 @@ export class AssistantChoices {
         set.status === 'unavailable')
     ) {
       this.stopFill(setId);
-      this.update(setId, { status: 'dismissed', pending: undefined });
+      void this.restorePreview(setId);
+      this.update(setId, {
+        status: 'dismissed',
+        pending: undefined,
+        previewOptionId: undefined,
+      });
     }
+  }
+
+  /** Put the page back if this offer is previewing something. */
+  private async restorePreview(setId: string): Promise<void> {
+    const set = this.sets.find((s) => s.id === setId);
+    if (!set?.previewable || set.previewOptionId === undefined) return;
+    try {
+      await this.source(set.sourceId)?.preview?.(set.original ?? null);
+    } catch {
+      // Nothing more to do: the page is leaving or the picture is gone.
+    }
+  }
+
+  /**
+   * The person clicked a card of a previewable offer (or its `original`):
+   * show it in place. Nothing is applied.
+   */
+  async preview(setId: string, optionId: string): Promise<void> {
+    const set = this.sets.find((s) => s.id === setId);
+    if (
+      !set?.previewable ||
+      (set.status !== 'waiting' && set.status !== 'failed')
+    ) {
+      return;
+    }
+    const option =
+      set.original?.id === optionId
+        ? set.original
+        : set.options.find((o) => o.id === optionId);
+    const source = this.source(set.sourceId);
+    if (!option || !source?.preview) return;
+    // One preview at a time: put back any other offer's first.
+    for (const other of this.sets) {
+      if (other.id !== setId && other.previewOptionId !== undefined) {
+        await this.restorePreview(other.id);
+        this.update(other.id, { previewOptionId: undefined });
+      }
+    }
+    try {
+      await source.preview(option);
+      this.update(setId, {
+        status: 'waiting',
+        previewOptionId: optionId,
+        error: undefined,
+      });
+    } catch (err) {
+      this.update(setId, {
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * The person pressed the commit button: apply the previewed option (the
+   * one thing that changes the page). The original, or nothing, previewed
+   * means there is nothing to apply: that is a cancel.
+   */
+  async commit(setId: string): Promise<void> {
+    const set = this.sets.find((s) => s.id === setId);
+    if (!set?.previewable) return;
+    const id = set.previewOptionId;
+    if (!id || id === set.original?.id) {
+      this.cancel(setId);
+      return;
+    }
+    await this.choose(setId, id);
+  }
+
+  /** The person wants to keep the original: restore it and close the offer. */
+  cancel(setId: string): void {
+    this.dismiss(setId);
   }
 
   /**
@@ -515,9 +639,14 @@ export class AssistantChoices {
    */
   supersedeWaiting() {
     if (this.waitingCount === 0) return;
+    for (const set of this.sets) {
+      if (set.status === 'waiting' && !set.lasting) {
+        void this.restorePreview(set.id);
+      }
+    }
     this.sets = this.sets.map((set) =>
       set.status === 'waiting' && !set.lasting
-        ? { ...set, status: 'dismissed' as const }
+        ? { ...set, status: 'dismissed' as const, previewOptionId: undefined }
         : set,
     );
     this.syncHolds();
@@ -526,6 +655,8 @@ export class AssistantChoices {
   clear() {
     for (const controller of this.fills.values()) controller.abort();
     this.fills.clear();
+    // An uncommitted preview never outlives the conversation.
+    for (const set of this.sets) void this.restorePreview(set.id);
     this.sets = [];
     this.syncHolds();
   }
