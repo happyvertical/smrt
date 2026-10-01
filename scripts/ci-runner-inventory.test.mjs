@@ -26,6 +26,16 @@ function runnerDeclarations(file) {
   return declarations;
 }
 
+function jobBlock(lines, job) {
+  const start = lines.findIndex((line) => line.match(new RegExp(`^  ${job}:\\s*$`)));
+  assert.notEqual(start, -1, `${job} must declare a job block`);
+
+  const end = lines.findIndex(
+    (line, index) => index > start && /^  [A-Za-z][\w-]*:\s*$/.test(line),
+  );
+  return lines.slice(start, end === -1 ? lines.length : end);
+}
+
 test('workflow runner inventory permits only explicit Ubuntu and native macOS jobs', () => {
   const unexpectedRunners = [];
   const expectedMacosJobs = new Set(['mobile.yml:gradle-macos', 'mobile.yml:xcode-ios']);
@@ -62,9 +72,30 @@ test('test matrices retain the hosted three-shard parallelism', () => {
     'test-core',
     'test-packages',
   ]) {
-    const start = declarations.find(({ job: currentJob }) => currentJob === job)?.line;
+    assert.ok(
+      declarations.some(({ job: currentJob }) => currentJob === job),
+      `${job} must declare a runner`,
+    );
     const workflow = readFileSync(path.join(workflowsDir, 'test-suite.yml'), 'utf8').split('\n');
-    const jobLines = workflow.slice(start, workflow.findIndex((line, index) => index >= start && /^  [A-Za-z][\w-]*:\s*$/.test(line)));
+    const jobLines = jobBlock(workflow, job);
     assert.ok(jobLines.includes('      max-parallel: 3'), `${job} must use all hosted shards`);
   }
+});
+
+test('matrix checks reject missing jobs and use the final job boundary', () => {
+  const missingJob = ['jobs:', '  another-matrix:', '      max-parallel: 3'];
+  assert.throws(() => jobBlock(missingJob, 'test-core'), /test-core must declare a job block/);
+
+  const finalJob = [
+    'jobs:',
+    '  another-matrix:',
+    '      max-parallel: 3',
+    '  test-core:',
+    '      max-parallel: 2',
+  ];
+  assert.deepEqual(jobBlock(finalJob, 'test-core'), ['  test-core:', '      max-parallel: 2']);
+  assert.throws(
+    () => assert.ok(jobBlock(finalJob, 'test-core').includes('      max-parallel: 3'), 'test-core must use all hosted shards'),
+    /test-core must use all hosted shards/,
+  );
 });

@@ -76,8 +76,8 @@ Making synced writes cheap belongs in the runner image instead
 
 ## Hosted Turbo cache
 
-The shared setup action starts the `rharkor/caching-for-turbo` shim on every
-current Linux CI runner: a
+The shared setup action starts the `rharkor/caching-for-turbo` shim on eligible
+non-`pull_request_target` hosted Linux CI runs: a
 localhost server speaking the Vercel remote-cache API that stores one GitHub
 Actions cache entry per Turbo task hash under the `turbogha_` key prefix. The
 gate is `runner.environment == 'github-hosted'`. The `turbo-cache-shim` input
