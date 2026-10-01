@@ -24,6 +24,8 @@ let { title, href }: Props = $props();
     border-radius: var(--smrt-radius-md);
     color: var(--smrt-color-on-surface);
     font: var(--smrt-typography-title-medium-font);
+    /* Themeable: --smrt-shell-title-font-family (a serif masthead, say). */
+    font-family: var(--smrt-shell-title-font-family, var(--smrt-typography-title-medium-font-family, inherit));
     text-decoration: none;
     text-overflow: ellipsis;
     white-space: nowrap;

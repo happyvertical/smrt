@@ -320,6 +320,28 @@ function collectInlineByPackage() {
   return byPkg;
 }
 
+/**
+ * Override hooks: tokens a component reads as `var(--smrt-x, <default>)` so an
+ * app can set them once in its own theme layer. They are deliberately not
+ * emitted by any preset (unset, the component keeps its stock look), so they
+ * are not dangling references. Keep this list explicit: a typo in a token name
+ * must still fail the check.
+ */
+const OVERRIDE_HOOKS = new Set([
+  '--smrt-card-background',
+  '--smrt-card-border',
+  '--smrt-card-divider',
+  '--smrt-card-shadow',
+  '--smrt-content-editor-icon-size',
+  '--smrt-admin-shell-background',
+  '--smrt-admin-shell-scrollbar-thumb',
+  '--smrt-admin-shell-scrollbar-thumb-hover',
+  '--smrt-admin-shell-scrollbar-track',
+  '--smrt-shell-title-font-family',
+  '--smrt-popover-panel-padding',
+  '--smrt-popover-panel-width',
+]);
+
 const { consumed, byPackage } = collectConsumed();
 const emitted = collectEmitted();
 const inlineByPackage = collectInlineByPackage();
@@ -329,7 +351,7 @@ const staticMissingByPreset = collectStaticPresetMissing();
 // defined inline within P itself. Collect each (token -> unsatisfied packages).
 const undefinedByToken = new Map();
 for (const [token, pkgs] of byPackage) {
-  if (emitted.has(token)) continue;
+  if (emitted.has(token) || OVERRIDE_HOOKS.has(token)) continue;
   for (const pkg of pkgs) {
     if (inlineByPackage.get(pkg)?.has(token)) continue;
     if (!undefinedByToken.has(token)) undefinedByToken.set(token, new Set());

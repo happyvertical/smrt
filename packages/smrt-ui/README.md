@@ -30,7 +30,7 @@ pnpm add @happyvertical/smrt-ui
 | Area | Components |
 | --- | --- |
 | Fields | `Form`, `Field`/`FormGroup`, `Fieldset`, `InputGroup`, `ErrorSummary`, `FormActionBar` |
-| Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `Listbox`, `MultiSelect`, `TagsInput` |
+| Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `Listbox`, `MultiSelect`, `TagsInput`, `SearchInput` |
 | Choices | `Checkbox`, `RadioGroup`/`Radio`, `Switch`, `Toggle`, `ToggleButton`, `SegmentedControl` |
 | Values and files | `Slider`, `RangeSlider`, `DatePicker`, `TimePicker`, `FilePicker` |
 | Actions and display | `Button`, `Dropdown`/`Menu`, `Badge`, `Chip`, `Avatar`, `Card`, `Skeleton`, `Tooltip`, `Tree` |
@@ -735,6 +735,22 @@ as `var(--smrt-color-surface-variant)` so cards stay distinct in both schemes:
   --smrt-card-background: var(--smrt-color-surface-variant);
 }
 ```
+
+### Component override hooks
+
+Hooks an app sets once in its own theme layer instead of restyling a component's
+classes. Unset, each keeps its stock look.
+
+| Property | Component | Used for |
+| --- | --- | --- |
+| `--smrt-popover-panel-width` | `Popover` | the panel's width (never wider than the viewport minus 2rem) |
+| `--smrt-popover-panel-padding` | `Popover` | the panel's padding |
+| `--smrt-admin-shell-background` | `AdminShell` (smrt-svelte) | the page background behind the cards |
+| `--smrt-admin-shell-scrollbar-track` / `-thumb` / `-thumb-hover` | `AdminShell` (smrt-svelte) | the themed thin scrollbars inside the shell |
+| `--smrt-shell-title-font-family` | `ShellTitle` (smrt-svelte) | the workspace name's font family |
+
+`IconToggle` takes a `tone` prop (a CSS colour such as `var(--status-draft)`) for
+a toggle that is neutral until pressed and then wears its colour.
 
 ## Development
 

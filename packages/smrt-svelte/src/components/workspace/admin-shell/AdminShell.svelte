@@ -1067,9 +1067,43 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       var(--smrt-admin-shell-phone-bar-track);
     min-block-size: 100svh;
     block-size: 100svh;
-    background: var(--smrt-color-surface);
+    /* Themeable: an app sets --smrt-admin-shell-background on the shell or an
+       ancestor (a tinted page behind cards, for instance). */
+    background: var(--smrt-admin-shell-background, var(--smrt-color-surface));
     color: var(--smrt-color-on-surface);
     overflow: hidden;
+    /* Themed, thin scrollbars for every scroller inside the shell. Override
+       --smrt-admin-shell-scrollbar-track / -thumb / -thumb-hover to retint. */
+    scrollbar-color: var(--smrt-admin-shell-scrollbar-thumb, color-mix(in srgb, var(--smrt-color-on-surface) 26%, transparent))
+      var(--smrt-admin-shell-scrollbar-track, color-mix(in srgb, var(--smrt-color-surface-container-low) 88%, transparent));
+  }
+
+  .smrt-admin-shell :global(*) {
+    scrollbar-width: thin;
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar {
+    width: 0.7rem;
+    height: 0.7rem;
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-track {
+    background: var(--smrt-admin-shell-scrollbar-track, color-mix(in srgb, var(--smrt-color-surface-container-low) 88%, transparent));
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb {
+    background-color: var(--smrt-admin-shell-scrollbar-thumb, color-mix(in srgb, var(--smrt-color-on-surface) 26%, transparent));
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: var(--smrt-radius-full, 999px);
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-thumb:hover {
+    background-color: var(--smrt-admin-shell-scrollbar-thumb-hover, color-mix(in srgb, var(--smrt-color-on-surface) 38%, transparent));
+  }
+
+  .smrt-admin-shell :global(*)::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
   .smrt-admin-shell__edge {
@@ -1197,6 +1231,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     block-size: 100%;
     overflow: auto;
     padding: var(--smrt-spacing-3);
+  }
+
+  /* A right rail never pads wider than its own track: a rail collapsed to 0
+     (an app that shows nothing there) paints no padding. */
+  .smrt-admin-shell__edge--right .smrt-admin-shell__rail {
+    padding-inline: min(
+      var(--smrt-spacing-3),
+      calc(var(--smrt-admin-shell-right-collapsed) / 4)
+    );
   }
 
   .smrt-admin-shell__focus-rail {
