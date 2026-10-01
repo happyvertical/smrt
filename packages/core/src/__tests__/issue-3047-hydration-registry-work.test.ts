@@ -137,13 +137,16 @@ describe('smrt#3047: simple-name lookups are indexed', () => {
 
   it('resolves simple names without scanning every registered class', () => {
     const lookups = 40_000;
+    const names = new Array<string | undefined>(lookups);
     const started = performance.now();
     for (let index = 0; index < lookups; index++) {
-      expect(ObjectRegistry.findClass('issue3047widget')?.name).toBe(
-        'Issue3047Widget',
-      );
+      names[index] = ObjectRegistry.findClass('issue3047widget')?.name;
     }
     const elapsed = performance.now() - started;
+    // Check every result outside the timer so matcher overhead is excluded.
+    for (const name of names) {
+      expect(name).toBe('Issue3047Widget');
+    }
     // Pre-#3047: 40,000 x 3,000+ lowercase comparisons (seconds). Indexed,
     // this is a few ms; the budget leaves wide headroom for slow runners.
     expect(elapsed).toBeLessThan(600);
