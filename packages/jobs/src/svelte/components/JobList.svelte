@@ -168,6 +168,18 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     },
   };
 }
+
+// Sortable header columns (labels routed through i18n where keyed).
+const sortColumns = $derived([
+  { id: 'status', label: 'Status' },
+  { id: 'queue', label: 'Queue' },
+  { id: 'objectType', label: 'Object' },
+  { id: 'method', label: 'Method' },
+  { id: 'priority', label: 'Priority' },
+  { id: 'attempts', label: 'Attempts' },
+  { id: 'createdAt', label: 'Created' },
+  { id: 'runAt', label: t(M['jobs.job_list.run_at']) },
+]);
 </script>
 
 <div class="job-list-container">
@@ -186,16 +198,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             />
           </th>
         {/if}
-        {#each [
-          { id: 'status', label: 'Status' },
-          { id: 'queue', label: 'Queue' },
-          { id: 'objectType', label: 'Object' },
-          { id: 'method', label: 'Method' },
-          { id: 'priority', label: 'Priority' },
-          { id: 'attempts', label: 'Attempts' },
-          { id: 'createdAt', label: 'Created' },
-          { id: 'runAt', label: t(M['jobs.job_list.run_at']) },
-        ] as column (column.id)}
+        {#each sortColumns as column (column.id)}
           <SortableHeader
             class="job-list__cell job-list__cell--sortable"
             columnId={column.id}
