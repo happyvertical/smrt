@@ -114,7 +114,7 @@ function assertPublicReadTypes(current: ScopeCurrentEventCollection): void {
     current.list({ select: ['title'] as const, stiScope: allTypesScope }),
   ).resolves.toEqualTypeOf<Record<string, unknown>[]>();
   expectTypeOf(current.list(publicListOptions)).resolves.toEqualTypeOf<
-    SmrtObject[]
+    SmrtObject[] | Record<string, unknown>[]
   >();
   function listThroughPublicOptions(
     options: SmrtListOptions<ScopeCurrentEvent>,
@@ -187,12 +187,12 @@ describe.each([
       tenantId: TENANT_B,
     });
     await notes.create({
-      eventId: currentA.id,
+      eventId: currentA.id!,
       sequence: 1,
       note: 'current note',
     });
     await notes.create({
-      eventId: historicalA.id,
+      eventId: historicalA.id!,
       sequence: 1,
       note: 'historical note',
     });
@@ -271,10 +271,9 @@ describe.each([
     expect(scoped[1].occurredAt).toEqual(new Date('2025-01-02T03:04:05.000Z'));
     expect(scoped[1].payload).toEqual({ source: 'legacy', version: 2 });
     expect(ensureManifestLoaded).toHaveBeenCalledWith(HISTORICAL_TYPE);
-    expect(scoped.map((event) => event.title)).toEqual([
-      'Current A',
-      'Historical A',
-    ]);
+    expect(
+      scoped.map((event) => ('title' in event ? event.title : undefined)),
+    ).toEqual(['Current A', 'Historical A']);
     expect(
       queries.filter((sql) => sql.includes(`FROM ${current.tableName}`)),
     ).toHaveLength(1);

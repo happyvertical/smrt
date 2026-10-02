@@ -90,10 +90,14 @@ describe('MockCollectionFactory', () => {
     await collection.create({ productName: 'Gamma', price: 300 });
 
     const expensive = await collection.list({ where: { 'price >': 100 } });
-    expect(expensive.every((p) => p.price > 100)).toBe(true);
+    expect(
+      expensive.every((p) => typeof p.price === 'number' && p.price > 100),
+    ).toBe(true);
 
     const cheap = await collection.list({ where: { 'price <': 100 } });
-    expect(cheap.every((p) => p.price < 100)).toBe(true);
+    expect(
+      cheap.every((p) => typeof p.price === 'number' && p.price < 100),
+    ).toBe(true);
 
     const liked = await collection.list({
       where: { 'productName like': '%lph%' },

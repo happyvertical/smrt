@@ -82,13 +82,13 @@ describe('Issue #871: Circular inheritance false positive', () => {
   });
 
   it('should register both classes with their SMRT names', () => {
-    expect(ObjectRegistry.findClass('Issue871LedgerAccount')).toBeDefined();
+    expect(ObjectRegistry.getClass('Issue871LedgerAccount')).toBeDefined();
 
     // This will be undefined if registration failed due to #871
     if (registrationError) {
       expect.fail('Local class was not registered due to Issue #871');
     }
-    expect(ObjectRegistry.findClass('Issue871LocalAccount')).toBeDefined();
+    expect(ObjectRegistry.getClass('Issue871LocalAccount')).toBeDefined();
   });
 
   it('should build inheritance chain using SMRT names, not JS names', () => {

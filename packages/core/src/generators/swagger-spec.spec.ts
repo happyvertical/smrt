@@ -13,7 +13,31 @@ import { describe, expect, it } from 'vitest';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
-import { generateOpenAPISpec, setupSwaggerUI } from './swagger';
+import {
+  generateOpenAPISpec,
+  type OpenAPIConfig,
+  setupSwaggerUI,
+} from './swagger';
+
+// The generator deliberately publishes Record<string, unknown>. These tests
+// inspect a known subset of its emitted OpenAPI document.
+interface TestSwaggerSpec {
+  [key: string]: unknown;
+  openapi: string;
+  info: { title: string; version: string; description: string };
+  servers: Array<{ url: string }>;
+  security: unknown;
+  components: {
+    securitySchemes: { bearerAuth: { scheme: string } };
+    responses: Record<string, unknown>;
+    schemas: Record<string, any>;
+  };
+  paths: Record<string, any>;
+}
+
+function testOpenAPISpec(config?: OpenAPIConfig): TestSwaggerSpec {
+  return generateOpenAPISpec(config) as TestSwaggerSpec;
+}
 
 function smrt(config?: any) {
   return (target: any) => {
@@ -82,7 +106,7 @@ class SwaggerNoDelete extends SmrtObject {
 describe('OpenAPI spec generation (#1500)', () => {
   describe('top-level config', () => {
     it('uses defaults when no config is given', () => {
-      const spec = generateOpenAPISpec();
+      const spec = testOpenAPISpec();
       expect(spec.openapi).toBe('3.0.3');
       expect(spec.info.title).toBe('smrt API');
       expect(spec.info.version).toBe('1.0.0');
@@ -96,7 +120,7 @@ describe('OpenAPI spec generation (#1500)', () => {
     });
 
     it('honors title / version / description / serverUrl / basePath overrides', () => {
-      const spec = generateOpenAPISpec({
+      const spec = testOpenAPISpec({
         title: 'My API',
         version: '9.9.9',
         description: 'custom',
@@ -115,7 +139,7 @@ describe('OpenAPI spec generation (#1500)', () => {
 
   describe('component schemas', () => {
     it('emits a base schema and a *List wrapper for a registered object', () => {
-      const spec = generateOpenAPISpec();
+      const spec = testOpenAPISpec();
       const schema = spec.components.schemas.SwaggerFieldWidget;
       expect(schema).toBeDefined();
       expect(schema.type).toBe('object');
@@ -140,7 +164,7 @@ describe('OpenAPI spec generation (#1500)', () => {
     });
 
     it('maps every field type to the right OpenAPI schema', () => {
-      const spec = generateOpenAPISpec();
+      const spec = testOpenAPISpec();
       const props = spec.components.schemas.SwaggerFieldWidget.properties;
 
       // text with length constraints
@@ -177,7 +201,7 @@ describe('OpenAPI spec generation (#1500)', () => {
 
   describe('path generation per verb', () => {
     it('emits collection + item CRUD paths with the expected operations', () => {
-      const spec = generateOpenAPISpec();
+      const spec = testOpenAPISpec();
       const base = '/api/v1/swaggerfieldwidgets';
       expect(spec.paths[base].get.summary).toContain('List');
       expect(spec.paths[base].post.summary).toContain('Create');
@@ -193,7 +217,7 @@ describe('OpenAPI spec generation (#1500)', () => {
     });
 
     it('include: [list, get] emits only those operations', () => {
-      const spec = generateOpenAPISpec();
+      const spec = testOpenAPISpec();
       const base = '/api/v1/swaggerreadonlies';
       expect(spec.paths[base].get).toBeDefined();
       // create not in include → no POST.
@@ -205,7 +229,7 @@ describe('OpenAPI spec generation (#1500)', () => {
     });
 
     it('exclude: [delete] omits the DELETE operation only', () => {
-      const spec = generateOpenAPISpec();
+      const spec = testOpenAPISpec();
       const base = '/api/v1/swaggernodeletes';
       expect(spec.paths[base].get).toBeDefined();
       expect(spec.paths[base].post).toBeDefined();
@@ -226,7 +250,12 @@ describe('OpenAPI spec generation (#1500)', () => {
       try {
         // `app` is never used because the require() of the optional peer dep
         // throws first and is caught. Must not throw.
-        expect(() => setupSwaggerUI({}, generateOpenAPISpec())).not.toThrow();
+        expect(() =>
+          setupSwaggerUI(
+            { use: () => undefined, get: () => undefined },
+            testOpenAPISpec(),
+          ),
+        ).not.toThrow();
       } finally {
         console.warn = original;
       }
@@ -292,7 +321,7 @@ class SwaggerDish extends SmrtObject {
 
 describe('OpenAPI pluralization branches (#1500)', () => {
   it('pluralizes y/x/z/sh/default endings in the path keys', () => {
-    const spec = generateOpenAPISpec();
+    const spec = testOpenAPISpec();
     const keys = Object.keys(spec.paths);
     expect(keys).toContain('/api/v1/swaggercategories'); // y → ies
     expect(keys).toContain('/api/v1/swaggerboxes'); // x → xes

@@ -24,10 +24,10 @@ import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
+import type { Meta } from '../decorators';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
-import type { Meta } from '../types';
 
 /**
  * Simulates Profile from @happyvertical/smrt-profiles

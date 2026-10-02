@@ -122,7 +122,7 @@ describe('canonical MCP tool identifiers (#3219)', () => {
       originalName:
         'rolepermissioncollection_seeddefaultrolepersonalizationpermissions',
     });
-    const receivers = [];
+    const receivers: string[] = [];
     for (const tool of tools) {
       const result = await instance.handleToolCall({
         method: 'tools/call',

@@ -56,7 +56,7 @@ describe('system table compatibility', () => {
     await probe.initialize();
 
     const columns = await db.query(`PRAGMA table_info(_smrt_dispatch)`);
-    const columnNames = columns.rows.map((row: { name: string }) => row.name);
+    const columnNames = columns.rows.map((row) => row.name);
     expect(columnNames).toContain('target_subscriber');
     expect(columnNames).toContain('correlation_id');
 
@@ -65,7 +65,7 @@ describe('system table compatibility', () => {
       WHERE type = 'index'
         AND name IN ('idx_smrt_dispatch_target', 'idx_smrt_dispatch_correlation')
     `);
-    const indexNames = indexes.rows.map((row: { name: string }) => row.name);
+    const indexNames = indexes.rows.map((row) => row.name);
     expect(indexNames).toContain('idx_smrt_dispatch_target');
     expect(indexNames).toContain('idx_smrt_dispatch_correlation');
   });
@@ -97,7 +97,7 @@ describe('system table compatibility', () => {
     const columns = await db.query(
       `PRAGMA table_info(_smrt_dispatch_subscriptions)`,
     );
-    const columnNames = columns.rows.map((row: { name: string }) => row.name);
+    const columnNames = columns.rows.map((row) => row.name);
     expect(columnNames).toContain('tenant_id');
 
     // The tenant-scoped unique index exists.
@@ -161,7 +161,7 @@ describe('system table compatibility', () => {
     await probe.initialize();
 
     const columns = await db.query(`PRAGMA table_info(_smrt_jobs)`);
-    const columnNames = columns.rows.map((row: { name: string }) => row.name);
+    const columnNames = columns.rows.map((row) => row.name);
     expect(columnNames).toContain('tenant_id');
     expect(columnNames).toEqual(
       expect.arrayContaining([
@@ -178,14 +178,14 @@ describe('system table compatibility', () => {
       WHERE type = 'index'
         AND name = 'idx_smrt_jobs_tenant_id'
     `);
-    const indexNames = indexes.rows.map((row: { name: string }) => row.name);
+    const indexNames = indexes.rows.map((row) => row.name);
     expect(indexNames).toContain('idx_smrt_jobs_tenant_id');
     const taskIndexes = await db.query(`
       SELECT name FROM sqlite_master
       WHERE type = 'index'
         AND name = 'idx_smrt_jobs_task_id'
     `);
-    expect(taskIndexes.rows.map((row: { name: string }) => row.name)).toContain(
+    expect(taskIndexes.rows.map((row) => row.name)).toContain(
       'idx_smrt_jobs_task_id',
     );
   });
@@ -239,7 +239,7 @@ describe('system table compatibility', () => {
     await ensureJobsSystemTableCompatibility(db);
 
     const columns = await db.query(`PRAGMA table_info(_smrt_jobs)`);
-    const columnNames = columns.rows.map((row: { name: string }) => row.name);
+    const columnNames = columns.rows.map((row) => row.name);
     expect(columnNames).toContain('tenant_id');
     expect(columnNames).toEqual(
       expect.arrayContaining([
@@ -256,14 +256,14 @@ describe('system table compatibility', () => {
       WHERE type = 'index'
         AND name = 'idx_smrt_jobs_tenant_id'
     `);
-    const indexNames = indexes.rows.map((row: { name: string }) => row.name);
+    const indexNames = indexes.rows.map((row) => row.name);
     expect(indexNames).toContain('idx_smrt_jobs_tenant_id');
     const taskIndexes = await db.query(`
       SELECT name FROM sqlite_master
       WHERE type = 'index'
         AND name = 'idx_smrt_jobs_task_id'
     `);
-    expect(taskIndexes.rows.map((row: { name: string }) => row.name)).toContain(
+    expect(taskIndexes.rows.map((row) => row.name)).toContain(
       'idx_smrt_jobs_task_id',
     );
     // The retention predicate of SmrtJobCollection.cleanup() must reach legacy
@@ -274,9 +274,9 @@ describe('system table compatibility', () => {
       WHERE type = 'index'
         AND name = 'idx_smrt_jobs_status_completed_at'
     `);
-    expect(
-      retentionIndexes.rows.map((row: { name: string }) => row.name),
-    ).toContain('idx_smrt_jobs_status_completed_at');
+    expect(retentionIndexes.rows.map((row) => row.name)).toContain(
+      'idx_smrt_jobs_status_completed_at',
+    );
   });
 
   describe('deferred (manifest-created) tables — issue #2376', () => {
@@ -481,7 +481,7 @@ describe('system table compatibility', () => {
     await ensureJobEventsSystemTableCompatibility(db);
 
     const columns = await db.query(`PRAGMA table_info(_smrt_job_events)`);
-    const columnNames = columns.rows.map((row: { name: string }) => row.name);
+    const columnNames = columns.rows.map((row) => row.name);
     expect(columnNames).toContain('tenant_id');
 
     const indexes = await db.query(`
@@ -494,7 +494,7 @@ describe('system table compatibility', () => {
           'idx_smrt_job_events_created_at'
         )
     `);
-    const indexNames = indexes.rows.map((row: { name: string }) => row.name);
+    const indexNames = indexes.rows.map((row) => row.name);
     expect(indexNames).toContain('idx_smrt_job_events_tenant_id');
     expect(indexNames).toContain('idx_smrt_job_events_job_id');
     expect(indexNames).toContain('idx_smrt_job_events_type');
@@ -927,7 +927,7 @@ describe('system table compatibility', () => {
   });
 
   it('migrates legacy PostgreSQL system timestamps atomically under the bootstrap lock', async () => {
-    const query = vi.fn(async () => ({ rows: [] }));
+    const query = vi.fn(async (_sql: string) => ({ rows: [] }));
 
     await migratePostgresSystemTimestamps(
       { url: 'postgresql://localhost/test', query } as any,

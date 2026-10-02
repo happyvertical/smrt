@@ -21,6 +21,13 @@ import {
   preflightNullEqualIndexes,
 } from '../null-equal-indexes.js';
 
+// Fail explicitly when a required value is absent; retain the existing assertions below.
+function requireFixture<T>(value: T | null | undefined): T {
+  if (value == null)
+    throw new Error('Expected test fixture value to be present');
+  return value;
+}
+
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const suite = pgUrl ? describe.sequential : describe.skip;
 const prefix = `i2834_${randomUUID().slice(0, 8)}`;
@@ -264,7 +271,8 @@ suite('NULL-equal framework identities on real PostgreSQL (#2834)', () => {
     await create(definition, true);
     await create(second, true);
     const targets = collectNullEqualIndexTargets({ model: definition, second });
-    const transaction = db.transaction.bind(db);
+    // PostgreSQL provides transactions; the suite exercises real transaction rollback.
+    const transaction = requireFixture(db.transaction).bind(db);
     const wrapped = {
       ...db,
       transaction: (callback: (tx: DatabaseInterface) => Promise<unknown>) =>
@@ -321,7 +329,8 @@ suite('NULL-equal framework identities on real PostgreSQL (#2834)', () => {
     const definition = schema('race');
     await create(definition, true);
     const targets = collectNullEqualIndexTargets({ model: definition });
-    const transaction = db.transaction.bind(db);
+    // PostgreSQL provides transactions; the suite exercises real transaction rollback.
+    const transaction = requireFixture(db.transaction).bind(db);
     const concurrentInsert = {
       ...db,
       transaction: async (callback: Parameters<typeof transaction>[0]) => {
@@ -365,7 +374,8 @@ suite('NULL-equal framework identities on real PostgreSQL (#2834)', () => {
     const finish = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const writing = writer.transaction(async (tx) => {
+    // getDatabase(postgres) supplies the transaction API required by this lock test.
+    const writing = requireFixture(writer.transaction)(async (tx) => {
       await tx.query(
         `LOCK TABLE "${definition.tableName}" IN ROW EXCLUSIVE MODE`,
       );

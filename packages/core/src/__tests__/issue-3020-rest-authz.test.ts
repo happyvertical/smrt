@@ -43,6 +43,31 @@ const PUNCHES_TABLE = 'issue3020rest_punches';
 const NOTES_TABLE = 'issue3020rest_notes';
 
 const OWN_ROW_ID = 'punch-station-owns';
+
+function isRowChange(value: unknown): value is { rowId: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'rowId' in value &&
+    typeof value.rowId === 'string'
+  );
+}
+
+async function readChangesBody(response: Response) {
+  const body: unknown = await response.json();
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !('changes' in body) ||
+    !Array.isArray(body.changes) ||
+    !body.changes.every(isRowChange) ||
+    !('cursor' in body) ||
+    typeof body.cursor !== 'number'
+  ) {
+    throw new Error('Expected a changes response with rows and cursor');
+  }
+  return { changes: body.changes, cursor: body.cursor };
+}
 const OTHER_ROW_ID = 'punch-office-owns';
 
 /** Pass-through auth middleware: keeps whatever the request already carries (e.g. the `x-principal` header) so a hook can read it from `request`. */
@@ -139,7 +164,7 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
         { authMiddleware: passThroughAuth, db },
       );
       expect(stationResponse.status).toBe(200);
-      const stationBody = await stationResponse.json();
+      const stationBody = await readChangesBody(stationResponse);
       expect(stationBody.changes).toHaveLength(0);
       // Cursor still advances — the station is not stuck re-polling forever,
       // and nothing about the denied entry is inferable from a stall.
@@ -151,7 +176,7 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
         }),
         { authMiddleware: passThroughAuth, db },
       );
-      const officeBody = await officeResponse.json();
+      const officeBody = await readChangesBody(officeResponse);
       expect(officeBody.changes.map((c: { rowId: string }) => c.rowId)).toEqual(
         [OTHER_ROW_ID],
       );
@@ -181,7 +206,7 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
         }),
         { authMiddleware: passThroughAuth, db },
       );
-      const body = await response.json();
+      const body = await readChangesBody(response);
       expect(body.changes.map((c: { rowId: string }) => c.rowId)).toEqual([
         OWN_ROW_ID,
       ]);
@@ -204,7 +229,7 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
         { authMiddleware: passThroughAuth, db },
       );
       expect(response.status).toBe(200);
-      const body = await response.json();
+      const body = await readChangesBody(response);
       expect(body.changes).toHaveLength(0);
       expect(body.cursor).toBeGreaterThan(0);
     });
@@ -217,7 +242,7 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
         new Request('http://localhost/api/v1/_changes?since=0'),
         { authMiddleware: passThroughAuth, db },
       );
-      const body = await response.json();
+      const body = await readChangesBody(response);
       expect(body.changes).toHaveLength(2);
     });
   });

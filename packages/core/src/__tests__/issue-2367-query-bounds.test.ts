@@ -20,7 +20,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { field } from '../decorators';
+import { field, oneToMany } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -51,7 +51,7 @@ class QueryBoundsWidget extends SmrtObject {
   @field({ transient: true, type: 'text' })
   computedLabel: string = '';
 
-  @field({ related: 'QueryBoundsWidget', type: 'oneToMany' })
+  @oneToMany('QueryBoundsWidget')
   children: QueryBoundsWidget[] = [];
 
   // Leading underscore: `toSnakeCase()` strips it (`_rank` → `rank`) while

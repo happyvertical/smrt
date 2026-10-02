@@ -171,6 +171,10 @@ and repository rules.
 
 ## Validation
 
+`typecheck` checks production source first, then the test project in
+`tsconfig.test.json`. Test coverage and the shared relaxed config
+contract are documented in [agents/test-types.md](agents/test-types.md).
+
 Run focused tests first, then applicable package checks:
 
 ```bash

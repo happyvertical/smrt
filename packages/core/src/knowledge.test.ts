@@ -528,6 +528,9 @@ describe('buildDomainKnowledgeManifest', () => {
     // `manifestObjectPackage` to read only `qualifiedName` makes this test
     // fail, which is what makes it a regression test rather than a tautology.
     manifest.objects['@decoy/pkg:KeyOnlyBase'] = {
+      name: 'keyonlybase',
+      filePath: '',
+
       className: 'KeyOnlyBase',
       collection: 'decoys',
       fields: {},
@@ -536,6 +539,9 @@ describe('buildDomainKnowledgeManifest', () => {
       extends: 'SmrtObject',
     } as SmartObjectManifest['objects'][string];
     manifest.objects['@key-only/pkg:KeyOnlyBase'] = {
+      name: 'keyonlybase',
+      filePath: '',
+
       className: 'KeyOnlyBase',
       collection: 'key_only_bases',
       fields: {},
@@ -545,6 +551,9 @@ describe('buildDomainKnowledgeManifest', () => {
       extendsTypeArg: 'KeyOnlyRow',
     } as SmartObjectManifest['objects'][string];
     manifest.objects['@key-only/pkg:KeyOnlyChild'] = {
+      name: 'keyonlychild',
+      filePath: '',
+
       className: 'KeyOnlyChild',
       collection: 'key_only_children',
       fields: {},
@@ -800,6 +809,9 @@ describe('buildDomainKnowledgeManifest', () => {
     it('adds polymorphic-associations:<n> when an object is a SmrtPolymorphicAssociation', () => {
       const manifest = fixtureManifest();
       manifest.objects['@example/orders:OrderTag'] = {
+        name: 'ordertag',
+        filePath: '',
+
         className: 'OrderTag',
         qualifiedName: '@example/orders:OrderTag',
         collection: 'order_tags',
@@ -930,6 +942,9 @@ function fixtureManifest(): SmartObjectManifest {
     packageVersion: '1.0.0',
     objects: {
       '@example/orders:Order': {
+        name: 'order',
+        filePath: '',
+
         className: 'Order',
         qualifiedName: '@example/orders:Order',
         collection: 'orders',
@@ -1009,6 +1024,10 @@ function fixtureManifest(): SmartObjectManifest {
         },
         extends: 'SmrtObject',
         schema: {
+          ddl: '',
+          indexes: [],
+          version: '1.0.0',
+
           tableName: 'orders',
           columns: {
             id: { type: 'UUID' },
@@ -1018,6 +1037,9 @@ function fixtureManifest(): SmartObjectManifest {
         },
       },
       '@example/orders:OrderLinks': {
+        name: 'orderlinks',
+        filePath: '',
+
         className: 'OrderLinks',
         qualifiedName: '@example/orders:OrderLinks',
         collection: 'order_links',
@@ -1030,6 +1052,9 @@ function fixtureManifest(): SmartObjectManifest {
         extends: 'SmrtJunction',
       },
       '@example/orders:OrderTree': {
+        name: 'ordertree',
+        filePath: '',
+
         className: 'OrderTree',
         qualifiedName: '@example/orders:OrderTree',
         collection: 'order_trees',
@@ -1064,6 +1089,9 @@ function fixtureManifest(): SmartObjectManifest {
         extends: 'SmrtHierarchical',
       },
       '@example/orders:OrderTreeCollection': {
+        name: 'ordertreecollection',
+        filePath: '',
+
         className: 'OrderTreeCollection',
         qualifiedName: '@example/orders:OrderTreeCollection',
         collection: 'order_trees',
@@ -1083,6 +1111,9 @@ function fixtureManifest(): SmartObjectManifest {
         extendsTypeArg: 'OrderTree',
       },
       '@example/orders:SpecialOrderTreeCollection': {
+        name: 'specialordertreecollection',
+        filePath: '',
+
         className: 'SpecialOrderTreeCollection',
         qualifiedName: '@example/orders:SpecialOrderTreeCollection',
         collection: 'order_trees',
@@ -1105,6 +1136,9 @@ function fixtureManifest(): SmartObjectManifest {
         extendsQualified: '@example/orders:OrderTreeCollection',
       },
       '@example/orders:HiddenOrder': {
+        name: 'hiddenorder',
+        filePath: '',
+
         className: 'HiddenOrder',
         qualifiedName: '@example/orders:HiddenOrder',
         collection: 'hidden_orders',
@@ -1122,6 +1156,9 @@ function fixtureManifest(): SmartObjectManifest {
       // (#2642) — excluded from every surface by class identity, not by
       // registration status.
       '@happyvertical/smrt-core:SmrtObject': {
+        name: 'smrtobject',
+        filePath: '',
+
         className: 'SmrtObject',
         qualifiedName: '@happyvertical/smrt-core:SmrtObject',
         packageName: '@happyvertical/smrt-core',
@@ -1144,6 +1181,9 @@ function fixtureManifest(): SmartObjectManifest {
       // but declared in `@happyvertical/smrt-reports`, not
       // `@happyvertical/smrt-core` — the owning package is per-name (#2619).
       '@happyvertical/smrt-reports:SmrtReport': {
+        name: 'smrtreport',
+        filePath: '',
+
         className: 'SmrtReport',
         qualifiedName: '@happyvertical/smrt-reports:SmrtReport',
         packageName: '@happyvertical/smrt-reports',
@@ -1166,6 +1206,9 @@ function fixtureManifest(): SmartObjectManifest {
       // mistaken for the real framework base — the map lookup is keyed on
       // (className, packageName) together, not className alone.
       '@example/other-pkg:SmrtObject': {
+        name: 'smrtobject',
+        filePath: '',
+
         className: 'SmrtObject',
         qualifiedName: '@example/other-pkg:SmrtObject',
         packageName: '@example/other-pkg',
@@ -1178,6 +1221,9 @@ function fixtureManifest(): SmartObjectManifest {
       // the emitted path/method must follow that override, not the derived
       // defaults (#2619).
       '@example/orders:RoutedOrder': {
+        name: 'routedorder',
+        filePath: '',
+
         className: 'RoutedOrder',
         qualifiedName: '@example/orders:RoutedOrder',
         collection: 'routed_orders',
@@ -1205,6 +1251,9 @@ function fixtureManifest(): SmartObjectManifest {
       // (it configures smrt-agents' route map instead), so the emitted path
       // must use `collection` verbatim (#2630).
       '@example/orders:LegacyPathOrder': {
+        name: 'legacypathorder',
+        filePath: '',
+
         className: 'LegacyPathOrder',
         qualifiedName: '@example/orders:LegacyPathOrder',
         collection: 'legacy_orders',
@@ -1226,6 +1275,9 @@ function fixtureManifest(): SmartObjectManifest {
       // resolver throw by design. The knowledge build must not die for the
       // whole package because one action's config is wrong (#2619).
       '@example/orders:ThrowingRouteOrder': {
+        name: 'throwingrouteorder',
+        filePath: '',
+
         className: 'ThrowingRouteOrder',
         qualifiedName: '@example/orders:ThrowingRouteOrder',
         collection: 'throwing_route_orders',
@@ -1253,6 +1305,9 @@ function fixtureManifest(): SmartObjectManifest {
       // namespace. `MCPGenerator` emits no separate tool for it, so the
       // knowledge projection must not report one either.
       '@example/orders:CasedVerbItem': {
+        name: 'casedverbitem',
+        filePath: '',
+
         className: 'CasedVerbItem',
         qualifiedName: '@example/orders:CasedVerbItem',
         collection: 'cased_verb_items',
@@ -1281,6 +1336,9 @@ function fixtureManifest(): SmartObjectManifest {
       // cased verb. `mcp.include` fails closed on it and `shouldInclude('list')`
       // is exact, so the generator emits NO tool for this class at all.
       '@example/orders:CasedIncludeItem': {
+        name: 'casedincludeitem',
+        filePath: '',
+
         className: 'CasedIncludeItem',
         qualifiedName: '@example/orders:CasedIncludeItem',
         collection: 'cased_include_items',
@@ -1298,6 +1356,9 @@ function fixtureManifest(): SmartObjectManifest {
         decoratorConfig: { mcp: { include: ['List'] } },
       },
       '@example/orders:MalformedConfigItem': {
+        name: 'malformedconfigitem',
+        filePath: '',
+
         className: 'MalformedConfigItem',
         qualifiedName: '@example/orders:MalformedConfigItem',
         collection: 'malformed_config_items',
@@ -1323,6 +1384,9 @@ function fixtureManifest(): SmartObjectManifest {
       // not change. NOTE: the shipped local CLI
       // (packages/cli/src/cli-generator.ts) does NOT apply this gate today.
       '@example/orders:LifecycleOverrideOrder': {
+        name: 'lifecycleoverrideorder',
+        filePath: '',
+
         className: 'LifecycleOverrideOrder',
         qualifiedName: '@example/orders:LifecycleOverrideOrder',
         collection: 'lifecycle_override_orders',
@@ -1355,6 +1419,9 @@ function fixtureManifest(): SmartObjectManifest {
       // mirror that, not report both method names as separate `mcp`
       // operations.
       '@example/orders:CaseCollisionItem': {
+        name: 'casecollisionitem',
+        filePath: '',
+
         className: 'CaseCollisionItem',
         qualifiedName: '@example/orders:CaseCollisionItem',
         collection: 'case_collision_items',
@@ -1384,6 +1451,9 @@ function fixtureManifest(): SmartObjectManifest {
       // compares `exclude` case-insensitively too (#2638) -- the projection
       // must not still advertise `Refresh` as an `mcp` operation here.
       '@example/orders:ExcludeCaseItem': {
+        name: 'excludecaseitem',
+        filePath: '',
+
         className: 'ExcludeCaseItem',
         qualifiedName: '@example/orders:ExcludeCaseItem',
         collection: 'exclude_case_items',

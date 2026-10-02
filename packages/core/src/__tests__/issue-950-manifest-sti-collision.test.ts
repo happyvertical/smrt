@@ -25,7 +25,32 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ObjectRegistry } from '../registry.js';
+import type { SmartObjectDefinition } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
+
+type FixtureManifestDefinition = Omit<
+  SmartObjectDefinition,
+  'name' | 'collection'
+> &
+  Partial<Pick<SmartObjectDefinition, 'name' | 'collection'>>;
+
+function registerManifestFixture(
+  key: string,
+  definition: FixtureManifestDefinition,
+  packageName: string,
+): void {
+  const lower = definition.className.toLowerCase();
+  const collection = lower.endsWith('y')
+    ? `${lower.slice(0, -1)}ies`
+    : /(?:s|x|z|ch|sh)$/.test(lower)
+      ? `${lower}es`
+      : `${lower}s`;
+  ObjectRegistry.registerFromManifest(
+    key,
+    { name: lower, collection, ...definition },
+    packageName,
+  );
+}
 
 describe('Issue #950: Manifest STI Collision Handling', () => {
   let restoreRegistry: () => void;
@@ -40,7 +65,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
 
   describe('registerFromManifest - STI child-wins', () => {
     it('should replace parent when child with same name is registered second', () => {
-      const parentDef = {
+      const parentDef: FixtureManifestDefinition = {
         className: 'TestEvent',
         fields: {
           title: { type: 'text', _meta: {} },
@@ -50,7 +75,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
         filePath: '/packages/events/src/models/Event.ts',
       };
 
-      const childDef = {
+      const childDef: FixtureManifestDefinition = {
         className: 'TestEvent',
         fields: {
           title: { type: 'text', _meta: {} },
@@ -63,27 +88,19 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
       };
 
       // Parent registered first
-      ObjectRegistry.registerFromManifest(
-        'TestEvent',
-        parentDef,
-        '@test/events',
-      );
+      registerManifestFixture('TestEvent', parentDef, '@test/events');
 
       // Verify parent is registered
-      const parentEntry = ObjectRegistry.findClass('TestEvent');
+      const parentEntry = ObjectRegistry.getClass('TestEvent');
       expect(parentEntry).toBeDefined();
       expect(parentEntry?.fields.size).toBe(1);
       expect(parentEntry?.packageName).toBe('@test/events');
 
       // Child registered second — should replace parent
-      ObjectRegistry.registerFromManifest(
-        'TestEvent',
-        childDef,
-        '@test/sports',
-      );
+      registerManifestFixture('TestEvent', childDef, '@test/sports');
 
       // Verify child replaced parent
-      const childEntry = ObjectRegistry.findClass('TestEvent');
+      const childEntry = ObjectRegistry.getClass('TestEvent');
       expect(childEntry).toBeDefined();
       expect(childEntry?.fields.size).toBe(2);
       expect(childEntry?.fields.has('sport')).toBe(true);
@@ -92,7 +109,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
     });
 
     it('should replace parent when child uses qualified name registration', () => {
-      const parentDef = {
+      const parentDef: FixtureManifestDefinition = {
         className: 'TestBase',
         fields: {
           title: { type: 'text', _meta: {} },
@@ -102,7 +119,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
         filePath: '/packages/core/src/models/Base.ts',
       };
 
-      const childDef = {
+      const childDef: FixtureManifestDefinition = {
         className: 'TestBase',
         fields: {
           title: { type: 'text', _meta: {} },
@@ -115,29 +132,25 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
       };
 
       // Parent registered with qualified name
-      ObjectRegistry.registerFromManifest(
-        '@test/core:TestBase',
-        parentDef,
-        '@test/core',
-      );
+      registerManifestFixture('@test/core:TestBase', parentDef, '@test/core');
 
       // Verify parent is accessible via simple name
-      const parentEntry = ObjectRegistry.findClass('TestBase');
+      const parentEntry = ObjectRegistry.getClass('TestBase');
       expect(parentEntry).toBeDefined();
       expect(parentEntry?.packageName).toBe('@test/core');
 
       // Child registered with simple name — hits classNameMap alias
-      ObjectRegistry.registerFromManifest('TestBase', childDef, '@test/agent');
+      registerManifestFixture('TestBase', childDef, '@test/agent');
 
       // Verify child replaced parent
-      const childEntry = ObjectRegistry.findClass('TestBase');
+      const childEntry = ObjectRegistry.getClass('TestBase');
       expect(childEntry).toBeDefined();
       expect(childEntry?.fields.size).toBe(2);
       expect(childEntry?.packageName).toBe('@test/agent');
     });
 
     it('should keep child when parent arrives after child', () => {
-      const childDef = {
+      const childDef: FixtureManifestDefinition = {
         className: 'TestChild',
         fields: {
           title: { type: 'text', _meta: {} },
@@ -149,7 +162,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
         filePath: '/packages/agent/src/models/Child.ts',
       };
 
-      const parentDef = {
+      const parentDef: FixtureManifestDefinition = {
         className: 'TestChild',
         fields: {
           title: { type: 'text', _meta: {} },
@@ -160,18 +173,18 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
       };
 
       // Child registered first
-      ObjectRegistry.registerFromManifest('TestChild', childDef, '@test/agent');
+      registerManifestFixture('TestChild', childDef, '@test/agent');
 
       // Verify child is registered
-      const childEntry = ObjectRegistry.findClass('TestChild');
+      const childEntry = ObjectRegistry.getClass('TestChild');
       expect(childEntry).toBeDefined();
       expect(childEntry?.fields.size).toBe(2);
 
       // Parent arrives second — should be skipped
-      ObjectRegistry.registerFromManifest('TestChild', parentDef, '@test/core');
+      registerManifestFixture('TestChild', parentDef, '@test/core');
 
       // Verify child is still there (not replaced by parent)
-      const stillChild = ObjectRegistry.findClass('TestChild');
+      const stillChild = ObjectRegistry.getClass('TestChild');
       expect(stillChild).toBeDefined();
       expect(stillChild?.fields.size).toBe(2);
       expect(stillChild?.packageName).toBe('@test/agent');
@@ -191,7 +204,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
       // duplicate parent entry. The `registrationKey` comparison added
       // to buildManifestCollisionInputs at class-registration.ts:260
       // closes that gap.
-      const parentDef = {
+      const parentDef: FixtureManifestDefinition = {
         className: 'StiQualifiedParent',
         fields: { name: { type: 'text', _meta: {} } },
         methods: {},
@@ -201,13 +214,9 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
 
       // Register the parent first so qualifyExtendsName can resolve the
       // child's `extends` string to the qualified parent key.
-      ObjectRegistry.registerFromManifest(
-        'StiQualifiedParent',
-        parentDef,
-        '@test/events',
-      );
+      registerManifestFixture('StiQualifiedParent', parentDef, '@test/events');
 
-      const childDef = {
+      const childDef: FixtureManifestDefinition = {
         className: 'StiQualifiedChild',
         fields: { title: { type: 'text', _meta: {} } },
         methods: {},
@@ -216,15 +225,11 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
         filePath: '/packages/sports/src/models/Child.ts',
       };
 
-      ObjectRegistry.registerFromManifest(
-        'StiQualifiedChild',
-        childDef,
-        '@test/sports',
-      );
+      registerManifestFixture('StiQualifiedChild', childDef, '@test/sports');
 
       // Confirm the child stored the parent's QUALIFIED key, not the
       // simple name — this is what makes the regression possible.
-      const child = ObjectRegistry.findClass('StiQualifiedChild');
+      const child = ObjectRegistry.getClass('StiQualifiedChild');
       expect(child?.extends).toBe('@test/events:StiQualifiedParent');
 
       // Now the parent manifest arrives again, e.g. via STI sibling
@@ -232,11 +237,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
       // parent would register a duplicate entry. With the fix, the
       // child's qualified `extends` matches the parent's registrationKey
       // → `manifest-sti-parent-skip` → skip.
-      ObjectRegistry.registerFromManifest(
-        'StiQualifiedParent',
-        parentDef,
-        '@test/events',
-      );
+      registerManifestFixture('StiQualifiedParent', parentDef, '@test/events');
 
       // Only one parent entry exists; not duplicated.
       const parents = ObjectRegistry.findClassesByName('StiQualifiedParent');
@@ -245,7 +246,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
     });
 
     it('should skip re-export with same source file', () => {
-      const def = {
+      const def: FixtureManifestDefinition = {
         className: 'TestWidget950',
         fields: {
           name: { type: 'text', _meta: {} },
@@ -256,27 +257,19 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
       };
 
       // First registration
-      ObjectRegistry.registerFromManifest(
-        'TestWidget950',
-        def,
-        '@test/profiles',
-      );
+      registerManifestFixture('TestWidget950', def, '@test/profiles');
 
       // Same class re-exported from consumer package with same filePath
-      ObjectRegistry.registerFromManifest(
-        'TestWidget950',
-        { ...def },
-        '@test/users',
-      );
+      registerManifestFixture('TestWidget950', { ...def }, '@test/users');
 
       // Should still have the first registration
-      const entry = ObjectRegistry.findClass('TestWidget950');
+      const entry = ObjectRegistry.getClass('TestWidget950');
       expect(entry).toBeDefined();
       expect(entry?.packageName).toBe('@test/profiles');
     });
 
     it('should not replace on true collision (unrelated classes)', () => {
-      const firstDef = {
+      const firstDef: FixtureManifestDefinition = {
         className: 'TestGadget950',
         fields: {
           name: { type: 'text', _meta: {} },
@@ -286,7 +279,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
         filePath: '/packages/a/src/models/Gadget.ts',
       };
 
-      const secondDef = {
+      const secondDef: FixtureManifestDefinition = {
         className: 'TestGadget950',
         fields: {
           label: { type: 'text', _meta: {} },
@@ -297,21 +290,13 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
       };
 
       // First registration
-      ObjectRegistry.registerFromManifest(
-        'TestGadget950',
-        firstDef,
-        '@test/package-a',
-      );
+      registerManifestFixture('TestGadget950', firstDef, '@test/package-a');
 
       // Second registration — different class, no inheritance
-      ObjectRegistry.registerFromManifest(
-        'TestGadget950',
-        secondDef,
-        '@test/package-b',
-      );
+      registerManifestFixture('TestGadget950', secondDef, '@test/package-b');
 
       // First one wins — second is skipped (with verbose log)
-      const entry = ObjectRegistry.findClass('TestGadget950');
+      const entry = ObjectRegistry.getClass('TestGadget950');
       expect(entry).toBeDefined();
       expect(entry?.fields.has('name')).toBe(true);
       expect(entry?.fields.has('label')).toBe(false);
@@ -319,7 +304,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
     });
 
     it('should handle child-wins with case-insensitive matching', () => {
-      const parentDef = {
+      const parentDef: FixtureManifestDefinition = {
         className: 'TestEvent',
         fields: {
           title: { type: 'text', _meta: {} },
@@ -329,7 +314,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
         filePath: '/packages/events/src/Event.ts',
       };
 
-      const childDef = {
+      const childDef: FixtureManifestDefinition = {
         className: 'TestEvent',
         fields: {
           title: { type: 'text', _meta: {} },
@@ -341,19 +326,11 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
         filePath: '/packages/conferences/src/Event.ts',
       };
 
-      ObjectRegistry.registerFromManifest(
-        'TestEvent',
-        parentDef,
-        '@test/events',
-      );
+      registerManifestFixture('TestEvent', parentDef, '@test/events');
 
-      ObjectRegistry.registerFromManifest(
-        'TestEvent',
-        childDef,
-        '@test/conferences',
-      );
+      registerManifestFixture('TestEvent', childDef, '@test/conferences');
 
-      const entry = ObjectRegistry.findClass('TestEvent');
+      const entry = ObjectRegistry.getClass('TestEvent');
       expect(entry).toBeDefined();
       expect(entry?.fields.size).toBe(2);
       expect(entry?.packageName).toBe('@test/conferences');

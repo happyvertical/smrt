@@ -28,9 +28,52 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConfigurationError } from '../errors.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import type { SmartObjectDefinition } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/index.js';
 import { fieldsFromClass } from '../utils.js';
+
+type FixtureManifestDefinition = Omit<
+  SmartObjectDefinition,
+  'name' | 'collection' | 'filePath'
+> &
+  Partial<Pick<SmartObjectDefinition, 'name' | 'collection'>>;
+
+function registerManifestFixture(
+  key: string,
+  definition: FixtureManifestDefinition,
+  packageName: string,
+): void {
+  const lower = definition.className.toLowerCase();
+  const collection = lower.endsWith('y')
+    ? `${lower.slice(0, -1)}ies`
+    : /(?:s|x|z|ch|sh)$/.test(lower)
+      ? `${lower}es`
+      : `${lower}s`;
+  const legacyDefinition: Omit<SmartObjectDefinition, 'filePath'> = {
+    name: lower,
+    collection,
+    ...definition,
+  };
+  // The legacy manifest fixtures intentionally omit source paths. Inserting
+  // one synthetic path for different packages changes collision identity.
+  ObjectRegistry.registerFromManifest(
+    key,
+    legacyDefinition as SmartObjectDefinition,
+    packageName,
+  );
+}
+
+// These tests intentionally alter registry keys to reproduce legacy hydration states.
+function mutableRegistryClasses(): ReturnType<
+  typeof ObjectRegistry.getAllClasses
+> {
+  return (
+    ObjectRegistry as unknown as {
+      classes: ReturnType<typeof ObjectRegistry.getAllClasses>;
+    }
+  ).classes;
+}
 
 describe('Issue #951: Qualified Names as Primary Keys', () => {
   let restoreRegistry: () => void;
@@ -56,9 +99,8 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     // The map key should be qualified (contains ':')
     // In test context, getPackageName returns the core package name
-    // @ts-expect-error - accessing private property
     let foundKey: string | undefined;
-    for (const [key, val] of ObjectRegistry.classes) {
+    for (const [key, val] of ObjectRegistry.getAllClasses()) {
       if (val.name === 'QualifiedTestA') {
         foundKey = key;
         break;
@@ -90,9 +132,8 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     class QualifiedTestC extends SmrtObject {}
 
     // Find the qualified key
-    // @ts-expect-error - accessing private property
     let qualifiedKey: string | undefined;
-    for (const [key, val] of ObjectRegistry.classes) {
+    for (const [key, val] of ObjectRegistry.getAllClasses()) {
       if (val.name === 'QualifiedTestC') {
         qualifiedKey = key;
         break;
@@ -115,8 +156,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     let initialKey: string | undefined;
     let entry: any;
-    // @ts-expect-error - accessing private property for verification
-    for (const [key, val] of ObjectRegistry.classes) {
+    for (const [key, val] of ObjectRegistry.getAllClasses()) {
       if (val.name === 'QualifiedTestCSource') {
         initialKey = key;
         entry = val;
@@ -128,12 +168,10 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     // Simulate a workspace source import that has not yet been promoted to a
     // package-qualified key.
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.delete(initialKey!);
+    mutableRegistryClasses().delete(initialKey!);
     entry.packageName = undefined;
     entry.qualifiedName = undefined;
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.set('QualifiedTestCSource', entry);
+    mutableRegistryClasses().set('QualifiedTestCSource', entry);
     // Release B (#1133): classNameMap is gone — case-insensitive lookups
     // iterate `classes` directly, so inserting into the classes Map is
     // sufficient to set up this scenario.
@@ -152,8 +190,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     let initialKey: string | undefined;
     let entry: any;
-    // @ts-expect-error - accessing private property for verification
-    for (const [key, val] of ObjectRegistry.classes) {
+    for (const [key, val] of ObjectRegistry.getAllClasses()) {
       if (val.name === 'QualifiedTestCPromoted') {
         initialKey = key;
         entry = val;
@@ -165,16 +202,14 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     // Simulate a source registration that has not yet been promoted to its
     // package-qualified key.
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.delete(initialKey!);
+    mutableRegistryClasses().delete(initialKey!);
     entry.packageName = undefined;
     entry.qualifiedName = undefined;
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.set('QualifiedTestCPromoted', entry);
+    mutableRegistryClasses().set('QualifiedTestCPromoted', entry);
     // Release B (#1133): classNameMap is gone — `classes` is the single
     // source of truth for case-insensitive lookups.
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       'QualifiedTestCPromoted',
       {
         className: 'QualifiedTestCPromoted',
@@ -217,7 +252,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       ObjectRegistry.getClassByConstructor(PromotedAlias951)?.packageName;
     expect(packageName).toBeDefined();
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       'PromotedAlias951',
       {
         className: 'PromotedAlias951',
@@ -259,7 +294,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
   it('should preserve same-simple-name collisions in getQualifiedClassNames()', () => {
     ObjectRegistry.clear();
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-a:QualifiedCollision',
       {
         className: 'QualifiedCollision',
@@ -270,7 +305,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       },
       '@fixture/pkg-a',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-b:QualifiedCollision',
       {
         className: 'QualifiedCollision',
@@ -292,7 +327,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
   it('prepares schemas for colliding simple names in getTestDatabase', async () => {
     ObjectRegistry.clear();
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-a:QualifiedDatabaseCollision',
       {
         className: 'QualifiedDatabaseCollision',
@@ -303,7 +338,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       },
       '@fixture/pkg-a',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-b:QualifiedDatabaseCollision',
       {
         className: 'QualifiedDatabaseCollision',
@@ -324,9 +359,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
           'qualified_database_collision_b'
         )
     `);
-    const tableNames = tables.rows
-      .map((row: { name: string }) => row.name)
-      .sort();
+    const tableNames = tables.rows.map((row) => row.name).sort();
 
     expect(tableNames).toEqual([
       'qualified_database_collision_a',
@@ -337,7 +370,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
   it('prepares qualified STI base schemas in getTestDatabase', async () => {
     ObjectRegistry.clear();
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-a:QualifiedStiBase',
       {
         className: 'QualifiedStiBase',
@@ -351,7 +384,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       },
       '@fixture/pkg-a',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-a:QualifiedStiChild',
       {
         className: 'QualifiedStiChild',
@@ -373,12 +406,10 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
         AND name = 'qualified_sti_bases'
     `);
 
-    expect(tables.rows.map((row: { name: string }) => row.name)).toEqual([
-      'qualified_sti_bases',
-    ]);
+    expect(tables.rows.map((row) => row.name)).toEqual(['qualified_sti_bases']);
 
     const columns = await db.query(`PRAGMA table_info('qualified_sti_bases')`);
-    const columnNames = columns.rows.map((row: { name: string }) => row.name);
+    const columnNames = columns.rows.map((row) => row.name);
     expect(columnNames).toContain('child_label');
 
     const childOnlyDb = await getTestDatabase({
@@ -388,14 +419,12 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     const childOnlyColumns = await childOnlyDb.query(
       `PRAGMA table_info('qualified_sti_bases')`,
     );
-    const childOnlyColumnNames = childOnlyColumns.rows.map(
-      (row: { name: string }) => row.name,
-    );
+    const childOnlyColumnNames = childOnlyColumns.rows.map((row) => row.name);
     expect(childOnlyColumnNames).toContain('child_label');
   });
 
   it('should resolve manifest stub by simple name when registered under qualified key', () => {
-    const manifestDef = {
+    const manifestDef: FixtureManifestDefinition = {
       className: 'QualifiedTestE',
       fields: {
         label: { type: 'text', _meta: {} },
@@ -405,7 +434,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     };
 
     // Register manifest under qualified key (simulating external package)
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:QualifiedTestE',
       manifestDef,
       '@test/pkg',
@@ -428,7 +457,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
   });
 
   it('should replace qualified manifest stub when real class is registered', () => {
-    const manifestDef = {
+    const manifestDef: FixtureManifestDefinition = {
       className: 'QualifiedTestF',
       fields: {
         data: { type: 'text', _meta: { required: true } },
@@ -437,7 +466,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       decoratorConfig: { cli: true },
     };
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:QualifiedTestF',
       manifestDef,
       '@test/pkg',
@@ -464,14 +493,14 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
   });
 
   it('should expose getClassByQualifiedName() for O(1) lookup', () => {
-    const manifestDef = {
+    const manifestDef: FixtureManifestDefinition = {
       className: 'QualifiedTestG',
       fields: {},
       methods: {},
       decoratorConfig: {},
     };
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:QualifiedTestG',
       manifestDef,
       '@test/pkg',
@@ -492,8 +521,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     let initialKey: string | undefined;
     let entry: any;
-    // @ts-expect-error - accessing private property for verification
-    for (const [key, val] of ObjectRegistry.classes) {
+    for (const [key, val] of ObjectRegistry.getAllClasses()) {
       if (val.name === 'QualifiedTestH') {
         initialKey = key;
         entry = val;
@@ -505,12 +533,10 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     // Force a simple-key starting point to simulate bundled runtimes that
     // registered the class before an explicit package name was available.
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.delete(initialKey!);
+    mutableRegistryClasses().delete(initialKey!);
     entry.packageName = undefined;
     entry.qualifiedName = undefined;
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.set('QualifiedTestH', entry);
+    mutableRegistryClasses().set('QualifiedTestH', entry);
     // Release B (#1133): no classNameMap to seed — iteration reads `classes`.
 
     ObjectRegistry.register(QualifiedTestH, {
@@ -527,8 +553,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       QualifiedTestH,
     );
 
-    // @ts-expect-error - accessing private property for verification
-    expect(ObjectRegistry.classes.has('QualifiedTestH')).toBe(false);
+    expect(ObjectRegistry.getAllClasses().has('QualifiedTestH')).toBe(false);
   });
 
   it('should reject promotion when the target qualified key already belongs to another class', () => {
@@ -539,8 +564,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     let initialKey: string | undefined;
     let entry: any;
-    // @ts-expect-error - accessing private property for verification
-    for (const [key, val] of ObjectRegistry.classes) {
+    for (const [key, val] of ObjectRegistry.getAllClasses()) {
       if (val.name === 'QualifiedTestI') {
         initialKey = key;
         entry = val;
@@ -552,12 +576,10 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     // Force a simple-key starting point, then occupy the target qualified key
     // with a different class to verify promotion collisions fail loudly.
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.delete(initialKey!);
+    mutableRegistryClasses().delete(initialKey!);
     entry.packageName = undefined;
     entry.qualifiedName = undefined;
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.set('QualifiedTestI', entry);
+    mutableRegistryClasses().set('QualifiedTestI', entry);
     // Release B (#1133): no classNameMap to seed — iteration reads `classes`.
 
     ObjectRegistry.register(QualifiedTestICollision, {
@@ -569,13 +591,11 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       QualifiedTestICollision,
     );
     expect(collisionEntry).toBeDefined();
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.delete('@test/pkg:QualifiedTestICollision');
+    mutableRegistryClasses().delete('@test/pkg:QualifiedTestICollision');
     collisionEntry!.name = 'QualifiedTestI';
     collisionEntry!.packageName = '@test/pkg';
     collisionEntry!.qualifiedName = '@test/pkg:QualifiedTestI';
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classes.set('@test/pkg:QualifiedTestI', collisionEntry!);
+    mutableRegistryClasses().set('@test/pkg:QualifiedTestI', collisionEntry!);
 
     expect(() =>
       ObjectRegistry.register(QualifiedTestI, {
@@ -611,7 +631,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
   it('should return qualified names from getDescendants() for qualified base names', () => {
     ObjectRegistry.clear();
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-a:QualifiedDescendantStiBase',
       {
         className: 'QualifiedDescendantStiBase',
@@ -625,7 +645,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       },
       '@fixture/pkg-a',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-a:QualifiedDescendantStiChild',
       {
         className: 'QualifiedDescendantStiChild',
@@ -637,7 +657,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       },
       '@fixture/pkg-a',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-b:QualifiedDescendantCtiBase',
       {
         className: 'QualifiedDescendantCtiBase',
@@ -648,7 +668,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       },
       '@fixture/pkg-b',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@fixture/pkg-b:QualifiedDescendantCtiChild',
       {
         className: 'QualifiedDescendantCtiChild',
@@ -680,7 +700,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     }
 
     // Register a class with a foreignKey via manifest
-    const manifestDef = {
+    const manifestDef: FixtureManifestDefinition = {
       className: 'QualifiedSource',
       fields: {
         targetId: {
@@ -693,7 +713,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
       decoratorConfig: {},
     };
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:QualifiedSource',
       manifestDef,
       '@test/pkg',

@@ -456,12 +456,14 @@ describe('generateDeclarations', () => {
   });
 
   it('declares a hidden item companion as custom-only without phantom CRUD', async () => {
-    const manifest = {
+    const manifest: SmartObjectManifest = {
       version: '1.0.0',
       timestamp: 1,
       objects: {
         Secret: {
           className: 'Secret',
+          name: 'secret',
+          filePath: 'secret.ts',
           collection: 'secrets',
           extends: 'SmrtObject',
           fields: { value: { type: 'text' } },
@@ -470,6 +472,8 @@ describe('generateDeclarations', () => {
         },
         SecretCollection: {
           className: 'SecretCollection',
+          name: 'secretcollection',
+          filePath: 'secret-collection.ts',
           collection: 'secrets',
           extends: 'SmrtCollection',
           extendsTypeArg: 'Secret',
@@ -478,7 +482,7 @@ describe('generateDeclarations', () => {
             reveal: {
               name: 'reveal',
               async: true,
-              parameters: [{ name: 'token', type: 'text' }],
+              parameters: [{ name: 'token', type: 'text', optional: false }],
               returnType: 'string',
               isStatic: false,
               isPublic: true,
@@ -489,7 +493,7 @@ describe('generateDeclarations', () => {
           },
         },
       },
-    } as SmartObjectManifest;
+    };
 
     await generateDeclarations({ manifest, outDir });
     const clientDeclaration = readFileSync(

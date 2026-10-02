@@ -7,7 +7,7 @@
  *  - the differ tolerates `uuid` and `text` for structural id/reference columns
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getDDLStrategy } from '../../schema/ddl/index.js';
@@ -45,7 +45,7 @@ describe('integer and binary type mapping (per-dialect) (#2373)', () => {
 });
 
 describe('R11 differ tolerance: UUID <-> TEXT are equivalent for structural ids', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
   let comparer: SchemaComparer;
 
   beforeEach(async () => {
@@ -202,7 +202,7 @@ describe('R11 differ tolerance: UUID <-> TEXT are equivalent for structural ids'
         },
         indexes: [],
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
     const postgresComparer = new SchemaComparer(postgresDb);
 
     const diff = await postgresComparer.compare({
@@ -253,7 +253,7 @@ describe('R11 differ tolerance: UUID <-> TEXT are equivalent for structural ids'
         },
         indexes: [],
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
     const postgresComparer = new SchemaComparer(postgresDb);
 
     const diff = await postgresComparer.compare({
@@ -303,7 +303,7 @@ describe('R11 differ tolerance: UUID <-> TEXT are equivalent for structural ids'
         },
         indexes: [],
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
     const jsonComparer = new SchemaComparer(jsonDb);
 
     const diff = await jsonComparer.compare({

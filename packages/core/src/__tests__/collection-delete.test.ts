@@ -211,9 +211,11 @@ describe('collection.delete()', () => {
 
       // Verify interceptor was called with correct instance
       expect(interceptedInstance).toBeTruthy();
-      expect(interceptedInstance?.id).toBe(product.id);
-      expect(interceptedContext?.className).toBe('DeleteTestProduct');
-      expect(interceptedContext?.operation).toBe('delete');
+      expect(interceptedInstance).toHaveProperty('id', product.id);
+      expect(interceptedContext).toMatchObject({
+        className: 'DeleteTestProduct',
+        operation: 'delete',
+      });
 
       // Cleanup
       GlobalInterceptors.clear();
@@ -242,9 +244,11 @@ describe('collection.delete()', () => {
 
       // Verify interceptor was called with correct instance
       expect(interceptedInstance).toBeTruthy();
-      expect(interceptedInstance?.id).toBe(product.id);
-      expect(interceptedContext?.className).toBe('DeleteTestProduct');
-      expect(interceptedContext?.operation).toBe('delete');
+      expect(interceptedInstance).toHaveProperty('id', product.id);
+      expect(interceptedContext).toMatchObject({
+        className: 'DeleteTestProduct',
+        operation: 'delete',
+      });
 
       // Cleanup
       GlobalInterceptors.clear();

@@ -57,6 +57,8 @@ describe('#1139 invalidation gaps', () => {
       ObjectRegistry.registerFromManifest(
         'RehydrateBase',
         {
+          name: 'rehydratebase',
+          collection: '',
           className: 'RehydrateBase',
           fields: { title: { type: 'text', _meta: {} } },
           methods: {},
@@ -70,6 +72,8 @@ describe('#1139 invalidation gaps', () => {
       ObjectRegistry.registerFromManifest(
         'RehydrateChild',
         {
+          name: 'rehydratechild',
+          collection: '',
           className: 'RehydrateChild',
           fields: { body: { type: 'text', _meta: {} } },
           methods: {},
@@ -80,16 +84,20 @@ describe('#1139 invalidation gaps', () => {
         '@test/b',
       );
 
-      const child = ObjectRegistry.findClass('RehydrateChild');
+      const child = ObjectRegistry.getClass('RehydrateChild');
       expect(child?.extends).toBe('@test/a:RehydrateBase');
 
       // Prime the cache.
       const baseWalk = ObjectRegistry.getClass('RehydrateBase');
       const childWalk = ObjectRegistry.getClass('RehydrateChild');
       if (baseWalk)
-        baseWalk.inheritedFields = new Map([['cached', 'sentinel']]);
+        baseWalk.inheritedFields = new Map([
+          ['cached', { type: 'text', default: 'sentinel' }],
+        ]);
       if (childWalk)
-        childWalk.inheritedFields = new Map([['cached', 'sentinel']]);
+        childWalk.inheritedFields = new Map([
+          ['cached', { type: 'text', default: 'sentinel' }],
+        ]);
 
       // Fire the public invalidator with the SIMPLE name.
       ObjectRegistry.invalidateInheritanceCache('RehydrateBase');
@@ -129,6 +137,8 @@ describe('#1139 invalidation gaps', () => {
       ObjectRegistry.registerFromManifest(
         'PromoteChild',
         {
+          name: 'promotechild',
+          collection: '',
           className: 'PromoteChild',
           fields: { childField: { type: 'text', _meta: {} } },
           methods: {},
@@ -140,15 +150,18 @@ describe('#1139 invalidation gaps', () => {
       );
 
       // Prime the cache on the child with a sentinel.
-      const child = ObjectRegistry.findClass('PromoteChild');
-      if (child) child.inheritedFields = new Map([['sentinel', 'present']]);
+      const child = ObjectRegistry.getClass('PromoteChild');
+      if (child)
+        child.inheritedFields = new Map([
+          ['sentinel', { type: 'text', default: 'present' }],
+        ]);
 
       // Re-register the parent with a packageName — routes through
       // register() → exact-key match → upsertExistingEntry, which promotes
       // the parent's key from 'PromoteBase' to '@test/promote:PromoteBase'.
       ObjectRegistry.register(PromoteBase, { packageName: '@test/promote' });
 
-      const childAfter = ObjectRegistry.findClass('PromoteChild');
+      const childAfter = ObjectRegistry.getClass('PromoteChild');
       expect(childAfter?.inheritedFields?.get('sentinel')).toBeUndefined();
       // Suppress the unused-class warning — the decorator ran on it.
       void PromoteBase;

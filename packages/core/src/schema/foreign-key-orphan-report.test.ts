@@ -7,15 +7,15 @@
  * parent table does not exist live rather than failing the whole report.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { collectForeignKeyOrphanCounts } from './foreign-key-orphan-report.js';
 import type { SchemaDefinition } from './types.js';
 
-let db: DatabaseProvider | undefined;
+let db: DatabaseInterface | undefined;
 
-async function openDatabase(): Promise<DatabaseProvider> {
+async function openDatabase(): Promise<DatabaseInterface> {
   db = await getDatabase({ type: 'sqlite', url: ':memory:' });
   return db;
 }
@@ -88,7 +88,7 @@ function manifest(): Record<string, SchemaDefinition> {
   };
 }
 
-async function seedTables(database: DatabaseProvider): Promise<void> {
+async function seedTables(database: DatabaseInterface): Promise<void> {
   await database.query(`CREATE TABLE event_types (id TEXT PRIMARY KEY)`);
   await database.query(
     `CREATE TABLE events (id TEXT PRIMARY KEY, type_id TEXT)`,

@@ -118,7 +118,7 @@ describe('Issue #603: JSON adapter cross-table queries', () => {
     const recap = await contentCollection.create({
       title: 'Team Standup Recap',
       body: 'We discussed the sprint progress...',
-      meetingId: meeting1.id,
+      meetingId: meeting1.id!,
       summary: 'Sprint is on track',
       actionItems: ['Complete task A', 'Review task B'],
     });
@@ -178,7 +178,7 @@ describe('Issue #603: JSON adapter cross-table queries', () => {
     const recap = await contentCollection.create({
       title: 'Team Standup Recap',
       body: 'We discussed the sprint progress...',
-      meetingId: meeting1.id,
+      meetingId: meeting1.id!,
       summary: 'Sprint is on track',
     });
     await recap.save();
@@ -228,7 +228,7 @@ describe('Issue #603: JSON adapter cross-table queries', () => {
     const recap = await contentCollection.create({
       title: 'Team Standup Recap',
       body: 'We discussed the sprint progress...',
-      meetingId: meeting.id,
+      meetingId: meeting.id!,
       summary: 'Sprint is on track',
     });
     await recap.save();

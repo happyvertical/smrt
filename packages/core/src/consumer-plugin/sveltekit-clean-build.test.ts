@@ -44,6 +44,12 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
   ])(
     'inventories only an explicitly selected provider-qualified route on the first build (%s)',
     async (_configCase, configOverrides, expectedConfigFile) => {
+      const overrides: {
+        routesDir?: string;
+        configPath?: string;
+        configFileName?: string;
+        kebabRoutes?: boolean;
+      } = configOverrides;
       // SvelteKit deliberately overrides Vite's configured root with the launch
       // cwd. Use a distinct requested Vite root to prove early SMRT generation
       // follows that final SvelteKit root when projectRoot is omitted.
@@ -141,7 +147,7 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
         changesRoute: { enabled: true },
         eventsRoute: { enabled: true },
         resourcesRoute: { enabled: false },
-        ...configOverrides,
+        ...overrides,
       };
       const consumerRoutesDir = svelteKitOptions.routesDir ?? 'src/routes/api';
       const producerSvelteKitOptions = {

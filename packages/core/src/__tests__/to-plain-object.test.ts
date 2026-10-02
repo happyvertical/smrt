@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object';
 
 class PlainObjectSerializationProbe extends SmrtObject {
-  protected transformJSON(data: Record<string, unknown>) {
+  public transformJSON(data: Record<string, unknown>): Record<string, unknown> {
     return {
       ...data,
       transformed: true,
@@ -236,6 +236,8 @@ describe('SmrtObject.toPlainObject', () => {
     try {
       vi.resetModules();
       const { getBoxedPrimitiveKind } = await import(
+        // Vite supplies this query module; TypeScript cannot resolve its suffix.
+        // @ts-expect-error Vite query module has no standalone declaration.
         '../plain-json?browser-fallback'
       );
       const [boxedBoolean, boxedNumber, boxedString] = runInNewContext(
@@ -371,7 +373,7 @@ describe('SmrtObject.toPlainObject', () => {
     const object =
       shape === 'nested'
         ? new PlainObjectSerializationProbe()
-        : new SmrtObject();
+        : new PlainObjectSerializationProbe();
     if (shape === 'row') {
       object.transformJSON = (data) => ({
         ...data,

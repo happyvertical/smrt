@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  type ConfigResolver,
   getClassConfigResolvers,
   getConfigResolver,
   isLazyConfigSentinel,
@@ -320,7 +321,9 @@ describe('lazy-config', () => {
 
     it('walks the prototype chain so subclasses inherit parent resolvers', () => {
       class Parent {
-        static configResolvers = { a: () => 'parent-a' };
+        static configResolvers: Record<string, ConfigResolver> = {
+          a: () => 'parent-a',
+        };
       }
       class Child extends Parent {
         static configResolvers = { b: () => 'child-b' };

@@ -18,7 +18,7 @@
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { DatabaseInterface, DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
@@ -370,7 +370,7 @@ describe('Issue #741: STI Index Detection', () => {
 describe('Index normalization edge cases', () => {
   it('should handle indexes on multiple columns correctly', async () => {
     // Test that compound indexes with different names but same columns are recognized as functionally equivalent
-    const db: DatabaseProvider = await getDatabase({
+    const db: DatabaseInterface = await getDatabase({
       type: 'sqlite',
       url: ':memory:',
     });
@@ -430,7 +430,7 @@ describe('Index normalization edge cases', () => {
   it('should treat different column orders as non-equivalent indexes', async () => {
     // Column order is semantically significant for composite indexes
     // An index on (a, b) is NOT equivalent to (b, a) - they have different query performance
-    const db: DatabaseProvider = await getDatabase({
+    const db: DatabaseInterface = await getDatabase({
       type: 'sqlite',
       url: ':memory:',
     });
@@ -489,7 +489,7 @@ describe('Index normalization edge cases', () => {
 
   it('should handle unique vs non-unique index differences', async () => {
     // Test that unique vs non-unique is considered in index equivalence
-    const db: DatabaseProvider = await getDatabase({
+    const db: DatabaseInterface = await getDatabase({
       type: 'sqlite',
       url: ':memory:',
     });

@@ -227,7 +227,10 @@ describe('C3 generator-surface hardening', () => {
       );
       expect(apiDisabledPaths).toEqual([]);
 
-      const schemaKeys = Object.keys(spec.components?.schemas || {});
+      const components = spec.components as
+        | { schemas?: Record<string, unknown> }
+        | undefined;
+      const schemaKeys = Object.keys(components?.schemas || {});
       const apiDisabledSchemas = schemaKeys.filter((s) =>
         s.toLowerCase().includes('c3apidisabled'),
       );

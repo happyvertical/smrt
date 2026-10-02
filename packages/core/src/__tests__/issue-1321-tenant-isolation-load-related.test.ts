@@ -165,7 +165,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
   describe('loadRelated (foreignKey)', () => {
     it('resolves a same-tenant relationship without throwing', async () => {
       const customer = await makeCustomer('tenant-a');
-      const order = await makeOrder('tenant-a', customer.id);
+      const order = await makeOrder('tenant-a', customer.id!);
 
       const loaded = await order.loadRelated('customerId');
 
@@ -175,7 +175,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('is a no-op when the target has a null tenant (global model)', async () => {
       const customer = await makeCustomer(null);
-      const order = await makeOrder('tenant-a', customer.id);
+      const order = await makeOrder('tenant-a', customer.id!);
 
       const loaded = await order.loadRelated('customerId');
 
@@ -184,7 +184,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('is a no-op when the owning object has a null tenant', async () => {
       const customer = await makeCustomer('tenant-b');
-      const order = await makeOrder(null, customer.id);
+      const order = await makeOrder(null, customer.id!);
 
       const loaded = await order.loadRelated('customerId');
 
@@ -193,7 +193,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('throws TenantIsolationError on a genuine cross-tenant load', async () => {
       const customer = await makeCustomer('tenant-b');
-      const order = await makeOrder('tenant-a', customer.id);
+      const order = await makeOrder('tenant-a', customer.id!);
 
       await expect(order.loadRelated('customerId')).rejects.toThrow(
         TenantIsolationError,
@@ -202,7 +202,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('surfaces the owning and attempted tenants on the error', async () => {
       const customer = await makeCustomer('tenant-b');
-      const order = await makeOrder('tenant-a', customer.id);
+      const order = await makeOrder('tenant-a', customer.id!);
 
       await expect(order.loadRelated('customerId')).rejects.toMatchObject({
         code: 'TENANT_ISOLATION_VIOLATION',
@@ -213,7 +213,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('bypasses the guard with { allowCrossTenant: true }', async () => {
       const customer = await makeCustomer('tenant-b');
-      const order = await makeOrder('tenant-a', customer.id);
+      const order = await makeOrder('tenant-a', customer.id!);
 
       const loaded = await order.loadRelated('customerId', {
         allowCrossTenant: true,
@@ -224,7 +224,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('does not cache a blocked cross-tenant target (re-throws on retry)', async () => {
       const customer = await makeCustomer('tenant-b');
-      const order = await makeOrder('tenant-a', customer.id);
+      const order = await makeOrder('tenant-a', customer.id!);
 
       await expect(order.loadRelated('customerId')).rejects.toThrow(
         TenantIsolationError,
@@ -237,7 +237,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('re-validates a prior allowCrossTenant load on a later guarded call', async () => {
       const customer = await makeCustomer('tenant-b');
-      const order = await makeOrder('tenant-a', customer.id);
+      const order = await makeOrder('tenant-a', customer.id!);
 
       // First load opts into the cross-tenant target (and caches it)...
       const allowed = await order.loadRelated('customerId', {
@@ -253,7 +253,7 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('blocks a cross-tenant target cached by an eager include load', async () => {
       const customer = await makeCustomer('tenant-b');
-      await makeOrder('tenant-a', customer.id);
+      await makeOrder('tenant-a', customer.id!);
 
       // Eager `include` populates _loadedRelationships directly, bypassing the
       // lazy loader. A later guarded read must NOT leak that cross-tenant target.
@@ -330,8 +330,8 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
   describe('loadRelatedMany (oneToMany)', () => {
     it('returns same-tenant children without throwing', async () => {
       const customer = await makeCustomer('tenant-a');
-      await makeOrder('tenant-a', customer.id);
-      await makeOrder('tenant-a', customer.id);
+      await makeOrder('tenant-a', customer.id!);
+      await makeOrder('tenant-a', customer.id!);
 
       const orders = (await customer.loadRelatedMany('orders')) as IsoOrder[];
 
@@ -340,8 +340,8 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('throws TenantIsolationError when any child is cross-tenant', async () => {
       const customer = await makeCustomer('tenant-a');
-      await makeOrder('tenant-a', customer.id);
-      await makeOrder('tenant-b', customer.id); // leaked child
+      await makeOrder('tenant-a', customer.id!);
+      await makeOrder('tenant-b', customer.id!); // leaked child
 
       await expect(customer.loadRelatedMany('orders')).rejects.toThrow(
         TenantIsolationError,
@@ -350,8 +350,8 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
     it('bypasses per-item guard with { allowCrossTenant: true }', async () => {
       const customer = await makeCustomer('tenant-a');
-      await makeOrder('tenant-a', customer.id);
-      await makeOrder('tenant-b', customer.id);
+      await makeOrder('tenant-a', customer.id!);
+      await makeOrder('tenant-b', customer.id!);
 
       const orders = (await customer.loadRelatedMany('orders', {
         allowCrossTenant: true,

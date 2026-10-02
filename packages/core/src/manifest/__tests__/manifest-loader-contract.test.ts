@@ -367,7 +367,7 @@ describe('Manifest loader contract', () => {
       tableStrategy: 'sti',
     });
 
-    const registered = ObjectRegistry.findClass('MissingManifestContractClass');
+    const registered = ObjectRegistry.getClass('MissingManifestContractClass');
     expect(registered).toBeDefined();
     registered?.fields.set('tenantId', { type: 'text', _meta: {} });
 

@@ -104,6 +104,8 @@ class MLIChildConstrained extends MLIParent {
 @smrt({ tableStrategy: 'sti' })
 class MLIProfileIssue302 extends SmrtObject {
   name: string = '';
+  // Legacy fixture models a declared slug field over the base accessor.
+  // @ts-expect-error The regression needs this historical declaration shape.
   slug: string = '';
   url: string = '';
 }
@@ -187,7 +189,7 @@ describe('Multi-Level Field Inheritance', () => {
 
       // Child's definition should win (TODO: metadata not merging correctly)
       const titleField = fields.get('title');
-      expect(titleField.required).toBe(true);
+      expect(titleField?.required).toBe(true);
     });
   });
 
@@ -223,9 +225,9 @@ describe('Multi-Level Field Inheritance', () => {
 
       const emailField = fields.get('email');
       expect(emailField).toBeDefined();
-      expect(emailField.required).toBe(true);
+      expect(emailField?.required).toBe(true);
       // Child's pattern should win
-      expect(emailField.pattern).toEqual(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+      expect(emailField?.pattern).toEqual(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
     });
   });
 

@@ -191,6 +191,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         const before = await links.byLeft('owner');
         const cursor = (await getChangesSince(db, { since: 0, limit: 1000 }))
           .cursor;
+        if (!db.transaction) throw new Error('Transaction support is required');
         await expect(
           db.transaction(async (tx) => {
             const bound = await JunctionBatchDialectLinks.create({ db: tx });
@@ -211,6 +212,8 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         async () => {
           await links.setLinks('legacy-owner', ['before']);
           const row = (await links.byLeft('legacy-owner'))[0];
+          if (!db.transaction)
+            throw new Error('DuckDB transaction is required');
           await expect(
             db.transaction(async (tx) => {
               await row.withDatabase(tx, () => row.delete());

@@ -20,13 +20,15 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtObject } from '../object.js';
+import type { RegisteredField } from '../registry/types.js';
 import { ObjectRegistry } from '../registry.js';
 import type { FieldDefinition } from '../scanner/types.js';
 
 // Minimal field stub mirroring registry.test.ts's helper: `related` is a
 // top-level property (not nested in _meta), matching how the scanner records
 // foreignKey targets.
-class StubField implements FieldDefinition {
+class StubField implements RegisteredField {
+  [key: string]: unknown;
   type: FieldDefinition['type'];
   _meta: Record<string, any>;
   related?: string;
@@ -48,7 +50,7 @@ class StubField implements FieldDefinition {
 
 function registerWithFields(
   ctor: typeof SmrtObject,
-  fields: Map<string, FieldDefinition>,
+  fields: Map<string, RegisteredField>,
 ): void {
   ObjectRegistry.register(ctor, {
     api: { include: ['list', 'get'] },
@@ -76,13 +78,13 @@ describe('Issue #1333: FK cycles must not abort migration ordering', () => {
 
     registerWithFields(
       CycleNodeA,
-      new Map<string, FieldDefinition>([
+      new Map<string, RegisteredField>([
         ['bId', new StubField('foreignKey', { related: 'CycleNodeB' })],
       ]),
     );
     registerWithFields(
       CycleNodeB,
-      new Map<string, FieldDefinition>([
+      new Map<string, RegisteredField>([
         ['aId', new StubField('foreignKey', { related: 'CycleNodeA' })],
       ]),
     );
@@ -110,14 +112,14 @@ describe('Issue #1333: FK cycles must not abort migration ordering', () => {
 
     registerWithFields(
       CycleSelfA,
-      new Map<string, FieldDefinition>([
+      new Map<string, RegisteredField>([
         ['bId', new StubField('foreignKey', { related: 'CycleSelfB' })],
         ['parentId', new StubField('foreignKey', { related: 'CycleSelfA' })],
       ]),
     );
     registerWithFields(
       CycleSelfB,
-      new Map<string, FieldDefinition>([
+      new Map<string, RegisteredField>([
         ['aId', new StubField('foreignKey', { related: 'CycleSelfA' })],
       ]),
     );
@@ -136,13 +138,13 @@ describe('Issue #1333: FK cycles must not abort migration ordering', () => {
     class PreexistingCycleB extends SmrtObject {}
     registerWithFields(
       PreexistingCycleA,
-      new Map<string, FieldDefinition>([
+      new Map<string, RegisteredField>([
         ['bId', new StubField('foreignKey', { related: 'PreexistingCycleB' })],
       ]),
     );
     registerWithFields(
       PreexistingCycleB,
-      new Map<string, FieldDefinition>([
+      new Map<string, RegisteredField>([
         ['aId', new StubField('foreignKey', { related: 'PreexistingCycleA' })],
       ]),
     );
@@ -151,10 +153,10 @@ describe('Issue #1333: FK cycles must not abort migration ordering', () => {
     // its dependencies, both outside the cycle.
     class NewParent extends SmrtObject {}
     class NewChild extends SmrtObject {}
-    registerWithFields(NewParent, new Map<string, FieldDefinition>());
+    registerWithFields(NewParent, new Map<string, RegisteredField>());
     registerWithFields(
       NewChild,
-      new Map<string, FieldDefinition>([
+      new Map<string, RegisteredField>([
         ['parentId', new StubField('foreignKey', { related: 'NewParent' })],
       ]),
     );

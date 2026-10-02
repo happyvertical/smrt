@@ -130,13 +130,13 @@ describe.skipIf(!pgUrl)(
         peer: DatabaseInterface,
       ) => Promise<void>,
     ) {
-      const peer = await db.beginTransaction?.();
+      const peer = await db.beginTransaction!();
       const rollback = new Error('rollback transaction-cache fixture');
       try {
         await peer.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         await peer.query(`SELECT name FROM ${TABLE}`); // establish peer snapshot
         try {
-          await db.transaction?.(async (leader) => {
+          await db.transaction!(async (leader) => {
             // Callback and manual handles have the same URL but distinct public
             // executor identities. No driver/private transaction fields are used.
             expect(leader === db || leader === peer || peer === db).toBe(false);
@@ -276,7 +276,7 @@ describe.skipIf(!pgUrl)(
     });
 
     it('preserves a repeatable-read snapshot after a fresh pool cache fill', async () => {
-      const peer = await db.beginTransaction?.();
+      const peer = await db.beginTransaction!();
       try {
         await peer.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         const peerRows = await Issue2819TxRows.create({ db: peer });

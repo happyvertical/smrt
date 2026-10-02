@@ -20,6 +20,12 @@ import { SmrtObject } from '../object';
 import { SmrtPolymorphicAssociation } from '../polymorphic-association';
 import { ObjectRegistry, smrt } from '../registry';
 
+function persistedId(record: SmrtObject): string {
+  const id = record.id;
+  if (typeof id !== 'string') throw new Error('Expected a persisted target id');
+  return id;
+}
+
 @smrt({ tableName: 'poly_assoc_test_targets' })
 class PolyTarget extends SmrtObject {
   name = '';
@@ -123,7 +129,7 @@ describe('SmrtPolymorphicAssociation', () => {
       const link = await links.create({
         ownerId: 'owner-1',
         metaType: targetMetaType,
-        metaId: target.id,
+        metaId: persistedId(target),
         role: 'hero',
         sortOrder: 3,
       });
@@ -154,7 +160,7 @@ describe('SmrtPolymorphicAssociation', () => {
       const link = await links.create({
         ownerId: 'owner-3',
         metaType: targetMetaType,
-        metaId: target.id,
+        metaId: persistedId(target),
         role: 'thumbnail',
       });
       await link.save();
@@ -162,7 +168,7 @@ describe('SmrtPolymorphicAssociation', () => {
       const found = (await links.list({
         where: {
           metaType: targetMetaType,
-          metaId: target.id,
+          metaId: persistedId(target),
           role: 'thumbnail',
         },
       })) as PolyLink[];
@@ -178,7 +184,7 @@ describe('SmrtPolymorphicAssociation', () => {
       const link = await links.create({
         ownerId: 'owner-4',
         metaType: targetMetaType,
-        metaId: target.id,
+        metaId: persistedId(target),
         role: 'hero',
       });
       await link.save();
@@ -202,7 +208,7 @@ describe('SmrtPolymorphicAssociation', () => {
       const link = await links.create({
         ownerId: 'owner-sti',
         metaType: articleMetaType,
-        metaId: article.id,
+        metaId: persistedId(article),
         role: 'hero',
       });
       await link.save();
@@ -229,7 +235,7 @@ describe('SmrtPolymorphicAssociation', () => {
       const link = await links.create({
         ownerId: 'owner-sti-base',
         metaType: baseMetaType,
-        metaId: article.id,
+        metaId: persistedId(article),
         role: 'hero',
       });
       await link.save();
@@ -256,7 +262,7 @@ describe('SmrtPolymorphicAssociation', () => {
       const link = await links.create({
         ownerId: 'owner-err',
         metaType: targetMetaType,
-        metaId: target.id,
+        metaId: persistedId(target),
       });
       await link.save();
 
@@ -308,7 +314,7 @@ describe('SmrtPolymorphicAssociation', () => {
       const link = await links.create({
         ownerId: 'owner-7',
         metaType: targetMetaType,
-        metaId: target.id,
+        metaId: persistedId(target),
       });
       await link.save();
 

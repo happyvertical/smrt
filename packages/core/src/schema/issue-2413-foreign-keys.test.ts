@@ -99,13 +99,25 @@ describe('same-package foreign-key policy (#2413)', () => {
   });
 
   it('maps declared actions, natural keys, ordinary references, and tenancy exclusions explicitly', () => {
-    expect(resolveForeignKeyDeleteAction({ declared: 'SET NULL' }).action).toBe(
-      'SET NULL',
-    );
     expect(
-      resolveForeignKeyDeleteAction({ isConflictColumn: true }).action,
+      resolveForeignKeyDeleteAction({
+        declared: 'SET NULL',
+        isConflictColumn: false,
+        isTenantIdField: false,
+      }).action,
+    ).toBe('SET NULL');
+    expect(
+      resolveForeignKeyDeleteAction({
+        isConflictColumn: true,
+        isTenantIdField: false,
+      }).action,
     ).toBe('CASCADE');
-    expect(resolveForeignKeyDeleteAction({}).action).toBe('NO ACTION');
+    expect(
+      resolveForeignKeyDeleteAction({
+        isConflictColumn: false,
+        isTenantIdField: false,
+      }).action,
+    ).toBe('NO ACTION');
     expect(
       resolveForeignKeyDeleteAction({
         isConflictColumn: true,
@@ -641,7 +653,16 @@ describe('existing-table orphan safety (#2413)', () => {
           }
           return { rows: [] };
         },
-        getTableSchema: async () => ({
+        getTableSchema: async (
+          _tableName: string,
+        ): Promise<{
+          columns: Record<
+            string,
+            { name: string; type: string; primaryKey?: boolean } | undefined
+          >;
+          indexes: unknown[];
+          foreignKeys: Array<Record<string, unknown>>;
+        }> => ({
           columns: {
             id: { name: 'id', type: 'text', primaryKey: true },
             parent_id: { name: 'parent_id', type: 'text' },
@@ -1121,6 +1142,8 @@ describe('PostgreSQL foreign-key provisioning across uuid/text drift (#2608)', (
       })
       .catch((thrown: unknown) => thrown as Error);
 
+    if (!(error instanceof Error)) throw new Error('Expected FK drift error');
+
     expect(error.message).toContain('incompatible column types');
     expect(error.message).toContain('SQLSTATE 42804');
     expect(error.message).toContain(
@@ -1140,6 +1163,8 @@ describe('PostgreSQL foreign-key provisioning across uuid/text drift (#2608)', (
         uuidComparison: true,
       })
       .catch((thrown: unknown) => thrown as Error);
+
+    if (!(error instanceof Error)) throw new Error('Expected FK drift error');
 
     expect(error.message).toContain('SQLSTATE 42804');
     expect(error.message).toContain('Align children.parent_id (uuid)');

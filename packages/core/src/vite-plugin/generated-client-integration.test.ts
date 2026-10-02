@@ -390,6 +390,8 @@ export class GenClientReadonly extends SmrtObject {
         objects: {
           AuditEvent: {
             className: 'AuditEvent',
+            name: 'AuditEvent',
+            filePath: '',
             collection: 'audit-events',
             fields: {},
             methods: {},

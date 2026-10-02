@@ -91,6 +91,11 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       vi.spyOn(ObjectRegistry, 'resolveEmbeddingConfig').mockReturnValue({
         fields: ['content'],
         combinedField: { name: 'combined', template: '{content}' },
+        dimensions: 2,
+        provider: 'local',
+        localModel: 'test-model',
+        aiModel: 'test-model',
+        fallbackToAI: false,
       });
       vi.spyOn(EmbeddingProvider.prototype, 'getModelName').mockReturnValue(
         'test-model',
@@ -109,8 +114,8 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         "DELETE FROM _smrt_embeddings WHERE object_class = 'SemanticIdProbe'",
       );
       await appDb?.query(`DROP TABLE IF EXISTS ${tableName}`);
-      await appDb?.close();
-      if (systemDb !== appDb) await systemDb?.close();
+      await appDb?.close?.();
+      if (systemDb !== appDb) await systemDb?.close?.();
       rmSync(tempDir, { recursive: true, force: true });
     });
     async function seed(count: number) {

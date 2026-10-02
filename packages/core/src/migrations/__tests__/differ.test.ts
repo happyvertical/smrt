@@ -4,7 +4,7 @@
  * Tests for schema comparison and diff generation.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SchemaGenerator } from '../../schema/generator.js';
@@ -16,7 +16,7 @@ import {
 } from '../differ.js';
 
 describe('SchemaComparer', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
   let comparer: SchemaComparer;
 
   beforeEach(async () => {
@@ -180,7 +180,7 @@ describe('SchemaComparer', () => {
       // And the emitted statement is executable against the live table.
       expect(add?.sql).toBeTruthy();
       await db.query(add?.sql as string);
-      const indexes = await db.query<{ name: string }>(
+      const indexes = await db.query(
         "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'posts';",
       );
       expect(indexes.rows.map((row) => row.name)).toContain(
@@ -1446,7 +1446,7 @@ describe('SchemaComparer INTEGER→REAL widening for rate columns (#2361)', () =
 });
 
 describe('SchemaComparer rename_data_pending (#2752)', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
 
   /**
    * Generic mock responder for the #2874 batched probes: both are one row
@@ -2194,7 +2194,7 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
       },
     };
 
-    const comparer = new SchemaComparer(mockDb as unknown as DatabaseProvider);
+    const comparer = new SchemaComparer(mockDb as unknown as DatabaseInterface);
     const diff = await comparer.compare(manifest);
 
     const pendingChanges = diff.changes.filter(
@@ -2286,7 +2286,7 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
       },
     };
 
-    const comparer = new SchemaComparer(mockDb as unknown as DatabaseProvider);
+    const comparer = new SchemaComparer(mockDb as unknown as DatabaseInterface);
     const diff = await comparer.compare(manifest);
 
     // No single cross-table probe statement exceeded the cap, even though
@@ -2349,7 +2349,7 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
       },
     };
 
-    const comparer = new SchemaComparer(mockDb as unknown as DatabaseProvider);
+    const comparer = new SchemaComparer(mockDb as unknown as DatabaseInterface);
 
     // First compare(): new_id is still empty, so the advisory fires.
     const firstDiff = await comparer.compare(manifest);

@@ -30,6 +30,8 @@ class TenantTestSmrtClass extends TestSmrtClass {
   tenantId: string | null = 'tenant-123';
 }
 
+// This regression intentionally shadows the runtime's private signal hook.
+// @ts-expect-error The fixture exercises private hook dispatch at runtime.
 class RuntimeSingleFlightTestSmrtClass extends SmrtClass {
   initializeSignalsCalls = 0;
   private _signalsInitStarted?: () => void;

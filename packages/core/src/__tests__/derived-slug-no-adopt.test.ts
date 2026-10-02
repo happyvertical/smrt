@@ -179,7 +179,7 @@ describe('a derived slug never adopts another record', () => {
 
   it('a public title slug counts up: council-meeting, -2, -3', async () => {
     const articles = await DsArticleCollection.create({ db });
-    const made = [];
+    const made: DsArticle[] = [];
     for (const body of ['one', 'two', 'three']) {
       made.push(
         await articles.create({

@@ -31,6 +31,9 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
       'Issue703Event',
       {
         className: 'Issue703Event',
+        name: 'issue703event',
+        collection: 'issue703events',
+        filePath: '/test/fixtures/Issue703Event.ts',
         extends: 'SmrtObject',
         decoratorConfig: {
           tableStrategy: 'sti',
@@ -40,6 +43,7 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
           title: { type: 'text', default: '' },
           eventDate: { type: 'datetime' },
         },
+        methods: {},
         schema: {
           tableName: 'issue703_events',
           ddl: 'CREATE TABLE IF NOT EXISTS "issue703_events" ("id" TEXT PRIMARY KEY, "title" TEXT, "event_date" DATETIME, "_meta_type" TEXT, "_meta_data" TEXT)',
@@ -51,6 +55,7 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
             _meta_data: { type: 'TEXT' },
           },
           indexes: [],
+          version: 'fixture',
         },
       },
       'test-package',
@@ -63,6 +68,9 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
       'Issue703Meeting',
       {
         className: 'Issue703Meeting',
+        name: 'issue703meeting',
+        collection: 'issue703meetings',
+        filePath: '/test/fixtures/Issue703Meeting.ts',
         extends: 'Issue703Event',
         decoratorConfig: {
           // tableName is intentionally omitted to simulate null in manifest
@@ -72,6 +80,7 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
           councilId: { type: 'text', default: '' },
           agendaUrl: { type: 'text', default: '' },
         },
+        methods: {},
         // No schema provided - simulating external manifest scenario
       },
       'test-package',
@@ -82,6 +91,9 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
       'Issue703WeatherForecast',
       {
         className: 'Issue703WeatherForecast',
+        name: 'issue703weatherforecast',
+        collection: 'issue703weatherforecasts',
+        filePath: '/test/fixtures/Issue703WeatherForecast.ts',
         extends: 'Issue703Event',
         decoratorConfig: {
           // Explicitly different tableName to test mismatch handling
@@ -91,6 +103,7 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
           temperatureHigh: { type: 'decimal', default: 0.0 },
           temperatureLow: { type: 'decimal', default: 0.0 },
         },
+        methods: {},
       },
       'test-package',
     );
@@ -133,12 +146,16 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
         'Issue703CTIClass',
         {
           className: 'Issue703CTIClass',
+          name: 'issue703cticlass',
+          collection: 'issue703cticlasses',
+          filePath: '/test/fixtures/Issue703CTIClass.ts',
           extends: 'SmrtObject',
           decoratorConfig: {
             tableStrategy: 'cti',
             tableName: 'issue703_cti',
           },
           fields: {},
+          methods: {},
         },
         'test-package',
       );

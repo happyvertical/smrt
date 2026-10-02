@@ -207,7 +207,7 @@ describe('generateToolFromMethod', () => {
         options: {},
       },
     });
-    expect(tool.function.parameters.required).toBeUndefined();
+    expect(tool.function.parameters?.required).toBeUndefined();
   });
 
   it('uses custom description from config', () => {

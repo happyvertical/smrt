@@ -6,6 +6,12 @@ import type { Signal } from '@happyvertical/smrt-types';
 import { describe, expect, it } from 'vitest';
 import { SignalSanitizer } from './sanitizer.js';
 
+// Exercise defensive sanitization of object-shaped args supplied by untyped callers.
+// The public Signal contract uses an array; only this malformed boundary is cast.
+function objectArgs(args: Record<string, unknown>): Signal['args'] {
+  return args as unknown as Signal['args'];
+}
+
 describe('SignalSanitizer', () => {
   describe('Default Redaction', () => {
     it('should redact password fields', () => {
@@ -16,11 +22,11 @@ describe('SignalSanitizer', () => {
         className: 'User',
         method: 'login',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           username: 'alice',
           password: 'secret123',
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -39,7 +45,7 @@ describe('SignalSanitizer', () => {
         className: 'APIClient',
         method: 'request',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
         metadata: {
           apiKey: 'sk-proj-abc123',
           api_key: 'another-key',
@@ -62,7 +68,7 @@ describe('SignalSanitizer', () => {
         className: 'Auth',
         method: 'refresh',
         type: 'end',
-        timestamp: Date.now(),
+        timestamp: new Date(),
         result: {
           accessToken: 'eyJ0eXAiOiJKV1QiLCJh...',
           refreshToken: 'refresh_xyz',
@@ -87,12 +93,12 @@ describe('SignalSanitizer', () => {
         className: 'Payment',
         method: 'process',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           creditCard: '4111111111111111',
           cvv: '123',
           ssn: '123-45-6789',
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -112,12 +118,12 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           PASSWORD: 'secret',
           ApiKey: 'key123',
           user_token: 'token456',
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -142,12 +148,12 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           secretData: 'should-be-redacted',
           privateInfo: 'also-redacted',
           publicData: 'visible',
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -170,8 +176,8 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: { password: 'secret' },
+        timestamp: new Date(),
+        args: objectArgs({ password: 'secret' }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -182,7 +188,7 @@ describe('SignalSanitizer', () => {
     it('should support custom replacer function', () => {
       const sanitizer = new SignalSanitizer({
         replacer: (key, value) => {
-          if (key === 'email') {
+          if (key === 'email' && typeof value === 'string') {
             // Partially redact email
             return value.replace(/(.{2})(.*)(@.*)/, '$1***$3');
           }
@@ -196,11 +202,11 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           email: 'alice@example.com',
           name: 'Alice',
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -221,8 +227,8 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           user: {
             name: 'Alice',
             credentials: {
@@ -230,7 +236,7 @@ describe('SignalSanitizer', () => {
               apiKey: 'key123',
             },
           },
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -254,13 +260,13 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           users: [
             { name: 'Alice', password: 'secret1' },
             { name: 'Bob', password: 'secret2' },
           ],
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -286,7 +292,7 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
         args: obj,
       };
 
@@ -308,14 +314,16 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: { data: longString },
+        timestamp: new Date(),
+        args: objectArgs({ data: longString }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
 
-      expect(sanitized.args?.data).toContain('[TRUNCATED]');
-      expect(sanitized.args?.data?.length).toBeLessThan(1100);
+      // This fixture deliberately supplies object-shaped args from an untyped caller.
+      const args = sanitized.args as unknown as { data: string };
+      expect(args.data).toContain('[TRUNCATED]');
+      expect(args.data?.length).toBeLessThan(1100);
     });
 
     it('should handle Error objects specially', () => {
@@ -328,7 +336,7 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'error',
-        timestamp: Date.now(),
+        timestamp: new Date(),
         error,
       };
 
@@ -355,7 +363,7 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'testMethod',
         type: 'end',
-        timestamp: 1234567890,
+        timestamp: new Date(1234567890),
         duration: 150,
       };
 
@@ -367,7 +375,7 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'testMethod',
         type: 'end',
-        timestamp: 1234567890,
+        timestamp: new Date(1234567890),
         duration: 150,
       });
     });
@@ -380,8 +388,8 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'end',
-        timestamp: Date.now(),
-        args: { password: 'secret' },
+        timestamp: new Date(),
+        args: objectArgs({ password: 'secret' }),
         result: { token: 'xyz' },
         metadata: { apiKey: 'key123' },
       };
@@ -401,11 +409,11 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: { password: 'secret', username: 'alice' },
+        timestamp: new Date(),
+        args: objectArgs({ password: 'secret', username: 'alice' }),
       };
 
-      const original = JSON.parse(JSON.stringify(signal));
+      const original = structuredClone(signal);
       sanitizer.sanitize(signal);
 
       // Original signal should be unchanged
@@ -423,12 +431,12 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           nullValue: null,
           undefinedValue: undefined,
           password: 'secret',
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -448,12 +456,12 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           string: 'hello',
           number: 42,
           boolean: true,
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -473,11 +481,11 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
-        args: {
+        timestamp: new Date(),
+        args: objectArgs({
           emptyObject: {},
           emptyArray: [],
-        },
+        }),
       };
 
       const sanitized = sanitizer.sanitize(signal);
@@ -496,7 +504,7 @@ describe('SignalSanitizer', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
 
       const sanitized = sanitizer.sanitize(signal);

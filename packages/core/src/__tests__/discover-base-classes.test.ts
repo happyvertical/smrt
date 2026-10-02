@@ -164,7 +164,7 @@ describe('Base Class Discovery', () => {
       // Log discovered classes for debugging
       if (baseClasses.length > 3) {
         const external = baseClasses.filter(
-          (cls) => !DEFAULT_BASE_CLASSES.includes(cls),
+          (cls) => !DEFAULT_BASE_CLASSES.some((base) => base === cls),
         );
         console.log(`Found ${external.length} external base classes`);
       }

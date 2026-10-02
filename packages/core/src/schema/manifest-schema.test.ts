@@ -10,13 +10,14 @@
  * a bare `"id" TEXT PRIMARY KEY` accepts NULL on SQLite.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { getDDLStrategy } from './ddl/index.js';
 import { SchemaGenerator } from './generator.js';
 import {
   collectManifestTables,
+  type ManifestSchemaLike,
   manifestSchemaToDefinition,
   mergeSchemaDefinitionInto,
   renderCollectedManifestTable,
@@ -58,7 +59,7 @@ const structuredEvent = {
     },
   ],
   version: 'v1',
-} as const;
+} satisfies ManifestSchemaLike;
 
 describe('manifestSchemaToDefinition', () => {
   it('preserves generated NULL-equal identities through raw manifest conversion and collected PostgreSQL DDL (#2834)', () => {
@@ -552,7 +553,7 @@ describe('mergeSchemaDefinitionInto', () => {
 });
 
 describe('DDL strategies emit NOT NULL on primary keys (#2358)', () => {
-  let db: DatabaseProvider | undefined;
+  let db: DatabaseInterface | undefined;
 
   afterEach(async () => {
     if (db && typeof db.close === 'function') {

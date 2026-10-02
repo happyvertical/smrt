@@ -370,9 +370,9 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       // Each returned seq maps to the row it actually inserted.
       const { changes } = await getChangesSince(db, { since: 0 });
       const bySeq = new Map(changes.map((c) => [c.seq, c]));
-      expect(bySeq.get(s1)?.rowId).toBe('r1');
-      expect(bySeq.get(s2)?.rowId).toBe('r2');
-      expect(bySeq.get(s3)?.rowId).toBe('r3');
+      expect(bySeq.get(s1!)?.rowId).toBe('r1');
+      expect(bySeq.get(s2!)?.rowId).toBe('r2');
+      expect(bySeq.get(s3!)?.rowId).toBe('r3');
     });
   });
 
@@ -848,7 +848,7 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
         enableCors: true,
         allowedOrigins: ['https://widget.example'],
         allowCredentials: true,
-      } as const;
+      };
 
       it('echoes an allow-listed Origin with credentials on the SSE response', async () => {
         const generator = new APIGenerator(corsConfig, { db });

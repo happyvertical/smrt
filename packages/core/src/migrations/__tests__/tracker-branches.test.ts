@@ -12,7 +12,7 @@
  *   (regular-in-transaction + CONCURRENTLY outside), and postgres no-transaction.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { MigrationDefinition } from '../../schema/types.js';
@@ -176,7 +176,7 @@ describe('MigrationTracker BIGINT hydration', () => {
 });
 
 describe('MigrationTracker on real SQLite', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
   let tracker: MigrationTracker;
 
   beforeEach(async () => {

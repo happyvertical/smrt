@@ -320,7 +320,9 @@ describe('Issue #2223 - test manifest task ownership', () => {
         JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
       ).toContain('fixture cache sentinel');
     });
-  }, 180_000);
+    // Three real Turbo generator runs can exceed 180s amid the root suite;
+    // each child command retains its separate 120s timeout.
+  }, 420_000);
 
   it('does not restore a nonproducer package manifest over test knowledge', () => {
     withIsolatedCoreFixture((fixtureDir) => {

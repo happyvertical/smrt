@@ -353,7 +353,7 @@ describe('consumer workspace registration (#3106, #3110)', () => {
   });
 
   it('accepts pnpm peer-variant copies of one package class as one class', async () => {
-    const copies = [];
+    const copies: Array<typeof SmrtObject> = [];
     for (const variant of ['a', 'b']) {
       copies.push(
         await defineFrom(
@@ -531,7 +531,7 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     } as never);
     try {
       const ctor = await defineFrom(ws.path('scripts/UnscopedLicenseSale.js'));
-      expect(ctor.SMRT_TABLE_NAME).not.toBe('contracts');
+      expect(Reflect.get(ctor, 'SMRT_TABLE_NAME')).not.toBe('contracts');
     } finally {
       getManifestCache().delete('@fixture/commerce');
     }

@@ -184,7 +184,10 @@ describe('MCP tool input schemas (#1500)', () => {
 // foreignKey field is split out so its `ID of related ...` description renders.
 @smrt({ mcp: { include: ['create'] } })
 class McpFkWidget extends SmrtObject {
-  @field({ type: 'foreignKey', related: 'Author' })
+  // This fixture supplies scanner relationship metadata directly.
+  @field({ type: 'foreignKey', related: 'Author' } as Parameters<
+    typeof field
+  >[0])
   authorId = '';
 
   constructor(options: any = {}) {
@@ -271,7 +274,10 @@ describe('MCP STI schemas (#2149)', () => {
       ]),
     );
     if (!get) throw new Error('Expected MCP STI get tool');
-    const [successSchema] = get.outputSchema.anyOf ?? [];
+    const successBranches = get.outputSchema.anyOf;
+    if (!Array.isArray(successBranches))
+      throw new Error('Expected MCP success schemas');
+    const [successSchema] = successBranches;
     expect(successSchema).toEqual(
       expect.objectContaining({
         oneOf: expect.arrayContaining([
@@ -292,7 +298,10 @@ describe('MCP public output schemas (#2149)', () => {
     const tools = await generator.generateTools();
     const get = tools.find((tool) => tool.name === 'mcpsensitivewidget_get');
     if (!get) throw new Error('Expected MCP sensitive-widget get tool');
-    const [publicItem] = get.outputSchema.anyOf ?? [];
+    const publicBranches = get.outputSchema.anyOf;
+    if (!Array.isArray(publicBranches))
+      throw new Error('Expected MCP public schemas');
+    const [publicItem] = publicBranches;
 
     expect(publicItem).toEqual(
       expect.objectContaining({

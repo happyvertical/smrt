@@ -33,11 +33,14 @@ describe('Issue #1102: ensureSchema() uses merged STI table definition', () => {
     ObjectRegistry.registerFromManifest(
       'Issue1102Event',
       {
+        name: 'issue1102event',
+        collection: '',
+        filePath: '',
         className: 'Issue1102Event',
         fields: {
           tenantId: { type: 'text', _meta: { isTenantIdField: true } },
           name: { type: 'text', _meta: {} },
-          startDate: { type: 'timestamp', _meta: {} },
+          startDate: { type: 'datetime', _meta: {} },
         },
         methods: {},
         decoratorConfig: { tableStrategy: 'sti' },
@@ -57,13 +60,10 @@ describe('Issue #1102: ensureSchema() uses merged STI table definition', () => {
 );`,
           columns: {
             tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
-            name: { type: 'TEXT', defaultValue: '' },
+            name: { type: 'TEXT', default: '' },
             start_date: { type: 'TIMESTAMP' },
           },
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: '1.0.0',
         },
       },
@@ -73,12 +73,15 @@ describe('Issue #1102: ensureSchema() uses merged STI table definition', () => {
     ObjectRegistry.registerFromManifest(
       'Issue1102Meeting',
       {
+        name: 'issue1102meeting',
+        collection: '',
+        filePath: '',
         className: 'Issue1102Meeting',
         extends: 'Issue1102Event',
         fields: {
           tenantId: { type: 'text', _meta: { isTenantIdField: true } },
           name: { type: 'text', _meta: {} },
-          startDate: { type: 'timestamp', _meta: {} },
+          startDate: { type: 'datetime', _meta: {} },
           councilId: { type: 'text', _meta: {} },
           agendaUrl: { type: 'text', _meta: {} },
         },
@@ -100,13 +103,10 @@ describe('Issue #1102: ensureSchema() uses merged STI table definition', () => {
 );`,
           columns: {
             tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
-            council_id: { type: 'TEXT', defaultValue: '' },
-            agenda_url: { type: 'TEXT', defaultValue: '' },
+            council_id: { type: 'TEXT', default: '' },
+            agenda_url: { type: 'TEXT', default: '' },
           },
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: '1.0.0',
         },
       },
@@ -119,7 +119,7 @@ describe('Issue #1102: ensureSchema() uses merged STI table definition', () => {
     expect(merged?.columns.council_id).toBeDefined();
     expect(merged?.columns.agenda_url).toBeDefined();
 
-    const query = vi.fn(async () => ({ rows: [] }));
+    const query = vi.fn(async (_sql: string) => ({ rows: [] }));
     const db = {
       url: 'postgresql://test:test@127.0.0.1:5432/test',
       query,

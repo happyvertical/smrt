@@ -19,20 +19,14 @@ import {
   loadExternalManifest,
 } from '../manifest/manifest-loader.js';
 import { ObjectRegistry } from '../registry.js';
+import type {
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 
-type SmartObjectDefinition = {
-  fields?: Record<string, unknown>;
-  [key: string]: unknown;
-};
-
-type SmartObjectManifest = {
-  objects?: Record<string, SmartObjectDefinition>;
-  [key: string]: unknown;
-};
-
 function findObjectInManifest(
-  manifest: SmartObjectManifest | undefined,
+  manifest: SmartObjectManifest | null | undefined,
   className: string,
   packageName: string,
 ): SmartObjectDefinition | undefined {
@@ -76,7 +70,7 @@ describe('Downstream events STI schema synthesis', () => {
   });
 
   it('keeps base Event columns and downstream Meeting columns on the shared events table', () => {
-    const eventClass = ObjectRegistry.findClass('Event');
+    const eventClass = ObjectRegistry.getClass('Event');
     expect(eventClass).toBeDefined();
     expect(ObjectRegistry.getTableStrategy('Event')).toBe('sti');
     // R5-canon: getSTIBase returns qualified names.
@@ -90,6 +84,9 @@ describe('Downstream events STI schema synthesis', () => {
       'Meeting',
       {
         className: 'Meeting',
+        name: 'meeting',
+        collection: 'meetings',
+        filePath: '/test/downstream/Meeting.ts',
         extends: 'Event',
         packageName: '@test/downstream',
         fields: {
@@ -100,14 +97,12 @@ describe('Downstream events STI schema synthesis', () => {
           tableStrategy: 'sti',
           tableName: 'events',
         },
+        methods: {},
         schema: {
           tableName: 'events',
           ddl: '',
           columns: {},
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: '',
         },
       },

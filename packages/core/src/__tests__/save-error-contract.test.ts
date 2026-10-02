@@ -504,7 +504,7 @@ describe('loadFromId() does not retry a deterministic failure (#2366)', () => {
       _skipLoad: true,
     });
     await widget.initialize();
-    widget._id = 'not-a-uuid';
+    widget.id = 'not-a-uuid';
 
     faulty = true;
     const started = Date.now();

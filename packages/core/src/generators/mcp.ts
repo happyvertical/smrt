@@ -1137,7 +1137,7 @@ export class MCPGenerator {
 
       // Find the registered class (case-insensitive)
       const registeredClasses = ObjectRegistry.getAllClasses();
-      let classInfo = null;
+      let classInfo: RegisteredClass | null = null;
       let actualObjectName = '';
 
       for (const [_key, info] of registeredClasses) {

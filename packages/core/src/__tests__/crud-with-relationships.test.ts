@@ -83,6 +83,8 @@ describe('CRUD Operations with @oneToMany Relationships', () => {
       expect(parent.id).toBeDefined();
       expect(parent.id).not.toBeNull();
       expect(typeof parent.id).toBe('string');
+      if (typeof parent.id !== 'string')
+        throw new Error('Expected saved parent id');
       expect(parent.id.length).toBeGreaterThan(0);
     });
 

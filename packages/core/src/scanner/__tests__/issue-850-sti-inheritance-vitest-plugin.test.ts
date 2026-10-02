@@ -80,7 +80,7 @@ describe('Issue #850: STI inheritance in vitest plugin manifest generation', () 
       filePath: '/src/models/weather-forecast.ts',
       fields: {
         temperature: { type: 'decimal', required: true },
-        humidity: { type: 'decimal', nullable: true },
+        humidity: { type: 'decimal', required: false },
       },
       methods: {},
       decoratorConfig: {
@@ -97,8 +97,7 @@ describe('Issue #850: STI inheritance in vitest plugin manifest generation', () 
       {
         filePath: '/src/models/weather-forecast.ts',
         objects: [childDef],
-        imports: [],
-        exports: [],
+        errors: [],
       },
     ];
 
@@ -151,8 +150,7 @@ describe('Issue #850: STI inheritance in vitest plugin manifest generation', () 
       {
         filePath: '/src/models/weather-forecast.ts',
         objects: [childDef],
-        imports: [],
-        exports: [],
+        errors: [],
       },
     ];
 

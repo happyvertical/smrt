@@ -29,6 +29,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { ObjectRegistry } from '../registry.js';
+import type { SmartObjectDefinition } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 
@@ -39,9 +40,13 @@ const PKG = '@happyvertical/smrt-junction-fixture';
  * published `PlaceAsset` / `ProfileAsset` shape (FK + cross-package ref +
  * regular junction columns).
  */
-function junctionItemManifest(itemName: string, ownerColumn: string) {
+function junctionItemManifest(
+  itemName: string,
+  ownerColumn: string,
+): SmartObjectDefinition {
   return {
     className: itemName,
+    name: itemName.toLowerCase(),
     qualifiedName: `${PKG}:${itemName}`,
     collection: `${itemName.toLowerCase()}s`,
     filePath: `/src/models/${itemName}.ts`,
@@ -77,19 +82,16 @@ function junctionItemManifest(itemName: string, ownerColumn: string) {
       columns: {
         id: { type: 'UUID', primaryKey: true, notNull: true },
         slug: { type: 'TEXT', notNull: true },
-        context: { type: 'TEXT', notNull: true, defaultValue: '' },
+        context: { type: 'TEXT', notNull: true, default: '' },
         created_at: { type: 'TIMESTAMP', notNull: true },
         updated_at: { type: 'TIMESTAMP', notNull: true },
         tenant_id: { type: 'TEXT' },
         [`${ownerColumn}_id`]: { type: 'UUID', notNull: true },
         asset_id: { type: 'UUID', notNull: true },
         relationship: { type: 'TEXT', notNull: true },
-        sort_order: { type: 'INTEGER', notNull: true, defaultValue: 0 },
+        sort_order: { type: 'INTEGER', notNull: true, default: 0 },
       },
       indexes: [],
-      triggers: [],
-      foreignKeys: [],
-      dependencies: [],
       version: '1.0.0',
     },
   };
@@ -100,9 +102,13 @@ function junctionItemManifest(itemName: string, ownerColumn: string) {
  * `extends: 'SmrtJunction'`, a base-columns-only schema, and a `tableName`
  * that points at the junction table.
  */
-function junctionCollectionManifest(itemName: string, tableName: string) {
+function junctionCollectionManifest(
+  itemName: string,
+  tableName: string,
+): SmartObjectDefinition {
   return {
     className: `${itemName}Collection`,
+    name: `${itemName.toLowerCase()}collection`,
     qualifiedName: `${PKG}:${itemName}Collection`,
     collection: `${itemName.toLowerCase()}s`,
     filePath: `/src/collections/${itemName}Collection.ts`,
@@ -123,14 +129,11 @@ function junctionCollectionManifest(itemName: string, tableName: string) {
       columns: {
         id: { type: 'UUID', primaryKey: true, notNull: true },
         slug: { type: 'TEXT', notNull: true },
-        context: { type: 'TEXT', notNull: true, defaultValue: '' },
+        context: { type: 'TEXT', notNull: true, default: '' },
         created_at: { type: 'TIMESTAMP', notNull: true },
         updated_at: { type: 'TIMESTAMP', notNull: true },
       },
       indexes: [],
-      triggers: [],
-      foreignKeys: [],
-      dependencies: [],
       version: '1.0.0',
     },
   };

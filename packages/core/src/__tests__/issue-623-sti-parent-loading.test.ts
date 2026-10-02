@@ -14,8 +14,35 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry';
+import type { RegisteredClass } from '../registry/types.js';
+import type { SchemaDefinition } from '../schema/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
+
+// These tests intentionally alter registry keys to reproduce legacy hydration states.
+function mutableRegistryClasses(): ReturnType<
+  typeof ObjectRegistry.getAllClasses
+> {
+  return (
+    ObjectRegistry as unknown as {
+      classes: ReturnType<typeof ObjectRegistry.getAllClasses>;
+    }
+  ).classes;
+}
+
+function fixtureSchema(tableName: string): SchemaDefinition {
+  return {
+    tableName,
+    ddl: '',
+    columns: {},
+    indexes: [],
+    triggers: [],
+    foreignKeys: [],
+    dependencies: [],
+    version: 'fixture',
+  };
+}
 
 describe('Issue #623: STI parent class loading in ensureSchema()', () => {
   let restoreRegistry: () => void;
@@ -31,106 +58,100 @@ describe('Issue #623: STI parent class loading in ensureSchema()', () => {
 
   it('should detect unregistered parent class from extends field', () => {
     // Simulate a child class with an unregistered parent
-    const childEntry = {
+    const childEntry: RegisteredClass = {
       name: 'ChildClass',
-      constructor: class ChildClass {},
+      constructor: class ChildClass extends SmrtObject {},
       config: { tableStrategy: 'sti' },
       fields: new Map([['name', { type: 'text' }]]),
       methods: new Map(),
-      schema: { tableName: 'parent_classes' },
+      schema: fixtureSchema('parent_classes'),
       validators: [],
       packageName: '@test/package',
       extends: 'ParentClass', // Parent not registered
     };
 
-    ObjectRegistry.classes.set('ChildClass', childEntry);
+    mutableRegistryClasses().set('ChildClass', childEntry);
 
     // Verify child is registered but parent is not
-    expect(ObjectRegistry.findClass('ChildClass')).toBeDefined();
-    expect(ObjectRegistry.findClass('ChildClass')?.extends).toBe('ParentClass');
-    expect(ObjectRegistry.findClass('ParentClass')).toBeUndefined();
+    expect(ObjectRegistry.getClass('ChildClass')).toBeDefined();
+    expect(ObjectRegistry.getClass('ChildClass')?.extends).toBe('ParentClass');
+    expect(ObjectRegistry.getClass('ParentClass')).toBeUndefined();
   });
 
   it('should find parent class when already registered', () => {
     // Simulate parent class already registered
-    const parentEntry = {
+    const parentEntry: RegisteredClass = {
       name: 'ParentClass',
-      constructor: class ParentClass {},
+      constructor: class ParentClass extends SmrtObject {},
       config: { tableStrategy: 'sti' },
       fields: new Map([['name', { type: 'text' }]]),
       methods: new Map(),
-      schema: {
-        tableName: 'parent_classes',
-        ddl: 'CREATE TABLE parent_classes ...',
-      },
+      schema: fixtureSchema('parent_classes'),
       validators: [],
       packageName: '@test/package',
     };
 
-    const childEntry = {
+    const childEntry: RegisteredClass = {
       name: 'ChildClass',
-      constructor: class ChildClass {},
+      constructor: class ChildClass extends SmrtObject {},
       config: { tableStrategy: 'sti' },
       fields: new Map([['childField', { type: 'text' }]]),
       methods: new Map(),
-      schema: { tableName: 'parent_classes' },
+      schema: fixtureSchema('parent_classes'),
       validators: [],
       packageName: '@test/package',
       extends: 'ParentClass',
     };
 
-    ObjectRegistry.classes.set('ParentClass', parentEntry);
-    ObjectRegistry.classes.set('ChildClass', childEntry);
+    mutableRegistryClasses().set('ParentClass', parentEntry);
+    mutableRegistryClasses().set('ChildClass', childEntry);
 
     // Both should be found
-    expect(ObjectRegistry.findClass('ParentClass')).toBeDefined();
-    expect(ObjectRegistry.findClass('ChildClass')).toBeDefined();
-    expect(ObjectRegistry.findClass('ChildClass')?.extends).toBe('ParentClass');
+    expect(ObjectRegistry.getClass('ParentClass')).toBeDefined();
+    expect(ObjectRegistry.getClass('ChildClass')).toBeDefined();
+    expect(ObjectRegistry.getClass('ChildClass')?.extends).toBe('ParentClass');
   });
 
   it('should not have extends field for standalone classes', () => {
     // Simulate a standalone class (not STI)
-    const standaloneEntry = {
+    const standaloneEntry: RegisteredClass = {
       name: 'StandaloneClass',
-      constructor: class StandaloneClass {},
+      constructor: class StandaloneClass extends SmrtObject {},
       config: {},
       fields: new Map([['name', { type: 'text' }]]),
       methods: new Map(),
-      schema: {
-        tableName: 'standalone_classes',
-        ddl: 'CREATE TABLE standalone_classes ...',
-      },
+      schema: fixtureSchema('standalone_classes'),
       validators: [],
       packageName: '@test/package',
       // No extends field
     };
 
-    ObjectRegistry.classes.set('StandaloneClass', standaloneEntry);
+    mutableRegistryClasses().set('StandaloneClass', standaloneEntry);
 
     // Should not have extends
-    const registered = ObjectRegistry.findClass('StandaloneClass');
+    const registered = ObjectRegistry.getClass('StandaloneClass');
     expect(registered).toBeDefined();
     expect(registered?.extends).toBeUndefined();
   });
 
   it('should have schema tableName available for STI sibling discovery', () => {
     // The fix uses schema.tableName to discover siblings
-    const childEntry = {
+    const childEntry: RegisteredClass = {
       name: 'ChildClass',
-      constructor: class ChildClass {},
+      constructor: class ChildClass extends SmrtObject {},
       config: { tableStrategy: 'sti' },
       fields: new Map([['name', { type: 'text' }]]),
       methods: new Map(),
-      schema: { tableName: 'shared_table' },
+      schema: fixtureSchema('shared_table'),
       validators: [],
       packageName: '@test/package',
       extends: 'ParentClass',
     };
 
-    ObjectRegistry.classes.set('ChildClass', childEntry);
+    mutableRegistryClasses().set('ChildClass', childEntry);
 
     // Verify tableName is accessible from registered entry
-    const registered = ObjectRegistry.findClass('ChildClass');
+    const registered = ObjectRegistry.getClass('ChildClass');
     expect(registered?.schema?.tableName).toBe('shared_table');
   });
 });

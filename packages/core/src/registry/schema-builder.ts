@@ -19,8 +19,8 @@ import {
   schemaForeignKeys,
 } from '../schema/foreign-key-ddl.js';
 import {
-  requireForeignKeyAction,
   resolveForeignKeyDeleteAction,
+  resolveForeignKeyUpdateAction,
 } from '../schema/foreign-key-policy.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
 import {
@@ -498,7 +498,7 @@ function applyContributorForeignKeys(
       table: targetTable,
       column: toSnakeCase(targetColumn),
       onDelete: action,
-      onUpdate: 'CASCADE',
+      onUpdate: resolveForeignKeyUpdateAction(field._meta?.onUpdate),
       ...(typeof field._meta?.constraint === 'object'
         ? { engines: [...field._meta.constraint.engines] }
         : {}),
@@ -1176,13 +1176,7 @@ export function fieldsToColumns(
           isTenantIdField: false,
           columnName: toSnakeCase(fieldName),
         }).action,
-        onUpdate:
-          fieldMeta?.onUpdate === undefined
-            ? 'CASCADE'
-            : requireForeignKeyAction(
-                fieldMeta.onUpdate,
-                `${fieldName} ON UPDATE`,
-              ),
+        onUpdate: resolveForeignKeyUpdateAction(fieldMeta?.onUpdate),
         ...(typeof fieldDef._meta?.constraint === 'object'
           ? { engines: [...fieldDef._meta.constraint.engines] }
           : {}),

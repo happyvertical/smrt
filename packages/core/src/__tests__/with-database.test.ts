@@ -3,6 +3,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { SmrtClass } from '../class.js';
 import { getTestDatabase } from '../testing/database.js';
 
+class DatabaseBindingProbe extends SmrtClass {
+  async init(): Promise<this> {
+    return this.initialize();
+  }
+}
+
 describe('SmrtClass.withDatabase', () => {
   const databases: DatabaseInterface[] = [];
 
@@ -19,8 +25,8 @@ describe('SmrtClass.withDatabase', () => {
   it('uses the bound database and restores the original after success', async () => {
     const root = await database();
     const transaction = await database();
-    const instance = new SmrtClass({ db: root });
-    await instance.initialize();
+    const instance = new DatabaseBindingProbe({ db: root });
+    await instance.init();
 
     const result = await instance.withDatabase(transaction, async (bound) => {
       expect(bound).toBe(instance);
@@ -37,8 +43,8 @@ describe('SmrtClass.withDatabase', () => {
   it('restores the original database when the callback throws', async () => {
     const root = await database();
     const transaction = await database();
-    const instance = new SmrtClass({ db: root });
-    await instance.initialize();
+    const instance = new DatabaseBindingProbe({ db: root });
+    await instance.init();
     const failure = new Error('transaction callback failed');
 
     await expect(

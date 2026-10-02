@@ -11,6 +11,8 @@ import {
 
 const agreementExecutionCollection = {
   className: 'AgreementExecutionCollection',
+  name: 'AgreementExecutionCollection',
+  filePath: '',
   collection: 'agreementExecutions',
   extends: 'SmrtCollection',
   extendsTypeArg: 'AgreementExecution',
@@ -21,6 +23,8 @@ const agreementExecutionCollection = {
 
 const agreementExecution = {
   className: 'AgreementExecution',
+  name: 'AgreementExecution',
+  filePath: '',
   collection: 'agreementExecutions',
   extends: 'SmrtObject',
   fields: {
@@ -33,6 +37,8 @@ const agreementExecution = {
 
 const contentsCollection = {
   className: 'Contents',
+  name: 'Contents',
+  filePath: '',
   collection: 'contents',
   extends: 'SmrtCollection',
   extendsTypeArg: 'Content',
@@ -43,6 +49,8 @@ const contentsCollection = {
 
 const content = {
   className: 'Content',
+  name: 'Content',
+  filePath: '',
   collection: 'contents',
   extends: 'SmrtObject',
   fields: { title: { type: 'text', required: true } },
@@ -147,6 +155,8 @@ describe('selectApiClientEntries', () => {
     const manifest = buildManifest(false);
     manifest.objects.HiddenAgreementExecution = {
       className: 'HiddenAgreementExecution',
+      name: 'HiddenAgreementExecution',
+      filePath: '',
       collection: 'agreementExecutions',
       extends: 'SmrtObject',
       fields: { secret: { type: 'text', required: true } },
@@ -155,6 +165,8 @@ describe('selectApiClientEntries', () => {
     } as SmartObjectDefinition;
     manifest.objects.InternalCheckpoint = {
       className: 'InternalCheckpoint',
+      name: 'InternalCheckpoint',
+      filePath: '',
       collection: 'internalCheckpoints',
       extends: 'SmrtObject',
       fields: { cursor: { type: 'text', required: true } },
@@ -178,6 +190,8 @@ describe('selectApiClientEntries', () => {
   it('keeps only routed companion collection methods when its item model has api:false', () => {
     const hiddenModel = {
       className: 'Secret',
+      name: 'Secret',
+      filePath: '',
       collection: 'secrets',
       extends: 'SmrtObject',
       fields: { value: { type: 'text', required: true } },
@@ -186,6 +200,8 @@ describe('selectApiClientEntries', () => {
     } as SmartObjectDefinition;
     const implicitCollection = {
       className: 'SecretCollection',
+      name: 'SecretCollection',
+      filePath: '',
       collection: 'secrets',
       extends: 'SmrtCollection',
       extendsTypeArg: 'Secret',
@@ -284,6 +300,8 @@ describe('selectApiClientEntries', () => {
       objects: {
         Widget: {
           className: 'Widget',
+          name: 'Widget',
+          filePath: '',
           collection: 'widgets',
           extends: 'SmrtObject',
           fields: {},
@@ -292,6 +310,8 @@ describe('selectApiClientEntries', () => {
         },
         SpecialWidget: {
           className: 'SpecialWidget',
+          name: 'SpecialWidget',
+          filePath: '',
           collection: 'specialWidgets',
           extends: 'SmrtObject',
           fields: {},
@@ -300,6 +320,8 @@ describe('selectApiClientEntries', () => {
         },
         WidgetCollection: {
           className: 'WidgetCollection',
+          name: 'WidgetCollection',
+          filePath: '',
           collection: 'widgets',
           extends: 'SmrtCollection',
           extendsTypeArg: 'Widget',
@@ -309,6 +331,8 @@ describe('selectApiClientEntries', () => {
         },
         SpecialWidgetCollection: {
           className: 'SpecialWidgetCollection',
+          name: 'SpecialWidgetCollection',
+          filePath: '',
           collection: 'widgets',
           extends: 'WidgetCollection',
           fields: {},
@@ -382,6 +406,8 @@ describe('selectApiClientEntries', () => {
         'ZBase',
         {
           className: 'ZBase',
+          name: 'ZBase',
+          filePath: '',
           collection: 'shared',
           extends: 'SmrtObject',
           fields: { base: { type: 'text' } },
@@ -393,6 +419,8 @@ describe('selectApiClientEntries', () => {
         'AChild',
         {
           className: 'AChild',
+          name: 'AChild',
+          filePath: '',
           collection: 'shared',
           extends: 'ZBase',
           fields: { child: { type: 'text' } },
@@ -404,6 +432,8 @@ describe('selectApiClientEntries', () => {
         'MOther',
         {
           className: 'MOther',
+          name: 'MOther',
+          filePath: '',
           collection: 'shared',
           extends: 'SmrtObject',
           fields: { other: { type: 'text' } },
@@ -435,6 +465,8 @@ describe('selectApiClientEntries', () => {
   it('matches CRUD aliases to the route files actually emitted for a shared collection', () => {
     const base = {
       className: 'RecordBase',
+      name: 'RecordBase',
+      filePath: '',
       collection: 'records',
       extends: 'SmrtObject',
       fields: { base: { type: 'text' } },
@@ -446,6 +478,8 @@ describe('selectApiClientEntries', () => {
     } as SmartObjectDefinition;
     const child = {
       className: 'RecordChild',
+      name: 'RecordChild',
+      filePath: '',
       collection: 'records',
       extends: 'RecordBase',
       fields: { child: { type: 'text' } },
@@ -550,6 +584,8 @@ describe('selectApiClientEntries', () => {
           qualifiedName: '@a/pkg:Item',
           packageName: '@a/pkg',
           className: 'Item',
+          name: 'Item',
+          filePath: '',
           collection: 'items',
           extends: 'SmrtObject',
           fields: { value: { type: 'text' } },
@@ -563,6 +599,8 @@ describe('selectApiClientEntries', () => {
           qualifiedName: '@a/pkg:Parent',
           packageName: '@a/pkg',
           className: 'Parent',
+          name: 'Parent',
+          filePath: '',
           collection: 'collectionParents',
           extends: 'SmrtCollection',
           extendsTypeArg: 'Item',
@@ -577,6 +615,8 @@ describe('selectApiClientEntries', () => {
           qualifiedName: '@z/pkg:Parent',
           packageName: '@z/pkg',
           className: 'Parent',
+          name: 'Parent',
+          filePath: '',
           collection: 'modelParents',
           extends: 'SmrtObject',
           fields: { label: { type: 'text' } },
@@ -590,6 +630,8 @@ describe('selectApiClientEntries', () => {
           qualifiedName: '@c/pkg:FallbackChild',
           packageName: '@c/pkg',
           className: 'FallbackChild',
+          name: 'FallbackChild',
+          filePath: '',
           collection: 'fallbackChildren',
           extends: 'Parent',
           fields: {},
@@ -603,6 +645,8 @@ describe('selectApiClientEntries', () => {
           qualifiedName: '@z/pkg:LocalChild',
           packageName: '@z/pkg',
           className: 'LocalChild',
+          name: 'LocalChild',
+          filePath: '',
           collection: 'localChildren',
           extends: 'Parent',
           fields: { local: { type: 'text' } },
@@ -616,6 +660,8 @@ describe('selectApiClientEntries', () => {
           qualifiedName: '@c/pkg:QualifiedChild',
           packageName: '@c/pkg',
           className: 'QualifiedChild',
+          name: 'QualifiedChild',
+          filePath: '',
           collection: 'qualifiedChildren',
           extends: 'Parent',
           extendsQualified: '@z/pkg:Parent',

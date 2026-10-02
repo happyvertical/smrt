@@ -7,6 +7,17 @@ import { ObjectRegistry, smrt } from '../registry.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 
+// These tests intentionally alter registry keys to reproduce legacy hydration states.
+function mutableRegistryClasses(): ReturnType<
+  typeof ObjectRegistry.getAllClasses
+> {
+  return (
+    ObjectRegistry as unknown as {
+      classes: ReturnType<typeof ObjectRegistry.getAllClasses>;
+    }
+  ).classes;
+}
+
 describe('constructor provenance (#2763)', () => {
   let restore: () => void;
   beforeEach(() => {
@@ -188,7 +199,7 @@ describe('constructor provenance (#2763)', () => {
         }),
       ]);
     } finally {
-      await db.close();
+      await db.close?.();
     }
   });
 
@@ -274,15 +285,12 @@ describe('constructor provenance (#2763)', () => {
       // Runtime registration supports consumers without package metadata. Keep
       // the supported simple registry key while removing inferred test-package
       // identity, as an unscoped consumer would have it.
-      // @ts-expect-error - construct the supported unqualified registry state.
-      for (const [key, candidate] of ObjectRegistry.classes) {
+      for (const [key, candidate] of mutableRegistryClasses()) {
         if (candidate.constructor !== ctor) continue;
-        // @ts-expect-error - construct the supported unqualified registry state.
-        ObjectRegistry.classes.delete(key);
+        mutableRegistryClasses().delete(key);
         entry.packageName = undefined;
         entry.qualifiedName = undefined;
-        // @ts-expect-error - construct the supported unqualified registry state.
-        ObjectRegistry.classes.set(entry.name, entry);
+        mutableRegistryClasses().set(entry.name, entry);
         break;
       }
     }
@@ -292,6 +300,9 @@ describe('constructor provenance (#2763)', () => {
         'UnqualifiedParent2763',
         {
           className: 'UnqualifiedParent2763',
+          name: 'unqualifiedparent2763',
+          collection: 'unqualifiedparent2763s',
+          filePath: '/src/unqualified-parent-2763.ts',
           fields: {},
           methods: {},
           decoratorConfig: { tableName: `unqualified_parent_${form}_2763` },
@@ -333,13 +344,13 @@ describe('constructor provenance (#2763)', () => {
       const parent = await new Parent({ db }).initialize();
       await parent.save();
       const child = await new Child({ db }).initialize();
-      child.parentId = parent.id;
+      child.parentId = parent.id!;
       await child.save();
       expect((await child.loadRelated('parentId'))?.id).toBe(parent.id);
       await parent.delete();
       expect(await db.list(`unqualified_child_${form}_2763`, {})).toEqual([]);
     } finally {
-      await db.close();
+      await db.close?.();
     }
   });
 });

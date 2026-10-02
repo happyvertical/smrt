@@ -35,8 +35,8 @@ describe('Issue #688: @smrt({ tenantScoped: true })', () => {
 
       const tenantIdField = fields.get('tenantId');
       expect(tenantIdField).toBeDefined();
-      expect(tenantIdField.type).toBe('foreignKey');
-      expect(tenantIdField.related).toBe('Tenant');
+      expect(tenantIdField?.type).toBe('foreignKey');
+      expect(tenantIdField?.related).toBe('Tenant');
     });
 
     it('should store normalized tenant config with defaults', () => {
@@ -105,7 +105,7 @@ describe('Issue #688: @smrt({ tenantScoped: true })', () => {
       // Field should not be required when mode is optional
       const fields = ObjectRegistry.getFields('TenantScopedDoc688E');
       const tenantIdField = fields.get('tenantId');
-      expect(tenantIdField.required).toBe(false);
+      expect(tenantIdField?.required).toBe(false);
     });
 
     it('should respect allowSuperAdminBypass: true', () => {
@@ -205,8 +205,8 @@ describe('Issue #688: @smrt({ tenantScoped: true })', () => {
       // The existing field should be preserved (from manifest)
       // or the injected one should be used if no manifest exists
       expect(tenantIdField).toBeDefined();
-      expect(tenantIdField._meta?.sqlType).toBe('UUID');
-      expect(tenantIdField._meta?.__tenancy?.isTenantIdField).toBe(true);
+      expect(tenantIdField?._meta?.sqlType).toBe('UUID');
+      expect(tenantIdField?._meta?.__tenancy?.isTenantIdField).toBe(true);
     });
   });
 
@@ -221,8 +221,8 @@ describe('Issue #688: @smrt({ tenantScoped: true })', () => {
       const tenantIdField = fields.get('tenantId');
 
       expect(tenantIdField).toBeDefined();
-      expect(tenantIdField._meta?.sqlType).toBe('UUID');
-      expect(tenantIdField._meta?.__tenancy?.isTenantIdField).toBe(true);
+      expect(tenantIdField?._meta?.sqlType).toBe('UUID');
+      expect(tenantIdField?._meta?.__tenancy?.isTenantIdField).toBe(true);
     });
   });
 });

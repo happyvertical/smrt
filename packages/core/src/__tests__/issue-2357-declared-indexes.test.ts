@@ -71,7 +71,7 @@ describe('Issue #2357: declared indexes survive the runtime config rebuild', () 
   it('materializes the composite index in a test database (testing/database.ts)', async () => {
     const db = await getTestDatabase({ classes: ['DeclaredIndexRecord'] });
 
-    const indexes = await db.query<{ name: string }>(
+    const indexes = await db.query(
       "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'declared_index_records';",
     );
     const names = indexes.rows.map((row) => row.name);

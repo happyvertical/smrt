@@ -192,8 +192,8 @@ describe('Consumer integration: plain fields survive in external-package schemas
     // (i.e. they were hydrated from the manifest, not bare decorator
     // reflection). This is the concrete signal behind the canary's
     // `hasManifestSchema === true` expectation.
-    const role = ObjectRegistry.findClass('Role');
-    const place = ObjectRegistry.findClass('Place');
+    const role = ObjectRegistry.getClass('Role');
+    const place = ObjectRegistry.getClass('Place');
     expect(role?.packageName).toBe('@happyvertical/smrt-users-fixture');
     expect(place?.packageName).toBe('@happyvertical/smrt-places-fixture');
     expect(role?.fields.has('name')).toBe(true);

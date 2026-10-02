@@ -83,6 +83,8 @@ export type FieldType =
   | 'manyToMany';
 
 export interface FieldOptions {
+  /** Use this field in the natural primary key, as supported by schema generation. */
+  primaryKey?: boolean;
   /** Explicit field type for runtime-only registration paths */
   type?: FieldType;
   /** Explicit SQL storage type when runtime and persistence contracts differ */
@@ -214,6 +216,10 @@ export interface RelationshipFieldOptions extends FieldOptions {
   foreignKey?: string;
   /** Through table for many-to-many */
   through?: string;
+  /** Source-side join column override for many-to-many relationships. */
+  sourceKey?: string;
+  /** Target-side join column override for many-to-many relationships. */
+  targetKey?: string;
   /** Relationship type */
   type?: 'foreignKey' | 'crossPackageRef' | 'oneToMany' | 'manyToMany';
   /**
@@ -243,6 +249,8 @@ export interface RelationshipFieldOptions extends FieldOptions {
    * same as a database-level `ON DELETE CASCADE`.
    */
   onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
+  /** Database action when the referenced key changes; defaults to CASCADE. */
+  onUpdate?: RelationshipFieldOptions['onDelete'];
   /**
    * Set to `false` only for an app-side relationship whose target identifier
    * must deliberately survive without a database parent row (for example an

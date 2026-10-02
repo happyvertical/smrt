@@ -106,11 +106,12 @@ describe('Issue #748: STI Discriminator Upgrade', () => {
       ObjectRegistry.register(Test748Meeting, {});
       ObjectRegistry.register(Test748Conference, {});
 
-      const db = await getDatabase({
+      const sqliteOptions = {
         type: 'sqlite',
         url: ':memory:',
         __smrtSkipVitestSchemaPreparation: true,
-      });
+      } as const;
+      const db = await getDatabase(sqliteOptions);
 
       // Create the STI table
       await db.query(`
@@ -157,11 +158,12 @@ describe('Issue #748: STI Discriminator Upgrade', () => {
     });
 
     it('should be able to identify STI tables by _meta_type column', async () => {
-      const db = await getDatabase({
+      const sqliteOptions = {
         type: 'sqlite',
         url: ':memory:',
         __smrtSkipVitestSchemaPreparation: true,
-      });
+      } as const;
+      const db = await getDatabase(sqliteOptions);
 
       // Create a regular table (no _meta_type)
       await db.query(`
@@ -181,8 +183,8 @@ describe('Issue #748: STI Discriminator Upgrade', () => {
       `);
 
       // Check schemas
-      const regularSchema = await db.getTableSchema('regular_table');
-      const stiSchema = await db.getTableSchema('sti_table');
+      const regularSchema = await db.getTableSchema!('regular_table');
+      const stiSchema = await db.getTableSchema!('sti_table');
 
       // Regular table should not have _meta_type
       expect(regularSchema?.columns._meta_type).toBeUndefined();

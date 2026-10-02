@@ -75,7 +75,7 @@ describe.skipIf(!pgUrl)(
         await a.delete();
         expect(await db.list(childTable, {})).toHaveLength(1);
         expect(await db.list(bTable, {})).toHaveLength(1);
-        const constraints = await db.query<{ target_table: string }>(
+        const constraints = await db.query(
           "SELECT confrelid::regclass::text AS target_table FROM pg_constraint WHERE conrelid = $1::regclass AND contype = 'f'",
           [childTable],
         );
@@ -92,7 +92,7 @@ describe.skipIf(!pgUrl)(
             await db.query(`DROP TABLE IF EXISTS "${table}"`);
           }
         } finally {
-          await db.close();
+          await db.close?.();
           restore();
         }
       }

@@ -87,7 +87,7 @@ postgresDescribe('PostgreSQL transaction hydration (#2070)', () => {
     process.on('warning', captureWarning);
 
     try {
-      await db.transaction(async (tx) => {
+      await db.transaction!(async (tx) => {
         const probes = await Issue2070PostgresHydrationProbeCollection.create({
           db: tx,
         });

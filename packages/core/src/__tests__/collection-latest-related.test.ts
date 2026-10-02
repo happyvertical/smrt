@@ -15,6 +15,13 @@ let activeInitializers = 0;
 let maximumActiveInitializers = 0;
 let initializationOrder: string[] = [];
 
+function persistedId(record: SmrtObject): string {
+  const id = record.id;
+  if (typeof id !== 'string')
+    throw new Error('Expected a persisted fixture id');
+  return id;
+}
+
 function resetInitializationEvidence(): void {
   activeInitializers = 0;
   maximumActiveInitializers = 0;
@@ -186,21 +193,21 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
     const third = await parents.create({ name: 'third' });
 
     await evaluations.create({
-      parentId: first.id,
+      parentId: persistedId(first),
       sequence: 1,
       score: 1.0,
       evaluationScore: 1.0,
       note: 'old first',
     });
     await evaluations.create({
-      parentId: first.id,
+      parentId: persistedId(first),
       sequence: 2,
       score: 9.0,
       evaluationScore: 9.0,
       note: 'latest first',
     });
     await evaluations.create({
-      parentId: second.id,
+      parentId: persistedId(second),
       sequence: 1,
       score: 4.0,
       evaluationScore: 4.0,
@@ -326,7 +333,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
       parent.id,
     );
     await evaluations.create({
-      parentId: parent.id,
+      parentId: persistedId(parent),
       sequence: 1,
       note: 'long alias',
       thisIsAnExtremelyLongLatestRelatedFieldNameForPostgresAliasCoverage:
@@ -356,21 +363,21 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
     const third = await parents.create({ name: 'third' });
 
     await evaluations.create({
-      parentId: first.id,
+      parentId: persistedId(first),
       sequence: 1,
       score: 1.0,
       evaluationScore: 1.0,
       note: 'first related',
     });
     await evaluations.create({
-      parentId: second.id,
+      parentId: persistedId(second),
       sequence: 1,
       score: 2.0,
       evaluationScore: 2.0,
       note: 'second related',
     });
     await evaluations.create({
-      parentId: third.id,
+      parentId: persistedId(third),
       sequence: 1,
       score: 3.0,
       evaluationScore: 3.0,
@@ -380,10 +387,19 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
 
     GlobalInterceptors.register({
       name: 'latest-related-transform',
-      afterList(_className, results: LatestRelatedParent[]) {
+      afterList(_className, results) {
         return results
-          .filter((parent) => parent.name !== 'second')
-          .sort((left, right) => right.name.localeCompare(left.name));
+          .filter((record) =>
+            record instanceof LatestRelatedParent
+              ? record.name !== 'second'
+              : true,
+          )
+          .sort((left, right) =>
+            left instanceof LatestRelatedParent &&
+            right instanceof LatestRelatedParent
+              ? right.name.localeCompare(left.name)
+              : 0,
+          );
       },
     });
 
@@ -405,7 +421,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
   it("applies the related collection's tenant scope inside the CTE", async () => {
     const parent = await parents.create({ name: 'scoped parent' });
     await evaluations.create({
-      parentId: parent.id,
+      parentId: persistedId(parent),
       sequence: 2,
       score: 9.0,
       evaluationScore: 9.0,
@@ -413,7 +429,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
       note: 'blocked related',
     });
     await evaluations.create({
-      parentId: parent.id,
+      parentId: persistedId(parent),
       sequence: 1,
       score: 1.0,
       evaluationScore: 1.0,
@@ -450,7 +466,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
     await parents.create({ name: 'empty' });
 
     await evaluations.create({
-      parentId: high.id,
+      parentId: persistedId(high),
       sequence: 1,
       score: 9.0,
       evaluationScore: 9.0,
@@ -458,7 +474,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
     });
     for (const note of ['tie-a', 'tie-b']) {
       await evaluations.create({
-        parentId: tied.id,
+        parentId: persistedId(tied),
         sequence: 1,
         score: 4.0,
         evaluationScore: 4.0,
@@ -497,7 +513,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
       await LatestRelatedStiScoreEvaluationCollection.create({ db });
     const parent = await stiParents.create({ name: 'sti parent' });
     await stiEvaluations.create({
-      parentId: parent.id,
+      parentId: persistedId(parent),
       sequence: 1,
       score: 7.0,
       note: 'sti latest',
@@ -560,14 +576,14 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
         name: 'duck second parent',
       });
       await duckEvaluations.create({
-        parentId: parent.id,
+        parentId: persistedId(parent),
         sequence: 1,
         score: 7.0,
         evaluationScore: 7.0,
         note: 'duck latest',
       });
       await duckEvaluations.create({
-        parentId: secondParent.id,
+        parentId: persistedId(secondParent),
         sequence: 1,
         score: 8.0,
         evaluationScore: 8.0,
@@ -656,14 +672,14 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
         name: 'json second parent',
       });
       await jsonEvaluations.create({
-        parentId: parent.id,
+        parentId: persistedId(parent),
         sequence: 1,
         score: 8.0,
         evaluationScore: 8.0,
         note: 'json latest',
       });
       await jsonEvaluations.create({
-        parentId: secondParent.id,
+        parentId: persistedId(secondParent),
         sequence: 1,
         score: 9.0,
         evaluationScore: 9.0,

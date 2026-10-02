@@ -22,7 +22,10 @@ import {
   resolveTenantColumn,
 } from '../schema/conflict-target.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
-import { resolveForeignKeyDeleteAction } from '../schema/foreign-key-policy.js';
+import {
+  resolveForeignKeyDeleteAction,
+  resolveForeignKeyUpdateAction,
+} from '../schema/foreign-key-policy.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import type {
   ColumnDefinition,
@@ -1176,7 +1179,9 @@ export class ManifestGenerator {
                   table: targetSchema.tableName,
                   column: targetColumn,
                   onDelete: action,
-                  onUpdate: 'CASCADE' as const,
+                  onUpdate: resolveForeignKeyUpdateAction(
+                    field._meta?.onUpdate,
+                  ),
                   ...(typeof field._meta?.constraint === 'object'
                     ? { engines: [...field._meta.constraint.engines] }
                     : {}),
@@ -2692,7 +2697,7 @@ ${fields}
     const include =
       (typeof config === 'object' && config?.include) || undefined;
 
-    const operations = [];
+    const operations: string[] = [];
 
     // Determine which operations to include
     const shouldInclude = (op: string) => {
@@ -3000,7 +3005,7 @@ ${fields}
     const include =
       (typeof config === 'object' && config?.include) || undefined;
 
-    const tools = [];
+    const tools: string[] = [];
 
     const shouldInclude = (op: string) => {
       if (include && !include.includes(op)) return false;
