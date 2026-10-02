@@ -6,6 +6,7 @@ import {
   sha256SmrtGenerationSnapshot,
 } from '@happyvertical/smrt-core/vite-plugin';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { parseCliCommandArgs } from '../../cli-generator.js';
 import {
   assertForceMigrationTargetsExist,
@@ -361,9 +362,9 @@ describe('utilities', () => {
       throw new Error(`exit:${code ?? ''}`);
     }) as typeof process.exit);
 
-    await expect(utilityCommands.doctor.handler([], {})).rejects.toThrow(
-      'exit:1',
-    );
+    await expect(
+      requireCommandHandler(utilityCommands.doctor)([], {}),
+    ).rejects.toThrow('exit:1');
 
     const output = logSpy.mock.calls.flat().join('\n');
     expect(output).toContain('smrtConsumer()');
@@ -450,9 +451,9 @@ describe('utilities', () => {
       throw new Error(`exit:${code ?? ''}`);
     }) as typeof process.exit);
 
-    await expect(utilityCommands.doctor.handler([], {})).rejects.toThrow(
-      'exit:1',
-    );
+    await expect(
+      requireCommandHandler(utilityCommands.doctor)([], {}),
+    ).rejects.toThrow('exit:1');
 
     const output = logSpy.mock.calls.flat().join('\n');
     expect(output).toContain('Packed publish artifact verification');
@@ -540,7 +541,7 @@ describe('utilities', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await utilityCommands.doctor.handler([], {
+    await requireCommandHandler(utilityCommands.doctor)([], {
       'generation-snapshot': snapshotPath,
       'generation-snapshot-sha256': sha256SmrtGenerationSnapshot(snapshot),
       'generation-snapshot-provenance': provenance,
@@ -586,7 +587,7 @@ describe('utilities', () => {
 
     // Issues present (missing smrt-core, missing config) => exits 1.
     await expect(
-      utilityCommands.doctor.handler([], {
+      requireCommandHandler(utilityCommands.doctor)([], {
         fix: true,
         'generation-snapshot': 'snapshot.json',
       }),
@@ -620,7 +621,7 @@ describe('utilities', () => {
     process.chdir(projectDir);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await utilityCommands.introspect.handler([], {});
+    await requireCommandHandler(utilityCommands.introspect)([], {});
     const output = logSpy.mock.calls.flat().join('\n');
     expect(output).toContain('Introspecting SMRT project');
 

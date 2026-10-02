@@ -8,6 +8,7 @@
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 // Mock the discovery module
 vi.mock('../../discovery/index.js', () => ({
@@ -50,7 +51,7 @@ describe('generate-register', () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  const handler = generateCommands['generate-register'].handler;
+  const handler = requireCommandHandler(generateCommands['generate-register']);
 
   it('deduplicates objects that appear in multiple package manifests', async () => {
     // Profile is defined in smrt-profiles but also appears in smrt-users manifest
@@ -115,7 +116,7 @@ describe('generate-register', () => {
           },
         };
       }
-      return null;
+      throw new Error(`Unexpected manifest path: ${path}`);
     });
 
     await handler([], { 'output-path': outputPath });
@@ -418,7 +419,7 @@ describe('generate-register', () => {
           },
         };
       }
-      return null;
+      throw new Error(`Unexpected manifest path: ${path}`);
     });
 
     await handler([], { 'output-path': outputPath });
@@ -481,7 +482,7 @@ describe('generate-register', () => {
           },
         };
       }
-      return null;
+      throw new Error(`Unexpected manifest path: ${path}`);
     });
 
     await handler([], { 'output-path': outputPath });

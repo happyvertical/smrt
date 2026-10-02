@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const {
   autoDiscoverAndLoadMock,
@@ -190,7 +191,7 @@ describe('db:history', () => {
   it('annotates failed migrations with live-schema classification in JSON output', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbHistoryCommand.handler([], { json: true });
+    await requireCommandHandler(dbHistoryCommand)([], { json: true });
 
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
     const parsed = JSON.parse(output);
@@ -236,7 +237,7 @@ describe('db:history', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbHistoryCommand.handler([], {});
+    await requireCommandHandler(dbHistoryCommand)([], {});
 
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
 

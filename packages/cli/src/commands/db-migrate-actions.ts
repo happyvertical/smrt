@@ -146,6 +146,7 @@ export interface SchemaChangeLike {
   name?: string;
   column?: {
     type: string;
+    primaryKey?: boolean;
     notNull?: boolean;
     defaultValue?: unknown;
     unique?: boolean;

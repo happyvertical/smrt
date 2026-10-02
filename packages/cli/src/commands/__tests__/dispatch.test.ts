@@ -14,6 +14,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { getPackageConfigMock } = vi.hoisted(() => ({
   getPackageConfigMock: vi.fn(),
@@ -69,7 +70,7 @@ describe('dispatch commands', () => {
 
   describe('dispatch:list', () => {
     it('reports when no dispatches are found', async () => {
-      await dispatchCommands['dispatch:list'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:list'])([], {});
       expect(allOutput()).toContain('No dispatches found.');
     });
 
@@ -79,7 +80,7 @@ describe('dispatch commands', () => {
       await bus.emit('order.created', { y: 2 }, { source: 'commerce' });
       await db.close?.();
 
-      await dispatchCommands['dispatch:list'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:list'])([], {});
 
       const out = allOutput();
       expect(out).toContain('Found 2 dispatch(es)');
@@ -92,7 +93,7 @@ describe('dispatch commands', () => {
       await bus.emit('a.event', {}, { source: 's1' });
       await db.close?.();
 
-      await dispatchCommands['dispatch:list'].handler([], {
+      await requireCommandHandler(dispatchCommands['dispatch:list'])([], {
         json: true,
         status: 'pending',
         limit: 10,
@@ -106,7 +107,7 @@ describe('dispatch commands', () => {
 
     it('sets exit code on error (bad db config)', async () => {
       getPackageConfigMock.mockReturnValueOnce({ database: {} });
-      await dispatchCommands['dispatch:list'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:list'])([], {});
       expect(process.exitCode).toBe(1);
       expect(errorSpy).toHaveBeenCalled();
     });
@@ -115,7 +116,7 @@ describe('dispatch commands', () => {
   describe('dispatch:process', () => {
     it('exits when subscriber is missing', async () => {
       await expect(
-        dispatchCommands['dispatch:process'].handler([], {}),
+        requireCommandHandler(dispatchCommands['dispatch:process'])([], {}),
       ).rejects.toThrow('process.exit called');
     });
 
@@ -129,7 +130,7 @@ describe('dispatch commands', () => {
       await bus.emit('campaign.completed', {}, { source: 'suasor' });
       await db.close?.();
 
-      await dispatchCommands['dispatch:process'].handler([], {
+      await requireCommandHandler(dispatchCommands['dispatch:process'])([], {
         subscriber: 'fiscus',
         dry: true,
       });
@@ -149,7 +150,7 @@ describe('dispatch commands', () => {
       await bus.emit('campaign.completed', {}, { source: 'suasor' });
       await db.close?.();
 
-      await dispatchCommands['dispatch:process'].handler([], {
+      await requireCommandHandler(dispatchCommands['dispatch:process'])([], {
         subscriber: 'fiscus',
       });
 
@@ -160,7 +161,7 @@ describe('dispatch commands', () => {
 
     it('sets exit code on error', async () => {
       getPackageConfigMock.mockReturnValueOnce({ database: {} });
-      await dispatchCommands['dispatch:process'].handler([], {
+      await requireCommandHandler(dispatchCommands['dispatch:process'])([], {
         subscriber: 'fiscus',
       });
       expect(process.exitCode).toBe(1);
@@ -169,7 +170,7 @@ describe('dispatch commands', () => {
 
   describe('dispatch:retry', () => {
     it('resets failed dispatches to pending', async () => {
-      await dispatchCommands['dispatch:retry'].handler([], {
+      await requireCommandHandler(dispatchCommands['dispatch:retry'])([], {
         'max-attempts': 5,
         type: 'campaign.completed',
       });
@@ -177,13 +178,13 @@ describe('dispatch commands', () => {
     });
 
     it('uses defaults when options omitted', async () => {
-      await dispatchCommands['dispatch:retry'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:retry'])([], {});
       expect(allOutput()).toMatch(/Reset \d+ failed dispatch/);
     });
 
     it('sets exit code on error', async () => {
       getPackageConfigMock.mockReturnValueOnce({ database: {} });
-      await dispatchCommands['dispatch:retry'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:retry'])([], {});
       expect(process.exitCode).toBe(1);
     });
   });
@@ -194,7 +195,7 @@ describe('dispatch commands', () => {
       await bus.emit('a.event', {}, { source: 's1' });
       await db.close?.();
 
-      await dispatchCommands['dispatch:cleanup'].handler([], {
+      await requireCommandHandler(dispatchCommands['dispatch:cleanup'])([], {
         dry: true,
         'completed-older-than': 15,
         'failed-older-than': 7,
@@ -207,7 +208,7 @@ describe('dispatch commands', () => {
     });
 
     it('performs cleanup and reports deleted counts', async () => {
-      await dispatchCommands['dispatch:cleanup'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:cleanup'])([], {});
       const out = allOutput();
       expect(out).toContain('Cleanup complete');
       expect(out).toContain('Completed deleted:');
@@ -216,14 +217,17 @@ describe('dispatch commands', () => {
 
     it('sets exit code on error', async () => {
       getPackageConfigMock.mockReturnValueOnce({ database: {} });
-      await dispatchCommands['dispatch:cleanup'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:cleanup'])([], {});
       expect(process.exitCode).toBe(1);
     });
   });
 
   describe('dispatch:subscriptions', () => {
     it('reports when no subscriptions exist', async () => {
-      await dispatchCommands['dispatch:subscriptions'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:subscriptions'])(
+        [],
+        {},
+      );
       expect(allOutput()).toContain('No subscriptions found.');
     });
 
@@ -236,7 +240,10 @@ describe('dispatch commands', () => {
       });
       await db.close?.();
 
-      await dispatchCommands['dispatch:subscriptions'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:subscriptions'])(
+        [],
+        {},
+      );
 
       const out = allOutput();
       expect(out).toContain('Found 1 subscription(s)');
@@ -249,9 +256,12 @@ describe('dispatch commands', () => {
       await bus.subscribe({ signalType: 'x.y', subscriber: 's1' });
       await db.close?.();
 
-      await dispatchCommands['dispatch:subscriptions'].handler([], {
-        json: true,
-      });
+      await requireCommandHandler(dispatchCommands['dispatch:subscriptions'])(
+        [],
+        {
+          json: true,
+        },
+      );
 
       const parsed = JSON.parse(allOutput());
       expect(parsed).toHaveLength(1);
@@ -259,7 +269,10 @@ describe('dispatch commands', () => {
 
     it('sets exit code on error', async () => {
       getPackageConfigMock.mockReturnValueOnce({ database: {} });
-      await dispatchCommands['dispatch:subscriptions'].handler([], {});
+      await requireCommandHandler(dispatchCommands['dispatch:subscriptions'])(
+        [],
+        {},
+      );
       expect(process.exitCode).toBe(1);
     });
   });
@@ -267,12 +280,15 @@ describe('dispatch commands', () => {
   describe('dispatch:subscribe', () => {
     it('exits when args are missing', async () => {
       await expect(
-        dispatchCommands['dispatch:subscribe'].handler(['only-one'], {}),
+        requireCommandHandler(dispatchCommands['dispatch:subscribe'])(
+          ['only-one'],
+          {},
+        ),
       ).rejects.toThrow('process.exit called');
     });
 
     it('creates a subscription', async () => {
-      await dispatchCommands['dispatch:subscribe'].handler(
+      await requireCommandHandler(dispatchCommands['dispatch:subscribe'])(
         ['campaign.*', 'fiscus'],
         { handler: 'handleCampaign' },
       );
@@ -289,7 +305,7 @@ describe('dispatch commands', () => {
 
     it('sets exit code on error', async () => {
       getPackageConfigMock.mockReturnValueOnce({ database: {} });
-      await dispatchCommands['dispatch:subscribe'].handler(
+      await requireCommandHandler(dispatchCommands['dispatch:subscribe'])(
         ['campaign.*', 'fiscus'],
         { handler: 'handleDispatch' },
       );
@@ -300,7 +316,10 @@ describe('dispatch commands', () => {
   describe('dispatch:unsubscribe', () => {
     it('exits when args are missing', async () => {
       await expect(
-        dispatchCommands['dispatch:unsubscribe'].handler(['only-one'], {}),
+        requireCommandHandler(dispatchCommands['dispatch:unsubscribe'])(
+          ['only-one'],
+          {},
+        ),
       ).rejects.toThrow('process.exit called');
     });
 
@@ -309,7 +328,7 @@ describe('dispatch commands', () => {
       await bus.subscribe({ signalType: 'campaign.*', subscriber: 'fiscus' });
       await db.close?.();
 
-      await dispatchCommands['dispatch:unsubscribe'].handler(
+      await requireCommandHandler(dispatchCommands['dispatch:unsubscribe'])(
         ['campaign.*', 'fiscus'],
         {},
       );
@@ -324,7 +343,7 @@ describe('dispatch commands', () => {
 
     it('sets exit code on error', async () => {
       getPackageConfigMock.mockReturnValueOnce({ database: {} });
-      await dispatchCommands['dispatch:unsubscribe'].handler(
+      await requireCommandHandler(dispatchCommands['dispatch:unsubscribe'])(
         ['campaign.*', 'fiscus'],
         {},
       );

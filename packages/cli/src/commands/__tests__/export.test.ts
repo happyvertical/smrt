@@ -1,9 +1,15 @@
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   formatProjectedRecords,
   getCommonFields,
   queryWithProjection,
 } from '../export.js';
+
+/** queryWithProjection uses only query; the remaining adapter methods are outside these unit cases. */
+function queryOnlyDb(query: DatabaseInterface['query']): DatabaseInterface {
+  return { query } as DatabaseInterface;
+}
 
 vi.mock('@happyvertical/smrt-core', () => ({
   ObjectRegistry: {
@@ -125,7 +131,7 @@ describe('export command helpers', () => {
     });
 
     await queryWithProjection(
-      { query },
+      queryOnlyDb(query),
       'contents',
       ['Article'],
       ['title'],
@@ -215,7 +221,7 @@ describe('export command helpers', () => {
   it('rejects unsafe identifiers before building SQL', async () => {
     await expect(
       queryWithProjection(
-        { query: vi.fn() },
+        queryOnlyDb(vi.fn()),
         'contents; DROP TABLE contents',
         ['Article'],
         ['title'],
@@ -227,7 +233,7 @@ describe('export command helpers', () => {
 
     await expect(
       queryWithProjection(
-        { query: vi.fn() },
+        queryOnlyDb(vi.fn()),
         'contents',
         ['Article'],
         ['title'],
@@ -243,9 +249,7 @@ describe('export command helpers', () => {
 
     await expect(
       queryWithProjection(
-        {
-          query: vi.fn().mockRejectedValue(sourceError),
-        },
+        queryOnlyDb(vi.fn().mockRejectedValue(sourceError)),
         'contents',
         ['MeetingRecap'],
         ['title'],
@@ -258,9 +262,7 @@ describe('export command helpers', () => {
 
     await expect(
       queryWithProjection(
-        {
-          query: vi.fn().mockRejectedValue(sourceError),
-        },
+        queryOnlyDb(vi.fn().mockRejectedValue(sourceError)),
         'contents',
         ['MeetingRecap'],
         ['title'],
@@ -276,7 +278,7 @@ describe('export command helpers', () => {
     });
 
     await queryWithProjection(
-      { query },
+      queryOnlyDb(query),
       'councils',
       ['Council'],
       ['id', 'slug', 'name'],

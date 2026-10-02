@@ -5,6 +5,7 @@ import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { autoDiscoverAndLoadMock } = vi.hoisted(() => ({
   autoDiscoverAndLoadMock: vi.fn(),
@@ -122,7 +123,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
     // (Sub-millisecond SQLite migrations are logged as "already applied" by
     // the tracker's execution_time_ms === 0 heuristic, so the applied
     // column is asserted on the live schema rather than the log line.)
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     let out = output();
     await withDb(async (db) => {
       const cols = await db.getTableSchema?.('posts');
@@ -143,7 +144,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
     // Run 2 (no flag): nothing to apply, the warning is repeated — never
     // reported as in sync.
     logSpy.mockClear();
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     out = output();
     expect(out).toContain('posts.title: orphan column (TEXT NOT NULL)');
     expect(out).toContain(
@@ -153,7 +154,9 @@ describe('db:migrate (real SQLite, #2369)', () => {
 
     // Run 3: --drop-columns removes the orphan; inserts work again.
     logSpy.mockClear();
-    await utilityCommands['db:migrate'].handler([], { 'drop-columns': true });
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      'drop-columns': true,
+    });
     out = output();
     expect(out).toContain('Applying 1 schema change(s)');
     expect(process.exitCode).toBeUndefined();
@@ -165,7 +168,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
 
     // Run 4: clean.
     logSpy.mockClear();
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     expect(output()).toContain('up to date');
     expect(output()).not.toContain('orphan column');
   });
@@ -183,7 +186,9 @@ describe('db:migrate (real SQLite, #2369)', () => {
       }),
     );
 
-    await utilityCommands['db:migrate'].handler([], { 'dry-run': true });
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      'dry-run': true,
+    });
     let out = output();
     expect(out).toContain(
       `ALTER TABLE "posts" ADD COLUMN "status" TEXT NOT NULL DEFAULT 'draft';`,
@@ -195,7 +200,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
     expect(out).not.toContain('ADD COLUMN "email" TEXT UNIQUE');
 
     logSpy.mockClear();
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     out = output();
     expect(out).toContain('Applying 2 schema change(s)');
     expect(process.exitCode).toBeUndefined();
@@ -212,7 +217,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
     });
 
     logSpy.mockClear();
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     expect(output()).toContain('up to date');
   });
 
@@ -231,7 +236,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
       ),
     );
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     const out = output();
     expect(out).toContain('requires manual intervention');
     expect(out).toContain('posts.owner_id was not added');
@@ -264,7 +269,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
       ),
     );
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     expect(output()).not.toContain('requires manual intervention');
     expect(process.exitCode).toBeUndefined();
 
@@ -283,7 +288,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
     });
 
     logSpy.mockClear();
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     expect(output()).toContain('up to date');
   });
 });

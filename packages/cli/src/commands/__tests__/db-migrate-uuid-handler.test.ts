@@ -5,6 +5,7 @@ import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { autoDiscoverAndLoadMock } = vi.hoisted(() => ({
   autoDiscoverAndLoadMock: vi.fn(),
@@ -89,7 +90,7 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
       .spyOn(process, 'exit')
       .mockImplementation((() => undefined as never) as any);
 
-    await dbMigrateUuidCommand.handler([], {});
+    await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(errorOutput()).toContain('Database configuration required');
@@ -97,7 +98,10 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
   });
 
   it('fails with exit code 1 when a --rename entry is malformed', async () => {
-    await dbMigrateUuidCommand.handler([], { rename: 'no_colon', table: 't' });
+    await requireCommandHandler(dbMigrateUuidCommand)([], {
+      rename: 'no_colon',
+      table: 't',
+    });
 
     expect(process.exitCode).toBe(1);
     expect(errorOutput()).toContain('uuid migration failed');
@@ -108,7 +112,7 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
     await db.query('CREATE TABLE things (id TEXT PRIMARY KEY)');
     await db.close?.();
 
-    await dbMigrateUuidCommand.handler([], {});
+    await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
     expect(output()).toContain('no native uuid column type');
   });
@@ -126,7 +130,7 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
       },
     } as never);
 
-    await dbMigrateInt8Command.handler([], { 'dry-run': true });
+    await requireCommandHandler(dbMigrateInt8Command)([], { 'dry-run': true });
 
     expect(output()).toContain('not applicable');
     expect(output()).toContain('No widening is needed on this engine');
@@ -143,7 +147,7 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
     );
     await db.close?.();
 
-    await dbMigrateUuidCommand.handler([], {
+    await requireCommandHandler(dbMigrateUuidCommand)([], {
       rename: 'parent_slug:parent_id',
       table: 'tags',
     });
@@ -164,7 +168,7 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
     await db.query('CREATE TABLE tags (id TEXT PRIMARY KEY, parent_id TEXT)');
     await db.close?.();
 
-    await dbMigrateUuidCommand.handler([], {
+    await requireCommandHandler(dbMigrateUuidCommand)([], {
       rename: 'parent_slug:parent_id',
       table: 'tags',
     });
@@ -178,7 +182,7 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
     await db.query('CREATE TABLE tags (id TEXT PRIMARY KEY, parent_slug TEXT)');
     await db.close?.();
 
-    await dbMigrateUuidCommand.handler([], {
+    await requireCommandHandler(dbMigrateUuidCommand)([], {
       rename: 'parent_slug:parent_id',
       table: 'tags',
     });
@@ -194,7 +198,7 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
     );
     await db.close?.();
 
-    await dbMigrateUuidCommand.handler([], {
+    await requireCommandHandler(dbMigrateUuidCommand)([], {
       rename: 'parent_slug:parent_id',
       table: 'tags',
       'skip-convert': true,
@@ -212,7 +216,7 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
     );
     await db.close?.();
 
-    await dbMigrateUuidCommand.handler([], {
+    await requireCommandHandler(dbMigrateUuidCommand)([], {
       rename: 'parent_slug:parent_id',
       table: 'tags',
       'dry-run': true,

@@ -7,6 +7,7 @@
  * the "db without getTableSchema" no-op path.
  */
 
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -163,7 +164,8 @@ describe('schema-contract extras', () => {
         schemaContract: {
           requiredDatabaseShape: { tables: ['widgets'] },
         },
-        db: {}, // no getTableSchema -> checkTable returns null -> table missing
+        // Deliberately lacks getTableSchema to exercise the fail-closed path.
+        db: {} as unknown as DatabaseInterface,
       });
 
       expect(
@@ -190,7 +192,8 @@ describe('schema-contract extras', () => {
             indexes: ['widgets.idx_widgets_name'],
           },
         },
-        db,
+        // This schema-only adapter fixture exposes the sole method this check reads.
+        db: db as unknown as DatabaseInterface,
       });
 
       expect(report.ok).toBe(true);

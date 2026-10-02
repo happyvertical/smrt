@@ -12,6 +12,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import {
   assessDecoratorSupport,
   resolveDeclaredViteMajor,
@@ -222,7 +223,9 @@ describe('doctor decorator check (end to end)', () => {
 
     // The fixture is deliberately minimal, so unrelated checks may still fail;
     // this test is only about the decorator verdict.
-    await utilityCommands.doctor.handler([], {}).catch(() => undefined);
+    await requireCommandHandler(utilityCommands.doctor)([], {}).catch(
+      () => undefined,
+    );
 
     const output = logSpy.mock.calls.flat().join('\n');
     expect(output).toContain('✅ Decorator transform configured');
@@ -263,9 +266,9 @@ describe('doctor decorator check (end to end)', () => {
       throw new Error(`exit:${code ?? ''}`);
     }) as typeof process.exit);
 
-    await expect(utilityCommands.doctor.handler([], {})).rejects.toThrow(
-      'exit:1',
-    );
+    await expect(
+      requireCommandHandler(utilityCommands.doctor)([], {}),
+    ).rejects.toThrow('exit:1');
 
     const output = logSpy.mock.calls.flat().join('\n');
     expect(output).toContain('Vite 8 ignores tsconfig experimentalDecorators');

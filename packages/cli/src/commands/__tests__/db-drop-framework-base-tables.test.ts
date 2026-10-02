@@ -16,6 +16,7 @@ import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { FRAMEWORK_BASE_TABLE_NAMES } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { dbDropFrameworkBaseTablesCommand } from '../db-drop-framework-base-tables.js';
 import { utilityCommands } from '../utilities.js';
 
@@ -138,14 +139,14 @@ describe('db:drop-framework-base-tables command', () => {
         packages: { cli: { database: { type: 'sqlite', url: ':memory:' } } },
       } as any);
 
-      await dbDropFrameworkBaseTablesCommand.handler([], {});
+      await requireCommandHandler(dbDropFrameworkBaseTablesCommand)([], {});
 
       expect(process.exitCode).toBe(1);
       expect(errorOutput()).toContain('Database configuration required');
     });
 
     it('reports nothing to do when none of the five tables exist', async () => {
-      await dbDropFrameworkBaseTablesCommand.handler([], {});
+      await requireCommandHandler(dbDropFrameworkBaseTablesCommand)([], {});
 
       expect(process.exitCode).toBeUndefined();
       expect(output()).toContain('Nothing to do');
@@ -155,7 +156,9 @@ describe('db:drop-framework-base-tables command', () => {
     it('prints the plan and drops nothing on --dry-run', async () => {
       await createAllFrameworkBaseTables();
 
-      await dbDropFrameworkBaseTablesCommand.handler([], { 'dry-run': true });
+      await requireCommandHandler(dbDropFrameworkBaseTablesCommand)([], {
+        'dry-run': true,
+      });
 
       expect(process.exitCode).toBeUndefined();
       // (2 indexes + 1 table) × 3 plain-baseline tables, (1 index + 1
@@ -183,7 +186,7 @@ describe('db:drop-framework-base-tables command', () => {
       );
       await db.close?.();
 
-      await dbDropFrameworkBaseTablesCommand.handler([], {});
+      await requireCommandHandler(dbDropFrameworkBaseTablesCommand)([], {});
 
       expect(process.exitCode).toBeUndefined();
       // 2 indexes × 3 plain-baseline tables + 1 index × 2 tables without a
@@ -206,7 +209,7 @@ describe('db:drop-framework-base-tables command', () => {
       );
       await db.close?.();
 
-      await dbDropFrameworkBaseTablesCommand.handler([], {});
+      await requireCommandHandler(dbDropFrameworkBaseTablesCommand)([], {});
 
       expect(process.exitCode).toBe(1);
       expect(errorOutput()).toContain('remediation failed');
@@ -224,7 +227,7 @@ describe('db:drop-framework-base-tables command', () => {
       await db.query('ALTER TABLE "smrt_objects" ADD COLUMN "extra" TEXT');
       await db.close?.();
 
-      await dbDropFrameworkBaseTablesCommand.handler([], {});
+      await requireCommandHandler(dbDropFrameworkBaseTablesCommand)([], {});
 
       expect(process.exitCode).toBe(1);
       expect(output()).toContain('unexpected column(s) [extra]');
@@ -240,7 +243,7 @@ describe('db:drop-framework-base-tables command', () => {
       );
       await db.close?.();
 
-      await dbDropFrameworkBaseTablesCommand.handler([], {});
+      await requireCommandHandler(dbDropFrameworkBaseTablesCommand)([], {});
 
       expect(process.exitCode).toBe(1);
       expect(output()).toContain(
@@ -256,7 +259,9 @@ describe('db:drop-framework-base-tables command', () => {
       }
       await db.close?.();
 
-      await dbDropFrameworkBaseTablesCommand.handler([], { verbose: true });
+      await requireCommandHandler(dbDropFrameworkBaseTablesCommand)([], {
+        verbose: true,
+      });
 
       expect(output()).toContain('smrt_objects: not present, nothing to do');
       expect(output()).toContain('smrt_classes: safe to drop');

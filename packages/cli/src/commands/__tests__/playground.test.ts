@@ -27,6 +27,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { importWorkspaceModuleMock, spawnMock } = vi.hoisted(() => ({
   importWorkspaceModuleMock: vi.fn(),
@@ -106,7 +107,10 @@ describe('playground commands', () => {
     it('throws when no package.json is present', async () => {
       process.chdir(projectRoot);
       await expect(
-        (await loadCommands())['playground:init'].handler([], {}),
+        requireCommandHandler((await loadCommands())['playground:init'])(
+          [],
+          {},
+        ),
       ).rejects.toThrow('No package.json found');
     });
 
@@ -114,9 +118,12 @@ describe('playground commands', () => {
       writePackageJson({ name: '@happyvertical/smrt-demo' });
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:init'].handler([], {
-        target: 'package',
-      });
+      await requireCommandHandler((await loadCommands())['playground:init'])(
+        [],
+        {
+          target: 'package',
+        },
+      );
 
       const o = out();
       expect(o).toContain('Scaffolded package playground support');
@@ -137,13 +144,19 @@ describe('playground commands', () => {
       writePackageJson({ name: '@happyvertical/smrt-demo' });
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:init'].handler([], {
-        target: 'package',
-      });
+      await requireCommandHandler((await loadCommands())['playground:init'])(
+        [],
+        {
+          target: 'package',
+        },
+      );
       logSpy.mockClear();
-      await (await loadCommands())['playground:init'].handler([], {
-        target: 'package',
-      });
+      await requireCommandHandler((await loadCommands())['playground:init'])(
+        [],
+        {
+          target: 'package',
+        },
+      );
 
       expect(out()).toContain('Skipped:');
     });
@@ -152,14 +165,20 @@ describe('playground commands', () => {
       writePackageJson({ name: '@happyvertical/smrt-demo' });
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:init'].handler([], {
-        target: 'package',
-      });
+      await requireCommandHandler((await loadCommands())['playground:init'])(
+        [],
+        {
+          target: 'package',
+        },
+      );
       logSpy.mockClear();
-      await (await loadCommands())['playground:init'].handler([], {
-        target: 'package',
-        force: true,
-      });
+      await requireCommandHandler((await loadCommands())['playground:init'])(
+        [],
+        {
+          target: 'package',
+          force: true,
+        },
+      );
 
       expect(out()).toContain('Created/updated:');
     });
@@ -168,9 +187,12 @@ describe('playground commands', () => {
       writePackageJson({ name: 'my-app' });
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:init'].handler([], {
-        target: 'app',
-      });
+      await requireCommandHandler((await loadCommands())['playground:init'])(
+        [],
+        {
+          target: 'app',
+        },
+      );
 
       const o = out();
       expect(o).toContain('Scaffolded app playground support');
@@ -193,9 +215,12 @@ describe('playground commands', () => {
       );
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:init'].handler([], {
-        target: 'app',
-      });
+      await requireCommandHandler((await loadCommands())['playground:init'])(
+        [],
+        {
+          target: 'app',
+        },
+      );
 
       const vite = readFileSync(join(projectRoot, 'vite.config.ts'), 'utf-8');
       expect(vite).toContain('smrtPlaygroundVitePlugin');
@@ -206,7 +231,10 @@ describe('playground commands', () => {
       writePackageJson({ name: 'plain-project' });
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:init'].handler([], {});
+      await requireCommandHandler((await loadCommands())['playground:init'])(
+        [],
+        {},
+      );
 
       expect(out()).toContain('Scaffolded app playground support');
     });
@@ -215,7 +243,10 @@ describe('playground commands', () => {
   describe('playground:list', () => {
     it('reports when no playground modules are discovered', async () => {
       process.chdir(projectRoot);
-      await (await loadCommands())['playground:list'].handler([], {});
+      await requireCommandHandler((await loadCommands())['playground:list'])(
+        [],
+        {},
+      );
       expect(out()).toContain('No playground modules discovered.');
     });
 
@@ -247,7 +278,10 @@ describe('playground commands', () => {
       );
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:list'].handler([], {});
+      await requireCommandHandler((await loadCommands())['playground:list'])(
+        [],
+        {},
+      );
 
       const o = out();
       expect(o).toContain('Discovered 1 playground target(s)');
@@ -272,7 +306,10 @@ describe('playground commands', () => {
       );
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:list'].handler([], {});
+      await requireCommandHandler((await loadCommands())['playground:list'])(
+        [],
+        {},
+      );
 
       expect(out()).toContain('Entries: unavailable');
     });
@@ -299,7 +336,10 @@ describe('playground commands', () => {
       );
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:dev'].handler([], {});
+      await requireCommandHandler((await loadCommands())['playground:dev'])(
+        [],
+        {},
+      );
 
       expect(spawnMock).toHaveBeenCalled();
       expect(out()).toContain('shared SMRT playground host');
@@ -315,7 +355,7 @@ describe('playground commands', () => {
       process.chdir(projectRoot);
 
       await expect(
-        (await loadCommands())['playground:dev'].handler([], {}),
+        requireCommandHandler((await loadCommands())['playground:dev'])([], {}),
       ).rejects.toThrow('Could not determine workspace root');
     });
 
@@ -335,7 +375,10 @@ describe('playground commands', () => {
       // No lockfiles → npm.
       process.chdir(projectRoot);
 
-      await (await loadCommands())['playground:dev'].handler([], {});
+      await requireCommandHandler((await loadCommands())['playground:dev'])(
+        [],
+        {},
+      );
 
       expect(spawnMock).toHaveBeenCalledWith(
         'npm',
@@ -361,7 +404,7 @@ describe('playground commands', () => {
       process.chdir(projectRoot);
 
       await expect(
-        (await loadCommands())['playground:dev'].handler([], {}),
+        requireCommandHandler((await loadCommands())['playground:dev'])([], {}),
       ).rejects.toThrow(/exited with code 1/);
     });
   });

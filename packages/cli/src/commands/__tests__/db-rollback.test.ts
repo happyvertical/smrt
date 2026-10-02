@@ -7,6 +7,7 @@ import { MigrationTracker } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
 import { parseCliArgs } from '@happyvertical/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { dbRollbackCommand, recoverDownStatements } from '../db-rollback.js';
 
 // The command prompts via node:readline/promises when not forced. Stub the
@@ -180,7 +181,7 @@ describe('db:rollback (real SQLite)', () => {
       .spyOn(process, 'exit')
       .mockImplementation((() => undefined as never) as any);
 
-    await dbRollbackCommand.handler([], {});
+    await requireCommandHandler(dbRollbackCommand)([], {});
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(errorOutput()).toContain('Database configuration required');
@@ -194,7 +195,7 @@ describe('db:rollback (real SQLite)', () => {
       .spyOn(process, 'exit')
       .mockImplementation((() => undefined as never) as any);
 
-    await dbRollbackCommand.handler([], { json: true });
+    await requireCommandHandler(dbRollbackCommand)([], { json: true });
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(output()).toContain('Database not configured');
@@ -204,7 +205,7 @@ describe('db:rollback (real SQLite)', () => {
   it('reports nothing to roll back when no migrations have been applied', async () => {
     await seedMigrations([]);
 
-    await dbRollbackCommand.handler([], { force: true });
+    await requireCommandHandler(dbRollbackCommand)([], { force: true });
 
     expect(output()).toContain('No applied migrations to rollback');
   });
@@ -212,7 +213,10 @@ describe('db:rollback (real SQLite)', () => {
   it('reports nothing to roll back in JSON mode when history is empty', async () => {
     await seedMigrations([]);
 
-    await dbRollbackCommand.handler([], { json: true, force: true });
+    await requireCommandHandler(dbRollbackCommand)([], {
+      json: true,
+      force: true,
+    });
 
     const parsed = JSON.parse(output());
     expect(parsed.message).toBe('No migrations to rollback');
@@ -225,7 +229,7 @@ describe('db:rollback (real SQLite)', () => {
         nonReversibleDef('m_two'),
       ]);
 
-      await dbRollbackCommand.handler([], { force: true });
+      await requireCommandHandler(dbRollbackCommand)([], { force: true });
 
       expect(process.exitCode).toBe(1);
       expect(errorOutput()).toContain('Refusing to roll back');
@@ -241,7 +245,10 @@ describe('db:rollback (real SQLite)', () => {
     it('emits a JSON refusal naming every unrecoverable migration', async () => {
       await seedMigrations([nonReversibleDef('jn_one')]);
 
-      await dbRollbackCommand.handler([], { json: true, force: true });
+      await requireCommandHandler(dbRollbackCommand)([], {
+        json: true,
+        force: true,
+      });
 
       const parsed = lastJson();
       expect(process.exitCode).toBe(1);
@@ -259,7 +266,7 @@ describe('db:rollback (real SQLite)', () => {
       await seedMigrations([createTableDef('r_one')]);
       expect(await tableExists('r_one')).toBe(true);
 
-      await dbRollbackCommand.handler([], { force: true });
+      await requireCommandHandler(dbRollbackCommand)([], { force: true });
 
       expect(process.exitCode).toBeUndefined();
       // The schema — not just the tracking row — actually moved.
@@ -271,7 +278,10 @@ describe('db:rollback (real SQLite)', () => {
     it('refuses a reversible migration whose DOWN SQL was never persisted', async () => {
       await seedMigrations([customReversibleDef('custom_one', 'custom_tbl')]);
 
-      await dbRollbackCommand.handler([], { json: true, force: true });
+      await requireCommandHandler(dbRollbackCommand)([], {
+        json: true,
+        force: true,
+      });
 
       const parsed = lastJson();
       expect(process.exitCode).toBe(1);
@@ -294,7 +304,10 @@ describe('db:rollback (real SQLite)', () => {
         createTableDef('mixed_new'),
       ]);
 
-      await dbRollbackCommand.handler([], { steps: 2, force: true });
+      await requireCommandHandler(dbRollbackCommand)([], {
+        steps: 2,
+        force: true,
+      });
 
       expect(process.exitCode).toBe(1);
       const byName = await statusByName();
@@ -307,7 +320,10 @@ describe('db:rollback (real SQLite)', () => {
     it('marks rows rolled back without touching the schema under --mark-only', async () => {
       await seedMigrations([nonReversibleDef('mo_one')]);
 
-      await dbRollbackCommand.handler([], { force: true, markOnly: true });
+      await requireCommandHandler(dbRollbackCommand)([], {
+        force: true,
+        markOnly: true,
+      });
 
       expect(process.exitCode).toBeUndefined();
       expect((await statusByName()).mo_one).toBe('rolled_back');
@@ -320,7 +336,7 @@ describe('db:rollback (real SQLite)', () => {
     it('reports --mark-only in the JSON summary', async () => {
       await seedMigrations([nonReversibleDef('mj_one')]);
 
-      await dbRollbackCommand.handler([], {
+      await requireCommandHandler(dbRollbackCommand)([], {
         force: true,
         json: true,
         markOnly: true,
@@ -351,7 +367,7 @@ describe('db:rollback (real SQLite)', () => {
         },
       ]);
 
-      await dbRollbackCommand.handler([], {
+      await requireCommandHandler(dbRollbackCommand)([], {
         steps: 2,
         force: true,
         json: true,
@@ -383,7 +399,10 @@ describe('db:rollback (real SQLite)', () => {
         },
       ]);
 
-      await dbRollbackCommand.handler([], { force: true, verbose: true });
+      await requireCommandHandler(dbRollbackCommand)([], {
+        force: true,
+        verbose: true,
+      });
 
       expect(errorOutput()).toContain('failed');
       expect(process.exitCode).toBe(1);
@@ -397,7 +416,10 @@ describe('db:rollback (real SQLite)', () => {
       createTableDef('s_three'),
     ]);
 
-    await dbRollbackCommand.handler([], { steps: 2, force: true });
+    await requireCommandHandler(dbRollbackCommand)([], {
+      steps: 2,
+      force: true,
+    });
 
     const byName = await statusByName();
     expect(byName.create_table_s_three).toBe('rolled_back');
@@ -415,7 +437,7 @@ describe('db:rollback (real SQLite)', () => {
       createTableDef('t_three'),
     ]);
 
-    await dbRollbackCommand.handler([], {
+    await requireCommandHandler(dbRollbackCommand)([], {
       to: 'create_table_t_one',
       force: true,
     });
@@ -430,7 +452,7 @@ describe('db:rollback (real SQLite)', () => {
   it('lists the DOWN statements it is about to run', async () => {
     await seedMigrations([createTableDef('p_list')]);
 
-    await dbRollbackCommand.handler([], { force: true });
+    await requireCommandHandler(dbRollbackCommand)([], { force: true });
 
     expect(output()).toContain('DROP TABLE IF EXISTS "p_list"');
   });
@@ -438,7 +460,10 @@ describe('db:rollback (real SQLite)', () => {
   it('errors when --to references an unknown migration', async () => {
     await seedMigrations([createTableDef('only_one')]);
 
-    await dbRollbackCommand.handler([], { to: 'does_not_exist', force: true });
+    await requireCommandHandler(dbRollbackCommand)([], {
+      to: 'does_not_exist',
+      force: true,
+    });
 
     expect(process.exitCode).toBe(1);
     expect(errorOutput()).toContain('not found in history');
@@ -447,7 +472,7 @@ describe('db:rollback (real SQLite)', () => {
   it('returns a JSON error when --to references an unknown migration', async () => {
     await seedMigrations([createTableDef('only_one')]);
 
-    await dbRollbackCommand.handler([], {
+    await requireCommandHandler(dbRollbackCommand)([], {
       to: 'does_not_exist',
       json: true,
       force: true,
@@ -464,7 +489,7 @@ describe('db:rollback (real SQLite)', () => {
     ]);
 
     // The latest applied migration is at index 0; nothing comes after it.
-    await dbRollbackCommand.handler([], {
+    await requireCommandHandler(dbRollbackCommand)([], {
       to: 'create_table_top_two',
       force: true,
     });
@@ -475,7 +500,10 @@ describe('db:rollback (real SQLite)', () => {
   it('previews a rollback without mutating history or schema in --dry-run mode', async () => {
     await seedMigrations([createTableDef('d_one'), createTableDef('d_two')]);
 
-    await dbRollbackCommand.handler([], { dryRun: true, force: true });
+    await requireCommandHandler(dbRollbackCommand)([], {
+      dryRun: true,
+      force: true,
+    });
 
     expect(output()).toContain('Dry-run');
     const history = await readHistory();
@@ -486,7 +514,7 @@ describe('db:rollback (real SQLite)', () => {
   it('emits structured dry-run output in JSON mode', async () => {
     await seedMigrations([createTableDef('dj_one')]);
 
-    await dbRollbackCommand.handler([], {
+    await requireCommandHandler(dbRollbackCommand)([], {
       dryRun: true,
       json: true,
       force: true,
@@ -503,7 +531,10 @@ describe('db:rollback (real SQLite)', () => {
   it('refuses (non-zero) in --dry-run when the real run would refuse', async () => {
     await seedMigrations([nonReversibleDef('dn_one')]);
 
-    await dbRollbackCommand.handler([], { dryRun: true, force: true });
+    await requireCommandHandler(dbRollbackCommand)([], {
+      dryRun: true,
+      force: true,
+    });
 
     expect(process.exitCode).toBe(1);
     expect(errorOutput()).toContain('Refusing to roll back');
@@ -516,7 +547,7 @@ describe('db:rollback (real SQLite)', () => {
     // run refuses before reaching the dry-run listing.
     await seedMigrations([nonReversibleDef('dm_one')]);
 
-    await dbRollbackCommand.handler([], {
+    await requireCommandHandler(dbRollbackCommand)([], {
       dryRun: true,
       markOnly: true,
       force: true,
@@ -531,7 +562,10 @@ describe('db:rollback (real SQLite)', () => {
   it('emits a JSON summary of a successful rollback', async () => {
     await seedMigrations([createTableDef('jr_one'), createTableDef('jr_two')]);
 
-    await dbRollbackCommand.handler([], { json: true, force: true });
+    await requireCommandHandler(dbRollbackCommand)([], {
+      json: true,
+      force: true,
+    });
 
     const parsed = lastJson();
     expect(parsed.success).toBe(true);
@@ -547,7 +581,7 @@ describe('db:rollback (real SQLite)', () => {
     await seedMigrations([createTableDef('c_one')]);
     questionMock.mockResolvedValue('n');
 
-    await dbRollbackCommand.handler([], {});
+    await requireCommandHandler(dbRollbackCommand)([], {});
 
     expect(output()).toContain('Cancelled by user');
     expect((await statusByName()).create_table_c_one).toBe('completed');
@@ -558,7 +592,7 @@ describe('db:rollback (real SQLite)', () => {
     await seedMigrations([createTableDef('p_one')]);
     questionMock.mockResolvedValue('yes');
 
-    await dbRollbackCommand.handler([], {});
+    await requireCommandHandler(dbRollbackCommand)([], {});
 
     expect((await statusByName()).create_table_p_one).toBe('rolled_back');
     expect(await tableExists('p_one')).toBe(false);
@@ -583,7 +617,10 @@ describe('db:rollback (real SQLite)', () => {
         [dbRollbackCommand as any],
         {},
       );
-      return dbRollbackCommand.handler(parsed.args, parsed.options);
+      return requireCommandHandler(dbRollbackCommand)(
+        parsed.args,
+        parsed.options,
+      );
     }
 
     it('produces the kebab option keys, not camelCase ones', () => {

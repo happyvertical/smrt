@@ -21,7 +21,11 @@ describe('smrt generate-mcp --version (regression #2279)', () => {
     outputDir = await mkdtemp(join(tmpdir(), 'smrt-generate-mcp-'));
     cli = new CLIGenerator({ prompt: false, colors: false });
     // Loading the consumer's compiled classes from disk is irrelevant here.
-    vi.spyOn(cli as never, 'tryLoadUserClasses').mockResolvedValue(undefined);
+    // The regression drives the public handler; suppress only its private class-loading side effect.
+    vi.spyOn(
+      cli as unknown as { tryLoadUserClasses: () => Promise<void> },
+      'tryLoadUserClasses',
+    ).mockResolvedValue(undefined);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
