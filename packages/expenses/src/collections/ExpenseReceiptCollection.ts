@@ -5,12 +5,17 @@
  * @packageDocumentation
  */
 
-import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
+import {
+  type JunctionAttachOptions,
+  SmrtJunction,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { ExpenseReceipt } from '../models/ExpenseReceipt.js';
-import type {
-  AttachReceiptInput,
-  DuplicateReceiptGroup,
-  FindDuplicateReceiptsOptions,
+import {
+  type AttachReceiptInput,
+  type DuplicateReceiptGroup,
+  ExpenseError,
+  type FindDuplicateReceiptsOptions,
 } from '../types.js';
 
 const DEFAULT_DUPLICATE_LIMIT = 100;
@@ -19,6 +24,11 @@ const MAX_DUPLICATE_LIMIT = 1000;
 /**
  * Junction collection over `expense_receipts` (left: expense, right: asset).
  * Reads go through the normal tenant interceptors.
+ *
+ * Writes: {@link attachReceipt} adds a receipt; the inherited `detach()`
+ * removes one (an explicit act; the asset itself is kept). The inherited
+ * `attach()` and `setLinks()` are refused because they cannot carry the
+ * content hash and `setLinks()` deletes before it writes.
  *
  * Collection classes are registered too, so this one carries its own closed
  * surface; without it every public method here would become an MCP tool.
@@ -52,6 +62,44 @@ export class ExpenseReceiptCollection extends SmrtJunction<ExpenseReceipt> {
     });
     await receipt.save();
     return receipt;
+  }
+
+  /**
+   * Refused: a receipt is evidence and needs its content hash, which a
+   * generic junction attach does not carry. Use {@link attachReceipt}.
+   *
+   * @throws {ExpenseError} `EXPENSE_RECEIPT_INVALID`, always.
+   */
+  override async attach(
+    _expenseId: string,
+    _assetId: string,
+    _opts: JunctionAttachOptions = {},
+  ): Promise<ExpenseReceipt> {
+    throw new ExpenseError(
+      'EXPENSE_RECEIPT_INVALID',
+      'ExpenseReceiptCollection.attach() is not supported: use ' +
+        'attachReceipt(), which records and checks the file hash.',
+    );
+  }
+
+  /**
+   * Refused before anything is deleted. The inherited replace-all deletes
+   * every receipt of the expense and re-attaches without hashes, which would
+   * lose the evidence. Attach with {@link attachReceipt}; remove a link with
+   * `detach()`.
+   *
+   * @throws {ExpenseError} `EXPENSE_RECEIPT_INVALID`, always.
+   */
+  override async setLinks(
+    _expenseId: string,
+    _assetIds: string[],
+    _opts: JunctionAttachOptions = {},
+  ): Promise<void> {
+    throw new ExpenseError(
+      'EXPENSE_RECEIPT_INVALID',
+      'ExpenseReceiptCollection.setLinks() is not supported: it would delete ' +
+        'receipt evidence. Use attachReceipt() to add and detach() to remove.',
+    );
   }
 
   /** Receipts of one expense, oldest first. */

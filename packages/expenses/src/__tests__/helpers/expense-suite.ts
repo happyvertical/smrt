@@ -14,6 +14,7 @@ import {
   ContractLineItemCollection,
   VendorCollection,
 } from '@happyvertical/smrt-commerce';
+import { SmrtObject } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
   disableTenancy,
@@ -24,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ExpenseCollection } from '../../collections/ExpenseCollection.js';
 import { ExpenseReceiptCollection } from '../../collections/ExpenseReceiptCollection.js';
 import type { Expense } from '../../models/Expense.js';
+import { ExpenseReceipt } from '../../models/ExpenseReceipt.js';
 import {
   DuplicateReceiptError,
   type ExpenseError,
@@ -950,6 +952,48 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
         }),
       ).rejects.toThrow();
       expect(await world.receipts.receiptsFor(expense.id)).toHaveLength(1);
+    });
+
+    it('refuses the inherited junction writers instead of losing evidence', async () => {
+      await world.inTenant(async () => {
+        const expense = await world.expense();
+        const asset = await world.asset();
+        await world.receipts.attachReceipt({
+          expenseId: expense.id,
+          assetId: asset.id,
+          contentSha256: computeContentSha256('kept-evidence'),
+        });
+
+        await expect(
+          world.receipts.setLinks(expense.id, [asset.id]),
+        ).rejects.toMatchObject({
+          code: 'EXPENSE_RECEIPT_INVALID',
+          message: expect.stringContaining('attachReceipt'),
+        });
+        await expect(
+          world.receipts.attach(expense.id, asset.id, {
+            contentSha256: computeContentSha256('via-attach'),
+          }),
+        ).rejects.toMatchObject({
+          code: 'EXPENSE_RECEIPT_INVALID',
+          message: expect.stringContaining('attachReceipt'),
+        });
+        const kept = await world.receipts.receiptsFor(expense.id);
+        expect(kept.map((r) => r.contentSha256)).toEqual([
+          computeContentSha256('kept-evidence'),
+        ]);
+
+        // The batch junction path only runs for models with the base save
+        // lifecycle; ExpenseReceipt's own save() keeps every write on it.
+        expect(
+          SmrtObject.hasBaseJunctionLifecycle(ExpenseReceipt.prototype),
+        ).toBe(false);
+
+        // detach is the explicit way to remove a link; the asset survives.
+        await world.receipts.detach(expense.id, asset.id);
+        expect(await world.receipts.receiptsFor(expense.id)).toEqual([]);
+        expect((await world.assets.get({ id: asset.id }))?.id).toBe(asset.id);
+      });
     });
   });
 }

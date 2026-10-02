@@ -53,7 +53,12 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   leave NULL-tenant (global) receipts unenforced. Same hash on different
   expenses is allowed; `findDuplicateReceipts()` reports it (facet on
   `contentSha256`, count > 1). Receipt `expenseId`, `assetId` and
-  `contentSha256` are immutable.
+  `contentSha256` are immutable. The inherited `SmrtJunction.attach()` and
+  `setLinks()` are overridden to throw (`setLinks()` would delete every
+  receipt, then fail to re-attach without hashes); `attachReceipt()` adds and
+  `detach()` removes a link, keeping the asset. Because `ExpenseReceipt`
+  overrides `save()`, `hasBaseJunctionLifecycle()` is false and no batch
+  junction path can write a hashless row around it.
 - **Vendor ownership.** `vendorId` is a `crossPackageRef` (no FK, no
   validation), so `assertVendor()` checks the vendor is visible in and owned
   by the expense's tenant whenever it is set or changed
