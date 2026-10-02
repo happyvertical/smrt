@@ -76,7 +76,9 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   (`EXPENSE_VENDOR_MISMATCH`).
 - **Tenant never moves.** Expense and receipt tenants are fixed once
   stored, compared as `effectiveTenant()` (the field, or the active context
-  the `beforeSave` interceptor would fill an empty one from). Otherwise a
+  the `beforeSave` interceptor would fill an unset one from; unset is falsy,
+  so `''` counts). `normalizeTenantId()` stores `''` as NULL (global), never
+  as a pseudo-tenant, matching core/tenancy's falsy "unset". Otherwise a
   global (NULL-tenant) row saved inside `withTenant()` would be silently
   populated and split from its global expense or receipts.
 - **Tenancy.** Optional (`@TenantScoped({ mode: 'optional' })`, nullable

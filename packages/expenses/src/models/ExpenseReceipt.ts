@@ -26,6 +26,7 @@ import {
   effectiveTenant,
   identityConflict,
   normalizeSha256,
+  normalizeTenantId,
   pinNaturalKey,
 } from '../validation.js';
 import { Expense } from './Expense.js';
@@ -165,6 +166,7 @@ export class ExpenseReceipt extends SmrtObject {
    */
   override async save(): Promise<this> {
     const label = this.id || '<new>';
+    this.tenantId = normalizeTenantId(this.tenantId);
     this.contentSha256 = normalizeSha256(
       'ExpenseReceipt',
       label,

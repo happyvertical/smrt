@@ -1151,6 +1151,59 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   });
 
   describe('review round 3 (PR #3339)', () => {
+    it('stores an empty-string tenant as global, never as a pseudo-tenant', async () => {
+      // Outside a tenant context.
+      const expense = await world.expense({ tenantId: '' });
+      expect(expense.tenantId).toBeNull();
+      const receipt = await world.receipts.attachReceipt({
+        expenseId: expense.id,
+        assetId: (await world.asset()).id,
+        contentSha256: computeContentSha256(`empty-tenant-${randomUUID()}`),
+      });
+      receipt.tenantId = '';
+      await receipt.save();
+      expect(receipt.tenantId).toBeNull();
+      expense.tenantId = '';
+      await expense.save();
+      expect(expense.tenantId).toBeNull();
+
+      expect(
+        (await world.expenses.get({ id: expense.id }))?.tenantId,
+      ).toBeNull();
+      expect(
+        (await world.receipts.get({ id: String(receipt.id) }))?.tenantId,
+      ).toBeNull();
+    });
+
+    it('refuses an empty-string tenant that a tenant context would fill in', async () => {
+      const expense = await world.expense();
+      const receipt = await world.receipts.attachReceipt({
+        expenseId: expense.id,
+        assetId: (await world.asset()).id,
+        contentSha256: computeContentSha256(`empty-in-tenant-${randomUUID()}`),
+      });
+
+      // '' is unset to the interceptor, which would fill in this tenant and
+      // move the stored global rows.
+      expense.tenantId = '';
+      await expectExpenseError(
+        world.inTenant(() => expense.save()),
+        'EXPENSE_INVALID',
+      );
+      receipt.tenantId = '';
+      await expectExpenseError(
+        world.inTenant(() => receipt.save()),
+        'EXPENSE_RECEIPT_INVALID',
+      );
+
+      expect(
+        (await world.expenses.get({ id: expense.id }))?.tenantId,
+      ).toBeNull();
+      expect(
+        (await world.receipts.get({ id: String(receipt.id) }))?.tenantId,
+      ).toBeNull();
+    });
+
     it('never lets tenant population move a global receipt or expense', async () => {
       // No context: optional tenancy writes global (NULL-tenant) rows.
       const expense = await world.expense();

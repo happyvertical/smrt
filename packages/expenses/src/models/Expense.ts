@@ -40,6 +40,7 @@ import {
   effectiveTenant,
   identityConflict,
   instantMs,
+  normalizeTenantId,
   pinNaturalKey,
 } from '../validation.js';
 
@@ -499,6 +500,7 @@ export class Expense extends SmrtObject {
   }
 
   private normalize(): void {
+    this.tenantId = normalizeTenantId(this.tenantId);
     this.currency = String(this.currency ?? '')
       .trim()
       .toUpperCase();

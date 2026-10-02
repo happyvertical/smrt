@@ -210,11 +210,23 @@ export function identityConflict(
 
 /**
  * The tenant a save will actually write: tenancy's `beforeSave` interceptor
- * fills an empty `tenantId` from the active tenant context, after the
- * model's own checks have run. Compare against this, not the raw field.
+ * fills an unset `tenantId` from the active tenant context, after the
+ * model's own checks have run, and "unset" is falsy there — `''` included.
+ * Compare against this, not the raw field.
  */
 export function effectiveTenant(
   tenantId: string | null | undefined,
 ): string | null {
-  return tenantId ?? getTenantId() ?? null;
+  return tenantId || getTenantId() || null;
+}
+
+/**
+ * An empty tenant id is unset, never a tenant of its own: core and tenancy
+ * treat it as falsy (and real tenant ids are UUIDs), so it is stored as
+ * NULL — a global row — rather than as a `''` pseudo-tenant.
+ */
+export function normalizeTenantId(
+  tenantId: string | null | undefined,
+): string | null {
+  return tenantId || null;
 }
