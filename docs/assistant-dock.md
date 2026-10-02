@@ -130,15 +130,36 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
     position, so overlapping sends in one thread keep their own replies.
     Replies written before this link existed are not attributed to any
     send; sends without a `clientRequestId` are never looked up.
-  - **Outcome.** The turn's state is kept on the user message
-    (`metadata.turnOutcome`). A reply exists → `completed`; stopped →
-    `cancelled`; failed → 409 `turn_failed`; waiting on browser tools →
-    `in_progress` for exactly as long as its continuation is waiting
-    (`AssistantContinuationStore.has`; a custom store without `has` gets the
-    default 15-minute continuation TTL), then 409; not settled yet, or a
-    resumed leg running → `in_progress` until `abandonedTurnMs` (default 15
-    minutes) has passed since it started, then 409. A retry never re-runs a
-    turn: the person sends again, under a new id.
+  - **Outcome, recorded by the turn.** The turn's state is kept on the user
+    message (`metadata.turnOutcome`) and written by the runner itself
+    (`runAssistantTurn`'s `onState`) when each fact becomes true, not from
+    what the HTTP reader consumed: `running` when a leg starts (a resume:
+    once it consumed its continuation), `suspended` with the continuation id
+    once the continuation is stored and before the browser sees
+    `client_tool_calls`, and `completed` (after the reply is stored),
+    `cancelled` or `failed` when the leg ends. The route pumps every turn to
+    its end whether or not a reader is still attached. Writes are
+    compare-and-set on the row's revision and only move forward per leg
+    (`unset → running → suspended(c) → running(from c) → … → terminal`); a
+    late write from an earlier leg, a `running` that does not consume the
+    waiting continuation, or anything after a terminal outcome is refused.
+  - **Disconnects cancel.** A client that disconnects aborts the request's
+    signal, which cancels the turn at its next model or tool boundary, the
+    same as the dock's Stop. The turn records `cancelled`, or `completed`
+    when its reply was already stored. A stale-send retry is then answered
+    from that record.
+  - **Answers.** A linked `assistant` reply → `completed`, whatever the
+    marker says: the runner stores exactly one per turn, at its end (tool
+    results are role `tool`, intermediate model text and suspensions store
+    none), so a crash between storing it and recording the outcome still
+    answers `completed`. Otherwise: `cancelled` → `cancelled`; `failed` →
+    409 `turn_failed`; `suspended` → `in_progress` for exactly as long as
+    its continuation is waiting (`AssistantContinuationStore.has`; a custom
+    store without `has` gets the default 15-minute continuation TTL), then
+    409; not settled yet, or a leg `running` → `in_progress` until
+    `abandonedTurnMs` (default 15 minutes) has passed since it started, then
+    409. A retry never re-runs a turn: the person sends again, under a new
+    id.
   - **Resumes.** A resume settles only the send recorded in the continuation
     it consumes (`originMessageId`, stored server-side when the turn
     suspended). The request's `clientRequestId` is ignored on resume, and a
