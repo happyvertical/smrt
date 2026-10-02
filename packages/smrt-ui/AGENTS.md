@@ -52,7 +52,8 @@ components are exempt — they *are* the primitives.
 | `./layout` | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, … |
 | `./calendar` | `CalendarView` (time-zone-aware month grid + phone agenda) and its Svelte-free date model (`toEntries`, `layoutMonth`, `dateKeyInZone`, …); deprecated `Calendar`, `DayView` |
 | `./chat` | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
-| `./forms` | Provider-free fields, choice controls, sliders/ranges, combobox/listbox/multiselect/tags, date/time/file controls, plus the transport-neutral control interaction registry |
+| `./forms` | Provider-free fields, choice controls, sliders/ranges, combobox/listbox/multiselect/tags, date/time/file controls, `CameraCapture`/`SignaturePad` capture, plus the transport-neutral control interaction registry |
+| `./form-retry` | **Svelte-free** form retry (#3291): submission key, in-flight refusal, conditional reset, opt-in restore-after-reload, browser `runOnce()` digest. Also re-exported from `./forms`. Framework-free TS typed structurally against SvelteKit's `SubmitFunction` — never import `@sveltejs/kit` here. Guide: `docs/content/form-retry.md` |
 | `./i18n` | i18n **client**: `useI18n`, `<Trans>`, `defineMessages`, `renderTemplate` (no `smrt-languages` import — the server resolver stays in `smrt-svelte/i18n/server`) |
 | `./registry` | `ModuleUIRegistry` for cross-package component discovery |
 | `./theme` | deprecated compatibility path forwarding to the canonical theme system |
@@ -153,6 +154,15 @@ other text pairing clears WCAG AA in both schemes.
   instants into the zone once (`dateKeyInZone`) and do all grid/span math on
   keys; never `new Date(y, m, d)` / `getDay()` in the browser zone. Months are
   1-12 in the public API (`CalendarMonth`), unlike `Date#getMonth`.
+- **Capture controls post natively.** `CameraCapture` and `SignaturePad` fill
+  a hidden named file input via `DataTransfer`, falling back to a `formdata`
+  listener (`native-file-field.ts`). Keep camera lifecycle in the
+  framework-free `camera-capture-session.ts` and the pointer gate in
+  `signature-pad-logic.ts`; their effects must not read rendered state. The
+  `<input capture>` path stays opt-in (`fileInputFallback`), off by default.
+  A form `reset` empties a native file input, so both clear their capture on
+  their form's reset (`attachFormResetListener`), even while `disabled`;
+  otherwise the UI shows a file the next submit no longer posts.
 
 - **i18n split**: the client (here) is dependency-free; the Node-only server
   resolver (`buildI18nSnapshot`, → `@happyvertical/smrt-languages`) stays in

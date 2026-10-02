@@ -111,7 +111,13 @@ const purchaseOrderId = await runOnce(
   too — a failed attempt never strands a claim, and a retry with the same key
   runs again.
 
-See [`agents/run-once.md`](agents/run-once.md) for the full contract.
+See [`agents/run-once.md`](agents/run-once.md) for the full contract. The
+browser half — minting and keeping the submission key per tab and form,
+refusing a concurrent submit, keeping typed values across a failed submit, and
+opt-in restore after a reload — is `createFormRetry()` in
+`@happyvertical/smrt-ui/form-retry`; the
+[form retry guide](../../docs/content/form-retry.md) shows both halves
+together.
 
 ### Bounded multi-collection reads
 

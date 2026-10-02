@@ -6,6 +6,7 @@ const loadInteractiveControls = () =>
 const loadFeedback = () => import('./playground/FeedbackPreview.svelte');
 const loadCollections = () => import('./playground/CollectionsPreview.svelte');
 const loadCalendar = () => import('./playground/CalendarPreview.svelte');
+const loadCapture = () => import('./playground/CapturePreview.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-ui',
@@ -79,6 +80,16 @@ export default {
       loadComponent: loadCalendar,
       order: 6,
       tags: ['calendar', 'events', 'agenda', 'mobile'],
+      modes: { mock: { label: 'Interactive' } },
+    },
+    {
+      id: 'capture',
+      title: 'Camera & Signature Capture',
+      description:
+        'Live camera capture with review and retake, and a stylus-aware signature pad, both posting files through a native multipart form.',
+      loadComponent: loadCapture,
+      order: 7,
+      tags: ['forms', 'camera', 'signature', 'files'],
       modes: { mock: { label: 'Interactive' } },
     },
   ],

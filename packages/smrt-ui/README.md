@@ -33,6 +33,7 @@ pnpm add @happyvertical/smrt-ui
 | Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `Listbox`, `MultiSelect`, `TagsInput`, `SearchInput` |
 | Choices | `Checkbox`, `RadioGroup`/`Radio`, `Switch`, `Toggle`, `ToggleButton`, `SegmentedControl` |
 | Values and files | `Slider`, `RangeSlider`, `DatePicker`, `TimePicker`, `FilePicker` |
+| Capture | `CameraCapture`, `SignaturePad` |
 | Actions and display | `Button`, `Dropdown`/`Menu`, `Badge`, `Chip`, `Avatar`, `Card`, `Skeleton`, `Tooltip`, `Tree` |
 | Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `PhoneSheet`, `ConfirmDialog` |
 | Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay`, `WorkingStrip` |
@@ -91,10 +92,11 @@ kept in view. It carries `data-shell-tabs`, so AdminShell keeps it sticky
 under the phone top bar. Pair it with `useLinkSurface` (smrt-svelte) so
 agents can switch tabs too.
 
-Use the focused subpaths (`/forms`, `/ui`, `/feedback`, `/data`,
+Use the focused subpaths (`/forms`, `/form-retry`, `/ui`, `/feedback`, `/data`,
 `/data-surface`, `/layout`, `/themes`) to keep imports explicit. The
 Svelte-free `/data-surface` entry exposes the registry contracts and shared
-protocol limits for server adapters. The package root remains a compatibility
+protocol limits for server adapters; the Svelte-free `/form-retry` entry
+exposes the form-retry helper. The package root remains a compatibility
 barrel.
 
 ### Calendar dates and shop time
@@ -441,6 +443,130 @@ property per proposable control (never secret/sensitive, unwritable,
 disabled, read-only, file, or password controls), and staging only ever
 creates reviewable proposals. smrt-svelte's `<Form webmcp>` and `FormScope`
 build their `*_stage_changes` tool from these.
+
+## Form retry
+
+`createFormRetry()` is the browser half of `runOnce()` (`@happyvertical/smrt-core`)
+for a SvelteKit enhanced form: a per-tab, per-form submission key, a refused
+second submit while one is in flight, typed values kept across a validation or
+transport failure, a reset after success only when the fields are unchanged
+since submit, and opt-in restore after a reload (a file that cannot be restored
+is reported, never silently dropped). It is framework-free and imports neither
+Svelte nor SvelteKit; the submit function is typed against SvelteKit's
+`SubmitFunction` shape structurally.
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+  import { createFormRetry } from '@happyvertical/smrt-ui/form-retry';
+
+  const retry = createFormRetry({ form: 'report' });
+</script>
+
+<form method="POST" use:enhance={retry.enhance()} {@attach retry.attach}>
+  <input name="title" />
+  <button type="submit">Send</button>
+  {#if $retry.status === 'transport-error'}<p role="alert">Send it again unchanged.</p>{/if}
+</form>
+```
+
+With smrt-ui's own `Form`, attach the same two pieces to it (see
+[Native and enhanced forms](#native-and-enhanced-forms)):
+`<Form method="POST" preventDefault={false} {@attach fromAction(enhance, () => retry.enhance())} {@attach retry.attach}>`.
+
+`/forms` re-exports the same API as the Svelte-free `/form-retry` entry. See the
+[form retry guide](../../docs/content/form-retry.md) for the server half, the
+per-result table, storage and private-window behaviour, and restore.
+
+## Camera and signature capture
+
+`CameraCapture` takes a photo from the device camera and `SignaturePad` takes a
+signature, each inside an ordinary form. Both live in `/forms`, need only
+browser APIs, and post their file through a plain multipart form when given a
+`name`; the page wires no hidden input and no submit handler.
+
+```svelte
+<script lang="ts">
+  import { CameraCapture, SignaturePad } from '@happyvertical/smrt-ui/forms';
+</script>
+
+<form method="POST" enctype="multipart/form-data">
+  <CameraCapture name="photo" facingMode="environment" />
+  <SignaturePad name="signature" stylusOnly={settings.signatureStylusOnly} />
+  <button type="submit">Send</button>
+</form>
+```
+
+**CameraCapture** uses `getUserMedia` with a live preview. The user takes a
+photo, reviews it, and can retake it before "Use photo" commits it. Committing
+calls `onCapture({ blob, dataUrl })` and fills the named field (`photo.jpg` by
+default; set `fileName`, `imageType`, and `quality` to change it). "Retake"
+after a commit empties the field and calls `onClear`. The root's `data-state`
+is one of `starting`, `streaming`, `reviewing`, `committed`, `off` (disabled),
+`permission-denied`, `no-camera`, `unsupported`, `error`, or `fallback`. Each
+problem state has its own copy and, where it can help, a "Try again" action.
+`getUserMedia` exists only in a secure context, so a page served over plain
+HTTP renders `unsupported`.
+
+The stream's tracks are stopped on unmount, when `disabled` turns on, when
+`facingMode` changes (the camera is then requested again), and as soon as a
+frame is captured. A permission prompt answered after unmount or disable is
+discarded and its stream released. The lifecycle lives in the framework-free
+`createCameraSession()` (exported with `classifyGetUserMediaError()` and
+`isCameraApiSupported()`), so it can be tested against a fake `MediaDevices`.
+
+`fileInputFallback` is opt-in and off by default. With it on, browsers without
+`getUserMedia` render an `<input type="file" accept="image/*" capture>` that
+carries `name` itself (`disabled` blocks it with `aria-disabled` rather than
+the native attribute, so a committed photo keeps posting). It opens the
+operating system's picker, which has no
+live preview and can offer the gallery, so it is not a substitute for the
+camera flow. With it off, those browsers render the `unsupported` state.
+
+**SignaturePad** draws on its own canvas. "Use signature" stays disabled until
+an accepted stroke exists, then returns a PNG through `onCapture({ blob,
+dataUrl })` and fills the named field (`signature.png` by default). A committed
+pad is locked until "Clear", which empties the field and calls `onClear`.
+`stylusOnly` is a prop the caller resolves; with it on, only `pointerType ===
+'pen'` draws. `isAcceptedPointerType()` and `mapPointerToCanvasPoint()` are
+exported as pure functions. The pad is dark ink on white paper in every theme
+and colour scheme, and the exported PNG is opaque white, so it reads the same
+wherever it is shown.
+
+**Native form posting.** The named field is a hidden `<input type="file">`
+filled through `DataTransfer` (Chrome 60+, Firefox 62+, Safari 14.1+). Where
+`DataTransfer` cannot be constructed or assigned, the field drops its `name`
+and a capture-phase `formdata` listener appends the file while the browser
+builds the request, which covers native navigation submits as well as
+`new FormData(form)`. Where neither API exists, nothing is posted and
+`onCapture` is the only channel. The root's `data-smrt-file-field` attribute
+reports `data-transfer`, `formdata-event`, `file-input`, or `none`. Before a
+commit the field posts what an empty native file input posts. `disabled`
+freezes the controls but keeps a committed file in the submission; unmount the
+component to drop it, or put it in a disabled `<fieldset>`, which leaves the
+field out of the submission (committed or empty) in every posting strategy.
+
+A reset of the owning form (`form.reset()`, a reset button, or SvelteKit
+`enhance`'s `update()` after a success, including `createFormRetry()`'s
+conditional reset) empties the field as it empties a native file input, in
+every posting strategy. A committed photo or signature is discarded as
+"Retake" or "Clear" would and `onClear` is called. A photo under review or
+ink not yet committed is discarded too, without `onClear`, so the next entry
+cannot attach the previous one's capture. `CameraCapture` returns to the live
+camera (`off` while `disabled`, the emptied picker with `fileInputFallback`)
+and supersedes a frame still encoding; with nothing held, a reset changes
+nothing and never re-prompts for the camera. `SignaturePad` returns to blank,
+unlocked paper. A reset clears both even while `disabled`, as it clears a
+disabled native input, and a reset a later listener cancels still leaves the
+component and the posted field both empty.
+
+Text comes from the `ui.camera_capture.*` and `ui.signature_pad.*` i18n keys
+and can be overridden per instance with `labels`. Capture is a touch flow, so
+its actions (and the fallback picker) are touch targets at every density: at
+least `--smrt-touch-target-min` (48px by default; see
+[Touch density](#touch-density)), which ThemeProvider `overrides` can raise.
+Both register with an enclosing `Form`'s interaction registry as non-readable,
+non-writable `file` controls.
 
 ## DataTable controller
 
@@ -884,7 +1010,9 @@ the label hit area while preserving the visual mark.
 `--smrt-touch-target-min` defaults to `48px` across all presets and works without
 a provider. Customize it globally with ThemeProvider's `overrides`, for example
 `overrides={{ '--smrt-touch-target-min': '56px' }}`. Touch targets grow with larger
-content; normal density keeps existing component sizing. TenantNav sizing is
+content; normal density keeps existing component sizing. `CameraCapture` and
+`SignaturePad` actions use `--smrt-touch-target-min` at every density, since
+capture is a touch flow. TenantNav sizing is
 tracked separately in [#3246](https://github.com/happyvertical/smrt/issues/3246).
 
 ### Narrow DataTable

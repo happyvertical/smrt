@@ -8,8 +8,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     rolldownOptions: {
-      input: ['index', 'tools-dock', 'mcp-apps-binding', 'mcp-apps-child'].map(
-        (entry) => fileURLToPath(new URL(`./${entry}.html`, import.meta.url)),
+      input: [
+        'index',
+        'tools-dock',
+        'mcp-apps-binding',
+        'mcp-apps-child',
+        'file-upload',
+      ].map((entry) =>
+        fileURLToPath(new URL(`./${entry}.html`, import.meta.url)),
       ),
     },
   },

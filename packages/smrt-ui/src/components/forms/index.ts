@@ -25,8 +25,21 @@ export {
   type DictationRecording,
   pickDictationMimeType,
 } from './audio-capture.js';
+// Camera and signature capture (smrt#3290).
+export { default as CameraCapture } from './CameraCapture.svelte';
 export { default as Checkbox } from './Checkbox.svelte';
 export { default as Combobox } from './Combobox.svelte';
+export {
+  type CameraCaptureErrorKind,
+  type CameraFacingMode,
+  type CameraSession,
+  type CameraSessionDeps,
+  type CameraSessionResult,
+  classifyGetUserMediaError,
+  createCameraSession,
+  isCameraApiSupported,
+  type MediaDevicesLike,
+} from './camera-capture-session.js';
 export {
   emitControlChange,
   focusControl,
@@ -115,6 +128,8 @@ export {
   setFormGroupContext,
   tryGetFormGroupContext,
 } from './form-group-context.js';
+// Form retry (#3291): also published Svelte-free at `@happyvertical/smrt-ui/form-retry`.
+export * from './form-retry/index.js';
 export { default as Input } from './Input.svelte';
 export { default as InputGroup } from './InputGroup.svelte';
 export { insertTextAtCursor } from './insert-text.js';
@@ -129,6 +144,10 @@ export {
   longPress,
 } from './long-press.js';
 export { default as MultiSelect } from './MultiSelect.svelte';
+export {
+  detectNativeFileFieldStrategy,
+  type NativeFileFieldStrategy,
+} from './native-file-field.js';
 export { default as Radio } from './Radio.svelte';
 export { default as RadioGroup } from './RadioGroup.svelte';
 export { default as RangeSlider } from './RangeSlider.svelte';
@@ -140,9 +159,15 @@ export {
 export { default as SearchInput } from './SearchInput.svelte';
 export { default as SegmentedControl } from './SegmentedControl.svelte';
 export { default as Select } from './Select.svelte';
+export { default as SignaturePad } from './SignaturePad.svelte';
 export { default as Slider } from './Slider.svelte';
 export { default as StagedControlReview } from './StagedControlReview.svelte';
 export { default as Switch } from './Switch.svelte';
+export {
+  isAcceptedPointerType,
+  mapPointerToCanvasPoint,
+  type SignaturePointerType,
+} from './signature-pad-logic.js';
 export type { StagedControlReviewLabels } from './staged-control-review.js';
 export { default as TagsInput } from './TagsInput.svelte';
 export { default as Textarea } from './Textarea.svelte';
@@ -150,9 +175,14 @@ export { default as TimePicker } from './TimePicker.svelte';
 export { default as Toggle } from './Toggle.svelte';
 export { default as ToggleButton } from './ToggleButton.svelte';
 export type {
+  CameraCaptureLabels,
+  CameraCaptureState,
+  CaptureResult,
   FormError,
   RangeSliderValue,
   SegmentedControlOption,
+  SignaturePadLabels,
+  SignaturePadState,
 } from './types.js';
 export {
   type ControlRegistrationDescriptor,

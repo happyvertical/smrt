@@ -13,6 +13,7 @@ const sidebars: SidebarsConfig = {
         { type: 'doc', id: 'data-surface-conformance' },
         { type: 'doc', id: 'dispatch' },
         { type: 'doc', id: 'field-policies' },
+        { type: 'doc', id: 'form-retry' },
         { type: 'doc', id: 'm5-reference-fixture' },
         { type: 'doc', id: 'postgres-permissions' },
         { type: 'doc', id: 'runtime-profiles' },

@@ -58,6 +58,40 @@ for (const width of [390, 768]) {
   }
 }
 
+for (const density of ['comfortable', 'touch']) {
+  for (const target of [48, 56]) {
+    test(`capture actions meet the ${target}px touch target at ${density} density`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 390, height: 1024 });
+      await page.goto(
+        `/e2e/density-responsive.html?surface=capture&density=${density}&target=${target}px`,
+      );
+      await expect(
+        page.getByRole('button', { name: 'Use signature' }),
+      ).toBeVisible();
+      const sizes = await page
+        .locator('.camera-capture .action, .signature-pad .action')
+        .evaluateAll((elements) =>
+          elements.map((element) => ({
+            height: element.getBoundingClientRect().height,
+            width: element.getBoundingClientRect().width,
+          })),
+        );
+      // The fallback picker, Clear and Use signature.
+      expect(sizes).toHaveLength(3);
+      expect(
+        sizes.every((size) => size.height >= target && size.width >= target),
+      ).toBe(true);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+    });
+  }
+}
+
 test('comfortable theme preserves defaults while a local touch override expands', async ({
   page,
 }) => {
