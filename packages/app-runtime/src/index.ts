@@ -47,6 +47,7 @@ import {
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 
+export * from './application-identity.js';
 export * from './deployed-runtime.js';
 export * from './runtime-diagnostics.js';
 
