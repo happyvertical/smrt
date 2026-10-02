@@ -53,6 +53,10 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   expenses is allowed; `findDuplicateReceipts()` reports it (facet on
   `contentSha256`, count > 1). Receipt `expenseId`, `assetId` and
   `contentSha256` are immutable.
+- **Vendor ownership.** `vendorId` is a `crossPackageRef` (no FK, no
+  validation), so `assertVendor()` checks the vendor is visible in and owned
+  by the expense's tenant whenever it is set or changed
+  (`EXPENSE_VENDOR_MISMATCH`).
 - **Tenancy.** Optional (`@TenantScoped({ mode: 'optional' })`, nullable
   `tenantId`), like smrt-commerce. A receipt takes its expense's tenant; its
   expense and asset must be visible in that tenant. A commitment must belong

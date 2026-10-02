@@ -12,6 +12,7 @@ import { AssetCollection } from '@happyvertical/smrt-assets';
 import {
   ContractCollection,
   ContractLineItemCollection,
+  VendorCollection,
 } from '@happyvertical/smrt-commerce';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
@@ -57,6 +58,8 @@ export interface ExpenseWorld {
   asset(name?: string): Promise<{ id: string }>;
   /** Create and save a purchase-order commitment. */
   commitment(totalAmount: number, currency?: string): Promise<{ id: string }>;
+  /** Create and save a commerce vendor. */
+  vendor(): Promise<{ id: string }>;
 }
 
 /** Build a world over `db` with its own tenant. */
@@ -112,6 +115,12 @@ export async function createWorld(
       } as never);
       await po.save();
       return saved(po);
+    },
+    async vendor() {
+      const vendors = await VendorCollection.create({ db });
+      const vendor = await vendors.create({ profileId: randomUUID() });
+      await vendor.save();
+      return saved(vendor);
     },
   };
   return world;
@@ -896,6 +905,27 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
         const stored = await world.receipts.get({ id: String(receipt.id) });
         expect(stored?.contentSha256).toBe(original);
         expect(stored?.assetId).toBe(receipt.assetId);
+      });
+    });
+
+    it('refuses a vendor from another tenant, on create and on change', async () => {
+      const other = await createWorld(getDb());
+      const foreign = await other.inTenant(() => other.vendor());
+      await world.inTenant(async () => {
+        await expectExpenseError(
+          world.expense({ vendorId: foreign.id }),
+          'EXPENSE_VENDOR_MISMATCH',
+        );
+
+        const own = await world.vendor();
+        const expense = await world.expense({ vendorId: own.id });
+        expect(expense.vendorId).toBe(own.id);
+
+        expense.vendorId = foreign.id;
+        await expectExpenseError(expense.save(), 'EXPENSE_VENDOR_MISMATCH');
+        expect((await world.expenses.get({ id: expense.id }))?.vendorId).toBe(
+          own.id,
+        );
       });
     });
   });

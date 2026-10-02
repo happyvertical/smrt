@@ -230,7 +230,8 @@ export type ExpenseErrorCode =
   | 'EXPENSE_COMMITMENT_MISMATCH'
   | 'EXPENSE_RECEIPT_INVALID'
   | 'EXPENSE_RECEIPT_DUPLICATE'
-  | 'EXPENSE_IDENTITY_CONFLICT';
+  | 'EXPENSE_IDENTITY_CONFLICT'
+  | 'EXPENSE_VENDOR_MISMATCH';
 
 /**
  * Base error for this package. `code` is stable and safe to branch on.

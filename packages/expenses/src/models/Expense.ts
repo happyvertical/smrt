@@ -8,6 +8,7 @@
 import {
   ContractCollection,
   ContractLineItemCollection,
+  VendorCollection,
 } from '@happyvertical/smrt-commerce';
 import {
   crossPackageRef,
@@ -450,6 +451,7 @@ export class Expense extends SmrtObject {
     this.assertReviewFields(persisted);
     this.assertReviewedLock(persisted);
     await this.assertCommitment(persisted);
+    await this.assertVendor(persisted);
 
     if (!this.recordedAt) this.recordedAt = new Date();
     try {
@@ -652,6 +654,29 @@ export class Expense extends SmrtObject {
             `not a line of commitment ${this.commitmentId}.`,
         );
       }
+    }
+  }
+
+  /**
+   * A vendor must be visible in, and owned by, the expense's tenant. A
+   * `crossPackageRef` neither validates its target nor creates a foreign
+   * key, so without this an expense in one tenant could name another
+   * tenant's vendor. Checked when the vendor is set or changed.
+   */
+  private async assertVendor(persisted: PersistedRow | null): Promise<void> {
+    if (!this.vendorId) return;
+    if (persisted && asNullableString(persisted.vendor_id) === this.vendorId) {
+      return;
+    }
+    const vendors = await VendorCollection.create({ db: this.db });
+    const vendor = await vendors.get({ id: this.vendorId });
+    const owner = this.tenantId ?? getTenantId() ?? null;
+    if (!vendor || !sameTenant(vendor.tenantId, owner)) {
+      throw new ExpenseError(
+        'EXPENSE_VENDOR_MISMATCH',
+        `Expense ${this.id || '<new>'}: vendor ${this.vendorId} was not ` +
+          "found in this expense's tenant.",
+      );
     }
   }
 
