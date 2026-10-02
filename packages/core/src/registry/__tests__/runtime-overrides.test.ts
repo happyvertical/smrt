@@ -382,6 +382,53 @@ describe('N-level same-table subtype replacement', () => {
     });
   }
 
+  it('retains replaced ancestry when the isolated leaf is rebuilt before a parent manifest replay', () => {
+    const Base = model();
+    const Middle = class OverrideRecord extends Base {};
+    const Leaf = class OverrideRecord extends Middle {};
+    const constructors = [Base, Middle, Leaf];
+    const definitions = constructors.map((_, level) =>
+      entry(
+        `@fixture/replay${level}`,
+        level ? `@fixture/replay${level - 1}:OverrideRecord` : 'SmrtObject',
+      ),
+    );
+    const configs = definitions.map((definition, level) => {
+      const packageName = `@fixture/replay${level}`;
+      const qualifiedName = `${packageName}:OverrideRecord`;
+      return {
+        packageName,
+        _manifestKey: qualifiedName,
+        _manifest: {
+          version: '1.0.0',
+          timestamp: 0,
+          packageName,
+          objects: { [qualifiedName]: definition },
+        },
+      };
+    });
+    constructors.forEach((ctor, level) => {
+      ObjectRegistry.register(ctor, configs[level]);
+    });
+    const leafKey = '@fixture/replay2:OverrideRecord';
+    ObjectRegistry.registerOverride(leafKey, closed);
+    ObjectRegistry.register(Leaf, configs[2]);
+    for (let level = 0; level < 2; level++)
+      ObjectRegistry.registerFromManifest(
+        `@fixture/replay${level}:OverrideRecord`,
+        definitions[level],
+      );
+    expect(ObjectRegistry.getAllClasses().size).toBe(1);
+    expect(ObjectRegistry.getClass(leafKey)?.constructor).toBe(Leaf);
+    expect(Object.keys(ObjectRegistry.getAllSchemasAsDefinitions())).toEqual([
+      'override_records',
+    ]);
+    expect(ObjectRegistry.getConfig(leafKey).api).toBe(false);
+    expect(ObjectRegistry.getTenantScopedConfig(leafKey)?.mode).toBe(
+      'required',
+    );
+  });
+
   it('rejects a cyclic qualified replacement chain', () => {
     ObjectRegistry.registerFromManifest(
       '@fixture/left:OverrideRecord',

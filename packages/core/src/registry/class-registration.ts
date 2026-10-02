@@ -891,6 +891,7 @@ function registerUntracked(
   const explicitPackageName = config.packageName;
   let promotedCollectionConstructor: RegisteredClass['collectionConstructor'];
   let promotedRuntimeConfig: SmartObjectConfig | undefined;
+  let promotedReplacementAncestry: string[] | undefined;
   let isolatedSubtypeParent: [string, RegisteredClass] | undefined;
   let isolatedManifestEntry: SmartObjectDefinition | undefined;
 
@@ -1113,6 +1114,7 @@ function registerUntracked(
       // the authoritative manifest and explicit generated config still win
       // for serializable identity, schema, and policy fields.
       promotedRuntimeConfig = constructorEntry.config;
+      promotedReplacementAncestry = constructorEntry.replacedQualifiedNames;
       getClasses().delete(constructorKey);
       getConstructorIndex().delete(ctor);
       if (targetIsManifestStub && targetEntry) {
@@ -1866,6 +1868,7 @@ function registerUntracked(
       inheritedStiCollection(ctor) ??
       pluralizeCollection(name),
     collectionConstructor: promotedCollectionConstructor,
+    replacedQualifiedNames: promotedReplacementAncestry,
     packageName, // Store package name from manifest for getPackageName() lookup
     sourceFilePath, // Store source file for collision detection (Issue #555)
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
@@ -1882,7 +1885,11 @@ function registerUntracked(
   if (isolatedSubtypeParent) {
     const [parentKey, parent] = isolatedSubtypeParent;
     registration.replacedQualifiedNames = [
-      ...new Set([parentKey, ...(parent.replacedQualifiedNames ?? [])]),
+      ...new Set([
+        ...(registration.replacedQualifiedNames ?? []),
+        parentKey,
+        ...(parent.replacedQualifiedNames ?? []),
+      ]),
     ];
     if (parentKey === registrationKey) registration.extends = parent.extends;
     transferRuntimeOverride(parentKey, registrationKey);
