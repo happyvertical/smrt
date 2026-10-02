@@ -34,6 +34,8 @@ import {
   type MinimalTenantContext,
 } from '@happyvertical/smrt-tenancy';
 import {
+  getCurrentSessionPermissionContext,
+  getRequestScopedDatabase,
   SessionService,
   type SessionServiceOptions,
   withSessionPermissionContext,
@@ -247,9 +249,19 @@ export interface SmrtSvelteKitRuntime {
   applicationId(): string;
   /** Secret-free configuration fingerprint. Requires a resolved runtime. */
   configurationFingerprint(): string;
-  /** Database config for SMRT collections. Requires a resolved runtime. */
+  /**
+   * Database for SMRT collections. Requires a resolved runtime. Inside a
+   * request running in the RLS transaction (`database-rls` isolation, or
+   * `session.postgresRls`) this is the transaction-bound request database;
+   * otherwise the base configuration. Call it per request and never retain
+   * the result (or collections built from it) beyond that request.
+   */
   databaseConfig(): SmrtClassOptions['db'];
-  /** Collection options for a class: database config plus overrides. */
+  /**
+   * Collection options for a class: {@link databaseConfig} plus
+   * `classOverrides`. A class whose override sets `db` keeps that database.
+   * Same per-request rule as {@link databaseConfig}.
+   */
   classOptions(className: string): SmrtClassOptions;
   /** The local runtime. Rejects outside the `local` profile. */
   localRuntime(): Promise<LocalApplicationRuntime>;
@@ -346,7 +358,8 @@ export function composeSmrtSvelteKitRuntime(
     return resolved;
   };
 
-  const databaseConfig = (): SmrtClassOptions['db'] => {
+  /** Base (connection-level) database config; never request-scoped. */
+  const baseDatabaseConfig = (): SmrtClassOptions['db'] => {
     const runtime = requireResolved();
     if (runtime.profile === 'local') {
       const paths = resolveLocalRuntimePaths({
@@ -364,10 +377,34 @@ export function composeSmrtSvelteKitRuntime(
     return { type: 'postgres', url: databaseUrl };
   };
 
-  const classOptions = (className: string): SmrtClassOptions => {
-    const defaults: SmrtClassOptions = { db: databaseConfig() };
+  /** Base collection options; used for anything that outlives a request. */
+  const baseClassOptions = (className: string): SmrtClassOptions => {
+    const defaults: SmrtClassOptions = { db: baseDatabaseConfig() };
     const override = options.classOverrides?.[className];
     return override ? { ...defaults, ...override } : defaults;
+  };
+
+  /**
+   * Inside a request running in the RLS transaction, the transaction-bound
+   * request database (it carries the `smrt.*` session variables); otherwise
+   * undefined. Never cache the returned handle beyond the request.
+   */
+  const rlsRequestDatabase = (): SmrtClassOptions['db'] | undefined => {
+    const context = getCurrentSessionPermissionContext();
+    if (context?.postgresRls !== true) return undefined;
+    return (getRequestScopedDatabase() ?? undefined) as
+      | SmrtClassOptions['db']
+      | undefined;
+  };
+
+  const databaseConfig = (): SmrtClassOptions['db'] =>
+    rlsRequestDatabase() ?? baseDatabaseConfig();
+
+  const classOptions = (className: string): SmrtClassOptions => {
+    const base = baseClassOptions(className);
+    if (options.classOverrides?.[className]?.db !== undefined) return base;
+    const requestDb = rlsRequestDatabase();
+    return requestDb ? { ...base, db: requestDb } : base;
   };
 
   let localPromise: Promise<LocalApplicationRuntime> | undefined;
@@ -614,7 +651,7 @@ export function composeSmrtSvelteKitRuntime(
     options.selectTenant ??
     createSubdomainTenantSelector({
       baseDomain: options.tenantBaseDomain ?? env.TENANT_BASE_DOMAIN,
-      classOptions: () => classOptions('Tenant'),
+      classOptions: () => baseClassOptions('Tenant'),
     });
 
   const readinessHandle: Handle = async ({ event, resolve }) => {
@@ -635,7 +672,7 @@ export function composeSmrtSvelteKitRuntime(
   const sessionCookieName = options.session?.cookieName ?? 'sid';
   const sessionSkipPaths = options.session?.skipPaths ?? [];
   const sessionServiceOptions = (): SessionServiceOptions => ({
-    ...classOptions('Session'),
+    ...baseClassOptions('Session'),
     ...options.session,
     defaultTTL: options.session?.ttl ?? DEFAULT_SESSION_TTL_SECONDS,
     autoExtend: options.session?.autoExtend ?? false,
@@ -671,11 +708,16 @@ export function composeSmrtSvelteKitRuntime(
   const sessionStep: Handle = async ({ event, resolve }) => {
     const locals = runtimeLocals(event.locals);
     clearSessionLocals(locals);
-    if (sessionSkipPaths.some((path) => event.url.pathname.startsWith(path))) {
-      return resolve(event);
-    }
-    const sessionId = event.cookies.get(sessionCookieName);
     const rls = postgresRls();
+    // A skipped path skips session loading only. Under RLS it still runs in
+    // the request transaction, as an anonymous principal.
+    const skipped = sessionSkipPaths.some((path) =>
+      event.url.pathname.startsWith(path),
+    );
+    if (skipped && !rls) return resolve(event);
+    const sessionId = skipped
+      ? undefined
+      : event.cookies.get(sessionCookieName);
     if (!sessionId && !rls) return resolve(event);
 
     let resolveEntered = false;
