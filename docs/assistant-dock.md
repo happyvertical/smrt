@@ -122,15 +122,29 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   (never upserted), so the database itself is the reservation: of any number
   of identical sends, on any replica and at any later time, one stores the
   message and runs the turn, and the rest get the JSON duplicate answer,
-  looked up by that id (not by scanning recent messages). The answer depends
-  on the stored send: a reply follows it → `completed`; its turn was stopped
-  → `cancelled`; still running or waiting on browser tools → `in_progress`
-  (the dock polls); its turn failed, or it has no reply and no recorded
-  outcome after `abandonedTurnMs` (default 15 minutes) → 409 `turn_failed`.
-  A retry never re-runs a turn: the person sends again, under a new id. The
-  turn's outcome is kept on the user message (`metadata.turnOutcome`). On a
-  PostgreSQL transaction handle the insert runs under a savepoint so a
-  conflict does not abort the transaction.
+  looked up by that id (not by scanning recent messages).
+  - **Replies belong to their send.** Every reply and tool message a turn
+    writes carries `replyToMessageId` = the send's id, set server-side
+    (`runAssistantTurn`'s `originMessageId`), and the duplicate answer reads
+    replies by that link (`ChatService.getThreadMessageReplies`), never by
+    position, so overlapping sends in one thread keep their own replies.
+    Replies written before this link existed are not attributed to any
+    send; sends without a `clientRequestId` are never looked up.
+  - **Outcome.** The turn's state is kept on the user message
+    (`metadata.turnOutcome`). A reply exists → `completed`; stopped →
+    `cancelled`; failed → 409 `turn_failed`; waiting on browser tools →
+    `in_progress` for exactly as long as its continuation is waiting
+    (`AssistantContinuationStore.has`; a custom store without `has` gets the
+    default 15-minute continuation TTL), then 409; not settled yet, or a
+    resumed leg running → `in_progress` until `abandonedTurnMs` (default 15
+    minutes) has passed since it started, then 409. A retry never re-runs a
+    turn: the person sends again, under a new id.
+  - **Resumes.** A resume settles only the send recorded in the continuation
+    it consumes (`originMessageId`, stored server-side when the turn
+    suspended). The request's `clientRequestId` is ignored on resume, and a
+    missing, foreign or expired continuation changes no send.
+  - On a PostgreSQL transaction handle the insert runs under a savepoint so
+    a conflict does not abort the transaction.
 - **Limits.** JSON bodies are capped at 1 MiB (`maxBodyBytes`), messages at
   12,000 characters (`maxContentLength`), titles at 200, attachments at 10 per
   message. A requested model must be in `models` when a list is set and is
