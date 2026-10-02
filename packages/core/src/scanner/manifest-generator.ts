@@ -535,7 +535,7 @@ export class ManifestGenerator {
    * lazy loader's alias index — so a malformed or colliding alias must stop
    * the build rather than ship a manifest the runtime will refuse:
    *
-   * - an array of `<package>:<ClassName>` strings, each listed once;
+   * - an array of scoped `@scope/package:ClassName` strings, each listed once;
    * - never the object's own qualified name, nor any object of this manifest;
    * - never declared by two objects of this manifest.
    */

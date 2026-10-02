@@ -68,7 +68,7 @@ entry per class. Registration refuses ambiguity with
 `CONFIG_QUALIFIED_NAME_ALIAS_COLLISION` when an alias equals a live class's
 qualified name (in either registration order) or when two classes claim one old
 name. It refuses `CONFIG_QUALIFIED_NAME_ALIAS_INVALID` when an entry is not
-`<package>:<ClassName>`, repeats, or names the class itself. Manifest generation
+a scoped `@scope/package:ClassName` (unscoped names never resolve as qualified), repeats, or names the class itself. Manifest generation
 (`ManifestGenerator.assertQualifiedNameAliases`) fails closed on the same
 mistakes. The knowledge artifact lists the names as
 `objects[].previousQualifiedNames`, sorted and omitted when empty.

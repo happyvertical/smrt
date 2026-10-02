@@ -194,7 +194,7 @@ export function getQualifiedNameAliasMap(): Map<string, string> {
  * update of a live entry, with the PROPOSED entry and `replacing` set to the
  * live one, before anything is mutated, so a refused update changes nothing.
  *
- * - every alias is a `<package>:<ClassName>` string, distinct from the
+ * - every alias is a scoped `@scope/package:ClassName` string, distinct from the
  *   class's own name, and declared once;
  * - no alias is the key of a different live class;
  * - no alias is also declared by a different class;

@@ -330,6 +330,21 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
       );
     });
 
+    it('refuses an unscoped alias, which qualified lookups never treat as qualified', () => {
+      // `isQualifiedName()` — the predicate eager lookups, resolveType() and
+      // the lazy loader all use — requires an `@scope/` package, so an
+      // unscoped old name could never resolve. Refuse it up front.
+      expectCode(
+        () =>
+          register(
+            objectDef('Unscoped', NEW_PKG, {
+              decoratorConfig: { previousQualifiedNames: ['old-app:Unscoped'] },
+            }),
+          ),
+        QUALIFIED_NAME_ALIAS_INVALID,
+      );
+    });
+
     it('validates a same-key re-registration before mutating the live entry', () => {
       class ReRegistered extends SmrtObject {}
       const key = `${NEW_PKG}:ReRegistered`;
@@ -559,6 +574,14 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
           import { SmrtObject, smrt } from '@happyvertical/smrt-core';
           @smrt({ previousQualifiedNames: ['NoPackage'] })
           export class BadAlias extends SmrtObject {}
+        `),
+      ).toThrow(/is not a qualified name/);
+
+      expect(() =>
+        scanToManifest(`
+          import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+          @smrt({ previousQualifiedNames: ['old-app:Unscoped'] })
+          export class Unscoped extends SmrtObject {}
         `),
       ).toThrow(/is not a qualified name/);
 

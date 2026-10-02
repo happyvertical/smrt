@@ -227,20 +227,18 @@ export function isType(
 }
 
 /**
- * A qualified name is `<package>:<ClassName>`. Scoped and unscoped package
- * names are both accepted (an app's own package may be unscoped); the class
- * half must be an identifier.
+ * A valid `previousQualifiedNames` entry: exactly what {@link isQualifiedName}
+ * accepts (`@scope/package:ClassName` — the predicate eager lookups,
+ * `resolveType()` and the lazy manifest loader all use), with an identifier
+ * class name. An unscoped `package:ClassName` is refused: no qualified lookup
+ * treats it as qualified, so it could never resolve (#3338).
  */
 export function isQualifiedNameAliasFormat(name: unknown): name is string {
-  if (typeof name !== 'string') return false;
+  if (typeof name !== 'string' || !isQualifiedName(name)) return false;
   const colon = name.lastIndexOf(':');
-  if (colon <= 0) return false;
-  const packageName = name.slice(0, colon);
-  const className = name.slice(colon + 1);
   return (
-    !/\s/u.test(packageName) &&
-    !packageName.endsWith('/') &&
-    /^[A-Za-z_$][\w$]*$/u.test(className)
+    !/\s/u.test(name.slice(0, colon)) &&
+    /^[A-Za-z_$][\w$]*$/u.test(name.slice(colon + 1))
   );
 }
 
