@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { FormRetryStorage } from '../submission-key.js';
 import {
   applyDraftToForm,
   clearSubmittedDraft,
@@ -12,7 +13,7 @@ import {
   readSubmittedDraft,
   saveSubmittedDraft,
 } from '../submitted-draft.js';
-import { memoryStorage, refusingStorage } from './storage.js';
+import { memoryStorage, refusingStorage, stickyStorage } from './storage.js';
 
 const TOKEN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OWNER = 'tenant-1:person-1';
@@ -20,7 +21,7 @@ const NAME = 'smrt:form-retry:report:draft';
 const ALWAYS = () => true;
 const SAVED_AT = new Date('2026-10-01T12:00:00Z');
 
-function save(storage: ReturnType<typeof memoryStorage>, owner = OWNER) {
+function save(storage: FormRetryStorage, owner = OWNER) {
   saveSubmittedDraft(storage, NAME, {
     token: TOKEN,
     owner,
@@ -224,6 +225,68 @@ describe('a later attempt whose values cannot be serialized', () => {
       }),
     ).toBeNull();
     expect(storage.store.has(NAME)).toBe(false);
+  });
+});
+
+describe('a store that refuses to remove the draft', () => {
+  const read = (storage: FormRetryStorage) =>
+    readSubmittedDraft(storage, NAME, {
+      token: TOKEN,
+      owner: OWNER,
+      fresh: ALWAYS,
+    });
+
+  it.each([
+    ['writes still work', false],
+    ['writes are refused too', true],
+  ] as const)('clearing leaves nothing to restore (%s)', (_label, refuseWrites) => {
+    const storage = stickyStorage();
+    save(storage);
+    expect(read(storage)).not.toBeNull();
+    storage.refuseWrites = refuseWrites;
+    clearSubmittedDraft(storage, NAME);
+    expect(read(storage)).toBeNull();
+  });
+
+  it.each([
+    ['writes still work', false],
+    ['writes are refused too', true],
+  ] as const)('an unserializable later attempt leaves nothing to restore (%s)', (_label, refuseWrites) => {
+    const storage = stickyStorage();
+    save(storage);
+    storage.refuseWrites = refuseWrites;
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    saveSubmittedDraft(storage, NAME, {
+      token: TOKEN,
+      owner: OWNER,
+      savedAt: SAVED_AT,
+      fields: [['title', 'A different submission']],
+      files: [],
+      values: cyclic,
+    });
+    expect(read(storage)).toBeNull();
+  });
+
+  it('a draft rejected at read time (another owner) is not restored later', () => {
+    const storage = stickyStorage();
+    save(storage);
+    expect(
+      readSubmittedDraft(storage, NAME, {
+        token: TOKEN,
+        owner: 'tenant-1:person-2',
+        fresh: ALWAYS,
+      }),
+    ).toBeNull();
+    expect(read(storage)).toBeNull();
+  });
+
+  it('a later save replaces the invalidation', () => {
+    const storage = stickyStorage();
+    save(storage);
+    clearSubmittedDraft(storage, NAME);
+    save(storage);
+    expect(read(storage)?.fields[0]).toEqual(['title', 'Trip over a hose']);
   });
 });
 

@@ -149,6 +149,12 @@ then does the next fill get a new key.
   storage, the key falls back to memory and still survives a remount for the
   life of the page (`$retry.persistent` is `false`); only a full reload loses
   it, which is less idempotent, never wrong.
+- A store that still reads but refuses `removeItem()` never hands back a
+  cleared key or draft: the old value is overwritten with a cleared marker
+  that reads as absent. If it refuses that write too, the clear is held in
+  page memory, so nothing stale is restored for the life of the page; only a
+  store that accepts no change at all can still hold the old draft after a
+  full reload or in another tab's copy of it.
 - During SSR nothing is shared: no module memory and not Node's process-wide
   `sessionStorage` global. The browser reads the real key on hydration.
 - Inject `storage` for tests or a custom store; `storage: null` keeps

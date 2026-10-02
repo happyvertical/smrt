@@ -28,10 +28,11 @@
  * some embedded webviews; even reading the `sessionStorage` property can throw
  * a `SecurityError`. Every access is guarded, and a refused write falls back
  * to an in-memory store, which is read before the backing store so a value
- * the store could not replace or remove is never handed back. In the browser
- * that store is module-level, so the key still survives a remount for the
- * life of the page — only a full reload loses it, which is less idempotent,
- * never wrong. During SSR there is no shared
+ * the store could not replace or remove is never handed back (a refused
+ * removal overwrites the value with a cleared marker; see `guardedRemove`).
+ * In the browser that store is module-level, so the key still survives a
+ * remount for the life of the page — only a full reload loses it, which is
+ * less idempotent, never wrong. During SSR there is no shared
  * store at all — neither the module-level memory nor the default storage (Node
  * 25+ has a process-wide `sessionStorage` global): either would hand one
  * request's key to another, so each read off the browser mints a fresh,
@@ -137,10 +138,19 @@ function resolveStorage(
 }
 
 /**
+ * What a clear writes when the store refuses `removeItem()`: a value no key or
+ * draft can take, which every read treats as absent. It is written over the
+ * old value so a store that still reads cannot hand that value back.
+ */
+const CLEARED = '\u0000smrt:form-retry:cleared';
+
+/**
  * Read `key` from memory, then from `storage`. Memory holds a value only when
  * its storage write was refused (a successful write and every removal drop the
  * memory copy), so it is the newer of the two: a store that refused to replace
- * or remove an old value must not hand that stale value back.
+ * or remove an old value must not hand that stale value back. A cleared value
+ * ({@link guardedRemove}) reads as `null` from either place, and a cleared
+ * memory entry hides whatever the store still holds.
  * @internal
  */
 export function guardedGet(
@@ -148,11 +158,14 @@ export function guardedGet(
   key: string,
 ): string | null {
   const remembered = memoryStore()?.get(key);
-  if (remembered !== undefined) return remembered;
+  if (remembered !== undefined) {
+    return remembered === CLEARED ? null : remembered;
+  }
   const store = resolveStorage(storage);
   if (!store) return null;
   try {
-    return store.getItem(key) ?? null;
+    const value = store.getItem(key) ?? null;
+    return value === CLEARED ? null : value;
   } catch {
     return null;
   }
@@ -182,19 +195,39 @@ export function guardedSet(
   return false;
 }
 
-/** Remove `key` from storage and memory alike. @internal */
+/**
+ * Remove `key` from storage and memory alike, so no later read returns it.
+ *
+ * A store may refuse `removeItem()` while reads still succeed. The old value
+ * is then overwritten with a cleared marker, which survives a reload of the
+ * tab like any stored value. If that write is refused too, the marker is kept
+ * in memory, which reads consult first: the old value is never read back for
+ * the life of the page. A store that refuses both cannot be changed at all,
+ * so after a full reload it still holds the old value; nothing in the page
+ * can prevent that.
+ * @internal
+ */
 export function guardedRemove(
   storage: FormRetryStorage | null | undefined,
   key: string,
 ): void {
-  memoryStore()?.delete(key);
+  const memory = memoryStore();
+  memory?.delete(key);
   const store = resolveStorage(storage);
   if (!store) return;
   try {
     store.removeItem(key);
+    return;
   } catch {
-    // Nothing stored means nothing to clear.
+    // Refused: overwrite the old value instead.
   }
+  try {
+    store.setItem(key, CLEARED);
+    return;
+  } catch {
+    // Refused too: hide the old value for the life of the page.
+  }
+  memory?.set(key, CLEARED);
 }
 
 /** The derived storage base for a form (and scope). @internal */
@@ -251,7 +284,8 @@ export function isSubmissionKeyPersistent(
   // store still holds under that name is stale.
   if (memoryStore()?.has(keyName(location))) return false;
   try {
-    return store.getItem(keyName(location)) !== null;
+    const value = store.getItem(keyName(location));
+    return value !== null && value !== CLEARED;
   } catch {
     return false;
   }

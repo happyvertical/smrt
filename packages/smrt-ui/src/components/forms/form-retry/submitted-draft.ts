@@ -31,7 +31,13 @@
  * the same claim.
  *
  * Every storage access is guarded: a browser that refuses storage simply gets
- * a form that is not restored after a reload.
+ * a form that is not restored after a reload. Every clear (confirmed write,
+ * validation failure, discard, a draft rejected on read, an unserializable
+ * later attempt) leaves nothing to restore even when the store refuses to
+ * remove the old record: it is overwritten with a cleared marker, or — if the
+ * store refuses that write too — hidden in memory for the life of the page.
+ * Only a store that accepts no change at all can still hold the old record
+ * after a full reload.
  *
  * @module
  */

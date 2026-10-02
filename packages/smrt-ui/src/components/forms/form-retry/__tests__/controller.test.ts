@@ -14,7 +14,7 @@ import { createFormRetry, type FormRetryOptions } from '../controller.js';
 import { resetFormRetryMemory } from '../submission-key.js';
 import type { FormRetrySubmitFunction } from '../types.js';
 import { fakeEnhance, fakeRunOnceServer } from './fake-kit.js';
-import { memoryStorage, refusingStorage } from './storage.js';
+import { memoryStorage, refusingStorage, stickyStorage } from './storage.js';
 
 /**
  * `SubmitFunction` from `@sveltejs/kit` 2.70.3 (`types/index.d.ts`), copied
@@ -834,5 +834,74 @@ describe('discard() while a submit is in flight', () => {
     const next = retry.token;
     expect(retry.discard()).toBe(true);
     expect(retry.token).not.toBe(next);
+  });
+});
+
+describe('restore with a store that refuses to remove the draft', () => {
+  const restore = {
+    owner: 'person-1',
+    values: {
+      capture: () => current,
+      restore: () => {},
+    },
+  };
+  let current: unknown;
+
+  beforeEach(() => {
+    current = { photoKey: 'k-1' };
+  });
+
+  function cyclic(): Record<string, unknown> {
+    const value: Record<string, unknown> = {};
+    value.self = value;
+    return value;
+  }
+
+  it('an unserializable later attempt is never followed by the earlier draft after a reload', async () => {
+    const storage = stickyStorage();
+    const first = setup({ storage, restore });
+    fill(first.form, { title: 'First attempt' });
+    first.server.next('lost-response');
+    await first.kit.submit();
+
+    fill(first.form, { title: 'Second attempt' });
+    current = cyclic();
+    first.server.next('lost-response');
+    await first.kit.submit();
+
+    resetFormRetryMemory(); // a reload: storage survives, memory does not
+    const reloaded = createFormRetry({ form: 'report', storage, restore });
+    expect(reloaded.restored).toBeNull();
+    expect(reloaded.state.restored).toBe(false);
+  });
+
+  it('a validation failure is never followed by its draft after a reload', async () => {
+    const storage = stickyStorage();
+    const first = setup({ storage, restore });
+    fill(first.form, { title: 'Hose' });
+    first.server.next('fail');
+    await first.kit.submit();
+
+    resetFormRetryMemory();
+    const reloaded = createFormRetry({ form: 'report', storage, restore });
+    expect(reloaded.restored).toBeNull();
+  });
+
+  it('with writes refused too, the stale draft is never restored in this page', async () => {
+    const storage = stickyStorage();
+    const first = setup({ storage, restore });
+    fill(first.form, { title: 'First attempt' });
+    first.server.next('lost-response');
+    await first.kit.submit();
+
+    storage.refuseWrites = true;
+    fill(first.form, { title: 'Second attempt' });
+    current = cyclic();
+    first.server.next('lost-response');
+    await first.kit.submit();
+
+    // A remount in the same page (memory kept): nothing to restore.
+    const remounted = createFormRetry({ form: 'report', storage, restore });
+    expect(remounted.restored).toBeNull();
   });
 });

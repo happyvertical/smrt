@@ -260,6 +260,23 @@ describe('the key store', () => {
     expect(isSubmissionKeyPersistent({ form: 'po', storage })).toBe(false);
   });
 
+  it.each([
+    ['writes still work', false],
+    ['writes are refused too', true],
+  ] as const)('clearing a key the store will not remove mints a fresh one (%s)', (_label, refuseWrites) => {
+    const storage = stickyStorage();
+    const first = readSubmissionKey({ form: 'po', storage });
+    storage.refuseWrites = refuseWrites;
+    clearSubmissionKey({ form: 'po', storage });
+    const next = readSubmissionKey({ form: 'po', storage });
+    expect(next).not.toBe(first);
+    expect(next).toMatch(UUID_V4);
+    expect(readSubmissionKey({ form: 'po', storage })).toBe(next);
+    expect(isSubmissionKeyPersistent({ form: 'po', storage })).toBe(
+      !refuseWrites,
+    );
+  });
+
   it('`storage: null` keeps everything in memory', () => {
     const first = readSubmissionKey({ form: 'po', storage: null });
     expect(readSubmissionKey({ form: 'po', storage: null })).toBe(first);
