@@ -96,12 +96,46 @@ export function matchesApplicationProcess(
   );
 }
 
+/** Result of re-checking a recorded web process. */
+export type OwnedProcessState =
+  /** Live and provably the recorded launcher. */
+  | 'owned'
+  /** The pid no longer exists. */
+  | 'gone'
+  /** The pid is live but runs something else (recycled pid). */
+  | 'mismatched'
+  /** The pid is live but its command line could not be read. */
+  | 'unverifiable';
+
+function isLive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = errorCode(error);
+    return code === 'EPERM' || code === 'EACCES';
+  }
+}
+
 /**
- * Re-read the live command line of `record.pid` and confirm it is still the
- * recorded web launcher. Call immediately before signalling the pid.
+ * Re-check `record` against the live process table. Only `gone` and
+ * `mismatched` justify dropping the record; `unverifiable` (the process
+ * query failed or returned nothing) must keep it and must not signal.
  */
+export function checkOwnedProcess(
+  record: ApplicationProcessRecord,
+): OwnedProcessState {
+  if (!isLive(record.pid)) return 'gone';
+  const command = processCommand(record.pid);
+  if (command === null || command === '') {
+    return isLive(record.pid) ? 'unverifiable' : 'gone';
+  }
+  return matchesApplicationProcess(record, command) ? 'owned' : 'mismatched';
+}
+
+/** True only when {@link checkOwnedProcess} proves the record still owned. */
 export function verifyOwnedProcess(record: ApplicationProcessRecord): boolean {
-  return matchesApplicationProcess(record, processCommand(record.pid));
+  return checkOwnedProcess(record) === 'owned';
 }
 
 /**
@@ -136,7 +170,7 @@ export function readOwnedProcess(
     }
   }
   const command = processCommand(record.pid);
-  if (command === null) {
+  if (command === null || command === '') {
     throw new Error(
       `Application process ${record.pid} is live but its identity cannot be verified.`,
     );

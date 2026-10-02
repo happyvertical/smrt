@@ -102,7 +102,9 @@ export {
 } from './portability-assets.js';
 export {
   type ApplicationProcessRecord,
+  checkOwnedProcess,
   matchesApplicationProcess,
+  type OwnedProcessState,
   readOwnedProcess,
   sendTerminationSignal,
   verifyOwnedProcess,

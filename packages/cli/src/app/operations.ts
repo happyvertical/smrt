@@ -36,9 +36,9 @@ import type {
   PortabilityContext,
 } from './portability.js';
 import {
+  checkOwnedProcess,
   readOwnedProcess,
   sendTerminationSignal,
-  verifyOwnedProcess,
   writeProcessRecord,
 } from './process-record.js';
 import { createProviderReadinessProbe } from './provider-readiness.js';
@@ -458,8 +458,15 @@ async function stop(context: AppContext): Promise<void> {
     return;
   }
   // Re-prove identity immediately before signalling: the pid may have exited
-  // and been recycled since the record was read.
-  if (!verifyOwnedProcess(record) || !sendTerminationSignal(pid)) {
+  // and been recycled since the record was read. A failed query proves
+  // nothing, so it keeps the record and sends no signal.
+  const state = checkOwnedProcess(record);
+  if (state === 'unverifiable') {
+    throw new Error(
+      `Application process ${pid} is live but its identity could not be re-verified; app.pid was kept and no signal was sent. Retry pnpm app:stop.`,
+    );
+  }
+  if (state !== 'owned' || !sendTerminationSignal(pid)) {
     // The process exited after its identity was verified but before SIGTERM.
     rmSync(pidPath(context), { force: true });
     printJson(context, { schemaVersion: 1, status: 'stopped', pid });
