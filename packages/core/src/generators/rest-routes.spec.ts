@@ -177,6 +177,8 @@ describe('REST generator route map (#1500)', () => {
       internalNote: 'internal',
     });
     await permissionWidget.save();
+    if (!permissionWidget.id)
+      throw new Error('Expected saved permission widget id');
     permissionWidgetId = permissionWidget.id;
 
     const api = new APIGenerator({ basePath: '/api/v1' });

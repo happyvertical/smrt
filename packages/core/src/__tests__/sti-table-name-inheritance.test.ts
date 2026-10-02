@@ -75,6 +75,11 @@ describe('STI Table Name Inheritance', () => {
       objects: {
         '@happyvertical/smrt-core:StaticManifestMeeting': {
           className: 'StaticManifestMeeting',
+          name: 'staticmanifestmeeting',
+          collection: 'staticmanifestmeetings',
+          filePath: '/test/fixtures/StaticManifestMeeting.ts',
+          fields: {},
+          methods: {},
           decoratorConfig: {
             tableName: 'static_manifest_events',
             tableStrategy: 'sti',

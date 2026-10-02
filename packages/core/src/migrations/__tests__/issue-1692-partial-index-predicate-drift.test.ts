@@ -21,7 +21,7 @@
  * database — DB operations are never mocked.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SchemaDefinition } from '../../schema/types.js';
@@ -52,7 +52,7 @@ function tableSchema(
 }
 
 describe('SchemaComparer partial-index predicate drift (issue #1692)', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
 
   beforeEach(async () => {
     db = await getDatabase({ type: 'sqlite', url: ':memory:' });

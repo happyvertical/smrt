@@ -119,9 +119,12 @@ describe('Issue #841: toJSON() should not convert tenant fields to empty string'
     const tenantIdField = decorators?.get('tenantId');
 
     expect(tenantIdField).toBeDefined();
-    expect(tenantIdField?.__tenancy).toBeDefined();
-    expect(tenantIdField?.__tenancy?.isTenantIdField).toBe(true);
-    expect(tenantIdField?.__tenancy?.autoPopulate).toBe(true);
+    const tenancy = tenantIdField?.__tenancy;
+    if (!tenancy || typeof tenancy !== 'object') {
+      throw new Error('Expected tenant decorator metadata');
+    }
+    expect('isTenantIdField' in tenancy && tenancy.isTenantIdField).toBe(true);
+    expect('autoPopulate' in tenancy && tenancy.autoPopulate).toBe(true);
   });
 });
 

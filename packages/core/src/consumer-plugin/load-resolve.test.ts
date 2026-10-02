@@ -22,12 +22,13 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { build, createServer } from 'vite';
+import { build, createServer, type Plugin } from 'vite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   serializeSmrtGenerationSnapshot,
   sha256SmrtGenerationSnapshot,
 } from '../generation-snapshot.js';
+import type { SmartObjectManifest } from '../scanner/types.js';
 import { smrtPlugin } from '../vite-plugin/index.js';
 import {
   contributeSvelteKitRoutes,
@@ -56,6 +57,18 @@ function writePackageJson(dir: string, json: Record<string, unknown>) {
 function getHook(plugin: any, name: 'resolveId' | 'load') {
   const hook = plugin[name];
   return typeof hook === 'function' ? hook : hook.handler;
+}
+
+function buildStart(plugin: Plugin, context: unknown): Promise<void> {
+  const hook = plugin.buildStart;
+  if (!hook) throw new Error('Expected buildStart hook');
+  const handler = typeof hook === 'function' ? hook : hook.handler;
+  return Promise.resolve(
+    handler.call(
+      context as ThisParameterType<typeof handler>,
+      {} as Parameters<typeof handler>[0],
+    ),
+  );
 }
 
 describe('smrtConsumer resolveId', () => {
@@ -270,7 +283,7 @@ describe('smrtConsumer load with a populated manifest', () => {
       projectRoot,
       disableScanning: true,
     });
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
     return plugin;
   }
 
@@ -318,7 +331,7 @@ describe('smrtConsumer load with a populated manifest', () => {
     // Reuse the package fixture populated by the helper, then initialize this
     // plugin with the route policy used by the producer SvelteKit generator.
     await pluginWithObjects();
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
     const load = getHook(plugin, 'load');
     const client = (await load.call({}, '\0smrt-consumer:client')) as string;
 
@@ -369,7 +382,7 @@ describe('smrtConsumer load with a populated manifest', () => {
       projectRoot,
       disableScanning: true,
     });
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
     const load = getHook(plugin, 'load');
     const client = (await load.call({}, '\0smrt-consumer:client')) as string;
 
@@ -474,6 +487,9 @@ describe('smrtConsumer load with a populated manifest', () => {
         join(projectRoot, 'src/types/smrt-generated/smrt-manifest.d.ts'),
       ),
     ).toBe(true);
+    if (!Array.isArray(result) && !('output' in result)) {
+      throw new Error('Expected a completed one-shot build');
+    }
     const outputs = Array.isArray(result) ? result : [result];
     const bundle = outputs
       .flatMap((output) => output.output)
@@ -574,7 +590,7 @@ describe('smrtConsumer buildStart package discovery', () => {
       build: {},
       plugins: [consumer],
     });
-    await consumer.buildStart?.call({} as any);
+    await buildStart(consumer, {} as any);
 
     const producerManifest = await getHook(producer, 'load').call(
       producer,
@@ -653,7 +669,7 @@ describe('smrtConsumer buildStart package discovery', () => {
       projectRoot,
       disableScanning: false,
     });
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const aggregatedPath = join(projectRoot, '.smrt', 'manifest.json');
     expect(existsSync(aggregatedPath)).toBe(true);
@@ -672,7 +688,7 @@ describe('smrtConsumer buildStart package discovery', () => {
       projectRoot,
       disableScanning: false,
     });
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     // No packages -> no aggregated manifest written, and no register.js.
     expect(existsSync(join(projectRoot, '.smrt', 'register.js'))).toBe(false);
@@ -714,7 +730,7 @@ describe('smrtConsumer buildStart package discovery', () => {
       projectRoot,
       disableScanning: true,
     });
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const registerPath = join(projectRoot, '.smrt', 'register.js');
     expect(existsSync(registerPath)).toBe(true);
@@ -739,7 +755,7 @@ describe('smrtConsumer buildStart package discovery', () => {
       disableScanning: true,
     });
 
-    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+    await expect(buildStart(plugin, {} as any)).rejects.toThrow(
       /No SMRT manifest could be resolved for broken-pkg/,
     );
   });
@@ -761,7 +777,7 @@ describe('smrtConsumer buildStart package discovery', () => {
       projectRoot,
     });
 
-    await expect(plugin.buildStart?.call({} as any)).resolves.toBeUndefined();
+    await expect(buildStart(plugin, {} as any)).resolves.toBeUndefined();
     const web = await getHook(plugin, 'load').call({}, '\0smrt-consumer:web');
     const module = await import(
       `data:text/javascript,${encodeURIComponent(web as string)}`
@@ -1437,7 +1453,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
         join(projectRoot, 'node_modules/@acme/widgets/dist/manifest.json'),
         'utf8',
       ),
-    );
+    ) as SmartObjectManifest;
     const otherWidgets = JSON.parse(
       readFileSync(
         join(
@@ -1446,7 +1462,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
         ),
         'utf8',
       ),
-    );
+    ) as SmartObjectManifest;
     const provenance = 'git-tree:snapshot-without-dependency-metadata';
     const snapshotContents = serializeSmrtGenerationSnapshot(
       {
@@ -1530,7 +1546,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
         join(projectRoot, 'node_modules/@acme/widgets/dist/manifest.json'),
         'utf8',
       ),
-    );
+    ) as SmartObjectManifest;
     const otherWidgets = JSON.parse(
       readFileSync(
         join(
@@ -1539,7 +1555,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
         ),
         'utf8',
       ),
-    );
+    ) as SmartObjectManifest;
     const provenance = 'git-tree:sparse-shared-route-registration';
     const snapshotContents = serializeSmrtGenerationSnapshot(
       {

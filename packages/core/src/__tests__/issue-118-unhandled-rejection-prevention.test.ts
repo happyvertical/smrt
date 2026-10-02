@@ -38,8 +38,12 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
     it('should retry on transient failures', async () => {
       const operation = vi
         .fn()
-        .mockRejectedValueOnce(new NetworkError('Timeout'))
-        .mockRejectedValueOnce(new NetworkError('Connection reset'))
+        .mockRejectedValueOnce(
+          new NetworkError('Timeout', 'NETWORK_TEST_FAILURE'),
+        )
+        .mockRejectedValueOnce(
+          new NetworkError('Connection reset', 'NETWORK_TEST_FAILURE'),
+        )
         .mockResolvedValueOnce('success');
 
       const result = await ErrorUtils.withRetry(operation, 3, 10);
@@ -51,7 +55,9 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
     it('should throw after max retries exceeded', async () => {
       const operation = vi
         .fn()
-        .mockRejectedValue(new NetworkError('Always fails'));
+        .mockRejectedValue(
+          new NetworkError('Always fails', 'NETWORK_TEST_FAILURE'),
+        );
 
       await expect(ErrorUtils.withRetry(operation, 2, 10)).rejects.toThrow(
         'Always fails',
@@ -62,8 +68,12 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
     it('should apply exponential backoff', async () => {
       const operation = vi
         .fn()
-        .mockRejectedValueOnce(new NetworkError('Fail 1'))
-        .mockRejectedValueOnce(new NetworkError('Fail 2'))
+        .mockRejectedValueOnce(
+          new NetworkError('Fail 1', 'NETWORK_TEST_FAILURE'),
+        )
+        .mockRejectedValueOnce(
+          new NetworkError('Fail 2', 'NETWORK_TEST_FAILURE'),
+        )
         .mockResolvedValueOnce('success');
 
       const startTime = Date.now();
@@ -91,7 +101,9 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
     it('should not retry ConfigurationError', async () => {
       const operation = vi
         .fn()
-        .mockRejectedValue(new ConfigurationError('Invalid config'));
+        .mockRejectedValue(
+          new ConfigurationError('Invalid config', 'CONFIG_TEST_INVALID'),
+        );
 
       await expect(ErrorUtils.withRetry(operation, 3, 10)).rejects.toThrow(
         ConfigurationError,
@@ -114,7 +126,9 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
     it('should retry RuntimeError', async () => {
       const operation = vi
         .fn()
-        .mockRejectedValueOnce(new RuntimeError('Temporary failure'))
+        .mockRejectedValueOnce(
+          new RuntimeError('Temporary failure', 'RUNTIME_TEST_FAILURE'),
+        )
         .mockResolvedValueOnce('success');
 
       const result = await ErrorUtils.withRetry(operation, 3, 10);
@@ -139,7 +153,10 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
     });
 
     it('should preserve original error details', async () => {
-      const originalError = new NetworkError('Original error message');
+      const originalError = new NetworkError(
+        'Original error message',
+        'NETWORK_TEST_FAILURE',
+      );
       const operation = vi.fn().mockRejectedValue(originalError);
 
       try {
@@ -164,8 +181,12 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
       try {
         const operation = vi
           .fn()
-          .mockRejectedValueOnce(new NetworkError('Fail 1'))
-          .mockRejectedValueOnce(new NetworkError('Fail 2'))
+          .mockRejectedValueOnce(
+            new NetworkError('Fail 1', 'NETWORK_TEST_FAILURE'),
+          )
+          .mockRejectedValueOnce(
+            new NetworkError('Fail 2', 'NETWORK_TEST_FAILURE'),
+          )
           .mockResolvedValueOnce('success');
 
         await ErrorUtils.withRetry(operation, 3, 10);
@@ -187,7 +208,9 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
 
       const operation = vi
         .fn()
-        .mockRejectedValueOnce(new NetworkError('Fail 1'))
+        .mockRejectedValueOnce(
+          new NetworkError('Fail 1', 'NETWORK_TEST_FAILURE'),
+        )
         .mockResolvedValueOnce('success');
 
       const result = await ErrorUtils.withRetry(operation, 3, 10);
@@ -202,7 +225,7 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
 
       const operation = vi
         .fn()
-        .mockRejectedValueOnce(new NetworkError('Fail'))
+        .mockRejectedValueOnce(new NetworkError('Fail', 'NETWORK_TEST_FAILURE'))
         .mockResolvedValueOnce('success');
 
       await ErrorUtils.withRetry(operation, 3, 10);
@@ -217,7 +240,9 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
 
   describe('Edge Cases', () => {
     it('should handle zero retries', async () => {
-      const operation = vi.fn().mockRejectedValue(new NetworkError('Fail'));
+      const operation = vi
+        .fn()
+        .mockRejectedValue(new NetworkError('Fail', 'NETWORK_TEST_FAILURE'));
 
       await expect(ErrorUtils.withRetry(operation, 0, 10)).rejects.toThrow();
       expect(operation).toHaveBeenCalledTimes(1); // No retries
@@ -226,7 +251,7 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
     it('should handle zero delay', async () => {
       const operation = vi
         .fn()
-        .mockRejectedValueOnce(new NetworkError('Fail'))
+        .mockRejectedValueOnce(new NetworkError('Fail', 'NETWORK_TEST_FAILURE'))
         .mockResolvedValueOnce('success');
 
       const startTime = Date.now();
@@ -257,7 +282,7 @@ describe('Issue #118: Unhandled Promise Rejection Prevention', () => {
       const operation = vi.fn().mockImplementation(async () => {
         callCount++;
         if (callCount < 5) {
-          throw new NetworkError(`Fail ${callCount}`);
+          throw new NetworkError(`Fail ${callCount}`, 'NETWORK_TEST_FAILURE');
         }
         return 'success';
       });

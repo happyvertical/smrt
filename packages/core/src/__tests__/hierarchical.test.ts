@@ -142,7 +142,9 @@ describe('SmrtHierarchical', () => {
       const { a, a2 } = await buildForest();
       // Manually corrupt: point `a` at its own descendant `a2`. Now
       // a.parentId === a2.id and a2's chain goes a2 → a → a2 → …
-      a.parentId = a2.id;
+      const descendantId = a2.id;
+      if (!descendantId) throw new Error('Expected saved descendant id');
+      a.parentId = descendantId;
       await a.save();
       const reloaded = (await nodes.get({
         id: a.id,

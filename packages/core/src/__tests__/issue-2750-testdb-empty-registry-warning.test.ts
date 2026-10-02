@@ -64,10 +64,8 @@ describe('issue #2750: getTestDatabase() warns on an empty implicit registry', (
       const result = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table'`,
       );
-      const rows = Array.isArray(result)
-        ? result
-        : (result as { rows: Array<{ name: string }> }).rows;
-      const tableNames = rows.map((row) => row.name);
+      const rows = Array.isArray(result) ? result : result.rows;
+      const tableNames = rows.map((row) => String(row.name));
       expect(tableNames.some((name) => name.startsWith('_smrt_'))).toBe(true);
     } finally {
       await db.close?.();

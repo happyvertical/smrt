@@ -81,7 +81,7 @@ describe('Issue #75: Circular Serialization Errors', () => {
       // Verify we can create a new instance and load it
       // Important: Use the same database instance (article.db) for retrieval
       const retrieved = new Issue75Article({
-        id: article.id,
+        id: article.id!,
         db: article.db, // Reuse the same database instance
       });
       await retrieved.initialize();

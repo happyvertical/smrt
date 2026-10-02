@@ -131,6 +131,7 @@ describe.skipIf(!pgUrl)('identifier length guard on PostgreSQL (#2374)', () => {
     };
 
     await db.query(`DROP TABLE IF EXISTS "${TABLE}"`);
+    if (!schema.ddl) throw new Error('Expected generated table DDL');
     await db.query(schema.ddl);
   }, 120_000);
 

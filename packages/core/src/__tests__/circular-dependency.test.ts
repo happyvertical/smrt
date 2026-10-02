@@ -60,6 +60,7 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
       'profileId',
     );
     expect(fieldDecorator).toBeDefined();
+    if (!fieldDecorator) throw new Error('Expected profileId decorator');
     expect(fieldDecorator.related).toBe('CircularDepTestProfile');
   });
 
@@ -95,7 +96,10 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
     });
 
     expect(lazyField).toBeDefined();
-    expect(lazyField.options.related).toBe('CircularDepTestProfile');
+    expect(lazyField).toHaveProperty(
+      'options.related',
+      'CircularDepTestProfile',
+    );
   });
 
   it.skip('should maintain backward compatibility with direct class references (field helper syntax - deprecated)', () => {
@@ -105,6 +109,9 @@ describe('Issue #142: Foreign Key Circular Dependencies', () => {
     const directField = foreignKey(CircularDepTestProfile, { required: true });
 
     expect(directField).toBeDefined();
-    expect(directField.options.related).toBe('CircularDepTestProfile');
+    expect(directField).toHaveProperty(
+      'options.related',
+      'CircularDepTestProfile',
+    );
   });
 });

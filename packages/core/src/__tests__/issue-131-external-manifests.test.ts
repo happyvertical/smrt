@@ -111,7 +111,7 @@ describe('Issue #131: External package manifest loading', () => {
         tableStrategy: 'sti',
       });
 
-      const registered = ObjectRegistry.findClass('Event');
+      const registered = ObjectRegistry.getClass('Event');
       expect(registered).toBeDefined();
 
       registered?.fields.set('tenantId', {

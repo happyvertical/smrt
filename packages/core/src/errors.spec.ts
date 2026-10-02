@@ -12,6 +12,13 @@ import {
   ValidationError,
 } from './errors';
 
+// Fail explicitly when a required value is absent; retain the existing assertions below.
+function requireFixture<T>(value: T | null | undefined): T {
+  if (value == null)
+    throw new Error('Expected test fixture value to be present');
+  return value;
+}
+
 describe('SMRT Error System', () => {
   describe('DatabaseError', () => {
     it('should create connection failed error', () => {
@@ -246,13 +253,17 @@ describe('SMRT Error System', () => {
       const error = DatabaseError.connectionFailed(
         'postgres://user:password123@host/db',
       );
-      error.details.apiKey = 'secret-key-123';
+      requireFixture(error.details).apiKey = 'secret-key-123';
 
       const sanitized = ErrorUtils.sanitizeError(error);
 
       expect(sanitized.code).toBe('DB_CONNECTION_FAILED');
-      expect(sanitized.details.apiKey).toBe('[REDACTED]');
-      expect(sanitized.details.dbUrl).toContain('postgres://'); // URL not sanitized in this basic version
+      expect((sanitized.details as Record<string, unknown>).apiKey).toBe(
+        '[REDACTED]',
+      );
+      expect((sanitized.details as Record<string, unknown>).dbUrl).toContain(
+        'postgres://',
+      ); // URL not sanitized in this basic version
     });
   });
 

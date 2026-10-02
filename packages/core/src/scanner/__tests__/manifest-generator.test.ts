@@ -35,7 +35,8 @@ describe('ManifestGenerator', () => {
         columns: {},
         indexes: [],
         ddl: '',
-      } as SmartObjectDefinition['schema'],
+        version: 'fixture',
+      },
     };
     const manifest: SmartObjectManifest = {
       version: '1',
@@ -96,14 +97,12 @@ describe('ManifestGenerator', () => {
         {
           filePath: '/path/to/file1.ts',
           objects: [objectDef1],
-          imports: [],
-          exports: [],
+          errors: [],
         },
         {
           filePath: '/path/to/file2.ts',
           objects: [objectDef2],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ];
 
@@ -144,14 +143,12 @@ describe('ManifestGenerator', () => {
         {
           filePath: '/path/to/file1.ts',
           objects: [objectDef1],
-          imports: [],
-          exports: [],
+          errors: [],
         },
         {
           filePath: '/path/to/file2.ts',
           objects: [objectDef2],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ];
 
@@ -183,8 +180,7 @@ describe('ManifestGenerator', () => {
                   'DataSurfaceActionIdempotencyStateCollection',
               },
             ],
-            imports: [],
-            exports: [],
+            errors: [],
           },
         ],
         {
@@ -226,8 +222,7 @@ describe('ManifestGenerator', () => {
                 collectionExportName: 'DataSurfaceWidgetCollection',
               },
             ],
-            imports: [],
-            exports: [],
+            errors: [],
           },
         ],
         {
@@ -267,8 +262,7 @@ describe('ManifestGenerator', () => {
                 collectionExportName: 'ThingCollection',
               },
             ],
-            imports: [],
-            exports: [],
+            errors: [],
           },
         ],
         {
@@ -356,8 +350,7 @@ describe('ManifestGenerator', () => {
                 collectionExportName: 'OddlyPlacedObjectCollection',
               },
             ],
-            imports: [],
-            exports: [],
+            errors: [],
           },
         ],
         {
@@ -407,8 +400,7 @@ describe('ManifestGenerator', () => {
                 collectionExportName: 'CategoryCollection',
               },
             ],
-            imports: [],
-            exports: [],
+            errors: [],
           },
         ],
         {
@@ -451,8 +443,7 @@ describe('ManifestGenerator', () => {
                 collectionExportName: 'JsServerThingCollection',
               },
             ],
-            imports: [],
-            exports: [],
+            errors: [],
           },
         ],
         {
@@ -502,8 +493,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'MyHandlerCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -540,8 +530,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'PlainAgentCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -601,8 +590,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'DailySalesReportCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -688,16 +676,22 @@ describe('ManifestGenerator', () => {
     it('should include collection class methods without duplicating CRUD endpoints', () => {
       const generator = new ManifestGenerator();
 
-      const manifest = {
+      const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Invitation: {
             name: 'invitation',
             className: 'Invitation',
+            filePath: '/src/Invitation.ts',
             collection: 'invitations',
             fields: {},
             methods: {
               canBeRedeemed: {
                 name: 'canBeRedeemed',
+                async: false,
+                returnType: 'void',
+                isStatic: false,
                 isPublic: true,
                 parameters: [],
               },
@@ -709,13 +703,19 @@ describe('ManifestGenerator', () => {
           InvitationCollection: {
             name: 'invitationCollection',
             className: 'InvitationCollection',
+            filePath: '/src/InvitationCollection.ts',
             collection: 'invitations',
             fields: {},
             methods: {
               findByToken: {
                 name: 'findByToken',
+                async: false,
+                returnType: 'void',
+                isStatic: false,
                 isPublic: true,
-                parameters: [{ name: 'token', type: 'string' }],
+                parameters: [
+                  { name: 'token', type: 'string', optional: false },
+                ],
               },
             },
             decoratorConfig: { api: true },
@@ -727,9 +727,7 @@ describe('ManifestGenerator', () => {
         },
       };
 
-      const endpoints = generator.generateRestEndpoints(
-        manifest as Parameters<typeof generator.generateRestEndpoints>[0],
-      );
+      const endpoints = generator.generateRestEndpoints(manifest);
 
       expect(endpoints.split('\n')).toEqual([
         'GET /invitations',
@@ -745,18 +743,24 @@ describe('ManifestGenerator', () => {
     it('should honor route metadata for collection class methods', () => {
       const generator = new ManifestGenerator();
 
-      const manifest = {
+      const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           DocumentCollection: {
             name: 'documentCollection',
             className: 'DocumentCollection',
+            filePath: '/src/DocumentCollection.ts',
             collection: 'documents',
             fields: {},
             methods: {
               browseFacts: {
                 name: 'browseFacts',
+                async: false,
+                returnType: 'void',
+                isStatic: false,
                 isPublic: true,
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
               },
             },
             decoratorConfig: {
@@ -779,9 +783,7 @@ describe('ManifestGenerator', () => {
         },
       };
 
-      const endpoints = generator.generateRestEndpoints(
-        manifest as Parameters<typeof generator.generateRestEndpoints>[0],
-      );
+      const endpoints = generator.generateRestEndpoints(manifest);
 
       expect(endpoints).toBe('GET /documents/facts');
     });
@@ -807,8 +809,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'SecretCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -862,8 +863,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'KeyCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -897,8 +897,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'TenantValidationCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -936,8 +935,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'ScopedObjectCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -964,8 +962,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'UnscopedObjectCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -1003,8 +1000,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'ScopedMembershipCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -1053,8 +1049,7 @@ describe('ManifestGenerator', () => {
                 collectionExportName: 'SecretCollection',
               },
             ],
-            imports: [],
-            exports: [],
+            errors: [],
           },
         ]),
       ).toThrow(
@@ -1089,8 +1084,7 @@ describe('ManifestGenerator', () => {
                 collectionExportName: 'SecretCollection',
               },
             ],
-            imports: [],
-            exports: [],
+            errors: [],
           },
         ]),
       ).toThrow(
@@ -1252,8 +1246,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'InternalJobCollectionCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 
@@ -1309,8 +1302,7 @@ describe('ManifestGenerator', () => {
               collectionExportName: 'ScopedMetricCollectionCollection',
             },
           ],
-          imports: [],
-          exports: [],
+          errors: [],
         },
       ]);
 

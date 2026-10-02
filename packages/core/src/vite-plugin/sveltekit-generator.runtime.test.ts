@@ -22,9 +22,12 @@ function createManifest(
   fields: SmartObjectManifest['objects'][string]['fields'] = {},
 ): SmartObjectManifest {
   return {
+    version: '1',
+    timestamp: 0,
     objects: {
       Widget: {
         className: 'Widget',
+        name: 'Widget',
         collection: 'widgets',
         qualifiedName: '@test/generated-helper-app:Widget',
         decoratorConfig: {
@@ -337,9 +340,11 @@ describe('generated SvelteKit helper runtime', () => {
     const manifest = createManifest(projectRoot, objectFilePath, ['inspect']);
     manifest.objects.Widget.methods = {
       inspect: {
+        async: false,
+        isStatic: false,
         isPublic: true,
         name: 'inspect',
-        parameters: [{ name: 'options', type: 'any' }],
+        parameters: [{ name: 'options', type: 'any', optional: false }],
         returnType: 'Promise<unknown>',
       },
     };

@@ -360,8 +360,11 @@ describe('MCPGenerator with Custom Actions', () => {
         'Execute research action on MCPTestAgent',
       );
       expect(researchTool?.inputSchema.type).toBe('object');
-      expect(researchTool?.inputSchema.properties.id).toBeDefined();
-      expect(researchTool?.inputSchema.properties.options).toBeDefined();
+      const properties = researchTool?.inputSchema.properties as
+        | Record<string, unknown>
+        | undefined;
+      expect(properties?.id).toBeDefined();
+      expect(properties?.options).toBeDefined();
     });
 
     it('projects canonical custom-action receivers and typed parameters', async () => {
@@ -683,6 +686,7 @@ describe('MCPGenerator with Custom Actions', () => {
 
       const collectionReceiver = {
         fanout: vi.fn(function (
+          this: unknown,
           idempotencyKey: string,
           expectedVersion?: number,
         ) {

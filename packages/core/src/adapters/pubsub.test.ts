@@ -26,7 +26,7 @@ describe('PubSubAdapter', () => {
       className: 'Product',
       method: 'analyze',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await adapter.handle(signal);
@@ -53,7 +53,7 @@ describe('PubSubAdapter', () => {
       className: 'Product',
       method: 'analyze',
       type: 'end',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await adapter.handle(signal);
@@ -78,7 +78,7 @@ describe('PubSubAdapter', () => {
       className: 'Product',
       method: 'analyze',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     await adapter.handle({
@@ -88,7 +88,7 @@ describe('PubSubAdapter', () => {
       method: 'analyze',
       type: 'error',
       error: new Error('Test'),
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     expect(errorSignals).toHaveLength(1);
@@ -108,7 +108,7 @@ describe('PubSubAdapter', () => {
       className: 'Product',
       method: 'analyze',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     expect(received).toHaveLength(1);
@@ -121,7 +121,7 @@ describe('PubSubAdapter', () => {
       className: 'Product',
       method: 'analyze',
       type: 'end',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     expect(received).toHaveLength(1); // Still only 1
@@ -166,7 +166,7 @@ describe('PubSubAdapter', () => {
       className: 'Product',
       method: 'analyze',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     expect(received).toHaveLength(0);
@@ -191,7 +191,7 @@ describe('PubSubAdapter', () => {
       className: 'Product',
       method: 'analyze',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await adapter.handle(signal);
@@ -213,7 +213,7 @@ describe('PubSubAdapter', () => {
         className: 'Product',
         method: 'analyze',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       await adapter.handle({
@@ -222,7 +222,7 @@ describe('PubSubAdapter', () => {
         className: 'Category',
         method: 'analyze',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       expect(received).toHaveLength(1);
@@ -242,7 +242,7 @@ describe('PubSubAdapter', () => {
         className: 'Product',
         method: 'analyze',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       await adapter.handle({
@@ -251,7 +251,7 @@ describe('PubSubAdapter', () => {
         className: 'Product',
         method: 'validate',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       expect(received).toHaveLength(1);
@@ -271,7 +271,7 @@ describe('PubSubAdapter', () => {
         className: 'Product',
         method: 'analyze',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       await adapter.handle({
@@ -281,7 +281,7 @@ describe('PubSubAdapter', () => {
         method: 'analyze',
         type: 'error',
         error: new Error('Test'),
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       expect(received).toHaveLength(1);
@@ -304,7 +304,7 @@ describe('PubSubAdapter', () => {
         className: 'Product',
         method: 'analyze',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       await adapter.handle({
@@ -313,7 +313,7 @@ describe('PubSubAdapter', () => {
         className: 'Product',
         method: 'validate',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       await adapter.handle({
@@ -322,7 +322,7 @@ describe('PubSubAdapter', () => {
         className: 'Category',
         method: 'analyze',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       expect(received).toHaveLength(1);
@@ -348,7 +348,7 @@ describe('PubSubAdapter', () => {
         className: 'Product',
         method: 'analyze',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       await adapter.handle({
@@ -358,7 +358,7 @@ describe('PubSubAdapter', () => {
         method: 'analyze',
         type: 'error',
         error: new Error('Test'),
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       await adapter.handle({
@@ -368,7 +368,7 @@ describe('PubSubAdapter', () => {
         method: 'analyze',
         type: 'error',
         error: new Error('Test'),
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
 
       expect(received).toHaveLength(1);
@@ -392,7 +392,7 @@ describe('PubSubAdapter', () => {
       className: 'Product',
       method: 'analyze',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     expect(received).toHaveLength(1);

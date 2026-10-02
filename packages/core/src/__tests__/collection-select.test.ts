@@ -159,30 +159,35 @@ describe('SmrtCollection.list({ select })', () => {
       async function seedOpportunities() {
         const account = await accounts.create({ name: 'Acme' });
         const otherAccount = await accounts.create({ name: 'Globex' });
+        const accountId = account.id;
+        const otherAccountId = otherAccount.id;
+        if (!accountId || !otherAccountId) {
+          throw new Error('Expected persisted account ids');
+        }
 
         await opportunities.create({
           title: 'Low priority',
           status: 'open',
           priority: 10,
-          accountId: account.id,
+          accountId,
         });
         await opportunities.create({
           title: 'Closed priority',
           status: 'closed',
           priority: 40,
-          accountId: otherAccount.id,
+          accountId: otherAccountId,
         });
         await opportunities.create({
           title: 'High priority',
           status: 'open',
           priority: 30,
-          accountId: account.id,
+          accountId,
         });
         await opportunities.create({
           title: 'Medium priority',
           status: 'open',
           priority: 20,
-          accountId: otherAccount.id,
+          accountId: otherAccountId,
         });
 
         return { account, otherAccount };

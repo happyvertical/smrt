@@ -22,6 +22,7 @@ import {
   getPackageName,
   loadExternalManifest,
 } from '../manifest/manifest-loader';
+import { SmrtObject } from '../object.js';
 
 // Clear manifest cache before and after each test to ensure test isolation
 // This prevents ESM module caching issues where cached manifests from one test
@@ -97,7 +98,7 @@ describe('Issue #175: External package manifest loading', () => {
   });
 
   it('should extract package name from constructor stack', () => {
-    class TestClass {}
+    class TestClass extends SmrtObject {}
 
     // getPackageName should not crash
     const pkgName = getPackageName(TestClass);

@@ -62,8 +62,7 @@ function scan(objects: SmartObjectDefinition[]): ScanResult {
   return {
     filePath: objects[0]?.filePath ?? '/src/unknown.ts',
     objects,
-    imports: [],
-    exports: [],
+    errors: [],
   };
 }
 
@@ -898,7 +897,11 @@ describe('ManifestGenerator coverage', () => {
           scan([
             def('TownAgent', {
               decoratorConfig: {
-                agent: { icon: 'town', tier: 'pro', description: 'Town agent' },
+                agent: {
+                  icon: 'town',
+                  tier: 'premium',
+                  description: 'Town agent',
+                },
                 cli: { include: ['runReport'] },
                 mcp: { include: ['runReport', 'sync'] },
               },
@@ -951,7 +954,7 @@ describe('ManifestGenerator coverage', () => {
 
       const agent = manifest.objects['@acme/town:TownAgent'].agent;
       expect(agent).toBeDefined();
-      expect(agent?.tier).toBe('pro');
+      expect(agent?.tier).toBe('premium');
       // manage:<slot> permission per uiSlot + execute:<method> per exposed method.
       const permIds = agent?.permissions.map((p) => p.id) ?? [];
       expect(permIds).toContain('manage:dashboard');

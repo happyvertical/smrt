@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { OxcScanner } from '@happyvertical/smrt-scanner';
+import type { Plugin } from 'vite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { smrtPlugin } from '../vite-plugin/index.js';
 import {
@@ -19,6 +20,34 @@ import {
   publishAtomicArtifact,
 } from './artifact-publication.js';
 import { smrtConsumer } from './index';
+
+function buildStart(plugin: Plugin, context: unknown): Promise<void> {
+  const hook = plugin.buildStart;
+  if (!hook) throw new Error('Expected buildStart hook');
+  const handler = typeof hook === 'function' ? hook : hook.handler;
+  return Promise.resolve(
+    handler.call(
+      context as ThisParameterType<typeof handler>,
+      {} as Parameters<typeof handler>[0],
+    ),
+  );
+}
+
+function configResolved(
+  plugin: Plugin,
+  context: unknown,
+  config: unknown,
+): Promise<void> {
+  const hook = plugin.configResolved;
+  if (!hook) throw new Error('Expected configResolved hook');
+  const handler = typeof hook === 'function' ? hook : hook.handler;
+  return Promise.resolve(
+    handler.call(
+      context as ThisParameterType<typeof handler>,
+      config as Parameters<typeof handler>[0],
+    ),
+  );
+}
 
 function manifestHash(manifest: unknown): string {
   const { timestamp: _timestamp, ...withoutTimestamp } = manifest as Record<
@@ -147,7 +176,7 @@ describe('smrtConsumer registration generation', () => {
       disableScanning: true,
     });
 
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const registerPath = join(tmpDir, '.smrt', 'register.js');
     expect(existsSync(registerPath)).toBe(true);
@@ -238,7 +267,7 @@ describe('smrtConsumer registration generation', () => {
       projectRoot: tmpDir,
       disableScanning: true,
     });
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
     expect(content).toContain(
@@ -312,7 +341,7 @@ describe('smrtConsumer registration generation', () => {
       disableScanning: true,
     });
 
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const merged = JSON.parse(
       readFileSync(join(smrtDir, 'manifest.json'), 'utf-8'),
@@ -380,10 +409,10 @@ describe('smrtConsumer registration generation', () => {
       build: {},
       plugins: [producer, consumer],
     };
-    await producer.configResolved?.call(producer, resolvedConfig as any);
-    await consumer.configResolved?.call(consumer, resolvedConfig as any);
+    await configResolved(producer, producer, resolvedConfig as any);
+    await configResolved(consumer, consumer, resolvedConfig as any);
 
-    await consumer.buildStart?.call({} as any);
+    await buildStart(consumer, {} as any);
 
     const knowledge = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
@@ -415,12 +444,12 @@ describe('smrtConsumer registration generation', () => {
       build: {},
       plugins: [producer, consumer],
     };
-    await producer.configResolved?.call(producer, resolvedConfig as any);
+    await configResolved(producer, producer, resolvedConfig as any);
     const knowledgePath = join(tmpDir, '.smrt', 'smrt-knowledge.json');
     writeFileSync(knowledgePath, '{"previous":"artifact"}');
-    await consumer.configResolved?.call(consumer, resolvedConfig as any);
+    await configResolved(consumer, consumer, resolvedConfig as any);
 
-    await consumer.buildStart?.call({} as any);
+    await buildStart(consumer, {} as any);
 
     expect(readFileSync(knowledgePath, 'utf-8')).toBe(
       '{"previous":"artifact"}',
@@ -466,11 +495,11 @@ export class PreviousOrder extends SmrtObject {
       build: {},
       plugins: [producer, consumer],
     };
-    await producer.configResolved?.call(producer, resolvedConfig as any);
-    await consumer.configResolved?.call(consumer, resolvedConfig as any);
+    await configResolved(producer, producer, resolvedConfig as any);
+    await configResolved(consumer, consumer, resolvedConfig as any);
     // The first buildStart reuses configResolved's scan. The next one is the
     // watch-style refresh that can run in parallel with the consumer.
-    await producer.buildStart?.call(producer);
+    await buildStart(producer, producer);
 
     writeFileSync(
       sourcePath,
@@ -498,17 +527,17 @@ export class CurrentOrder extends SmrtObject {
     const originalScan = OxcScanner.prototype.scanAndResolve;
     const delayedScan = vi
       .spyOn(OxcScanner.prototype, 'scanAndResolve')
-      .mockImplementation(async function (...args) {
+      .mockImplementation(async function (this: OxcScanner, ...args) {
         await scanGate;
         return originalScan.apply(this, args);
       });
     try {
-      const producerRefresh = producer.buildStart?.call(producer);
+      const producerRefresh = buildStart(producer, producer);
       // Give the producer hook its synchronous turn to register its in-flight
       // scan, then start the consumer while that scan remains blocked.
       await Promise.resolve();
       let consumerComplete = false;
-      const consumerRefresh = consumer.buildStart?.call(consumer).then(() => {
+      const consumerRefresh = buildStart(consumer, consumer).then(() => {
         consumerComplete = true;
       });
       await Promise.resolve();
@@ -566,7 +595,7 @@ export class CurrentOrder extends SmrtObject {
       disableScanning: true,
     });
 
-    await consumer.buildStart?.call(consumer);
+    await buildStart(consumer, consumer);
 
     const knowledge = JSON.parse(readFileSync(knowledgePath, 'utf-8'));
     expect(knowledge.agentSurface).toBeUndefined();
@@ -593,7 +622,7 @@ export class CurrentOrder extends SmrtObject {
       disableScanning: true,
     });
 
-    await consumer.buildStart?.call({} as any);
+    await buildStart(consumer, {} as any);
 
     expect(readFileSync(knowledgePath, 'utf-8')).toBe(
       '{"previous":"artifact"}',
@@ -817,7 +846,7 @@ export class CurrentOrder extends SmrtObject {
       disableScanning: true,
     });
 
-    await consumer.buildStart?.call({} as any);
+    await buildStart(consumer, {} as any);
 
     const knowledge = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
@@ -841,7 +870,7 @@ export class CurrentOrder extends SmrtObject {
       disableScanning: true,
     });
 
-    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+    await expect(buildStart(plugin, {} as any)).rejects.toThrow(
       'Failed to save aggregated manifest',
     );
     expect(readFileSync(join(smrtDir, 'manifest.json'), 'utf-8')).toBe(before);
@@ -953,7 +982,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       disableScanning: true,
     });
 
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const manifest = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
@@ -995,7 +1024,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       disableScanning: true,
     });
 
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const manifest = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
@@ -1016,7 +1045,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       disableScanning: true,
     });
 
-    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+    await expect(buildStart(plugin, {} as any)).rejects.toThrow(
       /No SMRT manifest could be resolved for @test\/manifestless/,
     );
     expect(existsSync(join(tmpDir, '.smrt', 'manifest.json'))).toBe(false);
@@ -1030,7 +1059,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       disableScanning: true,
     });
 
-    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+    await expect(buildStart(plugin, {} as any)).rejects.toThrow(
       /No SMRT manifest could be resolved for @test\/absent/,
     );
   });
@@ -1064,7 +1093,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       disableScanning: true,
     });
 
-    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+    await expect(buildStart(plugin, {} as any)).rejects.toThrow(
       /No SMRT manifest could be resolved for @test\/escaping/,
     );
   });
@@ -1106,7 +1135,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       disableScanning: true,
     });
 
-    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+    await expect(buildStart(plugin, {} as any)).rejects.toThrow(
       /No SMRT manifest could be resolved for @test\/symlinked/,
     );
   });
@@ -1149,7 +1178,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       disableScanning: true,
     });
 
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const manifest = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
@@ -1179,7 +1208,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       disableScanning: true,
     });
 
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const manifest = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
@@ -1214,7 +1243,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       disableScanning: true,
     });
 
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const manifest = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
@@ -1249,7 +1278,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
         projectRoot: tmpDir,
       });
 
-      await plugin.buildStart?.call({} as any);
+      await buildStart(plugin, {} as any);
 
       const announced = logSpy.mock.calls.map((call) => String(call[0]));
       expect(
@@ -1303,7 +1332,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       projectRoot: tmpDir,
     });
 
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const manifest = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
@@ -1323,7 +1352,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
       projectRoot: tmpDir,
     });
 
-    await plugin.buildStart?.call({} as any);
+    await buildStart(plugin, {} as any);
 
     const warnings = warnSpy.mock.calls.map((call) => String(call[0]));
     expect(

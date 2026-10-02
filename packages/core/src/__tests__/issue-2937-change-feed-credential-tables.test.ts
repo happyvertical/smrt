@@ -451,10 +451,7 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
       await insertLegacyFeedRow(db, PUBLIC_TABLE, 'note-b', 'tenant-b');
 
       // The low-privilege station authenticates into tenant-b.
-      setDispatchTenantResolver(() => ({
-        enforced: true,
-        tenantId: 'tenant-b',
-      }));
+      setDispatchTenantResolver(() => 'tenant-b');
 
       const changesRoute = await getTenantScopedChangesSince(db, {
         since: 0,

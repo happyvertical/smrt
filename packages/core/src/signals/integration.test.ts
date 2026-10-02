@@ -9,6 +9,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtClass } from '../class.js';
 import { config } from '../config.js';
 
+// These lifecycle tests intentionally initialize raw instances before testing teardown.
+async function initializeForTest(instance: SmrtClass): Promise<void> {
+  // @ts-expect-error -- Deliberate access to the protected lifecycle hook under test.
+  await instance.initialize();
+}
+
 // Mock custom adapter for testing
 class MockAdapter implements SignalAdapter {
   public signals: Signal[] = [];
@@ -37,7 +43,7 @@ describe('Universal Signaling System - Integration', () => {
 
     class TestClass extends SmrtClass {}
     const instance = new TestClass({});
-    await instance.initialize();
+    await initializeForTest(instance);
 
     expect(instance.signalBus).toBeDefined();
     expect(instance.signalBus?.adapterCount).toBe(1); // LoggerAdapter
@@ -51,7 +57,7 @@ describe('Universal Signaling System - Integration', () => {
 
     class TestClass extends SmrtClass {}
     const instance = new TestClass({});
-    await instance.initialize();
+    await initializeForTest(instance);
 
     expect(instance.signalBus).toBeUndefined(); // No adapters, so no bus
   });
@@ -64,7 +70,7 @@ describe('Universal Signaling System - Integration', () => {
 
     class TestClass extends SmrtClass {}
     const instance = new TestClass({});
-    await instance.initialize();
+    await initializeForTest(instance);
 
     expect(instance.signalBus).toBeDefined();
     expect(instance.signalBus?.adapterCount).toBe(1); // MetricsAdapter
@@ -78,7 +84,7 @@ describe('Universal Signaling System - Integration', () => {
 
     class TestClass extends SmrtClass {}
     const instance = new TestClass({});
-    await instance.initialize();
+    await initializeForTest(instance);
 
     expect(instance.signalBus).toBeDefined();
     expect(instance.signalBus?.adapterCount).toBe(1); // PubSubAdapter
@@ -96,7 +102,7 @@ describe('Universal Signaling System - Integration', () => {
 
     class TestClass extends SmrtClass {}
     const instance = new TestClass({});
-    await instance.initialize();
+    await initializeForTest(instance);
 
     expect(instance.signalBus).toBeDefined();
     expect(instance.signalBus?.adapterCount).toBe(1); // MockAdapter
@@ -108,7 +114,7 @@ describe('Universal Signaling System - Integration', () => {
       className: 'TestClass',
       method: 'testMethod',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await instance.signalBus?.emit(testSignal);
@@ -134,7 +140,7 @@ describe('Universal Signaling System - Integration', () => {
       metrics: { enabled: true }, // Instance: enabled (overrides global)
       signals: { adapters: [mockAdapter] },
     });
-    await instance.initialize();
+    await initializeForTest(instance);
 
     expect(instance.signalBus).toBeDefined();
     expect(instance.signalBus?.adapterCount).toBe(2); // MetricsAdapter + MockAdapter (no LoggerAdapter)
@@ -153,7 +159,7 @@ describe('Universal Signaling System - Integration', () => {
     const instance = new TestClass({
       signals: { adapters: [instanceAdapter] },
     });
-    await instance.initialize();
+    await initializeForTest(instance);
 
     expect(instance.signalBus).toBeDefined();
     expect(instance.signalBus?.adapterCount).toBe(2); // Both adapters
@@ -166,7 +172,7 @@ describe('Universal Signaling System - Integration', () => {
       method: 'testMethod',
       type: 'end',
       duration: 100,
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await instance.signalBus?.emit(testSignal);
@@ -184,14 +190,14 @@ describe('Universal Signaling System - Integration', () => {
       logging: false,
       signals: { adapters: [mockAdapter] },
     });
-    await instance1.initialize();
+    await initializeForTest(instance1);
 
     class TestClass2 extends SmrtClass {}
     const instance2 = new TestClass2({
       logging: false,
       signals: { bus: instance1.signalBus }, // Share bus from instance1
     });
-    await instance2.initialize();
+    await initializeForTest(instance2);
 
     expect(instance1.signalBus).toBe(instance2.signalBus); // Same bus instance
 
@@ -205,7 +211,7 @@ describe('Universal Signaling System - Integration', () => {
       className: 'TestClass',
       method: 'method1',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     await instance2.signalBus?.emit({
@@ -214,7 +220,7 @@ describe('Universal Signaling System - Integration', () => {
       className: 'TestClass2',
       method: 'method2',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     });
 
     expect(mockAdapter.signals).toHaveLength(2);
@@ -229,7 +235,7 @@ describe('Universal Signaling System - Integration', () => {
 
     class TestClass extends SmrtClass {}
     const instance = new TestClass({});
-    await instance.initialize();
+    await initializeForTest(instance);
 
     expect(instance.signalBus).toBeDefined();
     expect(instance.signalBus?.adapterCount).toBe(1);
@@ -246,7 +252,7 @@ describe('Universal Signaling System - Integration', () => {
 
     class TestClass extends SmrtClass {}
     const instance = new TestClass({});
-    await instance.initialize();
+    await initializeForTest(instance);
 
     expect(instance.signalBus).toBeDefined();
     expect(instance.signalBus?.adapterCount).toBe(3); // Logger + Metrics + PubSub
@@ -271,7 +277,7 @@ describe('Universal Signaling System - Integration', () => {
 
     class TestClass extends SmrtClass {}
     const instance = new TestClass({});
-    await instance.initialize();
+    await initializeForTest(instance);
 
     // Should not throw even though ErrorAdapter throws
     await expect(
@@ -282,7 +288,7 @@ describe('Universal Signaling System - Integration', () => {
         method: 'testMethod',
         type: 'error',
         error: new Error('Test error'),
-        timestamp: Date.now(),
+        timestamp: new Date(),
       }),
     ).resolves.not.toThrow();
 

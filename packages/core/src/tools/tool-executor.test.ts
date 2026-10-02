@@ -36,6 +36,7 @@ describe('validateToolCall', () => {
 describe('executeToolCall', () => {
   it('executes method successfully', async () => {
     const instance = {
+      id: 'test-tool-object',
       analyze: async (args: any) => {
         return { result: `Analyzed with ${args.type}` };
       },
@@ -64,6 +65,7 @@ describe('executeToolCall', () => {
 
   it('handles invalid JSON arguments', async () => {
     const instance = {
+      id: 'test-tool-object',
       analyze: async () => 'result',
     };
 
@@ -110,6 +112,7 @@ describe('executeToolCall', () => {
 
   it('handles method execution errors', async () => {
     const instance = {
+      id: 'test-tool-object',
       analyze: async () => {
         throw new Error('Analysis failed');
       },
@@ -136,6 +139,7 @@ describe('executeToolCall', () => {
 
   it('handles disallowed methods', async () => {
     const instance = {
+      id: 'test-tool-object',
       analyze: async () => 'result',
     };
 
@@ -162,6 +166,7 @@ describe('executeToolCall', () => {
 describe('executeToolCalls', () => {
   it('executes multiple tool calls sequentially', async () => {
     const instance = {
+      id: 'test-tool-object',
       analyze: async (args: any) => `Analyzed ${args.text}`,
       summarize: async (args: any) => `Summary of ${args.text}`,
     };
@@ -205,6 +210,7 @@ describe('executeToolCalls', () => {
 
   it('continues execution after errors', async () => {
     const instance = {
+      id: 'test-tool-object',
       analyze: async () => {
         throw new Error('Failed');
       },

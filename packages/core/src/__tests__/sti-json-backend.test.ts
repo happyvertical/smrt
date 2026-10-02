@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
-import { SmrtObject, smrt, text } from '../index';
+import { SmrtObject, smrt } from '../index';
 
 // Test classes for non-STI scenario (Issue391 prefix to avoid collisions)
 @smrt()
@@ -86,6 +86,8 @@ describe('STI with JSON Backend', () => {
       });
 
       expect(collection).toBeDefined();
+      // Inspect the collection's protected class binding in this regression.
+      // @ts-expect-error The binding is intentionally protected.
       expect(collection._itemClass).toBe(Issue391Event);
     });
 

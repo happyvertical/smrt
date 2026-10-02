@@ -98,11 +98,13 @@ describe('UUID FK empty-string coercion (whole-PR review C1/M1)', () => {
         name: 'Parent',
       });
       await parent.save();
+      const parentId = parent.id;
+      if (!parentId) throw new Error('Expected saved parent id');
 
       const child = await collection.create({
         slug: 'child-node',
         name: 'Child',
-        predecessorId: parent.id,
+        predecessorId: parentId,
       });
       await child.save();
 

@@ -97,8 +97,11 @@ describe('MCPGenerator - Integration Tests', () => {
       );
       expect(analyzeTool).toBeDefined();
       expect(analyzeTool?.description).toContain('analyze');
-      expect(analyzeTool?.inputSchema.properties.id).toBeDefined();
-      expect(analyzeTool?.inputSchema.properties.options).toBeDefined();
+      const properties = analyzeTool?.inputSchema.properties as
+        | Record<string, unknown>
+        | undefined;
+      expect(properties?.id).toBeDefined();
+      expect(properties?.options).toBeDefined();
     });
   });
 

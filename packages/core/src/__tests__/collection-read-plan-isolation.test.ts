@@ -71,11 +71,21 @@ describe('bounded read plan database isolation (#2304)', () => {
       }),
     ]);
 
-    expect(resultA.records.map((record) => record.marker)).toEqual([
-      'tenant-a',
-    ]);
-    expect(resultB.records.map((record) => record.marker)).toEqual([
-      'tenant-b',
-    ]);
+    expect(
+      resultA.records.map((record) => {
+        if (!(record instanceof ReadPlanIsolationProbe)) {
+          throw new Error('Expected hydrated read-plan probe');
+        }
+        return record.marker;
+      }),
+    ).toEqual(['tenant-a']);
+    expect(
+      resultB.records.map((record) => {
+        if (!(record instanceof ReadPlanIsolationProbe)) {
+          throw new Error('Expected hydrated read-plan probe');
+        }
+        return record.marker;
+      }),
+    ).toEqual(['tenant-b']);
   });
 });

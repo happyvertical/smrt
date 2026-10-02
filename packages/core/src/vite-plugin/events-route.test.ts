@@ -65,6 +65,8 @@ describe('generateEventsRoute (#1763)', () => {
       buildManifest({
         Zebra: {
           className: 'Zebra',
+          name: 'Zebra',
+          filePath: '',
           collection: 'zebras',
           fields: {},
           methods: {},
@@ -72,6 +74,8 @@ describe('generateEventsRoute (#1763)', () => {
         },
         Apple: {
           className: 'Apple',
+          name: 'Apple',
+          filePath: '',
           collection: 'apples',
           fields: {},
           methods: {},
@@ -109,6 +113,8 @@ describe('generateEventsRoute (#1763)', () => {
       buildManifest({
         Doc: {
           className: 'Doc',
+          name: 'Doc',
+          filePath: '',
           collection: 'docs',
           fields: {},
           methods: {},
@@ -147,6 +153,8 @@ describe('generateEventsRoute (#1763)', () => {
       buildManifest({
         Doc: {
           className: 'Doc',
+          name: 'Doc',
+          filePath: '',
           collection: 'docs',
           fields: {},
           methods: {},
@@ -169,6 +177,8 @@ describe('generateEventsRoute (#1763)', () => {
       buildManifest({
         Doc: {
           className: 'Doc',
+          name: 'Doc',
+          filePath: '',
           collection: 'docs',
           fields: {},
           methods: {},
@@ -192,6 +202,8 @@ describe('generateEventsRoute (#1763)', () => {
       buildManifest({
         '@happyvertical/smrt-ledgers:Account': {
           className: 'Account',
+          name: 'Account',
+          filePath: '',
           collection: 'accounts',
           fields: {},
           methods: {},
@@ -211,6 +223,8 @@ describe('generateEventsRoute (#1763)', () => {
     const scoped = buildManifest({
       Doc: {
         className: 'Doc',
+        name: 'Doc',
+        filePath: '',
         collection: 'docs',
         fields: {},
         methods: {},
@@ -228,6 +242,8 @@ describe('generateEventsRoute (#1763)', () => {
     const unscoped = buildManifest({
       Doc: {
         className: 'Doc',
+        name: 'Doc',
+        filePath: '',
         collection: 'docs',
         fields: {},
         methods: {},
@@ -246,6 +262,8 @@ describe('generateEventsRoute (#1763)', () => {
       buildManifest({
         AardvarkCollection: {
           className: 'AardvarkCollection',
+          name: 'AardvarkCollection',
+          filePath: '',
           collection: 'aardvarks',
           fields: {},
           methods: {},
@@ -254,6 +272,8 @@ describe('generateEventsRoute (#1763)', () => {
         },
         Bird: {
           className: 'Bird',
+          name: 'Bird',
+          filePath: '',
           collection: 'birds',
           fields: {},
           methods: {},
@@ -270,6 +290,8 @@ describe('generateEventsRoute (#1763)', () => {
       buildManifest({
         Doc: {
           className: 'Doc',
+          name: 'Doc',
+          filePath: '',
           collection: 'docs',
           fields: {},
           methods: {},
@@ -340,6 +362,8 @@ describe('generateEventsRoute (#1763)', () => {
     const manifest = buildManifest({
       Doc: {
         className: 'Doc',
+        name: 'Doc',
+        filePath: '',
         collection: 'docs',
         fields: {},
         methods: {},

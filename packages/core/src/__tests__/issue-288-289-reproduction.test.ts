@@ -165,7 +165,10 @@ describe('Issue #288 and #289 Reproduction', () => {
       // Foreign keys should be in the JSON output (either directly or in _meta_data)
       expect(
         'meetingId' in json ||
-          ('_meta_data' in json && json._meta_data?.meetingId),
+          (typeof json._meta_data === 'object' &&
+            json._meta_data !== null &&
+            'meetingId' in json._meta_data &&
+            Boolean(json._meta_data.meetingId)),
       ).toBe(true);
     });
 

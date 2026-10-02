@@ -67,16 +67,16 @@ describe('Issue #198: Date serialization integration tests', () => {
     await event.save();
 
     // Retrieve and verify
-    const retrieved = await collection.get(event.id);
+    const retrieved = await collection.get(event.id!);
     expect(retrieved).toBeDefined();
     expect(retrieved?.title).toBe('Tech Conference 2024');
 
     // Verify dates are preserved (allow for minor serialization differences)
-    expect(new Date(retrieved?.eventDate).getTime()).toBe(now.getTime());
-    expect(new Date(retrieved?.registrationDeadline).getTime()).toBe(
+    expect(new Date(retrieved!.eventDate).getTime()).toBe(now.getTime());
+    expect(new Date(retrieved!.registrationDeadline).getTime()).toBe(
       deadline.getTime(),
     );
-    expect(new Date(retrieved?.lastModified).getTime()).toBe(
+    expect(new Date(retrieved!.lastModified).getTime()).toBe(
       modified.getTime(),
     );
 
@@ -104,16 +104,16 @@ describe('Issue #198: Date serialization integration tests', () => {
     await event.save();
 
     // Retrieve and verify
-    const retrieved = await collection.get(event.id);
+    const retrieved = await collection.get(event.id!);
     expect(retrieved).toBeDefined();
     expect(retrieved?.title).toBe('Tech Conference 2024');
 
     // Verify dates are preserved (JSON adapter may serialize as ISO strings)
-    expect(new Date(retrieved?.eventDate).getTime()).toBe(now.getTime());
-    expect(new Date(retrieved?.registrationDeadline).getTime()).toBe(
+    expect(new Date(retrieved!.eventDate).getTime()).toBe(now.getTime());
+    expect(new Date(retrieved!.registrationDeadline).getTime()).toBe(
       deadline.getTime(),
     );
-    expect(new Date(retrieved?.lastModified).getTime()).toBe(
+    expect(new Date(retrieved!.lastModified).getTime()).toBe(
       modified.getTime(),
     );
   });
@@ -138,16 +138,16 @@ describe('Issue #198: Date serialization integration tests', () => {
     await event.save();
 
     // Retrieve and verify
-    const retrieved = await collection.get(event.id);
+    const retrieved = await collection.get(event.id!);
     expect(retrieved).toBeDefined();
     expect(retrieved?.title).toBe('Tech Conference 2024');
 
     // Verify dates are preserved
-    expect(new Date(retrieved?.eventDate).getTime()).toBe(now.getTime());
-    expect(new Date(retrieved?.registrationDeadline).getTime()).toBe(
+    expect(new Date(retrieved!.eventDate).getTime()).toBe(now.getTime());
+    expect(new Date(retrieved!.registrationDeadline).getTime()).toBe(
       deadline.getTime(),
     );
-    expect(new Date(retrieved?.lastModified).getTime()).toBe(
+    expect(new Date(retrieved!.lastModified).getTime()).toBe(
       modified.getTime(),
     );
   });
@@ -177,8 +177,8 @@ describe('Issue #198: Date serialization integration tests', () => {
     await event.save();
 
     // Retrieve and verify update
-    const retrieved = await collection.get(event.id);
-    expect(new Date(retrieved?.eventDate).getTime()).toBe(
+    const retrieved = await collection.get(event.id!);
+    expect(new Date(retrieved!.eventDate).getTime()).toBe(
       updatedDate.getTime(),
     );
   });
@@ -204,8 +204,8 @@ describe('Issue #198: Date serialization integration tests', () => {
       });
       await event.save();
 
-      const retrieved = await collection.get(event.id);
-      expect(new Date(retrieved?.eventDate).getTime()).toBe(testDate.getTime());
+      const retrieved = await collection.get(event.id!);
+      expect(new Date(retrieved!.eventDate).getTime()).toBe(testDate.getTime());
     }
   });
 });

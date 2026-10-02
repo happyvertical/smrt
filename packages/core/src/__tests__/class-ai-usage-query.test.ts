@@ -128,6 +128,7 @@ describe('SmrtClass.listAiUsage', () => {
     expect(rows[2].id).toBe('u1');
 
     const u1 = rows.find((r: any) => r.id === 'u1');
+    if (!u1) throw new Error('Expected usage row u1');
     expect(u1.provider).toBe('openai');
     expect(u1.estimatedCost).toBe(0.01);
     expect(u1.className).toBe('Widget');
@@ -135,6 +136,7 @@ describe('SmrtClass.listAiUsage', () => {
     expect(u1.timestamp).toBeInstanceOf(Date);
 
     const u2 = rows.find((r: any) => r.id === 'u2');
+    if (!u2) throw new Error('Expected usage row u2');
     // null DB columns coalesce to undefined in the record
     expect(u2.estimatedCost).toBeUndefined();
     expect(u2.className).toBeUndefined();

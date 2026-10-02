@@ -18,14 +18,14 @@
  * and create the right one.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getSQLFromDiff, SchemaComparer } from '../migrations/differ.js';
 import type { SchemaDefinition } from '../schema/types.js';
 
 describe('Issue #1165: tenants STI UPSERT repair via migrate', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
 
   beforeEach(async () => {
     db = await getDatabase({ type: 'sqlite', url: ':memory:' });

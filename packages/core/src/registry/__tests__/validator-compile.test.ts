@@ -14,6 +14,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { SmrtObject } from '../../object';
 import { ObjectRegistry } from '../../registry';
 
 /**
@@ -31,7 +32,17 @@ function field(
 
 function compile(fields: Record<string, any>) {
   const map = new Map<string, any>(Object.entries(fields));
-  return ObjectRegistry.compileValidators('CompileValidatorFixture', map);
+  // The validators read only these fixture fields; production instances carry
+  // the same properties through SmrtObject's dynamic field hydration.
+  return ObjectRegistry.compileValidators('CompileValidatorFixture', map).map(
+    (validate) => (instance: Record<string, unknown>) =>
+      validate(instance as unknown as SmrtObject),
+  );
+}
+
+function requiredError<T>(result: T | null | undefined): NonNullable<T> {
+  if (result == null) throw new Error('Expected a validation error');
+  return result as NonNullable<T>;
 }
 
 /** Run every validator and collect the non-null results (validation errors). */
@@ -68,10 +79,10 @@ describe('compileValidators', () => {
       const undefErr = await validators[0]({ name: undefined });
       const emptyErr = await validators[0]({ name: '' });
 
-      for (const err of [nullErr, undefErr, emptyErr]) {
-        expect(err).not.toBeNull();
+      for (const candidate of [nullErr, undefErr, emptyErr]) {
+        const err = requiredError(candidate);
         expect(err.code).toBe('VALIDATION_REQUIRED_FIELD');
-        expect(err.details.fieldName).toBe('name');
+        expect(err.details?.fieldName).toBe('name');
       }
     });
 
@@ -95,9 +106,9 @@ describe('compileValidators', () => {
 
     it('flags values below min and passes values at/above min', async () => {
       const [minValidator] = compile({ qty: field('integer', { min: 5 }) });
-      const below = await minValidator({ qty: 4 });
+      const below = requiredError(await minValidator({ qty: 4 }));
       expect(below.code).toBe('VALIDATION_RANGE_ERROR');
-      expect(below.details.min).toBe(5);
+      expect(below.details?.min).toBe(5);
 
       expect(await minValidator({ qty: 5 })).toBeNull();
       expect(await minValidator({ qty: 99 })).toBeNull();
@@ -108,9 +119,9 @@ describe('compileValidators', () => {
 
     it('flags values above max and passes values at/below max', async () => {
       const [maxValidator] = compile({ qty: field('decimal', { max: 100 }) });
-      const above = await maxValidator({ qty: 101 });
+      const above = requiredError(await maxValidator({ qty: 101 }));
       expect(above.code).toBe('VALIDATION_RANGE_ERROR');
-      expect(above.details.max).toBe(100);
+      expect(above.details?.max).toBe(100);
 
       expect(await maxValidator({ qty: 100 })).toBeNull();
       expect(await maxValidator({ qty: 0 })).toBeNull();
@@ -127,9 +138,9 @@ describe('compileValidators', () => {
   describe('string length validators', () => {
     it('flags strings shorter than minLength and passes longer ones', async () => {
       const [minLen] = compile({ bio: field('text', { minLength: 3 }) });
-      const tooShort = await minLen({ bio: 'ab' });
+      const tooShort = requiredError(await minLen({ bio: 'ab' }));
       expect(tooShort.code).toBe('VALIDATION_INVALID_VALUE');
-      expect(tooShort.details.fieldName).toBe('bio');
+      expect(tooShort.details?.fieldName).toBe('bio');
 
       expect(await minLen({ bio: 'abc' })).toBeNull();
       // empty string is falsy → guard short-circuits, returns null
@@ -140,7 +151,7 @@ describe('compileValidators', () => {
 
     it('flags strings longer than maxLength and passes shorter ones', async () => {
       const [maxLen] = compile({ code: field('text', { maxLength: 4 }) });
-      const tooLong = await maxLen({ code: 'abcde' });
+      const tooLong = requiredError(await maxLen({ code: 'abcde' }));
       expect(tooLong.code).toBe('VALIDATION_INVALID_VALUE');
 
       expect(await maxLen({ code: 'abcd' })).toBeNull();
@@ -154,7 +165,7 @@ describe('compileValidators', () => {
       const [pat] = compile({
         slug: field('text', { pattern: '^[a-z]+$' }),
       });
-      const bad = await pat({ slug: 'Has-Caps-123' });
+      const bad = requiredError(await pat({ slug: 'Has-Caps-123' }));
       expect(bad.code).toBe('VALIDATION_INVALID_VALUE');
 
       expect(await pat({ slug: 'lowercase' })).toBeNull();
@@ -180,9 +191,9 @@ describe('compileValidators', () => {
           validate: (v: number) => v % 2 === 0,
         }),
       });
-      const err = await custom({ even: 3 });
+      const err = requiredError(await custom({ even: 3 }));
       expect(err.code).toBe('VALIDATION_INVALID_VALUE');
-      expect(err.details.expectedType).toContain('failed custom validation');
+      expect(err.details?.expectedType).toContain('failed custom validation');
     });
 
     it('uses customMessage when provided and validator fails', async () => {
@@ -192,8 +203,8 @@ describe('compileValidators', () => {
           customMessage: 'must be even',
         }),
       });
-      const err = await custom({ even: 7 });
-      expect(err.details.expectedType).toBe('must be even');
+      const err = requiredError(await custom({ even: 7 }));
+      expect(err.details?.expectedType).toBe('must be even');
     });
 
     it('catches a throwing custom validator and reports the error message', async () => {
@@ -204,9 +215,9 @@ describe('compileValidators', () => {
           },
         }),
       });
-      const err = await custom({ x: 'anything' });
+      const err = requiredError(await custom({ x: 'anything' }));
       expect(err.code).toBe('VALIDATION_INVALID_VALUE');
-      expect(err.details.expectedType).toContain('boom in validator');
+      expect(err.details?.expectedType).toContain('boom in validator');
     });
 
     it('catches a thrown non-Error value (String(error) branch)', async () => {
@@ -218,9 +229,9 @@ describe('compileValidators', () => {
           },
         }),
       });
-      const err = await custom({ x: 'anything' });
+      const err = requiredError(await custom({ x: 'anything' }));
       expect(err.code).toBe('VALIDATION_INVALID_VALUE');
-      expect(err.details.expectedType).toContain('string failure');
+      expect(err.details?.expectedType).toContain('string failure');
     });
 
     it('ignores a non-function validate option', () => {

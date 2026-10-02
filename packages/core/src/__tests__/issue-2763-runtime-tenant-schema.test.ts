@@ -127,11 +127,13 @@ describe('runtime tenant schema registration (#2763)', () => {
       'ManifestOptionalRuntimeTenant',
       {
         className: 'ManifestOptionalRuntimeTenant',
+        name: 'manifestoptionalruntimetenant',
+        collection: 'manifestoptionalruntimetenants',
+        filePath: '/src/ManifestOptionalRuntimeTenant.ts',
         fields: {
           tenantId: {
             type: 'foreignKey',
-            nullable: true,
-            _meta: { __tenancy: { isTenantIdField: true } },
+            _meta: { nullable: true, __tenancy: { isTenantIdField: true } },
           },
         },
         methods: {},
@@ -141,9 +143,6 @@ describe('runtime tenant schema registration (#2763)', () => {
           ddl: '',
           columns: {},
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: '1.0.0',
         },
       },
@@ -169,11 +168,13 @@ describe('runtime tenant schema registration (#2763)', () => {
         objects: {
           ManifestSilentTenant: {
             className: 'ManifestSilentTenant',
+            name: 'manifestsilenttenant',
+            collection: 'manifestsilenttenants',
+            filePath: '/src/ManifestSilentTenant.ts',
             fields: {
               tenantId: {
                 type: 'foreignKey',
-                nullable: true,
-                _meta: { __tenancy: { isTenantIdField: true } },
+                _meta: { nullable: true, __tenancy: { isTenantIdField: true } },
               },
             },
             methods: {},
@@ -183,9 +184,6 @@ describe('runtime tenant schema registration (#2763)', () => {
               ddl: '',
               columns: {},
               indexes: [],
-              triggers: [],
-              foreignKeys: [],
-              dependencies: [],
               version: '1.0.0',
             },
           },
@@ -360,6 +358,9 @@ describe('runtime tenant schema registration (#2763)', () => {
         objects: {
           CaughtSilentManifestTenant: {
             className: 'CaughtSilentManifestTenant',
+            name: 'caughtsilentmanifesttenant',
+            collection: 'caughtsilentmanifesttenants',
+            filePath: '/src/CaughtSilentManifestTenant.ts',
             fields: {},
             methods: {},
             decoratorConfig,
@@ -382,6 +383,9 @@ describe('runtime tenant schema registration (#2763)', () => {
         identity,
         {
           className: 'CaughtSilentManifestTenant',
+          name: 'caughtsilentmanifesttenant',
+          collection: 'caughtsilentmanifesttenants',
+          filePath: '/src/CaughtSilentManifestTenant.ts',
           fields: {},
           methods: {},
           decoratorConfig: { tenantScoped: false },
@@ -410,6 +414,9 @@ describe('runtime tenant schema registration (#2763)', () => {
       '@test/caught-silent-manifest:CaughtSilentManifestTenant',
       {
         className: 'CaughtSilentManifestTenant',
+        name: 'caughtsilentmanifesttenant',
+        collection: 'caughtsilentmanifesttenants',
+        filePath: '/src/CaughtSilentManifestTenant.ts',
         fields: {},
         methods: {},
         decoratorConfig: { tenantScoped: { mode: 'required' } },
@@ -451,6 +458,9 @@ describe('runtime tenant schema registration (#2763)', () => {
           objects: {
             PromotedSilentManifestTenant: {
               className: 'PromotedSilentManifestTenant',
+              name: 'promotedsilentmanifesttenant',
+              collection: 'promotedsilentmanifesttenants',
+              filePath: '/src/PromotedSilentManifestTenant.ts',
               fields: {},
               methods: {},
               decoratorConfig,
@@ -552,6 +562,9 @@ describe('runtime tenant schema registration (#2763)', () => {
       '@test/late-manifest:LateManifestSilentTenant',
       {
         className: 'LateManifestSilentTenant',
+        name: 'latemanifestsilenttenant',
+        collection: 'latemanifestsilenttenants',
+        filePath: '/src/LateManifestSilentTenant.ts',
         fields: {},
         methods: {},
         decoratorConfig: {},
@@ -560,9 +573,6 @@ describe('runtime tenant schema registration (#2763)', () => {
           ddl: '',
           columns: {},
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: '1.0.0',
         },
       },
@@ -596,6 +606,9 @@ describe('runtime tenant schema registration (#2763)', () => {
         '@test/late-manifest-reconciled:LateManifestReconciledTenant',
         {
           className: 'LateManifestReconciledTenant',
+          name: 'latemanifestreconciledtenant',
+          collection: 'latemanifestreconciledtenants',
+          filePath: '/src/LateManifestReconciledTenant.ts',
           fields: {},
           methods: {},
           decoratorConfig,
@@ -624,6 +637,9 @@ describe('runtime tenant schema registration (#2763)', () => {
       '@test/explicit-manifest:ExplicitManifestSilentTenant',
       {
         className: 'ExplicitManifestSilentTenant',
+        name: 'explicitmanifestsilenttenant',
+        collection: 'explicitmanifestsilenttenants',
+        filePath: '/src/ExplicitManifestSilentTenant.ts',
         fields: {},
         methods: {},
         decoratorConfig: {},

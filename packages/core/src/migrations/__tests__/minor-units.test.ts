@@ -7,7 +7,7 @@
  * preflight and the idempotency marker are executed for real.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -20,7 +20,7 @@ import {
 const TARGETS = [{ table: 'payments', columns: ['amount', 'native_amount'] }];
 
 describe('money minor-units rescale (#2401)', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
 
   beforeEach(async () => {
     db = await getDatabase({ type: 'sqlite', url: ':memory:' });

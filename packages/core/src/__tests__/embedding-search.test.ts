@@ -202,7 +202,7 @@ describe('Semantic Search', () => {
       },
     ];
 
-    const created = [];
+    const created: SearchTestDocument[] = [];
     for (const doc of docs) {
       const article = await collection.create(doc);
       await article.save();

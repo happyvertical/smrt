@@ -11,6 +11,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
+// These tests intentionally alter registry keys to reproduce legacy hydration states.
+function mutableRegistryClasses(): ReturnType<
+  typeof ObjectRegistry.getAllClasses
+> {
+  return (
+    ObjectRegistry as unknown as {
+      classes: ReturnType<typeof ObjectRegistry.getAllClasses>;
+    }
+  ).classes;
+}
+
 describe('STI Registry Methods', () => {
   beforeEach(() => {
     ObjectRegistry.clear();
@@ -425,7 +436,7 @@ describe('STI Registry Methods', () => {
       }
 
       // Get the actual qualified name
-      const registered = ObjectRegistry.findClass('Event');
+      const registered = ObjectRegistry.getClass('Event');
       const qualifiedName = registered?.qualifiedName;
 
       // Should pass through unchanged
@@ -449,11 +460,11 @@ describe('STI Registry Methods', () => {
       }
 
       // Get the first product's qualified name
-      const product1 = ObjectRegistry.findClass('Product');
+      const product1 = ObjectRegistry.getClass('Product');
 
       // Manually register another "Product" from a different package
       // This simulates what happens when two packages define the same class name
-      ObjectRegistry.classes.set('Product2', {
+      mutableRegistryClasses().set('Product2', {
         name: 'Product',
         qualifiedName: '@other/package:Product',
         constructor: class OtherProduct extends SmrtObject {},

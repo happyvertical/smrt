@@ -51,6 +51,7 @@ describe('issue #2453 revision-guarded saves', () => {
     if (!first) throw new Error('expected persisted row');
 
     const expectedUpdatedAt = first.updated_at;
+    if (!expectedUpdatedAt) throw new Error('expected persisted revision');
     await db.update(
       'issue_2453_revision_rows',
       { id: created.id },
@@ -219,7 +220,7 @@ describe('issue #2453 revision-guarded saves', () => {
     });
     await readEntered;
     const naturalWrite = rows.create({
-      slug: created.slug,
+      slug: created.slug!,
       context: created.context,
       title: 'natural-key winner',
     });
@@ -338,7 +339,7 @@ describe('issue #2453 revision-guarded saves', () => {
 
       const bySlug = new Issue2453RevisionRow({
         db: duckDb,
-        slug: created.slug,
+        slug: created.slug!,
         context: created.context,
       });
       await bySlug.initialize();
@@ -466,7 +467,7 @@ describe('issue #2453 revision-guarded saves', () => {
 
       const loaded = new Issue2453RevisionRow({
         db: duckDb,
-        slug: original.slug,
+        slug: original.slug!,
         context: original.context,
       });
       await loaded.initialize();
@@ -528,6 +529,7 @@ describe('issue #2453 revision-guarded saves', () => {
       throw new Error('expected two persisted snapshots');
     }
     const expectedUpdatedAt = first.updated_at;
+    if (!expectedUpdatedAt) throw new Error('expected persisted revision');
     const originalUrl = db.url;
     db.url = 'libsql://shared.turso.io';
     const update = vi.spyOn(db, 'update');
@@ -572,6 +574,7 @@ describe('issue #2453 revision-guarded saves', () => {
       throw new Error('expected two persisted snapshots');
     }
     const expectedUpdatedAt = first.updated_at;
+    if (!expectedUpdatedAt) throw new Error('expected persisted revision');
     const expectedTime = new Date(expectedUpdatedAt).getTime();
     vi.useFakeTimers();
     vi.setSystemTime(expectedTime);

@@ -237,7 +237,7 @@ describe('Sync-apply batch endpoint (#1759)', () => {
         }),
       );
       expect(res.status).toBe(400);
-      const body = await res.json();
+      const body = (await res.json()) as { error: { code: string } };
       expect(body.error.code).toBe('invalid_batch');
     });
 
@@ -837,7 +837,7 @@ describe('Sync-apply batch endpoint (#1759)', () => {
         }),
       );
       expect(res.status).toBe(201);
-      const created = await res.json();
+      const created = (await res.json()) as { id: string };
 
       // The client-supplied id was ignored; the server generated its own.
       expect(created.id).not.toBe(clientId);

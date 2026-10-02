@@ -27,7 +27,7 @@ vi.mock('@happyvertical/logger', () => ({
   createLogger: createLoggerMock,
 }));
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { createSchemaManager, SchemaManager } from './schema-manager';
 import type { SchemaDefinition } from './types';
@@ -79,7 +79,7 @@ function fullSchema(tableName: string): SchemaDefinition {
 }
 
 describe('SchemaManager table creation on real SQLite', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -108,14 +108,14 @@ describe('SchemaManager table creation on real SQLite', () => {
 
     expect(await db.tableExists('widgets')).toBe(true);
 
-    const indexes = await db.query<{ name: string }>(
+    const indexes = await db.query(
       `SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='widgets'`,
     );
     const indexNames = indexes.rows.map((r) => r.name);
     expect(indexNames).toContain('idx_widgets_slug');
     expect(indexNames).toContain('idx_widgets_title_unique');
 
-    const triggers = await db.query<{ name: string }>(
+    const triggers = await db.query(
       `SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='widgets'`,
     );
     expect(triggers.rows.map((r) => r.name)).toContain('trg_widgets_updated');
@@ -133,7 +133,7 @@ describe('SchemaManager table creation on real SQLite', () => {
 
     await manager.ensureTable(fullSchema('gadgets'));
 
-    const triggers = await db.query<{ name: string }>(
+    const triggers = await db.query(
       `SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='gadgets'`,
     );
     expect(triggers.rows).toHaveLength(0);
@@ -146,7 +146,7 @@ describe('SchemaManager table creation on real SQLite', () => {
     const manager = new SchemaManager(db, { engine: 'sqlite' });
     await manager.ensureTable(fullSchema('parts'));
 
-    const cols = await db.query<{ name: string }>(`PRAGMA table_info(parts)`);
+    const cols = await db.query(`PRAGMA table_info(parts)`);
     const colNames = cols.rows.map((r) => r.name);
     expect(colNames).toContain('title');
     // `count` was NOT NULL with a default; it should still be added.
@@ -217,7 +217,7 @@ describe('SchemaManager adapter syncSchema path', () => {
 
   it('uses adapter syncSchema and returns when the table is verified created', async () => {
     let tableCreated = false;
-    const syncSchema = vi.fn(async () => {
+    const syncSchema = vi.fn(async (_ddl: string) => {
       tableCreated = true;
     });
     const db = {
@@ -243,7 +243,7 @@ describe('SchemaManager adapter syncSchema path', () => {
   });
 
   it('omits triggers from the syncSchema string when skipTriggers is set', async () => {
-    const syncSchema = vi.fn(async () => {});
+    const syncSchema = vi.fn(async (_ddl: string) => {});
     const tableExists = vi
       .fn()
       // initial existence check -> false (create path)

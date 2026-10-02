@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.package-test.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts"
+  ],
+  "exclude": [
+    "src/vite-plugin/templates/**"
+  ]
+}

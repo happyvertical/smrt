@@ -27,7 +27,8 @@ class Issue1031AttachedRecords extends SmrtCollection<Issue1031AttachedRecord> {
 
 describe('Issue #1031: attached DB upfront schema creation', () => {
   let db: DatabaseInterface;
-  const tableName = ObjectRegistry.getTableName('Issue1031AttachedRecord');
+  // The decorated fixture above is registered before these tests run.
+  const tableName = ObjectRegistry.getTableName('Issue1031AttachedRecord')!;
 
   beforeEach(async () => {
     db = await getTestDatabase({ classes: [] });

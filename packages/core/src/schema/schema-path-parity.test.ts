@@ -142,7 +142,7 @@ describe('same-name physical foreign key parity (#2763)', () => {
         tableName: 'fk_parity_b_2763',
         idType: 'text',
       })(B);
-      const key = `${packageB}:ParityChild2763`;
+      const key = `${packageB}:ParityChild2763` as const;
       const generator = new SchemaGenerator();
       const fields = await ObjectRegistry.getAllFields(key);
       const runtime =
@@ -159,7 +159,7 @@ describe('same-name physical foreign key parity (#2763)', () => {
               fields,
               { registry: ObjectRegistry },
             );
-      const definitions = [
+      const definitions: SmartObjectDefinition[] = [
         {
           ...objectDef(
             'ParityParent2763',

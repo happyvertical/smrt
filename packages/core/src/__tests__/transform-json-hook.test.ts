@@ -29,7 +29,7 @@ class TransformJSONTestArticle extends SmrtObject {
     if (options.body) this.body = options.body;
   }
 
-  protected transformJSON(data: any): any {
+  public transformJSON(data: any): any {
     return {
       ...data,
       wordCount: this.body.split(/\s+/).filter(Boolean).length,

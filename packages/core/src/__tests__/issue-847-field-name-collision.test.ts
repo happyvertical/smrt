@@ -23,6 +23,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry.js';
+import type {
+  FieldDefinition,
+  SmartObjectDefinition,
+} from '../scanner/types.js';
 import { SchemaGenerator } from '../schema/generator.js';
 
 // Test class that has a 'name' field - same name as Profile.name from smrt-profiles
@@ -52,12 +56,12 @@ describe('Issue #847: Field name collision with external packages', () => {
     ObjectRegistry.clear();
 
     const schemaGenerator = new SchemaGenerator();
-    const profileFields = {
+    const profileFields: Record<string, FieldDefinition> = {
       name: { type: 'text', required: false, default: '' }, // Collision with Council.name!
       email: { type: 'text', required: false, default: '' },
       bio: { type: 'text', required: false, default: '' },
     };
-    const councilFields = {
+    const councilFields: Record<string, FieldDefinition> = {
       name: { type: 'text', required: false, default: '' }, // Same field name as Profile!
       meetingsUrl: { type: 'text', required: false, default: '' },
       timezone: {
@@ -69,12 +73,16 @@ describe('Issue #847: Field name collision with external packages', () => {
 
     // FIRST: Register a mock "Profile" class from an external package
     // This simulates @happyvertical/smrt-profiles having a "name" field
-    const profileDef = {
+    const profileDef: SmartObjectDefinition = {
       className: 'Profile',
+      name: 'profile',
+      collection: 'profiles',
+      filePath: '/external/profiles/Profile.ts',
       decoratorConfig: {
         tableName: 'profiles',
       },
       fields: profileFields,
+      methods: {},
       schema: schemaGenerator.generateCTISchemaFromManifest(
         'Profile',
         'profiles',
@@ -86,12 +94,16 @@ describe('Issue #847: Field name collision with external packages', () => {
     // Register the Issue847Council class FROM a manifest that includes the name field
     // This simulates the production scenario where OXC scanner generates
     // a manifest with both decorator config and pre-generated schema metadata.
-    const councilDef = {
+    const councilDef: SmartObjectDefinition = {
       className: 'Issue847Council',
+      name: 'issue847council',
+      collection: 'issue847councils',
+      filePath: '/test/fixtures/Issue847Council.ts',
       decoratorConfig: {
         tableName: 'issue847_councils',
       },
       fields: councilFields,
+      methods: {},
       schema: schemaGenerator.generateCTISchemaFromManifest(
         'Issue847Council',
         'issue847_councils',
@@ -144,7 +156,7 @@ describe('Issue #847: Field name collision with external packages', () => {
     // Retrieve from database - pass ID in constructor to trigger auto-load
     const retrieved = new Issue847Council({
       id: council.id,
-      db: council._db, // Pass the db instance directly (has 'query' method)
+      db: council.db,
     });
     await retrieved.initialize(); // Auto-loads because id is set
 
@@ -171,7 +183,7 @@ describe('Issue #847: Field name collision with external packages', () => {
     // Retrieve and verify - pass ID in constructor to trigger auto-load
     const retrieved = new Issue847Council({
       id: council.id,
-      db: council._db, // Pass the db instance directly (has 'query' method)
+      db: council.db,
     });
     await retrieved.initialize(); // Auto-loads because id is set
     expect(retrieved.name).toBe('Updated Name');

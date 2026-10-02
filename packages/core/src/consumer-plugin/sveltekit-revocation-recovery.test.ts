@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AUTO_GENERATED_ROUTE_HEADER } from '../vite-plugin/route-header.js';
-import { smrtConsumer } from './index.js';
+import { type SmrtConsumerOptions, smrtConsumer } from './index.js';
 
 let projectRoot: string;
 
@@ -56,7 +56,9 @@ afterEach(() => {
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
-async function configureConsumer(svelteKit: unknown): Promise<void> {
+async function configureConsumer(
+  svelteKit: SmrtConsumerOptions['svelteKit'],
+): Promise<void> {
   const plugin: any = smrtConsumer({
     packages: ['@acme/widgets'],
     projectRoot,

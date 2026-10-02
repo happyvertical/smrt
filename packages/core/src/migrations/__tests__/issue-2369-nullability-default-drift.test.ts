@@ -8,7 +8,7 @@
  * differ emits are pinned even where the engine is not available.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getDDLStrategy } from '../../schema/ddl/index.js';
@@ -79,7 +79,7 @@ function representativeSchema(tableName = 'widgets'): SchemaDefinition {
   );
 }
 
-async function applyStatements(db: DatabaseProvider, statements: string[]) {
+async function applyStatements(db: DatabaseInterface, statements: string[]) {
   for (const sql of statements) {
     await db.query(sql);
   }
@@ -204,7 +204,7 @@ describe('canonicalizeDefault (#2369)', () => {
 
 for (const { name, type, engine } of engines) {
   describe(`SchemaComparer nullability/default drift on real ${name} (#2369)`, () => {
-    let db: DatabaseProvider;
+    let db: DatabaseInterface;
 
     beforeEach(async () => {
       db = await getDatabase({ type, url: ':memory:' });
@@ -1208,7 +1208,7 @@ describe('SchemaComparer PostgreSQL SQL shape for #2369 (mocked adapter)', () =>
       }),
     };
     return new SchemaComparer(
-      mockPostgresDb as unknown as DatabaseProvider,
+      mockPostgresDb as unknown as DatabaseInterface,
       options,
     );
   }

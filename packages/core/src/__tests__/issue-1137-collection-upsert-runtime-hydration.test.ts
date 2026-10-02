@@ -209,7 +209,7 @@ describe('Issue #1137: collection upsert semantics and lightweight hydration', (
     const created = await entries.create({
       slug: 'hydrated-entry',
       name: 'Hydrated Entry',
-      parentId: parent.id,
+      parentId: parent.id!, // create() persisted this parent and assigned its ID.
       status: 'draft',
     });
 

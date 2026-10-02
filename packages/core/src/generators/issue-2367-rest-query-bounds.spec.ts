@@ -44,7 +44,8 @@ class RestBoundsWidgetCollection extends SmrtCollection<RestBoundsWidget> {
 // must tiebreak on `sku` rather than on a column that does not exist.
 @smrt({ api: { include: ['list'], public: true } })
 class RestBoundsPkWidget extends SmrtObject {
-  @field({ primaryKey: true, type: 'text' })
+  // Exercise the generated schema with primary-key metadata from a scanner fixture.
+  @field({ primaryKey: true, type: 'text' } as Parameters<typeof field>[0])
   sku: string = '';
 
   @field({ type: 'text' })

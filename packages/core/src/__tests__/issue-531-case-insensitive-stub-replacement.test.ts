@@ -23,7 +23,24 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import type { SmartObjectDefinition } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
+
+type SourceLessManifestDefinition = Omit<SmartObjectDefinition, 'filePath'>;
+
+function registerSourceLessManifest(
+  key: string,
+  definition: SourceLessManifestDefinition,
+  packageName: string,
+): void {
+  // These legacy stubs intentionally have no source path. A synthetic path
+  // changes the collision policy and prevents their real classes replacing them.
+  ObjectRegistry.registerFromManifest(
+    key,
+    definition as SmartObjectDefinition,
+    packageName,
+  );
+}
 
 describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
   let restoreRegistry: () => void;
@@ -38,8 +55,10 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
 
   it('should replace lowercase manifest stub with PascalCase real class', () => {
     // Simulate manifest registration (lowercase key)
-    const manifestDef = {
+    const manifestDef: SourceLessManifestDefinition = {
       className: 'TestWidget',
+      name: 'testwidget',
+      collection: 'testwidgets',
       fields: {
         name: { type: 'text', _meta: { required: true } },
       },
@@ -48,14 +67,14 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
     };
 
     // Register as lowercase (how manifest keys are stored)
-    ObjectRegistry.registerFromManifest(
+    registerSourceLessManifest(
       'testwidget', // lowercase key
       manifestDef,
       '@test/package',
     );
 
     // Verify stub is registered
-    const stubEntry = ObjectRegistry.findClass('testwidget');
+    const stubEntry = ObjectRegistry.getClass('testwidget');
     expect(stubEntry).toBeDefined();
     expect((stubEntry?.constructor as any)?._isManifestStub).toBe(true);
 
@@ -66,22 +85,20 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
     }
 
     // Verify real class replaced the stub
-    const realEntry = ObjectRegistry.findClass('TestWidget');
+    const realEntry = ObjectRegistry.getClass('TestWidget');
     expect(realEntry).toBeDefined();
     expect((realEntry?.constructor as any)?._isManifestStub).toBeUndefined();
     expect(realEntry?.constructor).toBe(TestWidget);
 
     // Verify lowercase key no longer exists (was replaced)
-    // @ts-expect-error - accessing private property
-    const hasLowercase = ObjectRegistry.classes.has('testwidget');
+    const hasLowercase = ObjectRegistry.getAllClasses().has('testwidget');
     expect(hasLowercase).toBe(false);
 
     // Verify the class is stored under a qualified key (Issue #951)
     // The package name is determined by getPackageName() based on the file location,
     // which in the test context is the core package, not the @test/package from manifest.
-    // @ts-expect-error - accessing private property
     let hasQualifiedKey = false;
-    for (const key of ObjectRegistry.classes.keys()) {
+    for (const key of ObjectRegistry.getAllClasses().keys()) {
       if (key.endsWith(':TestWidget')) {
         hasQualifiedKey = true;
         break;
@@ -92,14 +109,23 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
 
   it('should preserve manifest metadata when replacing stub', () => {
     // Simulate manifest registration with fields and methods
-    const manifestDef = {
+    const manifestDef: SourceLessManifestDefinition = {
       className: 'TestGadget',
+      name: 'testgadget',
+      collection: 'testgadgets',
       fields: {
         title: { type: 'text', _meta: { required: true } },
         count: { type: 'integer', _meta: {} },
       },
       methods: {
-        doSomething: { async: true, parameters: [], returnType: 'void' },
+        doSomething: {
+          name: 'doSomething',
+          async: true,
+          isStatic: false,
+          isPublic: true,
+          parameters: [],
+          returnType: 'void',
+        },
       },
       decoratorConfig: {
         cli: true,
@@ -107,11 +133,7 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
       },
     };
 
-    ObjectRegistry.registerFromManifest(
-      'testgadget',
-      manifestDef,
-      '@test/package',
-    );
+    registerSourceLessManifest('testgadget', manifestDef, '@test/package');
 
     // Register real class
     @smrt()
@@ -121,7 +143,7 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
     }
 
     // Verify metadata was preserved
-    const entry = ObjectRegistry.findClass('TestGadget');
+    const entry = ObjectRegistry.getClass('TestGadget');
     expect(entry).toBeDefined();
 
     // Fields from manifest should be preserved
@@ -135,22 +157,20 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
 
   it('should handle already PascalCase manifest keys (no change needed)', () => {
     // Some manifests might use PascalCase keys
-    const manifestDef = {
+    const manifestDef: SourceLessManifestDefinition = {
       className: 'TestDevice',
+      name: 'testdevice',
+      collection: 'testdevices',
       fields: {},
       methods: {},
       decoratorConfig: {},
     };
 
     // Register with PascalCase (exact match case)
-    ObjectRegistry.registerFromManifest(
-      'TestDevice',
-      manifestDef,
-      '@test/package',
-    );
+    registerSourceLessManifest('TestDevice', manifestDef, '@test/package');
 
     // Verify stub is registered
-    const stubEntry = ObjectRegistry.findClass('TestDevice');
+    const stubEntry = ObjectRegistry.getClass('TestDevice');
     expect(stubEntry).toBeDefined();
     expect((stubEntry?.constructor as any)?._isManifestStub).toBe(true);
 
@@ -159,7 +179,7 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
     class TestDevice extends SmrtObject {}
 
     // Verify real class replaced the stub (exact match case)
-    const realEntry = ObjectRegistry.findClass('TestDevice');
+    const realEntry = ObjectRegistry.getClass('TestDevice');
     expect(realEntry).toBeDefined();
     expect((realEntry?.constructor as any)?._isManifestStub).toBeUndefined();
     expect(realEntry?.constructor).toBe(TestDevice);
@@ -171,7 +191,7 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
     class CollisionTest1 extends SmrtObject {}
 
     // Verify it's registered
-    const entry = ObjectRegistry.findClass('collisiontest');
+    const entry = ObjectRegistry.getClass('collisiontest');
     expect(entry).toBeDefined();
     expect((entry?.constructor as any)?._isManifestStub).toBeUndefined();
 
@@ -189,39 +209,36 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
   it('should resolve simple class name to qualified manifest key via classNameMap', () => {
     // Simulate manifest registration with a qualified key (how external packages are registered)
     // e.g., smrt-users registers Tenant as '@happyvertical/smrt-users:Tenant'
-    const manifestDef = {
+    const manifestDef: SourceLessManifestDefinition = {
       className: 'TestTenant',
+      name: 'testtenant',
+      collection: 'tenants',
       fields: {
         slug: { type: 'text', _meta: { required: true } },
         context: { type: 'text', _meta: {} },
       },
       methods: {},
       decoratorConfig: {
-        collection: 'tenants',
-        sti: { discriminator: '_meta_type' },
+        tableStrategy: 'sti',
       },
     };
 
     const qualifiedKey = '@test/users:TestTenant';
-    ObjectRegistry.registerFromManifest(
-      qualifiedKey,
-      manifestDef,
-      '@test/users',
-    );
+    registerSourceLessManifest(qualifiedKey, manifestDef, '@test/users');
 
     // classNameMap should have both the qualified key and the simple className mapped
     // Verify simple name resolves via findClass (the fix for PR #941)
-    const bySimpleName = ObjectRegistry.findClass('TestTenant');
+    const bySimpleName = ObjectRegistry.getClass('TestTenant');
     expect(bySimpleName).toBeDefined();
     expect((bySimpleName?.constructor as any)?._isManifestStub).toBe(true);
 
     // Verify case-insensitive simple name also resolves
-    const byLowerName = ObjectRegistry.findClass('testtenant');
+    const byLowerName = ObjectRegistry.getClass('testtenant');
     expect(byLowerName).toBeDefined();
     expect(byLowerName).toBe(bySimpleName);
 
     // Verify qualified key still resolves directly
-    const byQualified = ObjectRegistry.findClass(qualifiedKey);
+    const byQualified = ObjectRegistry.getClass(qualifiedKey);
     expect(byQualified).toBeDefined();
     expect(byQualified).toBe(bySimpleName);
 
@@ -233,8 +250,10 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
 
   it('should resolve simple name after real class replaces qualified manifest stub', () => {
     // Register manifest stub under qualified key
-    const manifestDef = {
+    const manifestDef: SourceLessManifestDefinition = {
       className: 'TestEntity',
+      name: 'testentity',
+      collection: 'testentities',
       fields: {
         name: { type: 'text', _meta: {} },
       },
@@ -242,14 +261,14 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
       decoratorConfig: {},
     };
 
-    ObjectRegistry.registerFromManifest(
+    registerSourceLessManifest(
       '@test/pkg:TestEntity',
       manifestDef,
       '@test/pkg',
     );
 
     // Verify stub is accessible via simple name
-    const stub = ObjectRegistry.findClass('TestEntity');
+    const stub = ObjectRegistry.getClass('TestEntity');
     expect(stub).toBeDefined();
     expect((stub?.constructor as any)?._isManifestStub).toBe(true);
 
@@ -260,7 +279,7 @@ describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
     }
 
     // Real class should now be accessible via simple name
-    const real = ObjectRegistry.findClass('TestEntity');
+    const real = ObjectRegistry.getClass('TestEntity');
     expect(real).toBeDefined();
     expect((real?.constructor as any)?._isManifestStub).toBeUndefined();
     expect(real?.constructor).toBe(TestEntity);

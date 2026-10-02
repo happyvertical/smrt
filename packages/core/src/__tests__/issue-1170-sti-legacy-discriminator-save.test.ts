@@ -61,7 +61,7 @@ const customLegacyMetaType = 'Issue1170CustomIdentityPlace';
 const customQualifiedMetaType =
   '@happyvertical/smrt-core:Issue1170CustomIdentityPlace';
 
-const externalPlaceClass = ObjectRegistry.findClass('Issue1170ExternalPlace');
+const externalPlaceClass = ObjectRegistry.getClass('Issue1170ExternalPlace');
 const originalExternalPackageName = externalPlaceClass?.packageName;
 const originalExternalQualifiedName = externalPlaceClass?.qualifiedName;
 

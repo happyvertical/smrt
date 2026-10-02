@@ -17,7 +17,7 @@
  *   own yet).
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { shortenIdentifier } from '../../schema/index-utils.js';
@@ -46,7 +46,7 @@ function tableSchema(
 }
 
 describe('SchemaComparer index drift', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
 
   beforeEach(async () => {
     db = await getDatabase({ type: 'sqlite', url: ':memory:' });

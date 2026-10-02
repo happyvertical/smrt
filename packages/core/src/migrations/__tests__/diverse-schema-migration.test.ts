@@ -597,7 +597,7 @@ describe('diverse-schema migration fixture (#1335)', () => {
         // 2. The DEFAULT survives through the shared source: the weight
         //    add-column carries `DEFAULT 0`. This is the concrete metadata the
         //    DDL reparse loses.
-        const weightSql = migrateSql.find((s) => s.includes('"weight"'));
+        const weightSql = migrateSql.find((s) => s?.includes('"weight"'));
         expect(weightSql).toBeDefined();
         expect(weightSql).toMatch(/DEFAULT 0\b/);
 
@@ -606,7 +606,7 @@ describe('diverse-schema migration fixture (#1335)', () => {
         //    someone reverts db:diff to that source, db:diff diverges from
         //    db:migrate again — and this assertion fails, catching the revert.
         expect(legacySql).not.toEqual(migrateSql);
-        const legacyWeightSql = legacySql.find((s) => s.includes('"weight"'));
+        const legacyWeightSql = legacySql.find((s) => s?.includes('"weight"'));
         expect(legacyWeightSql).toBeDefined();
         expect(legacyWeightSql).not.toMatch(/DEFAULT 0\b/);
       });

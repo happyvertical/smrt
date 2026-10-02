@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.package-typecheck.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vitest/globals"
+    ],
+    "strictNullChecks": true,
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitAny": false,
+    "strictPropertyInitialization": false
+  }
+}

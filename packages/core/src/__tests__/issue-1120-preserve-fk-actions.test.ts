@@ -17,12 +17,15 @@ describe('Issue #1120 - runtime schema rebuild preserves manifest FK actions', (
     ObjectRegistry.registerFromManifest(
       '@test/pkg:RestrictiveChild',
       {
+        name: 'restrictivechild',
+        collection: '',
+        filePath: '',
         className: 'RestrictiveChild',
         fields: {
           parentId: {
             type: 'foreignKey',
             related: 'Parent.id',
-            nullable: false,
+            required: true,
           },
         },
         methods: {},
@@ -45,9 +48,6 @@ describe('Issue #1120 - runtime schema rebuild preserves manifest FK actions', (
             },
           },
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: 'test-version',
         },
       },
@@ -91,11 +91,14 @@ describe('Issue #1120 - runtime schema rebuild preserves manifest FK actions', (
     ObjectRegistry.registerFromManifest(
       '@test/pkg:ManifestSafeSchedule',
       {
+        name: 'manifestsafeschedule',
+        collection: '',
+        filePath: '',
         className: 'ManifestSafeSchedule',
         fields: {
           agentConfig: {
             type: 'json',
-            nullable: false,
+            required: true,
           },
         },
         methods: {},
@@ -107,9 +110,6 @@ describe('Issue #1120 - runtime schema rebuild preserves manifest FK actions', (
           ddl: '',
           columns: manifestColumns,
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: 'test-version',
         },
       },
@@ -118,7 +118,7 @@ describe('Issue #1120 - runtime schema rebuild preserves manifest FK actions', (
 
     const registered = ObjectRegistry.getClass('ManifestSafeSchedule');
 
-    expect(registered?.schema.columns.agent_config?.type).toBe('TEXT');
+    expect(registered?.schema?.columns.agent_config?.type).toBe('TEXT');
     expect(manifestColumns.agent_config.type).toBe('JSON');
   });
 });

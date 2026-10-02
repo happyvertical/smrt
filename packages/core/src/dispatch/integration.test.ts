@@ -305,15 +305,15 @@ describe('Agent-to-Agent Communication', () => {
       },
     );
 
-    let receivedMetadata: DispatchMetadata | null = null;
+    const received: { metadata: DispatchMetadata | null } = { metadata: null };
     await bus.process('Logger', async (_payload, metadata) => {
-      receivedMetadata = metadata;
+      received.metadata = metadata;
     });
 
-    expect(receivedMetadata).not.toBeNull();
-    expect(receivedMetadata?.source).toBe('TestRunner');
-    expect(receivedMetadata?.sourceId).toBe('runner-001');
-    expect(receivedMetadata?.metadata).toEqual({
+    expect(received.metadata).not.toBeNull();
+    expect(received.metadata?.source).toBe('TestRunner');
+    expect(received.metadata?.sourceId).toBe('runner-001');
+    expect(received.metadata?.metadata).toEqual({
       traceId: 'trace-abc123',
       spanId: 'span-xyz789',
       environment: 'test',
@@ -346,7 +346,7 @@ describe('Agent-to-Agent Communication', () => {
     expect(request.correlationId).toBe(correlationId);
 
     // 2. Histrio processes the request and sees the correlationId in metadata
-    let receivedCorrelationId = '';
+    let receivedCorrelationId: string | undefined = '';
     await bus.process('Histrio', async (_payload, metadata) => {
       receivedCorrelationId = metadata.correlationId;
     });

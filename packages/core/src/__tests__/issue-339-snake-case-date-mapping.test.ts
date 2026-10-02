@@ -71,7 +71,7 @@ describe('Issue #339: snake_case to camelCase date field mapping', () => {
 
     // Load the event by ID (uses loadFromId → loadDataFromDb)
     const loadedById = new Issue339Event({
-      id: event.id,
+      id: event.id!,
       db: collection.db,
     });
     await loadedById.initialize();
@@ -138,7 +138,7 @@ describe('Issue #339: snake_case to camelCase date field mapping', () => {
 
     // Load by ID
     const loaded = new Issue339Event({
-      id: event.id,
+      id: event.id!,
       db: collection.db,
     });
     await loaded.initialize();

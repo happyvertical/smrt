@@ -51,6 +51,7 @@ for (const type of ['sqlite', 'duckdb'] as const) {
           dbid: randomUUID(),
         });
         await ensureChangeFeedTable(db);
+        if (!db.transaction) throw new Error('DuckDB transaction is required');
         await db.transaction(async (tx) => {
           expect(
             await appendChanges(tx, [

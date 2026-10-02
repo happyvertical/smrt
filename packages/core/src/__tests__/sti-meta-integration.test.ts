@@ -95,6 +95,7 @@ describe('STI Meta<T> Integration Tests', () => {
         homeTeam: 'Edmonton Oilers',
       });
       await game1.save();
+      if (!game1.id) throw new Error('Expected saved game ID');
 
       // Load by ID
       const game2 = await collection.get(game1.id);
@@ -122,6 +123,7 @@ describe('STI Meta<T> Integration Tests', () => {
         artist: 'The Rolling Stones',
       });
       await concert1.save();
+      if (!concert1.id) throw new Error('Expected saved concert ID');
 
       const concert2 = await collection.get(concert1.id);
 
