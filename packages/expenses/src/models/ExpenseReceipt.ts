@@ -7,6 +7,7 @@
 
 import { AssetCollection } from '@happyvertical/smrt-assets';
 import {
+  classifyDatabaseError,
   crossPackageRef,
   field,
   foreignKey,
@@ -27,6 +28,33 @@ import {
   pinNaturalKey,
 } from '../validation.js';
 import { Expense } from './Expense.js';
+
+/**
+ * The unique index that refuses a second copy of a file on one expense. Kept
+ * in step with the literal in the `@smrt()` indexes below (the scanner reads
+ * that literal); the PostgreSQL schema test asserts the name.
+ */
+const RECEIPT_FILE_KEY = 'expense_receipts_expense_sha256_key';
+
+/** The columns of {@link RECEIPT_FILE_KEY}; no other unique key uses them. */
+const RECEIPT_FILE_COLUMNS = new Set(['expense_id', 'content_sha256']);
+
+/**
+ * The columns a unique violation reports. Core's typed write error carries
+ * them in `details.fieldName` (recovered from PostgreSQL's
+ * `Key (expense_id, content_sha256)=…` detail, or SQLite's column list) but
+ * not the driver error itself, so this is where the violated key is named.
+ */
+function violatedColumns(error: unknown): string[] {
+  const details = (error as { details?: { fieldName?: unknown } } | null)
+    ?.details;
+  const fieldName =
+    typeof details?.fieldName === 'string' ? details.fieldName : '';
+  return fieldName
+    .split(',')
+    .map((column) => column.trim())
+    .filter(Boolean);
+}
 
 /**
  * Columns a receipt keeps for life: it is evidence, not a draft. The tenant
@@ -191,11 +219,32 @@ export class ExpenseReceipt extends SmrtObject {
 
   /**
    * A refused INSERT is either the same file racing onto the same expense,
-   * or a natural-key collision with another receipt. Re-read to tell which;
-   * if the re-read itself fails (an aborted transaction), keep the original
-   * error rather than guess.
+   * or a natural-key collision with another receipt.
+   *
+   * Classified from the error first, by the violated key's name or columns
+   * (no other unique key on this table uses `expense_id` or
+   * `content_sha256`). That matters inside a caller's transaction,
+   * which the violation has already aborted on PostgreSQL, so nothing could
+   * be re-read there. Only an adapter that reports neither falls back to a
+   * re-read; if that re-read fails too, the original error is kept rather
+   * than guessed at.
    */
   private async classifyInsertConflict(error: unknown): Promise<unknown> {
+    const info = classifyDatabaseError(error);
+    const columns = violatedColumns(error);
+    if (
+      info.constraint === RECEIPT_FILE_KEY ||
+      info.driverMessages.some((text) => text.includes(RECEIPT_FILE_KEY)) ||
+      columns.some((column) => RECEIPT_FILE_COLUMNS.has(column))
+    ) {
+      return new DuplicateReceiptError(this.expenseId, this.contentSha256, {
+        cause: error,
+      });
+    }
+    if (info.constraint || columns.length > 0) {
+      // Another named key: the natural key or the primary key.
+      return identityConflict('ExpenseReceipt', this, error);
+    }
     try {
       await this.assertNotDuplicate();
     } catch (duplicate) {

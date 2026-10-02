@@ -128,6 +128,32 @@ export async function createWorld(
   return world;
 }
 
+/**
+ * Attach a receipt in `world`'s tenant, then move that row out of the
+ * tenant's reads (raw `tenant_id = NULL`). A second attach of the same file
+ * then passes the tenant-filtered pre-insert read and reaches the unique
+ * index — the same path a concurrent attach takes.
+ */
+export async function hideReceiptFromTenantReads(
+  world: ExpenseWorld,
+): Promise<{ expenseId: string; sha: string }> {
+  const sha = computeContentSha256(`hidden-${randomUUID()}`);
+  const { expenseId, receiptId } = await world.inTenant(async () => {
+    const expense = await world.expense();
+    const receipt = await world.receipts.attachReceipt({
+      expenseId: expense.id,
+      assetId: (await world.asset()).id,
+      contentSha256: sha,
+    });
+    return { expenseId: expense.id, receiptId: String(receipt.id) };
+  });
+  await world.db.query(
+    'UPDATE expense_receipts SET tenant_id = NULL WHERE id = ?',
+    receiptId,
+  );
+  return { expenseId, sha };
+}
+
 async function expectExpenseError(
   promise: Promise<unknown>,
   code: ExpenseError['code'],
@@ -998,6 +1024,19 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   });
 
   describe('review round 2 (PR #3339)', () => {
+    it('reports a duplicate the pre-insert read cannot see as DuplicateReceiptError', async () => {
+      const { expenseId, sha } = await hideReceiptFromTenantReads(world);
+      await world.inTenant(async () => {
+        await expect(
+          world.receipts.attachReceipt({
+            expenseId,
+            assetId: (await world.asset()).id,
+            contentSha256: sha,
+          }),
+        ).rejects.toBeInstanceOf(DuplicateReceiptError);
+      });
+    });
+
     it('freezes recordedAt on a reviewed expense until it is reopened', async () => {
       await world.inTenant(async () => {
         const reviewer = randomUUID();

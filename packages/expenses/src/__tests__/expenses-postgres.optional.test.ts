@@ -28,9 +28,20 @@ import {
   type DatabaseInterface,
   migrateSmrtSchemas,
 } from '@happyvertical/smrt-core/migrations';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { defineExpenseSuite } from './helpers/expense-suite.js';
+import { ExpenseReceiptCollection } from '../collections/ExpenseReceiptCollection.js';
+import { DuplicateReceiptError } from '../types.js';
+import {
+  createWorld,
+  defineExpenseSuite,
+  hideReceiptFromTenantReads,
+} from './helpers/expense-suite.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -199,6 +210,37 @@ describePostgres('expenses on PostgreSQL', () => {
       const again = await dbMigrate(db);
       expect(again.applied).toBe(false);
       expect(again.statements).toEqual([]);
+    });
+  });
+
+  describe('inside a caller transaction', () => {
+    it('reports a racing duplicate as DuplicateReceiptError though the transaction aborted', async () => {
+      enableTenancy();
+      try {
+        const world = await createWorld(db);
+        const { expenseId, sha } = await hideReceiptFromTenantReads(world);
+        const assetId = (await world.inTenant(() => world.asset())).id;
+        const transactional = db as DatabaseInterface & {
+          transaction<T>(
+            work: (tx: DatabaseInterface) => Promise<T>,
+          ): Promise<T>;
+        };
+        const attempt = withTenant({ tenantId: world.tenantId }, () =>
+          transactional.transaction(async (tx) => {
+            const receipts = await ExpenseReceiptCollection.create({ db: tx });
+            // The violation aborts the transaction, so nothing can be
+            // re-read here: it must be classified from the error itself.
+            await receipts.attachReceipt({
+              expenseId,
+              assetId,
+              contentSha256: sha,
+            });
+          }),
+        );
+        await expect(attempt).rejects.toBeInstanceOf(DuplicateReceiptError);
+      } finally {
+        disableTenancy();
+      }
     });
   });
 

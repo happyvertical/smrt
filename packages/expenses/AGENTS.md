@@ -53,7 +53,10 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
 - **Duplicate receipts.** Same `(expense, sha256)` is refused by a pre-insert
   read plus the unique index `expense_receipts_expense_sha256_key`
   `(expense_id, content_sha256)`; a unique violation is rethrown as
-  `DuplicateReceiptError`. The index omits `tenant_id` deliberately: the
+  `DuplicateReceiptError`, classified from the error itself (violated key
+  name, or `details.fieldName` columns on core's typed error) because on
+  PostgreSQL the violation aborts a caller's transaction and nothing can be
+  re-read; only an error naming no key falls back to a re-read. The index omits `tenant_id` deliberately: the
   expense already fixes the tenant, and a nullable leading `tenant_id` would
   leave NULL-tenant (global) receipts unenforced. Same hash on different
   expenses is allowed; `findDuplicateReceipts()` reports it (facet on
