@@ -93,6 +93,7 @@
   "dependencies": {
     "@happyvertical/ai": "catalog:",
     "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",

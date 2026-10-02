@@ -584,6 +584,9 @@ importers:
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
+      '@happyvertical/smrt-config':
+        specifier: workspace:*
+        version: link:../config
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
