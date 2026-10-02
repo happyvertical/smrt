@@ -4,6 +4,7 @@
  * functions directly) — same harness pattern as
  * `db-migrate-force-postgres.test.ts`.
  */
+
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import {
   ObjectRegistry,
@@ -12,6 +13,7 @@ import {
 import { MigrationTracker } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { parseCliCommandArgs } from '../../cli-generator.js';
 import { utilityCommands } from '../utilities.js';
 
@@ -51,6 +53,7 @@ describePostgres(
 
     function foreignKey() {
       return {
+        table: parents,
         column: 'parent_id',
         referencesTable: parents,
         referencesColumn: 'id',
@@ -144,7 +147,7 @@ describePostgres(
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       process.exitCode = undefined;
-      await command.handler(parsed.args, parsed.options);
+      await requireCommandHandler(command)(parsed.args, parsed.options);
       const result = {
         stdout: [...logSpy.mock.calls, ...warnSpy.mock.calls]
           .map((call) => call.join(' '))

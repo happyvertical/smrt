@@ -8,6 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { execFileSyncMock, importWorkspaceModuleMock, spawnMock } = vi.hoisted(
   () => ({
@@ -90,7 +91,7 @@ describe('workbench commands', () => {
   it('starts the shared workbench host with inferred scope env', async () => {
     process.chdir(projectRoot);
 
-    await (await loadCommands())['workbench:dev'].handler([], {
+    await requireCommandHandler((await loadCommands())['workbench:dev'])([], {
       package: '@happyvertical/smrt-content',
       host: '0.0.0.0',
       port: '5580',
@@ -135,13 +136,13 @@ describe('workbench commands', () => {
     );
 
     await expect(
-      (await loadCommands())['workbench:dev'].handler([], {}),
+      requireCommandHandler((await loadCommands())['workbench:dev'])([], {}),
     ).rejects.toThrow('spawn failed');
   });
 
   it('requires explicit acknowledgement before binding remotely', async () => {
     await expect(
-      (await loadCommands())['workbench:dev'].handler([], {
+      requireCommandHandler((await loadCommands())['workbench:dev'])([], {
         host: '0.0.0.0',
       }),
     ).rejects.toThrow('Refusing to expose the workbench');
@@ -156,7 +157,9 @@ describe('workbench commands', () => {
     '5570 & calc',
   ])('rejects invalid workbench port %s', async (port) => {
     await expect(
-      (await loadCommands())['workbench:dev'].handler([], { port }),
+      requireCommandHandler((await loadCommands())['workbench:dev'])([], {
+        port,
+      }),
     ).rejects.toThrow('Expected an integer from 1 to 65535');
 
     expect(spawnMock).not.toHaveBeenCalled();
@@ -196,7 +199,7 @@ describe('workbench commands', () => {
     delete process.env.npm_execpath;
 
     try {
-      await (await loadCommands())['workbench:dev'].handler([], {
+      await requireCommandHandler((await loadCommands())['workbench:dev'])([], {
         port: '5570',
       });
     } finally {
@@ -260,7 +263,7 @@ describe('workbench commands', () => {
     delete process.env.npm_execpath;
 
     try {
-      await (await loadCommands())['workbench:dev'].handler([], {
+      await requireCommandHandler((await loadCommands())['workbench:dev'])([], {
         port: '5570',
       });
     } finally {
@@ -307,7 +310,7 @@ describe('workbench commands', () => {
       value: windowsNode,
     });
     try {
-      await (await loadCommands())['workbench:dev'].handler([], {
+      await requireCommandHandler((await loadCommands())['workbench:dev'])([], {
         port: '5571',
       });
     } finally {
@@ -333,7 +336,7 @@ describe('workbench commands', () => {
   });
 
   it('formats an IPv6 loopback address as a valid display URL', async () => {
-    await (await loadCommands())['workbench:dev'].handler([], {
+    await requireCommandHandler((await loadCommands())['workbench:dev'])([], {
       host: '::1',
       port: '5570',
     });
@@ -349,7 +352,7 @@ describe('workbench commands', () => {
   });
 
   it('normalizes a bracketed IPv6 loopback address before launching Vite', async () => {
-    await (await loadCommands())['workbench:dev'].handler([], {
+    await requireCommandHandler((await loadCommands())['workbench:dev'])([], {
       host: '[::1]',
       port: '5570',
     });
@@ -374,7 +377,7 @@ describe('workbench commands', () => {
     process.chdir(projectRoot);
 
     await expect(
-      (await loadCommands())['workbench:dev'].handler([], {}),
+      requireCommandHandler((await loadCommands())['workbench:dev'])([], {}),
     ).rejects.toThrow('nodeLinker: node-modules');
 
     expect(importWorkspaceModuleMock).not.toHaveBeenCalled();
@@ -413,7 +416,7 @@ describe('workbench commands', () => {
     process.chdir(projectRoot);
 
     const commands = await loadCommands();
-    await commands['workbench:dev'].handler([], {
+    await requireCommandHandler(commands['workbench:dev'])([], {
       host: '127.0.0.1',
       port: '5570',
     });
@@ -477,7 +480,7 @@ describe('workbench commands', () => {
     process.env.npm_execpath = unrelatedPnpmExecPath;
 
     try {
-      await commands['workbench:dev'].handler([], {
+      await requireCommandHandler(commands['workbench:dev'])([], {
         host: '127.0.0.1',
         port: '5573',
       });
@@ -515,7 +518,7 @@ describe('workbench commands', () => {
 
     spawnMock.mockClear();
     writeFileSync(join(projectRoot, 'yarn.lock'), '');
-    await commands['workbench:dev'].handler([], {
+    await requireCommandHandler(commands['workbench:dev'])([], {
       host: '127.0.0.1',
       port: '5571',
     });
@@ -541,7 +544,7 @@ describe('workbench commands', () => {
       join(projectRoot, 'package.json'),
       '{"name":"consumer-app","type":"module","packageManager":"yarn@4.9.2"}\n',
     );
-    await commands['workbench:dev'].handler([], {
+    await requireCommandHandler(commands['workbench:dev'])([], {
       host: '127.0.0.1',
       port: '5574',
     });
@@ -573,7 +576,7 @@ describe('workbench commands', () => {
       'lockfileVersion: "9.0"\n',
     );
     process.chdir(nestedProjectRoot);
-    await commands['workbench:dev'].handler([], {
+    await requireCommandHandler(commands['workbench:dev'])([], {
       host: '127.0.0.1',
       port: '5572',
     });

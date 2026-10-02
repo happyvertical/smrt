@@ -53,8 +53,12 @@ describe('JsonDatabaseValidator integration paths', () => {
       personClass,
       {
         className: personClass,
+        name: personClass.toLowerCase(),
+        collection: personTable,
+        filePath: `/fixtures/${personClass}.ts`,
         decoratorConfig: { tableName: personTable },
         fields: { name: { type: 'text' } },
+        methods: {},
       },
       '@test/json-validator',
     );
@@ -63,12 +67,16 @@ describe('JsonDatabaseValidator integration paths', () => {
       eventClass,
       {
         className: eventClass,
+        name: eventClass.toLowerCase(),
+        collection: eventTable,
+        filePath: `/fixtures/${eventClass}.ts`,
         decoratorConfig: { tableName: eventTable, tableStrategy: 'sti' },
         fields: {
           title: { type: 'text' },
           attendees: { type: 'integer' },
           organizerId: { type: 'foreignKey', related: personClass },
         },
+        methods: {},
       },
       '@test/json-validator',
     );
@@ -164,9 +172,13 @@ describe('JsonDatabaseValidator integration paths', () => {
       `Foo${suffix}`,
       {
         className: `Foo${suffix}`,
+        name: `foo${suffix}`.toLowerCase(),
+        collection: `foo${suffix}s`.toLowerCase(),
+        filePath: `/fixtures/Foo${suffix}.ts`,
         // Registered table name is the singular class name lowercased.
         decoratorConfig: { tableName: `foo${suffix}`.toLowerCase() },
         fields: { name: { type: 'text' } },
+        methods: {},
       },
       '@test/json-validator',
     );

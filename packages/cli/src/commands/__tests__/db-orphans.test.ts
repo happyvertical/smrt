@@ -13,6 +13,7 @@ import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { autoDiscoverAndLoadMock } = vi.hoisted(() => ({
   autoDiscoverAndLoadMock: vi.fn(),
@@ -362,7 +363,7 @@ describe('db:orphans against a real SQLite database', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbOrphansCommand.handler([], {});
+    await requireCommandHandler(dbOrphansCommand)([], {});
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
 
     const eventsLine = output.indexOf('events.type_id');
@@ -389,7 +390,7 @@ describe('db:orphans against a real SQLite database', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbOrphansCommand.handler([], {});
+    await requireCommandHandler(dbOrphansCommand)([], {});
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
 
     expect(output).toContain('No orphan rows found');
@@ -406,7 +407,7 @@ describe('db:orphans against a real SQLite database', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbOrphansCommand.handler([], { json: true });
+    await requireCommandHandler(dbOrphansCommand)([], { json: true });
     const payload = JSON.parse(
       logSpy.mock.calls.map((call) => call.join('')).join('\n'),
     );
@@ -434,7 +435,7 @@ describe('db:orphans against a real SQLite database', () => {
     } as never);
 
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await dbOrphansCommand.handler([], {});
+    await requireCommandHandler(dbOrphansCommand)([], {});
 
     expect(process.exitCode).toBe(1);
     errorSpy.mockRestore();

@@ -1,5 +1,5 @@
 import { ObjectRegistry, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { type DatabaseProvider, getDatabase } from '@happyvertical/sql';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   repairStiDiscriminatorRows,
@@ -21,8 +21,35 @@ class StiUpgradeCustomIdentity extends SmrtObject {
   externalKey: string = '';
 }
 
+type RegistryClassFixture = ReturnType<
+  typeof ObjectRegistry.findClassesByName
+>[number];
+
+function registryClassFixture(
+  name: string,
+  qualifiedName: RegistryClassFixture['qualifiedName'],
+): RegistryClassFixture {
+  return {
+    name,
+    qualifiedName,
+    constructor: class FixtureObject extends SmrtObject {},
+    config: {},
+    fields: new Map(),
+    methods: new Map(),
+  };
+}
+
+async function sqliteFixtureDatabase(): Promise<DatabaseInterface> {
+  // The Vitest SQL wrapper recognizes this test-only bypass, outside SDK options.
+  return getDatabase({
+    type: 'sqlite',
+    url: ':memory:',
+    __smrtSkipVitestSchemaPreparation: true,
+  } as Parameters<typeof getDatabase>[0]);
+}
+
 describe('resolveStiDiscriminatorUpgrade', () => {
-  let db: DatabaseProvider | undefined;
+  let db: DatabaseInterface | undefined;
 
   beforeEach(() => {
     ObjectRegistry.clear();
@@ -70,16 +97,19 @@ describe('resolveStiDiscriminatorUpgrade', () => {
     ObjectRegistry.register(PromotedStiUpgrade, { name: 'PromotedStiUpgrade' });
     const packageName =
       ObjectRegistry.getClassByConstructor(PromotedStiUpgrade)?.packageName;
-    expect(packageName).toBeDefined();
+    if (!packageName) throw new Error('Expected a registered package name');
     ObjectRegistry.registerFromManifest(
       'PromotedStiUpgrade',
       {
         className: 'PromotedStiUpgrade',
+        name: 'promotedstiupgrade',
+        collection: 'promoted_sti_upgrades',
+        filePath: '/fixtures/PromotedStiUpgrade.ts',
         fields: {},
         methods: {},
         decoratorConfig: { tableName: 'promoted_sti_upgrade' },
       },
-      packageName!,
+      packageName,
     );
 
     expect(resolveStiDiscriminatorUpgrade('PromotedStiUpgrade')).toEqual({
@@ -116,15 +146,15 @@ describe('resolveStiDiscriminatorUpgrade', () => {
     const findClassesByName = vi
       .spyOn(ObjectRegistry, 'findClassesByName')
       .mockReturnValue([
-        {
-          name: 'StiUpgradeDuplicate',
-          qualifiedName: '@happyvertical/smrt-assets:StiUpgradeDuplicate',
-        },
-        {
-          name: 'StiUpgradeDuplicate',
-          qualifiedName: '@happyvertical/smrt-images:StiUpgradeDuplicate',
-        },
-      ] as ReturnType<typeof ObjectRegistry.findClassesByName>);
+        registryClassFixture(
+          'StiUpgradeDuplicate',
+          '@happyvertical/smrt-assets:StiUpgradeDuplicate',
+        ),
+        registryClassFixture(
+          'StiUpgradeDuplicate',
+          '@happyvertical/smrt-images:StiUpgradeDuplicate',
+        ),
+      ]);
 
     expect(resolveStiDiscriminatorUpgrade('StiUpgradeDuplicate')).toEqual({
       action: 'skip',
@@ -138,11 +168,8 @@ describe('resolveStiDiscriminatorUpgrade', () => {
     const findClassesByName = vi
       .spyOn(ObjectRegistry, 'findClassesByName')
       .mockReturnValue([
-        {
-          name: 'UnqualifiedStiUpgrade',
-          qualifiedName: undefined,
-        },
-      ] as ReturnType<typeof ObjectRegistry.findClassesByName>);
+        registryClassFixture('UnqualifiedStiUpgrade', undefined),
+      ]);
 
     expect(resolveStiDiscriminatorUpgrade('UnqualifiedStiUpgrade')).toEqual({
       action: 'skip',
@@ -153,11 +180,7 @@ describe('resolveStiDiscriminatorUpgrade', () => {
   });
 
   it('repairs lone legacy discriminator rows by id', async () => {
-    db = await getDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-      __smrtSkipVitestSchemaPreparation: true,
-    });
+    db = await sqliteFixtureDatabase();
     await db.query(`
       CREATE TABLE sti_upgrade_assets (
         id TEXT PRIMARY KEY,
@@ -200,11 +223,7 @@ describe('resolveStiDiscriminatorUpgrade', () => {
   });
 
   it('reports qualified duplicates instead of violating the STI unique index', async () => {
-    db = await getDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-      __smrtSkipVitestSchemaPreparation: true,
-    });
+    db = await sqliteFixtureDatabase();
     await db.query(`
       CREATE TABLE sti_upgrade_assets (
         id TEXT PRIMARY KEY,
@@ -259,11 +278,7 @@ describe('resolveStiDiscriminatorUpgrade', () => {
   });
 
   it('uses custom STI conflict columns when finding qualified duplicates', async () => {
-    db = await getDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-      __smrtSkipVitestSchemaPreparation: true,
-    });
+    db = await sqliteFixtureDatabase();
     await db.query(`
       CREATE TABLE sti_upgrade_customs (
         id TEXT PRIMARY KEY,
@@ -309,11 +324,7 @@ describe('resolveStiDiscriminatorUpgrade', () => {
   });
 
   it('matches nullable STI conflict columns when finding qualified duplicates', async () => {
-    db = await getDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-      __smrtSkipVitestSchemaPreparation: true,
-    });
+    db = await sqliteFixtureDatabase();
     await db.query(`
       CREATE TABLE sti_upgrade_customs (
         id TEXT PRIMARY KEY,

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const mocks = vi.hoisted(() => ({
   formatRuntimeCheckReport: vi.fn(
@@ -58,7 +59,10 @@ describe('runtime-check utilities', () => {
 
     const { runtimeCheckCommand } = await import('../runtime-check-command.js');
 
-    await expect(runtimeCheckCommand.handler()).rejects.toThrow('exit:1');
+    // @ts-expect-error Exercise the handler's malformed no-argument failure path.
+    await expect(requireCommandHandler(runtimeCheckCommand)()).rejects.toThrow(
+      'exit:1',
+    );
     expect(mocks.formatRuntimeCheckReport).toHaveBeenCalledWith(
       expect.objectContaining({
         findings: [

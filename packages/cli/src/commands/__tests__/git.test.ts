@@ -9,6 +9,20 @@ import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mergeArraysByKey, mergeObjects } from '../git.js';
 
+function requireJsonObject(value: ReturnType<typeof mergeObjects>) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Expected merged JSON object');
+  }
+  return value;
+}
+
+function requireJsonArray(value: ReturnType<typeof mergeObjects>) {
+  if (!Array.isArray(value)) {
+    throw new Error('Expected merged JSON array');
+  }
+  return value;
+}
+
 describe('git:merge-json', () => {
   describe('mergeArraysByKey', () => {
     it('should merge arrays with no overlap', () => {
@@ -220,7 +234,7 @@ describe('git:merge-json', () => {
 
       const result = mergeObjects(base, ours, theirs);
 
-      expect(result.events).toHaveLength(3);
+      expect(requireJsonObject(result).events).toHaveLength(3);
     });
 
     it('should prefer ours for simple values', () => {
@@ -230,7 +244,7 @@ describe('git:merge-json', () => {
 
       const result = mergeObjects(base, ours, theirs);
 
-      expect(result.name).toBe('Ours');
+      expect(requireJsonObject(result).name).toBe('Ours');
     });
 
     it('should merge nested objects recursively', () => {
@@ -240,9 +254,9 @@ describe('git:merge-json', () => {
 
       const result = mergeObjects(base, ours, theirs);
 
-      expect(result.config.a).toBe(2); // ours wins
-      expect(result.config.b).toBe(3); // from ours
-      expect(result.config.c).toBe(4); // from theirs
+      expect(requireJsonObject(requireJsonObject(result).config).a).toBe(2); // ours wins
+      expect(requireJsonObject(requireJsonObject(result).config).b).toBe(3); // from ours
+      expect(requireJsonObject(requireJsonObject(result).config).c).toBe(4); // from theirs
     });
 
     it('should include keys from all three versions', () => {
@@ -265,7 +279,7 @@ describe('git:merge-json', () => {
       const result = mergeObjects(base, ours, theirs);
 
       // Simple arrays prefer ours
-      expect(result.tags).toEqual(['c', 'd']);
+      expect(requireJsonObject(result).tags).toEqual(['c', 'd']);
     });
 
     it('should handle null and undefined values', () => {
@@ -275,8 +289,8 @@ describe('git:merge-json', () => {
 
       const result = mergeObjects(base, ours, theirs);
 
-      expect(result.b).toBe('value');
-      expect(result.c).toBe('other');
+      expect(requireJsonObject(result).b).toBe('value');
+      expect(requireJsonObject(result).c).toBe('other');
     });
 
     it('should not pollute prototypes from untrusted merge input', () => {
@@ -299,15 +313,19 @@ describe('git:merge-json', () => {
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
 
       // Dangerous keys are dropped, not written into the merged output.
-      expect(Object.keys(result)).not.toContain('__proto__');
-      expect(Object.keys(result)).not.toContain('constructor');
-      expect(Object.keys(result)).not.toContain('prototype');
-      expect(Object.keys(result.nested ?? {})).not.toContain('__proto__');
+      expect(Object.keys(requireJsonObject(result))).not.toContain('__proto__');
+      expect(Object.keys(requireJsonObject(result))).not.toContain(
+        'constructor',
+      );
+      expect(Object.keys(requireJsonObject(result))).not.toContain('prototype');
+      expect(
+        Object.keys(requireJsonObject(requireJsonObject(result).nested ?? {})),
+      ).not.toContain('__proto__');
 
       // The result is a clean plain object with only the safe data preserved.
       expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
-      expect(result.safe).toBe(1);
-      expect((result as Record<string, unknown>).polluted).toBeUndefined();
+      expect(requireJsonObject(result).safe).toBe(1);
+      expect(requireJsonObject(result).polluted).toBeUndefined();
     });
 
     it('sanitizes ours on the theirs-is-null early-return path (review #1560)', () => {
@@ -315,12 +333,12 @@ describe('git:merge-json', () => {
       // `ours` can still carry prototype-polluting keys (both sides come from
       // untracked branch content), so the early return must sanitize too.
       const ours = JSON.parse('{"__proto__": {"polluted": true}, "safe": 1}');
-      const result = mergeObjects({}, ours, null) as Record<string, unknown>;
+      const result = requireJsonObject(mergeObjects({}, ours, null));
 
       expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
-      expect(Object.keys(result)).not.toContain('__proto__');
-      expect((result as Record<string, unknown>).polluted).toBeUndefined();
-      expect(result.safe).toBe(1);
+      expect(Object.keys(requireJsonObject(result))).not.toContain('__proto__');
+      expect(requireJsonObject(result).polluted).toBeUndefined();
+      expect(requireJsonObject(result).safe).toBe(1);
     });
   });
 
@@ -343,7 +361,11 @@ describe('git:merge-json', () => {
       const merged = mergeObjects(base, ours, theirs);
 
       expect(merged).toHaveLength(3);
-      expect(merged.map((o: any) => o.id).sort()).toEqual(['a', 'b', 'c']);
+      expect(
+        requireJsonArray(merged)
+          .map((o) => requireJsonObject(o).id)
+          .sort(),
+      ).toEqual(['a', 'b', 'c']);
     });
 
     it('should handle empty base (simulated new file)', () => {
@@ -378,13 +400,13 @@ describe('git:merge-json', () => {
 
       const merged = mergeObjects(base, ours, theirs);
 
-      expect(merged.version).toBe('1.0');
-      expect(merged.events).toHaveLength(3);
-      expect(merged.events.map((e: any) => e.id).sort()).toEqual([
-        'a',
-        'meeting-1',
-        'weather-1',
-      ]);
+      expect(requireJsonObject(merged).version).toBe('1.0');
+      expect(requireJsonObject(merged).events).toHaveLength(3);
+      expect(
+        requireJsonArray(requireJsonObject(merged).events)
+          .map((e) => requireJsonObject(e).id)
+          .sort(),
+      ).toEqual(['a', 'meeting-1', 'weather-1']);
     });
   });
 });

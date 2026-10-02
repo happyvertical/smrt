@@ -17,6 +17,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { initCommands } from '../init.js';
 
 let tempDir: string;
@@ -33,7 +34,7 @@ function writePackageJson(content: Record<string, unknown> | string): void {
   );
 }
 
-const init = initCommands.init.handler;
+const init = requireCommandHandler(initCommands.init);
 const INSTALLED_CLI_VERSION = JSON.parse(
   readFileSync(new URL('../../../package.json', import.meta.url), 'utf-8'),
 ).version as string;

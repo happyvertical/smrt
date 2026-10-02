@@ -20,6 +20,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { docsCommands } from '../docs-claude.js';
 
 let tempDir: string;
@@ -89,7 +90,9 @@ describe('docs:agents handler', () => {
       claude: '# ai\n\nAI client docs.',
     });
 
-    await docsCommands['docs:agents'].handler([], { 'dry-run': true });
+    await requireCommandHandler(docsCommands['docs:agents'])([], {
+      'dry-run': true,
+    });
 
     const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(printed).toContain('# SMRT Framework Context');
@@ -116,7 +119,9 @@ describe('docs:agents handler', () => {
     mkdirSync(moduleDir);
     writeFileSync(join(moduleDir, 'details.md'), '# Details\n\nbody.');
 
-    await docsCommands['docs:agents'].handler([], { 'dry-run': true });
+    await requireCommandHandler(docsCommands['docs:agents'])([], {
+      'dry-run': true,
+    });
     const printed = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(printed).toContain(
       '- [agents/details.md](<@happyvertical/smrt-alias/agents/details.md>)',
@@ -146,7 +151,7 @@ describe('docs:agents handler', () => {
       );
     }
 
-    await docsCommands[command].handler([], { 'dry-run': true });
+    await requireCommandHandler(docsCommands[command])([], { 'dry-run': true });
     const selected = logSpy.mock.calls.map((call) => call[0]).join('\n');
     for (const name of ['smrt-content', 'ai']) {
       expect(selected).toContain(
@@ -156,7 +161,7 @@ describe('docs:agents handler', () => {
       expect(selected).not.toContain(`${name} module body.`);
     }
     logSpy.mockClear();
-    await docsCommands[command].handler([], {
+    await requireCommandHandler(docsCommands[command])([], {
       'dry-run': true,
       complete: true,
     });
@@ -189,7 +194,9 @@ describe('docs:agents handler', () => {
       join(tempDir, 'node_modules', '@happyvertical', 'smrt-alias'),
       'dir',
     );
-    await docsCommands['docs:agents'].handler([], { 'dry-run': true });
+    await requireCommandHandler(docsCommands['docs:agents'])([], {
+      'dry-run': true,
+    });
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Custom SDK expertise');
     expect(output).not.toContain('Local fallback expertise');
@@ -202,7 +209,7 @@ describe('docs:agents handler', () => {
       readme: '## Usage\n\nUse it.',
     });
 
-    await docsCommands['docs:agents'].handler([], {});
+    await requireCommandHandler(docsCommands['docs:agents'])([], {});
 
     const outputPath = join(tempDir, '.agents', 'smrt-framework.md');
     expect(existsSync(outputPath)).toBe(true);
@@ -220,7 +227,9 @@ describe('docs:agents handler', () => {
     }) as any);
 
     await expect(
-      docsCommands['docs:agents'].handler([], { 'dry-run': true }),
+      requireCommandHandler(docsCommands['docs:agents'])([], {
+        'dry-run': true,
+      }),
     ).rejects.toThrow('process.exit called');
 
     expect(exitSpy).toHaveBeenCalledWith(1);
@@ -232,7 +241,7 @@ describe('docs:agents handler', () => {
       agents: '# smrt-content\n\nDocs.',
     });
 
-    await docsCommands['docs:claude'].handler([], {});
+    await requireCommandHandler(docsCommands['docs:claude'])([], {});
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('deprecated'));
     expect(existsSync(join(tempDir, '.claude', 'smrt-framework.md'))).toBe(
@@ -262,7 +271,9 @@ describe('docs:agents handler', () => {
       agents: '# smrt-content\n\nDocs.',
     });
 
-    await docsCommands['docs:agents'].handler([], { 'dry-run': true });
+    await requireCommandHandler(docsCommands['docs:agents'])([], {
+      'dry-run': true,
+    });
 
     const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(printed).toContain('## Framework Documentation');
@@ -289,7 +300,7 @@ describe('docs:agents handler', () => {
       'utf-8',
     );
 
-    await docsCommands['docs:agents'].handler([], {});
+    await requireCommandHandler(docsCommands['docs:agents'])([], {});
 
     const exportedPath = join(tempDir, '.agents', 'smrt-knowledge-graph.json');
     expect(existsSync(exportedPath)).toBe(true);
@@ -343,9 +354,9 @@ describe('docs:agents handler', () => {
     }) as any);
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await expect(docsCommands['docs:agents'].handler([], {})).rejects.toThrow(
-      'process.exit called',
-    );
+    await expect(
+      requireCommandHandler(docsCommands['docs:agents'])([], {}),
+    ).rejects.toThrow('process.exit called');
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(
@@ -369,7 +380,7 @@ describe('docs:agents handler', () => {
       agents: '# smrt-content\n\nDocs.',
     });
 
-    await docsCommands['docs:agents'].handler([], {});
+    await requireCommandHandler(docsCommands['docs:agents'])([], {});
 
     expect(
       existsSync(join(tempDir, '.agents', 'smrt-knowledge-graph.json')),
@@ -391,7 +402,9 @@ describe('docs:agents handler', () => {
     mkdirSync(brokenDir, { recursive: true });
     writeFileSync(join(brokenDir, 'package.json'), '{ broken json', 'utf-8');
 
-    await docsCommands['docs:agents'].handler([], { 'dry-run': true });
+    await requireCommandHandler(docsCommands['docs:agents'])([], {
+      'dry-run': true,
+    });
 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('Could not read package.json'),
@@ -423,7 +436,9 @@ describe('docs:agents handler', () => {
       'utf-8',
     );
 
-    await docsCommands['docs:agents'].handler([], { 'dry-run': true });
+    await requireCommandHandler(docsCommands['docs:agents'])([], {
+      'dry-run': true,
+    });
 
     const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(printed).toContain('@happyvertical/smrt-widgets');

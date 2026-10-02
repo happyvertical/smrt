@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -223,12 +224,13 @@ describe('schema contract', () => {
       schemaContract: {
         requiredFields: ['@happyvertical/smrt-content:Mirror.feedSourceId'],
       },
+      // Schema evaluation reads getTableSchema only; this is a partial adapter fixture.
       db: {
         getTableSchema: vi.fn().mockResolvedValue({
           columns: { feed_source_id: { type: 'TEXT' } },
           indexes: {},
         }),
-      },
+      } as unknown as DatabaseInterface,
     });
 
     expect(report.ok).toBe(true);
@@ -271,7 +273,7 @@ describe('schema contract', () => {
           columns: { feed_u_r_l_id: { type: 'TEXT' } },
           indexes: {},
         }),
-      },
+      } as unknown as DatabaseInterface,
     });
 
     expect(report.ok).toBe(true);
@@ -308,7 +310,7 @@ describe('schema contract', () => {
           columns: {},
           indexes: {},
         }),
-      },
+      } as unknown as DatabaseInterface,
     });
 
     expect(report.ok).toBe(false);
@@ -345,7 +347,7 @@ describe('schema contract', () => {
             },
           ],
         }),
-      },
+      } as unknown as DatabaseInterface,
     });
 
     expect(report.ok).toBe(true);

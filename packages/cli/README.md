@@ -8,6 +8,12 @@ Developer CLI for the s-m-r-t framework. Provides introspection, code generation
 pnpm add -D @happyvertical/smrt-cli
 ```
 
+For package validation, `pnpm --filter @happyvertical/smrt-cli typecheck`
+checks both CLI source and all `src/**/*.test.ts` / `src/**/*.spec.ts` fixtures.
+The test project uses the repository's test-only TypeScript settings in
+`tsconfig.test.json`; production declarations remain under
+`tsconfig.typecheck.json`.
+
 ## Commands
 
 ### Introspection

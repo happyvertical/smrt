@@ -8,6 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../__tests__/command-handler.js';
 
 const fixture = vi.hoisted(() => ({ source: {} as any, config: {} as any }));
 vi.mock('../loaders/index.js', async (importOriginal) => ({
@@ -55,7 +56,7 @@ it.each([
     __tempDir: extracted,
     __templateRoot: subdir,
   };
-  await gnodeCommands['gnode create'].handler(['sample'], {
+  await requireCommandHandler(gnodeCommands['gnode create'])(['sample'], {
     outputDir: join(p, 'app'),
     mcpApps: true,
   });
@@ -78,7 +79,7 @@ it('cleans a Git checkout when overlay generation fails', async () => {
     __templateRoot: extracted,
   };
   await expect(
-    gnodeCommands['gnode create'].handler(['sample'], {
+    requireCommandHandler(gnodeCommands['gnode create'])(['sample'], {
       outputDir: join(p, 'app'),
       mcpApps: true,
     }),
@@ -93,7 +94,7 @@ it.each([
   const p = mkdtempSync(join(tmpdir(), 'mcp-name-'));
   roots.push(p);
   await expect(
-    gnodeCommands['gnode create'].handler([name], {
+    requireCommandHandler(gnodeCommands['gnode create'])([name], {
       outputDir: join(p, 'app'),
       mcpApps: true,
     }),

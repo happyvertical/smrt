@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const {
   autoDiscoverAndLoadMock,
@@ -157,7 +158,7 @@ const {
     migrationAttempts,
     planForeignKeyCreationMock: vi.fn((schemas: unknown[]) => ({
       schemas,
-      deferredStatements: [],
+      deferredStatements: [] as string[],
     })),
     transactionRolledBack,
     MockMigrationTracker,
@@ -304,7 +305,7 @@ describe('db:migrate atomic schema execution', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'postgres-safe': true,
     });
 
@@ -362,7 +363,7 @@ describe('db:migrate atomic schema execution', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     expect(migrationAttempts.slice(0, 2)).toEqual([
       'create_table_left_nodes',
@@ -384,7 +385,7 @@ describe('db:migrate atomic schema execution', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'force-migration': 'add_column_contents_first_column',
     });
 
@@ -402,7 +403,7 @@ describe('db:migrate atomic schema execution', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'force-migration': [
         'add_column_contents_first_column',
         'add_column_contents_second_column',
@@ -427,7 +428,7 @@ describe('db:migrate atomic schema execution', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'force-migration': ['add_column_contents_missing_column'],
     });
 
@@ -460,7 +461,7 @@ describe('db:migrate atomic schema execution', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'postgres-safe': true,
     });
 
@@ -489,7 +490,7 @@ describe('db:migrate atomic schema execution', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     expect(trackerOptions[0].useConcurrentIndexes).toBe(false);
     expect(migrationApplyAllOptions[0]).toMatchObject({ postgresSafe: false });
@@ -515,7 +516,7 @@ describe('db:migrate atomic schema execution', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     expect(trackerOptions[0]).toMatchObject({
       lockTimeout: 5000,
@@ -528,7 +529,7 @@ describe('db:migrate atomic schema execution', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     expect(trackerOptions[0]).toMatchObject({
       lockTimeout: 30_000,
@@ -565,7 +566,7 @@ describe('db:migrate atomic schema execution', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'postgres-safe': true,
     });
 

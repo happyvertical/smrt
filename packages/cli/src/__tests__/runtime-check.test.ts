@@ -141,6 +141,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@fixture/messages:EmailAccount': {
           className: 'EmailAccount',
+          name: 'emailaccount',
+          filePath: '/fixtures/EmailAccount.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@fixture/messages:EmailAccount',
           packageName: '@fixture/messages',
           collection: 'email_accounts',
@@ -186,6 +190,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@fixture/messages:EmailAccount': {
           className: 'EmailAccount',
+          name: 'emailaccount',
+          filePath: '/fixtures/EmailAccount.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@fixture/messages:EmailAccount',
           packageName: '@fixture/messages',
           collection: 'email_accounts',
@@ -223,6 +231,10 @@ describe('runRuntimeCheck', () => {
 
     const externalDefinition = {
       className: 'FixtureProfile',
+      name: 'fixtureprofile',
+      filePath: '/fixtures/FixtureProfile.ts',
+      methods: {},
+      decoratorConfig: {},
       qualifiedName: '@fixture/profiles:FixtureProfile',
       packageName: '@fixture/profiles',
       collection: 'profiles',
@@ -249,6 +261,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@test/app:FixtureStaffProfile': {
           className: 'FixtureStaffProfile',
+          name: 'fixturestaffprofile',
+          filePath: '/fixtures/FixtureStaffProfile.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@test/app:FixtureStaffProfile',
           packageName: '@test/app',
           collection: 'profiles',
@@ -287,9 +303,16 @@ describe('runRuntimeCheck', () => {
     );
     tempDirs.push(projectRoot);
 
-    const family = (packageName: string, childName: string) => ({
+    const family = (
+      packageName: string,
+      childName: string,
+    ): SmartObjectManifest['objects'] => ({
       [`${packageName}:FixtureProfile`]: {
         className: 'FixtureProfile',
+        name: 'fixtureprofile',
+        filePath: '/fixtures/FixtureProfile.ts',
+        methods: {},
+        decoratorConfig: {},
         qualifiedName: `${packageName}:FixtureProfile`,
         packageName,
         collection: 'profiles',
@@ -297,6 +320,10 @@ describe('runRuntimeCheck', () => {
       },
       [`${packageName}:${childName}`]: {
         className: childName,
+        name: childName.toLowerCase(),
+        filePath: `/fixtures/${childName}.ts`,
+        methods: {},
+        decoratorConfig: {},
         qualifiedName: `${packageName}:${childName}`,
         packageName,
         collection: 'profiles',
@@ -360,6 +387,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@fixture/widgets:Widget': {
           className: 'Widget',
+          name: 'widget',
+          filePath: '/fixtures/Widget.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@fixture/widgets:Widget',
           packageName: '@fixture/widgets',
           collection: 'widgets',
@@ -377,6 +408,10 @@ describe('runRuntimeCheck', () => {
         objects: {
           '@test/app:Widget': {
             className: 'Widget',
+            name: 'widget',
+            filePath: '/fixtures/Widget.ts',
+            methods: {},
+            decoratorConfig: {},
             qualifiedName: '@test/app:Widget',
             packageName: '@test/app',
             collection: 'widgets',
@@ -416,6 +451,10 @@ describe('runRuntimeCheck', () => {
         objects: {
           Widget: {
             className: 'Widget',
+            name: 'widget',
+            filePath: '/fixtures/Widget.ts',
+            methods: {},
+            decoratorConfig: {},
             collection: 'widgets',
             fields: { title: { type: 'text', required: true } },
           },
@@ -516,6 +555,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@fixture/users:User': {
           className: 'User',
+          name: 'user',
+          filePath: '/fixtures/User.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@fixture/users:User',
           packageName: '@fixture/users',
           collection: 'users',
@@ -586,6 +629,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@fixture/users:User': {
           className: 'User',
+          name: 'user',
+          filePath: '/fixtures/User.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@fixture/users:User',
           packageName: '@fixture/users',
           collection: 'users',
@@ -703,6 +750,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@happyvertical/smrt-messages:EmailAccount': {
           className: 'EmailAccount',
+          name: 'emailaccount',
+          filePath: '/fixtures/EmailAccount.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@happyvertical/smrt-messages:EmailAccount',
           packageName: '@happyvertical/smrt-messages',
           collection: 'email_accounts',
@@ -723,6 +774,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@test/app:EmailAccount': {
           className: 'EmailAccount',
+          name: 'emailaccount',
+          filePath: '/fixtures/EmailAccount.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@test/app:EmailAccount',
           packageName: '@test/app',
           collection: 'email_accounts',
@@ -759,6 +814,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@happyvertical/smrt-profiles:FixtureProfile': {
           className: 'FixtureProfile',
+          name: 'fixtureprofile',
+          filePath: '/fixtures/FixtureProfile.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@happyvertical/smrt-profiles:FixtureProfile',
           packageName: '@happyvertical/smrt-profiles',
           collection: 'profiles',
@@ -778,6 +837,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@test/app:FixtureStaffProfile': {
           className: 'FixtureStaffProfile',
+          name: 'fixturestaffprofile',
+          filePath: '/fixtures/FixtureStaffProfile.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@test/app:FixtureStaffProfile',
           packageName: '@test/app',
           collection: 'profiles',
@@ -824,6 +887,10 @@ describe('runRuntimeCheck', () => {
         objects: {
           '@fixture/parent:FixtureParent': {
             className: 'FixtureParent',
+            name: 'fixtureparent',
+            filePath: '/fixtures/FixtureParent.ts',
+            methods: {},
+            decoratorConfig: {},
             qualifiedName: '@fixture/parent:FixtureParent',
             packageName: '@fixture/parent',
             collection: 'profiles',
@@ -854,6 +921,10 @@ describe('runRuntimeCheck', () => {
         objects: {
           '@fixture/child:FixtureChild': {
             className: 'FixtureChild',
+            name: 'fixturechild',
+            filePath: '/fixtures/FixtureChild.ts',
+            methods: {},
+            decoratorConfig: {},
             qualifiedName: '@fixture/child:FixtureChild',
             packageName: '@fixture/child',
             collection: 'profiles',
@@ -874,6 +945,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@test/app:FixtureGrandchild': {
           className: 'FixtureGrandchild',
+          name: 'fixturegrandchild',
+          filePath: '/fixtures/FixtureGrandchild.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@test/app:FixtureGrandchild',
           packageName: '@test/app',
           collection: 'profiles',
@@ -909,6 +984,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@fixture/profiles-a:FixtureProfile': {
           className: 'FixtureProfile',
+          name: 'fixtureprofile',
+          filePath: '/fixtures/FixtureProfile.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@fixture/profiles-a:FixtureProfile',
           packageName: '@fixture/profiles-a',
           collection: 'profiles',
@@ -926,6 +1005,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@fixture/profiles-b:FixtureProfile': {
           className: 'FixtureProfile',
+          name: 'fixtureprofile',
+          filePath: '/fixtures/FixtureProfile.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@fixture/profiles-b:FixtureProfile',
           packageName: '@fixture/profiles-b',
           collection: 'profiles',
@@ -944,6 +1027,10 @@ describe('runRuntimeCheck', () => {
       objects: {
         '@test/app:FixtureStaffProfile': {
           className: 'FixtureStaffProfile',
+          name: 'fixturestaffprofile',
+          filePath: '/fixtures/FixtureStaffProfile.ts',
+          methods: {},
+          decoratorConfig: {},
           qualifiedName: '@test/app:FixtureStaffProfile',
           packageName: '@test/app',
           collection: 'profiles',
@@ -1011,6 +1098,10 @@ describe('runRuntimeCheck', () => {
         objects: {
           '@happyvertical/smrt-core:CoreFixtureA': {
             className: 'CoreFixtureA',
+            name: 'corefixturea',
+            filePath: '/fixtures/CoreFixtureA.ts',
+            methods: {},
+            decoratorConfig: {},
             qualifiedName: '@happyvertical/smrt-core:CoreFixtureA',
             packageName: '@happyvertical/smrt-core',
             collection: 'core_fixtures',
@@ -1035,6 +1126,10 @@ describe('runRuntimeCheck', () => {
         objects: {
           '@happyvertical/smrt-core:CoreFixtureB': {
             className: 'CoreFixtureB',
+            name: 'corefixtureb',
+            filePath: '/fixtures/CoreFixtureB.ts',
+            methods: {},
+            decoratorConfig: {},
             qualifiedName: '@happyvertical/smrt-core:CoreFixtureB',
             packageName: '@happyvertical/smrt-core',
             collection: 'core_fixtures',
