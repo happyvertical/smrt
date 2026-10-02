@@ -18,6 +18,7 @@ export {
 export { default as ActivityBadge } from './admin-shell/ActivityBadge.svelte';
 export { default as ActivityItem } from './admin-shell/ActivityItem.svelte';
 export { default as ActivityList } from './admin-shell/ActivityList.svelte';
+export { default as ActivityTicker } from './admin-shell/ActivityTicker.svelte';
 export { default as ActivityToasts } from './admin-shell/ActivityToasts.svelte';
 export { default as AdminShell } from './admin-shell/AdminShell.svelte';
 export { default as AppScopePanel } from './admin-shell/AppScopePanel.svelte';

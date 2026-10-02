@@ -75,6 +75,26 @@ and touch input across mobile widths and desktop panel-state combinations.
 
 See `src/components/workspace/MIGRATION.md` for the old-to-new concept map.
 
+### Activity ticker
+
+`ActivityTicker` accepts app-owned `activities: ReadonlyArray<ShellActivity>` plus
+optional `label` and `emptyLabel`. It never fetches data or establishes authority.
+Render it in `AdminShell`'s `systemBar` slot with `activities={shell.activities}`;
+render `ActivityList filter={{ status: 'running' }}` in `systemPanel` for details.
+Connect the same registry to actual jobs through an authenticated app adapter or
+the `activityFeed` below. Queued and terminal records never appear as running.
+
+A single running activity is static. Multiple activities scroll continuously with
+a persistent Pause/Resume control and pause on hover/focus. A separate accessible
+list contains each process once; visual loop copies are hidden from assistive
+technology. Reduced motion disables animation and allows manual horizontal
+scrolling. Optional finite 0–100 progress is shown; no progress is inferred.
+
+Focused validation: `pnpm --filter @happyvertical/smrt-svelte exec vitest run
+src/components/workspace/__tests__/ActivityTicker.test.ts
+src/components/workspace/__tests__/index.test.ts`, then the activity ticker's
+Chromium scenarios via the package's documented `test:e2e` command.
+
 ### Live activity feed adapter (`./web`, #1779)
 
 `activityFeed({ collection, map, shell })` (from `@happyvertical/smrt-svelte/web`)
