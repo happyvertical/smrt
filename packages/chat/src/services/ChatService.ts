@@ -41,6 +41,8 @@ interface InternalMessageWrite {
   agentSessionId?: string | null;
   replyToMessageId?: string | null;
   toolCallData?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+  attachments?: ChatMessageAttachment[] | null;
   /** Internal-only escape hatch for system-authored writes. */
   skipMembershipCheck?: boolean;
 }
@@ -61,6 +63,19 @@ export interface AgentReplyParams {
    * room/tenant as the session (validated in {@link ChatService.writeMessage}).
    */
   threadId?: string | null;
+}
+
+/**
+ * A file reference stored on a user message (`ChatMessage.attachments`). The
+ * caller must have verified the reference belongs to the actor (for example,
+ * an upload it just stored) — the service stores it as given.
+ */
+export interface ChatMessageAttachment {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  url?: string;
 }
 
 /** Tenant-bound agent session lookup descriptor for the read facade. */
@@ -283,6 +298,14 @@ export class ChatService {
     threadId?: string | null;
     agentSessionId?: string | null;
     replyToMessageId?: string | null;
+    /**
+     * The sending client's idempotency key, stored as
+     * `metadata.clientRequestId` so a retry can be recognised and the reply
+     * matched to its send. Untrusted data, never authority.
+     */
+    clientRequestId?: string | null;
+    /** Already-verified file references to store on the message. */
+    attachments?: ChatMessageAttachment[] | null;
   }) {
     return this.#writeMessage({
       tenantId: params.tenantId,
@@ -294,6 +317,10 @@ export class ChatService {
       threadId: params.threadId ?? null,
       agentSessionId: params.agentSessionId ?? null,
       replyToMessageId: params.replyToMessageId ?? null,
+      metadata: params.clientRequestId
+        ? { clientRequestId: params.clientRequestId }
+        : null,
+      attachments: params.attachments?.length ? params.attachments : null,
     });
   }
 
@@ -379,6 +406,10 @@ export class ChatService {
       toolCallData: write.toolCallData
         ? JSON.stringify(write.toolCallData)
         : null,
+      ...(write.metadata ? { metadata: JSON.stringify(write.metadata) } : {}),
+      ...(write.attachments
+        ? { attachments: JSON.stringify(write.attachments) }
+        : {}),
     });
 
     // Update room's lastMessageAt

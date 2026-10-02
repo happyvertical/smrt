@@ -1,1 +1,1 @@
-export { ChatService } from './ChatService.js';
+export { type ChatMessageAttachment, ChatService } from './ChatService.js';
