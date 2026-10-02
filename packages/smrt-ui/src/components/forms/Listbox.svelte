@@ -90,15 +90,31 @@ function move(event: KeyboardEvent, index: number) {
 $effect(() => {
   const form = rootEl?.closest('form');
   if (!form) return;
+  let disposed = false;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
   const reset = (event: Event) => {
-    queueMicrotask(() => {
-      if (event.defaultPrevented) return;
+    const valueAtDispatch = value;
+    // Native dispatch can checkpoint microtasks between reset listeners.
+    // Wait for the next task so later cancellation and edits win.
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      if (
+        disposed ||
+        event.defaultPrevented ||
+        !Object.is(value, valueAtDispatch)
+      )
+        return;
       value = initialValue;
       if (value !== undefined) onvaluechange?.(value);
     });
+    timers.add(timer);
   };
   form.addEventListener('reset', reset);
-  return () => form.removeEventListener('reset', reset);
+  return () => {
+    disposed = true;
+    form.removeEventListener('reset', reset);
+    for (const timer of timers) clearTimeout(timer);
+  };
 });
 useControlRegistration(() => {
   const root = rootEl;
@@ -135,7 +151,7 @@ useControlRegistration(() => {
 <div bind:this={rootEl} class="listbox {className}" role="listbox" aria-label={label} aria-disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
-  {#if name}<input type="hidden" {name} value={value ?? ''} {disabled} />{/if}
+  {#if name}<input type="hidden" {name} value={value ?? ''} disabled={disabled || options.some((option) => String(option.value) === String(value) && option.disabled)} />{/if}
   {#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" aria-selected={value === option.value}
     disabled={disabled || option.disabled} tabindex={value === option.value || (value === undefined && index === 0) ? 0 : -1}
     onkeydown={(event) => move(event, index)} onclick={() => select(option.value, true)}>{option.label}</button>{/each}

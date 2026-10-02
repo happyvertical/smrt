@@ -182,18 +182,36 @@ function handleKeydown(event: KeyboardEvent) {
 $effect(() => {
   const form = inputEl?.form;
   if (!form) return;
+  let disposed = false;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
   const reset = (event: Event) => {
-    queueMicrotask(() => {
-      if (event.defaultPrevented) return;
+    const valueAtDispatch = value;
+    const queryAtDispatch = query;
+    // Native dispatch can checkpoint microtasks between reset listeners.
+    // Wait for the next task so later cancellation and edits win.
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      if (
+        disposed ||
+        event.defaultPrevented ||
+        value !== valueAtDispatch ||
+        query !== queryAtDispatch
+      )
+        return;
       value = initialValue;
       query = labelForValue(initialValue);
       typed = false;
       open = false;
       onvaluechange?.(value);
     });
+    timers.add(timer);
   };
   form.addEventListener('reset', reset);
-  return () => form.removeEventListener('reset', reset);
+  return () => {
+    disposed = true;
+    form.removeEventListener('reset', reset);
+    for (const timer of timers) clearTimeout(timer);
+  };
 });
 $effect(() => {
   if (!open) return;

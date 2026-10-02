@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { tick } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createControlInteractionRegistry } from '../control-interaction.js';
+import MultiSelect from '../MultiSelect.svelte';
 import Fixture from './multiselect-form.fixture.svelte';
 
 function form() {
@@ -58,7 +59,7 @@ describe('MultiSelect native form values', () => {
       screen.getByRole('option', { name: 'Administrator' }),
     );
     form().reset();
-    await tick();
+    await settleReset();
     expect(data().getAll('roles')).toEqual(['42']);
     await open();
     expect(screen.getByRole('option', { name: 'Operator' })).toHaveAttribute(
@@ -75,7 +76,7 @@ describe('MultiSelect native form values', () => {
     await userEvent.click(screen.getByRole('option', { name: 'Operator' }));
     form().addEventListener('reset', (event) => event.preventDefault());
     form().reset();
-    await tick();
+    await settleReset();
     expect(data().getAll('roles')).toEqual(['42']);
   });
   it('preserves registry identity and posts only applied canonical values', async () => {
@@ -94,5 +95,125 @@ describe('MultiSelect native form values', () => {
     );
     expect(data().getAll('roles')).toEqual(['42', 'admin']);
     expect(registry.get(identity)?.state.value).toEqual([42, 'admin']);
+  });
+});
+
+async function settleReset() {
+  await new Promise<void>((resolve) => setTimeout(resolve));
+  await tick();
+}
+
+describe('MultiSelect deferred native reset', () => {
+  it('preserves a newer programmatic value before reset completion', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const view = render(MultiSelect, {
+      target,
+      props: {
+        options: [
+          { value: 42, label: 'Initial' },
+          { value: 'other', label: 'Other' },
+          { value: 'changed', label: 'Changed' },
+        ],
+        label: 'Choice',
+        name: 'choice',
+        values: [42],
+      },
+    });
+    await view.rerender({ values: ['changed'] });
+    target.reset();
+    await view.rerender({ values: ['other'] });
+    await settleReset();
+    expect(new FormData(target).getAll('choice')).toEqual(['other']);
+    await view.unmount();
+    target.remove();
+  });
+  it('cancels pending completion when unmounted', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const onChange = vi.fn();
+    const view = render(MultiSelect, {
+      target,
+      props: {
+        options: [
+          { value: 42, label: 'Initial' },
+          { value: 'other', label: 'Other' },
+          { value: 'changed', label: 'Changed' },
+        ],
+        label: 'Choice',
+        name: 'choice',
+        values: [42],
+        onvalueschange: onChange,
+      },
+    });
+    target.reset();
+    await view.unmount();
+    await settleReset();
+    expect(onChange).not.toHaveBeenCalled();
+    target.remove();
+  });
+});
+
+describe('MultiSelect selected disabled option posting', () => {
+  it('omits initially disabled selections and responds to dynamic disable without losing state', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const options = [
+      { value: 42, label: 'Selected', disabled: true },
+      { value: 'other', label: 'Other' },
+    ];
+    const view = render(MultiSelect, {
+      target,
+      props: {
+        options,
+        label: 'Choice',
+        name: 'choice',
+        values: [42, 'other'],
+      },
+    });
+    expect(new FormData(target).getAll('choice')).toEqual(['other']);
+    await view.rerender({
+      options: options.map((option) => ({ ...option, disabled: false })),
+    });
+    expect(new FormData(target).getAll('choice')).toEqual(['42', 'other']);
+    await view.rerender({ options });
+    expect(new FormData(target).getAll('choice')).toEqual(['other']);
+    await view.rerender({
+      options: options.map((option) => ({ ...option, disabled: false })),
+    });
+    expect(new FormData(target).getAll('choice')).toEqual(['42', 'other']);
+    await view.unmount();
+    target.remove();
+  });
+});
+
+describe('MultiSelect reset listener ordering', () => {
+  it('honors cancellation from a later listener microtask', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const onChange = vi.fn();
+    const view = render(MultiSelect, {
+      target,
+      props: {
+        options: [
+          { value: 42, label: 'Initial' },
+          { value: 'changed', label: 'Changed' },
+        ],
+        label: 'Choice',
+        name: 'choice',
+        values: [42],
+        onvalueschange: onChange,
+      },
+    });
+    await view.rerender({ values: ['changed'] });
+    target.addEventListener('reset', (event) => {
+      queueMicrotask(() => event.preventDefault());
+    });
+    target.reset();
+    await settleReset();
+    expect(new FormData(target).getAll('choice')).toEqual(['changed']);
+    expect(onChange).not.toHaveBeenCalled();
+    await view.unmount();
+    target.remove();
   });
 });

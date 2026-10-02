@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { tick } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import Combobox from '../Combobox.svelte';
 import { createControlInteractionRegistry } from '../control-interaction.js';
 import FormFixture from './combobox-form.fixture.svelte';
 import LabelsFixture from './combobox-labels.fixture.svelte';
@@ -69,7 +70,7 @@ describe('Combobox native form value', () => {
     await userEvent.clear(input);
     await userEvent.type(input, 'changed');
     (screen.getByRole('form', { name: 'Order' }) as HTMLFormElement).reset();
-    await tick();
+    await settleReset();
     expect(data().getAll('sku')).toEqual([value]);
     expect(input).toHaveValue(value ? 'Plate 1/4 A36' : '');
   });
@@ -79,7 +80,7 @@ describe('Combobox native form value', () => {
     const form = screen.getByRole('form', { name: 'Order' });
     form.addEventListener('reset', (event) => event.preventDefault());
     await fireEvent.reset(form);
-    await tick();
+    await settleReset();
     expect(data().getAll('sku')).toEqual(['42']);
   });
   it('posts registry-applied values while preserving identity and staged isolation', async () => {
@@ -134,12 +135,12 @@ describe('Combobox labels and reopening', () => {
       value: '12cd-uuid-ponoka',
       valueLabel: undefined,
     });
-    await tick();
+    await settleReset();
     expect(input).toHaveValue('');
     expect(input).not.toHaveValue('12cd-uuid-ponoka');
 
     await view.rerender({ options: towns, value: '12cd-uuid-ponoka' });
-    await tick();
+    await settleReset();
     expect(input).toHaveValue('Ponoka');
   });
 
@@ -204,7 +205,94 @@ describe('Combobox labels and reopening', () => {
     expect(input).toHaveAttribute('aria-required', 'true');
 
     await view.rerender({ options: towns, value: '', required: true });
-    await tick();
+    await settleReset();
     expect(input.checkValidity()).toBe(false);
+  });
+});
+
+async function settleReset() {
+  await new Promise<void>((resolve) => setTimeout(resolve));
+  await tick();
+}
+
+describe('Combobox deferred native reset', () => {
+  it('preserves a newer programmatic value before reset completion', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const view = render(Combobox, {
+      target,
+      props: {
+        options: [
+          { value: 42, label: 'Initial' },
+          { value: 'other', label: 'Other' },
+          { value: 'changed', label: 'Changed' },
+        ],
+        label: 'Choice',
+        name: 'choice',
+        value: '42',
+      },
+    });
+    await view.rerender({ value: 'changed' });
+    target.reset();
+    await view.rerender({ value: 'other' });
+    await settleReset();
+    expect(new FormData(target).getAll('choice')).toEqual(['other']);
+    await view.unmount();
+    target.remove();
+  });
+  it('cancels pending completion when unmounted', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const onChange = vi.fn();
+    const view = render(Combobox, {
+      target,
+      props: {
+        options: [
+          { value: 42, label: 'Initial' },
+          { value: 'other', label: 'Other' },
+          { value: 'changed', label: 'Changed' },
+        ],
+        label: 'Choice',
+        name: 'choice',
+        value: '42',
+        onvaluechange: onChange,
+      },
+    });
+    target.reset();
+    await view.unmount();
+    await settleReset();
+    expect(onChange).not.toHaveBeenCalled();
+    target.remove();
+  });
+});
+
+describe('Combobox reset listener ordering', () => {
+  it('honors cancellation from a later listener microtask', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const onChange = vi.fn();
+    const view = render(Combobox, {
+      target,
+      props: {
+        options: [
+          { value: 42, label: 'Initial' },
+          { value: 'changed', label: 'Changed' },
+        ],
+        label: 'Choice',
+        name: 'choice',
+        value: '42',
+        onvaluechange: onChange,
+      },
+    });
+    await view.rerender({ value: 'changed' });
+    target.addEventListener('reset', (event) => {
+      queueMicrotask(() => event.preventDefault());
+    });
+    target.reset();
+    await settleReset();
+    expect(new FormData(target).getAll('choice')).toEqual(['changed']);
+    expect(onChange).not.toHaveBeenCalled();
+    await view.unmount();
+    target.remove();
   });
 });

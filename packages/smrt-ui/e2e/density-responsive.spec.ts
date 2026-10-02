@@ -229,3 +229,133 @@ test('required segmented controls reject unknown/disabled values and exclude dis
     }
   }
 });
+
+test('disabled selected list and multi values are omitted without changing their bindings', async ({
+  page,
+}) => {
+  await page.goto('/e2e/density-responsive.html?surface=choices');
+  const form = page.getByRole('form', { name: 'Choice posting' });
+  const entries = () =>
+    form.evaluate((element) =>
+      [...new FormData(element as HTMLFormElement).entries()],
+    );
+
+  await expect(page.locator('[data-bound="warehouse"]')).toHaveText(
+    'archived',
+  );
+  await expect(page.locator('[data-bound="channels"]')).toHaveText(
+    'email,archived',
+  );
+  expect(await entries()).toEqual([
+    ['country', 'ca'],
+    ['channels', 'email'],
+  ]);
+
+  await page.getByRole('button', { name: 'Toggle archived options' }).click();
+  await expect(page.getByRole('option', { name: 'Archived warehouse' })).toBeEnabled();
+  await expect(
+    page.locator('input[name="channels"][value="archived"]'),
+  ).toBeEnabled();
+  expect(await entries()).toEqual([
+    ['country', 'ca'],
+    ['warehouse', 'archived'],
+    ['channels', 'email'],
+    ['channels', 'archived'],
+  ]);
+  await expect(page.locator('[data-bound="warehouse"]')).toHaveText(
+    'archived',
+  );
+  await expect(page.locator('[data-bound="channels"]')).toHaveText(
+    'email,archived',
+  );
+
+  await page.getByRole('button', { name: 'Toggle archived options' }).click();
+  await expect(page.getByRole('option', { name: 'Archived warehouse' })).toBeDisabled();
+  await expect(
+    page.locator('input[name="channels"][value="archived"]'),
+  ).toBeDisabled();
+  expect(await entries()).toEqual([
+    ['country', 'ca'],
+    ['channels', 'email'],
+  ]);
+  await expect(page.locator('[data-bound="channels"]')).toHaveText(
+    'email,archived',
+  );
+});
+
+test('trusted reset button honors a later cancellation listener and successful reset', async ({
+  page,
+}) => {
+  await page.goto('/e2e/density-responsive.html?surface=choices');
+  const form = page.getByRole('form', { name: 'Choice posting' });
+  const entries = () =>
+    form.evaluate((element) =>
+      [...new FormData(element as HTMLFormElement).entries()],
+    );
+
+  const country = page.getByRole('combobox', { name: 'Country' });
+  await country.click();
+  await country.press('ArrowDown');
+  await country.press('Enter');
+  await page.getByRole('option', { name: 'Local warehouse' }).click();
+  await page.getByRole('button', { name: /Channels/ }).click();
+  await page.getByRole('option', { name: 'SMS' }).click();
+  await page.getByRole('button', { name: /Channels/ }).click();
+  await expect(page.locator('[data-bound="country"]')).toHaveText('us');
+  await expect(page.locator('[data-bound="warehouse"]')).toHaveText('local');
+  await expect(page.locator('[data-bound="channels"]')).toHaveText(
+    'email,archived,sms',
+  );
+  const changedEntries = [
+    ['country', 'us'],
+    ['warehouse', 'local'],
+    ['channels', 'email'],
+    ['channels', 'sms'],
+  ];
+  expect(await entries()).toEqual(changedEntries);
+  const callbacksBeforeReset = await page
+    .locator('[data-callback-log]')
+    .textContent();
+
+  // Register after the controls' reset handlers. The reset itself remains a
+  // trusted native action initiated by Playwright clicking the real button.
+  await form.evaluate((element) => {
+    element.addEventListener(
+      'reset',
+      (event) => event.preventDefault(),
+      { once: true },
+    );
+  });
+  await page.getByRole('button', { name: 'Reset choices' }).click();
+  await expect(page.locator('[data-bound="country"]')).toHaveText('us');
+  await expect(page.locator('[data-bound="warehouse"]')).toHaveText('local');
+  await expect(page.locator('[data-bound="channels"]')).toHaveText(
+    'email,archived,sms',
+  );
+  expect(await entries()).toEqual(changedEntries);
+  await expect(page.locator('[data-callback-log]')).toHaveText(
+    callbacksBeforeReset ?? '',
+  );
+
+  await page.getByRole('button', { name: 'Reset choices' }).click();
+  await expect(page.locator('[data-bound="country"]')).toHaveText('ca');
+  await expect(page.locator('[data-bound="warehouse"]')).toHaveText(
+    'archived',
+  );
+  await expect(page.locator('[data-bound="channels"]')).toHaveText(
+    'email,archived',
+  );
+  expect(await entries()).toEqual([
+    ['country', 'ca'],
+    ['channels', 'email'],
+  ]);
+  await expect(page.locator('[data-callback-log]')).toContainText(
+    'country:ca',
+  );
+  await expect(page.locator('[data-callback-log]')).toContainText(
+    'warehouse:archived',
+  );
+  await expect(page.locator('[data-callback-log]')).toContainText(
+    'channels:email,archived',
+  );
+});

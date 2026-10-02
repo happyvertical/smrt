@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { tick } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createControlInteractionRegistry } from '../control-interaction.js';
+import Listbox from '../Listbox.svelte';
 import Fixture from './listbox-form.fixture.svelte';
 
 function form() {
@@ -49,7 +50,7 @@ describe('Listbox native form value', () => {
       screen.getByRole('option', { name: 'Steel supplier' }),
     );
     form().reset();
-    await tick();
+    await settleReset();
     expect(data().getAll('vendor')).toEqual([value === undefined ? '' : '42']);
     expect(
       screen.getByRole('option', { name: 'Plate supplier' }),
@@ -65,7 +66,7 @@ describe('Listbox native form value', () => {
     );
     form().addEventListener('reset', (event) => event.preventDefault());
     form().reset();
-    await tick();
+    await settleReset();
     expect(data().getAll('vendor')).toEqual(['42']);
   });
   it('preserves registry identity and posts only applied values', async () => {
@@ -84,5 +85,120 @@ describe('Listbox native form value', () => {
     );
     expect(data().getAll('vendor')).toEqual(['42']);
     expect(registry.get(identity)?.state.value).toBe(42);
+  });
+});
+
+async function settleReset() {
+  await new Promise<void>((resolve) => setTimeout(resolve));
+  await tick();
+}
+
+describe('Listbox deferred native reset', () => {
+  it('preserves a newer programmatic value before reset completion', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const view = render(Listbox, {
+      target,
+      props: {
+        options: [
+          { value: 42, label: 'Initial' },
+          { value: 'other', label: 'Other' },
+          { value: 'changed', label: 'Changed' },
+        ],
+        label: 'Choice',
+        name: 'choice',
+        value: 42,
+      },
+    });
+    await view.rerender({ value: 'changed' });
+    target.reset();
+    await view.rerender({ value: 'other' });
+    await settleReset();
+    expect(new FormData(target).getAll('choice')).toEqual(['other']);
+    await view.unmount();
+    target.remove();
+  });
+  it('cancels pending completion when unmounted', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const onChange = vi.fn();
+    const view = render(Listbox, {
+      target,
+      props: {
+        options: [
+          { value: 42, label: 'Initial' },
+          { value: 'other', label: 'Other' },
+          { value: 'changed', label: 'Changed' },
+        ],
+        label: 'Choice',
+        name: 'choice',
+        value: 42,
+        onvaluechange: onChange,
+      },
+    });
+    target.reset();
+    await view.unmount();
+    await settleReset();
+    expect(onChange).not.toHaveBeenCalled();
+    target.remove();
+  });
+});
+
+describe('Listbox selected disabled option posting', () => {
+  it('omits initially disabled selections and responds to dynamic disable without losing state', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const options = [
+      { value: 42, label: 'Selected', disabled: true },
+      { value: 'other', label: 'Other' },
+    ];
+    const view = render(Listbox, {
+      target,
+      props: { options, label: 'Choice', name: 'choice', value: 42 },
+    });
+    expect(new FormData(target).getAll('choice')).toEqual([]);
+    await view.rerender({
+      options: options.map((option) => ({ ...option, disabled: false })),
+    });
+    expect(new FormData(target).getAll('choice')).toEqual(['42']);
+    await view.rerender({ options });
+    expect(new FormData(target).getAll('choice')).toEqual([]);
+    await view.rerender({
+      options: options.map((option) => ({ ...option, disabled: false })),
+    });
+    expect(new FormData(target).getAll('choice')).toEqual(['42']);
+    await view.unmount();
+    target.remove();
+  });
+});
+
+describe('Listbox reset listener ordering', () => {
+  it('honors cancellation from a later listener microtask', async () => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const onChange = vi.fn();
+    const view = render(Listbox, {
+      target,
+      props: {
+        options: [
+          { value: 42, label: 'Initial' },
+          { value: 'changed', label: 'Changed' },
+        ],
+        label: 'Choice',
+        name: 'choice',
+        value: 42,
+        onvaluechange: onChange,
+      },
+    });
+    await view.rerender({ value: 'changed' });
+    target.addEventListener('reset', (event) => {
+      queueMicrotask(() => event.preventDefault());
+    });
+    target.reset();
+    await settleReset();
+    expect(new FormData(target).getAll('choice')).toEqual(['changed']);
+    expect(onChange).not.toHaveBeenCalled();
+    await view.unmount();
+    target.remove();
   });
 });

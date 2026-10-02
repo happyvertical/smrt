@@ -30,6 +30,11 @@ switch (params.get('surface')) {
     });
     break;
   }
+  case 'choices': {
+    const { default: Choices } = await import('./choice-posting.svelte');
+    mount(Choices, { target });
+    break;
+  }
   default: {
     const { default: Density } = await import(
       '../src/components/forms/__tests__/touch-density.fixture.svelte',
