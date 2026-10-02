@@ -98,7 +98,9 @@ client to one async request. Its `RepositoryClientScope` must exactly match the
 repository's provider, owner, name, tenant, and self-hosted `baseUrl`; a
 mismatch throws before environment token resolution. The client is not stored
 on models or persisted, and the previous scope is restored when the callback
-settles.
+settles. In an active `TenantContext`, its tenant must also match the scoped
+repository; only an explicit `withSystemContext()` authorization bypasses that
+request-tenant check.
 
 ```typescript
 await withRepositoryClient(

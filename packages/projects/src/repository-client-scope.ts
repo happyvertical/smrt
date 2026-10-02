@@ -6,6 +6,7 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { getCurrentTenant, isSystemContext } from '@happyvertical/smrt-tenancy';
 import type { IRepository, RepositoryProviderType } from './types';
 
 /**
@@ -132,6 +133,22 @@ export function getScopedRepositoryClient(
   if (!matches) {
     throw new Error(
       'Request-scoped repository client does not match this repository identity.',
+    );
+  }
+
+  // A scoped provider credential must also remain in the tenant request that
+  // owns its repository. `withSystemContext()` is the tenancy package's
+  // explicit cross-tenant authorization; an absent context preserves the
+  // existing global/single-tenant behavior.
+  const tenant = getCurrentTenant();
+  if (
+    !isSystemContext() &&
+    tenant &&
+    (tenant.tenantId !== binding.scope.tenantId ||
+      tenant.tenantId !== repository.tenantId)
+  ) {
+    throw new Error(
+      'Request-scoped repository client does not match the active tenant context.',
     );
   }
   return binding.client;

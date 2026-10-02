@@ -16,7 +16,7 @@
 import { getProject } from '@happyvertical/projects';
 import { getRepository } from '@happyvertical/repos';
 import { getTestDatabase } from '@happyvertical/smrt-core';
-import { withTenant } from '@happyvertical/smrt-tenancy';
+import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IssueCollection } from '../collections/Issues';
@@ -273,6 +273,100 @@ describe('smrt-projects models', () => {
           async () => undefined,
         ),
       ).rejects.toThrow(/tenantId/i);
+    });
+
+    it('requires a matching active TenantContext even when scope and repository match', async () => {
+      const client = repoClient();
+      const tenantARepository = new Repository({
+        db,
+        owner: 'acme',
+        name: 'tenant-widgets',
+        tenantId: 'tenant-a',
+        tokenConfigKey: MISSING_KEY,
+      });
+      const matchingScope = {
+        provider: 'github' as const,
+        owner: 'acme',
+        repo: 'tenant-widgets',
+        tenantId: 'tenant-a',
+      };
+
+      await withTenant({ tenantId: 'tenant-a' }, async () => {
+        await withRepositoryClient(matchingScope, client, async () => {
+          expect(await tenantARepository.getClient()).toBe(client);
+          await expect(
+            withTenant({ tenantId: 'tenant-b' }, () =>
+              tenantARepository.getClient(),
+            ),
+          ).rejects.toThrow(/active tenant context/i);
+          expect(await tenantARepository.getClient()).toBe(client);
+        });
+      });
+
+      await expect(
+        withTenant({ tenantId: 'tenant-b' }, () =>
+          withRepositoryClient(matchingScope, client, () =>
+            tenantARepository.getClient(),
+          ),
+        ),
+      ).rejects.toThrow(/active tenant context/i);
+    });
+
+    it('allows global context and explicit system authorization for scoped clients', async () => {
+      const globalClient = repoClient();
+      const globalRepository = new Repository({
+        db,
+        owner: 'acme',
+        name: 'global-widgets',
+        tenantId: null,
+        tokenConfigKey: MISSING_KEY,
+      });
+      await withRepositoryClient(
+        {
+          provider: 'github',
+          owner: 'acme',
+          repo: 'global-widgets',
+          tenantId: null,
+        },
+        globalClient,
+        () => expect(globalRepository.getClient()).resolves.toBe(globalClient),
+      );
+      await expect(
+        withTenant({ tenantId: 'tenant-a' }, () =>
+          withRepositoryClient(
+            {
+              provider: 'github',
+              owner: 'acme',
+              repo: 'global-widgets',
+              tenantId: null,
+            },
+            globalClient,
+            () => globalRepository.getClient(),
+          ),
+        ),
+      ).rejects.toThrow(/active tenant context/i);
+
+      const tenantClient = repoClient();
+      const tenantRepository = new Repository({
+        db,
+        owner: 'acme',
+        name: 'tenant-widgets',
+        tenantId: 'tenant-a',
+        tokenConfigKey: MISSING_KEY,
+      });
+      await withSystemContext(() =>
+        withRepositoryClient(
+          {
+            provider: 'github',
+            owner: 'acme',
+            repo: 'tenant-widgets',
+            tenantId: 'tenant-a',
+          },
+          tenantClient,
+          () =>
+            expect(tenantRepository.getClient()).resolves.toBe(tenantClient),
+        ),
+      );
     });
 
     it('isolates concurrent scopes and restores an outer client after a nested failure', async () => {
