@@ -38,7 +38,9 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   it, `create({ slug: <reviewed id>, amount })` silently rewrote a reviewed
   expense or a receipt's evidence.
 - **Reviewed money is frozen.** While the stored status is `reviewed`,
-  `LOCKED_WHEN_REVIEWED` fields cannot change; `reopen()` first.
+  `LOCKED_WHEN_REVIEWED` fields (money, currency, both dates, cost object,
+  vendor, commitment, payer) cannot change; `reopen()` first. `recordedAt` is
+  compared as an instant, since drivers return it as a `Date` or a string.
 - **Drawdown counts once.** `ExpenseCollection.commitmentPosition()` sums only
   `reviewed` rows with no `duplicateOfId`, in the commitment's currency, deduped
   by id. Committed is the contract's `totalAmount` (or the line's `amount`).

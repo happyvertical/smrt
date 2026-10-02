@@ -998,6 +998,41 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   });
 
   describe('review round 2 (PR #3339)', () => {
+    it('freezes recordedAt on a reviewed expense until it is reopened', async () => {
+      await world.inTenant(async () => {
+        const reviewer = randomUUID();
+        const expense = await world.expense();
+        await expense.review({ reviewerProfileId: reviewer });
+        const recordedAt = expense.recordedAt?.toISOString();
+
+        // An unchanged instant (as hydrated from the database) still saves.
+        const loaded = await world.expenses.get({ id: expense.id });
+        if (!loaded) throw new Error('expense not loaded');
+        loaded.description = 'Lumber, reviewed';
+        await loaded.save();
+
+        loaded.recordedAt = new Date('2020-01-01T00:00:00.000Z');
+        await expectExpenseError(loaded.save(), 'EXPENSE_REVIEW_FIELDS_LOCKED');
+        expect(
+          (
+            await world.expenses.get({ id: expense.id })
+          )?.recordedAt?.toISOString(),
+        ).toBe(recordedAt);
+
+        // The refused instance still holds the change; reopen a fresh one.
+        const fresh = await world.expenses.get({ id: expense.id });
+        if (!fresh) throw new Error('expense not loaded');
+        await fresh.reopen({ reviewerProfileId: reviewer });
+        fresh.recordedAt = new Date('2020-01-01T00:00:00.000Z');
+        await fresh.save();
+        expect(
+          (
+            await world.expenses.get({ id: expense.id })
+          )?.recordedAt?.toISOString(),
+        ).toBe('2020-01-01T00:00:00.000Z');
+      });
+    });
+
     it('applies the limit to duplicate groups, not to the expense’s own receipts', async () => {
       await world.inTenant(async () => {
         const expense = await world.expense();

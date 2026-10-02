@@ -71,6 +71,7 @@ const LOCKED_WHEN_REVIEWED = [
   ['amount', 'amount'],
   ['currency', 'currency'],
   ['incurredOn', 'incurred_on'],
+  ['recordedAt', 'recorded_at'],
   ['category', 'category'],
   ['costObjectType', 'cost_object_type'],
   ['costObjectId', 'cost_object_id'],
@@ -629,7 +630,9 @@ export class Expense extends SmrtObject {
       const same =
         fieldName === 'amount'
           ? Number(before) === Number(after)
-          : asNullableString(before) === asNullableString(after);
+          : fieldName === 'recordedAt'
+            ? instantMs(before) === instantMs(after)
+            : asNullableString(before) === asNullableString(after);
       if (!same) {
         throw new ExpenseError(
           'EXPENSE_REVIEW_FIELDS_LOCKED',
