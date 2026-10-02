@@ -164,7 +164,13 @@ export {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 // Services
-export { type ChatMessageAttachment, ChatService } from './services/index.js';
+export {
+  ChatClientRequestConflictError,
+  type ChatClientRequestOutcome,
+  type ChatMessageAttachment,
+  ChatService,
+  clientRequestMessageId,
+} from './services/index.js';
 export {
   appendClientToolResults,
   buildManifestToolCatalog,

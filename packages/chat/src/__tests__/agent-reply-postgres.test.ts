@@ -26,7 +26,12 @@ import {
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ChatService, sendAgentReply } from '../services/ChatService.js';
+import {
+  ChatClientRequestConflictError,
+  ChatService,
+  clientRequestMessageId,
+  sendAgentReply,
+} from '../services/ChatService.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -192,5 +197,62 @@ describePostgres('agent reply authoring on PostgreSQL (#2995)', () => {
       session.id as string,
     );
     expect(rows?.rows[0]?.agent_profile_id).toBe(agentProfileId);
+  });
+
+  it('reserves a client request on its native uuid primary key, once (#3368)', async () => {
+    const room = await chat.createRoom({
+      tenantId,
+      name: 'Assistant',
+      roomType: 'private',
+      actorProfileId,
+    });
+    const thread = await chat.startThread({
+      tenantId,
+      roomId: room.id as string,
+      actorProfileId,
+      title: 'Reservation',
+    });
+    const send = () =>
+      chat.sendMessage({
+        tenantId,
+        roomId: room.id as string,
+        threadId: thread.id as string,
+        actorProfileId,
+        content: 'once',
+        clientRequestId: 'pg-req-1',
+      });
+    const stored = await send();
+    const expectedId = clientRequestMessageId({
+      tenantId,
+      roomId: room.id as string,
+      threadId: thread.id as string,
+      actorProfileId,
+      clientRequestId: 'pg-req-1',
+    });
+    expect(expectedId).toMatch(UUID_RE);
+    expect(stored.id).toBe(expectedId);
+    // A replay conflicts on the stored primary key ...
+    await expect(send()).rejects.toBeInstanceOf(ChatClientRequestConflictError);
+    // ... and leaves the (transaction) handle usable: the winner is read back
+    // by id through the membership-gated facade.
+    const window = await chat.getThreadMessagesFrom({
+      threadId: thread.id as string,
+      messageId: expectedId,
+      actorProfileId,
+      tenantId,
+    });
+    expect(window.map((m) => m.id)).toEqual([expectedId]);
+    const rows = await isolated?.db.query(
+      `SELECT CAST(id AS VARCHAR) AS id, pg_typeof(id)::text AS type
+         FROM chat_messages
+        WHERE thread_id = ? AND content = 'once'`,
+      thread.id as string,
+    );
+    expect(rows?.rows).toEqual([{ id: expectedId, type: 'uuid' }]);
+    const counted = await chat.getThread({
+      threadId: thread.id as string,
+      tenantId,
+    });
+    expect(counted?.messageCount).toBe(1);
   });
 });
