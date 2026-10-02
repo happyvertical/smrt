@@ -6,9 +6,14 @@ immutable charge / compensation snapshots taken at approval. Moved out of
 `smrt-projects` / `smrt-support` in #3288 so shops, builders, and service
 desks share one model instead of re-implementing it.
 
-This package is **layer 1 (entry)**. Attendance (punches, breaks, offline
-replay) and period rollup (per-person timecards) are planned as later modules
-of this same package; do not add them to projects or support.
+This package contains **layer 1 (entry)** and **layer 2 (attendance)**.
+`src/attendance/` owns punches, breaks, atomic transitions and durable offline
+receipts; `./attendance` is the public subpath. Period rollup belongs in this
+package too, never projects or support. See the README attendance contract.
+Attendance services accept trusted session actors, serialize mutations per
+actor, and bind every write to one executor. The new tables use non-null unique
+open slots, not nullable unique keys. A linked entry is draft evidence, and
+rollups must deduplicate `AttendancePunch.serviceTimeEntryId`.
 
 ## Models
 
