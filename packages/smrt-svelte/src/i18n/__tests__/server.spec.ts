@@ -73,4 +73,20 @@ describe('buildI18nSnapshot', () => {
       'Could not move {card}. The board was restored.',
     );
   });
+
+  it('includes the shipped MCP Apps bridge defaults', async () => {
+    const keys = [
+      'ui.mcp_apps.expand',
+      'ui.mcp_apps.connecting',
+      'ui.mcp_apps.inline_only',
+    ];
+    const snapshot = await buildI18nSnapshot({ locale: 'en', keys });
+
+    expect(snapshot.messages).toMatchObject({
+      'ui.mcp_apps.expand': 'Expand view',
+      'ui.mcp_apps.connecting': 'Connecting to the host…',
+      'ui.mcp_apps.inline_only':
+        'Host controls are unavailable; this view remains inline.',
+    });
+  });
 });
