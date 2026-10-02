@@ -138,7 +138,12 @@ accepted only for an active direct membership or a legitimately inherited
 one (`isSessionTenantAuthorized()`, the same rule deployed `restoreSession()`
 applies); otherwise the request is unauthenticated (no user, permissions,
 tenant, or tenant context). `database-rls` isolation always runs the request
-RLS transaction (`session.postgresRls` cannot disable it). Downstream code runs
+RLS transaction (`session.postgresRls` cannot disable it); a
+`session.skipPaths` prefix skips session loading only and still runs inside
+that transaction as an anonymous principal. During such a request
+`runtime.classOptions()` / `runtime.databaseConfig()` return the
+transaction-bound request database (unless the class has its own `db`
+override), so call them per request and never retain the result. Downstream code runs
 at most once: its error propagates unchanged, and a session-layer failure
 before it returns 500 with no authenticated locals. Defaults read `SMRT_APP_ID`, `SMRT_DATA_DIR`, `HOST`, `DATABASE_URL`,
 `TENANT_BASE_DOMAIN`, and `SMRT_BACKGROUND_JOBS`; `smrt.config` `runtime`

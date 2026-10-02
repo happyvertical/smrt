@@ -79,8 +79,13 @@ Application infrastructure composition for the validated runtime profiles in
   `isSessionTenantAuthorized()` accepts it, else unauthenticated; never via
   `createSessionHandler`, which re-runs `resolve` on downstream errors) →
   publish `locals.tenantContext` only for that verified tenant.
-- `database-rls` isolation forces `postgresRls: true`. `resolve` runs at most
-  once; session-layer failure before it is a 500 with cleared locals.
+- `database-rls` isolation forces `postgresRls: true`, including on
+  `skipPaths` (anonymous principal). `resolve` runs at most once;
+  session-layer failure before it is a 500 with cleared locals.
+- In an RLS request `classOptions()`/`databaseConfig()` return the
+  transaction-bound request db (class `db` overrides win). Anything that
+  outlives a request (session service, tenant selector) must use the base
+  config, never these.
 - Template-only concerns (writer lease, provider readiness modules, onboarding
   file cleanup) are injected hooks, not reimplemented here. Deployed startup
   fails closed without `providerReadiness`.

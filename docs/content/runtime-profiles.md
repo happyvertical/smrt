@@ -282,7 +282,9 @@ bindings, which additionally require explicit `providerReadiness` probes).
 only, loads the signed session, and enters and publishes its tenant context
 only for an active direct or legitimately inherited membership; any other
 session is treated as unauthenticated. Profiles that select `database-rls`
-isolation always run the request inside the PostgreSQL RLS transaction. The
+isolation always run the request inside the PostgreSQL RLS transaction, even on
+session skip paths (as an anonymous principal), and `runtime.classOptions()`
+then hands application collections that transaction-bound database. The
 same entry provides mountable health, authorized diagnostics, the local
 owner-setup `load`/`actions` (loopback peer and loopback host re-checked per
 request), and a session layout summary. See the package README for options.
