@@ -998,6 +998,28 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   });
 
   describe('review round 2 (PR #3339)', () => {
+    it('keeps a receipt in its expense tenant on every later save', async () => {
+      const receipt = await world.inTenant(async () => {
+        const expense = await world.expense();
+        return world.receipts.attachReceipt({
+          expenseId: expense.id,
+          assetId: (await world.asset()).id,
+          contentSha256: computeContentSha256(`tenant-${randomUUID()}`),
+        });
+      });
+
+      // A trusted save without tenant context (optional tenancy) must not
+      // move the receipt away from the tenant its expense lives in.
+      for (const moved of [randomUUID(), null]) {
+        const loaded = await world.receipts.get({ id: String(receipt.id) });
+        if (!loaded) throw new Error('receipt not loaded');
+        loaded.tenantId = moved;
+        await expectExpenseError(loaded.save(), 'EXPENSE_RECEIPT_INVALID');
+      }
+      const stored = await world.receipts.get({ id: String(receipt.id) });
+      expect(stored?.tenantId).toBe(world.tenantId);
+    });
+
     it('never persists a duplicate marker a transition did not set', async () => {
       const other = await createWorld(getDb());
       const foreign = await other.inTenant(() => other.expense());

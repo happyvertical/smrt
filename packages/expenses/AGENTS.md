@@ -55,8 +55,9 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   expense already fixes the tenant, and a nullable leading `tenant_id` would
   leave NULL-tenant (global) receipts unenforced. Same hash on different
   expenses is allowed; `findDuplicateReceipts()` reports it (facet on
-  `contentSha256`, count > 1). Receipt `expenseId`, `assetId` and
-  `contentSha256` are immutable. The inherited `SmrtJunction.attach()` and
+  `contentSha256`, count > 1). Receipt `tenantId` (derived from the
+  expense on insert), `expenseId`, `assetId` and `contentSha256` are
+  immutable. The inherited `SmrtJunction.attach()` and
   `setLinks()` are overridden to throw (`setLinks()` would delete every
   receipt, then fail to re-attach without hashes); `attachReceipt()` adds and
   `detach()` removes a link, keeping the asset. Because `ExpenseReceipt`

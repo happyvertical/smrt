@@ -28,8 +28,14 @@ import {
 } from '../validation.js';
 import { Expense } from './Expense.js';
 
-/** Columns a receipt keeps for life: it is evidence, not a draft. */
+/**
+ * Columns a receipt keeps for life: it is evidence, not a draft. The tenant
+ * is among them because it is derived from the expense on insert; letting a
+ * later save (e.g. one without tenant context) change it would split the
+ * receipt from its expense's tenant.
+ */
 const IMMUTABLE = [
+  ['tenantId', 'tenant_id'],
   ['expenseId', 'expense_id'],
   ['assetId', 'asset_id'],
   ['contentSha256', 'content_sha256'],
