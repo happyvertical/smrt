@@ -510,11 +510,15 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
           await innerCallback({ ...resultInput, update });
         } finally {
           doc.removeEventListener('reset', onReset, true);
-          if (seen.reset && !seen.reset.defaultPrevented) {
-            writeSlot({
-              token: rotateSubmissionKey(location),
-              inFlight: slot.inFlight,
-            });
+          // A submit started while the callback ran carries the current key:
+          // rotating under it would hand its resend a different claim. Its own
+          // result decides retirement instead.
+          if (
+            seen.reset &&
+            !seen.reset.defaultPrevented &&
+            slot.inFlight === null
+          ) {
+            writeSlot({ token: rotateSubmissionKey(location), inFlight: null });
             setState({});
           }
         }

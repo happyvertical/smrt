@@ -765,6 +765,42 @@ describe('a custom result callback decides the reset', () => {
       resetFormRetryMemory();
     }
   });
+  it('never retires the key out from under a submit started during the callback', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reset = false;
+    const { form, server, retry, kit } = customSetup(async ({ update }) => {
+      await update();
+      reset = true;
+      await gate;
+    });
+    fill(form, { title: 'First' });
+    const token = retry.token;
+    const first = kit.submit();
+    await vi.waitFor(() => expect(reset).toBe(true));
+
+    // The form is already reset; the next entry is sent before the callback
+    // finishes, and its response is lost.
+    fill(form, { title: 'Second' });
+    server.next('lost-response');
+    const held = server.hold();
+    const second = kit.submit();
+    await vi.waitFor(() => expect(retry.state.inFlight).toBe(token));
+    release();
+    await first;
+    held.release();
+    await second;
+    expect(retry.state.status).toBe('transport-error');
+
+    // The unchanged resend must carry the key the lost request carried.
+    await kit.submit();
+    expect(server.rows.map((row) => row.fields.title)).toEqual([
+      ['First'],
+      ['Second'],
+    ]);
+  });
 });
 
 describe('discard() while a submit is in flight', () => {
