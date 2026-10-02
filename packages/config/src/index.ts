@@ -64,6 +64,7 @@ export {
 
 // Re-export types
 export type {
+  AIConfigBlock,
   // CLI and migrations configuration types
   CliConfig,
   DatabaseConfig,

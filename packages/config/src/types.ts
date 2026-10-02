@@ -739,6 +739,12 @@ export interface SmrtConfig {
   };
 
   /**
+   * Assistant model declaration, read by {@link resolveAIProviderConfig}.
+   * Secrets come from the environment (`apiKeyEnv`), never the committed file.
+   */
+  ai?: AIConfigBlock;
+
+  /**
    * Module-scoped configurations keyed by module name.
    * Retrieved via {@link getModuleConfig}.
    */
@@ -753,6 +759,26 @@ export interface SmrtConfig {
   packages?: {
     [packageName: string]: Record<string, unknown>;
   };
+}
+
+/**
+ * The `ai` block of `smrt.config.ts`.
+ *
+ * Declare the provider and model here; keep the secret in the environment and
+ * name its variable with `apiKeyEnv`. A literal `apiKey` is honoured for
+ * programmatic configs (for example `process.env.X`) but is never exported.
+ */
+export interface AIConfigBlock {
+  /** Provider name passed to `getAI` (`openai`, `anthropic`, `gemini`, ...). */
+  provider?: string;
+  /** Model identifier (maps to `defaultModel`). */
+  model?: string;
+  /** Provider endpoint override. Must not embed credentials. */
+  baseUrl?: string;
+  /** Name of the environment variable holding the API key. */
+  apiKeyEnv?: string;
+  /** Literal key (discouraged); prefer `apiKeyEnv`. */
+  apiKey?: string;
 }
 
 /**
