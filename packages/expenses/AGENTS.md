@@ -22,7 +22,10 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
 
 - **Review is method-only.** `review()`, `reject()`, `markDuplicate()`,
   `reopen()` read the persisted status, check the move, and authorize exactly
-  one save through a module `WeakMap`. `save()` compares every review field
+  one save through a module `WeakMap`. Every transition assigns every review
+  field, and the token carries that complete resulting state, so a field set
+  directly beside `review()`/`reject()` (e.g. an injected `duplicateOfId`)
+  is refused. A `reviewed` expense never carries `duplicateOfId`. `save()` compares every review field
   (status, reviewer, time, note, `duplicateOfId`) with the stored row and
   refuses an unauthorized change (`EXPENSE_REVIEW_FIELDS_LOCKED`), including
   on a brand-new row. Review fields are also `readonly` for generated writes.

@@ -996,4 +996,31 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
       });
     });
   });
+
+  describe('review round 2 (PR #3339)', () => {
+    it('never persists a duplicate marker a transition did not set', async () => {
+      const other = await createWorld(getDb());
+      const foreign = await other.inTenant(() => other.expense());
+      await world.inTenant(async () => {
+        const reviewer = randomUUID();
+
+        // Injected before review(): a reviewed expense never carries one.
+        const reviewed = await world.expense();
+        reviewed.duplicateOfId = foreign.id;
+        await reviewed.review({ reviewerProfileId: reviewer });
+        const storedReviewed = await world.expenses.get({ id: reviewed.id });
+        expect(storedReviewed?.reviewStatus).toBe('reviewed');
+        expect(storedReviewed?.duplicateOfId).toBeNull();
+
+        // Injected before reject(): only markDuplicate() sets the marker,
+        // after checking the target is in the same tenant.
+        const rejected = await world.expense();
+        rejected.duplicateOfId = foreign.id;
+        await rejected.reject({ reviewerProfileId: reviewer, reason: 'no' });
+        const storedRejected = await world.expenses.get({ id: rejected.id });
+        expect(storedRejected?.reviewStatus).toBe('rejected');
+        expect(storedRejected?.duplicateOfId).toBeNull();
+      });
+    });
+  });
 }

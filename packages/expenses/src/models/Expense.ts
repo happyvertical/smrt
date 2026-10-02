@@ -42,8 +42,8 @@ import {
   assertQualifiedClassName,
   CATEGORY_PATTERN,
   identityConflict,
+  instantMs,
   pinNaturalKey,
-  sameInstant,
 } from '../validation.js';
 
 const PROFILE = '@happyvertical/smrt-profiles:Profile';
@@ -84,8 +84,27 @@ const LOCKED_WHEN_REVIEWED = [
 /** The review transition a dedicated method has authorized for one save. */
 const authorizedTransition = new WeakMap<
   Expense,
-  { from: ExpenseReviewStatus; to: ExpenseReviewStatus }
+  { from: ExpenseReviewStatus; expected: ReviewFieldState }
 >();
+
+/** Every review field, normalized for comparison. */
+interface ReviewFieldState {
+  status: ExpenseReviewStatus;
+  reviewer: string | null;
+  reviewedAtMs: number | null;
+  note: string;
+  duplicateOf: string | null;
+}
+
+function sameReviewState(a: ReviewFieldState, b: ReviewFieldState): boolean {
+  return (
+    a.status === b.status &&
+    a.reviewer === b.reviewer &&
+    a.reviewedAtMs === b.reviewedAtMs &&
+    a.note === b.note &&
+    a.duplicateOf === b.duplicateOf
+  );
+}
 
 type PersistedRow = Record<string, unknown>;
 
@@ -300,6 +319,7 @@ export class Expense extends SmrtObject {
       this.reviewedByProfileId = reviewer;
       this.reviewedAt = input.at ?? new Date();
       this.reviewNote = input.note ?? '';
+      this.duplicateOfId = null;
     });
   }
 
@@ -321,6 +341,7 @@ export class Expense extends SmrtObject {
       this.reviewedByProfileId = reviewer;
       this.reviewedAt = input.at ?? new Date();
       this.reviewNote = reason;
+      this.duplicateOfId = null;
     });
   }
 
@@ -534,6 +555,12 @@ export class Expense extends SmrtObject {
         `Expense ${label}: reimbursedAt needs reimbursable.`,
       );
     }
+    if (this.reviewStatus === 'reviewed' && this.duplicateOfId) {
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        `Expense ${label}: a reviewed expense cannot be marked a duplicate.`,
+      );
+    }
     if (this.commitmentLineId && !this.commitmentId) {
       throw new ExpenseError(
         'EXPENSE_INVALID',
@@ -553,26 +580,37 @@ export class Expense extends SmrtObject {
     return (row as PersistedRow | null | undefined) ?? null;
   }
 
+  private reviewState(): ReviewFieldState {
+    return {
+      status: this.reviewStatus,
+      reviewer: asNullableString(this.reviewedByProfileId),
+      reviewedAtMs: instantMs(this.reviewedAt),
+      note: this.reviewNote ?? '',
+      duplicateOf: asNullableString(this.duplicateOfId),
+    };
+  }
+
+  /**
+   * Refuse any review-field change a transition did not authorize. The token
+   * binds the transition's complete resulting state — status, reviewer,
+   * time, note and duplicate marker — so a field set directly beside a
+   * legitimate `review()` / `reject()` cannot ride along with it.
+   */
   private assertReviewFields(persisted: PersistedRow | null): void {
     const token = authorizedTransition.get(this);
-    const prior = {
+    const prior: ReviewFieldState = {
       status: (persisted?.review_status ?? 'unreviewed') as ExpenseReviewStatus,
       reviewer: asNullableString(persisted?.reviewed_by_profile_id),
-      reviewedAt: persisted?.reviewed_at ?? null,
+      reviewedAtMs: instantMs(persisted?.reviewed_at),
       note: String(persisted?.review_note ?? ''),
       duplicateOf: asNullableString(persisted?.duplicate_of_id),
     };
-    const changed =
-      this.reviewStatus !== prior.status ||
-      asNullableString(this.reviewedByProfileId) !== prior.reviewer ||
-      !sameInstant(this.reviewedAt, prior.reviewedAt) ||
-      (this.reviewNote ?? '') !== prior.note ||
-      asNullableString(this.duplicateOfId) !== prior.duplicateOf;
-    if (!changed) return;
+    const current = this.reviewState();
+    if (sameReviewState(current, prior)) return;
     if (
       !token ||
       token.from !== prior.status ||
-      token.to !== this.reviewStatus
+      !sameReviewState(current, token.expected)
     ) {
       throw new ExpenseError(
         'EXPENSE_REVIEW_FIELDS_LOCKED',
@@ -712,8 +750,10 @@ export class Expense extends SmrtObject {
       reviewNote: this.reviewNote,
       duplicateOfId: this.duplicateOfId,
     };
+    // Every transition assigns every review field, so the token below
+    // describes the whole resulting review state.
     apply();
-    authorizedTransition.set(this, { from, to: rule.to });
+    authorizedTransition.set(this, { from, expected: this.reviewState() });
     try {
       return await this.save();
     } catch (error) {

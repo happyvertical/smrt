@@ -125,17 +125,12 @@ export function computeContentSha256(data: Uint8Array | string): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
-/** True when two date-ish values denote the same instant (or are both empty). */
-export function sameInstant(a: unknown, b: unknown): boolean {
-  const toMs = (value: unknown): number | null => {
-    if (value === null || value === undefined || value === '') return null;
-    const ms =
-      value instanceof Date
-        ? value.getTime()
-        : new Date(String(value)).getTime();
-    return Number.isNaN(ms) ? null : ms;
-  };
-  return toMs(a) === toMs(b);
+/** Milliseconds since the epoch of a date-ish value; `null` when empty. */
+export function instantMs(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const ms =
+    value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+  return Number.isNaN(ms) ? null : ms;
 }
 
 /** The slice of `SmrtObject` the natural-key identity guard needs. */
