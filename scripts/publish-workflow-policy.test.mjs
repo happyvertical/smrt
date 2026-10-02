@@ -66,6 +66,11 @@ test('release regenerates and commits tracked SvelteKit registration snapshots',
     );
   }
   assert.match(publisher, /-name 'smrt-register\.ts'/);
+  // scripts/sync-template-versions.mjs also rewrites the optional MCP Apps
+  // pins (mcp-apps-template/package.dependencies.json); the versioned
+  // workspace archive and the release commit must both carry them (#3356).
+  assert.match(prepare, /-name 'package\.dependencies\.json'/);
+  assert.match(publisher, /-name 'package\.dependencies\.json'/);
   assert.ok(
     publisher.indexOf("-name 'smrt-register.ts'") <
       publisher.indexOf('git commit -m "chore(release):'),
