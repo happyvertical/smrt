@@ -366,6 +366,8 @@ describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
       '2026-07-28',
       '--expected-failures',
       baselinePath,
+      '--output-dir',
+      join(generatedDir, 'conformance-results'),
     ]);
     expect(result.code, result.output).toBe(0);
   });

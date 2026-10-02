@@ -2,7 +2,17 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node", "vitest/globals"]
+    "types": [
+      "node",
+      "vitest/globals"
+    ],
+    "lib": [
+      "ES2023",
+      "DOM"
+    ]
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts"
+  ]
 }
