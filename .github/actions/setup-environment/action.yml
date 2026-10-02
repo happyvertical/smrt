@@ -6,7 +6,7 @@ inputs:
   node-version:
     description: 'Node.js version to use'
     required: false
-    default: '24.18.0'
+    default: '26.9.0'
 
   install-deps:
     description: 'Whether to install project dependencies'

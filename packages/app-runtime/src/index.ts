@@ -600,11 +600,18 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     const tokenHash = await this.hashBootstrapToken(input.token);
     const now = this.now();
     const nowIso = now.toISOString();
+    // A token that cannot claim is rejected before seeding, so a wrong,
+    // replayed, or expired token stays read-only and never pays for a
+    // catalog-wide write (#3323). This is a preflight only: the conditional
+    // UPDATE in the claim transaction below remains the single authority.
+    if (!(await isBootstrapTokenClaimable(this.db, tokenHash, nowIso))) {
+      await throwBootstrapClaimFailure(this.db, now);
+    }
     // Generated write routes require `<collection>.<action>` grants (#2977),
     // so the owner role must hold the default role matrix over the manifest
     // permission catalog, not only the role itself. Seeding is idempotent and
-    // additive, and runs before the claim transaction because the catalog
-    // sync uses its own collection connections.
+    // additive, and commits in its own transaction before the claim
+    // transaction.
     const roles = await RoleCollection.create({ db: this.db });
     await roles.seedSystemRoles({ seedPermissions: true });
     return this.db.transaction(async (tx) => {
@@ -867,6 +874,25 @@ async function throwBootstrapClaimFailure(
     'bootstrap_invalid',
     'The local owner bootstrap token is invalid.',
   );
+}
+
+async function isBootstrapTokenClaimable(
+  db: DatabaseInterface,
+  tokenHash: string,
+  nowIso: string,
+): Promise<boolean> {
+  const result = await db.query(
+    `SELECT 1 AS claimable
+     FROM ${BOOTSTRAP_TABLE}
+     WHERE slot = 1
+       AND token_hash = ?
+       AND consumed_at IS NULL
+       AND expires_at > ?
+     LIMIT 1`,
+    tokenHash,
+    nowIso,
+  );
+  return result.rows.length > 0;
 }
 
 async function readBootstrapRow(

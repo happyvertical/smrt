@@ -62,12 +62,27 @@ export function hasAffectedCoreTest(dryRun) {
   );
 }
 
+/**
+ * Parse `turbo run --dry=json` output. pnpm can print warnings to stdout
+ * around turbo's JSON (for example `[WARN] Unsupported engine`), so parse
+ * only the span from the first line opening an object to the last line
+ * closing one.
+ */
+export function parseTurboDryRun(text) {
+  const start = text.search(/^\{/m);
+  const ends = [...text.matchAll(/^\}/gm)];
+  if (start === -1 || ends.length === 0) {
+    throw new Error('Turbo dry-run output did not contain a JSON object');
+  }
+  return JSON.parse(text.slice(start, ends[ends.length - 1].index + 1));
+}
+
 function readStdin() {
   return readFileSync(0, 'utf8');
 }
 
 function main() {
-  const input = JSON.parse(readStdin());
+  const input = parseTurboDryRun(readStdin());
   if (process.argv[2] === '--has-core') {
     process.stdout.write(hasAffectedCoreTest(input) ? 'true' : 'false');
     return;

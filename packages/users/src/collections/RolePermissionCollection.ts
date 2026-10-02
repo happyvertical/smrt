@@ -4,6 +4,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { RolePermission } from '../models/RolePermission.js';
 import {
   normalizeOperationPermissionAction,
@@ -13,6 +14,7 @@ import {
 import { DEFAULT_ROLE_SLUGS, type DefaultRoleSlug } from '../types/index.js';
 import { PermissionCollection } from './PermissionCollection.js';
 import { RoleCollection } from './RoleCollection.js';
+import { writeInSeedingBatches } from './seeding-transaction.js';
 
 export type RolePermissionPatternMatrix = Partial<
   Record<string, readonly string[]>
@@ -276,6 +278,10 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
    * Defaults to the system owner/admin/member/viewer matrix. Re-running is
    * idempotent: existing mappings are reported as `unchanged`, new catalog
    * slugs are added, and stale mappings are only removed when `prune` is true.
+   *
+   * Grants and revocations are planned from one read per role, then committed
+   * in batches rather than one durable commit per row (#3323). Inside a
+   * caller transaction, pass that transaction's handle.
    */
   async seedRolePermissions(
     matrix: RolePermissionPatternMatrix = DEFAULT_ROLE_PERMISSION_PATTERNS,
@@ -295,6 +301,11 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
       (permission) => permission.slug,
     );
     const permissionIdBySlug = new Map<string, string>();
+    const writes: Array<{
+      permissionId: string;
+      revoke: boolean;
+      roleId: string;
+    }> = [];
     for (const permission of await permissions.list({})) {
       if (
         typeof permission.id === 'string' &&
@@ -367,9 +378,9 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
           continue;
         }
 
-        // Absence was just established from `existingPermissionIds`, so skip
-        // `addPermission()`'s own per-pair re-read (#3022).
-        await this.grantPermission(role.id, permissionId);
+        // Absence was just established from `existingPermissionIds`, so the
+        // write skips `addPermission()`'s own per-pair re-read (#3022).
+        writes.push({ permissionId, revoke: false, roleId: role.id });
         result.added[roleSlug].push(slug);
       }
 
@@ -385,12 +396,30 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
           continue;
         }
 
-        await this.removePermission(role.id, permissionId);
+        writes.push({ permissionId, revoke: true, roleId: role.id });
         result.removed[roleSlug].push(
           existingPermissions.get(permissionId)?.slug ?? permissionId,
         );
       }
     }
+
+    await writeInSeedingBatches(
+      this.db as DatabaseInterface,
+      writes,
+      async (database, batch) => {
+        const batchGrants = await RolePermissionCollection.create({
+          ...this.options,
+          db: database,
+        });
+        for (const { permissionId, revoke, roleId } of batch) {
+          if (revoke) {
+            await batchGrants.removePermission(roleId, permissionId);
+          } else {
+            await batchGrants.grantPermission(roleId, permissionId);
+          }
+        }
+      },
+    );
 
     return result;
   }

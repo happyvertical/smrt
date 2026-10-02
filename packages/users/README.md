@@ -113,6 +113,8 @@ Catalog sync is additive and fail-closed:
 - it updates `name`, `description`, and `category` by slug
 - it does not auto-grant permissions to roles
 - it does not delete stale permissions in v1
+- it commits created/updated rows in small batched transactions; when calling
+  it inside your own transaction, pass that transaction's database handle
 
 ### App-defined permissions in `smrt.config.ts`
 
