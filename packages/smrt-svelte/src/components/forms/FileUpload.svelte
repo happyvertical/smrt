@@ -11,6 +11,9 @@
  * - Native form posting via `name` (the accepted list is mirrored onto the
  *   real input with `DataTransfer`, so picks, drops and removals post exactly
  *   what the list shows), `required` validation, and camera `capture`
+ * - A reset of the owning form (`form.reset()`, a reset button, SvelteKit
+ *   `enhance`'s `update()` after a success) empties the list, as it empties a
+ *   native file input, and reports it through `onchange([])`
  * - Material 3 styling
  *
  * Fallback: where the `DataTransfer` constructor is unavailable (Safari < 14.1,
@@ -32,7 +35,7 @@ export interface Props {
   multiple?: boolean;
   /** Selected files (bindable) */
   files?: File[];
-  /** Callback when files change */
+  /** Callback when files change, including the empty list after a form reset */
   onchange?: (files: File[]) => void;
   /** Maximum file size in bytes */
   maxSize?: number;
@@ -90,6 +93,28 @@ $effect(() => {
     native.length === current.length &&
     native.every((file, i) => file === current[i]);
   if (!matches) input.value = '';
+});
+
+// The owning form reset: the browser empties the native input, so the list
+// must empty too or it keeps showing files that no longer post. `reset` fires
+// before the browser resets the controls; clearing `files` makes the mirror
+// effect above assign an empty list, so the two agree instead of fighting
+// (and a cancelled reset still leaves list and input both empty). The capture
+// phase on `document` reads the input's form at dispatch time, so moving the
+// input between forms needs no re-wiring and no page listener can hide it.
+$effect(() => {
+  if (typeof document === 'undefined') return;
+  const onReset = (event: Event) => {
+    const form = inputRef?.form;
+    if (!form || event.target !== form) return;
+    const hadFiles = files.length > 0;
+    error = null;
+    isDragging = false;
+    files = [];
+    if (hadFiles) onchange?.(files);
+  };
+  document.addEventListener('reset', onReset, true);
+  return () => document.removeEventListener('reset', onReset, true);
 });
 
 function handleDragEnter(e: DragEvent) {

@@ -14,6 +14,7 @@ function onsubmit(event: SubmitEvent) {
 <form id="multi" method="post" enctype="multipart/form-data" {onsubmit}>
   <FileUpload name="docs" multiple required maxSize={1000} bind:files={docs} label="Documents" />
   <button type="button" id="reset" onclick={() => (docs = [])}>Reset</button>
+  <button type="reset" id="native-reset">Reset form</button>
   <output id="submits">{submits}</output>
 </form>
 

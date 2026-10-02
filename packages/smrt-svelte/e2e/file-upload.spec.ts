@@ -88,6 +88,26 @@ test('picked, dropped and removed files post exactly as listed', async ({
   await expect.poll(() => posted(page, 'multi', 'docs')).toEqual([]);
 });
 
+test('a native form reset empties the list and what posts', async ({
+  page,
+}) => {
+  await page.goto('/file-upload.html');
+  const input = page.locator('#multi input[type="file"]');
+
+  await input.setInputFiles(file('a.txt'));
+  await expect.poll(() => posted(page, 'multi', 'docs')).toEqual(['a.txt']);
+
+  // `form.reset()` (a reset button, or SvelteKit enhance's `update()` after a
+  // success) empties the native input; the list must empty with it.
+  await page.locator('#native-reset').click();
+  await expect.poll(() => posted(page, 'multi', 'docs')).toEqual([]);
+  await expect(page.locator('#multi .file-list')).toHaveCount(0);
+
+  // The next pick posts alone: the old list is never mirrored back.
+  await input.setInputFiles(file('b.txt'));
+  await expect.poll(() => posted(page, 'multi', 'docs')).toEqual(['b.txt']);
+});
+
 test('required blocks a native submit until a file is listed', async ({
   page,
 }) => {

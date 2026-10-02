@@ -38,7 +38,10 @@ migrate domain re-rolls *onto* them rather than build new primitives:
   the accepted list (picks, drops, removals, bound resets) is mirrored onto the
   visually-hidden input via `DataTransfer` — never `hidden`, which would break
   `required` validation. Without that constructor the input keeps only a
-  native selection that matches the list, else clears (#3260).
+  native selection that matches the list, else clears (#3260). A reset of the
+  owning form (`form.reset()`, a reset button, `enhance`'s `update()`) empties
+  the list and reports `onchange([])`, so the list never shows files that no
+  longer post.
 - **`Modal` + forms** (`./feedback` + `./forms`) — compose for dialogs; no
   bespoke modal shells.
 - **`ConfirmDialog`** (`./feedback`) — the standard confirm/destructive-action
