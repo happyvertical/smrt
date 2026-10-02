@@ -1,7 +1,7 @@
 # Tech Stack - SMRT Framework
 
 ## Core Technologies
-- **Language**: TypeScript (Node.js 24+)
+- **Language**: TypeScript (Node.js 26+)
 - **Package Manager**: pnpm (9.0+)
 - **Monorepo Management**: Turbo
 

@@ -83,6 +83,6 @@
   },
   "author": "HappyVertical",
   "engines": {
-    "node": ">=24.18.0"
+    "node": ">=26.0.0"
   }
 }

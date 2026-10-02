@@ -545,11 +545,11 @@ async function doctor() {
     });
   }
 
-  if (Number(process.versions.node.split('.')[0]) < 24) {
+  if (Number(process.versions.node.split('.')[0]) < 26) {
     findings.push({
       code: 'unsupported-node',
       severity: 'error',
-      message: 'Node.js 24 or newer is required.',
+      message: 'Node.js 26 or newer is required.',
       recovery: 'Install the Node.js version declared in package.json engines.',
     });
   }
