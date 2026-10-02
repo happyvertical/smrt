@@ -76,6 +76,8 @@ const loadedStatus = new WeakMap<ServiceTimeEntry, ServiceTimeEntryStatus>();
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'service_time_entries',
+  // Moved from smrt-projects in #3288; stored references keep resolving.
+  previousQualifiedNames: ['@happyvertical/smrt-projects:ServiceTimeEntry'],
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },

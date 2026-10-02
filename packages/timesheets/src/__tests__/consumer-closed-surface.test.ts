@@ -89,8 +89,13 @@ function consumerManifest(): SmartObjectManifest {
     entry.packageName = CONSUMER;
     entry.filePath = 'src/lib/server/time/models.ts';
     entry.extends = className;
+    // A subclass's scanned config holds only its own decorator options: it
+    // does not inherit the base's previousQualifiedNames, and must not
+    // redeclare them (two claimants of one old name collide, #3338).
+    const { previousQualifiedNames: _baseAliases, ...inherited } =
+      base.decoratorConfig as Record<string, unknown>;
     entry.decoratorConfig = {
-      ...base.decoratorConfig,
+      ...inherited,
       tenantScoped: { mode: 'required' },
       api: CLOSED,
       cli: CLOSED,

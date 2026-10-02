@@ -64,6 +64,10 @@ const COMPENSATION_FIELDS = [
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'service_charge_snapshots',
+  // Moved from smrt-projects in #3288; stored references keep resolving.
+  previousQualifiedNames: [
+    '@happyvertical/smrt-projects:ServiceChargeSnapshot',
+  ],
   conflictColumns: ['time_entry_id'],
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
@@ -128,6 +132,10 @@ export class ServiceChargeSnapshot extends SmrtObject {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'service_compensation_snapshots',
+  // Moved from smrt-projects in #3288; stored references keep resolving.
+  previousQualifiedNames: [
+    '@happyvertical/smrt-projects:ServiceCompensationSnapshot',
+  ],
   conflictColumns: ['time_entry_id'],
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
