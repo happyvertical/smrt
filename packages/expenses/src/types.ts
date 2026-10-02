@@ -229,7 +229,8 @@ export type ExpenseErrorCode =
   | 'EXPENSE_REVIEW_FIELDS_LOCKED'
   | 'EXPENSE_COMMITMENT_MISMATCH'
   | 'EXPENSE_RECEIPT_INVALID'
-  | 'EXPENSE_RECEIPT_DUPLICATE';
+  | 'EXPENSE_RECEIPT_DUPLICATE'
+  | 'EXPENSE_IDENTITY_CONFLICT';
 
 /**
  * Base error for this package. `code` is stable and safe to branch on.

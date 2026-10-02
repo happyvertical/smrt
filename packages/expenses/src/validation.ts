@@ -137,3 +137,64 @@ export function sameInstant(a: unknown, b: unknown): boolean {
   };
   return toMs(a) === toMs(b);
 }
+
+/** The slice of `SmrtObject` the natural-key identity guard needs. */
+interface NaturalKeyed {
+  id?: string | null;
+  slug?: string | null;
+  context?: string | null;
+  getSlug(): Promise<unknown>;
+  requireInsertOnSave(): void;
+}
+
+/**
+ * Make a save write only the row its guards checked.
+ *
+ * Core's natural-key save adopts any same-owner row on
+ * `(tenant_id, slug, context)`, and these models have no human slug, so a
+ * caller-supplied `slug` naming another row would turn a "new" save into an
+ * unguarded overwrite of that row. So:
+ *
+ * - a new row (none stored under this id) must be a plain INSERT: any
+ *   natural-key collision raises instead of adopting (`requireInsertOnSave`);
+ * - an existing row must keep the slug and context it is stored under, so
+ *   the write targets that row and no other.
+ *
+ * @throws {ExpenseError} `EXPENSE_IDENTITY_CONFLICT` when an existing row's
+ *   natural key is changed.
+ */
+export async function pinNaturalKey(
+  model: string,
+  object: NaturalKeyed,
+  persisted: Record<string, unknown> | null,
+): Promise<void> {
+  await object.getSlug();
+  if (!persisted) {
+    object.requireInsertOnSave();
+    return;
+  }
+  if (
+    String(persisted.slug ?? '') !== String(object.slug ?? '') ||
+    String(persisted.context ?? '') !== String(object.context ?? '')
+  ) {
+    throw new ExpenseError(
+      'EXPENSE_IDENTITY_CONFLICT',
+      `${model} ${object.id}: slug and context cannot change; they would ` +
+        'point the save at a different row.',
+    );
+  }
+}
+
+/** The error a refused natural-key INSERT is reported as. */
+export function identityConflict(
+  model: string,
+  object: { id?: string | null; slug?: string | null },
+  cause: unknown,
+): ExpenseError {
+  return new ExpenseError(
+    'EXPENSE_IDENTITY_CONFLICT',
+    `${model} ${object.id}: another row already uses slug ` +
+      `'${object.slug}' in this tenant; a new ${model} cannot take it over.`,
+    { cause },
+  );
+}

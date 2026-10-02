@@ -26,6 +26,14 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   (status, reviewer, time, note, `duplicateOfId`) with the stored row and
   refuses an unauthorized change (`EXPENSE_REVIEW_FIELDS_LOCKED`), including
   on a brand-new row. Review fields are also `readonly` for generated writes.
+- **Writes are pinned to the guarded row.** The guards read the row stored
+  under `id`, but core's natural-key save adopts any same-owner row on
+  `(tenant_id, slug, context)`, and these models' slugs come from the id. So
+  `pinNaturalKey()` makes a new row's first save a plain INSERT
+  (`requireInsertOnSave()`; a collision is `EXPENSE_IDENTITY_CONFLICT`, never
+  an adoption) and refuses a changed slug/context on an existing row. Without
+  it, `create({ slug: <reviewed id>, amount })` silently rewrote a reviewed
+  expense or a receipt's evidence.
 - **Reviewed money is frozen.** While the stored status is `reviewed`,
   `LOCKED_WHEN_REVIEWED` fields cannot change; `reopen()` first.
 - **Drawdown counts once.** `ExpenseCollection.commitmentPosition()` sums only

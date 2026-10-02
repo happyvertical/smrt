@@ -20,7 +20,12 @@ import {
   ExpenseError,
   type ExpenseReceiptOptions,
 } from '../types.js';
-import { assertMinorUnits, normalizeSha256 } from '../validation.js';
+import {
+  assertMinorUnits,
+  identityConflict,
+  normalizeSha256,
+  pinNaturalKey,
+} from '../validation.js';
 import { Expense } from './Expense.js';
 
 /** Columns a receipt keeps for life: it is evidence, not a draft. */
@@ -142,11 +147,13 @@ export class ExpenseReceipt extends SmrtObject {
     }
 
     const persisted = this.id
-      ? ((await this.db.get(this.tableName, { id: this.id })) as
+      ? (((await this.db.get(this.tableName, { id: this.id })) as
           | Record<string, unknown>
           | undefined
-          | null)
+          | null) ?? null)
       : null;
+    // The checks below are against `persisted`; pin the write to that row.
+    await pinNaturalKey('ExpenseReceipt', this, persisted);
     if (persisted) {
       const self = this as unknown as Record<string, unknown>;
       for (const [fieldName, column] of IMMUTABLE) {
@@ -167,12 +174,30 @@ export class ExpenseReceipt extends SmrtObject {
       return await super.save();
     } catch (error) {
       if (!persisted && isUniqueViolationError(error)) {
-        throw new DuplicateReceiptError(this.expenseId, this.contentSha256, {
-          cause: error,
-        });
+        throw await this.classifyInsertConflict(error);
       }
       throw error;
     }
+  }
+
+  /**
+   * A refused INSERT is either the same file racing onto the same expense,
+   * or a natural-key collision with another receipt. Re-read to tell which;
+   * if the re-read itself fails (an aborted transaction), keep the original
+   * error rather than guess.
+   */
+  private async classifyInsertConflict(error: unknown): Promise<unknown> {
+    try {
+      await this.assertNotDuplicate();
+    } catch (duplicate) {
+      if (duplicate instanceof DuplicateReceiptError) {
+        return new DuplicateReceiptError(this.expenseId, this.contentSha256, {
+          cause: error,
+        });
+      }
+      return error;
+    }
+    return identityConflict('ExpenseReceipt', this, error);
   }
 
   private async assertLinkTargets(label: string): Promise<void> {

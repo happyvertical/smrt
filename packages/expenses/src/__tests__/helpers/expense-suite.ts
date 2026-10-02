@@ -826,4 +826,77 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
       });
     });
   });
+
+  describe('identity and evidence integrity', () => {
+    it('refuses a new expense that names a reviewed expense by slug', async () => {
+      await world.inTenant(async () => {
+        const reviewer = randomUUID();
+        const reviewed = await world.expense({ amount: 5000 });
+        await reviewed.review({ reviewerProfileId: reviewer });
+
+        const forged = world.expense({
+          slug: reviewed.id,
+          amount: 9000,
+        } as ExpenseOptions);
+        await expectExpenseError(forged, 'EXPENSE_IDENTITY_CONFLICT');
+
+        const stored = await world.expenses.get({ id: reviewed.id });
+        expect(stored?.reviewStatus).toBe('reviewed');
+        expect(stored?.reviewedByProfileId).toBe(reviewer);
+        expect(stored?.amount).toBe(5000);
+      });
+    });
+
+    it('refuses an existing expense whose slug points at another row', async () => {
+      await world.inTenant(async () => {
+        const reviewer = randomUUID();
+        const reviewed = await world.expense({ amount: 5000 });
+        await reviewed.review({ reviewerProfileId: reviewer });
+        const other = await world.expense({ amount: 100 });
+
+        // collection.create() saves.
+        const retarget = world.expenses.create({
+          id: other.id,
+          slug: reviewed.id,
+          costObjectType: PROJECT,
+          costObjectId: 'project-1',
+          amount: 9000,
+          currency: 'USD',
+          incurredOn: '2026-09-15',
+        } as ExpenseOptions);
+        await expectExpenseError(retarget, 'EXPENSE_IDENTITY_CONFLICT');
+        expect((await world.expenses.get({ id: other.id }))?.amount).toBe(100);
+
+        const stored = await world.expenses.get({ id: reviewed.id });
+        expect(stored?.reviewStatus).toBe('reviewed');
+        expect(stored?.amount).toBe(5000);
+      });
+    });
+
+    it('refuses a new receipt that names an existing receipt by slug', async () => {
+      await world.inTenant(async () => {
+        const expense = await world.expense();
+        const original = computeContentSha256('original-evidence');
+        const receipt = await world.receipts.attachReceipt({
+          expenseId: expense.id,
+          assetId: (await world.asset()).id,
+          contentSha256: original,
+        });
+
+        // collection.create() saves.
+        const forgedAsset = await world.asset('forged.pdf');
+        const forged = world.receipts.create({
+          slug: receipt.id,
+          expenseId: expense.id,
+          assetId: forgedAsset.id,
+          contentSha256: computeContentSha256('forged-evidence'),
+        } as never);
+        await expectExpenseError(forged, 'EXPENSE_IDENTITY_CONFLICT');
+
+        const stored = await world.receipts.get({ id: String(receipt.id) });
+        expect(stored?.contentSha256).toBe(original);
+        expect(stored?.assetId).toBe(receipt.assetId);
+      });
+    });
+  });
 }

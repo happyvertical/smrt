@@ -13,6 +13,7 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  isUniqueViolationError,
   ObjectRegistry,
   SmrtObject,
   smrt,
@@ -39,6 +40,8 @@ import {
   assertMinorUnits,
   assertQualifiedClassName,
   CATEGORY_PATTERN,
+  identityConflict,
+  pinNaturalKey,
   sameInstant,
 } from '../validation.js';
 
@@ -442,12 +445,23 @@ export class Expense extends SmrtObject {
     this.validateShape();
 
     const persisted = await this.readPersisted();
+    // The guards below check `persisted`; pin the write to that row.
+    await pinNaturalKey('Expense', this, persisted);
     this.assertReviewFields(persisted);
     this.assertReviewedLock(persisted);
     await this.assertCommitment(persisted);
 
     if (!this.recordedAt) this.recordedAt = new Date();
-    return super.save();
+    try {
+      return await super.save();
+    } catch (error) {
+      // A new expense is a plain INSERT; its only unique keys are the id and
+      // the natural key, so a violation means it named an existing row.
+      if (!persisted && isUniqueViolationError(error)) {
+        throw identityConflict('Expense', this, error);
+      }
+      throw error;
+    }
   }
 
   private normalize(): void {
