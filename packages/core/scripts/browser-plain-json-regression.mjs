@@ -65,7 +65,10 @@ document.body.textContent = 'browser plain-json regression passed';
   const { port } = server.address();
   let browser;
   try {
-    browser = await chromium.launch({ executablePath: chromium.executablePath() });
+    browser = await chromium.launch({
+      executablePath:
+        process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || chromium.executablePath(),
+    });
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.stack ?? error.message));
