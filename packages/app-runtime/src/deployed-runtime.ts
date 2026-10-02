@@ -178,6 +178,45 @@ export class DeployedRuntimeCleanupError extends DeployedRuntimeError {
   }
 }
 
+/** Session fields that carry tenant-authorization provenance. */
+export type SessionTenantAuthorizationEvidence = Pick<
+  NonNullable<Awaited<ReturnType<SessionService['loadSessionContext']>>>,
+  'membership' | 'tenantAuthorization'
+>;
+
+/**
+ * The single rule for whether a loaded session may act in its tenant.
+ *
+ * True only for a verified ACTIVE direct membership whose id is the resolved
+ * authorization (and is not inherited), or — with no direct membership — a
+ * resolved authorization inherited from a named ancestor tenant. Accessor
+ * failures propagate so callers can fail closed.
+ */
+export function isSessionTenantAuthorized(
+  context: SessionTenantAuthorizationEvidence,
+): boolean {
+  const membership = context.membership;
+  const authorization = context.tenantAuthorization;
+  const membershipId = authorization?.membershipId;
+  const validMembershipId =
+    typeof membershipId === 'string' && membershipId.trim().length > 0;
+  if (membership?.isActive() === true) {
+    return (
+      validMembershipId &&
+      membership.id === membershipId &&
+      authorization?.inheritedFromTenantId === null
+    );
+  }
+  if (membership === null) {
+    return (
+      validMembershipId &&
+      typeof authorization?.inheritedFromTenantId === 'string' &&
+      authorization.inheritedFromTenantId.trim().length > 0
+    );
+  }
+  return false;
+}
+
 export interface DeployedApplicationRuntime {
   readonly db: DatabaseInterface;
   readonly resolvedRuntime: ResolvedApplicationRuntime;
@@ -629,22 +668,7 @@ class InitializedDeployedApplicationRuntime
       }
       let tenantAuthorized = false;
       try {
-        const membership = context.membership;
-        const authorization = context.tenantAuthorization;
-        const membershipId = authorization?.membershipId;
-        const validMembershipId =
-          typeof membershipId === 'string' && membershipId.trim().length > 0;
-        if (membership?.isActive() === true) {
-          tenantAuthorized =
-            validMembershipId &&
-            membership.id === membershipId &&
-            authorization?.inheritedFromTenantId === null;
-        } else if (membership === null) {
-          tenantAuthorized =
-            validMembershipId &&
-            typeof authorization?.inheritedFromTenantId === 'string' &&
-            authorization.inheritedFromTenantId.trim().length > 0;
-        }
+        tenantAuthorized = isSessionTenantAuthorized(context);
       } catch {
         throw unavailable('authentication');
       }
