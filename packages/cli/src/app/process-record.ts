@@ -66,16 +66,42 @@ export function sendTerminationSignal(
   }
 }
 
-/** True when `command` is the web launcher started with this record's nonce. */
+/** Split a process command line into argv-like tokens, dropping quotes. */
+function commandTokens(command: string): string[] {
+  return command
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.replace(/^"|"$/g, ''))
+    .filter(Boolean);
+}
+
+/**
+ * True when `command` is exactly the web launcher started with this record's
+ * nonce: the final argument is `--smrt-instance=<instance>` and the argument
+ * before it is a path whose basename is `smrt-web.mjs` (the CLI's
+ * `bin/smrt-web.mjs`, or the template's `scripts/smrt-web.mjs`). Substring
+ * matches such as `evil-smrt-web.mjs` or a nonce with a suffix are rejected.
+ */
 export function matchesApplicationProcess(
   record: Pick<ApplicationProcessRecord, 'instance'>,
   command: unknown,
 ): boolean {
+  if (typeof command !== 'string') return false;
+  const tokens = commandTokens(command);
+  if (tokens.length < 2) return false;
+  const script = tokens[tokens.length - 2];
   return (
-    typeof command === 'string' &&
-    command.includes(WEB_LAUNCHER_NAME) &&
-    command.includes(`--smrt-instance=${record.instance}`)
+    tokens[tokens.length - 1] === `--smrt-instance=${record.instance}` &&
+    script.split(/[\\/]/).pop() === WEB_LAUNCHER_NAME
   );
+}
+
+/**
+ * Re-read the live command line of `record.pid` and confirm it is still the
+ * recorded web launcher. Call immediately before signalling the pid.
+ */
+export function verifyOwnedProcess(record: ApplicationProcessRecord): boolean {
+  return matchesApplicationProcess(record, processCommand(record.pid));
 }
 
 /**
