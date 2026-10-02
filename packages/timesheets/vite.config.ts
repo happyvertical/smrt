@@ -1,6 +1,6 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
 export default createPackageConfig('timesheets', {
-  entries: ['ui'],
+  entries: ['ui', 'attendance'],
   svelte: 'svelte',
 });

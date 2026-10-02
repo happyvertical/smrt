@@ -218,3 +218,86 @@ and are unchanged.
   `SubscriptionServiceCommercialResolver` pricing for these entries.
 - [`smrt-support`](../support/README.md) — support-case time on the same table.
 - [`smrt-profiles`](../profiles/README.md) — the participants.
+
+## Attendance
+
+The `@happyvertical/smrt-timesheets/attendance` subpath adds `AttendancePunch`,
+`AttendanceBreak`, and `AttendanceService`. Apply migrations for the new tables
+before enabling the module. Existing entry and snapshot tables are unchanged.
+Attendance supports SQLite and PostgreSQL. DuckDB cannot enforce the required
+`ON UPDATE CASCADE` foreign-key contract used by attendance and existing entry
+corrections; schema creation deliberately fails rather than omitting constraints.
+
+Construct a service with your database and the **authorized session's**
+`{ tenantId, profileId }`. The application resolves Profile membership and
+operation permissions before this boundary; never pass request-supplied actor
+identifiers. A conflicting active tenant is refused. The service cannot read or
+link another profile's punch. Generated punch/break surfaces default to reads
+only; the replay ledger has no generated operations and is excluded from change
+feeds. Before constructing generated transports, consumers can close the remaining
+reads without replacing the models or changing their schema:
+
+```ts
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+import '@happyvertical/smrt-timesheets/attendance';
+
+for (const model of ['AttendancePunch', 'AttendanceBreak']) {
+  ObjectRegistry.registerOverride(`@happyvertical/smrt-timesheets:${model}`, {
+    api: false, cli: false, mcp: false,
+  });
+}
+```
+
+Required tenant scoping remains in effect after closing these surfaces.
+
+```ts
+import { AttendanceService } from '@happyvertical/smrt-timesheets/attendance';
+
+const attendance = new AttendanceService(db, { tenantId, profileId });
+await attendance.punchIn(new Date('2026-10-01T08:00:00Z'));
+await attendance.startBreak(new Date('2026-10-01T12:00:00Z')); // unpaid
+await attendance.endBreak(new Date('2026-10-01T12:30:00Z'));
+const punch = await attendance.punchOut(new Date('2026-10-01T16:00:00Z'), {
+  workRefType: '@acme/jobs:WorkPackage', workRefId: 'wp-7', description: 'Framing',
+});
+```
+
+Timestamps retain device milliseconds. `durationSeconds` is elapsed time minus
+unpaid breaks, rounded once to the nearest whole second; paid breaks remain
+included. Local time zone and payroll rounding policy belong to the consumer. Closing also ends an active break. New punches have the
+non-null `openSlot` value `open`, with a unique database index on tenant, profile
+and slot. Closed punches use a slot derived from their id, so PostgreSQL and
+SQLite enforce one open punch without differing nullable-unique semantics.
+The index compares native UUID owner columns directly, including PostgreSQL
+UUID normalization. Breaks use the same
+pattern per punch. Persisted ownership/start and closed intervals are immutable.
+Direct ORM saves serialize against the parent punch and reject a close while a
+break remains open or ends outside the punch.
+
+A work reference is optional: attendance alone is not billable evidence. Passing
+one on close, or calling `linkServiceTimeEntry(punch.id, work)` later, creates
+one draft `ServiceTimeEntry` atomically and records `serviceTimeEntryId` on the
+punch. Only the three declared work fields are copied; extra request fields cannot
+replace the trusted tenant or participant. Repeating the same link returns that entry; changing attribution is
+refused. Approval still uses the entry layer. Rollups must deduplicate this link,
+not count both attendance and its entry. Zero-net-duration punches cannot create
+service evidence.
+
+`autoClose(now, maxOpenSeconds)` closes a due open punch at its configured
+maximum duration and sets `reviewRequired`. It returns null before the deadline
+or when already closed. If later committed attendance would be truncated it
+refuses the operation for manual review. A scheduler calls this per authorized
+actor; the package does not choose overtime, payroll, or shop-time-zone rules.
+
+`replay(taps)` accepts `{ clientId, action, at, paid?, work? }`, where `action` is
+`punchIn`, `punchOut`, `startBreak`, or `endBreak`. It sorts each batch by device
+time, then client id. Client ids are durable and scoped to tenant/profile.
+Successful taps set `recordedOffline` and `reviewRequired`. The conflict policy
+is **committed attendance wins**: an event predating committed activity, or
+invalid for the current state, gets a durable error outcome. Identical retries
+return that outcome even after later shifts; changed payloads using the same id
+are rejected. Database failures roll back the tap and receipt together and can
+be retried. Earlier committed taps in the batch remain committed. Device clocks
+are treated as supplied evidence, not server authentication; consumers should
+apply device drift policy before replay. Replay receipts must be retained for as
+long as clients can retry their ids.

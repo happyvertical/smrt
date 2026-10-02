@@ -17,6 +17,7 @@
 // See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+export * from './attendance.js';
 export * from './models/index.js';
 export * from './services/index.js';
 export {
