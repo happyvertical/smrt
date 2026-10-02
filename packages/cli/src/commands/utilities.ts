@@ -74,6 +74,11 @@ import {
   runPostgresPermissions,
 } from './db-permissions.js';
 import { dbPruneCommand } from './db-prune.js';
+import {
+  dbMigrateQualifiedNamesCommand,
+  formatLegacyQualifiedNameReport,
+  runLegacyQualifiedNameReport,
+} from './db-qualified-names.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
@@ -3737,6 +3742,34 @@ export default testManifest;
           );
         }
         console.log();
+
+        // Stored references to deprecated qualified names (#3338): the
+        // signal that a `previousQualifiedNames` alias can be removed.
+        console.log('🏷️  Deprecated Qualified Names\n');
+        const legacyNames = await runLegacyQualifiedNameReport({
+          discover: false,
+        });
+        if (!legacyNames.report) {
+          check(
+            'Deprecated qualified-name references',
+            false,
+            legacyNames.error ?? 'Could not count stored references',
+          );
+        } else {
+          for (const line of formatLegacyQualifiedNameReport(
+            legacyNames.report,
+          )) {
+            console.log(line);
+          }
+          if (legacyNames.report.total > 0) {
+            warnings.push(
+              `deprecated qualified names: ${legacyNames.report.total} stored reference(s)`,
+            );
+          } else {
+            passed.push('Deprecated qualified-name references');
+          }
+        }
+        console.log();
       }
 
       // ========== Summary ==========
@@ -3799,6 +3832,7 @@ export default testManifest;
   'db:migrate-null-equal-indexes': dbMigrateNullEqualIndexesCommand,
   'db:migrate-agent-schedule-slugs': dbMigrateAgentScheduleSlugsCommand,
   'db:migrate-ledger-accounts': dbMigrateLedgerAccountsCommand,
+  'db:migrate-qualified-names': dbMigrateQualifiedNamesCommand,
   'db:materialize-tenant-hierarchy': dbMaterializeTenantHierarchyCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
   'db:orphans': dbOrphansCommand,
