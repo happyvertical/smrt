@@ -79,7 +79,7 @@ describe('tenantId decorator compatibility', () => {
     });
   });
 
-  it('reconciles same-name package classes through their exact constructors', () => {
+  it('reconciles same-name package classes through their exact constructors', async () => {
     let requiredConstructor: typeof SmrtObject;
     {
       @smrt({
@@ -135,7 +135,8 @@ describe('tenantId decorator compatibility', () => {
     ).toThrow(TenantContextError);
 
     expect(() =>
-      interceptor.beforeSave?.({ tenantId: '' } as SmrtObject, {
+      // The interceptor only reads tenantId; this structural double is intentional.
+      interceptor.beforeSave?.({ tenantId: '' } as unknown as SmrtObject, {
         className: 'TenantCollision',
         qualifiedClassName: '@fixture/tenant-required:TenantCollision',
         operation: 'save',
@@ -143,8 +144,8 @@ describe('tenantId decorator compatibility', () => {
       }),
     ).toThrow(TenantContextError);
 
-    withTenant({ tenantId: 'tenant-required-2763' }, () => {
-      const instance = { tenantId: '' } as SmrtObject;
+    await withTenant({ tenantId: 'tenant-required-2763' }, async () => {
+      const instance = { tenantId: '' } as unknown as SmrtObject;
       interceptor.beforeSave?.(instance, {
         className: 'TenantCollision',
         qualifiedClassName: '@fixture/tenant-required:TenantCollision',
@@ -247,6 +248,9 @@ describe('tenantId decorator compatibility', () => {
           objects: {
             SilentManifestOuterTenant: {
               className: 'SilentManifestOuterTenant',
+              name: 'silentmanifestoutertenant',
+              collection: 'silent_manifest_outer_tenants',
+              filePath: '/fixtures/SilentManifestOuterTenant.ts',
               fields: {},
               methods: {},
               decoratorConfig: {},
@@ -268,6 +272,9 @@ describe('tenantId decorator compatibility', () => {
           objects: {
             SilentManifestInnerTenant: {
               className: 'SilentManifestInnerTenant',
+              name: 'silentmanifestinnertenant',
+              collection: 'silent_manifest_inner_tenants',
+              filePath: '/fixtures/SilentManifestInnerTenant.ts',
               fields: {},
               methods: {},
               decoratorConfig: {},
@@ -293,6 +300,9 @@ describe('tenantId decorator compatibility', () => {
           objects: {
             FalseManifestOuterTenant: {
               className: 'FalseManifestOuterTenant',
+              name: 'falsemanifestoutertenant',
+              collection: 'false_manifest_outer_tenants',
+              filePath: '/fixtures/FalseManifestOuterTenant.ts',
               fields: {},
               methods: {},
               decoratorConfig: { tenantScoped: false },
@@ -314,6 +324,9 @@ describe('tenantId decorator compatibility', () => {
           objects: {
             FalseManifestInnerTenant: {
               className: 'FalseManifestInnerTenant',
+              name: 'falsemanifestinnertenant',
+              collection: 'false_manifest_inner_tenants',
+              filePath: '/fixtures/FalseManifestInnerTenant.ts',
               fields: {},
               methods: {},
               decoratorConfig: { tenantScoped: false },
@@ -339,6 +352,9 @@ describe('tenantId decorator compatibility', () => {
           objects: {
             ExplicitCoreFalseTenant: {
               className: 'ExplicitCoreFalseTenant',
+              name: 'explicitcorefalsetenant',
+              collection: 'explicit_core_false_tenants',
+              filePath: '/fixtures/ExplicitCoreFalseTenant.ts',
               fields: {},
               methods: {},
               decoratorConfig: { tenantScoped: false },
@@ -369,6 +385,9 @@ describe('tenantId decorator compatibility', () => {
         objects: {
           CaughtSilentManifestTenant: {
             className: 'CaughtSilentManifestTenant',
+            name: 'caughtsilentmanifesttenant',
+            collection: 'caught_silent_manifest_tenants',
+            filePath: '/fixtures/CaughtSilentManifestTenant.ts',
             fields: {},
             methods: {},
             decoratorConfig: {},
@@ -387,6 +406,9 @@ describe('tenantId decorator compatibility', () => {
         '@fixture/caught-silent-manifest:CaughtSilentManifestTenant',
         {
           className: 'CaughtSilentManifestTenant',
+          name: 'caughtsilentmanifesttenant',
+          collection: 'caught_silent_manifest_tenants',
+          filePath: '/fixtures/CaughtSilentManifestTenant.ts',
           fields: {},
           methods: {},
           decoratorConfig: { tenantScoped: false },
@@ -419,7 +441,7 @@ describe('tenantId decorator compatibility', () => {
       }),
     ).toThrow(/Regenerate the manifest/);
     expect(() =>
-      interceptor.beforeSave?.({ tenantId: '' } as SmrtObject, {
+      interceptor.beforeSave?.({ tenantId: '' } as unknown as SmrtObject, {
         className: 'CaughtSilentManifestTenant',
         qualifiedClassName:
           '@fixture/caught-silent-manifest:CaughtSilentManifestTenant',

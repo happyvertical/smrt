@@ -4,6 +4,7 @@
  * @see https://github.com/happyvertical/smrt/issues/675
  */
 
+import type { InterceptorContext } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Context tests
@@ -205,6 +206,8 @@ describe('TenantContext', () => {
       const job = { data: 'no tenant' };
 
       await expect(
+        // Deliberately unrelated job payload must be rejected by context extraction.
+        // @ts-expect-error no supported tenant context property
         TenantContext.runWithJobContext(job, async () => {}),
       ).rejects.toThrow(TenantContextError);
     });
@@ -997,7 +1000,7 @@ describe('TenantInterceptor', () => {
 
       // New instance (no id)
       const newInstance = { name: 'Acme Corp' } as any;
-      const newContext = {
+      const newContext: InterceptorContext = {
         className: 'Tenant',
         operation: 'save' as const,
         timestamp: new Date(),
@@ -1007,7 +1010,7 @@ describe('TenantInterceptor', () => {
 
       // Existing instance (has id)
       const existingInstance = { id: 'tenant-1', name: 'Acme Corp' } as any;
-      const existingContext = {
+      const existingContext: InterceptorContext = {
         className: 'Tenant',
         operation: 'save' as const,
         timestamp: new Date(),
@@ -1024,7 +1027,7 @@ describe('TenantInterceptor', () => {
       });
 
       const instance = { name: 'test doc' } as any;
-      const context = {
+      const context: InterceptorContext = {
         className: 'Document',
         operation: 'save' as const,
         timestamp: new Date(),
