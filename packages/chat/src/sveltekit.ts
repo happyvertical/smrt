@@ -827,7 +827,18 @@ export function mountAssistantRoutes(
       }
     }
     const continuations = continuationStoreFor(context, chat, session);
+    // The turn stops when the request is aborted OR the response body is
+    // cancelled (a client that left), whichever the adapter reports.
+    const abort = new AbortController();
+    const requestSignal = context.event.request.signal;
+    if (requestSignal.aborted) abort.abort();
+    else {
+      requestSignal.addEventListener('abort', () => abort.abort(), {
+        once: true,
+      });
+    }
     return {
+      abort,
       ai,
       model,
       clientTools,
@@ -871,7 +882,7 @@ export function mountAssistantRoutes(
           ? { postgresRls: options.postgresRls }
           : {}),
         onBehalfOfUserId: principal.userId,
-        signal: context.event.request.signal,
+        signal: abort.signal,
         ...(options.onUsage
           ? {
               onUsage: (usage: ToolLoopUsage) => {
@@ -902,12 +913,16 @@ export function mountAssistantRoutes(
 
   const stream = (
     events: AsyncGenerator<AssistantTurnEvent<AssistantMessageWire>, unknown>,
+    abort: AbortController,
   ) =>
     createAssistantTurnResponse(events, {
       ...(options.heartbeatMs !== undefined
         ? { heartbeatMs: options.heartbeatMs }
         : {}),
       onError: safeLog,
+      // A cancelled body cancels the turn, even when the adapter never
+      // aborts the request signal on disconnect.
+      onCancel: () => abort.abort(),
     });
 
   // ---- route bodies ------------------------------------------------------
@@ -1257,7 +1272,10 @@ export function mountAssistantRoutes(
         originMessageId: userWire.id,
         onState: recordTurnState(chat, principal, threadId),
       });
-      return stream(detached({ type: 'message', message: userWire }, events));
+      return stream(
+        detached({ type: 'message', message: userWire }, events),
+        setup.abort,
+      );
     } catch (error) {
       await recordFailure('failed');
       throw error;
@@ -1320,6 +1338,7 @@ export function mountAssistantRoutes(
           onState: recordTurnState(chat, principal, threadId),
         }),
       ),
+      setup.abort,
     );
   };
 
@@ -1527,9 +1546,11 @@ export function mountAssistantRoutes(
  * from the moment the handler returns into a buffer the response reads from
  * (after `first`, when given); a reader that leaves only stops reading. The
  * turn itself records its outcome (`onState`), so nothing here depends on
- * how far the reader got. A client disconnect cancels the turn through the
- * request's abort signal, as the dock's Stop does; the runner then records
- * `cancelled` (or `completed`, if the reply was already stored).
+ * how far the reader got. A client disconnect cancels the turn — through the
+ * request's abort signal, or the response body's cancellation when the
+ * adapter does not abort the request — as the dock's Stop does; the runner
+ * then records `cancelled` (or `completed`, if the reply was already
+ * stored).
  */
 function detached<M>(
   first: AssistantTurnEvent<M> | null,

@@ -1467,6 +1467,123 @@ describe('mountAssistantRoutes', () => {
       }
     });
 
+    // ---- review 4 (P1/P2) ----------------------------------------------
+
+    it('cancels the turn when the response body is cancelled without aborting the request (P1 probe)', async () => {
+      const ran: PrincipalRun[] = [];
+      let entered: () => void = () => {};
+      const inFirstCall = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let calls = 0;
+      const ai = {
+        async chat() {
+          calls += 1;
+          if (calls === 1) {
+            entered();
+            await gate;
+            // Released with a SERVER tool call.
+            return {
+              content: '',
+              finishReason: 'tool_calls',
+              toolCalls: [
+                {
+                  id: 'srv-1',
+                  type: 'function',
+                  function: { name: 'data-discover', arguments: '{}' },
+                },
+              ],
+            };
+          }
+          return { content: 'should not be reached', finishReason: 'stop' };
+        },
+      } as unknown as AIInterface;
+      const routes = mount({
+        ai,
+        allowedTools: ['data.discover'],
+        extraTools: [discoverTool(ran)],
+      });
+      const threadId = await createThread(routes);
+      const response = await retry(routes, threadId, 'probe', 'p1-probe');
+      const opened = await readUntil(response, () => true);
+      await inFirstCall;
+      // The client leaves; the adapter never aborts `request.signal`.
+      await opened.reader.cancel();
+      release();
+      await waitForOutcome(threadId, 'p1-probe', 'cancelled');
+      expect(ran).toHaveLength(0);
+      expect(calls).toBe(1);
+      expect(
+        await (await retry(routes, threadId, 'probe', 'p1-probe')).json(),
+      ).toMatchObject({ outcome: 'cancelled', inProgress: false });
+    });
+
+    it('keeps a resuming send in progress between taking its continuation and recording running (P2)', async () => {
+      const routes = mount({ ai: turnAI(), clientToolAllowList: ['page_*'] });
+      const threadId = await createThread(routes);
+      const suspended = await suspendSend(routes, threadId, 'call:p2', 'p2-a');
+      const original = ChatService.prototype.recordClientRequestOutcome;
+      let blocked: () => void = () => {};
+      const reached = new Promise<void>((resolve) => {
+        blocked = resolve;
+      });
+      let proceed: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        proceed = resolve;
+      });
+      const spy = vi
+        .spyOn(ChatService.prototype, 'recordClientRequestOutcome')
+        .mockImplementation(async function (
+          this: ChatService,
+          ...args: Parameters<ChatService['recordClientRequestOutcome']>
+        ) {
+          if (args[0].outcome === 'running' && args[0].resumedFrom) {
+            blocked();
+            await gate;
+          }
+          return original.apply(this, args);
+        });
+      try {
+        const resumeResponse = await resume(routes, threadId, {
+          continuationId: suspended.continuationId,
+          results: [{ id: 't-call:p2', ok: true, result: 'page' }],
+        });
+        const reading = events(resumeResponse);
+        // `take` has run: the runner is now recording `running`.
+        await reached;
+        expect(await outcomeOf(threadId, 'p2-a')).toBe('suspended');
+        const poll = await retry(routes, threadId, 'call:p2', 'p2-a');
+        expect(poll.status).toBe(200);
+        expect(await poll.json()).toMatchObject({ outcome: 'in_progress' });
+        // The claimed continuation is single-use meanwhile.
+        const second = await events(
+          await resume(routes, threadId, {
+            continuationId: suspended.continuationId,
+            results: [{ id: 't-call:p2', ok: true, result: 'page' }],
+          }),
+        );
+        expect(second.seen.find((e) => e.type === 'error')).toMatchObject({
+          code: 'continuation_expired',
+        });
+        proceed();
+        const done = await reading;
+        expect(done.seen.some((e) => e.type === 'done')).toBe(true);
+        expect(
+          await (await retry(routes, threadId, 'call:p2', 'p2-a')).json(),
+        ).toMatchObject({
+          outcome: 'completed',
+          assistantMessage: { content: 'reply call:p2' },
+        });
+      } finally {
+        proceed();
+        spy.mockRestore();
+      }
+    });
+
     it('refuses out-of-order and stale outcome writes, compare-and-set', async () => {
       const routes = mount();
       const threadId = await createThread(routes);
