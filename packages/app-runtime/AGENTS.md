@@ -30,6 +30,9 @@ Application infrastructure composition for the validated runtime profiles in
 - Owner bootstrap creates normal `Person`, `User`, `Tenant`, owner `Role` /
   `Membership`, and `Session` records in one transaction.
 - Bootstrap is loopback-only. Only an HMAC of the short-lived token is stored.
+  A token that cannot claim fails a read-only preflight before role/catalog
+  seeding (#3323); the claim transaction's conditional UPDATE stays the
+  authority for single use, expiry, and concurrency.
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
 
