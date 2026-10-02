@@ -261,3 +261,26 @@ providers, secret managers, workers, billing, or a hosted control plane. The
 operator applies application migrations and, when `database-rls` is selected,
 the documented s-m-r-t PostgreSQL policies. The selector validates intent; it
 does not mutate database roles or privileges during web startup.
+
+## SvelteKit server hooks
+
+SvelteKit applications consume the profiles through
+`@happyvertical/smrt-app-runtime/sveltekit` instead of copying profile
+conditionals, tenant selection, and diagnostics glue into each app:
+
+```ts
+// src/hooks.server.ts
+import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
+
+export const runtime = createSmrtSvelteKitRuntime();
+export const { handle, init } = runtime;
+```
+
+`init` runs the profile's fail-closed startup (local runtime, or deployed
+bindings, which additionally require explicit `providerReadiness` probes).
+`handle` waits for startup, then resolves a URL tenant candidate as selection
+only, loads the signed session with tenant context, and publishes
+`locals.tenantContext` only when that context matches the session tenant. The
+same entry provides mountable health, authorized diagnostics, the local
+owner-setup `load`/`actions` (loopback peer and loopback host re-checked per
+request), and a session layout summary. See the package README for options.

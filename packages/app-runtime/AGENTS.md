@@ -68,6 +68,23 @@ Application infrastructure composition for the validated runtime profiles in
 - Cloud must keep required tenant context and must never introduce a root or
   unscoped tenant fallback. RLS remains an explicit deployment/migration choice.
 
+## SvelteKit entry (`./sveltekit`)
+
+- Server-only subpath; `@sveltejs/kit` is an optional peer and is externalized
+  in `vite.config.ts` (kit recognizes `redirect`/`fail` by class identity).
+  The root entry must never import kit or Svelte.
+- `createSmrtSvelteKitRuntime()` order is fixed: readiness gate → URL tenant
+  selection (`locals.selectedTenant*`, never tenant context, headers ignored) →
+  session with `enterTenantContext: true` (not overridable) → publish
+  `locals.tenantContext` only when it matches the session tenant.
+- Template-only concerns (writer lease, provider readiness modules, onboarding
+  file cleanup) are injected hooks, not reimplemented here. Deployed startup
+  fails closed without `providerReadiness`.
+- Owner setup re-checks loopback peer and loopback URL host per request and
+  returns only fixed `{ code, message }` failures.
+- `resolveApplicationId()` / `runtimeConfigurationFingerprint()` must stay
+  byte-compatible with process managers (golden vectors in tests).
+
 ## Public runtime diagnostics
 
 - `projectRuntimeDiagnostics()` is the only public diagnostic projection. It

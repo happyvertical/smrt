@@ -102,6 +102,74 @@ explicitly enabled. With embedded job topology, `createEmbeddedJobRunner()`
 returns the normal s-m-r-t `TaskRunner`, so the application keeps one enqueue
 and execution contract without requiring a separate worker service.
 
+## SvelteKit entry
+
+`@happyvertical/smrt-app-runtime/sveltekit` composes the profile runtime,
+tenant selection, the signed session, and authorized-tenant locals so an app's
+server hooks are a few lines. `@sveltejs/kit` is an optional peer dependency;
+the root entry never imports it.
+
+```ts
+// src/hooks.server.ts
+import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
+
+export const runtime = createSmrtSvelteKitRuntime({
+  prepareDatabase: runApplicationMigrations, // optional, idempotent
+});
+export const { handle, init } = runtime;
+```
+
+```ts
+// src/app.d.ts
+import type { SmrtRuntimeLocals } from '@happyvertical/smrt-app-runtime/sveltekit';
+declare global {
+  namespace App {
+    interface Locals extends SmrtRuntimeLocals {}
+  }
+}
+```
+
+`init` is the fail-closed startup gate (local runtime or deployed bindings) and
+`handle` waits for it, then runs, in order: URL tenant selection into
+`locals.selectedTenant*` (never tenant context; tenant headers are ignored),
+`createSessionHandler({ enterTenantContext: true })`, and publication of
+`locals.tenantContext` only when the active context matches the session
+tenant. Defaults read `SMRT_APP_ID`, `SMRT_DATA_DIR`, `HOST`, `DATABASE_URL`,
+`TENANT_BASE_DOMAIN`, and `SMRT_BACKGROUND_JOBS`; `smrt.config` `runtime`
+selects the profile (local when absent). Deployed profiles additionally require
+`providerReadiness` probes and fail closed without them. Optional hooks:
+`acquireWriterLease` (local single-writer lease), `onBootstrapInvitation`
+(present a newly issued setup token), `selectTenant`, `session`, and
+`classOverrides`. `runtime.classOptions(className)` returns collection options
+for application code.
+
+Mountable routes:
+
+```ts
+// src/routes/api/_runtime/health/+server.ts
+export const GET = createRuntimeHealthHandler(runtime);
+// src/routes/api/_runtime/diagnostics/+server.ts
+export const GET = createRuntimeDiagnosticsHandler({ runtime, toolNames });
+// src/routes/setup/+page.server.ts
+export const { load, actions } = createOwnerSetupPage(runtime);
+// src/routes/+layout.server.ts
+export const load = createSessionLayoutLoad();
+```
+
+Diagnostics authorize (owner role or `runtime_diagnostics.read` on an active,
+session-matching membership) before reading the runtime and return only stable
+`{ schemaVersion: 1, error: { code } }` failures. Owner setup is local-only and
+re-checks on every request that both the peer address and the URL host are
+loopback; its `default` action reads `token`, `name`, `email`, and optional
+`tenantName`, sets the session cookie, and redirects 303, or returns
+`fail(status, { code, message })` with `setup_disabled` (404),
+`setup_unavailable` (403), `setup_invalid_input` (400), or `setup_invalid`
+(400). Claim error text is never returned.
+
+`resolveApplicationId()` and `runtimeConfigurationFingerprint()` (root entry)
+are the canonical app ID and secret-free configuration fingerprint shared by
+the web health route and process managers.
+
 ## Self-hosted and cloud applications
 
 The deployed initializer validates the selected profile against concrete,
