@@ -200,10 +200,9 @@ describePostgres('agent reply authoring on PostgreSQL (#2995)', () => {
   });
 
   it('reserves a client request on its native uuid primary key, once (#3368)', async () => {
-    const room = await chat.createRoom({
+    const { session, room } = await chat.createAgentSession({
       tenantId,
-      name: 'Assistant',
-      roomType: 'private',
+      agentId: AGENT_ID,
       actorProfileId,
     });
     const thread = await chat.startThread({
@@ -235,13 +234,22 @@ describePostgres('agent reply authoring on PostgreSQL (#2995)', () => {
     await expect(send()).rejects.toBeInstanceOf(ChatClientRequestConflictError);
     // ... and leaves the (transaction) handle usable: the winner is read back
     // by id through the membership-gated facade.
-    const window = await chat.getThreadMessagesFrom({
+    // A reply links to its send (replyToMessageId) and is found by that link.
+    const reply = await sendAgentReply(chat, {
+      tenantId,
+      agentSessionId: session.id as string,
+      threadId: thread.id as string,
+      replyToMessageId: expectedId,
+      content: 'answered',
+    });
+    const linked = await chat.getThreadMessageReplies({
       threadId: thread.id as string,
       messageId: expectedId,
       actorProfileId,
       tenantId,
     });
-    expect(window.map((m) => m.id)).toEqual([expectedId]);
+    expect(linked?.message.id).toBe(expectedId);
+    expect(linked?.replies.map((m) => m.id)).toEqual([reply.id]);
     const rows = await isolated?.db.query(
       `SELECT CAST(id AS VARCHAR) AS id, pg_typeof(id)::text AS type
          FROM chat_messages
@@ -253,6 +261,6 @@ describePostgres('agent reply authoring on PostgreSQL (#2995)', () => {
       threadId: thread.id as string,
       tenantId,
     });
-    expect(counted?.messageCount).toBe(1);
+    expect(counted?.messageCount).toBe(2);
   });
 });

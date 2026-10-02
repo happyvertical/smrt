@@ -84,6 +84,12 @@ export interface AssistantTurnContinuation {
   tokens?: number;
   /** `Date.now()` when the turn started (for `maxTurnMs`). Absent: `createdAt`. */
   startedAt?: number;
+  /**
+   * The message that started the turn (`AssistantTurnOptions.originMessageId`),
+   * kept server-side so a resume restores it from here, never from the
+   * request.
+   */
+  originMessageId?: string;
 }
 
 /**
@@ -95,6 +101,11 @@ export interface AssistantTurnContinuation {
 export interface AssistantContinuationStore {
   save(key: string, continuation: AssistantTurnContinuation): Promise<void>;
   take(key: string, id: string): Promise<AssistantTurnContinuation | null>;
+  /**
+   * Whether `id` is still waiting under `key` (present and unexpired),
+   * without consuming it. Optional; both built-in stores implement it.
+   */
+  has?(key: string, id: string): Promise<boolean>;
 }
 
 /** In-memory store, for tests and single-process demos. */
@@ -114,6 +125,12 @@ export function createMemoryContinuationStore(
       if (!entry || entry.id !== id) return null;
       entries.delete(key);
       return now() - entry.createdAt > ttl ? null : entry;
+    },
+    async has(key, id) {
+      const entry = entries.get(key);
+      return Boolean(
+        entry && entry.id === id && now() - entry.createdAt <= ttl,
+      );
     },
   };
 }
@@ -192,6 +209,12 @@ export function createSessionContinuationStore(
       });
       return now() - Number(entry.createdAt) > ttl ? null : entry;
     },
+    async has(key, id) {
+      const entry = read(await load())[key];
+      return Boolean(
+        entry && entry.id === id && now() - Number(entry.createdAt) <= ttl,
+      );
+    },
   };
 }
 
@@ -230,6 +253,19 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   userMessage?: string;
   /** Resume a suspended turn with the browser's results. */
   resume?: { continuationId: string; results: ClientToolResultInput[] };
+  /**
+   * The message that started this turn (e.g. the user's send). Every reply
+   * the turn authors links to it (`replyToMessageId`), and a suspension keeps
+   * it with the continuation. Ignored on resume: the consumed continuation's
+   * value is used instead.
+   */
+  originMessageId?: string;
+  /**
+   * Called once a resume has consumed its continuation (before the model
+   * runs), with the continuation. Not called when the continuation is
+   * missing, foreign or expired.
+   */
+  onResumed?: (continuation: AssistantTurnContinuation) => void;
   tools?: ManifestTool[];
   /** Server tools, narrowed to `principal.allowedTools`. */
   extraTools?: PrincipalTool[];
@@ -289,6 +325,8 @@ export interface AssistantTurnResult {
   stoppedReason: AssistantTurnStopReason | 'client_tools' | 'error';
   content: string;
   loop?: ToolLoopResult;
+  /** The turn's origin message (from the continuation on a resume). */
+  originMessageId?: string;
 }
 
 function defaultSerialize<M>(message: unknown): M {
@@ -434,6 +472,7 @@ async function runTurn<M>(
   let initialTokens = 0;
   let startedAt = now();
   let clientTools = options.clientTools ?? [];
+  let originMessageId = options.resume ? undefined : options.originMessageId;
   if (options.resume) {
     if (!options.continuations || !options.continuationKey) {
       throw new Error('Resuming a turn needs a continuation store and key.');
@@ -447,6 +486,12 @@ async function runTurn<M>(
         'This step expired or was already answered. Ask again to continue.',
         'continuation_expired',
       );
+    }
+    originMessageId = continuation.originMessageId;
+    try {
+      options.onResumed?.(continuation);
+    } catch (error) {
+      (options.onError ?? defaultLogError)(error);
     }
     messages = appendClientToolResults(
       continuation.messages,
@@ -607,6 +652,7 @@ async function runTurn<M>(
           tenantId: author.tenantId,
           agentSessionId: author.agentSessionId,
           threadId: author.threadId ?? null,
+          replyToMessageId: originMessageId ?? null,
           kind: 'tool',
           content: reply.content,
           messageType: reply.messageType ?? 'tool_result',
@@ -650,6 +696,7 @@ async function runTurn<M>(
       clientTools,
       tokens: initialTokens + loop.totalTokens,
       startedAt,
+      ...(originMessageId ? { originMessageId } : {}),
     };
     await options.continuations.save(options.continuationKey, continuation);
     emit(
@@ -676,13 +723,23 @@ async function runTurn<M>(
         effect: call.effect,
       })),
     });
-    return { stoppedReason: 'client_tools', content: loop.content, loop };
+    return {
+      stoppedReason: 'client_tools',
+      content: loop.content,
+      loop,
+      ...(originMessageId ? { originMessageId } : {}),
+    };
   }
 
   if (loop.stoppedReason === 'cancelled') {
     emit({ type: 'done', stoppedReason: 'cancelled' });
     emit(status({ state: 'idle', label: 'Stopped' }));
-    return { stoppedReason: 'cancelled', content: '', loop };
+    return {
+      stoppedReason: 'cancelled',
+      content: '',
+      loop,
+      ...(originMessageId ? { originMessageId } : {}),
+    };
   }
 
   const content = loop.content.trim() || 'Done.';
@@ -692,6 +749,7 @@ async function runTurn<M>(
       tenantId: author.tenantId,
       agentSessionId: author.agentSessionId,
       threadId: author.threadId ?? null,
+      replyToMessageId: originMessageId ?? null,
       kind: 'assistant',
       content,
     });
@@ -704,7 +762,12 @@ async function runTurn<M>(
     stoppedReason: loop.stoppedReason,
   });
   emit(status({ state: 'done', label: 'Done' }));
-  return { stoppedReason: loop.stoppedReason, content, loop };
+  return {
+    stoppedReason: loop.stoppedReason,
+    content,
+    loop,
+    ...(originMessageId ? { originMessageId } : {}),
+  };
 }
 
 /** Default SSE keep-alive for {@link createAssistantTurnResponse}. */

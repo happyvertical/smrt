@@ -875,6 +875,50 @@ describe('assistant turn', () => {
       now += 500;
       expect(await store.take('k', 'a')).toBeNull();
     });
+
+    it('reports whether a continuation is still waiting without consuming it (#3368)', async () => {
+      let now = 1_000;
+      let context: Record<string, unknown> = {};
+      const session = {
+        getSessionContext: () => context,
+        async updateSessionContext(updates: Record<string, unknown>) {
+          context = { ...context, ...updates };
+        },
+      };
+      for (const store of [
+        createMemoryContinuationStore({ ttlMs: 100, now: () => now }),
+        createSessionContinuationStore(session, { ttlMs: 100, now: () => now }),
+      ]) {
+        now = 1_000;
+        await store.save('k', {
+          version: 1,
+          id: 'a',
+          createdAt: now,
+          steps: 0,
+          messages: [],
+          pending: [],
+          clientTools: [],
+          originMessageId: 'send-1',
+        });
+        expect(await store.has?.('k', 'a')).toBe(true);
+        expect(await store.has?.('k', 'b')).toBe(false);
+        expect(await store.has?.('other', 'a')).toBe(false);
+        expect(await store.has?.('k', 'a')).toBe(true);
+        expect((await store.take('k', 'a'))?.originMessageId).toBe('send-1');
+        expect(await store.has?.('k', 'a')).toBe(false);
+        await store.save('k', {
+          version: 1,
+          id: 'c',
+          createdAt: now,
+          steps: 0,
+          messages: [],
+          pending: [],
+          clientTools: [],
+        });
+        now += 500;
+        expect(await store.has?.('k', 'c')).toBe(false);
+      }
+    });
   });
 
   describe('error redaction on the wire', () => {

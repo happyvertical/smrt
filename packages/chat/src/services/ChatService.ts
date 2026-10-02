@@ -67,6 +67,11 @@ export interface AgentReplyParams {
    * room/tenant as the session (validated in {@link ChatService.writeMessage}).
    */
   threadId?: string | null;
+  /**
+   * The message this reply answers (e.g. the user send that started the
+   * turn). Validated to the same room/tenant like `threadId`.
+   */
+  replyToMessageId?: string | null;
 }
 
 /**
@@ -139,8 +144,9 @@ export class ChatClientRequestConflictError extends Error {
   }
 }
 
-/** How the turn answering a client request ended (`metadata.turnOutcome`). */
+/** Where the turn answering a client request stands (`metadata.turnOutcome`); `running` is a resumed leg in flight. */
 export type ChatClientRequestOutcome =
+  | 'running'
   | 'completed'
   | 'cancelled'
   | 'suspended'
@@ -1170,6 +1176,7 @@ export class ChatService {
       messageType: params.messageType ?? 'text',
       threadId: params.threadId ?? null,
       agentSessionId: params.agentSessionId,
+      replyToMessageId: params.replyToMessageId ?? null,
       toolCallData: params.toolCallData ?? null,
     });
   }
@@ -1454,18 +1461,19 @@ export class ChatService {
   }
 
   /**
-   * A stored message and everything after it in its thread, oldest first
-   * (#3368). Tenant- and membership-bound like {@link ChatService.getThreadMessages};
-   * returns `[]` when the message is not in the thread. Lookup is by id, so
-   * it is not limited to the thread's latest window.
+   * A stored message and the replies linked to it (`replyToMessageId`),
+   * oldest first (#3368), or `null` when the message is not in the thread.
+   * Tenant- and membership-bound like {@link ChatService.getThreadMessages}.
+   * Replies are found by their link, not by position, so overlapping turns
+   * in one thread never claim each other's replies.
    */
-  async getThreadMessagesFrom(params: {
+  async getThreadMessageReplies(params: {
     threadId: string;
     messageId: string;
     actorProfileId: string;
     tenantId: string;
     limit?: number;
-  }): Promise<ChatMessage[]> {
+  }): Promise<{ message: ChatMessage; replies: ChatMessage[] } | null> {
     const thread = await this.#threads.get({
       id: params.threadId,
       tenantId: params.tenantId,
@@ -1478,23 +1486,23 @@ export class ChatService {
       params.actorProfileId,
       params.tenantId,
     );
-    const anchor = await this.#messages.get({
+    const message = await this.#messages.get({
       id: params.messageId,
       threadId: params.threadId,
       tenantId: params.tenantId,
     });
-    if (!anchor || anchor.isDeleted) return [];
-    const later = await this.#messages.list({
+    if (!message || message.isDeleted) return null;
+    const replies = await this.#messages.list({
       where: {
         tenantId: params.tenantId,
         threadId: params.threadId,
+        replyToMessageId: params.messageId,
         isDeleted: false,
-        'created_at >=': anchor.created_at,
       },
       orderBy: 'created_at ASC',
       limit: params.limit ?? 100,
     });
-    return [anchor, ...later.filter((message) => message.id !== anchor.id)];
+    return { message, replies };
   }
 
   /**
@@ -1508,6 +1516,8 @@ export class ChatService {
     messageId: string;
     actorProfileId: string;
     outcome: ChatClientRequestOutcome;
+    /** The continuation a `suspended` turn waits on. */
+    continuationId?: string | null;
   }): Promise<void> {
     const message = await this.#messages.get({
       id: params.messageId,
@@ -1529,6 +1539,8 @@ export class ChatService {
       ...message.getMetadata(),
       turnOutcome: params.outcome,
       turnSettledAt: new Date().toISOString(),
+      turnContinuationId:
+        params.outcome === 'suspended' ? (params.continuationId ?? null) : null,
     });
     await message.save();
   }
