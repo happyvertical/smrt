@@ -83,7 +83,7 @@ describe('direct tenant registration resolves qualified core identity (#2792)', 
       ).toThrow(TenantContextError);
       expect(() =>
         interceptor.beforeSave?.(
-          { tenantId: '' } as SmrtObject,
+          { tenantId: '' } as unknown as SmrtObject,
           context('save'),
         ),
       ).toThrow(TenantContextError);
@@ -98,7 +98,8 @@ describe('direct tenant registration resolves qualified core identity (#2792)', 
           interceptor.beforeGet?.('Document', 'visible', context('get')),
         ).toEqual({ slug: 'visible', context: '', tenantId: TENANT });
 
-        const own = { tenantId: '' } as SmrtObject;
+        // The save hook only needs the tenant marker from this structural double.
+        const own = { tenantId: '' } as unknown as SmrtObject;
         interceptor.beforeSave?.(own, context('save'));
         expect((own as unknown as { tenantId: string }).tenantId).toBe(TENANT);
 
@@ -118,7 +119,7 @@ describe('direct tenant registration resolves qualified core identity (#2792)', 
         ).toThrow(TenantIsolationError);
         expect(() =>
           interceptor.beforeSave?.(
-            { tenantId: OTHER_TENANT } as SmrtObject,
+            { tenantId: OTHER_TENANT } as unknown as SmrtObject,
             context('save'),
           ),
         ).toThrow(TenantIsolationError);
@@ -147,16 +148,20 @@ describe('direct tenant registration resolves qualified core identity (#2792)', 
       PromotedAliasDocument2792,
     )?.packageName;
     expect(packageName).toBeDefined();
+    if (!packageName) throw new Error('Promoted alias has no package name');
     const qualified = `${packageName}:${name}`;
     ObjectRegistry.registerFromManifest(
       name,
       {
         className: name,
+        name: name.toLowerCase(),
+        collection: `promoted_alias_${order}_2792`,
+        filePath: '/fixtures/PromotedAliasDocument2792.ts',
         fields: {},
         methods: {},
         decoratorConfig: { tableName: `promoted_alias_${order}_2792` },
       },
-      packageName!,
+      packageName,
     );
 
     expect(ObjectRegistry.findClassesByName(name)).toHaveLength(1);
@@ -455,7 +460,7 @@ describe('direct tenant registration resolves qualified core identity (#2792)', 
       expect(
         interceptor.beforeGet?.('Document', 'visible', context('get')),
       ).toBeUndefined();
-      const instance = { tenantId: '' } as SmrtObject;
+      const instance = { tenantId: '' } as unknown as SmrtObject;
       interceptor.beforeSave?.(instance, context('save'));
       expect((instance as unknown as { tenantId: string }).tenantId).toBe('');
       expect(

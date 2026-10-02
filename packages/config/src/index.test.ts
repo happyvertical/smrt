@@ -14,9 +14,14 @@ import { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';
 
 describe('mergeConfigs', () => {
   it('should not merge null values', () => {
+    // Null is intentionally outside Partial<T>; the merge must ignore it at runtime.
+    const nullOverride = { db: null, enabled: null } as unknown as Partial<{
+      db: { url: string };
+      enabled: boolean;
+    }>;
     const result = mergeConfigs(
       { db: { url: ':memory:' }, enabled: true },
-      { db: null, enabled: null },
+      nullOverride,
       {},
     );
     expect(result.db).toEqual({ url: ':memory:' });
@@ -45,7 +50,11 @@ describe('mergeConfigs', () => {
   });
 
   it('does not alias input arrays/objects into the merged result (#1579)', () => {
-    const defaults = { features: { list: ['a'] }, kept: { tags: ['k'] } };
+    const defaults: {
+      features: { list: string[] };
+      kept: { tags: string[] };
+      extra?: { items: string[] };
+    } = { features: { list: ['a'] }, kept: { tags: ['k'] } };
     const fileConfig = { extra: { items: ['x'] } };
     const merged = mergeConfigs(defaults, fileConfig, {});
 
@@ -55,7 +64,7 @@ describe('mergeConfigs', () => {
     fileConfig.extra.items.push('y');
     expect(merged.features.list).toEqual(['a']);
     expect(merged.kept.tags).toEqual(['k']);
-    expect(merged.extra.items).toEqual(['x']);
+    expect(merged.extra?.items).toEqual(['x']);
 
     // ...and mutating the result must not leak back into the inputs.
     (merged.features.list as string[]).push('c');

@@ -1,10 +1,7 @@
-import {
-  ObjectRegistry,
-  type SmrtClassOptions,
-} from '@happyvertical/smrt-core';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { SmartObjectManifest } from '@happyvertical/smrt-core/manifest';
 import { FeatureDefinitionCollection } from './feature-definitions.js';
-import { withoutListBounds } from './list-bounds.js';
+import { type FeatureHostOptions, withoutListBounds } from './list-bounds.js';
 import type {
   FeatureDefinitionSeed,
   FeatureSyncResult,
@@ -20,11 +17,11 @@ import {
 } from './utils.js';
 
 export class FeatureSyncService {
-  private readonly options: SmrtClassOptions;
+  private readonly options: FeatureHostOptions;
   private featureDefinitions!: FeatureDefinitionCollection;
   private initializationPromise: Promise<void> | null = null;
 
-  constructor(options: SmrtClassOptions = {}) {
+  constructor(options: FeatureHostOptions = {}) {
     this.options = options;
   }
 

@@ -46,8 +46,11 @@ postgresDescribe('PostgreSQL isolated change-feed bootstrap (#2427)', () => {
       );
       const helperRows = Array.isArray(helperResult)
         ? helperResult
-        : ((helperResult as { rows?: Array<{ helper: string | null }> }).rows ??
-          []);
+        : ((
+            helperResult as unknown as {
+              rows?: Array<{ helper: string | null }>;
+            }
+          ).rows ?? []);
       expect(helperRows[0]).toEqual(
         expect.objectContaining({ helper: expect.any(String) }),
       );

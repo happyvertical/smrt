@@ -32,7 +32,7 @@ class HardeningProbe extends SmrtObject {
 }
 
 afterEach(() => {
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
 });
 
 describe('TaskRunner security hardening (S5 #1402)', () => {

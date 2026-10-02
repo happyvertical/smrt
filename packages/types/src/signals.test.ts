@@ -13,7 +13,7 @@ describe('Signal Types', () => {
       className: 'TestClass',
       method: 'testMethod',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     expect(signal.id).toBe('exec-123');
@@ -30,7 +30,7 @@ describe('Signal Types', () => {
         className: 'Test',
         method: 'test',
         type,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
 
       expect(signal.type).toBe(type);
@@ -44,7 +44,7 @@ describe('Signal Types', () => {
       className: 'Test',
       method: 'test',
       type: 'end',
-      timestamp: Date.now(),
+      timestamp: new Date(),
       step: 'validation',
       args: [1, 'test', { key: 'value' }],
       result: { success: true },
@@ -67,7 +67,7 @@ describe('Signal Types', () => {
       className: 'Test',
       method: 'test',
       type: 'error',
-      timestamp: Date.now(),
+      timestamp: new Date(),
       error,
       duration: 50,
     };
@@ -94,7 +94,7 @@ describe('SignalAdapter Interface', () => {
       className: 'Test',
       method: 'test',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await adapter.handle(signal);
@@ -120,7 +120,7 @@ describe('SignalAdapter Interface', () => {
       className: 'Test',
       method: 'test',
       type: 'end',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await adapter.handle(signal);

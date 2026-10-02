@@ -40,7 +40,7 @@ class LazyConfigProbe extends SmrtObject {
 }
 
 afterEach(() => {
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
   resetConfigResolvers();
   delete process.env.LAZY_AGENT_ENV_VAR;
   delete process.env.LAZY_AGENT_CLASS_VAR;

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.package-test.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals", "svelte"],
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "ambient.d.ts",
+    "../vitest/src/svelte-setup.ts",
+    "src/svelte/**/*.ts",
+    "src/svelte/**/*.svelte"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

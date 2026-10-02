@@ -122,6 +122,7 @@ describe('FeatureSyncService', () => {
       objects: {
         '@test/smrt-feature-manifest:ManifestFixture': {
           className: 'ManifestFixture',
+          name: 'manifestfixture',
           qualifiedName: '@test/smrt-feature-manifest:ManifestFixture',
           collection: 'manifestfixtures',
           filePath: '/tmp/ManifestFixture.ts',
@@ -205,6 +206,7 @@ describe('FeatureSyncService', () => {
       objects: {
         '@test/smrt-feature-empty-manifest:ManifestFixture': {
           className: 'ManifestFixture',
+          name: 'manifestfixture',
           qualifiedName: '@test/smrt-feature-empty-manifest:ManifestFixture',
           collection: 'manifestfixtures',
           filePath: '/tmp/ManifestFixture.ts',
@@ -277,6 +279,7 @@ describe('FeatureSyncService', () => {
       objects: {
         '@test/smrt-feature-prune-bounds:ManifestFixture': {
           className: 'ManifestFixture',
+          name: 'manifestfixture',
           qualifiedName: '@test/smrt-feature-prune-bounds:ManifestFixture',
           collection: 'manifestfixtures',
           filePath: '/tmp/ManifestFixture.ts',

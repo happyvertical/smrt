@@ -22,7 +22,7 @@ class JobTenantProbe extends SmrtObject {
 }
 
 afterEach(() => {
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
 });
 
 describe('job tenancy propagation', () => {
@@ -713,7 +713,8 @@ describe('job tenancy propagation', () => {
     await SmrtJobCollection.create({ db });
 
     const columns = await db.query(`PRAGMA table_info(_smrt_jobs)`);
-    const columnNames = columns.rows.map((row: { name: string }) => row.name);
+    // DatabaseInterface rows are untyped; SQLite's name columns are strings.
+    const columnNames = columns.rows.map((row) => row.name as string);
     expect(columnNames).toContain('tenant_id');
 
     const indexes = await db.query(`
@@ -721,7 +722,7 @@ describe('job tenancy propagation', () => {
       WHERE type = 'index'
         AND name = 'idx_smrt_jobs_tenant_id'
     `);
-    const indexNames = indexes.rows.map((row: { name: string }) => row.name);
+    const indexNames = indexes.rows.map((row) => row.name as string);
     expect(indexNames).toContain('idx_smrt_jobs_tenant_id');
   });
 });

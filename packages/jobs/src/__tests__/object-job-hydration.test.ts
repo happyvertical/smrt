@@ -61,7 +61,7 @@ function canonicalProbeType(): string {
 
 afterEach(() => {
   ObjectJobHydrationProbe.invocationIds.length = 0;
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
 });
 
 describe('TaskRunner object-bound job hydration (#2038)', () => {
