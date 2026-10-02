@@ -19,6 +19,13 @@
  * purpose: the submission key is rotated by a confirmed write, so including it
  * would make every form look edited and nothing would ever reset.
  *
+ * Files are compared as the browser would post them. A control can contribute
+ * a file no element shows: a capture field on the `formdata`-event fallback
+ * appends its file while the entry list is built and keeps an empty, unnamed
+ * input. So the draft also records every `File` entry of `new FormData(form)`
+ * (which fires `formdata`, as a real submit does) by name, type, size and
+ * modification time; a capture replaced mid-submit then reads as an edit.
+ *
  * @module
  */
 
@@ -83,7 +90,38 @@ export function draftOf(form: HTMLFormElement): FormDraft {
     draft.set(`${index}:${name}`, controlValue(element));
     index += 1;
   }
+  draft.set('files', postedFiles(form));
   return draft;
+}
+
+/**
+ * The identity of every file `form` would post, in entry order. Bytes are
+ * never read. Empty when the entry list cannot be built here (no `FormData`,
+ * or a `formdata` listener is already building one for this form).
+ */
+function postedFiles(form: HTMLFormElement): string {
+  if (typeof FormData === 'undefined' || typeof File === 'undefined') {
+    return '';
+  }
+  let entries: FormData;
+  try {
+    entries = new FormData(form);
+  } catch {
+    return '';
+  }
+  const files: string[] = [];
+  entries.forEach((value, name) => {
+    // Skip the "no file chosen" entry (empty name, no bytes): it is minted
+    // afresh, with a new modification time, every time the list is built.
+    if (value instanceof File && (value.name !== '' || value.size > 0)) {
+      files.push(
+        [name, value.name, value.type, value.size, value.lastModified].join(
+          '\u0000',
+        ),
+      );
+    }
+  });
+  return files.join('\u0001');
 }
 
 /**

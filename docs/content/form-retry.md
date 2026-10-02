@@ -187,6 +187,13 @@ The reset after a confirmed write empties every file field. `FileUpload`
 form's `reset` event, so their list, photo or signature empties with it and
 the next submit never posts an empty field behind a file still on screen.
 
+"Unchanged since submit" compares the visible fields plus every file the form
+would post, read from `new FormData(form)` (which fires `formdata`, as a real
+submit does) by name, type, size and modification time. A capture field on the
+`formdata`-event fallback keeps its file in no element, so a photo or signature
+taken or replaced while the submit is in flight still counts as an edit and
+survives the success.
+
 ## Computing the digest in the browser
 
 `digestSubmissionContent(content)` returns the exact content digest

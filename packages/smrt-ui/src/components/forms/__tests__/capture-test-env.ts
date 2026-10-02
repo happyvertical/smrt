@@ -80,6 +80,27 @@ export function submittedEntries(form: HTMLFormElement): FormData {
   return formData;
 }
 
+/**
+ * Make `new FormData(form)` fire `formdata` on the form, as browsers do while
+ * constructing the entry list (jsdom does not), so code that snapshots a form
+ * — SvelteKit's `enhance`, form-retry's draft comparison — sees files the
+ * `formdata`-event strategy appends. Do not combine with
+ * {@link submittedEntries}, which dispatches the event itself.
+ */
+export function useBrowserFormData(): void {
+  const NativeFormData = FormData;
+  class BrowserFormData extends NativeFormData {
+    constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
+      super(form, submitter);
+      if (!form) return;
+      const event = new Event('formdata');
+      Object.defineProperty(event, 'formData', { value: this });
+      form.dispatchEvent(event);
+    }
+  }
+  vi.stubGlobal('FormData', BrowserFormData);
+}
+
 /** Canvas 2D, `toBlob` and `toDataURL` stubs. Returns the fake context. */
 /** The canvas 2D surface the capture components touch. */
 export interface FakeCanvasContext {

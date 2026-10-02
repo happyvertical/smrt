@@ -8,6 +8,12 @@
  * component must empty with it: otherwise it keeps showing the attachment
  * while the next submit posts an empty file entry, and the person believes a
  * photo or signature went with a record that has none.
+ *
+ * The reverse matters as much: a capture taken or replaced while the submit is
+ * in flight is an edit the server has never seen, so the success must NOT
+ * reset it. Under the `formdata`-event strategy the file lives in no element,
+ * only in the entry list, so `useBrowserFormData()` makes `new FormData(form)`
+ * fire `formdata` as browsers do.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,6 +30,7 @@ import {
   removeMediaDevices,
   stubCanvas,
   stubMediaPlayback,
+  useBrowserFormData,
   useFileFieldStrategy,
 } from './capture-test-env.js';
 
@@ -41,6 +48,7 @@ beforeEach(() => {
   sessionStorage.clear();
   stubCanvas();
   stubMediaPlayback();
+  useBrowserFormData();
   installMediaDevices({
     getUserMedia: vi.fn().mockResolvedValue(fakeStream()),
   });
@@ -85,43 +93,53 @@ async function commit(container: HTMLElement, kind: Kind) {
   await expectState(container, 'committed');
 }
 
-/**
- * A browser fires `formdata` while `new FormData(form)` builds the entry list;
- * jsdom does not, so the fake kit's submit hook dispatches it for the
- * `formdata-event` strategy's listener.
- */
-function browserFormData(form: HTMLFormElement) {
-  return (formData: FormData) => {
-    const event = new Event('formdata');
-    Object.defineProperty(event, 'formData', { value: formData });
-    form.dispatchEvent(event);
-  };
+/** Discard the committed capture as the person would, then commit another. */
+async function replace(container: HTMLElement, kind: Kind) {
+  // A different photo or signature: different bytes, so a different file.
+  vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation(
+    (callback, type) => callback(new Blob(['other pixels'], { type })),
+  );
+  await fireEvent.click(
+    screen.getByRole('button', {
+      name: kind === 'camera' ? 'Retake' : 'Clear',
+    }),
+  );
+  await commit(container, kind);
 }
 
+function setup(kind: Kind, strategy: Strategy) {
+  useFileFieldStrategy(strategy);
+  const onClear = vi.fn();
+  const view = render(CaptureFormFixture, {
+    props: { kind, name: FIELD[kind], onClear },
+  });
+  const form = view.container.querySelector('form') as HTMLFormElement;
+  const server = fakeRunOnceServer();
+  const retry = createFormRetry({ form: `capture-${kind}`, storage: null });
+  retry.attach(form);
+  const kit = fakeEnhance(form, retry.enhance(), server);
+  return { ...view, form, server, retry, kit, onClear };
+}
+
+const CASES: Array<[Kind, Strategy]> = [
+  ['camera', 'data-transfer'],
+  ['camera', 'formdata-event'],
+  ['signature', 'data-transfer'],
+  ['signature', 'formdata-event'],
+];
+
 describe('createFormRetry with a capture field', () => {
-  it.each<[Kind, Strategy]>([
-    ['camera', 'data-transfer'],
-    ['camera', 'formdata-event'],
-    ['signature', 'data-transfer'],
-    ['signature', 'formdata-event'],
-  ])('a successful submit clears the %s (%s), so the next submit cannot post a shown-but-empty attachment', async (kind, strategy) => {
-    useFileFieldStrategy(strategy);
+  it.each(
+    CASES,
+  )('a successful submit clears the %s (%s), so the next submit cannot post a shown-but-empty attachment', async (kind, strategy) => {
     const name = FIELD[kind];
-    const onClear = vi.fn();
-    const { container } = render(CaptureFormFixture, {
-      props: { kind, name, onClear },
-    });
+    const { container, server, retry, kit, onClear } = setup(kind, strategy);
     await waitFor(() =>
       expect(root(container)).toHaveAttribute('data-smrt-file-field', strategy),
     );
-    const form = container.querySelector('form') as HTMLFormElement;
-    const server = fakeRunOnceServer();
-    const retry = createFormRetry({ form: `capture-${kind}`, storage: null });
-    retry.attach(form);
-    const kit = fakeEnhance(form, retry.enhance(), server);
 
     await commit(container, kind);
-    await kit.submit(browserFormData(form));
+    await kit.submit();
 
     expect(retry.state.status).toBe('success');
     expect(kit.updates).toEqual([{ reset: true }]);
@@ -134,34 +152,31 @@ describe('createFormRetry with a capture field', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
 
     // The next submit posts what is shown: no file, and not the old one.
-    await kit.submit(browserFormData(form));
+    await kit.submit();
     expect(server.rows).toHaveLength(2);
     expect(server.rows[1].fields[name]).toEqual(['file:']);
 
     // A new capture posts as its own record.
     await commit(container, kind);
-    await kit.submit(browserFormData(form));
+    await kit.submit();
     expect(server.rows).toHaveLength(3);
     expect(server.rows[2].fields[name]).toEqual([FILE[kind]]);
   });
 
-  it('keeps the capture when the person moved on before the submit resolved', async () => {
-    useFileFieldStrategy('data-transfer');
-    const onClear = vi.fn();
-    const { container } = render(CaptureFormFixture, {
-      props: { kind: 'signature', name: 'signature', onClear },
-    });
-    const form = container.querySelector('form') as HTMLFormElement;
-    const server = fakeRunOnceServer();
-    const retry = createFormRetry({ form: 'capture-moved-on', storage: null });
-    retry.attach(form);
-    const kit = fakeEnhance(form, retry.enhance(), server);
+  it.each(
+    CASES,
+  )('keeps a %s (%s) captured while the submit was in flight', async (kind, strategy) => {
+    const name = FIELD[kind];
+    const { container, server, retry, kit, onClear } = setup(kind, strategy);
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-smrt-file-field', strategy),
+    );
 
     const held = server.hold();
     const first = kit.submit();
     await vi.waitFor(() => expect(retry.state.status).toBe('submitting'));
-    // The next entry is signed while the first submit is unresolved.
-    await commit(container, 'signature');
+    // The next entry's capture is taken while the first is unresolved.
+    await commit(container, kind);
     held.release();
     await first;
 
@@ -169,8 +184,38 @@ describe('createFormRetry with a capture field', () => {
     expect(root(container)).toHaveAttribute('data-state', 'committed');
     expect(onClear).not.toHaveBeenCalled();
     await kit.submit();
-    expect(server.rows.at(-1)?.fields.signature).toEqual([
-      'file:signature.png',
-    ]);
+    expect(server.rows.at(-1)?.fields[name]).toEqual([FILE[kind]]);
+  });
+
+  it.each(
+    CASES,
+  )('keeps a %s (%s) replaced while the submit was in flight', async (kind, strategy) => {
+    const name = FIELD[kind];
+    const { container, server, retry, kit, onClear } = setup(kind, strategy);
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-smrt-file-field', strategy),
+    );
+    await commit(container, kind);
+
+    const held = server.hold();
+    const first = kit.submit();
+    await vi.waitFor(() => expect(retry.state.status).toBe('submitting'));
+    await replace(container, kind);
+    expect(onClear).toHaveBeenCalledTimes(1);
+    held.release();
+    await first;
+
+    // The first capture was recorded; the newer one is an unsent edit, so the
+    // success must leave it on screen and in the field.
+    expect(server.rows[0].fields[name]).toEqual([FILE[kind]]);
+    expect(kit.updates).toEqual([{ reset: false }]);
+    expect(root(container)).toHaveAttribute('data-state', 'committed');
+    expect(onClear).toHaveBeenCalledTimes(1);
+
+    await kit.submit();
+    const sent = server.requests.at(-1)?.get(name) as File;
+    expect(sent.name).toBe(FILE[kind].slice('file:'.length));
+    expect(sent.size).toBe('other pixels'.length);
+    expect(server.rows).toHaveLength(2);
   });
 });

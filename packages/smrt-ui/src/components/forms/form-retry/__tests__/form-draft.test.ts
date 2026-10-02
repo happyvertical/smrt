@@ -115,3 +115,55 @@ describe('formWasCleared', () => {
     expect(formWasCleared(form, submitted)).toBe(false);
   });
 });
+
+describe('posted files', () => {
+  /** Browsers fire `formdata` while `new FormData(form)` builds; jsdom does not. */
+  function fireFormDataOnConstruct(): () => void {
+    const Native = globalThis.FormData;
+    class BrowserFormData extends Native {
+      constructor(form?: HTMLFormElement) {
+        super(form);
+        if (!form) return;
+        const event = new Event('formdata');
+        Object.defineProperty(event, 'formData', { value: this });
+        form.dispatchEvent(event);
+      }
+    }
+    globalThis.FormData = BrowserFormData;
+    return () => {
+      globalThis.FormData = Native;
+    };
+  }
+
+  it('sees a file a formdata listener appends, though no element shows it', () => {
+    const restore = fireFormDataOnConstruct();
+    try {
+      const form = formOf('<input type="file" hidden />');
+      let file: File | null = new File(['first'], 'photo.jpg', {
+        type: 'image/jpeg',
+      });
+      form.addEventListener('formdata', (event) => {
+        const formData = (event as Event & { formData: FormData }).formData;
+        formData.append('photo', file ?? new File([], ''));
+      });
+      const submitted = draftOf(form);
+      expect(draftChanged(form, submitted)).toBe(false);
+
+      file = new File(['second photo'], 'photo.jpg', { type: 'image/jpeg' });
+      expect(draftChanged(form, submitted)).toBe(true);
+
+      file = null;
+      expect(draftChanged(form, submitted)).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
+  it('ignores the fresh "no file chosen" entry of an empty file input', async () => {
+    const form = formOf('<input type="file" name="photo" />');
+    const submitted = draftOf(form);
+    // The empty entry is re-minted with a new lastModified on every build.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(draftChanged(form, submitted)).toBe(false);
+  });
+});
