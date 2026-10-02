@@ -25,9 +25,10 @@
  * 2. A submit while another is unresolved is refused (`status: 'busy'`) and
  *    nothing is sent; the form keeps what the person typed.
  * 3. Otherwise the key is written into the outgoing `FormData` (so the body is
- *    right even if a hidden field is stale or missing), what the person can
- *    see is snapshotted, and — with restore enabled — the submitted values are
- *    kept beside the key.
+ *    right even if a hidden field is stale or missing) and what the person can
+ *    see is snapshotted — before the page's own submit function runs, because
+ *    kit built the body before calling it. With restore enabled, the submitted
+ *    values are then kept beside the key.
  * 4. The result settles the slot:
  *    - `error` (transport failure, lost response, thrown server error): the key,
  *      the form and the draft are all kept, and `update()` is NOT called —
@@ -373,6 +374,11 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
       writeSlot(begun.state);
       const sent = begun.sent;
       formData.set(fieldName, sent);
+      // What was sent is what the form held when kit built `formData`, which
+      // it did before calling this function. Snapshot it now, before awaiting
+      // the page's submit function: an edit made while that is pending was
+      // never sent, and must read as an edit when the result arrives.
+      const submitted: FormDraft = draftOf(formElement);
 
       let innerCancelled = false;
       let innerCallback: FormRetryResultCallback | undefined;
@@ -401,7 +407,6 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
         return;
       }
 
-      const submitted: FormDraft = draftOf(formElement);
       if (restoreOptions) {
         saveDraft(
           formData,

@@ -669,3 +669,37 @@ describe('the page’s submit hook aborts the request itself', () => {
     expect(server.rows).toHaveLength(1);
   });
 });
+
+describe('an edit while the page’s async submit hook is pending', () => {
+  it('is not mistaken for the submitted content: the success keeps it', async () => {
+    const form = mountForm();
+    const server = fakeRunOnceServer();
+    const retry = createFormRetry({ form: 'report', storage: memoryStorage() });
+    retry.attach(form);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered = false;
+    const kit = fakeEnhance(
+      form,
+      retry.enhance(async () => {
+        entered = true;
+        await gate;
+      }),
+      server,
+    );
+    fill(form, { title: 'First' });
+    const token = retry.token;
+    const pending = kit.submit();
+    await vi.waitFor(() => expect(entered).toBe(true));
+    // kit built the body before awaiting the hook: this edit is unsent.
+    fill(form, { title: 'Second' });
+    release();
+    await pending;
+    expect(server.rows.map((row) => row.fields.title)).toEqual([['First']]);
+    expect(retry.state.status).toBe('success');
+    expect(fieldValue(form, 'title')).toBe('Second');
+    expect(retry.token).toBe(token);
+  });
+});
