@@ -70,6 +70,10 @@ import {
 } from './name-resolver';
 import { assertQualifiedNameAliasesAvailable } from './qualified-name-aliases';
 import {
+  applyRuntimeOverrides,
+  transferRuntimeOverride,
+} from './runtime-overrides';
+import {
   getClasses,
   getCollections,
   getConstructorFieldDecorators,
@@ -81,6 +85,11 @@ import {
   getStiSiblingsLoaded,
   verboseLog,
 } from './shared-state';
+import {
+  isSubtypeOf,
+  reconcileSubtypeLineage,
+  recordSubtypeParent,
+} from './subtype-lineage';
 import type {
   RegisteredClass,
   RegisteredField,
@@ -491,7 +500,7 @@ function buildManifestCollisionInputs(args: {
     matchKind,
   } = args;
   const newClassName = objectDef.className || name;
-  const newExtends = objectDef.extends;
+  const newExtends = objectDef.extendsQualified ?? objectDef.extends;
 
   // When an incoming manifest's `extends` points at the existing entry,
   // OR the existing entry's `extends` points at the incoming class, we
@@ -506,19 +515,28 @@ function buildManifestCollisionInputs(args: {
   // comparison, `existingExtendsNew` falsely reads as false and the
   // arriving parent manifest would be registered as a duplicate instead
   // of skipped. See the deep-review report on #1140 for the fix rationale.
-  const newExtendsExisting = !!(
-    newExtends &&
-    (newExtends === existing.name ||
-      newExtends === existingKey ||
-      newExtends.toLowerCase() === existing.name.toLowerCase())
-  );
-  const existingExtendsNew = !!(
-    existing.extends &&
-    (existing.extends === newClassName ||
-      existing.extends === name ||
-      existing.extends === registrationKey ||
-      existing.extends.toLowerCase() === newClassName.toLowerCase())
-  );
+  const knownAncestor =
+    existing.replacedQualifiedNames?.includes(registrationKey) === true ||
+    isSubtypeOf(existingKey, registrationKey);
+  const newExtendsExisting =
+    !knownAncestor &&
+    (isSubtypeOf(registrationKey, existingKey) ||
+      !!(
+        newExtends &&
+        (newExtends === existing.name ||
+          newExtends === existingKey ||
+          newExtends.toLowerCase() === existing.name.toLowerCase())
+      ));
+  const existingExtendsNew =
+    knownAncestor ||
+    (!newExtendsExisting &&
+      !!(
+        existing.extends &&
+        (existing.extends === newClassName ||
+          existing.extends === name ||
+          existing.extends === registrationKey ||
+          existing.extends.toLowerCase() === newClassName.toLowerCase())
+      ));
 
   const newSourceFile = objectDef.filePath;
   const bothSourceFilesKnown = !!(newSourceFile && existing.sourceFilePath);
@@ -586,6 +604,7 @@ function applyManifestCollisionPolicy(args: {
   existingKey: string;
   registrationKey: string;
   matchKind: MatchKind;
+  replacedQualifiedNames: Set<string>;
 }): 'return' | 'continue' {
   const inputs = buildManifestCollisionInputs(args);
   const decision = decideCollisionPolicy(inputs);
@@ -597,6 +616,11 @@ function applyManifestCollisionPolicy(args: {
       );
       return 'return';
     case 'replace':
+      args.replacedQualifiedNames.add(args.existingKey);
+      for (const ancestor of args.existing.replacedQualifiedNames ?? []) {
+        args.replacedQualifiedNames.add(ancestor);
+      }
+      transferRuntimeOverride(args.existingKey, args.registrationKey);
       // STI child-wins: delete existing so the new entry can register fresh.
       getClasses().delete(args.existingKey);
       verboseLog(
@@ -853,6 +877,8 @@ export function register(
   try {
     registerUntracked(ctor, config);
   } finally {
+    reconcileSubtypeLineage();
+    applyRuntimeOverrides();
     bumpRegistryGeneration();
   }
 }
@@ -865,6 +891,8 @@ function registerUntracked(
   const explicitPackageName = config.packageName;
   let promotedCollectionConstructor: RegisteredClass['collectionConstructor'];
   let promotedRuntimeConfig: SmartObjectConfig | undefined;
+  let promotedReplacementAncestry: string[] | undefined;
+  let isolatedSubtypeParent: [string, RegisteredClass] | undefined;
   let isolatedManifestEntry: SmartObjectDefinition | undefined;
 
   if (config._manifestKey) {
@@ -975,6 +1003,19 @@ function registerUntracked(
     ) {
       existing.sourceFilePath = newSourceFile;
     }
+    if (
+      ctor !== existing.constructor &&
+      ctor.prototype instanceof existing.constructor
+    ) {
+      existing.replacedQualifiedNames = [
+        ...new Set([...(existing.replacedQualifiedNames ?? []), existingKey]),
+      ];
+      const ownTenancy = normalizeTenantScopedConfig(config.tenantScoped);
+      if (ownTenancy) {
+        existing.tenantScopedConfig = ownTenancy;
+        existing.tenantScopedConfigSource = 'explicit';
+      }
+    }
     existing.constructor = ctor;
     setSmrtTableName(ctor, nextTableName);
     declareSensitiveTable(
@@ -1001,6 +1042,7 @@ function registerUntracked(
         );
       }
 
+      transferRuntimeOverride(existingKey, nextKey);
       classes.delete(existingKey);
       classes.set(nextKey, existing);
     }
@@ -1072,6 +1114,7 @@ function registerUntracked(
       // the authoritative manifest and explicit generated config still win
       // for serializable identity, schema, and policy fields.
       promotedRuntimeConfig = constructorEntry.config;
+      promotedReplacementAncestry = constructorEntry.replacedQualifiedNames;
       getClasses().delete(constructorKey);
       getConstructorIndex().delete(ctor);
       if (targetIsManifestStub && targetEntry) {
@@ -1126,9 +1169,37 @@ function registerUntracked(
     !!existing.packageName &&
     existing.packageName !== newPackageName;
 
+  // A same-named runtime subclass on its parent's table is a replacement,
+  // even with explicit package attribution. Prototype ancestry works at every
+  // depth and is never inferred from the shared name/table alone.
+  for (const [key, existing] of getClasses()) {
+    if (existing.name !== name || ctor === existing.constructor) continue;
+    const incomingTable = resolveTableName(ctor, name, {
+      ...config,
+      ...(newPackageName ? { packageName: newPackageName } : {}),
+    });
+    if (incomingTable !== existing.schema?.tableName) continue;
+    if (ctor.prototype instanceof existing.constructor) {
+      if (isolatedManifestEntry) {
+        // An isolated manifest owns all child metadata. Build a fresh entry
+        // below rather than retaining the parent's fields/schema/policy.
+        isolatedSubtypeParent = [key, existing];
+        promotedCollectionConstructor ??= existing.collectionConstructor;
+        break;
+      }
+      upsertExistingEntry(key, existing);
+      return;
+    }
+    if (existing.constructor.prototype instanceof ctor) return;
+  }
+
   // 1. Exact-match check (existingKey === name)
   const exactExisting = getClasses().get(name);
-  if (exactExisting && !belongsToAnotherPackage(exactExisting)) {
+  if (
+    exactExisting &&
+    exactExisting !== isolatedSubtypeParent?.[1] &&
+    !belongsToAnotherPackage(exactExisting)
+  ) {
     const existing = exactExisting;
     const handled = applyRegisterCollisionPolicy({
       ctor,
@@ -1149,6 +1220,7 @@ function registerUntracked(
   //    other same-name-different-case collisions.
   const lowerName = name.toLowerCase();
   for (const [existingKey, existing] of getClasses().entries()) {
+    if (existing === isolatedSubtypeParent?.[1]) continue;
     const keyMatches = existingKey.toLowerCase() === lowerName;
     const nameMatches = existing.name?.toLowerCase() === lowerName;
     if (!(keyMatches || nameMatches) || existingKey === name) continue;
@@ -1720,7 +1792,8 @@ function registerUntracked(
 
   // Derive extends from prototype chain if not available from manifest
   // This is critical for inline test classes that use decorators
-  let extendsClass: string | undefined = manifestEntry?.extends;
+  let extendsClass: string | undefined =
+    manifestEntry?.extendsQualified ?? manifestEntry?.extends;
   if (!extendsClass) {
     const proto = Object.getPrototypeOf(ctor);
     if (proto?.name && proto.name !== 'SmrtObject' && proto.name !== 'Object') {
@@ -1796,6 +1869,7 @@ function registerUntracked(
       inheritedStiCollection(ctor) ??
       pluralizeCollection(name),
     collectionConstructor: promotedCollectionConstructor,
+    replacedQualifiedNames: promotedReplacementAncestry,
     packageName, // Store package name from manifest for getPackageName() lookup
     sourceFilePath, // Store source file for collision detection (Issue #555)
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
@@ -1809,6 +1883,23 @@ function registerUntracked(
   };
   // #3338: a deprecated alias must never name a second live class.
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
+  if (isolatedSubtypeParent) {
+    const [parentKey, parent] = isolatedSubtypeParent;
+    registration.replacedQualifiedNames = [
+      ...new Set([
+        ...(registration.replacedQualifiedNames ?? []),
+        parentKey,
+        ...(parent.replacedQualifiedNames ?? []),
+      ]),
+    ];
+    if (parentKey === registrationKey) registration.extends = parent.extends;
+    transferRuntimeOverride(parentKey, registrationKey);
+    getClasses().delete(parentKey);
+    invalidateInheritanceEntries(registration, {
+      name: parent.name,
+      qualifiedName: parent.qualifiedName,
+    });
+  }
   getClasses().set(registrationKey, registration);
 
   // Release B (#1133): case-insensitive lookups iterate the classes Map
@@ -2354,10 +2445,11 @@ function mergeManifestIntoExistingRegistration(
     existing.packageName = objectDef.packageName;
   }
 
-  if (objectDef.extends) {
+  const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
+  if (manifestParent) {
     existing.extends = packageName
-      ? qualifyExtendsName(objectDef.extends, packageName)
-      : objectDef.extends;
+      ? qualifyExtendsName(manifestParent, packageName)
+      : manifestParent;
   }
 
   if (!existing.sourceFilePath && objectDef.filePath) {
@@ -2386,6 +2478,8 @@ export function registerFromManifest(
   try {
     registerFromManifestUntracked(name, objectDef, manifestPackageName);
   } finally {
+    reconcileSubtypeLineage();
+    applyRuntimeOverrides();
     bumpRegistryGeneration();
   }
 }
@@ -2420,6 +2514,9 @@ function registerFromManifestUntracked(
     ? createQualifiedName(packageName, simpleClassName)
     : objectDef.qualifiedName;
   const registrationKey = (qualifiedNameEarly || name) as string;
+  const replacedQualifiedNames = new Set<string>();
+  const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
+  recordSubtypeParent(registrationKey, manifestParent);
 
   // Release C (#1134): collision resolution routes through
   // decideCollisionPolicy. See collision-policy.ts for the 16-row decision
@@ -2447,6 +2544,7 @@ function registerFromManifestUntracked(
         existingKey: existingCanonical,
         registrationKey,
         matchKind: 'canonical-name',
+        replacedQualifiedNames,
       });
       if (outcome === 'return') return;
       // outcome === 'continue' means policy was replace (child-wins) or
@@ -2466,6 +2564,7 @@ function registerFromManifestUntracked(
       existingKey: registrationKey,
       registrationKey,
       matchKind: 'exact-key',
+      replacedQualifiedNames,
     });
     if (outcome === 'return') return;
   }
@@ -2477,9 +2576,9 @@ function registerFromManifestUntracked(
   // the underlying classNameMap lookup for an iteration over `classes`, but
   // the ordering invariant still holds.
   const qualifiedExtends =
-    objectDef.extends && packageName
-      ? qualifyExtendsName(objectDef.extends, packageName)
-      : objectDef.extends;
+    manifestParent && packageName
+      ? qualifyExtendsName(manifestParent, packageName)
+      : manifestParent;
 
   // Release B (#1133): case-insensitive lookups iterate the classes Map
   // directly; no parallel classNameMap index to maintain.
@@ -2625,6 +2724,7 @@ function registerFromManifestUntracked(
     collection: objectDef.collection ?? pluralizeCollection(simpleClassName),
     packageName,
     sourceFilePath: objectDef.filePath, // Store source file for collision detection (Issue #555)
+    replacedQualifiedNames: [...replacedQualifiedNames],
     extends: qualifiedExtends, // Issue #1004: Pre-computed qualified parent
     extendsTypeArg: objectDef.extendsTypeArg, // SmrtCollection<T> generic arg
     visibility, // New: Visibility control for manifest filtering

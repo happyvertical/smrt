@@ -678,3 +678,52 @@ it. Generated stdio servers run an `mcp-tasks` worker automatically.
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+### Consumer runtime restrictions
+
+After importing/registering package models, close their generated surface without
+subclassing or creating another registry key:
+
+```typescript
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+import '@happyvertical/smrt-timesheets';
+import '@happyvertical/smrt-expenses';
+
+for (const name of [
+  '@happyvertical/smrt-timesheets:ServiceTimeEntry',
+  '@happyvertical/smrt-expenses:Expense',
+]) {
+  ObjectRegistry.registerOverride(name, {
+    api: false,
+    mcp: false,
+    cli: false,
+    tenancy: { mode: 'required' },
+  });
+}
+```
+
+Call this at startup after registration (runtime decorators or manifest stubs)
+and before generating/constructing transports. It closes CRUD and custom actions;
+`{ include: [] }` is equivalent to `false`. Omitted keys preserve existing policy.
+Only complete closures and optional-to-required tenancy are supported: reopening,
+partial allowlists, unknown options, and unqualified or unregistered class names
+throw before any policy is installed. Existing tenancy is required; this API does
+not introduce a tenant column or change the database schema. Enable the tenancy
+interceptor with `enableTenancy()` as usual. Required mode also takes precedence
+over an optional direct `registerTenantScopedClass` selector; existing explicit
+system/super-admin bypass semantics remain applicable.
+
+Restrictions are process-local, accumulate monotonically, survive decorator and
+manifest re-registration/HMR, and reset with `ObjectRegistry.clear()`.
+`getRuntimeOverride(qualifiedName)` returns the immutable installed policy.
+Already emitted static route files must be regenerated with closed build-time
+configuration; a runtime override does not rewrite deployed route modules.
+
+Same-named subclasses that share their parent's table replace that parent, even
+across explicitly named packages and across more than two levels. Runtime
+registration uses constructor ancestry; an isolated child manifest supplies its
+own fields, methods, schema, and policy while preserving inherited runtime
+restrictions. Manifests should qualify cross-package
+`extends` names. The deepest subtype wins, including parent replay and late
+intermediate manifests. Unrelated classes and sibling subtypes do not choose a
+winner by registration order: sharing their table still raises a collision.

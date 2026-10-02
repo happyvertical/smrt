@@ -75,6 +75,17 @@ import {
   isBundledOutputPath,
   isSameSourcePath,
 } from './registry/class-registration';
+import {
+  applyRuntimeOverrides,
+  clearRuntimeOverrides,
+  getRuntimeOverride,
+  type RuntimeRegistrationOverride,
+  registerRuntimeOverride,
+} from './registry/runtime-overrides';
+import { clearSubtypeLineage } from './registry/subtype-lineage';
+
+export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
+
 import { resolveCollectionDbCacheKey } from './registry/db-cache-key';
 import {
   clearRegistryDiagnostics,
@@ -1151,6 +1162,25 @@ export class ObjectRegistry {
   }
 
   /**
+   * Close package-owned generated surfaces or require existing tenancy.
+   * Call after model registration, before constructing transports. Policy is
+   * monotonic, survives re-registration, and resets only with clear().
+   */
+  static registerOverride(
+    name: string,
+    policy: RuntimeRegistrationOverride,
+  ): void {
+    registerRuntimeOverride(name, policy);
+  }
+
+  /** Read the immutable consumer policy for an exact qualified class. */
+  static getRuntimeOverride(
+    name: string,
+  ): ReturnType<typeof getRuntimeOverride> {
+    return getRuntimeOverride(name);
+  }
+
+  /**
    * Register a new SMRT object class with the global registry
    *
    * @param constructor - The class constructor extending SmrtObject
@@ -2149,6 +2179,8 @@ export class ObjectRegistry {
    * Clear all registered classes (mainly for testing)
    */
   static clear(): void {
+    clearRuntimeOverrides();
+    clearSubtypeLineage();
     bumpRegistryGeneration();
     ObjectRegistry.classes.clear();
     ObjectRegistry.collections.clear();
@@ -3795,6 +3827,7 @@ export class ObjectRegistry {
         return;
       }
       registered.tenantScopedConfig = { ...config };
+      applyRuntimeOverrides();
       registered.tenantScopedConfigSource = 'tenant-decorator';
       ensureTenantScopedField(registered.fields, registered.tenantScopedConfig);
       // Schema assembly reads the registered fields on every generation pass;

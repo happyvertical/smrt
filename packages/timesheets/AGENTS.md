@@ -57,24 +57,21 @@ through a `ServiceCommercialResolver`), and corrects. `smrt-projects` supplies
 
 ## One table family
 
-Classes may share a table only as one inheritance chain, and the registry
-resolves a chain of same-named classes by "child wins" on the simple name.
-That works for exactly one subtype level per table (base → subtype); a third
-same-named level makes the middle class look like it extends its own child on
-the manifest path (`CONFIG_TABLE_NAME_COLLISION`). Therefore:
+Classes may share a table only as one inheritance chain. Core resolves
+same-named subclasses by constructor ancestry at runtime and qualified manifest
+ancestry at build registration; the deepest subtype wins across N levels.
+Sibling or unrelated types cannot share the table. `smrt-projects` re-exports
+the base; `smrt-support` subclasses it directly.
 
-- `smrt-projects` **re-exports** these classes (no projects subclass).
-- `smrt-support` subclasses `ServiceTimeEntry` directly from this package.
-- A consumer that needs its own surface (e.g. teamworks-os closing every
-  generated route with `api: { include: [] }` and
-  `@TenantScoped({ mode: 'required' })`) declares a same-named subclass over
-  `service_time_entries`; its manifest entry replaces the package's. It cannot
-  also install smrt-support's subtype on the same table.
-  The same applies to both snapshots;
-  `src/__tests__/consumer-closed-surface.test.ts` holds that contract for all
-  three models. The snapshots' explicit `time_entry_id` conflict key is not
-  rewritten when a consumer requires tenancy; widening it is the consumer's
-  schema change, never a package default.
+Consumers closing package routes should call
+`ObjectRegistry.registerOverride(qualifiedName, { api: false, mcp: false,
+cli: false, tenancy: { mode: 'required' } })` after importing the model and before
+constructing transports. This tightens the existing registration without a new
+subtype. See core's README for startup order, static route generation, and reset
+semantics. `src/__tests__/consumer-closed-surface.test.ts` also covers existing
+manifest subclass consumers. The snapshots' explicit `time_entry_id` conflict
+key is not rewritten when a consumer requires tenancy; widening it remains a
+consumer schema change.
 
 Subclasses restate their fields: package-isolated manifest scanning does not
 read dependency sources, so an unrestated subclass manifest has no columns.

@@ -88,68 +88,45 @@ view objects (`TimeEntry`, `TimeEntryApprovalView`).
 
 The entry and both snapshots expose generated `list` / `get` on REST, CLI,
 and MCP, with optional tenant scoping. An application that routes all time
-and money through its own permission-gated services declares a same-named
-subclass over each table and closes it:
+and money through its own permission-gated services can close those surfaces
+without declaring replacement models:
 
 ```ts
-import {
-  ServiceChargeSnapshot as SharedServiceChargeSnapshot,
-  ServiceCompensationSnapshot as SharedServiceCompensationSnapshot,
-  ServiceTimeEntry as SharedServiceTimeEntry,
-} from '@happyvertical/smrt-timesheets';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+import '@happyvertical/smrt-timesheets';
 
-const CLOSED = { include: [] };
-
-@TenantScoped({ mode: 'required' })
-@smrt({
-  tableName: 'service_time_entries',
-  api: CLOSED,
-  cli: CLOSED,
-  mcp: CLOSED,
-})
-export class ServiceTimeEntry extends SharedServiceTimeEntry {
-  // restate the fields — see AGENTS.md
-}
-
-@TenantScoped({ mode: 'required' })
-@smrt({
-  tableName: 'service_charge_snapshots',
-  conflictColumns: ['time_entry_id'],
-  api: CLOSED,
-  cli: CLOSED,
-  mcp: CLOSED,
-})
-export class ServiceChargeSnapshot extends SharedServiceChargeSnapshot {
-  // restate the fields — see AGENTS.md
-}
-
-@TenantScoped({ mode: 'required' })
-@smrt({
-  tableName: 'service_compensation_snapshots',
-  conflictColumns: ['time_entry_id'],
-  api: CLOSED,
-  cli: CLOSED,
-  mcp: CLOSED,
-})
-export class ServiceCompensationSnapshot extends SharedServiceCompensationSnapshot {
-  // restate the fields — see AGENTS.md
+for (const name of [
+  'ServiceTimeEntry',
+  'ServiceChargeSnapshot',
+  'ServiceCompensationSnapshot',
+]) {
+  ObjectRegistry.registerOverride(`@happyvertical/smrt-timesheets:${name}`, {
+    api: false,
+    cli: false,
+    mcp: false,
+    tenancy: { mode: 'required' },
+  });
 }
 ```
 
-Do not copy `previousQualifiedNames` into these subclasses: an old name may
-have only one claimant. Replacing the timesheets classes drops their
-smrt-projects aliases (see the known gap under "Stored and declared class
-names").
+Register overrides after importing the models and before constructing or
+emitting generated transports. Use the currently registered qualified name:
+when smrt-support has replaced `ServiceTimeEntry`, target
+`@happyvertical/smrt-support:ServiceTimeEntry` instead. Overrides accept only
+closed surfaces and required tenancy; they cannot reopen a surface or weaken
+tenancy. They survive registration replay and are reset by
+`ObjectRegistry.clear()`. Existing static route files must be regenerated with
+the closed configuration; changing the registry does not rewrite deployed files.
 
-Restate `conflictColumns` exactly as shown unless you mean to change it. The
-snapshots' conflict key is `time_entry_id` alone — one snapshot per entry —
-and, being an explicit key, it is never rewritten to lead with `tenant_id`
-when you require tenancy. That is safe as long as entry ids are unique across
-tenants (they are UUIDs). Widening it to `['tenant_id', 'time_entry_id']` is
-your decision, and it is a schema change for your database (a new unique
-index replacing `service_*_snapshots_time_entry_id_idx`), so it goes through
-`smrt db:migrate` like any other key change; the package default stays
-`['time_entry_id']`.
+This preserves the model's fields, indexes, conflict keys, and aliases. Same-named
+subclasses remain available when an application needs to change the model itself;
+see AGENTS.md for field restatement and the alias gap below.
+
+The snapshots' conflict key remains `time_entry_id` alone — one snapshot per
+entry — and is never rewritten to lead with `tenant_id` when tenancy becomes
+required. Entry ids are UUIDs unique across tenants. Widening that key to
+`['tenant_id', 'time_entry_id']` is a consumer schema change requiring a new
+unique index through `smrt db:migrate`; runtime overrides do not change schema.
 
 ## Migrating from smrt-projects / smrt-support
 
@@ -223,7 +200,7 @@ and are unchanged.
 
 > **Known gap: same-named subtypes drop the alias.** A same-named subclass
 > over a moved table — smrt-support's `ServiceTimeEntry`, or an
-> application's closing subclass (see "Closing the generated surface") —
+> application's replacement subclass —
 > replaces the timesheets class in the registry, and that class's alias does
 > not carry over to it yet. With smrt-support installed,
 > `@happyvertical/smrt-projects:ServiceTimeEntry` therefore does not resolve
