@@ -93,7 +93,11 @@ membership or tenant DENY to attenuate inherited role authority.
   seedSystemRoles({ seedPermissions: true }) maps owner/admin to all catalog
   permissions, member to ordinary-resource read/create, viewer to read. Member
   create excludes identity/RBAC/security resources and their joins/overrides.
-  Seeding is additive/idempotent; removal requires prune: true.
+  Seeding is additive/idempotent; removal requires prune: true. Catalog sync
+  and grants plan from one read, then commit in `SEEDING_BATCH_SIZE` batches
+  (#3323): never one durable commit per row (an fsync each on local SQLite),
+  and never one catalog-wide transaction (`@happyvertical/sql` transaction
+  scopes cost superlinearly per statement). Pass a caller transaction's handle.
 - When a package adds built-in self-personalization permissions after role
   creation, explicitly call seedDefaultRolePersonalizationPermissions(). It
   upgrades owner/admin/member/viewer idempotently and never grants custom roles.
