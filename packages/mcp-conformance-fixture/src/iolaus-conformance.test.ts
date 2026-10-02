@@ -43,6 +43,7 @@ import { inspectIolausInBrowser } from './iolaus-browser.js';
 import { initializeIolausSelfHosted } from './iolaus-deployed.js';
 import { createIolausHumanReview } from './iolaus-human-review.js';
 import { buildIolausResource } from './iolaus-resource.js';
+import { exerciseReviewAtomicity } from './iolaus-review-regressions.js';
 import { createIolausServer } from './iolaus-server.js';
 import {
   IOLAUS_RESOURCE,
@@ -206,6 +207,7 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
             try {
               if (req.url === '/ui') {
                 res.setHeader('content-type', 'text/html');
+                res.setHeader('referrer-policy', 'no-referrer');
                 res.end(
                   '<!doctype html><title>Synthetic Iolaus bridge</title>',
                 );
@@ -614,6 +616,7 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
             { slug: 'iolaus_applications.update' },
           ]);
           try {
+            await exerciseReviewAtomicity(db, dialect, alice, bob, authorize);
             const review = createIolausHumanReview(db, authorize);
             const request: DataSurfaceServerActionRequest = {
               version: 1,
@@ -725,6 +728,11 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
               ).ok,
             ).toBe(false);
             expect((await review.apply(apply, bob)).ok).toBe(false);
+            const staleApplication = await applications.get(String(rows[0].id));
+            if (!staleApplication) throw new Error('Missing stale application');
+            const previousRevision = new Date(
+              staleApplication.updated_at!,
+            ).toISOString();
             const outcomes = await Promise.all([
               review.apply(apply, alice),
               createIolausHumanReview(db, authorize).apply(apply, alice),
@@ -734,6 +742,25 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
               (await applications.get(String(rows[0].id)))?.humanReviewOpened,
             ).toBe(true);
             expect((await review.apply(apply, alice)).ok).toBe(true);
+            const reviewedApplication = await applications.get(
+              String(rows[0].id),
+            );
+            expect(
+              new Date(reviewedApplication!.updated_at!).toISOString(),
+            ).not.toBe(previousRevision);
+            expect(reviewedApplication?.revision).toBe(
+              staleApplication.revision,
+            );
+            expect(reviewedApplication?.materials).toBe(
+              staleApplication.materials,
+            );
+            expect(reviewedApplication?.materialsDigest).toBe(
+              staleApplication.materialsDigest,
+            );
+            staleApplication.humanReviewOpened = false;
+            await expect(staleApplication.save()).rejects.toMatchObject({
+              code: 'RUNTIME_REVISION_CONFLICT',
+            });
             expect(
               (await applications.get(String(rows[0].id)))?.reviewCount,
             ).toBe(1);
@@ -756,6 +783,49 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
             expect(browserResult.structuredContent).toEqual(
               materials.structuredContent,
             );
+            expect(browserResult.referrer).toBe('');
+            expect(browserResult.directHostAccessDenied).toBe(true);
+            expect(browserResult.toolCalls).toBe(2);
+            expect(browserResult.reviewUrl).toBe(reviewUrl);
+            const foreignHost = createServer((_req, res) => {
+              res.setHeader('content-type', 'text/html');
+              res.end('<!doctype html><title>Foreign synthetic host</title>');
+            });
+            await new Promise<void>((resolve) =>
+              foreignHost.listen(0, '127.0.0.1', resolve),
+            );
+            try {
+              const foreignAddress = foreignHost.address();
+              if (!foreignAddress || typeof foreignAddress === 'string')
+                throw new Error('No foreign address');
+              const foreignOrigin = `http://127.0.0.1:${foreignAddress.port}`;
+              const html = String(
+                (await client.readResource({ uri: IOLAUS_RESOURCE }))
+                  .contents[0].text,
+              );
+              for (const deceptiveReferrer of [
+                undefined,
+                `${foreignOrigin}/claims-to-be-trusted`,
+                `${origin}/forged-trusted-referrer`,
+              ]) {
+                const denied = await inspectIolausInBrowser(
+                  foreignOrigin,
+                  html,
+                  call,
+                  { blocked: true, deceptiveReferrer },
+                );
+                expect(denied.toolCalls).toBe(0);
+                expect(denied.structuredContent).toBeUndefined();
+                expect(denied.reviewUrl).toBeNull();
+                expect(denied.referrer).toBe(
+                  deceptiveReferrer ?? `${foreignOrigin}/`,
+                );
+              }
+            } finally {
+              await new Promise<void>((resolve) =>
+                foreignHost.close(() => resolve()),
+              );
+            }
           }
           const pending = await call('iolaus_prepare', {
             id: rows[0].id,

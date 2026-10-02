@@ -36,9 +36,16 @@ fit, records a decision, prepares bounded durable work, inspects immutable
 SHA-256-bound materials, and opens a separate human review action. It has no
 employer transmission operation. The human action uses the existing agents
 preview/apply adapter and durable SQL state. Host continuation replies are
-ordinary input and cannot grant this domain approval. The view is built once
+ordinary input and cannot grant this domain approval. Review claims the public
+framework revision and atomically matches owner, tenant, material digest and
+that revision before writing. Real SQLite/PostgreSQL triggers exercise raced
+authority changes and failed-write rollback; stale hydrated saves must fail.
+Domain material revision and frozen content stay unchanged. The view is built once
 with Vite, declared as a portable resource, read through MCP, and rendered in
-Chromium with a CSP-bound inline bundle. Its synthetic host forwards tool calls
+Chromium in an opaque `sandbox="allow-scripts"` frame with a CSP-bound inline
+bundle. Trusted parent origin is immutable build configuration, never referrer
+or runtime input. Tests require no-referrer success, direct host DOM denial,
+foreign-parent denial and a configured-origin human review link. Its synthetic host forwards tool calls
 through the same authorized SDK client. Native entrypoint/display metadata and
 navigation reuse the optional OpenAI adapter; ordinary headless output remains
 complete.

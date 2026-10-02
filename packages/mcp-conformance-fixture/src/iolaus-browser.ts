@@ -10,11 +10,28 @@ export async function inspectIolausInBrowser(
     name: string,
     args: Record<string, unknown>,
   ) => Promise<CallToolResult>,
+  options: { blocked?: boolean; deceptiveReferrer?: string } = {},
 ) {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    await page.exposeFunction('syntheticTool', call);
+    let toolCalls = 0;
+    await page.exposeFunction(
+      'syntheticTool',
+      (...args: Parameters<typeof call>) => {
+        toolCalls++;
+        return call(...args);
+      },
+    );
+    if (options.deceptiveReferrer) {
+      // Adversarial input: even a referrer getter naming the embedding attacker
+      // must not become bridge authority. Installed before the resource runs.
+      await page.addInitScript((referrer) => {
+        Object.defineProperty(Document.prototype, 'referrer', {
+          get: () => referrer,
+        });
+      }, options.deceptiveReferrer);
+    }
     await page.goto(`${origin}/ui`);
     const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
     if (!script) throw new Error('Missing declared resource script');
@@ -83,11 +100,37 @@ export async function inspectIolausInBrowser(
     });
     if (!directHostAccessDenied)
       throw new Error('Sandboxed view accessed host DOM directly');
+    const referrer = await frame.evaluate(() => document.referrer);
+    if (options.blocked) {
+      await frame
+        .getByRole('status')
+        .filter({ hasText: 'Workflow unavailable.' })
+        .waitFor();
+      if (toolCalls !== 0 || (await frame.getByRole('button').count()))
+        throw new Error(
+          'Foreign embedding dispatched a tool or completed the bridge',
+        );
+      return {
+        structuredContent: undefined,
+        referrer,
+        toolCalls,
+        directHostAccessDenied,
+        reviewUrl: null,
+      };
+    }
+    if (referrer !== '')
+      throw new Error('No-referrer regression requires an empty referrer');
     await frame.getByRole('button').first().click();
     await frame.waitForFunction(() =>
       Boolean(document.getElementById('materials')?.textContent),
     );
     return {
+      referrer,
+      toolCalls,
+      directHostAccessDenied,
+      reviewUrl: await frame
+        .getByRole('link', { name: 'Open dedicated human review' })
+        .getAttribute('href'),
       structuredContent: JSON.parse(
         await frame.locator('#materials').innerText(),
       ),
