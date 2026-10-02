@@ -10,9 +10,11 @@ import { declarations } from '../../scripts/declarations.js';
 export default defineConfig({
   build: {
     lib: {
-      entry: 'src/index.ts',
+      // `app` is the side-effect-free `@happyvertical/smrt-cli/app` subpath;
+      // `index` runs the CLI on import.
+      entry: { index: 'src/index.ts', app: 'src/app/index.ts' },
       formats: ['es'],
-      fileName: 'index',
+      fileName: (_format, entryName) => `${entryName}.js`,
     },
     // Build for Node.js, not browser
     ssr: true,
@@ -50,6 +52,7 @@ export default defineConfig({
 
         // Internal SMRT packages
         '@happyvertical/smrt-agents',
+        '@happyvertical/smrt-app-runtime',
         '@happyvertical/smrt-config',
         '@happyvertical/smrt-core',
         /^@happyvertical\/smrt-core\//,
@@ -84,7 +87,10 @@ export default defineConfig({
     outDir: 'dist',
   },
   plugins: [
-    declarations({ packageDir: __dirname }),
+    declarations({
+      packageDir: __dirname,
+      entries: { app: 'src/app/index.ts' },
+    }),
   ],
   test: {
     globals: true,

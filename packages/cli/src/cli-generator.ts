@@ -2776,6 +2776,16 @@ export class CLIGenerator {
 // CLI Binary Entry Point
 export async function main() {
   const args = process.argv.slice(2);
+
+  // `smrt app <operation>` is the application operator surface. It owns its
+  // own `.env`/config loading, raw argument passthrough (Vite), JSON output,
+  // and exit codes, so it is dispatched before manifest or config loading.
+  if (args[0] === 'app') {
+    const { runAppCommand } = await import('./app/cli.js');
+    process.exitCode = await runAppCommand(args.slice(1));
+    return;
+  }
+
   const timingEnabled = args.includes('--timing');
   const timing: Record<string, number> = {};
 

@@ -1,0 +1,131 @@
+/**
+ * `@happyvertical/smrt-cli/app` — the application operations behind
+ * `smrt app <operation>`, plus the shared lock, lease, identity, process,
+ * readiness, and portability primitives they are built from.
+ *
+ * Importing this entry has no side effects (unlike the package root, which
+ * runs the CLI).
+ */
+
+export {
+  APP_COMMANDS,
+  APP_RECOVERY,
+  type AppErrorEnvelope,
+  errorEnvelope,
+  type RunAppCommandOptions,
+  renderAppHelp,
+  runAppCommand,
+} from './cli.js';
+export { AppCommandError, redactSecrets } from './errors.js';
+export {
+  type ApplicationStateRootOptions,
+  assertExternalArtifactPath,
+  type ExternalArtifactPathOptions,
+  type FingerprintRuntime,
+  prepareApplicationStateRoot,
+  type ResolveApplicationIdOptions,
+  resolveApplicationId,
+  resolveApplicationStateRoot,
+  runtimeConfigurationFingerprint,
+  type StateCustodyOptions,
+} from './identity.js';
+export {
+  launchVite,
+  prepareMigration,
+  resolveViteEntry,
+  runWorker,
+  ViteLauncherError,
+  validateMcpAppsIfPresent,
+  type WorkerKind,
+} from './launchers.js';
+export {
+  type OperationLock,
+  processExists,
+  withOperationLock,
+} from './operation-lock.js';
+export {
+  APP_OPERATIONS,
+  type AppOperation,
+  type PortabilityAdapter,
+  runApplicationOperation,
+} from './operations.js';
+export {
+  type ExportResult,
+  executeImportPlan,
+  exportApplication,
+  type ImportExecutor,
+  type ImportResult,
+  importApplication,
+  type LogicalExportBundle,
+  type ManifestTable,
+  manifestTables,
+  type PlannedImportTable,
+  type PortabilityContext,
+  type PortabilityRuntime,
+  planImportTables,
+  serializeExportBundle,
+  validateImportBundle,
+} from './portability.js';
+export {
+  ASSET_MANIFEST_SCHEMA_VERSION,
+  type AssetBundle,
+  type AssetImportJournal,
+  type AssetManifestEntry,
+  type AssetPayload,
+  AssetPortabilityError,
+  assertAssetRoot,
+  bundleContentDigest,
+  collectFilesystemAssets,
+  digestBytes,
+  finishFilesystemAssets,
+  MAX_ASSET_BYTES,
+  MAX_ASSET_COUNT,
+  MAX_BUNDLE_BYTES,
+  MAX_TOTAL_ASSET_BYTES,
+  type PortableRow,
+  type PortableTable,
+  publishFilesystemAssets,
+  readSensitiveBundle,
+  recoverFilesystemAssets,
+  rollbackFilesystemAssets,
+  type StagedAssets,
+  stageFilesystemAssets,
+  type VerifiedAsset,
+  type VerifiedAssets,
+  verifyFilesystemAssets,
+  verifyPublishedFilesystemAssets,
+} from './portability-assets.js';
+export {
+  type ApplicationProcessRecord,
+  matchesApplicationProcess,
+  readOwnedProcess,
+  sendTerminationSignal,
+  WEB_LAUNCHER_NAME,
+  writeProcessRecord,
+} from './process-record.js';
+export {
+  createProviderReadinessProbe,
+  PROVIDER_READINESS_SETTINGS,
+  type ProviderReadinessOptions,
+  type ReadinessComponent,
+  type ReadinessContext,
+  resolveReadinessModule,
+} from './provider-readiness.js';
+export {
+  type AppCommandDependencies,
+  type AppCommandIo,
+  type AppContext,
+  type CommandRunner,
+  cliExecutablePath,
+  type RunOptions,
+  type RuntimeEnvironment,
+  runtimeEnvironment,
+  webLauncherPath,
+} from './runtime.js';
+export {
+  type AcquireWriterLeaseOptions,
+  acquireWriterLease,
+  readActiveWriterLease,
+  type WriterLease,
+  type WriterLeaseRecord,
+} from './writer-lease.js';
