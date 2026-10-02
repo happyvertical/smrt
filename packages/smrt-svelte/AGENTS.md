@@ -45,7 +45,9 @@ versioned normalizers and the conformance fixture together.
 The explicit `./mcp-apps` subpath owns portable MCP Apps mount/dispose bindings.
 It reuses `compileViewIntentToolSpec` for local registry interactions, never
 advertises browser closures as remote tools, and does not use
-`document.modelContext`. See [bridge contract](../mcp-apps/README.md). Its browser
+`document.modelContext`. `McpAppsBridge` is the shipped view shell: portable
+display-mode request only when the host advertises it, otherwise inline status;
+no OpenAI helpers. See [bridge contract](../mcp-apps/README.md). Its browser
 gate is `e2e/mcp-apps.spec.ts`, including trusted human staged-review enforcement.
 
 ## The UI split — primitive-adoption contract (#1589)
