@@ -10,11 +10,9 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ServiceTimeEntry } from '../models/service-time-entry';
+import { Expense } from '../models/Expense';
 
-const models = [
-  { ctor: ServiceTimeEntry, pkg: '@happyvertical/smrt-timesheets' },
-];
+const models = [{ ctor: Expense, pkg: '@happyvertical/smrt-expenses' }];
 afterEach(() => ObjectRegistry.clear());
 for (const path of ['runtime', 'manifest'] as const) {
   describe(`consumer restrictions on package models (${path})`, () => {
