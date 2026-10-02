@@ -88,6 +88,11 @@
       "default": "./dist/knowledge.js"
     },
     "./smrt-knowledge.json": "./dist/smrt-knowledge.json",
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js",
+      "default": "./dist/vite.js"
+    },
     "./vite-plugin": {
       "types": "./dist/vite-plugin.d.ts",
       "import": "./dist/vite-plugin.js",

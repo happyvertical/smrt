@@ -180,6 +180,35 @@ export default defineConfig({
 });
 ```
 
+#### One-call preset for SvelteKit apps
+
+`smrt()` applies the Oxc decorator config and composes `smrtConsumer()` and
+`smrtPlugin()` with the SvelteKit conventions (`src/lib/objects`,
+`src/lib/types/smrt-generated`, `src/routes/api`, `src/lib/server/smrt.ts`):
+
+```typescript
+// vite.config.ts
+import { sveltekit } from '@sveltejs/kit/vite';
+import { smrt } from '@happyvertical/smrt-core/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({ plugins: [sveltekit(), smrt()] });
+```
+
+```typescript
+// smrt.config.ts: the declared, deterministic list of consumed packages.
+// Tooling and UI packages are never inferred from package.json.
+export default { consumer: { packages: ['@happyvertical/smrt-users'] } };
+```
+
+`smrt({ packages })` overrides the config list; `[]` declares that none are
+consumed. A missing or malformed list fails the build. `objectsDir`, `typesDir`,
+`routesDir`, `configPath`, `configFileName`, `include`, `exclude` and
+`projectRoot` override the conventions; `decorators: false` omits the decorator
+config (values you set under `oxc.decorator` are never overwritten). `smrt()`
+returns a promise, which Vite accepts in `plugins`. The two plugins remain
+public for custom setups.
+
 ```bash
 pnpm vite build
 pnpm smrt db:migrate
@@ -473,6 +502,7 @@ file has run.
 | --- | --- |
 | `@happyvertical/smrt-core` | Objects, collections, decorators, registry, configuration |
 | `@happyvertical/smrt-core/vite-plugin` | Manifest, route, client, and knowledge generation |
+| `@happyvertical/smrt-core/vite` | One-call preset: decorators, consumer, and producer plugins |
 | `@happyvertical/smrt-core/consumer-plugin` | Consume manifests from installed s-m-r-t packages |
 | `@happyvertical/smrt-core/generators` | REST, OpenAPI, CLI, and MCP generator APIs |
 | `@happyvertical/smrt-core/manifest` | Runtime manifest loading and inspection |

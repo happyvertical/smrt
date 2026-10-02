@@ -117,6 +117,13 @@ admin auth.
 
 ## Vite Plugin
 
+`src/vite-preset/` (`@happyvertical/smrt-core/vite`, `smrt()`) composes the Oxc
+decorator block, `smrtConsumer`, then `smrtPlugin` with the template path
+conventions. Its package list comes only from the `smrt({ packages })` option, or
+`smrt.config` `consumer.packages` (smrt-config schema); it never sniffs
+`package.json`, and a missing or malformed list throws. Keep its output
+byte-identical to the two-plugin form (`src/vite-preset/index.test.ts`).
+
 ```typescript
 // vite.config.ts — required for @smrt() decorators (Vite 8+, oxc transform)
 export default defineConfig({
