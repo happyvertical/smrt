@@ -16,6 +16,7 @@
 import { getProject } from '@happyvertical/projects';
 import { getRepository } from '@happyvertical/repos';
 import { getTestDatabase } from '@happyvertical/smrt-core';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IssueCollection } from '../collections/Issues';
@@ -26,6 +27,7 @@ import { Issue } from '../models/Issue';
 import { Project } from '../models/Project';
 import { PullRequest } from '../models/PullRequest';
 import { Repository } from '../models/Repository';
+import { withRepositoryClient } from '../repository-client-scope';
 
 vi.mock('@happyvertical/repos', () => ({ getRepository: vi.fn() }));
 vi.mock('@happyvertical/projects', () => ({ getProject: vi.fn() }));
@@ -194,6 +196,157 @@ describe('smrt-projects models', () => {
       await expect(repo.getClient()).rejects.toThrow(
         new RegExp(`Token not found for key '${MISSING_KEY}'`),
       );
+    });
+
+    it('uses a matching request-scoped client ahead of a warm ambient cache', async () => {
+      const ambient = repoClient();
+      const scoped = repoClient();
+      vi.mocked(getRepository).mockResolvedValue(ambient);
+      const repository = new Repository({
+        db,
+        owner: 'acme',
+        name: 'widgets',
+        tokenConfigKey: TOKEN_KEY,
+      });
+
+      expect(await repository.getClient()).toBe(ambient);
+      await withRepositoryClient(
+        { provider: 'github', owner: 'acme', repo: 'widgets' },
+        scoped,
+        async () => {
+          expect(await repository.getClient()).toBe(scoped);
+        },
+      );
+      expect(await repository.getClient()).toBe(ambient);
+      expect(getRepository).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['provider', { provider: 'gitlab' }],
+      ['owner', { owner: 'other-owner' }],
+      ['repository', { repo: 'other-repository' }],
+      ['tenant', { tenantId: 'tenant-b' }],
+      ['base URL', { baseUrl: 'https://github.example.test' }],
+    ] as const)('fails closed for a scoped %s mismatch before ambient token resolution', async (_field, mismatch) => {
+      const repository = new Repository({
+        db,
+        owner: 'acme',
+        name: 'widgets',
+        tenantId: 'tenant-a',
+        baseUrl: 'https://github.example.test/api/v3',
+        tokenConfigKey: MISSING_KEY,
+      });
+
+      await expect(
+        withRepositoryClient(
+          {
+            provider: 'github',
+            owner: 'acme',
+            repo: 'widgets',
+            tenantId: 'tenant-a',
+            baseUrl: 'https://github.example.test/api/v3',
+            ...mismatch,
+          },
+          repoClient(),
+          () => repository.getClient(),
+        ),
+      ).rejects.toThrow(/does not match/i);
+    });
+
+    it('rejects malformed public scope inputs before binding a client', async () => {
+      await expect(
+        withRepositoryClient(
+          { provider: 'github', owner: '', repo: 'widgets' },
+          repoClient(),
+          async () => undefined,
+        ),
+      ).rejects.toThrow(/owner must be a non-blank string/i);
+      await expect(
+        withRepositoryClient(
+          {
+            provider: 'github',
+            owner: 'acme',
+            repo: 'widgets',
+            tenantId: 1,
+          } as any,
+          repoClient(),
+          async () => undefined,
+        ),
+      ).rejects.toThrow(/tenantId/i);
+    });
+
+    it('isolates concurrent scopes and restores an outer client after a nested failure', async () => {
+      const outer = repoClient();
+      const inner = repoClient();
+      const other = repoClient();
+      const repository = new Repository({
+        db,
+        owner: 'acme',
+        name: 'widgets',
+        tokenConfigKey: MISSING_KEY,
+      });
+      const tenantARepository = new Repository({
+        db,
+        owner: 'acme',
+        name: 'tenant-widgets',
+        tenantId: 'tenant-a',
+        tokenConfigKey: MISSING_KEY,
+      });
+      const tenantBRepository = new Repository({
+        db,
+        owner: 'acme',
+        name: 'tenant-widgets',
+        tenantId: 'tenant-b',
+        tokenConfigKey: MISSING_KEY,
+      });
+
+      await withRepositoryClient(
+        { provider: 'github', owner: 'acme', repo: 'widgets' },
+        outer,
+        async () => {
+          expect(await repository.getClient()).toBe(outer);
+          await expect(
+            withRepositoryClient(
+              { provider: 'github', owner: 'acme', repo: 'widgets' },
+              inner,
+              async () => {
+                expect(await repository.getClient()).toBe(inner);
+                throw new Error('nested failure');
+              },
+            ),
+          ).rejects.toThrow('nested failure');
+          expect(await repository.getClient()).toBe(outer);
+        },
+      );
+
+      const [first, second] = await Promise.all([
+        withTenant({ tenantId: 'tenant-a' }, () =>
+          withRepositoryClient(
+            {
+              provider: 'github',
+              owner: 'acme',
+              repo: 'tenant-widgets',
+              tenantId: 'tenant-a',
+            },
+            outer,
+            async () => tenantARepository.getClient(),
+          ),
+        ),
+        withTenant({ tenantId: 'tenant-b' }, () =>
+          withRepositoryClient(
+            {
+              provider: 'github',
+              owner: 'acme',
+              repo: 'tenant-widgets',
+              tenantId: 'tenant-b',
+            },
+            other,
+            async () => tenantBRepository.getClient(),
+          ),
+        ),
+      ]);
+      expect(first).toBe(outer);
+      expect(second).toBe(other);
     });
 
     it('sync() skips a recent sync but refreshes fields when forced', async () => {
@@ -407,6 +560,39 @@ describe('smrt-projects models', () => {
         number: 1,
       });
       await expect(issue.getRepository()).rejects.toThrow(/not found/i);
+    });
+
+    it('routes warm Issue and PullRequest instances through the scoped client without retaining it', async () => {
+      const repo = await seedRepo(db);
+      const ambient = repoClient();
+      const scoped = repoClient();
+      vi.mocked(getRepository).mockResolvedValue(ambient);
+      const issues = await IssueCollection.create({ db });
+      const issue = await issues.create({
+        repositoryId: repo.id as string,
+        number: 1,
+      });
+      const prs = await PullRequestCollection.create({ db });
+      const pullRequest = await prs.create({
+        repositoryId: repo.id as string,
+        number: 2,
+      });
+
+      expect(await issue.getClient()).toBe(ambient);
+      expect(await pullRequest.getClient()).toBe(ambient);
+      await withRepositoryClient(
+        { provider: 'github', owner: 'acme', repo: 'widgets' },
+        scoped,
+        async () => {
+          expect(await issue.getClient()).toBe(scoped);
+          expect(await pullRequest.getClient()).toBe(scoped);
+        },
+      );
+      expect(await issue.getClient()).toBe(ambient);
+      expect(await pullRequest.getClient()).toBe(ambient);
+      // Each loaded issue owns its repository-model cache; scoped calls did
+      // not construct another ambient SDK client for either instance.
+      expect(getRepository).toHaveBeenCalledTimes(2);
     });
 
     it('sync() throttles a recent sync and otherwise refreshes from the client', async () => {

@@ -91,6 +91,23 @@ await issue.rollback();
 
 `RepositoryOptions`, `IssueOptions`, `PullRequestOptions`, `ProjectOptions`, `CommentOptions`, `LabelOptions`
 
+### Request-scoped repository clients
+
+`withRepositoryClient(scope, client, callback)` binds an `IRepository` SDK
+client to one async request. Its `RepositoryClientScope` must exactly match the
+repository's provider, owner, name, tenant, and self-hosted `baseUrl`; a
+mismatch throws before environment token resolution. The client is not stored
+on models or persisted, and the previous scope is restored when the callback
+settles.
+
+```typescript
+await withRepositoryClient(
+  { provider: 'github', owner: 'org', repo: 'my-app', tenantId },
+  installationClient,
+  () => repository.sync(),
+);
+```
+
 ## Key Patterns
 
 - **Token config reference**: stores env var name (`tokenConfigKey: 'GITHUB_TOKEN'`), not the token itself. Resolved at runtime from `process.env` or `getModuleConfig()`

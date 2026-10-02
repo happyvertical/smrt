@@ -98,6 +98,10 @@ export { Repository, type RepositoryOptions } from './models/Repository';
 export * from './models/service-evidence.js';
 export type { ProjectBoardMoveIntent } from './project-board-types.js';
 export { issueIncorporateFeedbackPrompt } from './prompts';
+export {
+  type RepositoryClientScope,
+  withRepositoryClient,
+} from './repository-client-scope';
 export * from './services/index.js';
 
 // Export types
