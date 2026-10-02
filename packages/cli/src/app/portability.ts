@@ -24,7 +24,9 @@ import {
   bundleContentDigest,
   collectFilesystemAssets,
   finishFilesystemAssets,
+  hasCommittedImportJournal,
   MAX_BUNDLE_BYTES,
+  markFilesystemAssetsCommitted,
   type PortableRow,
   type PortableTable,
   publishFilesystemAssets,
@@ -472,6 +474,56 @@ async function inspectImportTarget(
   return 'dirty';
 }
 
+function canonicalValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number' || typeof value === 'bigint') {
+    return String(value);
+  }
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Uint8Array) return Buffer.from(value).toString('base64');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function canonicalRows(
+  rows: Array<Record<string, unknown>>,
+  columns: string[],
+): string[] {
+  return rows
+    .map((row) =>
+      JSON.stringify(columns.map((column) => canonicalValue(row[column]))),
+    )
+    .sort();
+}
+
+/**
+ * True when every planned table holds exactly the bundle's rows (as a
+ * multiset over the bundle's columns). This is the evidence an interrupted
+ * import's recovery needs when no commit marker was recorded: matching
+ * per-table counts alone do not prove the rows are this bundle's.
+ */
+export async function importedRowsMatchBundle(
+  db: ImportExecutor,
+  plan: PlannedImportTable[],
+  exportedByName: Map<string, { rows: PortableRow[] }>,
+): Promise<boolean> {
+  for (const table of plan) {
+    const expected = (exportedByName.get(table.name) as { rows: PortableRow[] })
+      .rows;
+    const actual = await db.query(
+      `SELECT ${table.columns.map(quoteIdentifier).join(', ')} FROM ${quoteIdentifier(table.name)}`,
+    );
+    const left = canonicalRows(actual.rows, table.columns);
+    const right = canonicalRows(expected, table.columns);
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) return false;
+    }
+  }
+  return true;
+}
+
 /** Result reported by `smrt app import`. */
 export interface ImportResult {
   path: string;
@@ -547,6 +599,20 @@ export async function importApplication(
     }
     const executor = db as unknown as ImportExecutor;
     let targetState = await inspectImportTarget(executor, plan, exportedByName);
+    if (
+      verifiedAssets.root &&
+      targetState === 'complete' &&
+      !hasCommittedImportJournal({
+        stateRoot: context.stateRoot,
+        appId: context.appId,
+        bundleDigest,
+      }) &&
+      !(await importedRowsMatchBundle(executor, plan, exportedByName))
+    ) {
+      // Counts match but nothing ties the rows to this bundle: recovery
+      // refuses (asset-recovery-target-mismatch) and keeps the journal.
+      targetState = 'dirty';
+    }
     if (verifiedAssets.root) {
       const recovery = recoverFilesystemAssets({
         stateRoot: context.stateRoot,
@@ -572,6 +638,7 @@ export async function importApplication(
       appId: context.appId,
       bundleDigest,
     });
+    let committed = false;
     try {
       await context.onImportPhase?.('assets-staged');
       await db.transaction(async (tx) => {
@@ -585,6 +652,8 @@ export async function importApplication(
         await context.onImportPhase?.('database-staged');
         verifyPublishedFilesystemAssets(staged);
       });
+      committed = true;
+      markFilesystemAssetsCommitted(staged);
       finishFilesystemAssets(staged);
     } catch (error) {
       const stateAfterFailure = await inspectImportTarget(
@@ -592,7 +661,11 @@ export async function importApplication(
         plan,
         exportedByName,
       );
-      if (stateAfterFailure === 'complete') {
+      if (
+        stateAfterFailure === 'complete' &&
+        (committed ||
+          (await importedRowsMatchBundle(executor, plan, exportedByName)))
+      ) {
         finishFilesystemAssets(staged);
         rowCount = totalRows();
         return;

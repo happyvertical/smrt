@@ -97,6 +97,13 @@ export interface AssetImportJournal {
   phase: 'staging' | 'publishing' | 'published';
   rootExisted: boolean;
   entries: Array<{ relativePath: string; contentDigest: string }>;
+  /**
+   * Set once the database transaction for this bundle committed (additive;
+   * journals written by the template scripts never carry it, and those
+   * scripts ignore it). Recovery treats it as proof the rows are this
+   * bundle's; without it, recovery verifies row content instead.
+   */
+  committedAt?: string;
 }
 
 /** A staged import: journal path plus its in-memory journal. */
@@ -728,6 +735,45 @@ function removePublishedTree(journal: AssetImportJournal): {
   rmSync(quarantine, { recursive: true });
   if (journal.rootExisted) mkdirSync(journal.assetRoot, { mode: 0o700 });
   return { quarantined: false };
+}
+
+/** Record in the journal that this bundle's database transaction committed. */
+export function markFilesystemAssetsCommitted(
+  staged: StagedAssets | null,
+): void {
+  if (!staged) return;
+  staged.journal.committedAt = new Date().toISOString();
+  writeJournal(staged.path, staged.journal);
+}
+
+/**
+ * True when an import journal for `appId` exists, belongs to `bundleDigest`,
+ * and records a committed database transaction.
+ */
+export function hasCommittedImportJournal({
+  stateRoot,
+  appId,
+  bundleDigest,
+}: {
+  stateRoot: string;
+  appId: string;
+  bundleDigest: string;
+}): boolean {
+  const path = journalPath(stateRoot, appId);
+  try {
+    const details = lstatSync(path);
+    if (details.isSymbolicLink() || !details.isFile()) return false;
+    const journal = JSON.parse(
+      readFileSync(path, 'utf8'),
+    ) as Partial<AssetImportJournal> | null;
+    return (
+      journal?.application === appId &&
+      journal.bundleDigest === bundleDigest &&
+      typeof journal.committedAt === 'string'
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Verify the published tree and drop the journal. */
