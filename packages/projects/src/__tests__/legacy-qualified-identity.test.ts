@@ -9,6 +9,7 @@
  */
 import {
   crossPackageRef,
+  field,
   getTestDatabase,
   ObjectRegistry,
   SmrtCollection,
@@ -41,6 +42,7 @@ const MOVED = [
   conflictColumns: ['owner_id', 'meta_type', 'meta_id', 'role'],
 })
 class LegacyIdentityLink extends SmrtPolymorphicAssociation {
+  @field()
   ownerId = '';
 }
 
