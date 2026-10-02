@@ -1,5 +1,38 @@
 # @happyvertical/smrt-core
 
+## 0.53.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - require Node 26 in engines, docs and the template contract (#3340)
+  
+  ### Features
+  
+  - move the shared time entry into smrt-timesheets (#3348) (timesheets)
+  - deprecated qualified-name aliases so moved models keep resolving (#3341) (core)
+  - reviewed expense and deduplicated receipt models in smrt-expenses (#3339) (expenses)
+  - native-posting capture controls and form retry (#3334) (smrt-ui,smrt-svelte)
+  - deliver touch and native form cohort (#3331) (ui)
+  - scaffold and validate portable MCP Apps (#3284) (cli)
+  
+  ### Bug Fixes
+  
+  - run all Linux jobs on ubuntu-latest (#3321) (ci)
+  
+  ### Other Changes
+  
+  - perf: batch permission seeding; run CI and the template image on Node 26 (#3330)
+  - test: add synthetic Iolaus cross-profile conformance (#3327) (mcp-apps)
+  - chore: sync sdk packages to v0.98.0 (#3314) (deps)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.53.0
+  - @happyvertical/smrt-scanner@0.53.0
+  - @happyvertical/smrt-types@0.53.0
+
 ## 0.52.0
 
 ### Minor Changes
