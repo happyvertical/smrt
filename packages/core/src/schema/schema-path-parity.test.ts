@@ -66,6 +66,37 @@ import type { IndexDefinition, SchemaDefinition } from './types.js';
 const PKG = '@happyvertical/smrt-parity';
 
 describe('same-name physical foreign key parity (#2763)', () => {
+  it('rejects invalid ON UPDATE actions in runtime and manifest schema paths', () => {
+    // Deliberately bypass the public decorator union to test malformed metadata.
+    const invalidAction = 'DROP' as 'CASCADE';
+    const field: FieldDefinition = {
+      type: 'foreignKey',
+      related: 'InvalidParent',
+      _meta: { onUpdate: invalidAction },
+    };
+    const generator = new SchemaGenerator();
+    expect(() =>
+      generator.generateSchemaFromRegistry(
+        'InvalidChild',
+        'invalid_children',
+        new Map([['parentId', field]]),
+      ),
+    ).toThrow(/Invalid foreign-key action .*ON UPDATE/);
+
+    const manifest: SmartObjectManifest = {
+      version: '1.0.0',
+      timestamp: 0,
+      packageName: PKG,
+      objects: {
+        [`${PKG}:InvalidParent`]: objectDef('InvalidParent', {}),
+        [`${PKG}:InvalidChild`]: objectDef('InvalidChild', { parentId: field }),
+      },
+    };
+    expect(() =>
+      new ManifestGenerator().applyGenerationPasses(manifest),
+    ).toThrow(/Invalid foreign-key action .*ON UPDATE/);
+  });
+
   it.each([
     'unregistered',
     'ambiguous',
@@ -128,10 +159,10 @@ describe('same-name physical foreign key parity (#2763)', () => {
         tableName: 'fk_parity_a_2763',
         idType: 'uuid',
       })(A);
-      foreignKey('ParityParent2763', { onDelete: 'CASCADE' })(
-        Child.prototype,
-        'parentId',
-      );
+      foreignKey('ParityParent2763', {
+        onDelete: 'CASCADE',
+        onUpdate: 'RESTRICT',
+      })(Child.prototype, 'parentId');
       smrt({
         packageName: packageB,
         tableName: 'fk_parity_child_2763',
@@ -185,7 +216,7 @@ describe('same-name physical foreign key parity (#2763)', () => {
               parentId: {
                 type: 'foreignKey',
                 related: 'ParityParent2763',
-                _meta: { onDelete: 'CASCADE' },
+                _meta: { onDelete: 'CASCADE', onUpdate: 'RESTRICT' },
               },
             },
             { tableName: 'fk_parity_child_2763', tableStrategy: strategy },
@@ -209,6 +240,7 @@ describe('same-name physical foreign key parity (#2763)', () => {
           table: 'fk_parity_b_2763',
           column: 'id',
           onDelete: 'CASCADE',
+          onUpdate: 'RESTRICT',
         },
       };
       expect(runtime.columns.parent_id).toMatchObject(expected);
@@ -302,7 +334,10 @@ function buildFixtureManifest(): SmartObjectManifest {
       portableAuthorId: {
         type: 'foreignKey',
         related: 'ParityAuthor',
-        _meta: { constraint: { engines: ['postgres', 'sqlite'] } },
+        _meta: {
+          constraint: { engines: ['postgres', 'sqlite'] },
+          onUpdate: 'RESTRICT',
+        },
       },
       archiveAuthorId: {
         type: 'foreignKey',
@@ -497,6 +532,7 @@ function buildFixtureManifest(): SmartObjectManifest {
           type: 'foreignKey',
           related: 'ParityAuthor.email',
           required: true,
+          _meta: { onUpdate: 'NO ACTION' },
         },
       },
       {
@@ -535,7 +571,11 @@ function buildFixtureManifest(): SmartObjectManifest {
     objectDef(
       'ParityMeeting',
       {
-        roomId: { type: 'foreignKey', related: 'ParityRoom' },
+        roomId: {
+          type: 'foreignKey',
+          related: 'ParityRoom',
+          _meta: { onUpdate: 'SET NULL' },
+        },
         agenda: { type: 'meta' },
         priority: { type: 'meta', _meta: { indexed: true } },
         bookingRef: { type: 'text', _meta: { unique: true } },
@@ -1070,7 +1110,7 @@ describe('schema path parity (#2359)', () => {
         table: 'parity_authors',
         column: 'id',
         onDelete: 'NO ACTION',
-        onUpdate: 'CASCADE',
+        onUpdate: 'RESTRICT',
         engines: ['postgres', 'sqlite'],
       });
       expect(
@@ -1304,6 +1344,24 @@ describe('schema path parity (#2359)', () => {
           schema?.columns.code.foreignKey?.onDelete,
           `${leg} STI-root natural-key FK inherited by child`,
         ).toBe('CASCADE');
+      }
+    });
+
+    it.each([
+      ['parity_posts', 'author_id', 'CASCADE'],
+      ['parity_posts', 'portable_author_id', 'RESTRICT'],
+      ['parity_tickets', 'code', 'NO ACTION'],
+      ['parity_events', 'room_id', 'SET NULL'],
+    ] as const)('%s.%s preserves ON UPDATE %s across manifest, registry, and migrate paths', (table, column, action) => {
+      for (const [leg, schema] of [
+        ['manifest', manifestSchemas.get(table)],
+        ['registry', registrySchemas.get(table)],
+        ['migrate', migrateSchemas[table]],
+      ] as const) {
+        expect(
+          schema?.columns[column].foreignKey?.onUpdate,
+          `${leg} ${table}.${column}`,
+        ).toBe(action);
       }
     });
 

@@ -25,7 +25,10 @@ import {
 } from './conflict-target.js';
 import { getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
-import { resolveForeignKeyDeleteAction } from './foreign-key-policy.js';
+import {
+  resolveForeignKeyDeleteAction,
+  resolveForeignKeyUpdateAction,
+} from './foreign-key-policy.js';
 import {
   assertIdentifierFits,
   enforceIdentifierLimits,
@@ -322,7 +325,7 @@ export class SchemaGenerator {
         table: targetTable,
         column: this.toSnakeCase(targetColumn),
         onDelete: action,
-        onUpdate: 'CASCADE',
+        onUpdate: resolveForeignKeyUpdateAction(field._meta?.onUpdate),
         ...(getForeignKeyConstraintEngines(field)
           ? { engines: getForeignKeyConstraintEngines(field) }
           : {}),
@@ -1236,7 +1239,7 @@ export class SchemaGenerator {
             table: this.classNameToTableName(relatedName),
             column: 'id',
             onDelete: onDeleteAction || 'CASCADE',
-            onUpdate: 'CASCADE',
+            onUpdate: resolveForeignKeyUpdateAction(field._meta?.onUpdate),
             ...(getForeignKeyConstraintEngines(field)
               ? { engines: getForeignKeyConstraintEngines(field) }
               : {}),
@@ -1587,7 +1590,7 @@ export class SchemaGenerator {
               table: this.classNameToTableName(relatedName),
               column: 'id',
               onDelete: onDeleteAction || 'CASCADE',
-              onUpdate: 'CASCADE',
+              onUpdate: resolveForeignKeyUpdateAction(field._meta?.onUpdate),
               ...(getForeignKeyConstraintEngines(field)
                 ? { engines: getForeignKeyConstraintEngines(field) }
                 : {}),

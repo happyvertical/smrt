@@ -210,8 +210,8 @@ SQLite can enforce generated same-package constraints on new tables, including
 cycles, but adding one to an existing table requires an explicit rebuild.
 DuckDB reports unsupported constraint shapes or `ALTER ADD CONSTRAINT` as
 manual/refused work, never as a successful no-op. Generated same-package
-constraints retain `ON UPDATE CASCADE`, which DuckDB/JSON cannot enforce, so
-those engines report an actionable refusal rather than silently stripping it.
+constraints default to `ON UPDATE CASCADE` and retain declared actions.
+DuckDB/JSON cannot enforce them, so they report an actionable refusal.
 
 SQLite has no `ALTER COLUMN ... TYPE`, so a type-bucket change (the common one
 being a numeric default edited `0` → `0.0`) is applied as the documented table
