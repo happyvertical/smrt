@@ -43,9 +43,10 @@
  *    - `redirect`: a confirmed write only with `redirectConfirmsWrite: true`.
  *    - A late result for a submit already settled is ignored entirely.
  *
- * An aborted request (the page called `controller.abort()`) produces no
- * result from `enhance`; it settles like a transport error so the form is not
- * stuck refusing submits.
+ * An aborted request (the page called `controller.abort()`, before or during
+ * the request — including from its own submit function) produces no result
+ * from `enhance`; it settles like a transport error so the form is not stuck
+ * refusing submits.
  *
  * @module
  */
@@ -423,6 +424,9 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
         setState({ status: 'transport-error' });
       };
       controller.signal.addEventListener('abort', onAbort, { once: true });
+      // The page's own submit function may already have aborted (without
+      // cancelling): the abort event has fired, and kit will report no result.
+      if (controller.signal.aborted) onAbort();
 
       return async (resultInput: FormRetryResultInput) => {
         controller.signal.removeEventListener('abort', onAbort);

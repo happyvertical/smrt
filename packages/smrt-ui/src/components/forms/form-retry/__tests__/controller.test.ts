@@ -639,3 +639,33 @@ describe('the store contract and the attachment', () => {
     handle.destroy();
   });
 });
+
+describe('the page’s submit hook aborts the request itself', () => {
+  it('settles like a transport error instead of leaving the slot in flight', async () => {
+    const form = mountForm();
+    const server = fakeRunOnceServer();
+    const retry = createFormRetry({ form: 'report', storage: memoryStorage() });
+    let abort = true;
+    const kit = fakeEnhance(
+      form,
+      retry.enhance(({ controller }) => {
+        // Abandon the request without cancelling the submission: kit still
+        // sends, the fetch rejects with an AbortError, and no result arrives.
+        if (abort) controller.abort();
+      }),
+      server,
+    );
+    fill(form, { title: 'Hose' });
+    const token = retry.token;
+    await kit.submit();
+    expect(server.requests).toHaveLength(0);
+    expect(retry.state).toMatchObject({
+      status: 'transport-error',
+      inFlight: null,
+    });
+    expect(retry.token).toBe(token);
+    abort = false;
+    await kit.submit();
+    expect(server.rows).toHaveLength(1);
+  });
+});
