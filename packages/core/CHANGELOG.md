@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.53.1
+
+### Patch Changes
+
+- ### Other Changes
+  
+  - chore: register new packages in tooling lists and stage template pins in releases (#3351)
+- @happyvertical/smrt-config@0.53.1
+  - @happyvertical/smrt-scanner@0.53.1
+  - @happyvertical/smrt-types@0.53.1
+
 ## 0.53.0
 
 ### Minor Changes
