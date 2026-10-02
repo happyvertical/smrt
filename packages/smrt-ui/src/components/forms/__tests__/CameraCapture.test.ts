@@ -382,6 +382,41 @@ describe('CameraCapture native form post', () => {
   });
 });
 
+describe('CameraCapture disabled with the opt-in file-input fallback', () => {
+  it('keeps a committed photo in the submission while blocking the picker', async () => {
+    installMediaDevices(undefined);
+    const props = { kind: 'camera', name: 'photo', fileInputFallback: true };
+    const { container, rerender } = render(CaptureFormFixture, { props });
+    await expectState(container, 'fallback');
+    const form = container.querySelector('form') as HTMLFormElement;
+    const picker = screen.getByLabelText(
+      'Take or choose a photo',
+    ) as HTMLInputElement;
+    const chosen = new File(['jpeg'], 'IMG_0001.jpg', { type: 'image/jpeg' });
+    picker.files = createFileList([chosen]);
+    await fireEvent.change(picker);
+    await expectState(container, 'committed');
+
+    await rerender({ ...props, disabled: true });
+    await waitFor(() => expect(root(container)).toHaveClass('disabled'));
+    // The photo still shown is the photo still posted.
+    expect(submittedEntries(form).getAll('photo')).toEqual([chosen]);
+    // ...but the picker cannot be opened or tabbed to.
+    expect(picker).toHaveAttribute('aria-disabled', 'true');
+    expect(picker).toHaveAttribute('tabindex', '-1');
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    picker.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+
+    await rerender({ ...props, disabled: false });
+    await waitFor(() => expect(picker).not.toHaveAttribute('aria-disabled'));
+    const reopen = new MouseEvent('click', { bubbles: true, cancelable: true });
+    picker.dispatchEvent(reopen);
+    expect(reopen.defaultPrevented).toBe(false);
+    expect(submittedEntries(form).getAll('photo')).toEqual([chosen]);
+  });
+});
+
 describe('CameraCapture in a disabled fieldset', () => {
   it.each([
     'data-transfer',

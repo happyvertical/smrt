@@ -433,7 +433,9 @@ discarded and its stream released. The lifecycle lives in the framework-free
 
 `fileInputFallback` is opt-in and off by default. With it on, browsers without
 `getUserMedia` render an `<input type="file" accept="image/*" capture>` that
-carries `name` itself. It opens the operating system's picker, which has no
+carries `name` itself (`disabled` blocks it with `aria-disabled` rather than
+the native attribute, so a committed photo keeps posting). It opens the
+operating system's picker, which has no
 live preview and can offer the gallery, so it is not a substitute for the
 camera flow. With it off, those browsers render the `unsupported` state.
 

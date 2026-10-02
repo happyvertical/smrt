@@ -57,7 +57,10 @@ import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   /** Which camera to request. Re-requested on change while live. */
   facingMode?: CameraFacingMode;
-  /** Stops the camera and disables every action; a held photo is kept. */
+  /**
+   * Stops the camera and disables every action; a held photo is kept and,
+   * when committed, still posts with the form.
+   */
   disabled?: boolean;
   /** Called when the user commits a photo with "Use photo". */
   onCapture?: (result: CaptureResult) => void;
@@ -375,6 +378,17 @@ function readDataUrl(file: Blob): Promise<string> {
   });
 }
 
+/**
+ * The fallback picker is the field that posts, so `disabled` must not set the
+ * native attribute: a disabled control is left out of the submission, and a
+ * committed photo still on screen would silently stop posting. Interaction is
+ * blocked here instead (a label click and keyboard activation both arrive as
+ * a click on the input), with `aria-disabled` and no tab stop.
+ */
+function blockPickerWhileDisabled(event: MouseEvent): void {
+  if (disabled) event.preventDefault();
+}
+
 async function handleFallbackChange(
   event: Event & { currentTarget: HTMLInputElement },
 ): Promise<void> {
@@ -486,7 +500,9 @@ useControlRegistration(() => {
           accept="image/*"
           capture={facingMode}
           {name}
-          {disabled}
+          aria-disabled={disabled || undefined}
+          tabindex={disabled ? -1 : undefined}
+          onclick={blockPickerWhileDisabled}
           onchange={handleFallbackChange}
         />
         <span>{cameraState === 'committed' ? text.retake : text.choosePhoto}</span>
