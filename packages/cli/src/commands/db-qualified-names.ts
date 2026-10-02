@@ -75,26 +75,34 @@ export async function runLegacyQualifiedNameReport(
   }
 }
 
-/** Render a legacy-name report as the lines `smrt doctor --db` prints. */
+/**
+ * Render a legacy-name report as the lines `smrt doctor --db` and
+ * `smrt db:migrate-qualified-names` print.
+ *
+ * A zero count is a removal signal only when it is global and complete: a
+ * tenant-scoped count (`tenantId`) or one that skipped untenanted tables
+ * never says the aliases are removable. Stored rows are also only half the
+ * picture, so every report reminds the operator that source still naming an
+ * old name must move first.
+ */
 export function formatLegacyQualifiedNameReport(
   report: LegacyQualifiedNameReport,
+  options: { tenantId?: string } = {},
 ): string[] {
   if (report.aliases.length === 0) {
     return ['   No class declares previousQualifiedNames.'];
   }
+  const scope =
+    options.tenantId !== undefined ? ` for tenant ${options.tenantId}` : '';
   const lines = [
     `   Declared aliases: ${report.aliases.length}`,
     ...report.aliases.map(
       ({ alias, current }) => `     - ${alias} → ${current}`,
     ),
   ];
-  if (report.total === 0) {
+  if (report.total > 0) {
     lines.push(
-      '   ✅ No stored row uses a deprecated name; these aliases can be removed in a breaking release.',
-    );
-  } else {
-    lines.push(
-      `   ⚠️  ${report.total} stored reference(s) still use a deprecated name:`,
+      `   ⚠️  ${report.total} stored reference(s)${scope} still use a deprecated name:`,
     );
     for (const reference of report.references) {
       lines.push(
@@ -104,12 +112,32 @@ export function formatLegacyQualifiedNameReport(
     lines.push(
       '   They keep resolving. Rewrite them early with `smrt db:migrate-qualified-names` (opt-in); keep the aliases until this count is zero.',
     );
+  } else if (options.tenantId !== undefined) {
+    lines.push(
+      `   ✅ No counted row${scope} uses a deprecated name. This is a tenant-scoped count, not a removal signal: other tenants and untenanted tables were not counted. Run without --tenant (or \`smrt doctor --db\`) before deciding to remove an alias.`,
+    );
+  } else if (report.untenantedTables.length > 0) {
+    lines.push(
+      '   ✅ No counted row uses a deprecated name, but some tables were skipped (below), so this is not a removal signal.',
+    );
+  } else {
+    lines.push(
+      '   ✅ No stored row in this database uses a deprecated name. The aliases may be removed in a breaking release once every deployment reports zero and no source still names them.',
+    );
+  }
+  if (report.untenantedTables.length > 0) {
+    lines.push(
+      `   Skipped (no tenant column, not counted): ${report.untenantedTables.join(', ')}`,
+    );
   }
   if (report.missingTables.length > 0) {
     lines.push(
       `   (not migrated in this database: ${report.missingTables.join(', ')})`,
     );
   }
+  lines.push(
+    '   Before removing an alias, also update source still naming an old qualified name (@crossPackageRef / relationship targets, playbook step models) to the current name.',
+  );
   return lines;
 }
 
@@ -159,7 +187,9 @@ export const dbMigrateQualifiedNamesCommand: CLICommand = {
         force: options.force === true,
         ...(options.tenant ? { tenantId: options.tenant } : {}),
       });
-      for (const line of formatLegacyQualifiedNameReport(result.before)) {
+      for (const line of formatLegacyQualifiedNameReport(result.before, {
+        ...(options.tenant ? { tenantId: options.tenant } : {}),
+      })) {
         console.log(line);
       }
       console.log();

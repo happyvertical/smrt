@@ -184,6 +184,68 @@ describe('deprecated qualified-name references (#3338)', () => {
       formatLegacyQualifiedNameReport(
         after.report as NonNullable<typeof after.report>,
       ).join('\n'),
-    ).toContain('can be removed');
+    ).toContain('No stored row in this database uses a deprecated name');
+  });
+
+  describe('formatLegacyQualifiedNameReport messaging', () => {
+    const SOURCE_REMINDER =
+      'source still naming an old qualified name (@crossPackageRef / relationship targets, playbook step models)';
+    const base = {
+      aliases: [{ alias: OLD, current: CURRENT }],
+      references: [],
+      total: 0,
+      missingTables: [],
+      untenantedTables: [],
+    };
+
+    it('a zero global count allows removal only after source references move', () => {
+      const text = formatLegacyQualifiedNameReport(base).join('\n');
+      expect(text).toContain(
+        'No stored row in this database uses a deprecated name',
+      );
+      expect(text).toContain(SOURCE_REMINDER);
+    });
+
+    it('a zero tenant-scoped count never claims removal is safe and lists skipped tables', () => {
+      const text = formatLegacyQualifiedNameReport(
+        { ...base, untenantedTables: ['plain_links'] },
+        { tenantId: 'tenant-a' },
+      ).join('\n');
+      expect(text).toContain('tenant tenant-a');
+      expect(text).toContain(
+        'Skipped (no tenant column, not counted): plain_links',
+      );
+      expect(text).not.toMatch(/can be removed|may be removed/);
+      expect(text).toContain('Run without --tenant');
+      expect(text).toContain(SOURCE_REMINDER);
+    });
+
+    it('a zero count with skipped tables never claims removal is safe', () => {
+      const text = formatLegacyQualifiedNameReport({
+        ...base,
+        untenantedTables: ['plain_links'],
+      }).join('\n');
+      expect(text).toContain('plain_links');
+      expect(text).not.toMatch(/can be removed|may be removed/);
+    });
+
+    it('a non-zero count keeps the aliases and reminds about source', () => {
+      const text = formatLegacyQualifiedNameReport({
+        ...base,
+        total: 1,
+        references: [
+          {
+            table: 'links',
+            column: 'meta_type',
+            kind: 'polymorphic',
+            alias: OLD,
+            current: CURRENT,
+            count: 1,
+          },
+        ],
+      }).join('\n');
+      expect(text).toContain('keep the aliases until this count is zero');
+      expect(text).toContain(SOURCE_REMINDER);
+    });
   });
 });
