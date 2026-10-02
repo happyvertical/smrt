@@ -101,6 +101,13 @@ shapes and lifecycle ownership. Unmounting must dispose registrations and cancel
 stale updates. File URLs and host file identifiers are untrusted references,
 not permission to read/write arbitrary server or local paths.
 
+Applications wire the server side with `mountMcpAppRoute` and
+`mountMcpProtectedResourceMetadataRoute` from `@happyvertical/smrt-app-mcp/sveltekit`
+(explicit model allow-list, required scopes, session-locals principal, optional
+bearer adapter) and the view side with the shipped `McpAppsBridge` component
+from `@happyvertical/smrt-svelte/mcp-apps`; neither requires app-owned glue
+modules. These are synthetic-host verified only.
+
 Local deployments retain loopback/private storage and explicit local process
 credentials. Self-hosted deployments supply their own HTTPS issuer/gateway.
 Cloud deployments require verified account and tenant isolation; an environment
