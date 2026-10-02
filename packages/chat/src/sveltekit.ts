@@ -57,8 +57,11 @@ import type { AgentSession } from './models/AgentSession.js';
 import type { ChatMessage } from './models/ChatMessage.js';
 import type { ChatThread } from './models/ChatThread.js';
 import {
+  ChatClientRequestConflictError,
+  type ChatClientRequestOutcome,
   type ChatMessageAttachment,
   ChatService,
+  clientRequestMessageId,
 } from './services/ChatService.js';
 import {
   type ClientToolResultInput,
@@ -218,6 +221,11 @@ export interface MountAssistantRoutesOptions {
   temperature?: number;
   /** Earlier messages sent with a new turn. Default 20. */
   historyLimit?: number;
+  /**
+   * A stored send with no reply and no recorded outcome (e.g. its process
+   * died) counts as failed after this long. Default 15 minutes.
+   */
+  abandonedTurnMs?: number;
   describeTool?: (name: string, args?: Record<string, unknown>) => string;
   /**
    * Persist a server tool invocation into the thread (default: none). Its
@@ -299,11 +307,17 @@ export interface AssistantMessageWire {
   clientRequestId?: string;
 }
 
-/** JSON answer to a send whose `clientRequestId` was already seen. */
+/**
+ * JSON answer to a send whose `clientRequestId` is already stored for this
+ * thread and actor. `outcome`: `completed` (a reply follows), `cancelled`
+ * (stopped, no reply), or `in_progress` (still running, or waiting on
+ * browser tools). A failed or abandoned turn answers 409 `turn_failed`.
+ */
 export interface AssistantDuplicateSendWire {
   duplicate: true;
   inProgress: boolean;
-  userMessage?: AssistantMessageWire;
+  outcome: 'completed' | 'cancelled' | 'in_progress';
+  userMessage: AssistantMessageWire;
   assistantMessage?: AssistantMessageWire;
   messages: AssistantMessageWire[];
 }
@@ -324,8 +338,8 @@ const MAX_TITLE_LENGTH = 200;
 const MAX_ATTACHMENTS_PER_MESSAGE = 10;
 const MAX_ID_LENGTH = 128;
 const CLIENT_REQUEST_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
-const DEDUP_SCAN_LIMIT = 200;
-const IN_FLIGHT_TTL_MS = 15 * 60 * 1000;
+/** Default age after which an unanswered, unsettled send counts as failed. */
+export const DEFAULT_ASSISTANT_ABANDONED_TURN_MS = 15 * 60 * 1000;
 const GENERIC_ERROR = 'The assistant request failed.';
 
 /**
@@ -634,9 +648,8 @@ export function mountAssistantRoutes(
       // Logging never breaks a response.
     }
   };
-  // Sends currently running per (tenant, actor, clientRequestId) in this
-  // process; the durable dedup is the stored `metadata.clientRequestId`.
-  const inFlight = new Map<string, number>();
+  const abandonedTurnMs =
+    options.abandonedTurnMs ?? DEFAULT_ASSISTANT_ABANDONED_TURN_MS;
 
   const segmentsOf = (event: AssistantRouteEvent): string[] | null => {
     const param = event.params?.[paramName];
@@ -944,43 +957,99 @@ export function mountAssistantRoutes(
     return json({ items: messages.map(toAssistantMessageWire) });
   };
 
-  const duplicateAnswer = async (
+  /**
+   * The answer for a send whose reservation (its deterministic user-message
+   * id) is already stored, or `null` when it is not.
+   */
+  const reservationAnswer = async (
     chat: ChatService,
     principal: AssistantPrincipal,
     threadId: string,
-    clientRequestId: string,
-  ): Promise<AssistantDuplicateSendWire | null> => {
-    const recent = await chat.getThreadMessages({
+    messageId: string,
+  ): Promise<Response | null> => {
+    const stored = await chat.getThreadMessagesFrom({
       threadId,
+      messageId,
       actorProfileId: principal.profileId,
       tenantId: principal.tenantId,
-      limit: DEDUP_SCAN_LIMIT,
     });
-    const index = recent.findIndex(
-      (message) =>
-        message.role === 'user' &&
-        message.senderProfileId === principal.profileId &&
-        parseObject(message.metadata)?.clientRequestId === clientRequestId,
-    );
-    if (index < 0) return null;
-    const userMessage = toAssistantMessageWire(recent[index]);
+    const [anchor, ...later] = stored;
+    if (
+      anchor?.role !== 'user' ||
+      anchor.senderProfileId !== principal.profileId
+    ) {
+      return null;
+    }
+    const userMessage = toAssistantMessageWire(anchor);
     // The turn's output runs up to the next user message.
     const after: AssistantMessageWire[] = [];
-    for (const message of recent.slice(index + 1)) {
+    for (const message of later) {
       if (message.role === 'user') break;
       after.push(toAssistantMessageWire(message));
     }
     const assistantMessage = [...after]
       .reverse()
       .find((message) => message.role === 'assistant');
-    return {
-      duplicate: true,
-      inProgress: !assistantMessage,
-      userMessage,
-      ...(assistantMessage ? { assistantMessage } : {}),
-      messages: after,
+    const answer = (
+      outcome: AssistantDuplicateSendWire['outcome'],
+    ): Response => {
+      const body: AssistantDuplicateSendWire = {
+        duplicate: true,
+        inProgress: outcome === 'in_progress',
+        outcome,
+        userMessage,
+        ...(assistantMessage ? { assistantMessage } : {}),
+        messages: after,
+      };
+      return json(body, 200);
     };
+    if (assistantMessage) return answer('completed');
+    const recorded = parseObject(anchor.metadata)?.turnOutcome;
+    const age = Date.now() - new Date(String(anchor.created_at)).getTime();
+    if (
+      recorded === 'failed' ||
+      (recorded !== 'cancelled' &&
+        recorded !== 'completed' &&
+        Number.isFinite(age) &&
+        age > abandonedTurnMs)
+    ) {
+      throw new AssistantRouteError(
+        409,
+        'turn_failed',
+        'The assistant could not answer this message. Send it again.',
+      );
+    }
+    if (recorded === 'cancelled' || recorded === 'completed') {
+      return answer(recorded === 'cancelled' ? 'cancelled' : 'completed');
+    }
+    return answer('in_progress');
   };
+
+  /** Record the turn's outcome on its send; never fails the response. */
+  const settleOutcome =
+    (
+      chat: ChatService,
+      principal: AssistantPrincipal,
+      threadId: string,
+      messageId: string,
+    ) =>
+    async (
+      outcome: ChatClientRequestOutcome,
+      settings: { quiet?: boolean } = {},
+    ) => {
+      try {
+        await chat.recordClientRequestOutcome({
+          tenantId: principal.tenantId,
+          threadId,
+          messageId,
+          actorProfileId: principal.profileId,
+          outcome,
+        });
+      } catch (error) {
+        // `quiet`: the send may never have been stored.
+        if (!settings.quiet) safeLog(error);
+      }
+    };
 
   const sendMessage = async (
     context: AssistantRequestContext,
@@ -1026,62 +1095,65 @@ export function mountAssistantRoutes(
     const chat = await chatFor(principal);
     const session = await findSession(chat, principal);
     const thread = await requireOwnThread(chat, principal, session, threadId);
-    if (!session) throw notFound();
+    if (!session?.chatRoomId) throw notFound();
 
-    const flightKey = `${principal.tenantId}\u0000${principal.profileId}\u0000${clientRequestId}`;
-    const now = Date.now();
-    for (const [key, expires] of inFlight) {
-      if (expires <= now) inFlight.delete(key);
-    }
-    if (inFlight.has(flightKey)) {
-      const known = await duplicateAnswer(
-        chat,
-        principal,
-        threadId,
-        clientRequestId,
-      );
-      return json(
-        known ?? { duplicate: true, inProgress: true, messages: [] },
-        200,
-      );
-    }
-    inFlight.set(flightKey, now + IN_FLIGHT_TTL_MS);
-    let handedOff = false;
-    try {
-      const known = await duplicateAnswer(
-        chat,
-        principal,
-        threadId,
-        clientRequestId,
-      );
-      if (known) return json(known, 200);
+    // The reservation is the user message's deterministic primary key, scoped
+    // to tenant, room, thread, actor and clientRequestId: the database's
+    // primary-key uniqueness makes it atomic and durable across replicas.
+    const reservationId = clientRequestMessageId({
+      tenantId: principal.tenantId,
+      roomId: session.chatRoomId,
+      threadId,
+      actorProfileId: principal.profileId,
+      clientRequestId,
+    });
+    const known = await reservationAnswer(
+      chat,
+      principal,
+      threadId,
+      reservationId,
+    );
+    if (known) return known;
 
-      let attachments: ChatMessageAttachment[] | null = null;
-      if (hasAttachments && options.attachments) {
-        const verified = await options.attachments.verify(
-          references as unknown[],
-          context,
+    let attachments: ChatMessageAttachment[] | null = null;
+    if (hasAttachments && options.attachments) {
+      const verified = await options.attachments.verify(
+        references as unknown[],
+        context,
+      );
+      if (!verified || verified.length !== (references as unknown[]).length) {
+        throw badRequest(
+          'An attachment could not be found.',
+          'attachment_not_found',
         );
-        if (!verified || verified.length !== (references as unknown[]).length) {
-          throw badRequest(
-            'An attachment could not be found.',
-            'attachment_not_found',
-          );
-        }
-        attachments = verified.map((record) => ({
-          id: record.id,
-          filename: record.name,
-          contentType: record.contentType,
-          size: record.size,
-          ...(record.url ? { url: record.url } : {}),
-        }));
       }
+      attachments = verified.map((record) => ({
+        id: record.id,
+        filename: record.name,
+        contentType: record.contentType,
+        size: record.size,
+        ...(record.url ? { url: record.url } : {}),
+      }));
+    }
 
-      const setup = await turnSetup(context, chat, session, thread, body);
+    // Everything that can refuse (the AI factory's 503 included) runs before
+    // the reservation, so a refused send stores nothing.
+    const setup = await turnSetup(context, chat, session, thread, body);
 
-      const userMessage = await chat.sendMessage({
+    // A failure after the reservation may have been stored settles it as
+    // failed (a no-op when nothing was stored), so a retry is told so at
+    // once instead of waiting out `abandonedTurnMs`.
+    const recordFailure = settleOutcome(
+      chat,
+      principal,
+      threadId,
+      reservationId,
+    );
+    let userMessage: ChatMessage;
+    try {
+      userMessage = await chat.sendMessage({
         tenantId: principal.tenantId,
-        roomId: session.chatRoomId as string,
+        roomId: session.chatRoomId,
         threadId,
         actorProfileId: principal.profileId,
         agentSessionId: String(session.id),
@@ -1089,8 +1161,24 @@ export function mountAssistantRoutes(
         clientRequestId,
         attachments,
       });
-      const userWire = toAssistantMessageWire(userMessage);
+    } catch (error) {
+      if (error instanceof ChatClientRequestConflictError) {
+        // Another request (any replica) took this reservation first.
+        const answer = await reservationAnswer(
+          chat,
+          principal,
+          threadId,
+          reservationId,
+        );
+        if (answer) return answer;
+      } else {
+        await recordFailure('failed', { quiet: true });
+      }
+      throw error;
+    }
+    const userWire = toAssistantMessageWire(userMessage);
 
+    try {
       const history: AIMessage[] = [];
       if (historyLimit > 0) {
         const earlier = await chat.getThreadMessages({
@@ -1101,7 +1189,9 @@ export function mountAssistantRoutes(
         });
         for (const message of earlier) {
           if (String(message.id) === userWire.id) continue;
-          if (message.role !== 'user' && message.role !== 'assistant') continue;
+          if (message.role !== 'user' && message.role !== 'assistant') {
+            continue;
+          }
           if (!message.content) continue;
           history.push({ role: message.role, content: message.content });
         }
@@ -1112,14 +1202,16 @@ export function mountAssistantRoutes(
         history: history.slice(-historyLimit),
         userMessage: content,
       });
-      handedOff = true;
       return stream(
-        prefixed({ type: 'message', message: userWire }, events, () =>
-          inFlight.delete(flightKey),
+        settled(
+          { type: 'message', message: userWire },
+          events,
+          settleOutcome(chat, principal, threadId, userWire.id),
         ),
       );
-    } finally {
-      if (!handedOff) inFlight.delete(flightKey);
+    } catch (error) {
+      await recordFailure('failed');
+      throw error;
     }
   };
 
@@ -1165,10 +1257,40 @@ export function mountAssistantRoutes(
     const thread = await requireOwnThread(chat, principal, session, threadId);
     if (!session) throw notFound();
     const setup = await turnSetup(context, chat, session, thread, body);
+    const events = runAssistantTurn<AssistantMessageWire>({
+      ...setup.turn,
+      resume: { continuationId, results },
+    });
+    const clientRequestId = body.clientRequestId;
+    if (
+      typeof clientRequestId !== 'string' ||
+      !CLIENT_REQUEST_ID.test(clientRequestId) ||
+      !session.chatRoomId
+    ) {
+      return stream(events);
+    }
+    // The resumed leg settles the send it belongs to.
+    const sendId = clientRequestMessageId({
+      tenantId: principal.tenantId,
+      roomId: session.chatRoomId,
+      threadId,
+      actorProfileId: principal.profileId,
+      clientRequestId,
+    });
+    const record = settleOutcome(chat, principal, threadId, sendId);
     return stream(
-      runAssistantTurn<AssistantMessageWire>({
-        ...setup.turn,
-        resume: { continuationId, results },
+      settled(null, events, async (outcome) => {
+        // Only a send that exists (and is this actor's) is settled.
+        const [anchor] = await chat
+          .getThreadMessagesFrom({
+            threadId,
+            messageId: sendId,
+            actorProfileId: principal.profileId,
+            tenantId: principal.tenantId,
+            limit: 1,
+          })
+          .catch(() => []);
+        if (anchor) await record(outcome);
       }),
     );
   };
@@ -1372,16 +1494,34 @@ export function mountAssistantRoutes(
   return { GET: handle, POST: handle, handle };
 }
 
-/** Yield `first`, then every event of `rest`; `done` runs once it ends. */
-async function* prefixed<M>(
-  first: AssistantTurnEvent<M>,
+/**
+ * Yield `first` (when given), then every event of `rest`, and report how the
+ * turn ended (`onSettled`) once a terminal event has been seen. A reader that
+ * leaves before the end records nothing: the turn still persists its reply,
+ * and an unanswered send ages into "failed" (`abandonedTurnMs`).
+ */
+async function* settled<M>(
+  first: AssistantTurnEvent<M> | null,
   rest: AsyncGenerator<AssistantTurnEvent<M>, unknown>,
-  done: () => void,
+  onSettled: (outcome: ChatClientRequestOutcome) => Promise<void>,
 ): AsyncGenerator<AssistantTurnEvent<M>, unknown> {
+  let outcome: ChatClientRequestOutcome | null = null;
   try {
-    yield first;
-    return yield* rest;
+    if (first) yield first;
+    for (;;) {
+      const next = await rest.next();
+      if (next.done) return next.value;
+      const event = next.value;
+      if (event.type === 'error') outcome = 'failed';
+      else if (event.type === 'client_tool_calls') outcome = 'suspended';
+      else if (event.type === 'done') {
+        outcome =
+          event.stoppedReason === 'cancelled' ? 'cancelled' : 'completed';
+      }
+      yield event;
+    }
   } finally {
-    done();
+    if (outcome) await onSettled(outcome);
+    await rest.return?.(undefined);
   }
 }

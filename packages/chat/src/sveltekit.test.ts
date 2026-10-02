@@ -30,7 +30,11 @@ import {
   type AssistantTurnEvent,
   readAssistantTurnStream,
 } from './assistant-turn-events.js';
-import { ChatService } from './services/index.js';
+import {
+  ChatClientRequestConflictError,
+  ChatService,
+  clientRequestMessageId,
+} from './services/index.js';
 import { createAssistantHttpTransport } from './svelte/components/assistant/assistant-http-client.js';
 import {
   type AssistantMessageWire,
@@ -634,6 +638,302 @@ describe('mountAssistantRoutes', () => {
       }
       const messages = await listMessages(routes, threadId);
       expect(messages.filter((m) => m.role === 'user')).toHaveLength(1);
+    });
+  });
+
+  // ---- 6b. durable send reservation (review F1/F2) -------------------------
+
+  describe('durable send reservation', () => {
+    const userRows = (messages: AssistantMessageWire[], id: string) =>
+      messages.filter((m) => m.role === 'user' && m.clientRequestId === id);
+
+    it('runs one turn when two independently mounted handlers race on one clientRequestId', async () => {
+      const ran: PrincipalRun[] = [];
+      const errors: unknown[] = [];
+      const ai = scriptedAI([calls(['data-discover', {}]), text('Done once.')]);
+      // Both requests reach the AI factory (past any pre-write check) before
+      // either is allowed to continue, so neither can see the other's row.
+      let arrived = 0;
+      let open: () => void = () => {};
+      const barrier = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      const factory = async () => {
+        arrived += 1;
+        if (arrived >= 2) open();
+        await Promise.race([
+          barrier,
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+        ]);
+        return ai;
+      };
+      const shared = {
+        ai: factory,
+        allowedTools: ['data.discover'],
+        extraTools: [discoverTool(ran)],
+        onError: (error: unknown) => errors.push(error),
+      };
+      const replicaOne = mount(shared);
+      const replicaTwo = mount(shared);
+      const threadId = await createThread(replicaOne);
+      const body = { content: 'once', clientRequestId: 'replica-1' };
+      const responses = await Promise.all([
+        send(replicaOne, threadId, body),
+        send(replicaTwo, threadId, body),
+      ]);
+      const answers: unknown[] = [];
+      for (const response of responses) {
+        if (
+          /^text\/event-stream/.test(response.headers.get('content-type') ?? '')
+        ) {
+          await events(response);
+        } else {
+          answers.push(await response.json());
+        }
+      }
+      expect(arrived).toBe(2);
+      expect(
+        userRows(await listMessages(replicaOne, threadId), 'replica-1'),
+      ).toHaveLength(1);
+      expect(ran).toHaveLength(1);
+      expect(answers).toEqual([expect.objectContaining({ duplicate: true })]);
+      expect(errors.map(String)).toEqual([]);
+    });
+
+    it('recognises a replay after more than 200 later messages', async () => {
+      const routes = mount();
+      const threadId = await createThread(routes);
+      await events(
+        await send(routes, threadId, {
+          content: 'first',
+          clientRequestId: 'old-1',
+        }),
+      );
+      const chat = await ChatService.create({ tenantId, db });
+      const sessions = await chat.findActiveAgentSessions({
+        tenantId,
+        agentId: 'smrt-assistant',
+        participantProfileId: ownerA.user.profileId,
+      });
+      const roomId = sessions[0].chatRoomId as string;
+      for (let i = 0; i < 205; i += 1) {
+        await chat.sendMessage({
+          tenantId,
+          roomId,
+          threadId,
+          actorProfileId: ownerA.user.profileId,
+          content: `later ${i}`,
+        });
+      }
+      const replay = await send(routes, threadId, {
+        content: 'first',
+        clientRequestId: 'old-1',
+      });
+      expect(replay.headers.get('content-type')).toMatch(/^application\/json/);
+      expect(await replay.json()).toMatchObject({
+        duplicate: true,
+        inProgress: false,
+        userMessage: { clientRequestId: 'old-1', content: 'first' },
+        assistantMessage: { content: 'Hello there.' },
+      });
+      const all = await chat.getThreadMessages({
+        threadId,
+        actorProfileId: ownerA.user.profileId,
+        tenantId,
+        limit: 1000,
+      });
+      expect(all.filter((m) => m.content === 'first')).toHaveLength(1);
+    }, 180_000);
+
+    it('answers a retry of a failed turn as failed without a second message or a second turn', async () => {
+      let calls = 0;
+      const ai = {
+        async chat() {
+          calls += 1;
+          throw new Error('provider down');
+        },
+      } as unknown as AIInterface;
+      const routes = mount({ ai });
+      const threadId = await createThread(routes);
+      const first = await events(
+        await send(routes, threadId, {
+          content: 'try',
+          clientRequestId: 'fail-1',
+        }),
+      );
+      expect(first.seen.some((e) => e.type === 'error')).toBe(true);
+      const retry = await send(routes, threadId, {
+        content: 'try',
+        clientRequestId: 'fail-1',
+      });
+      expect(retry.status).toBe(409);
+      expect(await retry.json()).toMatchObject({ code: 'turn_failed' });
+      expect(calls).toBe(1);
+      expect(
+        userRows(await listMessages(routes, threadId), 'fail-1'),
+      ).toHaveLength(1);
+    });
+
+    it('derives a uuid reservation id scoped to tenant, room, thread, actor and request', () => {
+      const base = {
+        tenantId: 't',
+        roomId: 'r',
+        threadId: 'th',
+        actorProfileId: 'p',
+        clientRequestId: 'c',
+      };
+      const id = clientRequestMessageId(base);
+      expect(id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(clientRequestMessageId({ ...base })).toBe(id);
+      for (const key of Object.keys(base) as Array<keyof typeof base>) {
+        expect(clientRequestMessageId({ ...base, [key]: 'other' })).not.toBe(
+          id,
+        );
+      }
+    });
+
+    it('stores a client request once in ChatService and counts it once', async () => {
+      const routes = mount();
+      const threadId = await createThread(routes);
+      const chat = await ChatService.create({ tenantId, db });
+      const [session] = await chat.findActiveAgentSessions({
+        tenantId,
+        agentId: 'smrt-assistant',
+        participantProfileId: ownerA.user.profileId,
+      });
+      const input = {
+        tenantId,
+        roomId: session.chatRoomId as string,
+        threadId,
+        actorProfileId: ownerA.user.profileId,
+        content: 'hello',
+        clientRequestId: 'svc-1',
+      };
+      const stored = await chat.sendMessage(input);
+      expect(stored.id).toBe(clientRequestMessageId(input));
+      await expect(chat.sendMessage(input)).rejects.toBeInstanceOf(
+        ChatClientRequestConflictError,
+      );
+      const thread = await chat.getThread({ threadId, tenantId });
+      expect(thread?.messageCount).toBe(1);
+      // Without a clientRequestId nothing is reserved.
+      await chat.sendMessage({ ...input, clientRequestId: undefined });
+      await chat.sendMessage({ ...input, clientRequestId: undefined });
+      const after = await chat.getThread({ threadId, tenantId });
+      expect(after?.messageCount).toBe(3);
+    });
+
+    it('answers a send that never settled as failed once it is older than abandonedTurnMs', async () => {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const ai = {
+        async chat() {
+          await gate;
+          return { content: 'late', finishReason: 'stop' };
+        },
+      } as unknown as AIInterface;
+      const routes = mount({ ai });
+      const threadId = await createThread(routes);
+      const first = await send(routes, threadId, {
+        content: 'slow',
+        clientRequestId: 'slow-1',
+      });
+      // Within the window it is in progress ...
+      const soon = await send(routes, threadId, {
+        content: 'slow',
+        clientRequestId: 'slow-1',
+      });
+      expect(await soon.json()).toMatchObject({
+        duplicate: true,
+        inProgress: true,
+        outcome: 'in_progress',
+      });
+      // ... and past it (another replica with a short window), failed.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const strict = mount({ ai, abandonedTurnMs: 1 });
+      const late = await send(strict, threadId, {
+        content: 'slow',
+        clientRequestId: 'slow-1',
+      });
+      expect(late.status).toBe(409);
+      expect(await late.json()).toMatchObject({ code: 'turn_failed' });
+      release();
+      await events(first);
+      // Once the reply exists the send is completed, whatever its age.
+      const done = await send(strict, threadId, {
+        content: 'slow',
+        clientRequestId: 'slow-1',
+      });
+      expect(await done.json()).toMatchObject({
+        outcome: 'completed',
+        assistantMessage: { content: 'late' },
+      });
+    });
+
+    it('records a stopped turn as cancelled', async () => {
+      const controller = new AbortController();
+      const ai = {
+        async chat() {
+          controller.abort();
+          throw new Error('aborted');
+        },
+      } as unknown as AIInterface;
+      const routes = mount({ ai });
+      const threadId = await createThread(routes);
+      const url = new URL(
+        `${ORIGIN}/api/assistant/threads/${threadId}/messages`,
+      );
+      const response = await routes.POST({
+        request: new Request(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin: ORIGIN },
+          body: JSON.stringify({
+            content: 'stop me',
+            clientRequestId: 'stop-1',
+          }),
+          signal: controller.signal,
+        }),
+        url,
+        params: { path: `threads/${threadId}/messages` },
+        locals: locals(ownerA),
+      });
+      const { seen } = await events(response);
+      expect(seen.find((e) => e.type === 'done')).toMatchObject({
+        stoppedReason: 'cancelled',
+      });
+      const retry = await send(routes, threadId, {
+        content: 'stop me',
+        clientRequestId: 'stop-1',
+      });
+      expect(await retry.json()).toMatchObject({
+        duplicate: true,
+        inProgress: false,
+        outcome: 'cancelled',
+      });
+    });
+
+    it('runs both sends when one clientRequestId goes to two of the actor’s threads at once', async () => {
+      const routes = mount();
+      const one = await createThread(routes, ownerA, 'One');
+      const two = await createThread(routes, ownerA, 'Two');
+      const body = { content: 'same id', clientRequestId: 'shared-id' };
+      // The first stream is not consumed yet: its turn is still running.
+      const first = await send(routes, one, body);
+      const second = await send(routes, two, body);
+      for (const response of [first, second]) {
+        expect(response.headers.get('content-type')).toMatch(
+          /^text\/event-stream/,
+        );
+        await events(response);
+      }
+      for (const threadId of [one, two]) {
+        const messages = await listMessages(routes, threadId);
+        expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+      }
     });
   });
 
