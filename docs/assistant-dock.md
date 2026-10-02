@@ -56,6 +56,95 @@ discovery when a host wants to scope the dock manually — it is intersected
 against `registry.list()`, so an identity named in `surfaces` that is not
 genuinely registered is never treated as mounted (Copilot PR #2919 jAwr0).
 
+### Mounting the server side (#3368)
+
+`@happyvertical/smrt-chat/sveltekit` serves everything the dock calls from one
+SvelteKit rest route:
+
+```ts
+// src/routes/api/assistant/[...path]/+server.ts
+import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
+import { assistantAI } from '$lib/server/ai';
+
+export const { GET, POST } = mountAssistantRoutes({ ai: assistantAI });
+```
+
+```svelte
+<script lang="ts">
+  import {
+    AssistantDock,
+    createAssistantHttpActionClient,
+    createAssistantHttpTransport,
+  } from '@happyvertical/smrt-chat/svelte';
+
+  const transport = createAssistantHttpTransport({ endpoint: '/api/assistant' });
+  // Only when the host passes `actions: { adapter }` to mountAssistantRoutes:
+  const actionClient = createAssistantHttpActionClient({ endpoint: '/api/assistant', registry });
+</script>
+
+<AssistantDock {transport} {registry} {actionClient} />
+```
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET threads` | — | `{ items: ThreadSummary[] }` |
+| `POST threads` | `{ title }` | 201 `{ thread }` |
+| `GET threads/:id/messages` | — | `{ items: Message[] }`, chronological |
+| `POST threads/:id/messages` | `{ content, clientRequestId, attachments?, model?, clientTools? }` | SSE turn (a leading `message` event carries the stored user message), or JSON `{ duplicate, inProgress, userMessage, assistantMessage?, messages }` for a `clientRequestId` already seen |
+| `POST threads/:id/resume` | `{ continuationId, results, clientTools?, model? }` | SSE turn |
+| `POST attachments` | multipart `file` | 201 `{ attachment }` |
+| `POST actions/preview`, `actions/apply` | `DataSurfaceActionWireRequest` | `{ result }` |
+
+Refusals are JSON `{ error, code }` with a user-safe `error`.
+
+- **Principal.** Read from `event.locals` as `createSessionHandler`
+  (`@happyvertical/smrt-users/sveltekit`) fills it: `user.id` runs tools,
+  `user.profileId` is the chat actor, `tenantId` the active tenant. No user is
+  401; no profile or tenant is 403. `resolvePrincipal` replaces this; nothing
+  is read from headers or the body.
+- **Scope.** Each actor has one assistant `AgentSession` per tenant
+  (`agentId`, default `smrt-assistant`, session key `assistant-dock`). A
+  thread is served only when it lives in that session's room, so another
+  member's thread, another tenant's thread, or another room the actor belongs
+  to answers 404. Reads never create a session.
+- **Turns.** A send stores the user message (`ChatService.sendMessage`, with
+  `clientRequestId` in `metadata`) and runs `runAssistantTurn`, whose reply is
+  authored through the agent bridge. `ai` is required (a client or a per-turn
+  factory; a failing factory answers 503 before anything is written) and is
+  never read from the environment. Tools are fail-closed: `allowedTools`
+  (absent = none) gates `extraTools`, `tools` and the action adapter, and
+  every tool runs under `executeAsPrincipal`. Browser tools need
+  `clientToolAllowList`. Suspended turns wait in the session context
+  (`createSessionContinuationStore`), keyed by thread; `continuations`
+  replaces the store.
+- **Retries.** A repeated `clientRequestId` never stores a second user
+  message: a send already running, or already stored in the last 200
+  messages of the thread, gets the JSON duplicate answer. The in-flight guard
+  is per process; across replicas the stored id is the guard.
+- **Limits.** JSON bodies are capped at 1 MiB (`maxBodyBytes`), messages at
+  12,000 characters (`maxContentLength`), titles at 200, attachments at 10 per
+  message. A requested model must be in `models` when a list is set and is
+  ignored otherwise (`defaultModel` applies).
+- **Attachments.** The package stores no files. Without `attachments:
+  { upload, verify }` uploads answer 404 and sends with attachments 400.
+  `verify` must check that every reference belongs to the principal; the
+  stored record is what `verify` returns, never the request's copy.
+- **Actions.** With `actions: { adapter }` the routes call
+  `DataSurfaceActionAdapter.preview`/`apply` with
+  `{ principal: { principal: { runAsUserId, tenantId, allowedTools }, onBehalfOfUserId } }`
+  built from the principal. An adapter that throws on apply answers 500
+  `outcome_unknown`. The HTTP action client sends the registry's current
+  revision as `expectedRevision`, returns the server's result, maps an apply
+  4xx to a refusal and lets an apply 5xx or network failure reject (an
+  unknown outcome, retried with the same key).
+- **Origin.** Mutations must be same-origin (`Origin`, else
+  `Sec-Fetch-Site`, else `Referer`); `trustedOrigins` adds origins and
+  `checkOrigin: false` turns it off for non-browser clients.
+
+Tests: `packages/chat/src/sveltekit.test.ts` (routes and the browser transport
+against the real handlers) and
+`packages/chat/src/svelte/components/assistant/__tests__/assistant-http-client.test.ts`.
+
 Consumers place `AssistantDock` inside their own shell's focus-tool
 primitive. In this repository, smrt-svelte's `ShellDockTool`
 (`packages/smrt-svelte/src/components/workspace/admin-shell/ShellDockTool.svelte`)
@@ -153,7 +242,8 @@ That adapter is server-only — it needs a `DataSurfaceExecutionContext` with a
 principal/tenant the browser cannot self-assert. `AssistantActionClient` is
 therefore the client-side seam a host application implements (typically an
 authenticated HTTP call to a server route wrapping the adapter); the package
-ships the interface but not an HTTP implementation (see "Gaps").
+ships the interface and, since #3368, an HTTP implementation
+(`createAssistantHttpActionClient`, served by `mountAssistantRoutes`).
 
 ## Transport
 
@@ -206,6 +296,10 @@ ships the interface but not an HTTP implementation (see "Gaps").
   `ChatService`-backed implementation the host supplies) for those three and
   throws a descriptive error if it is missing, rather than silently
   no-opping.
+- `mountAssistantRoutes` (`@happyvertical/smrt-chat/sveltekit`) is the shipped
+  server for both reads and writes, and `createAssistantHttpTransport` is
+  `createSmrtAssistantTransport` pointed at it with the `writeEndpoint`
+  filled in (see "Mounting the server side" above).
 - `createInMemoryAssistantTransport` is a full, deterministic implementation
   for tests and demos.
 
@@ -642,12 +736,10 @@ cost something); only they dismiss it.
 
 ## Gaps / follow-ups
 
-1. **`AssistantActionClient` has no shipped HTTP implementation.** The
-   package provides the interface (`preview`/`apply`) and the in-process test
-   double; a host application must supply the authenticated call to its own
-   server route wrapping `DataSurfaceActionAdapter`. This mirrors the same gap
-   already documented for `AssistantTransport.sendMessage`/`createThread`
-   (no generated REST `create` route on `ChatThread`/`ChatMessage`).
+1. **Closed by #3368.** `createAssistantHttpActionClient` is the HTTP
+   `AssistantActionClient`, served by `mountAssistantRoutes`' `actions/*`
+   over a host-supplied `DataSurfaceActionAdapter` (the adapter's surfaces
+   and state store stay host-owned).
 2. **`ChatClientBackend` (`packages/chat/src/client.ts`) was not extended.**
    `AssistantTransport` is a separate, narrower contract by design (see
    "Transport" above) rather than widening the existing streaming-oriented
@@ -669,20 +761,10 @@ cost something); only they dismiss it.
    mount. No anytown-specific API was added to this package.
 6. **Streaming shipped with #2908** — see "Streamed turns and browser
    tools" below.
-7. **`readEndpoint` has no shipped HTTP implementation either** (Copilot PR
-   #2919 review, threads jAwqo/jAwrQ/jAwvV). The package now requires a
-   host-supplied, member-scoped read endpoint (see "Transport" above) rather
-   than calling the generated `ChatThread`/`ChatMessage` list routes
-   directly — but it ships only the client-side contract and the
-   `normalizeAssistantThreadSummary`/`normalizeAssistantMessage` defensive
-   normalizers, not a reference server route. A host must implement
-   `GET {readEndpoint}/threads` and
-   `GET {readEndpoint}/threads/{id}/messages` itself, calling
-   `ChatService.listRoomThreads` (`packages/chat/src/services/ChatService.ts:1042`)
-   or equivalent membership-scoped logic server-side. This mirrors the
-   already-documented `writeEndpoint` gap above (item 1) for the identical
-   reason: neither model exposes a generated route safe to call unscoped
-   from the browser.
+7. **Closed by #3368.** `mountAssistantRoutes` implements
+   `GET {readEndpoint}/threads` and `GET {readEndpoint}/threads/{id}/messages`
+   with `ChatService.listRoomThreads`/`getThreadMessages`, scoped to the
+   actor's own assistant session room in the active tenant.
 8. **Unknown apply outcomes don't survive a context swap (#2990).** A
    registry or transport swap clears `actions`, including entries with
    `outcomeUnknown`, because old-context state must never render in the

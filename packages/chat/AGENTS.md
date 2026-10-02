@@ -142,22 +142,22 @@ always waits. Details: [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
 
 ## AssistantDock (#2904)
 
-`AssistantDock` (`svelte/components/assistant/`, exported from `./svelte`) is a
-shell-mounted, route-aware assistant surface: it discovers currently-mounted
-`DataSurfaceDescriptor`s from a host-supplied `DataSurfaceRegistry`
-(`@happyvertical/smrt-ui/data-surface`) and fails closed to plain chat when
-none are mounted. Action proposals flow through
-`normalizeDataSurfaceActionRequest` → a host-supplied `AssistantActionClient`
-(preview/apply against a server-hosted `DataSurfaceActionAdapter`, not through
-the `data-surface-bridge.ts` live-collaboration command channel) →
-`ToolCallDisplay`'s additive `actionResult` rendering. `AssistantTransport`
-(`assistant-transport.ts`) is a narrower, separate contract from
-`ChatClientBackend` (`client.ts`): `ChatThread`/`ChatMessage` only expose
-generated `list`/`get` REST (`api: { include: ['list', 'get'] }`,
-`models/ChatThread.ts:16`, `models/ChatMessage.ts:26`), so writes need a host-
-supplied `writeEndpoint`. See [`docs/assistant-dock.md`](../../docs/assistant-dock.md)
-for the full design, the anytown `PortalChatTool.svelte` polling/stale-send
-reconnaissance, and open gaps.
+`AssistantDock` (`svelte/components/assistant/`, exported from `./svelte`)
+uses a host `DataSurfaceRegistry`'s mounted descriptors (none: plain chat).
+Actions: `normalizeDataSurfaceActionRequest` → `AssistantActionClient`
+(preview/apply over a server `DataSurfaceActionAdapter`, not the
+`data-surface-bridge.ts` channel). Generated `ChatThread`/`ChatMessage`
+`list`/`get` are tenant- not member-scoped; the dock never calls them.
+
+**Server routes (#3368).** `./sveltekit` `mountAssistantRoutes({ ai, ... })`
+serves the dock from one `[...path]` route; `createAssistantHttpTransport`
+and `createAssistantHttpActionClient` (`./svelte`) are its browser half.
+Principal from `event.locals` (`user.id`, `user.profileId`, `tenantId`) or
+`resolvePrincipal`; threads are served only from the actor's keyed assistant
+session room in that tenant (else 404); `allowedTools` is fail-closed;
+`ai` is injected, never read from env. `ChatService.sendMessage` takes
+`clientRequestId` (stored in `metadata`, the dedup key) and verified
+`attachments`. Details: [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
 
 ## Gotchas
 
