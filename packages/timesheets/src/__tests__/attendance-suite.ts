@@ -1,3 +1,4 @@
+import { isPostgresDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -79,6 +80,24 @@ export function attendanceSuite(
           await punches.list({ where: { ...actor, endedAt: null } }),
         ).toHaveLength(1);
       });
+      if (isPostgresDatabase(db)) {
+        const alias = new AttendanceService(db, {
+          tenantId: actor.tenantId.toUpperCase(),
+          profileId: actor.profileId.toUpperCase(),
+        });
+        await expect(alias.punchIn(at(9))).rejects.toThrow('already open');
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const punches = await AttendancePunchCollection.create({ db });
+          await expect(
+            punches.create({
+              ...actor,
+              profileId: actor.profileId.toUpperCase(),
+              startedAt: at(9),
+              _insertOnly: true,
+            }),
+          ).rejects.toThrow();
+        });
+      }
       await service.punchOut(at(10));
       await service.punchIn(at(11));
     });
@@ -238,6 +257,46 @@ export function attendanceSuite(
       expect(punch.startedAt).toEqual(start);
       expect(punch.endedAt).toEqual(end);
       expect(punch.durationSeconds).toBe(2);
+    });
+    it('rejects a break referencing another tenant punch at the model boundary', async () => {
+      const foreign = await new AttendanceService(db, {
+        tenantId: crypto.randomUUID(),
+        profileId: crypto.randomUUID(),
+      }).punchIn(at(8));
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const breaks = await AttendanceBreakCollection.create({ db });
+        await expect(
+          breaks.create({
+            tenantId: actor.tenantId,
+            punchId: foreign.id ?? undefined,
+            startedAt: at(9),
+            _insertOnly: true,
+          }),
+        ).rejects.toThrow('inside its tenant-owned punch');
+      });
+    });
+    it('refuses automatic close that would truncate later committed attendance', async () => {
+      await service.punchIn(at(8));
+      await service.startBreak(at(11));
+      await expect(service.autoClose(at(12), 7200)).rejects.toThrow('predates');
+      const punch = await service.punchOut(at(13));
+      expect(punch.durationSeconds).toBe(3 * 3600);
+      expect(punch.reviewRequired).toBe(false);
+    });
+    it('orders against the active punch when a zero-length predecessor shares its start', async () => {
+      await service.punchIn(at(8));
+      await service.punchOut(at(8));
+      await service.punchIn(at(8));
+      await service.startBreak(at(10));
+      const result = await service.replay([
+        {
+          clientId: 'before-break',
+          action: 'endBreak',
+          at: at(9).toISOString(),
+        },
+      ]);
+      expect(result[0].error).toContain('predates');
+      await service.endBreak(at(11));
     });
   });
 }

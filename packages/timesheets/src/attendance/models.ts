@@ -7,12 +7,18 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { ServiceTimeEntry } from '../models/service-time-entry.js';
 
 /** A tenant-scoped interval of attendance, independent of billable work. */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'attendance_punches',
+  indexes: [
+    {
+      name: 'attendance_punches_open_owner_key',
+      columns: ['tenantId', 'profileId', 'openSlot'],
+      unique: true,
+    },
+  ],
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
@@ -26,11 +32,12 @@ export class AttendancePunch extends SmrtObject {
   unpaidBreakSeconds = 0;
   reviewRequired = false;
   recordedOffline = false;
-  @foreignKey(ServiceTimeEntry, { nullable: true }) serviceTimeEntryId:
+  // Resolve the active table family, including smrt-support's same-named subtype.
+  @foreignKey('ServiceTimeEntry', { nullable: true }) serviceTimeEntryId:
     | string
     | null = null;
   /** Unique while open; closed rows retain independent non-null slots on every dialect. */
-  @field({ required: true, unique: true }) openSlot = '';
+  @field({ required: true }) openSlot = '';
 
   override async save(): Promise<this> {
     if (!this.tenantId || !this.profileId)
@@ -70,9 +77,7 @@ export class AttendancePunch extends SmrtObject {
     )
       throw new Error('Closed attendance evidence is immutable.');
     this.id ??= crypto.randomUUID();
-    this.openSlot = this.endedAt
-      ? JSON.stringify(['closed', this.id])
-      : JSON.stringify(['open', this.tenantId, this.profileId]);
+    this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
     return super.save();
   }
 }
@@ -81,6 +86,13 @@ export class AttendancePunch extends SmrtObject {
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'attendance_breaks',
+  indexes: [
+    {
+      name: 'attendance_breaks_open_punch_key',
+      columns: ['tenantId', 'punchId', 'openSlot'],
+      unique: true,
+    },
+  ],
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
@@ -91,7 +103,7 @@ export class AttendanceBreak extends SmrtObject {
   startedAt: Date = new Date();
   endedAt: Date | null = null;
   paid = false;
-  @field({ required: true, unique: true }) openSlot = '';
+  @field({ required: true }) openSlot = '';
 
   override async save(): Promise<this> {
     if (!this.tenantId || !this.punchId || typeof this.paid !== 'boolean')
@@ -135,9 +147,7 @@ export class AttendanceBreak extends SmrtObject {
     )
       throw new Error('Closed breaks are immutable.');
     this.id ??= crypto.randomUUID();
-    this.openSlot = this.endedAt
-      ? JSON.stringify(['closed', this.id])
-      : JSON.stringify(['open', this.tenantId, this.punchId]);
+    this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
     return super.save();
   }
 }

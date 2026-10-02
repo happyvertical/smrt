@@ -62,14 +62,25 @@ export class AttendanceService {
   ) {
     if (!actor.tenantId || !actor.profileId)
       throw new Error('Attendance requires a trusted tenant/profile actor.');
-    this.actor = { ...actor };
+    this.actor = {
+      tenantId: this.identity(actor.tenantId),
+      profileId: this.identity(actor.profileId),
+    };
+  }
+
+  private identity(value: string): string {
+    if (!isPostgresDatabase(this.db)) return value;
+    const hex = value.replace(/[{}-]/g, '').toLowerCase();
+    if (!/^[0-9a-f]{32}$/.test(hex))
+      throw new Error('PostgreSQL attendance identities must be UUIDs.');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
   private async transact<T>(
     operation: (context: Context) => Promise<T>,
   ): Promise<T> {
     const current = getTenantId();
-    if (current && current !== this.actor.tenantId)
+    if (current && this.identity(current) !== this.actor.tenantId)
       throw new Error('Attendance actor differs from active tenant.');
     return withTenant({ tenantId: this.actor.tenantId }, async () => {
       const result = await withEmbeddedWriteTransaction(
@@ -125,11 +136,17 @@ export class AttendanceService {
   }
 
   private async chronological(tx: Context, at: Date): Promise<void> {
-    const rows = await tx.punches.list({
-      where: { ...this.actor },
-      orderBy: 'started_at DESC',
+    const open = await tx.punches.list({
+      where: { ...this.actor, endedAt: null },
       limit: 1,
     });
+    const rows = open.length
+      ? open
+      : await tx.punches.list({
+          where: { ...this.actor },
+          orderBy: 'ended_at DESC',
+          limit: 1,
+        });
     if (!rows.length) return;
     const punch = rows[0];
     const breaks = await tx.breaks.list({

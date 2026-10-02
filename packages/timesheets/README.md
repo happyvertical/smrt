@@ -250,10 +250,12 @@ const punch = await attendance.punchOut(new Date('2026-10-01T16:00:00Z'), {
 
 Timestamps retain device milliseconds. `durationSeconds` is elapsed time minus
 unpaid breaks, rounded once to the nearest whole second; paid breaks remain
-included. Local time zone and payroll rounding policy belong to the consumer. Closing also ends an active break. New punches have a
-non-null unique `openSlot` derived from tenant and profile. Closed punches have
-a unique slot derived from their id, so PostgreSQL and SQLite enforce
-one open punch without differing nullable-unique semantics. Breaks use the same
+included. Local time zone and payroll rounding policy belong to the consumer. Closing also ends an active break. New punches have the
+non-null `openSlot` value `open`, with a unique database index on tenant, profile
+and slot. Closed punches use a slot derived from their id, so PostgreSQL and
+SQLite enforce one open punch without differing nullable-unique semantics.
+The index compares native UUID owner columns directly, including PostgreSQL
+UUID normalization. Breaks use the same
 pattern per punch. Persisted ownership/start and closed intervals are immutable.
 
 A work reference is optional: attendance alone is not billable evidence. Passing
