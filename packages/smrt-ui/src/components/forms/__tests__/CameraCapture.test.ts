@@ -382,6 +382,41 @@ describe('CameraCapture native form post', () => {
   });
 });
 
+describe('CameraCapture in a disabled fieldset', () => {
+  it.each([
+    'data-transfer',
+    'formdata-event',
+  ] as const)('posts nothing, committed or empty, like a disabled native control (%s)', async (strategy) => {
+    useFileFieldStrategy(strategy);
+    grantCamera();
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'camera', name: 'photo', inFieldset: true },
+    });
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-smrt-file-field', strategy),
+    );
+    const form = container.querySelector('form') as HTMLFormElement;
+    const fieldset = form.querySelector('fieldset') as HTMLFieldSetElement;
+    await expectState(container, 'streaming');
+
+    fieldset.disabled = true;
+    expect(submittedEntries(form).has('photo')).toBe(false);
+    fieldset.disabled = false;
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Take photo' }));
+    await expectState(container, 'reviewing');
+    await fireEvent.click(screen.getByRole('button', { name: 'Use photo' }));
+    await expectState(container, 'committed');
+    expect(submittedEntries(form).getAll('photo')).toHaveLength(1);
+
+    fieldset.disabled = true;
+    expect(submittedEntries(form).has('photo')).toBe(false);
+    expect(submittedEntries(form).get('note')).toBe('hazard');
+    fieldset.disabled = false;
+    expect(submittedEntries(form).getAll('photo')).toHaveLength(1);
+  });
+});
+
 /**
  * A reset of the owning form (smrt#3290): SvelteKit `enhance`'s `update()`
  * after a success, `createFormRetry()`'s conditional reset, a reset button and

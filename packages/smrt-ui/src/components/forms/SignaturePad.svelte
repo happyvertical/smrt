@@ -155,7 +155,9 @@ $effect(() => {
 $effect(() => {
   if (strategy !== 'formdata-event' || typeof document === 'undefined') return;
   return attachFormDataFallback(document, () =>
-    name && fieldEl ? { form: fieldEl.form, name, file: committedFile } : null,
+    name && fieldEl
+      ? { form: fieldEl.form, name, file: committedFile, source: fieldEl }
+      : null,
   );
 });
 

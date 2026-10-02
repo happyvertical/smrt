@@ -283,6 +283,40 @@ describe('SignaturePad native form post', () => {
   });
 });
 
+describe('SignaturePad in a disabled fieldset', () => {
+  it.each([
+    'data-transfer',
+    'formdata-event',
+  ] as const)('posts nothing, committed or empty, like a disabled native control (%s)', async (strategy) => {
+    useFileFieldStrategy(strategy);
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'signature', name: 'signature', inFieldset: true },
+    });
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-smrt-file-field', strategy),
+    );
+    const form = container.querySelector('form') as HTMLFormElement;
+    const fieldset = form.querySelector('fieldset') as HTMLFieldSetElement;
+
+    fieldset.disabled = true;
+    expect(submittedEntries(form).has('signature')).toBe(false);
+    fieldset.disabled = false;
+
+    await stroke(canvas(container));
+    await fireEvent.click(useButton());
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-state', 'committed'),
+    );
+    expect(submittedEntries(form).getAll('signature')).toHaveLength(1);
+
+    fieldset.disabled = true;
+    expect(submittedEntries(form).has('signature')).toBe(false);
+    expect(submittedEntries(form).get('note')).toBe('hazard');
+    fieldset.disabled = false;
+    expect(submittedEntries(form).getAll('signature')).toHaveLength(1);
+  });
+});
+
 /**
  * A reset of the owning form (smrt#3290): SvelteKit `enhance`'s `update()`
  * after a success, `createFormRetry()`'s conditional reset, a reset button and

@@ -22,7 +22,8 @@
  *
  * In both posting strategies an uncommitted field posts what an empty native
  * file input posts (an empty, unnamed `application/octet-stream` file), so the
- * server sees one shape regardless of strategy. A reset of the owning form
+ * server sees one shape regardless of strategy; inside a disabled `<fieldset>`
+ * both post nothing, as a disabled native control does. A reset of the owning form
  * empties the field like a native file input ({@link attachFormResetListener}).
  */
 
@@ -124,6 +125,12 @@ export interface FormDataFieldEntry {
   name: string;
   /** The committed file, or `null` to post the native empty-file entry. */
   file: File | null;
+  /**
+   * The component's hidden input. While it is `:disabled` (inside a disabled
+   * `<fieldset>`), nothing is appended — the browser leaves a disabled native
+   * control out of the entry list, and this appended entry must match.
+   */
+  source?: Element | null;
 }
 
 /** The native "no file chosen" entry: an empty, unnamed octet-stream file. */
@@ -143,6 +150,7 @@ export function attachFormDataFallback(
   const listener = (event: Event) => {
     const entry = readEntry();
     if (!entry?.form || !entry.name || event.target !== entry.form) return;
+    if (entry.source?.matches(':disabled')) return;
     const formData = (event as Event & { formData?: FormData }).formData;
     if (!formData) return;
     const file = entry.file ?? emptyFileEntry();

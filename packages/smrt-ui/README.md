@@ -457,7 +457,8 @@ builds the request, which covers native navigation submits as well as
 reports `data-transfer`, `formdata-event`, `file-input`, or `none`. Before a
 commit the field posts what an empty native file input posts. `disabled`
 freezes the controls but keeps a committed file in the submission; unmount the
-component to drop it, or put it in a disabled `<fieldset>`.
+component to drop it, or put it in a disabled `<fieldset>`, which leaves the
+field out of the submission (committed or empty) in every posting strategy.
 
 A reset of the owning form (`form.reset()`, a reset button, or SvelteKit
 `enhance`'s `update()` after a success, including `createFormRetry()`'s

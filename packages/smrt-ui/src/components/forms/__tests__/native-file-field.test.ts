@@ -147,6 +147,33 @@ describe('attachFormDataFallback', () => {
     expect(entry.type).toBe('application/octet-stream');
   });
 
+  it('contributes nothing while its source input is disabled by a fieldset', () => {
+    document.body.innerHTML =
+      '<form><fieldset><input type="file" hidden /></fieldset></form>';
+    const form = document.querySelector('form') as HTMLFormElement;
+    const fieldset = form.querySelector('fieldset') as HTMLFieldSetElement;
+    const source = form.querySelector('input') as HTMLInputElement;
+    const file = new File(['png'], 'signature.png', { type: 'image/png' });
+    let committed: File | null = file;
+    attachFormDataFallback(document, () => ({
+      form,
+      name: 'signature',
+      file: committed,
+      source,
+    }));
+    expect(submittedEntries(form).getAll('signature')).toEqual([file]);
+
+    fieldset.disabled = true;
+    // Both a committed file and the empty entry are filtered, as the browser
+    // filters a disabled native control.
+    expect(submittedEntries(form).has('signature')).toBe(false);
+    committed = null;
+    expect(submittedEntries(form).has('signature')).toBe(false);
+
+    fieldset.disabled = false;
+    expect((submittedEntries(form).get('signature') as File).size).toBe(0);
+  });
+
   it('contributes nothing when the entry is unavailable', () => {
     const form = document.createElement('form');
     document.body.append(form);
