@@ -104,7 +104,8 @@ not permission to read/write arbitrary server or local paths.
 Applications wire the server side with `mountMcpAppRoute` and
 `mountMcpProtectedResourceMetadataRoute` from `@happyvertical/smrt-app-mcp/sveltekit`
 (explicit model allow-list, required scopes, session-locals principal, optional
-bearer adapter) and the view side with the shipped `McpAppsBridge` component
+bearer adapter, and a default-on `Origin` check that refuses other browser
+origins before any principal or dispatch work) and the view side with the shipped `McpAppsBridge` component
 from `@happyvertical/smrt-svelte/mcp-apps`; neither requires app-owned glue
 modules. These are synthetic-host verified only.
 
