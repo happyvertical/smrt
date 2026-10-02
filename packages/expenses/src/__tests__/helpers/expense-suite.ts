@@ -998,6 +998,36 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   });
 
   describe('review round 2 (PR #3339)', () => {
+    it('applies the limit to duplicate groups, not to the expense’s own receipts', async () => {
+      await world.inTenant(async () => {
+        const expense = await world.expense();
+        // Older unique receipts first, the shared one last.
+        for (let i = 0; i < 4; i++) {
+          await world.receipts.attachReceipt({
+            expenseId: expense.id,
+            assetId: (await world.asset()).id,
+            contentSha256: computeContentSha256(`unique-${i}-${randomUUID()}`),
+          });
+        }
+        const shared = computeContentSha256(`shared-${randomUUID()}`);
+        const other = await world.expense();
+        for (const owner of [expense, other]) {
+          await world.receipts.attachReceipt({
+            expenseId: owner.id,
+            assetId: (await world.asset()).id,
+            contentSha256: shared,
+          });
+        }
+
+        const groups = await world.receipts.findDuplicateReceipts({
+          expenseId: expense.id,
+          limit: 1,
+        });
+        expect(groups.map((group) => group.contentSha256)).toEqual([shared]);
+        expect(groups[0]?.expenseIds).toEqual([expense.id, other.id].sort());
+      });
+    });
+
     it('keeps a receipt in its expense tenant on every later save', async () => {
       const receipt = await world.inTenant(async () => {
         const expense = await world.expense();

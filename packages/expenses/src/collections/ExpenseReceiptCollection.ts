@@ -133,11 +133,15 @@ export class ExpenseReceiptCollection extends SmrtJunction<ExpenseReceipt> {
       });
       // One row per (expense, hash) is enforced, so count > 1 means the
       // hash sits on more than one expense.
+      // Already only shared hashes (largest groups first), so limiting the
+      // hashes here limits the groups.
       hashes = (facet?.values ?? [])
         .filter((value) => value.count > 1)
-        .map((value) => String(value.value));
+        .map((value) => String(value.value))
+        .slice(0, limit);
     }
-    hashes = hashes.slice(0, limit);
+    // The expense's own hashes include its unique receipts, so the limit is
+    // applied to the groups below, after unshared hashes are dropped.
     if (hashes.length === 0) return [];
 
     const rows = await this.list({
