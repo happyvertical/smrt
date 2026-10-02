@@ -88,18 +88,21 @@ export function createIolausHumanReview(
               row.materialsDigest !== payload?.sha256
             )
               throw new Error('Review unavailable');
+            // Public framework CAS advances updated_at with dialect-safe precision.
+            if (!row.updated_at) throw new Error('Review unavailable');
+            await row.claimRevision(row.updated_at);
             const updated = await tx.query(
               `UPDATE iolaus_applications
-                  SET human_review_opened = ?, review_count = review_count + 1, revision = revision + 1, updated_at = CURRENT_TIMESTAMP
+                  SET human_review_opened = ?, review_count = review_count + 1
                 WHERE id = ? AND owner_id = ? AND tenant_id = ?
-                  AND materials_digest = ? AND revision = ?
-                RETURNING id, revision`,
+                  AND materials_digest = ? AND updated_at = ?
+                RETURNING id, updated_at`,
               true,
               row.id,
               principal.id,
               principal.tenantId,
               row.materialsDigest,
-              row.revision,
+              new Date(row.updated_at).toISOString(),
             );
             if ((updated.rows?.length ?? 0) !== 1)
               throw new Error('Review unavailable');
