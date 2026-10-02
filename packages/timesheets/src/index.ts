@@ -5,8 +5,10 @@
  * long on what (a generic work reference), approval and correction, and the
  * immutable charge / compensation snapshots taken at approval.
  *
- * `smrt-projects` and `smrt-support` subclass these models over the same
- * tables and re-export them under their existing names.
+ * `smrt-projects` re-exports all of these classes unchanged under their
+ * existing names. `smrt-support` subclasses only `ServiceTimeEntry` (adding
+ * `caseId` / `specialistId`) over the same table; the snapshots and
+ * `ServiceEvidenceService` are used from this package as they are.
  *
  * @packageDocumentation
  */
