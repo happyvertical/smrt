@@ -558,7 +558,7 @@ describe('CameraCapture form reset', () => {
       new File(['jpeg'], 'IMG_0002.jpg', { type: 'image/jpeg' }),
     ]);
     // Reset in the same task as the change, before the FileReader can land.
-    picker.dispatchEvent(new Event('change'));
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
     form(container).reset();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(root(container)).toHaveAttribute('data-state', 'fallback');
