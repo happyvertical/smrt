@@ -307,26 +307,65 @@ function collision(
 }
 
 /**
- * Find the object in `manifest` that declares `alias` in its
- * `decoratorConfig.previousQualifiedNames`, returning its current qualified
- * name. This is the lazy path's alias index: the NEW owner's manifest carries
- * the old name, so an old package identity resolves even when that package's
+ * Every object in `manifest` that declares `alias` in its
+ * `decoratorConfig.previousQualifiedNames`, as current qualified names. This
+ * is the lazy path's alias index: the NEW owner's manifest carries the old
+ * name, so an old package identity resolves even when that package's
  * manifest no longer lists (or no longer ships) the class.
  */
-export function findQualifiedNameAliasInManifest(
+export function findQualifiedNameAliasClaimantsInManifest(
   manifest: SmartObjectManifest | null | undefined,
   alias: string,
-): string | undefined {
-  if (!manifest?.objects) return undefined;
+): string[] {
+  if (!manifest?.objects) return [];
+  const claimants: string[] = [];
   for (const [key, objectDef] of Object.entries(manifest.objects)) {
     if (
-      readPreviousQualifiedNames(objectDef?.decoratorConfig).includes(alias)
+      !readPreviousQualifiedNames(objectDef?.decoratorConfig).includes(alias)
     ) {
-      if (objectDef.qualifiedName) return objectDef.qualifiedName;
-      if (key.includes(':')) return key;
-      const packageName = objectDef.packageName ?? manifest.packageName;
-      return packageName ? `${packageName}:${objectDef.className}` : undefined;
+      continue;
+    }
+    const packageName = objectDef.packageName ?? manifest.packageName;
+    const current =
+      objectDef.qualifiedName ??
+      (key.includes(':')
+        ? key
+        : packageName
+          ? `${packageName}:${objectDef.className}`
+          : undefined);
+    if (current) claimants.push(current);
+  }
+  return claimants;
+}
+
+/**
+ * The single current owner of `alias` across `manifests`, or `undefined`.
+ * Two distinct claimants are refused rather than resolved first-match: an
+ * old name can resolve to only one class, on the lazy path as on the eager
+ * one.
+ *
+ * @throws {ConfigurationError} `CONFIG_QUALIFIED_NAME_ALIAS_COLLISION`
+ */
+export function resolveManifestQualifiedNameAlias(
+  manifests: Iterable<SmartObjectManifest | null | undefined>,
+  alias: string,
+): string | undefined {
+  const claimants = new Set<string>();
+  for (const manifest of manifests) {
+    for (const current of findQualifiedNameAliasClaimantsInManifest(
+      manifest,
+      alias,
+    )) {
+      claimants.add(current);
     }
   }
-  return undefined;
+  if (claimants.size > 1) {
+    const owners = [...claimants].sort();
+    throw collision(
+      `previousQualifiedNames "${alias}" is declared by more than one installed manifest (${owners.join(', ')}); ` +
+        'an old name can resolve to only one class.',
+      { alias, claimants: owners },
+    );
+  }
+  return [...claimants][0];
 }

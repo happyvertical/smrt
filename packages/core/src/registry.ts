@@ -120,11 +120,11 @@ import {
   resolveType as _resolveType,
 } from './registry/name-resolver';
 import {
-  findQualifiedNameAliasInManifest,
   getQualifiedNameAliasMap,
   lookupQualifiedNameAlias,
   readPreviousQualifiedNames,
   resetQualifiedNameAliasWarnings,
+  resolveManifestQualifiedNameAlias,
   warnDeprecatedQualifiedName,
 } from './registry/qualified-name-aliases';
 import {
@@ -1563,16 +1563,15 @@ export class ObjectRegistry {
     if (manifestAliasMissAtGeneration.get(alias) === getRegistryGeneration()) {
       return undefined;
     }
-    const loaded: Array<SmartObjectManifest | null | undefined> = [
+    // Every claimant is collected — loaded manifests AND every discoverable
+    // package — so two owners of one old name are refused, not resolved by
+    // whichever manifest happened to be searched first.
+    const manifests: Array<SmartObjectManifest | null | undefined> = [
       ...getManifestCache().values(),
       getStaticManifestCache(),
       getTestManifestCache(),
       getLocalTestManifestCache(),
     ];
-    for (const manifest of loaded) {
-      const current = findQualifiedNameAliasInManifest(manifest, alias);
-      if (current) return current;
-    }
     let packages: string[] = [];
     try {
       packages = await discoverInstalledSmrtPackages();
@@ -1582,12 +1581,10 @@ export class ObjectRegistry {
       );
     }
     for (const packageName of packages) {
-      const current = findQualifiedNameAliasInManifest(
-        await loadExternalManifest(packageName),
-        alias,
-      );
-      if (current) return current;
+      manifests.push(await loadExternalManifest(packageName));
     }
+    const current = resolveManifestQualifiedNameAlias(manifests, alias);
+    if (current) return current;
     manifestAliasMissAtGeneration.set(alias, getRegistryGeneration());
     return undefined;
   }

@@ -32,7 +32,8 @@ qualified names. Keep `tableName` explicit so the moved class keeps its table.
   index the NEW owner's manifest carries: the scanner keeps
   `decoratorConfig.previousQualifiedNames` verbatim, so the old identity
   resolves even when the old package no longer lists the class or is not
-  installed. Loaded manifests are searched first, then discovered packages.
+  installed. Loaded and discoverable manifests are all searched; two distinct
+  claimants of one old name throw `CONFIG_QUALIFIED_NAME_ALIAS_COLLISION`.
   `ensureManifestLoaded(old)` reconciles under the current name.
 - **Covered call sites.** `SmrtPolymorphicAssociation.hydrate()`, relationship
   targets (`relationship-graph.ts` resolves `@crossPackageRef('<old>')` to the

@@ -47,6 +47,7 @@ import {
 
 const NEW_PKG = '@test-3338/new-owner';
 const OLD_PKG = '@test-3338/old-owner';
+const RIVAL_PKG = '@test-3338/rival-owner';
 const CURRENT = `${NEW_PKG}:MovedThing`;
 const OLD = `${OLD_PKG}:MovedThing`;
 
@@ -113,6 +114,7 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
 
   afterEach(() => {
     getManifestCache().delete(NEW_PKG);
+    getManifestCache().delete(RIVAL_PKG);
     ObjectRegistry.clearDiagnostics();
     restoreRegistry();
   });
@@ -392,6 +394,29 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
         current: CURRENT,
         source: 'manifest alias index (lazy load)',
       });
+    });
+
+    it('refuses an old name claimed by two manifests when neither owner is registered', async () => {
+      getManifestCache().set(NEW_PKG, {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: NEW_PKG,
+        objects: { [CURRENT]: MOVED },
+      });
+      const rival = objectDef('MovedThing', RIVAL_PKG, {
+        decoratorConfig: { previousQualifiedNames: [OLD] },
+      });
+      getManifestCache().set(RIVAL_PKG, {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: RIVAL_PKG,
+        objects: { [`${RIVAL_PKG}:MovedThing`]: rival },
+      });
+
+      await expect(
+        ObjectRegistry.tryLoadFromExternalPackage(OLD),
+      ).rejects.toMatchObject({ code: QUALIFIED_NAME_ALIAS_COLLISION });
+      expect([...ObjectRegistry.getAllClasses().keys()]).toEqual([]);
     });
 
     it('still reports an unknown old name as not loadable', async () => {
