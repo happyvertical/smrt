@@ -46,6 +46,7 @@ import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import {
   type AssistantContinuationStore,
   type AssistantTurnErrorLogger,
+  type AssistantTurnState,
   type AuthoredToolReply,
   createAssistantTurnResponse,
   createSessionContinuationStore,
@@ -1023,13 +1024,11 @@ export function mountAssistantRoutes(
       );
     const metadata = parseObject(anchor.metadata) ?? {};
     const recorded = metadata.turnOutcome;
-    if (
-      assistantMessage &&
-      recorded !== 'suspended' &&
-      recorded !== 'running'
-    ) {
-      return answer('completed');
-    }
+    // A linked assistant reply is the turn's final answer (the runner
+    // stores exactly one, when the turn finishes; tool results are role
+    // `tool`; a suspension stores none), so it is completion evidence even
+    // if the outcome marker is stale or its write was lost.
+    if (assistantMessage) return answer('completed');
     if (recorded === 'failed') throw turnFailed();
     if (recorded === 'cancelled') return answer('cancelled');
     if (recorded === 'completed') return answer('completed');
@@ -1064,7 +1063,7 @@ export function mountAssistantRoutes(
     ) =>
     async (
       outcome: ChatClientRequestOutcome,
-      settings: { quiet?: boolean; continuationId?: string } = {},
+      settings: { quiet?: boolean } = {},
     ) => {
       try {
         await chat.recordClientRequestOutcome({
@@ -1073,14 +1072,33 @@ export function mountAssistantRoutes(
           messageId,
           actorProfileId: principal.profileId,
           outcome,
-          ...(settings.continuationId
-            ? { continuationId: settings.continuationId }
-            : {}),
+          resumedFrom: null,
         });
       } catch (error) {
         // `quiet`: the send may never have been stored.
         if (!settings.quiet) safeLog(error);
       }
+    };
+
+  /**
+   * The turn runner's own lifecycle reports (`onState`), recorded on the send
+   * they belong to. The send comes from the runner: the user message for a
+   * first leg, the consumed continuation for a resumed one — never from the
+   * request. Writes are monotonic compare-and-set (`ChatService`).
+   */
+  const recordTurnState =
+    (chat: ChatService, principal: AssistantPrincipal, threadId: string) =>
+    async (state: AssistantTurnState): Promise<void> => {
+      if (!state.originMessageId) return;
+      await chat.recordClientRequestOutcome({
+        tenantId: principal.tenantId,
+        threadId,
+        messageId: state.originMessageId,
+        actorProfileId: principal.profileId,
+        outcome: state.state,
+        resumedFrom: state.resumedFrom,
+        continuationId: state.continuationId ?? null,
+      });
     };
 
   const sendMessage = async (
@@ -1237,14 +1255,9 @@ export function mountAssistantRoutes(
         userMessage: content,
         // Every reply links to this send, and a suspension keeps it.
         originMessageId: userWire.id,
+        onState: recordTurnState(chat, principal, threadId),
       });
-      return stream(
-        settled(
-          { type: 'message', message: userWire },
-          events,
-          settleOutcome(chat, principal, threadId, userWire.id),
-        ),
-      );
+      return stream(detached({ type: 'message', message: userWire }, events));
     } catch (error) {
       await recordFailure('failed');
       throw error;
@@ -1294,33 +1307,19 @@ export function mountAssistantRoutes(
     if (!session) throw notFound();
     const setup = await turnSetup(context, chat, session, thread, body);
     // The send this leg belongs to comes only from the continuation it
-    // consumes (stored server-side when the turn suspended); a request's
-    // `clientRequestId` is ignored here. A missing, foreign or expired
-    // continuation is never consumed, so it settles no send.
-    let origin: string | undefined;
-    let running: Promise<void> = Promise.resolve();
-    const events = runAssistantTurn<AssistantMessageWire>({
-      ...setup.turn,
-      resume: { continuationId, results },
-      onResumed: (continuation) => {
-        origin = continuation.originMessageId;
-        if (origin) {
-          running = settleOutcome(chat, principal, threadId, origin)('running');
-        }
-      },
-    });
+    // consumes (stored server-side when the turn suspended), reported by the
+    // runner; a request's `clientRequestId` is ignored here. A missing,
+    // foreign or expired continuation is never consumed, so it changes no
+    // send.
     return stream(
-      settled(null, events, async (outcome, details) => {
-        await running;
-        if (origin) {
-          await settleOutcome(
-            chat,
-            principal,
-            threadId,
-            origin,
-          )(outcome, details);
-        }
-      }),
+      detached(
+        null,
+        runAssistantTurn<AssistantMessageWire>({
+          ...setup.turn,
+          resume: { continuationId, results },
+          onState: recordTurnState(chat, principal, threadId),
+        }),
+      ),
     );
   };
 
@@ -1524,42 +1523,49 @@ export function mountAssistantRoutes(
 }
 
 /**
- * Yield `first` (when given), then every event of `rest`, and report how the
- * turn ended (`onSettled`, with the continuation a suspension waits on) once
- * a terminal event has been seen. A reader that leaves before the end
- * records nothing: the turn still persists its reply, and an unanswered send
- * ages into "failed" (`abandonedTurnMs`).
+ * Run a turn to its end regardless of the reader. The events are pumped
+ * from the moment the handler returns into a buffer the response reads from
+ * (after `first`, when given); a reader that leaves only stops reading. The
+ * turn itself records its outcome (`onState`), so nothing here depends on
+ * how far the reader got. A client disconnect cancels the turn through the
+ * request's abort signal, as the dock's Stop does; the runner then records
+ * `cancelled` (or `completed`, if the reply was already stored).
  */
-async function* settled<M>(
+function detached<M>(
   first: AssistantTurnEvent<M> | null,
-  rest: AsyncGenerator<AssistantTurnEvent<M>, unknown>,
-  onSettled: (
-    outcome: ChatClientRequestOutcome,
-    details: { continuationId?: string },
-  ) => Promise<void>,
-): AsyncGenerator<AssistantTurnEvent<M>, unknown> {
-  let outcome: ChatClientRequestOutcome | null = null;
-  let continuationId: string | undefined;
-  try {
-    if (first) yield first;
-    for (;;) {
-      const next = await rest.next();
-      if (next.done) return next.value;
-      const event = next.value;
-      if (event.type === 'error') outcome = 'failed';
-      else if (event.type === 'client_tool_calls') {
-        outcome = 'suspended';
-        continuationId = event.continuationId;
-      } else if (event.type === 'done') {
-        outcome =
-          event.stoppedReason === 'cancelled' ? 'cancelled' : 'completed';
+  events: AsyncGenerator<AssistantTurnEvent<M>, unknown>,
+): AsyncGenerator<AssistantTurnEvent<M>, void> {
+  const buffer: AssistantTurnEvent<M>[] = first ? [first] : [];
+  let finished = false;
+  let notify: (() => void) | null = null;
+  const wake = () => {
+    const resume = notify;
+    notify = null;
+    resume?.();
+  };
+  void (async () => {
+    try {
+      for await (const event of events) {
+        buffer.push(event);
+        wake();
       }
-      yield event;
+    } catch {
+      // runAssistantTurn reports failures in-band and does not throw.
+    } finally {
+      finished = true;
+      wake();
     }
-  } finally {
-    if (outcome) {
-      await onSettled(outcome, continuationId ? { continuationId } : {});
+  })();
+  return (async function* () {
+    for (;;) {
+      if (buffer.length > 0) {
+        yield buffer.shift() as AssistantTurnEvent<M>;
+        continue;
+      }
+      if (finished) return;
+      await new Promise<void>((resolve) => {
+        notify = resolve;
+      });
     }
-    await rest.return?.(undefined);
-  }
+  })();
 }

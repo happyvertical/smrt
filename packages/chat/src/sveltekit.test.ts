@@ -1177,6 +1177,349 @@ describe('mountAssistantRoutes', () => {
         spy.mockRestore();
       }
     });
+
+    // ---- review 3 (N1/N2): the runner, not the reader, settles a send ----
+
+    /** Read SSE frames until `stop` matches; the stream stays open. */
+    async function readUntil(
+      response: Response,
+      stop: (event: AssistantTurnEvent<AssistantMessageWire>) => boolean,
+    ) {
+      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+      const decoder = new TextDecoder();
+      const seen: AssistantTurnEvent<AssistantMessageWire>[] = [];
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return { seen, reader, ended: true };
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          const block = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf('\n\n');
+          const data = block
+            .split('\n')
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trimStart())
+            .join('\n');
+          if (!data) continue;
+          const event = JSON.parse(
+            data,
+          ) as AssistantTurnEvent<AssistantMessageWire>;
+          seen.push(event);
+          if (stop(event)) return { seen, reader, ended: false };
+        }
+      }
+    }
+
+    const isReply = (event: AssistantTurnEvent<AssistantMessageWire>) =>
+      event.type === 'message' && event.message.role === 'assistant';
+
+    /** The send's recorded `metadata.turnOutcome`. */
+    async function outcomeOf(threadId: string, clientRequestId: string) {
+      const chat = await ChatService.create({ tenantId, db });
+      const messages = await chat.getThreadMessages({
+        threadId,
+        actorProfileId: ownerA.user.profileId,
+        tenantId,
+        limit: 200,
+      });
+      const send = messages.find(
+        (m) => m.getMetadata().clientRequestId === clientRequestId,
+      );
+      return send?.getMetadata().turnOutcome;
+    }
+
+    async function waitForOutcome(
+      threadId: string,
+      clientRequestId: string,
+      outcome: string,
+    ) {
+      for (let i = 0; i < 100; i += 1) {
+        if ((await outcomeOf(threadId, clientRequestId)) === outcome) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error(
+        `outcome stayed ${String(await outcomeOf(threadId, clientRequestId))}`,
+      );
+    }
+
+    async function waitForReply(threadId: string, content: string) {
+      const chat = await ChatService.create({ tenantId, db });
+      for (let i = 0; i < 100; i += 1) {
+        const messages = await chat.getThreadMessages({
+          threadId,
+          actorProfileId: ownerA.user.profileId,
+          tenantId,
+          limit: 200,
+        });
+        if (
+          messages.some((m) => m.role === 'assistant' && m.content === content)
+        ) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error(`no reply ${content}`);
+    }
+
+    /** Slow every `suspended` write, widening any race with a resume. */
+    async function withSlowSuspension<T>(fn: () => Promise<T>): Promise<T> {
+      const original = ChatService.prototype.recordClientRequestOutcome;
+      const spy = vi
+        .spyOn(ChatService.prototype, 'recordClientRequestOutcome')
+        .mockImplementation(async function (
+          this: ChatService,
+          ...args: Parameters<ChatService['recordClientRequestOutcome']>
+        ) {
+          if (args[0].outcome === 'suspended') {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          return original.apply(this, args);
+        });
+      try {
+        return await fn();
+      } finally {
+        spy.mockRestore();
+      }
+    }
+
+    it('completes a send whose reader left after the reply but before done, first leg and resumed leg (N1)', async () => {
+      const routes = mount({ ai: turnAI(), clientToolAllowList: ['page_*'] });
+      const strict = mount({
+        ai: turnAI(),
+        clientToolAllowList: ['page_*'],
+        abandonedTurnMs: 1,
+      });
+      const threadId = await createThread(routes);
+
+      // The reader takes one frame, stalls while the turn stores its reply,
+      // then leaves without ever reading `done`.
+      const first = await readUntil(
+        await retry(routes, threadId, 'plain', 'n1-a'),
+        () => true,
+      );
+      await waitForReply(threadId, 'reply plain');
+      await first.reader.cancel();
+
+      const suspended = await suspendSend(routes, threadId, 'call:n1', 'n1-b');
+      const resumed = await readUntil(
+        await resume(routes, threadId, {
+          continuationId: suspended.continuationId,
+          results: [{ id: 't-call:n1', ok: true, result: 'page' }],
+        }),
+        () => true,
+      );
+      expect(resumed.ended).toBe(false);
+      await waitForReply(threadId, 'reply call:n1');
+      await resumed.reader.cancel();
+
+      for (const [content, id] of [
+        ['plain', 'n1-a'],
+        ['call:n1', 'n1-b'],
+      ]) {
+        expect(
+          await (await retry(routes, threadId, content, id)).json(),
+        ).toMatchObject({ outcome: 'completed' });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        const late = await retry(strict, threadId, content, id);
+        expect(late.status).toBe(200);
+        expect(await late.json()).toMatchObject({
+          outcome: 'completed',
+          assistantMessage: { content: `reply ${content}` },
+        });
+        await waitForOutcome(threadId, id, 'completed');
+      }
+    });
+
+    it('keeps the resumed leg’s outcome when the original stream closes after the resume (N2)', () =>
+      withSlowSuspension(async () => {
+        const routes = mount({ ai: turnAI(), clientToolAllowList: ['page_*'] });
+        const threadId = await createThread(routes);
+        const original = await readUntil(
+          await send(routes, threadId, {
+            content: 'call:held',
+            clientRequestId: 'n2-held',
+            clientTools: pageTools,
+          }),
+          (event) => event.type === 'client_tool_calls',
+        );
+        const suspension = original.seen.at(-1) as Extract<
+          AssistantTurnEvent,
+          { type: 'client_tool_calls' }
+        >;
+        const resumed = await events(
+          await resume(routes, threadId, {
+            continuationId: suspension.continuationId,
+            results: [{ id: 't-call:held', ok: true, result: 'page' }],
+          }),
+        );
+        expect(resumed.seen.some((e) => e.type === 'done')).toBe(true);
+        // Now drain and close the original stream.
+        for (;;) {
+          const { done } = await original.reader.read();
+          if (done) break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(await outcomeOf(threadId, 'n2-held')).toBe('completed');
+        const strict = mount({
+          ai: turnAI(),
+          clientToolAllowList: ['page_*'],
+          abandonedTurnMs: 1,
+        });
+        expect(
+          await (await retry(strict, threadId, 'call:held', 'n2-held')).json(),
+        ).toMatchObject({ outcome: 'completed' });
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        expect(await outcomeOf(threadId, 'n2-held')).toBe('completed');
+      }));
+
+    it('records a suspension the reader never finished reading, paused or cancelled (N2)', () =>
+      withSlowSuspension(async () => {
+        const strict = mount({
+          ai: turnAI(),
+          clientToolAllowList: ['page_*'],
+          abandonedTurnMs: 1,
+        });
+        const threadId = await createThread(strict);
+        for (const [content, id, leave] of [
+          ['call:paused', 'n2-paused', 'pause'],
+          ['call:cancelled', 'n2-cancelled', 'cancel'],
+        ] as const) {
+          const original = await readUntil(
+            await send(strict, threadId, {
+              content,
+              clientRequestId: id,
+              clientTools: pageTools,
+            }),
+            (event) => event.type === 'client_tool_calls',
+          );
+          if (leave === 'cancel') await original.reader.cancel();
+          const suspension = original.seen.at(-1) as Extract<
+            AssistantTurnEvent,
+            { type: 'client_tool_calls' }
+          >;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          const waiting = await retry(strict, threadId, content, id);
+          expect(waiting.status).toBe(200);
+          expect(await waiting.json()).toMatchObject({
+            outcome: 'in_progress',
+          });
+          const resumed = await events(
+            await resume(strict, threadId, {
+              continuationId: suspension.continuationId,
+              results: [{ id: `t-${content}`, ok: true, result: 'page' }],
+            }),
+          );
+          expect(resumed.seen.some((e) => e.type === 'done')).toBe(true);
+          expect(
+            await (await retry(strict, threadId, content, id)).json(),
+          ).toMatchObject({
+            outcome: 'completed',
+            assistantMessage: { content: `reply ${content}` },
+          });
+          if (leave === 'pause') await original.reader.cancel();
+        }
+      }));
+
+    it('treats a stored linked reply as completion when the outcome write was lost (crash)', async () => {
+      const original = ChatService.prototype.recordClientRequestOutcome;
+      const spy = vi
+        .spyOn(ChatService.prototype, 'recordClientRequestOutcome')
+        .mockImplementation(async function (
+          this: ChatService,
+          ...args: Parameters<ChatService['recordClientRequestOutcome']>
+        ) {
+          // The process "dies" between storing the reply and recording it.
+          if (args[0].outcome === 'completed') return false;
+          return original.apply(this, args);
+        });
+      try {
+        const routes = mount({
+          ai: turnAI(),
+          clientToolAllowList: ['page_*'],
+        });
+        const threadId = await createThread(routes);
+        const suspended = await suspendSend(
+          routes,
+          threadId,
+          'call:crash',
+          'crash-1',
+        );
+        await events(
+          await resume(routes, threadId, {
+            continuationId: suspended.continuationId,
+            results: [{ id: 't-call:crash', ok: true, result: 'page' }],
+          }),
+        );
+        expect(await outcomeOf(threadId, 'crash-1')).toBe('running');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        const strict = mount({ ai: turnAI(), abandonedTurnMs: 1 });
+        expect(
+          await (await retry(strict, threadId, 'call:crash', 'crash-1')).json(),
+        ).toMatchObject({
+          outcome: 'completed',
+          assistantMessage: { content: 'reply call:crash' },
+        });
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('refuses out-of-order and stale outcome writes, compare-and-set', async () => {
+      const routes = mount();
+      const threadId = await createThread(routes);
+      const chat = await ChatService.create({ tenantId, db });
+      const [session] = await chat.findActiveAgentSessions({
+        tenantId,
+        agentId: 'smrt-assistant',
+        participantProfileId: ownerA.user.profileId,
+      });
+      const stored = await chat.sendMessage({
+        tenantId,
+        roomId: session.chatRoomId as string,
+        threadId,
+        actorProfileId: ownerA.user.profileId,
+        content: 'cas',
+        clientRequestId: 'cas-1',
+      });
+      const record = (
+        outcome: Parameters<
+          ChatService['recordClientRequestOutcome']
+        >[0]['outcome'],
+        resumedFrom: string | null,
+        continuationId?: string,
+      ) =>
+        chat.recordClientRequestOutcome({
+          tenantId,
+          threadId,
+          messageId: String(stored.id),
+          actorProfileId: ownerA.user.profileId,
+          outcome,
+          resumedFrom,
+          continuationId: continuationId ?? null,
+        });
+      expect(await record('suspended', null)).toBe(false); // needs an id
+      expect(await record('running', null)).toBe(true);
+      expect(await record('running', null)).toBe(false); // already running
+      expect(await record('suspended', null, 'c1')).toBe(true);
+      expect(await record('running', 'c0')).toBe(false); // wrong continuation
+      expect(await record('completed', null)).toBe(false); // not running
+      // Two resumes of c1 race: exactly one consumes it.
+      const raced = await Promise.all([
+        record('running', 'c1'),
+        record('running', 'c1'),
+      ]);
+      expect(raced.filter(Boolean)).toHaveLength(1);
+      // The first leg's late writes are stale now.
+      expect(await record('suspended', null, 'c1')).toBe(false);
+      expect(await record('failed', null)).toBe(false);
+      expect(await record('completed', 'c1')).toBe(true);
+      expect(await record('running', 'c1')).toBe(false);
+      expect(await record('failed', 'c1')).toBe(false);
+      expect(await outcomeOf(threadId, 'cas-1')).toBe('completed');
+    });
   });
 
   // ---- 7. tools ------------------------------------------------------------
