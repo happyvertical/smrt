@@ -15,7 +15,7 @@ schema, and code-generation commands.
 pnpm add @happyvertical/smrt-app-cli
 ```
 
-Node.js 24.18 or newer is required.
+Node.js 26 or newer is required.
 
 The published package also exposes a configuration-driven `smrt-app` binary.
 It lets policy runners and app operators use the canonical CLI outside a

@@ -14,7 +14,7 @@ pnpm add @happyvertical/smrt-core
 pnpm add -D @happyvertical/smrt-cli @happyvertical/smrt-vitest
 ```
 
-Requires Node.js 24.18.0 or newer. s-m-r-t projects use the Vite plugin to generate
+Requires Node.js 26.0.0 or newer. s-m-r-t projects use the Vite plugin to generate
 manifests and the CLI to apply schema migrations before runtime.
 
 ## Usage
