@@ -40,6 +40,11 @@ test('multiple processes scroll, pause persistently by keyboard, and expose each
   const track = region.locator('.smrt-activity-ticker__track');
   await expect(track).toHaveAttribute('aria-hidden', 'true');
   await expect(track).toHaveCSS('animation-name', /smrt-activity-scroll$/);
+  await expect(track).toHaveCSS('animation-play-state', 'running');
+  await region.hover();
+  await expect(track).toHaveCSS('animation-play-state', 'paused');
+  await page.getByRole('button', { name: 'Toggle activity details' }).hover();
+  await expect(track).toHaveCSS('animation-play-state', 'running');
   const pause = page.getByRole('button', {
     name: 'Pause scrolling activities',
   });
