@@ -7,6 +7,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { parseTimesheetJson } from '../models/json.js';
 
 /** A tenant-scoped interval of attendance, independent of billable work. */
 @TenantScoped({ mode: 'required' })
@@ -152,10 +153,33 @@ export class AttendanceBreak extends SmrtObject {
   }
 }
 
+/** Durable success or conflict; conflicts do not mutate attendance. */
+export interface AttendanceReplayOutcome {
+  clientId: string;
+  punchId?: string;
+  error?: string;
+}
+
+function validReplayOutcome(value: unknown): value is AttendanceReplayOutcome {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const result = value as Record<string, unknown>;
+  return (
+    typeof result.clientId === 'string' &&
+    result.clientId.length > 0 &&
+    ((typeof result.punchId === 'string' &&
+      result.punchId.length > 0 &&
+      result.error === undefined) ||
+      (typeof result.error === 'string' &&
+        result.error.length > 0 &&
+        result.punchId === undefined))
+  );
+}
+
 /** Durable offline-tap outcome; never exposed through generated operations. */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'attendance_replays',
+  sensitive: true,
   api: { include: [] },
   cli: { include: [] },
   mcp: { include: [] },
@@ -165,6 +189,26 @@ export class AttendanceReplay extends SmrtObject {
   @field({ required: true, unique: true }) replayKey = '';
   @field({ type: 'text' }) content = '';
   @field({ type: 'text' }) outcome = '{}';
+
+  /** Read a durable receipt, failing closed rather than re-executing a corrupt tap. */
+  getOutcome(): AttendanceReplayOutcome {
+    const value = parseTimesheetJson<unknown>(this.outcome, null);
+    if (!validReplayOutcome(value))
+      throw new Error('Invalid stored attendance replay outcome.');
+    return value;
+  }
+
+  /** Store the JSON representation of a validated success or refusal. */
+  setOutcome(value: AttendanceReplayOutcome): void {
+    if (!validReplayOutcome(value))
+      throw new Error('Invalid attendance replay outcome.');
+    this.outcome = JSON.stringify(value);
+  }
+
+  override async save(): Promise<this> {
+    this.getOutcome();
+    return super.save();
+  }
 }
 
 /** Punches for attendance and period rollup. */

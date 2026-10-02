@@ -11,7 +11,10 @@ import {
   AttendancePunch,
   AttendancePunchCollection,
   AttendanceReplayCollection,
+  type AttendanceReplayOutcome,
 } from './models.js';
+
+export type { AttendanceReplayOutcome } from './models.js';
 
 /** Resolve these identifiers from the authenticated session, never from tap input. */
 export interface AttendanceActor {
@@ -31,12 +34,6 @@ export interface AttendanceTap {
   action: 'punchIn' | 'punchOut' | 'startBreak' | 'endBreak';
   paid?: boolean;
   work?: AttendanceWork;
-}
-/** Durable success or conflict; conflicts do not mutate attendance. */
-export interface AttendanceReplayOutcome {
-  clientId: string;
-  punchId?: string;
-  error?: string;
 }
 
 /** Expected state conflict, distinct from retryable database failures. */
@@ -236,14 +233,7 @@ export class AttendanceService {
     if (action === 'endBreak' && !active)
       throw new AttendanceConflict('No open break.');
     if (action === 'punchOut' && work) {
-      if (
-        !work.workRefType ||
-        !work.workRefId ||
-        typeof work.description !== 'string'
-      )
-        throw new AttendanceConflict(
-          'A complete work reference and description are required.',
-        );
+      this.validateWork(work);
       const unpaid = breaks
         .filter((b) => !b.paid)
         .reduce(
@@ -281,19 +271,26 @@ export class AttendanceService {
     return punch;
   }
 
-  private async link(
-    tx: Context,
-    punch: AttendancePunch,
-    work: AttendanceWork,
-  ): Promise<void> {
+  private validateWork(work: AttendanceWork): void {
     if (
+      !work ||
+      typeof work.workRefType !== 'string' ||
       !work.workRefType ||
+      typeof work.workRefId !== 'string' ||
       !work.workRefId ||
       typeof work.description !== 'string'
     )
       throw new AttendanceConflict(
         'A complete work reference and description are required.',
       );
+  }
+
+  private async link(
+    tx: Context,
+    punch: AttendancePunch,
+    work: AttendanceWork,
+  ): Promise<void> {
+    this.validateWork(work);
     if (!punch.endedAt || punch.durationSeconds <= 0)
       throw new AttendanceConflict(
         'Only closed punches with positive duration can produce service evidence.',
@@ -394,6 +391,7 @@ export class AttendanceService {
       )
         throw new AttendanceConflict('Malformed attendance tap.');
       this.date(new Date(tap.at));
+      if (tap.work !== undefined) this.validateWork(tap.work);
       if (tap.paid !== undefined && typeof tap.paid !== 'boolean')
         throw new AttendanceConflict('paid must be boolean.');
     }
@@ -428,7 +426,12 @@ export class AttendanceService {
               throw new AttendanceConflict(
                 'Client id reused with different content.',
               );
-            return JSON.parse(receipt.outcome) as AttendanceReplayOutcome;
+            const outcome = receipt.getOutcome();
+            if (outcome.clientId !== tap.clientId)
+              throw new Error(
+                'Stored attendance receipt belongs to another client id.',
+              );
+            return outcome;
           }
           let outcome: AttendanceReplayOutcome;
           try {

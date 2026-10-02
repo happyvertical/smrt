@@ -16,7 +16,7 @@ const actor = {
 };
 const at = (hour: number) => new Date(Date.UTC(2026, 9, 1, hour));
 const work = {
-  workRefType: '@fixture/Work',
+  workRefType: '@fixture/work:WorkPackage',
   workRefId: 'work-1',
   description: 'Framing',
 };
@@ -297,6 +297,38 @@ export function attendanceSuite(
       ]);
       expect(result[0].error).toContain('predates');
       await service.endBreak(at(11));
+    });
+    it('rejects malformed optional work before any replay mutation', async () => {
+      await expect(
+        service.replay([
+          {
+            clientId: 'malformed-work',
+            action: 'punchIn',
+            at: at(8).toISOString(),
+            work: { ...work, workRefId: 123 } as never,
+          },
+        ]),
+      ).rejects.toThrow('work reference');
+      await service.punchIn(at(8));
+    });
+    it('fails closed on a corrupt durable outcome without replaying the mutation', async () => {
+      const tap = {
+        clientId: 'corrupt',
+        action: 'punchIn' as const,
+        at: at(8).toISOString(),
+      };
+      await service.replay([tap]);
+      await db.query(
+        isPostgresDatabase(db)
+          ? 'UPDATE attendance_replays SET outcome = $1 WHERE tenant_id = $2'
+          : 'UPDATE attendance_replays SET outcome = ? WHERE tenant_id = ?',
+        'null',
+        actor.tenantId,
+      );
+      await expect(service.replay([tap])).rejects.toThrow(
+        'Invalid stored attendance replay outcome',
+      );
+      await service.punchOut(at(9));
     });
   });
 }

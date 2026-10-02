@@ -233,8 +233,22 @@ Construct a service with your database and the **authorized session's**
 operation permissions before this boundary; never pass request-supplied actor
 identifiers. A conflicting active tenant is refused. The service cannot read or
 link another profile's punch. Generated punch/break surfaces default to reads
-only; the replay ledger has no generated operations. Consumers can close the
-remaining generated reads using the runtime registry override from #3318.
+only; the replay ledger has no generated operations and is excluded from change
+feeds. Before constructing generated transports, consumers can close the remaining
+reads without replacing the models or changing their schema:
+
+```ts
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+import '@happyvertical/smrt-timesheets/attendance';
+
+for (const model of ['AttendancePunch', 'AttendanceBreak']) {
+  ObjectRegistry.registerOverride(`@happyvertical/smrt-timesheets:${model}`, {
+    api: false, cli: false, mcp: false,
+  });
+}
+```
+
+Required tenant scoping remains in effect after closing these surfaces.
 
 ```ts
 import { AttendanceService } from '@happyvertical/smrt-timesheets/attendance';

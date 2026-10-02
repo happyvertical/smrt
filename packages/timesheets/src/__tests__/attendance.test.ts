@@ -36,6 +36,7 @@ it('exposes only generated reads and keeps replay receipts private', () => {
       expect(config[surface]).toEqual({ include: ['list', 'get'] });
   }
   const config = ObjectRegistry.getConfig('AttendanceReplay');
+  expect(config.sensitive).toBe(true);
   for (const surface of ['api', 'cli', 'mcp'] as const)
     expect(config[surface]).toEqual({ include: [] });
 });
