@@ -13,6 +13,8 @@ import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLSelectAttributes, 'class' | 'value'> {
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** The currently selected option value. */
   value?: string;
   /** Additional CSS class names. */
@@ -35,6 +37,7 @@ let {
   'aria-label': ariaLabel,
   'aria-describedby': ariaDescribedby,
   'aria-invalid': ariaInvalid,
+  density,
   ...rest
 }: Props = $props();
 
@@ -140,7 +143,7 @@ export function getElement(): HTMLSelectElement | null {
 		aria-label={ariaLabel}
 	aria-describedby={resolvedDescribedBy}
 	aria-invalid={resolvedInvalid}
-		class="select {className}"
+		data-density={density} class="select {className}"
 		data-smrt-control={resolvedControlId}
 		data-smrt-form={controlInteraction?.formId}
 		data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
@@ -204,4 +207,8 @@ export function getElement(): HTMLSelectElement | null {
 			transition: none;
 		}
 	}
+
+  .select[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .select[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .select { min-height: var(--smrt-control-target-min, 0px); }
 </style>

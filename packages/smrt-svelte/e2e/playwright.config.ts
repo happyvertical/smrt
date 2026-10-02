@@ -7,13 +7,16 @@ export default defineConfig({
   retries: 0,
   use: {
     baseURL: 'http://127.0.0.1:47851',
+    launchOptions: {
+      executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    },
     hasTouch: true,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
   webServer: {
     command:
-      'pnpm exec vite --config e2e/vite.config.ts --host 127.0.0.1 --port 47851 --strictPort',
+      'pnpm exec vite build --config e2e/vite.config.ts && pnpm exec vite preview --config e2e/vite.config.ts --host 127.0.0.1 --port 47851 --strictPort',
     cwd: new URL('..', import.meta.url).pathname,
     url: 'http://127.0.0.1:47851',
     reuseExistingServer: false,

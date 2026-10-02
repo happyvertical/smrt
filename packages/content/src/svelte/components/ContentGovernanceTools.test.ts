@@ -434,7 +434,7 @@ describe('ContentVersionsTool component', () => {
 
     expect(clientMocks.restoreVersion).not.toHaveBeenCalled();
 
-    const dialog = target.querySelector('[role="dialog"]');
+    const dialog = target.querySelector('dialog');
     expect(dialog).not.toBeNull();
     const confirmButton = dialog?.querySelector(
       'button.btn-filled',

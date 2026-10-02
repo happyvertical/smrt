@@ -3,10 +3,10 @@
  * StatusBadge - Generic status indicator badge
  *
  * Provides pre-defined color schemes for common status domains (invoice, project, etc.)
- * or allows custom styling via CSS variables.
+ * or an explicit semantic tone for custom status vocabulary.
  */
 
-import type { StatusType } from './types.js';
+import type { StatusTone, StatusType } from './types.js';
 
 /** Props for StatusBadge component */
 export interface Props {
@@ -14,6 +14,8 @@ export interface Props {
   status: string;
   /** Pre-defined color scheme type */
   type?: StatusType;
+  /** Semantic tone overriding the domain color scheme. */
+  tone?: StatusTone;
   /** Badge size */
   size?: 'sm' | 'md' | 'lg';
   /** Visual variant */
@@ -25,6 +27,7 @@ export interface Props {
 const {
   status,
   type = 'default',
+  tone,
   size = 'md',
   variant = 'filled',
   label,
@@ -201,11 +204,35 @@ const colorSchemes: Record<
   },
 };
 
+const toneSchemes: Record<StatusTone, { bg: string; text: string }> = {
+  success: {
+    bg: 'var(--smrt-color-success-container)',
+    text: 'var(--smrt-color-on-success-container)',
+  },
+  warning: {
+    bg: 'var(--smrt-color-warning-container)',
+    text: 'var(--smrt-color-on-warning-container)',
+  },
+  danger: {
+    bg: 'var(--smrt-color-error-container)',
+    text: 'var(--smrt-color-on-error-container)',
+  },
+  info: {
+    bg: 'var(--smrt-color-primary-container)',
+    text: 'var(--smrt-color-on-primary-container)',
+  },
+  neutral: {
+    bg: 'var(--smrt-color-surface-container-highest)',
+    text: 'var(--smrt-color-on-surface-variant)',
+  },
+};
+
 // Normalize status for lookup (lowercase, handle spaces/underscores)
 const normalizedStatus = $derived(status.toLowerCase().replace(/[\s-]/g, '_'));
 
 // Get colors for current status
 const colors = $derived.by(() => {
+  if (tone && Object.hasOwn(toneSchemes, tone)) return toneSchemes[tone];
   const scheme = colorSchemes[type] ?? colorSchemes.default;
   return (
     scheme[normalizedStatus] ?? {

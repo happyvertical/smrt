@@ -17,6 +17,8 @@
  */
 
 [data-theme="smrt"][data-color-scheme="light"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: smrt;
   --smrt-theme-name: s-m-r-t;
   --smrt-color-scheme: light;
@@ -242,6 +244,8 @@
 }
 
 [data-theme="smrt"][data-color-scheme="dark"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: smrt;
   --smrt-theme-name: s-m-r-t;
   --smrt-color-scheme: dark;

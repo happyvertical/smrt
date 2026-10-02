@@ -8,6 +8,8 @@
  */
 
 [data-theme="glass"][data-color-scheme="light"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: glass;
   --smrt-theme-name: Glass;
   --smrt-color-scheme: light;
@@ -239,6 +241,8 @@
 }
 
 [data-theme="glass"][data-color-scheme="dark"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: glass;
   --smrt-theme-name: Glass;
   --smrt-color-scheme: dark;

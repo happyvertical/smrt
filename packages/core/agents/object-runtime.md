@@ -60,7 +60,9 @@ warmed, interleaved per-row timings without a flaky timing assertion.
 `src/plain-json.ts` helper and executes it in Chromium with `process` and
 `JSON.isRawJSON` unavailable. It is an opt-in local/browser release gate rather
 than part of the default core suite: it requires the repository's
-`playwright-core` dependency and an installed Chromium binary. The normal test
+`playwright-core` dependency and an installed Chromium binary. Set
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/path/to/chromium` to use an installed
+executable; otherwise Playwright's managed Chromium is used. The normal test
 suite covers the same helper through `toPlainObject()` on Node.
 
 ## SmrtCollection Query

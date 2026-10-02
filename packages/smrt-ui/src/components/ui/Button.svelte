@@ -14,6 +14,8 @@ import type { ButtonSize, ButtonVariant } from '../../types-generic';
 
 /** Props for Button component */
 export interface Props extends Omit<HTMLButtonAttributes, 'class' | 'href'> {
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** Visual variant */
   variant?: ButtonVariant;
   /** Size variant */
@@ -62,6 +64,7 @@ const {
   target,
   rel,
   download,
+  density,
   ...rest
 }: Props = $props();
 
@@ -118,7 +121,7 @@ function handleClick(event: MouseEvent) {
     {target}
     {rel}
     {download}
-    class="button {variant} {size} {className}"
+    data-density={density} class="button {variant} {size} {className}"
     class:disabled={isDisabled}
     class:full-width={fullWidth}
     class:loading
@@ -140,7 +143,7 @@ function handleClick(event: MouseEvent) {
     {type}
     disabled={isDisabled}
     aria-busy={loading}
-    class="button {variant} {size} {className}"
+    data-density={density} class="button {variant} {size} {className}"
     class:full-width={fullWidth}
     class:loading
     onclick={handleClick}
@@ -308,4 +311,8 @@ function handleClick(event: MouseEvent) {
       animation: none;
     }
   }
+
+  .button[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .button[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .button { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 </style>

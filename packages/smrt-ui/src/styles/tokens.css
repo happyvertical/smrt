@@ -4,6 +4,8 @@
  */
 
 :root {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   /* Colors - Primary */
   --color-primary-main: #1976d2;
   --color-primary-light: #e3f2fd;

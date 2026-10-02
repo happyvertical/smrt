@@ -11,6 +11,8 @@ const TENANT_PREFIX = 'workspace-account:tenant:';
 export interface Props {
   /** Username or identifier displayed in the account menu. */
   userName: string;
+  /** Target density; omit to inherit the theme density. */
+  density?: 'comfortable' | 'touch';
   /** Custom display name for the user, falls back to userName. */
   userLabel?: string;
   /** URL for the user's avatar image. */
@@ -35,6 +37,7 @@ export interface Props {
 
 let {
   userName,
+  density,
   userLabel = '',
   avatarUrl,
   tenantLabel = '',
@@ -100,7 +103,7 @@ function handleSelect(id: string): void {
 }
 </script>
 
-<div class="smrt-workspace-account-menu" title={summaryTitle}>
+<div data-density={density} class="smrt-workspace-account-menu" title={summaryTitle}>
   <Dropdown
     {items}
     {placement}
@@ -129,6 +132,17 @@ function handleSelect(id: string): void {
     width: 100%;
   }
 
+  .smrt-workspace-account-menu[data-density='touch'] {
+    --smrt-control-target-min: var(--smrt-touch-target-min, 48px);
+  }
+  .smrt-workspace-account-menu[data-density='comfortable'] {
+    --smrt-control-target-min: 0px;
+  }
+  .smrt-workspace-account-menu :global(.dropdown__item) {
+    min-block-size: var(--smrt-control-target-min, 0px);
+    box-sizing: border-box;
+  }
+
   .smrt-workspace-account-menu :global(.dropdown) {
     display: flex;
     width: 100%;
@@ -141,7 +155,7 @@ function handleSelect(id: string): void {
     gap: var(--smrt-spacing-2);
     width: 100%;
     min-width: 0;
-    min-height: 2.75rem;
+    min-height: max(2.75rem, var(--smrt-control-target-min, 0px));
     padding: var(--smrt-spacing-2);
     border-radius: var(--smrt-radius-large);
     text-align: start;

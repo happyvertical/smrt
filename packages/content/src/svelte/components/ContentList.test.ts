@@ -2091,7 +2091,7 @@ describe('ContentList callbacks', () => {
     const target = renderList({ onDelete });
 
     click(buttonsByText(target, 'Delete')[0]);
-    const dialog = document.querySelector('[role="dialog"]');
+    const dialog = document.querySelector('dialog');
 
     expect(dialog).toBeTruthy();
     expect(dialog?.textContent).toContain('Council budget explained');
@@ -2526,14 +2526,14 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
     });
     flushSync();
 
-    const dialog = document.querySelector('[role="dialog"]');
+    const dialog = document.querySelector('dialog');
     const confirm = Array.from(dialog?.querySelectorAll('button') ?? []).find(
       (button) => button.textContent?.trim() === 'Delete',
     );
     click(confirm as HTMLButtonElement);
 
     expect(onDelete).not.toHaveBeenCalled();
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('dialog')).toBeNull();
   });
 
   it('ships a reduced-motion override for refresh affordances', () => {
