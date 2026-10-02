@@ -28,6 +28,10 @@
       "types": "./dist/data-surface-bridge.d.ts",
       "import": "./dist/data-surface-bridge.js"
     },
+    "./sveltekit": {
+      "types": "./dist/sveltekit.d.ts",
+      "import": "./dist/sveltekit.js"
+    },
     "./ui": {
       "types": "./dist/ui.d.ts",
       "import": "./dist/ui.js"

@@ -1,0 +1,1286 @@
+/**
+ * Mountable AssistantDock routes (#3368).
+ *
+ * Real SQLite (a temp file) for users, tenants, memberships and chat; only the
+ * AI boundary is scripted. The matrix: actor × thread ownership × active
+ * tenant (allow and deny), unauthenticated and incomplete principals, a
+ * principal with no tools, malformed/oversized input, upstream AI failure,
+ * stale and foreign continuations, attachments, actions, origin, routing, and
+ * the browser transport talking to these handlers unchanged.
+ */
+
+import { existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type {
+  AIInterface,
+  AIMessage,
+  AIResponse,
+  ChatOptions,
+} from '@happyvertical/ai';
+import type { PrincipalRun, PrincipalTool } from '@happyvertical/smrt-agents';
+import {
+  MembershipCollection,
+  RoleCollection,
+  TenantCollection,
+  UserCollection,
+} from '@happyvertical/smrt-users';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  type AssistantTurnEvent,
+  readAssistantTurnStream,
+} from './assistant-turn-events.js';
+import { ChatService } from './services/index.js';
+import { createAssistantHttpTransport } from './svelte/components/assistant/assistant-http-client.js';
+import {
+  type AssistantMessageWire,
+  type AssistantRouteEvent,
+  type AssistantRoutes,
+  type MountAssistantRoutesOptions,
+  mountAssistantRoutes,
+} from './sveltekit.js';
+
+const ORIGIN = 'http://app.test';
+
+type Round = (
+  messages: AIMessage[],
+  options: ChatOptions | undefined,
+) => AIResponse;
+
+function scriptedAI(rounds: Round[]): AIInterface & {
+  seen: AIMessage[][];
+  offered: string[][];
+  models: unknown[];
+} {
+  let call = 0;
+  const seen: AIMessage[][] = [];
+  const offered: string[][] = [];
+  const models: unknown[] = [];
+  return {
+    seen,
+    offered,
+    models,
+    async chat(messages: AIMessage[], options?: ChatOptions) {
+      seen.push([...messages]);
+      models.push(options?.model);
+      offered.push(
+        options?.toolChoice === 'none'
+          ? []
+          : (options?.tools ?? []).map((tool) => tool.function.name),
+      );
+      const round = rounds[Math.min(call, rounds.length - 1)];
+      call += 1;
+      return round(messages, options);
+    },
+  } as unknown as AIInterface & {
+    seen: AIMessage[][];
+    offered: string[][];
+    models: unknown[];
+  };
+}
+
+function text(content: string): Round {
+  return (_messages, options) => {
+    options?.onProgress?.(content);
+    return { content, finishReason: 'stop' };
+  };
+}
+
+function calls(
+  ...entries: Array<[name: string, args: Record<string, unknown>, id?: string]>
+): Round {
+  return () => ({
+    content: '',
+    finishReason: 'tool_calls',
+    toolCalls: entries.map(([name, args, id], index) => ({
+      id: id ?? `call_${name}_${index}`,
+      type: 'function',
+      function: { name, arguments: JSON.stringify(args) },
+    })),
+  });
+}
+
+function discoverTool(ran: PrincipalRun[]): PrincipalTool {
+  return {
+    slug: 'data.discover',
+    aiTool: {
+      type: 'function',
+      function: {
+        name: 'data-discover',
+        description: 'Discover data.',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    async execute({ run }) {
+      run.assertToolAllowed('data.discover');
+      ran.push(run);
+      return { surfaces: ['articles'] };
+    },
+  };
+}
+
+interface Actor {
+  user: { id: string; profileId: string };
+  tenantId: string;
+}
+
+const locals = (actor: Actor | null) =>
+  actor ? { user: actor.user, tenantId: actor.tenantId } : { user: null };
+
+async function events(response: Response) {
+  const seen: AssistantTurnEvent<AssistantMessageWire>[] = [];
+  let thrown: unknown = null;
+  try {
+    await readAssistantTurnStream<AssistantMessageWire>(response, (event) => {
+      seen.push(event);
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  return { seen, thrown };
+}
+
+describe('mountAssistantRoutes', () => {
+  let dbPath: string;
+  let db: { type: 'sqlite'; url: string };
+  let tenantId: string;
+  let otherTenantId: string;
+  let ownerA: Actor;
+  let memberB: Actor;
+  let ownerAElsewhere: Actor;
+
+  beforeEach(async () => {
+    dbPath = join(
+      tmpdir(),
+      `smrt-assistant-routes-${Date.now()}-${Math.random()}.db`,
+    );
+    db = { type: 'sqlite', url: dbPath };
+    const options = { db };
+    const users = await UserCollection.create(options);
+    const tenants = await TenantCollection.create(options);
+    const roles = await RoleCollection.create(options);
+    const memberships = await MembershipCollection.create(options);
+    const tenant = await tenants.create({ name: 'Routes Org' });
+    await tenant.save();
+    const other = await tenants.create({ name: 'Other Org' });
+    await other.save();
+    const role = await roles.create({ name: 'Member' });
+    await role.save();
+    const makeUser = async (email: string, profileId: string) => {
+      const user = await users.create({ email, profileId });
+      await user.save();
+      return { id: user.id as string, profileId };
+    };
+    const a = await makeUser('a@example.com', 'profile-a');
+    const b = await makeUser('b@example.com', 'profile-b');
+    for (const [userId, tId] of [
+      [a.id, tenant.id],
+      [b.id, tenant.id],
+      [a.id, other.id],
+    ] as const) {
+      await (
+        await memberships.create({
+          userId,
+          tenantId: tId as string,
+          roleId: role.id,
+        })
+      ).save();
+    }
+    tenantId = tenant.id as string;
+    otherTenantId = other.id as string;
+    ownerA = { user: a, tenantId };
+    memberB = { user: b, tenantId };
+    ownerAElsewhere = { user: a, tenantId: otherTenantId };
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // best-effort
+      }
+    }
+  });
+
+  function mount(
+    overrides: Partial<MountAssistantRoutesOptions> = {},
+  ): AssistantRoutes {
+    return mountAssistantRoutes({
+      ai: scriptedAI([text('Hello there.')]),
+      db,
+      audit: () => {},
+      onError: () => {},
+      ...overrides,
+    });
+  }
+
+  function call(
+    routes: AssistantRoutes,
+    method: string,
+    path: string,
+    init: {
+      actor?: Actor | null;
+      locals?: unknown;
+      body?: unknown;
+      rawBody?: BodyInit;
+      headers?: Record<string, string>;
+      origin?: string | null;
+    } = {},
+  ): Promise<Response> {
+    const url = new URL(`${ORIGIN}/api/assistant/${path}`);
+    const headers: Record<string, string> = {};
+    if (init.body !== undefined) headers['content-type'] = 'application/json';
+    const origin = init.origin === undefined ? ORIGIN : init.origin;
+    if (method !== 'GET' && origin) headers.origin = origin;
+    Object.assign(headers, init.headers);
+    const request = new Request(url, {
+      method,
+      headers,
+      ...(init.rawBody !== undefined
+        ? { body: init.rawBody }
+        : init.body !== undefined
+          ? { body: JSON.stringify(init.body) }
+          : {}),
+    });
+    const event: AssistantRouteEvent = {
+      request,
+      url,
+      params: { path },
+      locals:
+        init.locals !== undefined
+          ? init.locals
+          : locals(init.actor === undefined ? ownerA : init.actor),
+    };
+    return method === 'GET' ? routes.GET(event) : routes.POST(event);
+  }
+
+  async function createThread(
+    routes: AssistantRoutes,
+    actor: Actor = ownerA,
+    title = 'Plans',
+  ): Promise<string> {
+    const response = await call(routes, 'POST', 'threads', {
+      actor,
+      body: { title },
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { thread: { id: string } };
+    return body.thread.id;
+  }
+
+  async function listMessages(
+    routes: AssistantRoutes,
+    threadId: string,
+    actor: Actor = ownerA,
+  ): Promise<AssistantMessageWire[]> {
+    const response = await call(routes, 'GET', `threads/${threadId}/messages`, {
+      actor,
+    });
+    expect(response.status).toBe(200);
+    return ((await response.json()) as { items: AssistantMessageWire[] }).items;
+  }
+
+  const send = (
+    routes: AssistantRoutes,
+    threadId: string,
+    body: Record<string, unknown>,
+    actor: Actor = ownerA,
+  ) => call(routes, 'POST', `threads/${threadId}/messages`, { actor, body });
+
+  // ---- 1. principal -----------------------------------------------------
+
+  describe('principal', () => {
+    it('refuses an unauthenticated caller on every route', async () => {
+      const routes = mount();
+      for (const [method, path, body] of [
+        ['GET', 'threads', undefined],
+        ['POST', 'threads', { title: 'x' }],
+        ['GET', 'threads/t1/messages', undefined],
+        ['POST', 'threads/t1/messages', { content: 'x', clientRequestId: 'r' }],
+        ['POST', 'threads/t1/resume', { continuationId: 'c', results: [] }],
+        ['POST', 'actions/preview', { phase: 'preview' }],
+      ] as const) {
+        const response = await call(routes, method, path, {
+          actor: null,
+          body,
+        });
+        expect(response.status, `${method} ${path}`).toBe(401);
+        expect(await response.json()).toMatchObject({
+          code: 'unauthenticated',
+        });
+      }
+    });
+
+    it('refuses a user without a profile or without an active tenant', async () => {
+      const routes = mount();
+      const noProfile = await call(routes, 'GET', 'threads', {
+        locals: { user: { id: ownerA.user.id }, tenantId },
+      });
+      expect(noProfile.status).toBe(403);
+      expect(await noProfile.json()).toMatchObject({
+        code: 'profile_required',
+      });
+      const noTenant = await call(routes, 'GET', 'threads', {
+        locals: { user: ownerA.user, tenantId: null },
+      });
+      expect(noTenant.status).toBe(403);
+      expect(await noTenant.json()).toMatchObject({ code: 'tenant_required' });
+    });
+
+    it('never takes identity from the body or headers', async () => {
+      const routes = mount();
+      const response = await call(routes, 'POST', 'threads', {
+        actor: ownerA,
+        body: {
+          title: 'Mine',
+          actorProfileId: memberB.user.profileId,
+          tenantId: otherTenantId,
+        },
+        headers: { 'x-profile-id': memberB.user.profileId },
+      });
+      expect(response.status).toBe(201);
+      const listB = await call(routes, 'GET', 'threads', { actor: memberB });
+      expect((await listB.json()).items).toEqual([]);
+      const listA = await call(routes, 'GET', 'threads', { actor: ownerA });
+      expect((await listA.json()).items).toHaveLength(1);
+    });
+
+    it('uses an injected resolver instead of locals', async () => {
+      const routes = mount({
+        resolvePrincipal: () => ({
+          userId: memberB.user.id,
+          profileId: memberB.user.profileId,
+          tenantId,
+        }),
+      });
+      await createThread(routes, ownerA);
+      // Locals said A; the resolver said B, so the thread is B's.
+      const asB = mount();
+      const list = await call(asB, 'GET', 'threads', { actor: memberB });
+      expect((await list.json()).items).toHaveLength(1);
+    });
+  });
+
+  // ---- 2-4. member-scoped reads and thread creation ----------------------
+
+  describe('threads', () => {
+    it('lists nothing and creates nothing before the first thread', async () => {
+      const routes = mount();
+      const response = await call(routes, 'GET', 'threads');
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ items: [] });
+      const chat = await ChatService.create({ tenantId, db });
+      const sessions = await chat.findActiveAgentSessions({
+        tenantId,
+        agentId: 'smrt-assistant',
+        participantProfileId: ownerA.user.profileId,
+      });
+      expect(sessions).toEqual([]);
+    });
+
+    it('scopes threads to the actor and the active tenant', async () => {
+      const routes = mount();
+      const threadId = await createThread(routes, ownerA, 'Roadmap');
+      const mine = await call(routes, 'GET', 'threads', { actor: ownerA });
+      expect((await mine.json()).items).toEqual([
+        expect.objectContaining({
+          id: threadId,
+          title: 'Roadmap',
+          isResolved: false,
+          messageCount: 0,
+        }),
+      ]);
+      const other = await call(routes, 'GET', 'threads', { actor: memberB });
+      expect((await other.json()).items).toEqual([]);
+      const elsewhere = await call(routes, 'GET', 'threads', {
+        actor: ownerAElsewhere,
+      });
+      expect((await elsewhere.json()).items).toEqual([]);
+    });
+
+    it('validates the title', async () => {
+      const routes = mount();
+      for (const body of [{}, { title: '   ' }, { title: 'x'.repeat(201) }]) {
+        const response = await call(routes, 'POST', 'threads', { body });
+        expect(response.status).toBe(400);
+      }
+      const notJson = await call(routes, 'POST', 'threads', {
+        rawBody: 'title=x',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      });
+      expect(notJson.status).toBe(415);
+      const malformed = await call(routes, 'POST', 'threads', {
+        rawBody: '{"title":',
+        headers: { 'content-type': 'application/json' },
+      });
+      expect(malformed.status).toBe(400);
+      const array = await call(routes, 'POST', 'threads', { body: ['x'] });
+      expect(array.status).toBe(400);
+    });
+
+    it('reads messages only from the actor’s own assistant room in the tenant', async () => {
+      const routes = mount();
+      const threadId = await createThread(routes);
+      expect(await listMessages(routes, threadId)).toEqual([]);
+
+      for (const actor of [memberB, ownerAElsewhere]) {
+        const denied = await call(
+          routes,
+          'GET',
+          `threads/${threadId}/messages`,
+          { actor },
+        );
+        expect(denied.status).toBe(404);
+      }
+      const unknown = await call(routes, 'GET', 'threads/nope/messages');
+      expect(unknown.status).toBe(404);
+
+      // A room A belongs to that is not the assistant room stays out of reach.
+      const chat = await ChatService.create({ tenantId, db });
+      const room = await chat.createRoom({
+        tenantId,
+        name: 'General',
+        roomType: 'public',
+        actorProfileId: ownerA.user.profileId,
+      });
+      const side = await chat.startThread({
+        tenantId,
+        roomId: room.id as string,
+        actorProfileId: ownerA.user.profileId,
+        title: 'Side',
+      });
+      const sideRead = await call(routes, 'GET', `threads/${side.id}/messages`);
+      expect(sideRead.status).toBe(404);
+    });
+  });
+
+  // ---- 5-6. sends --------------------------------------------------------
+
+  describe('send', () => {
+    it('persists the user message, streams the turn, and persists the reply', async () => {
+      const ai = scriptedAI([text('Here is the plan.')]);
+      const routes = mount({ ai, systemPrompt: 'Be brief.' });
+      const threadId = await createThread(routes);
+      const response = await send(routes, threadId, {
+        content: 'What next?',
+        clientRequestId: 'req-1',
+      });
+      expect(response.headers.get('content-type')).toMatch(
+        /^text\/event-stream/,
+      );
+      const { seen, thrown } = await events(response);
+      expect(thrown).toBeNull();
+      const persisted = seen.filter((e) => e.type === 'message') as Extract<
+        AssistantTurnEvent<AssistantMessageWire>,
+        { type: 'message' }
+      >[];
+      expect(persisted.map((e) => [e.message.role, e.message.content])).toEqual(
+        [
+          ['user', 'What next?'],
+          ['assistant', 'Here is the plan.'],
+        ],
+      );
+      expect(persisted[0].message.clientRequestId).toBe('req-1');
+      expect(
+        seen.at(-1)?.type === 'done' || seen.some((e) => e.type === 'done'),
+      ).toBe(true);
+      expect(ai.seen[0][0]).toMatchObject({
+        role: 'system',
+        content: 'Be brief.',
+      });
+
+      const reloaded = await listMessages(routes, threadId);
+      expect(
+        reloaded.map((m) => [m.role, m.content, m.clientRequestId]),
+      ).toEqual([
+        ['user', 'What next?', 'req-1'],
+        ['assistant', 'Here is the plan.', undefined],
+      ]);
+
+      // The next turn carries the earlier exchange as history.
+      await events(
+        await send(routes, threadId, {
+          content: 'And then?',
+          clientRequestId: 'req-2',
+        }),
+      );
+      expect(ai.seen[1].map((m) => [m.role, m.content])).toEqual([
+        ['system', 'Be brief.'],
+        ['user', 'What next?'],
+        ['assistant', 'Here is the plan.'],
+        ['user', 'And then?'],
+      ]);
+    });
+
+    it('refuses another member’s or another tenant’s thread before any write or model call', async () => {
+      const factory = vi.fn(() => scriptedAI([text('nope')]));
+      const routes = mount({ ai: factory });
+      const threadId = await createThread(routes, ownerA);
+      for (const actor of [memberB, ownerAElsewhere]) {
+        const response = await send(
+          routes,
+          threadId,
+          {
+            content: 'hi',
+            clientRequestId: `x-${actor.tenantId}-${actor.user.id}`,
+          },
+          actor,
+        );
+        expect(response.status).toBe(404);
+      }
+      expect(factory).not.toHaveBeenCalled();
+      expect(await listMessages(routes, threadId)).toEqual([]);
+    });
+
+    it('rejects malformed and oversized input', async () => {
+      const routes = mount({ maxBodyBytes: 4096 });
+      const threadId = await createThread(routes);
+      const cases: Array<[Record<string, unknown>, number]> = [
+        [{ content: '', clientRequestId: 'a' }, 400],
+        [{ content: '   ', clientRequestId: 'a' }, 400],
+        [{ content: 'hi' }, 400],
+        [{ content: 'hi', clientRequestId: 'has space' }, 400],
+        [{ content: 'hi', clientRequestId: 'x'.repeat(129) }, 400],
+        [{ content: 'hi', clientRequestId: 'a', attachments: 'nope' }, 400],
+        [{ content: 'x'.repeat(4100), clientRequestId: 'a' }, 413],
+        [{ content: 'x'.repeat(5000), clientRequestId: 'a' }, 413],
+      ];
+      for (const [body, status] of cases) {
+        const response = await send(routes, threadId, body);
+        expect(response.status, JSON.stringify(body).slice(0, 60)).toBe(status);
+      }
+      const longMessage = mount({ maxContentLength: 10 });
+      const response = await send(longMessage, threadId, {
+        content: 'x'.repeat(11),
+        clientRequestId: 'a',
+      });
+      expect(response.status).toBe(413);
+      expect(await response.json()).toMatchObject({ code: 'message_too_long' });
+      expect(await listMessages(routes, threadId)).toEqual([]);
+    });
+
+    it('answers a repeated clientRequestId without a second user message', async () => {
+      const routes = mount();
+      const threadId = await createThread(routes);
+      await events(
+        await send(routes, threadId, { content: 'hi', clientRequestId: 'dup' }),
+      );
+      const again = await send(routes, threadId, {
+        content: 'hi',
+        clientRequestId: 'dup',
+      });
+      expect(again.headers.get('content-type')).toMatch(/^application\/json/);
+      expect(await again.json()).toMatchObject({
+        duplicate: true,
+        inProgress: false,
+        userMessage: { content: 'hi', clientRequestId: 'dup' },
+        assistantMessage: { role: 'assistant', content: 'Hello there.' },
+      });
+      const messages = await listMessages(routes, threadId);
+      expect(messages.filter((m) => m.role === 'user')).toHaveLength(1);
+    });
+
+    it('answers a duplicate that arrives while the first send is still running', async () => {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const ai = {
+        async chat() {
+          await gate;
+          return { content: 'late', finishReason: 'stop' };
+        },
+      } as unknown as AIInterface;
+      const routes = mount({ ai });
+      const threadId = await createThread(routes);
+      const first = await send(routes, threadId, {
+        content: 'hi',
+        clientRequestId: 'busy',
+      });
+      const second = await send(routes, threadId, {
+        content: 'hi',
+        clientRequestId: 'busy',
+      });
+      expect(await second.json()).toMatchObject({
+        duplicate: true,
+        inProgress: true,
+        userMessage: { clientRequestId: 'busy' },
+      });
+      release();
+      await events(first);
+      const messages = await listMessages(routes, threadId);
+      expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    });
+
+    it('persists one user message when identical sends race before either is stored', async () => {
+      const routes = mount();
+      const threadId = await createThread(routes);
+      const responses = await Promise.all(
+        [1, 2, 3].map(() =>
+          send(routes, threadId, {
+            content: 'race',
+            clientRequestId: 'race-1',
+          }),
+        ),
+      );
+      const streams = responses.filter((r) =>
+        /^text\/event-stream/.test(r.headers.get('content-type') ?? ''),
+      );
+      expect(streams).toHaveLength(1);
+      for (const response of responses) {
+        if (streams.includes(response)) await events(response);
+        else expect(await response.json()).toMatchObject({ duplicate: true });
+      }
+      const messages = await listMessages(routes, threadId);
+      expect(messages.filter((m) => m.role === 'user')).toHaveLength(1);
+    });
+  });
+
+  // ---- 7. tools ------------------------------------------------------------
+
+  describe('tools', () => {
+    it('offers no tools to a principal without an allow-list', async () => {
+      const ran: PrincipalRun[] = [];
+      const ai = scriptedAI([text('No tools here.')]);
+      const routes = mount({ ai, extraTools: [discoverTool(ran)] });
+      const threadId = await createThread(routes);
+      await events(
+        await send(routes, threadId, {
+          content: 'look',
+          clientRequestId: 'n1',
+        }),
+      );
+      expect(ai.offered[0]).toEqual([]);
+      expect(ran).toEqual([]);
+    });
+
+    it('runs allow-listed tools under the request principal', async () => {
+      const ran: PrincipalRun[] = [];
+      const ai = scriptedAI([calls(['data-discover', {}]), text('Found it.')]);
+      const routes = mount({
+        ai,
+        allowedTools: ({ principal }) =>
+          principal.profileId === ownerA.user.profileId
+            ? ['data.discover']
+            : [],
+        extraTools: [discoverTool(ran)],
+      });
+      const threadId = await createThread(routes);
+      const { seen } = await events(
+        await send(routes, threadId, {
+          content: 'look',
+          clientRequestId: 't1',
+        }),
+      );
+      expect(ai.offered[0]).toContain('data-discover');
+      expect(ran).toHaveLength(1);
+      expect(ran[0].allowedTools).toEqual(['data.discover']);
+      expect(ran[0].context).toBeDefined();
+      expect(
+        seen.some(
+          (e) =>
+            e.type === 'step' && e.step.kind === 'tool_result' && e.step.ok,
+        ),
+      ).toBe(true);
+    });
+
+    it('drops browser tools that are not on the allow-list', async () => {
+      const ai = scriptedAI([text('ok')]);
+      const routes = mount({ ai, clientToolAllowList: ['page_*'] });
+      const threadId = await createThread(routes);
+      await events(
+        await send(routes, threadId, {
+          content: 'hi',
+          clientRequestId: 'c1',
+          clientTools: [
+            {
+              name: 'page_read',
+              description: 'Read.',
+              inputSchema: { type: 'object' },
+              effect: 'read',
+            },
+            {
+              name: 'admin_delete',
+              description: 'Delete.',
+              inputSchema: { type: 'object' },
+              effect: 'destructive',
+            },
+          ],
+        }),
+      );
+      expect(ai.offered[0]).toEqual(['page_read']);
+    });
+  });
+
+  // ---- 8. suspension and resume -------------------------------------------
+
+  describe('resume', () => {
+    const pageTools = [
+      {
+        name: 'page_read',
+        description: 'Read the page.',
+        inputSchema: { type: 'object', properties: {} },
+        effect: 'read',
+      },
+    ];
+
+    async function suspend(
+      routes: AssistantRoutes,
+      threadId: string,
+      id: string,
+    ) {
+      const { seen } = await events(
+        await send(routes, threadId, {
+          content: 'read the page',
+          clientRequestId: id,
+          clientTools: pageTools,
+        }),
+      );
+      const suspended = seen.at(-1) as Extract<
+        AssistantTurnEvent,
+        { type: 'client_tool_calls' }
+      >;
+      expect(suspended.type).toBe('client_tool_calls');
+      return suspended;
+    }
+
+    it('suspends on a browser tool and resumes once', async () => {
+      const ai = scriptedAI([
+        calls(['page_read', {}, 'p1']),
+        text('The page lists three items.'),
+      ]);
+      const routes = mount({ ai, clientToolAllowList: ['page_*'] });
+      const threadId = await createThread(routes);
+      const suspended = await suspend(routes, threadId, 's1');
+      expect(suspended.calls).toEqual([
+        { id: 'p1', name: 'page_read', args: {}, effect: 'read' },
+      ]);
+
+      const resumed = await events(
+        await call(routes, 'POST', `threads/${threadId}/resume`, {
+          body: {
+            clientRequestId: 's1',
+            continuationId: suspended.continuationId,
+            results: [{ id: 'p1', ok: true, result: 'three items' }],
+          },
+        }),
+      );
+      expect(resumed.thrown).toBeNull();
+      expect(resumed.seen.find((e) => e.type === 'done')).toMatchObject({
+        message: { role: 'assistant', content: 'The page lists three items.' },
+      });
+
+      // Stale: the continuation was consumed.
+      const replay = await events(
+        await call(routes, 'POST', `threads/${threadId}/resume`, {
+          body: {
+            continuationId: suspended.continuationId,
+            results: [{ id: 'p1', ok: true, result: 'again' }],
+          },
+        }),
+      );
+      expect(replay.seen.find((e) => e.type === 'error')).toMatchObject({
+        code: 'continuation_expired',
+      });
+    });
+
+    it('refuses a foreign actor and a resume under another thread', async () => {
+      const ai = scriptedAI([calls(['page_read', {}, 'p1']), text('done')]);
+      const routes = mount({ ai, clientToolAllowList: ['page_*'] });
+      const threadId = await createThread(routes);
+      const otherThread = await createThread(routes, ownerA, 'Other');
+      const suspended = await suspend(routes, threadId, 'f1');
+      const body = {
+        continuationId: suspended.continuationId,
+        results: [{ id: 'p1', ok: true, result: 'x' }],
+      };
+      for (const actor of [memberB, ownerAElsewhere]) {
+        const response = await call(
+          routes,
+          'POST',
+          `threads/${threadId}/resume`,
+          { actor, body },
+        );
+        expect(response.status).toBe(404);
+      }
+      const crossThread = await events(
+        await call(routes, 'POST', `threads/${otherThread}/resume`, { body }),
+      );
+      expect(crossThread.seen.find((e) => e.type === 'error')).toMatchObject({
+        code: 'continuation_expired',
+      });
+      // The owner's real continuation is still intact after those attempts.
+      const ok = await events(
+        await call(routes, 'POST', `threads/${threadId}/resume`, { body }),
+      );
+      expect(ok.seen.some((e) => e.type === 'done')).toBe(true);
+    });
+
+    it('rejects malformed resume input', async () => {
+      const routes = mount();
+      const threadId = await createThread(routes);
+      for (const body of [
+        { results: [] },
+        { continuationId: 'c', results: 'x' },
+        { continuationId: 'c', results: [null] },
+        { continuationId: 'c', results: [{ id: 'p1' }] },
+        { continuationId: 'c', results: [{ ok: true }] },
+        {
+          continuationId: 'c',
+          results: Array.from({ length: 65 }, (_, i) => ({
+            id: `p${i}`,
+            ok: true,
+          })),
+        },
+      ]) {
+        const response = await call(
+          routes,
+          'POST',
+          `threads/${threadId}/resume`,
+          { body },
+        );
+        expect(response.status, JSON.stringify(body).slice(0, 40)).toBe(400);
+      }
+    });
+  });
+
+  // ---- 9-10. upstream failure and models ----------------------------------
+
+  describe('upstream failure', () => {
+    it('redacts a model failure mid-turn and logs the detail server-side', async () => {
+      const logged: unknown[] = [];
+      const ai = {
+        async chat() {
+          throw new Error('provider key sk-secret rejected');
+        },
+      } as unknown as AIInterface;
+      const routes = mount({ ai, onError: (error) => logged.push(error) });
+      const threadId = await createThread(routes);
+      const { seen, thrown } = await events(
+        await send(routes, threadId, { content: 'hi', clientRequestId: 'e1' }),
+      );
+      expect(thrown).toBeInstanceOf(Error);
+      const error = seen.find((e) => e.type === 'error') as {
+        error: string;
+        code: string;
+      };
+      expect(error.code).toBe('internal_error');
+      expect(error.error).not.toContain('sk-secret');
+      expect(String(logged[0])).toContain('sk-secret');
+    });
+
+    it('answers 503 and writes nothing when the AI factory fails', async () => {
+      const routes = mount({
+        ai: () => {
+          throw new Error('no credentials');
+        },
+      });
+      const threadId = await createThread(routes);
+      const response = await send(routes, threadId, {
+        content: 'hi',
+        clientRequestId: 'f1',
+      });
+      expect(response.status).toBe(503);
+      const body = await response.json();
+      expect(body).toMatchObject({ code: 'assistant_unavailable' });
+      expect(JSON.stringify(body)).not.toContain('credentials');
+      expect(await listMessages(routes, threadId)).toEqual([]);
+    });
+
+    it('allows only listed models, and ignores a model when none are listed', async () => {
+      const ai = scriptedAI([text('ok')]);
+      const listed = mount({ ai, models: [{ id: 'm1' }] });
+      const threadId = await createThread(listed);
+      const refused = await send(listed, threadId, {
+        content: 'hi',
+        clientRequestId: 'm-a',
+        model: 'm2',
+      });
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toMatchObject({ code: 'model_not_allowed' });
+      await events(
+        await send(listed, threadId, {
+          content: 'hi',
+          clientRequestId: 'm-b',
+          model: 'm1',
+        }),
+      );
+      expect(ai.models.at(-1)).toBe('m1');
+
+      const unlisted = mount({ ai, defaultModel: 'fallback' });
+      await events(
+        await send(unlisted, threadId, {
+          content: 'hi',
+          clientRequestId: 'm-c',
+          model: 'm9',
+        }),
+      );
+      expect(ai.models.at(-1)).toBe('fallback');
+    });
+  });
+
+  // ---- 11. attachments ----------------------------------------------------
+
+  describe('attachments', () => {
+    const upload = (
+      routes: AssistantRoutes,
+      file: File,
+      actor: Actor = ownerA,
+    ) => {
+      const form = new FormData();
+      form.set('file', file);
+      return call(routes, 'POST', 'attachments', { actor, rawBody: form });
+    };
+
+    it('fails closed without host storage', async () => {
+      const routes = mount();
+      const response = await upload(routes, new File(['x'], 'a.txt'));
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({
+        code: 'attachments_unsupported',
+      });
+      const threadId = await createThread(routes);
+      const sent = await send(routes, threadId, {
+        content: 'see file',
+        clientRequestId: 'a1',
+        attachments: [{ id: 'att-1', name: 'a.txt' }],
+      });
+      expect(sent.status).toBe(400);
+      expect(await listMessages(routes, threadId)).toEqual([]);
+    });
+
+    it('stores uploads through the host and persists verified references', async () => {
+      const stored = new Map<
+        string,
+        { owner: string; name: string; size: number }
+      >();
+      const routes = mount({
+        attachments: {
+          maxBytes: 16,
+          async upload(file, { principal }) {
+            const id = `att-${stored.size + 1}`;
+            stored.set(id, {
+              owner: principal.profileId,
+              name: file.name,
+              size: file.size,
+            });
+            return {
+              id,
+              name: file.name,
+              contentType: 'text/plain',
+              size: file.size,
+            };
+          },
+          async verify(references, { principal }) {
+            const out = [];
+            for (const ref of references) {
+              const id = (ref as { id?: unknown })?.id;
+              const entry = typeof id === 'string' ? stored.get(id) : undefined;
+              if (!entry || entry.owner !== principal.profileId) return null;
+              out.push({
+                id: id as string,
+                name: entry.name,
+                contentType: 'text/plain',
+                size: entry.size,
+              });
+            }
+            return out;
+          },
+        },
+      });
+      const response = await upload(routes, new File(['hello'], 'note.txt'));
+      expect(response.status).toBe(201);
+      const { attachment } = await response.json();
+      expect(attachment).toMatchObject({
+        id: 'att-1',
+        name: 'note.txt',
+        size: 5,
+      });
+
+      const tooBig = await upload(
+        routes,
+        new File(['x'.repeat(17)], 'big.txt'),
+      );
+      expect(tooBig.status).toBe(413);
+
+      const threadId = await createThread(routes);
+      // B cannot attach A's upload.
+      const threadB = await createThread(routes, memberB);
+      const stolen = await send(
+        routes,
+        threadB,
+        {
+          content: 'mine now',
+          clientRequestId: 'b1',
+          attachments: [attachment],
+        },
+        memberB,
+      );
+      expect(stolen.status).toBe(400);
+
+      await events(
+        await send(routes, threadId, {
+          content: 'see note',
+          clientRequestId: 'a2',
+          attachments: [
+            { ...attachment, size: 999_999, url: 'https://evil.test/x' },
+          ],
+        }),
+      );
+      const [userMessage] = await listMessages(routes, threadId);
+      expect(userMessage.attachments).toEqual([
+        { id: 'att-1', name: 'note.txt', contentType: 'text/plain', size: 5 },
+      ]);
+    });
+  });
+
+  // ---- 12. actions --------------------------------------------------------
+
+  describe('actions', () => {
+    const request = (phase: 'preview' | 'apply') => ({
+      version: 1,
+      requestId: 'r1',
+      identity: { surfaceId: 'articles', kind: 'table' },
+      actionId: 'archive',
+      phase,
+      selection: { scope: 'explicit-ids', rowIds: ['a1'] },
+      expectedRevision: 3,
+      ...(phase === 'apply' ? { idempotencyKey: 'k1' } : {}),
+    });
+
+    it('answers 404 without an adapter', async () => {
+      const routes = mount();
+      const response = await call(routes, 'POST', 'actions/preview', {
+        body: request('preview'),
+      });
+      expect(response.status).toBe(404);
+    });
+
+    it('passes the server-resolved principal to the adapter', async () => {
+      const preview = vi.fn(async (req: { requestId: string }) => ({
+        version: 1 as const,
+        requestId: req.requestId,
+        identity: { surfaceId: 'articles', kind: 'table' as const },
+        actionId: 'archive',
+        phase: 'preview' as const,
+        ok: true,
+        confirmationToken: 'tok',
+      }));
+      const apply = vi.fn(async () => {
+        throw new Error('db exploded');
+      });
+      const routes = mount({
+        allowedTools: ['articles.archive'],
+        actions: { adapter: { preview, apply } as never },
+      });
+      const previewed = await call(routes, 'POST', 'actions/preview', {
+        body: { ...request('preview'), principal: { runAsUserId: 'attacker' } },
+      });
+      expect(previewed.status).toBe(200);
+      expect((await previewed.json()).result).toMatchObject({
+        ok: true,
+        confirmationToken: 'tok',
+      });
+      const [, context] = preview.mock.calls[0] as unknown as [
+        unknown,
+        {
+          principal: {
+            principal: Record<string, unknown>;
+            onBehalfOfUserId: string;
+          };
+        },
+      ];
+      expect(context.principal.principal).toEqual({
+        runAsUserId: ownerA.user.id,
+        tenantId,
+        allowedTools: ['articles.archive'],
+      });
+      expect(context.principal.onBehalfOfUserId).toBe(ownerA.user.id);
+
+      const failed = await call(routes, 'POST', 'actions/apply', {
+        body: request('apply'),
+      });
+      expect(failed.status).toBe(500);
+      const failedBody = await failed.json();
+      expect(failedBody).toMatchObject({ code: 'outcome_unknown' });
+      expect(JSON.stringify(failedBody)).not.toContain('exploded');
+
+      const mismatch = await call(routes, 'POST', 'actions/apply', {
+        body: request('preview'),
+      });
+      expect(mismatch.status).toBe(400);
+      const unauth = await call(routes, 'POST', 'actions/preview', {
+        actor: null,
+        body: request('preview'),
+      });
+      expect(unauth.status).toBe(401);
+      expect(preview).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ---- 15-16. origin and routing -----------------------------------------
+
+  describe('origin and routing', () => {
+    it('requires a same-origin mutation unless disabled', async () => {
+      const routes = mount();
+      const foreign = await call(routes, 'POST', 'threads', {
+        body: { title: 'x' },
+        origin: 'https://evil.test',
+      });
+      expect(foreign.status).toBe(403);
+      const none = await call(routes, 'POST', 'threads', {
+        body: { title: 'x' },
+        origin: null,
+      });
+      expect(none.status).toBe(403);
+      const sameSite = await call(routes, 'POST', 'threads', {
+        body: { title: 'x' },
+        origin: null,
+        headers: { 'sec-fetch-site': 'same-origin' },
+      });
+      expect(sameSite.status).toBe(201);
+      const trusted = mount({ trustedOrigins: ['https://proxy.test'] });
+      const viaProxy = await call(trusted, 'POST', 'threads', {
+        body: { title: 'x' },
+        origin: 'https://proxy.test',
+      });
+      expect(viaProxy.status).toBe(201);
+      const open = mount({ checkOrigin: false });
+      const unchecked = await call(open, 'POST', 'threads', {
+        body: { title: 'x' },
+        origin: null,
+      });
+      expect(unchecked.status).toBe(201);
+    });
+
+    it('answers unknown paths 404 and wrong methods 405', async () => {
+      const routes = mount();
+      expect((await call(routes, 'GET', 'nope')).status).toBe(404);
+      expect((await call(routes, 'GET', 'threads/a/b/c')).status).toBe(404);
+      const wrong = await call(routes, 'GET', 'threads/t1/resume');
+      expect(wrong.status).toBe(405);
+      expect(wrong.headers.get('allow')).toBe('POST');
+    });
+
+    it('serves a route mounted without a rest parameter via basePath', async () => {
+      const routes = mount({ basePath: '/api/assistant' });
+      const url = new URL(`${ORIGIN}/api/assistant/threads`);
+      const response = await routes.GET({
+        request: new Request(url),
+        url,
+        locals: locals(ownerA),
+      });
+      expect(response.status).toBe(200);
+    });
+
+    it('requires an AI client at mount time', () => {
+      expect(() =>
+        mountAssistantRoutes({ ai: undefined as unknown as AIInterface }),
+      ).toThrow(/ai/);
+    });
+  });
+
+  // ---- 14. the browser transport against these routes ---------------------
+
+  describe('browser transport contract', () => {
+    it('drives list, create, send, load and resume through the real handlers', async () => {
+      const ai = scriptedAI([
+        text('First answer.'),
+        calls(['page_read', {}, 'p9']),
+        text('Read it.'),
+      ]);
+      const routes = mount({ ai, clientToolAllowList: ['page_*'] });
+      const fetchImpl = (async (
+        input: string | URL | Request,
+        init?: RequestInit,
+      ) => {
+        const url = new URL(String(input), ORIGIN);
+        const path = url.pathname.replace(/^\/api\/assistant\/?/, '');
+        const headers = new Headers(init?.headers);
+        headers.set('origin', ORIGIN);
+        expect(headers.has('authorization')).toBe(false);
+        const request = new Request(url, { ...init, headers });
+        return routes.handle({
+          request,
+          url,
+          params: { path },
+          locals: locals(ownerA),
+        });
+      }) as typeof fetch;
+      const transport = createAssistantHttpTransport({
+        endpoint: '/api/assistant/',
+        fetchImpl,
+      });
+      expect(await transport.listThreads()).toEqual([]);
+      const thread = await transport.createThread('Contract');
+      expect(thread).toMatchObject({ title: 'Contract', messageCount: 0 });
+      expect((await transport.listThreads()).map((t) => t.id)).toEqual([
+        thread.id,
+      ]);
+
+      const streamed: string[] = [];
+      const sent = await transport.sendMessage({
+        threadId: thread.id,
+        content: 'Hello',
+        clientRequestId: 'contract-1',
+        onEvent: (event) => streamed.push(event.type),
+      });
+      expect(sent.inProgress).toBe(false);
+      expect(sent.userMessage).toMatchObject({
+        content: 'Hello',
+        clientRequestId: 'contract-1',
+      });
+      expect(sent.assistantMessage).toMatchObject({ content: 'First answer.' });
+      expect(streamed).toContain('done');
+
+      const repeat = await transport.sendMessage({
+        threadId: thread.id,
+        content: 'Hello',
+        clientRequestId: 'contract-1',
+      });
+      expect(repeat).toMatchObject({
+        inProgress: false,
+        assistantMessage: { content: 'First answer.' },
+      });
+
+      const suspended = await transport.sendMessage({
+        threadId: thread.id,
+        content: 'Read the page',
+        clientRequestId: 'contract-2',
+        clientTools: [
+          {
+            name: 'page_read',
+            description: 'Read.',
+            inputSchema: { type: 'object', properties: {} },
+            effect: 'read',
+          },
+        ],
+      });
+      expect(suspended.clientToolCalls?.calls).toEqual([
+        { id: 'p9', name: 'page_read', args: {}, effect: 'read' },
+      ]);
+      const resumed = await transport.resumeTurn?.({
+        threadId: thread.id,
+        clientRequestId: 'contract-2',
+        continuationId: suspended.clientToolCalls?.continuationId as string,
+        results: [{ id: 'p9', ok: true, result: 'page text' }],
+      });
+      expect(resumed?.assistantMessage).toMatchObject({ content: 'Read it.' });
+
+      const loaded = await transport.loadMessages(thread.id);
+      expect(loaded.map((m) => [m.role, m.content])).toEqual([
+        ['user', 'Hello'],
+        ['assistant', 'First answer.'],
+        ['user', 'Read the page'],
+        ['assistant', 'Read it.'],
+      ]);
+      expect(loaded[0].clientRequestId).toBe('contract-1');
+
+      await expect(transport.loadMessages('missing')).rejects.toThrow(/404/);
+      await expect(
+        transport.uploadAttachment(new File(['x'], 'x.txt')),
+      ).rejects.toThrow(/does not accept attachments/);
+    });
+  });
+});
