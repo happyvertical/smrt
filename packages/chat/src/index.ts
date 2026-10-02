@@ -69,6 +69,7 @@ export {
   type AssistantTurnState,
   AssistantTurnUserError,
   type AuthoredToolReply,
+  CONTINUATION_CLAIM_TTL_MS,
   type ContinuationSessionLike,
   createAssistantTurnResponse,
   createMemoryContinuationStore,

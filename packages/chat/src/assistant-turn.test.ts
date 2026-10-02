@@ -980,6 +980,10 @@ describe('assistant turn', () => {
         expect(await store.has?.('other', 'a')).toBe(false);
         expect(await store.has?.('k', 'a')).toBe(true);
         expect((await store.take('k', 'a'))?.originMessageId).toBe('send-1');
+        // Claimed, not gone: single-use, still visible until released.
+        expect(await store.has?.('k', 'a')).toBe(true);
+        expect(await store.take('k', 'a')).toBeNull();
+        await store.release?.('k', 'a');
         expect(await store.has?.('k', 'a')).toBe(false);
         await store.save('k', {
           version: 1,

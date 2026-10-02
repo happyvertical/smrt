@@ -102,10 +102,44 @@ export interface AssistantContinuationStore {
   save(key: string, continuation: AssistantTurnContinuation): Promise<void>;
   take(key: string, id: string): Promise<AssistantTurnContinuation | null>;
   /**
-   * Whether `id` is still waiting under `key` (present and unexpired),
-   * without consuming it. Optional; both built-in stores implement it.
+   * Whether `id` is still waiting under `key` (present and unexpired, or
+   * claimed by a resume that is still activating), without consuming it.
+   * Optional; both built-in stores implement it.
    */
   has?(key: string, id: string): Promise<boolean>;
+  /**
+   * Forget a continuation `take` returned. The built-in stores' `take`
+   * CLAIMS the entry (no second `take` can return it, and `has` stays true)
+   * instead of deleting it, so a resume is never invisible between taking
+   * its continuation and recording that it runs; the runner calls `release`
+   * once that is recorded. An unreleased claim expires after
+   * {@link CONTINUATION_CLAIM_TTL_MS}. Optional.
+   */
+  release?(key: string, id: string): Promise<void>;
+}
+
+/** How long a claimed (taken, unreleased) continuation still counts. */
+export const CONTINUATION_CLAIM_TTL_MS = 60 * 1000;
+
+type StoredContinuation = AssistantTurnContinuation & { claimedAt?: number };
+
+function liveFor(
+  entry: StoredContinuation | undefined,
+  id: string,
+  ttl: number,
+  at: number,
+): boolean {
+  if (!entry || entry.id !== id) return false;
+  if (at - Number(entry.createdAt) > ttl) return false;
+  return (
+    entry.claimedAt === undefined ||
+    at - Number(entry.claimedAt) <= CONTINUATION_CLAIM_TTL_MS
+  );
+}
+
+function unclaimed(entry: StoredContinuation): AssistantTurnContinuation {
+  const { claimedAt: _claimedAt, ...continuation } = entry;
+  return continuation;
 }
 
 /** In-memory store, for tests and single-process demos. */
@@ -114,7 +148,7 @@ export function createMemoryContinuationStore(
 ): AssistantContinuationStore {
   const ttl = options.ttlMs ?? DEFAULT_CONTINUATION_TTL_MS;
   const now = options.now ?? (() => Date.now());
-  const entries = new Map<string, AssistantTurnContinuation>();
+  const entries = new Map<string, StoredContinuation>();
   return {
     async save(key, continuation) {
       // One suspended turn per key: a new suspension replaces an old one.
@@ -122,15 +156,22 @@ export function createMemoryContinuationStore(
     },
     async take(key, id) {
       const entry = entries.get(key);
-      if (!entry || entry.id !== id) return null;
-      entries.delete(key);
-      return now() - entry.createdAt > ttl ? null : entry;
+      if (!entry || entry.id !== id || entry.claimedAt !== undefined) {
+        return null;
+      }
+      if (now() - entry.createdAt > ttl) {
+        entries.delete(key);
+        return null;
+      }
+      // Claimed, not deleted: single-use, and still visible until released.
+      entries.set(key, { ...entry, claimedAt: now() });
+      return unclaimed(entry);
     },
     async has(key, id) {
-      const entry = entries.get(key);
-      return Boolean(
-        entry && entry.id === id && now() - entry.createdAt <= ttl,
-      );
+      return liveFor(entries.get(key), id, ttl, now());
+    },
+    async release(key, id) {
+      if (entries.get(key)?.id === id) entries.delete(key);
     },
   };
 }
@@ -177,15 +218,15 @@ export function createSessionContinuationStore(
   };
   const read = (
     current: ContinuationSessionLike,
-  ): Record<string, AssistantTurnContinuation> => {
+  ): Record<string, StoredContinuation> => {
     const raw = current.getSessionContext()[SESSION_CONTINUATIONS_FIELD];
     return raw && typeof raw === 'object' && !Array.isArray(raw)
-      ? { ...(raw as Record<string, AssistantTurnContinuation>) }
+      ? { ...(raw as Record<string, StoredContinuation>) }
       : {};
   };
-  const prune = (all: Record<string, AssistantTurnContinuation>) => {
+  const prune = (all: Record<string, StoredContinuation>) => {
     for (const [key, entry] of Object.entries(all)) {
-      if (!entry || now() - Number(entry.createdAt) > ttl) delete all[key];
+      if (!entry || !liveFor(entry, entry.id, ttl, now())) delete all[key];
     }
     return all;
   };
@@ -202,18 +243,30 @@ export function createSessionContinuationStore(
       const current = await load();
       const all = read(current);
       const entry = all[key];
-      if (!entry || entry.id !== id) return null;
+      if (!entry || entry.id !== id || entry.claimedAt !== undefined) {
+        return null;
+      }
+      const expired = now() - Number(entry.createdAt) > ttl;
+      if (expired) delete all[key];
+      // Claimed, not deleted: single-use (the session row's revision check
+      // refuses a concurrent claim), and still visible until released.
+      else all[key] = { ...entry, claimedAt: now() };
+      await current.updateSessionContext({
+        [SESSION_CONTINUATIONS_FIELD]: prune(all),
+      });
+      return expired ? null : unclaimed(entry);
+    },
+    async has(key, id) {
+      return liveFor(read(await load())[key], id, ttl, now());
+    },
+    async release(key, id) {
+      const current = await load();
+      const all = read(current);
+      if (all[key]?.id !== id) return;
       delete all[key];
       await current.updateSessionContext({
         [SESSION_CONTINUATIONS_FIELD]: prune(all),
       });
-      return now() - Number(entry.createdAt) > ttl ? null : entry;
-    },
-    async has(key, id) {
-      const entry = read(await load())[key];
-      return Boolean(
-        entry && entry.id === id && now() - Number(entry.createdAt) <= ttl,
-      );
     },
   };
 }
@@ -559,6 +612,15 @@ async function runTurn<M>(
     leg.resumedFrom = continuation.id;
     leg.started = true;
     await report('running');
+    // `running` is recorded: the claimed continuation can go.
+    try {
+      await options.continuations.release?.(
+        options.continuationKey,
+        continuation.id,
+      );
+    } catch (error) {
+      (options.onError ?? defaultLogError)(error);
+    }
     messages = appendClientToolResults(
       continuation.messages,
       continuation.pending,
@@ -862,6 +924,11 @@ export function createAssistantTurnResponse(
     headers?: Record<string, string>;
     /** Server-side log for a failure while pulling (default `console.error`). */
     onError?: AssistantTurnErrorLogger;
+    /**
+     * Called synchronously when the reader cancels the body (a client that
+     * went away), before the generator is closed — e.g. to abort the turn.
+     */
+    onCancel?: () => void;
   } = {},
 ): Response {
   const encoder = new TextEncoder();
@@ -909,6 +976,11 @@ export function createAssistantTurnResponse(
     },
     async cancel() {
       stop();
+      try {
+        options.onCancel?.();
+      } catch {
+        // A host callback never breaks the close.
+      }
       await events.return?.(undefined);
     },
   });
