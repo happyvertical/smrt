@@ -120,9 +120,10 @@ import {
   resolveType as _resolveType,
 } from './registry/name-resolver';
 import {
-  collectManifestAliasClaims,
+  collectManifestAliasInventory,
   getQualifiedNameAliasMap,
   lookupQualifiedNameAlias,
+  type ManifestAliasInventory,
   readPreviousQualifiedNames,
   resetQualifiedNameAliasWarnings,
   resolveManifestQualifiedNameAlias,
@@ -262,7 +263,7 @@ function importManifestLoader(): Promise<ManifestLoaderModule> {
  * was built at. See `ObjectRegistry.loadManifestAliasInventory()`.
  */
 let manifestAliasInventory:
-  | { generation: number; claims: Map<string, Set<string>> }
+  | { generation: number; inventory: ManifestAliasInventory }
   | undefined;
 
 /**
@@ -1550,8 +1551,8 @@ export class ObjectRegistry {
   }
 
   /**
-   * Old name → claiming current names across every manifest this process can
-   * see: loaded caches AND every discoverable package's manifest, which this
+   * Old-name claims and defined class names across every manifest this
+   * process can see: loaded caches AND every discoverable package's manifest, which this
    * also loads into the cache so registration-time checks see it (#3338).
    * Rebuilt only when the registry generation moves, so repeated lookups of
    * a stale or unknown old name do not rescan every installed manifest.
@@ -1560,9 +1561,9 @@ export class ObjectRegistry {
     loadExternalManifest: (
       packageName: string,
     ) => Promise<SmartObjectManifest | null>,
-  ): Promise<Map<string, Set<string>>> {
+  ): Promise<ManifestAliasInventory> {
     if (manifestAliasInventory?.generation === getRegistryGeneration()) {
-      return manifestAliasInventory.claims;
+      return manifestAliasInventory.inventory;
     }
     let packages: string[] = [];
     try {
@@ -1575,14 +1576,17 @@ export class ObjectRegistry {
     for (const packageName of packages) {
       await loadExternalManifest(packageName);
     }
-    const claims = collectManifestAliasClaims([
+    const inventory = collectManifestAliasInventory([
       ...getManifestCache().values(),
       getStaticManifestCache(),
       getTestManifestCache(),
       getLocalTestManifestCache(),
     ]);
-    manifestAliasInventory = { generation: getRegistryGeneration(), claims };
-    return claims;
+    manifestAliasInventory = {
+      generation: getRegistryGeneration(),
+      inventory,
+    };
+    return inventory;
   }
 
   /**

@@ -116,6 +116,7 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
   afterEach(() => {
     getManifestCache().delete(NEW_PKG);
     getManifestCache().delete(RIVAL_PKG);
+    getManifestCache().delete(OLD_PKG);
     ObjectRegistry.clearDiagnostics();
     restoreRegistry();
   });
@@ -579,6 +580,66 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
         QUALIFIED_NAME_ALIAS_COLLISION,
       );
       expect([...ObjectRegistry.getAllClasses().keys()]).toEqual([]);
+    });
+
+    function cacheSuccessorAndOldPackage(oldListsClass: boolean): void {
+      getManifestCache().set(NEW_PKG, {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: NEW_PKG,
+        objects: { [CURRENT]: MOVED },
+      });
+      // A stale old package version still DEFINING the class (no aliases),
+      // or — the legitimate move — the old package without it.
+      const other = objectDef('Unrelated', OLD_PKG);
+      getManifestCache().set(OLD_PKG, {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: OLD_PKG,
+        objects: oldListsClass
+          ? {
+              [OLD]: objectDef('MovedThing', OLD_PKG),
+              [`${OLD_PKG}:Unrelated`]: other,
+            }
+          : { [`${OLD_PKG}:Unrelated`]: other },
+      });
+    }
+
+    it('refuses a successor whose old name a stale manifest still defines (current name first)', async () => {
+      cacheSuccessorAndOldPackage(true);
+      await expect(
+        ObjectRegistry.resolveQualifiedNameAsync(CURRENT),
+      ).rejects.toMatchObject({ code: QUALIFIED_NAME_ALIAS_COLLISION });
+      expect(ObjectRegistry.getClassByQualifiedName(CURRENT)).toBeUndefined();
+      // The old name then resolves to its own (stale) definition, never to
+      // the successor.
+      await ObjectRegistry.tryLoadFromExternalPackage(OLD);
+      expect(ObjectRegistry.getClassByQualifiedName(OLD)?.qualifiedName).toBe(
+        OLD,
+      );
+    });
+
+    it('refuses a successor whose old name a stale manifest still defines (old name first)', async () => {
+      cacheSuccessorAndOldPackage(true);
+      await expect(ObjectRegistry.resolveQualifiedNameAsync(OLD)).resolves.toBe(
+        OLD,
+      );
+      await expect(
+        ObjectRegistry.resolveQualifiedNameAsync(CURRENT),
+      ).rejects.toMatchObject({ code: QUALIFIED_NAME_ALIAS_COLLISION });
+      expect(ObjectRegistry.getClassByQualifiedName(OLD)?.qualifiedName).toBe(
+        OLD,
+      );
+    });
+
+    it('still resolves the legitimate move once the old manifest no longer lists the class', async () => {
+      cacheSuccessorAndOldPackage(false);
+      await expect(
+        ObjectRegistry.resolveQualifiedNameAsync(CURRENT),
+      ).resolves.toBe(CURRENT);
+      await expect(ObjectRegistry.resolveQualifiedNameAsync(OLD)).resolves.toBe(
+        CURRENT,
+      );
     });
 
     it('still reports an unknown old name as not loadable', async () => {

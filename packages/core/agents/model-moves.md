@@ -67,8 +67,10 @@ MCP/CLI/REST generation, knowledge surfaces and every other iteration see one
 entry per class. Registration refuses ambiguity with
 `CONFIG_QUALIFIED_NAME_ALIAS_COLLISION` when an alias equals a live class's
 qualified name (in either registration order) or when two classes claim one old
-name. That includes a competing claim in any loaded manifest, so registration
-refuses an alias another installed package also declares. A lazy load of a
+name. That includes any loaded manifest: registration refuses an alias that
+another installed package also declares, or that an installed manifest still
+defines as a class, for example a stale old package version. A re-exported
+constructor is not a definition. A lazy load of a
 manifest that declares aliases first loads every discoverable manifest. That
 inventory is cached per registry generation, so the check applies whether the
 class is requested by its current name or by an old one. It refuses `CONFIG_QUALIFIED_NAME_ALIAS_INVALID` when an entry is not

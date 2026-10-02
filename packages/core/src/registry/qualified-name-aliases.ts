@@ -308,7 +308,7 @@ export function assertQualifiedNameAliasesAvailable(
   if (seen.size > 0) {
     assertNoCompetingManifestClaims(
       seen,
-      collectManifestAliasClaims(loadedManifests()),
+      collectManifestAliasInventory(loadedManifests()),
       entry.qualifiedName ?? self,
     );
   }
@@ -338,45 +338,72 @@ function manifestObjectQualifiedName(
 }
 
 /**
- * Old name → the distinct current qualified names claiming it, across
- * `manifests` (one manifest may appear twice, e.g. cached and static; the
- * same class claiming twice is one claim).
+ * What a set of manifests says about qualified names (#3338): which classes
+ * claim each old name, and which qualified names the manifests DEFINE as
+ * classes of their own (installed but possibly unregistered).
  */
-export function collectManifestAliasClaims(
+export interface ManifestAliasInventory {
+  /** Old name → distinct current names claiming it. */
+  claims: Map<string, Set<string>>;
+  /** Every qualified name a manifest defines as a class. */
+  defined: Set<string>;
+}
+
+/**
+ * Index `manifests` (one manifest may appear twice, e.g. cached and static;
+ * the same class claiming twice is one claim). A re-exported constructor is
+ * not a definition: manifests list only classes a package declares.
+ */
+export function collectManifestAliasInventory(
   manifests: Iterable<SmartObjectManifest | null | undefined>,
-): Map<string, Set<string>> {
+): ManifestAliasInventory {
   const claims = new Map<string, Set<string>>();
+  const defined = new Set<string>();
   for (const manifest of manifests) {
     if (!manifest?.objects) continue;
     for (const [key, objectDef] of Object.entries(manifest.objects)) {
-      const aliases = readPreviousQualifiedNames(objectDef?.decoratorConfig);
-      if (aliases.length === 0) continue;
       const current = manifestObjectQualifiedName(manifest, key, objectDef);
       if (!current) continue;
-      for (const alias of aliases) {
+      defined.add(current);
+      for (const alias of readPreviousQualifiedNames(
+        objectDef?.decoratorConfig,
+      )) {
         const owners = claims.get(alias) ?? new Set<string>();
         owners.add(current);
         claims.set(alias, owners);
       }
     }
   }
-  return claims;
+  return { claims, defined };
 }
 
 /**
- * THE manifest-claim rule (#3338): an old name may be claimed by one class
- * only. Throws when any of `aliases` is claimed in `claims` by a class other
- * than `owner` (or, with no `owner`, by more than one class).
+ * THE manifest rule for old names (#3338). Throws when any of `aliases`:
+ *
+ * - is defined as a class by a manifest in `inventory` — an installed
+ *   (possibly stale) package still ships the old class, so the old name is
+ *   live, not deprecated;
+ * - is claimed by a class other than `owner` (or, with no `owner`, by more
+ *   than one class).
  *
  * @throws {ConfigurationError} `CONFIG_QUALIFIED_NAME_ALIAS_COLLISION`
  */
 export function assertNoCompetingManifestClaims(
   aliases: Iterable<string>,
-  claims: Map<string, Set<string>>,
+  inventory: ManifestAliasInventory,
   owner?: string,
 ): void {
   for (const alias of aliases) {
-    const owners = new Set(claims.get(alias) ?? []);
+    if (inventory.defined.has(alias)) {
+      const claimants = [...(inventory.claims.get(alias) ?? [])];
+      if (owner && !claimants.includes(owner)) claimants.push(owner);
+      throw collision(
+        `previousQualifiedNames "${alias}" is still defined as a class by an installed manifest (claimed by ${claimants.sort().join(', ') || 'no class'}). ` +
+          'An alias may only name a class that no longer exists; remove the stale package/manifest or the alias.',
+        { alias, claimants: claimants.sort(), definedByManifest: true },
+      );
+    }
+    const owners = new Set(inventory.claims.get(alias) ?? []);
     if (owner) owners.add(owner);
     if (owners.size > 1) {
       const sorted = [...owners].sort();
@@ -400,7 +427,8 @@ function loadedManifests(): Array<SmartObjectManifest | null | undefined> {
 }
 
 /**
- * The single current owner of `alias` in a claim inventory, or `undefined`.
+ * The single current owner of `alias` in an inventory, or `undefined` —
+ * also when a manifest defines `alias` as a class of its own.
  * Two distinct claimants are refused rather than resolved first-match: an
  * old name can resolve to only one class, on the lazy path as on the eager
  * one.
@@ -408,9 +436,11 @@ function loadedManifests(): Array<SmartObjectManifest | null | undefined> {
  * @throws {ConfigurationError} `CONFIG_QUALIFIED_NAME_ALIAS_COLLISION`
  */
 export function resolveManifestQualifiedNameAlias(
-  claims: Map<string, Set<string>>,
+  inventory: ManifestAliasInventory,
   alias: string,
 ): string | undefined {
-  assertNoCompetingManifestClaims([alias], claims);
-  return [...(claims.get(alias) ?? [])][0];
+  // A name some manifest defines as a class is not an alias to follow.
+  if (inventory.defined.has(alias)) return undefined;
+  assertNoCompetingManifestClaims([alias], inventory);
+  return [...(inventory.claims.get(alias) ?? [])][0];
 }
