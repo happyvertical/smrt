@@ -2,7 +2,12 @@ import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
-import { createControlInteractionRegistry } from '../control-interaction.js';
+import {
+  type ControlCommand,
+  type ControlInteractionRegistry,
+  createControlInteractionRegistry,
+  executeLocalControlCommand,
+} from '../control-interaction.js';
 import Listbox from '../Listbox.svelte';
 import Fixture from './listbox-form.fixture.svelte';
 
@@ -198,6 +203,157 @@ describe('Listbox reset listener ordering', () => {
     await settleReset();
     expect(new FormData(target).getAll('choice')).toEqual(['changed']);
     expect(onChange).not.toHaveBeenCalled();
+    await view.unmount();
+    target.remove();
+  });
+});
+
+function dispatchLocalCommand(
+  registry: ControlInteractionRegistry,
+  command: ControlCommand,
+) {
+  const target = new EventTarget();
+  let pending: ReturnType<typeof executeLocalControlCommand> | undefined;
+  target.addEventListener(
+    'click',
+    (event) => {
+      pending = executeLocalControlCommand(registry, command, event);
+    },
+    { once: true },
+  );
+  target.dispatchEvent(new Event('click'));
+  if (!pending) throw new Error('local command handler did not run');
+  return pending;
+}
+
+describe('Listbox reset registry currency', () => {
+  it.each([
+    false,
+    true,
+  ])('keeps staged proposal currency correct when cancellation is %s', async (cancel) => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(Fixture, { props: { ...{ value: 42 }, registry } });
+    const identity = { formId: 'vendor-form', controlId: 'vendor' };
+    const target = form() as HTMLFormElement;
+    await userEvent.click(
+      screen.getByRole('option', { name: 'Steel supplier' }),
+    );
+    expect(
+      (
+        await registry.execute(
+          { action: 'stage', identity, value: 42 },
+          { source: 'agent' },
+        )
+      ).ok,
+    ).toBe(true);
+    if (cancel)
+      target.addEventListener('reset', (event) => event.preventDefault());
+    target.reset();
+    await settleReset();
+    expect(registry.get(identity)?.state.staged?.stale).toBe(!cancel);
+    const applied = await dispatchLocalCommand(registry, {
+      action: 'apply',
+      identity,
+    });
+    expect(applied.ok).toBe(cancel);
+    if (!cancel) {
+      expect(applied.reason).toBe('staged_value_stale');
+      expect(new FormData(target).getAll('vendor')).toEqual(['42']);
+    }
+  });
+
+  it.each([
+    false,
+    true,
+  ])('preserves reset over an async local clear when cancellation is %s', async (cancel) => {
+    let releasePolicy!: () => void;
+    let policyStarted!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      releasePolicy = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      policyStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy: async (command) => {
+        if (command.action === 'clear') {
+          policyStarted();
+          await blocked;
+        }
+        return { allowed: true };
+      },
+    });
+    render(Fixture, { props: { ...{ value: 42 }, registry } });
+    const identity = { formId: 'vendor-form', controlId: 'vendor' };
+    const target = form() as HTMLFormElement;
+    await userEvent.click(
+      screen.getByRole('option', { name: 'Steel supplier' }),
+    );
+    const clearing = dispatchLocalCommand(registry, {
+      action: 'clear',
+      identity,
+    });
+    await started;
+    if (cancel)
+      target.addEventListener('reset', (event) => event.preventDefault());
+    target.reset();
+    await settleReset();
+    releasePolicy();
+    const result = await clearing;
+    await tick();
+    expect(result.ok).toBe(cancel);
+    if (!cancel) expect(result.reason).toBe('staged_value_stale');
+    expect(new FormData(target).getAll('vendor')).toEqual(
+      cancel ? [''] : ['42'],
+    );
+  });
+});
+
+describe('Listbox exact option identity posting', () => {
+  it.each([
+    false,
+    true,
+  ])('posts an enabled numeric option beside a disabled string collision in reversed order %s', async (reverse) => {
+    const target = document.createElement('form');
+    document.body.append(target);
+    const options = [
+      { value: 42, label: 'Numeric' },
+      { value: '42', label: 'Text', disabled: true },
+    ];
+    if (reverse) options.reverse();
+    const view = render(Listbox, {
+      target,
+      props: { options, label: 'Choice', name: 'choice', value: 42 },
+    });
+    expect(new FormData(target).getAll('choice')).toEqual(['42']);
+    expect(screen.getByRole('option', { name: 'Numeric' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await view.rerender({ value: undefined });
+    await userEvent.click(screen.getByRole('option', { name: 'Numeric' }));
+    expect(new FormData(target).getAll('choice')).toEqual(['42']);
+    expect(screen.getByRole('option', { name: 'Numeric' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await view.rerender({
+      value: 42,
+      options: options.map((option) => ({
+        ...option,
+        disabled: option.value === 42,
+      })),
+    });
+    expect(new FormData(target).getAll('choice')).toEqual([]);
+    await userEvent.click(screen.getByRole('option', { name: 'Text' }));
+    expect(new FormData(target).getAll('choice')).toEqual(['42']);
+    expect(screen.getByRole('option', { name: 'Text' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     await view.unmount();
     target.remove();
   });

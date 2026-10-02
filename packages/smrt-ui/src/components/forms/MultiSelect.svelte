@@ -159,6 +159,11 @@ $effect(() => {
         return;
       values = [...initialValues];
       closeOptions();
+      recordControlUserEdit(
+        interactionContext,
+        controlId,
+        interaction === false ? undefined : interaction?.subject,
+      );
       onvalueschange?.(values);
     });
     timers.add(timer);

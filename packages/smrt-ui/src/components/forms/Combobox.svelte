@@ -202,6 +202,11 @@ $effect(() => {
       query = labelForValue(initialValue);
       typed = false;
       open = false;
+      recordControlUserEdit(
+        interactionContext,
+        controlId,
+        interaction === false ? undefined : interaction?.subject,
+      );
       onvaluechange?.(value);
     });
     timers.add(timer);

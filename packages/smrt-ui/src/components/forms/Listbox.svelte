@@ -14,6 +14,7 @@ import {
   tryGetControlInteractionContext,
 } from './control-interaction-context.js';
 import {
+  matchingOption,
   prepareEnabledOptionValue,
   validatesEnabledOption,
 } from './control-value-validation.js';
@@ -57,7 +58,7 @@ const controlId = $derived(
     : (interaction?.id ?? name ?? `listbox-${instanceId}`),
 );
 function select(next: unknown, userEdit = false) {
-  const option = options.find((item) => String(item.value) === String(next));
+  const option = matchingOption(options, next);
   if (!option || option.disabled || disabled) return;
   const changed = !Object.is(value, option.value);
   value = option.value;
@@ -105,6 +106,11 @@ $effect(() => {
       )
         return;
       value = initialValue;
+      recordControlUserEdit(
+        interactionContext,
+        controlId,
+        interaction === false ? undefined : interaction?.subject,
+      );
       if (value !== undefined) onvaluechange?.(value);
     });
     timers.add(timer);
@@ -151,7 +157,7 @@ useControlRegistration(() => {
 <div bind:this={rootEl} class="listbox {className}" role="listbox" aria-label={label} aria-disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
-  {#if name}<input type="hidden" {name} value={value ?? ''} disabled={disabled || options.some((option) => String(option.value) === String(value) && option.disabled)} />{/if}
+  {#if name}<input type="hidden" {name} value={value ?? ''} disabled={disabled || matchingOption(options, value)?.disabled} />{/if}
   {#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" aria-selected={value === option.value}
     disabled={disabled || option.disabled} tabindex={value === option.value || (value === undefined && index === 0) ? 0 : -1}
     onkeydown={(event) => move(event, index)} onclick={() => select(option.value, true)}>{option.label}</button>{/each}
