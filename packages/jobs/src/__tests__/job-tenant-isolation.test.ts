@@ -24,7 +24,7 @@ beforeEach(() => {
 
 afterEach(() => {
   disableTenancy();
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
 });
 
 /**

@@ -110,17 +110,17 @@ function getObjectTypeName(instance: SmrtObject): string {
 // `SmrtObjectOptions`, breaking the documented `withBackgroundJobs(Document)`
 // API for consumers.
 type SmrtObjectConstructor = new (...args: never[]) => SmrtObject;
-type BackgroundCapableConstructor<T extends SmrtObjectConstructor> = T & {
+type BackgroundCapableConstructor<T extends SmrtObjectConstructor> = {
   new (...args: ConstructorParameters<T>): InstanceType<T> & BackgroundCapable;
-};
+} & T;
 
 // Compile-time regression guard (#1658, PR #1658): a typed-options SmrtObject
 // subclass constructor — the documented `withBackgroundJobs(Document)` pattern,
 // where a model's ctor is `(options?: SomeOptions)` — MUST satisfy the
 // constraint. A `unknown[]` rest param (instead of `never[]`) makes this
 // resolve to `false` and fails the build, since `unknown` is not assignable to
-// the typed options parameter. Test files are excluded from `tsc`, so this
-// lives in typechecked source rather than a `*.test.ts`.
+// the typed options parameter. Keep this guard in production source so the
+// published constructor declaration stays checked during builds as well.
 type AssertTrue<T extends true> = T;
 type _TypedOptionsCtorStaysAssignable = AssertTrue<
   (new (
