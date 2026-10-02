@@ -39,6 +39,8 @@ export {
   type WorkerKind,
 } from './launchers.js';
 export {
+  isStaleOperationLock,
+  lockOwnerPid,
   type OperationLock,
   processExists,
   withOperationLock,
@@ -56,6 +58,7 @@ export {
   type ImportExecutor,
   type ImportResult,
   importApplication,
+  importedRowsMatchBundle,
   type LogicalExportBundle,
   type ManifestTable,
   manifestTables,
@@ -78,10 +81,12 @@ export {
   collectFilesystemAssets,
   digestBytes,
   finishFilesystemAssets,
+  hasCommittedImportJournal,
   MAX_ASSET_BYTES,
   MAX_ASSET_COUNT,
   MAX_BUNDLE_BYTES,
   MAX_TOTAL_ASSET_BYTES,
+  markFilesystemAssetsCommitted,
   type PortableRow,
   type PortableTable,
   publishFilesystemAssets,
@@ -100,15 +105,18 @@ export {
   matchesApplicationProcess,
   readOwnedProcess,
   sendTerminationSignal,
+  verifyOwnedProcess,
   WEB_LAUNCHER_NAME,
   writeProcessRecord,
 } from './process-record.js';
 export {
   createProviderReadinessProbe,
+  findInstalledPackage,
   PROVIDER_READINESS_SETTINGS,
   type ProviderReadinessOptions,
   type ReadinessComponent,
   type ReadinessContext,
+  resolvePackageEntry,
   resolveReadinessModule,
 } from './provider-readiness.js';
 export {
@@ -122,6 +130,11 @@ export {
   runtimeEnvironment,
   webLauncherPath,
 } from './runtime.js';
+export {
+  RECLAIM_MUTEX_FILE,
+  type ReclaimOutcome,
+  reclaimStaleRecord,
+} from './stale-reclaim.js';
 export {
   type AcquireWriterLeaseOptions,
   acquireWriterLease,

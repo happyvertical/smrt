@@ -9,12 +9,13 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -146,6 +147,51 @@ describe('smrt app dev/build/vite', () => {
       's-m-r-t Vite launcher: The installed Vite package CLI is missing; reinstall dependencies.\n',
     );
   });
+});
+
+describe('child process output (R2)', () => {
+  it.skipIf(!existsSync(distEntry))(
+    'a failing real smrt db:migrate child never prints the database credentials',
+    () => {
+      const app = application();
+      writeFileSync(
+        join(app, 'smrt.config.js'),
+        `export default {
+          runtime: { profile: 'self-hosted' },
+          packages: { cli: { database: { type: 'postgres', url: process.env.DATABASE_URL }, verbose: true } },
+        };\n`,
+      );
+      mkdirSync(join(app, '.smrt'));
+      const usersManifest = join(
+        packageRoot,
+        'node_modules',
+        '@happyvertical',
+        'smrt-users',
+        'dist',
+        'manifest.json',
+      );
+      writeFileSync(
+        join(app, '.smrt', 'manifest.json'),
+        readFileSync(usersManifest),
+      );
+      const result = smrt(app, ['migrate'], {
+        ...process.env,
+        XDG_STATE_HOME: join(app, '..', `${basename(app)}-state`),
+        DATABASE_URL:
+          'postgresql://owner:SENTINEL-PASSWORD-7731@127.0.0.1:1/app?password=SENTINEL-QUERY-7731',
+      });
+      rmSync(join(app, '..', `${basename(app)}-state`), {
+        recursive: true,
+        force: true,
+      });
+      const output = `${result.stdout}${result.stderr}`;
+      expect(result.status).toBe(1);
+      // The child really reached the database (and printed about it).
+      expect(output).toContain('Connected to postgresql://owner:***@');
+      expect(output).toContain('Migration failed');
+      expect(output).not.toContain('SENTINEL');
+    },
+  );
 });
 
 describe('smrt app process contract', () => {
