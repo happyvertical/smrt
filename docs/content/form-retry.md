@@ -175,7 +175,10 @@ retry is byte-identical and is the same claim.
 - For state-driven forms, `retry.restored` exposes the draft (`fields`,
   `files`, `values`, `savedAt`) to read yourself instead of attaching.
 - `retry.discard()` is the "start over" control: it drops the draft and
-  rotates the key.
+  rotates the key, and returns `true`. While a submit is in flight it is
+  refused and returns `false` without changing anything — that request may
+  already have written, and an unchanged resend after a lost response must
+  still carry its key. Disable the control while `$retry.inFlight` is set.
 
 ### Files
 

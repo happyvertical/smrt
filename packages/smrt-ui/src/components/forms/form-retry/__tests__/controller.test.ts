@@ -766,3 +766,37 @@ describe('a custom result callback decides the reset', () => {
     }
   });
 });
+
+describe('discard() while a submit is in flight', () => {
+  it('is refused: the key and the draft stay with the unresolved submit', async () => {
+    const storage = memoryStorage();
+    const { form, server, retry, kit } = setup({
+      storage,
+      restore: { owner: 'person-1' },
+    });
+    fill(form, { title: 'Hose' });
+    const token = retry.token;
+    server.next('lost-response');
+    const held = server.hold();
+    const pending = kit.submit();
+    await vi.waitFor(() => expect(retry.state.status).toBe('submitting'));
+
+    const refused = retry.discard();
+    held.release();
+    await pending;
+    expect(retry.state.status).toBe('transport-error');
+    expect(retry.token).toBe(token);
+    expect(storage.store.has('smrt:form-retry:report:draft')).toBe(true);
+    // The unchanged resend is the same claim: ONE row.
+    await kit.submit();
+    expect(server.rows).toHaveLength(1);
+    expect(server.requests[1].get('submissionKey')).toBe(token);
+    expect(refused).toBe(false);
+    // Once settled, discard works again.
+    expect(storage.store.has('smrt:form-retry:report:draft')).toBe(false);
+    fill(form, { title: 'Other' });
+    const next = retry.token;
+    expect(retry.discard()).toBe(true);
+    expect(retry.token).not.toBe(next);
+  });
+});

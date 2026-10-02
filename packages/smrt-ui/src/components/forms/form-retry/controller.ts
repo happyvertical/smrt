@@ -220,8 +220,15 @@ export interface FormRetry {
   /**
    * Abandon this fill: drop the stored draft and rotate the key, so the next
    * submit is a new submission. For a "start over" control.
+   *
+   * Refused while a submit is in flight: that request may already have
+   * written, and if its response is lost the unchanged resend must still
+   * carry its key (and a reload must still find its draft). Returns `false`
+   * and changes nothing then; disable the control while
+   * `$retry.inFlight` is set, or call it again once the submit settles.
+   * Returns `true` when the fill was discarded.
    */
-  discard(): void;
+  discard(): boolean;
 }
 
 const DEFAULT_FIELD = 'submissionKey';
@@ -549,14 +556,16 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
     };
   }
 
-  function discard(): void {
+  function discard(): boolean {
+    if (slot.inFlight !== null) return false;
     clearDraft();
     restored = null;
     writeSlot({
       token: rotateSubmissionKey(location),
-      inFlight: slot.inFlight,
+      inFlight: null,
     });
     setState({ status: 'idle', restored: false, filesToReselect: [] });
+    return true;
   }
 
   return {
