@@ -905,3 +905,58 @@ describe('restore with a store that refuses to remove the draft', () => {
     expect(remounted.restored).toBeNull();
   });
 });
+
+describe('page-managed hidden fields', () => {
+  const NONCE_FORM = `${FORM_HTML}<input type="hidden" name="csrf" value="n-1" />`;
+
+  it('a hidden field the page rewrites after submit keeps the form (safe direction)', async () => {
+    const { form, retry, kit } = setup(
+      { storage: memoryStorage() },
+      NONCE_FORM,
+    );
+    fill(form, { title: 'Hose' });
+    const token = retry.token;
+    const held = kit.submit();
+    fill(form, { csrf: 'n-2' });
+    await held;
+    expect(kit.updates).toEqual([{ reset: false }]);
+    expect(fieldValue(form, 'title')).toBe('Hose');
+    expect(retry.token).toBe(token);
+  });
+
+  it('ignoreFields leaves such a field out of the comparison', async () => {
+    const { form, retry, kit } = setup(
+      { storage: memoryStorage(), ignoreFields: ['csrf'] },
+      NONCE_FORM,
+    );
+    fill(form, { title: 'Hose' });
+    const token = retry.token;
+    const held = kit.submit();
+    fill(form, { csrf: 'n-2' });
+    await held;
+    expect(kit.updates).toEqual([{ reset: true }]);
+    expect(fieldValue(form, 'title')).toBe('');
+    expect(retry.token).not.toBe(token);
+  });
+
+  it('a custom key field name rotating never looks like an edit', async () => {
+    const form = mountForm();
+    const retry = createFormRetry({
+      form: 'report',
+      storage: memoryStorage(),
+      fieldName: 'retryKey',
+    });
+    retry.attach(form);
+    const kit = fakeEnhance(
+      form,
+      retry.enhance(),
+      fakeRunOnceServer('retryKey'),
+    );
+    fill(form, { title: 'Hose' });
+    const token = retry.token;
+    await kit.submit();
+    expect(kit.updates).toEqual([{ reset: true }]);
+    expect(retry.token).not.toBe(token);
+    expect(fieldValue(form, 'retryKey')).toBe(retry.token);
+  });
+});

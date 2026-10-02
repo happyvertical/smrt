@@ -135,6 +135,18 @@ export const actions = {
 | `redirect` | kept (rotated with `redirectConfirmsWrite: true`) | as SvelteKit does | kept (dropped when confirmed) |
 | A late answer to a submit already settled | unchanged | unchanged | unchanged |
 
+"Unchanged since submit" compares everything the form would post, hidden
+inputs included — `Listbox`, `Combobox`, `MultiSelect`, `TagsInput` and the
+smrt-svelte money/measurement/date-range inputs post through hidden inputs, so
+a selection changed while the submit is in flight counts as an edit and
+survives the success. Only the retry key field (`fieldName`) is left out, since
+it rotates by design. A hidden field your page rewrites on its own after a
+submit (a CSRF nonce, a server timestamp) therefore keeps the form and its key
+after a success: the safe direction, nothing is lost, but nothing is reset
+either. Name such fields in `ignoreFields` to leave them out of the comparison:
+`createFormRetry({ form: 'report', ignoreFields: ['csrf'] })`. (It is not a
+storage rule; `restore.exclude` keeps fields out of the restore draft.)
+
 Why the key is kept when a confirmed write leaves content on screen: the form
 still shows something. If it is what was recorded, resubmitting it is the same
 claim and collapses onto the existing row; if it is new, its content differs
@@ -173,7 +185,42 @@ retry is byte-identical and is the same claim.
   while fresh (`maxAgeMs`, default one day, or your own `fresh(savedAt, now)`
   rule such as "same business day").
 - Password inputs and names in `restore.exclude` are never written to storage.
-  Hidden fields are not restored; carry their source state through `values`.
+- Hidden inputs are never written back into the form. A control that posts
+  through hidden inputs (`Listbox`, `Combobox`, `MultiSelect`, `TagsInput`)
+  renders them from its own state, so restore that state through `values`.
+  Declare the state before `createFormRetry()`, which calls `restore`
+  synchronously:
+
+  ```svelte
+  <script lang="ts">
+    import { Listbox } from '@happyvertical/smrt-ui/forms';
+    import { createFormRetry } from '@happyvertical/smrt-ui/form-retry';
+
+    let { data } = $props();
+    let unit = $state('pcs');
+    const units = ['pcs', 'ft'];
+
+    const retry = createFormRetry({
+      form: 'receipt',
+      restore: {
+        owner: `${data.tenantId}:${data.userId}`,
+        values: {
+          capture: () => ({ unit }),
+          restore: (stored) => {
+            const value = (stored as { unit?: unknown } | null)?.unit;
+            if (typeof value === 'string' && units.includes(value)) unit = value;
+          },
+        },
+      },
+    });
+  </script>
+
+  <Listbox name="unit" label="Unit" bind:value={unit}
+    options={units.map((value) => ({ value, label: value }))} />
+  ```
+
+  The restored selection re-renders the same hidden input, so the retry posts
+  byte-identical content.
 - `restore.values` keeps state that is not a form field — an uploaded asset's
   id, a signature capture key — so it is not captured twice:
   `values: { capture: (formData) => ({ photoKeys }), restore: (v) => { photoKeys = parsePhotoKeys(v) } }`.

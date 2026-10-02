@@ -77,6 +77,29 @@ describe('draftChanged', () => {
     expect(draftChanged(form, submitted)).toBe(false);
   });
 
+  it('sees a hidden input a control posts through (a Listbox selection)', () => {
+    const form = formOf(
+      `${ENTRY_FORM}<input type="hidden" name="choice" value="a" />`,
+    );
+    const submitted = draftOf(form);
+    field(form, '[name=choice]').value = 'b';
+    expect(draftChanged(form, submitted)).toBe(true);
+  });
+
+  it('ignores exactly the fields it is told to — the configured key field', () => {
+    const form = formOf(`
+      <input type="hidden" name="retryKey" value="k-1" />
+      <input type="hidden" name="choice" value="a" />
+    `);
+    const ignore = new Set(['retryKey']);
+    const submitted = draftOf(form, ignore);
+    field(form, '[name=retryKey]').value = 'k-2';
+    expect(draftChanged(form, submitted, ignore)).toBe(false);
+    expect(formWasCleared(form, submitted, ignore)).toBe(true);
+    field(form, '[name=choice]').value = 'b';
+    expect(draftChanged(form, submitted, ignore)).toBe(true);
+  });
+
   it('notices a field being cleared, a control removed, and a repeated name', () => {
     let form = formOf(ENTRY_FORM);
     let submitted = draftOf(form);

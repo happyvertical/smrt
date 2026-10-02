@@ -15,9 +15,14 @@
  * next entry a fresh form with a fresh key. If they do not, the person has
  * moved on and their work is kept.
  *
- * Only controls a PERSON edits are compared. Hidden fields are excluded on
- * purpose: the submission key is rotated by a confirmed write, so including it
- * would make every form look edited and nothing would ever reset.
+ * Every control that posts a value is compared, hidden inputs included: a
+ * `Listbox`, `Combobox` or `MultiSelect` posts its selection through hidden
+ * inputs, and a selection changed while a submit is in flight is an edit the
+ * server has never seen. The ONE exception is the retry helper's own key field
+ * (and any name the caller adds to `ignore`): a confirmed write rotates it, so
+ * comparing it would make every form look edited and nothing would ever
+ * reset. A page-managed hidden field that changes after a submit (a rewritten
+ * nonce) therefore keeps the form — the safe direction — unless it is ignored.
  *
  * Files are compared as the browser would post them. A control can contribute
  * a file no element shows: a capture field on the `formdata`-event fallback
@@ -32,6 +37,13 @@
 /** The values a person can see and change, keyed by position and name. */
 export type FormDraft = ReadonlyMap<string, string>;
 
+/**
+ * The names left out of the comparison by default: the controller's default
+ * key field. `createFormRetry()` passes its configured field name (plus
+ * `ignoreFields`) instead.
+ */
+const DEFAULT_IGNORED: ReadonlySet<string> = new Set(['submissionKey']);
+
 function isEditableControl(element: Element): element is HTMLElement {
   if (
     !(element instanceof HTMLInputElement) &&
@@ -43,7 +55,6 @@ function isEditableControl(element: Element): element is HTMLElement {
   if (element instanceof HTMLInputElement) {
     const type = element.type;
     if (
-      type === 'hidden' ||
       type === 'submit' ||
       type === 'button' ||
       type === 'reset' ||
@@ -78,13 +89,22 @@ function controlValue(element: HTMLElement): string {
   return (element as HTMLTextAreaElement | HTMLSelectElement).value;
 }
 
-/** What the person could see in `form` at this moment. */
-export function draftOf(form: HTMLFormElement): FormDraft {
+/**
+ * What `form` would post at this moment, as far as an edit can change it:
+ * every value-carrying control except the names in `ignore` (by default the
+ * `submissionKey` key field).
+ */
+export function draftOf(
+  form: HTMLFormElement,
+  ignore: ReadonlySet<string> = DEFAULT_IGNORED,
+): FormDraft {
   const draft = new Map<string, string>();
   let index = 0;
   for (const element of Array.from(form.elements)) {
     if (!isEditableControl(element)) continue;
-    const name = (element as HTMLInputElement).name || `#${index}`;
+    const controlName = (element as HTMLInputElement).name;
+    if (controlName && ignore.has(controlName)) continue;
+    const name = controlName || `#${index}`;
     // Several controls can share a name (a radio group, repeated fields); the
     // index keeps them distinct so a change in any one of them is visible.
     draft.set(`${index}:${name}`, controlValue(element));
@@ -131,8 +151,9 @@ function postedFiles(form: HTMLFormElement): string {
 export function draftChanged(
   form: HTMLFormElement,
   submitted: FormDraft,
+  ignore: ReadonlySet<string> = DEFAULT_IGNORED,
 ): boolean {
-  const now = draftOf(form);
+  const now = draftOf(form, ignore);
   if (now.size !== submitted.size) return true;
   for (const [key, value] of now) {
     if (submitted.get(key) !== value) return true;
@@ -161,7 +182,8 @@ export function draftChanged(
 export function formWasCleared(
   form: HTMLFormElement,
   submitted: FormDraft,
+  ignore: ReadonlySet<string> = DEFAULT_IGNORED,
 ): boolean {
   if (!form.isConnected) return false;
-  return !draftChanged(form, submitted);
+  return !draftChanged(form, submitted, ignore);
 }

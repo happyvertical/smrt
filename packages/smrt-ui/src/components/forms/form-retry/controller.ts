@@ -173,6 +173,14 @@ export interface FormRetryOptions {
   scope?: string;
   /** Hidden field that carries the key. Default `submissionKey`. */
   fieldName?: string;
+  /**
+   * Fields whose change after a submit is not an edit, left out of the
+   * "unchanged since submit" check that decides the success reset — e.g. a
+   * hidden nonce the page rewrites. Every other control counts, hidden inputs
+   * included (choice controls post through them); the key field is always
+   * left out. Not a storage rule: use `restore.exclude` for that.
+   */
+  ignoreFields?: readonly string[];
   /** Backing store. Default `sessionStorage`; `null` keeps everything in memory. */
   storage?: FormRetryStorage | null;
   /** Exact storage name for the key (migration from an older name). */
@@ -252,6 +260,12 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
   const exclude = new Set<string>([
     fieldName,
     ...(restoreOptions?.exclude ?? []),
+  ]);
+  // Left out of the edit comparison: the key field (it rotates by design)
+  // and whatever the page says changes on its own.
+  const notEdits = new Set<string>([
+    fieldName,
+    ...(options.ignoreFields ?? []),
   ]);
 
   let slot: SubmissionSlot = {
@@ -390,7 +404,7 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
       // it did before calling this function. Snapshot it now, before awaiting
       // the page's submit function: an edit made while that is pending was
       // never sent, and must read as an edit when the result arrives.
-      const submitted: FormDraft = draftOf(formElement);
+      const submitted: FormDraft = draftOf(formElement, notEdits);
 
       let innerCancelled = false;
       let innerCallback: FormRetryResultCallback | undefined;
@@ -450,7 +464,7 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
         if (settled) return;
         settled = true;
         const { result } = resultInput;
-        const formCleared = formWasCleared(formElement, submitted);
+        const formCleared = formWasCleared(formElement, submitted, notEdits);
         // The default handling resets an unchanged form on success, so the key
         // retires now. A page's own result callback decides the reset itself
         // (`update({ reset: false })`, or no update at all), and values left on
