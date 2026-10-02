@@ -26,7 +26,7 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   # Only same-repository PRs check out their head. External forks retain the
-  # base revision; their reusable self-hosted workflows are skipped below.
+  # base revision; their reusable trusted-head workflows are skipped below.
   CHECKOUT_REF: >-
     ${{ github.event.pull_request.head.repo.full_name == github.repository &&
     github.event.pull_request.head.sha || github.sha }}
@@ -386,8 +386,7 @@ jobs:
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     # Deliberately below the 45-minute standard: this is GitHub-hosted, so it
-    # is not exposed to the self-hosted queue wait that makes low ceilings
-    # fragile there. Setup plus the audit and its policy check are bounded work
+    # has a bounded setup, audit, and policy check workload.
     # against the registry, so ten minutes is a hang guard against an
     # unresponsive registry rather than a capacity budget.
     timeout-minutes: 10
@@ -441,8 +440,8 @@ jobs:
 
   publish-dry-run:
     name: Publish Dry Run
-    # This gate is the canonical trusted-base self-hosted admission expression
-    # and stays byte-identical across every reusable or self-hosted job in this
+    # This gate is the canonical trusted-base admission expression and stays
+    # byte-identical across every reusable job in this
     # workflow (the former `hv-agent check-pr` rule was retired in
     # happyvertical/have-config#758), so the merge-queue-only narrowing for
     # #2214 item 4 lives inside publish-dry-run.yml instead.
@@ -473,7 +472,7 @@ jobs:
     runs-on: ubuntu-latest
     # Deliberately below the 45-minute standard. This aggregator does no
     # checkout and no work beyond reading `needs.*.result`, and it is
-    # GitHub-hosted, so it never waits in the self-hosted queue. It runs in
+    # GitHub-hosted and runs in
     # seconds; if it has not finished in five minutes it is stuck, and failing
     # fast is correct for a job that only reports other jobs' results.
     timeout-minutes: 5

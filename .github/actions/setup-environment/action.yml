@@ -36,10 +36,9 @@ inputs:
   turbo-cache-shim:
     description: >-
       Turborepo remote-cache shim backed by GitHub Actions cache. 'auto'
-      enables it only on GitHub-hosted runners; self-hosted pods receive the
-      internal Turbo cache server env from iac and must not have it shadowed.
-      'on' forces the shim everywhere (debug only: its GITHUB_ENV exports
-      override pod-injected process env). 'off' disables it everywhere.
+      enables it on GitHub-hosted runners. 'on' forces the shim (debug only:
+      its GITHUB_ENV exports override any existing Turbo cache environment).
+      'off' disables it everywhere.
     required: false
     default: 'auto'
 
@@ -70,7 +69,7 @@ runs:
         echo "Using runner temp directory at $temp_dir"
         echo "Using writable Corepack cache at $corepack_home"
 
-    # Check if Node.js is already installed with the required version (custom ARC runner)
+    # Reuse a compatible preinstalled Node.js version when one is available.
     - name: Check Node.js version
       id: node-check
       shell: bash
@@ -147,7 +146,7 @@ runs:
 
         echo "✓ Configured GitHub Packages auth for @happyvertical installs"
 
-    # Check if pnpm is already installed (custom ARC runner with corepack)
+    # Reuse a compatible preinstalled pnpm version when one is available.
     - name: Check pnpm
       id: pnpm-check
       shell: bash

@@ -74,7 +74,7 @@ jobs:
           trusted=true
           run=true
           if [ "$EVENT_NAME" = pull_request_target ]; then
-            # Fork code never runs on the self-hosted lane.
+            # Fork code never runs with trusted PR-head credentials.
             if [ "$HEAD_REPO" != "$REPOSITORY" ]; then trusted=false; fi
             if [ "$CODE_CHANGED" != true ]; then run=false; fi
           fi
@@ -87,9 +87,8 @@ jobs:
     name: Registered PostgreSQL Suites
     needs: scope
     if: needs.scope.outputs.run == 'true'
-    # The `services:` container needs the dind sidecar, so this stays on the
-    # general lane rather than arc-happyvertical-nodocker.
-    runs-on: arc-happyvertical
+    # GitHub-hosted Ubuntu supports service containers for the isolated suite.
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     # One shared service. CI_POSTGRES_BASE_URL keeps
     # scripts/run-with-ci-postgres.mjs on its managed path, so each package
@@ -193,7 +192,7 @@ jobs:
           fi
           if [ "$TRUSTED" != true ]; then
             echo "::error::External fork PRs are not validated on the" \
-                 "self-hosted PostgreSQL lane; a maintainer must land the change" \
+                 "PostgreSQL lane; a maintainer must land the change" \
                  "from a same-repository branch."
             exit 1
           fi
