@@ -891,6 +891,7 @@ function registerUntracked(
   const explicitPackageName = config.packageName;
   let promotedCollectionConstructor: RegisteredClass['collectionConstructor'];
   let promotedRuntimeConfig: SmartObjectConfig | undefined;
+  let isolatedSubtypeParent: [string, RegisteredClass] | undefined;
   let isolatedManifestEntry: SmartObjectDefinition | undefined;
 
   if (config._manifestKey) {
@@ -1177,6 +1178,13 @@ function registerUntracked(
     });
     if (incomingTable !== existing.schema?.tableName) continue;
     if (ctor.prototype instanceof existing.constructor) {
+      if (isolatedManifestEntry) {
+        // An isolated manifest owns all child metadata. Build a fresh entry
+        // below rather than retaining the parent's fields/schema/policy.
+        isolatedSubtypeParent = [key, existing];
+        promotedCollectionConstructor ??= existing.collectionConstructor;
+        break;
+      }
       upsertExistingEntry(key, existing);
       return;
     }
@@ -1185,7 +1193,11 @@ function registerUntracked(
 
   // 1. Exact-match check (existingKey === name)
   const exactExisting = getClasses().get(name);
-  if (exactExisting && !belongsToAnotherPackage(exactExisting)) {
+  if (
+    exactExisting &&
+    exactExisting !== isolatedSubtypeParent?.[1] &&
+    !belongsToAnotherPackage(exactExisting)
+  ) {
     const existing = exactExisting;
     const handled = applyRegisterCollisionPolicy({
       ctor,
@@ -1206,6 +1218,7 @@ function registerUntracked(
   //    other same-name-different-case collisions.
   const lowerName = name.toLowerCase();
   for (const [existingKey, existing] of getClasses().entries()) {
+    if (existing === isolatedSubtypeParent?.[1]) continue;
     const keyMatches = existingKey.toLowerCase() === lowerName;
     const nameMatches = existing.name?.toLowerCase() === lowerName;
     if (!(keyMatches || nameMatches) || existingKey === name) continue;
@@ -1866,6 +1879,19 @@ function registerUntracked(
   };
   // #3338: a deprecated alias must never name a second live class.
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
+  if (isolatedSubtypeParent) {
+    const [parentKey, parent] = isolatedSubtypeParent;
+    registration.replacedQualifiedNames = [
+      ...new Set([parentKey, ...(parent.replacedQualifiedNames ?? [])]),
+    ];
+    if (parentKey === registrationKey) registration.extends = parent.extends;
+    transferRuntimeOverride(parentKey, registrationKey);
+    getClasses().delete(parentKey);
+    invalidateInheritanceEntries(registration, {
+      name: parent.name,
+      qualifiedName: parent.qualifiedName,
+    });
+  }
   getClasses().set(registrationKey, registration);
 
   // Release B (#1133): case-insensitive lookups iterate the classes Map

@@ -311,6 +311,77 @@ describe('N-level same-table subtype replacement', () => {
     expect(ObjectRegistry.getTableName(childKey)).toBe('separate_records');
   });
 
+  for (const [packageName, restrictParent] of [
+    ['@fixture/isolated', false],
+    ['@fixture/isolated', true],
+    ['@fixture/runtime', false],
+  ] as const) {
+    it(`loads a same-table isolated subtype manifest and retains parent restrictions (${packageName}, ${restrictParent})`, () => {
+      const Base = model();
+      ObjectRegistry.register(Base, {
+        packageName: '@fixture/runtime',
+        tableName: 'override_records',
+        api: true,
+        cli: true,
+        mcp: true,
+        tenantScoped: { mode: 'optional' },
+      });
+      if (restrictParent) ObjectRegistry.registerOverride(key, closed);
+      const Child = class OverrideRecord extends Base {};
+      const childKey = `${packageName}:OverrideRecord`;
+      const definition = entry(packageName, key);
+      definition.fields.childValue = { type: 'text' };
+      definition.methods.childAction = {
+        name: 'childAction',
+        parameters: [],
+        returnType: 'void',
+      };
+      definition.schema!.columns.child_value = { type: 'TEXT' };
+      definition.schema!.version = 'child-schema';
+      if (!restrictParent)
+        definition.decoratorConfig = {
+          ...definition.decoratorConfig,
+          api: false,
+          cli: false,
+          mcp: false,
+          tenantScoped: { mode: 'required' },
+        };
+      ObjectRegistry.register(Child, {
+        packageName,
+        _manifestKey: childKey,
+        _manifest: {
+          version: '1.0.0',
+          timestamp: 0,
+          packageName,
+          objects: { [childKey]: definition },
+        },
+      });
+      const registered = ObjectRegistry.getClass(childKey)!;
+      expect(registered.fields.has('childValue')).toBe(true);
+      expect(registered.methods.has('childAction')).toBe(true);
+      expect(registered.schema?.columns.child_value).toBeDefined();
+      expect(registered.schema?.version).toBe('child-schema');
+      expect(Object.keys(ObjectRegistry.getAllSchemasAsDefinitions())).toEqual([
+        'override_records',
+      ]);
+      expect(registered.config.api).toBe(false);
+      expect(registered.config.cli).toBe(false);
+      expect(registered.config.mcp).toBe(false);
+      expect(registered.tenantScopedConfig?.mode).toBe('required');
+      expect(ObjectRegistry.getAllClasses().size).toBe(1);
+      ObjectRegistry.register(Base, {
+        packageName: '@fixture/runtime',
+        tableName: 'override_records',
+      });
+      expect(ObjectRegistry.getAllClasses().size).toBe(1);
+      expect(ObjectRegistry.getClass(childKey)?.constructor).toBe(Child);
+      if (restrictParent)
+        expect(ObjectRegistry.getRuntimeOverride(childKey)?.tenancy?.mode).toBe(
+          'required',
+        );
+    });
+  }
+
   it('rejects a cyclic qualified replacement chain', () => {
     ObjectRegistry.registerFromManifest(
       '@fixture/left:OverrideRecord',

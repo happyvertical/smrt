@@ -56,6 +56,61 @@ describe('required consumer tenancy overrides', () => {
       ),
     ).toThrow();
   });
+  it('requires context for descendants inheriting an overridden optional selector', async () => {
+    register();
+    const childKey = '@fixture/override:InheritedRuntimeTenantRecord';
+    ObjectRegistry.registerFromManifest(childKey, {
+      name: 'inheritedruntimetenantrecord',
+      className: 'InheritedRuntimeTenantRecord',
+      packageName: '@fixture/override',
+      extends: key,
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+    } as SmartObjectDefinition);
+    expect(getTenantScopedConfig(childKey)?.mode).toBe('required');
+    const interceptor = createTenantInterceptor();
+    const childContext = (operation: InterceptorContext['operation']) => ({
+      ...context(operation),
+      className: 'InheritedRuntimeTenantRecord',
+      qualifiedClassName: childKey,
+    });
+    expect(() =>
+      interceptor.beforeList?.(
+        'InheritedRuntimeTenantRecord',
+        {},
+        childContext('list'),
+      ),
+    ).toThrow();
+    expect(() =>
+      interceptor.beforeSave?.(
+        { tenantId: 'tenant-a' } as never,
+        childContext('save'),
+      ),
+    ).toThrow();
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      expect(
+        interceptor.beforeList?.(
+          'InheritedRuntimeTenantRecord',
+          {},
+          childContext('list'),
+        ),
+      ).toEqual({ where: { tenantId: 'tenant-a' } });
+      expect(() =>
+        interceptor.beforeSave?.(
+          { tenantId: 'tenant-a' } as never,
+          childContext('save'),
+        ),
+      ).not.toThrow();
+      expect(() =>
+        interceptor.beforeSave?.(
+          { tenantId: 'tenant-b' } as never,
+          childContext('save'),
+        ),
+      ).toThrow();
+    });
+  });
+
   for (const tenantId of ['tenant-a', 'tenant-b']) {
     it(`allows own reads and denies foreign ownership with context ${tenantId}`, async () => {
       register();

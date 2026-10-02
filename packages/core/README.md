@@ -721,7 +721,9 @@ configuration; a runtime override does not rewrite deployed route modules.
 
 Same-named subclasses that share their parent's table replace that parent, even
 across explicitly named packages and across more than two levels. Runtime
-registration uses constructor ancestry; manifests should qualify cross-package
+registration uses constructor ancestry; an isolated child manifest supplies its
+own fields, methods, schema, and policy while preserving inherited runtime
+restrictions. Manifests should qualify cross-package
 `extends` names. The deepest subtype wins, including parent replay and late
 intermediate manifests. Unrelated classes and sibling subtypes do not choose a
 winner by registration order: sharing their table still raises a collision.

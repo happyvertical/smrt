@@ -197,7 +197,8 @@ existing bypass behavior. Use bounded collection reads inside the callback.
 A consumer can strengthen an already tenant-scoped package model at startup with
 `ObjectRegistry.registerOverride(qualifiedName, { tenancy: { mode: 'required' } })`.
 This policy survives manifest/decorator re-registration and takes precedence over
-optional direct tenant registrations. It preserves the declared tenant field and
+optional direct tenant registrations, including when a descendant inherits that
+registration. It preserves the declared tenant field and
 filter/population settings; it cannot introduce tenancy or change schema. Continue
 to enable the tenancy interceptor. Explicit system/super-admin context keeps its
 existing bypass semantics. See smrt-core's consumer runtime restrictions contract.
