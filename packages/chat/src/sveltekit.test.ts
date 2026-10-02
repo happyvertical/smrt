@@ -937,6 +937,248 @@ describe('mountAssistantRoutes', () => {
     });
   });
 
+  // ---- 6c. reservation outcomes (review 2: M1-M3) --------------------------
+
+  describe('reservation outcomes', () => {
+    const pageTools = [
+      {
+        name: 'page_read',
+        description: 'Read the page.',
+        inputSchema: { type: 'object', properties: {} },
+        effect: 'read',
+      },
+    ];
+
+    /** An AI whose answer depends on the turn's own user message: `call:`
+     * asks for the browser tool once, anything else replies `reply <text>`. */
+    function turnAI(gates: Map<string, Promise<void>> = new Map()) {
+      return {
+        async chat(messages: AIMessage[]) {
+          const lastUser = [...messages]
+            .reverse()
+            .find((m) => m.role === 'user');
+          const text = String(lastUser?.content ?? '');
+          const sawTool = messages.some((m) => m.role === 'tool');
+          await gates.get(text);
+          if (text.startsWith('call:') && !sawTool) {
+            return {
+              content: '',
+              finishReason: 'tool_calls',
+              toolCalls: [
+                {
+                  id: `t-${text}`,
+                  type: 'function',
+                  function: { name: 'page_read', arguments: '{}' },
+                },
+              ],
+            };
+          }
+          return { content: `reply ${text}`, finishReason: 'stop' };
+        },
+      } as unknown as AIInterface;
+    }
+
+    async function suspendSend(
+      routes: AssistantRoutes,
+      threadId: string,
+      content: string,
+      clientRequestId: string,
+    ) {
+      const { seen } = await events(
+        await send(routes, threadId, {
+          content,
+          clientRequestId,
+          clientTools: pageTools,
+        }),
+      );
+      const last = seen.at(-1) as Extract<
+        AssistantTurnEvent,
+        { type: 'client_tool_calls' }
+      >;
+      expect(last.type).toBe('client_tool_calls');
+      return last;
+    }
+
+    const resume = (
+      routes: AssistantRoutes,
+      threadId: string,
+      body: Record<string, unknown>,
+    ) =>
+      call(routes, 'POST', `threads/${threadId}/resume`, {
+        body: { results: [], ...body },
+      });
+
+    const retry = (
+      routes: AssistantRoutes,
+      threadId: string,
+      content: string,
+      clientRequestId: string,
+    ) => send(routes, threadId, { content, clientRequestId });
+
+    it('keeps a suspended send in progress past abandonedTurnMs while its continuation is valid (M1)', async () => {
+      const routes = mount({
+        ai: turnAI(),
+        clientToolAllowList: ['page_*'],
+        abandonedTurnMs: 1,
+      });
+      const threadId = await createThread(routes);
+      const suspended = await suspendSend(routes, threadId, 'call:a', 'm1-a');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const waiting = await retry(routes, threadId, 'call:a', 'm1-a');
+      expect(waiting.status).toBe(200);
+      expect(await waiting.json()).toMatchObject({
+        duplicate: true,
+        inProgress: true,
+        outcome: 'in_progress',
+      });
+      const resumed = await events(
+        await resume(routes, threadId, {
+          continuationId: suspended.continuationId,
+          results: [{ id: 't-call:a', ok: true, result: 'page' }],
+        }),
+      );
+      expect(resumed.seen.some((e) => e.type === 'done')).toBe(true);
+      expect(
+        await (await retry(routes, threadId, 'call:a', 'm1-a')).json(),
+      ).toMatchObject({
+        outcome: 'completed',
+        assistantMessage: { content: 'reply call:a' },
+      });
+    });
+
+    it('settles the send that owns the consumed continuation, not the one the request names (M2)', async () => {
+      const routes = mount({ ai: turnAI(), clientToolAllowList: ['page_*'] });
+      const threadId = await createThread(routes);
+      await suspendSend(routes, threadId, 'call:a', 'm2-a');
+      // One suspension per thread: B's replaces A's continuation.
+      const b = await suspendSend(routes, threadId, 'call:b', 'm2-b');
+      const resumed = await events(
+        await resume(routes, threadId, {
+          clientRequestId: 'm2-a',
+          continuationId: b.continuationId,
+          results: [{ id: 't-call:b', ok: true, result: 'page' }],
+        }),
+      );
+      expect(resumed.seen.some((e) => e.type === 'done')).toBe(true);
+      expect(
+        await (await retry(routes, threadId, 'call:b', 'm2-b')).json(),
+      ).toMatchObject({
+        outcome: 'completed',
+        assistantMessage: { content: 'reply call:b' },
+      });
+      // A never completed: its continuation is gone, so it has failed.
+      const a = await retry(routes, threadId, 'call:a', 'm2-a');
+      expect(a.status).toBe(409);
+      expect(await a.json()).toMatchObject({ code: 'turn_failed' });
+    });
+
+    it('changes no send when a resume names an invalid continuation (M2)', async () => {
+      const routes = mount({ ai: turnAI(), clientToolAllowList: ['page_*'] });
+      const threadId = await createThread(routes);
+      const a = await suspendSend(routes, threadId, 'call:a', 'm2i-a');
+      const bogus = await events(
+        await resume(routes, threadId, {
+          clientRequestId: 'm2i-a',
+          continuationId: 'not-a-continuation',
+        }),
+      );
+      expect(bogus.seen.find((e) => e.type === 'error')).toMatchObject({
+        code: 'continuation_expired',
+      });
+      expect(
+        await (await retry(routes, threadId, 'call:a', 'm2i-a')).json(),
+      ).toMatchObject({ outcome: 'in_progress' });
+      const resumed = await events(
+        await resume(routes, threadId, {
+          continuationId: a.continuationId,
+          results: [{ id: 't-call:a', ok: true, result: 'page' }],
+        }),
+      );
+      expect(resumed.seen.some((e) => e.type === 'done')).toBe(true);
+      expect(
+        await (await retry(routes, threadId, 'call:a', 'm2i-a')).json(),
+      ).toMatchObject({
+        outcome: 'completed',
+        assistantMessage: { content: 'reply call:a' },
+      });
+    });
+
+    it('answers each overlapping send with its own reply when turns finish out of order (M3)', async () => {
+      let releaseA: () => void = () => {};
+      let releaseB: () => void = () => {};
+      const gates = new Map<string, Promise<void>>([
+        ['first', new Promise((resolve) => (releaseA = resolve))],
+        ['second', new Promise((resolve) => (releaseB = resolve))],
+      ]);
+      const routes = mount({ ai: turnAI(gates) });
+      const threadId = await createThread(routes);
+      const streamA = await retry(routes, threadId, 'first', 'm3-a');
+      const streamB = await retry(routes, threadId, 'second', 'm3-b');
+      const readA = events(streamA);
+      const readB = events(streamB);
+      releaseB();
+      await readB;
+      releaseA();
+      await readA;
+      const a = await (await retry(routes, threadId, 'first', 'm3-a')).json();
+      const b = await (await retry(routes, threadId, 'second', 'm3-b')).json();
+      expect(a).toMatchObject({
+        outcome: 'completed',
+        assistantMessage: { content: 'reply first' },
+      });
+      expect(b).toMatchObject({
+        outcome: 'completed',
+        assistantMessage: { content: 'reply second' },
+      });
+      expect(JSON.stringify(a.messages)).not.toContain('reply second');
+      expect(JSON.stringify(b.messages)).not.toContain('reply first');
+    });
+
+    it('marks a send failed when sendMessage throws after storing it', async () => {
+      const original = ChatService.prototype.sendMessage;
+      const spy = vi
+        .spyOn(ChatService.prototype, 'sendMessage')
+        .mockImplementationOnce(async function (
+          this: ChatService,
+          ...args: Parameters<ChatService['sendMessage']>
+        ) {
+          await original.apply(this, args);
+          throw new Error('room save failed after insert');
+        });
+      try {
+        const routes = mount();
+        const threadId = await createThread(routes);
+        const first = await retry(routes, threadId, 'hi', 'after-store');
+        expect(first.status).toBe(500);
+        const again = await retry(routes, threadId, 'hi', 'after-store');
+        expect(again.status).toBe(409);
+        expect(await again.json()).toMatchObject({ code: 'turn_failed' });
+        const rows = (await listMessages(routes, threadId)).filter(
+          (m) => m.clientRequestId === 'after-store',
+        );
+        expect(rows).toHaveLength(1);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('marks a send failed when the turn cannot start after storing it', async () => {
+      const spy = vi
+        .spyOn(ChatService.prototype, 'getThreadMessages')
+        .mockRejectedValueOnce(new Error('history read failed'));
+      try {
+        const routes = mount();
+        const threadId = await createThread(routes);
+        const first = await retry(routes, threadId, 'hi', 'no-start');
+        expect(first.status).toBe(500);
+        const again = await retry(routes, threadId, 'hi', 'no-start');
+        expect(again.status).toBe(409);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
   // ---- 7. tools ------------------------------------------------------------
 
   describe('tools', () => {
