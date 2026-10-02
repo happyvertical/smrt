@@ -557,10 +557,12 @@ disabled native input, and a reset a later listener cancels still leaves the
 component and the posted field both empty.
 
 Text comes from the `ui.camera_capture.*` and `ui.signature_pad.*` i18n keys
-and can be overridden per instance with `labels`. Actions are at least 44px
-(`--smrt-capture-target-size`, to be replaced by the shared touch-target token
-from smrt#3252). Both register with an enclosing `Form`'s interaction registry
-as non-readable, non-writable `file` controls.
+and can be overridden per instance with `labels`. Capture is a touch flow, so
+its actions (and the fallback picker) are touch targets at every density: at
+least `--smrt-touch-target-min` (48px by default; see
+[Touch density](#touch-density)), which ThemeProvider `overrides` can raise.
+Both register with an enclosing `Form`'s interaction registry as non-readable,
+non-writable `file` controls.
 
 ## DataTable controller
 
@@ -1004,7 +1006,9 @@ the label hit area while preserving the visual mark.
 `--smrt-touch-target-min` defaults to `48px` across all presets and works without
 a provider. Customize it globally with ThemeProvider's `overrides`, for example
 `overrides={{ '--smrt-touch-target-min': '56px' }}`. Touch targets grow with larger
-content; normal density keeps existing component sizing. TenantNav sizing is
+content; normal density keeps existing component sizing. `CameraCapture` and
+`SignaturePad` actions use `--smrt-touch-target-min` at every density, since
+capture is a touch flow. TenantNav sizing is
 tracked separately in [#3246](https://github.com/happyvertical/smrt/issues/3246).
 
 ### Narrow DataTable

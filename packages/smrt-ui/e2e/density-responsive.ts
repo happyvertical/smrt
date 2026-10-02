@@ -30,6 +30,25 @@ switch (params.get('surface')) {
     });
     break;
   }
+  case 'capture': {
+    // No camera API, so CameraCapture renders its opt-in file-input picker,
+    // which shares the `.action` sizing rule with the live-camera buttons.
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: undefined,
+    });
+    const { default: Capture } = await import(
+      '../src/components/forms/__tests__/capture-touch.fixture.svelte'
+    );
+    mount(Capture, {
+      target,
+      props: {
+        density: params.get('density') === 'touch' ? 'touch' : 'comfortable',
+        target: params.get('target') ?? '48px',
+      },
+    });
+    break;
+  }
   case 'choices': {
     const { default: Choices } = await import('./choice-posting.svelte');
     mount(Choices, { target });

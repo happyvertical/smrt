@@ -359,8 +359,6 @@ useControlRegistration(() => {
 
 <style>
   .signature-pad {
-    /* Swap for the shared touch-target token once smrt#3252 lands. */
-    --smrt-capture-target-size: 2.75rem;
     display: grid;
     gap: var(--smrt-spacing-3);
     width: 100%;
@@ -405,8 +403,10 @@ useControlRegistration(() => {
   }
   .action {
     flex: 1 1 auto;
-    min-width: var(--smrt-capture-target-size);
-    min-height: var(--smrt-capture-target-size);
+    /* Capture is a touch flow: its actions are touch targets at every
+       density, on the shared scale (smrt#3252). */
+    min-width: var(--smrt-touch-target-min, 48px);
+    min-height: var(--smrt-touch-target-min, 48px);
     padding: 0 var(--smrt-spacing-4);
     border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-small);
