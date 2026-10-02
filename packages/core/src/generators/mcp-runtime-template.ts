@@ -1006,7 +1006,7 @@ The MCP server supports optional environment variables:
    - \`SMRT_AI_MODEL\` - Model to use (optional)
    - \`SMRT_AI_BASE_URL\` - Endpoint override (optional)
 
-3. **Provider-specific key fallbacks** (only for the selected provider):
+3. **Provider-specific key fallbacks** (used when the \`ai\` block selects the provider, and only for that provider):
    - \`OPENAI_API_KEY\`, \`ANTHROPIC_API_KEY\`, \`GEMINI_API_KEY\`
    - \`CLAUDE_API_KEY\` + \`CLAUDE_MODEL\` - Claude CLI provider (defaults to 'sonnet'); read by \`@happyvertical/ai\`
 

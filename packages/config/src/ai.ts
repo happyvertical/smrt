@@ -88,6 +88,11 @@ export interface ResolveAIProviderOptions {
   env?: Readonly<Record<string, string | undefined>>;
   /** Env prefixes, highest priority first. Default `['SMRT_AI', 'HAVE_AI']`. */
   prefixes?: readonly string[];
+  /**
+   * Fall back to the selected provider's own key variable (`OPENAI_API_KEY`...).
+   * Default `true`.
+   */
+  providerKeyEnvFallback?: boolean;
   /** Auto-detect provider from well-known key variables. Default `true`. */
   autoDetect?: boolean;
   /** Let env prefixes beat the config block. Default `false`. */
@@ -211,7 +216,7 @@ export function tryResolveAIProviderConfig(
     'provider',
     first(
       layered(
-        [explicitCand(explicit.provider ?? explicit.type)],
+        [explicitCand(nonEmpty(explicit.provider) ?? nonEmpty(explicit.type))],
         [configCand(block.provider)],
         fromEnv('PROVIDER'),
       ),
@@ -221,7 +226,11 @@ export function tryResolveAIProviderConfig(
     'model',
     first(
       layered(
-        [explicitCand(explicit.model ?? explicit.defaultModel)],
+        [
+          explicitCand(
+            nonEmpty(explicit.model) ?? nonEmpty(explicit.defaultModel),
+          ),
+        ],
         [configCand(block.model)],
         fromEnv('MODEL'),
       ),
@@ -252,7 +261,7 @@ export function tryResolveAIProviderConfig(
   const configKeyEnv = nonEmpty(block.apiKeyEnv);
   const explicitGroup: CredentialGroup = {
     source: 'explicit',
-    provider: nonEmpty(explicit.provider ?? explicit.type),
+    provider: nonEmpty(explicit.provider) ?? nonEmpty(explicit.type),
     apiKey: nonEmpty(explicit.apiKey),
     baseUrl: nonEmpty(explicit.baseUrl),
   };
@@ -294,7 +303,12 @@ export function tryResolveAIProviderConfig(
     }
   }
   const providerKeyEnv = getDefaultAIKeyEnvName(result.provider);
-  if (!result.apiKey && providerKeyEnv && read(providerKeyEnv)) {
+  if (
+    !result.apiKey &&
+    providerKeyEnv &&
+    options.providerKeyEnvFallback !== false &&
+    read(providerKeyEnv)
+  ) {
     result.apiKey = read(providerKeyEnv);
     sources.apiKey = 'provider-key-env';
   }

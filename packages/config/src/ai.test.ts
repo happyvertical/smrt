@@ -387,3 +387,100 @@ describe('base URL redaction (K2)', () => {
     }
   });
 });
+
+describe('ai block layers keep provider ownership (L1)', () => {
+  type Layer = 'file.packages' | 'file.ai' | 'runtime.packages' | 'runtime.ai';
+  const ORDER: Layer[] = [
+    'file.packages',
+    'file.ai',
+    'runtime.packages',
+    'runtime.ai',
+  ];
+  function apply(layer: Layer, block: Record<string, string>) {
+    if (layer.startsWith('file')) {
+      const cur = (globalThis.__smrtConfigCache ?? {}) as Record<string, any>;
+      if (layer === 'file.ai') cur.ai = block;
+      else cur.packages = { ...(cur.packages ?? {}), ai: block };
+      globalThis.__smrtConfigCache = cur;
+    } else if (layer === 'runtime.ai') {
+      setConfig({ ai: block });
+    } else {
+      setConfig({ packages: { ai: block } });
+    }
+  }
+
+  const pairs: [Layer, Layer][] = [];
+  for (let i = 0; i < ORDER.length; i++) {
+    for (let j = i + 1; j < ORDER.length; j++) pairs.push([ORDER[i], ORDER[j]]);
+  }
+
+  it.each(
+    pairs,
+  )('%s (openai) < %s (anthropic): lower credentials dropped', (low, high) => {
+    apply(low, {
+      provider: 'openai',
+      apiKeyEnv: 'OPENAI_API_KEY',
+      apiKey: SECRET,
+      baseUrl: 'https://openai-gw.example/v1',
+      model: 'gpt-x',
+    });
+    apply(high, { provider: 'anthropic' });
+    expect(getAIConfigBlock()).toEqual({ provider: 'anthropic' });
+  });
+
+  it.each(pairs)('%s < %s: same provider layers still merge', (low, high) => {
+    apply(low, { provider: 'openai', apiKeyEnv: 'OPENAI_API_KEY' });
+    apply(high, { provider: 'OpenAI', model: 'gpt-y' });
+    expect(getAIConfigBlock()).toMatchObject({
+      apiKeyEnv: 'OPENAI_API_KEY',
+      model: 'gpt-y',
+    });
+  });
+
+  it('a provider-less higher layer binds to the provider selected so far', () => {
+    apply('file.ai', { provider: 'openai' });
+    apply('runtime.ai', { apiKeyEnv: 'OPENAI_API_KEY' });
+    expect(getAIConfigBlock()).toEqual({
+      provider: 'openai',
+      apiKeyEnv: 'OPENAI_API_KEY',
+    });
+  });
+
+  it('the issue example resolves to Anthropic without the OpenAI key', () => {
+    apply('file.packages', { provider: 'openai', apiKeyEnv: 'OPENAI_API_KEY' });
+    apply('file.ai', { provider: 'anthropic' });
+    const r = resolveConfiguredAIProvider({ env: { OPENAI_API_KEY: SECRET } });
+    expect(r.provider).toBe('anthropic');
+    expect(r.apiKey).toBeUndefined();
+  });
+});
+
+describe('alias normalisation (L3)', () => {
+  it('a blank provider does not suppress the type alias in binding', () => {
+    const r = resolveAIProviderConfig({
+      explicit: { provider: ' ', type: 'anthropic', apiKey: OTHER_SECRET },
+      config: { provider: 'openai', apiKeyEnv: 'OPENAI_API_KEY' },
+      env: { OPENAI_API_KEY: SECRET },
+    });
+    expect(r.provider).toBe('anthropic');
+    expect(r.apiKey).toBe(OTHER_SECRET);
+  });
+
+  it('a type-owned explicit provider still drops the config key', () => {
+    const r = resolveAIProviderConfig({
+      explicit: { provider: '', type: 'anthropic' },
+      config: { provider: 'openai', apiKeyEnv: 'OPENAI_API_KEY' },
+      env: { OPENAI_API_KEY: SECRET },
+    });
+    expect(r.provider).toBe('anthropic');
+    expect(r.apiKey).toBeUndefined();
+  });
+
+  it('a blank model falls through to defaultModel', () => {
+    const r = resolveAIProviderConfig({
+      explicit: { provider: 'openai', model: '  ', defaultModel: 'gpt-z' },
+      env: {},
+    });
+    expect(r.model).toBe('gpt-z');
+  });
+});

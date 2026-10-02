@@ -200,6 +200,12 @@ source's key and base URL are discarded and the key comes only from sources vali
 provider (then that provider's own key variable). A source that supplies a key but names no provider is
 generic and binds to whichever provider is selected. Displayed base URLs (`toJSON()`,
 `describeAIProviderConfig()`, `redactBaseUrl()`) expose only the origin; the real URL still goes to the client.
+The rule holds at every layer: the `ai` block layers (runtime `ai`, runtime `packages.ai`, file `ai`, file `packages.ai`)
+are merged with provider ownership (`mergeAIConfigLayers`): when a higher layer names a different provider, the lower
+layers' `apiKey`, `apiKeyEnv`, `baseUrl` and `model` are dropped (a model id is provider-specific). A layer with no provider
+binds to the provider selected so far. Core applies the same rule between its global `ai` config and `options.ai`, and always
+builds its client from the resolver's bound result. Aliases are normalised before coalescing (`provider`/`type`,
+`model`/`defaultModel`), so a blank primary never hides the alias.
 Core consults the block only when it names a `provider`; a partial block behaves like no block.
 
 Call sites keep their historical order through options: the chat dev routes pass

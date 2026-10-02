@@ -524,25 +524,59 @@ export function defineConfig(config: SmrtConfig): SmrtConfig {
 export function getAIConfigBlock(): AIConfigBlock | null {
   const file = getLoadedConfig();
   const runtime = getRuntimeConfig();
-  const layers = [
+  return mergeAIConfigLayers([
     file?.packages?.ai,
     file?.ai,
     runtime.packages?.ai,
     runtime.ai,
-  ];
-  const merged: Record<string, unknown> = {};
-  let found = false;
+  ]);
+}
+
+/**
+ * Merge `ai` block layers, lowest priority first, preserving provider
+ * ownership: `apiKey`, `apiKeyEnv`, `baseUrl` and `model` belong to the
+ * provider their layer names. When a higher layer names a different provider,
+ * the credentials and model already collected from lower layers for another
+ * provider are dropped (a model id is provider-specific, so it is dropped
+ * too). A layer that names no provider contributes generic values that bind to
+ * the provider selected so far.
+ */
+export function mergeAIConfigLayers(
+  layers: ReadonlyArray<unknown>,
+): AIConfigBlock | null {
+  const FIELDS = ['model', 'baseUrl', 'apiKeyEnv', 'apiKey'] as const;
+  let provider: string | undefined;
+  const values: Partial<Record<(typeof FIELDS)[number], string>> = {};
+  const owners: Partial<Record<(typeof FIELDS)[number], string | undefined>> =
+    {};
+  const text = (v: unknown) =>
+    typeof v === 'string' && v.trim() ? v.trim() : undefined;
   for (const layer of layers) {
     if (!layer || typeof layer !== 'object') continue;
-    for (const key of ['provider', 'model', 'baseUrl', 'apiKeyEnv', 'apiKey']) {
-      const value = (layer as Record<string, unknown>)[key];
-      if (typeof value === 'string' && value.trim()) {
-        merged[key] = value;
-        found = true;
+    const rec = layer as Record<string, unknown>;
+    const named = text(rec.provider);
+    if (named && provider && named.toLowerCase() !== provider.toLowerCase()) {
+      for (const f of FIELDS) {
+        const owner = owners[f];
+        if (owner && owner.toLowerCase() !== named.toLowerCase()) {
+          delete values[f];
+          delete owners[f];
+        }
+      }
+    }
+    if (named) provider = named;
+    for (const f of FIELDS) {
+      const v = text(rec[f]);
+      if (v) {
+        values[f] = v;
+        owners[f] = provider;
       }
     }
   }
-  return found ? (merged as AIConfigBlock) : null;
+  if (!provider && FIELDS.every((f) => !values[f])) return null;
+  const merged: AIConfigBlock = { ...values };
+  if (provider) merged.provider = provider;
+  return merged;
 }
 
 /**

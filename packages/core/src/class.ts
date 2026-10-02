@@ -720,7 +720,33 @@ export class SmrtClass {
             const baseConfig = globalConfig.ai || {};
 
             // Merge with instance options (takes priority over global)
-            const userConfig = { ...baseConfig, ...this.options.ai };
+            // Provider ownership holds across these two layers too: when the
+            // instance options name a different provider than the global
+            // config, the global layer's key, base URL and model are dropped.
+            const baseRec = baseConfig as Record<string, unknown>;
+            const optRec = (this.options.ai ?? {}) as Record<string, unknown>;
+            const nameOf = (r: Record<string, unknown>) =>
+              [r.provider, r.type]
+                .map((v) => (typeof v === 'string' ? v.trim() : ''))
+                .find(Boolean)
+                ?.toLowerCase();
+            const baseName = nameOf(baseRec);
+            const optName = nameOf(optRec);
+            const ownedBase: Record<string, unknown> =
+              baseName && optName && baseName !== optName
+                ? Object.fromEntries(
+                    Object.entries(baseRec).filter(
+                      ([k]) =>
+                        ![
+                          'apiKey',
+                          'baseUrl',
+                          'model',
+                          'defaultModel',
+                        ].includes(k),
+                    ),
+                  )
+                : baseRec;
+            const userConfig = { ...ownedBase, ...this.options.ai };
 
             // Load environment variables and merge (user options take priority).
             // `AIConfig` carries an index signature, so provider-specific keys
@@ -739,31 +765,41 @@ export class SmrtClass {
               },
             });
 
-            // When the smrt.config.ts `ai` block selects the provider, consume
-            // the whole resolved provider (key, base URL, model), including the
-            // provider's own key variable. Precedence: options.ai > core global
-            // config > block > SMRT_AI_*. Credentials bound to another provider
-            // are dropped, so env-loaded values are replaced, not merged.
-            // Tuning fields keep their current source.
-            const resolvedAi = aiConfigBlock
-              ? tryResolveAIProviderConfig({
-                  explicit: userConfig as AIExplicitConfig,
-                  config: aiConfigBlock,
-                  prefixes: ['SMRT_AI'],
-                  autoDetect: false,
-                  requireProvider: false,
-                })
-              : undefined;
-            if (resolvedAi && resolvedAi.sources.provider === 'config') {
-              aiConfig.provider = resolvedAi.provider;
+            // Provider, key, base URL and model always come from the shared
+            // resolver's bound result (options.ai > core global config >
+            // smrt.config `ai` block > SMRT_AI_*), so a credential is only ever
+            // sent to the provider its own source named; env-loaded values are
+            // replaced, not merged. Tuning fields keep their current source.
+            // Without a block the provider's own key variable is not consulted
+            // (no behaviour change for apps that never declared one).
+            const resolvedAi = tryResolveAIProviderConfig({
+              explicit: userConfig as AIExplicitConfig,
+              config: aiConfigBlock,
+              prefixes: ['SMRT_AI'],
+              autoDetect: false,
+              requireProvider: false,
+              providerKeyEnvFallback: Boolean(aiConfigBlock),
+            });
+            if (resolvedAi) {
+              if (resolvedAi.provider) aiConfig.provider = resolvedAi.provider;
+              else delete aiConfig.provider;
               if (resolvedAi.apiKey) aiConfig.apiKey = resolvedAi.apiKey;
               else delete aiConfig.apiKey;
               if (resolvedAi.baseUrl) aiConfig.baseUrl = resolvedAi.baseUrl;
               else delete aiConfig.baseUrl;
               if (resolvedAi.model) {
                 aiConfig.model = resolvedAi.model;
-                aiConfig.defaultModel = resolvedAi.model;
+                if (
+                  !userConfig.defaultModel ||
+                  resolvedAi.sources.model !== 'explicit'
+                ) {
+                  aiConfig.defaultModel = resolvedAi.model;
+                }
               }
+            } else {
+              delete aiConfig.provider;
+              delete aiConfig.apiKey;
+              delete aiConfig.baseUrl;
             }
 
             const existingOnUsage =

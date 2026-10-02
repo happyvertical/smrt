@@ -33,6 +33,7 @@ const ENV_KEYS = [
   'CORE_TEST_KEY',
   'OPENAI_API_KEY',
   'ANTHROPIC_API_KEY',
+  'GEMINI_API_KEY',
 ];
 
 describe('SmrtClass AI config block', () => {
@@ -146,5 +147,81 @@ describe('SmrtClass AI config block', () => {
     await new Probe().client();
     expect(getAIMock.mock.calls[0][0].provider).toBe('anthropic');
     expect(getAIMock.mock.calls[0][0].model).toBeUndefined();
+  });
+
+  describe('core builds the client from the bound resolver result (L2)', () => {
+    const argOf = () => getAIMock.mock.calls[0][0];
+
+    it('options provider wins, same-provider config key is kept', async () => {
+      setConfig({ ai: { provider: 'openai', apiKeyEnv: 'CORE_TEST_KEY' } });
+      process.env.CORE_TEST_KEY = SECRET;
+      await new Probe({ ai: { provider: 'openai' } } as never).client();
+      expect(argOf()).toMatchObject({ provider: 'openai', apiKey: SECRET });
+    });
+
+    it('options provider wins, a different-provider env key is dropped', async () => {
+      process.env.SMRT_AI_PROVIDER = 'anthropic';
+      process.env.SMRT_AI_API_KEY = OTHER_SECRET;
+      await new Probe({ ai: { provider: 'gemini' } } as never).client();
+      expect(argOf().provider).toBe('gemini');
+      expect(argOf().apiKey).toBeUndefined();
+    });
+
+    it('options provider wins over a config block with a different key', async () => {
+      setConfig({ ai: { provider: 'openai', apiKeyEnv: 'CORE_TEST_KEY' } });
+      process.env.CORE_TEST_KEY = SECRET;
+      await new Probe({ ai: { provider: 'gemini' } } as never).client();
+      expect(argOf().provider).toBe('gemini');
+      expect(argOf().apiKey).toBeUndefined();
+    });
+
+    it('env wins (no options/block provider) and keeps its own key', async () => {
+      process.env.SMRT_AI_PROVIDER = 'anthropic';
+      process.env.SMRT_AI_API_KEY = OTHER_SECRET;
+      process.env.SMRT_AI_MODEL = 'm';
+      await new Probe().client();
+      expect(argOf()).toMatchObject({
+        provider: 'anthropic',
+        apiKey: OTHER_SECRET,
+        model: 'm',
+      });
+    });
+
+    it('no block: provider key env is not consulted (unchanged)', async () => {
+      process.env.SMRT_AI_PROVIDER = 'openai';
+      process.env.OPENAI_API_KEY = SECRET;
+      await new Probe().client();
+      expect(argOf().provider).toBe('openai');
+      expect(argOf().apiKey).toBeUndefined();
+    });
+
+    it('tuning fields keep their source', async () => {
+      setConfig({ ai: { provider: 'openai' } });
+      process.env.SMRT_AI_TIMEOUT = '1234';
+      try {
+        await new Probe().client();
+        expect(argOf().timeout).toBe(1234);
+      } finally {
+        delete process.env.SMRT_AI_TIMEOUT;
+      }
+    });
+  });
+
+  it('options.ai naming another provider drops the global config key (L2)', async () => {
+    config({ ai: { provider: 'openai', apiKey: SECRET } } as never);
+    await new Probe({ ai: { provider: 'anthropic' } } as never).client();
+    expect(getAIMock.mock.calls[0][0].provider).toBe('anthropic');
+    expect(getAIMock.mock.calls[0][0].apiKey).toBeUndefined();
+  });
+
+  it('options.ai with the same provider keeps the global config key', async () => {
+    config({ ai: { provider: 'openai', apiKey: SECRET } } as never);
+    await new Probe({
+      ai: { provider: 'openai', model: 'm' },
+    } as never).client();
+    expect(getAIMock.mock.calls[0][0]).toMatchObject({
+      provider: 'openai',
+      apiKey: SECRET,
+    });
   });
 });
