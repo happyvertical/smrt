@@ -262,5 +262,31 @@ describePostgres('agent reply authoring on PostgreSQL (#2995)', () => {
       tenantId,
     });
     expect(counted?.messageCount).toBe(2);
+
+    // Outcome writes are forward-only, compare-and-set on the row revision.
+    const record = (
+      outcome: 'running' | 'suspended' | 'completed',
+      resumedFrom: string | null,
+      continuationId: string | null = null,
+    ) =>
+      chat.recordClientRequestOutcome({
+        tenantId,
+        threadId: thread.id as string,
+        messageId: expectedId,
+        actorProfileId,
+        outcome,
+        resumedFrom,
+        continuationId,
+      });
+    expect(await record('running', null)).toBe(true);
+    expect(await record('suspended', null, 'c1')).toBe(true);
+    const raced = await Promise.all([
+      record('running', 'c1'),
+      record('running', 'c1'),
+    ]);
+    expect(raced.filter(Boolean)).toHaveLength(1);
+    expect(await record('suspended', null, 'c1')).toBe(false);
+    expect(await record('completed', 'c1')).toBe(true);
+    expect(await record('running', 'c1')).toBe(false);
   });
 });
