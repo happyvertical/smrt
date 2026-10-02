@@ -40,12 +40,8 @@ jobs:
     if: >-
       github.event_name != 'pull_request_target' ||
       vars.CI_MERGE_QUEUE_ENABLED != 'true'
-    # Emergency lane selector: publish dry run backs the required aggregator in
-    # the merge queue, so it must move with the CI_HOSTED_FALLBACK_ENABLED lever
-    # or a fleet outage would keep Required CI blocked despite the fallback. See
-    # the selector comment in test-suite.yml and the Hosted Turbo cache section
-    # of CI.md.
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    # Linux publish validation uses the same explicit hosted runner as Required CI.
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
       should-validate: ${{ steps.prepare.outputs.should_validate }}
@@ -165,7 +161,7 @@ jobs:
   validate-publish-shards:
     needs: prepare-publish
     if: needs.prepare-publish.outputs.should-validate == 'true'
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
