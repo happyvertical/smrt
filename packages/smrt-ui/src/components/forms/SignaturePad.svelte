@@ -136,11 +136,17 @@ onMount(() => {
 
 // Paint paper when the canvas mounts. A backing-size change clears the bitmap,
 // so it resets the pad (discarding a committed signature) rather than leaving
-// a posted file that no longer matches what is shown.
+// a posted file that no longer matches what is shown. Only a real change
+// counts: a re-run at the same size (a parent re-spreading a fresh props
+// object) leaves the bitmap intact and must not discard the signature.
+let paintedFor: { canvas: HTMLCanvasElement; size: string } | null = null;
 $effect(() => {
-  void width;
-  void height;
-  if (!canvasEl) return;
+  const canvas = canvasEl;
+  const size = `${width}x${height}`;
+  if (!canvas || (paintedFor?.canvas === canvas && paintedFor.size === size)) {
+    return;
+  }
+  paintedFor = { canvas, size };
   untrack(resetPad);
 });
 

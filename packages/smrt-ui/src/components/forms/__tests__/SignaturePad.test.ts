@@ -198,6 +198,28 @@ describe('SignaturePad states', () => {
     expect(root(container)).toHaveAttribute('data-state', 'empty');
   });
 
+  it('keeps a committed signature across prop updates and resets only on a size change', async () => {
+    const onClear = vi.fn();
+    const props = { name: 'signature', onClear };
+    const { container, rerender } = render(SignaturePad, { props });
+    await stroke(canvas(container));
+    await fireEvent.click(useButton());
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-state', 'committed'),
+    );
+
+    // The harness replaces the whole props object, as a parent re-spreading a
+    // fresh object does; width and height are unchanged.
+    await rerender({ ...props, disabled: true });
+    await rerender({ ...props, disabled: false });
+    expect(root(container)).toHaveAttribute('data-state', 'committed');
+    expect(onClear).not.toHaveBeenCalled();
+
+    await rerender({ ...props, width: 300 });
+    expect(root(container)).toHaveAttribute('data-state', 'empty');
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
   it('accepts label overrides', () => {
     render(SignaturePad, {
       props: { labels: { useSignature: 'Signer', clear: 'Effacer' } },
