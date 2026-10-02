@@ -1,24 +1,23 @@
 /**
  * Exclusive operator-operation lock (`<state>/operation.lock`).
  *
- * Ported unchanged from the template's `scripts/smrt-operation-lock.mjs`: the
- * same file, record shape, stale-owner reclamation, and messages.
+ * Ported from the template's `scripts/smrt-operation-lock.mjs`: the same
+ * file, record shape, and messages. Stale-owner reclamation is serialized
+ * through `stale-reclaim.ts` so it can never remove a live lock.
  */
 
 import { randomBytes } from 'node:crypto';
 import {
   closeSync,
-  fstatSync,
-  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   rmSync,
-  type Stats,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { errorCode } from './errors.js';
+import { reclaimStaleRecord } from './stale-reclaim.js';
 
 /** Held lock handed to the operation callback. */
 export interface OperationLock {
@@ -38,6 +37,24 @@ export function processExists(pid: number): boolean {
     const code = errorCode(error);
     return code === 'EPERM' || code === 'EACCES';
   }
+}
+
+/** Owner pid of a lock record, or `null` when it cannot be verified. */
+export function lockOwnerPid(contents: string): number | null {
+  try {
+    const pid = (JSON.parse(contents) as { pid?: unknown } | null)?.pid;
+    return Number.isSafeInteger(pid) && (pid as number) >= 1
+      ? (pid as number)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when an operation-lock record names an owner that no longer exists. */
+export function isStaleOperationLock(contents: string): boolean {
+  const pid = lockOwnerPid(contents);
+  return pid !== null && !processExists(pid);
 }
 
 /**
@@ -72,45 +89,26 @@ export async function withOperationLock<T>(
       break;
     } catch (error) {
       if (errorCode(error) !== 'EEXIST') throw error;
-      let ownerPid: unknown = null;
-      let staleIdentity: Stats | undefined;
-      let staleDescriptor: number | undefined;
+      let observed: string | null = null;
       try {
-        staleDescriptor = openSync(path, 'r');
-        staleIdentity = fstatSync(staleDescriptor);
-        ownerPid = (
-          JSON.parse(readFileSync(staleDescriptor, 'utf8')) as {
-            pid?: unknown;
-          }
-        ).pid;
+        observed = readFileSync(path, 'utf8');
       } catch {
-        // A malformed partial lock has no authority.
-      } finally {
-        if (staleDescriptor !== undefined) closeSync(staleDescriptor);
+        // A lock that cannot be read has no provable owner.
       }
-      if (!Number.isSafeInteger(ownerPid)) {
+      const ownerPid = observed === null ? null : lockOwnerPid(observed);
+      if (ownerPid === null) {
         throw new Error(
           'An application operation lock exists but cannot be verified; inspect the private state directory.',
         );
       }
-      if (processExists(ownerPid as number)) {
+      if (processExists(ownerPid)) {
         throw new Error(
           `Another application operation is active (process ${ownerPid}).`,
         );
       }
-      try {
-        const currentIdentity = lstatSync(path);
-        if (
-          !staleIdentity ||
-          currentIdentity.dev !== staleIdentity.dev ||
-          currentIdentity.ino !== staleIdentity.ino
-        ) {
-          continue;
-        }
-        rmSync(path);
-      } catch (removeError) {
-        if (errorCode(removeError) !== 'ENOENT') throw removeError;
-      }
+      // Removed only under the reclaim mutex, and only if it is still this
+      // exact dead owner's record; a replaced lock is retried, never unlinked.
+      reclaimStaleRecord(path, observed as string, isStaleOperationLock);
     }
   }
   if (descriptor === undefined) {

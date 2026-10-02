@@ -1,16 +1,15 @@
 /**
  * Single-writer lease (`<state>/writer.lease`).
  *
- * Ported unchanged from the template's `scripts/smrt-writer-lease.mjs`. The
- * running web server takes the same lease, so the file, record shape, and
- * operation-lock admission rule must stay byte-compatible.
+ * Ported from the template's `scripts/smrt-writer-lease.mjs`. The running web
+ * server takes the same lease, so the file, record shape, and operation-lock
+ * admission rule stay byte-compatible. Stale-owner reclamation (of the lease
+ * and of a dead operation lock) is serialized through `stale-reclaim.ts`.
  */
 
 import { randomBytes } from 'node:crypto';
 import {
   closeSync,
-  fstatSync,
-  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -19,7 +18,8 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { errorCode } from './errors.js';
-import { processExists } from './operation-lock.js';
+import { isStaleOperationLock, processExists } from './operation-lock.js';
+import { reclaimStaleRecord } from './stale-reclaim.js';
 
 /** Persisted writer-lease record. */
 export interface WriterLeaseRecord {
@@ -57,6 +57,15 @@ function readRecord(pathOrDescriptor: string | number): WriterLeaseRecord {
   return validateRecord(JSON.parse(readFileSync(pathOrDescriptor, 'utf8')));
 }
 
+/** True when a lease record names a writer that no longer exists. */
+function isStaleWriterLease(contents: string): boolean {
+  try {
+    return !processExists(validateRecord(JSON.parse(contents)).pid);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Return the live writer lease, removing a lease whose owner is gone.
  */
@@ -65,27 +74,22 @@ export function readActiveWriterLease(
 ): WriterLeaseRecord | null {
   const path = join(stateRoot, 'writer.lease');
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    let descriptor: number | undefined;
+    let observed: string;
+    let record: WriterLeaseRecord;
     try {
-      descriptor = openSync(path, 'r');
-      const identity = fstatSync(descriptor);
-      const record = readRecord(descriptor);
-      closeSync(descriptor);
-      descriptor = undefined;
-      if (processExists(record.pid)) return record;
-      const current = lstatSync(path);
-      if (current.dev !== identity.dev || current.ino !== identity.ino) {
-        continue;
-      }
-      rmSync(path);
-      return null;
+      observed = readFileSync(path, 'utf8');
+      record = validateRecord(JSON.parse(observed));
     } catch (error) {
-      if (descriptor !== undefined) closeSync(descriptor);
       if (errorCode(error) === 'ENOENT') return null;
       throw new Error(
         'The application writer lease cannot be verified; inspect the private state directory.',
       );
     }
+    if (processExists(record.pid)) return record;
+    // Removed only under the reclaim mutex, and only if it is still this
+    // exact dead writer's record; a replaced lease is re-read, never unlinked.
+    const outcome = reclaimStaleRecord(path, observed, isStaleWriterLease);
+    if (outcome !== 'changed') return null;
   }
   throw new Error(
     'The application writer lease changed repeatedly and cannot be verified.',
@@ -156,47 +160,53 @@ export function acquireWriterLease(
       // A missing or externally repaired lease is not ours to remove.
     }
   };
-  let operationDescriptor: number | undefined;
+  const operationPath = join(stateRoot, 'operation.lock');
+  let observedOperation: string | null = null;
   try {
-    const operationPath = join(stateRoot, 'operation.lock');
-    operationDescriptor = openSync(operationPath, 'r');
-    const operationIdentity = fstatSync(operationDescriptor);
-    const operation = JSON.parse(readFileSync(operationDescriptor, 'utf8')) as {
-      pid?: unknown;
-      instance?: unknown;
-    };
-    closeSync(operationDescriptor);
-    operationDescriptor = undefined;
+    observedOperation = readFileSync(operationPath, 'utf8');
+  } catch (error) {
+    if (errorCode(error) !== 'ENOENT') {
+      release();
+      throw error;
+    }
+  }
+  if (observedOperation !== null) {
+    let operation: { pid?: unknown; instance?: unknown } | null;
+    try {
+      operation = JSON.parse(observedOperation);
+    } catch {
+      operation = null;
+    }
     if (
+      !operation ||
       !Number.isSafeInteger(operation.pid) ||
       (operation.pid as number) < 1 ||
       typeof operation.instance !== 'string'
     ) {
+      release();
       throw new Error('The application operation lock cannot be verified.');
     }
     if (!processExists(operation.pid as number)) {
-      const currentIdentity = lstatSync(operationPath);
-      if (
-        currentIdentity.dev !== operationIdentity.dev ||
-        currentIdentity.ino !== operationIdentity.ino
-      ) {
+      let outcome: ReturnType<typeof reclaimStaleRecord>;
+      try {
+        outcome = reclaimStaleRecord(
+          operationPath,
+          observedOperation,
+          isStaleOperationLock,
+        );
+      } catch (error) {
+        release();
+        throw error;
+      }
+      if (outcome === 'changed') {
+        release();
         throw new Error('The application operation lock changed unexpectedly.');
       }
-      rmSync(operationPath);
     } else if (operation.instance !== options.operationInstance) {
       release();
       throw new Error(
         'An application operation is active; wait for it to finish before starting a writer.',
       );
-    }
-  } catch (error) {
-    if (operationDescriptor !== undefined) closeSync(operationDescriptor);
-    if (errorCode(error) !== 'ENOENT') {
-      release();
-      if (error instanceof SyntaxError) {
-        throw new Error('The application operation lock cannot be verified.');
-      }
-      throw error;
     }
   }
   process.once('exit', release);
