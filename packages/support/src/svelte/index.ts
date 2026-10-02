@@ -15,22 +15,18 @@ import CaseDetail from './components/CaseDetail.svelte';
 import CaseQueue from './components/CaseQueue.svelte';
 import RoutingRationale from './components/RoutingRationale.svelte';
 import TargetList from './components/TargetList.svelte';
-import TimeEntryApprovalQueue from './components/TimeEntryApprovalQueue.svelte';
 
+// The approval queue moved to smrt-timesheets (#3288) and stays exported here.
 export {
-  CaseDetail,
-  CaseQueue,
-  RoutingRationale,
-  TargetList,
   TimeEntryApprovalQueue,
-};
+  type TimeEntryApprovalQueueProps,
+} from '@happyvertical/smrt-timesheets/svelte';
+
+export { CaseDetail, CaseQueue, RoutingRationale, TargetList };
 export type CaseQueueProps = ComponentProps<typeof CaseQueue>;
 export type CaseDetailProps = ComponentProps<typeof CaseDetail>;
 export type TargetListProps = ComponentProps<typeof TargetList>;
 export type RoutingRationaleProps = ComponentProps<typeof RoutingRationale>;
-export type TimeEntryApprovalQueueProps = ComponentProps<
-  typeof TimeEntryApprovalQueue
->;
 
 export {
   type CaseTimelineItemView,

@@ -11,10 +11,20 @@ connects the two without making Support execute repository work.
 ## Installation
 
 ```bash
-pnpm add @happyvertical/smrt-support
+pnpm add @happyvertical/smrt-support @happyvertical/smrt-timesheets
 ```
 
-Add `svelte` for the optional operator surfaces.
+Add `svelte` for the optional operator surfaces. Support's `ServiceTimeEntry`
+extends the [`smrt-timesheets`](../timesheets/README.md) entry (#3288). Under
+pnpm, declare `@happyvertical/smrt-timesheets` directly: the CLI's manifest
+discovery reads only top-level packages, so without it `smrt db:migrate` /
+`db:status` stop planning the timesheets snapshot tables
+(`service_charge_snapshots`, `service_compensation_snapshots`). Stored
+`@happyvertical/smrt-projects:ServiceTimeEntry` references do not yet resolve
+when smrt-support is installed, and neither does
+`@happyvertical/smrt-timesheets:ServiceTimeEntry` (support's subtype replaces
+it): reference `@happyvertical/smrt-support:ServiceTimeEntry`. See the
+smrt-timesheets README migration note.
 
 ## Open and manage a case
 
@@ -109,13 +119,16 @@ operations.
 `@happyvertical/smrt-support/svelte` exports presentational `CaseQueue`,
 `CaseDetail`, `TargetList`, `RoutingRationale`, and
 `TimeEntryApprovalQueue` components plus model-to-view adapters. Hosts own data
-loading and actions.
+loading and actions. `TimeEntryApprovalQueue` lives in
+[`smrt-timesheets`](../timesheets/README.md) and is re-exported here.
 
 ## Related packages
 
 - [`smrt-chat`](../chat/README.md) and
   [`smrt-messages`](../messages/README.md) provide transports.
 - [`smrt-jobs`](../jobs/README.md) runs escalation tasks.
+- [`smrt-timesheets`](../timesheets/README.md) owns the shared time entry that
+  support's `ServiceTimeEntry` extends with `caseId` / `specialistId`.
 - [`smrt-users`](../users/README.md) supplies permission resolution.
 - [`smrt-subscriptions`](../subscriptions/README.md) may supply plan keys without
   becoming a runtime dependency.

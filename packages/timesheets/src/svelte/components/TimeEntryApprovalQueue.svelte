@@ -1,24 +1,30 @@
 <script lang="ts">
 /**
- * TimeEntryApprovalQueue — reusable Service Time Entry review list (issue
- * #1930): date, hours, description, worker, status, and the client charge
- * amount at a glance, with approve/reject actions on `submitted` rows.
- * Presentational: the host loads entries through `TimeEntryApprovalService`
- * / `ServiceTimeEntryCollection`, adapts them with `toSupportTimeEntryView`,
- * and wires `onapprove` / `onreject` to the approval service.
+ * TimeEntryApprovalQueue — reusable time-entry review list (issue #1930,
+ * moved to smrt-timesheets in #3288): date, hours, description, worker,
+ * status, and the client charge amount at a glance, with approve/reject
+ * actions on `submitted` rows. Presentational: the host loads entries (e.g.
+ * through `ServiceTimeEntryCollection`), adapts them to
+ * `TimeEntryApprovalView` (smrt-support's `toSupportTimeEntryView` does this
+ * for support entries), and wires `onapprove` / `onreject` to its approval
+ * service.
  */
 
 import { Button, StatusBadge } from '@happyvertical/smrt-ui';
 import { Input } from '@happyvertical/smrt-ui/forms';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { M } from '../i18n.js';
 import {
-  humanizeStatus,
-  type SupportTimeEntryView,
+  humanizeTimeEntryStatus,
+  type TimeEntryApprovalView,
   timeEntryStatusBadgeKey,
 } from '../types.js';
 
+const { t } = useI18n();
+
 export interface TimeEntryApprovalQueueProps {
   /** Array of time entries awaiting approval review. */
-  entries: SupportTimeEntryView[];
+  entries: TimeEntryApprovalView[];
   /** Callback invoked with entry ID when approving a time entry. */
   onapprove?: (id: string) => void;
   /** Callback invoked with entry ID and rejection reason when rejecting a time entry. */
@@ -31,7 +37,7 @@ const {
   entries,
   onapprove,
   onreject,
-  emptyMessage = 'No time entries',
+  emptyMessage,
 }: TimeEntryApprovalQueueProps = $props();
 
 /** The entry currently collecting a rejection reason (one at a time). */
@@ -80,7 +86,9 @@ function formatAmount(amount: number, currency = 'USD'): string {
 </script>
 
 {#if entries.length === 0}
-  <p class="time-approval-empty">{emptyMessage}</p>
+  <p class="time-approval-empty">
+    {emptyMessage ?? t(M['timesheets.approval_queue.empty'])}
+  </p>
 {:else}
   <ul class="time-approval-queue">
     {#each entries as entry (entry.id)}
@@ -97,7 +105,7 @@ function formatAmount(amount: number, currency = 'USD'): string {
             <span class="time-approval-hours">{formatHours(entry.hours)}</span>
             <StatusBadge
               status={timeEntryStatusBadgeKey(entry.status)}
-              label={humanizeStatus(entry.status)}
+              label={humanizeTimeEntryStatus(entry.status)}
               size="sm"
             />
             {#if entry.amount !== undefined}
@@ -112,42 +120,42 @@ function formatAmount(amount: number, currency = 'USD'): string {
             {#if rejectingId === entry.id}
               <Input
                 bind:value={rejectReason}
-                placeholder="Rejection reason"
-                aria-label={`Rejection reason for: ${entry.description}`}
+                placeholder={t(M['timesheets.approval_queue.reason_placeholder'])}
+                aria-label={t(M['timesheets.approval_queue.reason_aria'], { description: entry.description })}
               />
               <Button
                 variant="danger"
                 size="sm"
                 disabled={rejectReason.trim().length === 0}
                 onclick={() => confirmReject(entry.id)}
-                aria-label={`Confirm rejection of: ${entry.description}`}
+                aria-label={t(M['timesheets.approval_queue.confirm_reject_aria'], { description: entry.description })}
               >
-                Confirm reject
+                {t(M['timesheets.approval_queue.confirm_reject'])}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onclick={cancelReject}
-                aria-label={`Cancel rejecting: ${entry.description}`}
+                aria-label={t(M['timesheets.approval_queue.cancel_aria'], { description: entry.description })}
               >
-                Cancel
+                {t(M['timesheets.approval_queue.cancel'])}
               </Button>
             {:else}
               <Button
                 variant="primary"
                 size="sm"
                 onclick={() => onapprove?.(entry.id)}
-                aria-label={`Approve time entry: ${entry.description}`}
+                aria-label={t(M['timesheets.approval_queue.approve_aria'], { description: entry.description })}
               >
-                Approve
+                {t(M['timesheets.approval_queue.approve'])}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onclick={() => beginReject(entry.id)}
-                aria-label={`Reject time entry: ${entry.description}`}
+                aria-label={t(M['timesheets.approval_queue.reject_aria'], { description: entry.description })}
               >
-                Reject
+                {t(M['timesheets.approval_queue.reject'])}
               </Button>
             {/if}
           </div>

@@ -11,12 +11,12 @@ import {
   userEvent,
 } from '@happyvertical/smrt-vitest/svelte';
 import { describe, expect, it, vi } from 'vitest';
-import type { SupportTimeEntryView } from '../../types.js';
+import type { TimeEntryApprovalView } from '../../types.js';
 import TimeEntryApprovalQueue from '../TimeEntryApprovalQueue.svelte';
 
 function entryView(
-  overrides: Partial<SupportTimeEntryView> = {},
-): SupportTimeEntryView {
+  overrides: Partial<TimeEntryApprovalView> = {},
+): TimeEntryApprovalView {
   return {
     id: 'te-1',
     date: '2026-07-01',
@@ -29,7 +29,6 @@ function entryView(
     hourlyRate: 12000, // $120.00/h in cents
     source: 'timer',
     participantKind: 'human',
-    caseId: 'case-1',
     ...overrides,
   };
 }

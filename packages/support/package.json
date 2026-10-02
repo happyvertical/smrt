@@ -45,6 +45,7 @@
     "@happyvertical/smrt-messages": "workspace:*",
     "@happyvertical/smrt-projects": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-timesheets": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:"

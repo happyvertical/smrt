@@ -1,5 +1,6 @@
 /**
- * PostgreSQL lane for the Professional Service evidence money columns (#2401).
+ * PostgreSQL lane for the Professional Service evidence money columns (#2401),
+ * moved here from smrt-projects with the snapshot models (#3288).
  *
  * `ServiceChargeSnapshot.amount` and `ServiceCompensationSnapshot.amount` are
  * **integer minor units** — `$19.99` is `1999` — and the delivery margin is the
@@ -27,11 +28,11 @@ import {
   ServiceChargeSnapshotCollection,
   ServiceCompensationSnapshotCollection,
   ServiceTimeEntryCollection,
-} from '../models/service-evidence.js';
+} from '../index.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
-describePostgres('projects money columns on PostgreSQL (#2401)', () => {
+describePostgres('timesheets money columns on PostgreSQL (#2401)', () => {
   let isolated: IsolatedTestDbResult | undefined;
   let db: DatabaseInterface;
 
@@ -127,6 +128,8 @@ describePostgres('projects money columns on PostgreSQL (#2401)', () => {
       durationSeconds: 3600,
     });
 
+    // Refused at the model boundary with the same error SQLite gets, not
+    // only by PostgreSQL's integer column (22P02).
     const charges = await ServiceChargeSnapshotCollection.create({ db });
     await expect(
       charges.create({
@@ -135,6 +138,19 @@ describePostgres('projects money columns on PostgreSQL (#2401)', () => {
         currency: 'USD',
         pricingVersion: 'pricing-v2',
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/ServiceChargeSnapshot.*integer number of minor units/);
+    const compensations = await ServiceCompensationSnapshotCollection.create({
+      db,
+    });
+    await expect(
+      compensations.create({
+        timeEntryId: String(entry.id),
+        amount: 90.5,
+        currency: 'USD',
+        termsVersion: 'provider-v1',
+      }),
+    ).rejects.toThrow(
+      /ServiceCompensationSnapshot.*integer number of minor units/,
+    );
   });
 });
