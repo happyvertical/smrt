@@ -41,18 +41,20 @@ export interface RolePermissionOptions extends SmrtObjectOptions {
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
+  // One durable grant per pair; core uses conflict-tolerant natural-key writes.
+  conflictColumns: ['role_id', 'permission_id'],
 })
 export class RolePermission extends SmrtObject {
   /**
    * Foreign key to Role
    */
-  @foreignKey('Role', { required: true })
+  @foreignKey('Role', { required: true, onDelete: 'NO ACTION' })
   roleId?: string;
 
   /**
    * Foreign key to Permission
    */
-  @foreignKey('Permission', { required: true })
+  @foreignKey('Permission', { required: true, onDelete: 'NO ACTION' })
   permissionId?: string;
 
   constructor(options: RolePermissionOptions = {}) {

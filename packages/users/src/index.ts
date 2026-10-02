@@ -127,6 +127,11 @@ export {
   type UserEmailKeyBackfillErrorCode,
 } from './migrations/backfillUserEmailKeys.js';
 export {
+  type DeduplicateRolePermissionsOptions,
+  type DeduplicateRolePermissionsResult,
+  deduplicateRolePermissions,
+} from './migrations/deduplicateRolePermissions.js';
+export {
   type MaterializeTenantHierarchyOptions,
   type MaterializeTenantHierarchyResult,
   materializeTenantHierarchy,

@@ -920,3 +920,43 @@ for authentication, deduplication, and status semantics.
 ## License
 
 MIT
+
+### Upgrade duplicate role grants (#3329)
+
+`RolePermission` now has a unique natural key `(role_id, permission_id)`.
+Concurrent seeders converge through core's conflict-tolerant writes, preserving
+one grant ID per pair. Permissions already use `(slug, context)` and system
+roles use the tenant-aware natural key. System-role bootstrap holds a
+PostgreSQL transaction advisory lock across its read/create sequence so two
+seeders also return the same global (`tenant_id = NULL`) role IDs. The concurrent cold-seed test
+checks all three catalogs. Seeding still uses bounded batches and is additive
+unless `prune: true`; concurrent passes must use the same catalog/matrix.
+
+Existing deployments need a maintenance window **before ordinary schema
+migration**: adding the new unique index directly fails if duplicates exist.
+Back up the database, stop every application writer and bootstrap/seed process,
+and run the following once with the new package from an operator process:
+
+```typescript
+import { getDatabase } from '@happyvertical/sql';
+import { deduplicateRolePermissions } from '@happyvertical/smrt-users';
+
+const db = await getDatabase(databaseConfig);
+console.log(await deduplicateRolePermissions(db, { dryRun: true }));
+console.log(await deduplicateRolePermissions(db, {
+  maintenanceConfirmed: true,
+}));
+```
+
+The migration keeps the earliest `created_at` per pair (lowest `id` breaks ties;
+null timestamps sort last), deletes only extra grants, and creates
+`role_permissions_role_id_permission_id_idx` in the same transaction. Other
+pairs and surviving grant data remain intact. Failure rolls the transaction
+back; after resolving its cause, rerun the migration. Dry runs change nothing.
+The helper requires transaction support and supports SQLite, DuckDB and
+PostgreSQL; PostgreSQL locks the grant table while repairing it. Writer shutdown
+is still required because older application versions cannot seed safely
+against the new constraint. Apply the remaining application schema migrations,
+run `smrt doctor --db` / `db:status --parity`, deploy the new version to every
+writer, then resume traffic. Do not roll back application writers without also
+restoring the pre-upgrade schema/database backup.
