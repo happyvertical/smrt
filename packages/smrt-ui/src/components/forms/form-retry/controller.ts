@@ -130,7 +130,8 @@ export interface FormRetryValuesHook<T = unknown> {
   /**
    * What to keep for this submit — values the page holds outside form fields
    * (an uploaded asset's id, a signature capture key, a selection). Must be
-   * JSON-serializable. Called after the submit is accepted.
+   * JSON-serializable: a result that is not keeps no draft for that submit
+   * and drops an earlier attempt's. Called after the submit is accepted.
    */
   capture: (formData: FormData) => T;
   /**
