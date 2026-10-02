@@ -495,6 +495,76 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
       expect([...ObjectRegistry.getAllClasses().keys()]).toEqual([]);
     });
 
+    function cacheCompetingClaims(): void {
+      getManifestCache().set(NEW_PKG, {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: NEW_PKG,
+        objects: { [CURRENT]: MOVED },
+      });
+      getManifestCache().set(RIVAL_PKG, {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: RIVAL_PKG,
+        objects: {
+          [`${RIVAL_PKG}:MovedThing`]: objectDef('MovedThing', RIVAL_PKG, {
+            decoratorConfig: { previousQualifiedNames: [OLD] },
+          }),
+        },
+      });
+    }
+
+    for (const order of ['current name first', 'old name first'] as const) {
+      it(`refuses competing manifest claims whichever name is loaded first (${order})`, async () => {
+        cacheCompetingClaims();
+        const [first, second] =
+          order === 'current name first' ? [CURRENT, OLD] : [OLD, CURRENT];
+
+        for (const name of [first, second]) {
+          await expect(
+            ObjectRegistry.resolveQualifiedNameAsync(name),
+          ).rejects.toMatchObject({ code: QUALIFIED_NAME_ALIAS_COLLISION });
+          expect([...ObjectRegistry.getAllClasses().keys()]).toEqual([]);
+        }
+        await expect(
+          ObjectRegistry.ensureManifestLoaded(CURRENT),
+        ).rejects.toMatchObject({ code: QUALIFIED_NAME_ALIAS_COLLISION });
+        expect(ObjectRegistry.getClassByQualifiedName(OLD)).toBeUndefined();
+      });
+    }
+
+    it('refuses an eager registration whose old name another loaded manifest claims', () => {
+      cacheCompetingClaims();
+      let thrown: unknown;
+      try {
+        register(MOVED);
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as { code?: string })?.code).toBe(
+        QUALIFIED_NAME_ALIAS_COLLISION,
+      );
+
+      class DecoratedMoved extends SmrtObject {}
+      thrown = undefined;
+      try {
+        ObjectRegistry.register(
+          DecoratedMoved as unknown as typeof SmrtObject,
+          {
+            packageName: NEW_PKG,
+            tableName: 't3338_decoratedmoveds',
+            previousQualifiedNames: [OLD],
+          },
+        );
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as { code?: string })?.code).toBe(
+        QUALIFIED_NAME_ALIAS_COLLISION,
+      );
+      expect([...ObjectRegistry.getAllClasses().keys()]).toEqual([]);
+    });
+
     it('still reports an unknown old name as not loadable', async () => {
       await expect(
         ObjectRegistry.tryLoadFromExternalPackage(`${OLD_PKG}:NeverExisted`),

@@ -67,7 +67,11 @@ MCP/CLI/REST generation, knowledge surfaces and every other iteration see one
 entry per class. Registration refuses ambiguity with
 `CONFIG_QUALIFIED_NAME_ALIAS_COLLISION` when an alias equals a live class's
 qualified name (in either registration order) or when two classes claim one old
-name. It refuses `CONFIG_QUALIFIED_NAME_ALIAS_INVALID` when an entry is not
+name. That includes a competing claim in any loaded manifest, so registration
+refuses an alias another installed package also declares. A lazy load of a
+manifest that declares aliases first loads every discoverable manifest. That
+inventory is cached per registry generation, so the check applies whether the
+class is requested by its current name or by an old one. It refuses `CONFIG_QUALIFIED_NAME_ALIAS_INVALID` when an entry is not
 a scoped `@scope/package:ClassName` (unscoped names never resolve as qualified), repeats, or names the class itself. Manifest generation
 (`ManifestGenerator.assertQualifiedNameAliases`) fails closed on the same
 mistakes. The knowledge artifact lists the names as

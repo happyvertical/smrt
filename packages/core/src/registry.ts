@@ -120,6 +120,7 @@ import {
   resolveType as _resolveType,
 } from './registry/name-resolver';
 import {
+  collectManifestAliasClaims,
   getQualifiedNameAliasMap,
   lookupQualifiedNameAlias,
   readPreviousQualifiedNames,
@@ -257,10 +258,12 @@ function importManifestLoader(): Promise<ManifestLoaderModule> {
 }
 
 /**
- * Old qualified names the lazy manifest alias search (#3338) found no owner
- * for, keyed to the registry generation of that search.
+ * Lazy alias claim inventory (#3338), keyed to the registry generation it
+ * was built at. See `ObjectRegistry.loadManifestAliasInventory()`.
  */
-const manifestAliasMissAtGeneration = new Map<string, number>();
+let manifestAliasInventory:
+  | { generation: number; claims: Map<string, Set<string>> }
+  | undefined;
 
 /**
  * Registered classes whose manifest has been reconciled, keyed to the registry
@@ -1547,46 +1550,39 @@ export class ObjectRegistry {
   }
 
   /**
-   * Find the current qualified name of a class that declares `alias` in its
-   * manifest `previousQualifiedNames` (#3338). Already-loaded manifests are
-   * searched first, then every discoverable SMRT package's manifest.
+   * Old name → claiming current names across every manifest this process can
+   * see: loaded caches AND every discoverable package's manifest, which this
+   * also loads into the cache so registration-time checks see it (#3338).
+   * Rebuilt only when the registry generation moves, so repeated lookups of
+   * a stale or unknown old name do not rescan every installed manifest.
    */
-  private static async findManifestQualifiedNameAlias(
-    alias: string,
+  private static async loadManifestAliasInventory(
     loadExternalManifest: (
       packageName: string,
     ) => Promise<SmartObjectManifest | null>,
-  ): Promise<string | undefined> {
-    // A miss is remembered for the registry generation it was observed at,
-    // so a stale `metaType` naming an uninstalled package does not rescan
-    // every installed manifest on each hydration.
-    if (manifestAliasMissAtGeneration.get(alias) === getRegistryGeneration()) {
-      return undefined;
+  ): Promise<Map<string, Set<string>>> {
+    if (manifestAliasInventory?.generation === getRegistryGeneration()) {
+      return manifestAliasInventory.claims;
     }
-    // Every claimant is collected — loaded manifests AND every discoverable
-    // package — so two owners of one old name are refused, not resolved by
-    // whichever manifest happened to be searched first.
-    const manifests: Array<SmartObjectManifest | null | undefined> = [
-      ...getManifestCache().values(),
-      getStaticManifestCache(),
-      getTestManifestCache(),
-      getLocalTestManifestCache(),
-    ];
     let packages: string[] = [];
     try {
       packages = await discoverInstalledSmrtPackages();
     } catch (error) {
       verboseLog(
-        `[ObjectRegistry] Package discovery failed while resolving alias ${alias}: ${error instanceof Error ? error.message : String(error)}`,
+        `[ObjectRegistry] Package discovery failed while indexing qualified-name aliases: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
     for (const packageName of packages) {
-      manifests.push(await loadExternalManifest(packageName));
+      await loadExternalManifest(packageName);
     }
-    const current = resolveManifestQualifiedNameAlias(manifests, alias);
-    if (current) return current;
-    manifestAliasMissAtGeneration.set(alias, getRegistryGeneration());
-    return undefined;
+    const claims = collectManifestAliasClaims([
+      ...getManifestCache().values(),
+      getStaticManifestCache(),
+      getTestManifestCache(),
+      getLocalTestManifestCache(),
+    ]);
+    manifestAliasInventory = { generation: getRegistryGeneration(), claims };
+    return claims;
   }
 
   /**
@@ -1671,9 +1667,9 @@ export class ObjectRegistry {
       // NEW owner's manifest carries, even when the old package's manifest
       // no longer lists the class (or the package is no longer installed).
       if (requestedPackageName) {
-        const current = await ObjectRegistry.findManifestQualifiedNameAlias(
+        const current = resolveManifestQualifiedNameAlias(
+          await ObjectRegistry.loadManifestAliasInventory(loadExternalManifest),
           className,
-          loadExternalManifest,
         );
         if (current && current !== className) {
           const loaded =
@@ -1715,6 +1711,19 @@ export class ObjectRegistry {
     verboseLog(
       `[ObjectRegistry] ✅ Found ${className} in ${packageName} manifest`,
     );
+
+    // #3338: before publishing a lazy registration of a manifest that
+    // declares `previousQualifiedNames`, load the full alias claim inventory
+    // into the manifest cache, so registration's claim check sees every
+    // installed competitor — whether the class was requested by its current
+    // name or by an old one. Manifests without aliases skip the scan.
+    if (
+      Object.values(manifest.objects).some(
+        (def) => readPreviousQualifiedNames(def?.decoratorConfig).length > 0,
+      )
+    ) {
+      await ObjectRegistry.loadManifestAliasInventory(loadExternalManifest);
+    }
 
     // Register the class from manifest
     ObjectRegistry.registerFromManifest(
