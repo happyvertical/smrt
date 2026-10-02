@@ -88,7 +88,9 @@ describe('issue #2750: ObjectRegistry is shared with the pool: "forks" worker pr
       const smrtDir = join(fixtureRoot, '.smrt');
       const manifestPath = join(smrtDir, 'manifest.json');
       const knowledgePath = join(smrtDir, 'smrt-knowledge.json');
-      const agentSurface = {
+      const agentSurface: NonNullable<
+        Parameters<typeof buildDomainKnowledgeManifest>[0]['agentSurface']
+      > = {
         intents: [
           {
             id: 'widgets.next_page',
