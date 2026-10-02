@@ -90,7 +90,7 @@ export const { GET, POST } = mountAssistantRoutes({ ai: assistantAI });
 | `GET threads` | — | `{ items: ThreadSummary[] }` |
 | `POST threads` | `{ title }` | 201 `{ thread }` |
 | `GET threads/:id/messages` | — | `{ items: Message[] }`, chronological |
-| `POST threads/:id/messages` | `{ content, clientRequestId, attachments?, model?, clientTools? }` | SSE turn (a leading `message` event carries the stored user message), or JSON `{ duplicate, inProgress, userMessage, assistantMessage?, messages }` for a `clientRequestId` already seen |
+| `POST threads/:id/messages` | `{ content, clientRequestId, attachments?, model?, clientTools? }` | SSE turn (a leading `message` event carries the stored user message), JSON `{ duplicate, inProgress, outcome, userMessage, assistantMessage?, messages }` for a `clientRequestId` already stored in this thread, or 409 `turn_failed` |
 | `POST threads/:id/resume` | `{ continuationId, results, clientTools?, model? }` | SSE turn |
 | `POST attachments` | multipart `file` | 201 `{ attachment }` |
 | `POST actions/preview`, `actions/apply` | `DataSurfaceActionWireRequest` | `{ result }` |
@@ -117,10 +117,20 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   `clientToolAllowList`. Suspended turns wait in the session context
   (`createSessionContinuationStore`), keyed by thread; `continuations`
   replaces the store.
-- **Retries.** A repeated `clientRequestId` never stores a second user
-  message: a send already running, or already stored in the last 200
-  messages of the thread, gets the JSON duplicate answer. The in-flight guard
-  is per process; across replicas the stored id is the guard.
+- **Retries.** The user message's primary key is a UUIDv5 of tenant, room,
+  thread, actor and `clientRequestId` (`clientRequestMessageId`), inserted
+  (never upserted), so the database itself is the reservation: of any number
+  of identical sends, on any replica and at any later time, one stores the
+  message and runs the turn, and the rest get the JSON duplicate answer,
+  looked up by that id (not by scanning recent messages). The answer depends
+  on the stored send: a reply follows it → `completed`; its turn was stopped
+  → `cancelled`; still running or waiting on browser tools → `in_progress`
+  (the dock polls); its turn failed, or it has no reply and no recorded
+  outcome after `abandonedTurnMs` (default 15 minutes) → 409 `turn_failed`.
+  A retry never re-runs a turn: the person sends again, under a new id. The
+  turn's outcome is kept on the user message (`metadata.turnOutcome`). On a
+  PostgreSQL transaction handle the insert runs under a savepoint so a
+  conflict does not abort the transaction.
 - **Limits.** JSON bodies are capped at 1 MiB (`maxBodyBytes`), messages at
   12,000 characters (`maxContentLength`), titles at 200, attachments at 10 per
   message. A requested model must be in `models` when a list is set and is

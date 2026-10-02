@@ -155,9 +155,9 @@ and `createAssistantHttpActionClient` (`./svelte`) are its browser half.
 Principal from `event.locals` (`user.id`, `user.profileId`, `tenantId`) or
 `resolvePrincipal`; threads are served only from the actor's keyed assistant
 session room in that tenant (else 404); `allowedTools` is fail-closed;
-`ai` is injected, never read from env. `ChatService.sendMessage` takes
-`clientRequestId` (stored in `metadata`, the dedup key) and verified
-`attachments`. Details: [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
+`ai` is injected, never read from env. `sendMessage`'s `clientRequestId`
+makes the row id a UUIDv5 (`clientRequestMessageId`): the PK is the retry
+reservation. Details: [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
 
 ## Gotchas
 
