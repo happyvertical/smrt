@@ -5,8 +5,16 @@ Provider-agnostic project management models for the s-m-r-t framework. Manages r
 ## Installation
 
 ```bash
-pnpm add @happyvertical/smrt-projects
+pnpm add @happyvertical/smrt-projects @happyvertical/smrt-timesheets
 ```
+
+Time entries and their commercial snapshots live in
+[`smrt-timesheets`](../timesheets/README.md) (#3288); smrt-projects re-exports
+them. Under pnpm, declare `@happyvertical/smrt-timesheets` directly: the CLI's
+manifest discovery reads only top-level packages, so without it `smrt
+db:migrate` / `db:status` stop planning `service_time_entries`,
+`service_charge_snapshots`, and `service_compensation_snapshots`. See
+[SERVICE_TIME_MIGRATION.md](./SERVICE_TIME_MIGRATION.md).
 
 ## Usage
 

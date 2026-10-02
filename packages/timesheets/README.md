@@ -114,8 +114,21 @@ and no data migration.** The table names, columns, indexes, and conflict keys
 are unchanged, and the tables carry no type discriminator, so existing rows
 load through every package's classes as they are.
 
+> **pnpm: add a direct `@happyvertical/smrt-timesheets` dependency.** The
+> CLI's manifest discovery (`smrt db:migrate`, `db:status`, `db:diff`) reads
+> only packages installed at the top level of `node_modules`. Under pnpm a
+> transitive dependency is not there, so an application that depends on
+> smrt-projects or smrt-support but not on smrt-timesheets stops planning
+> `service_time_entries`, `service_charge_snapshots`, and
+> `service_compensation_snapshots`: a fresh database never gets them (and
+> `ServiceEvidenceService` then fails the runtime table check), and an
+> existing one reports them as orphan tables. Add
+> `pnpm add @happyvertical/smrt-timesheets`. npm and Yarn hoist the package
+> and are unaffected.
+
 | Before | After |
 |---|---|
+| `@happyvertical/smrt-projects` / `@happyvertical/smrt-support` in `dependencies` | Also add `@happyvertical/smrt-timesheets` under pnpm, or the CLI stops planning the three time tables (see the note above) |
 | `ServiceTimeEntry`, `ServiceEvidenceService`, snapshots from `@happyvertical/smrt-projects` | Same names, still exported from smrt-projects (re-exports); new code imports `@happyvertical/smrt-timesheets` |
 | `ServiceTimeEntry` from `@happyvertical/smrt-support` | Unchanged: support's subtype, now extending the timesheets entry |
 | `caseId` / `specialistId`, `forCase()` / `forSpecialist()` on the projects export | Support subtype only — import `ServiceTimeEntry` / `ServiceTimeEntryCollection` from smrt-support |

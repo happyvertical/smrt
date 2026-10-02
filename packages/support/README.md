@@ -11,10 +11,15 @@ connects the two without making Support execute repository work.
 ## Installation
 
 ```bash
-pnpm add @happyvertical/smrt-support
+pnpm add @happyvertical/smrt-support @happyvertical/smrt-timesheets
 ```
 
-Add `svelte` for the optional operator surfaces.
+Add `svelte` for the optional operator surfaces. Support's `ServiceTimeEntry`
+extends the [`smrt-timesheets`](../timesheets/README.md) entry (#3288). Under
+pnpm, declare `@happyvertical/smrt-timesheets` directly: the CLI's manifest
+discovery reads only top-level packages, so without it `smrt db:migrate` /
+`db:status` stop planning the timesheets snapshot tables
+(`service_charge_snapshots`, `service_compensation_snapshots`).
 
 ## Open and manage a case
 
