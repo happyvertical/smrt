@@ -301,3 +301,9 @@ be retried. Earlier committed taps in the batch remain committed. Device clocks
 are treated as supplied evidence, not server authentication; consumers should
 apply device drift policy before replay. Replay receipts must be retained for as
 long as clients can retry their ids.
+
+## Period timecards
+
+`./rollup` provides per-person integer-second regular/overtime rollups, immutable
+confirmation, and attributed append-only adjustments. Consumer resolvers own
+calendar/timezone, holiday and overtime rules. See the [contract and example](agents/period-rollup.md).

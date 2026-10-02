@@ -19,6 +19,7 @@ import './__smrt-register__.js';
 
 export * from './attendance.js';
 export * from './models/index.js';
+export * from './rollup.js';
 export * from './services/index.js';
 export {
   SERVICE_TIME_ENTRY_STATUS_TRANSITIONS,

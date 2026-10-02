@@ -10,7 +10,8 @@
   "files": [
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "exports": {
     ".": {
@@ -31,6 +32,10 @@
     "./attendance": {
       "types": "./dist/attendance.d.ts",
       "import": "./dist/attendance.js"
+    },
+    "./rollup": {
+      "types": "./dist/rollup.d.ts",
+      "import": "./dist/rollup.js"
     }
   },
   "scripts": {
