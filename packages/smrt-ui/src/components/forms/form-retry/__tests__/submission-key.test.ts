@@ -17,7 +17,12 @@ import {
   settleSubmit,
   submitDisposition,
 } from '../submission-key.js';
-import { fullStorage, memoryStorage, refusingStorage } from './storage.js';
+import {
+  fullStorage,
+  memoryStorage,
+  refusingStorage,
+  stickyStorage,
+} from './storage.js';
 
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -232,6 +237,27 @@ describe('the key store', () => {
     const storage = fullStorage();
     const first = readSubmissionKey({ form: 'po', storage });
     expect(readSubmissionKey({ form: 'po', storage })).toBe(first);
+  });
+
+  it('rotates even when the store refuses to remove the old key', () => {
+    const storage = stickyStorage();
+    const first = readSubmissionKey({ form: 'po', storage });
+    const rotated = rotateSubmissionKey({ form: 'po', storage });
+    expect(rotated).not.toBe(first);
+    expect(readSubmissionKey({ form: 'po', storage })).toBe(rotated);
+    expect(storage.store.get('smrt:form-retry:po:key')).toBe(rotated);
+    expect(isSubmissionKeyPersistent({ form: 'po', storage })).toBe(true);
+  });
+
+  it('rotates when removal AND the replacement write are refused over an existing key', () => {
+    const storage = stickyStorage(true);
+    storage.store.set('smrt:form-retry:po:key', 'stale-key');
+    expect(readSubmissionKey({ form: 'po', storage })).toBe('stale-key');
+    const rotated = rotateSubmissionKey({ form: 'po', storage });
+    expect(rotated).not.toBe('stale-key');
+    // The fresh key lives in memory and takes precedence over stale storage.
+    expect(readSubmissionKey({ form: 'po', storage })).toBe(rotated);
+    expect(isSubmissionKeyPersistent({ form: 'po', storage })).toBe(false);
   });
 
   it('`storage: null` keeps everything in memory', () => {

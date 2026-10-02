@@ -47,3 +47,26 @@ export function fullStorage(): FormRetryStorage & {
     },
   };
 }
+
+/**
+ * Reads work; `removeItem` throws, and so does `setItem` when `refuseWrites`
+ * (a store that cannot let go of a value already in it).
+ */
+export function stickyStorage(refuseWrites = false): FormRetryStorage & {
+  store: Map<string, string>;
+} {
+  const store = new Map<string, string>();
+  return {
+    store,
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => {
+      if (refuseWrites) {
+        throw new DOMException('Quota exceeded', 'QuotaExceededError');
+      }
+      store.set(key, value);
+    },
+    removeItem: () => {
+      throw new DOMException('The operation is insecure.', 'SecurityError');
+    },
+  };
+}

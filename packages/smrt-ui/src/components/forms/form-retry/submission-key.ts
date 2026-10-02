@@ -27,9 +27,11 @@
  * `sessionStorage` throws in private windows, with site data blocked, and in
  * some embedded webviews; even reading the `sessionStorage` property can throw
  * a `SecurityError`. Every access is guarded, and a refused write falls back
- * to an in-memory store. In the browser that store is module-level, so the key
- * still survives a remount for the life of the page — only a full reload loses
- * it, which is less idempotent, never wrong. During SSR there is no shared
+ * to an in-memory store, which is read before the backing store so a value
+ * the store could not replace or remove is never handed back. In the browser
+ * that store is module-level, so the key still survives a remount for the
+ * life of the page — only a full reload loses it, which is less idempotent,
+ * never wrong. During SSR there is no shared
  * store at all — neither the module-level memory nor the default storage (Node
  * 25+ has a process-wide `sessionStorage` global): either would hand one
  * request's key to another, so each read off the browser mints a fresh,
@@ -135,24 +137,25 @@ function resolveStorage(
 }
 
 /**
- * Read `key` from `storage`, then from memory. Memory is consulted second so a
- * value whose storage write was refused (quota) is still found.
+ * Read `key` from memory, then from `storage`. Memory holds a value only when
+ * its storage write was refused (a successful write and every removal drop the
+ * memory copy), so it is the newer of the two: a store that refused to replace
+ * or remove an old value must not hand that stale value back.
  * @internal
  */
 export function guardedGet(
   storage: FormRetryStorage | null | undefined,
   key: string,
 ): string | null {
+  const remembered = memoryStore()?.get(key);
+  if (remembered !== undefined) return remembered;
   const store = resolveStorage(storage);
-  if (store) {
-    try {
-      const value = store.getItem(key);
-      if (value !== null && value !== undefined) return value;
-    } catch {
-      // Refused: fall through to memory.
-    }
+  if (!store) return null;
+  try {
+    return store.getItem(key) ?? null;
+  } catch {
+    return null;
   }
-  return memoryStore()?.get(key) ?? null;
 }
 
 /**
@@ -244,6 +247,9 @@ export function isSubmissionKeyPersistent(
 ): boolean {
   const store = resolveStorage(location.storage);
   if (!store) return false;
+  // A key held in memory is one the store refused to write: whatever the
+  // store still holds under that name is stale.
+  if (memoryStore()?.has(keyName(location))) return false;
   try {
     return store.getItem(keyName(location)) !== null;
   } catch {
@@ -268,10 +274,18 @@ export function clearSubmissionKey(location: SubmissionKeyLocation): void {
 /**
  * Clear the key and mint the next one, returning it — for an inline form that
  * stays on screen after a confirmed write.
+ *
+ * The fresh key is written over the old one directly rather than read back:
+ * a store may refuse `removeItem()` while reads still succeed, and reading
+ * after a failed clear would return the retired key. If the replacement write
+ * is refused too, the fresh key lives in memory, which {@link guardedGet}
+ * consults before the store.
  */
 export function rotateSubmissionKey(location: SubmissionKeyLocation): string {
   clearSubmissionKey(location);
-  return readSubmissionKey(location);
+  const minted = (location.mint ?? mintSubmissionKey)();
+  guardedSet(location.storage, keyName(location), minted);
+  return minted;
 }
 
 /**
