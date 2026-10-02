@@ -505,6 +505,7 @@ importable, even if it appears in `dist/`.
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, DateTimeInput, Toggle, etc.) |
 | `@happyvertical/smrt-svelte/settings` | Server-paged settings search, selection, and list/detail layout (`SettingsCatalog`, `paginateSettingsCatalog`) |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
+| `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
 | `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
 | `@happyvertical/smrt-svelte/workspace/server` | Server-side workspace helpers (Node only) |
 | `@happyvertical/smrt-svelte/workspace/live` | `systemFeed` — the AdminShell system scope (jobs/schedules/dispatch) polled from an app status endpoint; deliberately carries no `smrt-web` dependency |
