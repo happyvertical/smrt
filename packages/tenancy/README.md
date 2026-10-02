@@ -193,3 +193,11 @@ if nested code changes tenants. Point reads, raw queries, and writes retain thei
 normal guards. The capability is async-local, restores after exceptions, and does
 not affect concurrent requests. Real system/super-admin callers retain their
 existing bypass behavior. Use bounded collection reads inside the callback.
+
+A consumer can strengthen an already tenant-scoped package model at startup with
+`ObjectRegistry.registerOverride(qualifiedName, { tenancy: { mode: 'required' } })`.
+This policy survives manifest/decorator re-registration and takes precedence over
+optional direct tenant registrations. It preserves the declared tenant field and
+filter/population settings; it cannot introduce tenancy or change schema. Continue
+to enable the tenancy interceptor. Explicit system/super-admin context keeps its
+existing bypass semantics. See smrt-core's consumer runtime restrictions contract.

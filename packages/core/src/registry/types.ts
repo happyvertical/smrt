@@ -1082,6 +1082,8 @@ export interface RegisteredClass {
    * subtype, and a manifest registered later reconciles it (#3125).
    */
   collection?: string;
+  /** Qualified ancestors replaced by same-named consumer subtypes. */
+  replacedQualifiedNames?: string[];
   /** Parent class name (for inheritance chain tracking) */
   extends?: string;
   /** Generic type arg from `SmrtCollection<X>` — marks collection classes. */

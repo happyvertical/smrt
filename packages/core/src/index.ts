@@ -327,6 +327,7 @@ export {
 } from './query-bounds';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
+export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,

@@ -432,6 +432,13 @@ export function getTenantScopedConfig(
   // A class's own @TenantScoped / @smrt({ tenantScoped }) declaration wins.
   const direct = getDirectTenantScopedConfig(className);
   if (direct) {
+    const qualifiedName = ObjectRegistry.getClass(className)?.qualifiedName;
+    if (
+      qualifiedName &&
+      ObjectRegistry.getRuntimeOverride(qualifiedName)?.tenancy
+    ) {
+      return { ...direct, mode: 'required' };
+    }
     return direct;
   }
   // Otherwise inherit recognition from a tenant-scoped STI ancestor (#1596).
