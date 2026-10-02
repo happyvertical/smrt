@@ -150,7 +150,9 @@ export async function handlePlaybookPreflightRoute(
  */
 export function resolveRegisteredObjectName(model: string): string | undefined {
   const registered = model.includes(':')
-    ? ObjectRegistry.getClassByQualifiedName(model)
+    ? ObjectRegistry.getClassByQualifiedName(model, {
+        source: 'playbook step model (REST preflight)',
+      })
     : ObjectRegistry.getClass(model);
   return registered?.name;
 }

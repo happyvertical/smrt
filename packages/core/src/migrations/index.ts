@@ -111,6 +111,20 @@ export {
   migrateSmrtSchemas,
   type PendingSchemaStatementsResult,
 } from './orchestrate.js';
+// Stored deprecated qualified names: doctor counts + opt-in backfill (#3338)
+export {
+  backfillLegacyQualifiedNames,
+  collectLegacyQualifiedNameTargets,
+  countLegacyQualifiedNameReferences,
+  LEGACY_QUALIFIED_NAMES_BACKFILL_PREFIX,
+  type LegacyQualifiedNameBackfillOptions,
+  type LegacyQualifiedNameBackfillResult,
+  type LegacyQualifiedNameOptions,
+  type LegacyQualifiedNameReference,
+  type LegacyQualifiedNameReport,
+  type LegacyQualifiedNameTarget,
+  legacyQualifiedNamesBackfillName,
+} from './qualified-name-aliases.js';
 // SQLite table rebuild (type changes SQLite cannot ALTER in place)
 export {
   type BuildSqliteRebuildStatementsInput,

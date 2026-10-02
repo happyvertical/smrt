@@ -295,6 +295,33 @@ export interface SmartObjectConfig {
   packageName?: string;
 
   /**
+   * Deprecated qualified names (`@package/name:ClassName`) this class was
+   * registered under before it moved package or was renamed (#3338).
+   *
+   * Each entry is a lookup bridge, never a second class: qualified lookups,
+   * `SmrtPolymorphicAssociation.hydrate()`, `@crossPackageRef` and
+   * relationship targets, and playbook `model:` names that still use an old
+   * name resolve to this class, logging a one-time deprecation warning per
+   * name. The alias never owns a table, route, tool, or `getAllClasses()`
+   * entry, and new writes store the current qualified name. An alias that
+   * equals a live class's qualified name, or that two classes both declare,
+   * is a `CONFIG_QUALIFIED_NAME_ALIAS_COLLISION` error.
+   *
+   * Removing an entry is a breaking change: ship it only once
+   * `smrt doctor --db` reports no stored references to that name. See
+   * `packages/core/agents/model-moves.md`.
+   *
+   * @example
+   * ```typescript
+   * @smrt({
+   *   previousQualifiedNames: ['@happyvertical/smrt-projects:ServiceTimeEntry'],
+   * })
+   * export class ServiceTimeEntry extends SmrtObject {}
+   * ```
+   */
+  previousQualifiedNames?: string[];
+
+  /**
    * Custom table name for database storage (defaults to pluralized snake_case class name)
    * Explicitly setting this ensures the table name survives code minification
    */

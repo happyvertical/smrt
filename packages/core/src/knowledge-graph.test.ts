@@ -449,6 +449,112 @@ describe('buildKnowledgeGraph', () => {
     expect(duplicateEdges).toBe(0);
   });
 
+  it('resolves a crossPackageRef by a moved object’s previous qualified name (#3338)', () => {
+    const object = (
+      name: string,
+      qualifiedName: string,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      name,
+      qualifiedName,
+      collection: `${name.toLowerCase()}s`,
+      fields: [],
+      relationships: [],
+      methods: [],
+      surfaces: [],
+      relationshipFeatures: [],
+      tags: [],
+      risks: [],
+      ...extra,
+    });
+    const timesheets = manifest({
+      packageName: '@example/timesheets',
+      objects: [
+        object('TimeEntry', '@example/timesheets:TimeEntry', {
+          previousQualifiedNames: ['@example/projects:TimeEntry'],
+        }),
+      ],
+    });
+    const billing = manifest({
+      packageName: '@example/billing',
+      objects: [
+        object('Invoice', '@example/billing:Invoice', {
+          relationships: [
+            {
+              name: 'timeEntryId',
+              type: 'crossPackageRef',
+              related: '@example/projects:TimeEntry',
+            },
+          ],
+        }),
+      ],
+    });
+
+    const graph = buildKnowledgeGraph([
+      { artifactPath: 'billing/smrt-knowledge.json', manifest: billing },
+      { artifactPath: 'timesheets/smrt-knowledge.json', manifest: timesheets },
+    ]);
+
+    expect(graph.edges).toContainEqual({
+      type: 'crossPackageRef',
+      from: '@example/billing#@example/billing:Invoice',
+      to: '@example/timesheets#@example/timesheets:TimeEntry',
+      field: 'timeEntryId',
+    });
+  });
+
+  it('fails when two distinct objects claim one previous qualified name (#3338)', () => {
+    const moved = (packageName: string) =>
+      manifest({
+        packageName,
+        objects: [
+          {
+            name: 'TimeEntry',
+            qualifiedName: `${packageName}:TimeEntry`,
+            previousQualifiedNames: ['@example/projects:TimeEntry'],
+            collection: 'timeentrys',
+            fields: [],
+            relationships: [],
+            methods: [],
+            surfaces: [],
+            relationshipFeatures: [],
+            tags: [],
+            risks: [],
+          },
+        ],
+      });
+
+    expect(() =>
+      buildKnowledgeGraph([
+        {
+          artifactPath: 'a/smrt-knowledge.json',
+          manifest: moved('@example/a'),
+        },
+        {
+          artifactPath: 'b/smrt-knowledge.json',
+          manifest: moved('@example/b'),
+        },
+      ]),
+    ).toThrow(
+      /previousQualifiedNames "@example\/projects:TimeEntry" is claimed by more than one object: @example\/a#@example\/a:TimeEntry, @example\/b#@example\/b:TimeEntry/,
+    );
+
+    // The SAME object repeated across artifacts (e.g. a package artifact and
+    // a consumer aggregate that scanned it) is one claim, not a conflict.
+    expect(() =>
+      buildKnowledgeGraph([
+        {
+          artifactPath: 'a/smrt-knowledge.json',
+          manifest: moved('@example/a'),
+        },
+        {
+          artifactPath: 'app/smrt-knowledge.json',
+          manifest: moved('@example/a'),
+        },
+      ]),
+    ).not.toThrow();
+  });
+
   it('preserves generatedAt across a rebuild when nothing merged changed (#2872)', () => {
     vi.useFakeTimers();
     try {
