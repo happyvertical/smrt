@@ -234,16 +234,16 @@ export class AttendanceService {
       throw new AttendanceConflict('No open break.');
     if (action === 'punchOut' && work) {
       this.validateWork(work);
-      const unpaid = breaks
+      const unpaidMilliseconds = breaks
         .filter((b) => !b.paid)
         .reduce(
-          (sum, b) =>
-            sum + ((b.endedAt ?? at).getTime() - b.startedAt.getTime()) / 1000,
+          (sum, b) => sum + (b.endedAt ?? at).getTime() - b.startedAt.getTime(),
           0,
         );
       if (
         Math.round(
-          (at.getTime() - punch.startedAt.getTime()) / 1000 - unpaid,
+          (at.getTime() - punch.startedAt.getTime() - unpaidMilliseconds) /
+            1000,
         ) <= 0
       )
         throw new AttendanceConflict(
@@ -256,15 +256,15 @@ export class AttendanceService {
     }
     if (action === 'endBreak') return punch;
     punch.endedAt = at;
-    const unpaidSeconds = breaks
+    const unpaidMilliseconds = breaks
       .filter((b) => !b.paid)
       .reduce(
-        (sum, b) => sum + (b.endedAt!.getTime() - b.startedAt.getTime()) / 1000,
+        (sum, b) => sum + b.endedAt!.getTime() - b.startedAt.getTime(),
         0,
       );
-    punch.unpaidBreakSeconds = Math.round(unpaidSeconds);
+    punch.unpaidBreakSeconds = Math.round(unpaidMilliseconds / 1000);
     punch.durationSeconds = Math.round(
-      (at.getTime() - punch.startedAt.getTime()) / 1000 - unpaidSeconds,
+      (at.getTime() - punch.startedAt.getTime() - unpaidMilliseconds) / 1000,
     );
     await punch.save();
     if (work) await this.link(tx, punch, work);

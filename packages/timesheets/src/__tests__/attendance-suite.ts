@@ -345,6 +345,28 @@ export function attendanceSuite(
       expect(punch.endedAt).toEqual(end);
       expect(punch.durationSeconds).toBe(2);
     });
+    it.each([
+      { total: 4100, unpaid: 600, expected: 4 },
+      { total: 4100, unpaid: 3600, expected: 1 },
+    ])('subtracts integer milliseconds before rounding linked net duration ($unpaid ms unpaid)', async ({
+      total,
+      unpaid,
+      expected,
+    }) => {
+      const start = at(8).getTime();
+      await service.punchIn(new Date(start));
+      await service.startBreak(new Date(start));
+      await service.endBreak(new Date(start + unpaid));
+      const punch = await service.punchOut(new Date(start + total), work);
+      expect(punch.durationSeconds).toBe(expected);
+      expect(punch.unpaidBreakSeconds).toBe(Math.round(unpaid / 1000));
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const entries = await ServiceTimeEntryCollection.create({ db });
+        expect(
+          (await entries.get(punch.serviceTimeEntryId!))!.durationSeconds,
+        ).toBe(expected);
+      });
+    });
     it('rejects a break referencing another tenant punch at the model boundary', async () => {
       const foreign = await new AttendanceService(db, {
         tenantId: crypto.randomUUID(),
