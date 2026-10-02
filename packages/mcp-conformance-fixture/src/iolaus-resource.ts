@@ -1,8 +1,9 @@
 import { build } from 'vite';
 /** Build once before declaration; the resource server never compiles on reads. */
-export async function buildIolausResource() {
+export async function buildIolausResource(hostOrigin: string) {
   const result = await build({
     configFile: false,
+    define: { __IOLAUS_TRUSTED_HOST_ORIGIN__: JSON.stringify(hostOrigin) },
     logLevel: 'error',
     build: {
       write: false,

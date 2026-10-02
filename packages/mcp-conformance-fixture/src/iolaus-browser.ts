@@ -23,21 +23,22 @@ export async function inspectIolausInBrowser(
       ({ html, csp }) => {
         const iframe = document.createElement('iframe');
         iframe.setAttribute('csp', csp);
+        // Opaque sandbox denies direct access to the same-origin synthetic host.
+        iframe.setAttribute('sandbox', 'allow-scripts');
         iframe.srcdoc = html;
         iframe.title = 'Synthetic Iolaus';
         document.body.append(iframe);
         window.addEventListener('message', async (event) => {
-          if (
-            event.source !== iframe.contentWindow ||
-            event.origin !== location.origin
-          )
+          if (event.source !== iframe.contentWindow || event.origin !== 'null')
             return;
           const message = event.data;
           if (!message.method || !message.id) return;
           const reply = (envelope: Record<string, unknown>) =>
             iframe.contentWindow?.postMessage(
               { jsonrpc: '2.0', id: message.id, ...envelope },
-              location.origin,
+              // Opaque sandboxed documents require '*' as the target origin;
+              // the exact iframe window is still checked above.
+              '*',
             );
           if (message.method === 'ui/initialize')
             reply({
@@ -72,6 +73,16 @@ export async function inspectIolausInBrowser(
     const frame = await element.contentFrame();
     if (!frame) throw new Error('Missing embedded frame');
     await frame.waitForLoadState();
+    const directHostAccessDenied = await frame.evaluate(() => {
+      try {
+        void parent.document.body;
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    if (!directHostAccessDenied)
+      throw new Error('Sandboxed view accessed host DOM directly');
     await frame.getByRole('button').first().click();
     await frame.waitForFunction(() =>
       Boolean(document.getElementById('materials')?.textContent),

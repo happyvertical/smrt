@@ -88,11 +88,21 @@ export function createIolausHumanReview(
               row.materialsDigest !== payload?.sha256
             )
               throw new Error('Review unavailable');
-            await tx.query(
-              'UPDATE iolaus_applications SET human_review_opened = ?, review_count = review_count + 1 WHERE id = ?',
+            const updated = await tx.query(
+              `UPDATE iolaus_applications
+                  SET human_review_opened = ?, review_count = review_count + 1, revision = revision + 1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND owner_id = ? AND tenant_id = ?
+                  AND materials_digest = ? AND revision = ?
+                RETURNING id, revision`,
               true,
               row.id,
+              principal.id,
+              principal.tenantId,
+              row.materialsDigest,
+              row.revision,
             );
+            if ((updated.rows?.length ?? 0) !== 1)
+              throw new Error('Review unavailable');
             return {
               reviewUrl: `/review/${row.id}`,
               sha256: row.materialsDigest,

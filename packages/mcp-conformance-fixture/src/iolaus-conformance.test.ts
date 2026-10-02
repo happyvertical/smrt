@@ -167,10 +167,17 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
               }),
             ),
           );
+          await new Promise<void>((resolve) =>
+            server.listen(0, '127.0.0.1', resolve),
+          );
+          const address = server.address();
+          if (!address || typeof address === 'string')
+            throw new Error('No HTTP address');
+          const origin = `http://127.0.0.1:${address.port}`;
           const app = createIolausServer(
             db,
             authorize,
-            await buildIolausResource(),
+            await buildIolausResource(origin),
           );
           const route = mountMcpRoute(app);
           const pair = await generateKeyPair('RS256');
@@ -180,13 +187,6 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
             alg: 'RS256',
             use: 'sig',
           };
-          await new Promise<void>((resolve) =>
-            server.listen(0, '127.0.0.1', resolve),
-          );
-          const address = server.address();
-          if (!address || typeof address === 'string')
-            throw new Error('No HTTP address');
-          const origin = `http://127.0.0.1:${address.port}`;
           const auth = createMcpResourceAuth({
             profile: 'local',
             issuer: origin,

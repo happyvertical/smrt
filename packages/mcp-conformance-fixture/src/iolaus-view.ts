@@ -1,9 +1,13 @@
 /** Prebuilt portable view: all domain data arrives through authorized tools. */
 import { McpAppBridge } from '@happyvertical/smrt-mcp-apps';
 
+declare const __IOLAUS_TRUSTED_HOST_ORIGIN__: string;
+
+// Bound by the resource builder; referrer and embed input are untrusted.
+const trustedHostOrigin = __IOLAUS_TRUSTED_HOST_ORIGIN__;
 const bridge = new McpAppBridge({
   hostWindow: parent,
-  hostOrigin: new URL(document.referrer).origin,
+  hostOrigin: trustedHostOrigin,
   appInfo: { name: 'Synthetic Iolaus review', version: '1' },
 });
 const main = document.createElement('main');
@@ -45,7 +49,7 @@ async function browse() {
             ) {
               const link = document.createElement('a');
               link.textContent = 'Open dedicated human review';
-              link.href = `${new URL(document.referrer).origin}${path}`;
+              link.href = `${trustedHostOrigin}${path}`;
               link.target = '_blank';
               link.rel = 'noopener noreferrer';
               main.append(link);
