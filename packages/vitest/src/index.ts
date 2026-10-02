@@ -37,7 +37,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { SmrtPluginApi } from '@happyvertical/smrt-core/vite-plugin';
-import type { Plugin } from 'vitest/config';
+import { configDefaults, type Plugin } from 'vitest/config';
 import { isVerbose, shouldLogManifestSummaryOnce } from './log.js';
 
 /**
@@ -1392,21 +1392,43 @@ export function smrtVitestPlugin(
     return setupFiles;
   };
 
+  const ensureExcludes = (value: string[] | undefined): string[] => [
+    ...new Set([
+      ...configDefaults.exclude,
+      '**/dist/**',
+      '**/.svelte-kit/**',
+      ...(value ?? []),
+    ]),
+  ];
+
   const applyTestDefaultsToProjects = (
     projects: unknown[] | undefined,
     rootRetry: RetryConfig | undefined,
   ): void => {
     projects?.forEach((project) => {
-      if (!project || typeof project !== 'object' || !('test' in project)) {
+      // Only inline objects are available here; Vitest resolves deferred configs.
+      if (
+        !project ||
+        typeof project !== 'object' ||
+        Array.isArray(project) ||
+        'then' in project
+      ) {
         return;
       }
 
       const projectConfig = project as Record<string, unknown> & {
-        test?: { setupFiles?: string | string[]; retry?: RetryConfig };
+        test?: {
+          setupFiles?: string | string[];
+          retry?: RetryConfig;
+          exclude?: string[];
+        };
       };
 
       projectConfig.test = {
         ...projectConfig.test,
+        // Let Vitest apply explicit `extends` inheritance. Independent projects
+        // keep their own exclusions rather than inheriting the root's filters.
+        exclude: ensureExcludes(projectConfig.test?.exclude),
         // Vitest does NOT inherit the root `test.retry` into per-project configs,
         // so apply it here, falling back to the root retry (then the CI default)
         // when the project has none. resolveRetry preserves an explicit
@@ -1461,6 +1483,9 @@ export function smrtVitestPlugin(
       setManifestRegistrationOptionsForRoot(root, { packages, root, verbose });
 
       const rootRetry = userConfig.test?.retry as RetryConfig | undefined;
+      // Build tools may copy co-located tests into both output directories.
+      // Always retain Vitest defaults and consumer exclusions as well.
+      const exclude = ensureExcludes(userConfig.test?.exclude);
       applyTestDefaultsToProjects(userConfig.test?.projects, rootRetry);
       const setupFiles = ensureSetupFiles(userConfig.test?.setupFiles);
       const resolveConfig =
@@ -1479,6 +1504,7 @@ export function smrtVitestPlugin(
           alias: [...workspaceAliases, ...alias],
         },
         test: {
+          exclude,
           setupFiles,
           // Re-run a failed test before failing the run, in CI only. Several
           // packages have rare, CI-environment-specific timing flakes that pass

@@ -104,7 +104,7 @@
     "agents"
   ],
   "scripts": {
-    "build": "svelte-package -i src --tsconfig tsconfig.svelte.json",
+    "build": "svelte-package -i src --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "dev": "svelte-package -i src --watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "prepack": "node ../../scripts/prepack-package.js",

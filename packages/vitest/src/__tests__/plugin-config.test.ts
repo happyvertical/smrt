@@ -111,6 +111,59 @@ describe('smrtVitestPlugin config', () => {
     });
   });
 
+  it('excludes build copies at root and in projects while preserving exclusions', () => {
+    const userConfig = {
+      test: {
+        exclude: ['**/slow/**'],
+        projects: [{ test: { name: 'unit', exclude: ['**/fixtures/**'] } }],
+      },
+    };
+    const config = smrtVitestPlugin().config?.(userConfig as any) as any;
+    expect(config.test.exclude).toEqual(
+      expect.arrayContaining([
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/.svelte-kit/**',
+        '**/slow/**',
+      ]),
+    );
+    expect(userConfig.test.projects[0].test.exclude).toEqual(
+      expect.arrayContaining([
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/.svelte-kit/**',
+        '**/fixtures/**',
+      ]),
+    );
+    expect(userConfig.test.projects[0].test.exclude).not.toContain(
+      '**/slow/**',
+    );
+  });
+
+  it('creates test defaults for bare inline configs without mutating deferred configs', () => {
+    const inline: Record<string, unknown> = { root: '/example' };
+    const deferred = Promise.resolve({ test: { name: 'deferred' } });
+    const factory = () => ({ test: { name: 'factory' } });
+    const projects = [inline, deferred, factory, './vitest.project.ts'];
+    smrtVitestPlugin().config?.({ test: { projects } } as any);
+    expect(inline).toMatchObject({
+      test: {
+        setupFiles: [defaultSetupFile],
+        exclude: expect.arrayContaining([
+          '**/node_modules/**',
+          '**/dist/**',
+          '**/.svelte-kit/**',
+        ]),
+      },
+    });
+    expect(Object.hasOwn(deferred, 'test')).toBe(false);
+    expect(projects[1]).toBe(deferred);
+    expect(projects[2]).toBe(factory);
+    expect(projects[3]).toBe('./vitest.project.ts');
+  });
+
   it('injects CI-aware retry into root and project configs', () => {
     vi.stubEnv('SMRT_VITEST_RETRY', '');
     vi.stubEnv('CI', '1');

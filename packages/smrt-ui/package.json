@@ -114,7 +114,7 @@
     "AGENTS.md"
   ],
   "scripts": {
-    "build": "svelte-package -i src --tsconfig tsconfig.svelte.json",
+    "build": "svelte-package -i src --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "dev": "svelte-package -i src --watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "bench:data-table": "vitest bench src/components/data/__benchmarks__/DataTable.bench.ts",
