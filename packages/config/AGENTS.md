@@ -35,7 +35,7 @@ Configuration management with cosmiconfig, secret sanitization, and SSG export.
 
 ## Gotchas
 
-- **AI keys come from the environment**: the `ai` block names a variable (`apiKeyEnv`); resolver errors/`toJSON()` never contain keys or URL credentials. Core and the chat dev routes use this resolver; agents share its provider key-name map (`getDefaultAIKeyEnvName`) and keep per-tenant secret lookup; do not add new provider-env parsing elsewhere.
+- **AI credentials are bound to their source's provider**: a lower-priority key/baseUrl is dropped when another provider wins; redacted base URLs show only the origin. **AI keys come from the environment**: the `ai` block names a variable (`apiKeyEnv`); resolver errors/`toJSON()` never contain keys or URL credentials. Core and the chat dev routes use this resolver; agents share its provider key-name map (`getDefaultAIKeyEnvName`) and keep per-tenant secret lookup; do not add new provider-env parsing elsewhere.
 - **clearCache() is global**: affects all modules sharing the config instance
 - **SSG export defaults to no secrets**: must explicitly set `includeSecrets: true` to include them
 - **Deep merge**: later values override earlier ones at each key level

@@ -25,11 +25,14 @@ class Probe extends SmrtClass {
 }
 
 const SECRET = 'sk-core-secret-xyz';
+const OTHER_SECRET = 'sk-other-provider-xyz';
 const ENV_KEYS = [
   'SMRT_AI_PROVIDER',
   'SMRT_AI_API_KEY',
   'SMRT_AI_MODEL',
   'CORE_TEST_KEY',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
 ];
 
 describe('SmrtClass AI config block', () => {
@@ -77,10 +80,9 @@ describe('SmrtClass AI config block', () => {
     process.env.SMRT_AI_PROVIDER = 'anthropic';
     process.env.SMRT_AI_API_KEY = SECRET;
     await new Probe().client();
-    expect(getAIMock.mock.calls[0][0]).toMatchObject({
-      provider: 'openai',
-      apiKey: SECRET,
-    });
+    // The env key is bound to the (overridden) anthropic provider: dropped.
+    expect(getAIMock.mock.calls[0][0].provider).toBe('openai');
+    expect(getAIMock.mock.calls[0][0].apiKey).toBeUndefined();
 
     getAIMock.mockClear();
     await new Probe({ ai: { provider: 'gemini' } } as never).client();
@@ -93,5 +95,56 @@ describe('SmrtClass AI config block', () => {
     expect(getAIMock.mock.calls[0][0]).toMatchObject({
       provider: 'anthropic',
     });
+  });
+
+  it('one provider key in the env is enough with a provider-only block (K3)', async () => {
+    setConfig({ ai: { provider: 'openai', model: 'gpt-x' } });
+    process.env.OPENAI_API_KEY = SECRET;
+    process.env.SMRT_AI_API_KEY = '';
+    await new Probe().client();
+    expect(getAIMock.mock.calls[0][0]).toMatchObject({
+      provider: 'openai',
+      apiKey: SECRET,
+    });
+  });
+
+  it('never sends an env key bound to another provider (K3/K1)', async () => {
+    setConfig({ ai: { provider: 'openai' } });
+    process.env.SMRT_AI_PROVIDER = 'anthropic';
+    process.env.SMRT_AI_API_KEY = OTHER_SECRET;
+    process.env.OPENAI_API_KEY = SECRET;
+    await new Probe().client();
+    const arg = getAIMock.mock.calls[0][0];
+    expect(arg.provider).toBe('openai');
+    expect(arg.apiKey).toBe(SECRET);
+  });
+
+  it.each([
+    ['model only', { model: 'gpt-x' }],
+    ['baseUrl only', { baseUrl: 'https://gw.example/v1' }],
+    ['unset apiKeyEnv', { apiKeyEnv: 'CORE_TEST_KEY' }],
+  ])('a partial block (%s) behaves like no block (K4)', async (_n, block) => {
+    setConfig({ ai: block });
+    await new Probe().client();
+    expect(getAIMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['model only', { model: 'gpt-x' }],
+    ['apiKeyEnv set, no provider', { apiKeyEnv: 'CORE_TEST_KEY' }],
+  ])('a partial block (%s) plus a provider-less key env is still no client (K4)', async (_n, block) => {
+    setConfig({ ai: block });
+    process.env.CORE_TEST_KEY = SECRET;
+    process.env.SMRT_AI_API_KEY = SECRET;
+    await new Probe().client();
+    expect(getAIMock).not.toHaveBeenCalled();
+  });
+
+  it('a partial block does not disturb legacy SMRT_AI_PROVIDER', async () => {
+    setConfig({ ai: { model: 'gpt-x' } });
+    process.env.SMRT_AI_PROVIDER = 'anthropic';
+    await new Probe().client();
+    expect(getAIMock.mock.calls[0][0].provider).toBe('anthropic');
+    expect(getAIMock.mock.calls[0][0].model).toBeUndefined();
   });
 });

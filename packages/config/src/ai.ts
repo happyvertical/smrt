@@ -15,7 +15,16 @@
  *    variable is set (openai, anthropic, gemini).
  *
  * `envOverridesConfig` swaps (2) and (3) for call sites that historically let
- * env win. Secrets are never included in errors, `toJSON()` or `describe`.
+ * env win.
+ *
+ * Credential binding: a key or base URL is bound to the provider named by its
+ * own source (explicit, the config block, or one env prefix). When a
+ * higher-priority source selects a different provider, the lower source's key
+ * and base URL are discarded, then the selected provider's own key variable is
+ * used. A source that supplies a key but names no provider is generic and
+ * binds to whichever provider is selected.
+ *
+ * Redaction: displayed base URLs expose only the origin. Secrets are never included in errors, `toJSON()` or `describe`.
  */
 import type { AIConfigBlock } from './types.js';
 
@@ -126,16 +135,16 @@ function nonEmpty(value: unknown): string | undefined {
     : undefined;
 }
 
-/** Replace URL userinfo and query so a base URL is safe to display. */
+/**
+ * Reduce a base URL to its origin (scheme, host, port) for display. Userinfo,
+ * path, query and fragment can all carry credentials, so none are shown. The
+ * real URL is still what is passed to the client.
+ */
 export function redactBaseUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {
     const url = new URL(value);
-    url.username = '';
-    url.password = '';
-    url.search = '';
-    url.hash = '';
-    return url.toString();
+    return `${url.protocol}//${url.host}`;
   } catch {
     return '[unparseable-url]';
   }
@@ -209,16 +218,6 @@ export function tryResolveAIProviderConfig(
     ),
   );
   set(
-    'baseUrl',
-    first(
-      layered(
-        [explicitCand(explicit.baseUrl)],
-        [configCand(block.baseUrl)],
-        fromEnv('BASE_URL'),
-      ),
-    ),
-  );
-  set(
     'model',
     first(
       layered(
@@ -229,21 +228,11 @@ export function tryResolveAIProviderConfig(
     ),
   );
 
-  const configKeyEnv = nonEmpty(block.apiKeyEnv);
-  const configKey: Candidate[] = [
-    configCand(block.apiKey),
-    ...(configKeyEnv
-      ? [
-          {
-            source: 'config' as const,
-            value: read(configKeyEnv),
-          },
-        ]
-      : []),
-  ];
-
-  // Provider-specific key variables are consulted only for the provider that
-  // ends up selected, so a stray key for another provider is never used.
+  // Credentials (key, base URL) are bound to the provider of the source they
+  // come from. A source that names a different provider than the one finally
+  // selected is skipped, so one provider's secret or endpoint is never sent to
+  // another. A source that supplies a credential but names no provider is
+  // generic: it is bound to whichever provider is selected.
   const autoDetected =
     result.provider || options.autoDetect === false
       ? undefined
@@ -252,26 +241,63 @@ export function tryResolveAIProviderConfig(
     result.provider = autoDetected;
     sources.provider = 'auto-detect';
   }
+  const selected = result.provider?.toLowerCase();
 
+  interface CredentialGroup {
+    source: AIConfigSource;
+    provider?: string;
+    apiKey?: string;
+    baseUrl?: string;
+  }
+  const configKeyEnv = nonEmpty(block.apiKeyEnv);
+  const explicitGroup: CredentialGroup = {
+    source: 'explicit',
+    provider: nonEmpty(explicit.provider ?? explicit.type),
+    apiKey: nonEmpty(explicit.apiKey),
+    baseUrl: nonEmpty(explicit.baseUrl),
+  };
+  const configGroup: CredentialGroup = {
+    source: 'config',
+    provider: nonEmpty(block.provider),
+    apiKey:
+      nonEmpty(block.apiKey) ?? (configKeyEnv ? read(configKeyEnv) : undefined),
+    baseUrl: nonEmpty(block.baseUrl),
+  };
+  const envGroups: CredentialGroup[] = prefixes.map((prefix) => ({
+    source: `env:${prefix}` as AIConfigSource,
+    provider: read(`${prefix}_PROVIDER`),
+    apiKey: read(`${prefix}_API_KEY`),
+    baseUrl: read(`${prefix}_BASE_URL`),
+  }));
+  const groups = options.envOverridesConfig
+    ? [explicitGroup, ...envGroups, configGroup]
+    : [explicitGroup, configGroup, ...envGroups];
+  const usable = (g: CredentialGroup) =>
+    !g.provider || g.provider.toLowerCase() === selected;
+  const sourceName = (
+    g: CredentialGroup,
+    suffix: 'API_KEY' | 'BASE_URL',
+  ): AIConfigSource =>
+    g.source.startsWith('env:')
+      ? (`${g.source}_${suffix}` as AIConfigSource)
+      : g.source;
+
+  for (const g of groups) {
+    if (!usable(g)) continue;
+    if (g.baseUrl && !result.baseUrl) {
+      result.baseUrl = g.baseUrl;
+      sources.baseUrl = sourceName(g, 'BASE_URL');
+    }
+    if (g.apiKey && !result.apiKey) {
+      result.apiKey = g.apiKey;
+      sources.apiKey = sourceName(g, 'API_KEY');
+    }
+  }
   const providerKeyEnv = getDefaultAIKeyEnvName(result.provider);
-  set(
-    'apiKey',
-    first([
-      ...layered(
-        [explicitCand(explicit.apiKey)],
-        configKey,
-        fromEnv('API_KEY'),
-      ),
-      ...(providerKeyEnv
-        ? [
-            {
-              source: 'provider-key-env' as const,
-              value: read(providerKeyEnv),
-            },
-          ]
-        : []),
-    ]),
-  );
+  if (!result.apiKey && providerKeyEnv && read(providerKeyEnv)) {
+    result.apiKey = read(providerKeyEnv);
+    sources.apiKey = 'provider-key-env';
+  }
 
   if (!result.provider && (options.requireProvider ?? true)) {
     return undefined;

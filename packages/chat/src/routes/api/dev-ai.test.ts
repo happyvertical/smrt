@@ -1,3 +1,4 @@
+import { clearRuntimeConfig, setConfig } from '@happyvertical/smrt-config';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveDevAIConfig } from './dev-ai.js';
 
@@ -27,6 +28,7 @@ beforeEach(() => {
   }
 });
 afterEach(() => {
+  clearRuntimeConfig();
   for (const k of KEYS) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k];
@@ -79,5 +81,24 @@ describe('resolveDevAIConfig (preserved dev precedence)', () => {
   it('a generic key without a provider or detectable key is unconfigured', () => {
     process.env.SMRT_AI_API_KEY = 'k';
     expect(resolveDevAIConfig()).toBeNull();
+  });
+
+  it('env provider override never takes the config-bound key (K1)', () => {
+    setConfig({ ai: { provider: 'openai', apiKeyEnv: 'OPENAI_API_KEY' } });
+    process.env.OPENAI_API_KEY = 'o-key';
+    process.env.SMRT_CHAT_DEV_PROVIDER = 'anthropic';
+    expect(resolveDevAIConfig()).toMatchObject({ provider: 'anthropic' });
+    expect(resolveDevAIConfig()?.apiKey).toBeUndefined();
+    process.env.ANTHROPIC_API_KEY = 'a-key';
+    expect(resolveDevAIConfig()?.apiKey).toBe('a-key');
+  });
+
+  it('same-provider config still supplies its key (K1)', () => {
+    setConfig({ ai: { provider: 'openai', apiKeyEnv: 'OPENAI_API_KEY' } });
+    process.env.OPENAI_API_KEY = 'o-key';
+    expect(resolveDevAIConfig()).toMatchObject({
+      provider: 'openai',
+      apiKey: 'o-key',
+    });
   });
 });

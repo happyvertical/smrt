@@ -687,7 +687,10 @@ export class SmrtClass {
 
         // The smrt.config.ts `ai` block (resolved through smrt-config's shared
         // resolver) is the lowest-priority declared source, above SMRT_AI_*.
-        const aiConfigBlock = getAIConfigBlock();
+        // Only a block that names a provider counts: a partial block (model,
+        // baseUrl or apiKeyEnv alone) behaves exactly like an absent block.
+        const declaredBlock = getAIConfigBlock();
+        const aiConfigBlock = declaredBlock?.provider ? declaredBlock : null;
         if (
           !this._ai &&
           (this.options.ai ||
@@ -736,31 +739,30 @@ export class SmrtClass {
               },
             });
 
-            // Apply the smrt.config.ts `ai` block where it supplied a field:
-            // precedence is options.ai > core global config > config block >
-            // SMRT_AI_* env. Env-sourced and explicit values are unchanged.
-            const resolvedAi = tryResolveAIProviderConfig({
-              explicit: userConfig as AIExplicitConfig,
-              config: aiConfigBlock,
-              prefixes: ['SMRT_AI'],
-              autoDetect: false,
-              requireProvider: false,
-            });
-            if (resolvedAi) {
-              const fromConfig = (field: keyof typeof resolvedAi.sources) =>
-                resolvedAi.sources[field] === 'config'
-                  ? resolvedAi[field]
-                  : undefined;
-              const provider = fromConfig('provider');
-              const apiKey = fromConfig('apiKey');
-              const baseUrl = fromConfig('baseUrl');
-              const model = fromConfig('model');
-              if (provider) aiConfig.provider = provider;
-              if (apiKey) aiConfig.apiKey = apiKey;
-              if (baseUrl) aiConfig.baseUrl = baseUrl;
-              if (model) {
-                aiConfig.model = model;
-                aiConfig.defaultModel = model;
+            // When the smrt.config.ts `ai` block selects the provider, consume
+            // the whole resolved provider (key, base URL, model), including the
+            // provider's own key variable. Precedence: options.ai > core global
+            // config > block > SMRT_AI_*. Credentials bound to another provider
+            // are dropped, so env-loaded values are replaced, not merged.
+            // Tuning fields keep their current source.
+            const resolvedAi = aiConfigBlock
+              ? tryResolveAIProviderConfig({
+                  explicit: userConfig as AIExplicitConfig,
+                  config: aiConfigBlock,
+                  prefixes: ['SMRT_AI'],
+                  autoDetect: false,
+                  requireProvider: false,
+                })
+              : undefined;
+            if (resolvedAi && resolvedAi.sources.provider === 'config') {
+              aiConfig.provider = resolvedAi.provider;
+              if (resolvedAi.apiKey) aiConfig.apiKey = resolvedAi.apiKey;
+              else delete aiConfig.apiKey;
+              if (resolvedAi.baseUrl) aiConfig.baseUrl = resolvedAi.baseUrl;
+              else delete aiConfig.baseUrl;
+              if (resolvedAi.model) {
+                aiConfig.model = resolvedAi.model;
+                aiConfig.defaultModel = resolvedAi.model;
               }
             }
 

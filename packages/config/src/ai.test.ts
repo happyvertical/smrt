@@ -37,12 +37,9 @@ describe('resolveAIProviderConfig precedence', () => {
     });
     expect(r.provider).toBe('explicit-provider');
     expect(r.model).toBe('cfg-model');
-    expect(r.baseUrl).toBe('https://env.example/v1');
-    expect(r.sources).toEqual({
-      provider: 'explicit',
-      model: 'config',
-      baseUrl: 'env:SMRT_AI_BASE_URL',
-    });
+    // env base URL belongs to env-provider, not the selected provider.
+    expect(r.baseUrl).toBeUndefined();
+    expect(r.sources).toEqual({ provider: 'explicit', model: 'config' });
   });
 
   it('accepts type/defaultModel aliases in explicit', () => {
@@ -70,7 +67,8 @@ describe('resolveAIProviderConfig precedence', () => {
       },
     });
     expect(r.provider).toBe('anthropic');
-    expect(r.apiKey).toBe(SECRET);
+    // HAVE_AI_API_KEY belongs to HAVE_AI_PROVIDER=openai: not sent to anthropic.
+    expect(r.apiKey).toBeUndefined();
     expect(r.model).toBe('dev-model');
   });
 
@@ -274,6 +272,118 @@ describe('configured block', () => {
       ).toBeUndefined();
     } finally {
       delete process.env.LANE_KEY;
+    }
+  });
+});
+
+describe('credential binding to the selected provider (K1)', () => {
+  const config = { provider: 'openai', apiKeyEnv: 'OPENAI_API_KEY' };
+  const env = { OPENAI_API_KEY: SECRET };
+
+  it('explicit provider override discards the config-bound key', () => {
+    const r = resolveAIProviderConfig({
+      explicit: { provider: 'anthropic' },
+      config,
+      env,
+    });
+    expect(r.provider).toBe('anthropic');
+    expect(r.apiKey).toBeUndefined();
+  });
+
+  it('falls back to the selected provider key variable after discarding', () => {
+    const r = resolveAIProviderConfig({
+      explicit: { provider: 'anthropic' },
+      config,
+      env: { ...env, ANTHROPIC_API_KEY: OTHER_SECRET },
+    });
+    expect(r.apiKey).toBe(OTHER_SECRET);
+    expect(r.sources.apiKey).toBe('provider-key-env');
+  });
+
+  it('discards a literal config apiKey and config baseUrl too', () => {
+    const r = resolveAIProviderConfig({
+      explicit: { provider: 'anthropic' },
+      config: {
+        provider: 'openai',
+        apiKey: SECRET,
+        baseUrl: 'https://openai-gateway.example/v1',
+      },
+      env: {},
+    });
+    expect(r.apiKey).toBeUndefined();
+    expect(r.baseUrl).toBeUndefined();
+  });
+
+  it('chat-style env override beats config without taking its key', () => {
+    const r = resolveAIProviderConfig({
+      prefixes: ['SMRT_CHAT_DEV', 'SMRT_AI'],
+      envOverridesConfig: true,
+      config,
+      env: { ...env, SMRT_CHAT_DEV_PROVIDER: 'anthropic' },
+    });
+    expect(r.provider).toBe('anthropic');
+    expect(r.apiKey).toBeUndefined();
+  });
+
+  it('cross-prefix: a lower prefix key bound to another provider is dropped', () => {
+    const r = resolveAIProviderConfig({
+      prefixes: ['SMRT_CHAT_DEV', 'SMRT_AI'],
+      env: {
+        SMRT_CHAT_DEV_PROVIDER: 'anthropic',
+        SMRT_AI_PROVIDER: 'openai',
+        SMRT_AI_API_KEY: SECRET,
+        SMRT_AI_BASE_URL: 'https://openai-gateway.example/v1',
+      },
+    });
+    expect(r.provider).toBe('anthropic');
+    expect(r.apiKey).toBeUndefined();
+    expect(r.baseUrl).toBeUndefined();
+  });
+
+  it('explicit apiKey is kept when explicit selects the provider', () => {
+    const r = resolveAIProviderConfig({
+      explicit: { provider: 'anthropic', apiKey: OTHER_SECRET },
+      config,
+      env,
+    });
+    expect(r.apiKey).toBe(OTHER_SECRET);
+  });
+
+  it('same-provider setups are unchanged', () => {
+    const r = resolveAIProviderConfig({
+      explicit: { provider: 'OpenAI' },
+      config: { ...config, baseUrl: 'https://gw.example/v1' },
+      env,
+    });
+    expect(r.apiKey).toBe(SECRET);
+    expect(r.baseUrl).toBe('https://gw.example/v1');
+  });
+
+  it('a key with no provider in its source binds to the selected provider', () => {
+    const r = resolveAIProviderConfig({
+      explicit: { provider: 'anthropic' },
+      env: { SMRT_AI_API_KEY: SECRET },
+    });
+    expect(r.apiKey).toBe(SECRET);
+  });
+});
+
+describe('base URL redaction (K2)', () => {
+  it('exposes at most the origin, never path tokens', () => {
+    const r = resolveAIProviderConfig({
+      explicit: {
+        provider: 'openai',
+        baseUrl: 'https://u:p@gateway.example:8443/v1/token-secret?k=1#f',
+      },
+      env: {},
+    });
+    expect(r.baseUrl).toContain('token-secret');
+    for (const text of [
+      JSON.stringify(r),
+      JSON.stringify(describeAIProviderConfig(r)),
+    ]) {
+      expect(text).not.toContain('token-secret');
+      expect(text).toContain('https://gateway.example:8443');
     }
   });
 });

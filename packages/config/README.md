@@ -194,6 +194,14 @@ Default precedence, applied per field (`provider`, `apiKey`, `baseUrl`, `model`)
 4. the selected provider's own key variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`); a key for any other provider is never used
 5. with no provider selected, auto-detect the first provider whose key variable is set (openai, anthropic, gemini)
 
+Credential binding: a key or base URL belongs to the provider named by its own source (explicit, the
+`ai` block, or one env prefix). If a higher-priority source selects a different provider, the lower
+source's key and base URL are discarded and the key comes only from sources valid for the selected
+provider (then that provider's own key variable). A source that supplies a key but names no provider is
+generic and binds to whichever provider is selected. Displayed base URLs (`toJSON()`,
+`describeAIProviderConfig()`, `redactBaseUrl()`) expose only the origin; the real URL still goes to the client.
+Core consults the block only when it names a `provider`; a partial block behaves like no block.
+
 Call sites keep their historical order through options: the chat dev routes pass
 `prefixes: ['SMRT_CHAT_DEV', 'SMRT_AI', 'HAVE_AI']` and `envOverridesConfig: true`; core passes
 `prefixes: ['SMRT_AI']`, `autoDetect: false`. `resolveAIProviderConfig` throws
