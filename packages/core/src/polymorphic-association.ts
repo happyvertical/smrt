@@ -105,8 +105,9 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
    * Store `metaType` under its target's CURRENT qualified name before every
    * save (#3338). A deprecated name declared in the target's
    * `previousQualifiedNames` is rewritten first, so new rows — and any legacy
-   * row that is loaded and saved again — never perpetuate it. Names that
-   * resolve to no registered class are stored as given.
+   * row that is loaded and saved again — never perpetuate it. A target known
+   * only from an installed manifest is lazily loaded first; names that
+   * resolve to no class at all are stored as given.
    *
    * This runs in the first save-preparation hook rather than a `save()`
    * override: a public override would be scanned into every subclass's
@@ -114,9 +115,12 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
    */
   protected override async validateBeforeSave(): Promise<void> {
     if (this.metaType) {
-      const current = ObjectRegistry.resolveQualifiedName(this.metaType, {
-        source: 'SmrtPolymorphicAssociation.save',
-      });
+      // Async: a target known only from its (new owner's) manifest is
+      // lazily loaded first, so an old name never slips through unresolved.
+      const current = await ObjectRegistry.resolveQualifiedNameAsync(
+        this.metaType,
+        { source: 'SmrtPolymorphicAssociation.save' },
+      );
       if (current && current !== this.metaType) this.metaType = current;
     }
     await super.validateBeforeSave();

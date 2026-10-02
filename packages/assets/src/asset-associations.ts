@@ -34,10 +34,13 @@ import { AssetAssociation } from './asset-association';
  * moved package both match; new rows always store the current name
  * (`SmrtPolymorphicAssociation.save()`).
  */
-function metaTypeFilter(metaType: string): string | string[] {
-  const names = ObjectRegistry.getEquivalentQualifiedNames(metaType, {
-    source: 'AssetAssociationCollection',
-  });
+async function metaTypeFilter(metaType: string): Promise<string | string[]> {
+  // Async so an owner class known only from its installed manifest is
+  // lazily loaded first; otherwise its old names are invisible here.
+  const names = await ObjectRegistry.getEquivalentQualifiedNamesAsync(
+    metaType,
+    { source: 'AssetAssociationCollection' },
+  );
   return names.length === 1 ? names[0] : names;
 }
 
@@ -68,7 +71,7 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
   ): Promise<AssetAssociation[]> {
     return (await this.list({
       // Spread opts first so the fixed polymorphic owner keys always win.
-      where: { ...opts, metaType: metaTypeFilter(metaType), metaId },
+      where: { ...opts, metaType: await metaTypeFilter(metaType), metaId },
       orderBy: 'sort_order ASC',
     })) as AssetAssociation[];
   }
@@ -103,7 +106,12 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
     opts: JunctionFilterOptions = {},
   ): Promise<void> {
     const links = (await this.list({
-      where: { ...opts, metaType: metaTypeFilter(metaType), metaId, assetId },
+      where: {
+        ...opts,
+        metaType: await metaTypeFilter(metaType),
+        metaId,
+        assetId,
+      },
     })) as AssetAssociation[];
     for (const link of links) {
       await link.delete();
@@ -128,7 +136,11 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
     delete snapshotOpts.assetId;
 
     const existing = (await this.list({
-      where: { ...snapshotOpts, metaType: metaTypeFilter(metaType), metaId },
+      where: {
+        ...snapshotOpts,
+        metaType: await metaTypeFilter(metaType),
+        metaId,
+      },
     })) as AssetAssociation[];
     for (const link of existing) {
       await link.delete();

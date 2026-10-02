@@ -1332,6 +1332,41 @@ export class ObjectRegistry {
   }
 
   /**
+   * {@link resolveQualifiedName}, also covering a class that is not
+   * registered yet: on a qualified miss it lazily loads the name from its
+   * package's manifest — or, for a deprecated name, from the manifest of the
+   * class that now declares it — before resolving (#3338). A genuinely
+   * unknown name still returns `undefined`.
+   */
+  static async resolveQualifiedNameAsync(
+    name: string,
+    options: { source?: string } = {},
+  ): Promise<string | undefined> {
+    if (!name.includes(':')) return undefined;
+    const resolved = ObjectRegistry.resolveQualifiedName(name, options);
+    if (resolved) return resolved;
+    if (!(await ObjectRegistry.tryLoadFromExternalPackage(name))) {
+      return undefined;
+    }
+    return ObjectRegistry.resolveQualifiedName(name, options);
+  }
+
+  /**
+   * {@link getEquivalentQualifiedNames}, lazily loading a qualified name's
+   * class from its manifest first when it is not registered yet (#3338), so
+   * stored-name filters see a moved class's old names before anything else
+   * has registered it.
+   */
+  static async getEquivalentQualifiedNamesAsync(
+    name: string,
+    options: { source?: string } = {},
+  ): Promise<string[]> {
+    if (!name.includes(':')) return [name];
+    await ObjectRegistry.resolveQualifiedNameAsync(name, options);
+    return ObjectRegistry.getEquivalentQualifiedNames(name, options);
+  }
+
+  /**
    * Every qualified name stored data may use for the class `name` resolves
    * to: its current qualified name first, then its declared
    * `previousQualifiedNames` (#3338). Readers that match persisted names

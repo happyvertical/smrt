@@ -17,6 +17,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { crossPackageRef } from '../decorators/index';
+import { getManifestCache } from '../manifest/store';
 import { BackfillTracker } from '../migrations/backfill-tracker';
 import {
   backfillLegacyQualifiedNames,
@@ -184,6 +185,59 @@ describe('issue #3338: stored references under a moved class’s old name (SQLit
       current,
       source: 'SmrtPolymorphicAssociation.hydrate',
     });
+  });
+
+  it('stores the current name when the target class is only known from its manifest (lazy)', async () => {
+    const lazyPkg = '@test-3338/poly-lazy-owner';
+    const lazyCurrent = `${lazyPkg}:LazyPolyTarget`;
+    const lazyOld = '@test-3338/poly-lazy-old:LazyPolyTarget';
+    getManifestCache().set(lazyPkg, {
+      version: '1.0.0',
+      timestamp: 0,
+      packageName: lazyPkg,
+      objects: {
+        [lazyCurrent]: {
+          name: 'lazypolytarget',
+          className: 'LazyPolyTarget',
+          qualifiedName: lazyCurrent,
+          collection: 'lazypolytargets',
+          filePath: 'poly-lazy-owner/src/lazy-poly-target.ts',
+          packageName: lazyPkg,
+          fields: {},
+          methods: {},
+          decoratorConfig: {
+            tableName: 'lazy_poly_targets_3338',
+            previousQualifiedNames: [lazyOld],
+          },
+        } as never,
+      },
+    });
+    try {
+      expect(
+        ObjectRegistry.getClassByQualifiedName(lazyCurrent),
+      ).toBeUndefined();
+      const link = await links.create({
+        tenantId: 'tenant-a',
+        ownerId: 'lazy',
+        metaType: lazyOld,
+        metaId: 'target-1',
+      } as never);
+      await link.save();
+      expect(link.metaType).toBe(lazyCurrent);
+      expect(await storedMetaTypes('i3338_links')).toEqual([lazyCurrent]);
+
+      // A genuinely unknown qualified name is stored as given.
+      const unknown = await links.create({
+        tenantId: 'tenant-a',
+        ownerId: 'unknown',
+        metaType: '@test-3338/nowhere:Ghost',
+        metaId: 'ghost-1',
+      } as never);
+      await unknown.save();
+      expect(unknown.metaType).toBe('@test-3338/nowhere:Ghost');
+    } finally {
+      getManifestCache().delete(lazyPkg);
+    }
   });
 
   it('stores the current name on new writes and on re-saving a legacy row', async () => {

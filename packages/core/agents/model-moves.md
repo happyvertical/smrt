@@ -46,12 +46,18 @@ qualified names. Keep `tableName` explicit so the moved class keeps its table.
 - **New writes store the current name.** `SmrtPolymorphicAssociation.save()`
   rewrites an aliased `metaType`; a legacy row that is loaded and saved again
   is upgraded. Readers that filter on stored names use
-  `ObjectRegistry.getEquivalentQualifiedNames(name)`, which returns the
+  `ObjectRegistry.getEquivalentQualifiedNamesAsync(name)`, which returns the
   current name followed by the aliases, as `AssetAssociationCollection`'s
   `byLeft()`, `detach()` and `setLinks()` do.
+- **Writes and filters cover unregistered classes.** Both of those call sites
+  use the async helpers. When a qualified name misses, they lazily load the
+  class from its manifest before normalizing or filtering. The sync variants
+  only see registered classes, so a write or filter could otherwise miss a
+  class known only from its installed manifest. A genuinely unknown name is
+  stored or matched as given.
 - **Public helpers.** `ObjectRegistry.getQualifiedNameAliases()` returns the
-  alias-to-current map, and `resolveQualifiedName(name)` returns the current
-  name.
+  alias-to-current map. `resolveQualifiedName(name)` and
+  `resolveQualifiedNameAsync(name)` return the current name.
 
 ## An alias is never a second class
 
