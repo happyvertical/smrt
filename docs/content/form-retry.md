@@ -115,8 +115,12 @@ export const actions = {
 - To run your own logic too, pass your submit function:
   `retry.enhance(({ formData, cancel }) => { ... return async ({ result, update }) => { ... } })`.
   It runs after the retry gate (it sees the key) and may still `cancel()`; its
-  `update()` defaults to the safe reset described below. Transport errors and
-  late results never reach it — watch `$retry.status`.
+  `update()` defaults to the safe reset described below. On a success your
+  callback decides whether the key retires: it rotates only if the form is
+  actually reset while the callback runs (`update()` or `form.reset()`), so
+  values kept with `update({ reset: false })`, or by not calling `update()`,
+  keep their key and resending them replays the recorded write. Transport
+  errors and late results never reach it — watch `$retry.status`.
 
 ## What happens to one submit
 
@@ -126,7 +130,7 @@ export const actions = {
 | A restored file has not been chosen again | kept | kept; submit **refused** (`files-required`) | kept |
 | `error` result — network drop, lost response, thrown server error | kept | kept, and `update()` is **not** called (it would apply the error and can unmount the form) | kept |
 | `failure` result (`fail(...)`, validation) | kept — nothing was written | kept | dropped |
-| `success`, fields unchanged since submit | **rotated** | reset | dropped |
+| `success`, fields unchanged since submit | **rotated** (with your own result callback: only if it resets the form) | reset (your callback's choice) | dropped |
 | `success`, person typed the next entry meanwhile | kept | **not** reset — the new entry survives | dropped |
 | `redirect` | kept (rotated with `redirectConfirmsWrite: true`) | as SvelteKit does | kept (dropped when confirmed) |
 | A late answer to a submit already settled | unchanged | unchanged | unchanged |

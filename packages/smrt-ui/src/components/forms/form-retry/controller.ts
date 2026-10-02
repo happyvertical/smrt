@@ -40,7 +40,8 @@
  *      rotated — only if the fields are unchanged since the submit. A person who
  *      typed the next entry while the first was in flight keeps it, under the
  *      same key, and sending it is a different claim because its content
- *      differs.
+ *      differs. With the page's own result callback, the key rotates only if
+ *      the form is actually reset while that callback runs.
  *    - `redirect`: a confirmed write only with `redirectConfirmsWrite: true`.
  *    - A late result for a submit already settled is ignored entirely.
  *
@@ -205,8 +206,11 @@ export interface FormRetry {
    * after the retry gate (it sees the key in `formData` and may still
    * `cancel()`); its returned callback, if any, replaces the default
    * `update({ reset })` for applied results and receives an `update` whose
-   * default `reset` is the safe one. Transport errors and stale results never
-   * reach it — observe `status` instead.
+   * default `reset` is the safe one. On a success it also decides whether the
+   * key retires: only a reset of the form while it runs (through `update()` or
+   * `form.reset()`) rotates the key, so values it keeps on screen keep their
+   * key. Transport errors and stale results never reach it — observe `status`
+   * instead.
    */
   enhance(submit?: FormRetrySubmitFunction): FormRetrySubmitFunction;
   /** Attachment: `{@attach retry.attach}`. Returns its cleanup. */
@@ -439,8 +443,15 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
         settled = true;
         const { result } = resultInput;
         const formCleared = formWasCleared(formElement, submitted);
+        // The default handling resets an unchanged form on success, so the key
+        // retires now. A page's own result callback decides the reset itself
+        // (`update({ reset: false })`, or no update at all), and values left on
+        // screen must keep their key: then the key retires only if the form is
+        // actually reset while the callback runs.
+        const retireOnReset =
+          innerCallback !== undefined && result.type === 'success';
         const next = settleSubmit(slot, sent, result.type, {
-          formCleared,
+          formCleared: formCleared && !retireOnReset,
           mint: () => rotateSubmissionKey(location),
           redirectConfirmsWrite: options.redirectConfirmsWrite,
         });
@@ -471,10 +482,33 @@ export function createFormRetry(options: FormRetryOptions): FormRetry {
 
         const update = (opts?: { reset?: boolean; invalidateAll?: boolean }) =>
           resultInput.update({ ...opts, reset: opts?.reset ?? formCleared });
-        if (innerCallback) {
-          await innerCallback({ ...resultInput, update });
-        } else {
+        if (!innerCallback) {
           await update();
+          return;
+        }
+        if (!(retireOnReset && formCleared)) {
+          await innerCallback({ ...resultInput, update });
+          return;
+        }
+        // Watch for the reset like the capture fields do: capture phase on the
+        // document, so a page listener that stops propagation cannot hide it.
+        const doc = formElement.ownerDocument;
+        const seen: { reset: Event | null } = { reset: null };
+        const onReset = (event: Event) => {
+          if (event.target === formElement) seen.reset = event;
+        };
+        doc.addEventListener('reset', onReset, true);
+        try {
+          await innerCallback({ ...resultInput, update });
+        } finally {
+          doc.removeEventListener('reset', onReset, true);
+          if (seen.reset && !seen.reset.defaultPrevented) {
+            writeSlot({
+              token: rotateSubmissionKey(location),
+              inFlight: slot.inFlight,
+            });
+            setState({});
+          }
         }
       };
     };

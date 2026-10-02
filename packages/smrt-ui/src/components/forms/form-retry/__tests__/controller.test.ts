@@ -703,3 +703,66 @@ describe('an edit while the page’s async submit hook is pending', () => {
     expect(retry.token).toBe(token);
   });
 });
+
+describe('a custom result callback decides the reset', () => {
+  function customSetup(
+    handle: (input: {
+      update: (options?: { reset?: boolean }) => Promise<void>;
+      formElement: HTMLFormElement;
+    }) => Promise<void> | void,
+  ) {
+    const form = mountForm();
+    const server = fakeRunOnceServer();
+    const retry = createFormRetry({ form: 'report', storage: memoryStorage() });
+    retry.attach(form);
+    const kit = fakeEnhance(
+      form,
+      retry.enhance(() => async (input) => handle(input)),
+      server,
+    );
+    return { form, server, retry, kit };
+  }
+
+  it('update({ reset: false }) keeps the values AND their key, so resending them replays', async () => {
+    const { form, server, retry, kit } = customSetup(({ update }) =>
+      update({ reset: false }),
+    );
+    fill(form, { title: 'Hose', qty: '1' });
+    const token = retry.token;
+    await kit.submit();
+    expect(retry.state.status).toBe('success');
+    expect(fieldValue(form, 'title')).toBe('Hose');
+    expect(retry.token).toBe(token);
+    await kit.submit();
+    expect(server.requests).toHaveLength(2);
+    expect(server.rows).toHaveLength(1);
+  });
+
+  it('a callback that never calls update keeps the values AND their key', async () => {
+    const { form, server, retry, kit } = customSetup(() => {});
+    fill(form, { title: 'Hose' });
+    const token = retry.token;
+    await kit.submit();
+    expect(fieldValue(form, 'title')).toBe('Hose');
+    expect(retry.token).toBe(token);
+    await kit.submit();
+    expect(server.rows).toHaveLength(1);
+  });
+
+  it('a reset the callback performs (through update or by hand) retires the key', async () => {
+    for (const handle of [
+      ({ update }: { update: () => Promise<void> }) => update(),
+      ({ formElement }: { formElement: HTMLFormElement }) =>
+        formElement.reset(),
+    ]) {
+      const { form, retry, kit } = customSetup(handle as never);
+      fill(form, { title: 'Hose' });
+      const token = retry.token;
+      await kit.submit();
+      expect(fieldValue(form, 'title')).toBe('');
+      expect(retry.token).not.toBe(token);
+      expect(fieldValue(form, 'submissionKey')).toBe(retry.token);
+      resetFormRetryMemory();
+    }
+  });
+});
