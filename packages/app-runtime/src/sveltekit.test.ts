@@ -357,42 +357,39 @@ describe('request ordering units', () => {
     expect(calls).toEqual(['a', 'b', 'c']);
   });
 
-  it('publishes tenantContext only for an authenticated session whose tenant matches the active context', async () => {
+  it('never publishes tenantContext for locals the runtime session step did not verify', async () => {
+    // The verified (positive) path is covered end to end by the local
+    // runtime tests; locals populated by any other session layer, even when
+    // they match the active context, are never published.
     const cases: Array<{
       label: string;
       locals: Record<string, unknown>;
       active: string | null;
-      published: boolean;
     }> = [
       {
-        label: 'matching session',
+        label: 'unverified matching session',
         locals: { user: { id: 'u1' }, tenantId: 't1' },
         active: 't1',
-        published: true,
       },
       {
         label: 'active context for another tenant',
         locals: { user: { id: 'u1' }, tenantId: 't1' },
         active: 't2',
-        published: false,
       },
       {
         label: 'no user',
         locals: { user: null, tenantId: 't1' },
         active: 't1',
-        published: false,
       },
       {
         label: 'no session tenant',
         locals: { user: { id: 'u1' }, tenantId: null },
         active: 't1',
-        published: false,
       },
       {
         label: 'no active context',
         locals: { user: { id: 'u1' }, tenantId: 't1' },
         active: null,
-        published: false,
       },
     ];
     for (const testCase of cases) {
@@ -402,11 +399,7 @@ describe('request ordering units', () => {
       const observed = testCase.active
         ? await withTenant({ tenantId: testCase.active }, run)
         : await run();
-      expect(
-        (observed.locals.tenantContext as { tenantId?: string } | undefined)
-          ?.tenantId,
-        testCase.label,
-      ).toBe(testCase.published ? testCase.active : undefined);
+      expect(observed.locals.tenantContext, testCase.label).toBeUndefined();
     }
   });
 });
@@ -1238,5 +1231,209 @@ describe('runtime diagnostics route', () => {
       401,
     );
     expect(() => createRuntimeDiagnosticsHandler({})).toThrow(TypeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review findings F1 (tenant authorization) and F2 (single downstream run)
+// ---------------------------------------------------------------------------
+
+async function claimedOwner(label: string) {
+  const directories = await localDirectories(label);
+  const options = {
+    ...directories,
+    runtime: LOCAL,
+    env: { NODE_ENV: 'development', TENANT_BASE_DOMAIN: 'example.test' },
+  } satisfies SmrtSvelteKitRuntimeOptions;
+  const runtime = createSmrtSvelteKitRuntime(options);
+  openRuntimes.push(runtime);
+  await runtime.init();
+  const local = await runtime.localRuntime();
+  const token = await bootstrapToken(runtime);
+  const claimEvent = testEvent(SETUP_URL, {
+    form: { token, name: 'Owner', email: 'owner@example.com' },
+  });
+  await runAction(createOwnerSetupPage(runtime), claimEvent);
+  const sid = claimEvent.setCookies[0]?.value as string;
+  const row = (
+    await local.db.query(
+      `SELECT memberships.id AS membership_id, memberships.user_id, memberships.tenant_id
+       FROM memberships JOIN roles ON roles.id = memberships.role_id
+       WHERE roles.slug = 'owner'`,
+    )
+  ).rows[0] as { membership_id: string; user_id: string; tenant_id: string };
+  return {
+    runtime,
+    local,
+    sid,
+    userId: row.user_id,
+    ownerTenantId: row.tenant_id,
+    membershipId: row.membership_id,
+  };
+}
+
+/**
+ * The connection the request layer reads through (`runtime.classOptions`).
+ * Post-request writes go through it, as an application's own collections
+ * would; see the lane report for the custody-connection visibility note.
+ */
+async function applicationDb(
+  runtime: SmrtSvelteKitRuntime,
+): Promise<DatabaseInterface> {
+  const { SessionService } = await import('@happyvertical/smrt-users');
+  const service = new SessionService(runtime.classOptions('Session'));
+  await service.initialize();
+  return service.getDatabase() as unknown as DatabaseInterface;
+}
+
+function expectNoTenantAuthority(observed: Observation): void {
+  expect(observed.activeTenantId).toBeUndefined();
+  expect(observed.locals.tenantContext).toBeUndefined();
+  expect(observed.locals.user).toBeNull();
+  expect(observed.locals.tenantId).toBeNull();
+  expect(observed.locals.membership ?? null).toBeNull();
+  expect(observed.locals.permissions).toEqual([]);
+  expect(observed.locals.sessionId).toBeNull();
+}
+
+describe('F1: tenant context requires verified membership authorization', () => {
+  it('publishes no tenant authority for a deactivated membership with a still-valid session', async () => {
+    const owner = await claimedOwner('f1-deactivated');
+    const before = await runHandle(
+      owner.runtime.handle,
+      testEvent('http://127.0.0.1/', { sid: owner.sid }),
+    );
+    expect(before.activeTenantId).toBe(owner.ownerTenantId);
+
+    await (await applicationDb(owner.runtime)).query(
+      "UPDATE memberships SET status = 'inactive' WHERE id = ?",
+      owner.membershipId,
+    );
+    // A fresh session service still accepts the session itself.
+    const { SessionService } = await import('@happyvertical/smrt-users');
+    const service = new SessionService({ db: owner.local.db });
+    await service.initialize();
+    const context = await service.loadSessionContext(owner.sid);
+    expect(context?.user).toBeTruthy();
+    expect(context?.tenantId).toBe(owner.ownerTenantId);
+    expect(context?.membership ?? null).toBeNull();
+    const after = await runHandle(
+      owner.runtime.handle,
+      testEvent('http://127.0.0.1/', { sid: owner.sid }),
+    );
+    expectNoTenantAuthority(after);
+  });
+
+  it('publishes no tenant authority when the membership row is deleted', async () => {
+    const owner = await claimedOwner('f1-deleted');
+    await owner.local.db.query(
+      'DELETE FROM memberships WHERE id = ?',
+      owner.membershipId,
+    );
+    const observed = await runHandle(
+      owner.runtime.handle,
+      testEvent('http://127.0.0.1/', { sid: owner.sid }),
+    );
+    expectNoTenantAuthority(observed);
+  });
+
+  it('allows legitimately inherited authorization and revokes it with the ancestor membership', async () => {
+    const owner = await claimedOwner('f1-inherited');
+    const childTenantId = await withSystemContext(async () => {
+      const roles = await RoleCollection.create({ db: owner.local.db });
+      const ownerRole = await roles.findSystemRoleBySlug(
+        DEFAULT_ROLE_SLUGS.OWNER,
+      );
+      if (!ownerRole) throw new Error('owner role missing');
+      ownerRole.inheritsToDescendants = true;
+      await ownerRole.save();
+      const tenants = await TenantCollection.create({ db: owner.local.db });
+      const child = await tenants.createChild(owner.ownerTenantId, {
+        name: 'Child',
+        slug: 'child',
+      });
+      await child.save();
+      return child.id as string;
+    });
+    const { SessionService } = await import('@happyvertical/smrt-users');
+    const sessions = new SessionService({ db: owner.local.db });
+    await sessions.initialize();
+    const childSid = await sessions.createSession(owner.userId, childTenantId);
+
+    const inherited = await runHandle(
+      owner.runtime.handle,
+      testEvent('http://127.0.0.1/', { sid: childSid }),
+    );
+    expect(inherited.locals.user).not.toBeNull();
+    expect(inherited.locals.tenantId).toBe(childTenantId);
+    expect(inherited.activeTenantId).toBe(childTenantId);
+    expect(
+      (inherited.locals.tenantContext as { tenantId: string }).tenantId,
+    ).toBe(childTenantId);
+
+    // The user no longer belongs to the ancestor the authority came from.
+    await (await applicationDb(owner.runtime)).query(
+      "UPDATE memberships SET status = 'inactive' WHERE id = ?",
+      owner.membershipId,
+    );
+    const revoked = await runHandle(
+      owner.runtime.handle,
+      testEvent('http://127.0.0.1/', { sid: childSid }),
+    );
+    expectNoTenantAuthority(revoked);
+  });
+});
+
+describe('F2: downstream failures run application code once', () => {
+  it('propagates a downstream throw exactly once and never re-enters resolve', async () => {
+    const owner = await claimedOwner('f2-once');
+    const boom = new Error('downstream failure');
+    let calls = 0;
+    const outcome = await Promise.resolve(
+      owner.runtime.handle({
+        event: testEvent('http://127.0.0.1/', {
+          sid: owner.sid,
+        }) as unknown as Parameters<Handle>[0]['event'],
+        resolve: async () => {
+          calls += 1;
+          throw boom;
+        },
+      }),
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(outcome).toBe(boom);
+    expect(calls).toBe(1);
+  });
+
+  it('fails closed with 500 and no downstream run when the session layer cannot load', async () => {
+    const owner = await claimedOwner('f2-session-failure');
+    const dataDirectory = owner.local.paths.root;
+    const broken = createSmrtSvelteKitRuntime({
+      runtime: LOCAL,
+      sourceRoot: join(dirname(dataDirectory), 'source'),
+      dataDirectory,
+      env: { NODE_ENV: 'development' },
+      classOverrides: {
+        Session: {
+          db: { type: 'sqlite', url: '/nonexistent-smrt-dir/denied.sqlite' },
+        },
+      },
+    });
+    openRuntimes.push(broken);
+    const event = testEvent('http://127.0.0.1/', { sid: owner.sid });
+    let calls = 0;
+    const response = await broken.handle({
+      event: event as unknown as Parameters<Handle>[0]['event'],
+      resolve: async () => {
+        calls += 1;
+        return new Response('should not run');
+      },
+    });
+    expect(response.status).toBe(500);
+    expect(calls).toBe(0);
+    expect(event.locals.user ?? null).toBeNull();
+    expect(event.locals.tenantContext).toBeUndefined();
   });
 });

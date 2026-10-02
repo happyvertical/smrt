@@ -6,10 +6,14 @@
  * 0. Wait for the fail-closed runtime startup gate (`init`).
  * 1. Resolve a URL tenant candidate into `locals.selectedTenant*`. This is
  *    selection only and never enters AsyncLocalStorage tenant context.
- * 2. Load the signed session. `enterTenantContext: true` establishes the
- *    authorized session tenant and its permission set for downstream code.
+ * 2. Load the signed session. Its tenant is accepted only for a verified
+ *    active direct or legitimately inherited membership
+ *    ({@link isSessionTenantAuthorized}, the deployed runtime's rule);
+ *    otherwise the request is unauthenticated. An accepted session enters the
+ *    tenant context and permission set for downstream code, inside the
+ *    request RLS transaction when the profile selects `database-rls`.
  * 3. Publish the authorized context on `locals.tenantContext` only when it
- *    matches the session.
+ *    matches the verified session tenant.
  *
  * This ordering prevents a spoofed header or hostname from becoming query
  * authority. Membership-gated tenant switching belongs in an explicit action
@@ -30,9 +34,13 @@ import {
   type MinimalTenantContext,
 } from '@happyvertical/smrt-tenancy';
 import {
-  createSessionHandler,
-  type SessionHandlerOptions,
-  type SessionLocals,
+  SessionService,
+  type SessionServiceOptions,
+  withSessionPermissionContext,
+} from '@happyvertical/smrt-users';
+import type {
+  SessionHandlerOptions,
+  SessionLocals,
 } from '@happyvertical/smrt-users/sveltekit';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import type { Handle, ServerInit } from '@sveltejs/kit';
@@ -44,6 +52,7 @@ import {
   type DeployedApplicationRuntime,
   type DeployedApplicationRuntimeProfile,
   initializeDeployedApplicationRuntime,
+  isSessionTenantAuthorized,
   type PublicAuthenticationProvider,
 } from '../deployed-runtime.js';
 import {
@@ -623,14 +632,90 @@ export function composeSmrtSvelteKitRuntime(
     return resolve(event);
   };
 
-  let sessionHandle: Handle | undefined;
-  const sessionStep: Handle = (input) => {
-    sessionHandle ??= createSessionHandler({
-      ...classOptions('Session'),
-      ...options.session,
-      enterTenantContext: true,
-    }) as unknown as Handle;
-    return sessionHandle(input);
+  const sessionCookieName = options.session?.cookieName ?? 'sid';
+  const sessionSkipPaths = options.session?.skipPaths ?? [];
+  const sessionServiceOptions = (): SessionServiceOptions => ({
+    ...classOptions('Session'),
+    ...options.session,
+    defaultTTL: options.session?.ttl ?? DEFAULT_SESSION_TTL_SECONDS,
+    autoExtend: options.session?.autoExtend ?? false,
+  });
+  /** `database-rls` isolation always runs the request RLS transaction. */
+  const postgresRls = (): boolean | undefined =>
+    requireResolved().providers.tenancy.isolation === 'database-rls'
+      ? true
+      : options.session?.postgresRls;
+  let sessionServicePromise: Promise<SessionService> | undefined;
+  const sessionService = (): Promise<SessionService> => {
+    sessionServicePromise ??= (async () => {
+      const service = new TenantAuthorizingSessionService(
+        sessionServiceOptions(),
+        requireResolved().providers.tenancy.context === 'required',
+      );
+      await service.initialize();
+      return service;
+    })().catch((error: unknown) => {
+      sessionServicePromise = undefined;
+      throw error;
+    });
+    return sessionServicePromise;
+  };
+
+  /**
+   * Step 2. Downstream code runs at most once: a downstream throw (or a
+   * failure after `resolve` was entered, such as an RLS commit) propagates
+   * unchanged and `resolve` is never re-entered. A session-layer failure
+   * before `resolve` fails closed with 500 and no authenticated locals, for
+   * both RLS and non-RLS isolation.
+   */
+  const sessionStep: Handle = async ({ event, resolve }) => {
+    const locals = runtimeLocals(event.locals);
+    clearSessionLocals(locals);
+    if (sessionSkipPaths.some((path) => event.url.pathname.startsWith(path))) {
+      return resolve(event);
+    }
+    const sessionId = event.cookies.get(sessionCookieName);
+    const rls = postgresRls();
+    if (!sessionId && !rls) return resolve(event);
+
+    let resolveEntered = false;
+    let downstream: { error: unknown } | undefined;
+    try {
+      const service = await sessionService();
+      return await withSessionPermissionContext(
+        {
+          ...sessionServiceOptions(),
+          enterTenantContext: true,
+          postgresRls: rls,
+          sessionId: sessionId ?? null,
+          sessionService: service,
+        },
+        async (context) => {
+          if (context.session) {
+            locals.user = context.user;
+            locals.membership = context.membership ?? null;
+            locals.permissions = context.permissions;
+            locals.tenantId = context.tenantId;
+            locals.sessionId = context.sessionId;
+            if (context.tenantId) {
+              verifiedSessionTenants.set(locals, context.tenantId);
+            }
+          }
+          resolveEntered = true;
+          try {
+            return await resolve(event);
+          } catch (error) {
+            downstream = { error };
+            throw error;
+          }
+        },
+      );
+    } catch (error) {
+      if (downstream) throw downstream.error;
+      if (resolveEntered) throw error;
+      clearSessionLocals(locals);
+      return new Response('Internal Server Error', { status: 500 });
+    }
   };
 
   const sessionCookie: SmrtRuntimeSessionCookie = Object.freeze({
@@ -670,9 +755,50 @@ export function composeSmrtSvelteKitRuntime(
   });
 }
 
+/** Locals whose session tenant passed {@link isSessionTenantAuthorized}. */
+const verifiedSessionTenants = new WeakMap<object, string>();
+
 /**
- * Step 3: publish the authorized tenant context only when an authenticated
- * session's tenant matches the active AsyncLocalStorage context.
+ * Session service whose loaded context carries a tenant only when that
+ * tenant passed {@link isSessionTenantAuthorized}. A session bound to an
+ * unauthorized tenant (or missing a required tenant) loads as no session, so
+ * no identity, permissions, or tenant context is established for it.
+ */
+class TenantAuthorizingSessionService extends SessionService {
+  private readonly tenantRequired: boolean;
+
+  constructor(options: SessionServiceOptions, tenantRequired: boolean) {
+    super(options);
+    this.tenantRequired = tenantRequired;
+  }
+
+  override async loadSessionContext(
+    sessionId: string,
+  ): ReturnType<SessionService['loadSessionContext']> {
+    const context = await super.loadSessionContext(sessionId);
+    if (!context) return null;
+    if (typeof context.tenantId === 'string' && context.tenantId.length > 0) {
+      return isSessionTenantAuthorized(context) ? context : null;
+    }
+    return this.tenantRequired ? null : context;
+  }
+}
+
+function clearSessionLocals(locals: SmrtRuntimeLocals): void {
+  locals.user = null;
+  locals.membership = null;
+  locals.permissions = [];
+  locals.tenantId = null;
+  locals.sessionId = null;
+  locals.tenantContext = undefined;
+  verifiedSessionTenants.delete(locals);
+}
+
+/**
+ * Step 3: publish the authorized tenant context only when this runtime's
+ * session step verified the session tenant and it matches the active
+ * AsyncLocalStorage context. Locals populated by any other session layer are
+ * never published.
  */
 export const authorizedTenantLocalsHandle: Handle = async ({
   event,
@@ -683,6 +809,7 @@ export const authorizedTenantLocalsHandle: Handle = async ({
   if (
     locals.user &&
     locals.tenantId &&
+    verifiedSessionTenants.get(locals) === locals.tenantId &&
     activeContext?.tenantId === locals.tenantId
   ) {
     locals.tenantContext = activeContext;
