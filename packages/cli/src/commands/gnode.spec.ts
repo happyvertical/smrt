@@ -11,6 +11,18 @@ const mockLoadTemplate = vi.fn();
 const mockGenerate = vi.fn();
 const mockCleanupGitTemplate = vi.fn();
 const mockDiscoverInstalledTemplates = vi.fn();
+const mockScaffoldMcpAppsPackage = vi.fn();
+const mockConfigureMcpAppsConsumerRegistry = vi.fn();
+const mockAddMcpAppsRuntime = vi.fn();
+
+vi.mock('./mcp-apps-packaging.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./mcp-apps-packaging.js')>()),
+  addMcpAppsRuntime: (...args: any[]) => mockAddMcpAppsRuntime(...args),
+  configureMcpAppsConsumerRegistry: (...args: any[]) =>
+    mockConfigureMcpAppsConsumerRegistry(...args),
+  scaffoldMcpAppsPackage: (...args: any[]) =>
+    mockScaffoldMcpAppsPackage(...args),
+}));
 
 vi.mock('../loaders/index.js', () => ({
   resolveTemplate: (...args: any[]) => mockResolveTemplate(...args),
@@ -103,6 +115,41 @@ describe('Gnode Commands', () => {
       consoleSpy.mockRestore();
     });
 
+    it('adds portable MCP Apps metadata only when opted in', async () => {
+      mockResolveTemplate.mockResolvedValue({
+        type: 'npm',
+        location: 'sveltekit',
+        resolved: '/node_modules/sveltekit',
+      });
+      mockLoadTemplate.mockResolvedValue({
+        name: 'SvelteKit',
+        description: 'SvelteKit template',
+        dependencies: {},
+      });
+      mockGenerate.mockResolvedValue(undefined);
+      const { gnodeCommands } = await import('./gnode.js');
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await gnodeCommands['gnode create'].handler(['my-app'], {
+        outputDir: '/tmp/my-app',
+        mcpApps: true,
+      });
+      expect(mockConfigureMcpAppsConsumerRegistry).toHaveBeenCalledWith(
+        '/tmp/my-app',
+      );
+      expect(mockAddMcpAppsRuntime).toHaveBeenCalledWith(
+        '/node_modules/sveltekit',
+        '/tmp/my-app',
+      );
+      expect(mockScaffoldMcpAppsPackage).toHaveBeenCalledWith(
+        '/tmp/my-app/mcp-apps',
+        'my-app',
+      );
+      expect(mockGenerate.mock.calls[0]?.[2]).toMatchObject({
+        name: '@smrt-app/my-app',
+      });
+      consoleSpy.mockRestore();
+    });
+
     it('should use default output directory', async () => {
       mockResolveTemplate.mockResolvedValue({
         type: 'npm',
@@ -128,7 +175,7 @@ describe('Gnode Commands', () => {
         expect.anything(),
         expect.anything(),
         expect.objectContaining({
-          name: 'my-gnode',
+          name: '@smrt-app/my-gnode',
           outputDir: './my-gnode',
         }),
       );

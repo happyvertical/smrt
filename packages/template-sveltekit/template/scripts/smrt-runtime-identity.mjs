@@ -106,6 +106,12 @@ export function runtimeConfigurationFingerprint(
           assets: environment.SMRT_ASSETS_READINESS_MODULE || null,
           secrets: environment.SMRT_SECRETS_READINESS_MODULE || null,
         },
+        mcpAuthorization: {
+          resource: environment.SMRT_MCP_RESOURCE || null,
+          issuer: environment.SMRT_MCP_ISSUER || null,
+          jwksUri: environment.SMRT_MCP_JWKS_URI || null,
+          scopes: environment.SMRT_MCP_SCOPES || null,
+        },
       }),
     )
     .digest('hex');

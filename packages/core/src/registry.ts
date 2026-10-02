@@ -230,8 +230,13 @@ let manifestLoaderModule: Promise<ManifestLoaderModule> | undefined;
  */
 function importManifestLoader(): Promise<ManifestLoaderModule> {
   if (!manifestLoaderModule) {
+    // Downstream bundlers must be able to rewrite the emitted JS import.
     manifestLoaderModule = (
-      import(getManifestLoaderSpecifier()) as Promise<ManifestLoaderModule>
+      import.meta.url.endsWith('.ts')
+        ? (import(
+            getManifestLoaderSpecifier()
+          ) as Promise<ManifestLoaderModule>)
+        : import('./manifest/index.js')
     ).catch((error: unknown) => {
       manifestLoaderModule = undefined;
       throw error;

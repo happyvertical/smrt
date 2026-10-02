@@ -10,6 +10,14 @@ const tenants = [
 ];
 
 describe('WorkspaceAccountMenu', () => {
+  it('exposes typed touch density without changing account actions', () => {
+    const { container } = render(WorkspaceAccountMenu, {
+      props: { userName: 'Dana', density: 'touch', onSignOut: vi.fn() },
+    });
+    expect(
+      container.querySelector('.smrt-workspace-account-menu'),
+    ).toHaveAttribute('data-density', 'touch');
+  });
   it('switches tenant and signs out through app-owned callbacks', async () => {
     const user = userEvent.setup();
     const onTenantSelect = vi.fn();

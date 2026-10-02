@@ -726,3 +726,13 @@ also get standard CRUD + custom collection-level endpoints.
 | `@happyvertical/geo` | Static map thumbnails |
 | `@happyvertical/images` | Headline card rendering |
 | `yaml` | YAML frontmatter parsing |
+
+Browser QA: `pnpm test:e2e` builds package dependencies and runs Playwright.
+Playwright resets its fixture-owned `.smrt/e2e-playwright.db`, builds the app
+with the normal SvelteKit toolchain, and serves compiled assets with Vite preview
+on `127.0.0.1:4173`. App output stays in `.svelte-kit/output/`, separate from the
+published library's `dist/`. Build failures or an occupied port fail startup.
+The six maintained scenarios retain their authorization and behavior assertions;
+failure traces, screenshots, and videos remain available for diagnosis.
+Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/path/to/chromium` to use an installed
+Chromium when Playwright's managed browser dependencies are unavailable.

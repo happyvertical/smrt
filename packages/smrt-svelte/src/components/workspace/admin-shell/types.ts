@@ -106,7 +106,7 @@ export type ShellPanelDefaults = Partial<
 export interface ShellSettingsDelta {
   hotkeysEnabled?: boolean;
   keymap?: Partial<Record<PanelEdge, ShellHotkeyBinding | null>>;
-  panels?: Partial<Record<PanelEdge, VisiblePanelState>>;
+  panels?: Partial<Record<PanelEdge, PanelState>>;
   /** Resized expanded widths in px; `null` resets to the configured size. */
   sizes?: Partial<Record<PanelEdge, number | null>>;
   activeFocusToolId?: string | null;
@@ -125,6 +125,12 @@ export interface ShellFocusToolSubject {
   type: string;
   id: string;
   label?: string;
+}
+
+/** Labelled, collapsible group of tenant navigation links. */
+export interface ShellNavGroup {
+  heading: string;
+  items: ShellNavItem[];
 }
 
 export interface ShellNavItem {
@@ -252,6 +258,16 @@ export interface AdminShellPhoneOptions {
 
 export interface AdminShellProps {
   title?: string;
+  /** Optional destination for the default brand and compact rail mark. */
+  homeHref?: string;
+  /** Show the built-in tenant edge collapse/expand control. */
+  showTenantToggle?: boolean;
+  /** Optional brand logo URL. */
+  logoSrc?: string;
+  /** Alternative text for the logo (decorative by default). */
+  logoAlt?: string;
+  /** Custom brand content, receiving whether it is in the compact rail. */
+  brand?: Snippet<[{ compact: boolean }]>;
   subtitle?: string;
   config?: ShellPanelDefaults;
   settings?: ShellSettingsDelta;

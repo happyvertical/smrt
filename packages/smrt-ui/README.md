@@ -99,6 +99,58 @@ protocol limits for server adapters; the Svelte-free `/form-retry` entry
 exposes the form-retry helper. The package root remains a compatibility
 barrel.
 
+### Calendar dates and shop time
+
+`DateDisplay` accepts `timeZone` (an IANA id such as `America/Edmonton`) for
+instant inputs (`Date`, numeric timestamps, and timestamp strings). Omit it to
+keep browser-local absolute formatting and the existing duration-based relative
+format. With an explicit zone, relative today/yesterday/tomorrow boundaries use
+calendar days in that zone, including daylight saving transitions.
+
+A bare `YYYY-MM-DD` string always denotes that calendar date, independent of the
+viewer or shop zone. It formats in UTC, retains a date-only `datetime` attribute,
+and ignores `showTime` because it contains no time. Relative calendar-date
+labels compare it with today's date in the supplied zone (or the browser zone).
+Impossible calendar dates render `fallback`. Invalid explicit zones used for
+instant or relative formatting also render `fallback` rather than throwing.
+
+### Combobox form submission
+
+A named `Combobox` submits its selected option value through a hidden native
+input. Its visible search text and option label are display-only. With
+`allowCustom`, typed text becomes the submitted value; otherwise searching keeps
+the last committed selection. A named empty selection submits an empty string;
+controls with no name or an empty name are omitted. Disabled controls, including
+those inside disabled fieldsets, are omitted by native `FormData`. Native form
+reset restores the initial selection and its label, unless reset is canceled.
+
+### MultiSelect form submission
+
+A named `MultiSelect` submits one hidden native input per selected option value,
+using repeated field names in selection order. Read them with `FormData.getAll`.
+Option labels are display-only, and numeric option values submit as strings.
+Empty selections, missing or empty names, and disabled controls (including
+ancestor fieldsets) contribute no entries. Native reset restores the initial
+selection unless reset is canceled.
+
+### Listbox form submission
+
+A named `Listbox` submits one hidden native input containing its selected option
+value, with numeric values encoded as strings. A named listbox without a
+selection submits an empty string. Missing or empty names and disabled controls
+(including ancestor fieldsets) are omitted. Native reset restores the initial
+selection unless reset is canceled.
+
+### Status badge tones
+
+`StatusBadge` accepts `tone="success"`, `"warning"`, `"danger"`, `"info"`, or
+`"neutral"` for custom status vocabulary such as `awaiting_cert`. An explicit
+tone overrides the built-in domain scheme while label, size, and outline variant
+continue to work independently. Tones use the active theme's paired container
+and text tokens. Without a tone, known domain statuses retain their existing
+colors and unknown statuses retain the neutral fallback. `StatusTone` is exported
+as a TypeScript type from the package root.
+
 ### Touch targets for Checkbox, Radio and Switch
 
 `Checkbox`, `Radio` and `Switch` have an invisible 44x44px hit area around the
@@ -230,6 +282,34 @@ Foundation components follow one contract:
 Application-specific editors, maps, charts, media workbenches, and domain
 records remain composites built from this foundation rather than generic base
 components.
+
+## Native and enhanced forms
+
+`Form` forwards native form attributes and Svelte attachments through its rest
+props to the underlying `<form>`. For a SvelteKit action, adapt `enhance` with
+`fromAction` and set `preventDefault={false}` so the enhancement handles submission:
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+  import { fromAction } from 'svelte/attachments';
+  import { Form, Input } from '@happyvertical/smrt-ui/forms';
+</script>
+
+<Form method="POST" action="?/save" preventDefault={false} {@attach fromAction(enhance)}>
+  <Input name="displayName" />
+  <button type="submit">Save</button>
+</Form>
+```
+
+For a customized enhancement, pass its callback as a getter:
+`{@attach fromAction(enhance, () => submitFunction)}`. The attachment runs on the
+native element and cleans up when it unmounts; the interaction registry and
+staged-review surface remain available. A component reference obtained with
+`bind:this` exposes `getFormElement(): HTMLFormElement | null`, which returns
+`null` before mount and after unmount. For ordinary browser GET/POST forms, use
+`preventDefault={false}` without an attachment. The default remains `true` for
+existing handler-driven forms.
 
 ## Agent-addressable forms
 
@@ -909,3 +989,93 @@ pnpm test
 pnpm build
 pnpm verify:pack
 ```
+
+### Touch density
+
+Set `<ThemeProvider density="touch">` for floor tablets and phones, or set
+`density="touch"` on Input, Select, Textarea, Checkbox, Switch, RadioGroup,
+Button (including links), FilterChips, SegmentedControl, or DataTable. DataTable
+applies density to its sort buttons. Density is independent of existing `size`
+props, including native Input/Select sizes. Omitted density inherits; explicitly
+setting `density="comfortable"` opts that control out and keeps its usual size.
+RadioGroup expands each option's clickable label, and Checkbox/Switch expand
+the label hit area while preserving the visual mark.
+
+`--smrt-touch-target-min` defaults to `48px` across all presets and works without
+a provider. Customize it globally with ThemeProvider's `overrides`, for example
+`overrides={{ '--smrt-touch-target-min': '56px' }}`. Touch targets grow with larger
+content; normal density keeps existing component sizing. TenantNav sizing is
+tracked separately in [#3246](https://github.com/happyvertical/smrt/issues/3246).
+
+### Narrow DataTable
+
+Set `responsiveMode="hide-columns"` to adapt to the table's container width.
+The default `responsiveBreakpoint={800}` includes both 768px tablets and 390px
+phones. Narrow mode budgets one column per `responsiveColumnMinWidth={160}`
+pixels, after reserving space for selection and expansion controls. Higher
+`column.responsive.priority` values survive first (missing/nonfinite values are
+zero); ties preserve declared display order. `responsive.keepVisible` columns
+always survive responsive collapse, while explicitly hidden columns stay hidden.
+
+Retained cells wrap, and their desktop width and pinning settings resume when
+the container widens. Responsive presentation never changes controller state,
+sorting, selection, or persisted column visibility. Header groups and structural
+row colspans follow the retained columns. If keepVisible columns exceed the
+budget, all remain visible and share the available width. Custom cell/header
+snippets should fit their cells. Default `responsiveMode="scroll"` preserves
+existing horizontal scrolling.
+
+ConfirmDialog opens a native modal dialog above existing Modal and Drawer surfaces.
+Its `message` accepts plain text or a Svelte snippet (including lists and emphasis);
+each instance owns its accessible title and description ids. Escape and backdrop
+clicks request `oncancel`; the parent controls `open`. The opener regains focus
+on close. Buttons remain disabled while `loading`, and Escape stays available.
+The native top layer replaces the previous fixed div; confirmation now stacks
+above an already open modal and makes its background inert. Escape is scoped to
+the active dialog rather than handled globally. Existing `open`, `loading` and
+action callbacks retain their controlled-state contracts.
+
+Browser feedback contracts run with `pnpm --filter @happyvertical/smrt-ui test:e2e`
+(after installing Playwright Chromium, or setting
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a local Chromium executable).
+
+ToastViewport follows the topmost native modal dialog and restores its original
+host when all modals close. Its live region, dismiss buttons and actions stay
+interactive inside Modal, Drawer and ConfirmDialog. Hover and focus independently
+pause auto-dismiss, then resume the remaining duration. Configure
+`createToaster({ successDuration: 0 })` to keep success records until dismissal;
+per-toast `duration: 0` remains supported. `inset` accepts a CSS length, `anchor`
+accepts a content-region element, and `top-center`/`bottom-center` positions center
+the viewport within that region (or the window). Anchor geometry follows resize
+and scroll. Custom injected Toaster implementations may optionally implement
+`pause(id, reason)` and `resume(id, reason)` to support interaction pausing.
+
+### SegmentedControl forms
+
+SegmentedControl renders native radio inputs. Set `name` to post the selected
+option value with ordinary form submission or FormData; numeric values post as
+strings while bound values retain their declared type. Unselected, unknown,
+disabled-option, disabled-control and disabled-fieldset values are omitted.
+`required` uses native form validation and accepts numeric zero. Nameless controls
+validate without posting a generated field. Arrow keys cycle enabled options;
+Home/End select the first/last enabled option. Touch density applies to the full
+clickable segment.
+
+Native form reset restores the initial bound value if that option is still
+available and enabled; otherwise it clears the selection. Canceling the reset
+event preserves the current selection. Reset does not fire `onvaluechange`,
+matching native controls; bind:value reflects it.
+
+### Application icons
+
+Icon includes the original menu/search/chevron/action glyphs plus `alert`,
+`warning`, `info`, `home`, `user`, `settings`, `trash`, `edit`, `calendar`,
+`clock`, `camera`, `upload`, and `download`. Import `registerIcons` from
+`@happyvertical/smrt-ui` to install an application SVG path map at startup.
+Registrations update mounted icons; the returned cleanup function removes that
+registration and restores the previous active set. Last active registration wins,
+and an explicit Icon `path` prop wins over every named set. Unknown names retain
+their empty shape. Names and paths must be nonempty strings; invalid mixed sets
+are rejected atomically. Sets are snapshotted, so later caller mutations do not
+change glyphs. Register static application assets, never request or identity data,
+and install the same application set for SSR and client hydration.

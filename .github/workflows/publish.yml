@@ -65,7 +65,7 @@ permissions:
 jobs:
   prepare-release:
     name: Prepare Release
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
       previous-version: ${{ steps.prepare.outputs.previous_version }}
@@ -100,7 +100,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24.18.0'
+          node-version: '26.9.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -257,7 +257,7 @@ jobs:
   validate-release-shards:
     needs: prepare-release
     if: needs.prepare-release.outputs.should-publish == 'true'
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -287,7 +287,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24.18.0'
+          node-version: '26.9.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -320,7 +320,7 @@ jobs:
     if: |
       needs.prepare-release.outputs.should-publish == 'true' &&
       needs.validate-release-shards.result == 'success'
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:
       group: release-publish-${{ github.repository }}-${{ github.ref }}
@@ -371,7 +371,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24.18.0'
+          node-version: '26.9.0'
           # This job consumes already-built, verified tarballs and its release
           # scripts use only Node built-ins. Reinstalling the workspace can
           # exhaust the recovery window before sequential npm publication.
@@ -569,7 +569,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24.18.0'
+          node-version: '26.9.0'
           install-deps: 'false'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -592,7 +592,7 @@ jobs:
   deploy-docs:
     name: Deploy Documentation
     if: inputs.deploy-docs
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
@@ -611,7 +611,7 @@ jobs:
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24.18.0'
+          node-version: '26.9.0'
           install-deps: 'false'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'

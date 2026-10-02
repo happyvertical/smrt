@@ -21,6 +21,8 @@
  */
 
 [data-theme="happyvertical"][data-color-scheme="light"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: happyvertical;
   --smrt-theme-name: Day Shift;
   --smrt-color-scheme: light;
@@ -246,6 +248,8 @@
 }
 
 [data-theme="happyvertical"][data-color-scheme="dark"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: happyvertical;
   --smrt-theme-name: Day Shift;
   --smrt-color-scheme: dark;

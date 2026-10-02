@@ -13,7 +13,9 @@ It is the ground-up alternative to `smrt-saas-starter`.
 
 ## Current generated-project contract
 
-- Node `>=24.18.0`; pnpm `11.25.0` via `packageManager` and `engines`.
+- Node `>=24.18.0`; pnpm `11.25.0` via `packageManager` and `engines`. The
+  Docker image runs Node 26; Node 25+ images ship no Corepack, so the
+  Dockerfile installs a pinned copy.
 - `runtime.profile` is the canonical infrastructure selector. Generated apps
   expose deterministic `app:*` operations and keep runtime state outside source.
 - The production baseline uses adapter-node with separate web, task-worker, and

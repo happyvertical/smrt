@@ -171,25 +171,26 @@ export class SmrtAppStateManager {
     // Notify callback
     this.options.onCapabilitiesDetected?.(capabilities);
 
-    // Determine initial mode
-    if (this.options.initialMode) {
-      this._state.mode = this.options.initialMode;
-      this._state.modeSource = 'explicit';
-    } else {
-      // Auto-detect based on capabilities and preferences
-      const autoEnable = this._state.session.preferences.autoEnableSmrt ?? true;
-      if (autoEnable && canEnableSmrtMode(capabilities)) {
-        this._state.mode = 'smrt';
-        this._state.modeSource = 'auto';
-      }
-    }
-
     // Apply initial session if provided
     if (this.options.session) {
       this._state.session = {
         ...this._state.session,
         ...this.options.session,
       };
+    }
+
+    // Determine initial mode
+    if (this.options.initialMode) {
+      this._state.mode = this.options.initialMode;
+      this._state.modeSource = 'explicit';
+    } else {
+      // Auto-detect based on capabilities and preferences
+      const autoEnable =
+        this._state.session.preferences.autoEnableSmrt ?? false;
+      if (autoEnable && canEnableSmrtMode(capabilities)) {
+        this._state.mode = 'smrt';
+        this._state.modeSource = 'auto';
+      }
     }
 
     this._state.initialized = true;

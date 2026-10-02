@@ -331,6 +331,11 @@ describe('local application runtime', () => {
        WHERE roles.slug = 'owner'`,
     );
     expect(Number(ownerGrants.rows[0]?.grants)).toBeGreaterThan(0);
+    // `owner` maps `*`, so it holds every catalog permission — the full
+    // default matrix, not a partial seed (#3323).
+    expect(Number(ownerGrants.rows[0]?.grants)).toBe(
+      await countRows(initialized.runtime.db, 'permissions'),
+    );
 
     const restored = await initialized.runtime.restoreSession(claim.sessionId);
     expect(restored?.user.id).toBe(claim.userId);
@@ -535,6 +540,10 @@ describe('local application runtime', () => {
         email: 'owner@example.com',
       }),
     ).rejects.toMatchObject({ code: 'bootstrap_invalid' });
+    // A rejected token is read-only: it never seeds roles or the permission
+    // catalog on the caller's behalf (#3323).
+    expect(await countRows(wrong.runtime.db, 'roles')).toBe(0);
+    expect(await countRows(wrong.runtime.db, 'permissions')).toBe(0);
     await wrong.runtime.claimOwner({
       token: wrong.bootstrap?.token as string,
       name: 'Owner',
@@ -565,6 +574,8 @@ describe('local application runtime', () => {
       }),
     ).rejects.toMatchObject({ code: 'bootstrap_expired' });
     expect(await countRows(expired.runtime.db, 'users')).toBe(0);
+    expect(await countRows(expired.runtime.db, 'roles')).toBe(0);
+    expect(await countRows(expired.runtime.db, 'permissions')).toBe(0);
   });
 
   it.each([

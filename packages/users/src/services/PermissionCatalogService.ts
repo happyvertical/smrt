@@ -10,7 +10,9 @@ import {
   type SmartObjectDefinition,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
+import { writeInSeedingBatches } from '../collections/seeding-transaction.js';
 import {
   isValidPermissionSlug,
   type Permission,
@@ -742,6 +744,18 @@ export function registerPermissionDefinitions(
   };
 }
 
+/** Whether syncing `definition` would change the persisted row. */
+function definitionChangesPermission(
+  existing: Permission,
+  definition: PermissionDefinition,
+): boolean {
+  return (
+    (definition.name ?? existing.name) !== existing.name ||
+    (definition.description ?? existing.description) !== existing.description ||
+    (definition.category ?? existing.category) !== existing.category
+  );
+}
+
 export class PermissionCatalogService {
   constructor(private readonly options: SmrtClassOptions = {}) {}
 
@@ -820,47 +834,63 @@ export class PermissionCatalogService {
       }
     }
 
-    for (const definition of catalog.permissions) {
-      const existing = existingBySlug.get(definition.slug) ?? null;
-      if (!existing) {
-        // `collection.create()` already persists (it calls `save()`), so a
-        // second `save()` here was a redundant UPDATE plus a second change-feed
-        // append for every seeded row (#3022).
-        const permission = await permissions.create({
-          category:
-            definition.category ??
-            parsePermissionSlug(definition.slug).resource,
-          description: definition.description ?? '',
-          name: definition.name ?? definition.slug,
-          slug: definition.slug,
-        });
-        // Keep the in-memory view authoritative: the removed per-slug read used
-        // to see a row this same loop had just written, so a catalog carrying
-        // the same slug twice must still resolve to one row.
-        existingBySlug.set(definition.slug, permission);
-        created.push(definition.slug);
-        continue;
-      }
-
-      const nextName = definition.name ?? existing.name;
-      const nextDescription = definition.description ?? existing.description;
-      const nextCategory = definition.category ?? existing.category;
-
-      if (
-        existing.name === nextName &&
-        existing.description === nextDescription &&
-        existing.category === nextCategory
-      ) {
+    // Unchanged slugs settle from that one read. Only rows that need a write
+    // go to the writer, which commits them in batches rather than one durable
+    // commit per row (#3323).
+    const pending = catalog.permissions.filter((definition) => {
+      const existing = existingBySlug.get(definition.slug);
+      if (existing && !definitionChangesPermission(existing, definition)) {
         unchanged.push(definition.slug);
-        continue;
+        return false;
       }
+      return true;
+    });
 
-      existing.name = nextName;
-      existing.description = nextDescription;
-      existing.category = nextCategory;
-      await existing.save();
-      updated.push(definition.slug);
-    }
+    await writeInSeedingBatches(
+      permissions.db as DatabaseInterface,
+      pending,
+      async (database, batch) => {
+        const batchPermissions = await PermissionCollection.create({
+          ...this.options,
+          db: database,
+        });
+        for (const definition of batch) {
+          const existing = existingBySlug.get(definition.slug) ?? null;
+          if (!existing) {
+            // `collection.create()` already persists (it calls `save()`), so a
+            // second `save()` here was a redundant UPDATE plus a second
+            // change-feed append for every seeded row (#3022).
+            const permission = await batchPermissions.create({
+              category:
+                definition.category ??
+                parsePermissionSlug(definition.slug).resource,
+              description: definition.description ?? '',
+              name: definition.name ?? definition.slug,
+              slug: definition.slug,
+            });
+            // Keep the in-memory view authoritative: the removed per-slug read
+            // used to see a row this same loop had just written, so a catalog
+            // carrying the same slug twice must still resolve to one row.
+            existingBySlug.set(definition.slug, permission);
+            created.push(definition.slug);
+            continue;
+          }
+
+          if (!definitionChangesPermission(existing, definition)) {
+            unchanged.push(definition.slug);
+            continue;
+          }
+
+          existing.name = definition.name ?? existing.name;
+          existing.description = definition.description ?? existing.description;
+          existing.category = definition.category ?? existing.category;
+          // The row may have been loaded or created outside this batch's
+          // transaction; persist it through the batch's handle.
+          await existing.withDatabase(database, (row) => row.save());
+          updated.push(definition.slug);
+        }
+      },
+    );
 
     return {
       catalog,

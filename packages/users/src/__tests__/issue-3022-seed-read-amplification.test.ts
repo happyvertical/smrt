@@ -25,6 +25,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import '../models/index.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
 import { RolePermissionCollection } from '../collections/RolePermissionCollection.js';
+import { SEEDING_BATCH_SIZE } from '../collections/seeding-transaction.js';
 import { syncPermissionCatalog } from '../services/index.js';
 
 const dbPaths: string[] = [];
@@ -35,6 +36,10 @@ interface StatementCounts {
   permissionWrites: number;
   rolePermissionWrites: number;
   changeFeedAppends: number;
+  /** Permission/grant row writes issued outside any transaction (#3323). */
+  autocommitSeedWrites: number;
+  /** Transactions opened on the root handle (#3323). */
+  rootTransactions: number;
 }
 
 /**
@@ -69,9 +74,31 @@ async function openCountingDatabase(label: string): Promise<{
     permissionWrites: 0,
     rolePermissionWrites: 0,
     changeFeedAppends: 0,
+    autocommitSeedWrites: 0,
+    rootTransactions: 0,
   };
 
-  const handle = db as unknown as Record<string, (...a: unknown[]) => unknown>;
+  instrumentHandle(db, counts, false);
+
+  return { db, counts };
+}
+
+const instrumentedHandles = new WeakSet<object>();
+
+/**
+ * Tally statements on `target` and on every transaction-bound handle it hands
+ * out. Seeding commits its writes in batched transactions (#3323), and those
+ * statements run on the transaction's handle rather than the root's, so a
+ * counter on the root alone would go blind to every seeded row.
+ */
+function instrumentHandle(
+  target: unknown,
+  counts: StatementCounts,
+  inTransaction: boolean,
+): void {
+  const handle = target as Record<string, (...a: unknown[]) => unknown>;
+  if (instrumentedHandles.has(handle)) return;
+  instrumentedHandles.add(handle);
 
   const originalQuery = handle.query.bind(handle);
   handle.query = async (...args: unknown[]) => {
@@ -94,10 +121,32 @@ async function openCountingDatabase(label: string): Promise<{
     const table = String(args[0]);
     if (table === 'role_permissions') counts.rolePermissionWrites += 1;
     else if (table === 'permissions') counts.permissionWrites += 1;
+    if (
+      !inTransaction &&
+      (table === 'role_permissions' || table === 'permissions')
+    ) {
+      counts.autocommitSeedWrites += 1;
+    }
     return await originalUpsert(...args);
   };
 
-  return { db, counts };
+  if (typeof handle.transaction === 'function') {
+    const originalTransaction = handle.transaction.bind(handle);
+    handle.transaction = (...args: unknown[]) => {
+      if (!inTransaction) counts.rootTransactions += 1;
+      const [callback, ...rest] = args as [
+        (tx: unknown) => Promise<unknown>,
+        ...unknown[],
+      ];
+      return originalTransaction(
+        (tx: unknown) => {
+          instrumentHandle(tx, counts, true);
+          return callback(tx);
+        },
+        ...rest,
+      );
+    };
+  }
 }
 
 function customCatalogOfSize(size: number): void {
@@ -236,5 +285,38 @@ describe('issue #3022: cold seeding must not read per catalog slug', () => {
     expect(outcome.counts.changeFeedAppends).toBeLessThanOrEqual(
       outcome.permissionsCreated + outcome.grantsAdded + 16,
     );
+  });
+
+  /**
+   * Regression guard for #3323. Even with flat reads and single writes, a cold
+   * seed that autocommits each row pays one durable commit per row — an
+   * `fsync` each on file-backed SQLite with `synchronous = FULL` — which is
+   * what pushed the local owner claim past its timeout on a real disk. Every
+   * seeded row must be written inside a batch transaction, and the number of
+   * commits must follow the batch size, not the row count.
+   */
+  it('commits a cold seed in batches, not one commit per row', async () => {
+    for (const size of [20, 200]) {
+      const outcome = await seedWithCatalogSize(`commits-${size}`, size);
+      const { counts } = outcome;
+
+      // Non-vacuous: the seeded rows were seen, on transaction handles.
+      expect(outcome.permissionsCreated).toBeGreaterThanOrEqual(size);
+      expect(outcome.grantsAdded).toBeGreaterThanOrEqual(size);
+      expect(counts.permissionWrites).toBeGreaterThanOrEqual(
+        outcome.permissionsCreated,
+      );
+      expect(counts.rolePermissionWrites).toBeGreaterThanOrEqual(
+        outcome.grantsAdded,
+      );
+      expect(counts.autocommitSeedWrites).toBe(0);
+
+      // One commit per batch: the sync and the grants each batch separately.
+      expect(counts.rootTransactions).toBeGreaterThan(0);
+      expect(counts.rootTransactions).toBeLessThanOrEqual(
+        Math.ceil(outcome.permissionsCreated / SEEDING_BATCH_SIZE) +
+          Math.ceil(outcome.grantsAdded / SEEDING_BATCH_SIZE),
+      );
+    }
   });
 });

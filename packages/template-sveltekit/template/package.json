@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env scripts/smrt-vite.mjs dev",
-    "build": "node --env-file-if-exists=.env scripts/smrt-vite.mjs build",
+    "build": "node scripts/smrt-mcp-apps.mjs validate-if-present && node --env-file-if-exists=.env scripts/smrt-vite.mjs build",
     "preview": "node scripts/smrt-app.mjs start",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
@@ -25,6 +25,7 @@
     "app:backup": "node scripts/smrt-app.mjs backup",
     "app:export": "node scripts/smrt-app.mjs export",
     "app:import": "node scripts/smrt-app.mjs import",
+    "mcp-apps:validate": "pnpm exec smrt mcp-apps validate --output-dir ./mcp-apps",
     "worker": "node scripts/smrt-worker.mjs task",
     "worker:schedule": "node scripts/smrt-worker.mjs schedule"
   },

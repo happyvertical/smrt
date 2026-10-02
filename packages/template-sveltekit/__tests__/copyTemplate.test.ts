@@ -31,6 +31,7 @@ describe('copyTemplate', () => {
     copyTemplate(tempDir, { name: 'my-app', overwrite: true });
 
     expect(existsSync(join(tempDir, 'package.json'))).toBe(true);
+    expect(existsSync(join(tempDir, 'pnpm-workspace.yaml'))).toBe(true);
     expect(existsSync(join(tempDir, 'src', 'hooks.server.ts'))).toBe(true);
     expect(existsSync(join(tempDir, 'src', 'lib', 'server', 'tenancy.ts'))).toBe(
       true,
@@ -51,6 +52,9 @@ describe('copyTemplate', () => {
       readFileSync(join(getTemplatePath(), '.gitignore'), 'utf8'),
     );
     expect(existsSync(join(tempDir, 'scripts', 'smrt-app.mjs'))).toBe(true);
+    expect(existsSync(join(tempDir, 'scripts', 'smrt-mcp-apps.mjs'))).toBe(
+      true,
+    );
     expect(existsSync(join(tempDir, 'scripts', 'smrt-vite.mjs'))).toBe(true);
     expect(
       existsSync(join(tempDir, 'scripts', 'smrt-operation-lock.mjs')),
@@ -135,6 +139,7 @@ describe('copyTemplate', () => {
     ]) {
       expect(pkg.scripts).toHaveProperty(`app:${operation}`);
     }
+    expect(pkg.scripts.build).toContain('smrt-mcp-apps.mjs validate-if-present');
   });
 
   it('does NOT copy the `.svelte-kit/` directory if it exists in the template', () => {

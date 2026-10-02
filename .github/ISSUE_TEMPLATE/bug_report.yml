@@ -73,7 +73,7 @@ body:
     attributes:
       label: Node.js Version
       description: Which version of Node.js are you using?
-      placeholder: "24.0.0"
+      placeholder: "26.9.0"
     validations:
       required: true
 

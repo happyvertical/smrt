@@ -613,3 +613,50 @@ public registry interactions. It does not require `document.modelContext` or
 export mounted closures to remote MCP. Agent proposals retain trusted human
 staged review. See the [bridge contract](../mcp-apps/README.md) for origin
 configuration, capabilities, fallback and synthetic-browser evidence limits.
+
+AdminShell's optional `homeHref` turns default branding into a named home link.
+Use `logoSrc`/`logoAlt` for a logo or a `brand` snippet receiving `{ compact }`
+for custom marks. A collapsed tenant rail keeps a compact linked logo or initial;
+the default app bar keeps the full brand visible at narrow widths. A custom
+`appBar` continues to own its branding. Without these props, branding stays text.
+
+### Voice mode migration (#3261)
+
+**Changed default:** Provider and standalone `createAppState()` now keep voice
+mode off unless explicitly requested. Omitted `autoEnableSmrt` defaults to
+`false`; speech-capable browsers stay in `default` mode. Apps that relied on
+automatic voice activation must opt in with `autoEnableSmrt={true}`. Use
+`mode="smrt"` for an explicit voice-mode choice. An explicit `mode="default"`
+wins over auto-detection from the start of initialization, including when
+`autoEnableSmrt` is true; no transient voice-mode activation occurs.
+Standalone state callers can opt in through initial session preferences
+(`autoEnableSmrt: true`); `initialMode` takes precedence. Runtime mode prop
+updates retain their existing behavior.
+
+### Runtime panel controls (#3246)
+
+Use `shell.setPanelState(edge, 'hidden' | 'collapsed' | 'expanded')` to persist
+runtime panel preferences; app-configured hidden edges remain unavailable.
+AdminShell keeps a discoverable tenant collapse control with supplied navigation
+(`showTenantToggle={false}` opts out), a Menu opener in narrow layouts, and the
+system toggle alongside a custom `systemBar`. Closed narrow drawers are inert;
+opening focuses the first control, and closing or Escape restores the opener.
+TenantNav accepts `density="touch"` for canonical 48px link targets, including
+collapsed rail links; omit density to inherit the theme's control density.
+
+`AdminShell` keeps a supplied `tenantFooter` in the app bar while the left pane
+is collapsed, hidden, or a closed narrow drawer; it moves back to the expanded
+pane without duplicate account controls. Use the optional `account` snippet for
+an account permanently in the app bar (including with a custom `appBar`).
+`WorkspaceAccountMenu density="touch"` sizes its trigger and menu actions to the
+canonical 48px target; omit density to inherit the theme, or choose
+`"comfortable"`. Account menus in the shell app bar open below the bar so the
+existing footer's default placement stays reachable on narrow screens.
+
+`TenantNav` accepts optional `groups: ShellNavGroup[]` (`{ heading, items }`)
+next to its existing flat `items`. Each group has a labelled `role="group"` and
+native disclosure summary; keyboard and touch users can collapse it even in the
+icon rail. Groups start open, preserve nested links and active-route markers,
+and inherit the navigation density. Supply `aria-label="Shop navigation"` for
+an instance-specific landmark name; omission uses the localized default.
+`ShellNavGroup` is exported from `@happyvertical/smrt-svelte/workspace`.

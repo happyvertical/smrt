@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   hasAffectedCoreTest,
   parseShard,
+  parseTurboDryRun,
   selectAffectedTestPackages,
 } from './affected-test-shard.mjs';
 
@@ -56,4 +57,17 @@ test('selectAffectedTestPackages rejects malformed Turbo output', () => {
     () => selectAffectedTestPackages({}, { index: 1, count: 3 }),
     /tasks array/,
   );
+});
+
+test('parseTurboDryRun ignores pnpm warnings printed around the JSON', () => {
+  const json = JSON.stringify(
+    { tasks: [{ task: 'test', package: '@happyvertical/smrt-core' }] },
+    null,
+    2,
+  );
+  const output = `[WARN] Unsupported engine: wanted: {"node":">=26.0.0"}\n${json}\n[WARN] trailing notice\n`;
+
+  assert.equal(hasAffectedCoreTest(parseTurboDryRun(output)), true);
+  assert.deepEqual(parseTurboDryRun(json), JSON.parse(json));
+  assert.throws(() => parseTurboDryRun('[WARN] no json here'), /did not contain/);
 });
