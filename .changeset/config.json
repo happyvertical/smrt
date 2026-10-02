@@ -23,6 +23,7 @@
       "@happyvertical/smrt-core",
       "@happyvertical/smrt-dev-mcp",
       "@happyvertical/smrt-events",
+      "@happyvertical/smrt-expenses",
       "@happyvertical/smrt-facts",
       "@happyvertical/smrt-features",
       "@happyvertical/smrt-fields",
