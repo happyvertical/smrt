@@ -997,15 +997,18 @@ The MCP server supports optional environment variables:
 - \`DATABASE_URL\` - Database connection string
 
 **AI Provider Configuration (in priority order):**
-1. **Generic configuration** (supports any provider):
+1. **\`ai\` block in \`smrt.config.ts\`** (declare once; keep the secret in the environment):
+   - \`ai: { provider: 'openai', model: 'gpt-4o', apiKeyEnv: 'OPENAI_API_KEY' }\`
+
+2. **Generic environment configuration** (supports any provider):
    - \`SMRT_AI_PROVIDER\` - Provider name (e.g., 'openai', 'anthropic', 'claude-cli', 'gemini')
    - \`SMRT_AI_API_KEY\` - API key for the provider
    - \`SMRT_AI_MODEL\` - Model to use (optional)
+   - \`SMRT_AI_BASE_URL\` - Endpoint override (optional)
 
-2. **Provider-specific fallbacks**:
-   - \`OPENAI_API_KEY\` - OpenAI API key (auto-detects provider as 'openai')
-   - \`ANTHROPIC_API_KEY\` - Anthropic API key (auto-detects provider as 'anthropic')
-   - \`CLAUDE_API_KEY\` + \`CLAUDE_MODEL\` - Claude CLI provider (defaults to 'sonnet')
+3. **Provider-specific key fallbacks** (only for the selected provider):
+   - \`OPENAI_API_KEY\`, \`ANTHROPIC_API_KEY\`, \`GEMINI_API_KEY\`
+   - \`CLAUDE_API_KEY\` + \`CLAUDE_MODEL\` - Claude CLI provider (defaults to 'sonnet'); read by \`@happyvertical/ai\`
 
 **Examples:**
 \`\`\`bash

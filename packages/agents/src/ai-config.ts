@@ -1,4 +1,5 @@
 import type { AIClientOptions } from '@happyvertical/ai';
+import { getDefaultAIKeyEnvName } from '@happyvertical/smrt-config';
 import { SecretService } from '@happyvertical/smrt-secrets';
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
@@ -30,12 +31,6 @@ interface ResolveAgentAIOptionsInput {
   tenantId?: string | null;
 }
 
-const DEFAULT_SECRET_NAMES: Record<string, string> = {
-  anthropic: 'ANTHROPIC_API_KEY',
-  gemini: 'GEMINI_API_KEY',
-  openai: 'OPENAI_API_KEY',
-};
-
 const DEFAULT_SECRET_FALLBACK: AgentAISecretFallback = 'ancestors';
 
 const secretServiceCache = new WeakMap<
@@ -58,12 +53,9 @@ function normalizeSecretFallback(value: unknown): AgentAISecretFallback {
 }
 
 function getDefaultSecretName(aiConfig: AgentAIOptions): string | undefined {
-  const provider = asNonEmptyString(aiConfig.type)?.toLowerCase();
-  if (!provider) {
-    return undefined;
-  }
-
-  return DEFAULT_SECRET_NAMES[provider];
+  // The provider -> conventional key name map is shared with the resolver in
+  // smrt-config; the key itself is still read per tenant from smrt-secrets.
+  return getDefaultAIKeyEnvName(asNonEmptyString(aiConfig.type));
 }
 
 function stripAgentAISecretFields(

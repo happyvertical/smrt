@@ -4,6 +4,11 @@ import type {
   FilesystemAdapterOptions,
 } from '@happyvertical/files';
 import { createLogger, type LoggerConfig } from '@happyvertical/logger';
+import {
+  type AIExplicitConfig,
+  getAIConfigBlock,
+  tryResolveAIProviderConfig,
+} from '@happyvertical/smrt-config';
 import type {
   AiTokenUsage,
   AiUsageHandler,
@@ -680,9 +685,15 @@ export class SmrtClass {
         const usageConfig = this.mergeAiUsageConfig(globalConfig);
         this.initializeAiUsageHandlers(usageConfig);
 
+        // The smrt.config.ts `ai` block (resolved through smrt-config's shared
+        // resolver) is the lowest-priority declared source, above SMRT_AI_*.
+        const aiConfigBlock = getAIConfigBlock();
         if (
           !this._ai &&
-          (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER)
+          (this.options.ai ||
+            globalConfig.ai ||
+            aiConfigBlock ||
+            process.env.SMRT_AI_PROVIDER)
         ) {
           // Check if options.ai is already a client-like object with embed method
           // This allows passing mock AI clients for testing
@@ -697,14 +708,9 @@ export class SmrtClass {
           ) {
             this._ai = aiOption as unknown as AIClient;
           } else {
-            // CC-8 follow-up: ideally this would route through
-            // `@happyvertical/smrt-config` for sanitization parity (e.g. via
-            // `getPackageConfig('ai', ...)`), but smrt-config currently only
-            // merges file-based config + runtime overrides — it does NOT
-            // read from `process.env` with a typed prefix/schema. Until
-            // smrt-config grows an env-loader (or wraps `loadEnvConfig`),
-            // we continue to use the underlying utility directly. Tracked
-            // alongside the CC-8 audit on issue #1199.
+            // Passthrough tuning fields (timeout, maxRetries, ...) still come
+            // from `SMRT_AI_*` via loadEnvConfig. Provider/key/model selection
+            // goes through the shared smrt-config resolver below (#3372).
             const { loadEnvConfig } = await import('@happyvertical/utils');
 
             // Start with global defaults
@@ -729,6 +735,34 @@ export class SmrtClass {
                 maxTokens: 'number',
               },
             });
+
+            // Apply the smrt.config.ts `ai` block where it supplied a field:
+            // precedence is options.ai > core global config > config block >
+            // SMRT_AI_* env. Env-sourced and explicit values are unchanged.
+            const resolvedAi = tryResolveAIProviderConfig({
+              explicit: userConfig as AIExplicitConfig,
+              config: aiConfigBlock,
+              prefixes: ['SMRT_AI'],
+              autoDetect: false,
+              requireProvider: false,
+            });
+            if (resolvedAi) {
+              const fromConfig = (field: keyof typeof resolvedAi.sources) =>
+                resolvedAi.sources[field] === 'config'
+                  ? resolvedAi[field]
+                  : undefined;
+              const provider = fromConfig('provider');
+              const apiKey = fromConfig('apiKey');
+              const baseUrl = fromConfig('baseUrl');
+              const model = fromConfig('model');
+              if (provider) aiConfig.provider = provider;
+              if (apiKey) aiConfig.apiKey = apiKey;
+              if (baseUrl) aiConfig.baseUrl = baseUrl;
+              if (model) {
+                aiConfig.model = model;
+                aiConfig.defaultModel = model;
+              }
+            }
 
             const existingOnUsage =
               aiConfig.onUsage ??
