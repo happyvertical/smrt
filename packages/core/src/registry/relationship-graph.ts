@@ -31,8 +31,15 @@ function resolveTarget(
   }
   const related = field.related;
   if (!related) return null;
+  // A deprecated qualified target (#3338) resolves to the class's current
+  // name, so relationship loads, inverses and delete planning all key on it.
   if (related.includes(':'))
-    return findClass(related)?.qualifiedName ?? related;
+    return (
+      findClass(
+        related,
+        `relationship target declared on ${registered.qualifiedName ?? registered.name}`,
+      )?.qualifiedName ?? related
+    );
   const local = classes.get(`${registered.packageName}:${related}`);
   if (local)
     return local.qualifiedName ?? `${registered.packageName}:${related}`;

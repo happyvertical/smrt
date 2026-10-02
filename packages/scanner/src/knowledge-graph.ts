@@ -165,6 +165,7 @@ export function buildKnowledgeGraph(
   // two packages both declaring `Account` must not point one package's
   // subclass at the other package's `Account` (#2863 review).
   const idBySimpleNamePerPackage = new Map<string, Map<string, string>>();
+  const aliasIds: Array<[string, string]> = [];
 
   for (const input of sortedInputs) {
     const manifestPackageName =
@@ -185,7 +186,15 @@ export function buildKnowledgeGraph(
       idBySimpleName.set(object.name, bySimple);
       perPackage.set(object.name, id);
       idBySimpleNamePerPackage.set(packageName, perPackage);
+      for (const alias of object.previousQualifiedNames ?? []) {
+        aliasIds.push([alias, id]);
+      }
     }
+  }
+  // A moved object's deprecated qualified names (#3338) resolve to it, but
+  // never shadow a live object's own qualified name.
+  for (const [alias, id] of aliasIds) {
+    if (!idByQualifiedName.has(alias)) idByQualifiedName.set(alias, id);
   }
 
   const resolveTarget = (

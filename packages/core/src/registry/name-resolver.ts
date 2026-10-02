@@ -32,6 +32,7 @@ import {
   parseQualifiedName,
 } from '../utils/qualified-names.js';
 import { getRegistryGeneration } from './generation';
+import { resolveQualifiedNameAlias } from './qualified-name-aliases';
 import { getClasses, getConstructorIndex, verboseLog } from './shared-state';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
@@ -146,6 +147,8 @@ export function hasClassCaseInsensitive(name: string): boolean {
  *
  * Lookup priority:
  * 1. Direct hit on classes map (works for qualified names as keys)
+ *    1b. A deprecated qualified name declared in a class's
+ *        `previousQualifiedNames` resolves to that class (#3338)
  * 2. If input contains ':', prefer direct qualified lookup, then fall back
  *    to an exact/simple registration when runtime source imports registered
  *    the class before package-qualified promotion happened
@@ -153,13 +156,24 @@ export function hasClassCaseInsensitive(name: string): boolean {
  *    - Unambiguous (1 match) → return it
  *    - Ambiguous (>1 matches) → log warning, return first
  */
-export function findClass(name: string): RegisteredClass | undefined {
+export function findClass(
+  name: string,
+  source?: string,
+): RegisteredClass | undefined {
   const classes = getClasses();
 
   // 1. Direct hit on classes map (fast path, works for qualified keys)
   const registered = classes.get(name);
   if (registered) {
     return registered;
+  }
+
+  // 1b. Deprecated qualified-name alias (#3338). Checked before the
+  // simple-name heuristics below: a declared alias is exact, and
+  // registration guarantees it never names a live class.
+  const aliased = resolveQualifiedNameAlias(name, source);
+  if (aliased) {
+    return aliased;
   }
 
   // 2. Qualified lookup fallback for source-registered classes.
@@ -232,9 +246,10 @@ export function findClassStrict(
     return registered;
   }
 
-  // 2. If input is a qualified name, no fallback — it's not found
+  // 2. If input is a qualified name, the only fallback is a declared
+  // deprecated alias (#3338) — never a simple-name guess.
   if (isQualifiedName(name)) {
-    return undefined;
+    return resolveQualifiedNameAlias(name);
   }
 
   // 3. If fromPackage provided, try constructing qualified name for direct lookup
@@ -357,11 +372,19 @@ export function getClassByConstructor(
 
 /**
  * Get a registered class by its qualified name (O(1) direct lookup).
+ *
+ * A deprecated qualified name declared in a class's `previousQualifiedNames`
+ * resolves to that class with a one-time deprecation warning naming
+ * `source` (#3338).
  */
 export function getClassByQualifiedName(
   qualifiedName: string,
+  source?: string,
 ): RegisteredClass | undefined {
-  return getClasses().get(qualifiedName);
+  return (
+    getClasses().get(qualifiedName) ??
+    resolveQualifiedNameAlias(qualifiedName, source)
+  );
 }
 
 /**
@@ -372,7 +395,7 @@ export function getClassInPackage(
   className: string,
 ): RegisteredClass | undefined {
   const qualifiedName = createQualifiedName(packageName, className);
-  return getClasses().get(qualifiedName);
+  return getClassByQualifiedName(qualifiedName);
 }
 
 /**
@@ -408,7 +431,8 @@ export function resolveType(shortName: string): QualifiedClassName {
           `Make sure the package is installed and the class is decorated with @smrt().`,
       );
     }
-    return shortName as QualifiedClassName;
+    // A deprecated alias resolves to the class's CURRENT name (#3338).
+    return (registered.qualifiedName ?? shortName) as QualifiedClassName;
   }
 
   // Find all classes with this short name

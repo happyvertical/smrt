@@ -102,6 +102,27 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
   }
 
   /**
+   * Store `metaType` under its target's CURRENT qualified name before every
+   * save (#3338). A deprecated name declared in the target's
+   * `previousQualifiedNames` is rewritten first, so new rows — and any legacy
+   * row that is loaded and saved again — never perpetuate it. Names that
+   * resolve to no registered class are stored as given.
+   *
+   * This runs in the first save-preparation hook rather than a `save()`
+   * override: a public override would be scanned into every subclass's
+   * manifest as a `save` method.
+   */
+  protected override async validateBeforeSave(): Promise<void> {
+    if (this.metaType) {
+      const current = ObjectRegistry.resolveQualifiedName(this.metaType, {
+        source: 'SmrtPolymorphicAssociation.save',
+      });
+      if (current && current !== this.metaType) this.metaType = current;
+    }
+    await super.validateBeforeSave();
+  }
+
+  /**
    * Resolve and load the target object this association points at.
    *
    * Resolves `metaType` to its registered class via
@@ -121,6 +142,11 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
    * exists. The target shares this association's database connection via
    * `this.options`.
    *
+   * A `metaType` written under a class's former qualified name (declared in
+   * its `previousQualifiedNames`, e.g. after the class moved package)
+   * resolves to the class, eagerly or through the lazy manifest alias index,
+   * with a one-time deprecation warning (#3338).
+   *
    * Prefer qualified `metaType` values (`@pkg:Class`): a bare simple name
    * resolves to the first registered match, and an ambiguous unqualified name
    * that has to be lazily loaded surfaces a `ConfigurationError` rather than
@@ -133,8 +159,9 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
 
     // Prefer the qualified-name lookup; fall back to a simple-name lookup for
     // legacy/unqualified values.
+    const lookup = { source: 'SmrtPolymorphicAssociation.hydrate' };
     let registered =
-      ObjectRegistry.getClassByQualifiedName(this.metaType) ??
+      ObjectRegistry.getClassByQualifiedName(this.metaType, lookup) ??
       ObjectRegistry.getClass(this.metaType);
 
     // Not registered yet — try a lazy external-package load, then re-resolve.
@@ -148,7 +175,7 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
       );
       if (!loaded) return null;
       registered =
-        ObjectRegistry.getClassByQualifiedName(this.metaType) ??
+        ObjectRegistry.getClassByQualifiedName(this.metaType, lookup) ??
         ObjectRegistry.getClass(this.metaType);
     }
 

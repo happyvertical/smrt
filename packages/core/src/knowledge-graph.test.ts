@@ -449,6 +449,60 @@ describe('buildKnowledgeGraph', () => {
     expect(duplicateEdges).toBe(0);
   });
 
+  it('resolves a crossPackageRef by a moved object’s previous qualified name (#3338)', () => {
+    const object = (
+      name: string,
+      qualifiedName: string,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      name,
+      qualifiedName,
+      collection: `${name.toLowerCase()}s`,
+      fields: [],
+      relationships: [],
+      methods: [],
+      surfaces: [],
+      relationshipFeatures: [],
+      tags: [],
+      risks: [],
+      ...extra,
+    });
+    const timesheets = manifest({
+      packageName: '@example/timesheets',
+      objects: [
+        object('TimeEntry', '@example/timesheets:TimeEntry', {
+          previousQualifiedNames: ['@example/projects:TimeEntry'],
+        }),
+      ],
+    });
+    const billing = manifest({
+      packageName: '@example/billing',
+      objects: [
+        object('Invoice', '@example/billing:Invoice', {
+          relationships: [
+            {
+              name: 'timeEntryId',
+              type: 'crossPackageRef',
+              related: '@example/projects:TimeEntry',
+            },
+          ],
+        }),
+      ],
+    });
+
+    const graph = buildKnowledgeGraph([
+      { artifactPath: 'billing/smrt-knowledge.json', manifest: billing },
+      { artifactPath: 'timesheets/smrt-knowledge.json', manifest: timesheets },
+    ]);
+
+    expect(graph.edges).toContainEqual({
+      type: 'crossPackageRef',
+      from: '@example/billing#@example/billing:Invoice',
+      to: '@example/timesheets#@example/timesheets:TimeEntry',
+      field: 'timeEntryId',
+    });
+  });
+
   it('preserves generatedAt across a rebuild when nothing merged changed (#2872)', () => {
     vi.useFakeTimers();
     try {

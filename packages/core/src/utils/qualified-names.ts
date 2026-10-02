@@ -225,3 +225,30 @@ export function isType(
   }
   return getClassName(qualifiedName) === shortName;
 }
+
+/**
+ * A qualified name is `<package>:<ClassName>`. Scoped and unscoped package
+ * names are both accepted (an app's own package may be unscoped); the class
+ * half must be an identifier.
+ */
+export function isQualifiedNameAliasFormat(name: unknown): name is string {
+  if (typeof name !== 'string') return false;
+  const colon = name.lastIndexOf(':');
+  if (colon <= 0) return false;
+  const packageName = name.slice(0, colon);
+  const className = name.slice(colon + 1);
+  return (
+    !/\s/u.test(packageName) &&
+    !packageName.endsWith('/') &&
+    /^[A-Za-z_$][\w$]*$/u.test(className)
+  );
+}
+
+/** The declared aliases of one decorator/manifest config, as strings. */
+export function readPreviousQualifiedNames(config: unknown): string[] {
+  if (!config || typeof config !== 'object') return [];
+  const declared = (config as { previousQualifiedNames?: unknown })
+    .previousQualifiedNames;
+  if (!Array.isArray(declared)) return [];
+  return declared.filter((name): name is string => typeof name === 'string');
+}

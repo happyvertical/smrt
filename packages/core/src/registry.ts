@@ -52,8 +52,11 @@ import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.j
 import {
   cloneManifestSchemaColumns,
   discoverCachedManifestSync,
+  getLocalTestManifestCache,
   getManifestCache,
   getNodeBuiltins,
+  getStaticManifestCache,
+  getTestManifestCache,
   loadExternalManifestSyncWithNode,
 } from './manifest/store.js';
 import type { SmrtObject } from './object';
@@ -116,6 +119,14 @@ import {
   hasClassCaseInsensitive as _hasClassCaseInsensitive,
   resolveType as _resolveType,
 } from './registry/name-resolver';
+import {
+  findQualifiedNameAliasInManifest,
+  getQualifiedNameAliasMap,
+  lookupQualifiedNameAlias,
+  readPreviousQualifiedNames,
+  resetQualifiedNameAliasWarnings,
+  warnDeprecatedQualifiedName,
+} from './registry/qualified-name-aliases';
 import {
   getDependencyGraph as _getDependencyGraph,
   getRelationshipMap as _getRelationshipMap,
@@ -244,6 +255,12 @@ function importManifestLoader(): Promise<ManifestLoaderModule> {
   }
   return manifestLoaderModule;
 }
+
+/**
+ * Old qualified names the lazy manifest alias search (#3338) found no owner
+ * for, keyed to the registry generation of that search.
+ */
+const manifestAliasMissAtGeneration = new Map<string, number>();
 
 /**
  * Registered classes whose manifest has been reconciled, keyed to the registry
@@ -1282,8 +1299,59 @@ export class ObjectRegistry {
    */
   static getClassByQualifiedName(
     qualifiedName: string,
+    options: { source?: string } = {},
   ): RegisteredClass | undefined {
-    return _getClassByQualifiedName(qualifiedName);
+    return _getClassByQualifiedName(qualifiedName, options.source);
+  }
+
+  /**
+   * Every deprecated qualified name declared through
+   * `@smrt({ previousQualifiedNames })`, mapped to its class's CURRENT
+   * qualified name and sorted by old name (#3338). Aliases are lookup bridges
+   * only: they never appear in {@link getAllClasses} or any other iteration.
+   */
+  static getQualifiedNameAliases(): Map<string, string> {
+    return getQualifiedNameAliasMap();
+  }
+
+  /**
+   * The current qualified name for `name` — itself when it is a live
+   * qualified name, the class's current name when it is a deprecated alias
+   * (logging the one-time deprecation warning), `undefined` otherwise —
+   * including for every simple (unqualified) name (#3338).
+   * Use it to normalize a stored or declared name before writing it.
+   */
+  static resolveQualifiedName(
+    name: string,
+    options: { source?: string } = {},
+  ): string | undefined {
+    if (!name.includes(':')) return undefined;
+    const registered = _getClassByQualifiedName(name, options.source);
+    if (!registered) return undefined;
+    return registered.qualifiedName ?? name;
+  }
+
+  /**
+   * Every qualified name stored data may use for the class `name` resolves
+   * to: its current qualified name first, then its declared
+   * `previousQualifiedNames` (#3338). Readers that match persisted names
+   * (e.g. a polymorphic `metaType` filter) use this so rows written before
+   * and after a model move both match. A simple (unqualified) or
+   * unresolvable `name` is returned alone.
+   */
+  static getEquivalentQualifiedNames(
+    name: string,
+    options: { source?: string } = {},
+  ): string[] {
+    if (!name.includes(':')) return [name];
+    const registered = _getClassByQualifiedName(name, options.source);
+    if (!registered?.qualifiedName) return [name];
+    return [
+      registered.qualifiedName,
+      ...readPreviousQualifiedNames(registered.config).filter(
+        (alias) => alias !== registered.qualifiedName,
+      ),
+    ];
   }
 
   /**
@@ -1444,6 +1512,52 @@ export class ObjectRegistry {
   }
 
   /**
+   * Find the current qualified name of a class that declares `alias` in its
+   * manifest `previousQualifiedNames` (#3338). Already-loaded manifests are
+   * searched first, then every discoverable SMRT package's manifest.
+   */
+  private static async findManifestQualifiedNameAlias(
+    alias: string,
+    loadExternalManifest: (
+      packageName: string,
+    ) => Promise<SmartObjectManifest | null>,
+  ): Promise<string | undefined> {
+    // A miss is remembered for the registry generation it was observed at,
+    // so a stale `metaType` naming an uninstalled package does not rescan
+    // every installed manifest on each hydration.
+    if (manifestAliasMissAtGeneration.get(alias) === getRegistryGeneration()) {
+      return undefined;
+    }
+    const loaded: Array<SmartObjectManifest | null | undefined> = [
+      ...getManifestCache().values(),
+      getStaticManifestCache(),
+      getTestManifestCache(),
+      getLocalTestManifestCache(),
+    ];
+    for (const manifest of loaded) {
+      const current = findQualifiedNameAliasInManifest(manifest, alias);
+      if (current) return current;
+    }
+    let packages: string[] = [];
+    try {
+      packages = await discoverInstalledSmrtPackages();
+    } catch (error) {
+      verboseLog(
+        `[ObjectRegistry] Package discovery failed while resolving alias ${alias}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    for (const packageName of packages) {
+      const current = findQualifiedNameAliasInManifest(
+        await loadExternalManifest(packageName),
+        alias,
+      );
+      if (current) return current;
+    }
+    manifestAliasMissAtGeneration.set(alias, getRegistryGeneration());
+    return undefined;
+  }
+
+  /**
    * Try to load and register a class from external SMRT packages
    *
    * This method attempts to auto-discover classes from @happyvertical/smrt-* packages
@@ -1521,6 +1635,30 @@ export class ObjectRegistry {
     }
 
     if (matches.length === 0) {
+      // #3338: an old package identity resolves through the alias index the
+      // NEW owner's manifest carries, even when the old package's manifest
+      // no longer lists the class (or the package is no longer installed).
+      if (requestedPackageName) {
+        const current = await ObjectRegistry.findManifestQualifiedNameAlias(
+          className,
+          loadExternalManifest,
+        );
+        if (current && current !== className) {
+          const loaded =
+            await ObjectRegistry.tryLoadFromExternalPackage(current);
+          if (loaded) {
+            const registered = lookupQualifiedNameAlias(className);
+            if (registered) {
+              warnDeprecatedQualifiedName(
+                className,
+                registered.qualifiedName ?? current,
+                'manifest alias index (lazy load)',
+              );
+            }
+            return true;
+          }
+        }
+      }
       verboseLog(
         `[ObjectRegistry] ❌ Could not find ${className} in any SMRT package`,
       );
@@ -1972,6 +2110,7 @@ export class ObjectRegistry {
     ObjectRegistry.constructorTenantScopedDeclarations.clear();
     getLegacyFieldDecorators().clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
+    resetQualifiedNameAliasWarnings();
     // Release B (#1133) dropped classNameMap — case-insensitive lookups
     // iterate the classes Map directly, so there's no secondary index to
     // clear here.
@@ -2298,7 +2437,8 @@ export class ObjectRegistry {
    * const fields = ObjectRegistry.getFields('Place'); // Now has fields
    * ```
    */
-  static async ensureManifestLoaded(className: string): Promise<void> {
+  static async ensureManifestLoaded(requestedName: string): Promise<void> {
+    let className = requestedName;
     const startGeneration = getRegistryGeneration();
     let registered = ObjectRegistry.findClass(className);
     if (
@@ -2349,6 +2489,17 @@ export class ObjectRegistry {
           `Ensure the class is decorated with @smrt() before using it.` +
           testHint,
       );
+    }
+
+    // A deprecated alias resolved to its class (#3338): reconcile the
+    // manifest under the class's CURRENT name, which is what its manifest
+    // is keyed by.
+    if (
+      registered.qualifiedName &&
+      registered.qualifiedName !== className &&
+      lookupQualifiedNameAlias(className) === registered
+    ) {
+      className = registered.qualifiedName;
     }
 
     // Try to load manifest from external package (even if some fields exist)

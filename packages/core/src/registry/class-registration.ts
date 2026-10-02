@@ -68,6 +68,7 @@ import {
   hasClassCaseInsensitive,
   qualifyExtendsName,
 } from './name-resolver';
+import { assertQualifiedNameAliasesAvailable } from './qualified-name-aliases';
 import {
   getClasses,
   getCollections,
@@ -608,6 +609,8 @@ function applyManifestCollisionPolicy(args: {
         args.objectDef,
         args.packageName,
       );
+      // The merged manifest config can carry new aliases (#3338).
+      assertQualifiedNameAliasesAvailable(args.registrationKey, args.existing);
       if (args.registrationKey !== args.existingKey) {
         const classes = getClasses();
         classes.set(args.registrationKey, args.existing);
@@ -969,6 +972,7 @@ function registerUntracked(
         );
       }
 
+      assertQualifiedNameAliasesAvailable(nextKey, existing);
       classes.delete(existingKey);
       classes.set(nextKey, existing);
     }
@@ -1743,7 +1747,7 @@ function registerUntracked(
   // Issue #951: Use qualified name as primary key when available
   const registrationKey = qualifiedName || name;
 
-  getClasses().set(registrationKey, {
+  const registration: RegisteredClass = {
     name,
     qualifiedName, // Qualified name for cross-package identification
     constructor: ctor,
@@ -1774,7 +1778,10 @@ function registerUntracked(
     // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
     // it lazily using the `extends` field. This ensures correct chain for both
     // decorator-registered and manifest-loaded classes.
-  });
+  };
+  // #3338: a deprecated alias must never name a second live class.
+  assertQualifiedNameAliasesAvailable(registrationKey, registration);
+  getClasses().set(registrationKey, registration);
 
   // Release B (#1133): case-insensitive lookups iterate the classes Map
   // directly instead of maintaining a parallel classNameMap index.
@@ -2573,7 +2580,7 @@ function registerFromManifestUntracked(
   const tenantScopedConfig = normalizeTenantScopedConfig(config.tenantScoped);
 
   // Issue #951: Use registrationKey (qualified when available) as the primary key
-  getClasses().set(registrationKey, {
+  const registration: RegisteredClass = {
     name: simpleClassName,
     qualifiedName, // Qualified name for cross-package identification
     constructor: stubConstructor,
@@ -2593,7 +2600,10 @@ function registerFromManifestUntracked(
     extends: qualifiedExtends, // Issue #1004: Pre-computed qualified parent
     extendsTypeArg: objectDef.extendsTypeArg, // SmrtCollection<T> generic arg
     visibility, // New: Visibility control for manifest filtering
-  });
+  };
+  // #3338: a deprecated alias must never name a second live class.
+  assertQualifiedNameAliasesAvailable(registrationKey, registration);
+  getClasses().set(registrationKey, registration);
   // Tag the synthetic stub constructor with the qualified name so the
   // same constructor-side identity convention holds for manifest-loaded
   // classes as well as decorator-registered ones.
