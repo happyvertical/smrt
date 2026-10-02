@@ -26,7 +26,8 @@ function entry(
     className: 'OverrideRecord',
     collection: 'override_records',
     packageName: pkg,
-    extends: parent,
+    extends: parent.split(':').at(-1),
+    extendsQualified: parent.includes(':') ? parent : undefined,
     filePath: `${pkg}/model.ts`,
     fields: { tenantId: { type: 'text' } },
     methods: {},
@@ -230,6 +231,7 @@ describe('N-level same-table subtype replacement', () => {
   });
 
   for (const order of [
+    [2, 0, 1],
     [3, 0, 1, 2],
     [2, 0, 3, 1],
     [3, 2, 1, 0],
@@ -245,8 +247,10 @@ describe('N-level same-table subtype replacement', () => {
         );
       expect(ObjectRegistry.getAllClasses().size).toBe(1);
       expect(
-        ObjectRegistry.getClass('@fixture/level3:OverrideRecord'),
-      ).toBeDefined();
+        ObjectRegistry.getClass(
+          `@fixture/level${Math.max(...order)}:OverrideRecord`,
+        )?.extends,
+      ).toBe(`@fixture/level${Math.max(...order) - 1}:OverrideRecord`);
       expect(Object.keys(ObjectRegistry.getAllSchemasAsDefinitions())).toEqual([
         'override_records',
       ]);

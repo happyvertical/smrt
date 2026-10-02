@@ -500,7 +500,7 @@ function buildManifestCollisionInputs(args: {
     matchKind,
   } = args;
   const newClassName = objectDef.className || name;
-  const newExtends = objectDef.extends;
+  const newExtends = objectDef.extendsQualified ?? objectDef.extends;
 
   // When an incoming manifest's `extends` points at the existing entry,
   // OR the existing entry's `extends` points at the incoming class, we
@@ -2444,10 +2444,11 @@ function mergeManifestIntoExistingRegistration(
     existing.packageName = objectDef.packageName;
   }
 
-  if (objectDef.extends) {
+  const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
+  if (manifestParent) {
     existing.extends = packageName
-      ? qualifyExtendsName(objectDef.extends, packageName)
-      : objectDef.extends;
+      ? qualifyExtendsName(manifestParent, packageName)
+      : manifestParent;
   }
 
   if (!existing.sourceFilePath && objectDef.filePath) {
@@ -2513,7 +2514,8 @@ function registerFromManifestUntracked(
     : objectDef.qualifiedName;
   const registrationKey = (qualifiedNameEarly || name) as string;
   const replacedQualifiedNames = new Set<string>();
-  recordSubtypeParent(registrationKey, objectDef.extends);
+  const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
+  recordSubtypeParent(registrationKey, manifestParent);
 
   // Release C (#1134): collision resolution routes through
   // decideCollisionPolicy. See collision-policy.ts for the 16-row decision
@@ -2573,9 +2575,9 @@ function registerFromManifestUntracked(
   // the underlying classNameMap lookup for an iteration over `classes`, but
   // the ordering invariant still holds.
   const qualifiedExtends =
-    objectDef.extends && packageName
-      ? qualifyExtendsName(objectDef.extends, packageName)
-      : objectDef.extends;
+    manifestParent && packageName
+      ? qualifyExtendsName(manifestParent, packageName)
+      : manifestParent;
 
   // Release B (#1133): case-insensitive lookups iterate the classes Map
   // directly; no parallel classNameMap index to maintain.
