@@ -38,7 +38,11 @@ import {
 } from './collection';
 import type { CollectionCacheConfig } from './collection-cache';
 import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
-import type { FieldOptions, MethodOptions } from './decorators/index.js';
+import type {
+  FieldOptions,
+  MethodOptions,
+  RelationshipFieldOptions,
+} from './decorators/index.js';
 import type {
   ClassEmbeddingConfig,
   ProjectEmbeddingConfig,
@@ -299,6 +303,8 @@ interface FieldOptionsView {
  * consumers (`SmrtObject` relationship resolution, schema builder) read back.
  */
 interface FieldDecoratorOptions extends FieldOptions {
+  onDelete?: RelationshipFieldOptions['onDelete'];
+  onUpdate?: RelationshipFieldOptions['onUpdate'];
   /** Exact runtime target, retained until the target registers. */
   relatedConstructor?: Function;
   /** Related class name (foreignKey / crossPackageRef / oneToMany / manyToMany). */
