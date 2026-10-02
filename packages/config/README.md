@@ -169,6 +169,38 @@ const safeJson = exportConfig(config, { includeSecrets: false });
 const sanitized = sanitizeConfig(config);
 ```
 
+## AI provider
+
+Declare the assistant model once in `smrt.config.ts`; keep the secret in the environment.
+
+```ts
+export default defineConfig({
+  ai: { provider: 'openai', model: 'gpt-4o', apiKeyEnv: 'OPENAI_API_KEY' },
+});
+```
+
+```ts
+import { resolveConfiguredAIProvider, toAIClientOptions } from '@happyvertical/smrt-config';
+import { getAI } from '@happyvertical/ai';
+
+const ai = await getAI(toAIClientOptions(resolveConfiguredAIProvider()));
+```
+
+Default precedence, applied per field (`provider`, `apiKey`, `baseUrl`, `model`), highest first:
+
+1. `explicit` values passed by the caller (for example a class's `options.ai`)
+2. the `ai` block (`provider`, `model`, `baseUrl`, `apiKeyEnv`; legacy `packages.ai` is read below `ai`)
+3. environment, one prefix at a time: `<PREFIX>_PROVIDER`, `_API_KEY`, `_BASE_URL`, `_MODEL` for `SMRT_AI`, then `HAVE_AI`
+4. the selected provider's own key variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`); a key for any other provider is never used
+5. with no provider selected, auto-detect the first provider whose key variable is set (openai, anthropic, gemini)
+
+Call sites keep their historical order through options: the chat dev routes pass
+`prefixes: ['SMRT_CHAT_DEV', 'SMRT_AI', 'HAVE_AI']` and `envOverridesConfig: true`; core passes
+`prefixes: ['SMRT_AI']`, `autoDetect: false`. `resolveAIProviderConfig` throws
+`AIProviderNotConfiguredError` (naming variables only) when nothing is configured;
+`tryResolveAIProviderConfig` returns `undefined`. Results redact the key in `toJSON()` /
+`describeAIProviderConfig()`; errors never include key or URL credentials.
+
 ## API
 
 ### Functions
@@ -190,6 +222,10 @@ const sanitized = sanitizeConfig(config);
 | `getApplicationRuntimePreset(profile)` | Inspect an immutable copy of a profile preset |
 | `mergeExportedConfig(baseConfig, exportedConfig)` | Merge an exported config over a base |
 | `parseExportedConfig(raw)` | Parse an exported config string |
+| `resolveAIProviderConfig(options?)` / `tryResolveAIProviderConfig(options?)` | Pure resolver (throws / returns `undefined` when unconfigured) |
+| `resolveConfiguredAIProvider(options?)` / `tryResolveConfiguredAIProvider(options?)` | Same, against the loaded `ai` block |
+| `getAIConfigBlock()` | Effective `ai` block (runtime > file; `ai` > `packages.ai`) |
+| `toAIClientOptions(resolved)` | `getAI()` options (`type`, `provider`, `apiKey`, `baseUrl`, `defaultModel`) |
 
 ### Priority Order
 
