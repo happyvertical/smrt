@@ -10,7 +10,11 @@ export async function inspectIolausInBrowser(
     name: string,
     args: Record<string, unknown>,
   ) => Promise<CallToolResult>,
-  options: { blocked?: boolean; deceptiveReferrer?: string } = {},
+  options: {
+    blocked?: boolean;
+    deceptiveReferrer?: string;
+    reviewNavigation?: { url: string; sessions: (string | undefined)[] };
+  } = {},
 ) {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -41,7 +45,12 @@ export async function inspectIolausInBrowser(
         const iframe = document.createElement('iframe');
         iframe.setAttribute('csp', csp);
         // Opaque sandbox denies direct access to the same-origin synthetic host.
-        iframe.setAttribute('sandbox', 'allow-scripts');
+        // User-activated review links open an independent authenticated page;
+        // the embedded document remains opaque and has no host DOM access.
+        iframe.setAttribute(
+          'sandbox',
+          'allow-scripts allow-popups allow-popups-to-escape-sandbox',
+        );
         iframe.srcdoc = html;
         iframe.title = 'Synthetic Iolaus';
         document.body.append(iframe);
@@ -124,7 +133,43 @@ export async function inspectIolausInBrowser(
     await frame.waitForFunction(() =>
       Boolean(document.getElementById('materials')?.textContent),
     );
+    const navigation = [];
+    for (const sessionId of options.reviewNavigation?.sessions ?? []) {
+      await page.context().clearCookies();
+      if (sessionId)
+        await page.context().addCookies([
+          {
+            name: 'iolaus-human',
+            value: sessionId,
+            url: origin,
+            httpOnly: true,
+            sameSite: 'Lax',
+          },
+        ]);
+      const [popup, response] = await Promise.all([
+        page.context().waitForEvent('page', { timeout: 5000 }),
+        page.context().waitForEvent('response', {
+          predicate: (response) =>
+            response.url() === options.reviewNavigation!.url &&
+            response.request().isNavigationRequest(),
+          timeout: 5000,
+        }),
+        frame
+          .getByRole('link', { name: 'Open dedicated human review' })
+          .click(),
+      ]);
+      await popup.waitForLoadState();
+      navigation.push({
+        status: response.status(),
+        url: popup.url(),
+        body: await popup.locator('body').innerText(),
+        referrer: await popup.evaluate(() => document.referrer),
+        openerIsNull: await popup.evaluate(() => window.opener === null),
+      });
+      await popup.close();
+    }
     return {
+      navigation,
       referrer,
       toolCalls,
       directHostAccessDenied,

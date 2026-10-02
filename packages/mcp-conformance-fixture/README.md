@@ -42,10 +42,14 @@ that revision before writing. Real SQLite/PostgreSQL triggers exercise raced
 authority changes and failed-write rollback; stale hydrated saves must fail.
 Domain material revision and frozen content stay unchanged. The view is built once
 with Vite, declared as a portable resource, read through MCP, and rendered in
-Chromium in an opaque `sandbox="allow-scripts"` frame with a CSP-bound inline
+Chromium in an opaque, script-enabled sandboxed frame with a CSP-bound inline
 bundle. Trusted parent origin is immutable build configuration, never referrer
 or runtime input. Tests require no-referrer success, direct host DOM denial,
-foreign-parent denial and a configured-origin human review link. Its synthetic host forwards tool calls
+foreign-parent denial and real clicks on the configured-origin human review link.
+Explicit popup permissions let that link open a separate authenticated page with
+`noopener noreferrer`; the embedded frame remains opaque. Owner, anonymous and
+foreign human sessions exercise the existing review route, and navigation cannot
+change review state or submit materials. Its synthetic host forwards tool calls
 through the same authorized SDK client. Native entrypoint/display metadata and
 navigation reuse the optional OpenAI adapter; ordinary headless output remains
 complete.

@@ -612,6 +612,112 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
           expect(
             (await applications.get(String(rows[0].id)))?.humanReviewOpened,
           ).toBe(false);
+          if (process.env.SMRT_MCP_APPS_BROWSER === '1') {
+            const beforeNavigation = await db.query(
+              'SELECT * FROM iolaus_applications WHERE id = ?',
+              rows[0].id,
+            );
+            expect(
+              (await applications.get(String(rows[0].id)))?.humanReviewOpened,
+            ).toBe(false);
+            expect(
+              (await applications.get(String(rows[0].id)))?.reviewCount,
+            ).toBe(0);
+            const browserResult = await inspectIolausInBrowser(
+              origin,
+              String(
+                (await client.readResource({ uri: IOLAUS_RESOURCE }))
+                  .contents[0].text,
+              ),
+              call,
+              {
+                reviewNavigation: {
+                  url: reviewUrl,
+                  sessions: [
+                    humanSessions[0].id,
+                    undefined,
+                    humanSessions[1].id,
+                  ],
+                },
+              },
+            );
+            expect(browserResult.structuredContent).toEqual(
+              materials.structuredContent,
+            );
+            expect(browserResult.referrer).toBe('');
+            expect(browserResult.directHostAccessDenied).toBe(true);
+            expect(browserResult.toolCalls).toBe(2);
+            expect(browserResult.reviewUrl).toBe(reviewUrl);
+            expect(
+              browserResult.navigation?.map((page) => page.status),
+            ).toEqual([200, 401, 403]);
+            for (const page of browserResult.navigation ?? []) {
+              expect(page.url).toBe(reviewUrl);
+              expect(page.referrer).toBe('');
+              expect(page.openerIsNull).toBe(true);
+            }
+            expect(browserResult.navigation?.[0].body).toContain(
+              String(materials.structuredContent?.sha256),
+            );
+            expect(browserResult.navigation?.[0].body).toContain(
+              'Nothing submitted.',
+            );
+            for (const page of browserResult.navigation?.slice(1) ?? [])
+              expect(page.body).not.toContain(
+                String(materials.structuredContent?.sha256),
+              );
+            expect(
+              (
+                await db.query(
+                  'SELECT * FROM iolaus_applications WHERE id = ?',
+                  rows[0].id,
+                )
+              ).rows,
+            ).toEqual(beforeNavigation.rows);
+            expect(
+              (await call('iolaus_inspect_materials', { id: rows[0].id }))
+                .structuredContent,
+            ).toEqual(materials.structuredContent);
+            const foreignHost = createServer((_req, res) => {
+              res.setHeader('content-type', 'text/html');
+              res.end('<!doctype html><title>Foreign synthetic host</title>');
+            });
+            await new Promise<void>((resolve) =>
+              foreignHost.listen(0, '127.0.0.1', resolve),
+            );
+            try {
+              const foreignAddress = foreignHost.address();
+              if (!foreignAddress || typeof foreignAddress === 'string')
+                throw new Error('No foreign address');
+              const foreignOrigin = `http://127.0.0.1:${foreignAddress.port}`;
+              const html = String(
+                (await client.readResource({ uri: IOLAUS_RESOURCE }))
+                  .contents[0].text,
+              );
+              for (const deceptiveReferrer of [
+                undefined,
+                `${foreignOrigin}/claims-to-be-trusted`,
+                `${origin}/forged-trusted-referrer`,
+              ]) {
+                const denied = await inspectIolausInBrowser(
+                  foreignOrigin,
+                  html,
+                  call,
+                  { blocked: true, deceptiveReferrer },
+                );
+                expect(denied.toolCalls).toBe(0);
+                expect(denied.structuredContent).toBeUndefined();
+                expect(denied.reviewUrl).toBeNull();
+                expect(denied.referrer).toBe(
+                  deceptiveReferrer ?? `${foreignOrigin}/`,
+                );
+              }
+            } finally {
+              await new Promise<void>((resolve) =>
+                foreignHost.close(() => resolve()),
+              );
+            }
+          }
           const unregister = registerPermissionDefinitions([
             { slug: 'iolaus_applications.update' },
           ]);
@@ -770,62 +876,6 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
             ).toEqual(materials.structuredContent);
           } finally {
             unregister();
-          }
-          if (process.env.SMRT_MCP_APPS_BROWSER === '1') {
-            const browserResult = await inspectIolausInBrowser(
-              origin,
-              String(
-                (await client.readResource({ uri: IOLAUS_RESOURCE }))
-                  .contents[0].text,
-              ),
-              call,
-            );
-            expect(browserResult.structuredContent).toEqual(
-              materials.structuredContent,
-            );
-            expect(browserResult.referrer).toBe('');
-            expect(browserResult.directHostAccessDenied).toBe(true);
-            expect(browserResult.toolCalls).toBe(2);
-            expect(browserResult.reviewUrl).toBe(reviewUrl);
-            const foreignHost = createServer((_req, res) => {
-              res.setHeader('content-type', 'text/html');
-              res.end('<!doctype html><title>Foreign synthetic host</title>');
-            });
-            await new Promise<void>((resolve) =>
-              foreignHost.listen(0, '127.0.0.1', resolve),
-            );
-            try {
-              const foreignAddress = foreignHost.address();
-              if (!foreignAddress || typeof foreignAddress === 'string')
-                throw new Error('No foreign address');
-              const foreignOrigin = `http://127.0.0.1:${foreignAddress.port}`;
-              const html = String(
-                (await client.readResource({ uri: IOLAUS_RESOURCE }))
-                  .contents[0].text,
-              );
-              for (const deceptiveReferrer of [
-                undefined,
-                `${foreignOrigin}/claims-to-be-trusted`,
-                `${origin}/forged-trusted-referrer`,
-              ]) {
-                const denied = await inspectIolausInBrowser(
-                  foreignOrigin,
-                  html,
-                  call,
-                  { blocked: true, deceptiveReferrer },
-                );
-                expect(denied.toolCalls).toBe(0);
-                expect(denied.structuredContent).toBeUndefined();
-                expect(denied.reviewUrl).toBeNull();
-                expect(denied.referrer).toBe(
-                  deceptiveReferrer ?? `${foreignOrigin}/`,
-                );
-              }
-            } finally {
-              await new Promise<void>((resolve) =>
-                foreignHost.close(() => resolve()),
-              );
-            }
           }
           const pending = await call('iolaus_prepare', {
             id: rows[0].id,
