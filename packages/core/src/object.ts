@@ -4137,6 +4137,8 @@ export class SmrtObject extends SmrtClass {
    *     callers that already curate the relevant fields into `criteria`).
    *   - `maxDataLength` (number of characters) — override the injected
    *     object-data truncation limit.
+   *   With configured decisions, accepts {@link EvaluateOptions} controls;
+   *   `model` retains its legacy meaning as the generative fallback override.
    * @returns `true` if the object meets the criteria, `false` otherwise
    * @throws Error if the AI returns a non-boolean or malformed JSON response
    *
@@ -4149,7 +4151,10 @@ export class SmrtObject extends SmrtClass {
    *
    * @see {@link do} for open-ended instructions instead of boolean checks
    */
-  public async is(criteria: string, options: AiOperationOptions = {}) {
+  public async is(
+    criteria: string,
+    options: AiOperationOptions & EvaluateOptions = {},
+  ) {
     const tools = this.getAvailableTools();
     const hasConfiguredDecisions =
       this.options.decisions !== undefined ||
