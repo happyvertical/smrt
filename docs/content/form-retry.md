@@ -220,6 +220,35 @@ keep the two implementations byte-identical.
 
 ## SMRT `Form`
 
-The helper works with any `<form method="POST" use:enhance>`. Using it with
-smrt-ui's `Form` component needs `Form` to accept `use:enhance` / expose its
-element, which is smrt#3265.
+The helper works with any `<form method="POST" use:enhance>`, including
+smrt-ui's own `Form`. `Form` forwards Svelte attachments to its native
+`<form>` (smrt#3265), so attach SvelteKit's `enhance` through `fromAction`
+with the retry submit function, attach `retry.attach` beside it, and set
+`preventDefault={false}` so the enhancement handles the submit:
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+  import { fromAction } from 'svelte/attachments';
+  import { Form, Input } from '@happyvertical/smrt-ui/forms';
+  import { createFormRetry } from '@happyvertical/smrt-ui/form-retry';
+
+  const retry = createFormRetry({ form: 'report' });
+</script>
+
+<Form
+  method="POST"
+  action="?/create"
+  preventDefault={false}
+  {@attach fromAction(enhance, () => retry.enhance())}
+  {@attach retry.attach}
+>
+  <Input name="title" />
+  <button type="submit">Send</button>
+</Form>
+```
+
+The getter form `() => retry.enhance()` is how `fromAction` passes a custom
+submit function; pass your own one through it as `retry.enhance(mySubmit)`.
+The hidden key field lands inside `Form`'s `<form>`, and the interaction
+registry and staged-review surface are unaffected.

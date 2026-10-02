@@ -470,6 +470,10 @@ Svelte nor SvelteKit; the submit function is typed against SvelteKit's
 </form>
 ```
 
+With smrt-ui's own `Form`, attach the same two pieces to it (see
+[Native and enhanced forms](#native-and-enhanced-forms)):
+`<Form method="POST" preventDefault={false} {@attach fromAction(enhance, () => retry.enhance())} {@attach retry.attach}>`.
+
 `/forms` re-exports the same API as the Svelte-free `/form-retry` entry. See the
 [form retry guide](../../docs/content/form-retry.md) for the server half, the
 per-result table, storage and private-window behaviour, and restore.

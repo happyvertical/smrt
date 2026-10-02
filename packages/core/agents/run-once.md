@@ -66,9 +66,10 @@ submit is in flight, kept with the typed values across a transport error, and
 optional restore-after-reload so the retry carries byte-identical content. It
 is in `smrt-ui` rather than `smrt-svelte` because smrt-ui is the dependency
 leaf that both `smrt-svelte` and plain SvelteKit apps can use, and its `Form`
-is the one smrt#3265 makes enhanceable; it is typed structurally against
-SvelteKit's `SubmitFunction`, so smrt-ui takes no `@sveltejs/kit`
-dependency. Its `digestSubmissionContent()` is a Web Crypto port of
+takes `enhance` and the retry attachment directly (smrt#3265: attach
+`fromAction(enhance, () => retry.enhance())` and `retry.attach`). It is typed
+structurally against SvelteKit's `SubmitFunction`, so smrt-ui takes no
+`@sveltejs/kit` dependency. Its `digestSubmissionContent()` is a Web Crypto port of
 `digestRunOnceContent()`; `src/__tests__/issue-3291-digest-vectors.test.ts`
 pins vectors shared with the port, so change both together (and remember a
 digest change re-keys every stored claim). Guide:
