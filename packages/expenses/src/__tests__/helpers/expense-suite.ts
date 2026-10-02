@@ -14,7 +14,7 @@ import {
   ContractLineItemCollection,
   VendorCollection,
 } from '@happyvertical/smrt-commerce';
-import { SmrtObject } from '@happyvertical/smrt-core';
+import { GlobalInterceptors, SmrtObject } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import {
   disableTenancy,
@@ -24,7 +24,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ExpenseCollection } from '../../collections/ExpenseCollection.js';
 import { ExpenseReceiptCollection } from '../../collections/ExpenseReceiptCollection.js';
-import type { Expense } from '../../models/Expense.js';
+import { Expense } from '../../models/Expense.js';
 import { ExpenseReceipt } from '../../models/ExpenseReceipt.js';
 import {
   DuplicateReceiptError,
@@ -1146,6 +1146,74 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
         const storedRejected = await world.expenses.get({ id: rejected.id });
         expect(storedRejected?.reviewStatus).toBe('rejected');
         expect(storedRejected?.duplicateOfId).toBeNull();
+      });
+    });
+  });
+
+  describe('review round 3 (PR #3339)', () => {
+    it('refuses a fresh instance that names an existing expense id', async () => {
+      await world.inTenant(async () => {
+        const existing = await world.expense({ amount: 5000 });
+        // collection.create() saves; same id and same slug, new money.
+        const overwrite = world.expenses.create({
+          id: existing.id,
+          slug: existing.slug,
+          costObjectType: PROJECT,
+          costObjectId: 'project-1',
+          amount: 9000,
+          currency: 'USD',
+          incurredOn: '2026-09-15',
+        } as ExpenseOptions);
+        await expectExpenseError(overwrite, 'EXPENSE_IDENTITY_CONFLICT');
+        expect((await world.expenses.get({ id: existing.id }))?.amount).toBe(
+          5000,
+        );
+      });
+    });
+
+    it('never lets a fresh instance overwrite a review that lands mid-save', async () => {
+      await world.inTenant(async () => {
+        const reviewer = randomUUID();
+        const existing = await world.expense({ amount: 5000 });
+        // A fresh, never-loaded instance carrying the existing id.
+        const fresh = new Expense({
+          db: world.db,
+          _skipLoad: true,
+          id: existing.id,
+          slug: existing.slug,
+          costObjectType: PROJECT,
+          costObjectId: 'project-1',
+          amount: 9000,
+          currency: 'USD',
+          incurredOn: '2026-09-15',
+        } as ExpenseOptions);
+        await fresh.initialize();
+        expect(fresh.isPersisted).toBe(false);
+
+        // The review lands after the fresh save's guards have read the row
+        // and before its write: a beforeSave interceptor runs exactly there.
+        let fired = false;
+        GlobalInterceptors.register({
+          name: 'expenses-review-race-3339',
+          async beforeSave(instance) {
+            if (instance !== fresh || fired) return;
+            fired = true;
+            const loaded = await world.expenses.get({ id: existing.id });
+            await loaded?.review({ reviewerProfileId: reviewer });
+          },
+        });
+        try {
+          await expect(fresh.save()).rejects.toBeTruthy();
+        } finally {
+          GlobalInterceptors.unregister('expenses-review-race-3339');
+        }
+
+        const stored = await world.expenses.get({ id: existing.id });
+        expect(stored?.amount).toBe(5000);
+        if (fired) {
+          expect(stored?.reviewStatus).toBe('reviewed');
+          expect(stored?.reviewedByProfileId).toBe(reviewer);
+        }
       });
     });
   });

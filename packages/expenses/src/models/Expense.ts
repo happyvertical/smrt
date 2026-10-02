@@ -469,7 +469,7 @@ export class Expense extends SmrtObject {
 
     const persisted = await this.readPersisted();
     // The guards below check `persisted`; pin the write to that row.
-    await pinNaturalKey('Expense', this, persisted);
+    const inserting = await pinNaturalKey('Expense', this, persisted);
     this.assertReviewFields(persisted);
     this.assertReviewedLock(persisted);
     await this.assertCommitment(persisted);
@@ -481,7 +481,7 @@ export class Expense extends SmrtObject {
     } catch (error) {
       // A new expense is a plain INSERT; its only unique keys are the id and
       // the natural key, so a violation means it named an existing row.
-      if (!persisted && isUniqueViolationError(error)) {
+      if (inserting && isUniqueViolationError(error)) {
         throw identityConflict('Expense', this, error);
       }
       throw error;

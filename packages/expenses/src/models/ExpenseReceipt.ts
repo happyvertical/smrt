@@ -190,7 +190,7 @@ export class ExpenseReceipt extends SmrtObject {
           | null) ?? null)
       : null;
     // The checks below are against `persisted`; pin the write to that row.
-    await pinNaturalKey('ExpenseReceipt', this, persisted);
+    const inserting = await pinNaturalKey('ExpenseReceipt', this, persisted);
     if (persisted) {
       const self = this as unknown as Record<string, unknown>;
       for (const [fieldName, column] of IMMUTABLE) {
@@ -210,7 +210,7 @@ export class ExpenseReceipt extends SmrtObject {
     try {
       return await super.save();
     } catch (error) {
-      if (!persisted && isUniqueViolationError(error)) {
+      if (inserting && isUniqueViolationError(error)) {
         throw await this.classifyInsertConflict(error);
       }
       throw error;

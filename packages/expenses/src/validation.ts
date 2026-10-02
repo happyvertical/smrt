@@ -138,6 +138,7 @@ interface NaturalKeyed {
   id?: string | null;
   slug?: string | null;
   context?: string | null;
+  readonly isPersisted: boolean;
   getSlug(): Promise<unknown>;
   requireInsertOnSave(): void;
 }
@@ -146,31 +147,42 @@ interface NaturalKeyed {
  * Make a save write only the row its guards checked.
  *
  * Core's natural-key save adopts any same-owner row on
- * `(tenant_id, slug, context)`, and these models have no human slug, so a
- * caller-supplied `slug` naming another row would turn a "new" save into an
- * unguarded overwrite of that row. So:
+ * `(tenant_id, slug, context)` and upserts it without a revision predicate,
+ * and these models have no human slug. So:
  *
- * - a new row (none stored under this id) must be a plain INSERT: any
- *   natural-key collision raises instead of adopting (`requireInsertOnSave`);
- * - an existing row must keep the slug and context it is stored under, so
- *   the write targets that row and no other.
+ * - a fresh (never loaded, never saved) instance may only INSERT
+ *   (`requireInsertOnSave`): naming an existing row's id is refused here, and
+ *   a row that appears between this check and the write makes the INSERT
+ *   fail rather than be adopted;
+ * - an existing row is changed only through a loaded instance, whose save
+ *   carries core's revision compare-and-swap, and it must keep the slug and
+ *   context it is stored under, so the write targets that row and no other.
  *
- * @throws {ExpenseError} `EXPENSE_IDENTITY_CONFLICT` when an existing row's
- *   natural key is changed.
+ * @returns `true` when this save is an INSERT.
+ * @throws {ExpenseError} `EXPENSE_IDENTITY_CONFLICT` when a fresh instance
+ *   names an existing row, or a loaded one changes its natural key.
  */
 export async function pinNaturalKey(
   model: string,
   object: NaturalKeyed,
   persisted: Record<string, unknown> | null,
-): Promise<void> {
+): Promise<boolean> {
   await object.getSlug();
-  if (!persisted) {
+  if (!object.isPersisted) {
+    if (persisted) {
+      throw new ExpenseError(
+        'EXPENSE_IDENTITY_CONFLICT',
+        `${model} ${object.id} already exists; load it and save the loaded ` +
+          'instance instead of creating one with its id.',
+      );
+    }
     object.requireInsertOnSave();
-    return;
+    return true;
   }
   if (
-    String(persisted.slug ?? '') !== String(object.slug ?? '') ||
-    String(persisted.context ?? '') !== String(object.context ?? '')
+    persisted &&
+    (String(persisted.slug ?? '') !== String(object.slug ?? '') ||
+      String(persisted.context ?? '') !== String(object.context ?? ''))
   ) {
     throw new ExpenseError(
       'EXPENSE_IDENTITY_CONFLICT',
@@ -178,6 +190,7 @@ export async function pinNaturalKey(
         'point the save at a different row.',
     );
   }
+  return false;
 }
 
 /** The error a refused natural-key INSERT is reported as. */

@@ -31,12 +31,14 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   on a brand-new row. Review fields are also `readonly` for generated writes.
 - **Writes are pinned to the guarded row.** The guards read the row stored
   under `id`, but core's natural-key save adopts any same-owner row on
-  `(tenant_id, slug, context)`, and these models' slugs come from the id. So
-  `pinNaturalKey()` makes a new row's first save a plain INSERT
-  (`requireInsertOnSave()`; a collision is `EXPENSE_IDENTITY_CONFLICT`, never
-  an adoption) and refuses a changed slug/context on an existing row. Without
-  it, `create({ slug: <reviewed id>, amount })` silently rewrote a reviewed
-  expense or a receipt's evidence.
+  `(tenant_id, slug, context)` and upserts it with no revision predicate;
+  these models' slugs come from the id. So `pinNaturalKey()` lets a fresh
+  (not `isPersisted`) instance only INSERT (`requireInsertOnSave()`): naming
+  an existing row's id is `EXPENSE_IDENTITY_CONFLICT`, and a row appearing
+  mid-save fails the INSERT instead of being adopted. An existing row changes
+  only through a loaded instance (revision compare-and-swap) that keeps its
+  slug/context. Never `create({ id: <existing> })` or `getOrUpsert()` these
+  models; load and save instead.
 - **Reviewed money is frozen.** While the stored status is `reviewed`,
   `LOCKED_WHEN_REVIEWED` fields (money, currency, both dates, cost object,
   vendor, commitment, payer) cannot change; `reopen()` first. `recordedAt` is
