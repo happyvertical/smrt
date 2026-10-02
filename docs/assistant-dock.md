@@ -169,7 +169,10 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
     stores' `take` claims the continuation instead of deleting it (no second
     `take` returns it, and `has` stays true) until the runner has recorded
     `running` and calls `release`, so a retry never sees a resuming send as
-    failed; an unreleased claim expires after 60 seconds.
+    failed. A claim lives 60 seconds from the claim, whatever the
+    continuation's own lifetime. If `running` cannot be recorded, the leg
+    never runs (error `resume_not_recorded`), the claim is kept, and the
+    continuation can be resumed again once the claim lapses.
   - On a PostgreSQL transaction handle the insert runs under a savepoint so
     a conflict does not abort the transaction.
 - **Limits.** JSON bodies are capped at 1 MiB (`maxBodyBytes`), messages at

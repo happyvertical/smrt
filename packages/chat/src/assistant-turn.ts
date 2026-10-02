@@ -130,9 +130,15 @@ function liveFor(
   at: number,
 ): boolean {
   if (!entry || entry.id !== id) return false;
-  if (at - Number(entry.createdAt) > ttl) return false;
+  // An active claim lives from its claim time, whatever the original
+  // lifetime; an unclaimed (or lapsed-claim) entry from its creation.
+  if (claimActive(entry, at)) return true;
+  return at - Number(entry.createdAt) <= ttl;
+}
+
+function claimActive(entry: StoredContinuation, at: number): boolean {
   return (
-    entry.claimedAt === undefined ||
+    entry.claimedAt !== undefined &&
     at - Number(entry.claimedAt) <= CONTINUATION_CLAIM_TTL_MS
   );
 }
@@ -156,7 +162,9 @@ export function createMemoryContinuationStore(
     },
     async take(key, id) {
       const entry = entries.get(key);
-      if (!entry || entry.id !== id || entry.claimedAt !== undefined) {
+      // An active claim is single-use; a lapsed one (its activation never
+      // became durable) is claimable again within the original lifetime.
+      if (!entry || entry.id !== id || claimActive(entry, now())) {
         return null;
       }
       if (now() - entry.createdAt > ttl) {
@@ -243,7 +251,8 @@ export function createSessionContinuationStore(
       const current = await load();
       const all = read(current);
       const entry = all[key];
-      if (!entry || entry.id !== id || entry.claimedAt !== undefined) {
+      // An active claim is single-use; a lapsed one is claimable again.
+      if (!entry || entry.id !== id || claimActive(entry, now())) {
         return null;
       }
       const expired = now() - Number(entry.createdAt) > ttl;
@@ -320,10 +329,15 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
    * continuation, `suspended` once the continuation is stored (before its
    * `client_tool_calls` event), and `completed` / `cancelled` / `failed`
    * when the leg ends (`completed` after the reply is stored). A throw is
-   * logged and never breaks the turn. Not called for a resume whose
-   * continuation is missing, foreign or expired.
+   * logged and never breaks the turn, except for a resume's `running`: when
+   * that report throws or returns `false` (not recorded), the leg stops
+   * before any model or tool call with `resume_not_recorded`, and its
+   * continuation stays claimed (claimable again after
+   * {@link CONTINUATION_CLAIM_TTL_MS}). Not called for a resume whose
+   * continuation is missing, foreign or expired. Resolve `false` (or throw)
+   * for "not recorded"; any other value counts as recorded.
    */
-  onState?: (state: AssistantTurnState) => void | Promise<void>;
+  onState?: (state: AssistantTurnState) => unknown;
   tools?: ManifestTool[];
   /** Server tools, narrowed to `principal.allowedTools`. */
   extraTools?: PrincipalTool[];
@@ -543,13 +557,15 @@ interface TurnLeg {
 }
 
 function reporter<M>(options: AssistantTurnOptions<M>, leg: TurnLeg) {
+  // Resolves whether the report was recorded (no `onState`: nothing to
+  // record, so yes; `false` or a throw: no).
   return async (
     state: AssistantTurnState['state'],
     continuationId?: string,
-  ): Promise<void> => {
-    if (!options.onState) return;
+  ): Promise<boolean> => {
+    if (!options.onState) return true;
     try {
-      await options.onState({
+      const recorded = await options.onState({
         state,
         ...(leg.originMessageId
           ? { originMessageId: leg.originMessageId }
@@ -557,12 +573,14 @@ function reporter<M>(options: AssistantTurnOptions<M>, leg: TurnLeg) {
         resumedFrom: leg.resumedFrom,
         ...(continuationId ? { continuationId } : {}),
       });
+      return recorded !== false;
     } catch (error) {
       try {
         (options.onError ?? defaultLogError)(error);
       } catch {
         // Logging never breaks the turn.
       }
+      return false;
     }
   };
 }
@@ -610,8 +628,16 @@ async function runTurn<M>(
     originMessageId = continuation.originMessageId;
     leg.originMessageId = originMessageId;
     leg.resumedFrom = continuation.id;
+    if (!(await report('running'))) {
+      // The activation is not durable: never run the leg. The continuation
+      // stays claimed (has() true) and is claimable again after the claim
+      // lapses.
+      throw new AssistantTurnUserError(
+        'This step could not be resumed right now. Try again in a minute.',
+        'resume_not_recorded',
+      );
+    }
     leg.started = true;
-    await report('running');
     // `running` is recorded: the claimed continuation can go.
     try {
       await options.continuations.release?.(

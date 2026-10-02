@@ -1103,9 +1103,10 @@ export function mountAssistantRoutes(
    */
   const recordTurnState =
     (chat: ChatService, principal: AssistantPrincipal, threadId: string) =>
-    async (state: AssistantTurnState): Promise<void> => {
-      if (!state.originMessageId) return;
-      await chat.recordClientRequestOutcome({
+    async (state: AssistantTurnState): Promise<boolean> => {
+      // A continuation without an origin has no send to record against.
+      if (!state.originMessageId) return true;
+      return chat.recordClientRequestOutcome({
         tenantId: principal.tenantId,
         threadId,
         messageId: state.originMessageId,

@@ -27,6 +27,10 @@ import {
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CONTINUATION_CLAIM_TTL_MS,
+  createMemoryContinuationStore,
+} from './assistant-turn.js';
+import {
   type AssistantTurnEvent,
   readAssistantTurnStream,
 } from './assistant-turn-events.js';
@@ -1583,6 +1587,169 @@ describe('mountAssistantRoutes', () => {
         spy.mockRestore();
       }
     });
+
+    // ---- review 5 (Q1/Q2) ----------------------------------------------
+
+    /** Block (or replace) the resumed leg's `running` write. */
+    function onResumedRunning(
+      handle: (apply: () => Promise<boolean>) => Promise<boolean>,
+    ) {
+      const original = ChatService.prototype.recordClientRequestOutcome;
+      return vi
+        .spyOn(ChatService.prototype, 'recordClientRequestOutcome')
+        .mockImplementation(async function (
+          this: ChatService,
+          ...args: Parameters<ChatService['recordClientRequestOutcome']>
+        ) {
+          const apply = () => original.apply(this, args);
+          return args[0].outcome === 'running' && args[0].resumedFrom
+            ? handle(apply)
+            : apply();
+        });
+    }
+
+    it('keeps a claimed continuation alive past its original lifetime while the claim holds (Q1)', async () => {
+      let offset = 0;
+      const store = createMemoryContinuationStore({
+        ttlMs: 1_000,
+        now: () => Date.now() + offset,
+      });
+      const routes = mount({
+        ai: turnAI(),
+        clientToolAllowList: ['page_*'],
+        continuations: () => store,
+      });
+      const threadId = await createThread(routes);
+      const suspended = await suspendSend(routes, threadId, 'call:q1', 'q1-a');
+      offset = 900; // just before the 1 s lifetime
+      let reached: () => void = () => {};
+      const atRunning = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      let proceed: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        proceed = resolve;
+      });
+      const spy = onResumedRunning(async (apply) => {
+        reached();
+        await gate;
+        return apply();
+      });
+      try {
+        const reading = events(
+          await resume(routes, threadId, {
+            continuationId: suspended.continuationId,
+            results: [{ id: 't-call:q1', ok: true, result: 'page' }],
+          }),
+        );
+        await atRunning; // taken and claimed at ~900 ms
+        offset = 2_000; // past the lifetime, far inside the 60 s claim
+        expect(await store.has?.(threadId, suspended.continuationId)).toBe(
+          true,
+        );
+        const poll = await retry(routes, threadId, 'call:q1', 'q1-a');
+        expect(poll.status).toBe(200);
+        expect(await poll.json()).toMatchObject({ outcome: 'in_progress' });
+        proceed();
+        expect((await reading).seen.some((e) => e.type === 'done')).toBe(true);
+        expect(
+          await (await retry(routes, threadId, 'call:q1', 'q1-a')).json(),
+        ).toMatchObject({
+          outcome: 'completed',
+          assistantMessage: { content: 'reply call:q1' },
+        });
+      } finally {
+        proceed();
+        spy.mockRestore();
+      }
+    });
+
+    for (const failure of ['returns false', 'throws'] as const) {
+      it(`never runs a resumed leg whose running write ${failure}, and keeps the claim (Q2)`, async () => {
+        let offset = 0;
+        const store = createMemoryContinuationStore({
+          now: () => Date.now() + offset,
+        });
+        const ran: PrincipalRun[] = [];
+        const base = turnAI();
+        let modelCalls = 0;
+        const ai = {
+          async chat(...args: Parameters<AIInterface['chat']>) {
+            modelCalls += 1;
+            return base.chat(...args);
+          },
+        } as unknown as AIInterface;
+        const routes = mount({
+          ai,
+          clientToolAllowList: ['page_*'],
+          allowedTools: ['data.discover'],
+          extraTools: [discoverTool(ran)],
+          continuations: () => store,
+        });
+        const threadId = await createThread(routes);
+        const suspended = await suspendSend(
+          routes,
+          threadId,
+          'call:q2',
+          `q2-${failure.replace(' ', '-')}`,
+        );
+        const callsAtSuspension = modelCalls;
+        const spy = onResumedRunning(async () => {
+          if (failure === 'throws') throw new Error('db unavailable');
+          return false;
+        });
+        const body = {
+          continuationId: suspended.continuationId,
+          results: [{ id: 't-call:q2', ok: true, result: 'page' }],
+        };
+        try {
+          const refused = await events(await resume(routes, threadId, body));
+          expect(refused.seen.find((e) => e.type === 'error')).toMatchObject({
+            code: 'resume_not_recorded',
+          });
+          expect(modelCalls).toBe(callsAtSuspension);
+          expect(ran).toHaveLength(0);
+          // The claim is retained: the send is still in progress.
+          expect(await store.has?.(threadId, suspended.continuationId)).toBe(
+            true,
+          );
+          expect(
+            await outcomeOf(threadId, `q2-${failure.replace(' ', '-')}`),
+          ).toBe('suspended');
+          const poll = await retry(
+            routes,
+            threadId,
+            'call:q2',
+            `q2-${failure.replace(' ', '-')}`,
+          );
+          expect(poll.status).toBe(200);
+          expect(await poll.json()).toMatchObject({ outcome: 'in_progress' });
+        } finally {
+          spy.mockRestore();
+        }
+        // While the claim holds, no other resume can take it ...
+        const early = await events(await resume(routes, threadId, body));
+        expect(early.seen.find((e) => e.type === 'error')).toMatchObject({
+          code: 'continuation_expired',
+        });
+        // ... once it lapses, a later resume activates and completes.
+        offset = CONTINUATION_CLAIM_TTL_MS + 1_000;
+        const later = await events(await resume(routes, threadId, body));
+        expect(later.seen.find((e) => e.type === 'done')).toMatchObject({
+          message: { content: 'reply call:q2' },
+        });
+        expect(
+          await (
+            await retry(
+              routes,
+              threadId,
+              'call:q2',
+              `q2-${failure.replace(' ', '-')}`,
+            )
+          ).json(),
+        ).toMatchObject({ outcome: 'completed' });
+      });
+    }
 
     it('refuses out-of-order and stale outcome writes, compare-and-set', async () => {
       const routes = mount();
