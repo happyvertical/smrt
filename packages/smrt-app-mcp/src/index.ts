@@ -28,6 +28,15 @@ export {
   type McpWorkflowContinuation,
 } from './continuation.js';
 export {
+  type CreateDefaultMcpAppServerOptions,
+  createDefaultMcpAppServer,
+  DEFAULT_MCP_APP_SERVER_INFO,
+  type McpAppModel,
+  type McpPrincipalScopePolicyOptions,
+  mcpAllowedClassNames,
+  mcpPrincipalScopePolicy,
+} from './defaults.js';
+export {
   MCP_TOOL_ACCESS_DENIED_CODE,
   McpAccessError,
   type McpAccessErrorMetadata,

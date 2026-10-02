@@ -8,6 +8,74 @@ App-runtime MCP server scaffolding for s-m-r-t apps. Provides:
   `mountMcpToolsRoute` / `mountMcpCallRoute` aliases remain available for one
   release while applications migrate.
 
+## One-call app route
+
+Most applications need no server helper module. `mountMcpAppRoute` builds the
+server from the app's own declared models, maps the request principal from the
+SvelteKit session locals populated by `createSessionHandler`
+(`@happyvertical/smrt-users/sveltekit`), and mounts the stateless endpoint:
+
+```ts
+// src/routes/api/mcp/+server.ts
+import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
+import { Item } from '$lib/objects/Item';
+import { getApplicationDatabaseConfig } from '$lib/server/application-runtime';
+
+export const POST = mountMcpAppRoute({
+  models: [Item],
+  requiredScopes: ['items.read'],
+  smrtOptions: () => ({ db: getApplicationDatabaseConfig() }),
+});
+```
+
+- **Allow-list** — exactly the `models` listed (registered `@smrt()`
+  constructors; anything else throws at construction). Other registered
+  models are never enumerated; direct calls to them return the unknown-tool
+  error (404 semantics).
+- **Principal** — `principalFromSessionLocals` reads only `locals.user.id`, the
+  session-authorized `locals.tenantId`, and `locals.permissions` (as sorted
+  `scopes`, `kind: 'human'`). Missing or malformed fields mean unauthenticated.
+  URL-selected tenants, headers and bodies are never identity inputs. Override
+  with `resolvePrincipal`.
+- **Policy** — `requiredScopes` is required: every authenticated principal must
+  be an accepted kind (`principalKinds`, default `['human']`) with an id, a
+  tenant, and every listed scope, for every tool and resource. Unauthenticated
+  callers keep the base rule (only `publicToolPatterns` read-only tools; none by
+  default) and mutating tools always need a principal. A supplied `toolPolicy`
+  or `resourcePolicy` is composed with this default and can only narrow it;
+  for a wider policy, call `createMcpAppServer` and `mountMcpRoute` directly.
+  Because the default is principal-aware, `tools/list` stays `private` even
+  with a public-cache attestation.
+- **Server** — `serverInfo` defaults to `{ name: 'smrt-app', version: '0.1.0' }`;
+  every other `createMcpAppServer` option (`workflowTools`, `resources`,
+  `workflowAssertions`, `toolListCache`, …) passes through. The handler's
+  `server` property exposes the policy core. The same defaults are available
+  without SvelteKit as `createDefaultMcpAppServer` from the root entry.
+
+Bearer authentication for hosted profiles is an `auth` option on both
+`mountMcpRoute` and `mountMcpAppRoute`. When its source yields an adapter,
+every request must carry a valid bearer token and the adapter's principal
+replaces the session principal; `null` (the `local` profile) keeps the session
+principal. `createHostedMcpResourceAuth` from `./auth` builds that source from
+`SMRT_MCP_RESOURCE`, `SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI` and
+`SMRT_MCP_SCOPES`, caching one adapter and retrying a failed construction:
+
+```ts
+import { createHostedMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
+const auth = createHostedMcpResourceAuth({
+  profile: () => applicationRuntime.profile,
+  resolvePrincipal: resolveHostedMcpPrincipal, // application-owned lookup
+});
+// api/mcp/+server.ts
+export const POST = mountMcpAppRoute({ models: [Item], requiredScopes: ['items.read'], smrtOptions, auth });
+// .well-known/oauth-protected-resource/api/mcp/+server.ts
+export const GET = mountMcpProtectedResourceMetadataRoute(auth);
+```
+
+`mountMcpProtectedResourceMetadataRoute` serves the RFC 9728 document only at
+the adapter's advertised `metadataUrl` path and returns 404 otherwise or for
+the `local` profile. It does not implement an OAuth authorization server.
+
 For piping a deployed app's MCP surface to a local stdio MCP client, see `@happyvertical/smrt-app-cli` — the client-side runtime CLI exposes a `startMcpBridge()` default and a generic `smrt-mcp-bridge` bin.
 
 For public deployments, follow the

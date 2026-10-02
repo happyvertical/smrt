@@ -7,7 +7,19 @@
  *
  * @example
  * ```ts
- * // src/routes/api/mcp/+server.ts
+ * // src/routes/api/mcp/+server.ts — one call with the app defaults
+ * import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
+ * import { Item } from '$lib/objects/Item';
+ * export const POST = mountMcpAppRoute({
+ *   models: [Item],
+ *   requiredScopes: ['items.read'],
+ *   smrtOptions: () => ({ db: getDatabaseConfig() }),
+ * });
+ * ```
+ *
+ * @example
+ * ```ts
+ * // src/routes/api/mcp/+server.ts — a custom server core
  * import { mountMcpRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
  * import { mcpServer } from '$lib/server/mcp';
  * export const POST = mountMcpRoute(mcpServer);
@@ -19,6 +31,11 @@ import {
   createMcpHandler,
   isJsonContentType,
 } from '@modelcontextprotocol/server';
+import type { McpResourceAuth } from './auth.js';
+import {
+  type CreateDefaultMcpAppServerOptions,
+  createDefaultMcpAppServer,
+} from './defaults.js';
 import { McpAccessError } from './errors.js';
 import {
   createMcpProtocolServerForRequest,
@@ -91,8 +108,80 @@ function listToolsInput(resolved: ResolvedRequestPrincipal) {
   return { principal: resolved.principal };
 }
 
+/**
+ * The bearer-authentication surface `mountMcpRoute` and the metadata route
+ * need from `createMcpResourceAuth` (`./auth`). Typed structurally so this
+ * entry does not load the JWT verifier.
+ */
+export type McpRouteResourceAuth = Pick<
+  McpResourceAuth,
+  'metadataUrl' | 'metadataResponse' | 'authenticate'
+>;
+
+/**
+ * A protected-resource adapter, or a thunk read on every request. A `null` or
+ * `undefined` result (for example the `local` profile) means the route uses
+ * its session principal resolver instead.
+ */
+export type McpRouteResourceAuthSource =
+  | McpRouteResourceAuth
+  | null
+  | undefined
+  | (() => McpRouteResourceAuth | null | undefined);
+
+function currentResourceAuth(
+  source: McpRouteResourceAuthSource,
+): McpRouteResourceAuth | null {
+  const value = typeof source === 'function' ? source() : source;
+  return value ?? null;
+}
+
+/**
+ * Project the session hook's request-local result onto an MCP principal.
+ *
+ * Reads only `locals.user.id`, the session-authorized `locals.tenantId`, and
+ * `locals.permissions` as populated by `createSessionHandler` from
+ * `@happyvertical/smrt-users/sveltekit`. Headers, URL-selected tenants
+ * (`locals.selectedTenantId`), request bodies and route arguments are never
+ * identity inputs. Any missing or malformed field yields `null`
+ * (unauthenticated), which fails closed for every non-public tool.
+ */
+export function principalFromSessionLocals(event: {
+  locals?: Record<string, unknown>;
+}): McpAppPrincipal | null {
+  const locals = event.locals;
+  if (!locals || typeof locals !== 'object') return null;
+  const user = locals.user as { id?: unknown } | null | undefined;
+  const tenantId = locals.tenantId;
+  const permissions = locals.permissions;
+  if (!user || typeof user !== 'object') return null;
+  if (typeof user.id !== 'string' || user.id.length === 0) return null;
+  if (typeof tenantId !== 'string' || tenantId.length === 0) return null;
+  if (
+    !Array.isArray(permissions) ||
+    !permissions.every((value) => typeof value === 'string')
+  )
+    return null;
+  return {
+    id: user.id,
+    tenantId,
+    kind: 'human',
+    scopes: [...permissions].sort(),
+  };
+}
+
 /** Options shared by both route mounts. */
 export interface MountMcpRouteOptions {
+  /**
+   * Optional bearer authentication for the modern `mountMcpRoute` endpoint.
+   * When the source yields an adapter, every request must carry a valid
+   * bearer token: a failed check returns the adapter's challenge response
+   * before any dispatch, and the adapter's mapped principal replaces the
+   * session principal (`resolvePrincipal` is not consulted). When it yields
+   * `null`, the route resolves its principal from the request as usual.
+   * Ignored by the deprecated REST-shaped mounts.
+   */
+  auth?: McpRouteResourceAuthSource;
   /** Optional extension discovery projected from the request-authorized tool catalog. */
   extensions?: McpProtocolRequestOptions['extensions'];
   /**
@@ -139,7 +228,15 @@ export function mountMcpRoute(
   options: MountMcpRouteOptions = {},
 ): McpSvelteKitHandler {
   return async (event) => {
-    const resolved = resolveRequestPrincipal(event, options);
+    let resolved: ResolvedRequestPrincipal;
+    const auth = currentResourceAuth(options.auth);
+    if (auth) {
+      const checked = await auth.authenticate(event.request);
+      if (!checked.ok) return checked.response;
+      resolved = { principal: checked.principal };
+    } else {
+      resolved = resolveRequestPrincipal(event, options);
+    }
     const taskResponse = await maybeHandleTaskRequest(
       server,
       resolved.principal,
@@ -166,6 +263,86 @@ export function mountMcpRoute(
       },
     );
     return handler.fetch(event.request);
+  };
+}
+
+/** Options for {@link mountMcpAppRoute}. */
+export interface MountMcpAppRouteOptions
+  extends CreateDefaultMcpAppServerOptions,
+    Pick<MountMcpRouteOptions, 'auth' | 'extensions'> {
+  /**
+   * Resolve the request principal when no bearer adapter is active. Defaults
+   * to {@link principalFromSessionLocals}.
+   */
+  resolvePrincipal?: McpPrincipalResolver;
+}
+
+/** A mounted app route; `server` is the policy core it serves. */
+export type McpAppSvelteKitHandler = McpSvelteKitHandler & {
+  readonly server: McpAppServer;
+};
+
+/**
+ * One-call application MCP endpoint: the app's declared `models`, the default
+ * principal scope policy (see `createDefaultMcpAppServer`), principals from
+ * the SvelteKit session locals, and optional bearer authentication, mounted
+ * as the stateless {@link mountMcpRoute} `POST` endpoint.
+ *
+ * @example
+ * ```ts
+ * // src/routes/api/mcp/+server.ts
+ * import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
+ * import { Item } from '$lib/objects/Item';
+ * import { getDatabaseConfig } from '$lib/server/db';
+ *
+ * export const POST = mountMcpAppRoute({
+ *   models: [Item],
+ *   requiredScopes: ['items.read'],
+ *   smrtOptions: () => ({ db: getDatabaseConfig() }),
+ * });
+ * ```
+ */
+export function mountMcpAppRoute(
+  options: MountMcpAppRouteOptions,
+): McpAppSvelteKitHandler {
+  const { auth, extensions, resolvePrincipal, ...serverOptions } = options;
+  const server = createDefaultMcpAppServer(serverOptions);
+  const handler = mountMcpRoute(server, {
+    auth,
+    extensions,
+    resolvePrincipal: resolvePrincipal ?? principalFromSessionLocals,
+  });
+  return Object.defineProperty(handler, 'server', {
+    value: server,
+    enumerable: true,
+  }) as McpAppSvelteKitHandler;
+}
+
+/**
+ * Mount the RFC 9728 protected-resource metadata document as a SvelteKit
+ * `GET` handler, at the exact `metadataUrl` path the bearer challenge
+ * advertises (for `/api/mcp`:
+ * `src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts`).
+ *
+ * Returns 404 when the source yields no adapter (the `local` profile) or when
+ * the request path is not the advertised metadata path. This handler does
+ * not implement an OAuth authorization server; the metadata names the
+ * operator-owned issuer.
+ */
+export function mountMcpProtectedResourceMetadataRoute(
+  auth: McpRouteResourceAuthSource,
+): McpSvelteKitHandler {
+  return async (event) => {
+    const current = currentResourceAuth(auth);
+    if (
+      !current ||
+      event.url.pathname !== new URL(current.metadataUrl).pathname
+    )
+      return new Response(null, {
+        status: 404,
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    return current.metadataResponse();
   };
 }
 
@@ -491,5 +668,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+export type {
+  CreateDefaultMcpAppServerOptions,
+  McpAppModel,
+} from './defaults.js';
 export { McpAccessError } from './errors.js';
 export type { McpAppPrincipal, McpAppServer } from './server.js';
