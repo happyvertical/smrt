@@ -143,11 +143,13 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
     (`unset → running → suspended(c) → running(from c) → … → terminal`); a
     late write from an earlier leg, a `running` that does not consume the
     waiting continuation, or anything after a terminal outcome is refused.
-  - **Disconnects cancel.** A client that disconnects aborts the request's
-    signal, which cancels the turn at its next model or tool boundary, the
-    same as the dock's Stop. The turn records `cancelled`, or `completed`
-    when its reply was already stored. A stale-send retry is then answered
-    from that record.
+  - **Disconnects cancel.** A client that disconnects cancels the turn at
+    its next model or tool boundary (a pending server tool call is skipped),
+    the same as the dock's Stop, whether the adapter aborts the request's
+    signal or only cancels the response body (`createAssistantTurnResponse`'s
+    `onCancel`). The turn records `cancelled`, or `completed` when its reply
+    was already stored. A stale-send retry is then answered from that
+    record.
   - **Answers.** A linked `assistant` reply → `completed`, whatever the
     marker says: the runner stores exactly one per turn, at its end (tool
     results are role `tool`, intermediate model text and suspensions store
@@ -163,7 +165,11 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   - **Resumes.** A resume settles only the send recorded in the continuation
     it consumes (`originMessageId`, stored server-side when the turn
     suspended). The request's `clientRequestId` is ignored on resume, and a
-    missing, foreign or expired continuation changes no send.
+    missing, foreign or expired continuation changes no send. The built-in
+    stores' `take` claims the continuation instead of deleting it (no second
+    `take` returns it, and `has` stays true) until the runner has recorded
+    `running` and calls `release`, so a retry never sees a resuming send as
+    failed; an unreleased claim expires after 60 seconds.
   - On a PostgreSQL transaction handle the insert runs under a savepoint so
     a conflict does not abort the transaction.
 - **Limits.** JSON bodies are capped at 1 MiB (`maxBodyBytes`), messages at
