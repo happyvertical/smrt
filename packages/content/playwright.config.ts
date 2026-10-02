@@ -14,7 +14,7 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL,
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     headless: true,
@@ -26,7 +26,8 @@ export default defineConfig({
     command: [
       'mkdir -p .smrt',
       'rm -f .smrt/e2e-playwright.db',
-      `DATABASE_URL=.smrt/e2e-playwright.db pnpm exec vite dev --host 127.0.0.1 --port ${port}`,
+      'DATABASE_URL=.smrt/e2e-playwright.db pnpm exec vite build',
+      `DATABASE_URL=.smrt/e2e-playwright.db pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
     ].join(' && '),
     cwd: new URL('.', import.meta.url).pathname,
     url: baseURL,

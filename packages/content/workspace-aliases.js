@@ -8,6 +8,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const workspaceAliasEntries = [
   ['@happyvertical/smrt-assets', '../assets/src/index.ts'],
   ['@happyvertical/smrt-chat', '../chat/src/index.ts'],
+  [
+    '@happyvertical/smrt-chat/internal/agent-runtime',
+    '../chat/src/internal/agent-runtime.ts',
+  ],
   ['@happyvertical/smrt-chat/svelte', '../chat/src/svelte/index.ts'],
   ['@happyvertical/smrt-config', '../config/src/index.ts'],
   // @happyvertical/smrt-core is deliberately NOT aliased to source. If it were,
@@ -34,6 +38,10 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-scanner', '../scanner/src/index.ts'],
   ['@happyvertical/smrt-scanner/knowledge', '../scanner/src/knowledge.ts'],
   ['@happyvertical/smrt-profiles', '../profiles/src/index.ts'],
+  [
+    '@happyvertical/smrt-profiles/internal/oidc-provisioning',
+    '../profiles/src/internal/oidc-provisioning.ts',
+  ],
   ['@happyvertical/smrt-secrets', '../secrets/src/index.ts'],
   ['@happyvertical/smrt-tags', '../tags/src/index.ts'],
   ['@happyvertical/smrt-tenancy', '../tenancy/src/index.ts'],

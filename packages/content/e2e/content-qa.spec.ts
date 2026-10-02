@@ -126,7 +126,7 @@ test('workspace route supports governed editing and published article viewing', 
     .locator('[contenteditable="true"]')
     .fill('This governed article was created by the Playwright browser suite.');
   await page
-    .getByLabel('Description:')
+    .getByLabel('Description', { exact: true })
     .fill('Browser-created governed content for QA coverage.');
   await page.getByLabel('Status').selectOption('published');
 
