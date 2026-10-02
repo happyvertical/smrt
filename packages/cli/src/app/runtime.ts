@@ -65,6 +65,8 @@ export interface AppCommandDependencies {
   fetch: typeof fetch;
   /** Delay between readiness polls. */
   sleep(milliseconds: number): Promise<void>;
+  /** Signal a process (`start` cleanup). */
+  signal(pid: number, signal: NodeJS.Signals): void;
 }
 
 /** Per-invocation context. */
@@ -211,6 +213,9 @@ export async function defaultDependencies(
     fetch: globalThis.fetch.bind(globalThis),
     sleep: (milliseconds) =>
       new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds)),
+    signal: (pid, signal) => {
+      process.kill(pid, signal);
+    },
   };
 }
 

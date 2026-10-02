@@ -7,7 +7,7 @@
  * template's `pnpm app:*` scripts can become `smrt app <operation>`.
  */
 
-import { spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
   accessSync,
@@ -38,6 +38,7 @@ import type {
 import {
   readOwnedProcess,
   sendTerminationSignal,
+  verifyOwnedProcess,
   writeProcessRecord,
 } from './process-record.js';
 import { createProviderReadinessProbe } from './provider-readiness.js';
@@ -406,10 +407,11 @@ async function start(
   try {
     await waitForReady(context, url, pid, instance, configuration);
   } catch (error) {
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch {
-      // The child already exited; stale process state is removed below.
+    if (!(await terminateFailedStart(context, child))) {
+      // Never drop the only handle `smrt app stop` has on a live writer.
+      throw new Error(
+        `${error instanceof Error ? error.message : 'The application did not become ready.'} Application process ${pid} did not exit after SIGTERM and SIGKILL and remains recorded; run pnpm app:stop.`,
+      );
     }
     rmSync(pidPath(context), { force: true });
     throw error;
@@ -418,14 +420,46 @@ async function start(
   return pid;
 }
 
+/**
+ * Terminate a launcher that failed to prove readiness: SIGTERM, wait, then
+ * SIGKILL, wait. Resolves `true` only once the child has provably exited.
+ * Uses the child handle we own, so a reaped pid is never signalled.
+ */
+async function terminateFailedStart(
+  context: AppContext,
+  child: ChildProcess,
+): Promise<boolean> {
+  const exited = () => child.exitCode !== null || child.signalCode !== null;
+  for (const [signal, attempts] of [
+    ['SIGTERM', 50],
+    ['SIGKILL', 20],
+  ] as const) {
+    if (exited()) return true;
+    try {
+      context.deps.signal(child.pid as number, signal);
+    } catch (error) {
+      if (errorCode(error) === 'ESRCH') return true;
+      throw error;
+    }
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      await context.deps.sleep(100);
+      if (exited()) return true;
+    }
+  }
+  return exited();
+}
+
 async function stop(context: AppContext): Promise<void> {
-  const pid = readOwnedProcess(pidPath(context))?.pid || null;
-  if (!pid) {
+  const record = readOwnedProcess(pidPath(context));
+  const pid = record?.pid || null;
+  if (!record || !pid) {
     rmSync(pidPath(context), { force: true });
     printJson(context, { schemaVersion: 1, status: 'stopped' });
     return;
   }
-  if (!sendTerminationSignal(pid)) {
+  // Re-prove identity immediately before signalling: the pid may have exited
+  // and been recycled since the record was read.
+  if (!verifyOwnedProcess(record) || !sendTerminationSignal(pid)) {
     // The process exited after its identity was verified but before SIGTERM.
     rmSync(pidPath(context), { force: true });
     printJson(context, { schemaVersion: 1, status: 'stopped', pid });
