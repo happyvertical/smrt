@@ -102,4 +102,37 @@ describePostgres('3329 concurrent cold catalog seeding', () => {
       await db.close?.();
     }
   });
+
+  it('keeps system-role seeding on the caller transaction through rollback and retry', async () => {
+    const db = await getDatabase({ ...getTestDbConfig(), dbid: randomUUID() });
+    try {
+      await db.query('TRUNCATE role_permissions, permissions, roles CASCADE');
+      await expect(
+        db.transaction!(async (tx) => {
+          const roles = await RoleCollection.create({ db: tx });
+          const seeded = await roles.seedSystemRoles({ seedPermissions: true });
+          expect(seeded).toHaveLength(4);
+          // Returned models must remain bound to this live caller transaction.
+          seeded[0].name = 'Transactional role';
+          await seeded[0].save();
+          throw new Error('rollback system roles');
+        }),
+      ).rejects.toThrow('rollback system roles');
+      for (const table of ['roles', 'permissions', 'role_permissions']) {
+        expect(
+          Number(
+            (await db.query(`SELECT COUNT(*) AS count FROM ${table}`)).rows[0]
+              .count,
+          ),
+          table,
+        ).toBe(0);
+      }
+      const roles = await RoleCollection.create({ db });
+      expect(
+        await roles.seedSystemRoles({ seedPermissions: true }),
+      ).toHaveLength(4);
+    } finally {
+      await db.close?.();
+    }
+  });
 });
