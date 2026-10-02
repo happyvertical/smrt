@@ -132,9 +132,15 @@ declare global {
 `init` is the fail-closed startup gate (local runtime or deployed bindings) and
 `handle` waits for it, then runs, in order: URL tenant selection into
 `locals.selectedTenant*` (never tenant context; tenant headers are ignored),
-`createSessionHandler({ enterTenantContext: true })`, and publication of
-`locals.tenantContext` only when the active context matches the session
-tenant. Defaults read `SMRT_APP_ID`, `SMRT_DATA_DIR`, `HOST`, `DATABASE_URL`,
+the signed session, and publication of `locals.tenantContext` only when the
+active context matches the verified session tenant. A session's tenant is
+accepted only for an active direct membership or a legitimately inherited
+one (`isSessionTenantAuthorized()`, the same rule deployed `restoreSession()`
+applies); otherwise the request is unauthenticated (no user, permissions,
+tenant, or tenant context). `database-rls` isolation always runs the request
+RLS transaction (`session.postgresRls` cannot disable it). Downstream code runs
+at most once: its error propagates unchanged, and a session-layer failure
+before it returns 500 with no authenticated locals. Defaults read `SMRT_APP_ID`, `SMRT_DATA_DIR`, `HOST`, `DATABASE_URL`,
 `TENANT_BASE_DOMAIN`, and `SMRT_BACKGROUND_JOBS`; `smrt.config` `runtime`
 selects the profile (local when absent). Deployed profiles additionally require
 `providerReadiness` probes and fail closed without them. Optional hooks:

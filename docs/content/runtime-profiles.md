@@ -279,8 +279,10 @@ export const { handle, init } = runtime;
 `init` runs the profile's fail-closed startup (local runtime, or deployed
 bindings, which additionally require explicit `providerReadiness` probes).
 `handle` waits for startup, then resolves a URL tenant candidate as selection
-only, loads the signed session with tenant context, and publishes
-`locals.tenantContext` only when that context matches the session tenant. The
+only, loads the signed session, and enters and publishes its tenant context
+only for an active direct or legitimately inherited membership; any other
+session is treated as unauthenticated. Profiles that select `database-rls`
+isolation always run the request inside the PostgreSQL RLS transaction. The
 same entry provides mountable health, authorized diagnostics, the local
 owner-setup `load`/`actions` (loopback peer and loopback host re-checked per
 request), and a session layout summary. See the package README for options.

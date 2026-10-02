@@ -75,8 +75,12 @@ Application infrastructure composition for the validated runtime profiles in
   The root entry must never import kit or Svelte.
 - `createSmrtSvelteKitRuntime()` order is fixed: readiness gate → URL tenant
   selection (`locals.selectedTenant*`, never tenant context, headers ignored) →
-  session with `enterTenantContext: true` (not overridable) → publish
-  `locals.tenantContext` only when it matches the session tenant.
+  verified session (tenant context entered only when
+  `isSessionTenantAuthorized()` accepts it, else unauthenticated; never via
+  `createSessionHandler`, which re-runs `resolve` on downstream errors) →
+  publish `locals.tenantContext` only for that verified tenant.
+- `database-rls` isolation forces `postgresRls: true`. `resolve` runs at most
+  once; session-layer failure before it is a 500 with cleared locals.
 - Template-only concerns (writer lease, provider readiness modules, onboarding
   file cleanup) are injected hooks, not reimplemented here. Deployed startup
   fails closed without `providerReadiness`.
