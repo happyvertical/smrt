@@ -1,3 +1,9 @@
+import {
+  type ResolveAIProviderOptions,
+  type ResolvedAIProviderConfig,
+  resolveAIProviderConfig,
+  tryResolveAIProviderConfig,
+} from './ai.js';
 import { loadConfig as _loadConfig, clearConfigCache } from './loader.js';
 import {
   setConfig as _setConfig,
@@ -12,7 +18,26 @@ import {
   type ApplicationRuntimeConfig,
   type ResolvedApplicationRuntime,
 } from './runtime-profile.js';
-import type { LoadConfigOptions, SmrtConfig } from './types.js';
+import type { AIConfigBlock, LoadConfigOptions, SmrtConfig } from './types.js';
+
+// Re-export AI provider resolution
+export {
+  AI_PROVIDER_KEY_ENV,
+  type AIConfigField,
+  type AIConfigSource,
+  type AIExplicitConfig,
+  type AIProviderClientOptions,
+  AIProviderNotConfiguredError,
+  DEFAULT_AI_ENV_PREFIXES,
+  describeAIProviderConfig,
+  getDefaultAIKeyEnvName,
+  type ResolveAIProviderOptions,
+  type ResolvedAIProviderConfig,
+  redactBaseUrl,
+  resolveAIProviderConfig,
+  toAIClientOptions,
+  tryResolveAIProviderConfig,
+} from './ai.js';
 
 // Re-export config export utilities
 export {
@@ -489,4 +514,56 @@ export function clearCache(): void {
  */
 export function defineConfig(config: SmrtConfig): SmrtConfig {
   return config;
+}
+
+/**
+ * The effective `ai` block: runtime `ai` > runtime `packages.ai` > file `ai` >
+ * file `packages.ai` (`smrt init` historically wrote `packages.ai`), merged
+ * field by field. Returns `null` when none is declared.
+ */
+export function getAIConfigBlock(): AIConfigBlock | null {
+  const file = getLoadedConfig();
+  const runtime = getRuntimeConfig();
+  const layers = [
+    file?.packages?.ai,
+    file?.ai,
+    runtime.packages?.ai,
+    runtime.ai,
+  ];
+  const merged: Record<string, unknown> = {};
+  let found = false;
+  for (const layer of layers) {
+    if (!layer || typeof layer !== 'object') continue;
+    for (const key of ['provider', 'model', 'baseUrl', 'apiKeyEnv', 'apiKey']) {
+      const value = (layer as Record<string, unknown>)[key];
+      if (typeof value === 'string' && value.trim()) {
+        merged[key] = value;
+        found = true;
+      }
+    }
+  }
+  return found ? (merged as AIConfigBlock) : null;
+}
+
+/**
+ * {@link resolveAIProviderConfig} against the loaded `smrt.config.ts` `ai`
+ * block. Throws `AIProviderNotConfiguredError` when nothing is configured.
+ */
+export function resolveConfiguredAIProvider(
+  options: ResolveAIProviderOptions = {},
+): ResolvedAIProviderConfig {
+  return resolveAIProviderConfig({
+    ...options,
+    config: options.config === undefined ? getAIConfigBlock() : options.config,
+  });
+}
+
+/** Non-throwing variant of {@link resolveConfiguredAIProvider}. */
+export function tryResolveConfiguredAIProvider(
+  options: ResolveAIProviderOptions = {},
+): ResolvedAIProviderConfig | undefined {
+  return tryResolveAIProviderConfig({
+    ...options,
+    config: options.config === undefined ? getAIConfigBlock() : options.config,
+  });
 }
