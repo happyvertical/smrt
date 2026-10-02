@@ -201,6 +201,32 @@ describe('saveSubmittedDraft / readSubmittedDraft', () => {
   });
 });
 
+describe('a later attempt whose values cannot be serialized', () => {
+  it('clears the earlier attempt’s draft instead of leaving it to be restored', () => {
+    const storage = memoryStorage();
+    save(storage);
+    expect(storage.store.has(NAME)).toBe(true);
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    saveSubmittedDraft(storage, NAME, {
+      token: TOKEN,
+      owner: OWNER,
+      savedAt: SAVED_AT,
+      fields: [['title', 'A different submission']],
+      files: [],
+      values: cyclic,
+    });
+    expect(
+      readSubmittedDraft(storage, NAME, {
+        token: TOKEN,
+        owner: OWNER,
+        fresh: ALWAYS,
+      }),
+    ).toBeNull();
+    expect(storage.store.has(NAME)).toBe(false);
+  });
+});
+
 describe('describeFormData', () => {
   it('keeps text entries in order, describes chosen files, skips excluded names', () => {
     const data = new FormData();

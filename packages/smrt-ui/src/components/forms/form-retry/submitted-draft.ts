@@ -143,7 +143,10 @@ export function saveSubmittedDraft(
   try {
     serialized = JSON.stringify(stored);
   } catch {
-    // A `values.capture()` result with no JSON form: nothing to restore.
+    // A `values.capture()` result with no JSON form: nothing to restore. An
+    // earlier attempt's draft may be stored under the same (unrotated) key,
+    // and it no longer describes what was sent, so it must not be restored.
+    clearSubmittedDraft(storage, name);
     return;
   }
   guardedSet(storage, name, serialized);
