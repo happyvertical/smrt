@@ -790,7 +790,7 @@ export class SmrtClass {
               if (resolvedAi.model) {
                 aiConfig.model = resolvedAi.model;
                 if (
-                  !userConfig.defaultModel ||
+                  !(userConfig as Record<string, unknown>).defaultModel ||
                   resolvedAi.sources.model !== 'explicit'
                 ) {
                   aiConfig.defaultModel = resolvedAi.model;
