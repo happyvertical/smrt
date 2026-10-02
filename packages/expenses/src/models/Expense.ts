@@ -19,11 +19,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import {
-  getTenantId,
-  TenantScoped,
-  tenantId,
-} from '@happyvertical/smrt-tenancy';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   ExpenseError,
   type ExpenseOptions,
@@ -41,6 +37,7 @@ import {
   assertMinorUnits,
   assertQualifiedClassName,
   CATEGORY_PATTERN,
+  effectiveTenant,
   identityConflict,
   instantMs,
   pinNaturalKey,
@@ -470,6 +467,19 @@ export class Expense extends SmrtObject {
     const persisted = await this.readPersisted();
     // The guards below check `persisted`; pin the write to that row.
     const inserting = await pinNaturalKey('Expense', this, persisted);
+    if (
+      persisted &&
+      String(persisted.tenant_id ?? '') !==
+        String(effectiveTenant(this.tenantId) ?? '')
+    ) {
+      // Includes the quiet case: saving a global expense inside a tenant
+      // context, where the interceptor would fill in that tenant and split
+      // the expense from its global receipts and links.
+      throw new ExpenseError(
+        'EXPENSE_INVALID',
+        `Expense ${this.id}: its tenant cannot change after it is recorded.`,
+      );
+    }
     this.assertReviewFields(persisted);
     this.assertReviewedLock(persisted);
     await this.assertCommitment(persisted);
@@ -669,7 +679,7 @@ export class Expense extends SmrtObject {
     const commitment = await contracts.get({ id: this.commitmentId });
     // Before super.save() the tenant interceptor has not populated tenantId
     // yet, so compare against the tenant the row is about to be written in.
-    const owner = this.tenantId ?? getTenantId() ?? null;
+    const owner = effectiveTenant(this.tenantId);
     if (!commitment || !sameTenant(commitment.tenantId, owner)) {
       throw new ExpenseError(
         'EXPENSE_COMMITMENT_MISMATCH',
@@ -711,7 +721,7 @@ export class Expense extends SmrtObject {
     }
     const vendors = await VendorCollection.create({ db: this.db });
     const vendor = await vendors.get({ id: this.vendorId });
-    const owner = this.tenantId ?? getTenantId() ?? null;
+    const owner = effectiveTenant(this.tenantId);
     if (!vendor || !sameTenant(vendor.tenantId, owner)) {
       throw new ExpenseError(
         'EXPENSE_VENDOR_MISMATCH',

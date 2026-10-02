@@ -23,6 +23,7 @@ import {
 } from '../types.js';
 import {
   assertMinorUnits,
+  effectiveTenant,
   identityConflict,
   normalizeSha256,
   pinNaturalKey,
@@ -194,7 +195,13 @@ export class ExpenseReceipt extends SmrtObject {
     if (persisted) {
       const self = this as unknown as Record<string, unknown>;
       for (const [fieldName, column] of IMMUTABLE) {
-        if (String(persisted[column] ?? '') !== String(self[fieldName] ?? '')) {
+        // The tenant is compared as it will be written: an empty tenantId
+        // saved inside a tenant context is filled in by the interceptor.
+        const value =
+          fieldName === 'tenantId'
+            ? effectiveTenant(this.tenantId)
+            : self[fieldName];
+        if (String(persisted[column] ?? '') !== String(value ?? '')) {
           throw new ExpenseError(
             'EXPENSE_RECEIPT_INVALID',
             `ExpenseReceipt ${this.id}: ${fieldName} cannot change; attach ` +

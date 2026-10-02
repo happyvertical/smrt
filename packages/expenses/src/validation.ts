@@ -5,6 +5,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { ExpenseError, type ExpenseErrorCode } from './types.js';
 
 /** Lowercase kebab-case: `material`, `outside-service`. */
@@ -205,4 +206,15 @@ export function identityConflict(
       `'${object.slug}' in this tenant; a new ${model} cannot take it over.`,
     { cause },
   );
+}
+
+/**
+ * The tenant a save will actually write: tenancy's `beforeSave` interceptor
+ * fills an empty `tenantId` from the active tenant context, after the
+ * model's own checks have run. Compare against this, not the raw field.
+ */
+export function effectiveTenant(
+  tenantId: string | null | undefined,
+): string | null {
+  return tenantId ?? getTenantId() ?? null;
 }

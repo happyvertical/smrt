@@ -74,6 +74,11 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   validation), so `assertVendor()` checks the vendor is visible in and owned
   by the expense's tenant whenever it is set or changed
   (`EXPENSE_VENDOR_MISMATCH`).
+- **Tenant never moves.** Expense and receipt tenants are fixed once
+  stored, compared as `effectiveTenant()` (the field, or the active context
+  the `beforeSave` interceptor would fill an empty one from). Otherwise a
+  global (NULL-tenant) row saved inside `withTenant()` would be silently
+  populated and split from its global expense or receipts.
 - **Tenancy.** Optional (`@TenantScoped({ mode: 'optional' })`, nullable
   `tenantId`), like smrt-commerce. A receipt takes its expense's tenant; its
   expense and asset must be visible in that tenant. A commitment must belong

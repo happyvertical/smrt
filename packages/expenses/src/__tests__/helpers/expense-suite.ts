@@ -1151,6 +1151,37 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
   });
 
   describe('review round 3 (PR #3339)', () => {
+    it('never lets tenant population move a global receipt or expense', async () => {
+      // No context: optional tenancy writes global (NULL-tenant) rows.
+      const expense = await world.expense();
+      const receipt = await world.receipts.attachReceipt({
+        expenseId: expense.id,
+        assetId: (await world.asset()).id,
+        contentSha256: computeContentSha256(`global-${randomUUID()}`),
+      });
+      expect(receipt.tenantId).toBeNull();
+      expect(expense.tenantId).toBeNull();
+
+      // Saving them inside a tenant would let the interceptor fill in that
+      // tenant: the receipt would leave its global expense, the expense its
+      // global receipts.
+      await expectExpenseError(
+        world.inTenant(() => receipt.save()),
+        'EXPENSE_RECEIPT_INVALID',
+      );
+      await expectExpenseError(
+        world.inTenant(() => expense.save()),
+        'EXPENSE_INVALID',
+      );
+
+      expect(
+        (await world.receipts.get({ id: String(receipt.id) }))?.tenantId,
+      ).toBeNull();
+      expect(
+        (await world.expenses.get({ id: expense.id }))?.tenantId,
+      ).toBeNull();
+    });
+
     it('refuses a fresh instance that names an existing expense id', async () => {
       await world.inTenant(async () => {
         const existing = await world.expense({ amount: 5000 });
