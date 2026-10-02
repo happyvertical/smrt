@@ -200,3 +200,45 @@ export function fakeEnhance(
 
   return state;
 }
+
+/**
+ * `enhance` as the Svelte action SvelteKit exports: `(form, submit?)`, wired to
+ * the form's real `submit` event (kit prevents the native submission and
+ * handles it), so it can be attached through `fromAction(enhance, () =>
+ * submit)` exactly as an app would. `settle()` awaits every submission the
+ * action has started.
+ */
+export function fakeEnhanceAction(server: FakeRunOnceServer): {
+  action: (
+    form: HTMLFormElement,
+    submit?: FormRetrySubmitFunction,
+  ) => { destroy(): void };
+  readonly enhanced: FakeEnhanced;
+  settle(): Promise<void>;
+} {
+  const pending: Array<Promise<void>> = [];
+  let enhanced: FakeEnhanced | null = null;
+  return {
+    action(form, submit = () => {}) {
+      const state = fakeEnhance(form, submit, server);
+      enhanced = state;
+      const onSubmit = (event: Event) => {
+        event.preventDefault();
+        pending.push(state.submit());
+      };
+      form.addEventListener('submit', onSubmit);
+      return {
+        destroy() {
+          form.removeEventListener('submit', onSubmit);
+        },
+      };
+    },
+    get enhanced() {
+      if (!enhanced) throw new Error('enhance was never attached');
+      return enhanced;
+    },
+    async settle() {
+      while (pending.length > 0) await pending.shift();
+    },
+  };
+}
