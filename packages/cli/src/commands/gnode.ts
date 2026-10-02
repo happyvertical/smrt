@@ -4,14 +4,24 @@
  * Commands for creating and managing gnodes (federated local knowledge bases)
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { CLICommand } from '../cli-generator.js';
 import {
   cleanupGitTemplate,
   discoverInstalledTemplates,
+  getGitTemplateDir,
   loadTemplate,
   resolveTemplate,
+  type TemplateConfig,
 } from '../loaders/index.js';
 import { generate } from '../utils/generator.js';
+import {
+  addMcpAppsRuntime,
+  assertMcpAppsPluginName,
+  configureMcpAppsConsumerRegistry,
+  scaffoldMcpAppsPackage,
+} from './mcp-apps-packaging.js';
 
 /**
  * Parsed option bag for the `gnode create` handler. The CLI parser produces
@@ -24,6 +34,40 @@ interface GnodeCreateOptions {
   lat?: string;
   lon?: string;
   timezone?: string;
+  mcpApps?: boolean;
+  'mcp-apps'?: boolean;
+}
+
+const SCOPED_PACKAGE_NAME = /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
+
+function projectIdentity(name: string, outputDir: string) {
+  const packagePath = join(outputDir, 'package.json');
+  if (existsSync(packagePath)) {
+    const existing = JSON.parse(readFileSync(packagePath, 'utf8')) as {
+      name?: unknown;
+    };
+    if (
+      typeof existing.name !== 'string' ||
+      !SCOPED_PACKAGE_NAME.test(existing.name)
+    ) {
+      throw new Error(
+        'Generated applications require a scoped package identity (for example @smrt-app/my-app); rename the existing project before generating into it',
+      );
+    }
+    return existing.name;
+  }
+  if (SCOPED_PACKAGE_NAME.test(name)) return name;
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!slug)
+    throw new Error('MCP Apps project name must contain a package slug');
+  return `@smrt-app/${slug}`;
+}
+
+function mcpAppsPluginName(packageName: string) {
+  return packageName.split('/').at(-1) ?? packageName;
 }
 
 /**
@@ -62,6 +106,11 @@ export const gnodeCommands: Record<string, CLICommand> = {
         description: 'IANA timezone (e.g., "America/Edmonton")',
         default: 'America/Edmonton',
       },
+      'mcp-apps': {
+        type: 'boolean',
+        description:
+          'Add opt-in portable MCP Apps plugin metadata under mcp-apps/',
+      },
     },
     handler: async (args: string[], options: GnodeCreateOptions) => {
       const name = args[0];
@@ -71,6 +120,9 @@ export const gnodeCommands: Record<string, CLICommand> = {
 
       const outputDir = options.outputDir || `./${name}`;
       const templateName = options.template || 'sveltekit';
+      const mcpApps = options.mcpApps || options['mcp-apps'];
+      const projectName = projectIdentity(name, outputDir);
+      if (mcpApps) assertMcpAppsPluginName(mcpAppsPluginName(projectName));
 
       // Build site options if any site-related flags were provided
       const siteOptions =
@@ -83,6 +135,7 @@ export const gnodeCommands: Record<string, CLICommand> = {
             }
           : undefined;
 
+      let gitConfig: TemplateConfig | undefined;
       try {
         // Resolve template source
         console.log(`🔍 Resolving template: ${templateName}...`);
@@ -91,24 +144,38 @@ export const gnodeCommands: Record<string, CLICommand> = {
 
         // Load template configuration
         const config = await loadTemplate(source);
+        if (source.type === 'git') gitConfig = config;
 
         // Generate project
         await generate(source, config, {
-          name,
+          name: projectName,
           template: templateName,
           outputDir,
           site: siteOptions,
         });
 
-        // Cleanup git template if needed
-        if (source.type === 'git') {
-          await cleanupGitTemplate(config);
+        if (mcpApps || config.name === 'sveltekit')
+          configureMcpAppsConsumerRegistry(outputDir);
+        if (mcpApps) {
+          addMcpAppsRuntime(
+            source.type === 'git' ? getGitTemplateDir(config) : source.resolved,
+            outputDir,
+          );
+          scaffoldMcpAppsPackage(
+            `${outputDir}/mcp-apps`,
+            mcpAppsPluginName(projectName),
+          );
+          console.log(
+            '✓ Added MCP Apps metadata and the canonical @happyvertical package registry. Configure the authorized v2 MCP endpoint before deployment.',
+          );
         }
       } catch (error) {
         throw new Error(
           `Failed to create gnode: ${error instanceof Error ? error.message : 'Unknown error'}`,
           { cause: error },
         );
+      } finally {
+        if (gitConfig) await cleanupGitTemplate(gitConfig);
       }
     },
   },
