@@ -148,7 +148,7 @@ describe('smrtVitestPlugin config', () => {
         projects: [{ test: { name: 'unit', exclude: ['**/fixtures/**'] } }],
       },
     };
-    const config = smrtVitestPlugin().config?.(userConfig as any) as any;
+    const config = invokeConfig(smrtVitestPlugin(), userConfig as any) as any;
     expect(config.test.exclude).toEqual(
       expect.arrayContaining([
         '**/node_modules/**',
@@ -177,7 +177,7 @@ describe('smrtVitestPlugin config', () => {
     const deferred = Promise.resolve({ test: { name: 'deferred' } });
     const factory = () => ({ test: { name: 'factory' } });
     const projects = [inline, deferred, factory, './vitest.project.ts'];
-    smrtVitestPlugin().config?.({ test: { projects } } as any);
+    invokeConfig(smrtVitestPlugin(), { test: { projects } } as any);
     expect(inline).toMatchObject({
       test: {
         setupFiles: [defaultSetupFile],
