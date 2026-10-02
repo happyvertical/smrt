@@ -72,7 +72,7 @@ refuses an alias another installed package also declares. A lazy load of a
 manifest that declares aliases first loads every discoverable manifest. That
 inventory is cached per registry generation, so the check applies whether the
 class is requested by its current name or by an old one. It refuses `CONFIG_QUALIFIED_NAME_ALIAS_INVALID` when an entry is not
-a scoped `@scope/package:ClassName` (unscoped names never resolve as qualified), repeats, or names the class itself. Manifest generation
+a scoped `@scope/package:ClassName` with exactly one colon (unscoped names never resolve as qualified), repeats, or names the class itself. Manifest generation
 (`ManifestGenerator.assertQualifiedNameAliases`) fails closed on the same
 mistakes. The knowledge artifact lists the names as
 `objects[].previousQualifiedNames`, sorted and omitted when empty.

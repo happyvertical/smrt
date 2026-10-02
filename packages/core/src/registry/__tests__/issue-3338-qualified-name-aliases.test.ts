@@ -345,6 +345,22 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
       );
     });
 
+    it('refuses an alias with a colon in its package part', () => {
+      // Qualified names split at the LAST colon, so the package here would
+      // be `@scope/pkg:legacy` — no package the lazy loader could resolve.
+      expectCode(
+        () =>
+          register(
+            objectDef('ExtraColon', NEW_PKG, {
+              decoratorConfig: {
+                previousQualifiedNames: ['@scope/pkg:legacy:ExtraColon'],
+              },
+            }),
+          ),
+        QUALIFIED_NAME_ALIAS_INVALID,
+      );
+    });
+
     it('validates a same-key re-registration before mutating the live entry', () => {
       class ReRegistered extends SmrtObject {}
       const key = `${NEW_PKG}:ReRegistered`;
@@ -652,6 +668,14 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
           import { SmrtObject, smrt } from '@happyvertical/smrt-core';
           @smrt({ previousQualifiedNames: ['old-app:Unscoped'] })
           export class Unscoped extends SmrtObject {}
+        `),
+      ).toThrow(/is not a qualified name/);
+
+      expect(() =>
+        scanToManifest(`
+          import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+          @smrt({ previousQualifiedNames: ['@scope/pkg:legacy:ExtraColon'] })
+          export class ExtraColon extends SmrtObject {}
         `),
       ).toThrow(/is not a qualified name/);
 

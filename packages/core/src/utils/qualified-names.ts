@@ -230,13 +230,18 @@ export function isType(
  * A valid `previousQualifiedNames` entry: exactly what {@link isQualifiedName}
  * accepts (`@scope/package:ClassName` — the predicate eager lookups,
  * `resolveType()` and the lazy manifest loader all use), with an identifier
- * class name. An unscoped `package:ClassName` is refused: no qualified lookup
- * treats it as qualified, so it could never resolve (#3338).
+ * class name and exactly one colon. An unscoped `package:ClassName` is
+ * refused: no qualified lookup treats it as qualified, so it could never
+ * resolve (#3338).
  */
 export function isQualifiedNameAliasFormat(name: unknown): name is string {
   if (typeof name !== 'string' || !isQualifiedName(name)) return false;
   const colon = name.lastIndexOf(':');
+  // `isQualifiedName()` splits at the LAST colon, so `@scope/pkg:x:Class`
+  // would name the package `@scope/pkg:x`, which the lazy loader cannot
+  // resolve. An alias's package part may not contain a colon.
   return (
+    name.indexOf(':') === colon &&
     !/\s/u.test(name.slice(0, colon)) &&
     /^[A-Za-z_$][\w$]*$/u.test(name.slice(colon + 1))
   );
