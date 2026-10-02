@@ -2,12 +2,39 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  isEmbeddedDatabase,
+  isPostgresDatabase,
   SmrtCollection,
   SmrtObject,
   smrt,
+  withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { parseTimesheetJson } from '../models/json.js';
+
+// Punch closes and break writes share one atomic parent boundary, including direct ORM saves.
+async function saveWithPunchLock<T extends SmrtObject>(
+  model: T,
+  punchId: string | null | undefined,
+  tenant: string,
+  save: () => Promise<T>,
+): Promise<T> {
+  return withEmbeddedWriteTransaction(
+    model.db,
+    isEmbeddedDatabase(model.db),
+    (db) =>
+      model.withDatabase(db, async () => {
+        if (punchId && isPostgresDatabase(db))
+          await db.query(
+            'SELECT id FROM attendance_punches WHERE id = $1 AND tenant_id = $2 FOR UPDATE',
+            punchId,
+            tenant,
+          );
+        return save();
+      }),
+    true,
+  );
+}
 
 /** A tenant-scoped interval of attendance, independent of billable work. */
 @TenantScoped({ mode: 'required' })
@@ -41,6 +68,12 @@ export class AttendancePunch extends SmrtObject {
   @field({ required: true }) openSlot = '';
 
   override async save(): Promise<this> {
+    return saveWithPunchLock(this, this.id, this.tenantId, () =>
+      this.saveConsistent(),
+    );
+  }
+
+  private async saveConsistent(): Promise<this> {
     if (!this.tenantId || !this.profileId)
       throw new Error('Attendance requires tenantId and profileId.');
     if (
@@ -77,6 +110,23 @@ export class AttendancePunch extends SmrtObject {
         Number(prior.unpaid_break_seconds) !== this.unpaidBreakSeconds)
     )
       throw new Error('Closed attendance evidence is immutable.');
+    if (this.id && this.endedAt) {
+      const breaks = await this.db.list('attendance_breaks', {
+        tenant_id: this.tenantId,
+        punch_id: this.id,
+      });
+      if (
+        breaks.some(
+          (item) =>
+            !item.ended_at ||
+            new Date(item.started_at as string).getTime() <
+              this.startedAt.getTime() ||
+            new Date(item.ended_at as string).getTime() >
+              this.endedAt!.getTime(),
+        )
+      )
+        throw new Error('Break must be inside its tenant-owned punch.');
+    }
     this.id ??= crypto.randomUUID();
     this.openSlot = this.endedAt ? JSON.stringify(['closed', this.id]) : 'open';
     return super.save();
@@ -107,6 +157,12 @@ export class AttendanceBreak extends SmrtObject {
   @field({ required: true }) openSlot = '';
 
   override async save(): Promise<this> {
+    return saveWithPunchLock(this, this.punchId, this.tenantId, () =>
+      this.saveConsistent(),
+    );
+  }
+
+  private async saveConsistent(): Promise<this> {
     if (!this.tenantId || !this.punchId || typeof this.paid !== 'boolean')
       throw new Error('Invalid attendance break.');
     if (

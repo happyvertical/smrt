@@ -65,6 +65,93 @@ export function attendanceSuite(
         }),
       ).rejects.toThrow('different work');
     });
+    it('keeps linked evidence attribution bound to the actor despite extra work keys', async () => {
+      const injected = {
+        ...work,
+        participantProfileId: crypto.randomUUID(),
+        participantKind: 'agent',
+        tenantId: crypto.randomUUID(),
+        agentRef: 'attacker',
+      };
+      const outcomes = await service.replay([
+        {
+          clientId: 'attribution-in',
+          action: 'punchIn',
+          at: at(8).toISOString(),
+        },
+        {
+          clientId: 'attribution-out',
+          action: 'punchOut',
+          at: at(9).toISOString(),
+          work: injected,
+        },
+      ]);
+      expect(outcomes[1].error).toBeUndefined();
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const punches = await AttendancePunchCollection.create({ db });
+        const punch = await punches.get(outcomes[1].punchId!);
+        const entries = await ServiceTimeEntryCollection.create({ db });
+        const entry = await entries.get(punch!.serviceTimeEntryId!);
+        expect(entry).toMatchObject({
+          tenantId: actor.tenantId,
+          participantProfileId: actor.profileId,
+          participantKind: 'human',
+        });
+      });
+      expect(
+        await service.replay([
+          {
+            clientId: 'attribution-out',
+            action: 'punchOut',
+            at: at(9).toISOString(),
+            work,
+          },
+        ]),
+      ).toEqual([outcomes[1]]);
+    });
+    it('rejects direct closes before a committed break or while a break remains open', async () => {
+      const punch = await service.punchIn(at(8));
+      await service.startBreak(at(10));
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        punch.endedAt = at(9);
+        await expect(punch.save()).rejects.toThrow('Break must be inside');
+        punch.endedAt = at(12);
+        await expect(punch.save()).rejects.toThrow('Break must be inside');
+      });
+      await service.endBreak(at(11));
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        punch.endedAt = at(10);
+        await expect(punch.save()).rejects.toThrow('Break must be inside');
+      });
+      const closed = await service.punchOut(at(12));
+      expect(closed.durationSeconds).toBe(3 * 3600);
+    });
+    it('serializes direct punch close against a concurrent break insertion', async () => {
+      const punch = await service.punchIn(at(8));
+      await withTenant({ tenantId: actor.tenantId }, async () => {
+        const breaks = await AttendanceBreakCollection.create({ db });
+        punch.endedAt = at(12);
+        punch.durationSeconds = 4 * 3600;
+        const results = await Promise.allSettled([
+          punch.save(),
+          breaks.create({
+            tenantId: actor.tenantId,
+            punchId: punch.id!,
+            startedAt: at(13),
+          }),
+        ]);
+        expect(
+          results.filter((result) => result.status === 'fulfilled'),
+        ).toHaveLength(1);
+        const punches = await AttendancePunchCollection.create({ db });
+        const stored = await punches.get(punch.id!);
+        const children = await breaks.list({
+          where: { tenantId: actor.tenantId, punchId: punch.id },
+        });
+        if (stored!.endedAt) expect(children).toHaveLength(0);
+        else expect(children).toHaveLength(1);
+      });
+    });
     it('enforces one open punch in the database and permits a new closed slot', async () => {
       const results = await Promise.allSettled([
         service.punchIn(at(8)),

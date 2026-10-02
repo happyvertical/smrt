@@ -271,11 +271,14 @@ SQLite enforce one open punch without differing nullable-unique semantics.
 The index compares native UUID owner columns directly, including PostgreSQL
 UUID normalization. Breaks use the same
 pattern per punch. Persisted ownership/start and closed intervals are immutable.
+Direct ORM saves serialize against the parent punch and reject a close while a
+break remains open or ends outside the punch.
 
 A work reference is optional: attendance alone is not billable evidence. Passing
 one on close, or calling `linkServiceTimeEntry(punch.id, work)` later, creates
 one draft `ServiceTimeEntry` atomically and records `serviceTimeEntryId` on the
-punch. Repeating the same link returns that entry; changing attribution is
+punch. Only the three declared work fields are copied; extra request fields cannot
+replace the trusted tenant or participant. Repeating the same link returns that entry; changing attribution is
 refused. Approval still uses the entry layer. Rollups must deduplicate this link,
 not count both attendance and its entry. Zero-net-duration punches cannot create
 service evidence.
