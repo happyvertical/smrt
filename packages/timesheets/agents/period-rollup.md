@@ -94,10 +94,12 @@ introduced here.
 Only approved human `ServiceTimeEntry` rows for the subject count; corrected
 ancestors do not. Correction chains must remain within that subject/tenant and
 point to corrected parents. Multiple approved descendants of one root are
-rejected as ambiguous rather than double-counted. Bounded entries allocate their declared seconds
+rejected as ambiguous rather than double-counted. Entries with both `startedAt`
+and `endedAt` allocate their declared seconds
 proportionally across the period using exact integer prefix division, preserving
 seconds over adjacent periods. Unbounded entries count at `startedAt`, or, when
-absent, `approvedAt`; both absent is an error. This is time attribution, not a
+absent, `approvedAt`; an end-only timestamp does not create an interval. Missing
+both attribution timestamps is an error. This is time attribution, not a
 claim that a manual entry has a continuous wall-clock duration.
 
 With `attendance: true`, closed punches without `reviewRequired` count, excluding

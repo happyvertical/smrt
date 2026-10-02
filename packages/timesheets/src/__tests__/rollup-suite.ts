@@ -105,6 +105,31 @@ export function rollupSuite(
       await entry(70, { startedAt: at(24), endedAt: at(25) });
       expect((await service.rollup(at(12))).totalSeconds).toBe(3661);
     });
+    it('attributes end-only entries to approval without blocking unrelated periods', async () => {
+      const source = await entry(61, {
+        startedAt: null,
+        endedAt: at(-2),
+        approvedAt: at(12),
+      });
+      const card = await service.rollup(at(12));
+      expect(card.totalSeconds).toBe(61);
+      expect(card.getSources()).toEqual([
+        expect.objectContaining({
+          id: source.id,
+          startsAt: at(12).toISOString(),
+          endsAt: at(12).toISOString(),
+          seconds: 61,
+        }),
+      ]);
+      resolver.periodFor = async () => ({
+        startsAt: at(-24),
+        endsAt: at(0),
+        timezone: 'UTC',
+        version: 'configured-v1',
+        rules: {},
+      });
+      expect((await service.rollup(at(-12))).totalSeconds).toBe(0);
+    });
     it('uses only approved corrections and rejects forged cross-person ancestry', async () => {
       const original = await entry(7200, { status: 'corrected' });
       await entry(3600, { correctionOfId: original.id });
@@ -373,6 +398,27 @@ export function rollupSuite(
         expect(await cards.list({ where: actor })).toHaveLength(0);
       });
       expect((await service.rollup(at(12))).totalSeconds).toBe(7200);
+    });
+    it('rolls up fractional-second attendance using integer elapsed milliseconds', async () => {
+      const attendance = new AttendanceService(db, actor);
+      const instant = (ms: number) => new Date(at(8).getTime() + ms);
+      await attendance.punchIn(instant(0));
+      await attendance.startBreak(instant(1000));
+      await attendance.endBreak(instant(1600));
+      const punch = await attendance.punchOut(instant(4100));
+      const enabled = new PeriodRollupService(db, actor, resolver, {
+        attendance: true,
+      });
+      expect((await enabled.rollup(at(12))).totalSeconds).toBe(4);
+      expect(punch.durationSeconds).toBe(4);
+      resolver.periodFor = async () => ({
+        startsAt: at(24),
+        endsAt: at(48),
+        timezone: 'UTC',
+        version: 'configured-v1',
+        rules: {},
+      });
+      expect((await enabled.rollup(at(36))).totalSeconds).toBe(0);
     });
     it('optionally clips attendance breaks and deduplicates linked evidence', async () => {
       const attendance = new AttendanceService(db, actor);

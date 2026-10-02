@@ -214,7 +214,7 @@ export class PeriodRollupService {
           throw new Error(
             'Approved evidence needs a start or approval timestamp.',
           );
-        const end = entry.endedAt ?? start;
+        const end = entry.startedAt && entry.endedAt ? entry.endedAt : start;
         const source = clipSource(
           {
             kind: 'entry',
