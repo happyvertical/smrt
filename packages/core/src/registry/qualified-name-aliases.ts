@@ -190,7 +190,9 @@ export function getQualifiedNameAliasMap(): Map<string, string> {
 
 /**
  * Refuse a registration whose aliases would make a qualified name resolve to
- * two classes. Called immediately before a class is stored in `classes`.
+ * two classes. Called before a class is stored in `classes` — and, for an
+ * update of a live entry, with the PROPOSED entry and `replacing` set to the
+ * live one, before anything is mutated, so a refused update changes nothing.
  *
  * - every alias is a `<package>:<ClassName>` string, distinct from the
  *   class's own name, and declared once;
@@ -204,6 +206,7 @@ export function getQualifiedNameAliasMap(): Map<string, string> {
 export function assertQualifiedNameAliasesAvailable(
   registrationKey: string,
   entry: RegisteredClass,
+  replacing?: RegisteredClass,
 ): void {
   const self = ownName(entry, registrationKey);
   const declared = (entry.config as { previousQualifiedNames?: unknown })
@@ -263,7 +266,7 @@ export function assertQualifiedNameAliasesAvailable(
   const selfIdentities = new Set(identities(entry, registrationKey));
 
   for (const [key, other] of classes) {
-    if (sameClass(other, entry)) continue;
+    if (other === replacing || sameClass(other, entry)) continue;
     const otherName = ownName(other, key);
     for (const identity of identities(other, key)) {
       if (seen.has(identity)) {

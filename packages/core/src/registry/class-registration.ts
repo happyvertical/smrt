@@ -604,13 +604,24 @@ function applyManifestCollisionPolicy(args: {
       );
       return 'continue';
     case 'merge-manifest': {
+      // The merged manifest config can carry new aliases (#3338): validate
+      // the merged result before the merge mutates the live entry.
+      assertQualifiedNameAliasesAvailable(
+        args.registrationKey,
+        {
+          ...args.existing,
+          config: {
+            ...(args.objectDef.decoratorConfig || {}),
+            ...args.existing.config,
+          },
+        },
+        args.existing,
+      );
       mergeManifestIntoExistingRegistration(
         args.existing,
         args.objectDef,
         args.packageName,
       );
-      // The merged manifest config can carry new aliases (#3338).
-      assertQualifiedNameAliasesAvailable(args.registrationKey, args.existing);
       if (args.registrationKey !== args.existingKey) {
         const classes = getClasses();
         classes.set(args.registrationKey, args.existing);
@@ -902,6 +913,24 @@ function registerUntracked(
       qualifiedName: existing.qualifiedName as string | undefined,
     };
 
+    // #3338: validate the PROPOSED identity and aliases before mutating the
+    // live entry, so a refused re-registration (same key or promoted) leaves
+    // it exactly as it was.
+    assertQualifiedNameAliasesAvailable(
+      nextKey,
+      {
+        ...existing,
+        name,
+        packageName: nextPackageName,
+        qualifiedName: nextPackageName
+          ? (createQualifiedName(nextPackageName, name) as QualifiedClassName)
+          : undefined,
+        constructor: ctor,
+        config: { ...existing.config, ...config },
+      },
+      existing,
+    );
+
     existing.name = name;
     existing.packageName = nextPackageName;
     bumpRegistryGeneration();
@@ -972,7 +1001,6 @@ function registerUntracked(
         );
       }
 
-      assertQualifiedNameAliasesAvailable(nextKey, existing);
       classes.delete(existingKey);
       classes.set(nextKey, existing);
     }

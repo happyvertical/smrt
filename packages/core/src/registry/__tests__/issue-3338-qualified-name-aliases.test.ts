@@ -31,6 +31,7 @@ import { MCPGenerator } from '../../generators/mcp.js';
 import { resolveRegisteredObjectName } from '../../generators/preflight-route.js';
 import { buildDomainKnowledgeManifest } from '../../knowledge.js';
 import { getManifestCache } from '../../manifest/store.js';
+import { SmrtObject } from '../../object.js';
 import { ObjectRegistry } from '../../registry.js';
 import { ManifestGenerator } from '../../scanner/manifest-generator.js';
 import type {
@@ -327,6 +328,66 @@ describe('issue #3338: deprecated qualified-name aliases', () => {
           ),
         QUALIFIED_NAME_ALIAS_COLLISION,
       );
+    });
+
+    it('validates a same-key re-registration before mutating the live entry', () => {
+      class ReRegistered extends SmrtObject {}
+      const key = `${NEW_PKG}:ReRegistered`;
+      ObjectRegistry.register(ReRegistered as unknown as typeof SmrtObject, {
+        packageName: NEW_PKG,
+        tableName: 't3338_reregistered',
+      });
+      register(objectDef('StillLive', OLD_PKG));
+      const entry = ObjectRegistry.getAllClasses().get(key);
+      expect(entry).toBeDefined();
+      const configBefore = structuredClone(entry?.config);
+
+      for (const [aliases, code] of [
+        [['NotQualified'], QUALIFIED_NAME_ALIAS_INVALID],
+        [[`${OLD_PKG}:StillLive`], QUALIFIED_NAME_ALIAS_COLLISION],
+      ] as const) {
+        expectCode(
+          () =>
+            ObjectRegistry.register(
+              ReRegistered as unknown as typeof SmrtObject,
+              {
+                packageName: NEW_PKG,
+                tableName: 't3338_reregistered',
+                previousQualifiedNames: [...aliases],
+              },
+            ),
+          code,
+        );
+        expect(ObjectRegistry.getAllClasses().get(key)).toBe(entry);
+        expect(entry?.config).toEqual(configBefore);
+      }
+      expect(ObjectRegistry.getQualifiedNameAliases().size).toBe(0);
+    });
+
+    it('validates a manifest merge before mutating the live entry', () => {
+      class MergeTarget extends SmrtObject {}
+      const key = `${NEW_PKG}:MergeTarget`;
+      ObjectRegistry.register(MergeTarget as unknown as typeof SmrtObject, {
+        packageName: NEW_PKG,
+        tableName: 't3338_mergetargets',
+      });
+      const entry = ObjectRegistry.getAllClasses().get(key);
+      const configBefore = structuredClone(entry?.config);
+      const fieldsBefore = [...(entry?.fields.keys() ?? [])];
+
+      expectCode(
+        () =>
+          register(
+            objectDef('MergeTarget', NEW_PKG, {
+              fields: { extra: { type: 'text', required: false } },
+              decoratorConfig: { previousQualifiedNames: ['NotQualified'] },
+            }),
+          ),
+        QUALIFIED_NAME_ALIAS_INVALID,
+      );
+      expect(ObjectRegistry.getAllClasses().get(key)).toBe(entry);
+      expect(entry?.config).toEqual(configBefore);
+      expect([...(entry?.fields.keys() ?? [])]).toEqual(fieldsBefore);
     });
 
     it('refuses malformed declarations', () => {
