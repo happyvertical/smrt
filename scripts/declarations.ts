@@ -48,9 +48,13 @@ export function declarations(options: {
             include: (options.include ?? ['src/**/*.ts', 'ambient.d.ts']).map(
               absolute,
             ),
-            exclude: (options.exclude ?? ['**/*.test.ts', '**/*.spec.ts']).map(
-              absolute,
-            ),
+            exclude: [
+              '**/*.test.ts',
+              '**/*.spec.ts',
+              '**/__tests__/**',
+              '**/test-stubs/**',
+              ...(options.exclude ?? []),
+            ].map(absolute),
             references: [],
           }),
         );

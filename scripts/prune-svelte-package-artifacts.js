@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
+import { isTestArtifact } from './package-test-artifacts.mjs';
 
 const targetDir = process.argv[2];
 
@@ -18,15 +19,11 @@ if (!existsSync(rootDir)) {
   process.exit(0);
 }
 
-const removableDirectoryNames = new Set(['__tests__', 'test-stubs']);
-const removableFilePattern = /\.(test|spec)\.[^.]+$/;
-
 function prune(entryPath) {
-  const stats = statSync(entryPath);
+  const stats = lstatSync(entryPath);
 
   if (stats.isDirectory()) {
-    const name = basename(entryPath);
-    if (removableDirectoryNames.has(name)) {
+    if (isTestArtifact(relative(rootDir, entryPath))) {
       rmSync(entryPath, { recursive: true, force: true });
       return;
     }
@@ -37,7 +34,7 @@ function prune(entryPath) {
     return;
   }
 
-  if (removableFilePattern.test(entryPath)) {
+  if (isTestArtifact(relative(rootDir, entryPath))) {
     rmSync(entryPath, { force: true });
   }
 }

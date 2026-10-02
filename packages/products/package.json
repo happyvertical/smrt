@@ -102,7 +102,7 @@
     "typecheck": "npm run generate && tsc --noEmit -p tsconfig.json",
     "build": "npm run build:lib",
     "build:all": "npm run clean && npm run generate && npm run build:lib && npm run build:app && npm run build:federation",
-    "build:lib": "vite build --mode library && svelte-package -i src/lib/components -o dist/lib/lib/components --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/features -o dist/lib/lib/features --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/stores -o dist/lib/lib/stores --tsconfig tsconfig.svelte.json",
+    "build:lib": "vite build --mode library && svelte-package -i src/lib/components -o dist/lib/lib/components --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/features -o dist/lib/lib/features --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/stores -o dist/lib/lib/stores --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:app": "vite build --mode standalone",
     "build:federation": "vite build --mode federation",
     "generate:mcp": "tsx src/mcp.ts",

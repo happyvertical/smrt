@@ -55,7 +55,7 @@
     "agents"
   ],
   "scripts": {
-    "build": "SMRT_PACKAGE_BUILD=1 vite build --mode library && SMRT_PACKAGE_BUILD=1 svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "SMRT_PACKAGE_BUILD=1 vite build --mode library && SMRT_PACKAGE_BUILD=1 svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:watch": "vite build --mode library --watch",
     "check": "svelte-kit sync && pnpm exec svelte-check --tsconfig ./tsconfig.kit.json",
     "clean": "rm -rf dist",
