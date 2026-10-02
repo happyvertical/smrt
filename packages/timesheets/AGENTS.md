@@ -6,7 +6,8 @@ immutable charge / compensation snapshots taken at approval. Moved out of
 `smrt-projects` / `smrt-support` in #3288 so shops, builders, and service
 desks share one model instead of re-implementing it.
 
-This package contains **layer 1 (entry)** and **layer 2 (attendance)**.
+This package contains **layer 1 (entry)**, **layer 2 (attendance)**, and
+**layer 3 (period rollup)**.
 `src/attendance/` owns punches, breaks, atomic transitions and durable offline
 receipts; `./attendance` is the public subpath. Period rollup belongs in this
 package too, never projects or support. See the README attendance contract.
@@ -105,3 +106,11 @@ pnpm --filter @happyvertical/smrt-support test
 Schema-affecting edits must keep `service-time-entry-compat.test.ts` (projects,
 support) and `service-time-entry-migration-plan.test.ts` (support) green: a
 pre-move table must plan no DDL.
+
+## Period rollup
+
+Layer 3 lives under `src/rollup/` and the `./rollup` subpath. See
+[period-rollup.md](agents/period-rollup.md) for resolver, source clipping,
+confirmation, attributed adjustments, isolation, and transaction contracts.
+Timecards and adjustments have closed generated surfaces and service-only
+model writes; never bypass the instance capability with generic persistence.
