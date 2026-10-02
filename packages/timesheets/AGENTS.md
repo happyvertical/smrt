@@ -35,6 +35,14 @@ through a `ServiceCommercialResolver`), and corrects. `smrt-projects` supplies
   `SERVICE_TIME_ENTRY_STATUS_TRANSITIONS` and compares the frozen fields with
   the stored row. A correction is a new row (`correctionOfId`), the original
   flips to `corrected`. Snapshots are immutable after their first save.
+- **Old qualified names are aliases.** Each model declares its pre-#3288
+  `@happyvertical/smrt-projects:*` name in `previousQualifiedNames` (#3338;
+  `packages/core/agents/model-moves.md`). smrt-projects must never list these
+  classes in its manifests again (`CONFIG_QUALIFIED_NAME_ALIAS_COLLISION`),
+  and no subtype (smrt-support's, or a consumer's closing subclass) may
+  redeclare an alias (two claimants). Known gap: a same-named subtype that
+  replaces a moved class drops that class's alias. `projects/src/__tests__/legacy-qualified-identity.test.ts` pins
+  the projects-only contract.
 - **Table names are a compatibility contract.** `service_time_entries` and the
   two snapshot tables hold existing production rows from smrt-projects /
   smrt-support; renaming any of them, or adding a discriminator, is a data

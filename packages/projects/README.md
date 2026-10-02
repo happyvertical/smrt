@@ -13,7 +13,9 @@ Time entries and their commercial snapshots live in
 them. Under pnpm, declare `@happyvertical/smrt-timesheets` directly: the CLI's
 manifest discovery reads only top-level packages, so without it `smrt
 db:migrate` / `db:status` stop planning `service_time_entries`,
-`service_charge_snapshots`, and `service_compensation_snapshots`. See
+`service_charge_snapshots`, and `service_compensation_snapshots`. Their old
+`@happyvertical/smrt-projects:*` class names keep resolving as deprecated
+aliases; move source references to `@happyvertical/smrt-timesheets:*`. See
 [SERVICE_TIME_MIGRATION.md](./SERVICE_TIME_MIGRATION.md).
 
 ## Usage

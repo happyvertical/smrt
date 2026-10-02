@@ -136,6 +136,11 @@ export class ServiceCompensationSnapshot extends SharedServiceCompensationSnapsh
 }
 ```
 
+Do not copy `previousQualifiedNames` into these subclasses: an old name may
+have only one claimant. Replacing the timesheets classes drops their
+smrt-projects aliases (see the known gap under "Stored and declared class
+names").
+
 Restate `conflictColumns` exactly as shown unless you mean to change it. The
 snapshots' conflict key is `time_entry_id` alone — one snapshot per entry —
 and, being an explicit key, it is never rewritten to lead with `tenant_id`
@@ -155,7 +160,9 @@ index replacing `service_*_snapshots_time_entry_id_idx`), so it goes through
 **Consumers already holding `service_time_entries` rows need no schema change
 and no data migration.** The table names, columns, indexes, and conflict keys
 are unchanged, and the tables carry no type discriminator, so existing rows
-load through every package's classes as they are.
+load through every package's classes as they are. References stored under
+the old smrt-projects class names keep resolving as deprecated aliases (see
+"Stored and declared class names" below; one gap applies with smrt-support).
 
 > **pnpm: add a direct `@happyvertical/smrt-timesheets` dependency.** The
 > CLI's manifest discovery (`smrt db:migrate`, `db:status`, `db:diff`) reads
@@ -176,14 +183,50 @@ load through every package's classes as they are.
 | `ServiceTimeEntry` from `@happyvertical/smrt-support` | Unchanged: support's subtype, now extending the timesheets entry |
 | `caseId` / `specialistId`, `forCase()` / `forSpecialist()` on the projects export | Support subtype only — import `ServiceTimeEntry` / `ServiceTimeEntryCollection` from smrt-support |
 | `ServiceEvidenceService.record({ caseId })` | Requires `workRefType` + `workRefId`; record case time through smrt-support's `ServiceTimeEntryService` |
+| `@happyvertical/smrt-projects:ServiceTimeEntry` (and the two snapshot names) stored in `meta_type` or declared in `@crossPackageRef` / playbook `model:` | Resolves as a deprecated alias of `@happyvertical/smrt-timesheets:*`; move declarations to the new name, optionally backfill stored rows with `smrt db:migrate-qualified-names` (see below) |
 | `TimeEntryList`, `TimeEntryCard`, `TimeSummary`, `DurationDisplay` from `@happyvertical/smrt-projects/svelte`; `TimeEntryApprovalQueue` from `@happyvertical/smrt-support/svelte` | Still exported there; canonical home `@happyvertical/smrt-timesheets/svelte` |
 
 An application with smrt-projects but not smrt-support keeps its existing
 `case_id` / `specialist_id` columns: `db:migrate` reports them as orphan
 columns and never alters or drops them, and saves through the shared entry
-leave their values untouched. The registered class names for the moved models
-are now `@happyvertical/smrt-timesheets:*`; generated routes and MCP tool names
-derive from the simple names and are unchanged.
+leave their values untouched.
+
+### Stored and declared class names
+
+The moved models' registered names changed from
+`@happyvertical/smrt-projects:*` to `@happyvertical/smrt-timesheets:*`. Each
+class declares its old name in `previousQualifiedNames` (#3338), so references
+that stored or declared it keep resolving as a **deprecated alias**:
+polymorphic association rows (`metaType`, including smrt-assets
+`AssetAssociation`), `ObjectRegistry.getClassByQualifiedName()`,
+`@crossPackageRef` and relationship targets, and playbook step `model:`
+names. The first resolution of each old name per process logs a deprecation
+warning; new association writes store the current name. Generated routes,
+MCP tool names, and permission slugs derive from simple and collection names
+and are unchanged.
+
+- `smrt doctor --db` counts stored references that still use an old name
+  ("Deprecated Qualified Names").
+- `smrt db:migrate-qualified-names` is an opt-in backfill that rewrites them
+  to the current names (`--dry-run` first); it is never run automatically.
+- Move source references — `@crossPackageRef(...)`, relationship targets,
+  playbook `model:` names — to `@happyvertical/smrt-timesheets:*` now. The
+  aliases will be removed in a later **breaking** release, once `smrt doctor
+  --db` reports no stored references.
+
+> **Known gap: same-named subtypes drop the alias.** A same-named subclass
+> over a moved table — smrt-support's `ServiceTimeEntry`, or an
+> application's closing subclass (see "Closing the generated surface") —
+> replaces the timesheets class in the registry, and that class's alias does
+> not carry over to it yet. With smrt-support installed,
+> `@happyvertical/smrt-projects:ServiceTimeEntry` therefore does not resolve
+> (hydration returns `null`) and `smrt doctor --db` /
+> `db:migrate-qualified-names` do not see it; the snapshot aliases still work
+> unless the application subclasses the snapshots too. A subclass must not
+> redeclare the alias (two claimants of one old name collide). Until core
+> carries aliases across the replacement, rewrite affected stored references
+> (typically `meta_type` columns) to the replacing class's current name, e.g.
+> `@happyvertical/smrt-support:ServiceTimeEntry`.
 
 ## Related packages
 

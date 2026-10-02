@@ -22,6 +22,20 @@ hoist the package and are unaffected.
 pnpm add @happyvertical/smrt-timesheets
 ```
 
+**Old class names keep resolving as deprecated aliases.** The moved classes
+declare `previousQualifiedNames` (#3338), so stored or declared
+`@happyvertical/smrt-projects:ServiceTimeEntry`, `:ServiceChargeSnapshot`, and
+`:ServiceCompensationSnapshot` references — polymorphic `meta_type` rows,
+`@crossPackageRef` and relationship targets, playbook `model:` names — resolve
+to the `@happyvertical/smrt-timesheets:*` classes with a one-time deprecation
+warning, and new association writes store the current name. `smrt doctor --db`
+counts remaining stored references; `smrt db:migrate-qualified-names` is the
+opt-in backfill. Move source references to the new names before the aliases
+are removed in a later breaking release. A same-named subtype that replaces a
+moved class drops its alias for now — with smrt-support installed the
+`ServiceTimeEntry` alias does not resolve; see the smrt-timesheets README for
+the workaround.
+
 The #1955 notes below still describe the support side.
 
 There is no data migration and no duplicate table. The support import is a
