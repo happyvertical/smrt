@@ -181,4 +181,74 @@ describe('ServiceTimeEntry', () => {
     expect(SERVICE_TIME_ENTRY_FROZEN_FIELDS).toContain('durationSeconds');
     expect(SERVICE_TIME_ENTRY_FROZEN_FIELDS).not.toContain('caseId');
   });
+
+  describe('money boundary (#3288 review)', () => {
+    async function entryFor(workRefId: string) {
+      const entry = await service.record({
+        ...WORK,
+        workRefId,
+        participantKind: 'agent',
+        agentRef: 'agent:estimator',
+        source: 'agent',
+        description: 'Priced work',
+        durationSeconds: 3600,
+      });
+      return String(entry.id);
+    }
+
+    it('rejects a non-integer or unsafe amount on direct snapshot writes', async () => {
+      const charges = await ServiceChargeSnapshotCollection.create({ db });
+      const paid = await ServiceCompensationSnapshotCollection.create({ db });
+      for (const amount of [
+        19.99,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        2 ** 53,
+      ]) {
+        const timeEntryId = await entryFor(`wp-money-${amount}`);
+        await expect(
+          charges.create({ timeEntryId, amount, currency: 'USD' }),
+          `charge ${amount}`,
+        ).rejects.toThrow(
+          /ServiceChargeSnapshot.*integer number of minor units/,
+        );
+        await expect(
+          paid.create({ timeEntryId, amount, currency: 'USD' }),
+          `compensation ${amount}`,
+        ).rejects.toThrow(
+          /ServiceCompensationSnapshot.*integer number of minor units/,
+        );
+        expect(await charges.list({ where: { timeEntryId } })).toEqual([]);
+        expect(await paid.list({ where: { timeEntryId } })).toEqual([]);
+      }
+    });
+
+    it('refuses fractional resolver output instead of storing it', async () => {
+      const fractional = await ServiceEvidenceService.create(
+        { db },
+        commercial(12000, 8000.5),
+      );
+      const entry = await fractional.record({
+        ...WORK,
+        workRefId: 'wp-fractional',
+        participantKind: 'agent',
+        agentRef: 'agent:estimator',
+        source: 'agent',
+        description: 'Fractional pay',
+        durationSeconds: 3600,
+      });
+      await fractional.submit(entry);
+      await expect(
+        fractional.approve(entry, { approvalPath: 'automatic' }),
+      ).rejects.toThrow(/integer number of minor units/);
+      const timeEntryId = String(entry.id);
+      expect(
+        await (await ServiceCompensationSnapshotCollection.create({ db })).list(
+          {
+            where: { timeEntryId },
+          },
+        ),
+      ).toEqual([]);
+    });
+  });
 });

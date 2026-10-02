@@ -75,8 +75,10 @@ All collections provide: `discover({ repository, filters })`, `findByRepository(
   INTEGER columns (BIGINT on fresh PostgreSQL/DuckDB databases; #2401, #2373). The two convert as a pair — the delivery margin is
   `charge - compensation`, an exact integer subtraction with no tolerance —
   and both are fed verbatim by `CommercialSnapshot.amount`, so a resolver that
-  returns major units corrupts the snapshot silently on SQLite and fails with
-  `22P02` on PostgreSQL. `pnpm --filter @happyvertical/smrt-timesheets
+  returns major units is wrong on every engine: snapshot `save()` refuses a
+  fractional value (`19.99`) on SQLite and PostgreSQL alike, but a whole
+  major-unit value (`150` for $150.00) is a valid integer and is stored
+  100× too small. `pnpm --filter @happyvertical/smrt-timesheets
   test:postgres` is the lane that holds the line (moved with the snapshots in
   #3288).
 - **UI formats by dividing, never by `toFixed`**: `formatCurrency()` and

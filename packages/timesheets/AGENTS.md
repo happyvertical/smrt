@@ -30,7 +30,10 @@ through a `ServiceCommercialResolver`), and corrects. `smrt-projects` supplies
   `ServiceTimeEntry` adds `caseId` / `specialistId` and extends
   `frozenFieldNames()` so they freeze on approval.
 - **Entries carry no rate.** Money lives only on the snapshots, `= 0`
-  integer initializers (INTEGER columns). Never `= 0.0`.
+  integer initializers (INTEGER columns). Never `= 0.0`. Snapshot `save()`
+  rejects an `amount` that is not a safe integer (`VALIDATION_INVALID_VALUE`),
+  so SQLite cannot silently store `19.99`; fix a fractional resolver at its
+  source rather than rounding here.
 - **Approved evidence never changes.** `save()` enforces
   `SERVICE_TIME_ENTRY_STATUS_TRANSITIONS` and compares the frozen fields with
   the stored row. A correction is a new row (`correctionOfId`), the original

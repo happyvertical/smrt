@@ -128,6 +128,8 @@ describePostgres('timesheets money columns on PostgreSQL (#2401)', () => {
       durationSeconds: 3600,
     });
 
+    // Refused at the model boundary with the same error SQLite gets, not
+    // only by PostgreSQL's integer column (22P02).
     const charges = await ServiceChargeSnapshotCollection.create({ db });
     await expect(
       charges.create({
@@ -136,6 +138,19 @@ describePostgres('timesheets money columns on PostgreSQL (#2401)', () => {
         currency: 'USD',
         pricingVersion: 'pricing-v2',
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/ServiceChargeSnapshot.*integer number of minor units/);
+    const compensations = await ServiceCompensationSnapshotCollection.create({
+      db,
+    });
+    await expect(
+      compensations.create({
+        timeEntryId: String(entry.id),
+        amount: 90.5,
+        currency: 'USD',
+        termsVersion: 'provider-v1',
+      }),
+    ).rejects.toThrow(
+      /ServiceCompensationSnapshot.*integer number of minor units/,
+    );
   });
 });

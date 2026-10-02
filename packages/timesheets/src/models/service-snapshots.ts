@@ -4,8 +4,31 @@ import {
   SmrtCollection,
   SmrtObject,
   smrt,
+  ValidationError,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+
+/**
+ * Refuse an amount that is not a JavaScript-safe integer number of minor
+ * units. SQLite stores `19.99` in an INTEGER column without complaint and
+ * PostgreSQL rejects it only at the driver, so the model boundary is the one
+ * place both engines (and every writer: collections, `ServiceEvidenceService`,
+ * resolvers) get the same answer. Sign is not constrained here.
+ */
+export function assertSnapshotMinorUnits(model: string, amount: unknown): void {
+  if (typeof amount !== 'number' || !Number.isSafeInteger(amount)) {
+    throw new ValidationError(
+      `${model}.amount must be a safe integer number of minor units (cents) — ` +
+        `got ${String(amount)}. $19.99 is 1999.`,
+      'VALIDATION_INVALID_VALUE',
+      {
+        fieldName: 'amount',
+        value: amount,
+        expectedType: 'safe integer minor units',
+      },
+    );
+  }
+}
 
 const chargeSnapshot = new WeakMap<ServiceChargeSnapshot, string>();
 const compensationSnapshot = new WeakMap<ServiceCompensationSnapshot, string>();
@@ -107,6 +130,7 @@ export class ServiceChargeSnapshot extends SmrtObject {
   }
 
   override async save(): Promise<this> {
+    assertSnapshotMinorUnits('ServiceChargeSnapshot', this.amount);
     const current = commercialSnapshot(
       this as unknown as Record<string, unknown>,
       CHARGE_FIELDS,
@@ -171,6 +195,7 @@ export class ServiceCompensationSnapshot extends SmrtObject {
   }
 
   override async save(): Promise<this> {
+    assertSnapshotMinorUnits('ServiceCompensationSnapshot', this.amount);
     const current = commercialSnapshot(
       this as unknown as Record<string, unknown>,
       COMPENSATION_FIELDS,

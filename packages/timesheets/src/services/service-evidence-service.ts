@@ -36,9 +36,10 @@ export interface CommercialSnapshot {
    * Integer minor units of `currency` — `$19.99` is `1999` (#2401).
    *
    * Written straight into `ServiceChargeSnapshot.amount` /
-   * `ServiceCompensationSnapshot.amount`, which are INTEGER columns, so a
-   * resolver that returns major units corrupts the snapshot silently on SQLite
-   * and fails with `22P02` on PostgreSQL.
+   * `ServiceCompensationSnapshot.amount`, INTEGER columns whose `save()`
+   * refuses anything but a safe integer on every engine. A fractional
+   * major-unit value (`19.99`) is rejected; a whole one (`150` for $150.00)
+   * is not detectable and is stored 100× too small, so return minor units.
    */
   amount: number;
   currency?: string;
