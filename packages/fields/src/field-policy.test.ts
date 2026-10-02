@@ -967,6 +967,7 @@ describe('FieldPolicy write-time validation', () => {
     const tenants = await TenantCollection.create({ db });
     const root = await tenants.create({ name: 'Lock Root' });
     await root.save();
+    if (!root.id) throw new Error('Saved root tenant has no id');
     const child = await tenants.createChild(root.id, {
       name: 'Lock Child',
       inheritPermissions: true,
@@ -1008,6 +1009,7 @@ describe('FieldPolicy write-time validation', () => {
     const tenants = await TenantCollection.create({ db });
     const root = await tenants.create({ name: 'Default Root' });
     await root.save();
+    if (!root.id) throw new Error('Saved root tenant has no id');
     const child = await tenants.createChild(root.id, {
       name: 'Default Child',
       inheritPermissions: true,

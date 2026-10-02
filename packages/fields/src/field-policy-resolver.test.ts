@@ -651,6 +651,7 @@ describe('resolveFieldPolicy', () => {
     const tenants = await TenantCollection.create({ db });
     const root = await tenants.create({ name: 'Root Tenant' });
     await root.save();
+    if (!root.id) throw new Error('Saved root tenant has no id');
     const child = await tenants.createChild(root.id, {
       name: 'Child Tenant',
       inheritPermissions: true,

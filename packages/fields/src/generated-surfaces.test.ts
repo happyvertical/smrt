@@ -911,7 +911,10 @@ describe('smrt-fields generated surfaces', () => {
         ),
     );
     expect(pluralRoute.status).toBe(200);
-    expect((await pluralRoute.json()).action).toBe('getEditorState');
+    // Response.json() is unknown; this route's action envelope is asserted below.
+    expect(((await pluralRoute.json()) as { action?: string }).action).toBe(
+      'getEditorState',
+    );
 
     // The control-panel roll-up is likewise a collection action: it must
     // dispatch through the generated runtime route rather than falling
