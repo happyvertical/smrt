@@ -729,6 +729,16 @@ export interface SmrtConfig {
   runtime?: ApplicationRuntimeConfig;
 
   /**
+   * Build-time declaration of the SMRT packages whose object manifests this
+   * app consumes. Read by the `@happyvertical/smrt-core/vite` preset so runtime
+   * registration is deterministic; tooling and UI packages are never inferred
+   * as model providers.
+   */
+  consumer?: {
+    packages?: string[];
+  };
+
+  /**
    * Module-scoped configurations keyed by module name.
    * Retrieved via {@link getModuleConfig}.
    */
