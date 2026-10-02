@@ -28,15 +28,18 @@ export {
   type AIExplicitConfig,
   type AIProviderClientOptions,
   AIProviderNotConfiguredError,
+  canonicalizeAIConfig,
   DEFAULT_AI_ENV_PREFIXES,
   describeAIProviderConfig,
   getDefaultAIKeyEnvName,
+  mergeAIConfigObjects,
   type ResolveAIProviderOptions,
   type ResolvedAIProviderConfig,
   redactBaseUrl,
   resolveAIProviderConfig,
   toAIClientOptions,
   tryResolveAIProviderConfig,
+  withAIAliases,
 } from './ai.js';
 
 // Re-export config export utilities
@@ -554,7 +557,7 @@ export function mergeAIConfigLayers(
   for (const layer of layers) {
     if (!layer || typeof layer !== 'object') continue;
     const rec = layer as Record<string, unknown>;
-    const named = text(rec.provider);
+    const named = text(rec.provider) ?? text(rec.type);
     if (named && provider && named.toLowerCase() !== provider.toLowerCase()) {
       for (const f of FIELDS) {
         const owner = owners[f];
@@ -566,7 +569,10 @@ export function mergeAIConfigLayers(
     }
     if (named) provider = named;
     for (const f of FIELDS) {
-      const v = text(rec[f]);
+      const v =
+        f === 'model'
+          ? (text(rec.model) ?? text(rec.defaultModel))
+          : text(rec[f]);
       if (v) {
         values[f] = v;
         owners[f] = provider;

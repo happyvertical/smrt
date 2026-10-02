@@ -224,4 +224,54 @@ describe('SmrtClass AI config block', () => {
       apiKey: SECRET,
     });
   });
+
+  describe('cross-layer aliases (O1)', () => {
+    it('global provider + instance type: instance wins with its own key, no stale alias', async () => {
+      config({
+        ai: { provider: 'openai', apiKey: SECRET, model: 'gpt-g' },
+      } as never);
+      await new Probe({
+        ai: { type: 'anthropic', apiKey: OTHER_SECRET },
+      } as never).client();
+      const arg = getAIMock.mock.calls[0][0];
+      expect(arg).toMatchObject({
+        provider: 'anthropic',
+        type: 'anthropic',
+        apiKey: OTHER_SECRET,
+      });
+      expect(arg.model).toBeUndefined();
+      expect(arg.defaultModel).toBeUndefined();
+      expect(JSON.stringify(arg)).not.toContain(SECRET);
+      expect(JSON.stringify(arg)).not.toContain('openai');
+    });
+
+    it('global type + instance provider: no stale global type survives', async () => {
+      config({ ai: { type: 'openai', apiKey: SECRET } } as never);
+      await new Probe({
+        ai: { provider: 'anthropic', apiKey: OTHER_SECRET },
+      } as never).client();
+      const arg = getAIMock.mock.calls[0][0];
+      expect(arg).toMatchObject({
+        provider: 'anthropic',
+        type: 'anthropic',
+        apiKey: OTHER_SECRET,
+      });
+      expect(JSON.stringify(arg)).not.toContain(SECRET);
+      expect(JSON.stringify(arg)).not.toContain('openai');
+    });
+
+    it('same provider via different aliases keeps the lower credentials and sets both aliases', async () => {
+      config({
+        ai: { type: 'openai', apiKey: SECRET, defaultModel: 'gpt-g' },
+      } as never);
+      await new Probe({ ai: { provider: 'OpenAI' } } as never).client();
+      expect(getAIMock.mock.calls[0][0]).toMatchObject({
+        provider: 'OpenAI',
+        type: 'OpenAI',
+        apiKey: SECRET,
+        model: 'gpt-g',
+        defaultModel: 'gpt-g',
+      });
+    });
+  });
 });

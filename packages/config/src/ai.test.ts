@@ -6,6 +6,7 @@ import {
   describeAIProviderConfig,
   getAIConfigBlock,
   getDefaultAIKeyEnvName,
+  mergeExportedConfig,
   resolveAIProviderConfig,
   resolveConfiguredAIProvider,
   setConfig,
@@ -482,5 +483,50 @@ describe('alias normalisation (L3)', () => {
       env: {},
     });
     expect(r.model).toBe('gpt-z');
+  });
+});
+
+describe('accumulating setConfig keeps provider ownership (O1)', () => {
+  it('a later provider does not inherit the earlier provider credentials', () => {
+    setConfig({
+      ai: {
+        provider: 'openai',
+        apiKeyEnv: 'OPENAI_API_KEY',
+        baseUrl: 'https://o.example/v1',
+        model: 'gpt-x',
+      },
+    });
+    setConfig({ ai: { provider: 'anthropic' } });
+    expect(getAIConfigBlock()).toEqual({ provider: 'anthropic' });
+  });
+
+  it('packages.ai accumulates the same way', () => {
+    setConfig({ packages: { ai: { provider: 'openai', apiKey: SECRET } } });
+    setConfig({ packages: { ai: { type: 'anthropic' } } });
+    expect(getAIConfigBlock()).toEqual({ provider: 'anthropic' });
+  });
+
+  it('same-provider accumulation still overlays', () => {
+    setConfig({ ai: { provider: 'openai', apiKeyEnv: 'K' } });
+    setConfig({ ai: { provider: 'openai', model: 'm' } });
+    expect(getAIConfigBlock()).toEqual({
+      provider: 'openai',
+      apiKeyEnv: 'K',
+      model: 'm',
+    });
+  });
+
+  it('layer aliases are honoured (type / defaultModel)', () => {
+    setConfig({ ai: { type: 'openai', defaultModel: 'm', apiKeyEnv: 'K' } });
+    setConfig({ ai: { provider: 'anthropic', apiKey: ' ' } });
+    expect(getAIConfigBlock()).toEqual({ provider: 'anthropic' });
+  });
+
+  it('mergeExportedConfig applies ownership to ai blocks', () => {
+    const merged = mergeExportedConfig(
+      { ai: { provider: 'openai', baseUrl: 'https://o.example', model: 'm' } },
+      { ai: { type: 'anthropic' } },
+    ) as { ai: Record<string, unknown> };
+    expect(merged.ai).toEqual({ provider: 'anthropic' });
   });
 });

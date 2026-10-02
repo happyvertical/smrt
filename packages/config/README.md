@@ -206,6 +206,10 @@ layers' `apiKey`, `apiKeyEnv`, `baseUrl` and `model` are dropped (a model id is 
 binds to the provider selected so far. Core applies the same rule between its global `ai` config and `options.ai`, and always
 builds its client from the resolver's bound result. Aliases are normalised before coalescing (`provider`/`type`,
 `model`/`defaultModel`), so a blank primary never hides the alias.
+All object merges go through one canonicalising helper, `mergeAIConfigObjects(lower, higher)`
+(folds `provider`/`type` and `model`/`defaultModel`, drops blanks, and drops the lower side's provider, key, key variable, base URL and model
+when the higher side names a different provider): accumulating `setConfig({ ai })` / `setConfig({ packages: { ai } })`, `mergeExportedConfig`
+`ai` blocks, and core's global `ai` + `options.ai`. `withAIAliases()` sets both client-facing aliases on the final result.
 Core consults the block only when it names a `provider`; a partial block behaves like no block.
 
 Call sites keep their historical order through options: the chat dev routes pass

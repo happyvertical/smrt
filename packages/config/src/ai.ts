@@ -381,3 +381,70 @@ export function toAIClientOptions(
   if (resolved.model) out.defaultModel = resolved.model;
   return out;
 }
+
+const OWNED_AI_FIELDS = ['apiKey', 'apiKeyEnv', 'baseUrl', 'model'] as const;
+
+/**
+ * Canonicalise one AI config object: blank strings are removed, `type` folds
+ * into `provider` and `defaultModel` into `model` (`provider`/`model` win when
+ * both are non-blank). Other keys pass through untouched.
+ */
+export function canonicalizeAIConfig(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== 'object') return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;
+    }
+    if (typeof value === 'string' && value.trim().length === 0) continue;
+    out[key] = value;
+  }
+  const provider = nonEmpty(out.provider) ?? nonEmpty(out.type);
+  const model = nonEmpty(out.model) ?? nonEmpty(out.defaultModel);
+  delete out.type;
+  delete out.defaultModel;
+  if (provider) out.provider = provider;
+  else delete out.provider;
+  if (model) out.model = model;
+  else delete out.model;
+  return out;
+}
+
+/**
+ * The one merge for two AI config objects (`lower` < `higher`). Both sides are
+ * canonicalised first. When `higher` names a provider and `lower` names a
+ * different one, `lower`'s provider, key, key variable, base URL and model are
+ * dropped so no credential is paired with another provider. Everything else is
+ * a shallow overlay with `higher` winning. The result carries canonical
+ * `provider` / `model` only; use {@link withAIAliases} for client-facing aliases.
+ */
+export function mergeAIConfigObjects(
+  lower: unknown,
+  higher: unknown,
+): Record<string, unknown> {
+  const low = canonicalizeAIConfig(lower);
+  const high = canonicalizeAIConfig(higher);
+  const lowName = nonEmpty(low.provider)?.toLowerCase();
+  const highName = nonEmpty(high.provider)?.toLowerCase();
+  if (lowName && highName && lowName !== highName) {
+    delete low.provider;
+    for (const f of OWNED_AI_FIELDS) delete low[f];
+  }
+  return { ...low, ...high };
+}
+
+/** Set both client-facing aliases (`provider`+`type`, `model`+`defaultModel`). */
+export function withAIAliases<T extends Record<string, unknown>>(config: T): T {
+  const out: Record<string, unknown> = { ...config };
+  const provider = nonEmpty(out.provider) ?? nonEmpty(out.type);
+  const model = nonEmpty(out.model) ?? nonEmpty(out.defaultModel);
+  for (const k of ['provider', 'type'] as const) {
+    if (provider) out[k] = provider;
+    else delete out[k];
+  }
+  for (const k of ['model', 'defaultModel'] as const) {
+    if (model) out[k] = model;
+    else delete out[k];
+  }
+  return out as T;
+}

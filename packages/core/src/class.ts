@@ -7,7 +7,9 @@ import { createLogger, type LoggerConfig } from '@happyvertical/logger';
 import {
   type AIExplicitConfig,
   getAIConfigBlock,
+  mergeAIConfigObjects,
   tryResolveAIProviderConfig,
+  withAIAliases,
 } from '@happyvertical/smrt-config';
 import type {
   AiTokenUsage,
@@ -720,33 +722,14 @@ export class SmrtClass {
             const baseConfig = globalConfig.ai || {};
 
             // Merge with instance options (takes priority over global)
-            // Provider ownership holds across these two layers too: when the
-            // instance options name a different provider than the global
-            // config, the global layer's key, base URL and model are dropped.
-            const baseRec = baseConfig as Record<string, unknown>;
-            const optRec = (this.options.ai ?? {}) as Record<string, unknown>;
-            const nameOf = (r: Record<string, unknown>) =>
-              [r.provider, r.type]
-                .map((v) => (typeof v === 'string' ? v.trim() : ''))
-                .find(Boolean)
-                ?.toLowerCase();
-            const baseName = nameOf(baseRec);
-            const optName = nameOf(optRec);
-            const ownedBase: Record<string, unknown> =
-              baseName && optName && baseName !== optName
-                ? Object.fromEntries(
-                    Object.entries(baseRec).filter(
-                      ([k]) =>
-                        ![
-                          'apiKey',
-                          'baseUrl',
-                          'model',
-                          'defaultModel',
-                        ].includes(k),
-                    ),
-                  )
-                : baseRec;
-            const userConfig = { ...ownedBase, ...this.options.ai };
+            // Provider ownership holds across these two layers too: the shared
+            // canonicalising merge folds provider/type and model/defaultModel,
+            // and drops the global layer's provider, key, base URL and model
+            // when the instance options name a different provider.
+            const userConfig = mergeAIConfigObjects(
+              baseConfig,
+              this.options.ai,
+            );
 
             // Load environment variables and merge (user options take priority).
             // `AIConfig` carries an index signature, so provider-specific keys
@@ -780,27 +763,32 @@ export class SmrtClass {
               requireProvider: false,
               providerKeyEnvFallback: Boolean(aiConfigBlock),
             });
-            if (resolvedAi) {
-              if (resolvedAi.provider) aiConfig.provider = resolvedAi.provider;
-              else delete aiConfig.provider;
-              if (resolvedAi.apiKey) aiConfig.apiKey = resolvedAi.apiKey;
-              else delete aiConfig.apiKey;
-              if (resolvedAi.baseUrl) aiConfig.baseUrl = resolvedAi.baseUrl;
-              else delete aiConfig.baseUrl;
-              if (resolvedAi.model) {
-                aiConfig.model = resolvedAi.model;
-                if (
-                  !(userConfig as Record<string, unknown>).defaultModel ||
-                  resolvedAi.sources.model !== 'explicit'
-                ) {
-                  aiConfig.defaultModel = resolvedAi.model;
-                }
-              }
-            } else {
-              delete aiConfig.provider;
-              delete aiConfig.apiKey;
-              delete aiConfig.baseUrl;
+            // Replace (never merge) the identity/credential fields with the
+            // resolver's bound result, then set both client-facing aliases so
+            // no stale `type` / `defaultModel` reaches getAI().
+            const bound: Record<string, unknown> = {
+              provider: resolvedAi?.provider,
+              apiKey: resolvedAi?.apiKey,
+              baseUrl: resolvedAi?.baseUrl,
+              model: resolvedAi?.model,
+            };
+            for (const key of [
+              'provider',
+              'type',
+              'apiKey',
+              'baseUrl',
+              'model',
+              'defaultModel',
+            ]) {
+              delete (aiConfig as Record<string, unknown>)[key];
             }
+            for (const [key, value] of Object.entries(bound)) {
+              if (value) (aiConfig as Record<string, unknown>)[key] = value;
+            }
+            Object.assign(
+              aiConfig,
+              withAIAliases(aiConfig as Record<string, unknown>),
+            );
 
             const existingOnUsage =
               aiConfig.onUsage ??
