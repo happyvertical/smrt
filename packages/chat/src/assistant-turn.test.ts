@@ -702,6 +702,81 @@ describe('assistant turn', () => {
       });
     });
 
+    it('reports its lifecycle itself, suspension before the event, per leg (#3368)', async () => {
+      const store = createMemoryContinuationStore();
+      const states: string[] = [];
+      const onState = (state: {
+        state: string;
+        originMessageId?: string;
+        resumedFrom: string | null;
+        continuationId?: string;
+      }) => {
+        states.push(
+          `${state.state}:${state.originMessageId}:${state.resumedFrom}:${state.continuationId ?? '-'}`,
+        );
+      };
+      const ai = scriptedAI([
+        calls(['articles_update', { id: 'a1' }, 'w1']),
+        text('Proposed.'),
+      ]);
+      const seenAtEvent: string[][] = [];
+      const first = runAssistantTurn({
+        ai,
+        db,
+        principal: principal(),
+        audit: () => {},
+        userMessage: 'rename it',
+        clientTools: PAGE_TOOLS,
+        continuations: store,
+        continuationKey: 'thread-1',
+        originMessageId: 'send-1',
+        createId: () => 'cont-1',
+        onState,
+      });
+      for await (const event of first) {
+        if (event.type === 'client_tool_calls') seenAtEvent.push([...states]);
+      }
+      expect(seenAtEvent[0]).toEqual([
+        'running:send-1:null:-',
+        'suspended:send-1:null:cont-1',
+      ]);
+      // A bogus continuation is never consumed and reports nothing.
+      await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          resume: { continuationId: 'nope', results: [] },
+          continuations: store,
+          continuationKey: 'thread-1',
+          onState,
+        }),
+      );
+      expect(states).toHaveLength(2);
+      // The resumed leg's origin comes from the continuation, not the options.
+      await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          resume: {
+            continuationId: 'cont-1',
+            results: [{ id: 'w1', ok: true, result: 'ok' }],
+          },
+          originMessageId: 'forged',
+          continuations: store,
+          continuationKey: 'thread-1',
+          onState,
+        }),
+      );
+      expect(states.slice(2)).toEqual([
+        'running:send-1:cont-1:-',
+        'completed:send-1:cont-1:-',
+      ]);
+    });
+
     it('refuses a resume under another key', async () => {
       const store = createMemoryContinuationStore();
       const ai = scriptedAI([

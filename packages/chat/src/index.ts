@@ -66,6 +66,7 @@ export {
   type AssistantTurnErrorLogger,
   type AssistantTurnOptions,
   type AssistantTurnResult,
+  type AssistantTurnState,
   AssistantTurnUserError,
   type AuthoredToolReply,
   type ContinuationSessionLike,

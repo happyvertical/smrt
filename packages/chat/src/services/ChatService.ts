@@ -1506,9 +1506,18 @@ export class ChatService {
   }
 
   /**
-   * Record how the turn answering a client request ended, on the actor's own
-   * user message (`metadata.turnOutcome`, #3368). Only the message's author,
-   * still a member of its room, can record it.
+   * Record where the turn answering a client request stands, on the actor's
+   * own user message (`metadata.turnOutcome`, #3368). Only the message's
+   * author, still a member of its room, can record it.
+   *
+   * Transitions only move forward, per leg, and are compare-and-set on the
+   * row's revision (a concurrent writer re-reads and is re-checked):
+   * `unset → running → suspended(c) → running(resumedFrom c) → … →
+   * completed | cancelled | failed`, plus `unset → suspended | terminal` for
+   * a first leg whose earlier write was lost. A write from a leg that is not
+   * the current one (its `resumedFrom` differs), a `running` that does not
+   * consume the waiting continuation, or anything after a terminal outcome
+   * is refused. Returns whether the write was applied.
    */
   async recordClientRequestOutcome(params: {
     tenantId: string;
@@ -1516,33 +1525,95 @@ export class ChatService {
     messageId: string;
     actorProfileId: string;
     outcome: ChatClientRequestOutcome;
-    /** The continuation a `suspended` turn waits on. */
+    /** The continuation the writing leg consumed; `null` for the first leg. */
+    resumedFrom?: string | null;
+    /** The continuation a `suspended` turn now waits on. */
     continuationId?: string | null;
-  }): Promise<void> {
-    const message = await this.#messages.get({
-      id: params.messageId,
-      threadId: params.threadId,
-      tenantId: params.tenantId,
-    });
-    if (
-      message?.role !== 'user' ||
-      message.senderProfileId !== params.actorProfileId
-    ) {
-      throw new Error('Message not found');
+  }): Promise<boolean> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const message = await this.#messages.get({
+        id: params.messageId,
+        threadId: params.threadId,
+        tenantId: params.tenantId,
+      });
+      if (
+        message?.role !== 'user' ||
+        message.senderProfileId !== params.actorProfileId
+      ) {
+        throw new Error('Message not found');
+      }
+      await this.#requireActiveMembership(
+        message.roomId,
+        params.actorProfileId,
+        params.tenantId,
+      );
+      const metadata = message.getMetadata();
+      if (
+        !ChatService.#outcomeTransitionAllowed(
+          metadata,
+          params.outcome,
+          params.resumedFrom ?? null,
+          params.continuationId ?? null,
+        )
+      ) {
+        return false;
+      }
+      message.setMetadata({
+        ...metadata,
+        turnOutcome: params.outcome,
+        turnSettledAt: new Date().toISOString(),
+        // While running: the leg (continuation it consumed); while
+        // suspended: the continuation it waits on.
+        turnContinuationId:
+          params.outcome === 'suspended'
+            ? (params.continuationId ?? null)
+            : (params.resumedFrom ?? null),
+      });
+      try {
+        await message.save();
+        return true;
+      } catch (error) {
+        if (
+          (error as { code?: unknown })?.code !== 'RUNTIME_REVISION_CONFLICT'
+        ) {
+          throw error;
+        }
+        // Another writer moved it first: re-read and re-check.
+      }
     }
-    await this.#requireActiveMembership(
-      message.roomId,
-      params.actorProfileId,
-      params.tenantId,
-    );
-    message.setMetadata({
-      ...message.getMetadata(),
-      turnOutcome: params.outcome,
-      turnSettledAt: new Date().toISOString(),
-      turnContinuationId:
-        params.outcome === 'suspended' ? (params.continuationId ?? null) : null,
-    });
-    await message.save();
+    return false;
+  }
+
+  static #outcomeTransitionAllowed(
+    metadata: Record<string, unknown>,
+    next: ChatClientRequestOutcome,
+    resumedFrom: string | null,
+    continuationId: string | null,
+  ): boolean {
+    const current =
+      typeof metadata.turnOutcome === 'string' ? metadata.turnOutcome : null;
+    const recordedId =
+      typeof metadata.turnContinuationId === 'string'
+        ? metadata.turnContinuationId
+        : null;
+    if (
+      current === 'completed' ||
+      current === 'cancelled' ||
+      current === 'failed'
+    ) {
+      return false;
+    }
+    if (next === 'running') {
+      // A first leg starts from nothing; a resumed leg consumes exactly the
+      // continuation the send is waiting on.
+      return resumedFrom === null
+        ? current === null
+        : current === 'suspended' && recordedId === resumedFrom;
+    }
+    if (next === 'suspended' && !continuationId) return false;
+    // suspended or terminal: written by the leg that is running now.
+    if (current === 'running') return recordedId === resumedFrom;
+    return current === null && resumedFrom === null;
   }
 
   /**

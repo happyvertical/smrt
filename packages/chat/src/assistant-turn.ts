@@ -261,11 +261,16 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
    */
   originMessageId?: string;
   /**
-   * Called once a resume has consumed its continuation (before the model
-   * runs), with the continuation. Not called when the continuation is
-   * missing, foreign or expired.
+   * The turn's own lifecycle, reported (and awaited) by the runner at the
+   * moment each fact becomes true, whether or not anyone still reads the
+   * events: `running` when a fresh turn starts or a resume has consumed its
+   * continuation, `suspended` once the continuation is stored (before its
+   * `client_tool_calls` event), and `completed` / `cancelled` / `failed`
+   * when the leg ends (`completed` after the reply is stored). A throw is
+   * logged and never breaks the turn. Not called for a resume whose
+   * continuation is missing, foreign or expired.
    */
-  onResumed?: (continuation: AssistantTurnContinuation) => void;
+  onState?: (state: AssistantTurnState) => void | Promise<void>;
   tools?: ManifestTool[];
   /** Server tools, narrowed to `principal.allowedTools`. */
   extraTools?: PrincipalTool[];
@@ -318,6 +323,19 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
    */
   onError?: AssistantTurnErrorLogger;
   now?: () => number;
+}
+
+/**
+ * One lifecycle fact of a turn leg, for {@link AssistantTurnOptions.onState}.
+ * `resumedFrom` is the continuation this leg consumed (`null` for the first
+ * leg), so a recorder can refuse a write from a leg that is no longer
+ * current. `continuationId` is set for `suspended`.
+ */
+export interface AssistantTurnState {
+  state: 'running' | 'suspended' | 'completed' | 'cancelled' | 'failed';
+  originMessageId?: string;
+  resumedFrom: string | null;
+  continuationId?: string;
 }
 
 /** What {@link runAssistantTurn} returns when its generator completes. */
@@ -416,15 +434,29 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
   };
 
   let result: AssistantTurnResult = { stoppedReason: 'error', content: '' };
+  const leg: TurnLeg = {
+    originMessageId: options.resume ? undefined : options.originMessageId,
+    resumedFrom: null,
+    started: !options.resume,
+  };
+  const report = reporter(options, leg);
 
   const work = (async () => {
     try {
-      result = await runTurn(options, emit, status, serialize, describe);
+      result = await runTurn(options, emit, status, serialize, describe, leg);
     } catch (error) {
       const wire = wireError(error, options.onError ?? defaultLogError);
+      // A resume that never consumed its continuation changes nothing.
+      if (leg.started) await report('failed');
       emit({ type: 'error', ...wire });
       emit(status({ state: 'error', label: wire.error }));
-      result = { stoppedReason: 'error', content: '' };
+      result = {
+        stoppedReason: 'error',
+        content: '',
+        ...(leg.originMessageId
+          ? { originMessageId: leg.originMessageId }
+          : {}),
+      };
     } finally {
       finished = true;
       wake();
@@ -449,14 +481,49 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
   return result;
 }
 
+/** The leg the runner is on: what `onState` reports. */
+interface TurnLeg {
+  originMessageId?: string;
+  resumedFrom: string | null;
+  /** False until a resume has consumed its continuation. */
+  started: boolean;
+}
+
+function reporter<M>(options: AssistantTurnOptions<M>, leg: TurnLeg) {
+  return async (
+    state: AssistantTurnState['state'],
+    continuationId?: string,
+  ): Promise<void> => {
+    if (!options.onState) return;
+    try {
+      await options.onState({
+        state,
+        ...(leg.originMessageId
+          ? { originMessageId: leg.originMessageId }
+          : {}),
+        resumedFrom: leg.resumedFrom,
+        ...(continuationId ? { continuationId } : {}),
+      });
+    } catch (error) {
+      try {
+        (options.onError ?? defaultLogError)(error);
+      } catch {
+        // Logging never breaks the turn.
+      }
+    }
+  };
+}
+
 async function runTurn<M>(
   options: AssistantTurnOptions<M>,
   emit: (event: AssistantTurnEvent<M>) => void,
   status: (value: AssistantStatus) => AssistantTurnEvent<M>,
   serialize: (message: unknown) => M,
   describe: (name: string, args?: Record<string, unknown>) => string,
+  leg: TurnLeg,
 ): Promise<AssistantTurnResult> {
   const { principal, author } = options;
+  const report = reporter(options, leg);
   const now = options.now ?? (() => Date.now());
   const createId =
     options.createId ??
@@ -472,7 +539,7 @@ async function runTurn<M>(
   let initialTokens = 0;
   let startedAt = now();
   let clientTools = options.clientTools ?? [];
-  let originMessageId = options.resume ? undefined : options.originMessageId;
+  let originMessageId = leg.originMessageId;
   if (options.resume) {
     if (!options.continuations || !options.continuationKey) {
       throw new Error('Resuming a turn needs a continuation store and key.');
@@ -488,11 +555,10 @@ async function runTurn<M>(
       );
     }
     originMessageId = continuation.originMessageId;
-    try {
-      options.onResumed?.(continuation);
-    } catch (error) {
-      (options.onError ?? defaultLogError)(error);
-    }
+    leg.originMessageId = originMessageId;
+    leg.resumedFrom = continuation.id;
+    leg.started = true;
+    await report('running');
     messages = appendClientToolResults(
       continuation.messages,
       continuation.pending,
@@ -521,6 +587,7 @@ async function runTurn<M>(
       });
     }
   } else {
+    await report('running');
     const userMessage = options.userMessage?.trim();
     if (!userMessage) {
       throw new AssistantTurnUserError(
@@ -699,6 +766,8 @@ async function runTurn<M>(
       ...(originMessageId ? { originMessageId } : {}),
     };
     await options.continuations.save(options.continuationKey, continuation);
+    // Recorded before the browser can see (and resume) the suspension.
+    await report('suspended', continuation.id);
     emit(
       status({
         state: 'working',
@@ -732,6 +801,7 @@ async function runTurn<M>(
   }
 
   if (loop.stoppedReason === 'cancelled') {
+    await report('cancelled');
     emit({ type: 'done', stoppedReason: 'cancelled' });
     emit(status({ state: 'idle', label: 'Stopped' }));
     return {
@@ -756,6 +826,7 @@ async function runTurn<M>(
     finalMessage = serialize(message);
     emit({ type: 'message', message: finalMessage });
   }
+  await report('completed');
   emit({
     type: 'done',
     ...(finalMessage ? { message: finalMessage } : {}),
