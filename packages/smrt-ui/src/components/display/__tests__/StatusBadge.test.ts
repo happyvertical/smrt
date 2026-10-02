@@ -14,24 +14,38 @@ import StatusBadge from '../StatusBadge.svelte';
 
 describe('StatusBadge', () => {
   it.each([
-    ['success', 'success'],
-    ['warning', 'warning'],
-    ['danger', 'error'],
-    ['info', 'primary'],
-    ['neutral', 'surface-container-highest'],
-  ] as const)('applies %s tone to a custom status', (tone, token) => {
+    [
+      'success',
+      'var(--smrt-color-success-container)',
+      'var(--smrt-color-on-success-container)',
+    ],
+    [
+      'warning',
+      'var(--smrt-color-warning-container)',
+      'var(--smrt-color-on-warning-container)',
+    ],
+    [
+      'danger',
+      'var(--smrt-color-error-container)',
+      'var(--smrt-color-on-error-container)',
+    ],
+    [
+      'info',
+      'var(--smrt-color-primary-container)',
+      'var(--smrt-color-on-primary-container)',
+    ],
+    [
+      'neutral',
+      'var(--smrt-color-surface-container-highest)',
+      'var(--smrt-color-on-surface-variant)',
+    ],
+  ] as const)('applies %s tone to a custom status', (tone, background, foreground) => {
     const { container } = render(StatusBadge, {
       props: { status: 'awaiting_cert', tone },
     });
     const span = container.querySelector('span') as HTMLElement;
-    expect(span.style.getPropertyValue('--badge-bg')).toBe(
-      `var(--smrt-color-${token}${tone === 'neutral' ? '' : '-container'})`,
-    );
-    expect(span.style.getPropertyValue('--badge-text')).toBe(
-      tone === 'neutral'
-        ? 'var(--smrt-color-on-surface-variant)'
-        : `var(--smrt-color-on-${token}-container)`,
-    );
+    expect(span.style.getPropertyValue('--badge-bg')).toBe(background);
+    expect(span.style.getPropertyValue('--badge-text')).toBe(foreground);
     expect(screen.getByText('awaiting cert')).toBeInTheDocument();
   });
 
