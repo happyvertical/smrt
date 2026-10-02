@@ -55,7 +55,11 @@ the manifest path (`CONFIG_TABLE_NAME_COLLISION`). Therefore:
   `@TenantScoped({ mode: 'required' })`) declares a same-named subclass over
   `service_time_entries`; its manifest entry replaces the package's. It cannot
   also install smrt-support's subtype on the same table.
-  `src/__tests__/consumer-closed-surface.test.ts` holds that contract.
+  The same applies to both snapshots;
+  `src/__tests__/consumer-closed-surface.test.ts` holds that contract for all
+  three models. The snapshots' explicit `time_entry_id` conflict key is not
+  rewritten when a consumer requires tenancy; widening it is the consumer's
+  schema change, never a package default.
 
 Subclasses restate their fields: package-isolated manifest scanning does not
 read dependency sources, so an unrestated subclass manifest has no columns.

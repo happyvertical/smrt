@@ -86,22 +86,65 @@ view objects (`TimeEntry`, `TimeEntryApprovalView`).
 
 ## Closing the generated surface
 
-The base entry exposes generated `list` / `get` on REST, CLI, and MCP. An
-application that routes all time through its own permission-gated services
-declares a same-named subclass over the same table and closes it:
+The entry and both snapshots expose generated `list` / `get` on REST, CLI,
+and MCP, with optional tenant scoping. An application that routes all time
+and money through its own permission-gated services declares a same-named
+subclass over each table and closes it:
 
 ```ts
+import {
+  ServiceChargeSnapshot as SharedServiceChargeSnapshot,
+  ServiceCompensationSnapshot as SharedServiceCompensationSnapshot,
+  ServiceTimeEntry as SharedServiceTimeEntry,
+} from '@happyvertical/smrt-timesheets';
+
+const CLOSED = { include: [] };
+
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'service_time_entries',
-  api: { include: [] },
-  cli: { include: [] },
-  mcp: { include: [] },
+  api: CLOSED,
+  cli: CLOSED,
+  mcp: CLOSED,
 })
 export class ServiceTimeEntry extends SharedServiceTimeEntry {
   // restate the fields — see AGENTS.md
 }
+
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'service_charge_snapshots',
+  conflictColumns: ['time_entry_id'],
+  api: CLOSED,
+  cli: CLOSED,
+  mcp: CLOSED,
+})
+export class ServiceChargeSnapshot extends SharedServiceChargeSnapshot {
+  // restate the fields — see AGENTS.md
+}
+
+@TenantScoped({ mode: 'required' })
+@smrt({
+  tableName: 'service_compensation_snapshots',
+  conflictColumns: ['time_entry_id'],
+  api: CLOSED,
+  cli: CLOSED,
+  mcp: CLOSED,
+})
+export class ServiceCompensationSnapshot extends SharedServiceCompensationSnapshot {
+  // restate the fields — see AGENTS.md
+}
 ```
+
+Restate `conflictColumns` exactly as shown unless you mean to change it. The
+snapshots' conflict key is `time_entry_id` alone — one snapshot per entry —
+and, being an explicit key, it is never rewritten to lead with `tenant_id`
+when you require tenancy. That is safe as long as entry ids are unique across
+tenants (they are UUIDs). Widening it to `['tenant_id', 'time_entry_id']` is
+your decision, and it is a schema change for your database (a new unique
+index replacing `service_*_snapshots_time_entry_id_idx`), so it goes through
+`smrt db:migrate` like any other key change; the package default stays
+`['time_entry_id']`.
 
 ## Migrating from smrt-projects / smrt-support
 
