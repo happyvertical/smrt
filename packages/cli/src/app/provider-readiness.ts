@@ -7,9 +7,11 @@
  * provider adapter.
  */
 
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { existsSync, realpathSync } from 'node:fs';
+import { registerHooks } from 'node:module';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /** Provider components with a readiness module setting. */
 export type ReadinessComponent = 'authentication' | 'assets' | 'secrets';
@@ -62,18 +64,60 @@ function packageNameOf(specifier: string): string {
   return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
 }
 
+/** Evaluated by Node itself; exposes `import.meta.resolve` to the hook. */
+const RESOLVER_MODULE =
+  'data:text/javascript,export default (s) => import.meta.resolve(s)';
+
+/**
+ * Resolve a bare specifier exactly as an ES module located at `sourceRoot`
+ * would, using Node's own ESM resolver (exports/imports maps, condition
+ * order, PATTERN_KEY_COMPARE, null targets, invalid-target rejection).
+ *
+ * Node 26 still flags `import.meta.resolve(specifier, parent)`, so a
+ * synchronous `module.registerHooks()` resolve hook re-parents one unique
+ * token onto the application's `package.json` and delegates to the default
+ * resolver; the hook is removed before this returns.
+ */
+async function resolveFromApplication(
+  specifier: string,
+  sourceRoot: string,
+): Promise<string> {
+  const parentURL = pathToFileURL(
+    join(resolve(sourceRoot), 'package.json'),
+  ).href;
+  const token = `smrt-app-readiness-${randomUUID()}`;
+  const hooks = registerHooks({
+    resolve(requested, context, nextResolve) {
+      return requested === token
+        ? nextResolve(specifier, { ...context, parentURL })
+        : nextResolve(requested, context);
+    },
+  });
+  try {
+    // A data: module is evaluated by Node itself, so its import.meta.resolve
+    // runs through the hook (and not through a test runner's resolver).
+    const resolver = (await import(/* @vite-ignore */ RESOLVER_MODULE)) as {
+      default: (value: string) => string;
+    };
+    return resolver.default(token);
+  } finally {
+    hooks.deregister();
+  }
+}
+
 /**
  * Resolve a readiness module specifier the way the application would.
  *
  * URLs (`data:`, `file:`) are imported as given; absolute paths become file
  * URLs; relative paths resolve against the application root; bare package
- * specifiers resolve through the application's own `node_modules` with ESM
- * import conditions (as the template's in-app `import()` did).
+ * specifiers resolve through Node's ESM resolver from the application root
+ * (as the template's in-app `import()` did) and must land inside the
+ * package installed in the application's own `node_modules` chain.
  */
-export function resolveReadinessModule(
+export async function resolveReadinessModule(
   specifier: string,
   sourceRoot: string,
-): string {
+): Promise<string> {
   if (/^[a-z][a-z0-9+.-]*:/i.test(specifier) && !isAbsolute(specifier)) {
     return specifier;
   }
@@ -81,134 +125,22 @@ export function resolveReadinessModule(
   if (specifier.startsWith('./') || specifier.startsWith('../')) {
     return pathToFileURL(resolve(sourceRoot, specifier)).href;
   }
-  const packageName = packageNameOf(specifier);
-  const installed = findInstalledPackage(sourceRoot, packageName);
+  const installed = findInstalledPackage(sourceRoot, packageNameOf(specifier));
   if (!installed) {
     throw new Error(`${specifier} is not installed in the application.`);
   }
-  return pathToFileURL(
-    resolvePackageEntry(
-      realpathSync(installed),
-      `.${specifier.slice(packageName.length)}`,
-    ),
-  ).href;
-}
-
-/** Conditions Node's ESM loader matches for `import()` (in priority order of the map). */
-const IMPORT_CONDITIONS = new Set(['node', 'import', 'module-sync', 'default']);
-
-function notExported(packageRoot: string, subpath: string): Error {
-  return Object.assign(
-    new Error(
-      `Package subpath '${subpath}' is not exported for import by ${join(packageRoot, 'package.json')}.`,
-    ),
-    { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' },
-  );
-}
-
-function resolveExportTarget(
-  packageRoot: string,
-  target: unknown,
-  patternMatch: string | null,
-): string | null {
-  if (typeof target === 'string') {
-    if (!target.startsWith('./')) return null;
-    const substituted =
-      patternMatch === null ? target : target.replaceAll('*', patternMatch);
-    const resolved = resolve(packageRoot, substituted);
-    // A target (or pattern substitution) may never leave the package.
-    if (
-      resolved !== packageRoot &&
-      !resolved.startsWith(`${packageRoot}/`) &&
-      !resolved.startsWith(`${packageRoot}\\`)
-    ) {
-      return null;
-    }
-    return resolved;
-  }
-  if (Array.isArray(target)) {
-    for (const candidate of target) {
-      const resolved = resolveExportTarget(
-        packageRoot,
-        candidate,
-        patternMatch,
-      );
-      if (resolved) return resolved;
-    }
-    return null;
-  }
-  if (target && typeof target === 'object') {
-    for (const [condition, value] of Object.entries(target)) {
-      if (!IMPORT_CONDITIONS.has(condition)) continue;
-      const resolved = resolveExportTarget(packageRoot, value, patternMatch);
-      if (resolved) return resolved;
-    }
-  }
-  return null;
-}
-
-/**
- * Resolve `subpath` (`.` or `./x`) of an installed package the way Node's ESM
- * loader does for `import()`: `exports` with the `node`/`import`/`default`
- * conditions (including `*` subpath patterns), else `main`/`index.js`.
- * `require` resolution is wrong here: it rejects import-only packages.
- */
-export function resolvePackageEntry(
-  packageRoot: string,
-  subpath: string,
-): string {
-  const metadata = JSON.parse(
-    readFileSync(join(packageRoot, 'package.json'), 'utf8'),
-  ) as { exports?: unknown; main?: unknown };
-  const { exports } = metadata;
-  if (exports === undefined || exports === null) {
-    if (subpath === '.') {
-      return resolve(
-        packageRoot,
-        typeof metadata.main === 'string' ? metadata.main : 'index.js',
-      );
-    }
-    return resolve(packageRoot, subpath);
-  }
-  const map =
-    typeof exports === 'string' ||
-    Array.isArray(exports) ||
-    (typeof exports === 'object' &&
-      !Object.keys(exports as object).some((key) => key.startsWith('.')))
-      ? { '.': exports }
-      : (exports as Record<string, unknown>);
-  if (Object.hasOwn(map, subpath)) {
-    const resolved = resolveExportTarget(packageRoot, map[subpath], null);
-    if (resolved) return resolved;
-    throw notExported(packageRoot, subpath);
-  }
-  let best: { key: string; match: string } | null = null;
-  for (const key of Object.keys(map)) {
-    const star = key.indexOf('*');
-    if (star === -1 || key.indexOf('*', star + 1) !== -1) continue;
-    const prefix = key.slice(0, star);
-    const suffix = key.slice(star + 1);
-    if (
-      subpath.length >= key.length &&
-      subpath.startsWith(prefix) &&
-      subpath.endsWith(suffix) &&
-      (!best || prefix.length > best.key.indexOf('*'))
-    ) {
-      best = {
-        key,
-        match: subpath.slice(prefix.length, subpath.length - suffix.length),
-      };
-    }
-  }
-  if (best) {
-    const resolved = resolveExportTarget(
-      packageRoot,
-      map[best.key],
-      best.match,
+  const packageRoot = realpathSync(installed);
+  const resolvedUrl = await resolveFromApplication(specifier, sourceRoot);
+  const resolvedPath = realpathSync(fileURLToPath(resolvedUrl));
+  if (
+    resolvedPath !== packageRoot &&
+    !resolvedPath.startsWith(`${packageRoot}${sep}`)
+  ) {
+    throw new Error(
+      `${specifier} resolved outside its installed package; refusing to load it.`,
     );
-    if (resolved) return resolved;
   }
-  throw notExported(packageRoot, subpath);
+  return pathToFileURL(resolvedPath).href;
 }
 
 /**
@@ -231,7 +163,10 @@ export function createProviderReadinessProbe(
       );
     }
     const module = (await import(
-      resolveReadinessModule(specifier, options.sourceRoot ?? process.cwd())
+      await resolveReadinessModule(
+        specifier,
+        options.sourceRoot ?? process.cwd(),
+      )
     )) as { checkReadiness?: unknown; default?: unknown };
     const probe = module.checkReadiness || module.default;
     if (typeof probe !== 'function') {

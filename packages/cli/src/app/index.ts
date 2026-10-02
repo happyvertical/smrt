@@ -118,7 +118,6 @@ export {
   type ProviderReadinessOptions,
   type ReadinessComponent,
   type ReadinessContext,
-  resolvePackageEntry,
   resolveReadinessModule,
 } from './provider-readiness.js';
 export {
