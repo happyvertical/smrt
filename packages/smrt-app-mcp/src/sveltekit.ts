@@ -36,7 +36,7 @@ import {
   type CreateDefaultMcpAppServerOptions,
   createDefaultMcpAppServer,
 } from './defaults.js';
-import { McpAccessError } from './errors.js';
+import { MCP_ORIGIN_DENIED_CODE, McpAccessError } from './errors.js';
 import {
   createMcpProtocolServerForRequest,
   MCP_TASKS_EXTENSION,
@@ -136,6 +136,84 @@ function currentResourceAuth(
   return value ?? null;
 }
 
+/** Parse an origin to its canonical `scheme://host[:port]`, or `undefined`. */
+function canonicalOrigin(value: string): string | undefined {
+  if (value === 'null') return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+  if (url.username || url.password || url.search || url.hash) return undefined;
+  if (url.pathname !== '/') return undefined;
+  return url.origin;
+}
+
+function normalizeTrustedOrigins(
+  values: readonly string[],
+): ReadonlySet<string> {
+  if (!Array.isArray(values)) {
+    throw new TypeError('MCP trustedOrigins must be an array of origins.');
+  }
+  const origins = new Set<string>();
+  for (const value of values) {
+    const origin =
+      typeof value === 'string' ? canonicalOrigin(value) : undefined;
+    if (!origin) throw new TypeError('Invalid MCP trusted origin.');
+    origins.add(origin);
+  }
+  return origins;
+}
+
+/**
+ * Same-origin is judged against `event.url`, which SvelteKit derives from the
+ * adapter's configured origin (for example adapter-node `ORIGIN`, or its
+ * `PROTOCOL_HEADER`/`HOST_HEADER` proxy settings). This package does not read
+ * `X-Forwarded-*` itself.
+ */
+function originPermitted(
+  event: SvelteKitRequestEvent,
+  trusted: ReadonlySet<string>,
+): boolean {
+  const header = event.request.headers.get('origin');
+  if (header !== null) {
+    const origin = canonicalOrigin(header.trim());
+    return (
+      origin !== undefined &&
+      (origin === event.url.origin || trusted.has(origin))
+    );
+  }
+  // No Origin: a non-browser client, unless fetch metadata says otherwise.
+  const site = event.request.headers
+    .get('sec-fetch-site')
+    ?.trim()
+    .toLowerCase();
+  return site !== 'cross-site' && site !== 'same-site';
+}
+
+function originDeniedResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32600,
+        message: 'MCP request origin is not permitted.',
+        data: { code: MCP_ORIGIN_DENIED_CODE, retryable: false },
+      },
+    }),
+    {
+      status: 403,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+      },
+    },
+  );
+}
+
 /**
  * Project the session hook's request-local result onto an MCP principal.
  *
@@ -172,6 +250,25 @@ export function principalFromSessionLocals(event: {
 
 /** Options shared by both route mounts. */
 export interface MountMcpRouteOptions {
+  /**
+   * Refuse a modern-endpoint request whose `Origin` header is present but is
+   * neither the request URL's own origin nor in `trustedOrigins` (and, when
+   * `Origin` is absent, one whose `Sec-Fetch-Site` is `cross-site` or
+   * `same-site`). The check runs before bearer authentication, principal
+   * resolution and any task or tool dispatch, and answers 403 with the safe
+   * `mcp_origin_denied` JSON-RPC error. Requests without browser origin
+   * signals (server-side MCP clients, the `smrt-app-cli` stdio bridge) are
+   * unaffected. Off unless set for `mountMcpRoute`; on by default for
+   * `mountMcpAppRoute`. Ignored by the deprecated REST-shaped mounts.
+   */
+  checkOrigin?: boolean;
+  /**
+   * Additional exact origins (`scheme://host[:port]`) accepted by the origin
+   * check, e.g. a browser-hosted MCP client, or the public origin when a
+   * proxy makes `event.url` differ from what browsers send. `null`, wildcards,
+   * paths and credentials are rejected at mount time.
+   */
+  trustedOrigins?: readonly string[];
   /**
    * Optional bearer authentication for the modern `mountMcpRoute` endpoint.
    * When the source yields an adapter, every request must carry a valid
@@ -227,7 +324,15 @@ export function mountMcpRoute(
   server: McpAppServer,
   options: MountMcpRouteOptions = {},
 ): McpSvelteKitHandler {
+  const trustedOrigins = options.checkOrigin
+    ? normalizeTrustedOrigins(options.trustedOrigins ?? [])
+    : undefined;
   return async (event) => {
+    // Ambient browser credentials (session cookies) must not let another
+    // origin drive this endpoint; refuse before any identity or dispatch work.
+    if (trustedOrigins && !originPermitted(event, trustedOrigins)) {
+      return originDeniedResponse();
+    }
     let resolved: ResolvedRequestPrincipal;
     const auth = currentResourceAuth(options.auth);
     if (auth) {
@@ -269,7 +374,10 @@ export function mountMcpRoute(
 /** Options for {@link mountMcpAppRoute}. */
 export interface MountMcpAppRouteOptions
   extends CreateDefaultMcpAppServerOptions,
-    Pick<MountMcpRouteOptions, 'auth' | 'extensions'> {
+    Pick<
+      MountMcpRouteOptions,
+      'auth' | 'extensions' | 'checkOrigin' | 'trustedOrigins'
+    > {
   /**
    * Resolve the request principal when no bearer adapter is active. Defaults
    * to {@link principalFromSessionLocals}.
@@ -286,7 +394,10 @@ export type McpAppSvelteKitHandler = McpSvelteKitHandler & {
  * One-call application MCP endpoint: the app's declared `models`, the default
  * principal scope policy (see `createDefaultMcpAppServer`), principals from
  * the SvelteKit session locals, and optional bearer authentication, mounted
- * as the stateless {@link mountMcpRoute} `POST` endpoint.
+ * as the stateless {@link mountMcpRoute} `POST` endpoint. The origin check
+ * (`checkOrigin`) is on by default because the default principal is an
+ * ambient session cookie; set `trustedOrigins` for extra browser origins or
+ * `checkOrigin: false` to opt out.
  *
  * @example
  * ```ts
@@ -305,11 +416,21 @@ export type McpAppSvelteKitHandler = McpSvelteKitHandler & {
 export function mountMcpAppRoute(
   options: MountMcpAppRouteOptions,
 ): McpAppSvelteKitHandler {
-  const { auth, extensions, resolvePrincipal, ...serverOptions } = options;
+  const {
+    auth,
+    extensions,
+    resolvePrincipal,
+    checkOrigin,
+    trustedOrigins,
+    ...serverOptions
+  } = options;
   const server = createDefaultMcpAppServer(serverOptions);
   const handler = mountMcpRoute(server, {
     auth,
     extensions,
+    // Default on: the default principal is an ambient session cookie.
+    checkOrigin: checkOrigin ?? true,
+    trustedOrigins,
     resolvePrincipal: resolvePrincipal ?? principalFromSessionLocals,
   });
   return Object.defineProperty(handler, 'server', {

@@ -37,6 +37,7 @@ export {
   mcpPrincipalScopePolicy,
 } from './defaults.js';
 export {
+  MCP_ORIGIN_DENIED_CODE,
   MCP_TOOL_ACCESS_DENIED_CODE,
   McpAccessError,
   type McpAccessErrorMetadata,

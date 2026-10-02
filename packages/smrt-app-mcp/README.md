@@ -52,6 +52,25 @@ export const POST = mountMcpAppRoute({
   `server` property exposes the policy core. The same defaults are available
   without SvelteKit as `createDefaultMcpAppServer` from the root entry.
 
+- **Origin check** — on by default (`checkOrigin`). Before bearer
+  authentication, principal resolution or any dispatch, a request whose
+  `Origin` is present but is not the request URL's own origin (exact scheme,
+  host and port) or one of `trustedOrigins` — including `Origin: null` and
+  sibling subdomains — gets HTTP 403 with the JSON-RPC error data
+  `{ code: 'mcp_origin_denied', retryable: false }`, naming no origins. With
+  no `Origin`, a `Sec-Fetch-Site` of `cross-site`/`same-site` is also
+  refused. Clients that send no browser origin signals (server-side MCP
+  clients, the `smrt-app-cli` bridge) are unaffected; a browser-hosted MCP
+  client must be listed in `trustedOrigins`. Bearer requests are checked too:
+  the token is not ambient authority, but the MCP Streamable HTTP transport
+  requires origin validation and server-side remote clients send no `Origin`.
+  "Own origin" is `event.url`, so behind a rewriting proxy configure the
+  SvelteKit adapter's origin (adapter-node `ORIGIN`, or its
+  `PROTOCOL_HEADER`/`HOST_HEADER`) or add the public origin to
+  `trustedOrigins`; this package never reads `X-Forwarded-*`.
+  `checkOrigin: false` opts out. `mountMcpRoute` accepts the same options,
+  off unless set.
+
 Bearer authentication for hosted profiles is an `auth` option on both
 `mountMcpRoute` and `mountMcpAppRoute`. When its source yields an adapter,
 every request must carry a valid bearer token and the adapter's principal
