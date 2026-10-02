@@ -24,6 +24,7 @@ function entry(
   return {
     name: 'overriderecord',
     className: 'OverrideRecord',
+    collection: 'override_records',
     packageName: pkg,
     extends: parent,
     filePath: `${pkg}/model.ts`,
@@ -43,7 +44,7 @@ function entry(
       indexes: [],
       version: 'test',
     },
-  } as SmartObjectDefinition;
+  };
 }
 afterEach(() => ObjectRegistry.clear());
 
@@ -335,6 +336,9 @@ describe('N-level same-table subtype replacement', () => {
         name: 'childAction',
         parameters: [],
         returnType: 'void',
+        async: false,
+        isStatic: false,
+        isPublic: true,
       };
       definition.schema!.columns.child_value = { type: 'TEXT' };
       definition.schema!.version = 'child-schema';
