@@ -62,15 +62,20 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
 - **Process identity**: `app.pid` is trusted only when the live command
   line's last two tokens are a path with basename `smrt-web.mjs` and exactly
   `--smrt-instance=<record instance>` (the template's `scripts/smrt-web.mjs`
-  still matches); `stop` re-reads it immediately before SIGTERM. A `start`
+  still matches); `stop` re-reads it immediately before SIGTERM
+  (`checkOwnedProcess`: only `gone`/`mismatched` drop `app.pid`; an
+  `unverifiable` query keeps it, sends nothing, and fails naming the pid). A `start`
   whose launcher never proves readiness is sent SIGTERM, then SIGKILL; only a
   confirmed exit removes `app.pid`, otherwise the record stays and the error
   names the pid.
 - **Application resolution**: Vite and bare readiness-module specifiers
-  resolve from the app's own `node_modules` chain (never `NODE_PATH`), and
-  readiness `exports` with ESM conditions (`node`/`import`/`module-sync`/
-  `default`, `*` patterns), so import-only packages load; relative readiness
-  specifiers resolve against the app root.
+  resolve from the app's own `node_modules` chain (never `NODE_PATH`).
+  Readiness specifiers go through Node's own ESM resolver re-parented to the
+  app root (a temporary `module.registerHooks` resolve hook, because the
+  `import.meta.resolve` parent argument is still flagged), so `exports`
+  precedence, condition order, `null` targets, and invalid targets follow
+  Node exactly; the result must stay inside the installed package. Relative
+  readiness specifiers resolve against the app root.
 - **Import recovery**: after the database commit the asset journal gains an
   additive `committedAt`. A leftover journal with matching table counts is
   accepted as complete only with that marker for the same bundle digest, or
