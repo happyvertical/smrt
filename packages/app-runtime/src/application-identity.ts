@@ -65,6 +65,16 @@ function databaseTargetIdentity(value: string | undefined): string | null {
 }
 
 /**
+ * Runtime selection the fingerprint covers. Structural so operator tooling
+ * can fingerprint a resolved runtime it loaded itself; a
+ * {@link ResolvedApplicationRuntime} always satisfies it.
+ */
+export interface FingerprintRuntime {
+  readonly profile: string;
+  readonly providers: unknown;
+}
+
+/**
  * Secret-safe identity used to reject stale managed processes after profile,
  * provider, database-target, or listener configuration changes.
  *
@@ -73,7 +83,7 @@ function databaseTargetIdentity(value: string | undefined): string | null {
  * process manager and the web process can compare it.
  */
 export function runtimeConfigurationFingerprint(
-  runtime: Pick<ResolvedApplicationRuntime, 'profile' | 'providers'>,
+  runtime: FingerprintRuntime,
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
   return createHash('sha256')

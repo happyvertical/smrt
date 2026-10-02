@@ -18,10 +18,13 @@ template's scripts so an app's `package.json` scripts become one-liners.
 ## Source
 
 `src/app/`: `cli.ts` (dispatch, help, error envelope), `operations.ts`,
-`launchers.ts` (migrate/worker/vite), `identity.ts`, `operation-lock.ts`,
-`writer-lease.ts`, `process-record.ts`, `provider-readiness.ts`,
-`portability.ts`, `portability-assets.ts`, `runtime.ts` (context, runners,
-profile-aware child environment). `main()` dispatches `app` before manifest or
+`launchers.ts` (migrate/worker/vite), `identity.ts` (artifact-path custody;
+re-exports identity and state root), `process-record.ts`, `portability.ts`,
+`portability-assets.ts`, `runtime.ts` (context, runners, profile-aware child
+environment). Application ID, configuration fingerprint, state root,
+operation lock, writer lease, stale reclaim, and provider readiness are
+`@happyvertical/smrt-app-runtime`'s (the web process takes the same lease
+without depending on the CLI); `./app` re-exports them unchanged. `main()` dispatches `app` before manifest or
 config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
 `smrt app worker`.
 
@@ -38,7 +41,7 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   records are removed only under an exclusive SQLite transaction on
   `<state>/.smrt-lock-reclaim.sqlite` (kernel lock, released on death), after
   re-reading that the file still holds the exact dead record
-  (`stale-reclaim.ts`); a contender waits up to 2 s, then fails. Acquisition
+  (app-runtime `stale-reclaim.ts`); a contender waits up to 2 s, then fails. Acquisition
   is still a plain `O_EXCL` create, so formats are unchanged.
 - **Storage custody** belongs to `@happyvertical/smrt-app-runtime`: `setup`
   goes through `initializeLocalApplicationRuntime` with an explicit
@@ -85,4 +88,6 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   the built-in export/import adapter (the documented extension point).
 
 Tests: `src/app/__tests__/` (primitives, operations in-process, real CLI
-process, and the template's portability-asset suite ported verbatim).
+process, and the template's portability-asset suite ported verbatim); lock,
+lease, state-custody, and readiness cases (including review findings R1, R3,
+T2) live in app-runtime's `src/operator-primitives.test.ts`.

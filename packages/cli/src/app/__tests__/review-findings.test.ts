@@ -1,5 +1,7 @@
 /**
- * Independent-review findings R1, R3–R6 on the `smrt app` port (#3371).
+ * Independent-review findings R4–R6 on the `smrt app` port (#3371); R1 and
+ * R3 moved with the lock/lease/readiness code to
+ * `@happyvertical/smrt-app-runtime` (`src/operator-primitives.test.ts`).
  * Each case reproduces the reported interleaving or input deterministically.
  */
 
@@ -19,19 +21,20 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  acquireWriterLease,
+  createProviderReadinessProbe,
+  withOperationLock,
+} from '@happyvertical/smrt-app-runtime';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAppCommand } from '../cli.js';
 import { resolveApplicationStateRoot } from '../identity.js';
-import { withOperationLock } from '../operation-lock.js';
 import { exportApplication, importApplication } from '../portability.js';
 import { matchesApplicationProcess } from '../process-record.js';
-import { createProviderReadinessProbe } from '../provider-readiness.js';
-import { acquireWriterLease } from '../writer-lease.js';
 
 const fsHooks = vi.hoisted(() => ({
-  beforeRm: undefined as undefined | ((path: string) => void),
   keepImportJournal: false,
 }));
 
@@ -39,7 +42,6 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   const rmSync: typeof actual.rmSync = (path, options) => {
     if (typeof path === 'string') {
-      fsHooks.beforeRm?.(path);
       // Simulate a crash after the import transaction committed but before
       // the asset journal was removed.
       if (fsHooks.keepImportJournal && path.includes('.smrt-asset-import-')) {
@@ -63,7 +65,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fsHooks.beforeRm = undefined;
   fsHooks.keepImportJournal = false;
   for (const key of ENV_KEYS) {
     if (savedEnv[key] === undefined) delete process.env[key];
@@ -88,116 +89,6 @@ function temporary(label: string): string {
   roots.push(directory);
   return directory;
 }
-
-describe('R1: stale reclamation never removes a live lock', () => {
-  it('operation lock: a reclaimer paused before unlink cannot remove the next owner', async () => {
-    const directory = temporary('r1-lock');
-    const path = join(directory, 'operation.lock');
-    writeFileSync(
-      path,
-      `${JSON.stringify({ schemaVersion: 1, pid: DEAD_PID, operation: 'setup', instance: STALE_INSTANCE })}\n`,
-    );
-    let firstOwnerRecord: string | null = null;
-    let firstOwnerHolds = false;
-    let releaseFirst: () => void = () => {};
-    let firstOwner: Promise<unknown> | undefined;
-    // Process B has judged the lock stale and is about to unlink it; process
-    // A reclaims and acquires it first.
-    fsHooks.beforeRm = (target) => {
-      if (target !== path || firstOwner) return;
-      fsHooks.beforeRm = undefined;
-      firstOwner = withOperationLock(directory, 'first', () => {
-        firstOwnerHolds = true;
-        firstOwnerRecord = readFileSync(path, 'utf8');
-        return new Promise<void>((resolve) => {
-          releaseFirst = resolve;
-        });
-      }).catch(() => undefined);
-    };
-    let bothHeld = false;
-    let firstRecordSurvived = true;
-    const second = withOperationLock(directory, 'second', async () => {
-      bothHeld = firstOwnerHolds;
-      if (firstOwnerRecord !== null) {
-        firstRecordSurvived = readFileSync(path, 'utf8') === firstOwnerRecord;
-      }
-    }).catch((error: Error) => error);
-    await second;
-    releaseFirst();
-    await firstOwner;
-    expect(bothHeld).toBe(false);
-    expect(firstRecordSurvived).toBe(true);
-  }, 30_000);
-
-  it('writer lease: a reclaimer paused before unlink cannot remove the next writer', () => {
-    const directory = temporary('r1-lease');
-    const path = join(directory, 'writer.lease');
-    writeFileSync(
-      path,
-      `${JSON.stringify({ schemaVersion: 1, pid: DEAD_PID, instance: STALE_INSTANCE })}\n`,
-    );
-    let firstRecord: string | null = null;
-    fsHooks.beforeRm = (target) => {
-      if (target !== path) return;
-      fsHooks.beforeRm = undefined;
-      try {
-        acquireWriterLease(directory);
-        firstRecord = readFileSync(path, 'utf8');
-      } catch {
-        // Refused while another process reclaims: the safe outcome.
-      }
-    };
-    let secondAcquired = false;
-    try {
-      acquireWriterLease(directory);
-      secondAcquired = true;
-    } catch {
-      // Refused because the first writer is live: the safe outcome.
-    }
-    if (firstRecord !== null && secondAcquired) {
-      // Both "acquired": only acceptable if the first writer's lease file
-      // was never removed (same-process re-entrancy returns a no-op lease).
-      expect(readFileSync(path, 'utf8')).toBe(firstRecord);
-    }
-    expect(firstRecord !== null || secondAcquired).toBe(true);
-  }, 30_000);
-});
-
-describe('R3: readiness modules resolve with ESM import conditions', () => {
-  it('loads an import-only package from the application', async () => {
-    const sourceRoot = temporary('r3');
-    writeFileSync(join(sourceRoot, 'package.json'), '{"name":"app"}');
-    const moduleRoot = join(sourceRoot, 'node_modules', '@acme', 'ready');
-    mkdirSync(join(moduleRoot, 'esm'), { recursive: true });
-    writeFileSync(
-      join(moduleRoot, 'package.json'),
-      JSON.stringify({
-        name: '@acme/ready',
-        type: 'module',
-        exports: {
-          '.': { import: './esm/index.js' },
-          './probe': { import: './esm/index.js' },
-        },
-      }),
-    );
-    writeFileSync(
-      join(moduleRoot, 'esm', 'index.js'),
-      'export const checkReadiness = () => ({ ready: true });\n',
-    );
-    for (const specifier of ['@acme/ready', '@acme/ready/probe']) {
-      await expect(
-        createProviderReadinessProbe(
-          'secrets',
-          { profile: 'cloud', provider: 'vault' },
-          {
-            sourceRoot,
-            environment: { SMRT_SECRETS_READINESS_MODULE: specifier },
-          },
-        )(),
-      ).resolves.toBeUndefined();
-    }
-  });
-});
 
 describe('R4: a failed start never orphans a live writer', () => {
   it('confirms the child exited (or keeps its record) when it ignores SIGTERM', async () => {

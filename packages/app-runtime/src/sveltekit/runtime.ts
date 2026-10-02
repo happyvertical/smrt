@@ -69,6 +69,7 @@ import {
   type RuntimeDiagnostics,
   type RuntimeDiagnosticsProjectionInput,
 } from '../runtime-diagnostics.js';
+import type { WriterLease } from '../writer-lease.js';
 import {
   createSubdomainTenantSelector,
   normalizeTenantSelection,
@@ -109,10 +110,11 @@ export interface WriterLeaseContext {
   readonly sourceRoot: string;
 }
 
-/** Held for the life of the local web process; released on failed startup. */
-export interface WriterLease {
-  release(): void;
-}
+/**
+ * Held for the life of the local web process; released on failed startup.
+ * The root entry's `acquireWriterLease()` returns one.
+ */
+export type { WriterLease } from '../writer-lease.js';
 
 /** Inputs to the public diagnostics projection that only the app can supply. */
 export interface ApplicationRuntimeDiagnosticsOptions {

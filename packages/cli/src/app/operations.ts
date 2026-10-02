@@ -22,6 +22,12 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  acquireWriterLease,
+  createProviderReadinessProbe,
+  type OperationLock,
+  withOperationLock,
+} from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
 import { errorCode } from './errors.js';
 import {
@@ -29,7 +35,6 @@ import {
   resolveApplicationStateRoot,
   runtimeConfigurationFingerprint,
 } from './identity.js';
-import { type OperationLock, withOperationLock } from './operation-lock.js';
 import type {
   ExportResult,
   ImportResult,
@@ -41,14 +46,12 @@ import {
   sendTerminationSignal,
   writeProcessRecord,
 } from './process-record.js';
-import { createProviderReadinessProbe } from './provider-readiness.js';
 import {
   type AppContext,
   preparedStateRoot,
   runtimeEnvironment,
   webLauncherPath,
 } from './runtime.js';
-import { acquireWriterLease } from './writer-lease.js';
 
 /** Operations implemented by this module. */
 export const APP_OPERATIONS = [

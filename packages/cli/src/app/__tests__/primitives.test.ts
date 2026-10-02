@@ -1,8 +1,10 @@
 /**
- * Lock, lease, identity, process-record, readiness, redaction, and import-plan
+ * Identity, artifact-path, process-record, redaction, and import-plan
  * primitives behind `smrt app` (#3371). The first cases are ported from
  * packages/template-sveltekit/__tests__/runtimeOperations.test.ts; the rest
- * cover the failure modes the template never exercised.
+ * cover the failure modes the template never exercised. Operation-lock,
+ * writer-lease, state-custody, and readiness cases live with their
+ * implementation in `@happyvertical/smrt-app-runtime`.
  */
 
 import { spawn } from 'node:child_process';
@@ -20,6 +22,13 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as appRuntime from '@happyvertical/smrt-app-runtime';
+import {
+  acquireWriterLease,
+  createProviderReadinessProbe,
+  readActiveWriterLease,
+  withOperationLock,
+} from '@happyvertical/smrt-app-runtime';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { errorEnvelope } from '../cli.js';
@@ -31,7 +40,6 @@ import {
   resolveApplicationStateRoot,
   runtimeConfigurationFingerprint,
 } from '../identity.js';
-import { withOperationLock } from '../operation-lock.js';
 import {
   executeImportPlan,
   planImportTables,
@@ -44,8 +52,6 @@ import {
   sendTerminationSignal,
   writeProcessRecord,
 } from '../process-record.js';
-import { createProviderReadinessProbe } from '../provider-readiness.js';
-import { acquireWriterLease, readActiveWriterLease } from '../writer-lease.js';
 
 const DEAD_PID = 2_147_483_647;
 const INSTANCE = '0123456789abcdef0123456789abcdef';
@@ -63,173 +69,6 @@ afterEach(() => {
   for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
-});
-
-describe('operation lock', () => {
-  it('serializes application operations with one exclusive lock', async () => {
-    const directory = temporary('operation');
-    let release = () => {};
-    const held = withOperationLock(directory, 'first', async () => {
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
-    });
-    await expect(
-      withOperationLock(directory, 'second', async () => {}),
-    ).rejects.toThrow('Another application operation is active');
-    release();
-    await held;
-    await expect(
-      withOperationLock(directory, 'third', async () => 'done'),
-    ).resolves.toBe('done');
-    expect(existsSync(join(directory, 'operation.lock'))).toBe(false);
-  });
-
-  it('reclaims a lock whose owner process is gone', async () => {
-    const directory = temporary('stale-lock');
-    writeFileSync(
-      join(directory, 'operation.lock'),
-      `${JSON.stringify({ schemaVersion: 1, pid: DEAD_PID, operation: 'setup', instance: INSTANCE })}\n`,
-    );
-    await expect(
-      withOperationLock(directory, 'setup', async (lock) => {
-        const record = JSON.parse(readFileSync(lock.path, 'utf8'));
-        expect(record).toMatchObject({ pid: process.pid, operation: 'setup' });
-        expect(statSync(lock.path).mode & 0o777).toBe(0o600);
-        return 'reclaimed';
-      }),
-    ).resolves.toBe('reclaimed');
-  });
-
-  it('fails closed on a malformed lock and leaves it for inspection', async () => {
-    const directory = temporary('malformed-lock');
-    writeFileSync(join(directory, 'operation.lock'), '{"pid":');
-    await expect(
-      withOperationLock(directory, 'setup', async () => {}),
-    ).rejects.toThrow('cannot be verified');
-    expect(existsSync(join(directory, 'operation.lock'))).toBe(true);
-  });
-
-  it('does not unlink a lock an operator replaced during the operation', async () => {
-    const directory = temporary('repaired-lock');
-    const replacement = `${JSON.stringify({ schemaVersion: 1, pid: process.pid, operation: 'other', instance: INSTANCE })}\n`;
-    await withOperationLock(directory, 'setup', async (lock) => {
-      rmSync(lock.path);
-      writeFileSync(lock.path, replacement);
-    });
-    expect(readFileSync(join(directory, 'operation.lock'), 'utf8')).toBe(
-      replacement,
-    );
-  });
-
-  it('elects exactly one winner among concurrent processes', async () => {
-    const directory = temporary('race');
-    const moduleUrl = new URL('../operation-lock.ts', import.meta.url).href;
-    const script = `
-      const { withOperationLock } = await import(${JSON.stringify(moduleUrl)});
-      try {
-        await withOperationLock(process.argv[1], 'race', () => new Promise((r) => setTimeout(r, 1500)));
-        process.stdout.write('won');
-      } catch (error) {
-        process.stdout.write(error.message.includes('Another application operation is active') ? 'lost' : 'error:' + error.message);
-      }`;
-    const runs = Array.from({ length: 4 }, () => {
-      const child = spawn(
-        process.execPath,
-        ['--import', 'tsx', '--input-type=module', '-e', script, directory],
-        { stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-      let output = '';
-      child.stdout.on('data', (chunk) => {
-        output += chunk;
-      });
-      return new Promise<string>((resolve) =>
-        child.on('exit', () => resolve(output)),
-      );
-    });
-    const outcomes = (await Promise.all(runs)).sort();
-    expect(outcomes).toEqual(['lost', 'lost', 'lost', 'won']);
-    expect(existsSync(join(directory, 'operation.lock'))).toBe(false);
-  });
-});
-
-describe('writer lease', () => {
-  it('fails closed on live writers and removes only stale leases', () => {
-    const directory = temporary('writer');
-    writeFileSync(
-      join(directory, 'writer.lease'),
-      `${JSON.stringify({ schemaVersion: 1, pid: DEAD_PID, instance: INSTANCE })}\n`,
-    );
-    expect(readActiveWriterLease(directory)).toBeNull();
-    expect(existsSync(join(directory, 'writer.lease'))).toBe(false);
-
-    const lease = acquireWriterLease(directory);
-    expect(readActiveWriterLease(directory)).toMatchObject({
-      pid: process.pid,
-    });
-    expect(statSync(join(directory, 'writer.lease')).mode & 0o777).toBe(0o600);
-    lease.release();
-    lease.release();
-    expect(readActiveWriterLease(directory)).toBeNull();
-  });
-
-  it('refuses a second writer while another live process holds the lease', () => {
-    const directory = temporary('writer-live');
-    const parentPid = process.ppid;
-    writeFileSync(
-      join(directory, 'writer.lease'),
-      `${JSON.stringify({ schemaVersion: 1, pid: parentPid, instance: INSTANCE })}\n`,
-    );
-    expect(() => acquireWriterLease(directory)).toThrow(
-      `Another application writer is active (process ${parentPid}).`,
-    );
-    expect(existsSync(join(directory, 'writer.lease'))).toBe(true);
-  });
-
-  it('fails closed on a malformed lease', () => {
-    const directory = temporary('writer-malformed');
-    writeFileSync(
-      join(directory, 'writer.lease'),
-      `${JSON.stringify({ schemaVersion: 2, pid: 1, instance: 'x' })}\n`,
-    );
-    expect(() => readActiveWriterLease(directory)).toThrow(
-      'cannot be verified',
-    );
-  });
-
-  it('prevents a direct writer from racing an active operator command', async () => {
-    const directory = temporary('writer-operation');
-    await withOperationLock(directory, 'backup', async (lock) => {
-      expect(() => acquireWriterLease(directory)).toThrow(
-        'application operation is active',
-      );
-      expect(existsSync(join(directory, 'writer.lease'))).toBe(false);
-      const managedStartLease = acquireWriterLease(directory, {
-        operationInstance: lock.instance,
-      });
-      managedStartLease.release();
-    });
-  });
-
-  it('reclaims a dead operation lock before admitting a writer', () => {
-    const directory = temporary('writer-stale-operation');
-    writeFileSync(
-      join(directory, 'operation.lock'),
-      `${JSON.stringify({ schemaVersion: 1, pid: DEAD_PID, operation: 'setup', instance: INSTANCE })}\n`,
-    );
-    const lease = acquireWriterLease(directory);
-    expect(existsSync(join(directory, 'operation.lock'))).toBe(false);
-    lease.release();
-  });
-
-  it('refuses a writer when the operation lock cannot be parsed', () => {
-    const directory = temporary('writer-bad-operation');
-    writeFileSync(join(directory, 'operation.lock'), 'not json');
-    expect(() => acquireWriterLease(directory)).toThrow(
-      'The application operation lock cannot be verified.',
-    );
-    expect(existsSync(join(directory, 'writer.lease'))).toBe(false);
-  });
 });
 
 describe('managed process record', () => {
@@ -286,79 +125,42 @@ describe('managed process record', () => {
   });
 });
 
-describe('provider readiness', () => {
-  it('requires deployed provider modules to return verified readiness', async () => {
-    const context = { profile: 'self-hosted', provider: 'oidc' };
-    const probe = (environment: Record<string, string | undefined>) =>
-      createProviderReadinessProbe('authentication', context, {
-        environment,
-      })();
-    await expect(probe({})).rejects.toThrow(
-      'must name an installed provider readiness module',
-    );
-    await expect(
-      probe({
-        SMRT_AUTH_READINESS_MODULE:
-          'data:text/javascript,export default async () => ({ ready: false })',
-      }),
-    ).rejects.toThrow('readiness check failed');
-    await expect(
-      probe({
-        SMRT_AUTH_READINESS_MODULE: 'data:text/javascript,export const x = 1',
-      }),
-    ).rejects.toThrow('does not export a readiness probe');
-    await expect(
-      probe({
-        SMRT_AUTH_READINESS_MODULE:
-          'data:text/javascript,export async function checkReadiness() { return { ready: true } }',
-      }),
-    ).resolves.toBeUndefined();
-  });
-
-  it('resolves relative and bare modules from the application, not the CLI', async () => {
-    const sourceRoot = temporary('readiness');
-    writeFileSync(join(sourceRoot, 'package.json'), '{"name":"app"}');
-    writeFileSync(
-      join(sourceRoot, 'ready.mjs'),
-      'export default () => true;\n',
-    );
-    const moduleRoot = join(sourceRoot, 'node_modules', 'app-ready');
-    mkdirSync(moduleRoot, { recursive: true });
-    writeFileSync(
-      join(moduleRoot, 'package.json'),
-      JSON.stringify({
-        name: 'app-ready',
-        type: 'module',
-        exports: './index.js',
-      }),
-    );
-    writeFileSync(
-      join(moduleRoot, 'index.js'),
-      'export function checkReadiness({ component }) { return { ready: component === "assets" }; }\n',
-    );
-    const context = { profile: 'self-hosted', provider: 'local-files' };
-    await expect(
-      createProviderReadinessProbe('assets', context, {
-        sourceRoot,
-        environment: { SMRT_ASSETS_READINESS_MODULE: './ready.mjs' },
-      })(),
-    ).resolves.toBeUndefined();
-    await expect(
-      createProviderReadinessProbe('assets', context, {
-        sourceRoot,
-        environment: { SMRT_ASSETS_READINESS_MODULE: 'app-ready' },
-      })(),
-    ).resolves.toBeUndefined();
-    await expect(
-      createProviderReadinessProbe('assets', context, {
-        sourceRoot,
-        environment: { SMRT_ASSETS_READINESS_MODULE: 'not-installed-module' },
-      })(),
-    ).rejects.toThrow();
-  });
-});
-
 describe('application identity and state custody', () => {
+  it('uses app-runtime as the single identity implementation (golden vectors)', () => {
+    // One implementation, not two copies kept in step: the web health route
+    // and `smrt app start` compare these values byte for byte.
+    expect(resolveApplicationId).toBe(appRuntime.resolveApplicationId);
+    expect(runtimeConfigurationFingerprint).toBe(
+      appRuntime.runtimeConfigurationFingerprint,
+    );
+    // Same vectors as app-runtime's sveltekit.test.ts, computed with the
+    // template's former scripts/smrt-runtime-identity.mjs.
+    const runtime = {
+      profile: 'local',
+      providers: {
+        database: { provider: 'sqlite' },
+        jobs: { topology: 'embedded' },
+      },
+    };
+    expect(
+      runtimeConfigurationFingerprint(runtime, {
+        DATABASE_URL:
+          'postgres://user:secret@db.example:5432/app?sslmode=require&password=x#frag',
+        HOST: '127.0.0.1',
+        PORT: '5173',
+        ORIGIN: 'http://127.0.0.1:5173/',
+        SMRT_BACKGROUND_JOBS: 'true',
+        SMRT_MCP_SCOPES: 'read',
+      }),
+    ).toBe('1082a7948f012507750cd6811e66a314cc88c5071d1ee2401fd544e3768aa4ba');
+    expect(runtimeConfigurationFingerprint(runtime, {})).toBe(
+      '2823bad362649569b8ef2bf2f8a66e349e510875fe7a0c2fc5831c995bf4a987',
+    );
+    expect(resolveApplicationId({ packageName: '@acme/My App' })).toBe(
+      'acme-my-app-1e1f533d66',
+    );
+  });
+
   it('uses one package-derived application identity by default', () => {
     const directory = temporary('identity');
     writeFileSync(
@@ -388,120 +190,6 @@ describe('application identity and state custody', () => {
     expect(() => resolveApplicationId({ sourceRoot: directory })).toThrow(
       'package.json must declare a non-empty package name.',
     );
-  });
-
-  function stateOptions(directory: string, appId = 'state-proof') {
-    const sourceRoot = join(directory, 'source');
-    mkdirSync(sourceRoot, { recursive: true });
-    return {
-      appId,
-      dataDirectory: join(directory, 'data'),
-      sourceRoot,
-      platformName: 'linux',
-      homeDirectory: directory,
-      environment: { XDG_STATE_HOME: join(directory, 'state-home') },
-    };
-  }
-
-  it('derives one private state/lock domain from the app and data identity', () => {
-    const directory = temporary('state');
-    const options = stateOptions(directory);
-    const stateRoot = prepareApplicationStateRoot(options);
-    expect(stateRoot).toMatch(
-      new RegExp(
-        `^${join(directory, 'state-home', '.state-proof-').replaceAll('.', '\\.')}` +
-          '[a-f0-9]{12}-state$',
-      ),
-    );
-    expect(resolveApplicationStateRoot(options)).toBe(stateRoot);
-    expect(prepareApplicationStateRoot(options)).toBe(stateRoot);
-    expect(statSync(stateRoot).mode & 0o777).toBe(0o700);
-    expect(
-      statSync(join(stateRoot, '.smrt-state-state-proof')).mode & 0o777,
-    ).toBe(0o600);
-    expect(
-      resolveApplicationStateRoot({
-        ...options,
-        dataDirectory: join(directory, 'other-data'),
-      }),
-    ).not.toBe(stateRoot);
-    expect(
-      resolveApplicationStateRoot({
-        ...options,
-        platformName: 'darwin',
-      }).startsWith(join(directory, 'Library', 'Application Support')),
-    ).toBe(true);
-  });
-
-  it('rejects a symlinked state path component', () => {
-    const directory = temporary('state-symlink');
-    const options = stateOptions(directory, 'redirected');
-    const redirected = join(directory, 'redirected-state');
-    symlinkSync(options.sourceRoot, redirected);
-    expect(() =>
-      prepareApplicationStateRoot({
-        ...options,
-        environment: { XDG_STATE_HOME: redirected },
-      }),
-    ).toThrow(/unsafe/);
-  });
-
-  it('rejects a group/world-writable state ancestor', () => {
-    const directory = temporary('state-writable');
-    const options = stateOptions(directory);
-    mkdirSync(options.environment.XDG_STATE_HOME, { mode: 0o700 });
-    chmodSync(options.environment.XDG_STATE_HOME, 0o777);
-    expect(() => prepareApplicationStateRoot(options)).toThrow(
-      'lacks trusted custody',
-    );
-  });
-
-  it('rejects a state root with the wrong mode without repairing it', () => {
-    const directory = temporary('state-mode');
-    const options = stateOptions(directory);
-    const stateRoot = prepareApplicationStateRoot(options);
-    chmodSync(stateRoot, 0o750);
-    expect(() => prepareApplicationStateRoot(options)).toThrow(
-      'Application state root must be current-user-owned mode 0700.',
-    );
-    expect(statSync(stateRoot).mode & 0o777).toBe(0o750);
-  });
-
-  it('rejects a state tree owned by another user', () => {
-    const directory = temporary('state-owner');
-    const options = stateOptions(directory);
-    prepareApplicationStateRoot(options);
-    const foreignUid = (process.getuid?.() ?? 1000) + 4242;
-    expect(() =>
-      prepareApplicationStateRoot({ ...options, currentUid: foreignUid }),
-    ).toThrow(/lacks trusted custody|current-user-owned/);
-  });
-
-  it('rejects a tampered app-bound marker', () => {
-    const directory = temporary('state-marker');
-    const options = stateOptions(directory);
-    const stateRoot = prepareApplicationStateRoot(options);
-    const marker = join(stateRoot, '.smrt-state-state-proof');
-    writeFileSync(marker, 'tampered');
-    expect(() => prepareApplicationStateRoot(options)).toThrow(
-      'Application state marker is unsafe.',
-    );
-    rmSync(marker);
-    symlinkSync(join(directory, 'elsewhere'), marker);
-    expect(() => prepareApplicationStateRoot(options)).toThrow(
-      'Application state marker is unsafe.',
-    );
-  });
-
-  it('refuses state inside the source tree', () => {
-    const directory = temporary('state-in-source');
-    const options = stateOptions(directory);
-    expect(() =>
-      prepareApplicationStateRoot({
-        ...options,
-        environment: { XDG_STATE_HOME: join(options.sourceRoot, 'state') },
-      }),
-    ).toThrow('Application state must remain outside the source tree.');
   });
 
   it('keeps operator-created data artifacts outside the checkout', () => {

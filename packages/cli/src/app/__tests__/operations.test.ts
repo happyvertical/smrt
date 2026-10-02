@@ -30,6 +30,7 @@ import {
   MIGRATION_FAILED_MESSAGE,
   prepareLocalDatabaseStorage,
   resolveLocalRuntimePaths,
+  withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
@@ -40,7 +41,6 @@ import {
   resolveApplicationStateRoot,
   runtimeConfigurationFingerprint,
 } from '../identity.js';
-import { withOperationLock } from '../operation-lock.js';
 import type { AppCommandDependencies, CommandRunner } from '../runtime.js';
 
 const TOKEN = 'bootstrap-token-must-never-print-0123456789';

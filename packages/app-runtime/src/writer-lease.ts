@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { errorCode } from './errors.js';
+import { errorCode } from './error-code.js';
 import { isStaleOperationLock, processExists } from './operation-lock.js';
 import { reclaimStaleRecord } from './stale-reclaim.js';
 

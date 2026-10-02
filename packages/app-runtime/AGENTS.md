@@ -86,13 +86,27 @@ Application infrastructure composition for the validated runtime profiles in
   transaction-bound request db (class `db` overrides win). Anything that
   outlives a request (session service, tenant selector) must use the base
   config, never these.
-- Template-only concerns (writer lease, provider readiness modules, onboarding
-  file cleanup) are injected hooks, not reimplemented here. Deployed startup
-  fails closed without `providerReadiness`.
+- The writer lease, provider readiness, and onboarding file cleanup are
+  injected hooks. Apps pass the root entry's `acquireWriterLease` (over
+  `prepareApplicationStateRoot`) and `createProviderReadinessProbe`; deployed
+  startup fails closed without `providerReadiness`.
 - Owner setup re-checks loopback peer and loopback URL host per request and
   returns only fixed `{ code, message }` failures.
 - `resolveApplicationId()` / `runtimeConfigurationFingerprint()` must stay
   byte-compatible with process managers (golden vectors in tests).
+
+## Operator state (root entry)
+
+- One owner for the state shared by the web process and `smrt app`
+  (`@happyvertical/smrt-cli/app` re-exports these): `resolveApplicationStateRoot`
+  / `prepareApplicationStateRoot` (private app-bound mode-0700 root and
+  marker), `withOperationLock` (`operation.lock`), `acquireWriterLease` /
+  `readActiveWriterLease` (`writer.lease`), `reclaimStaleRecord`, and
+  `createProviderReadinessProbe` (`SMRT_*_READINESS_MODULE`, resolved from the
+  app root with Node's own ESM rules). File names, record formats, and
+  messages are a cross-process contract; never change them unilaterally.
+- Tests that hook `node:fs` interleavings must live in this package: from a
+  consumer the package is an externalized dependency a mock cannot reach.
 
 ## Public runtime diagnostics
 

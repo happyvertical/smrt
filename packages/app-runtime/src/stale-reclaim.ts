@@ -19,7 +19,7 @@
 import { chmodSync, lstatSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { errorCode } from './errors.js';
+import { errorCode } from './error-code.js';
 
 /** Mutex database file created in the lock's (private) state directory. */
 export const RECLAIM_MUTEX_FILE = '.smrt-lock-reclaim.sqlite';

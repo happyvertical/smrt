@@ -8,6 +8,28 @@
  */
 
 export {
+  type AcquireWriterLeaseOptions,
+  acquireWriterLease,
+  createProviderReadinessProbe,
+  findInstalledPackage,
+  isStaleOperationLock,
+  lockOwnerPid,
+  type OperationLock,
+  PROVIDER_READINESS_SETTINGS,
+  type ProviderReadinessOptions,
+  processExists,
+  RECLAIM_MUTEX_FILE,
+  type ReadinessComponent,
+  type ReadinessContext,
+  type ReclaimOutcome,
+  readActiveWriterLease,
+  reclaimStaleRecord,
+  resolveReadinessModule,
+  type WriterLease,
+  type WriterLeaseRecord,
+  withOperationLock,
+} from '@happyvertical/smrt-app-runtime';
+export {
   APP_COMMANDS,
   APP_RECOVERY,
   type AppErrorEnvelope,
@@ -38,13 +60,6 @@ export {
   validateMcpAppsIfPresent,
   type WorkerKind,
 } from './launchers.js';
-export {
-  isStaleOperationLock,
-  lockOwnerPid,
-  type OperationLock,
-  processExists,
-  withOperationLock,
-} from './operation-lock.js';
 export {
   APP_OPERATIONS,
   type AppOperation,
@@ -112,15 +127,6 @@ export {
   writeProcessRecord,
 } from './process-record.js';
 export {
-  createProviderReadinessProbe,
-  findInstalledPackage,
-  PROVIDER_READINESS_SETTINGS,
-  type ProviderReadinessOptions,
-  type ReadinessComponent,
-  type ReadinessContext,
-  resolveReadinessModule,
-} from './provider-readiness.js';
-export {
   type AppCommandDependencies,
   type AppCommandIo,
   type AppContext,
@@ -131,15 +137,3 @@ export {
   runtimeEnvironment,
   webLauncherPath,
 } from './runtime.js';
-export {
-  RECLAIM_MUTEX_FILE,
-  type ReclaimOutcome,
-  reclaimStaleRecord,
-} from './stale-reclaim.js';
-export {
-  type AcquireWriterLeaseOptions,
-  acquireWriterLease,
-  readActiveWriterLease,
-  type WriterLease,
-  type WriterLeaseRecord,
-} from './writer-lease.js';

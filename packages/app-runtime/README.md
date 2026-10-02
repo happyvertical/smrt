@@ -181,6 +181,28 @@ loopback; its `default` action reads `token`, `name`, `email`, and optional
 are the canonical app ID and secret-free configuration fingerprint shared by
 the web health route and process managers.
 
+The root entry also owns the operator state shared with `smrt app`:
+`prepareApplicationStateRoot()` (private, app-bound state directory),
+`withOperationLock()`, `acquireWriterLease()` / `readActiveWriterLease()`,
+and `createProviderReadinessProbe()`. A SvelteKit app wires the last two into
+its runtime without depending on the CLI:
+
+```ts
+import {
+  acquireWriterLease,
+  createProviderReadinessProbe,
+  prepareApplicationStateRoot,
+} from '@happyvertical/smrt-app-runtime';
+
+export const runtime = createSmrtSvelteKitRuntime({
+  acquireWriterLease: (context) =>
+    acquireWriterLease(prepareApplicationStateRoot(context), {
+      operationInstance: process.env.SMRT_OPERATION_INSTANCE,
+    }),
+  providerReadiness: createProviderReadinessProbe,
+});
+```
+
 ## Self-hosted and cloud applications
 
 The deployed initializer validates the selected profile against concrete,

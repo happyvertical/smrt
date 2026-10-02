@@ -11,15 +11,15 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { PublicAuthenticationProvider } from '@happyvertical/smrt-app-runtime';
-import type { DatabaseInterface } from '@happyvertical/sql';
-import { AppCommandError } from './errors.js';
-import { withOperationLock } from './operation-lock.js';
 import {
   createProviderReadinessProbe,
   findInstalledPackage,
-} from './provider-readiness.js';
+  readActiveWriterLease,
+  withOperationLock,
+} from '@happyvertical/smrt-app-runtime';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { AppCommandError } from './errors.js';
 import { type AppContext, preparedStateRoot } from './runtime.js';
-import { readActiveWriterLease } from './writer-lease.js';
 
 /**
  * Prepare the schema explicitly: under the operation lock, refuse while a

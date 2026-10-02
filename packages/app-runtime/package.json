@@ -51,6 +51,7 @@
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/kit": "2.70.3",
     "@types/node": "24.13.6",
+    "tsx": "^4.23.13",
     "typescript": "6.0.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

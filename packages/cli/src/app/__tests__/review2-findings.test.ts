@@ -1,7 +1,9 @@
 /**
  * Second review round on the `smrt app` port (#3371): T1 (an unavailable
- * process query must never drop a live writer's record) and T2 (readiness
- * packages resolve with Node's own `exports` selection rules).
+ * process query must never drop a live writer's record). T2 (readiness
+ * packages resolve with Node's own `exports` selection rules) moved with the
+ * readiness resolver to `@happyvertical/smrt-app-runtime`
+ * (`src/operator-primitives.test.ts`).
  */
 
 import { spawn } from 'node:child_process';
@@ -51,9 +53,6 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 const { runAppCommand } = await import('../cli.js');
 const { resolveApplicationStateRoot } = await import('../identity.js');
-const { createProviderReadinessProbe } = await import(
-  '../provider-readiness.js'
-);
 
 const roots: string[] = [];
 const children: number[] = [];
@@ -148,99 +147,4 @@ describe('T1: an unverifiable process keeps its record', () => {
       `Application process ${child.pid}`,
     );
   }, 30_000);
-});
-
-describe('T2: exports follow Node selection rules', () => {
-  function application(exportsField: unknown, files: string[]): string {
-    const sourceRoot = temporary('t2');
-    writeFileSync(join(sourceRoot, 'package.json'), '{"name":"app"}');
-    const root = join(sourceRoot, 'node_modules', 'pk');
-    mkdirSync(root, { recursive: true });
-    writeFileSync(
-      join(root, 'package.json'),
-      JSON.stringify({ name: 'pk', type: 'module', exports: exportsField }),
-    );
-    for (const file of files) {
-      mkdirSync(join(root, file, '..'), { recursive: true });
-      writeFileSync(
-        join(root, file),
-        `export const checkReadiness = () => ({ ready: true });\nexport const file = ${JSON.stringify(file)};\n`,
-      );
-    }
-    return sourceRoot;
-  }
-
-  async function probe(sourceRoot: string, specifier: string) {
-    return createProviderReadinessProbe(
-      'assets',
-      { profile: 'cloud', provider: 's3' },
-      { sourceRoot, environment: { SMRT_ASSETS_READINESS_MODULE: specifier } },
-    )();
-  }
-
-  async function resolved(sourceRoot: string, specifier: string) {
-    const { resolveReadinessModule } = await import('../provider-readiness.js');
-    const url = await resolveReadinessModule(specifier, sourceRoot);
-    return url.slice(
-      url.indexOf('/node_modules/pk/') + '/node_modules/pk/'.length,
-    );
-  }
-
-  it('prefers the more specific pattern regardless of key order', async () => {
-    const sourceRoot = application(
-      {
-        './*': './generic/*.js',
-        './*.js': './specific/*.js',
-        './feature/*': './feature-generic/*.js',
-        './feature/*.js': './feature-specific/*.js',
-      },
-      [
-        'generic/a.js',
-        'specific/a.js',
-        'generic/a.js.js',
-        'feature-generic/x.js',
-        'feature-specific/x.js',
-        'feature-generic/x.js.js',
-      ],
-    );
-    expect(await resolved(sourceRoot, 'pk/a.js')).toBe('specific/a.js');
-    expect(await resolved(sourceRoot, 'pk/a')).toBe('generic/a.js');
-    expect(await resolved(sourceRoot, 'pk/feature/x.js')).toBe(
-      'feature-specific/x.js',
-    );
-    expect(await resolved(sourceRoot, 'pk/feature/x')).toBe(
-      'feature-generic/x.js',
-    );
-  });
-
-  it('treats a matched null condition as excluding the subpath', async () => {
-    const sourceRoot = application(
-      {
-        '.': { node: null, default: './fallback.js' },
-        './hidden/*': null,
-        './*': './*.js',
-      },
-      ['fallback.js', 'hidden/x.js', 'open.js'],
-    );
-    await expect(probe(sourceRoot, 'pk')).rejects.toThrow();
-    await expect(probe(sourceRoot, 'pk/hidden/x')).rejects.toThrow();
-    await expect(probe(sourceRoot, 'pk/open')).resolves.toBeUndefined();
-  });
-
-  it('honours condition order as written, exact keys before patterns, and array fallbacks', async () => {
-    const sourceRoot = application(
-      {
-        '.': { import: './esm.js', node: './node.js' },
-        './x': './exact.js',
-        './*': './pattern/*.js',
-        './arr': ['not-relative', './array.js'],
-        './bad': '../escape.js',
-      },
-      ['esm.js', 'node.js', 'exact.js', 'pattern/x.js', 'array.js'],
-    );
-    expect(await resolved(sourceRoot, 'pk')).toBe('esm.js');
-    expect(await resolved(sourceRoot, 'pk/x')).toBe('exact.js');
-    expect(await resolved(sourceRoot, 'pk/arr')).toBe('array.js');
-    await expect(probe(sourceRoot, 'pk/bad')).rejects.toThrow();
-  });
 });
