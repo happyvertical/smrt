@@ -181,10 +181,10 @@ describe('formatDataJs', () => {
       const data = { created_at: '2024-01-01', updated_at: '2024-01-02' };
       const fields = {};
 
-      const result = formatDataJs(data, fields);
+      const result: Record<string, unknown> = formatDataJs(data, fields);
 
-      expect(result).toHaveProperty('createdAt');
-      expect(result).toHaveProperty('updatedAt');
+      expect(result.createdAt).toBeDefined();
+      expect(result.updatedAt).toBeDefined();
     });
 
     it('should preserve underscore-prefixed keys', () => {
