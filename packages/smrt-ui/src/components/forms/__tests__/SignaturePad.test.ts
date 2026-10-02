@@ -282,3 +282,135 @@ describe('SignaturePad native form post', () => {
     expect(posted[0].name).toBe('flha-signature.png');
   });
 });
+
+/**
+ * A reset of the owning form (smrt#3290): SvelteKit `enhance`'s `update()`
+ * after a success, `createFormRetry()`'s conditional reset, a reset button and
+ * `form.reset()` all empty a native file input, so the pad must empty with it.
+ * jsdom's reset does not empty file inputs (browsers do), so these assertions
+ * prove the component empties its own field.
+ */
+describe('SignaturePad form reset', () => {
+  function form(container: HTMLElement): HTMLFormElement {
+    return container.querySelector('form') as HTMLFormElement;
+  }
+
+  async function commit(container: HTMLElement) {
+    await stroke(canvas(container));
+    await fireEvent.click(useButton());
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-state', 'committed'),
+    );
+  }
+
+  function postedSignatures(container: HTMLElement): File[] {
+    return submittedEntries(form(container)).getAll('signature') as File[];
+  }
+
+  it.each([
+    'data-transfer',
+    'formdata-event',
+  ] as const)('discards a committed signature like Clear (%s)', async (strategy) => {
+    useFileFieldStrategy(strategy);
+    const onClear = vi.fn();
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'signature', name: 'signature', onClear },
+    });
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-smrt-file-field', strategy),
+    );
+    await commit(container);
+    expect(postedSignatures(container)[0].name).toBe('signature.png');
+    context.fillRect.mockClear();
+
+    form(container).reset();
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-state', 'empty'),
+    );
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(context.fillRect).toHaveBeenCalled();
+    expect(context.fillStyle).toBe(SIGNATURE_PAPER_COLOR);
+    expect(screen.getByRole('status')).toHaveTextContent('');
+    const posted = postedSignatures(container);
+    expect(posted).toHaveLength(1);
+    expect(posted[0].size).toBe(0);
+    expect(posted[0].name).toBe('');
+
+    // Unlocked: the next entry can be signed and committed.
+    await commit(container);
+    expect(postedSignatures(container)[0].name).toBe('signature.png');
+  });
+
+  it('a reset button discards ink not yet committed, without onClear', async () => {
+    const onClear = vi.fn();
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'signature', name: 'signature', onClear },
+    });
+    await stroke(canvas(container));
+    expect(useButton()).toBeEnabled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Reset form' }));
+    expect(root(container)).toHaveAttribute('data-state', 'empty');
+    expect(useButton()).toBeDisabled();
+    expect(onClear).not.toHaveBeenCalled();
+  });
+
+  it('clears a committed signature even while disabled', async () => {
+    const onClear = vi.fn();
+    const { container, rerender } = render(CaptureFormFixture, {
+      props: { kind: 'signature', name: 'signature', onClear },
+    });
+    await commit(container);
+    await rerender({
+      kind: 'signature',
+      name: 'signature',
+      onClear,
+      disabled: true,
+    });
+
+    form(container).reset();
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-state', 'empty'),
+    );
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(postedSignatures(container)[0].size).toBe(0);
+  });
+
+  it('supersedes a signature still encoding', async () => {
+    let finish!: () => void;
+    vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation(
+      (callback, type) => {
+        finish = () => callback(new Blob(['pixels'], { type }));
+      },
+    );
+    const onCapture = vi.fn();
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'signature', name: 'signature', onCapture },
+    });
+    await stroke(canvas(container));
+    await fireEvent.click(useButton());
+
+    form(container).reset();
+    finish();
+    await Promise.resolve();
+    expect(onCapture).not.toHaveBeenCalled();
+    expect(root(container)).toHaveAttribute('data-state', 'empty');
+    expect(postedSignatures(container)[0].size).toBe(0);
+  });
+
+  it('ignores the reset of another form', async () => {
+    const onClear = vi.fn();
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'signature', name: 'signature', onClear },
+    });
+    await commit(container);
+    const other = document.createElement('form');
+    document.body.append(other);
+
+    other.reset();
+    expect(root(container)).toHaveAttribute('data-state', 'committed');
+    expect(onClear).not.toHaveBeenCalled();
+    expect(postedSignatures(container)[0].name).toBe('signature.png');
+    other.remove();
+  });
+});

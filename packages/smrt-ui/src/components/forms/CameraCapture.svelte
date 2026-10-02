@@ -6,8 +6,9 @@
   is committed. A committed photo leaves through `onCapture({ blob, dataUrl })`
   and, when `name` is set, is posted by a plain native form as a file field
   (`native-file-field.ts` explains the DataTransfer and `formdata`-event
-  strategies). Permission denied, no camera, unsupported browser and other
-  errors are distinct rendered states.
+  strategies). A reset of the owning form discards the photo, as it empties a
+  native file input. Permission denied, no camera, unsupported browser and
+  other errors are distinct rendered states.
 
   The request/classify/release lifecycle lives in the framework-free
   `camera-capture-session.ts`. The `$effect` below depends only on `disabled`
@@ -40,6 +41,7 @@ import { tryGetControlInteractionContext } from './control-interaction-context.j
 import {
   assignFileWithDataTransfer,
   attachFormDataFallback,
+  attachFormResetListener,
   clearFileInput,
   detectNativeFileFieldStrategy,
   fileNameForType,
@@ -59,7 +61,7 @@ export interface Props {
   disabled?: boolean;
   /** Called when the user commits a photo with "Use photo". */
   onCapture?: (result: CaptureResult) => void;
-  /** Called when a committed photo is discarded by "Retake". */
+  /** Called when a committed photo is discarded by "Retake" or a form reset. */
   onClear?: () => void;
   /** Field name: the committed photo posts as a file in a native form. */
   name?: string;
@@ -141,9 +143,13 @@ let strategy = $state<NativeFileFieldStrategy>('data-transfer');
 let rootEl = $state<HTMLDivElement | null>(null);
 let videoEl = $state<HTMLVideoElement | null>(null);
 let fieldEl = $state<HTMLInputElement | null>(null);
+let pickerEl = $state<HTMLInputElement | null>(null);
 let pending: CaptureResult | null = null;
 let committedFile: File | null = null;
 let fallbackReads = 0;
+// Set while a captured frame encodes; a form reset supersedes the request.
+let capturing = false;
+let captureRequest = 0;
 
 const fallbackActive = $derived(unsupportedApi && fileInputFallback);
 const message = $derived.by(() => {
@@ -275,8 +281,13 @@ function capture(): void {
   const dataUrl = canvas.toDataURL(imageType, quality);
   // The frame is on the canvas: release the camera now, not after encoding.
   stopStream();
+  capturing = true;
+  const request = ++captureRequest;
   canvas.toBlob(
     (blob) => {
+      // A form reset during encoding superseded this frame.
+      if (request !== captureRequest) return;
+      capturing = false;
       if (!blob) {
         cameraState = 'error';
         return;
@@ -313,6 +324,47 @@ function retake(): void {
   }
   void startCamera();
 }
+
+/**
+ * The owning form reset. A native file input is emptied by its form's reset,
+ * so the photo goes too, committed or still under review (a stale review would
+ * invite attaching the previous entry's photo to the next one), and the
+ * component returns to its initial flow: the live camera, `off` while
+ * `disabled`, or the emptied fallback picker. It
+ * runs even while `disabled`, as a reset empties a disabled native input. With
+ * nothing held a reset changes nothing, so it never re-prompts for a camera.
+ */
+function resetCapture(): void {
+  const wasCommitted = cameraState === 'committed';
+  const wasCapturing = capturing;
+  captureRequest += 1;
+  capturing = false;
+  // Empty the fallback picker as the browser's reset will (the same either
+  // way, and still so if a later listener cancels the reset), and drop a read
+  // still in flight.
+  fallbackReads += 1;
+  if (pickerEl) clearFileInput(pickerEl);
+  if (!holdsPhoto() && !wasCapturing) return;
+  pending = null;
+  previewUrl = '';
+  if (wasCommitted) {
+    committedFile = null;
+    writeField(null);
+  }
+  if (fallbackActive) cameraState = 'fallback';
+  else if (disabled) cameraState = 'off';
+  else void startCamera();
+  if (wasCommitted) onClear?.();
+}
+
+$effect(() => {
+  if (typeof document === 'undefined') return;
+  return attachFormResetListener(
+    document,
+    () => fieldEl?.form ?? pickerEl?.form ?? rootEl?.closest('form'),
+    resetCapture,
+  );
+});
 
 function readDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -428,6 +480,7 @@ useControlRegistration(() => {
     {#if fallbackActive}
       <label class="action primary picker" class:disabled>
         <input
+          bind:this={pickerEl}
           class="visually-hidden"
           type="file"
           accept="image/*"

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assignFileWithDataTransfer,
   attachFormDataFallback,
+  attachFormResetListener,
   clearFileInput,
   detectNativeFileFieldStrategy,
   fileNameForType,
@@ -163,5 +164,45 @@ describe('fileNameForType', () => {
     expect(fileNameForType('photo', 'image/png')).toBe('photo.png');
     expect(fileNameForType('photo', 'image/webp')).toBe('photo.webp');
     expect(fileNameForType('photo', 'image/heic')).toBe('photo.bin');
+  });
+});
+
+describe('attachFormResetListener', () => {
+  it('fires for the owning form only, read at dispatch time, until disposed', () => {
+    document.body.innerHTML = '<form id="a"></form><form id="b"></form>';
+    const a = document.getElementById('a') as HTMLFormElement;
+    const b = document.getElementById('b') as HTMLFormElement;
+    let owner: HTMLFormElement | null = a;
+    const onReset = vi.fn();
+    const dispose = attachFormResetListener(document, () => owner, onReset);
+
+    b.reset();
+    expect(onReset).not.toHaveBeenCalled();
+    a.reset();
+    expect(onReset).toHaveBeenCalledTimes(1);
+
+    owner = b;
+    b.reset();
+    expect(onReset).toHaveBeenCalledTimes(2);
+    owner = null;
+    b.reset();
+    expect(onReset).toHaveBeenCalledTimes(2);
+
+    owner = a;
+    dispose();
+    a.reset();
+    expect(onReset).toHaveBeenCalledTimes(2);
+  });
+
+  it('is not hidden by a page listener that stops propagation', () => {
+    document.body.innerHTML = '<form></form>';
+    const form = document.querySelector('form') as HTMLFormElement;
+    form.addEventListener('reset', (event) => event.stopPropagation());
+    const onReset = vi.fn();
+    const dispose = attachFormResetListener(document, () => form, onReset);
+
+    form.reset();
+    expect(onReset).toHaveBeenCalledTimes(1);
+    dispose();
   });
 });

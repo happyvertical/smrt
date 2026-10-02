@@ -22,7 +22,8 @@
  *
  * In both posting strategies an uncommitted field posts what an empty native
  * file input posts (an empty, unnamed `application/octet-stream` file), so the
- * server sees one shape regardless of strategy.
+ * server sees one shape regardless of strategy. A reset of the owning form
+ * empties the field like a native file input ({@link attachFormResetListener}).
  */
 
 /** How a capture component posts its file in a native form. */
@@ -149,6 +150,34 @@ export function attachFormDataFallback(
   };
   target.addEventListener('formdata', listener, true);
   return () => target.removeEventListener('formdata', listener, true);
+}
+
+/**
+ * Call `onReset` whenever the form returned by `readForm` resets
+ * (`form.reset()`, a reset button, or SvelteKit `enhance`'s `update()` after a
+ * success). A native file input is emptied by its form's reset; a capture
+ * component must empty its own committed state at the same moment, or it keeps
+ * showing a file that no longer posts.
+ *
+ * Like {@link attachFormDataFallback}, the listener runs in the capture phase
+ * on `target` (normally `document`) and reads the owning form at dispatch
+ * time, so a field moved between forms needs no re-wiring and a page listener
+ * that stops propagation cannot hide the reset. `reset` fires before the
+ * browser resets the controls, and `onReset` runs even if a later listener
+ * cancels it: the component and the posted entry are then both empty, which
+ * keeps what is shown equal to what posts. Returns a disposer.
+ */
+export function attachFormResetListener(
+  target: Pick<EventTarget, 'addEventListener' | 'removeEventListener'>,
+  readForm: () => HTMLFormElement | null | undefined,
+  onReset: () => void,
+): () => void {
+  const listener = (event: Event) => {
+    const form = readForm();
+    if (form && event.target === form) onReset();
+  };
+  target.addEventListener('reset', listener, true);
+  return () => target.removeEventListener('reset', listener, true);
 }
 
 const EXTENSIONS: Record<string, string> = {

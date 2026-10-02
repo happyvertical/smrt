@@ -459,6 +459,20 @@ commit the field posts what an empty native file input posts. `disabled`
 freezes the controls but keeps a committed file in the submission; unmount the
 component to drop it, or put it in a disabled `<fieldset>`.
 
+A reset of the owning form (`form.reset()`, a reset button, or SvelteKit
+`enhance`'s `update()` after a success, including `createFormRetry()`'s
+conditional reset) empties the field as it empties a native file input, in
+every posting strategy. A committed photo or signature is discarded as
+"Retake" or "Clear" would and `onClear` is called. A photo under review or
+ink not yet committed is discarded too, without `onClear`, so the next entry
+cannot attach the previous one's capture. `CameraCapture` returns to the live
+camera (`off` while `disabled`, the emptied picker with `fileInputFallback`)
+and supersedes a frame still encoding; with nothing held, a reset changes
+nothing and never re-prompts for the camera. `SignaturePad` returns to blank,
+unlocked paper. A reset clears both even while `disabled`, as it clears a
+disabled native input, and a reset a later listener cancels still leaves the
+component and the posted field both empty.
+
 Text comes from the `ui.camera_capture.*` and `ui.signature_pad.*` i18n keys
 and can be overridden per instance with `labels`. Actions are at least 44px
 (`--smrt-capture-target-size`, to be replaced by the shared touch-target token

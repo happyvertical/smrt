@@ -182,6 +182,11 @@ refused rather than silently sent without the file. Re-choosing the same file
 reproduces the same digest — `runOnce()` digests a `File` by name, type and
 size — so the retry is still the same claim.
 
+The reset after a confirmed write empties every file field. `FileUpload`
+(smrt-svelte) and the smrt-ui `CameraCapture` / `SignaturePad` follow their
+form's `reset` event, so their list, photo or signature empties with it and
+the next submit never posts an empty field behind a file still on screen.
+
 ## Computing the digest in the browser
 
 `digestSubmissionContent(content)` returns the exact content digest

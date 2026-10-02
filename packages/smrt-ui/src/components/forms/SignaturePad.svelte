@@ -9,7 +9,8 @@
   and passed in; the pointer-type gate is the pure `isAcceptedPointerType()` in
   `signature-pad-logic.ts`. "Use signature" stays disabled until an accepted
   stroke exists, so an empty canvas can never be submitted. Once committed the
-  canvas is locked; "Clear" discards the signature and unlocks it.
+  canvas is locked; "Clear" discards the signature and unlocks it. A reset of
+  the owning form does the same, as it empties a native file input.
 
   The bitmap is painted white and inked dark in every theme and colour scheme:
   a signature is document content, so the exported PNG reads the same wherever
@@ -30,6 +31,7 @@ import { tryGetControlInteractionContext } from './control-interaction-context.j
 import {
   assignFileWithDataTransfer,
   attachFormDataFallback,
+  attachFormResetListener,
   clearFileInput,
   detectNativeFileFieldStrategy,
   type NativeFileFieldStrategy,
@@ -54,7 +56,7 @@ export interface Props {
   disabled?: boolean;
   /** Called when the user commits a signature with "Use signature". */
   onCapture?: (result: CaptureResult) => void;
-  /** Called when a committed signature is discarded by "Clear". */
+  /** Called when a committed signature is discarded by "Clear" or a form reset. */
   onClear?: () => void;
   /** Field name: the committed PNG posts as a file in a native form. */
   name?: string;
@@ -154,6 +156,19 @@ $effect(() => {
   if (strategy !== 'formdata-event' || typeof document === 'undefined') return;
   return attachFormDataFallback(document, () =>
     name && fieldEl ? { form: fieldEl.form, name, file: committedFile } : null,
+  );
+});
+
+// A reset of the owning form (`form.reset()`, a reset button, `enhance`'s
+// `update()` after a success) empties a native file input, so it discards the
+// signature exactly as "Clear" does: committed or still being drawn, and even
+// while `disabled`, as a reset empties a disabled native input too.
+$effect(() => {
+  if (typeof document === 'undefined') return;
+  return attachFormResetListener(
+    document,
+    () => fieldEl?.form ?? rootEl?.closest('form'),
+    resetPad,
   );
 });
 

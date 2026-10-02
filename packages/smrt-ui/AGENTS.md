@@ -160,6 +160,9 @@ other text pairing clears WCAG AA in both schemes.
   framework-free `camera-capture-session.ts` and the pointer gate in
   `signature-pad-logic.ts`; their effects must not read rendered state. The
   `<input capture>` path stays opt-in (`fileInputFallback`), off by default.
+  A form `reset` empties a native file input, so both clear their capture on
+  their form's reset (`attachFormResetListener`), even while `disabled`;
+  otherwise the UI shows a file the next submit no longer posts.
 
 - **i18n split**: the client (here) is dependency-free; the Node-only server
   resolver (`buildI18nSnapshot`, → `@happyvertical/smrt-languages`) stays in

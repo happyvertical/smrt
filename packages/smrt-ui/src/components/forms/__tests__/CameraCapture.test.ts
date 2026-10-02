@@ -381,3 +381,187 @@ describe('CameraCapture native form post', () => {
     ).toEqual([chosen]);
   });
 });
+
+/**
+ * A reset of the owning form (smrt#3290): SvelteKit `enhance`'s `update()`
+ * after a success, `createFormRetry()`'s conditional reset, a reset button and
+ * `form.reset()` all empty a native file input, so the photo goes with it.
+ * jsdom's reset does not empty file inputs (browsers do), so these assertions
+ * prove the component empties its own field.
+ */
+describe('CameraCapture form reset', () => {
+  function form(container: HTMLElement): HTMLFormElement {
+    return container.querySelector('form') as HTMLFormElement;
+  }
+
+  async function commitPhoto(container: HTMLElement) {
+    await expectState(container, 'streaming');
+    await fireEvent.click(screen.getByRole('button', { name: 'Take photo' }));
+    await expectState(container, 'reviewing');
+    await fireEvent.click(screen.getByRole('button', { name: 'Use photo' }));
+    await expectState(container, 'committed');
+  }
+
+  function postedPhotos(container: HTMLElement): File[] {
+    return submittedEntries(form(container)).getAll('photo') as File[];
+  }
+
+  it.each([
+    'data-transfer',
+    'formdata-event',
+  ] as const)('discards a committed photo and reopens the camera (%s)', async (strategy) => {
+    useFileFieldStrategy(strategy);
+    const { getUserMedia } = grantCamera();
+    const onClear = vi.fn();
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'camera', name: 'photo', onClear },
+    });
+    await waitFor(() =>
+      expect(root(container)).toHaveAttribute('data-smrt-file-field', strategy),
+    );
+    await commitPhoto(container);
+    expect(postedPhotos(container)[0].name).toBe('photo.jpg');
+
+    form(container).reset();
+    await expectState(container, 'streaming');
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    const posted = postedPhotos(container);
+    expect(posted).toHaveLength(1);
+    expect(posted[0].size).toBe(0);
+    expect(posted[0].name).toBe('');
+
+    // The next entry takes and posts its own photo.
+    await commitPhoto(container);
+    expect(postedPhotos(container)[0].name).toBe('photo.jpg');
+  });
+
+  it('a reset button discards a photo under review, without onClear', async () => {
+    const { getUserMedia } = grantCamera();
+    const onClear = vi.fn();
+    const onCapture = vi.fn();
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'camera', name: 'photo', onClear, onCapture },
+    });
+    await expectState(container, 'streaming');
+    await fireEvent.click(screen.getByRole('button', { name: 'Take photo' }));
+    await expectState(container, 'reviewing');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Reset form' }));
+    await expectState(container, 'streaming');
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(onClear).not.toHaveBeenCalled();
+    expect(onCapture).not.toHaveBeenCalled();
+  });
+
+  it('clears a committed photo while disabled and keeps the camera off', async () => {
+    const { getUserMedia } = grantCamera();
+    const onClear = vi.fn();
+    const props = { kind: 'camera', name: 'photo', onClear };
+    const { container, rerender } = render(CaptureFormFixture, { props });
+    await commitPhoto(container);
+    await rerender({ ...props, disabled: true });
+
+    form(container).reset();
+    await expectState(container, 'off');
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(postedPhotos(container)[0].size).toBe(0);
+
+    await rerender({ ...props, disabled: false });
+    await expectState(container, 'streaming');
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+  });
+
+  it('supersedes a frame still encoding', async () => {
+    let finish!: () => void;
+    vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation(
+      (callback, type) => {
+        finish = () => callback(new Blob(['pixels'], { type }));
+      },
+    );
+    const { getUserMedia } = grantCamera();
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'camera', name: 'photo' },
+    });
+    await expectState(container, 'streaming');
+    await fireEvent.click(screen.getByRole('button', { name: 'Take photo' }));
+
+    form(container).reset();
+    finish();
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    await expectState(container, 'streaming');
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('changes nothing when no photo is held, and never re-prompts', async () => {
+    const getUserMedia = rejectCamera('NotAllowedError');
+    const { container } = render(CaptureFormFixture, {
+      props: { kind: 'camera', name: 'photo' },
+    });
+    await expectState(container, 'permission-denied');
+
+    form(container).reset();
+    expect(root(container)).toHaveAttribute('data-state', 'permission-denied');
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it('opt-in file-input fallback returns to the picker', async () => {
+    installMediaDevices(undefined);
+    const onClear = vi.fn();
+    const { container } = render(CaptureFormFixture, {
+      props: {
+        kind: 'camera',
+        name: 'photo',
+        fileInputFallback: true,
+        onClear,
+      },
+    });
+    await expectState(container, 'fallback');
+    const picker = screen.getByLabelText(
+      'Take or choose a photo',
+    ) as HTMLInputElement;
+    picker.files = createFileList([
+      new File(['jpeg'], 'IMG_0001.jpg', { type: 'image/jpeg' }),
+    ]);
+    await fireEvent.change(picker);
+    await expectState(container, 'committed');
+
+    form(container).reset();
+    await expectState(container, 'fallback');
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(picker.files).toHaveLength(0);
+    const posted = postedPhotos(container);
+    expect(posted).toHaveLength(1);
+    expect(posted[0].size).toBe(0);
+  });
+
+  it('opt-in file-input fallback drops a pick still being read', async () => {
+    installMediaDevices(undefined);
+    const onCapture = vi.fn();
+    const { container } = render(CaptureFormFixture, {
+      props: {
+        kind: 'camera',
+        name: 'photo',
+        fileInputFallback: true,
+        onCapture,
+      },
+    });
+    await expectState(container, 'fallback');
+    const picker = screen.getByLabelText(
+      'Take or choose a photo',
+    ) as HTMLInputElement;
+    picker.files = createFileList([
+      new File(['jpeg'], 'IMG_0002.jpg', { type: 'image/jpeg' }),
+    ]);
+    // Reset in the same task as the change, before the FileReader can land.
+    picker.dispatchEvent(new Event('change'));
+    form(container).reset();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(root(container)).toHaveAttribute('data-state', 'fallback');
+    expect(onCapture).not.toHaveBeenCalled();
+  });
+});

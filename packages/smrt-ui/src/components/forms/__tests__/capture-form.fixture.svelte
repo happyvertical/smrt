@@ -20,4 +20,5 @@ let {
     <SignaturePad {...props} />
   {/if}
   <button type="submit">Submit</button>
+  <button type="reset">Reset form</button>
 </form>
