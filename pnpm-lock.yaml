@@ -669,6 +669,9 @@ importers:
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
+      '@happyvertical/smrt-app-runtime':
+        specifier: workspace:*
+        version: link:../app-runtime
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
