@@ -46,10 +46,11 @@ review, reimbursement recording, and smrt-commerce commitment drawdown (#3289).
   Rows left in another currency by a later commitment change land in
   `otherCurrencies`, never in `drawn`.
 - **Duplicate receipts.** Same `(expense, sha256)` is refused by a pre-insert
-  read plus the unique index `expense_receipts_tenant_expense_sha256_key`
-  `(tenant_id, expense_id, content_sha256)`; a unique violation is rethrown as
-  `DuplicateReceiptError`. NULLs are distinct in that index, so for NULL-tenant
-  (global) rows only the pre-insert check holds. Same hash on different
+  read plus the unique index `expense_receipts_expense_sha256_key`
+  `(expense_id, content_sha256)`; a unique violation is rethrown as
+  `DuplicateReceiptError`. The index omits `tenant_id` deliberately: the
+  expense already fixes the tenant, and a nullable leading `tenant_id` would
+  leave NULL-tenant (global) receipts unenforced. Same hash on different
   expenses is allowed; `findDuplicateReceipts()` reports it (facet on
   `contentSha256`, count > 1). Receipt `expenseId`, `assetId` and
   `contentSha256` are immutable.

@@ -155,7 +155,7 @@ it is payroll's or payables' job (#3292).
 | domacraft.com#143 vendor / worker / work package | `vendorId` / `paidByProfileId` / `costObjectType` + `costObjectId` |
 | `FinancialCostAsset` (cost, Asset) | `ExpenseReceipt` (`expenseId`, `assetId`) |
 | `FinancialCostAsset` uploader, filename, mime, bytes, `contentSha256` | `uploadedByProfileId`, `filename`, `mimeType`, `byteCount`, `contentSha256` |
-| `FinancialCostAsset` unique tenant + cost + hash | unique index `(tenant_id, expense_id, content_sha256)` |
+| `FinancialCostAsset` unique tenant + cost + hash | unique index `(expense_id, content_sha256)` — the expense fixes the tenant, and it also holds for NULL-tenant rows |
 | teamworks-os `JobExpense.job` | `costObjectType` + `costObjectId` |
 | `JobExpense.category` | `category` (`material`, `consumable`, `outside-service`, `freight`, `other`, …) |
 | `JobExpense.description` | `description` |

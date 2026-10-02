@@ -42,8 +42,11 @@ const IMMUTABLE = [
  * generic `AssetAssociation`. The file's SHA-256 is stored so:
  *
  * - the same file attached twice to one expense is refused — a unique index
- *   on `(tenant_id, expense_id, content_sha256)` plus a pre-insert check
- *   that raises {@link DuplicateReceiptError};
+ *   on `(expense_id, content_sha256)` plus a pre-insert check that raises
+ *   {@link DuplicateReceiptError}. The index leaves `tenant_id` out on
+ *   purpose: an expense belongs to exactly one tenant, so the key is already
+ *   tenant-scoped, and a NULL tenant would otherwise make every global row
+ *   distinct and the index unenforced;
  * - the same file on two different expenses is allowed, and surfaced for a
  *   person to look at by `ExpenseReceiptCollection.findDuplicateReceipts()`.
  *
@@ -59,8 +62,8 @@ const IMMUTABLE = [
   cli: false,
   indexes: [
     {
-      name: 'expense_receipts_tenant_expense_sha256_key',
-      columns: ['tenantId', 'expenseId', 'contentSha256'],
+      name: 'expense_receipts_expense_sha256_key',
+      columns: ['expenseId', 'contentSha256'],
       unique: true,
     },
     {

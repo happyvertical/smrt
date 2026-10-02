@@ -451,7 +451,7 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
       });
     });
 
-    it('backs the refusal with a unique index on tenant, expense and hash', async () => {
+    it('backs the refusal with a unique index on expense and hash', async () => {
       const { db } = world;
       const { expenseId, receiptId } = await world.inTenant(async () => {
         const expense = await world.expense();
@@ -927,6 +927,29 @@ export function defineExpenseSuite(getDb: () => DatabaseInterface): void {
           own.id,
         );
       });
+    });
+
+    it('enforces one copy of a file per expense in the database, even without a tenant', async () => {
+      // No tenant context: optional tenancy writes a global (NULL-tenant) row.
+      const expense = await world.expense();
+      expect(expense.tenantId).toBeNull();
+      const receipt = await world.receipts.attachReceipt({
+        expenseId: expense.id,
+        assetId: (await world.asset()).id,
+        contentSha256: computeContentSha256(`global-${randomUUID()}`),
+      });
+      const row = (await world.db.get('expense_receipts', {
+        id: receipt.id,
+      })) as Record<string, unknown>;
+      const copyId = randomUUID();
+      await expect(
+        world.db.insert('expense_receipts', {
+          ...row,
+          id: copyId,
+          slug: copyId,
+        }),
+      ).rejects.toThrow();
+      expect(await world.receipts.receiptsFor(expense.id)).toHaveLength(1);
     });
   });
 }

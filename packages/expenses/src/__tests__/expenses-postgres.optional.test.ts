@@ -160,7 +160,7 @@ describePostgres('expenses on PostgreSQL', () => {
       });
     });
 
-    it('enforces one copy of a file per expense with a unique index', async () => {
+    it('enforces one copy of a file per expense with a NULL-safe unique index', async () => {
       const result = await db.query(
         `SELECT i.indisunique AS is_unique, i.indisvalid AS is_valid,
                 array_to_string(array_agg(a.attname ORDER BY k.ord), ',') AS cols
@@ -169,14 +169,14 @@ describePostgres('expenses on PostgreSQL', () => {
            JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
            JOIN pg_attribute a
              ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-          WHERE c.relname = 'expense_receipts_tenant_expense_sha256_key'
+          WHERE c.relname = 'expense_receipts_expense_sha256_key'
           GROUP BY i.indisunique, i.indisvalid`,
       );
       expect(result.rows).toEqual([
         {
           is_unique: true,
           is_valid: true,
-          cols: 'tenant_id,expense_id,content_sha256',
+          cols: 'expense_id,content_sha256',
         },
       ]);
     });
