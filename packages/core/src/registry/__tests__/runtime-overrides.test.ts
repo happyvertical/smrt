@@ -286,6 +286,61 @@ describe('N-level same-table subtype replacement', () => {
     });
   }
 
+  for (const firstPath of ['runtime', 'manifest'] as const) {
+    for (const replayFirst of [false, true]) {
+      it(`rejects mixed-path siblings (${firstPath} first, replay ${replayFirst})`, () => {
+        const Base = model();
+        const Left = class OverrideRecord extends Base {};
+        const Right = class OverrideRecord extends Base {};
+        ObjectRegistry.register(Base, {
+          packageName: '@fixture/runtime',
+          tableName: 'override_records',
+        });
+        const registerSibling = (
+          ctor: typeof Left,
+          packageName: string,
+          path: 'runtime' | 'manifest',
+        ) => {
+          const qualifiedName = `${packageName}:OverrideRecord`;
+          const definition = entry(packageName, key);
+          if (path === 'manifest') {
+            ObjectRegistry.registerFromManifest(qualifiedName, definition);
+          } else {
+            ObjectRegistry.register(ctor, {
+              packageName,
+              _manifestKey: qualifiedName,
+              _manifest: {
+                version: '1.0.0',
+                timestamp: 0,
+                packageName,
+                objects: { [qualifiedName]: definition },
+              },
+            });
+          }
+        };
+        registerSibling(Left, '@fixture/mixed-left', firstPath);
+        if (replayFirst)
+          registerSibling(Left, '@fixture/mixed-left', firstPath);
+        registerSibling(
+          Right,
+          '@fixture/mixed-right',
+          firstPath === 'runtime' ? 'manifest' : 'runtime',
+        );
+        expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).toThrow(
+          /unrelated classes/,
+        );
+        expect(
+          ObjectRegistry.getClass('@fixture/mixed-left:OverrideRecord')
+            ?.extends,
+        ).toBe(key);
+        expect(
+          ObjectRegistry.getClass('@fixture/mixed-right:OverrideRecord')
+            ?.extends,
+        ).toBe(key);
+      });
+    }
+  }
+
   it('keeps a same-named runtime subclass whose isolated manifest declares another table', () => {
     const Base = model();
     ObjectRegistry.register(Base, {

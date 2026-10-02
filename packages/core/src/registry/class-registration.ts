@@ -1792,7 +1792,8 @@ function registerUntracked(
 
   // Derive extends from prototype chain if not available from manifest
   // This is critical for inline test classes that use decorators
-  let extendsClass: string | undefined = manifestEntry?.extends;
+  let extendsClass: string | undefined =
+    manifestEntry?.extendsQualified ?? manifestEntry?.extends;
   if (!extendsClass) {
     const proto = Object.getPrototypeOf(ctor);
     if (proto?.name && proto.name !== 'SmrtObject' && proto.name !== 'Object') {
