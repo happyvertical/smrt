@@ -44,7 +44,24 @@ function check(source, { filename = 'transport.test.ts', manifest = {}, isolated
       writeFileSync(join(compiler, 'package.json'), JSON.stringify({ name: 'typescript', main: 'index.cjs' }));
       writeFileSync(join(compiler, 'index.cjs'), workspaceCompilerSource);
     }
-    return spawnSync(process.execPath, [script, '--root', fixture], {
+    const loaderArgs = [];
+    if (isolated && !workspaceCompilerSource) {
+      // Absence in this directory does not prevent Node finding an ancestor's
+      // node_modules. Model an absent workspace compiler explicitly; absolute
+      // trusted/configured compiler imports retain the real loader path.
+      const isolationHook = join(fixture, 'isolate-compiler.mjs');
+      writeFileSync(isolationHook, `
+        import { registerHooks } from 'node:module';
+        registerHooks({ resolve(specifier, context, nextResolve) {
+          if (specifier === 'typescript') {
+            throw Object.assign(new Error('No fixture workspace compiler'), { code: 'ERR_MODULE_NOT_FOUND' });
+          }
+          return nextResolve(specifier, context);
+        }});
+      `);
+      loaderArgs.push('--import', isolationHook);
+    }
+    return spawnSync(process.execPath, [...loaderArgs, script, '--root', fixture], {
       encoding: 'utf8',
       env,
     });
