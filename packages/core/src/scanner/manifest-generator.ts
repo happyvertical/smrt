@@ -2692,7 +2692,7 @@ ${fields}
     const include =
       (typeof config === 'object' && config?.include) || undefined;
 
-    const operations = [];
+    const operations: string[] = [];
 
     // Determine which operations to include
     const shouldInclude = (op: string) => {
@@ -3000,7 +3000,7 @@ ${fields}
     const include =
       (typeof config === 'object' && config?.include) || undefined;
 
-    const tools = [];
+    const tools: string[] = [];
 
     const shouldInclude = (op: string) => {
       if (include && !include.includes(op)) return false;
