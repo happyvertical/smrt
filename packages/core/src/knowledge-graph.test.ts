@@ -503,6 +503,58 @@ describe('buildKnowledgeGraph', () => {
     });
   });
 
+  it('fails when two distinct objects claim one previous qualified name (#3338)', () => {
+    const moved = (packageName: string) =>
+      manifest({
+        packageName,
+        objects: [
+          {
+            name: 'TimeEntry',
+            qualifiedName: `${packageName}:TimeEntry`,
+            previousQualifiedNames: ['@example/projects:TimeEntry'],
+            collection: 'timeentrys',
+            fields: [],
+            relationships: [],
+            methods: [],
+            surfaces: [],
+            relationshipFeatures: [],
+            tags: [],
+            risks: [],
+          },
+        ],
+      });
+
+    expect(() =>
+      buildKnowledgeGraph([
+        {
+          artifactPath: 'a/smrt-knowledge.json',
+          manifest: moved('@example/a'),
+        },
+        {
+          artifactPath: 'b/smrt-knowledge.json',
+          manifest: moved('@example/b'),
+        },
+      ]),
+    ).toThrow(
+      /previousQualifiedNames "@example\/projects:TimeEntry" is claimed by more than one object: @example\/a#@example\/a:TimeEntry, @example\/b#@example\/b:TimeEntry/,
+    );
+
+    // The SAME object repeated across artifacts (e.g. a package artifact and
+    // a consumer aggregate that scanned it) is one claim, not a conflict.
+    expect(() =>
+      buildKnowledgeGraph([
+        {
+          artifactPath: 'a/smrt-knowledge.json',
+          manifest: moved('@example/a'),
+        },
+        {
+          artifactPath: 'app/smrt-knowledge.json',
+          manifest: moved('@example/a'),
+        },
+      ]),
+    ).not.toThrow();
+  });
+
   it('preserves generatedAt across a rebuild when nothing merged changed (#2872)', () => {
     vi.useFakeTimers();
     try {
