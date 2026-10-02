@@ -183,7 +183,7 @@ the old smrt-projects class names keep resolving as deprecated aliases (see
 | `ServiceTimeEntry` from `@happyvertical/smrt-support` | Unchanged: support's subtype, now extending the timesheets entry |
 | `caseId` / `specialistId`, `forCase()` / `forSpecialist()` on the projects export | Support subtype only — import `ServiceTimeEntry` / `ServiceTimeEntryCollection` from smrt-support |
 | `ServiceEvidenceService.record({ caseId })` | Requires `workRefType` + `workRefId`; record case time through smrt-support's `ServiceTimeEntryService` |
-| `@happyvertical/smrt-projects:ServiceTimeEntry` (and the two snapshot names) stored in `meta_type` or declared in `@crossPackageRef` / playbook `model:` | Resolves as a deprecated alias of `@happyvertical/smrt-timesheets:*`; move declarations to the new name, optionally backfill stored rows with `smrt db:migrate-qualified-names` (see below) |
+| `@happyvertical/smrt-projects:ServiceTimeEntry` (and the two snapshot names) stored in `meta_type` or declared in `@crossPackageRef` / playbook `model:` | Resolves as a deprecated alias of `@happyvertical/smrt-timesheets:*`; move declarations to the class that is registered in your app — `@happyvertical/smrt-timesheets:*`, except `@happyvertical/smrt-support:ServiceTimeEntry` when smrt-support is installed (or your own closing subclass) — and optionally backfill stored rows with `smrt db:migrate-qualified-names` (see below) |
 | `TimeEntryList`, `TimeEntryCard`, `TimeSummary`, `DurationDisplay` from `@happyvertical/smrt-projects/svelte`; `TimeEntryApprovalQueue` from `@happyvertical/smrt-support/svelte` | Still exported there; canonical home `@happyvertical/smrt-timesheets/svelte` |
 
 An application with smrt-projects but not smrt-support keeps its existing
@@ -210,9 +210,16 @@ and are unchanged.
 - `smrt db:migrate-qualified-names` is an opt-in backfill that rewrites them
   to the current names (`--dry-run` first); it is never run automatically.
 - Move source references — `@crossPackageRef(...)`, relationship targets,
-  playbook `model:` names — to `@happyvertical/smrt-timesheets:*` now. The
-  aliases will be removed in a later **breaking** release, once `smrt doctor
-  --db` reports no stored references.
+  playbook `model:` names — to the name of the class your application
+  actually registers, now. That is `@happyvertical/smrt-timesheets:*`, except
+  where a same-named subclass replaces the timesheets class: with smrt-support
+  installed, reference `@happyvertical/smrt-support:ServiceTimeEntry` (the
+  timesheets name is not registered there, so a `@crossPackageRef` to it
+  fails to load and an association stored under it hydrates to `null`); with
+  your own closing subclass, reference your subclass's qualified name. The
+  snapshots keep their timesheets names unless you subclass them. The aliases
+  will be removed in a later **breaking** release, once `smrt doctor --db`
+  reports no stored references.
 
 > **Known gap: same-named subtypes drop the alias.** A same-named subclass
 > over a moved table — smrt-support's `ServiceTimeEntry`, or an

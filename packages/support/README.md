@@ -21,7 +21,10 @@ discovery reads only top-level packages, so without it `smrt db:migrate` /
 `db:status` stop planning the timesheets snapshot tables
 (`service_charge_snapshots`, `service_compensation_snapshots`). Stored
 `@happyvertical/smrt-projects:ServiceTimeEntry` references do not yet resolve
-when smrt-support is installed; see the smrt-timesheets README migration note.
+when smrt-support is installed, and neither does
+`@happyvertical/smrt-timesheets:ServiceTimeEntry` (support's subtype replaces
+it): reference `@happyvertical/smrt-support:ServiceTimeEntry`. See the
+smrt-timesheets README migration note.
 
 ## Open and manage a case
 

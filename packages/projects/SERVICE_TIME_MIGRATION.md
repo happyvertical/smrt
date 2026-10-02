@@ -30,9 +30,13 @@ declare `previousQualifiedNames` (#3338), so stored or declared
 to the `@happyvertical/smrt-timesheets:*` classes with a one-time deprecation
 warning, and new association writes store the current name. `smrt doctor --db`
 counts remaining stored references; `smrt db:migrate-qualified-names` is the
-opt-in backfill. Move source references to the new names before the aliases
-are removed in a later breaking release. A same-named subtype that replaces a
-moved class drops its alias for now — with smrt-support installed the
+opt-in backfill. Move source references to the name of the class your
+application registers before the aliases are removed in a later breaking
+release: `@happyvertical/smrt-timesheets:*`, except
+`@happyvertical/smrt-support:ServiceTimeEntry` when smrt-support is installed
+(its subtype replaces the timesheets entry, whose name then does not resolve)
+or your own closing subclass's name. A same-named subtype that replaces a
+moved class also drops its alias for now — with smrt-support installed the
 `ServiceTimeEntry` alias does not resolve; see the smrt-timesheets README for
 the workaround.
 

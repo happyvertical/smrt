@@ -44,7 +44,11 @@ through a `ServiceCommercialResolver`), and corrects. `smrt-projects` supplies
   classes in its manifests again (`CONFIG_QUALIFIED_NAME_ALIAS_COLLISION`),
   and no subtype (smrt-support's, or a consumer's closing subclass) may
   redeclare an alias (two claimants). Known gap: a same-named subtype that
-  replaces a moved class drops that class's alias. `projects/src/__tests__/legacy-qualified-identity.test.ts` pins
+  replaces a moved class drops that class's alias, and the replaced class's
+  own `@happyvertical/smrt-timesheets:*` name stops resolving too — guidance
+  for apps with smrt-support must name `@happyvertical/smrt-support:ServiceTimeEntry`.
+  Support's vitest environment keeps both classes registered, so verify this
+  against built packages, not package tests. `projects/src/__tests__/legacy-qualified-identity.test.ts` pins
   the projects-only contract.
 - **Table names are a compatibility contract.** `service_time_entries` and the
   two snapshot tables hold existing production rows from smrt-projects /
