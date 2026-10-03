@@ -16,6 +16,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -725,15 +726,22 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
           label: 'Backup destination',
         });
         ensurePrivateDirectory(dirname(destination));
-        if (existsSync(destination)) {
+        try {
+          mkdirSync(destination, { mode: 0o700 });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+            throw error;
+          }
           throw new Error(`Backup destination already exists: ${destination}`);
         }
         try {
-          cpSync(paths.root, destination, {
-            recursive: true,
-            force: false,
-            errorOnExist: true,
-          });
+          for (const entry of readdirSync(paths.root)) {
+            cpSync(join(paths.root, entry), join(destination, entry), {
+              recursive: true,
+              force: false,
+              errorOnExist: true,
+            });
+          }
           chmodSync(destination, 0o700);
         } catch (error) {
           rmSync(destination, { recursive: true, force: true });
