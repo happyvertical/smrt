@@ -8,9 +8,13 @@
  * initialize application storage.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import * as hooks from '../template/src/hooks.server.js';
+import * as smrtModule from '../template/src/lib/server/smrt.js';
 import { runtime } from '../template/src/lib/server/smrt.js';
 import { load as layoutLoad } from '../template/src/routes/+layout.server.js';
 import { GET as diagnosticsGet } from '../template/src/routes/api/_runtime/diagnostics/+server.js';
@@ -30,6 +34,23 @@ const anonymousLocals = {
 };
 
 describe('template runtime entry', () => {
+  it('reduces smrt.ts to the runtime and its options (#3416)', () => {
+    // Generated routes resolve collections through runtime.getCollection(),
+    // the smrt() plugin injects the generated registration, and the runtime
+    // holds the local writer lease by default: none of it is app code.
+    expect(Object.keys(smrtModule)).toEqual(['runtime']);
+    expect(typeof runtime.getCollection).toBe('function');
+    const source = readFileSync(
+      join(process.cwd(), 'template/src/lib/server/smrt.ts'),
+      'utf8',
+    );
+    expect(source).not.toContain('smrt-register');
+    expect(source).not.toContain('isMissingRegisterModule');
+    expect(source).not.toContain('loadManifestFromPathSync');
+    expect(source).not.toMatch(/acquireWriterLease\(/);
+    expect(source).not.toMatch(/export (async )?function/);
+  });
+
   it('mounts the shared runtime handle and startup gate', () => {
     expect(hooks.handle).toBe(runtime.handle);
     expect(hooks.init).toBe(runtime.init);

@@ -157,8 +157,12 @@ changes. That helper checks active membership and rotates the session ID; never
 copy an untrusted header directly into `locals.tenantId` or
 `enterTenantContext()`.
 
-`getCollection()` and `getSmrtConfig()` in `$lib/server/smrt` return
-request-scoped options (under `database-rls` isolation they carry the request
+`src/lib/server/smrt.ts` holds only the runtime and its options. The `smrt()`
+plugin registers the generated objects before it runs, generated API routes
+resolve collections through `runtime.getCollection()`, and in the local profile
+the runtime holds the single-writer lease (`acquireWriterLease: false` opts
+out). `runtime.getCollection()` and `runtime.classOptions()` are
+request-scoped (under `database-rls` isolation they carry the request
 transaction): call them inside a request and never keep the result.
 
 Set `TENANT_BASE_DOMAIN` for deployed subdomain routing. The fallback parser is
@@ -185,10 +189,10 @@ import {
   RoleCollection,
   syncPermissionCatalog,
 } from '@happyvertical/smrt-users';
-import { getSmrtConfig } from '$lib/server/smrt';
+import { runtime } from '$lib/server/smrt';
 
-await syncPermissionCatalog(getSmrtConfig('Permission'));
-const roles = await RoleCollection.create(getSmrtConfig('Role'));
+await syncPermissionCatalog(runtime.classOptions('Permission'));
+const roles = await RoleCollection.create(runtime.classOptions('Role'));
 await roles.seedSystemRoles({ seedPermissions: true });
 ```
 
@@ -219,7 +223,7 @@ export const load: PageServerLoad = async ({ depends, locals }) => {
     return { items: [] };
   }
 
-  const items = await getCollection<Item>('Item');
+  const items = await runtime.getCollection<Item>('Item');
   const rows = await items.list({ limit: 50 });
   return {
     items: rows.flatMap((item) =>
