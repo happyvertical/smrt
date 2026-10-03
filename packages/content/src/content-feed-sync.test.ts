@@ -119,6 +119,32 @@ describe('syncContentFeedSource', () => {
     expect(fetch.mock.calls[0][1]?.signal).toBeUndefined();
   });
 
+  it('releases the pinned transport after a post-header timeout', async () => {
+    const { server, port } = await startFeedFixture((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/rss+xml' });
+      response.write('<rss version="2.0">');
+    });
+
+    try {
+      const source = createSource({
+        feedUrl: `http://stalled.rebind.test:${port}/rss.xml`,
+      });
+
+      await expect(
+        syncContentFeedSource(source, {
+          allowPrivateNetworkHosts: true,
+          fetchTimeoutMs: 20,
+          now: () => FIXED_NOW,
+          resolveHostname: async () => [{ address: '127.0.0.1', family: 4 }],
+        }),
+      ).rejects.toThrow();
+
+      expect(source.status).toBe('error');
+    } finally {
+      await closeFeedFixture(server);
+    }
+  });
+
   it('imports, updates, and skips feed items while preserving source scope', async () => {
     const source = createSource();
     const queries: Array<{ sql: string; params: unknown[] }> = [];

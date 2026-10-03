@@ -175,8 +175,14 @@ async function fetchValidatedFeedUrl(
 }
 
 async function closeFeedResponse({ response, close }: FeedFetchResponse) {
-  if (response.body && !response.body.locked) await response.body.cancel();
-  await close();
+  try {
+    if (response.body && !response.body.locked) await response.body.cancel();
+  } catch {
+    // A stream that already failed can reject cancellation. The per-request
+    // dispatcher still must be closed, and the caller retains its read error.
+  } finally {
+    await close();
+  }
 }
 
 /**
