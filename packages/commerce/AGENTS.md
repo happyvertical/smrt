@@ -161,3 +161,7 @@ for usage.
 - **PaymentInstrument defaults**: `isDefault` is domain-managed, not API-writable. Call `setDefaultForCustomer(customerId, instrumentId)` so the target is validated and the customer's other instruments are cleared.
 - **LicenseSale immutability**: rights snapshot freezes on save-with-status-ACCEPTED. The captured snapshot lives in a module-scoped `WeakMap<LicenseSale, string>` so it doesn't interact with the schema or round-trip through `_meta_data`. Drafts (status != ACCEPTED) remain mutable. To "change" an issued license: `revoke()` it, then issue a new `LicenseSale` row.
 - **Vendor.payoutAddresses normalization**: the constructor accepts either a `Record<string, string>` or a pre-serialized JSON string. `initialize()` re-normalizes after the framework's option-override pass; `save()` re-normalizes defensively against direct field assignment. Non-string values inside the input map are silently dropped to preserve the typed invariant downstream.
+
+## Commercial UI
+
+See [commercial UI composition](agents/commercial-ui.md) for native form recovery, amount compatibility and backend ownership. Package-owned guides under `agents/` ship with the package.

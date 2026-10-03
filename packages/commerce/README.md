@@ -514,3 +514,7 @@ known limits.
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+## Commercial UI composition
+
+See [commercial UI contracts and backend boundaries](agents/commercial-ui.md) for native forms, recovery, amount units and consumer adoption.
