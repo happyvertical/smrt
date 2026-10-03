@@ -206,7 +206,11 @@ consumed. A missing or malformed list fails the build. `objectsDir`, `typesDir`,
 `routesDir`, `configPath`, `configFileName`, `include`, `exclude` and
 `projectRoot` override the conventions; `decorators: false` omits the decorator
 config (values you set under `oxc.decorator` are never overwritten). `smrt()`
-returns a promise, which Vite accepts in `plugins`. The two plugins remain
+returns a promise, which Vite accepts in `plugins`. The plugin also writes the
+`virtual-modules.d.ts` ambient declarations (into `typesDir`) whenever it runs
+a build or `svelte-kit sync`, not only under a dev server, so `tsc` and
+`svelte-check` pass on a clean clone with no copied shim; the file is rewritten
+only when its contents change. The two plugins remain
 public for custom setups.
 
 ```bash
