@@ -85,6 +85,34 @@
       "remediation": "Clears when @sveltejs/adapter-auto's kit pin moves to cookie >=0.7.0.",
       "suppressed": false,
       "recheckBy": "2026-10-23"
+    },
+    {
+      "ghsa": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "severity": "high",
+      "presentVersions": ["3.0.3"],
+      "firstPatchedVersion": null,
+      "reachability": "prod",
+      "introducedVia": "fast-glob@3.3.3 -> micromatch@4.0.8 -> braces. Declared as a prod dependency by @happyvertical/smrt-cli, smrt-core, smrt-scanner, smrt-playground and smrt-workbench (and reached through smrt-scanner by its dependents such as smrt-dev-mcp); devDependency only of ads, agents, analytics, chat, commerce, events, ledgers, places, profiles, projects, properties, sites and users.",
+      "exploitability": "Stack exhaustion needs a glob PATTERN nested thousands of `{` levels deep (micromatch/braces#70); measured on Node 26.9, fast-glob.sync first throws RangeError at ~4,200-4,600 levels (8,500+ pattern characters). braces only ever parses patterns: fast-glob expands them through micromatch.braces (out/utils/pattern.js) and tests candidate paths against picomatch regexes, so file names on disk never reach braces (a path is bounded by NAME_MAX 255 / PATH_MAX 4096 anyway). Every runtime fast-glob call in packages/*/src takes its patterns from code constants or from the local developer's build/CLI configuration: cli utils/generator.ts, commands/schema-contract.ts, commands/json-validator.ts and discovery/manifest-discovery.ts use constants; cli loaders/npm-loader.ts interpolates the `smrt gnode` template short name typed by the operator (not a package export); scanner discovery.ts takes include/exclude from OxcScanner/ManifestBuilder options set by Vite plugin config or CLI constants (core reaches it via utils/scanner-module.ts; smrt-dev-mcp passes constants plus `<member dir>/**` excludes built from directories that exist in the local checkout); smrt-playground and smrt-workbench vite.ts/discovery.ts use constants or the Vite plugin `packagesPattern` option. None runs in a request handler, and no REST, generated MCP or other network input reaches a glob pattern. Worst case is a developer crashing their own build or CLI with their own config.",
+      "decision": "No patched release exists: braces 3.0.3 is both the npm latest and the top of the affected range, and micromatch 4.0.8 / fast-glob 3.3.3 (both latest) still require it, so no override can clear it. Removing braces means replacing fast-glob in five published packages, which changes the scanner's bounded discovery semantics (#2275: dot, ignore space, followSymbolicLinks) and the CLI/Vite plugin file discovery; that is a contract-level change not justified for a path no untrusted input reaches.",
+      "remediation": "Upstream: micromatch/braces#70 (open) with fix PR micromatch/braces#72 (open, unreleased). Drop this suppression once a patched braces ships and micromatch/fast-glob resolve to it; if upstream stalls past recheck, replace fast-glob with a braces-free glob engine under its own issue.",
+      "suppressed": true,
+      "recheckBy": "2026-11-02"
+    },
+    {
+      "ghsa": "GHSA-ch52-4w7c-c8xp",
+      "package": "http-cache-semantics",
+      "severity": "high",
+      "presentVersions": ["4.2.0"],
+      "firstPatchedVersion": null,
+      "reachability": "prod",
+      "introducedVia": "@happyvertical/smrt-content -> @happyvertical/documents / @happyvertical/spider -> crawlee -> got-scraping -> got -> cacheable-request -> http-cache-semantics. No SMRT package depends on got, cacheable-request or http-cache-semantics directly.",
+      "exploitability": "Affects a SHARED cache built on CachePolicy: a client sending `Cache-Control: max-stale` is served another user's zero-lifetime entry (e.g. one carrying Set-Cookie). Verified not reachable in SMRT: (1) SMRT is never that cache; its only consumer is packages/content/src/contents.ts, which calls documents fetchDocument(url, { cacheDir }) as an outbound client. (2) fetchDocument passes no scraper/spider, so spider uses its default basic scraper and DomAdapter (undici `request`); the crawlee adapter chunk is only dynamically imported for `spider: 'crawlee'`, which no SMRT source selects. (3) Even on that path, got only builds a cacheable-request when `options.cache` is set (got/dist/source/core/index.js), its default is undefined, and neither got-scraping nor any @crawlee/* package sets it. Spider's own page cache (CacheManager over @happyvertical/cache) is URL-keyed and does not use http-cache-semantics.",
+      "decision": "No patched release exists: 4.2.0 is both the npm latest and the top of the affected range, and cacheable-request 13.0.19 (latest) requires ^4.2.0, so no override can clear it. The crawlee/got graph belongs to @happyvertical/spider; removing it from SMRT would mean dropping document fetching from @happyvertical/smrt-content for a path SMRT neither loads nor configures.",
+      "remediation": "Upstream: kornelski/http-cache-semantics#56 (open) with fix PR kornelski/http-cache-semantics#58 (open, unreleased). Drop this suppression once a patched release ships and cacheable-request resolves to it.",
+      "suppressed": true,
+      "recheckBy": "2026-11-02"
     }
   ]
 }

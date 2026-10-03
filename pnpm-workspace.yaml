@@ -127,7 +127,17 @@ auditConfig:
   #
   # The six protobufjs GHSAs previously baselined here (1 critical, 5 high) are
   # gone: they were all driven by protobufjs 6.11.4, now unified onto 7.6.5.
-  ignoreGhsas: []
+  #
+  # The two entries below have NO patched release to override to (#3396); see
+  # their audit-policy.json records for the reachability evidence and the open
+  # upstream fixes they wait on.
+  ignoreGhsas:
+    # braces <=3.0.3 nested-pattern stack overflow; glob patterns are code or
+    # developer config only. Upstream: micromatch/braces#72.
+    - GHSA-vfj7-8cjw-p6xm
+    # http-cache-semantics <=4.2.0 max-stale shared-cache disclosure; SMRT never
+    # enables got's cache. Upstream: kornelski/http-cache-semantics#58.
+    - GHSA-ch52-4w7c-c8xp
 
 minimumReleaseAgeExclude:
   - '@happyvertical/accounting@0.90.0 || 0.94.0 || 0.94.1 || 0.96.0 || 0.96.1 || 0.98.0'
