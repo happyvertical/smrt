@@ -1,5 +1,6 @@
 import type { AIMessage, ChatOptions } from '@happyvertical/ai';
 import { json, type RequestHandler } from '@sveltejs/kit';
+import { type DevAIConfig, resolveDevAIConfig } from '../dev-ai.js';
 
 const MAX_MESSAGES = 24;
 const MAX_CONTENT_LENGTH = 8_000;
@@ -16,72 +17,10 @@ interface DevChatRequest {
   temperature?: unknown;
 }
 
-interface DevAIConfig {
-  provider: string;
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
-}
-
 function nonEmpty(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0
     ? value.trim()
     : undefined;
-}
-
-function env(name: string): string | undefined {
-  return nonEmpty(process.env[name]);
-}
-
-function apiKeyForProvider(provider: string): string | undefined {
-  const normalized = provider.toLowerCase();
-  const direct =
-    env('SMRT_CHAT_DEV_API_KEY') ||
-    env('SMRT_AI_API_KEY') ||
-    env('HAVE_AI_API_KEY');
-
-  if (direct) {
-    return direct;
-  }
-
-  if (normalized === 'anthropic') return env('ANTHROPIC_API_KEY');
-  if (normalized === 'gemini') return env('GEMINI_API_KEY');
-  if (normalized === 'openai') return env('OPENAI_API_KEY');
-  return undefined;
-}
-
-function resolveDevAIConfig(requestedModel?: string): DevAIConfig | null {
-  const explicitProvider =
-    env('SMRT_CHAT_DEV_PROVIDER') ||
-    env('SMRT_AI_PROVIDER') ||
-    env('HAVE_AI_PROVIDER');
-  const provider =
-    explicitProvider ||
-    (env('OPENAI_API_KEY')
-      ? 'openai'
-      : env('ANTHROPIC_API_KEY')
-        ? 'anthropic'
-        : env('GEMINI_API_KEY')
-          ? 'gemini'
-          : undefined);
-
-  if (!provider) {
-    return null;
-  }
-
-  return {
-    provider,
-    apiKey: apiKeyForProvider(provider),
-    baseUrl:
-      env('SMRT_CHAT_DEV_BASE_URL') ||
-      env('SMRT_AI_BASE_URL') ||
-      env('HAVE_AI_BASE_URL'),
-    model:
-      requestedModel ||
-      env('SMRT_CHAT_DEV_MODEL') ||
-      env('SMRT_AI_MODEL') ||
-      env('HAVE_AI_MODEL'),
-  };
 }
 
 function normalizeMessages(messages: DevChatRequest['messages']): AIMessage[] {

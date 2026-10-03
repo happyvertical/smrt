@@ -60,6 +60,10 @@ export default defineConfig({
     headless: true,
     // Nothing here talks to the public internet.
     bypassCSP: false,
+    // An installed Chromium, for hosts where the downloaded one cannot load.
+    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+      ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } }
+      : {}),
   },
   projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
 });

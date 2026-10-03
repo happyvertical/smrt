@@ -66,8 +66,10 @@ export {
   type AssistantTurnErrorLogger,
   type AssistantTurnOptions,
   type AssistantTurnResult,
+  type AssistantTurnState,
   AssistantTurnUserError,
   type AuthoredToolReply,
+  CONTINUATION_CLAIM_TTL_MS,
   type ContinuationSessionLike,
   createAssistantTurnResponse,
   createMemoryContinuationStore,
@@ -164,7 +166,13 @@ export {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 // Services
-export { ChatService } from './services/index.js';
+export {
+  ChatClientRequestConflictError,
+  type ChatClientRequestOutcome,
+  type ChatMessageAttachment,
+  ChatService,
+  clientRequestMessageId,
+} from './services/index.js';
 export {
   appendClientToolResults,
   buildManifestToolCatalog,

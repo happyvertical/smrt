@@ -42,6 +42,7 @@ smrt config:export           # Export agent config for SSG
 smrt init                    # Init new project
 smrt gnode                   # Scaffold gnode site
 smrt dispatch:*              # Dispatch management (list/process/retry/cleanup)
+smrt app <op>                # App install/setup/start/migrate/worker…: agents/app-commands.md
 ```
 
 File-backed SQL/TypeScript migration generation is not supported. SMRT schema

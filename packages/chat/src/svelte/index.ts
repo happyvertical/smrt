@@ -102,6 +102,16 @@ export {
   normalizeChoiceOptions,
   safeChoiceImageUrl,
 } from './components/assistant/assistant-choices.svelte.js';
+// HTTP client half of `@happyvertical/smrt-chat/sveltekit`'s
+// `mountAssistantRoutes` (#3368).
+export {
+  type AssistantHttpActionClientOptions,
+  AssistantHttpError,
+  type AssistantHttpOptions,
+  type AssistantHttpTransportOptions,
+  createAssistantHttpActionClient,
+  createAssistantHttpTransport,
+} from './components/assistant/assistant-http-client.js';
 export {
   type AssistantAttachmentRef,
   type AssistantMessage,

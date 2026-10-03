@@ -86,6 +86,87 @@ export interface McpResourceAuth {
   >;
 }
 
+/** Options for {@link createHostedMcpResourceAuth}. */
+export interface HostedMcpResourceAuthOptions {
+  /**
+   * Deployment profile, or a thunk read on every call. `local` disables bearer
+   * authentication; the route then uses its session principal.
+   */
+  profile: McpDeploymentProfile | (() => McpDeploymentProfile);
+  /**
+   * Application-owned mapping from a verified identity to a current account
+   * and active membership. Required for every non-local profile; token claims
+   * never select a tenant. An absent binding throws on first hosted use.
+   */
+  resolvePrincipal?: McpResourceAuthOptions['resolvePrincipal'];
+  /** Environment source. Defaults to `process.env`, read lazily. */
+  env?: Readonly<Record<string, string | undefined>>;
+  /** Default `['RS256']`. */
+  algorithms?: McpResourceAuthOptions['algorithms'];
+  tokenType?: McpResourceAuthOptions['tokenType'];
+  requireTenant?: McpResourceAuthOptions['requireTenant'];
+}
+
+/** Environment variables read by {@link createHostedMcpResourceAuth}. */
+export const HOSTED_MCP_AUTH_ENV = Object.freeze({
+  resource: 'SMRT_MCP_RESOURCE',
+  issuer: 'SMRT_MCP_ISSUER',
+  jwksUri: 'SMRT_MCP_JWKS_URI',
+  scopes: 'SMRT_MCP_SCOPES',
+});
+
+/**
+ * Lazily build the hosted protected-resource adapter from operator
+ * environment. The returned thunk yields `null` for the `local` profile,
+ * otherwise one cached `createMcpResourceAuth` instance configured from
+ * `SMRT_MCP_RESOURCE`, `SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI` and the
+ * whitespace-separated `SMRT_MCP_SCOPES`. Missing configuration throws (fail
+ * closed); a failed construction is not cached, so a corrected environment
+ * is picked up on the next request. Pass the thunk as the `auth` option of
+ * `mountMcpRoute`/`mountMcpAppRoute` and to
+ * `mountMcpProtectedResourceMetadataRoute`.
+ */
+export function createHostedMcpResourceAuth(
+  options: HostedMcpResourceAuthOptions,
+): () => McpResourceAuth | null {
+  let cached: McpResourceAuth | undefined;
+  return () => {
+    const profile =
+      typeof options.profile === 'function'
+        ? options.profile()
+        : options.profile;
+    if (profile === 'local') return null;
+    if (cached) return cached;
+    const env =
+      options.env ??
+      (globalThis as { process?: { env?: Record<string, string | undefined> } })
+        .process?.env ??
+      {};
+    const required = (name: string): string => {
+      const value = env[name]?.trim();
+      if (!value) throw new Error(`Hosted MCP requires ${name}.`);
+      return value;
+    };
+    if (!options.resolvePrincipal) {
+      throw new Error(
+        'Hosted MCP requires an application-owned resolvePrincipal binding.',
+      );
+    }
+    cached = createMcpResourceAuth({
+      profile,
+      resource: required(HOSTED_MCP_AUTH_ENV.resource),
+      issuer: required(HOSTED_MCP_AUTH_ENV.issuer),
+      jwksUri: required(HOSTED_MCP_AUTH_ENV.jwksUri),
+      scopes: required(HOSTED_MCP_AUTH_ENV.scopes).split(/\s+/u),
+      algorithms: options.algorithms ?? ['RS256'],
+      tokenType: options.tokenType,
+      requireTenant: options.requireTenant,
+      resolvePrincipal: options.resolvePrincipal,
+    });
+    return cached;
+  };
+}
+
 export function createMcpResourceAuth(
   options: McpResourceAuthOptions,
 ): McpResourceAuth {

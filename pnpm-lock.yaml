@@ -405,9 +405,15 @@ importers:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
+      '@sveltejs/kit':
+        specifier: 2.70.3
+        version: 2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.4)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))(svelte@5.56.4)(typescript@6.0.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -582,6 +588,9 @@ importers:
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
+      '@happyvertical/smrt-config':
+        specifier: workspace:*
+        version: link:../config
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -667,6 +676,9 @@ importers:
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
+      '@happyvertical/smrt-app-runtime':
+        specifier: workspace:*
+        version: link:../app-runtime
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -3107,6 +3119,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@happyvertical/smrt-app-mcp':
+        specifier: workspace:*
+        version: link:../smrt-app-mcp
       '@happyvertical/smrt-app-runtime':
         specifier: workspace:*
         version: link:../app-runtime
@@ -3122,6 +3137,9 @@ importers:
       '@happyvertical/smrt-jobs':
         specifier: workspace:*
         version: link:../jobs
+      '@happyvertical/smrt-mcp-openai':
+        specifier: workspace:*
+        version: link:../mcp-openai
       '@happyvertical/smrt-playbooks':
         specifier: workspace:*
         version: link:../playbooks
@@ -14223,6 +14241,27 @@ snapshots:
       set-cookie-parser: 3.0.1
       sirv: 3.0.2
       svelte: 5.57.1
+      vite: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
+    optionalDependencies:
+      '@opentelemetry/api': 1.9.1
+      typescript: 6.0.3
+
+  '@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.4)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))(svelte@5.56.4)(typescript@6.0.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))':
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+      '@sveltejs/acorn-typescript': 1.0.13(acorn@8.18.0)
+      '@sveltejs/vite-plugin-svelte': 7.3.0(svelte@5.56.4)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+      '@types/cookie': 0.6.0
+      acorn: 8.18.0
+      cookie: 0.6.0
+      devalue: 5.9.4
+      esm-env: 1.2.2
+      kleur: 4.1.5
+      magic-string: 0.30.21
+      mrmime: 2.0.1
+      set-cookie-parser: 3.0.1
+      sirv: 3.0.2
+      svelte: 5.56.4
       vite: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
     optionalDependencies:
       '@opentelemetry/api': 1.9.1

@@ -1,56 +1,15 @@
 /**
- * Request foundation, in order:
+ * Request foundation from `@happyvertical/smrt-app-runtime/sveltekit`, in
+ * order: the fail-closed startup gate (`init`), URL tenant selection
+ * (`locals.selectedTenant*`, never authority; tenant headers are ignored), the
+ * signed session (the only source of tenant context and permissions), and
+ * `locals.tenantContext` published only for the verified session tenant.
  *
- * 1. Resolve a URL tenant candidate into `locals.selectedTenant*`. This is
- *    selection only and does not enter AsyncLocalStorage tenant context.
- * 2. Load the signed session. `enterTenantContext: true` establishes the
- *    authorized session tenant and its permission set for downstream code.
- * 3. Publish the authorized context on locals when it matches the session.
- *
- * This ordering prevents a spoofed header or hostname from becoming query
- * authority. Membership-gated tenant switching belongs in an explicit action
- * using `switchSessionTenant()` from `@happyvertical/smrt-users/sveltekit`.
+ * Membership-gated tenant switching belongs in an explicit action using
+ * `switchSessionTenant()` from `@happyvertical/smrt-users/sveltekit`.
+ * Configure the runtime in `$lib/server/smrt`.
  */
 
-import { getCurrentTenant, enableTenancy } from '@happyvertical/smrt-tenancy';
-import { createSessionHandler } from '@happyvertical/smrt-users/sveltekit';
-import type { Handle, ServerInit } from '@sveltejs/kit';
-import { sequence } from '@sveltejs/kit/hooks';
+import { runtime } from '$lib/server/smrt';
 
-import { getSmrtConfig } from '$lib/server/smrt';
-import { ensureApplicationRuntimeReady } from '$lib/server/application-runtime';
-import { resolveTenant } from '$lib/server/tenancy';
-
-enableTenancy();
-
-export const init: ServerInit = ensureApplicationRuntimeReady;
-
-const tenantSelectionHandle: Handle = async ({ event, resolve }) => {
-  const selection = await resolveTenant(event);
-  event.locals.selectedTenantId = selection.tenantId;
-  event.locals.selectedTenantSlug = selection.tenantSlug;
-  return resolve(event);
-};
-
-const sessionHandle = createSessionHandler({
-  ...getSmrtConfig('Session'),
-  enterTenantContext: true,
-}) as unknown as Handle;
-
-const authorizedTenantLocalsHandle: Handle = async ({ event, resolve }) => {
-  const activeContext = getCurrentTenant();
-  if (
-    event.locals.user &&
-    event.locals.tenantId &&
-    activeContext?.tenantId === event.locals.tenantId
-  ) {
-    event.locals.tenantContext = activeContext;
-  }
-  return resolve(event);
-};
-
-export const handle: Handle = sequence(
-  tenantSelectionHandle,
-  sessionHandle,
-  authorizedTenantLocalsHandle,
-);
+export const { handle, init } = runtime;

@@ -44,11 +44,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.fixture.json"
   },
   "devDependencies": {
+    "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-app-runtime": "workspace:*",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
+    "@happyvertical/smrt-mcp-openai": "workspace:*",
     "@happyvertical/smrt-playbooks": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",

@@ -84,6 +84,12 @@ export interface AssistantTurnContinuation {
   tokens?: number;
   /** `Date.now()` when the turn started (for `maxTurnMs`). Absent: `createdAt`. */
   startedAt?: number;
+  /**
+   * The message that started the turn (`AssistantTurnOptions.originMessageId`),
+   * kept server-side so a resume restores it from here, never from the
+   * request.
+   */
+  originMessageId?: string;
 }
 
 /**
@@ -95,6 +101,51 @@ export interface AssistantTurnContinuation {
 export interface AssistantContinuationStore {
   save(key: string, continuation: AssistantTurnContinuation): Promise<void>;
   take(key: string, id: string): Promise<AssistantTurnContinuation | null>;
+  /**
+   * Whether `id` is still waiting under `key` (present and unexpired, or
+   * claimed by a resume that is still activating), without consuming it.
+   * Optional; both built-in stores implement it.
+   */
+  has?(key: string, id: string): Promise<boolean>;
+  /**
+   * Forget a continuation `take` returned. The built-in stores' `take`
+   * CLAIMS the entry (no second `take` can return it, and `has` stays true)
+   * instead of deleting it, so a resume is never invisible between taking
+   * its continuation and recording that it runs; the runner calls `release`
+   * once that is recorded. An unreleased claim expires after
+   * {@link CONTINUATION_CLAIM_TTL_MS}. Optional.
+   */
+  release?(key: string, id: string): Promise<void>;
+}
+
+/** How long a claimed (taken, unreleased) continuation still counts. */
+export const CONTINUATION_CLAIM_TTL_MS = 60 * 1000;
+
+type StoredContinuation = AssistantTurnContinuation & { claimedAt?: number };
+
+function liveFor(
+  entry: StoredContinuation | undefined,
+  id: string,
+  ttl: number,
+  at: number,
+): boolean {
+  if (!entry || entry.id !== id) return false;
+  // An active claim lives from its claim time, whatever the original
+  // lifetime; an unclaimed (or lapsed-claim) entry from its creation.
+  if (claimActive(entry, at)) return true;
+  return at - Number(entry.createdAt) <= ttl;
+}
+
+function claimActive(entry: StoredContinuation, at: number): boolean {
+  return (
+    entry.claimedAt !== undefined &&
+    at - Number(entry.claimedAt) <= CONTINUATION_CLAIM_TTL_MS
+  );
+}
+
+function unclaimed(entry: StoredContinuation): AssistantTurnContinuation {
+  const { claimedAt: _claimedAt, ...continuation } = entry;
+  return continuation;
 }
 
 /** In-memory store, for tests and single-process demos. */
@@ -103,7 +154,7 @@ export function createMemoryContinuationStore(
 ): AssistantContinuationStore {
   const ttl = options.ttlMs ?? DEFAULT_CONTINUATION_TTL_MS;
   const now = options.now ?? (() => Date.now());
-  const entries = new Map<string, AssistantTurnContinuation>();
+  const entries = new Map<string, StoredContinuation>();
   return {
     async save(key, continuation) {
       // One suspended turn per key: a new suspension replaces an old one.
@@ -111,9 +162,24 @@ export function createMemoryContinuationStore(
     },
     async take(key, id) {
       const entry = entries.get(key);
-      if (!entry || entry.id !== id) return null;
-      entries.delete(key);
-      return now() - entry.createdAt > ttl ? null : entry;
+      // An active claim is single-use; a lapsed one (its activation never
+      // became durable) is claimable again within the original lifetime.
+      if (!entry || entry.id !== id || claimActive(entry, now())) {
+        return null;
+      }
+      if (now() - entry.createdAt > ttl) {
+        entries.delete(key);
+        return null;
+      }
+      // Claimed, not deleted: single-use, and still visible until released.
+      entries.set(key, { ...entry, claimedAt: now() });
+      return unclaimed(entry);
+    },
+    async has(key, id) {
+      return liveFor(entries.get(key), id, ttl, now());
+    },
+    async release(key, id) {
+      if (entries.get(key)?.id === id) entries.delete(key);
     },
   };
 }
@@ -160,15 +226,15 @@ export function createSessionContinuationStore(
   };
   const read = (
     current: ContinuationSessionLike,
-  ): Record<string, AssistantTurnContinuation> => {
+  ): Record<string, StoredContinuation> => {
     const raw = current.getSessionContext()[SESSION_CONTINUATIONS_FIELD];
     return raw && typeof raw === 'object' && !Array.isArray(raw)
-      ? { ...(raw as Record<string, AssistantTurnContinuation>) }
+      ? { ...(raw as Record<string, StoredContinuation>) }
       : {};
   };
-  const prune = (all: Record<string, AssistantTurnContinuation>) => {
+  const prune = (all: Record<string, StoredContinuation>) => {
     for (const [key, entry] of Object.entries(all)) {
-      if (!entry || now() - Number(entry.createdAt) > ttl) delete all[key];
+      if (!entry || !liveFor(entry, entry.id, ttl, now())) delete all[key];
     }
     return all;
   };
@@ -185,12 +251,31 @@ export function createSessionContinuationStore(
       const current = await load();
       const all = read(current);
       const entry = all[key];
-      if (!entry || entry.id !== id) return null;
+      // An active claim is single-use; a lapsed one is claimable again.
+      if (!entry || entry.id !== id || claimActive(entry, now())) {
+        return null;
+      }
+      const expired = now() - Number(entry.createdAt) > ttl;
+      if (expired) delete all[key];
+      // Claimed, not deleted: single-use (the session row's revision check
+      // refuses a concurrent claim), and still visible until released.
+      else all[key] = { ...entry, claimedAt: now() };
+      await current.updateSessionContext({
+        [SESSION_CONTINUATIONS_FIELD]: prune(all),
+      });
+      return expired ? null : unclaimed(entry);
+    },
+    async has(key, id) {
+      return liveFor(read(await load())[key], id, ttl, now());
+    },
+    async release(key, id) {
+      const current = await load();
+      const all = read(current);
+      if (all[key]?.id !== id) return;
       delete all[key];
       await current.updateSessionContext({
         [SESSION_CONTINUATIONS_FIELD]: prune(all),
       });
-      return now() - Number(entry.createdAt) > ttl ? null : entry;
     },
   };
 }
@@ -230,6 +315,29 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   userMessage?: string;
   /** Resume a suspended turn with the browser's results. */
   resume?: { continuationId: string; results: ClientToolResultInput[] };
+  /**
+   * The message that started this turn (e.g. the user's send). Every reply
+   * the turn authors links to it (`replyToMessageId`), and a suspension keeps
+   * it with the continuation. Ignored on resume: the consumed continuation's
+   * value is used instead.
+   */
+  originMessageId?: string;
+  /**
+   * The turn's own lifecycle, reported (and awaited) by the runner at the
+   * moment each fact becomes true, whether or not anyone still reads the
+   * events: `running` when a fresh turn starts or a resume has consumed its
+   * continuation, `suspended` once the continuation is stored (before its
+   * `client_tool_calls` event), and `completed` / `cancelled` / `failed`
+   * when the leg ends (`completed` after the reply is stored). A throw is
+   * logged and never breaks the turn, except for a resume's `running`: when
+   * that report throws or returns `false` (not recorded), the leg stops
+   * before any model or tool call with `resume_not_recorded`, and its
+   * continuation stays claimed (claimable again after
+   * {@link CONTINUATION_CLAIM_TTL_MS}). Not called for a resume whose
+   * continuation is missing, foreign or expired. Resolve `false` (or throw)
+   * for "not recorded"; any other value counts as recorded.
+   */
+  onState?: (state: AssistantTurnState) => unknown;
   tools?: ManifestTool[];
   /** Server tools, narrowed to `principal.allowedTools`. */
   extraTools?: PrincipalTool[];
@@ -284,11 +392,26 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   now?: () => number;
 }
 
+/**
+ * One lifecycle fact of a turn leg, for {@link AssistantTurnOptions.onState}.
+ * `resumedFrom` is the continuation this leg consumed (`null` for the first
+ * leg), so a recorder can refuse a write from a leg that is no longer
+ * current. `continuationId` is set for `suspended`.
+ */
+export interface AssistantTurnState {
+  state: 'running' | 'suspended' | 'completed' | 'cancelled' | 'failed';
+  originMessageId?: string;
+  resumedFrom: string | null;
+  continuationId?: string;
+}
+
 /** What {@link runAssistantTurn} returns when its generator completes. */
 export interface AssistantTurnResult {
   stoppedReason: AssistantTurnStopReason | 'client_tools' | 'error';
   content: string;
   loop?: ToolLoopResult;
+  /** The turn's origin message (from the continuation on a resume). */
+  originMessageId?: string;
 }
 
 function defaultSerialize<M>(message: unknown): M {
@@ -378,15 +501,29 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
   };
 
   let result: AssistantTurnResult = { stoppedReason: 'error', content: '' };
+  const leg: TurnLeg = {
+    originMessageId: options.resume ? undefined : options.originMessageId,
+    resumedFrom: null,
+    started: !options.resume,
+  };
+  const report = reporter(options, leg);
 
   const work = (async () => {
     try {
-      result = await runTurn(options, emit, status, serialize, describe);
+      result = await runTurn(options, emit, status, serialize, describe, leg);
     } catch (error) {
       const wire = wireError(error, options.onError ?? defaultLogError);
+      // A resume that never consumed its continuation changes nothing.
+      if (leg.started) await report('failed');
       emit({ type: 'error', ...wire });
       emit(status({ state: 'error', label: wire.error }));
-      result = { stoppedReason: 'error', content: '' };
+      result = {
+        stoppedReason: 'error',
+        content: '',
+        ...(leg.originMessageId
+          ? { originMessageId: leg.originMessageId }
+          : {}),
+      };
     } finally {
       finished = true;
       wake();
@@ -411,14 +548,53 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
   return result;
 }
 
+/** The leg the runner is on: what `onState` reports. */
+interface TurnLeg {
+  originMessageId?: string;
+  resumedFrom: string | null;
+  /** False until a resume has consumed its continuation. */
+  started: boolean;
+}
+
+function reporter<M>(options: AssistantTurnOptions<M>, leg: TurnLeg) {
+  // Resolves whether the report was recorded (no `onState`: nothing to
+  // record, so yes; `false` or a throw: no).
+  return async (
+    state: AssistantTurnState['state'],
+    continuationId?: string,
+  ): Promise<boolean> => {
+    if (!options.onState) return true;
+    try {
+      const recorded = await options.onState({
+        state,
+        ...(leg.originMessageId
+          ? { originMessageId: leg.originMessageId }
+          : {}),
+        resumedFrom: leg.resumedFrom,
+        ...(continuationId ? { continuationId } : {}),
+      });
+      return recorded !== false;
+    } catch (error) {
+      try {
+        (options.onError ?? defaultLogError)(error);
+      } catch {
+        // Logging never breaks the turn.
+      }
+      return false;
+    }
+  };
+}
+
 async function runTurn<M>(
   options: AssistantTurnOptions<M>,
   emit: (event: AssistantTurnEvent<M>) => void,
   status: (value: AssistantStatus) => AssistantTurnEvent<M>,
   serialize: (message: unknown) => M,
   describe: (name: string, args?: Record<string, unknown>) => string,
+  leg: TurnLeg,
 ): Promise<AssistantTurnResult> {
   const { principal, author } = options;
+  const report = reporter(options, leg);
   const now = options.now ?? (() => Date.now());
   const createId =
     options.createId ??
@@ -434,6 +610,7 @@ async function runTurn<M>(
   let initialTokens = 0;
   let startedAt = now();
   let clientTools = options.clientTools ?? [];
+  let originMessageId = leg.originMessageId;
   if (options.resume) {
     if (!options.continuations || !options.continuationKey) {
       throw new Error('Resuming a turn needs a continuation store and key.');
@@ -447,6 +624,28 @@ async function runTurn<M>(
         'This step expired or was already answered. Ask again to continue.',
         'continuation_expired',
       );
+    }
+    originMessageId = continuation.originMessageId;
+    leg.originMessageId = originMessageId;
+    leg.resumedFrom = continuation.id;
+    if (!(await report('running'))) {
+      // The activation is not durable: never run the leg. The continuation
+      // stays claimed (has() true) and is claimable again after the claim
+      // lapses.
+      throw new AssistantTurnUserError(
+        'This step could not be resumed right now. Try again in a minute.',
+        'resume_not_recorded',
+      );
+    }
+    leg.started = true;
+    // `running` is recorded: the claimed continuation can go.
+    try {
+      await options.continuations.release?.(
+        options.continuationKey,
+        continuation.id,
+      );
+    } catch (error) {
+      (options.onError ?? defaultLogError)(error);
     }
     messages = appendClientToolResults(
       continuation.messages,
@@ -476,6 +675,7 @@ async function runTurn<M>(
       });
     }
   } else {
+    await report('running');
     const userMessage = options.userMessage?.trim();
     if (!userMessage) {
       throw new AssistantTurnUserError(
@@ -607,6 +807,7 @@ async function runTurn<M>(
           tenantId: author.tenantId,
           agentSessionId: author.agentSessionId,
           threadId: author.threadId ?? null,
+          replyToMessageId: originMessageId ?? null,
           kind: 'tool',
           content: reply.content,
           messageType: reply.messageType ?? 'tool_result',
@@ -650,8 +851,11 @@ async function runTurn<M>(
       clientTools,
       tokens: initialTokens + loop.totalTokens,
       startedAt,
+      ...(originMessageId ? { originMessageId } : {}),
     };
     await options.continuations.save(options.continuationKey, continuation);
+    // Recorded before the browser can see (and resume) the suspension.
+    await report('suspended', continuation.id);
     emit(
       status({
         state: 'working',
@@ -676,13 +880,24 @@ async function runTurn<M>(
         effect: call.effect,
       })),
     });
-    return { stoppedReason: 'client_tools', content: loop.content, loop };
+    return {
+      stoppedReason: 'client_tools',
+      content: loop.content,
+      loop,
+      ...(originMessageId ? { originMessageId } : {}),
+    };
   }
 
   if (loop.stoppedReason === 'cancelled') {
+    await report('cancelled');
     emit({ type: 'done', stoppedReason: 'cancelled' });
     emit(status({ state: 'idle', label: 'Stopped' }));
-    return { stoppedReason: 'cancelled', content: '', loop };
+    return {
+      stoppedReason: 'cancelled',
+      content: '',
+      loop,
+      ...(originMessageId ? { originMessageId } : {}),
+    };
   }
 
   const content = loop.content.trim() || 'Done.';
@@ -692,19 +907,26 @@ async function runTurn<M>(
       tenantId: author.tenantId,
       agentSessionId: author.agentSessionId,
       threadId: author.threadId ?? null,
+      replyToMessageId: originMessageId ?? null,
       kind: 'assistant',
       content,
     });
     finalMessage = serialize(message);
     emit({ type: 'message', message: finalMessage });
   }
+  await report('completed');
   emit({
     type: 'done',
     ...(finalMessage ? { message: finalMessage } : {}),
     stoppedReason: loop.stoppedReason,
   });
   emit(status({ state: 'done', label: 'Done' }));
-  return { stoppedReason: loop.stoppedReason, content, loop };
+  return {
+    stoppedReason: loop.stoppedReason,
+    content,
+    loop,
+    ...(originMessageId ? { originMessageId } : {}),
+  };
 }
 
 /** Default SSE keep-alive for {@link createAssistantTurnResponse}. */
@@ -728,6 +950,11 @@ export function createAssistantTurnResponse(
     headers?: Record<string, string>;
     /** Server-side log for a failure while pulling (default `console.error`). */
     onError?: AssistantTurnErrorLogger;
+    /**
+     * Called synchronously when the reader cancels the body (a client that
+     * went away), before the generator is closed — e.g. to abort the turn.
+     */
+    onCancel?: () => void;
   } = {},
 ): Response {
   const encoder = new TextEncoder();
@@ -775,6 +1002,11 @@ export function createAssistantTurnResponse(
     },
     async cancel() {
       stop();
+      try {
+        options.onCancel?.();
+      } catch {
+        // A host callback never breaks the close.
+      }
       await events.return?.(undefined);
     },
   });

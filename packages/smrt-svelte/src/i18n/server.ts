@@ -34,6 +34,7 @@ import '@happyvertical/smrt-ui/i18n';
 import './strings.forms.js';
 import './strings.board.js';
 import './strings.workspace.js';
+import '../mcp-apps/strings.js';
 
 export interface BuildI18nSnapshotOptions {
   /** Target locale (BCP-47-ish, e.g. `fr-CA`). */

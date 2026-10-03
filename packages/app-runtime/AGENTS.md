@@ -68,6 +68,46 @@ Application infrastructure composition for the validated runtime profiles in
 - Cloud must keep required tenant context and must never introduce a root or
   unscoped tenant fallback. RLS remains an explicit deployment/migration choice.
 
+## SvelteKit entry (`./sveltekit`)
+
+- Server-only subpath; `@sveltejs/kit` is an optional peer and is externalized
+  in `vite.config.ts` (kit recognizes `redirect`/`fail` by class identity).
+  The root entry must never import kit or Svelte.
+- `createSmrtSvelteKitRuntime()` order is fixed: readiness gate → URL tenant
+  selection (`locals.selectedTenant*`, never tenant context, headers ignored) →
+  verified session (tenant context entered only when
+  `isSessionTenantAuthorized()` accepts it, else unauthenticated; never via
+  `createSessionHandler`, which re-runs `resolve` on downstream errors) →
+  publish `locals.tenantContext` only for that verified tenant.
+- `database-rls` isolation forces `postgresRls: true`, including on
+  `skipPaths` (anonymous principal). `resolve` runs at most once;
+  session-layer failure before it is a 500 with cleared locals.
+- In an RLS request `classOptions()`/`databaseConfig()` return the
+  transaction-bound request db (class `db` overrides win). Anything that
+  outlives a request (session service, tenant selector) must use the base
+  config, never these.
+- The writer lease, provider readiness, and onboarding file cleanup are
+  injected hooks. Apps pass the root entry's `acquireWriterLease` (over
+  `prepareApplicationStateRoot`) and `createProviderReadinessProbe`; deployed
+  startup fails closed without `providerReadiness`.
+- Owner setup re-checks loopback peer and loopback URL host per request and
+  returns only fixed `{ code, message }` failures.
+- `resolveApplicationId()` / `runtimeConfigurationFingerprint()` must stay
+  byte-compatible with process managers (golden vectors in tests).
+
+## Operator state (root entry)
+
+- One owner for the state shared by the web process and `smrt app`
+  (`@happyvertical/smrt-cli/app` re-exports these): `resolveApplicationStateRoot`
+  / `prepareApplicationStateRoot` (private app-bound mode-0700 root and
+  marker), `withOperationLock` (`operation.lock`), `acquireWriterLease` /
+  `readActiveWriterLease` (`writer.lease`), `reclaimStaleRecord`, and
+  `createProviderReadinessProbe` (`SMRT_*_READINESS_MODULE`, resolved from the
+  app root with Node's own ESM rules). File names, record formats, and
+  messages are a cross-process contract; never change them unilaterally.
+- Tests that hook `node:fs` interleavings must live in this package: from a
+  consumer the package is an externalized dependency a mock cannot reach.
+
 ## Public runtime diagnostics
 
 - `projectRuntimeDiagnostics()` is the only public diagnostic projection. It

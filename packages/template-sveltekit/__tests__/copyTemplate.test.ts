@@ -33,7 +33,7 @@ describe('copyTemplate', () => {
     expect(existsSync(join(tempDir, 'package.json'))).toBe(true);
     expect(existsSync(join(tempDir, 'pnpm-workspace.yaml'))).toBe(true);
     expect(existsSync(join(tempDir, 'src', 'hooks.server.ts'))).toBe(true);
-    expect(existsSync(join(tempDir, 'src', 'lib', 'server', 'tenancy.ts'))).toBe(
+    expect(existsSync(join(tempDir, 'src', 'lib', 'server', 'smrt.ts'))).toBe(
       true,
     );
     expect(existsSync(join(tempDir, 'src', 'app.d.ts'))).toBe(true);
@@ -51,26 +51,8 @@ describe('copyTemplate', () => {
     expect(readFileSync(join(tempDir, '.gitignore'), 'utf8')).toBe(
       readFileSync(join(getTemplatePath(), '.gitignore'), 'utf8'),
     );
-    expect(existsSync(join(tempDir, 'scripts', 'smrt-app.mjs'))).toBe(true);
-    expect(existsSync(join(tempDir, 'scripts', 'smrt-mcp-apps.mjs'))).toBe(
-      true,
-    );
-    expect(existsSync(join(tempDir, 'scripts', 'smrt-vite.mjs'))).toBe(true);
-    expect(
-      existsSync(join(tempDir, 'scripts', 'smrt-operation-lock.mjs')),
-    ).toBe(true);
-    expect(
-      existsSync(join(tempDir, 'scripts', 'smrt-provider-readiness.mjs')),
-    ).toBe(true);
-    expect(
-      existsSync(join(tempDir, 'scripts', 'smrt-prepare-migration.mjs')),
-    ).toBe(true);
-    expect(
-      existsSync(join(tempDir, 'scripts', 'smrt-runtime-identity.mjs')),
-    ).toBe(true);
-    expect(existsSync(join(tempDir, 'scripts', 'smrt-writer-lease.mjs'))).toBe(
-      true,
-    );
+    // Lifecycle operations come from `smrt app` (#3371); nothing is copied.
+    expect(existsSync(join(tempDir, 'scripts'))).toBe(false);
     expect(
       existsSync(
         join(
@@ -84,7 +66,6 @@ describe('copyTemplate', () => {
         ),
       ),
     ).toBe(true);
-    expect(existsSync(join(tempDir, 'scripts', 'smrt-worker.mjs'))).toBe(true);
     expect(existsSync(join(tempDir, 'Dockerfile'))).toBe(true);
     expect(existsSync(join(tempDir, '.dockerignore'))).toBe(true);
     expect(existsSync(join(tempDir, 'compose.yaml'))).toBe(true);
@@ -139,7 +120,8 @@ describe('copyTemplate', () => {
     ]) {
       expect(pkg.scripts).toHaveProperty(`app:${operation}`);
     }
-    expect(pkg.scripts.build).toContain('smrt-mcp-apps.mjs validate-if-present');
+    // `smrt app build` validates ./mcp-apps when present, then builds.
+    expect(pkg.scripts.build).toBe('smrt app build');
   });
 
   it('does NOT copy the `.svelte-kit/` directory if it exists in the template', () => {

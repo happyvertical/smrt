@@ -1,6 +1,9 @@
 /** Machine-readable code for a principal policy denial. */
 export const MCP_TOOL_ACCESS_DENIED_CODE = 'mcp_tool_access_denied';
 
+/** Machine-readable code for a request refused by the endpoint's origin check. */
+export const MCP_ORIGIN_DENIED_CODE = 'mcp_origin_denied';
+
 /**
  * Metadata that is safe to expose for an app-MCP access failure. Policy
  * implementations must not place principal, scope, tool, or internal-error
