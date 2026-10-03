@@ -109,7 +109,9 @@ session-locals principal, optional bearer adapter whose verified principal is
 bound with `bindPrincipal` so `database-rls` transactions carry the bearer
 user, tenant and token-capped permissions and the tool policy authorizes with
 those live-capped scopes under either isolation mode, task lifecycle calls
-that re-check the originating action against the same allow-list and effects, and a default-on `Origin` check
+that re-check the originating action against the same allow-list and effects
+and are gated on the effective principal's scopes so live revocation reaches
+existing tasks, and a default-on `Origin` check
 that refuses other browser origins before any principal or dispatch work) and
 the view side with the shipped `McpAppsBridge` component
 from `@happyvertical/smrt-svelte/mcp-apps`; neither requires app-owned glue

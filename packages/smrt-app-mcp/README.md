@@ -66,7 +66,16 @@ export const POST = mountMcpAppRoute({
   `toolPolicy` is not re-applied to lifecycle calls: a task created by an
   application workflow does not record which workflow created it, and such
   workflows often front a policy-hidden generated task tool. Owner and tenant
-  scoping apply to every lifecycle call.
+  scoping apply to every lifecycle call. Principal-level authority is checked
+  first, before the task store is touched: `createDefaultMcpAppServer` (and so
+  `mountMcpAppRoute`) gates every lifecycle call on its principal scope policy
+  — accepted kind, id, tenant and every `requiredScopes` entry, evaluated on
+  the *effective* bound principal — so a bearer whose live permissions were
+  revoked cannot read, resume (supply input to) or cancel an existing task;
+  restoring the permission restores access. A custom `createMcpAppServer`
+  supplies the same gate with `taskPrincipalPolicy({ principal })`; without
+  it, a custom `toolPolicy` is not applied to lifecycle calls. A denial or a
+  thrown predicate is answered as an unknown task.
 - **Server** — `serverInfo` defaults to `{ name: 'smrt-app', version: '0.1.0' }`;
   every other `createMcpAppServer` option (`workflowTools`, `resources`,
   `workflowAssertions`, `toolListCache`, …) passes through. The handler's
