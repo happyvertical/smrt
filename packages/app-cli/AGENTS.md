@@ -15,6 +15,10 @@ Application CLI support for SMRT-based apps.
 - Do not persist tokens, server URLs, or app slugs outside the configured local CLI config path.
 - Bind persisted bearer tokens to the exact issuer emitted by the device flow
   and to the server selected during login. Never reuse them after either changes.
+- The modern bridge targets `mcpPath` (default `/api/mcp`): `createAppCli`
+  option, `startMcpBridge({ mcpPath })`, `smrt-mcp-bridge --mcp-path` /
+  `SMRT_MCP_PATH`, `smrt-app --mcp-path` / `SMRT_APP_MCP_PATH`. Validate it
+  with `resolveMcpPath` (same-server absolute path only) before listening.
 - Keep command output stream-injectable so tests can assert behavior without writing to the real terminal.
 
 ## Gotchas

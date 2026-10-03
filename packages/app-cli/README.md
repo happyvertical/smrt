@@ -150,6 +150,35 @@ stdio clients:
 await cli.startMcpBridge({ name: 'acme-mcp', version: '1.0.0' });
 ```
 
+The bridge forwards to `/api/mcp` by default. When the app mounts its MCP
+route elsewhere, set `mcpPath` on `createAppCli()` or pass it per call
+(`startMcpBridge({ mcpPath: '/mcp' })`). The binaries take `--mcp-path=/mcp`
+(`smrt-mcp-bridge`, or `SMRT_MCP_PATH`) and `--mcp-path` / `SMRT_APP_MCP_PATH`
+(`smrt-app`). The path must be same-server and absolute.
+
+For a local-profile SMRT app, mint a credential with
+`smrt app token --scopes <scope>` in the app checkout. The token is printed
+once. Then give the bridge the loopback server and that token through the
+app's environment prefix. This Claude Desktop entry is an example:
+
+```json
+{
+  "mcpServers": {
+    "notes": {
+      "command": "npx",
+      "args": ["smrt-mcp-bridge", "--env-prefix=NOTES", "--mcp-path=/mcp"],
+      "env": {
+        "NOTES_SERVER_URL": "http://127.0.0.1:5173",
+        "NOTES_TOKEN": "smrt_mcp_…"
+      }
+    }
+  }
+}
+```
+
+The token is sent only when `<PREFIX>_SERVER_URL` matches the target server.
+Revoke a token with `smrt app token revoke <id>`.
+
 The package also ships the generic `smrt-mcp-bridge` binary. The remote app
 surface is typically mounted with
 [`@happyvertical/smrt-app-mcp`](../smrt-app-mcp/README.md).

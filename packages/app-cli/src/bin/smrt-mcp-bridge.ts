@@ -16,6 +16,8 @@
  *  - `SMRT_MCP_APP_SLUG` — directory name under `~/.config`.
  *  - `SMRT_MCP_SERVER_NAME` / `SMRT_MCP_SERVER_VERSION` — local server identity.
  *  - `SMRT_MCP_DEFAULT_SERVER_URL` — fallback server URL.
+ *  - `SMRT_MCP_PATH` (`--mcp-path`) — the app's MCP endpoint path, e.g.
+ *    `/mcp`. Defaults to `/api/mcp`.
  *
  * Apps that want their own branded bin should call `runMcpStdioBridge`
  * directly from `@happyvertical/smrt-app-cli` — this package's root export —
@@ -52,6 +54,7 @@ const serverName =
   readArg('name') ?? process.env.SMRT_MCP_SERVER_NAME ?? 'smrt-app-mcp';
 const serverVersion =
   readArg('version') ?? process.env.SMRT_MCP_SERVER_VERSION ?? '0.0.0';
+const mcpPath = readArg('mcp-path') ?? process.env.SMRT_MCP_PATH;
 
 await runMcpStdioBridge({
   transport: process.argv.includes('--legacy-rest') ? 'legacy-rest' : 'mcp',
@@ -59,5 +62,6 @@ await runMcpStdioBridge({
   appSlug,
   defaultServerUrl,
   requireSecureServerUrl: true,
+  ...(mcpPath ? { mcpPath } : {}),
   serverInfo: { name: serverName, version: serverVersion },
 });
