@@ -20,6 +20,25 @@ function activity(
   };
 }
 describe('ActivityTicker', () => {
+  it('optionally includes queued work with an accurate label and excludes terminal work', () => {
+    render(ActivityTicker, {
+      props: {
+        activities: [
+          activity('waiting', 'queued', 50),
+          activity('active'),
+          activity('done', 'completed'),
+        ],
+        statuses: ['queued', 'running'],
+        label: 'Active processes',
+      },
+    });
+    expect(
+      screen.getAllByRole('listitem').map((item) => item.textContent),
+    ).toEqual(['Queued · Process waiting', 'Process active']);
+    expect(
+      screen.getByRole('region', { name: 'Active processes' }),
+    ).not.toHaveTextContent('Process done');
+  });
   it('uses an honest empty state and never promotes queued/terminal/unknown activity to running', () => {
     const { container } = render(ActivityTicker, {
       props: {

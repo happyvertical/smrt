@@ -89,3 +89,27 @@ test('empty feed tells the truth in both collapsed and expanded states', async (
     'No active processes',
   );
 });
+
+test('queued work is active with an accurate label, while terminal work only appears in expanded details', async ({
+  page,
+}) => {
+  await page.goto('/activity-ticker.html?count=3&queued=1&terminal=1');
+  const region = page.getByRole('region', { name: 'Active processes' });
+  await expect(region.getByRole('listitem')).toHaveCount(2);
+  await expect(region.getByRole('listitem').first()).toHaveText(
+    'Queued · Native process 1',
+  );
+  await expect(region).not.toContainText('Native process 3');
+  await expect(region.locator('.smrt-activity-ticker__track')).toHaveCSS(
+    'animation-name',
+    /smrt-activity-scroll$/,
+  );
+  await page.getByRole('button', { name: 'Toggle activity details' }).click();
+  await expect(page.locator('.smrt-activity-item')).toHaveCount(3);
+  await expect(
+    page.locator('.smrt-activity-item[data-status="queued"]'),
+  ).toContainText('Native process 1');
+  await expect(
+    page.locator('.smrt-activity-item[data-status="completed"]'),
+  ).toContainText('Native process 3');
+});

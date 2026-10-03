@@ -63,6 +63,7 @@ export const M = defineMessages({
   'ui.activity_ticker.empty': 'No active processes',
   'ui.activity_ticker.pause': 'Pause scrolling activities',
   'ui.activity_ticker.resume': 'Resume scrolling activities',
+  'ui.activity_ticker.queued': 'Queued',
   'ui.app_scope_panel.app_scope': 'App scope',
   'ui.hotkey_input.capture_title': 'Press a key to capture it',
   'ui.hotkey_input.conflicts_with': 'Conflicts with',

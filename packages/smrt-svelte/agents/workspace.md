@@ -169,3 +169,5 @@ failure; a context change or later successful refresh clears the signal, and
 success applies the new snapshot.
 Availability is never an authorization boundary—server operations must still
 enforce permissions.
+
+`ActivityTicker` accepts optional `statuses` restricted to queued/running; running-only remains the default. Opting into queued work adds an explicit localized Queued label without progress. Terminal outcomes belong in expanded `ActivityList`, with retention controlled by the app-owned data source.

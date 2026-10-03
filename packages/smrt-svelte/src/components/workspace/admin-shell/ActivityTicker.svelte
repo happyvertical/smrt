@@ -7,25 +7,37 @@ import type { ShellActivity } from './types.js';
 interface Props {
   /** Authenticated app-owned activities; this component never fetches process data. */
   activities: ReadonlyArray<ShellActivity>;
+  /** Active statuses to display; defaults to running only. Terminal work is never active. */
+  statuses?: ReadonlyArray<'queued' | 'running'>;
   /** Accessible region name. */
   label?: string;
   /** Message shown when no activities are running. */
   emptyLabel?: string;
 }
-let { activities, label, emptyLabel }: Props = $props();
+let { activities, statuses = ['running'], label, emptyLabel }: Props = $props();
 const { t } = useI18n();
 let paused = $state(false);
 const running = $derived(
-  activities.filter((activity) => activity.status === 'running'),
+  activities.filter(
+    (activity) =>
+      (activity.status === 'queued' || activity.status === 'running') &&
+      statuses.includes(activity.status),
+  ),
 );
 const multiple = $derived(running.length > 1);
 function progress(activity: ShellActivity): string {
-  return typeof activity.progress === 'number' &&
+  return activity.status === 'running' &&
+    typeof activity.progress === 'number' &&
     Number.isFinite(activity.progress) &&
     activity.progress >= 0 &&
     activity.progress <= 100
     ? ` · ${Math.round(activity.progress)}%`
     : '';
+}
+function activityLabel(activity: ShellActivity): string {
+  return activity.status === 'queued'
+    ? `${t(M['ui.activity_ticker.queued'])} · ${activity.label}`
+    : activity.label;
 }
 </script>
 
@@ -35,15 +47,15 @@ function progress(activity: ShellActivity): string {
     <span class="smrt-activity-ticker__empty">{emptyLabel ?? t(M['ui.activity_ticker.empty'])}</span>
   {:else}
     <ul class="smrt-activity-ticker__accessible">
-      {#each running as activity (activity.id)}<li>{activity.label}{progress(activity)}</li>{/each}
+      {#each running as activity (activity.id)}<li>{activityLabel(activity)}{progress(activity)}</li>{/each}
     </ul>
     <div class="smrt-activity-ticker__track" aria-hidden="true">
       <span class="smrt-activity-ticker__group">
-        {#each running as activity (activity.id)}<span>{activity.label}{progress(activity)}</span>{/each}
+        {#each running as activity (activity.id)}<span>{activityLabel(activity)}{progress(activity)}</span>{/each}
       </span>
       {#if multiple}
         <span class="smrt-activity-ticker__group smrt-activity-ticker__copy">
-          {#each running as activity (activity.id)}<span>{activity.label}{progress(activity)}</span>{/each}
+          {#each running as activity (activity.id)}<span>{activityLabel(activity)}{progress(activity)}</span>{/each}
         </span>
       {/if}
     </div>
