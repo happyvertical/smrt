@@ -165,3 +165,9 @@ for usage.
 ## Commercial UI
 
 See [commercial UI composition](agents/commercial-ui.md) for native form recovery, amount compatibility and backend ownership. Package-owned guides under `agents/` ship with the package.
+
+## Quote and estimate UI
+
+`src/svelte/quote-types.ts` separates unparsed draft strings from explicit
+minor-unit revision DTOs. Native row submitters, caller-owned retry identity and
+extension conventions are documented in [agents/quote-ui.md](agents/quote-ui.md).

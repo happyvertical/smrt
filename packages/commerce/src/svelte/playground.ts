@@ -52,6 +52,27 @@ export default {
   moduleMeta: COMMERCE_MODULE_META,
   entries: [
     {
+      id: 'quote-editor',
+      title: 'Vendor quotation editor',
+      description:
+        'Edit, add/remove rows and recover a simulated rejected native submission.',
+      loadComponent: () => import('./components/QuotePlayground.svelte'),
+      order: 20,
+      props: { kind: 'vendor-quotation' },
+      modes: { mock: { label: 'Interactive demo' } },
+    },
+    {
+      id: 'customer-estimate-editor',
+      title: 'Customer estimate editor',
+      description:
+        'Customer estimate draft and retained revision comparison, without acceptance or budget writes.',
+      loadComponent: () => import('./components/QuotePlayground.svelte'),
+      order: 21,
+      props: { kind: 'customer-estimate' },
+      modes: { mock: { label: 'Interactive demo' } },
+    },
+
+    {
       id: 'invoice-preparation',
       title: 'Invoice Preparation',
       description:
