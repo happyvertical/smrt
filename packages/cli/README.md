@@ -238,7 +238,7 @@ consumer projects receive the CLI's published release line.
 
 ### Application operations (`smrt app`)
 
-Operational commands for a generated SMRT application, run from the
+Operational commands for a generated s-m-r-t application, run from the
 application root. They replace the template's copied `scripts/*.mjs`, so an
 app's `package.json` scripts are one-liners:
 
