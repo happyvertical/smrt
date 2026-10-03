@@ -99,7 +99,7 @@ export const LOCAL_MCP_TOKEN_PRINCIPAL: unique symbol = Symbol.for(
 /**
  * A verified token principal, structurally an MCP app principal. `scopes`
  * are the token scopes the owner still holds in `tenantId`. The object is
- * frozen and always binds `direct`: passed straight to `runAsPrincipal`, it
+ * frozen (its `scopes` array too) and always binds `direct`: passed straight to `runAsPrincipal`, it
  * is authorized only by the owner's active direct membership in `tenantId`.
  * A copy that sets any other `tenantBinding` is rejected, not ignored.
  */
@@ -107,7 +107,8 @@ export interface LocalMcpTokenPrincipal {
   readonly id: string;
   readonly tenantId: string;
   readonly kind: 'human';
-  readonly scopes: string[];
+  /** Frozen: token scopes ∩ live permissions at verification. */
+  readonly scopes: readonly string[];
   readonly tenantBinding: 'direct';
   /** @internal Token provenance brand; see {@link LOCAL_MCP_TOKEN_PRINCIPAL}. */
   readonly [LOCAL_MCP_TOKEN_PRINCIPAL]: true;
@@ -383,7 +384,8 @@ export function createLocalMcpTokenStore(
         id: userId,
         tenantId,
         kind: 'human' as const,
-        scopes: scopes.filter((scope) => held.has(scope)),
+        // A frozen copy: mutating it can never widen a later binding.
+        scopes: Object.freeze(scopes.filter((scope) => held.has(scope))),
         tenantBinding: 'direct' as const,
         [LOCAL_MCP_TOKEN_PRINCIPAL]: true as const,
       });

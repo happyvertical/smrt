@@ -111,15 +111,22 @@ export interface McpResourceAuth {
  * {@link createHostedMcpResourceAuth}, structurally satisfied by the SMRT
  * SvelteKit runtime from `@happyvertical/smrt-app-runtime/sveltekit`.
  */
+/**
+ * A verified local-token principal as a runtime returns it. Its `scopes` may
+ * be a frozen (readonly) array; the adapter copies it.
+ */
+export type McpLocalTokenPrincipal = Omit<McpAppPrincipal, 'scopes'> & {
+  id: string;
+  scopes?: readonly string[];
+};
+
 export interface McpAuthRuntime {
   /**
    * Verify an owner-minted local MCP token (`smrt app token`). Resolve the
    * token principal (with scopes already capped to live permissions), or
    * `null` to deny. Used only in the `local` profile.
    */
-  verifyLocalMcpToken?(
-    token: string,
-  ): Promise<(McpAppPrincipal & { id: string }) | null>;
+  verifyLocalMcpToken?(token: string): Promise<McpLocalTokenPrincipal | null>;
   /**
    * Default hosted identity mapping, used when no explicit
    * `resolvePrincipal` is given (for example the runtime's membership-backed
@@ -137,7 +144,7 @@ export interface LocalMcpTokenAuthOptions {
    * error is also a denial. The principal needs a non-empty `id` and
    * `tenantId` and string `scopes`; `allowCrossTenant` is never honoured.
    */
-  verify(token: string): Promise<(McpAppPrincipal & { id: string }) | null>;
+  verify(token: string): Promise<McpLocalTokenPrincipal | null>;
 }
 
 const LOCAL_BEARER_PATTERN = /^Bearer +([A-Za-z0-9._~+/-]{16,512}=*)$/iu;
@@ -180,7 +187,7 @@ export function createLocalMcpTokenAuth(
         request.headers.get('authorization') ?? '',
       );
       if (!match) return deny();
-      let principal: (McpAppPrincipal & { id: string }) | null;
+      let principal: McpLocalTokenPrincipal | null;
       try {
         principal = await verify(match[1]);
       } catch {

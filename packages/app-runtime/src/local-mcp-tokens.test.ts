@@ -257,6 +257,47 @@ describe('local MCP tokens', () => {
     expect(await tokenRows(local.db)).toEqual([]);
   });
 
+  it('cannot widen a verified principal by mutating its scopes', async () => {
+    const { runtime, local } = await ownedRuntime('frozen-scopes');
+    // The owner holds both, but the token was minted for READ only.
+    const issued = await local.mcpTokens?.issue({ scopes: [READ] });
+    if (!issued) throw new Error('not issued');
+    const verified = await runtime.verifyLocalMcpToken(issued.token);
+    if (!verified) throw new Error('not verified');
+    let pushError: unknown;
+    try {
+      (verified.scopes as string[]).push(EXPORT);
+    } catch (error) {
+      pushError = error;
+    }
+    // The bound scopes stay the minted token ∩ live permissions.
+    await expect(
+      runtime.runAsPrincipal(verified, async (bound) => bound.scopes),
+    ).resolves.toEqual([READ]);
+    expect(pushError).toBeInstanceOf(TypeError);
+    expect(Object.isFrozen(verified.scopes)).toBe(true);
+    expect(verified.scopes).toEqual([READ]);
+    // A fresh verification is equally frozen.
+    const again = await runtime.verifyLocalMcpToken(issued.token);
+    if (!again) throw new Error('not verified');
+    expect(() => {
+      (again.scopes as string[]).push(EXPORT);
+    }).toThrow(TypeError);
+  });
+
+  it('copies caller scopes before binding', async () => {
+    const { runtime, owner } = await ownedRuntime('copied-scopes');
+    const scopes = [READ];
+    const bound = await runtime.runAsPrincipal(
+      { id: owner.userId, tenantId: owner.tenantId, scopes },
+      async (value) => {
+        scopes.push(EXPORT);
+        return value.scopes;
+      },
+    );
+    expect(bound).toEqual([READ]);
+  });
+
   it('never grants more than the owner holds now', async () => {
     const { runtime, local, owner, revokePermission } =
       await ownedRuntime('live');

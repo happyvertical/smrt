@@ -150,6 +150,22 @@ describe('createLocalMcpTokenAuth', () => {
     });
   });
 
+  it('copies a frozen scopes array from the verifier', async () => {
+    const scopes = Object.freeze(['notes.read']);
+    const result = await createLocalMcpTokenAuth({
+      verify: async () => ({ id: 'u', tenantId: 't', kind: 'human', scopes }),
+    }).authenticate(
+      new Request('http://127.0.0.1/mcp', {
+        headers: { authorization: `Bearer ${TOKEN}` },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.principal.scopes).toEqual(['notes.read']);
+      expect(result.principal.scopes).not.toBe(scopes);
+    }
+  });
+
   it.each([
     ['no header', undefined],
     ['another scheme', `Basic ${TOKEN}`],

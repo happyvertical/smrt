@@ -842,6 +842,18 @@ export function composeSmrtSvelteKitRuntime(
   ): Promise<T> => {
     const userId = principal?.id;
     const tenantId = principal?.tenantId;
+    // Read-only input: snapshot the requested scopes before any await, so a
+    // caller mutating its array can never widen the binding.
+    const requestedScopes =
+      principal?.scopes === undefined
+        ? undefined
+        : Object.freeze([...principal.scopes]);
+    if (
+      requestedScopes !== undefined &&
+      !requestedScopes.every((scope) => typeof scope === 'string')
+    ) {
+      throw new Error('A bound principal has malformed scopes.');
+    }
     if (typeof userId !== 'string' || userId.length === 0) {
       throw new Error('A bound principal requires a user id.');
     }
@@ -885,7 +897,7 @@ export function composeSmrtSvelteKitRuntime(
           : 'The bound principal has no authorized membership in its tenant.',
       );
     }
-    const cap = principal.scopes ? new Set(principal.scopes) : undefined;
+    const cap = requestedScopes ? new Set(requestedScopes) : undefined;
     const permissions = [...resolved.permissions].filter(
       (permission) => !cap || cap.has(permission),
     );
