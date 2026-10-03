@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -401,6 +402,66 @@ describe('smrt() Vite preset', () => {
           ]),
         );
       expect(strip(actual)).toEqual(strip(expected));
+    });
+  });
+
+  describe('virtual-module declarations without a dev server (#3409)', () => {
+    const declarations = (dir: string) =>
+      join(root, dir, 'virtual-modules.d.ts');
+
+    it('emits them during a build so typecheck needs no dev server or shim', async () => {
+      const plugins = await smrt({
+        projectRoot: root,
+        packages: ['@test/pkg'],
+      });
+      await runBuild(plugins as AnyPlugin[], root);
+      const file = declarations('src/lib/types/smrt-generated');
+      expect(existsSync(file)).toBe(true);
+      const text = readFileSync(file, 'utf8');
+      expect(text).toContain("declare module '@happyvertical/smrt-virt-web'");
+      expect(text).toContain('ItemData');
+    });
+
+    it('emits when only the Vite config is resolved, as `svelte-kit sync` does', async () => {
+      // SvelteKit's sync CLI calls vite.resolveConfig(...) and never builds, so
+      // a clean clone must get the declarations from config resolution alone.
+      const { resolveConfig } = await import('vite');
+      const plugins = await smrt({
+        projectRoot: root,
+        packages: ['@test/pkg'],
+      });
+      await resolveConfig(
+        { configFile: false, root, logLevel: 'silent', plugins },
+        'build',
+      );
+      const file = declarations('src/lib/types/smrt-generated');
+      expect(existsSync(file)).toBe(true);
+      expect(readFileSync(file, 'utf8')).toContain(
+        "declare module '@happyvertical/smrt-virt-web'",
+      );
+    });
+
+    it('emits at the overridden typesDir', async () => {
+      const plugins = await smrt({
+        projectRoot: root,
+        packages: ['@test/pkg'],
+        typesDir: 'app/types',
+      });
+      await runBuild(plugins as AnyPlugin[], root);
+      expect(existsSync(declarations('app/types'))).toBe(true);
+    });
+
+    it('is deterministic and does not rewrite an unchanged file', async () => {
+      const file = declarations('src/lib/types/smrt-generated');
+      const first = await smrt({ projectRoot: root, packages: ['@test/pkg'] });
+      await runBuild(first as AnyPlugin[], root);
+      const before = readFileSync(file, 'utf8');
+      const mtime = statSync(file).mtimeMs;
+      await new Promise((r) => setTimeout(r, 20));
+      const second = await smrt({ projectRoot: root, packages: ['@test/pkg'] });
+      await runBuild(second as AnyPlugin[], root);
+      expect(readFileSync(file, 'utf8')).toBe(before);
+      expect(statSync(file).mtimeMs).toBe(mtime);
     });
   });
 
