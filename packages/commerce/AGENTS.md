@@ -171,3 +171,9 @@ See [commercial UI composition](agents/commercial-ui.md) for native form recover
 `src/svelte/quote-types.ts` separates unparsed draft strings from explicit
 minor-unit revision DTOs. Native row submitters, caller-owned retry identity and
 extension conventions are documented in [agents/quote-ui.md](agents/quote-ui.md).
+
+## Purchasing UI
+
+`PurchaseOrderEditor` preserves allocation IDs and explicit zeroes, including
+retained reduction rows; the server validates review fingerprints before recording.
+See [agents/purchasing-ui.md](agents/purchasing-ui.md) for caller responsibilities.

@@ -127,3 +127,33 @@ ModuleUIRegistry.register(
   'quote-revision-comparison',
   QuoteRevisionComparison,
 );
+
+import PurchaseOrderEditor from './components/PurchaseOrderEditor.svelte';
+import PurchaseSourceSelector from './components/PurchaseSourceSelector.svelte';
+
+export { PurchaseOrderEditor, PurchaseSourceSelector };
+export type PurchaseOrderEditorProps = ComponentProps<
+  typeof PurchaseOrderEditor
+>;
+export type PurchaseSourceSelectorProps = ComponentProps<
+  typeof PurchaseSourceSelector
+>;
+export type {
+  PurchaseAllocationDraft,
+  PurchaseDraftValues,
+  PurchaseFieldNames,
+  PurchaseReviewSnapshot,
+  PurchaseSourceOption,
+} from './purchasing-types.js';
+export { purchaseFieldNames } from './purchasing-types.js';
+
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'purchase-order-editor',
+  PurchaseOrderEditor,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'purchase-source-selector',
+  PurchaseSourceSelector,
+);
