@@ -75,6 +75,7 @@ import {
 } from '../direct-membership.js';
 import {
   initializeLocalApplicationRuntime,
+  isLocalMcpTokenPrincipal,
   type LocalApplicationRuntime,
   type LocalMcpTokenPrincipal,
   type LocalOwnerBootstrapInvitation,
@@ -850,7 +851,21 @@ export function composeSmrtSvelteKitRuntime(
     // Resolution reads the base connection, before any RLS transaction opens.
     // Only the principal's own active direct membership in exactly this
     // tenant authorizes it; it is pinned so inheritance cannot substitute.
-    const binding = principal.tenantBinding ?? 'direct-or-inherited';
+    // A token-derived principal is direct-only. A copy that tries to widen
+    // its binding is refused rather than silently narrowed.
+    const tokenDerived = isLocalMcpTokenPrincipal(principal);
+    if (
+      tokenDerived &&
+      principal.tenantBinding !== undefined &&
+      principal.tenantBinding !== 'direct'
+    ) {
+      throw new Error(
+        'A local MCP token principal binds only through its direct membership.',
+      );
+    }
+    const binding = tokenDerived
+      ? 'direct'
+      : (principal.tenantBinding ?? 'direct-or-inherited');
     if (binding !== 'direct' && binding !== 'direct-or-inherited') {
       throw new Error('Unknown tenant binding mode for a bound principal.');
     }

@@ -86,14 +86,40 @@ export interface LocalMcpTokenRecord {
 }
 
 /**
+ * Brand on every principal `verify()` returns. It is an enumerable symbol, so
+ * a spread copy keeps it and `runAsPrincipal` can refuse any attempt to widen
+ * the binding of a token-derived principal.
+ *
+ * @internal
+ */
+export const LOCAL_MCP_TOKEN_PRINCIPAL: unique symbol = Symbol.for(
+  '@happyvertical/smrt-app-runtime/local-mcp-token-principal',
+);
+
+/**
  * A verified token principal, structurally an MCP app principal. `scopes`
- * are the token scopes the owner still holds in `tenantId`.
+ * are the token scopes the owner still holds in `tenantId`. The object is
+ * frozen and always binds `direct`: passed straight to `runAsPrincipal`, it
+ * is authorized only by the owner's active direct membership in `tenantId`.
+ * A copy that sets any other `tenantBinding` is rejected, not ignored.
  */
 export interface LocalMcpTokenPrincipal {
   readonly id: string;
   readonly tenantId: string;
   readonly kind: 'human';
   readonly scopes: string[];
+  readonly tenantBinding: 'direct';
+  /** @internal Token provenance brand; see {@link LOCAL_MCP_TOKEN_PRINCIPAL}. */
+  readonly [LOCAL_MCP_TOKEN_PRINCIPAL]: true;
+}
+
+/** True for a principal derived from a verified local MCP token. */
+export function isLocalMcpTokenPrincipal(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as Record<symbol, unknown>)[LOCAL_MCP_TOKEN_PRINCIPAL] === true
+  );
 }
 
 /** Owner-scoped local MCP token operations. */
@@ -358,6 +384,8 @@ export function createLocalMcpTokenStore(
         tenantId,
         kind: 'human' as const,
         scopes: scopes.filter((scope) => held.has(scope)),
+        tenantBinding: 'direct' as const,
+        [LOCAL_MCP_TOKEN_PRINCIPAL]: true as const,
       });
     },
   });

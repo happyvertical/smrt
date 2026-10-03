@@ -32,6 +32,7 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import {
+  LOCAL_MCP_TOKEN_PRINCIPAL,
   LOCAL_MCP_TOKEN_TABLE,
   LocalRuntimeError,
   openLocalMcpTokenStore,
@@ -202,6 +203,8 @@ describe('local MCP tokens', () => {
       tenantId: owner.tenantId,
       kind: 'human',
       scopes: [EXPORT, READ],
+      tenantBinding: 'direct',
+      [LOCAL_MCP_TOKEN_PRINCIPAL]: true,
     };
     expect(await store.verify(issued.token)).toEqual(principal);
     expect(await runtime.verifyLocalMcpToken(issued.token)).toEqual(principal);
@@ -353,10 +356,13 @@ describe('local MCP tokens', () => {
       childTenantId,
       issued.id,
     );
-    expect(await runtime.verifyLocalMcpToken(issued.token)).toMatchObject({
-      tenantId: childTenantId,
-      scopes: [READ],
-    });
+    const verified = await runtime.verifyLocalMcpToken(issued.token);
+    expect(verified).toMatchObject({ tenantId: childTenantId, scopes: [READ] });
+    if (!verified) throw new Error('not verified');
+    // The two public runtime APIs compose directly.
+    await expect(
+      runtime.runAsPrincipal(verified, async (bound) => bound.scopes),
+    ).resolves.toEqual([READ]);
     await expect(
       runtime.runAsPrincipal(
         { id: owner.userId, tenantId: childTenantId, scopes: [READ] },
@@ -375,6 +381,25 @@ describe('local MCP tokens', () => {
     if (!directRow) throw new Error('direct membership missing');
     await withSystemContext(() => directRow.delete());
     expect(await runtime.verifyLocalMcpToken(issued.token)).toBeNull();
+    // A principal verified earlier, passed straight to runAsPrincipal, still
+    // binds direct-only: the inheriting ancestor cannot replace the row.
+    await expect(
+      runtime.runAsPrincipal(verified, async () => 'ran'),
+    ).rejects.toThrow('no active direct membership');
+    // Widening a token-derived principal's binding is rejected, not ignored.
+    await expect(
+      runtime.runAsPrincipal(
+        { ...verified, tenantBinding: 'direct-or-inherited' as const },
+        async () => 'ran',
+      ),
+    ).rejects.toThrow('local MCP token principal');
+    // The verified principal is immutable and always direct-only.
+    expect(verified.tenantBinding).toBe('direct');
+    expect(Object.isFrozen(verified)).toBe(true);
+    expect(() => {
+      (verified as { tenantBinding: string }).tenantBinding =
+        'direct-or-inherited';
+    }).toThrow();
     // The local-token binding mode is direct-only.
     await expect(
       runtime.runAsPrincipal(
