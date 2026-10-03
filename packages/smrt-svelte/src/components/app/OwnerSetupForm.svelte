@@ -46,7 +46,9 @@ function enhanceForm(form: HTMLFormElement) {
   {:else}
     <p>{t(M['ui.owner_setup.intro'])}</p>
     {#if form?.message}<p role="alert" data-owner-setup="error">{form.message}</p>{/if}
+    <!-- raw-primitive-allow: native POST form so owner setup works without JavaScript; the host's SvelteKit `enhance` is attached when available -->
     <form method="POST" {action} {@attach enhanceForm}>
+      <!-- raw-primitive-allow: hidden, non-interactive carrier for the single-use bootstrap token -->
       <input type="hidden" name="token" value={data.token} />
       <label>
         {t(M['ui.owner_setup.name'])}
