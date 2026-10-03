@@ -211,8 +211,13 @@ export async function resolveConfiguredRuntime(
     resolveConfiguredApplicationRuntime,
   } = await import('@happyvertical/smrt-config');
   const loaded = await loadConfig({ cache: false, searchFrom: sourceRoot });
+  // Only an absent property (or an explicit `undefined`) is "no runtime
+  // block". A present falsy value (`null`, `false`, `0`, `''`) goes to the
+  // validator, which rejects it, rather than silently selecting local.
+  const declaresRuntime =
+    Object.hasOwn(loaded, 'runtime') && loaded.runtime !== undefined;
   return (
-    loaded.runtime
+    declaresRuntime
       ? resolveConfiguredApplicationRuntime()
       : resolveApplicationRuntime({ profile: 'local' })
   ) as ResolvedApplicationRuntime;

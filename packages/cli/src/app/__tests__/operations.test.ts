@@ -324,6 +324,28 @@ describe('runtime profile resolution (#3410 item 1)', () => {
     );
   });
 
+  it.each([
+    'null',
+    'false',
+    '0',
+    "''",
+    "'local'",
+    '[]',
+    '42',
+  ])('fails closed on a present runtime value that is not a runtime block (runtime: %s)', async (value) => {
+    const fixture = makeFixture();
+    withConfig(fixture, `export default { runtime: ${value} };\n`);
+    await expect(resolveConfiguredRuntime(fixture.app)).rejects.toThrow(
+      /Invalid application runtime profile/,
+    );
+  });
+
+  it('treats an explicitly undefined runtime as absent', async () => {
+    const fixture = makeFixture();
+    withConfig(fixture, 'export default { runtime: undefined };\n');
+    expect((await resolveConfiguredRuntime(fixture.app)).profile).toBe('local');
+  });
+
   it('runs setup with the default resolver when the config declares no runtime', async () => {
     const fixture = makeFixture();
     withConfig(fixture, 'export default {};\n');
