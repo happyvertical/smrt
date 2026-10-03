@@ -118,6 +118,7 @@ const title = $derived(
     {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} />{/each}
     <fieldset disabled={readonly || busy}>
       <legend>{title}</legend>
+      {#if !readonly}<div class="actions"><Button type="submit" name={intents.name} value={intents.save} density="touch">{labels.save ?? t(Q['commerce.quote.save'])}</Button></div>{/if}
       <FormGroup label={labels.counterparty ?? t(Q[kind === 'vendor-quotation' ? 'commerce.quote.vendor_party' : 'commerce.quote.customer_party'])} error={errors.counterpartyId} required>
         <Select name={fields.counterpartyId} value={values.counterpartyId} required density="touch">
           <option value="">{t(Q['commerce.quote.choose'])}</option>
@@ -149,7 +150,6 @@ const title = $derived(
       {#if !readonly}<Button type="submit" name={intents.name} value={intents.add} formnovalidate variant="secondary" density="touch">{t(Q['commerce.quote.add'])}</Button>{/if}
       {@render extensions?.()}
       {@render attachments?.()}
-      {#if !readonly}<div class="actions"><Button type="submit" name={intents.name} value={intents.save} density="touch">{labels.save ?? t(Q['commerce.quote.save'])}</Button></div>{/if}
     </fieldset>
     {#if cancelHref}<Button href={cancelHref} variant="secondary" density="touch">{t(Q['commerce.quote.cancel'])}</Button>{/if}
   </Form>

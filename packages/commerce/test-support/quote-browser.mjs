@@ -57,6 +57,10 @@ try {
  const native=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
  const page=await native.newPage();await page.goto('http://127.0.0.1:5585/native');
  await page.getByLabel('Total, including tax').fill('12..50');
+ await Promise.all([page.waitForEvent('load'),page.getByLabel('Total, including tax').press('Enter')]);
+ assert.equal(requests.at(-1).intent,'save');
+ assert.equal(await page.locator('[name=lineId]').count(),1);
+ assert.equal(await page.getByLabel('Total, including tax').inputValue(),'12..50');
  await page.getByLabel('Reference',{exact:true}).fill('Keyboard retained');
  await page.getByRole('button',{name:'Add line',exact:true}).focus();
  await Promise.all([page.waitForURL('**/post'),page.keyboard.press('Enter')]);
@@ -76,7 +80,12 @@ try {
  const hydrated=await browser.newContext({viewport:{width:390,height:844}});const demo=await hydrated.newPage();const errors=[];
  demo.on('pageerror',error=>errors.push(String(error)));
  await demo.goto('http://127.0.0.1:5585/demo');await demo.getByRole('button',{name:'Add line',exact:true}).waitFor();
- await demo.getByLabel('Total, including tax').fill('9..99');await demo.getByRole('button',{name:'Add line',exact:true}).click();
+ await demo.getByLabel('Total, including tax').fill('9..99');
+ await demo.getByLabel('Total, including tax').press('Enter');
+ await demo.getByText('Demo rejected submission. Values and request identity remain available for retry.',{exact:true}).waitFor();
+ assert.equal(await demo.locator('[name=lineId]').count(),1);
+ assert.equal(await demo.getByLabel('Total, including tax').inputValue(),'9..99');
+ await demo.getByRole('button',{name:'Add line',exact:true}).click();
  assert.equal(await demo.locator('[name=lineId]').count(),2);
  await demo.getByRole('button',{name:'Save draft',exact:true}).click();
  assert.equal(await demo.getByLabel('Total, including tax').inputValue(),'9..99');
