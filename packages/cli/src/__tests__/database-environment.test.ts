@@ -118,7 +118,7 @@ describe('applyDatabaseEnvironment precedence', () => {
 });
 
 describe('smrt db:migrate from the environment (real process)', () => {
-  function project(): string {
+  function project(configName = 'smrt.config.mjs'): string {
     const root = realpathSync(
       mkdtempSync(join(realpathSync(tmpdir()), 'smrt-db-env-')),
     );
@@ -129,7 +129,7 @@ describe('smrt db:migrate from the environment (real process)', () => {
     );
     // A config that, like the template's, says nothing about the database.
     writeFileSync(
-      join(root, 'smrt.config.mjs'),
+      join(root, configName),
       'export default { runtime: { profile: "local" } };\n',
     );
     // A built project with no local objects that consumes one small package.
@@ -182,6 +182,26 @@ describe('smrt db:migrate from the environment (real process)', () => {
     expect(result.stdout).toContain('Database type: sqlite');
     expect(result.status, output).toBe(0);
     expect(existsSync(database)).toBe(true);
+  });
+
+  it('loads .env beside a TypeScript smrt.config.ts without overriding the shell', () => {
+    const root = project('smrt.config.ts');
+    const fromFile = join(root, 'data', 'from-env-file.sqlite');
+    writeFileSync(
+      join(root, '.env'),
+      `DATABASE_URL=${fromFile}\nDATABASE_TYPE=sqlite\n`,
+    );
+    const fileRun = smrt(root, ['db:migrate'], {
+      DATABASE_URL: undefined,
+      DATABASE_TYPE: undefined,
+    });
+    expect(fileRun.status, `${fileRun.stdout}\n${fileRun.stderr}`).toBe(0);
+    expect(existsSync(fromFile)).toBe(true);
+
+    const fromShell = join(root, 'data', 'from-shell.sqlite');
+    const shellRun = smrt(root, ['db:migrate'], { DATABASE_URL: fromShell });
+    expect(shellRun.status, `${shellRun.stdout}\n${shellRun.stderr}`).toBe(0);
+    expect(existsSync(fromShell)).toBe(true);
   });
 
   it('still requires a database when neither config nor environment names one', () => {

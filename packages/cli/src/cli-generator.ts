@@ -2800,6 +2800,9 @@ export async function main() {
       'smrt.config.js',
       'smrt.config.mjs',
       'smrt.config.cjs',
+      'smrt.config.ts',
+      'smrt.config.mts',
+      'smrt.config.cts',
       'smrt.config.json',
     ];
     let dir = process.cwd();
