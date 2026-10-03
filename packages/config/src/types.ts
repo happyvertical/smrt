@@ -779,6 +779,17 @@ export interface AIConfigBlock {
   apiKeyEnv?: string;
   /** Literal key (discouraged); prefer `apiKeyEnv`. */
   apiKey?: string;
+  /**
+   * Legacy alias of `provider`, as written by older `smrt init` configs.
+   * The resolver canonicalises it; prefer `provider`.
+   * @deprecated
+   */
+  type?: string;
+  /**
+   * Legacy alias of `model`. The resolver canonicalises it; prefer `model`.
+   * @deprecated
+   */
+  defaultModel?: string;
 }
 
 /**

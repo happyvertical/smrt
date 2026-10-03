@@ -14,6 +14,7 @@ import {
   tryResolveAIProviderConfig,
   tryResolveConfiguredAIProvider,
 } from './index.js';
+import type { AIConfigBlock } from './types.js';
 
 const SECRET = 'sk-super-secret-value-123';
 const OTHER_SECRET = 'sk-other-provider-secret-456';
@@ -523,7 +524,7 @@ describe('accumulating setConfig keeps provider ownership (O1)', () => {
   });
 
   it('mergeExportedConfig applies ownership to ai blocks', () => {
-    const merged = mergeExportedConfig(
+    const merged = mergeExportedConfig<{ ai: AIConfigBlock }>(
       { ai: { provider: 'openai', baseUrl: 'https://o.example', model: 'm' } },
       { ai: { type: 'anthropic' } },
     ) as { ai: Record<string, unknown> };
