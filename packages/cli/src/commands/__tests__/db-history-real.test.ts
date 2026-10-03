@@ -5,6 +5,7 @@ import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { MigrationTracker } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { autoDiscoverAndLoadMock } = vi.hoisted(() => ({
   autoDiscoverAndLoadMock: vi.fn(),
@@ -98,7 +99,7 @@ describe('db:history (real SQLite rendering)', () => {
       .spyOn(process, 'exit')
       .mockImplementation((() => undefined as never) as any);
 
-    await dbHistoryCommand.handler([], {});
+    await requireCommandHandler(dbHistoryCommand)([], {});
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(errorOutput()).toContain('Database configuration required');
@@ -112,7 +113,7 @@ describe('db:history (real SQLite rendering)', () => {
       .spyOn(process, 'exit')
       .mockImplementation((() => undefined as never) as any);
 
-    await dbHistoryCommand.handler([], { json: true });
+    await requireCommandHandler(dbHistoryCommand)([], { json: true });
 
     expect(output()).toContain('Database not configured');
     exitSpy.mockRestore();
@@ -121,7 +122,7 @@ describe('db:history (real SQLite rendering)', () => {
   it('renders the applied migrations in compact human-readable form', async () => {
     await seed();
 
-    await dbHistoryCommand.handler([], {});
+    await requireCommandHandler(dbHistoryCommand)([], {});
 
     const out = output();
     expect(out).toContain('Migration History');
@@ -134,7 +135,7 @@ describe('db:history (real SQLite rendering)', () => {
   it('renders verbose details including version and checksum', async () => {
     await seed();
 
-    await dbHistoryCommand.handler([], { verbose: true });
+    await requireCommandHandler(dbHistoryCommand)([], { verbose: true });
 
     const out = output();
     expect(out).toContain('Version: 1.0.0');
@@ -144,7 +145,7 @@ describe('db:history (real SQLite rendering)', () => {
   it('serializes the full history as JSON', async () => {
     await seed();
 
-    await dbHistoryCommand.handler([], { json: true });
+    await requireCommandHandler(dbHistoryCommand)([], { json: true });
 
     const parsed = JSON.parse(output());
     expect(Array.isArray(parsed)).toBe(true);
@@ -159,7 +160,7 @@ describe('db:history (real SQLite rendering)', () => {
     await tracker.initialize();
     await db.close?.();
 
-    await dbHistoryCommand.handler([], {});
+    await requireCommandHandler(dbHistoryCommand)([], {});
 
     expect(output()).toContain('No migrations found matching criteria');
   });
@@ -167,7 +168,7 @@ describe('db:history (real SQLite rendering)', () => {
   it('filters by status, hiding non-matching rows', async () => {
     await seed();
 
-    await dbHistoryCommand.handler([], { status: 'failed' });
+    await requireCommandHandler(dbHistoryCommand)([], { status: 'failed' });
 
     // No failed migrations were seeded, so the filtered result is empty.
     expect(output()).toContain('No migrations found matching criteria');
@@ -177,7 +178,7 @@ describe('db:history (real SQLite rendering)', () => {
     await seed();
 
     // A future cutoff filters out every applied migration.
-    await dbHistoryCommand.handler([], { since: '2999-01-01' });
+    await requireCommandHandler(dbHistoryCommand)([], { since: '2999-01-01' });
 
     expect(output()).toContain('No migrations found matching criteria');
   });
@@ -185,7 +186,7 @@ describe('db:history (real SQLite rendering)', () => {
   it('honors a numeric --limit', async () => {
     await seed();
 
-    await dbHistoryCommand.handler([], { limit: 1 });
+    await requireCommandHandler(dbHistoryCommand)([], { limit: 1 });
 
     expect(output()).toContain('Showing 1 migration');
   });

@@ -219,7 +219,7 @@ describe('utils/generator generate()', () => {
       resolved: templateDir,
     };
     const config = baseConfig();
-    (config as Record<string, unknown>).templateDir = 'custom-files';
+    config.templateDir = 'custom-files';
 
     await generate(source, config, {
       template: 'test',
@@ -317,8 +317,8 @@ describe('utils/generator generate()', () => {
       location: 'github:user/repo',
       resolved: '',
     };
-    const config = baseConfig();
-    (config as Record<string, unknown>).__tempDir = gitTemp;
+    // Git loader adds this internal location before handing the config to generate().
+    const config = { ...baseConfig(), __tempDir: gitTemp };
 
     await generate(source, config, {
       template: 'test',
@@ -350,9 +350,11 @@ describe('utils/generator generate()', () => {
       location: 'github:user/repo/templates/site',
       resolved: '',
     };
-    const config = baseConfig();
-    (config as Record<string, unknown>).__tempDir = repoRoot;
-    (config as Record<string, unknown>).__templateRoot = subdir;
+    const config = {
+      ...baseConfig(),
+      __tempDir: repoRoot,
+      __templateRoot: subdir,
+    };
 
     await generate(source, config, {
       template: 'test',

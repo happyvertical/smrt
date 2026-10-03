@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const mocks = vi.hoisted(() => ({
   run: vi.fn(),
@@ -44,7 +45,10 @@ describe('database validation permissions routing', () => {
     });
     const outcome = { skipped: false, plan: null, error: 'Missing contract' };
     mocks.run.mockResolvedValue(outcome);
-    await utilityCommands['db:validate'].handler([], { json: true, fix: true });
+    await requireCommandHandler(utilityCommands['db:validate'])([], {
+      json: true,
+      fix: true,
+    });
     expect(mocks.run).toHaveBeenCalledWith({}, true);
     expect(mocks.output).toHaveBeenCalledWith(outcome, true);
     expect(mocks.resolveData).not.toHaveBeenCalled();
@@ -65,9 +69,9 @@ describe('database validation permissions routing', () => {
     vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('exit');
     });
-    await utilityCommands['db:validate']
-      .handler([], { quick: true })
-      .catch(() => undefined);
+    await requireCommandHandler(utilityCommands['db:validate'])([], {
+      quick: true,
+    }).catch(() => undefined);
     expect(mocks.resolveData).toHaveBeenCalledWith(undefined);
     expect(mocks.run).toHaveBeenCalledWith({}, true);
     expect(mocks.output).not.toHaveBeenCalled();
@@ -88,7 +92,9 @@ describe('database validation permissions routing', () => {
       throw new Error('exit');
     });
     await expect(
-      utilityCommands['db:validate'].handler([], { data: './data' }),
+      requireCommandHandler(utilityCommands['db:validate'])([], {
+        data: './data',
+      }),
     ).rejects.toThrow('exit');
     expect(mocks.resolveData).toHaveBeenCalledWith('./data');
     expect(mocks.run).not.toHaveBeenCalled();
@@ -114,9 +120,9 @@ it('doctor --db includes read-only permission findings as issues', async () => {
   });
   try {
     process.chdir(directory);
-    await utilityCommands.doctor
-      .handler([], { db: true })
-      .catch(() => undefined);
+    await requireCommandHandler(utilityCommands.doctor)([], { db: true }).catch(
+      () => undefined,
+    );
     expect(mocks.run).toHaveBeenCalledWith({}, true);
     expect(log.mock.calls.flat().join('\n')).toContain(
       'PostgreSQL role permissions',

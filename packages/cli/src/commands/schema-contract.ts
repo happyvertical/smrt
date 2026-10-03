@@ -385,7 +385,7 @@ export async function evaluateSchemaContract(options: {
     };
   });
 
-  const requiredFields = [];
+  const requiredFields: SchemaContractReport['requiredFields'] = [];
   for (const ref of schemaContract.requiredFields ?? []) {
     const { objectRef, fieldName } = parseRequiredField(ref);
     const entry = resolveClass(objectRef);

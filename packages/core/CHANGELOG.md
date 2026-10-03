@@ -1,5 +1,30 @@
 # @happyvertical/smrt-core
 
+## 0.53.2
+
+### Patch Changes
+
+- ### Features
+  
+  - add request-scoped repository clients (#3383) (projects)
+  - add configurable period rollups and adjustments (#3363) (timesheets)
+  - add tenant-scoped attendance and offline replay (#3362) (timesheets)
+  - allow consumers to close generated model surfaces at runtime (#3361) (core)
+  
+  ### Bug Fixes
+  
+  - make concurrent permission seeding idempotent (#3354) (users)
+  - exclude compiled tests from package output and discovery (#3353)
+  
+  ### Other Changes
+  
+  - chore: type-check tests across seven packages (#3360) (framework)
+  - chore: type-check all 82 test fixtures (#3359) (cli)
+  - chore: type-check all 434 test fixtures (#3358) (core)
+- @happyvertical/smrt-config@0.53.2
+  - @happyvertical/smrt-scanner@0.53.2
+  - @happyvertical/smrt-types@0.53.2
+
 ## 0.53.1
 
 ### Patch Changes

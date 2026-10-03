@@ -17,12 +17,14 @@ function register() {
   ObjectRegistry.registerFromManifest(key, {
     name: 'runtimetenantrecord',
     className: 'RuntimeTenantRecord',
+    collection: 'runtime_tenant_records',
+    filePath: '/fixtures/runtime-tenant-record.ts',
     packageName: '@fixture/override',
     extends: 'SmrtObject',
     fields: { tenantId: { type: 'text' } },
     methods: {},
     decoratorConfig: { tenantScoped: { mode: 'optional' } },
-  } as SmartObjectDefinition);
+  } satisfies SmartObjectDefinition);
   registerTenantScopedClass(key, { mode: 'optional' });
   ObjectRegistry.registerOverride(key, { tenancy: { mode: 'required' } });
 }
@@ -62,12 +64,14 @@ describe('required consumer tenancy overrides', () => {
     ObjectRegistry.registerFromManifest(childKey, {
       name: 'inheritedruntimetenantrecord',
       className: 'InheritedRuntimeTenantRecord',
+      collection: 'inherited_runtime_tenant_records',
+      filePath: '/fixtures/inherited-runtime-tenant-record.ts',
       packageName: '@fixture/override',
       extends: key,
       fields: {},
       methods: {},
       decoratorConfig: {},
-    } as SmartObjectDefinition);
+    } satisfies SmartObjectDefinition);
     expect(getTenantScopedConfig(childKey)?.mode).toBe('required');
     const interceptor = createTenantInterceptor();
     const childContext = (operation: InterceptorContext['operation']) => ({

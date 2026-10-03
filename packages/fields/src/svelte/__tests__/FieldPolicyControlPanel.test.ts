@@ -47,6 +47,7 @@ function editorState(): FieldPolicyEditorState {
           scopeType: 'tenant',
           tenantId: 'tenant',
           userId: null,
+          updatedBy: null,
           defaultValue: null,
           displayOrder: null,
           help: null,
@@ -253,9 +254,7 @@ describe('FieldPolicyControlPanel', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Edit settings' }),
     );
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Save', exact: true }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await vi.waitFor(() =>
       expect(calls).toEqual(['update', 'audit', 'load', 'changed']),
@@ -327,9 +326,7 @@ describe('FieldPolicyControlPanel', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Edit settings' }),
     );
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Save', exact: true }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await vi.waitFor(() =>
       expect(panelAdapter.loadAudit).toHaveBeenCalledTimes(1),
     );

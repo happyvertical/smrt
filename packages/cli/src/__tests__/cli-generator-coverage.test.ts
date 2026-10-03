@@ -20,7 +20,8 @@
  * calling process.exit — error paths are assertable.
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { ObjectRegistry, SmrtObject } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { parseCliArgs } from '@happyvertical/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -431,7 +432,8 @@ describe('CLIGenerator - utility commands', () => {
   it('status handler reports connection state', async () => {
     const withCtx = new CLIGenerator(
       { name: 'smrt', version: '1.0.0', colors: false },
-      { db: {}, user: { id: 'u1' } },
+      // The status handler checks connection presence only; this is a deliberate sentinel.
+      { db: {} as DatabaseInterface, user: { id: 'u1' } },
     );
     const status = withCtx
       .generateUtilityCommands()
@@ -475,7 +477,19 @@ describe('CLIGenerator - utility commands', () => {
       new Map([['title', { type: 'text' }]]),
     );
     vi.spyOn(ObjectRegistry, 'getAllMethods').mockResolvedValue(
-      new Map([['analyze', { name: 'analyze', isPublic: true }]]),
+      new Map([
+        [
+          'analyze',
+          {
+            name: 'analyze',
+            isPublic: true,
+            isStatic: false,
+            async: false,
+            parameters: [],
+            returnType: 'void',
+          },
+        ],
+      ]),
     );
     const objects = cli
       .generateUtilityCommands()
@@ -503,7 +517,19 @@ describe('CLIGenerator - utility commands', () => {
       new Map([['title', { type: 'text' }]]),
     );
     vi.spyOn(ObjectRegistry, 'getAllMethods').mockResolvedValue(
-      new Map([['analyze', { name: 'analyze', isPublic: true }]]),
+      new Map([
+        [
+          'analyze',
+          {
+            name: 'analyze',
+            isPublic: true,
+            isStatic: false,
+            async: false,
+            parameters: [],
+            returnType: 'void',
+          },
+        ],
+      ]),
     );
     const objects = cli
       .generateUtilityCommands()
@@ -596,7 +622,19 @@ describe('CLIGenerator - preprocessObjectCommands', () => {
 
   it('combines when first arg is a registered object name', () => {
     vi.spyOn(ObjectRegistry, 'getAllClasses').mockReturnValue(
-      new Map([['test:Council', { name: 'Council', packageName: 'test' }]]),
+      new Map([
+        [
+          'test:Council',
+          {
+            name: 'Council',
+            packageName: 'test',
+            constructor: class Council extends SmrtObject {},
+            config: {},
+            fields: new Map(),
+            methods: new Map(),
+          },
+        ],
+      ]),
     );
     const g = cli as any;
     expect(g.preprocessObjectCommands(['council', 'analyze'], [])).toEqual([
@@ -922,8 +960,11 @@ describe('CLIGenerator - handleCustomMethod', () => {
           {
             name: 'analyze',
             isPublic: true,
+            isStatic: false,
+            async: true,
+            returnType: 'unknown',
             parameters: [
-              { name: 'id', type: 'string' },
+              { name: 'id', type: 'string', optional: false },
               {
                 name: 'opts',
                 type: '{ depth?: number; payload?: object }',
@@ -975,7 +1016,17 @@ describe('CLIGenerator - handleCustomMethod', () => {
     } as any);
     vi.spyOn(ObjectRegistry, 'getAllMethods').mockResolvedValue(
       new Map([
-        ['analyze', { name: 'analyze', isPublic: true, parameters: [] }],
+        [
+          'analyze',
+          {
+            name: 'analyze',
+            isPublic: true,
+            isStatic: false,
+            async: false,
+            parameters: [],
+            returnType: 'void',
+          },
+        ],
       ]),
     );
     vi.spyOn(console, 'log').mockImplementation(() => {});

@@ -20,7 +20,8 @@ vi.hoisted(() => {
 // from one realm. jsdom replaces the globals, so restore Node's encoder before
 // the in-process server begins handling requests.
 globalThis.TextEncoder = TextEncoder;
-globalThis.TextDecoder = TextDecoder;
+globalThis.TextDecoder =
+  TextDecoder as unknown as typeof globalThis.TextDecoder;
 globalThis.Uint8Array = new TextEncoder().encode('')
   .constructor as Uint8ArrayConstructor;
 

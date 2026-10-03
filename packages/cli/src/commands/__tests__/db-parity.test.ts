@@ -23,6 +23,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { autoDiscoverAndLoadMock } = vi.hoisted(() => ({
   autoDiscoverAndLoadMock: vi.fn(),
@@ -254,12 +255,14 @@ describe('collectRegistryConflictTargets', () => {
       })
       class Issue2762TenantRecord extends SmrtObject {
         @field({ type: 'text', required: true })
+        // @ts-expect-error Intentionally shadow the base accessor to test registration of a declared slug field.
         slug: string = '';
       }
 
       @smrt({ tableName: 'issue_2762_events', tableStrategy: 'sti' })
       class Issue2762Event extends SmrtObject {
         @field({ type: 'text', required: true })
+        // @ts-expect-error Intentionally shadow the base accessor to test registration of a declared slug field.
         slug: string = '';
       }
 
@@ -442,7 +445,10 @@ describe('live parity against a real SQLite database', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], { parity: true, verbose: true });
+    await requireCommandHandler(dbStatusCommand)([], {
+      parity: true,
+      verbose: true,
+    });
     const output = logSpy.mock.calls.flat().join('\n');
 
     expect(output).toContain('Live Schema Parity');
@@ -476,7 +482,10 @@ describe('live parity against a real SQLite database', () => {
     await createSystemTables();
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], { json: true, parity: true });
+    await requireCommandHandler(dbStatusCommand)([], {
+      json: true,
+      parity: true,
+    });
     const payload = JSON.parse(logSpy.mock.calls.flat().join('\n'));
 
     expect(payload.parity.ok).toBe(true);
@@ -490,7 +499,7 @@ describe('live parity against a real SQLite database', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
     const payload = JSON.parse(logSpy.mock.calls.flat().join('\n'));
 
     expect(payload.parity).toBeNull();
@@ -538,7 +547,7 @@ describe('live parity against a real SQLite database', () => {
       }) as typeof process.exit);
 
       await expect(
-        utilityCommands.doctor.handler([], { db: true }),
+        requireCommandHandler(utilityCommands.doctor)([], { db: true }),
       ).rejects.toThrow('exit:1');
 
       const output = logSpy.mock.calls.flat().join('\n');
@@ -558,7 +567,9 @@ describe('live parity against a real SQLite database', () => {
         throw new Error(`exit:${code ?? ''}`);
       }) as typeof process.exit);
 
-      await utilityCommands.doctor.handler([], {}).catch(() => undefined);
+      await requireCommandHandler(utilityCommands.doctor)([], {}).catch(
+        () => undefined,
+      );
 
       expect(logSpy.mock.calls.flat().join('\n')).not.toContain(
         'Live Database Parity',

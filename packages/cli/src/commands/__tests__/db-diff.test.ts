@@ -6,6 +6,7 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { SchemaComparer } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { autoDiscoverAndLoadMock } = vi.hoisted(() => ({
   autoDiscoverAndLoadMock: vi.fn(),
@@ -85,7 +86,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
   }
 
   it('rejects unsupported file-migration options with a guidance error', async () => {
-    await dbDiffCommand.handler([], { generate: true });
+    await requireCommandHandler(dbDiffCommand)([], { generate: true });
 
     expect(process.exitCode).toBe(1);
     expect(errorOutput()).toContain('--generate');
@@ -93,7 +94,10 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
   });
 
   it('rejects unsupported file-migration options in JSON mode', async () => {
-    await dbDiffCommand.handler([], { name: 'my_migration', json: true });
+    await requireCommandHandler(dbDiffCommand)([], {
+      name: 'my_migration',
+      json: true,
+    });
 
     expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(output());
@@ -109,7 +113,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       .spyOn(process, 'exit')
       .mockImplementation((() => undefined as never) as any);
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(errorOutput()).toContain('Database configuration required');
@@ -117,7 +121,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
   });
 
   it('refuses an unproven PostgreSQL timestamp timezone before opening the database', async () => {
-    await dbDiffCommand.handler([], {
+    await requireCommandHandler(dbDiffCommand)([], {
       'postgres-timestamp-legacy-timezone': 'America/Edmonton',
     });
 
@@ -134,7 +138,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       .spyOn(process, 'exit')
       .mockImplementation((() => undefined as never) as any);
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(errorOutput()).toContain('No SMRT manifests found');
@@ -150,7 +154,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       .spyOn(process, 'exit')
       .mockImplementation((() => undefined as never) as any);
 
-    await dbDiffCommand.handler([], { json: true });
+    await requireCommandHandler(dbDiffCommand)([], { json: true });
 
     expect(output()).toContain('No manifests found');
     exitSpy.mockRestore();
@@ -169,7 +173,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     expect(output()).toContain('up to date');
   });
@@ -183,7 +187,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     const out = output();
     expect(out).toContain('Changes Detected');
@@ -204,7 +208,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     const out = output();
     expect(out).toContain('New columns');
@@ -224,7 +228,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], { json: true });
+    await requireCommandHandler(dbDiffCommand)([], { json: true });
 
     const parsed = JSON.parse(output());
     expect(parsed.hasChanges).toBe(true);
@@ -244,7 +248,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     const out = output();
     expect(out).toContain('New indexes');
@@ -267,7 +271,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     const out = output();
     expect(out).toContain('Type');
@@ -306,7 +310,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       ],
     } as never);
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     const out = output();
     expect(out).toContain('Foreign-key drift needing a manual step (1)');
@@ -333,7 +337,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], { 'drop-indexes': true });
+    await requireCommandHandler(dbDiffCommand)([], { 'drop-indexes': true });
 
     const out = output();
     expect(out).toContain('Indexes to drop');
@@ -362,7 +366,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], { 'drop-indexes': true });
+    await requireCommandHandler(dbDiffCommand)([], { 'drop-indexes': true });
 
     const out = output();
     expect(out).toContain('Indexes to recreate');
@@ -388,7 +392,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     const out = output();
     expect(out).toContain('no migrations needed (see notes below)');
@@ -410,7 +414,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], { 'drop-columns': true });
+    await requireCommandHandler(dbDiffCommand)([], { 'drop-columns': true });
 
     const out = output();
     expect(out).toContain('Columns to drop (1, --drop-columns)');
@@ -428,7 +432,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], { json: true });
+    await requireCommandHandler(dbDiffCommand)([], { json: true });
 
     const parsed = JSON.parse(output());
     expect(parsed.orphanTables).toEqual(['zombie']);
@@ -456,7 +460,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], {});
+    await requireCommandHandler(dbDiffCommand)([], {});
 
     expect(process.exitCode).toBe(1);
     expect(errorOutput()).toContain('Failed to generate diff');
@@ -474,7 +478,7 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
       },
     });
 
-    await dbDiffCommand.handler([], { json: true });
+    await requireCommandHandler(dbDiffCommand)([], { json: true });
 
     expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(output());

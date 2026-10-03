@@ -58,7 +58,7 @@ class McpTaskProbeCollection extends SmrtCollection<McpTaskProbe> {
 }
 
 afterEach(() => {
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
 });
 
 async function createProbe() {

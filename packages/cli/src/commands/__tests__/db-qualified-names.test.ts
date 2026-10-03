@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import type { SmartObjectDefinition } from '@happyvertical/smrt-core/scanner';
 import { getDatabase } from '@happyvertical/sql';
 import {
   afterEach,
@@ -27,6 +28,7 @@ vi.mock('../../discovery/index.js', () => ({
   autoDiscoverAndLoad: autoDiscoverAndLoadMock,
 }));
 
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import {
   dbMigrateQualifiedNamesCommand,
   formatLegacyQualifiedNameReport,
@@ -41,9 +43,9 @@ const OLD = '@test-3338/cli-old-owner:MovedOwner';
 function def(
   className: string,
   tableName: string,
-  fields: Record<string, unknown>,
-  extra: Record<string, unknown> = {},
-) {
+  fields: SmartObjectDefinition['fields'],
+  extra: Partial<SmartObjectDefinition['decoratorConfig']> = {},
+): SmartObjectDefinition {
   return {
     name: className.toLowerCase(),
     className,
@@ -56,7 +58,7 @@ function def(
     decoratorConfig: { tableName, ...extra },
     exportName: className,
     collectionExportName: `${className}Collection`,
-  } as unknown as Parameters<typeof ObjectRegistry.registerFromManifest>[1];
+  };
 }
 
 describe('deprecated qualified-name references (#3338)', () => {
@@ -95,7 +97,7 @@ describe('deprecated qualified-name references (#3338)', () => {
     clearCache();
     setConfig({
       packages: { cli: { database: { type: 'sqlite', url: dbUrl } } },
-    } as never);
+    });
     autoDiscoverAndLoadMock.mockResolvedValue({
       discovered: [],
       totalObjects: 0,
@@ -155,7 +157,7 @@ describe('deprecated qualified-name references (#3338)', () => {
     clearCache();
     setConfig({
       packages: { cli: { database: { type: 'sqlite', url: ':memory:' } } },
-    } as never);
+    });
     const outcome = await runLegacyQualifiedNameReport({ discover: false });
     expect(outcome.report).toBeNull();
     expect(outcome.error).toContain('No persistent database is configured');
@@ -167,15 +169,17 @@ describe('deprecated qualified-name references (#3338)', () => {
     );
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbMigrateQualifiedNamesCommand.handler([], { 'dry-run': true });
+    await requireCommandHandler(dbMigrateQualifiedNamesCommand)([], {
+      'dry-run': true,
+    });
     expect(await storedMetaTypes()).toEqual([OLD, OLD, CURRENT]);
 
-    await dbMigrateQualifiedNamesCommand.handler([], {});
+    await requireCommandHandler(dbMigrateQualifiedNamesCommand)([], {});
     expect(process.exitCode).toBeUndefined();
     expect(await storedMetaTypes()).toEqual([CURRENT, CURRENT, CURRENT]);
 
     log.mockClear();
-    await dbMigrateQualifiedNamesCommand.handler([], {});
+    await requireCommandHandler(dbMigrateQualifiedNamesCommand)([], {});
     expect(log.mock.calls.flat().join('\n')).toContain('Already applied');
 
     const after = await runLegacyQualifiedNameReport({ discover: false });

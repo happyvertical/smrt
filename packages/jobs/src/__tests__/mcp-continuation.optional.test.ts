@@ -52,7 +52,7 @@ class DurableContinuationProbeCollection extends SmrtCollection<DurableContinuat
 }
 
 afterEach(() => {
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
   beforeApply = undefined;
   applications = 0;
   unknownOutcome = false;
@@ -228,9 +228,11 @@ describe('durable MCP continuation persistence', () => {
         return 0;
       });
     try {
+      const probeId = f.probe.id;
+      if (!probeId) throw new Error('Initialized probe has no id');
       const creating = f.store.createTask({
         objectType: 'DurableContinuationProbe',
-        objectId: f.probe.id!,
+        objectId: probeId,
         method: 'review',
         invocationArgs: [{}],
         tenantId,

@@ -23,9 +23,10 @@ describe('issue #2750 registry-sharing probe', () => {
       const result = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table'`,
       );
+      // The database adapter's row envelope is generic at this SQL boundary.
       const rows = Array.isArray(result)
         ? result
-        : (result as { rows: Array<{ name: string }> }).rows;
+        : (result as unknown as { rows: Array<{ name: string }> }).rows;
       const tableNames = rows.map((row) => row.name as string);
 
       expect(tableNames).toContain('widgets');

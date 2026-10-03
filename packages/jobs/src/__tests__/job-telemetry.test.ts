@@ -40,7 +40,7 @@ class JobTelemetryProbe extends SmrtObject {
 }
 
 afterEach(() => {
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
 });
 
 describe('job telemetry', () => {

@@ -441,10 +441,13 @@ describe('CLIGenerator - handleCustomMethod param edge cases', () => {
           {
             name: 'run',
             isPublic: true,
+            isStatic: false,
+            async: true,
+            returnType: 'string',
             parameters: [
               { name: 'required', type: '{ a?: string }', optional: false },
               { name: 'optionalObj', type: '{ b?: string }', optional: true },
-              { name: 'count', type: 'number', default: 9 },
+              { name: 'count', type: 'number', optional: false, default: 9 },
             ],
           },
         ],

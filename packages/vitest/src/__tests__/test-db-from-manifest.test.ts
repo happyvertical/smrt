@@ -559,7 +559,8 @@ describe('createIsolatedTestDbFromManifest', () => {
         const columns = Array.isArray(columnsResult)
           ? columnsResult
           : columnsResult.rows;
-        const columnNames = columns.map((row: { name: string }) => row.name);
+        // SQLite PRAGMA name columns are strings; DatabaseInterface rows are generic.
+        const columnNames = columns.map((row) => row.name as string);
 
         expect(columnNames).toContain('_meta_type');
         expect(columnNames).toContain('_meta_data');
@@ -683,7 +684,7 @@ describe('createIsolatedTestDbFromManifest', () => {
         const columns = Array.isArray(columnsResult)
           ? columnsResult
           : columnsResult.rows;
-        const columnNames = columns.map((row: { name: string }) => row.name);
+        const columnNames = columns.map((row) => row.name as string);
 
         // The full junction columns from the item class must be present — not
         // just the Collection stub's base columns.

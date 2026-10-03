@@ -23,7 +23,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseCliArgs } from '@happyvertical/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { mergeObjects } from '../git.js';
+
+function requireJsonObject(value: ReturnType<typeof mergeObjects>) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Expected merged JSON object');
+  }
+  return value;
+}
+
+function requireJsonArray(value: ReturnType<typeof mergeObjects>) {
+  if (!Array.isArray(value)) {
+    throw new Error('Expected merged JSON array');
+  }
+  return value;
+}
 
 describe('mergeObjects additional branches', () => {
   it('prefers ours wholesale when ours is a non-object', () => {
@@ -36,17 +51,17 @@ describe('mergeObjects additional branches', () => {
       { items: ['a', 'b'] },
       { items: ['c'] },
     );
-    expect(result.items).toEqual(['a', 'b']);
+    expect(requireJsonObject(result).items).toEqual(['a', 'b']);
   });
 
   it('falls back to theirs array when ours is absent', () => {
     const result = mergeObjects({}, {}, { tags: ['t1', 't2'] });
-    expect(result.tags).toEqual(['t1', 't2']);
+    expect(requireJsonObject(result).tags).toEqual(['t1', 't2']);
   });
 
   it('keeps a key that exists only in base', () => {
     const result = mergeObjects({ onlyBase: 'kept' }, {}, {});
-    expect(result.onlyBase).toBe('kept');
+    expect(requireJsonObject(result).onlyBase).toBe('kept');
   });
 
   it('sanitizes dangerous keys inside adopted array subtrees', () => {
@@ -54,9 +69,12 @@ describe('mergeObjects additional branches', () => {
       '{"records":[{"id":"a","__proto__":{"polluted":true},"safe":1}]}',
     );
     const result = mergeObjects({}, { records: [] }, theirs);
-    expect(result.records).toHaveLength(1);
-    expect(Object.keys(result.records[0])).not.toContain('__proto__');
-    expect(result.records[0].safe).toBe(1);
+    const records = requireJsonArray(requireJsonObject(result).records);
+    expect(records).toHaveLength(1);
+    expect(Object.keys(requireJsonObject(records[0]))).not.toContain(
+      '__proto__',
+    );
+    expect(requireJsonObject(records[0]).safe).toBe(1);
   });
 });
 
@@ -98,7 +116,7 @@ describe('git:init handler', () => {
     process.chdir(repoDir);
 
     const { gitCommands } = await import('../git.js');
-    await gitCommands['git:init'].handler([], {
+    await requireCommandHandler(gitCommands['git:init'])([], {
       patterns: 'data/*.json',
     });
 
@@ -122,9 +140,13 @@ describe('git:init handler', () => {
     process.chdir(repoDir);
 
     const { gitCommands } = await import('../git.js');
-    await gitCommands['git:init'].handler([], { patterns: 'data/*.json' });
+    await requireCommandHandler(gitCommands['git:init'])([], {
+      patterns: 'data/*.json',
+    });
     logSpy.mockClear();
-    await gitCommands['git:init'].handler([], { patterns: 'data/*.json' });
+    await requireCommandHandler(gitCommands['git:init'])([], {
+      patterns: 'data/*.json',
+    });
 
     expect(out()).toContain('already configured');
   });
@@ -135,7 +157,9 @@ describe('git:init handler', () => {
     process.chdir(repoDir);
 
     const { gitCommands } = await import('../git.js');
-    await gitCommands['git:init'].handler([], { patterns: '*.data.json' });
+    await requireCommandHandler(gitCommands['git:init'])([], {
+      patterns: '*.data.json',
+    });
 
     const gitattributes = readFileSync(
       join(repoDir, '.gitattributes'),
@@ -150,7 +174,9 @@ describe('git:init handler', () => {
 
     const { gitCommands } = await import('../git.js');
     await expect(
-      gitCommands['git:init'].handler([], { patterns: 'data/*.json' }),
+      requireCommandHandler(gitCommands['git:init'])([], {
+        patterns: 'data/*.json',
+      }),
     ).rejects.toThrow('process.exit called');
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Not a git repository'),
@@ -198,9 +224,9 @@ describe('merge-json handler', () => {
 
   it('prints usage and exits 1 when arguments are missing', async () => {
     const { gitCommands } = await import('../git.js');
-    await expect(gitCommands['merge-json'].handler([], {})).rejects.toThrow(
-      'process.exit:1',
-    );
+    await expect(
+      requireCommandHandler(gitCommands['merge-json'])([], {}),
+    ).rejects.toThrow('process.exit:1');
     expect(firstExit()).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Usage: smrt merge-json'),
@@ -226,7 +252,7 @@ describe('merge-json handler', () => {
 
     const { gitCommands } = await import('../git.js');
     await expect(
-      gitCommands['merge-json'].handler([base, ours, theirs], {
+      requireCommandHandler(gitCommands['merge-json'])([base, ours, theirs], {
         verbose: true,
       }),
     ).rejects.toThrow();
@@ -243,7 +269,10 @@ describe('merge-json handler', () => {
 
     const { gitCommands } = await import('../git.js');
     await expect(
-      gitCommands['merge-json'].handler([base, ours, theirs], {}),
+      requireCommandHandler(gitCommands['merge-json'])(
+        [base, ours, theirs],
+        {},
+      ),
     ).rejects.toThrow();
     expect(firstExit()).toBe(0);
     expect(existsSync(base)).toBe(false);
@@ -257,7 +286,7 @@ describe('merge-json handler', () => {
 
     const { gitCommands } = await import('../git.js');
     await expect(
-      gitCommands['merge-json'].handler([base, ours, theirs], {
+      requireCommandHandler(gitCommands['merge-json'])([base, ours, theirs], {
         dryRun: true,
       }),
     ).rejects.toThrow();
@@ -294,7 +323,7 @@ describe('merge-json handler', () => {
     expect((parsed.options as any).dryRun).toBeUndefined();
 
     await expect(
-      mergeJson.handler(parsed.args, parsed.options),
+      requireCommandHandler(mergeJson)(parsed.args, parsed.options),
     ).rejects.toThrow();
     expect(firstExit()).toBe(0);
 
@@ -311,7 +340,10 @@ describe('merge-json handler', () => {
 
     const { gitCommands } = await import('../git.js');
     await expect(
-      gitCommands['merge-json'].handler([base, missingOurs, theirs], {}),
+      requireCommandHandler(gitCommands['merge-json'])(
+        [base, missingOurs, theirs],
+        {},
+      ),
     ).rejects.toThrow('process.exit:1');
     expect(firstExit()).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(
@@ -326,7 +358,7 @@ describe('merge-json handler', () => {
 
     const { gitCommands } = await import('../git.js');
     await expect(
-      gitCommands['merge-json'].handler([base, ours, theirs], {
+      requireCommandHandler(gitCommands['merge-json'])([base, ours, theirs], {
         verbose: true,
       }),
     ).rejects.toThrow('process.exit:1');

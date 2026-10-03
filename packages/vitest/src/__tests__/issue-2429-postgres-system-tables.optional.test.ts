@@ -55,7 +55,7 @@ postgresDescribe('PostgreSQL isolated system-table bootstrap (#2429)', () => {
       const tableRows = Array.isArray(tableResult)
         ? tableResult
         : ((
-            tableResult as {
+            tableResult as unknown as {
               rows?: Array<{
                 contexts: string | null;
                 embeddings: string | null;

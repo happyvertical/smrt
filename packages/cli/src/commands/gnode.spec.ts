@@ -3,6 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../__tests__/command-handler.js';
 import type { CLICommand } from '../cli-generator.js';
 
 // Mock dependencies
@@ -60,7 +61,9 @@ describe('Gnode Commands', () => {
 
       const command = gnodeCommands['gnode create'];
 
-      await expect(command.handler([], {})).rejects.toThrow(/name is required/);
+      await expect(requireCommandHandler(command)([], {})).rejects.toThrow(
+        /name is required/,
+      );
     });
 
     it('should use default template if not specified', async () => {
@@ -82,7 +85,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler(['my-gnode'], {});
+      await requireCommandHandler(command)(['my-gnode'], {});
 
       expect(mockResolveTemplate).toHaveBeenCalledWith('sveltekit');
 
@@ -108,7 +111,9 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler(['my-gnode'], { template: 'github:user/repo' });
+      await requireCommandHandler(command)(['my-gnode'], {
+        template: 'github:user/repo',
+      });
 
       expect(mockResolveTemplate).toHaveBeenCalledWith('github:user/repo');
 
@@ -129,7 +134,7 @@ describe('Gnode Commands', () => {
       mockGenerate.mockResolvedValue(undefined);
       const { gnodeCommands } = await import('./gnode.js');
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      await gnodeCommands['gnode create'].handler(['my-app'], {
+      await requireCommandHandler(gnodeCommands['gnode create'])(['my-app'], {
         outputDir: '/tmp/my-app',
         mcpApps: true,
       });
@@ -169,7 +174,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler(['my-gnode'], {});
+      await requireCommandHandler(command)(['my-gnode'], {});
 
       expect(mockGenerate).toHaveBeenCalledWith(
         expect.anything(),
@@ -202,7 +207,9 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler(['my-gnode'], { outputDir: '/custom/path' });
+      await requireCommandHandler(command)(['my-gnode'], {
+        outputDir: '/custom/path',
+      });
 
       expect(mockGenerate).toHaveBeenCalledWith(
         expect.anything(),
@@ -236,7 +243,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler(['my-gnode'], {});
+      await requireCommandHandler(command)(['my-gnode'], {});
 
       expect(mockCleanupGitTemplate).toHaveBeenCalledWith(mockConfig);
 
@@ -262,7 +269,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler(['my-gnode'], {});
+      await requireCommandHandler(command)(['my-gnode'], {});
 
       expect(mockCleanupGitTemplate).not.toHaveBeenCalled();
 
@@ -288,7 +295,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler(['my-gnode'], {});
+      await requireCommandHandler(command)(['my-gnode'], {});
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('Resolving template'),
@@ -309,12 +316,12 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await expect(command.handler(['my-gnode'], {})).rejects.toThrow(
-        /Failed to create gnode/,
-      );
-      await expect(command.handler(['my-gnode'], {})).rejects.toThrow(
-        /Template not found/,
-      );
+      await expect(
+        requireCommandHandler(command)(['my-gnode'], {}),
+      ).rejects.toThrow(/Failed to create gnode/);
+      await expect(
+        requireCommandHandler(command)(['my-gnode'], {}),
+      ).rejects.toThrow(/Template not found/);
 
       consoleSpy.mockRestore();
     });
@@ -326,7 +333,9 @@ describe('Gnode Commands', () => {
 
       const command = gnodeCommands['gnode create'];
 
-      await expect(command.handler(['my-gnode'], {})).rejects.toThrow();
+      await expect(
+        requireCommandHandler(command)(['my-gnode'], {}),
+      ).rejects.toThrow();
     });
 
     it('should handle generation errors', async () => {
@@ -346,7 +355,9 @@ describe('Gnode Commands', () => {
 
       const command = gnodeCommands['gnode create'];
 
-      await expect(command.handler(['my-gnode'], {})).rejects.toThrow();
+      await expect(
+        requireCommandHandler(command)(['my-gnode'], {}),
+      ).rejects.toThrow();
     });
   });
 
@@ -394,7 +405,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler([], {});
+      await requireCommandHandler(command)([], {});
 
       expect(mockDiscoverInstalledTemplates).toHaveBeenCalled();
       expect(consoleSpy).toHaveBeenCalledWith(
@@ -419,7 +430,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler([], {});
+      await requireCommandHandler(command)([], {});
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('No templates found'),
@@ -456,7 +467,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler([], {});
+      await requireCommandHandler(command)([], {});
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('Test description'),
@@ -493,7 +504,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler([], {});
+      await requireCommandHandler(command)([], {});
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('Framework: unknown'),
@@ -524,7 +535,7 @@ describe('Gnode Commands', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      await command.handler([], {});
+      await requireCommandHandler(command)([], {});
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('Usage:'),

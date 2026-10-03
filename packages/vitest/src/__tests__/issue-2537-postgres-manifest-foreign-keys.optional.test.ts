@@ -36,7 +36,7 @@ async function dropIssueTables(...tableNames: string[]): Promise<void> {
       await admin.query(drop.rows[0].statement);
     }
   } finally {
-    await admin.close();
+    await admin.close?.();
   }
 }
 
@@ -284,7 +284,7 @@ postgresDescribe(
           `COMMENT ON CONSTRAINT "i2537_evolve_child_parent_id_i2537_evolve_parent_id_fkey" ON "i2537_evolve_child" IS 'smrt-vitest:manifest-foreign-key:v1'`,
         );
       } finally {
-        await admin.close();
+        await admin.close?.();
       }
 
       const validated = await createIsolatedTestDbFromManifest({
@@ -327,7 +327,7 @@ postgresDescribe(
           'CREATE TABLE IF NOT EXISTS "i2537_evolve_parent_alternate" ("id" TEXT PRIMARY KEY)',
         );
       } finally {
-        await retargetAdmin.close();
+        await retargetAdmin.close?.();
       }
 
       writeObjects(
@@ -358,7 +358,7 @@ postgresDescribe(
           id: persistentParentId,
         });
       } finally {
-        await failedRetargetAdmin.close();
+        await failedRetargetAdmin.close?.();
       }
       const targetChanged = await createIsolatedTestDbFromManifest({
         manifestPath,
@@ -567,7 +567,7 @@ postgresDescribe(
         );
         await admin.query(insertParent.rows[0].statement, [orphanId]);
       } finally {
-        await admin.close();
+        await admin.close?.();
       }
 
       const validated = await createIsolatedTestDbFromManifest({
@@ -668,7 +668,7 @@ postgresDescribe(
             [randomUUID(), 'not-a-uuid'],
           );
         } finally {
-          await admin.close();
+          await admin.close?.();
         }
 
         writeFileSync(manifestPath, JSON.stringify({ objects: objects(true) }));
@@ -724,7 +724,7 @@ postgresDescribe(
         );
         await setupAdmin.query(createShadowTable.rows[0].statement);
       } finally {
-        await setupAdmin.close();
+        await setupAdmin.close?.();
       }
       try {
         writeFileSync(manifestPath, JSON.stringify({ objects: objects(true) }));
@@ -757,7 +757,7 @@ postgresDescribe(
           );
           await cleanupAdmin.query(dropShadowSchema.rows[0].statement);
         } finally {
-          await cleanupAdmin.close();
+          await cleanupAdmin.close?.();
         }
         rmSync(manifestPath, { force: true });
       }
@@ -826,7 +826,7 @@ postgresDescribe(
           'ALTER TABLE "i2537_owned_child" ADD CONSTRAINT "external_owned_child_parent_fkey" FOREIGN KEY ("parent_id") REFERENCES "i2537_owned_parent" ("id")',
         );
       } finally {
-        await admin.close();
+        await admin.close?.();
       }
 
       const beforeDb = await createIsolatedTestDbFromManifest({ manifestPath });

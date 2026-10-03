@@ -17,8 +17,9 @@ import {
   requiredVisibilityIsInvalid,
   serializeDefaultValue,
 } from '../field-policy-editor.js';
+import type { ObjectFormFieldDefinition } from '../types.js';
 
-const fields = {
+const fields: Record<string, ObjectFormFieldDefinition> = {
   title: { type: 'text', required: true },
   enabled: { type: 'boolean' },
 };
@@ -194,12 +195,18 @@ describe('FieldPolicy gear', () => {
     });
     await alice.create(organization);
     expect(
-      ((await alice.load()) as FieldPolicyEditorState).policy.fields.title
-        .label,
+      (
+        (await alice.load({
+          objectRef: '@test:Widget',
+        })) as FieldPolicyEditorState
+      ).policy.fields.title.label,
     ).toBe('Organization title');
     expect(
-      ((await bob.load()) as FieldPolicyEditorState).policy.fields.title
-        .visibility,
+      (
+        (await bob.load({
+          objectRef: '@test:Widget',
+        })) as FieldPolicyEditorState
+      ).policy.fields.title.visibility,
     ).toBe('advanced');
 
     const personal = {
@@ -209,16 +216,26 @@ describe('FieldPolicy gear', () => {
     };
     await alice.create(personal);
     expect(
-      ((await alice.load()) as FieldPolicyEditorState).policy.fields.title
-        .label,
+      (
+        (await alice.load({
+          objectRef: '@test:Widget',
+        })) as FieldPolicyEditorState
+      ).policy.fields.title.label,
     ).toBe('Alice title');
     expect(
-      ((await bob.load()) as FieldPolicyEditorState).policy.fields.title.label,
+      (
+        (await bob.load({
+          objectRef: '@test:Widget',
+        })) as FieldPolicyEditorState
+      ).policy.fields.title.label,
     ).toBe('Organization title');
     await alice.delete({ id: 'user:alice' });
     expect(
-      ((await alice.load()) as FieldPolicyEditorState).policy.fields.title
-        .label,
+      (
+        (await alice.load({
+          objectRef: '@test:Widget',
+        })) as FieldPolicyEditorState
+      ).policy.fields.title.label,
     ).toBe('Organization title');
 
     await alice.update({ ...organization, id: 'organization', locked: true });
@@ -226,7 +243,9 @@ describe('FieldPolicy gear', () => {
       /locked by organization/,
     );
     await expect(
-      transport.forUser('nobody', { manage: false, personalize: false }).load(),
+      transport
+        .forUser('nobody', { manage: false, personalize: false })
+        .load({ objectRef: '@test:Widget' }),
     ).resolves.toMatchObject({ ok: false, status: 403 });
   });
 
@@ -326,9 +345,7 @@ describe('FieldPolicy gear', () => {
     expect(
       screen.getByText(/locked by your organization/i),
     ).toBeInTheDocument();
-    expect(
-      screen.getAllByRole('button', { name: 'Save', exact: true })[1],
-    ).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Save' })[1]).toBeDisabled();
     await expectNoA11yViolations(container);
   });
 
@@ -367,9 +384,7 @@ describe('FieldPolicy gear', () => {
     const visibility = screen.getAllByLabelText('Visibility')[0];
     await userEvent.selectOptions(visibility, 'hidden');
     expect(screen.getByText(/Add a usable default/i)).toBeInTheDocument();
-    expect(
-      screen.getAllByRole('button', { name: 'Save', exact: true })[0],
-    ).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeDisabled();
   });
 
   it('blocks an app-row default removal when no lower code default exists', async () => {
@@ -415,9 +430,7 @@ describe('FieldPolicy gear', () => {
       screen.getAllByLabelText('Visibility')[0],
       'hidden',
     );
-    expect(
-      screen.getAllByRole('button', { name: 'Save', exact: true })[0],
-    ).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeDisabled();
   });
 
   it('permits a personal required-default removal when the server reports a usable lower default', async () => {
@@ -462,9 +475,7 @@ describe('FieldPolicy gear', () => {
     await userEvent.click(
       screen.getAllByRole('checkbox', { name: 'Override default value' })[0],
     );
-    expect(
-      screen.getAllByRole('button', { name: 'Save', exact: true })[0],
-    ).toBeEnabled();
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeEnabled();
   });
 
   it('permits clearing a current app default when the generated field has a code default', async () => {
@@ -507,9 +518,7 @@ describe('FieldPolicy gear', () => {
       screen.getAllByLabelText('Visibility')[0],
       'hidden',
     );
-    expect(
-      screen.getAllByRole('button', { name: 'Save', exact: true })[0],
-    ).toBeEnabled();
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeEnabled();
   });
 
   it('clears invalid JSON default state when its override is disabled', async () => {
@@ -543,15 +552,11 @@ describe('FieldPolicy gear', () => {
     json.value = '{bad';
     json.dispatchEvent(new Event('input', { bubbles: true }));
     await Promise.resolve();
-    expect(
-      screen.getAllByRole('button', { name: 'Save', exact: true })[0],
-    ).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeDisabled();
     await userEvent.click(
       screen.getAllByRole('checkbox', { name: 'Override default value' })[0],
     );
-    expect(
-      screen.getAllByRole('button', { name: 'Save', exact: true })[0],
-    ).toBeEnabled();
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeEnabled();
   });
 
   it('remounts default JSON inputs across scope tabs without leaking invalid drafts', async () => {
@@ -589,8 +594,6 @@ describe('FieldPolicy gear', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Just me' }));
     await userEvent.click(screen.getByRole('tab', { name: 'Organization' }));
     expect(screen.queryByText(/Enter valid JSON/i)).toBeNull();
-    expect(
-      screen.getAllByRole('button', { name: 'Save', exact: true })[0],
-    ).toBeEnabled();
+    expect(screen.getAllByRole('button', { name: 'Save' })[0]).toBeEnabled();
   });
 });

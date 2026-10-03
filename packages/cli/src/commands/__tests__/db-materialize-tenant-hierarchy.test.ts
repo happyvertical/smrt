@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { dbMaterializeTenantHierarchyCommand } from '../db-materialize-tenant-hierarchy.js';
 import { utilityCommands } from '../utilities.js';
 
@@ -107,7 +108,7 @@ describe('db:materialize-tenant-hierarchy command', () => {
         ['desk', 'pub'],
       ]);
 
-      await dbMaterializeTenantHierarchyCommand.handler([], {
+      await requireCommandHandler(dbMaterializeTenantHierarchyCommand)([], {
         'dry-run': true,
       });
 
@@ -129,7 +130,7 @@ describe('db:materialize-tenant-hierarchy command', () => {
         ['desk', 'pub'],
       ]);
 
-      await dbMaterializeTenantHierarchyCommand.handler([], {});
+      await requireCommandHandler(dbMaterializeTenantHierarchyCommand)([], {});
       expect(process.exitCode).toBeUndefined();
       expect(output()).toContain('Materialized the hierarchy for 2 of 3');
       expect(await stored()).toEqual({
@@ -139,7 +140,7 @@ describe('db:materialize-tenant-hierarchy command', () => {
       });
 
       logSpy.mockClear();
-      await dbMaterializeTenantHierarchyCommand.handler([], {});
+      await requireCommandHandler(dbMaterializeTenantHierarchyCommand)([], {});
       expect(process.exitCode).toBeUndefined();
       expect(output()).toContain('nothing to do');
     });
@@ -152,7 +153,7 @@ describe('db:materialize-tenant-hierarchy command', () => {
         ['b', 'a'],
       ]);
 
-      await dbMaterializeTenantHierarchyCommand.handler([], {});
+      await requireCommandHandler(dbMaterializeTenantHierarchyCommand)([], {});
 
       expect(process.exitCode).toBe(1);
       expect(errorOutput()).toContain('CIRCULAR_REFERENCE');
@@ -166,7 +167,7 @@ describe('db:materialize-tenant-hierarchy command', () => {
         packages: { cli: { database: { type: 'sqlite', url: ':memory:' } } },
       } as any);
 
-      await dbMaterializeTenantHierarchyCommand.handler([], {});
+      await requireCommandHandler(dbMaterializeTenantHierarchyCommand)([], {});
 
       expect(process.exitCode).toBe(1);
       expect(errorOutput()).toContain('Database configuration required');

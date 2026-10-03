@@ -104,7 +104,11 @@ describe('portable MCP Apps package validation', () => {
   it('dispatches the space-separated scaffold command through the CLI', async () => {
     const value = root();
     const cli = new CLIGenerator({ prompt: false, colors: false });
-    vi.spyOn(cli as never, 'tryLoadUserClasses').mockResolvedValue(undefined);
+    // Only the private class-loading side effect is suppressed for this public dispatch test.
+    vi.spyOn(
+      cli as unknown as { tryLoadUserClasses: () => Promise<void> },
+      'tryLoadUserClasses',
+    ).mockResolvedValue(undefined);
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await cli.generateHandler()([
