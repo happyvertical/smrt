@@ -42,4 +42,13 @@ export const Q = defineMessages({
     'Totals cannot be compared across document kinds, currencies, scales or unknown pricing.',
   'commerce.quote.view': 'View revision',
   'commerce.quote.readonly': 'Read only',
+  'commerce.quote.demo_notice':
+    'This demo simulates validation failure locally. It does not save a quotation or estimate.',
+  'commerce.quote.demo_enable': 'Enable editing',
+  'commerce.quote.demo_readonly': 'Preview read only',
+  'commerce.quote.demo_added': 'Demo: line added; entered values retained.',
+  'commerce.quote.demo_removed': 'Demo: line removed; entered values retained.',
+  'commerce.quote.demo_error': 'Demo server validation: confirm the total.',
+  'commerce.quote.demo_rejected':
+    'Demo rejected submission. Values and request identity remain available for retry.',
 });

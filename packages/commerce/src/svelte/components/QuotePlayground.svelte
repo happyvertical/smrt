@@ -1,5 +1,7 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { Q } from '../quote-i18n.js';
 import type {
   QuoteDocumentKind,
   QuoteDraftValues,
@@ -13,6 +15,7 @@ export interface Props {
   kind?: QuoteDocumentKind;
 }
 let { kind = 'vendor-quotation' }: Props = $props();
+const { t } = useI18n();
 let values = $state<QuoteDraftValues>({
   counterpartyId: 'party-1',
   reference: 'Q-104',
@@ -87,20 +90,19 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
       ...values.lines,
       { id: `line-${++row}`, description: '', quantity: '', unitRate: '' },
     ];
-    message = 'Demo: line added; entered values retained.';
+    message = t(Q['commerce.quote.demo_added']);
   } else if (intent.startsWith('removeLine:')) {
     values.lines = values.lines.filter(
       (line) => line.id !== intent.slice('removeLine:'.length),
     );
-    message = 'Demo: line removed; entered values retained.';
+    message = t(Q['commerce.quote.demo_removed']);
   } else {
-    errors = { total: 'Demo server validation: confirm the total.' };
-    message =
-      'Demo rejected submission. Values and request identity remain available for retry.';
+    errors = { total: t(Q['commerce.quote.demo_error']) };
+    message = t(Q['commerce.quote.demo_rejected']);
   }
 }
 </script>
-<p>This demo simulates validation failure locally. It does not save a quotation or estimate.</p>
-<Button variant="secondary" onclick={() => {readonly=!readonly;}}>{readonly ? 'Enable editing' : 'Preview read only'}</Button>
+<p>{t(Q['commerce.quote.demo_notice'])}</p>
+<Button variant="secondary" onclick={() => {readonly=!readonly;}}>{t(Q[readonly ? 'commerce.quote.demo_enable' : 'commerce.quote.demo_readonly'])}</Button>
 <QuoteEditor {kind} {values} counterparties={[{id:'party-1',label:'North Studio'}]} action="" {errors} {message} {readonly} hiddenFields={[{name:'requestId',value:'demo-request-1'},{name:'expectedTenantId',value:'demo-tenant'}]} onsubmit={submit} />
 <QuoteRevisionComparison {previous} {current} />
