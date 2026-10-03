@@ -19,12 +19,14 @@ SvelteKit session locals populated by `createSessionHandler`
 // src/routes/api/mcp/+server.ts
 import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 import { Item } from '$lib/objects/Item';
-import { getApplicationDatabaseConfig } from '$lib/server/application-runtime';
+// The app's `createSmrtSvelteKitRuntime()` (@happyvertical/smrt-app-runtime/sveltekit).
+import { runtime } from '$lib/server/smrt';
 
 export const POST = mountMcpAppRoute({
   models: [Item],
   requiredScopes: ['items.read'],
-  smrtOptions: () => ({ db: getApplicationDatabaseConfig() }),
+  // Per request: under RLS this is the request's transaction-bound database.
+  smrtOptions: () => ({ db: runtime.databaseConfig() }),
 });
 ```
 

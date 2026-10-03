@@ -3,7 +3,9 @@
   "compilerOptions": {
     "paths": {
       "$lib": ["./template/src/lib"],
-      "$lib/*": ["./template/src/lib/*"],
+      // The opt-in MCP Apps overlay is copied into an app's `src/`, so its
+      // `$lib` imports resolve against the template first, then the overlay.
+      "$lib/*": ["./template/src/lib/*", "./mcp-apps-template/src/lib/*"],
       "@happyvertical/smrt-virt-web": [
         "./__tests__/setup/smrt-virt-web-stub.ts"
       ],
@@ -15,6 +17,9 @@
     "__tests__/runtimeOperations.test.ts",
     "__tests__/runtimeProfileReference*.ts",
     "fixtures/**/*.ts",
+    "mcp-apps-template/src/**/*.ts",
+    // `**` globs skip dot-directories.
+    "mcp-apps-template/src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts",
     "e2e/**/*.ts",
     "playwright.config.ts"
   ]

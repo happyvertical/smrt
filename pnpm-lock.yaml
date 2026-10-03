@@ -3118,6 +3118,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@happyvertical/smrt-app-mcp':
+        specifier: workspace:*
+        version: link:../smrt-app-mcp
       '@happyvertical/smrt-app-runtime':
         specifier: workspace:*
         version: link:../app-runtime
@@ -3133,6 +3136,9 @@ importers:
       '@happyvertical/smrt-jobs':
         specifier: workspace:*
         version: link:../jobs
+      '@happyvertical/smrt-mcp-openai':
+        specifier: workspace:*
+        version: link:../mcp-openai
       '@happyvertical/smrt-playbooks':
         specifier: workspace:*
         version: link:../playbooks

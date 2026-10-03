@@ -100,6 +100,10 @@ It is the ground-up alternative to `smrt-saas-starter`.
   (`createRuntimeDiagnosticsHandler`) requires a direct active tenant membership
   plus the owner role or `runtime_diagnostics.read` before any projection or
   probe; it never calls principal-bound server tools.
+- The opt-in `mcp-apps-template/` overlay is one `mountMcpAppRoute()` route,
+  the protected-resource metadata route, and the application-owned
+  `mcp-hosted-principal.ts` binding; `pnpm typecheck` checks it against the
+  template.
 
 ## Tests
 

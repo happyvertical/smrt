@@ -248,10 +248,14 @@ non-object or malformed manifests, credential-shaped JSON fields and credential 
 URL userinfo, non-portable schemas, and non-loopback HTTP server URLs. Diagnostics never
 include malformed manifest content.
 
-The option stages `src/routes/api/mcp/+server.ts`, a session-authorized `mcp`
-server, and a bounded static resource with a restrictive CSP. It also includes
-`McpAppsBridge.svelte` for an application-configured trusted host origin and
-the optional OpenAI display adapter; it stays inert until your UI mounts it.
+The option stages `src/routes/api/mcp/+server.ts`, one `mountMcpAppRoute()`
+call from `@happyvertical/smrt-app-mcp/sveltekit` that publishes `Item` to
+principals holding `items.read` (the signed session's permissions locally),
+refuses browser requests from a foreign `Origin`, and serves a bounded static
+resource with a restrictive CSP and the optional OpenAI display metadata. It
+also stages the protected-resource metadata route. For a view, mount
+`McpAppsBridge` from `@happyvertical/smrt-svelte/mcp-apps` with an
+application-configured trusted host origin.
 The scaffold does not enable remote MCP tasks, so a deployment that adds them
 must supply the durable worker's live authorization callback before publication.
 
