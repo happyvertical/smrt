@@ -10,8 +10,15 @@
  * read that tenant's rows, regardless of any cookie on the same request.
  *
  * The application connects as a NOSUPERUSER NOBYPASSRLS role so the policy
- * actually applies. The bearer adapter is a structural stub of
- * `createMcpResourceAuth` (JWT verification is covered in smrt-app-mcp).
+ * actually applies (asserted below). The bearer adapter is a structural stub
+ * of `createMcpResourceAuth` (JWT verification is covered in smrt-app-mcp).
+ *
+ * CI role model (.github/CI.md): the base URL is the unprivileged `smrt_ci`
+ * role, which owns what it creates, so FORCE ROW LEVEL SECURITY applies to
+ * this fixture's own seeding too. The fixture therefore seeds its rows before
+ * enabling RLS, and confines all committed DDL (users tables, policy helper
+ * functions, the RLS table) to a schema of its own, dropped on teardown. It
+ * never uses the superuser URL.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -40,8 +47,16 @@ import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import type { Handle } from '@sveltejs/kit';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const adminUrl = process.env.SMRT_TEST_POSTGRES_URL;
-const postgresDescribe = adminUrl ? describe : describe.skip;
+const baseUrl = process.env.SMRT_TEST_POSTGRES_URL;
+const postgresDescribe = baseUrl ? describe : describe.skip;
+const SCHEMA = `mcp_bearer_rls_${randomUUID().replaceAll('-', '')}`;
+
+/** `url` with its connection search_path confined to this fixture's schema. */
+function inSchema(url: string): string {
+  const confined = new URL(url);
+  confined.searchParams.set('options', `-c search_path=${SCHEMA}`);
+  return confined.toString();
+}
 
 const TABLE = 'mcp_bearer_rls_items';
 const READ = `${TABLE}.read`;
@@ -57,6 +72,8 @@ interface Probe {
 }
 
 let admin: DatabaseInterface;
+let base: DatabaseInterface | undefined;
+let adminUrl = '';
 let roleName = '';
 let roleUrl = '';
 const ids = {
@@ -75,7 +92,10 @@ function rows(result: unknown): Array<Record<string, unknown>> {
 
 postgresDescribe('hosted bearer MCP under database-rls', () => {
   beforeAll(async () => {
-    admin = await getDatabase({ type: 'postgres', url: adminUrl! });
+    base = await getDatabase({ type: 'postgres', url: baseUrl! });
+    await base.query(`CREATE SCHEMA "${SCHEMA}"`);
+    adminUrl = inSchema(baseUrl!);
+    admin = await getDatabase({ type: 'postgres', url: adminUrl });
     await getTestDatabase({
       db: admin,
       type: 'postgres',
@@ -88,7 +108,7 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
       }),
     });
 
-    const options = { db: { type: 'postgres' as const, url: adminUrl! } };
+    const options = { db: { type: 'postgres' as const, url: adminUrl } };
     const users = await UserCollection.create(options);
     const tenants = await TenantCollection.create(options);
     const roles = await RoleCollection.create(options);
@@ -164,10 +184,20 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
     ids.cookieSession = await sessions.createSession(cookieUser.id, tenantB.id);
 
     // An RLS-protected application table using the smrt-users policy
-    // helpers: rows of the session tenant, given the read permission.
-    for (const statement of [
-      `DROP TABLE IF EXISTS ${TABLE}`,
+    // helpers: rows of the session tenant, given the read permission. Its
+    // rows are seeded before RLS is enabled: the seeding role owns the table
+    // and FORCE ROW LEVEL SECURITY binds the owner too (no write policy).
+    await admin.query(
       `CREATE TABLE ${TABLE} (id text PRIMARY KEY, tenant_id text NOT NULL, title text NOT NULL)`,
+    );
+    await admin.query(
+      `INSERT INTO ${TABLE} (id, tenant_id, title) VALUES ($1, $2, 'Bearer tenant row'), ($3, $4, 'Cookie tenant row')`,
+      randomUUID(),
+      ids.tenantA,
+      randomUUID(),
+      ids.tenantB,
+    );
+    for (const statement of [
       `CREATE OR REPLACE FUNCTION smrt_rls_bypass() RETURNS boolean LANGUAGE sql STABLE AS $$
          SELECT COALESCE(NULLIF(current_setting('smrt.system_context', true), ''), 'false')::boolean
              OR COALESCE(NULLIF(current_setting('smrt.super_admin_bypass', true), ''), 'false')::boolean $$`,
@@ -183,39 +213,62 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
     ]) {
       await admin.query(statement);
     }
-    await admin.query(
-      `INSERT INTO ${TABLE} (id, tenant_id, title) VALUES ($1, $2, 'Bearer tenant row'), ($3, $4, 'Cookie tenant row')`,
-      randomUUID(),
-      ids.tenantA,
-      randomUUID(),
-      ids.tenantB,
-    );
 
     roleName = `smrt_mcp_rls_${randomUUID().replaceAll('-', '_')}`;
     await admin.query(
       `CREATE ROLE "${roleName}" LOGIN PASSWORD 'rls-test' NOSUPERUSER NOBYPASSRLS`,
     );
-    await admin.query(`GRANT USAGE ON SCHEMA public TO "${roleName}"`);
+    await admin.query(`GRANT USAGE ON SCHEMA "${SCHEMA}" TO "${roleName}"`);
     await admin.query(
-      `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${roleName}"`,
+      `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "${SCHEMA}" TO "${roleName}"`,
     );
     await admin.query(
-      `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${roleName}"`,
+      `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "${SCHEMA}" TO "${roleName}"`,
     );
-    const url = new URL(adminUrl!);
+    const url = new URL(adminUrl);
     url.username = roleName;
     url.password = 'rls-test';
     roleUrl = url.toString();
   });
 
   afterAll(async () => {
-    if (!admin) return;
-    await admin.query(`DROP TABLE IF EXISTS ${TABLE}`);
+    if (!base) return;
+    await admin?.close?.();
+    // Undo every committed change: the fixture schema (users tables, policy
+    // helpers, RLS table and policy, and with them every grant to the login
+    // role, which owns nothing), then the role. `smrt_ci` administers the
+    // roles it creates but lacks their privileges, so DROP OWNED BY would be
+    // refused; nothing needs it.
+    await base.query(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`);
     if (roleName) {
-      await admin.query(`DROP OWNED BY "${roleName}"`);
-      await admin.query(`DROP ROLE IF EXISTS "${roleName}"`);
+      await base.query(`DROP ROLE IF EXISTS "${roleName}"`);
     }
-    await admin.close?.();
+    await base.close?.();
+  });
+
+  it('connects the application as a NOSUPERUSER NOBYPASSRLS role', async () => {
+    // A dedicated pool: the runtimes below share the cached one for roleUrl.
+    const app = await getDatabase({
+      type: 'postgres',
+      url: roleUrl,
+      dbid: `mcp-bearer-rls-role-check-${SCHEMA}`,
+    } as Parameters<typeof getDatabase>[0]);
+    try {
+      const [role] = rows(
+        await app.query(
+          'SELECT current_user AS name, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user',
+        ),
+      );
+      expect(role).toEqual({
+        name: roleName,
+        rolsuper: false,
+        rolbypassrls: false,
+      });
+      // RLS is enforced, not bypassed: without a principal nothing is visible.
+      expect(rows(await app.query(`SELECT id FROM ${TABLE}`))).toEqual([]);
+    } finally {
+      await app.close?.();
+    }
   });
 
   function setup(
