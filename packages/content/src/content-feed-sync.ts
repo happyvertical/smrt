@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import {
   ObjectRegistry,
   type SmrtCollectionOptions,
 } from '@happyvertical/smrt-core';
+import { Agent, fetch as undiciFetch } from 'undici';
 import {
   type ParsedContentFeedItem,
   parseContentFeed,
@@ -10,9 +12,18 @@ import {
 import type { ContentFeedSource } from './content-feed-source';
 import { Mirror } from './content-types';
 import { Contents } from './contents';
-import { assertSafeRemoteUrl, type ResolveHostname } from './safe-remote-url';
+import {
+  type ResolvedAddress,
+  type ResolveHostname,
+  type ValidatedRemoteUrl,
+  validateSafeRemoteUrl,
+} from './safe-remote-url';
 
 export interface ContentFeedSyncOptions extends SmrtCollectionOptions {
+  /**
+   * Trusted test/embedding seam. A supplied transport receives a validated URL
+   * but owns its own DNS-pinning guarantee; production uses Undici below.
+   */
   fetch?: typeof fetch;
   maxItems?: number;
   maxResponseBytes?: number;
@@ -86,9 +97,10 @@ function createDedupeKey(
 async function validateFeedFetchUrl(
   feedUrl: string,
   options: ContentFeedSyncOptions,
-): Promise<URL> {
-  return assertSafeRemoteUrl(feedUrl, {
+): Promise<ValidatedRemoteUrl> {
+  return validateSafeRemoteUrl(feedUrl, {
     allowPrivateNetworkHosts: options.allowPrivateNetworkHosts,
+    resolveHostnameWhenPrivateAllowed: true,
     resolveHostname: options.resolveHostname,
   });
 }
@@ -96,6 +108,101 @@ async function validateFeedFetchUrl(
 function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
   if (timeoutMs <= 0) return undefined;
   return AbortSignal.timeout(timeoutMs);
+}
+
+function createPinnedDispatcher(addresses: ResolvedAddress[]): Agent {
+  const pinnedAddresses = addresses.map(({ address, family }) => {
+    const resolvedFamily = family ?? isIP(address);
+    if (resolvedFamily !== 4 && resolvedFamily !== 6) {
+      throw new Error('Remote URL resolved to an unrecognised network address');
+    }
+    return { address, family: resolvedFamily };
+  });
+
+  return new Agent({
+    connect: {
+      lookup: (_hostname, lookupOptions, callback) => {
+        if (lookupOptions.all) {
+          callback(null, pinnedAddresses);
+          return;
+        }
+        const selected =
+          pinnedAddresses.find(
+            ({ family }) =>
+              !lookupOptions.family || family === lookupOptions.family,
+          ) ?? pinnedAddresses[0];
+        callback(null, selected.address, selected.family);
+      },
+    },
+  });
+}
+
+type FeedResponse = {
+  status: number;
+  statusText: string;
+  ok: boolean;
+  headers: Pick<Headers, 'get'>;
+  body: {
+    locked: boolean;
+    cancel: (reason?: unknown) => Promise<void>;
+    getReader: () => {
+      cancel: (reason?: unknown) => Promise<void>;
+      read: () => Promise<{ done: boolean; value?: Uint8Array }>;
+      releaseLock: () => void;
+    };
+  } | null;
+  text: () => Promise<string>;
+};
+
+type FeedFetchResponse = {
+  // `undici` and Node's global fetch expose equivalent response behavior, but
+  // their complete `Headers` declarations differ under Node 26's disposable
+  // iterator types. Feed sync only depends on this shared response surface.
+  response: FeedResponse;
+  close: () => Promise<void>;
+};
+
+async function fetchValidatedFeedUrl(
+  url: ValidatedRemoteUrl,
+  headers: Record<string, string>,
+  options: ContentFeedSyncOptions,
+): Promise<FeedFetchResponse> {
+  const init = {
+    headers,
+    redirect: 'manual' as const,
+    signal: createTimeoutSignal(
+      options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS,
+    ),
+  };
+
+  // Production uses Undici with a lookup that cannot perform a second DNS
+  // resolution. The documented injected-fetch seam is a trusted transport.
+  if (options.fetch) {
+    return {
+      response: await options.fetch(url.url, init),
+      close: async () => {},
+    };
+  }
+
+  const dispatcher = createPinnedDispatcher(url.addresses);
+  try {
+    const response = await undiciFetch(url.url, { ...init, dispatcher });
+    return { response, close: () => dispatcher.close() };
+  } catch (error) {
+    await dispatcher.close();
+    throw error;
+  }
+}
+
+async function closeFeedResponse({ response, close }: FeedFetchResponse) {
+  try {
+    if (response.body && !response.body.locked) await response.body.cancel();
+  } catch {
+    // A stream that already failed can reject cancellation. The per-request
+    // dispatcher still must be closed, and the caller retains its read error.
+  } finally {
+    await close();
+  }
 }
 
 /**
@@ -107,45 +214,44 @@ function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
  * the parser uses the redirect target as the feed base.
  */
 async function fetchFeedWithRedirectGuard(
-  fetchImpl: typeof fetch,
-  startUrl: URL,
+  startUrl: ValidatedRemoteUrl,
   headers: Record<string, string>,
   options: ContentFeedSyncOptions,
-): Promise<{ response: Response; finalUrl: URL }> {
+): Promise<FeedFetchResponse & { finalUrl: URL }> {
   let current = startUrl;
 
   for (let hop = 0; hop <= MAX_FEED_REDIRECTS; hop += 1) {
-    const response = await fetchImpl(current, {
-      headers,
-      redirect: 'manual',
-      signal: createTimeoutSignal(
-        options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS,
-      ),
-    });
+    const result = await fetchValidatedFeedUrl(current, headers, options);
+    const { response } = result;
 
     // Only the redirect statuses (not 304 Not Modified / 305 / 306) reroute the
     // request; everything else (200, 304, 4xx, 5xx) is returned to the caller.
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get('location');
       if (!location) {
+        await closeFeedResponse(result);
         throw new Error('Feed redirect response missing Location header');
       }
       // Re-run the full SSRF validation against the resolved redirect target.
-      current = await validateFeedFetchUrl(
-        new URL(location, current).toString(),
-        options,
-      );
+      try {
+        current = await validateFeedFetchUrl(
+          new URL(location, current.url).toString(),
+          options,
+        );
+      } finally {
+        await closeFeedResponse(result);
+      }
       continue;
     }
 
-    return { response, finalUrl: current };
+    return { ...result, finalUrl: current.url };
   }
 
   throw new Error('Feed URL exceeded the maximum number of redirects');
 }
 
 async function readResponseText(
-  response: Response,
+  response: FeedResponse,
   maxBytes: number,
 ): Promise<string> {
   const contentLength = response.headers.get('content-length');
@@ -165,16 +271,23 @@ async function readResponseText(
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    totalBytes += value.byteLength;
-    if (totalBytes > maxBytes) {
-      await reader.cancel();
-      throw new Error(`Feed response exceeds ${maxBytes} bytes`);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new Error(`Feed response exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
+  } catch (error) {
+    await reader.cancel(error);
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
 
   const buffer = new Uint8Array(totalBytes);
@@ -349,9 +462,6 @@ export async function syncContentFeedSource(
     };
   }
 
-  const fetchImpl = options.fetch ?? globalThis.fetch;
-  if (!fetchImpl) throw new Error('No fetch implementation available');
-
   const headers: Record<string, string> = {
     Accept:
       'application/rss+xml, application/atom+xml, application/xml, text/xml',
@@ -366,14 +476,15 @@ export async function syncContentFeedSource(
 
   try {
     const feedUrl = await validateFeedFetchUrl(source.feedUrl, options);
-    const { response, finalUrl } = await fetchFeedWithRedirectGuard(
-      fetchImpl,
+    const fetchResult = await fetchFeedWithRedirectGuard(
       feedUrl,
       headers,
       options,
     );
+    const { response, finalUrl } = fetchResult;
 
     if (response.status === 304) {
+      await closeFeedResponse(fetchResult);
       source.markFetchSucceeded(now);
       await source.save();
       return {
@@ -387,16 +498,21 @@ export async function syncContentFeedSource(
     }
 
     if (!response.ok) {
+      await closeFeedResponse(fetchResult);
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const parsed = parseContentFeed(
-      await readResponseText(
-        response,
-        options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
-      ),
-      finalUrl.toString(),
-    );
+    const responseText = await (async () => {
+      try {
+        return await readResponseText(
+          response,
+          options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+        );
+      } finally {
+        await closeFeedResponse(fetchResult);
+      }
+    })();
+    const parsed = parseContentFeed(responseText, finalUrl.toString());
     source.format = parsed.format;
     source.homepageUrl = source.homepageUrl || parsed.homepageUrl;
     if (!source.name && parsed.title) source.name = parsed.title;

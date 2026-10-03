@@ -24,6 +24,17 @@ export interface SafeRemoteUrlOptions {
   resolveHostname?: ResolveHostname;
 }
 
+export interface ValidatedRemoteUrlOptions extends SafeRemoteUrlOptions {
+  /** Resolve even when private hosts are explicitly allowed, for pinned fetches. */
+  resolveHostnameWhenPrivateAllowed?: boolean;
+}
+
+/** A URL together with the exact addresses accepted by its DNS validation. */
+export interface ValidatedRemoteUrl {
+  url: URL;
+  addresses: ResolvedAddress[];
+}
+
 export async function defaultResolveHostname(
   hostname: string,
 ): Promise<ResolvedAddress[]> {
@@ -131,13 +142,13 @@ export function isBlockedAddress(address: string): boolean {
 /**
  * Parse and validate a remote URL for outbound fetching. Rejects non-http(s)
  * schemes, embedded credentials, and hosts that resolve to non-public ranges.
- * Returns the parsed {@link URL} on success; throws a descriptive `Error`
- * otherwise.
+ * Returns the parsed URL and the exact accepted addresses so callers can bind
+ * their connection without resolving the hostname again.
  */
-export async function assertSafeRemoteUrl(
+export async function validateSafeRemoteUrl(
   rawUrl: string,
-  options: SafeRemoteUrlOptions = {},
-): Promise<URL> {
+  options: ValidatedRemoteUrlOptions = {},
+): Promise<ValidatedRemoteUrl> {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -155,7 +166,12 @@ export async function assertSafeRemoteUrl(
     throw new Error('Remote URL must include a hostname');
   }
 
-  if (options.allowPrivateNetworkHosts) return url;
+  if (
+    options.allowPrivateNetworkHosts &&
+    !options.resolveHostnameWhenPrivateAllowed
+  ) {
+    return { url, addresses: [] };
+  }
 
   const resolver = options.resolveHostname ?? defaultResolveHostname;
   const addresses =
@@ -165,12 +181,20 @@ export async function assertSafeRemoteUrl(
 
   if (
     !addresses.length ||
-    addresses.some(({ address }) => isBlockedAddress(address))
+    (!options.allowPrivateNetworkHosts &&
+      addresses.some(({ address }) => isBlockedAddress(address)))
   ) {
     throw new Error('Remote URL must resolve to a public network address');
   }
 
-  return url;
+  return { url, addresses };
+}
+
+export async function assertSafeRemoteUrl(
+  rawUrl: string,
+  options: SafeRemoteUrlOptions = {},
+): Promise<URL> {
+  return (await validateSafeRemoteUrl(rawUrl, options)).url;
 }
 
 /** Redirect status codes that reroute a request to a new Location. */
