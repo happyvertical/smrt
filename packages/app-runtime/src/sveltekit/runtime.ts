@@ -36,8 +36,10 @@ import {
 import {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
+  PermissionResolver,
   SessionService,
   type SessionServiceOptions,
+  withPrincipalPermissionContext,
   withSessionPermissionContext,
 } from '@happyvertical/smrt-users';
 import type {
@@ -236,6 +238,14 @@ export interface SmrtRuntimeSessionCookie {
 }
 
 /** The composed runtime; `handle` and `init` are bound and destructurable. */
+/** A principal a route authenticated itself, for {@link SmrtSvelteKitRuntime.runAsPrincipal}. */
+export interface SmrtRuntimeBoundPrincipal {
+  readonly id: string;
+  readonly tenantId?: string | null;
+  /** Granted scopes that cap the live permission set (e.g. token scopes). */
+  readonly scopes?: readonly string[];
+}
+
 export interface SmrtSvelteKitRuntime {
   /** `hooks.server.ts` `handle`. */
   readonly handle: Handle;
@@ -265,6 +275,20 @@ export interface SmrtSvelteKitRuntime {
    * Same per-request rule as {@link databaseConfig}.
    */
   classOptions(className: string): SmrtClassOptions;
+  /**
+   * Run `fn` as a principal the route verified itself (for example a bearer
+   * token mapped by an MCP route), replacing the cookie session's permission
+   * context for that call. The principal's permissions are resolved live from
+   * its membership in `tenantId` and, when `scopes` is given, capped to it;
+   * under the RLS transaction rule of {@link databaseConfig} a fresh
+   * transaction publishes that user, tenant and permission set, and
+   * `databaseConfig()`/`classOptions()` return it inside `fn`. Rejects (before
+   * `fn` runs) without a user id, a tenant, or an authorized membership.
+   */
+  runAsPrincipal<T>(
+    principal: SmrtRuntimeBoundPrincipal,
+    fn: () => Promise<T>,
+  ): Promise<T>;
   /** The local runtime. Rejects outside the `local` profile. */
   localRuntime(): Promise<LocalApplicationRuntime>;
   /** The deployed runtime. Rejects in the `local` profile. */
@@ -684,6 +708,54 @@ export function composeSmrtSvelteKitRuntime(
     requireResolved().providers.tenancy.isolation === 'database-rls'
       ? true
       : options.session?.postgresRls;
+  let permissionResolverPromise: Promise<PermissionResolver> | undefined;
+  const permissionResolver = (): Promise<PermissionResolver> => {
+    permissionResolverPromise ??= PermissionResolver.create(
+      baseClassOptions('Permission'),
+    ).catch((error: unknown) => {
+      permissionResolverPromise = undefined;
+      throw error;
+    });
+    return permissionResolverPromise;
+  };
+
+  const runAsPrincipal = async <T>(
+    principal: SmrtRuntimeBoundPrincipal,
+    fn: () => Promise<T>,
+  ): Promise<T> => {
+    const userId = principal?.id;
+    const tenantId = principal?.tenantId;
+    if (typeof userId !== 'string' || userId.length === 0) {
+      throw new Error('A bound principal requires a user id.');
+    }
+    if (typeof tenantId !== 'string' || tenantId.length === 0) {
+      throw new Error('A bound principal requires a tenant.');
+    }
+    // Resolution reads the base connection, before any RLS transaction opens.
+    const resolved = await (await permissionResolver()).resolvePermissions(
+      userId,
+      tenantId,
+    );
+    if (!resolved.membershipId) {
+      throw new Error('The bound principal has no membership in its tenant.');
+    }
+    const cap = principal.scopes ? new Set(principal.scopes) : undefined;
+    const permissions = [...resolved.permissions].filter(
+      (permission) => !cap || cap.has(permission),
+    );
+    return withPrincipalPermissionContext(
+      {
+        ...baseClassOptions('Session'),
+        userId,
+        tenantId,
+        permissions,
+        enterTenantContext: true,
+        postgresRls: postgresRls(),
+      },
+      () => fn(),
+    );
+  };
+
   let sessionServicePromise: Promise<SessionService> | undefined;
   const sessionService = (): Promise<SessionService> => {
     sessionServicePromise ??= (async () => {
@@ -792,6 +864,7 @@ export function composeSmrtSvelteKitRuntime(
     configurationFingerprint,
     databaseConfig,
     classOptions,
+    runAsPrincipal,
     localRuntime,
     deployedRuntime,
     health,
