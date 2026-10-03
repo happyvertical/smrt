@@ -14,6 +14,7 @@
     "preview": "smrt app start",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json",
     "db:migrate": "vite build && smrt app migrate",
     "app:install": "smrt app install",
     "app:setup": "smrt app setup",

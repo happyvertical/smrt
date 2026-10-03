@@ -66,6 +66,12 @@ describe('generated project metadata', () => {
     expect(JSON.stringify(packageJson)).not.toContain('db:setup');
   });
 
+  it('ships typecheck as a TypeScript pass plus svelte-check (standards §10)', () => {
+    expect(packageJson.scripts.typecheck).toBe(
+      'svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json',
+    );
+  });
+
   it('keeps scanner-visible CRUD actions literal in the decorator', () => {
     expect(itemSource.match(/include: \['list', 'get', 'create', 'update', 'delete'\]/g)).toHaveLength(3);
     expect(itemSource).not.toContain('...CRUD_ACTIONS');
