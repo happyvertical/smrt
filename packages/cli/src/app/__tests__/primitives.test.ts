@@ -315,6 +315,25 @@ describe('secret redaction', () => {
     );
     // Unchanged default: an empty value is never a match, short values pass.
     expect(redactSecrets(text, environment)).toBe(text);
+    // A short value that is URL syntax (Vite's BASE_URL=/) must not break the
+    // userinfo pattern: patterns run before the short-value pass.
+    const url = redactSecrets(
+      'connect postgres://smrt:pw-must-not-print@db.internal/app',
+      { BASE_URL: '/', SMRT_PORT_KEY: ':', SMRT_SECRET_KEY: 'ab' },
+      { strict: true },
+    );
+    expect(url).not.toContain('pw-must-not-print');
+    expect(url).not.toContain('smrt:');
+    // Markers are never re-scanned for a shorter value.
+    expect(
+      redactSecrets(
+        'a Bearer x',
+        { SMRT_KEY: 'a', SMRT_TOKEN: 'e' },
+        {
+          strict: true,
+        },
+      ),
+    ).toBe('[redacted] B[redacted][redacted]r[redacted]r [redacted]');
     // Strict never redacts less than the default.
     const long =
       'postgresql://admin:hunter22@db/app?token=abcDEF123456 Bearer abcdefghijklmnop';

@@ -47,6 +47,9 @@ export class ApplicationStartError extends Error {
   }
 }
 
+/** Replacement marker for every redacted value. */
+const REDACTED = '[redacted]';
+
 /** Minimum length before an environment value is treated as redactable. */
 const MIN_REDACTED_VALUE_LENGTH = 8;
 
@@ -79,33 +82,52 @@ export function redactSecrets(
   environment: Record<string, string | undefined> = process.env,
   options: RedactSecretsOptions = {},
 ): string {
-  const minimumLength = options.strict ? 1 : MIN_REDACTED_VALUE_LENGTH;
-  let redacted = message;
-  const values = Object.entries(environment)
+  const secretValues = Object.entries(environment)
     .filter(
       ([name, value]) =>
         typeof value === 'string' &&
-        value.length >= minimumLength &&
+        value !== '' &&
         SECRET_ENVIRONMENT_NAME.test(name),
     )
     .map(([, value]) => value as string)
     .sort((left, right) => right.length - left.length);
-  for (const value of values) {
-    redacted = redacted.replaceAll(value, '[redacted]');
+  let redacted = message;
+  for (const value of secretValues) {
+    if (value.length < MIN_REDACTED_VALUE_LENGTH) continue;
+    redacted = redacted.replaceAll(value, REDACTED);
   }
-  return redacted
+  redacted = redacted
     .replace(
       /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:'"]*(?::[^\s/@'"]*)?@/gi,
-      '$1[redacted]@',
+      `$1${REDACTED}@`,
     )
     .replace(
       /([?&;](?:token|password|secret|key|access_token)=)[^&\s"'<>]+/gi,
-      '$1[redacted]',
+      `$1${REDACTED}`,
     )
-    .replace(
-      options.strict
-        ? /\bBearer\s+[A-Za-z0-9._~+/=-]+/g
-        : /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g,
-      'Bearer [redacted]',
-    );
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g, `Bearer ${REDACTED}`);
+  if (!options.strict) return redacted;
+  // Strict pass, after the patterns so a short value (`/`, `:`) can never
+  // break the URL/query/Bearer syntax they match. Existing markers are left
+  // intact; only the text between them is searched.
+  redacted = redacted.replace(
+    /\bBearer\s+[A-Za-z0-9._~+/=-]+/g,
+    `Bearer ${REDACTED}`,
+  );
+  const shortValues = secretValues.filter(
+    (value) => value.length < MIN_REDACTED_VALUE_LENGTH,
+  );
+  if (shortValues.length === 0) return redacted;
+  // One alternation (longest first), so a marker inserted for one value is
+  // never re-scanned for another.
+  const shortPattern = new RegExp(
+    shortValues
+      .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('|'),
+    'g',
+  );
+  return redacted
+    .split(REDACTED)
+    .map((segment) => segment.replace(shortPattern, REDACTED))
+    .join(REDACTED);
 }
