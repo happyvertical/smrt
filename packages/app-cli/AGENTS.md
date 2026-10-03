@@ -19,6 +19,9 @@ Application CLI support for SMRT-based apps.
   option, `startMcpBridge({ mcpPath })`, `smrt-mcp-bridge --mcp-path` /
   `SMRT_MCP_PATH`, `smrt-app --mcp-path` / `SMRT_APP_MCP_PATH`. Validate it
   with `resolveMcpPath` (same-server absolute path only) before listening.
+  `smrt-mcp-bridge` parses argv with `parseMcpBridgeArgs`: empty, missing or
+  repeated value options and an explicit invalid (even empty) path are usage
+  errors (exit 2) — never silently the default.
 - Keep command output stream-injectable so tests can assert behavior without writing to the real terminal.
 
 ## Gotchas
