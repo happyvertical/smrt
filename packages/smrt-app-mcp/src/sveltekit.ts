@@ -36,7 +36,11 @@ import {
   type CreateDefaultMcpAppServerOptions,
   createDefaultMcpAppServer,
 } from './defaults.js';
-import { MCP_ORIGIN_DENIED_CODE, McpAccessError } from './errors.js';
+import {
+  MCP_ORIGIN_DENIED_CODE,
+  MCP_TOOL_ACCESS_DENIED_CODE,
+  McpAccessError,
+} from './errors.js';
 import {
   createMcpProtocolServerForRequest,
   MCP_TASKS_EXTENSION,
@@ -248,8 +252,31 @@ export function principalFromSessionLocals(event: {
   };
 }
 
+/**
+ * Run MCP dispatch for a bearer-authenticated principal inside an
+ * application-owned context bound to that principal (for example
+ * `runtime.runAsPrincipal` from `@happyvertical/smrt-app-runtime/sveltekit`,
+ * which opens the principal's permission context and, under `database-rls`,
+ * its RLS transaction). Must call `run` exactly once and return its result;
+ * throwing before `run` (an unbindable principal) is a denial.
+ */
+export type McpPrincipalBinder = <T>(
+  principal: McpAppPrincipal & { id: string },
+  run: () => Promise<T>,
+) => Promise<T>;
+
 /** Options shared by both route mounts. */
 export interface MountMcpRouteOptions {
+  /**
+   * Bind a bearer-authenticated principal around dispatch (see
+   * {@link McpPrincipalBinder}). The `smrtOptions` database thunk, task
+   * handling and tool execution all run inside the binding, and the response
+   * is fully materialized before it returns. A binder that throws before
+   * running dispatch, or returns without running it, yields HTTP 403 with the
+   * safe `mcp_tool_access_denied` JSON-RPC error. Used only when `auth`
+   * authenticated the request; the session-locals path is unchanged.
+   */
+  bindPrincipal?: McpPrincipalBinder;
   /**
    * Refuse a modern-endpoint request whose `Origin` header is present but is
    * neither the request URL's own origin nor in `trustedOrigins` (and, when
@@ -333,15 +360,37 @@ export function mountMcpRoute(
     if (trustedOrigins && !originPermitted(event, trustedOrigins)) {
       return originDeniedResponse();
     }
-    let resolved: ResolvedRequestPrincipal;
     const auth = currentResourceAuth(options.auth);
-    if (auth) {
-      const checked = await auth.authenticate(event.request);
-      if (!checked.ok) return checked.response;
-      resolved = { principal: checked.principal };
-    } else {
-      resolved = resolveRequestPrincipal(event, options);
+    if (!auth) return dispatch(event, resolveRequestPrincipal(event, options));
+    const checked = await auth.authenticate(event.request);
+    if (!checked.ok) return checked.response;
+    const resolved = { principal: checked.principal };
+    if (!options.bindPrincipal) return dispatch(event, resolved);
+    let entered = false;
+    let response: Response;
+    try {
+      response = await options.bindPrincipal(checked.principal, async () => {
+        entered = true;
+        // Materialize the body inside the binding so no dispatch work can
+        // outlive the principal's context (or its RLS transaction).
+        const dispatched = await dispatch(event, resolved);
+        return new Response(await dispatched.arrayBuffer(), {
+          status: dispatched.status,
+          statusText: dispatched.statusText,
+          headers: dispatched.headers,
+        });
+      });
+    } catch (error) {
+      if (entered) throw error;
+      return principalUnboundResponse();
     }
+    return entered ? response : principalUnboundResponse();
+  };
+
+  async function dispatch(
+    event: SvelteKitRequestEvent,
+    resolved: ResolvedRequestPrincipal,
+  ): Promise<Response> {
     const taskResponse = await maybeHandleTaskRequest(
       server,
       resolved.principal,
@@ -368,7 +417,28 @@ export function mountMcpRoute(
       },
     );
     return handler.fetch(event.request);
-  };
+  }
+}
+
+function principalUnboundResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32600,
+        message: 'MCP tool access is not permitted.',
+        data: { code: MCP_TOOL_ACCESS_DENIED_CODE, retryable: false },
+      },
+    }),
+    {
+      status: 403,
+      headers: {
+        'content-type': 'application/json',
+        'cache-control': 'no-store',
+      },
+    },
+  );
 }
 
 /** Options for {@link mountMcpAppRoute}. */
@@ -376,7 +446,7 @@ export interface MountMcpAppRouteOptions
   extends CreateDefaultMcpAppServerOptions,
     Pick<
       MountMcpRouteOptions,
-      'auth' | 'extensions' | 'checkOrigin' | 'trustedOrigins'
+      'auth' | 'bindPrincipal' | 'extensions' | 'checkOrigin' | 'trustedOrigins'
     > {
   /**
    * Resolve the request principal when no bearer adapter is active. Defaults
@@ -418,6 +488,7 @@ export function mountMcpAppRoute(
 ): McpAppSvelteKitHandler {
   const {
     auth,
+    bindPrincipal,
     extensions,
     resolvePrincipal,
     checkOrigin,
@@ -427,6 +498,7 @@ export function mountMcpAppRoute(
   const server = createDefaultMcpAppServer(serverOptions);
   const handler = mountMcpRoute(server, {
     auth,
+    bindPrincipal,
     extensions,
     // Default on: the default principal is an ambient session cookie.
     checkOrigin: checkOrigin ?? true,

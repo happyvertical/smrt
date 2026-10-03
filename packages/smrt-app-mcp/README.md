@@ -47,7 +47,17 @@ export const POST = mountMcpAppRoute({
   or `resourcePolicy` is composed with this default and can only narrow it;
   for a wider policy, call `createMcpAppServer` and `mountMcpRoute` directly.
   Because the default is principal-aware, `tools/list` stays `private` even
-  with a public-cache attestation.
+  with a public-cache attestation. A scope applies uniformly to every
+  published tool, so a read scope such as `items.read` must be paired with
+  `effects: ['read']` (below) unless the app adds per-operation policy.
+- **Effects** — `effects` (also on `createMcpAppServer`) limits the catalog to
+  tools whose effect is listed: `'read'`, `'write'`, `'destructive'`, the
+  WebMCP vocabulary. `mcpToolEffect` classifies with the existing read-only
+  detection (canonical `readOnlyHint`, else the `_list`/`_get` name rule); any
+  other tool is `destructive` unless it declares `destructiveHint: false`.
+  Excluded tools are absent from `tools/list`, and a direct call gets the same
+  unknown-tool error as a nonexistent name, so they cannot be enumerated.
+  Omitted, every allow-listed tool is published (unchanged behaviour).
 - **Server** — `serverInfo` defaults to `{ name: 'smrt-app', version: '0.1.0' }`;
   every other `createMcpAppServer` option (`workflowTools`, `resources`,
   `workflowAssertions`, `toolListCache`, …) passes through. The handler's
@@ -77,7 +87,16 @@ Bearer authentication for hosted profiles is an `auth` option on both
 `mountMcpRoute` and `mountMcpAppRoute`. When its source yields an adapter,
 every request must carry a valid bearer token and the adapter's principal
 replaces the session principal; `null` (the `local` profile) keeps the session
-principal. `createHostedMcpResourceAuth` from `./auth` builds that source from
+principal. Pass `bindPrincipal` (for example `runtime.runAsPrincipal` from
+`@happyvertical/smrt-app-runtime/sveltekit`) so that, after bearer
+authentication, the `smrtOptions` database thunk, task handling and tool
+execution all run inside a context bound to that principal: under
+`database-rls` the runtime opens a fresh RLS transaction publishing the bearer
+user, tenant and its live membership permissions capped by the token's scopes,
+instead of the anonymous (or a cookie user's) request transaction. A binder
+that fails before dispatch answers HTTP 403 with the safe
+`mcp_tool_access_denied` error; the response is materialized inside the
+binding. `createHostedMcpResourceAuth` from `./auth` builds that source from
 `SMRT_MCP_RESOURCE`, `SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI` and
 `SMRT_MCP_SCOPES`, caching one adapter and retrying a failed construction:
 
@@ -88,7 +107,10 @@ const auth = createHostedMcpResourceAuth({
   resolvePrincipal: resolveHostedMcpPrincipal, // application-owned lookup
 });
 // api/mcp/+server.ts
-export const POST = mountMcpAppRoute({ models: [Item], requiredScopes: ['items.read'], smrtOptions, auth });
+export const POST = mountMcpAppRoute({
+  models: [Item], requiredScopes: ['items.read'], effects: ['read'],
+  smrtOptions, auth, bindPrincipal: runtime.runAsPrincipal,
+});
 // .well-known/oauth-protected-resource/api/mcp/+server.ts
 export const GET = mountMcpProtectedResourceMetadataRoute(auth);
 ```
