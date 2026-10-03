@@ -433,15 +433,30 @@ web/workers and set `SMRT_MAINTENANCE_MODE=true`. For domain-specific
 transformations, add a `scripts/smrt-portability.mjs` adapter; when present it
 replaces `smrt app export`/`import`'s built-in one.
 
-### Hosted MCP authorization
+### MCP authorization
 
-The opt-in MCP route uses the local signed session only in the `local` profile.
+In the `local` profile, the opt-in MCP route accepts two credentials. One is
+the signed browser session. The other is an owner-minted bearer token for a
+local MCP client such as Claude Desktop through `smrt-mcp-bridge`:
+
+```bash
+pnpm exec smrt app token --scopes items.read --label "Claude Desktop"
+pnpm exec smrt app token list
+pnpm exec smrt app token revoke <id>
+```
+
+The token is printed once and only its hash is stored. It is bound to the
+owner and the owner's workspace. It expires after 30 days unless you pass
+`--expires`, up to 365 days. It never carries a permission the owner no longer
+holds. Point the bridge at `/api/mcp` with `<PREFIX>_SERVER_URL` and
+`<PREFIX>_TOKEN`; see the `@happyvertical/smrt-app-cli` README.
+
 For `self-hosted` and `cloud`, configure HTTPS `SMRT_MCP_RESOURCE`,
 `SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI`, and space-separated
-`SMRT_MCP_SCOPES` values. Bind `resolveHostedMcpPrincipal` in
-`src/lib/server/mcp-hosted-principal.ts` to an application-owned lookup that
-checks the current account and active tenant membership on every request. It
-must return `null` for disabled, revoked, or unmapped identities. The route
-does not derive tenant authority from JWT claims, request headers, or tool
-arguments; missing configuration or a missing binding fails closed before MCP
-dispatch.
+`SMRT_MCP_SCOPES` values. On every request, the runtime maps the verified
+issuer and subject to the user linked through OIDC login. That user must have
+exactly one active tenant membership. Disabled, unmapped, or multi-tenant
+identities are denied. To use a different lookup, pass `resolvePrincipal` to
+`createHostedMcpResourceAuth`. The route never derives tenant authority from
+JWT claims, request headers, or tool arguments. Missing configuration fails
+closed before MCP dispatch.

@@ -3119,6 +3119,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@happyvertical/smrt-app-cli':
+        specifier: workspace:*
+        version: link:../app-cli
       '@happyvertical/smrt-app-mcp':
         specifier: workspace:*
         version: link:../smrt-app-mcp
@@ -3167,6 +3170,9 @@ importers:
       '@happyvertical/sql':
         specifier: ^0.98.0
         version: 0.98.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@modelcontextprotocol/client':
+        specifier: 2.0.0
+        version: 2.0.0
       '@modelcontextprotocol/server':
         specifier: ^2.0.0
         version: 2.0.0

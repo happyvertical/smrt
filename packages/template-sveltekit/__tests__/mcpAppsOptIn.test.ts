@@ -22,9 +22,8 @@ function files(directory: string): string[] {
  * `pnpm typecheck` (tsconfig.fixture.json).
  */
 describe('opt-in MCP Apps runtime', () => {
-  it('ships two route files and the application-owned principal binding only', () => {
+  it('ships only the two route files; principal bindings come from the runtime', () => {
     expect(files(join(staged, 'src')).sort()).toEqual([
-      'src/lib/server/mcp-hosted-principal.ts',
       'src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts',
       'src/routes/api/mcp/+server.ts',
     ]);
@@ -36,10 +35,10 @@ describe('opt-in MCP Apps runtime', () => {
     expect(route).toContain('models: [Item]');
     expect(route).toContain("requiredScopes: ['items.read']");
     expect(route).toContain('smrtOptions: () => ({ db: runtime.databaseConfig() })');
-    // The default principal comes from the verified session locals; the only
-    // resolver is the hosted bearer mapping, never a route-level override.
-    expect(route.match(/resolvePrincipal:/g)).toEqual(['resolvePrincipal:']);
-    expect(route).toContain('resolvePrincipal: resolveHostedMcpPrincipal');
+    // The default principal comes from the verified session locals; bearer
+    // principals (local owner tokens, hosted access tokens) come from the
+    // runtime bindings. No route-level or app-owned resolver override.
+    expect(route).not.toContain('resolvePrincipal:');
     expect(route).not.toContain('checkOrigin');
     expect(route).not.toContain('Authorization');
     expect(route).toContain('csp: {}');
@@ -65,8 +64,7 @@ describe('opt-in MCP Apps runtime', () => {
       'src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts',
     );
     for (const file of [route, metadata]) {
-      expect(file).toContain('createHostedMcpResourceAuth({');
-      expect(file).toContain('resolvePrincipal: resolveHostedMcpPrincipal');
+      expect(file).toContain('createHostedMcpResourceAuth({ profile, runtime })');
     }
     expect(metadata).toContain(
       'export const GET = mountMcpProtectedResourceMetadataRoute(',
