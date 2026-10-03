@@ -194,15 +194,28 @@ export function createBrowserOpener(sourceRoot: string): (url: string) => void {
   };
 }
 
-/** Default runtime resolver: reload `smrt.config` without the cache. */
+/**
+ * Default runtime resolver: reload `smrt.config` without the cache.
+ *
+ * A config with no `runtime` block (or no config file) is the `local`
+ * profile — the same rule the web process applies in app-runtime's SvelteKit
+ * entry — so the operator and the server it manages never disagree. A
+ * present but invalid block still fails closed.
+ */
 export async function resolveConfiguredRuntime(
   sourceRoot: string,
 ): Promise<ResolvedApplicationRuntime> {
-  const { loadConfig, resolveConfiguredApplicationRuntime } = await import(
-    '@happyvertical/smrt-config'
-  );
-  await loadConfig({ cache: false, searchFrom: sourceRoot });
-  return resolveConfiguredApplicationRuntime() as ResolvedApplicationRuntime;
+  const {
+    loadConfig,
+    resolveApplicationRuntime,
+    resolveConfiguredApplicationRuntime,
+  } = await import('@happyvertical/smrt-config');
+  const loaded = await loadConfig({ cache: false, searchFrom: sourceRoot });
+  return (
+    loaded.runtime
+      ? resolveConfiguredApplicationRuntime()
+      : resolveApplicationRuntime({ profile: 'local' })
+  ) as ResolvedApplicationRuntime;
 }
 
 /** Build the default dependency set for `sourceRoot`. */

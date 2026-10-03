@@ -30,6 +30,10 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
 
 ## Contracts that must not drift
 
+- **Profile**: `resolveConfiguredRuntime` treats a `smrt.config` with no
+  `runtime` block (or no config) as `local`, the rule app-runtime's SvelteKit
+  entry applies, so operator and web process agree; a present but invalid
+  block still fails closed.
 - **State root** `<XDG_STATE_HOME|~/.local/state|~/Library/Application Support|%LOCALAPPDATA%>/.<appId>-<sha256(dataRoot)[:12]>-state`,
   mode 0700, every ancestor user/root-owned and not group/world-writable,
   app-bound empty 0600 marker `.smrt-state-<appId>`. Shared with the running

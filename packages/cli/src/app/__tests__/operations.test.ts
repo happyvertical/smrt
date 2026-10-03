@@ -32,7 +32,10 @@ import {
   resolveLocalRuntimePaths,
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
-import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
+import {
+  clearCache,
+  resolveApplicationRuntime,
+} from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAppCommand } from '../cli.js';
@@ -41,7 +44,11 @@ import {
   resolveApplicationStateRoot,
   runtimeConfigurationFingerprint,
 } from '../identity.js';
-import type { AppCommandDependencies, CommandRunner } from '../runtime.js';
+import {
+  type AppCommandDependencies,
+  type CommandRunner,
+  resolveConfiguredRuntime,
+} from '../runtime.js';
 
 const TOKEN = 'bootstrap-token-must-never-print-0123456789';
 const ROTATED_TOKEN = 'rotated-token-must-never-print-9876543210';
@@ -270,6 +277,70 @@ async function freePort(): Promise<string> {
   await new Promise<void>((resolve) => socket.close(() => resolve()));
   return String(address.port);
 }
+
+describe('runtime profile resolution (#3410 item 1)', () => {
+  afterEach(() => {
+    clearCache();
+  });
+
+  function withConfig(fixture: Fixture, source: string | null): void {
+    if (source !== null) {
+      writeFileSync(join(fixture.app, 'smrt.config.mjs'), source);
+    }
+  }
+
+  it.each([
+    ['a config with no runtime block', 'export default { knowledge: {} };\n'],
+    ['no smrt.config at all', null],
+  ])('defaults to the local profile for %s, as the web runtime does', async (_label, source) => {
+    const fixture = makeFixture();
+    withConfig(fixture, source);
+    const runtime = await resolveConfiguredRuntime(fixture.app);
+    expect(runtime.profile).toBe('local');
+    expect(runtime).toEqual(resolveApplicationRuntime({ profile: 'local' }));
+  });
+
+  it('keeps an explicit profile and still fails closed on an invalid runtime block', async () => {
+    // One fixture per config: Node caches an imported config module by URL.
+    const explicit = makeFixture();
+    withConfig(
+      explicit,
+      "export default { runtime: { profile: 'self-hosted' } };\n",
+    );
+    expect((await resolveConfiguredRuntime(explicit.app)).profile).toBe(
+      'self-hosted',
+    );
+    const empty = makeFixture();
+    withConfig(empty, 'export default { runtime: {} };\n');
+    await expect(resolveConfiguredRuntime(empty.app)).rejects.toThrow(
+      /must be local, self-hosted, or cloud/,
+    );
+    const bogus = makeFixture();
+    withConfig(bogus, "export default { runtime: { profile: 'bogus' } };\n");
+    await expect(resolveConfiguredRuntime(bogus.app)).rejects.toThrow(
+      /Invalid application runtime profile/,
+    );
+  });
+
+  it('runs setup with the default resolver when the config declares no runtime', async () => {
+    const fixture = makeFixture();
+    withConfig(fixture, 'export default {};\n');
+    expect(
+      await fixture.run(['setup'], {
+        resolveRuntime: resolveConfiguredRuntime,
+      }),
+      fixture.output.stderr.join(''),
+    ).toBe(0);
+    expect(fixture.stdoutJson()).toMatchObject({
+      status: 'ready',
+      profile: 'local',
+    });
+    expect(fixture.calls.smrt[0].env).toMatchObject({
+      SMRT_RUNTIME_PROFILE: 'local',
+      DATABASE_TYPE: 'sqlite',
+    });
+  });
+});
 
 describe('smrt app setup', () => {
   it('builds, migrates explicitly, and keeps the bootstrap token in private files only', async () => {
