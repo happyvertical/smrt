@@ -99,6 +99,9 @@ interface Fixture {
   appId: string;
   stateRoot: () => string;
   output: { stdout: string[]; stderr: string[] };
+  /** Lines the operator terminal received; null sink when not interactive. */
+  terminal: string[];
+  interactive: boolean;
   calls: {
     pm: Array<{ args: string[]; env?: NodeJS.ProcessEnv }>;
     smrt: Array<{ args: string[]; env?: NodeJS.ProcessEnv }>;
@@ -130,6 +133,7 @@ function makeFixture(): Fixture {
     pm: [] as Array<{ args: string[]; env?: NodeJS.ProcessEnv }>,
     smrt: [] as Array<{ args: string[]; env?: NodeJS.ProcessEnv }>,
   };
+  const terminal: string[] = [];
   const bootstrapStatus = { value: 'available' as 'available' | 'claimed' };
   const ok = {
     status: 0,
@@ -159,6 +163,8 @@ function makeFixture(): Fixture {
         sourceRoot: app,
       }),
     output,
+    terminal,
+    interactive: false,
     calls,
     bootstrapStatus,
     setProfile(next) {
@@ -167,11 +173,15 @@ function makeFixture(): Fixture {
     async run(argv, overrides = {}) {
       output.stdout.length = 0;
       output.stderr.length = 0;
+      terminal.length = 0;
       return runAppCommand(argv, {
         cwd: app,
         io: {
           stdout: (text) => output.stdout.push(text),
           stderr: (text) => output.stderr.push(text),
+          operatorTerminal: fixture.interactive
+            ? (text) => terminal.push(text)
+            : undefined,
         },
         dependencies: {
           resolveRuntime: async () =>
@@ -300,6 +310,27 @@ describe('smrt app setup', () => {
     });
     expect(statSync(fixture.data).mode & 0o777).toBe(0o700);
     expectNoLocks(fixture);
+  });
+
+  it('prints the one-time URL to an interactive operator terminal only', async () => {
+    const fixture = makeFixture();
+    fixture.interactive = true;
+    expect(await fixture.run(['setup'])).toBe(0);
+    expect(fixture.terminal.join('')).toContain(
+      `http://127.0.0.1:5173/setup?token=${TOKEN}`,
+    );
+    // Never in the stdout/stderr streams that may be logged.
+    expect(allOutput(fixture)).not.toContain(TOKEN);
+    expect(await fixture.run(['recover'])).toBe(0);
+    expect(fixture.terminal.join('')).toContain(ROTATED_TOKEN);
+    expect(allOutput(fixture)).not.toContain(ROTATED_TOKEN);
+  });
+
+  it('prints no URL when there is no interactive terminal', async () => {
+    const fixture = makeFixture();
+    expect(await fixture.run(['setup'])).toBe(0);
+    expect(fixture.terminal).toEqual([]);
+    expect(allOutput(fixture)).not.toContain(TOKEN);
   });
 
   it('removes the handoff once the owner has claimed the application', async () => {

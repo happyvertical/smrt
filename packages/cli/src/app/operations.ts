@@ -70,7 +70,7 @@ export const APP_OPERATIONS = [
 /** One of {@link APP_OPERATIONS}. */
 export type AppOperation = (typeof APP_OPERATIONS)[number];
 
-/** Report printed by `setup`; `onboardingUrl` is never printed. */
+/** Report printed by `setup`; `onboardingUrl` is never in this JSON. */
 interface SetupReport {
   schemaVersion: 1;
   status: 'ready';
@@ -83,6 +83,14 @@ interface SetupReport {
 function printJson(context: AppContext, value: unknown, pretty = false): void {
   context.io.stdout(
     `${pretty ? JSON.stringify(value, null, 2) : JSON.stringify(value)}\n`,
+  );
+}
+
+/** Print the one-time URL to the operator's terminal only, never to logs. */
+function printOnboardingUrl(context: AppContext, url: string | null): void {
+  if (!url || !context.io.operatorTerminal) return;
+  context.io.operatorTerminal(
+    `Open this one-time owner setup link on this device (it works once and expires):\n  ${url}\n`,
   );
 }
 
@@ -308,6 +316,7 @@ async function recoverOnboarding(
       recovery: 'Run pnpm app:start, then pnpm app:open.',
       secretValuesIncluded: false,
     });
+    printOnboardingUrl(context, url);
   } finally {
     operatorLease.release();
   }
@@ -870,8 +879,13 @@ export async function runApplicationOperation(
       return 0;
     }
     case 'setup':
-      await withOperationLock(preparedStateRoot(context), operation, (lock) =>
-        setup(context, lock),
+      await withOperationLock(
+        preparedStateRoot(context),
+        operation,
+        async (lock) => {
+          const report = await setup(context, lock);
+          printOnboardingUrl(context, report.onboardingUrl);
+        },
       );
       return 0;
     case 'recover':

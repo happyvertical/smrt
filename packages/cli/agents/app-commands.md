@@ -55,7 +55,10 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   (`migration_failed` + `MIGRATION_FAILED_MESSAGE`). Messages pass through
   `redactSecrets()` (secret-named env values, URL userinfo, `token=`, Bearer).
   The bootstrap token is written only to mode-0600 `onboarding.json` /
-  `onboarding-launch.html`; `open` passes the launch file URL, never the token.
+  `onboarding-launch.html`; `open` passes the launch file URL, never the token. `setup`/`recover` print the one-time
+  `/setup?token=` URL only to an interactive terminal (`io.operatorTerminal`,
+  stderr when both stdio are TTYs), never to stdout/stderr logs or pipes. The
+  web runtime deletes the files after a successful owner claim.
 - **Artifacts**: backup/export/import paths go through
   `assertExternalArtifactPath` (real path of nearest existing ancestor, never
   in or over the checkout). Backup refuses an existing destination; export

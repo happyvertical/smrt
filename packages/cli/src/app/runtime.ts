@@ -22,6 +22,12 @@ import {
 export interface AppCommandIo {
   stdout(text: string): void;
   stderr(text: string): void;
+  /**
+   * Operator-only sink for secret material (the one-time onboarding URL).
+   * Present only when it reaches an interactive terminal; never a log, pipe,
+   * or file. Absent means the secret is not printed.
+   */
+  operatorTerminal?(text: string): void;
 }
 
 /** Options for a child command run. */

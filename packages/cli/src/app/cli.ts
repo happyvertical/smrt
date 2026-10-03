@@ -126,6 +126,12 @@ export async function runAppCommand(
   const io: AppCommandIo = {
     stdout: options.io?.stdout ?? ((text) => void process.stdout.write(text)),
     stderr: options.io?.stderr ?? ((text) => void process.stderr.write(text)),
+    // The onboarding URL is a bearer token: show it only on a real terminal.
+    operatorTerminal: options.io
+      ? options.io.operatorTerminal
+      : process.stderr.isTTY && process.stdout.isTTY
+        ? (text) => void process.stderr.write(text)
+        : undefined,
   };
   const operation = argv[0] || 'doctor';
   const rawArgs = argv.slice(1);
