@@ -65,6 +65,25 @@ export const COMMERCE_UI_SLOTS: Record<string, ModuleUISlot> = {
     order: 31,
     propsInterface: 'PricingVersionDecisionProps',
   },
+  'invoice-editor': {
+    id: 'invoice-editor',
+    label: 'Invoice Preparation',
+    description:
+      'Native retained-draft editing and reviewed source allocations',
+    icon: 'file-text',
+    category: 'form',
+    order: 7,
+    propsInterface: 'InvoiceEditorProps',
+  },
+  'invoice-review': {
+    id: 'invoice-review',
+    label: 'Invoice Review',
+    description: 'Caller-authoritative review and approval presentation',
+    icon: 'file-text',
+    category: 'display',
+    order: 8,
+    propsInterface: 'InvoiceReviewProps',
+  },
   'invoice-card': {
     id: 'invoice-card',
     label: 'Invoice Card',

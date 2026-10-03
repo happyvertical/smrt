@@ -26,6 +26,7 @@
   },
   "files": [
     "dist",
+    "agents",
     "CLAUDE.md",
     "AGENTS.md"
   ],

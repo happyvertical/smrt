@@ -1,6 +1,6 @@
 # @happyvertical/smrt-commerce
 
-Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (5 STI types), invoices with ledger integration, payments, and fulfillment tracking.
+Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (9 STI types), invoices with ledger integration, payments, and fulfillment tracking.
 
 ## Installation
 
@@ -521,3 +521,15 @@ and contributor guidance.
 contract without adding a pricing ledger. Compare versions using
 `QuoteRevisionComparison`; the application owns every decision and native form
 action. See [pricing version presentation](agents/pricing-versions.md).
+
+## Commercial UI composition
+
+See [commercial UI contracts and backend boundaries](agents/commercial-ui.md) for native forms, recovery, amount units and consumer adoption.
+
+## Invoice preparation UI
+
+`InvoiceEditor` and `InvoiceReview` from `@happyvertical/smrt-commerce/svelte`
+provide native retained-draft forms, reviewed-source allocations, and
+caller-authoritative review presentation. Draft fields retain currency-unit text while source amounts use integer minor
+units. See [the preparation contract](agents/invoice-preparation.md) for props,
+native action payloads, retries, restricted readers, and adoption guidance.

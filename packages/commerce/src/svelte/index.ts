@@ -155,3 +155,28 @@ ModuleUIRegistry.register(
   'pricing-version-decision',
   PricingVersionDecision,
 );
+
+import InvoiceEditor from './components/InvoiceEditor.svelte';
+import InvoiceReview from './components/InvoiceReview.svelte';
+
+export { InvoiceEditor, InvoiceReview };
+export type InvoiceReviewProps = ComponentProps<typeof InvoiceReview>;
+export type {
+  InvoiceAllocationDraft,
+  InvoiceEditorProps,
+  InvoicePreparationFields,
+  InvoicePreparationHiddenField,
+  InvoicePreparationReview,
+  InvoicePreparationSource,
+} from './invoices/types.js';
+
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'invoice-editor',
+  InvoiceEditor,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'invoice-review',
+  InvoiceReview,
+);

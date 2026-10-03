@@ -134,3 +134,11 @@ await store.store({ buffer, mimeType: 'image/png', name: 'screenshot' });
 | `@happyvertical/smrt-tags` | Tag integration (`addTag`/`removeTag` on assets) |
 | `@happyvertical/smrt-tenancy` | Optional tenant scoping |
 | `@happyvertical/files` | Provider-agnostic filesystem for AssetStore |
+
+## Native private attachments
+
+`AttachmentPanel`, `AttachmentList` and `AttachmentUpload` compose authorized
+private links, caller-supplied version history, and native multipart uploads.
+They preserve request identity and failed-action metadata without deriving
+public storage URLs. See [the attachment contract](agents/attachments.md) for
+public types, native payloads, recovery, and server responsibilities.
