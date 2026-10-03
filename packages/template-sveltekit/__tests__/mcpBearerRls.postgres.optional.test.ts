@@ -63,6 +63,7 @@ const ids = {
   bearer: '',
   cookieUser: '',
   outsider: '',
+  revoked: '',
   tenantA: '',
   tenantB: '',
   cookieSession: '',
@@ -113,17 +114,35 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
     const role = await save(
       await roles.create({ name: `MCP reader ${randomUUID()}` }),
     );
+    // A second role holding only DELETE: an active member whose role no
+    // longer grants the READ scope the token still carries.
+    const revokedRole = await save(
+      await roles.create({ name: `MCP revoked reader ${randomUUID()}` }),
+    );
     for (const slug of [READ, DELETE]) {
       const permission = await save(
         await permissions.create({ slug, name: slug }),
       );
       await rolePermissions.addPermission(role.id, permission.id);
+      if (slug === DELETE) {
+        await rolePermissions.addPermission(revokedRole.id, permission.id);
+      }
     }
+    const revoked = await save(
+      await users.create({ email: `revoked-${randomUUID()}@example.test` }),
+    );
     await save(
       await memberships.create({
         userId: bearer.id,
         tenantId: tenantA.id,
         roleId: role.id,
+      }),
+    );
+    await save(
+      await memberships.create({
+        userId: revoked.id,
+        tenantId: tenantA.id,
+        roleId: revokedRole.id,
       }),
     );
     await save(
@@ -137,6 +156,7 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
       bearer: bearer.id,
       cookieUser: cookieUser.id,
       outsider: outsider.id,
+      revoked: revoked.id,
       tenantA: tenantA.id,
       tenantB: tenantB.id,
     });
@@ -227,6 +247,7 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
           : { ok: false, response: new Response(null, { status: 401 }) },
     };
     let smrtOptionsDatabase: unknown;
+    const executions: string[] = [];
     const POST = mountMcpAppRoute({
       models: [],
       requiredScopes: [READ],
@@ -247,6 +268,7 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
           idempotent: true,
           openWorld: false,
           async execute() {
+            executions.push('probe');
             const db = runtime.databaseConfig() as unknown;
             const queryable =
               typeof (db as DatabaseInterface | undefined)?.query ===
@@ -279,7 +301,7 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
         },
       ],
     });
-    return { runtime, POST };
+    return { runtime, POST, executions };
   }
 
   async function call(
@@ -396,4 +418,27 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
     expect(status).toBe(200);
     expect(body.result.structuredContent).toEqual({ transactional: false });
   });
+
+  for (const profile of ['cloud', 'self-hosted'] as const) {
+    it(`denies before dispatch when live permissions dropped the token scope (${profile})`, async () => {
+      const revoked = setup(profile, { id: ids.revoked, tenantId: ids.tenantA });
+      const { status, body } = await call(revoked);
+      // Active membership, token still carries READ, role no longer grants it.
+      expect(status).toBe(200);
+      expect(body.error).toEqual({
+        code: -32600,
+        message: 'MCP tool access is not permitted.',
+        data: { code: 'mcp_tool_access_denied', retryable: false },
+      });
+      expect(revoked.executions).toEqual([]);
+
+      const granted = setup(profile);
+      const allowed = await call(granted);
+      expect(allowed.status).toBe(200);
+      expect(allowed.body.result.structuredContent.transactional).toBe(
+        profile === 'cloud',
+      );
+      expect(granted.executions).toEqual(['probe']);
+    });
+  }
 });

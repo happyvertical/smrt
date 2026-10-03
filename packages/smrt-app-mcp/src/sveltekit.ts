@@ -259,11 +259,45 @@ export function principalFromSessionLocals(event: {
  * which opens the principal's permission context and, under `database-rls`,
  * its RLS transaction). Must call `run` exactly once and return its result;
  * throwing before `run` (an unbindable principal) is a denial.
+ *
+ * Pass `run` the bound principal carrying its *effective* `scopes` (for
+ * example the token scopes still granted by live membership permissions).
+ * Dispatch then authorizes with those scopes, intersected with the token's:
+ * a binder can only narrow authority, and changing the principal's `id` or
+ * `tenantId` is a denial. Calling `run()` with no argument keeps the token
+ * scopes.
  */
 export type McpPrincipalBinder = <T>(
   principal: McpAppPrincipal & { id: string },
-  run: () => Promise<T>,
+  run: (bound?: McpAppPrincipal & { id: string }) => Promise<T>,
 ) => Promise<T>;
+
+/**
+ * The principal dispatch authorizes after binding: the authenticated identity
+ * with only the scopes both the token and the binder grant. `undefined` when
+ * the binder changed the identity or returned malformed scopes.
+ */
+function effectiveBoundPrincipal(
+  authenticated: McpAppPrincipal & { id: string },
+  bound: (McpAppPrincipal & { id: string }) | undefined,
+): (McpAppPrincipal & { id: string }) | undefined {
+  if (bound === undefined) return authenticated;
+  if (
+    !bound ||
+    typeof bound !== 'object' ||
+    bound.id !== authenticated.id ||
+    (bound.tenantId ?? null) !== (authenticated.tenantId ?? null) ||
+    !Array.isArray(bound.scopes) ||
+    !bound.scopes.every((scope) => typeof scope === 'string')
+  ) {
+    return undefined;
+  }
+  const granted = new Set(bound.scopes);
+  return {
+    ...authenticated,
+    scopes: (authenticated.scopes ?? []).filter((scope) => granted.has(scope)),
+  };
+}
 
 /** Options shared by both route mounts. */
 export interface MountMcpRouteOptions {
@@ -273,7 +307,9 @@ export interface MountMcpRouteOptions {
    * handling and tool execution all run inside the binding, and the response
    * is fully materialized before it returns. A binder that throws before
    * running dispatch, or returns without running it, yields HTTP 403 with the
-   * safe `mcp_tool_access_denied` JSON-RPC error. Used only when `auth`
+   * safe `mcp_tool_access_denied` JSON-RPC error. Scopes the binder hands
+   * back become the effective authority for the tool policy, so live
+   * revocation applies even without a database-enforced policy. Used only when `auth`
    * authenticated the request; the session-locals path is unchanged.
    */
   bindPrincipal?: McpPrincipalBinder;
@@ -364,22 +400,28 @@ export function mountMcpRoute(
     if (!auth) return dispatch(event, resolveRequestPrincipal(event, options));
     const checked = await auth.authenticate(event.request);
     if (!checked.ok) return checked.response;
-    const resolved = { principal: checked.principal };
-    if (!options.bindPrincipal) return dispatch(event, resolved);
+    if (!options.bindPrincipal) {
+      return dispatch(event, { principal: checked.principal });
+    }
     let entered = false;
     let response: Response;
     try {
-      response = await options.bindPrincipal(checked.principal, async () => {
-        entered = true;
-        // Materialize the body inside the binding so no dispatch work can
-        // outlive the principal's context (or its RLS transaction).
-        const dispatched = await dispatch(event, resolved);
-        return new Response(await dispatched.arrayBuffer(), {
-          status: dispatched.status,
-          statusText: dispatched.statusText,
-          headers: dispatched.headers,
-        });
-      });
+      response = await options.bindPrincipal(
+        checked.principal,
+        async (bound) => {
+          entered = true;
+          const principal = effectiveBoundPrincipal(checked.principal, bound);
+          if (!principal) return principalUnboundResponse();
+          // Materialize the body inside the binding so no dispatch work can
+          // outlive the principal's context (or its RLS transaction).
+          const dispatched = await dispatch(event, { principal });
+          return new Response(await dispatched.arrayBuffer(), {
+            status: dispatched.status,
+            statusText: dispatched.statusText,
+            headers: dispatched.headers,
+          });
+        },
+      );
     } catch (error) {
       if (entered) throw error;
       return principalUnboundResponse();

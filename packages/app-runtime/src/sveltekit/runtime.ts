@@ -284,10 +284,19 @@ export interface SmrtSvelteKitRuntime {
    * transaction publishes that user, tenant and permission set, and
    * `databaseConfig()`/`classOptions()` return it inside `fn`. Rejects (before
    * `fn` runs) without a user id, a tenant, or an authorized membership.
+   *
+   * `fn` receives the principal with `scopes` replaced by that effective
+   * permission set (live permissions, capped by the given scopes). Callers
+   * that authorize in code (rather than through database policy, as under
+   * `application` isolation) must authorize with these effective scopes so a
+   * revoked permission takes effect even while a token still carries it.
    */
-  runAsPrincipal<T>(
-    principal: SmrtRuntimeBoundPrincipal,
-    fn: () => Promise<T>,
+  runAsPrincipal<
+    T,
+    P extends SmrtRuntimeBoundPrincipal = SmrtRuntimeBoundPrincipal,
+  >(
+    principal: P,
+    fn: (bound: P & { scopes: string[] }) => Promise<T>,
   ): Promise<T>;
   /** The local runtime. Rejects outside the `local` profile. */
   localRuntime(): Promise<LocalApplicationRuntime>;
@@ -719,9 +728,12 @@ export function composeSmrtSvelteKitRuntime(
     return permissionResolverPromise;
   };
 
-  const runAsPrincipal = async <T>(
-    principal: SmrtRuntimeBoundPrincipal,
-    fn: () => Promise<T>,
+  const runAsPrincipal = async <
+    T,
+    P extends SmrtRuntimeBoundPrincipal = SmrtRuntimeBoundPrincipal,
+  >(
+    principal: P,
+    fn: (bound: P & { scopes: string[] }) => Promise<T>,
   ): Promise<T> => {
     const userId = principal?.id;
     const tenantId = principal?.tenantId;
@@ -752,7 +764,7 @@ export function composeSmrtSvelteKitRuntime(
         enterTenantContext: true,
         postgresRls: postgresRls(),
       },
-      () => fn(),
+      () => fn({ ...principal, scopes: [...permissions] }),
     );
   };
 

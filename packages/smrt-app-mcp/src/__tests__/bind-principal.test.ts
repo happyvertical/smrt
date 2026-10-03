@@ -232,3 +232,91 @@ describe('bindPrincipal', () => {
     expect(seen.execute).toEqual([[undefined, 'bearer-user']]);
   });
 });
+
+describe('bindPrincipal effective authority (D1)', () => {
+  /** A binder that hands dispatch the principal with live-capped scopes. */
+  function effectiveBinder(
+    effective: (principal: McpAppPrincipal & { id: string }) => unknown,
+  ) {
+    return async <T>(
+      principal: McpAppPrincipal & { id: string },
+      run: (bound?: McpAppPrincipal & { id: string }) => Promise<T>,
+    ): Promise<T> =>
+      bound.run(`${principal.id}@${principal.tenantId}`, () =>
+        run(effective(principal) as McpAppPrincipal & { id: string }),
+      );
+  }
+
+  it('denies before dispatch when live permissions no longer grant the token scope', async () => {
+    const { handler, seen } = appRoute({
+      bindPrincipal: effectiveBinder((principal) => ({
+        ...principal,
+        scopes: [],
+      })),
+    });
+    const list = await (await handler(rpc('tools/list'))).json();
+    expect(list.result.tools).toEqual([]);
+    const call = await (
+      await handler(
+        rpc('tools/call', { name: 'items_overview', arguments: {} }),
+      )
+    ).json();
+    expect(call.error).toEqual({
+      code: -32600,
+      message: 'MCP tool access is not permitted.',
+      data: { code: MCP_TOOL_ACCESS_DENIED_CODE, retryable: false },
+    });
+    expect(seen.execute).toEqual([]);
+  });
+
+  it('keeps the tools the remaining live permissions still grant', async () => {
+    const { handler, seen } = appRoute({
+      bindPrincipal: effectiveBinder((principal) => ({
+        ...principal,
+        scopes: ['items.read'],
+      })),
+    });
+    const call = await handler(
+      rpc('tools/call', { name: 'items_overview', arguments: {} }),
+    );
+    expect(call.status).toBe(200);
+    expect(seen.execute).toEqual([['bearer-user@tenant-b', 'bearer-user']]);
+  });
+
+  it('never lets a binder widen scopes or change identity', async () => {
+    // Widening: the token only carried items.read, so a broader live set
+    // cannot add scopes the token did not grant.
+    const widening = appRoute({
+      requiredScopes: ['items.write'],
+      bindPrincipal: effectiveBinder((principal) => ({
+        ...principal,
+        scopes: ['items.read', 'items.write'],
+      })),
+    });
+    const widened = await (
+      await widening.handler(
+        rpc('tools/call', { name: 'items_overview', arguments: {} }),
+      )
+    ).json();
+    expect(widened.error.data.code).toBe(MCP_TOOL_ACCESS_DENIED_CODE);
+    expect(widening.seen.execute).toEqual([]);
+
+    for (const effective of [
+      (principal: McpAppPrincipal) => ({ ...principal, id: 'someone-else' }),
+      (principal: McpAppPrincipal) => ({ ...principal, tenantId: 'other' }),
+      (principal: McpAppPrincipal) => ({ ...principal, scopes: 'items.read' }),
+    ]) {
+      const { handler, seen } = appRoute({
+        bindPrincipal: effectiveBinder(effective),
+      });
+      const response = await handler(
+        rpc('tools/call', { name: 'items_overview', arguments: {} }),
+      );
+      expect(response.status).toBe(403);
+      expect((await response.json()).error.data.code).toBe(
+        MCP_TOOL_ACCESS_DENIED_CODE,
+      );
+      expect(seen.execute).toEqual([]);
+    }
+  });
+});
