@@ -52,17 +52,21 @@ fixtures.
 
 ## 2. Understand the generated files
 
-The checked-in template contains authored objects, hooks, server helpers,
-pages, and configuration. Vite generates `.smrt/manifest.json`,
+The checked-in template contains authored objects, one server module
+(`src/lib/server/smrt.ts`, the runtime and collection access), thin hooks and
+routes that mount package handlers, pages, and configuration. It ships no
+operator scripts. Vite generates `.smrt/manifest.json`,
 `.smrt/smrt-knowledge.json`, `.smrt/register.js`,
 `src/lib/server/smrt-register.ts`, `src/lib/types/smrt-generated/`, and
 `src/routes/api/**/+server.ts`. All are ignored and excluded from scaffold
 fixtures.
 
-`smrtPlugin()` scans the local object directory and generates local routes and
-types. `smrtConsumer()` explicitly consumes the profiles, tenancy, and users
-package manifests. `@happyvertical/smrt-cli` is a direct dev dependency because
-the generated package scripts and README invoke its `smrt` binary.
+`vite.config.ts` is `plugins: [sveltekit(), smrt()]`: the
+`@happyvertical/smrt-core/vite` preset applies the decorator transform, scans
+the local object directory, generates local routes and types, and consumes the
+packages `smrt.config.ts` lists under `consumer.packages` (profiles, tenancy,
+users). `@happyvertical/smrt-cli` is a direct dev dependency because every
+lifecycle script is `smrt app <operation>`.
 
 ## 3. Define the first object
 
@@ -85,7 +89,8 @@ pnpm db:migrate
 ```
 
 The script builds first to refresh manifests, registrations, types, and API
-routes, then runs `smrt db:migrate`. The deprecated `smrt db:setup` command is
+routes, then runs `smrt app migrate`, which holds the operation lock and runs
+`smrt db:migrate`. The deprecated `smrt db:setup` command is
 not documented or shipped.
 
 ## 5. Understand tenant context

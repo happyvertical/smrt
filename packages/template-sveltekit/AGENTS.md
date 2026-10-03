@@ -17,6 +17,16 @@ It is the ground-up alternative to `smrt-saas-starter`.
   images ship no Corepack, so the Dockerfile installs a pinned copy.
 - `runtime.profile` is the canonical infrastructure selector. Generated apps
   expose deterministic `app:*` operations and keep runtime state outside source.
+- Every lifecycle script is a `smrt app <operation>` one-liner
+  (`packages/cli/agents/app-commands.md`); the template ships no `scripts/`.
+  Never reintroduce copied operator scripts: fix the CLI command instead.
+- Server composition is `createSmrtSvelteKitRuntime()` from
+  `@happyvertical/smrt-app-runtime/sveltekit`, built once in
+  `src/lib/server/smrt.ts` with the writer lease
+  (`acquireWriterLease(prepareApplicationStateRoot(...))`) and provider
+  readiness (`createProviderReadinessProbe`) from app-runtime's root entry, so
+  the web process never imports the CLI. Health, diagnostics, layout session,
+  and owner setup routes mount that package's handlers.
 - The production baseline uses adapter-node with separate web, task-worker, and
   schedule-worker processes. Workers import the build-compiled
   `.smrt/runtime/register.js` (#3117) before creating runners so app-defined
@@ -37,8 +47,9 @@ It is the ground-up alternative to `smrt-saas-starter`.
   different or stale server is never accepted as this app. Deployed health
   responses expose only generic status and profile.
 - Directly used `@happyvertical/smrt-*` packages share one current release range.
-- `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
-  its binary. The template includes `@happyvertical/smrt-web` because the root
+- `@happyvertical/smrt-cli` is a direct dev dependency because every
+  lifecycle script runs its binary; the runtime image keeps dev dependencies so
+  workers and operator commands can. The template includes `@happyvertical/smrt-web` because the root
   Provider wires the generated read-only WebMCP definitions for every page.
 - The generated MCP server resolves its imports from the scaffolded app, not
   from the CLI, so every specifier `generate-mcp` emits must be declared here.
@@ -129,11 +140,13 @@ own. Never add a mocked REST handler, an in-memory database, or DOM automation
 presented as WebMCP execution.
 
 - `@happyvertical/smrt-cli` is a devDependency **because the gate needs it**:
-  the app's `app:setup` migration step shells out to `pnpm exec smrt db:migrate`,
-  and the copied app deliberately never runs `pnpm install`, so `smrt` has to
-  arrive through the linked `node_modules/.bin`. The harness pins the app's own
-  `.bin` ahead of `PATH` and fails with a named error if that binary is missing,
-  so a host-global `smrt` cannot make a local run pass where CI fails.
+  the harness runs the app's own `smrt app setup` and `smrt app dev` from the
+  linked CLI, and setup's `pnpm build` is `smrt app build`. The copied app
+  deliberately never runs `pnpm install`, so `smrt` has to arrive through the
+  linked `node_modules`. The harness pins the app's own `.bin` ahead of `PATH`
+  and fails with a named error if the binary is missing, so a host-global
+  `smrt` cannot make a local run pass where CI fails. Identity and state-root
+  values it checks come from `@happyvertical/smrt-app-runtime`.
 - `pnpm test:e2e` runs the browser half.
 - `pnpm test:m5` runs the whole aggregate gate through
   `e2e/support/gate.mjs`, which requires a PostgreSQL service and fails when a
@@ -148,8 +161,12 @@ presented as WebMCP execution.
   from `testInfo.project.outputDir` and asserts it is outside the repository.
   The harness gives the copied app a real `node_modules` directory of
   individually symlinked entries rather than one symlink to this package's, so
-  the served app's `node_modules/.vite` cache cannot land in the checkout —
-  never replace that loop with a whole-directory symlink.
+  the served app's `node_modules/.vite` cache cannot land in the checkout.
+  Scope directories (`@happyvertical/`) and `.bin/` are real directories of
+  per-entry links too: the copy ships `pnpm-workspace.yaml` and setup runs
+  `pnpm build` in it, so anything pnpm relinks must land in the copy, never in
+  this package's `node_modules`. Never replace either loop with a
+  whole-directory symlink.
 - `e2e/` is outside `biome.json`'s include globs, as every package's `e2e/` is,
   so a green `Lint` job says nothing about this tree. `pnpm typecheck` covers
   the `.ts` files (`tsconfig.fixture.json` includes `e2e/**/*.ts`) but NOT

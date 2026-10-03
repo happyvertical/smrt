@@ -40,6 +40,11 @@ const packagesRoot = resolve(packageRoot, '..');
 const VITEST_SUITES = [
   { id: 'template', cwd: packageRoot, files: [] },
   {
+    id: 'cli',
+    cwd: join(packagesRoot, 'cli'),
+    files: ['src/app/__tests__/portability-assets.test.ts'],
+  },
+  {
     id: 'app-runtime',
     cwd: join(packagesRoot, 'app-runtime'),
     files: ['src/sveltekit.test.ts'],
@@ -77,6 +82,8 @@ const REQUIRED_VITEST_CASES = [
   {
     id: 'asset-manifest-portability',
     profile: 'sqlite',
+    // `smrt app export`/`import` (#3371) own asset-aware portability.
+    suite: 'cli',
     match: /round-trips the owner, tenant, record, association, bytes, and digest/i,
     dependsOn: '#2576',
   },
@@ -128,6 +135,7 @@ const REQUIRED_VITEST_CASES = [
   {
     id: 'postgres-asset-portability',
     profile: 'postgres',
+    suite: 'cli',
     match: /imports the same record, authorization links, association, and verified blob/i,
     dependsOn: '#2576',
   },

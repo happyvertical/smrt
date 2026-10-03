@@ -22,7 +22,9 @@ re-running install, setup, or recovery; each operation is repeatable from that
 stopped state. `pnpm app:doctor`
 prints secret-free JSON diagnostics and recovery steps. Individual
 setup/start/doctor/open/stop/backup/export/import operations are available as
-`pnpm app:<operation>`.
+`pnpm app:<operation>`. Every lifecycle script is a one-line call to
+`smrt app <operation>` from `@happyvertical/smrt-cli`; the app ships no copied
+operator scripts, so upgrading the CLI upgrades them.
 
 `app:start` defaults adapter-node `ORIGIN` to its loopback HTTP URL (including
 the selected `PORT`) and preserves an explicitly configured `ORIGIN`. Origin
@@ -417,8 +419,9 @@ Every supported local web
 entry point (`app:start` or `pnpm dev`) holds a shared writer lease. Direct
 production startup must set an explicit loopback `HOST`, and `app:start` is the
 recommended entry point. Stop the app before backup/import. For deployed import, stop
-web/workers and set `SMRT_MAINTENANCE_MODE=true`. Extend
-`scripts/smrt-portability.mjs` for domain-specific transformations.
+web/workers and set `SMRT_MAINTENANCE_MODE=true`. For domain-specific
+transformations, add a `scripts/smrt-portability.mjs` adapter; when present it
+replaces `smrt app export`/`import`'s built-in one.
 
 ### Hosted MCP authorization
 

@@ -18,7 +18,16 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   return only the schema-versioned allowlist; never expose private runtime
   objects, identity fields, paths, URLs, secrets, PII, raw errors, or logs.
 - Never improvise setup internals. Run `pnpm app:install`; use individual
-  `app:*` commands only for recovery or explicit operator control.
+  `app:*` commands only for recovery or explicit operator control. They call
+  `smrt app <operation>` from `@happyvertical/smrt-cli`; do not copy operator
+  scripts into this app.
+- Server composition (profile, storage custody, owner bootstrap, tenant
+  selection, session, health, diagnostics) comes from
+  `@happyvertical/smrt-app-runtime/sveltekit`, configured once in
+  `src/lib/server/smrt.ts`. Pass app-specific behaviour as options
+  (`selectTenant`, `classOverrides`, `session`, `prepareDatabase`); do not
+  reimplement hooks. `getCollection()`/`getSmrtConfig()` are request-scoped:
+  never keep their result beyond the request.
 - Recover an interrupted unclaimed owner invitation with `pnpm app:stop`, then
   `pnpm app:recover`, `pnpm app:start`, and `pnpm app:open`; never print or copy
   its token.
@@ -58,8 +67,9 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   imports `.smrt/runtime/register.js` (compiled by `pnpm build`) before any
   runner starts, so jobs can target this app's own `@smrt()` objects; keep that
   import ahead of runner creation and keep domain objects free of SvelteKit
-  virtual modules (`$env/*`, `$app/*`), which a worker cannot load. Extend the
-  portability adapter instead of converting database files. Deployed provider
+  virtual modules (`$env/*`, `$app/*`), which a worker cannot load. Add a
+  `scripts/smrt-portability.mjs` adapter (it overrides the CLI's built-in one)
+  instead of converting database files. Deployed provider
   readiness must come from installed modules that probe the real backing
   services; environment booleans are not readiness evidence.
 - Every supported local web entry point (`app:start` or `pnpm dev`) holds the

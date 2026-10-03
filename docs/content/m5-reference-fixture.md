@@ -77,10 +77,11 @@ authenticated REST, namespace, exposure and consent semantics).
   siblings. The harness's `registerTool` always resolves, so that path is
   covered by unit tests in `smrt-web`, not here.
 - **The production web writer is not exercised.** The gate serves the app with
-  `vite dev`, a supported local writer, rather than `app:start`'s adapter-node
-  build. The operation lock, PID record, and stale-process rejection in
-  `scripts/smrt-app.mjs start()` are therefore out of scope; `app:setup`'s
-  build, migrate, and bootstrap pass is in scope and does run.
+  `smrt app dev` (`vite dev`), a supported local writer, rather than
+  `app:start`'s adapter-node build. The operation lock, PID record, and
+  stale-process rejection in `smrt app start` are therefore out of scope here
+  (`packages/cli/src/app/__tests__` covers them); `smrt app setup`'s build,
+  migrate, and bootstrap pass is in scope and does run.
 - **No model in the loop.** No external AI model, no principal-bound server
   tool, and no mocked REST handler participates.
 - **Response redaction covers the runtime namespace's JSON contract**, not
@@ -147,7 +148,7 @@ pnpm --filter @happyvertical/smrt-template-sveltekit test:e2e
 | `required case … did not run` | A prerequisite issue has not landed | The message names the issue. Land it; do not weaken the gate. |
 | `Application state path component is unsafe` | The temporary root resolves through a symlink (macOS `/var`) | Already handled by the harness; if it reappears, check `TMPDIR`. |
 | `The reference app exited before becoming ready` | The workspace build is stale | Re-run the `turbo run build` filter above. |
-| ``The reference app has no local `smrt` binary`` | `@happyvertical/smrt-cli` was dropped from `packages/template-sveltekit`'s devDependencies | Restore it. `app:setup`'s migration step runs `pnpm exec smrt db:migrate`, and the copied app never runs `pnpm install`, so that binary reaches it only through the linked `node_modules/.bin`. |
+| ``The reference app has no local `smrt` binary`` | `@happyvertical/smrt-cli` was dropped from `packages/template-sveltekit`'s devDependencies | Restore it. The harness runs the copied app's `smrt app setup` and `smrt app dev`, and setup's `pnpm build` is `smrt app build`; the copied app never runs `pnpm install`, so the CLI reaches it only through the linked `node_modules`. |
 | `Reference app setup failed (exit 1)` with a sanitized excerpt | Whatever the excerpt names | The application redacts a migration failure to a fixed sentence, so the excerpt of the commands `app:setup` shells out to is the diagnosis; the harness prints both ends of it with paths, tokens, and database URLs removed. |
 | `A different server answered on the reserved port` | Port reuse race | Re-run; the harness reserves a fresh ephemeral loopback port each time. |
 | `The served runtime configuration fingerprint does not match the harness expectation` | The right process answered with an unexpected configuration — usually a new provider override or runtime field in the template's `smrt.config.ts` | Not a race; re-running will not help. Update the harness's expectation in `e2e/support/referenceApp.ts` to match the new configuration. |

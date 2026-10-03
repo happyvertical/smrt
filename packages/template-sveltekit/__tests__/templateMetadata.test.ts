@@ -60,8 +60,8 @@ describe('generated project metadata', () => {
   });
 
   it('uses the current migration command rather than deprecated db:setup', () => {
-    expect(packageJson.scripts['db:migrate']).toContain(
-      'smrt-prepare-migration.mjs',
+    expect(packageJson.scripts['db:migrate']).toBe(
+      'vite build && smrt app migrate',
     );
     expect(JSON.stringify(packageJson)).not.toContain('db:setup');
   });

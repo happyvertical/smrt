@@ -5,8 +5,10 @@
  * See: https://github.com/happyvertical/smrt
  */
 
-import { resolveLocalRuntimePaths } from '@happyvertical/smrt-app-runtime';
-import { resolveApplicationId } from './scripts/smrt-runtime-identity.mjs';
+import {
+  resolveApplicationId,
+  resolveLocalRuntimePaths,
+} from '@happyvertical/smrt-app-runtime';
 
 const profile = (process.env.SMRT_RUNTIME_PROFILE || 'local') as
   | 'local'
@@ -63,7 +65,7 @@ export default {
       database: {
         type:
           profile === 'local' ? 'sqlite' : 'postgres',
-        // `smrt-app` sets DATABASE_URL to the profile-owned data path before
+        // `smrt app` sets DATABASE_URL to the profile-owned data path before
         // migrations. Deployed profiles require an operator-owned URL.
         url:
           profile === 'local'

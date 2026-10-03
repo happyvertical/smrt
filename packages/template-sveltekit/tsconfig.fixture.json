@@ -12,6 +12,7 @@
   },
   "include": [
     "__tests__/runtimeEntry.test.ts",
+    "__tests__/runtimeOperations.test.ts",
     "__tests__/runtimeProfileReference*.ts",
     "fixtures/**/*.ts",
     "e2e/**/*.ts",

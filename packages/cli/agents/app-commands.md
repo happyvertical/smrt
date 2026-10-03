@@ -64,8 +64,8 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   target; deployed import requires `SMRT_MAINTENANCE_MODE=true`.
 - **Process identity**: `app.pid` is trusted only when the live command
   line's last two tokens are a path with basename `smrt-web.mjs` and exactly
-  `--smrt-instance=<record instance>` (the template's `scripts/smrt-web.mjs`
-  still matches); `stop` re-reads it immediately before SIGTERM
+  `--smrt-instance=<record instance>` (an app started by the template's former
+  `scripts/smrt-web.mjs` still matches); `stop` re-reads it immediately before SIGTERM
   (`checkOwnedProcess`: only `gone`/`mismatched` drop `app.pid`; an
   `unverifiable` query keeps it, sends nothing, and fails naming the pid). A `start`
   whose launcher never proves readiness is sent SIGTERM, then SIGKILL; only a
