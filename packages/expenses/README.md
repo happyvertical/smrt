@@ -169,8 +169,9 @@ Imported rows start `unreviewed`; replay each donor review through
 ## Testing
 
 ```bash
-pnpm --filter @happyvertical/smrt-expenses test           # SQLite
+pnpm --filter @happyvertical/smrt-expenses test           # SQLite + UI SSR
 pnpm --filter @happyvertical/smrt-expenses test:postgres  # PostgreSQL lane
+pnpm --filter @happyvertical/smrt-expenses test:e2e       # Native browser forms
 ```
 
 ## See also
@@ -179,3 +180,10 @@ pnpm --filter @happyvertical/smrt-expenses test:postgres  # PostgreSQL lane
 - [smrt-commerce](../commerce/README.md) — vendors and purchase orders
 - [smrt-assets](../assets/README.md) — receipt files
 - [smrt-tenancy](../tenancy/README.md) — tenant context and required mode
+
+## Expense and receipt UI
+
+`ExpenseForm` and `ExpenseReviewPanel` from `@happyvertical/smrt-expenses/svelte`
+provide native purchase entry, caller-driven duplicate/correction review and
+Assets receipt composition. See [the UI contract](agents/expense-ui.md) for
+public props, native payloads, retained errors and server responsibilities.

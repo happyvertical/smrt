@@ -1,0 +1,31 @@
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
+export const expenseMessages = defineMessages({
+  'expenses.form.title': 'Record expense',
+  'expenses.form.amount': 'Amount',
+  'expenses.form.currency': 'Currency',
+  'expenses.form.incurredOn': 'Incurred date',
+  'expenses.form.description': 'Description',
+  'expenses.form.category': 'Category',
+  'expenses.form.vendorId': 'Vendor',
+  'expenses.form.commitmentId': 'Commitment',
+  'expenses.form.paidBy': 'Paid by',
+  'expenses.form.paidByProfileId': 'Payer profile reference',
+  'expenses.form.correctionReason': 'Correction reason',
+  'expenses.form.company': 'Company',
+  'expenses.form.person': 'Person',
+  'expenses.form.choose': 'No reference selected',
+  'expenses.form.retained': 'Retained reference: {reference}',
+  'expenses.form.date_help': 'Calendar date (YYYY-MM-DD).',
+  'expenses.form.amount_help':
+    'Enter ordinary currency amounts, for example 125.00 CAD. The server validates currency precision.',
+  'expenses.form.save': 'Save expense',
+  'expenses.form.correct': 'Save correction',
+  'expenses.form.readonly': 'This expense is read-only.',
+  'expenses.form.uncertain':
+    'The outcome is uncertain. Your entries and request identity are retained; follow the application’s retry guidance.',
+  'expenses.review.title': 'Expense review',
+  'expenses.review.duplicates': 'Possible duplicates',
+  'expenses.review.no_duplicates': 'No possible duplicates supplied.',
+  'expenses.review.history': 'Correction and review history',
+  'expenses.review.no_history': 'No history supplied.',
+});

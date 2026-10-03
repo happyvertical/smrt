@@ -1,3 +1,3 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
-export default createPackageConfig('expenses');
+export default createPackageConfig('expenses', { entries: ['ui', 'playground'], svelte: 'svelte' });

@@ -125,3 +125,11 @@ pnpm --filter @happyvertical/smrt-expenses test:postgres
 SQLite file and the PostgreSQL lane (`*.optional.test.ts`, schema from
 `migrateSmrtSchemas` plus live parity) both run it. Use UUID tenant and
 profile ids in tests: PostgreSQL stores them as `uuid`.
+
+## UI
+
+`src/svelte/` owns native expense entry and review presentation. See
+[the UI contract](agents/expense-ui.md) for DTOs, native payloads and recovery.
+Draft amounts are lossless currency-unit text; model/review amounts remain integer
+minor units. Receipt upload is composed from Assets, never reimplemented here.
+`test` includes backend and UI SSR; `test:e2e` proves native browser submissions.
