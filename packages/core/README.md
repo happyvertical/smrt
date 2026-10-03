@@ -209,7 +209,7 @@ config (values you set under `oxc.decorator` are never overwritten). `smrt()`
 returns a promise, which Vite accepts in `plugins`. The plugin also writes the
 `virtual-modules.d.ts` ambient declarations (into `typesDir`) whenever it runs
 a build or whenever Vite resolves the config, including `svelte-kit sync`
-(SvelteKit 2.70+ resolves the Vite config there), not only under a dev server.
+(SvelteKit 2.69.3+ resolves the Vite config there), not only under a dev server.
 `svelte-kit sync && tsc` therefore passes on a clean clone with no prior build
 and no copied shim; the file is rewritten
 only when its contents change. The two plugins remain
