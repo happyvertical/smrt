@@ -48,8 +48,9 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Keep object relationship metadata close to `@smrt()`.
 - Add human-facing routes explicitly; generated REST routes do not create nav
   pages.
-- The root layout includes `@happyvertical/smrt-web` and registers generated
-  WebMCP read tools through Provider when the browser exposes `modelContext`.
+- The root layout is `AppShell` from `@happyvertical/smrt-svelte/app`; it
+  includes `@happyvertical/smrt-web` and registers generated WebMCP read tools
+  through its Provider when the browser exposes `modelContext`.
   Keep the guard in place for SSR and seed live collections with SSR
   `initialData`.
 - Do not enable knowledge HTTP routes in production without explicit admin auth.

@@ -312,7 +312,7 @@ narrower tool set.
 ```svelte
 <script lang="ts">
   import { webMcpToolDefinitions } from '@happyvertical/smrt-virt-web';
-  import { Provider } from '@happyvertical/smrt-svelte';
+  import { AppShell } from '@happyvertical/smrt-svelte/app';
 
   const webmcp = $derived(
     typeof document !== 'undefined' && 'modelContext' in document
@@ -321,10 +321,16 @@ narrower tool set.
   );
 </script>
 
-<Provider {webmcp}>
+<!-- AppShell passes `webmcp` to its Provider unchanged. -->
+<AppShell title="s-m-r-t app" {webmcp} {nav}>
   {@render children()}
-</Provider>
+</AppShell>
 ```
+
+The root layout is `AppShell` from `@happyvertical/smrt-svelte/app` (Provider,
+theme and its CSS, the admin shell, and navigation); the app supplies its
+navigation and content. `/setup` and `/settings` use the same package's
+`OwnerSetupForm` and `ShellSettingsPage`.
 
 `registerWebMcpTools()` feature-detects browser support and uses the current
 authenticated page session. Omitted policy exposes all `read`-effect tools:
