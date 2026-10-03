@@ -8,6 +8,141 @@ App-runtime MCP server scaffolding for s-m-r-t apps. Provides:
   `mountMcpToolsRoute` / `mountMcpCallRoute` aliases remain available for one
   release while applications migrate.
 
+## One-call app route
+
+Most applications need no server helper module. `mountMcpAppRoute` builds the
+server from the app's own declared models, maps the request principal from the
+SvelteKit session locals populated by `createSessionHandler`
+(`@happyvertical/smrt-users/sveltekit`), and mounts the stateless endpoint:
+
+```ts
+// src/routes/api/mcp/+server.ts
+import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
+import { Item } from '$lib/objects/Item';
+// The app's `createSmrtSvelteKitRuntime()` (@happyvertical/smrt-app-runtime/sveltekit).
+import { runtime } from '$lib/server/smrt';
+
+export const POST = mountMcpAppRoute({
+  models: [Item],
+  requiredScopes: ['items.read'],
+  // Per request: under RLS this is the request's transaction-bound database.
+  smrtOptions: () => ({ db: runtime.databaseConfig() }),
+});
+```
+
+- **Allow-list** — exactly the `models` listed (registered `@smrt()`
+  constructors; anything else throws at construction). Other registered
+  models are never enumerated; direct calls to them return the unknown-tool
+  error (404 semantics).
+- **Principal** — `principalFromSessionLocals` reads only `locals.user.id`, the
+  session-authorized `locals.tenantId`, and `locals.permissions` (as sorted
+  `scopes`, `kind: 'human'`). Missing or malformed fields mean unauthenticated.
+  URL-selected tenants, headers and bodies are never identity inputs. Override
+  with `resolvePrincipal`.
+- **Policy** — `requiredScopes` is required: every authenticated principal must
+  be an accepted kind (`principalKinds`, default `['human']`) with an id, a
+  tenant, and every listed scope, for every tool and resource. Unauthenticated
+  callers keep the base rule (only `publicToolPatterns` read-only tools; none by
+  default) and mutating tools always need a principal. A supplied `toolPolicy`
+  or `resourcePolicy` is composed with this default and can only narrow it;
+  for a wider policy, call `createMcpAppServer` and `mountMcpRoute` directly.
+  Because the default is principal-aware, `tools/list` stays `private` even
+  with a public-cache attestation. A scope applies uniformly to every
+  published tool, so a read scope such as `items.read` must be paired with
+  `effects: ['read']` (below) unless the app adds per-operation policy.
+- **Effects** — `effects` (also on `createMcpAppServer`) limits the catalog to
+  tools whose effect is listed: `'read'`, `'write'`, `'destructive'`, the
+  WebMCP vocabulary. `mcpToolEffect` classifies with the existing read-only
+  detection (canonical `readOnlyHint`, else the `_list`/`_get` name rule); any
+  other tool is `destructive` unless it declares `destructiveHint: false`.
+  Excluded tools are absent from `tools/list`, and a direct call gets the same
+  unknown-tool error as a nonexistent name, so they cannot be enumerated.
+  Omitted, every allow-listed tool is published (unchanged behaviour).
+  Durable task lifecycle calls (`tasks/get`, `tasks/update`, `tasks/cancel`)
+  re-apply the allow-list and `effects` filter to the task's originating
+  action, the generated tool for the class (simple or qualified name) and
+  method its job persists; a task whose action is excluded, or maps to no
+  allow-listed generated tool, is answered exactly like an unknown task.
+  `toolPolicy` is not re-applied to lifecycle calls: a task created by an
+  application workflow does not record which workflow created it, and such
+  workflows often front a policy-hidden generated task tool. Owner and tenant
+  scoping apply to every lifecycle call. Principal-level authority is checked
+  first, before the task store is touched: `createDefaultMcpAppServer` (and so
+  `mountMcpAppRoute`) gates every lifecycle call on its principal scope policy
+  — accepted kind, id, tenant and every `requiredScopes` entry, evaluated on
+  the *effective* bound principal — so a bearer whose live permissions were
+  revoked cannot read, resume (supply input to) or cancel an existing task;
+  restoring the permission restores access. A custom `createMcpAppServer`
+  supplies the same gate with `taskPrincipalPolicy({ principal })`; without
+  it, a custom `toolPolicy` is not applied to lifecycle calls. A denial or a
+  thrown predicate is answered as an unknown task.
+- **Server** — `serverInfo` defaults to `{ name: 'smrt-app', version: '0.1.0' }`;
+  every other `createMcpAppServer` option (`workflowTools`, `resources`,
+  `workflowAssertions`, `toolListCache`, …) passes through. The handler's
+  `server` property exposes the policy core. The same defaults are available
+  without SvelteKit as `createDefaultMcpAppServer` from the root entry.
+
+- **Origin check** — on by default (`checkOrigin`). Before bearer
+  authentication, principal resolution or any dispatch, a request whose
+  `Origin` is present but is not the request URL's own origin (exact scheme,
+  host and port) or one of `trustedOrigins` — including `Origin: null` and
+  sibling subdomains — gets HTTP 403 with the JSON-RPC error data
+  `{ code: 'mcp_origin_denied', retryable: false }`, naming no origins. With
+  no `Origin`, a `Sec-Fetch-Site` of `cross-site`/`same-site` is also
+  refused. Clients that send no browser origin signals (server-side MCP
+  clients, the `smrt-app-cli` bridge) are unaffected; a browser-hosted MCP
+  client must be listed in `trustedOrigins`. Bearer requests are checked too:
+  the token is not ambient authority, but the MCP Streamable HTTP transport
+  requires origin validation and server-side remote clients send no `Origin`.
+  "Own origin" is `event.url`, so behind a rewriting proxy configure the
+  SvelteKit adapter's origin (adapter-node `ORIGIN`, or its
+  `PROTOCOL_HEADER`/`HOST_HEADER`) or add the public origin to
+  `trustedOrigins`; this package never reads `X-Forwarded-*`.
+  `checkOrigin: false` opts out. `mountMcpRoute` accepts the same options,
+  off unless set.
+
+Bearer authentication for hosted profiles is an `auth` option on both
+`mountMcpRoute` and `mountMcpAppRoute`. When its source yields an adapter,
+every request must carry a valid bearer token and the adapter's principal
+replaces the session principal; `null` (the `local` profile) keeps the session
+principal. Pass `bindPrincipal` (for example `runtime.runAsPrincipal` from
+`@happyvertical/smrt-app-runtime/sveltekit`) so that, after bearer
+authentication, the `smrtOptions` database thunk, task handling and tool
+execution all run inside a context bound to that principal: under
+`database-rls` the runtime opens a fresh RLS transaction publishing the bearer
+user, tenant and its live membership permissions capped by the token's scopes,
+instead of the anonymous (or a cookie user's) request transaction. The binder
+hands dispatch the principal's effective scopes (`runAsPrincipal` passes the
+token scopes still granted by live permissions), and the tool policy
+authorizes with those, intersected with the token's: a revoked permission
+denies the tool before dispatch even under `application` isolation, while the
+principal keeps the tools its remaining permissions allow. A binder can never
+widen scopes or change the principal's id or tenant. A binder
+that fails before dispatch answers HTTP 403 with the safe
+`mcp_tool_access_denied` error; the response is materialized inside the
+binding. `createHostedMcpResourceAuth` from `./auth` builds that source from
+`SMRT_MCP_RESOURCE`, `SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI` and
+`SMRT_MCP_SCOPES`, caching one adapter and retrying a failed construction:
+
+```ts
+import { createHostedMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
+const auth = createHostedMcpResourceAuth({
+  profile: () => applicationRuntime.profile,
+  resolvePrincipal: resolveHostedMcpPrincipal, // application-owned lookup
+});
+// api/mcp/+server.ts
+export const POST = mountMcpAppRoute({
+  models: [Item], requiredScopes: ['items.read'], effects: ['read'],
+  smrtOptions, auth, bindPrincipal: runtime.runAsPrincipal,
+});
+// .well-known/oauth-protected-resource/api/mcp/+server.ts
+export const GET = mountMcpProtectedResourceMetadataRoute(auth);
+```
+
+`mountMcpProtectedResourceMetadataRoute` serves the RFC 9728 document only at
+the adapter's advertised `metadataUrl` path and returns 404 otherwise or for
+the `local` profile. It does not implement an OAuth authorization server.
+
 For piping a deployed app's MCP surface to a local stdio MCP client, see `@happyvertical/smrt-app-cli` — the client-side runtime CLI exposes a `startMcpBridge()` default and a generic `smrt-mcp-bridge` bin.
 
 For public deployments, follow the

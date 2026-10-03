@@ -16,7 +16,7 @@ services:
     build: .
     env_file: .env.self-hosted
     environment: *runtime-environment
-    command: node scripts/smrt-worker.mjs task
+    command: pnpm exec smrt app worker task
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -24,7 +24,7 @@ services:
     build: .
     env_file: .env.self-hosted
     environment: *runtime-environment
-    command: node scripts/smrt-worker.mjs schedule
+    command: pnpm exec smrt app worker schedule
     depends_on:
       migrate:
         condition: service_completed_successfully

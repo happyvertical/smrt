@@ -13,6 +13,8 @@ export default defineConfig({
         'tools-dock',
         'mcp-apps-binding',
         'mcp-apps-child',
+        'mcp-apps-bridge',
+        'mcp-apps-bridge-child',
         'file-upload',
       ].map((entry) =>
         fileURLToPath(new URL(`./${entry}.html`, import.meta.url)),

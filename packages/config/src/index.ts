@@ -1,3 +1,9 @@
+import {
+  type ResolveAIProviderOptions,
+  type ResolvedAIProviderConfig,
+  resolveAIProviderConfig,
+  tryResolveAIProviderConfig,
+} from './ai.js';
 import { loadConfig as _loadConfig, clearConfigCache } from './loader.js';
 import {
   setConfig as _setConfig,
@@ -12,7 +18,29 @@ import {
   type ApplicationRuntimeConfig,
   type ResolvedApplicationRuntime,
 } from './runtime-profile.js';
-import type { LoadConfigOptions, SmrtConfig } from './types.js';
+import type { AIConfigBlock, LoadConfigOptions, SmrtConfig } from './types.js';
+
+// Re-export AI provider resolution
+export {
+  AI_PROVIDER_KEY_ENV,
+  type AIConfigField,
+  type AIConfigSource,
+  type AIExplicitConfig,
+  type AIProviderClientOptions,
+  AIProviderNotConfiguredError,
+  canonicalizeAIConfig,
+  DEFAULT_AI_ENV_PREFIXES,
+  describeAIProviderConfig,
+  getDefaultAIKeyEnvName,
+  mergeAIConfigObjects,
+  type ResolveAIProviderOptions,
+  type ResolvedAIProviderConfig,
+  redactBaseUrl,
+  resolveAIProviderConfig,
+  toAIClientOptions,
+  tryResolveAIProviderConfig,
+  withAIAliases,
+} from './ai.js';
 
 // Re-export config export utilities
 export {
@@ -64,6 +92,7 @@ export {
 
 // Re-export types
 export type {
+  AIConfigBlock,
   // CLI and migrations configuration types
   CliConfig,
   DatabaseConfig,
@@ -488,4 +517,93 @@ export function clearCache(): void {
  */
 export function defineConfig(config: SmrtConfig): SmrtConfig {
   return config;
+}
+
+/**
+ * The effective `ai` block: runtime `ai` > runtime `packages.ai` > file `ai` >
+ * file `packages.ai` (`smrt init` historically wrote `packages.ai`), merged
+ * field by field. Returns `null` when none is declared.
+ */
+export function getAIConfigBlock(): AIConfigBlock | null {
+  const file = getLoadedConfig();
+  const runtime = getRuntimeConfig();
+  return mergeAIConfigLayers([
+    file?.packages?.ai,
+    file?.ai,
+    runtime.packages?.ai,
+    runtime.ai,
+  ]);
+}
+
+/**
+ * Merge `ai` block layers, lowest priority first, preserving provider
+ * ownership: `apiKey`, `apiKeyEnv`, `baseUrl` and `model` belong to the
+ * provider their layer names. When a higher layer names a different provider,
+ * the credentials and model already collected from lower layers for another
+ * provider are dropped (a model id is provider-specific, so it is dropped
+ * too). A layer that names no provider contributes generic values that bind to
+ * the provider selected so far.
+ */
+export function mergeAIConfigLayers(
+  layers: ReadonlyArray<unknown>,
+): AIConfigBlock | null {
+  const FIELDS = ['model', 'baseUrl', 'apiKeyEnv', 'apiKey'] as const;
+  let provider: string | undefined;
+  const values: Partial<Record<(typeof FIELDS)[number], string>> = {};
+  const owners: Partial<Record<(typeof FIELDS)[number], string | undefined>> =
+    {};
+  const text = (v: unknown) =>
+    typeof v === 'string' && v.trim() ? v.trim() : undefined;
+  for (const layer of layers) {
+    if (!layer || typeof layer !== 'object') continue;
+    const rec = layer as Record<string, unknown>;
+    const named = text(rec.provider) ?? text(rec.type);
+    if (named && provider && named.toLowerCase() !== provider.toLowerCase()) {
+      for (const f of FIELDS) {
+        const owner = owners[f];
+        if (owner && owner.toLowerCase() !== named.toLowerCase()) {
+          delete values[f];
+          delete owners[f];
+        }
+      }
+    }
+    if (named) provider = named;
+    for (const f of FIELDS) {
+      const v =
+        f === 'model'
+          ? (text(rec.model) ?? text(rec.defaultModel))
+          : text(rec[f]);
+      if (v) {
+        values[f] = v;
+        owners[f] = provider;
+      }
+    }
+  }
+  if (!provider && FIELDS.every((f) => !values[f])) return null;
+  const merged: AIConfigBlock = { ...values };
+  if (provider) merged.provider = provider;
+  return merged;
+}
+
+/**
+ * {@link resolveAIProviderConfig} against the loaded `smrt.config.ts` `ai`
+ * block. Throws `AIProviderNotConfiguredError` when nothing is configured.
+ */
+export function resolveConfiguredAIProvider(
+  options: ResolveAIProviderOptions = {},
+): ResolvedAIProviderConfig {
+  return resolveAIProviderConfig({
+    ...options,
+    config: options.config === undefined ? getAIConfigBlock() : options.config,
+  });
+}
+
+/** Non-throwing variant of {@link resolveConfiguredAIProvider}. */
+export function tryResolveConfiguredAIProvider(
+  options: ResolveAIProviderOptions = {},
+): ResolvedAIProviderConfig | undefined {
+  return tryResolveAIProviderConfig({
+    ...options,
+    config: options.config === undefined ? getAIConfigBlock() : options.config,
+  });
 }

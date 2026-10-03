@@ -1,3 +1,5 @@
+import { mergeAIConfigObjects } from './ai.js';
+
 /**
  * Config export utilities for static site generation
  *
@@ -409,6 +411,20 @@ export function mergeExportedConfig<T extends Record<string, unknown>>(
       continue;
     }
     if (
+      key === 'ai' &&
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      result[key] !== null &&
+      typeof result[key] === 'object' &&
+      !Array.isArray(result[key])
+    ) {
+      // AI blocks merge with provider ownership (see mergeAIConfigObjects).
+      (result as Record<string, unknown>)[key] = mergeAIConfigObjects(
+        result[key],
+        value,
+      );
+    } else if (
       value !== null &&
       typeof value === 'object' &&
       !Array.isArray(value) &&

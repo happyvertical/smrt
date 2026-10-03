@@ -260,6 +260,21 @@ waiting | done | failed | cancelled`), with `pauseRun` / `continueRun`,
 `matchesToolAllowList` is exported browser-safe. Full guide:
 [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
 
+The server side mounts in one route file. The principal comes from
+`event.locals` (`@happyvertical/smrt-users/sveltekit`); threads are scoped to
+the caller's own assistant session in the active tenant; tools are
+fail-closed (`allowedTools`, absent means none):
+
+```ts
+// src/routes/api/assistant/[...path]/+server.ts
+import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
+export const { GET, POST } = mountAssistantRoutes({ ai: assistantAI });
+```
+
+In the page, `createAssistantHttpTransport({ endpoint: '/api/assistant' })`
+is the dock's `transport`, and `createAssistantHttpActionClient` its
+`actionClient` when the route is given `actions: { adapter }`.
+
 ## API
 
 ### Models

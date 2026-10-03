@@ -824,6 +824,20 @@ export function renderAgentSurfaceReport(
  */
 export const utilityCommands: Record<string, CLICommand> = {
   ...mcpAppsCommands,
+  app: {
+    name: 'app',
+    description:
+      'Application operations: install, setup, recover, start, stop, doctor, open, backup, export, import, migrate, worker, dev, build (`smrt app help`)',
+    args: ['[operation]', '[args...]'],
+    // `main()` dispatches `smrt app …` before this registry is consulted;
+    // this entry keeps the group discoverable in `smrt --help` and handles a
+    // programmatic invocation through the generic handler.
+    handler: async (args) => {
+      const { runAppCommand } = await import('../app/cli.js');
+      const code = await runAppCommand(args);
+      if (code !== 0) process.exitCode = code;
+    },
+  },
   introspect: {
     name: 'introspect',
     description: 'Analyze project and discover SMRT objects',

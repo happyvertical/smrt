@@ -46,8 +46,8 @@ test('mount, navigation, and unmount leave no duplicate live registrations', asy
   expect([...after].sort()).toEqual([...initial].sort());
 
   // Nothing accumulated. In this application every WebMCP registration is
-  // owned by the root layout — the Provider and RuntimeDiagnosticsWebMcp both
-  // live there — so navigating between routes under that layout must not tear
+  // owned by the root layout — AppShell's Provider and its runtime-diagnostics
+  // tool both live there — so navigating between routes under that layout must not tear
   // them down and must not register them again. A component that re-registered
   // per navigation would show up here as a growing total, and as a duplicate
   // live name above.
@@ -55,8 +55,8 @@ test('mount, navigation, and unmount leave no duplicate live registrations', asy
   // That also means there is no in-document unmount to observe: the only way
   // these owners are torn down is with their document, which the reload test
   // below covers. Disposal on owner teardown itself — `owner.dispose()`
-  // aborting the registration signal — is asserted directly in
-  // `__tests__/runtimeDiagnostics.test.ts`.
+  // aborting the registration signal — is asserted directly in smrt-svelte's
+  // `src/components/app/__tests__/runtime-diagnostics-webmcp.test.ts`.
   const all = await ownerPage.evaluate(() =>
     window.__m5ModelContext!.registrations(),
   );

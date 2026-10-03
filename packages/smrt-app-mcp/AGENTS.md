@@ -22,6 +22,18 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   validates JWT access tokens and requires an application-owned principal mapper.
 - Mount `mountMcpRoute` as one modern `POST` endpoint. It creates a fresh
   protocol server per request, emits no session id, and refuses subscriptions.
+- `mountMcpAppRoute` (`src/defaults.ts` + `./sveltekit`) is the one-call app
+  route: explicit `models` allow-list, required `requiredScopes`, principal from
+  session locals (`principalFromSessionLocals`). App policies compose with the
+  default and may only narrow it. Its `Origin` check (default on; opt-in on
+  `mountMcpRoute`) runs before auth and dispatch; no-`Origin` clients pass.
+  `effects` filters the catalog by `mcpToolEffect` (excluded tools 404).
+  `auth` swaps in bearer principals; `bindPrincipal` runs their dispatch in
+  the app's principal context (RLS transaction), failing closed, and
+  authorizes with the binder's narrowed (live) scopes; task lifecycle calls
+  re-check the originating action against the allow-list and `effects`,
+  after a principal-level `taskPrincipalPolicy` (defaults: scope policy);
+  `mountMcpProtectedResourceMetadataRoute` serves only the advertised path.
 - Keep tool catalogs private by default. Public caching requires an explicit
   attestation and a global, unauthenticated, read-only, non-tenant catalog with
   no principal-aware policy.

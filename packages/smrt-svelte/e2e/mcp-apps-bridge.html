@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><title>MCP Apps bridge component host</title></head><body><iframe title="Bridge view" src="/mcp-apps-bridge-child.html"></iframe><script>
+window.requests = [];
+const query = new URLSearchParams(location.search);
+const modes = (query.get('modes') ?? 'inline').split(',');
+const failDisplay = query.get('fail') === 'display';
+addEventListener('message', event => {
+ if(event.source !== document.querySelector('iframe').contentWindow) return;
+ window.requests.push(event.data);
+ const reply = result => event.source.postMessage({jsonrpc:'2.0',id:event.data.id,result}, location.origin);
+ if(event.data.method === 'ui/initialize') reply({protocolVersion:'2026-01-26',hostInfo:{name:'synthetic',version:'1'},hostCapabilities:{},hostContext:{displayMode:'inline',availableDisplayModes:modes}});
+ if(event.data.method === 'ui/request-display-mode') {
+  if(failDisplay) event.source.postMessage({jsonrpc:'2.0',id:event.data.id,error:{code:-32000,message:'denied'}}, location.origin);
+  else reply({mode:event.data.params.mode});
+ }
+});
+</script></body></html>

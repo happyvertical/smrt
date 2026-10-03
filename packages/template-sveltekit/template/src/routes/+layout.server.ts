@@ -1,15 +1,7 @@
-import type { LayoutServerLoad } from './$types';
+import { createSessionLayoutLoad } from '@happyvertical/smrt-app-runtime/sveltekit';
 
 /**
- * Keep session and tenant state server-owned. The selected tenant is displayed
- * separately from the tenant authorized by the active session.
+ * Server-owned session summary: whether a user is signed in, the tenant the
+ * session authorizes, and (display only) the URL-selected tenant candidate.
  */
-export const load: LayoutServerLoad = async ({ locals }) => {
-  return {
-    session: {
-      authenticated: Boolean(locals.user),
-      activeTenantId: locals.tenantId,
-      selectedTenantSlug: locals.selectedTenantSlug,
-    },
-  };
-};
+export const load = createSessionLayoutLoad();

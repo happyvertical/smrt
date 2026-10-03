@@ -22,7 +22,15 @@ export function useMcpApp(options: () => McpAppBridgeOptions): McpAppState {
   let error = $state<string>();
   onMount(() => {
     let active = true;
-    const current = new McpAppBridge(options());
+    let current: McpAppBridge;
+    try {
+      current = new McpAppBridge(options());
+    } catch (failure) {
+      // E.g. opened top-level (no embedding host) or an invalid origin: keep
+      // the view's ordinary fallback instead of failing the component mount.
+      error = failure instanceof Error ? failure.message : 'Host unavailable';
+      return;
+    }
     bridge = current;
     const unsubscribe = current.subscribe((next) => {
       if (active) snapshot = next;

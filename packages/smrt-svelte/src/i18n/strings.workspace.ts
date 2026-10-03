@@ -64,6 +64,22 @@ export const M = defineMessages({
   'ui.activity_item.cancel': 'Cancel',
   'ui.activity_list.empty': 'No activities',
   'ui.app_scope_panel.app_scope': 'App scope',
+
+  // components/app/*.svelte
+  'ui.app_shell.settings_link': 'Shell settings',
+  'ui.app_shell.navigation': 'Application navigation',
+  'ui.owner_setup.heading': 'Set up your local application',
+  'ui.owner_setup.unavailable':
+    'Local owner setup is unavailable or has already been completed.',
+  'ui.owner_setup.intro':
+    'Create the real local owner account. This invitation works once and stays on this device.',
+  'ui.owner_setup.name': 'Name',
+  'ui.owner_setup.email': 'Email',
+  'ui.owner_setup.tenant_name': 'Workspace name (optional)',
+  'ui.owner_setup.submit': 'Create owner',
+  'ui.shell_settings_page.heading': 'Settings',
+  'ui.shell_settings_page.description':
+    'Adjust the workspace shell — panel layout and keyboard shortcuts.',
   'ui.hotkey_input.capture_title': 'Press a key to capture it',
   'ui.hotkey_input.conflicts_with': 'Conflicts with',
   'ui.shell_settings_panel.shell_settings': 'Shell settings',

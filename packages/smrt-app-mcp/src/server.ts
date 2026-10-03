@@ -34,6 +34,7 @@ import {
   type McpTask,
   McpTaskNotFoundError,
   McpTaskStore,
+  SmrtJobCollection,
 } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from './errors.js';
@@ -44,7 +45,13 @@ import {
   type McpResourcePolicy,
   prepareMcpAppResource,
 } from './resources.js';
-import { compareMcpToolNames, isPublicMcpTool } from './tools.js';
+import {
+  compareMcpToolNames,
+  isPublicMcpTool,
+  MCP_TOOL_EFFECTS,
+  type McpToolEffect,
+  mcpToolEffect,
+} from './tools.js';
 import {
   createMcpWorkflowTool,
   type McpWorkflowTool,
@@ -90,6 +97,16 @@ export interface McpToolPolicyContext {
 export type McpToolPolicy = (
   context: McpToolPolicyContext,
 ) => boolean | Promise<boolean>;
+
+/**
+ * Principal-level predicate for durable task lifecycle calls (`tasks/get`,
+ * `tasks/update`, `tasks/cancel`). It receives the authenticated, bound
+ * principal (with effective scopes) and no tool: return `false` to answer
+ * the call as an unknown task. A thrown error is a denial.
+ */
+export type McpTaskPrincipalPolicy = (context: {
+  principal: McpAppPrincipal;
+}) => boolean | Promise<boolean>;
 
 /**
  * Workflow assertion hook signature. Throw `McpAccessError` to reject the
@@ -175,7 +192,25 @@ export interface CreateMcpAppServerOptions {
    * assertion gates before the handler runs.
    */
   workflowTools?: readonly McpWorkflowToolDefinition[];
+  /**
+   * Restrict the catalog to tools whose effect (see `mcpToolEffect`) is
+   * listed, for example `['read']` until per-operation authorization exists.
+   * Excluded tools are absent from discovery and a direct call receives the
+   * same not-found error as an unknown tool, so they cannot be enumerated.
+   * Omitted: every allow-listed tool, regardless of effect.
+   */
+  effects?: readonly McpToolEffect[];
   resources?: readonly McpAppResourceDefinition[];
+  /**
+   * Gate every task lifecycle call (`tasks/get`, `tasks/update`,
+   * `tasks/cancel`) on the calling principal before the task store is
+   * touched; a denial is answered as an unknown task. `toolPolicy` is not
+   * re-applied to lifecycle calls (a task does not yet record the tool that
+   * created it), so a server whose `toolPolicy` encodes principal-level
+   * requirements (scopes, roles, revocation) should restate them here.
+   * `createDefaultMcpAppServer` supplies its principal scope policy.
+   */
+  taskPrincipalPolicy?: McpTaskPrincipalPolicy;
   /** Required for private resources; rechecked on catalog/read, errors deny. */
   resourcePolicy?: McpResourcePolicy;
 }
@@ -270,6 +305,21 @@ function configuredToolListCacheHint(
   };
 }
 
+function configuredEffects(
+  effects: readonly McpToolEffect[] | undefined,
+): ReadonlySet<McpToolEffect> | undefined {
+  if (effects === undefined) return undefined;
+  if (
+    !Array.isArray(effects) ||
+    effects.some((effect) => !MCP_TOOL_EFFECTS.includes(effect))
+  ) {
+    throw new TypeError(
+      "MCP effects must be an array of 'read', 'write' or 'destructive'.",
+    );
+  }
+  return new Set(effects);
+}
+
 function isTenantScopedTool(identity: MCPToolIdentity): boolean {
   const objectName = identity.objectName.toLowerCase();
   for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
@@ -329,6 +379,7 @@ export function createMcpAppServer(
     }
     workflowToolsByName.set(workflowTool.tool.name, workflowTool);
   }
+  const allowedEffects = configuredEffects(options.effects);
   const requestedToolListCacheHint = configuredToolListCacheHint(
     options.toolListCache,
   );
@@ -392,9 +443,9 @@ export function createMcpAppServer(
     return input.user ?? null;
   }
 
-  async function catalogTools(): Promise<
-    Array<{ tool: MCPTool; identity?: MCPToolIdentity }>
-  > {
+  async function catalogTools(
+    applyEffects = true,
+  ): Promise<Array<{ tool: MCPTool; identity?: MCPToolIdentity }>> {
     // Identity is owned by the exact generator that produced each descriptor.
     const generator = makeGenerator();
     const coreTools = (await generator.generateTools())
@@ -422,9 +473,16 @@ export function createMcpAppServer(
         throw new TypeError('MCP tool references an undeclared resource.');
       }
     }
-    return allTools.sort((left, right) =>
-      compareMcpToolNames(left.tool.name, right.tool.name),
-    );
+    return allTools
+      .filter(
+        ({ tool }) =>
+          !applyEffects ||
+          !allowedEffects ||
+          allowedEffects.has(mcpToolEffect(tool)),
+      )
+      .sort((left, right) =>
+        compareMcpToolNames(left.tool.name, right.tool.name),
+      );
   }
 
   function runWorkflowAssertions(
@@ -666,12 +724,106 @@ export function createMcpAppServer(
     });
   }
 
+  /**
+   * The generated tool that created a task, recovered from its job row
+   * (`object_type` + `method`, persisted by core's `createTask`) under the
+   * same owner/tenant scope as the task store. Undefined when not found.
+   */
+  async function taskOrigin(
+    taskId: string,
+    principal: McpAppPrincipal & { id: string },
+  ): Promise<{ objectType: string; method: string } | undefined> {
+    const db = options.smrtOptions().db as DatabaseInterface;
+    const jobs = await SmrtJobCollection.create({ db });
+    const [job] = await jobs.list({
+      where: { taskId, taskOwnerId: taskOwnerIdFor(principal) },
+      limit: 1,
+    });
+    if (!job || (job.tenantId ?? null) !== (principal.tenantId ?? null)) {
+      return undefined;
+    }
+    return { objectType: job.objectType, method: job.method };
+  }
+
+  /**
+   * Mirror core's task resolution: class by simple name; core persists its
+   * qualified name, while application workflows that create tasks through a
+   * task store may persist the simple name.
+   */
+  function isTaskOrigin(
+    identity: MCPToolIdentity,
+    origin: { objectType: string; method: string },
+  ): boolean {
+    if (identity.action.toLowerCase() !== origin.method.toLowerCase()) {
+      return false;
+    }
+    for (const [key, info] of ObjectRegistry.getAllClasses()) {
+      const name = info.name || key;
+      if (name.toLowerCase() !== identity.objectName.toLowerCase()) continue;
+      return (
+        origin.objectType === name || origin.objectType === info.qualifiedName
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Re-apply the current catalog to a task's originating action: the
+   * allow-list and `effects` filter, judged on the generated tool for the
+   * class and method its job persists. A task whose action is excluded (or
+   * maps to no allow-listed generated tool) is indistinguishable from an
+   * unknown task.
+   *
+   * The per-tool `toolPolicy` is not re-applied here: a task created by an
+   * application workflow records only the class and method, not the
+   * workflow tool that created it, and such workflows routinely front a
+   * generated task tool that policy hides. Owner and tenant scoping still
+   * apply to every lifecycle call.
+   */
+  async function assertTaskToolVisible(
+    taskId: string,
+    principal: McpAppPrincipal & { id: string },
+  ): Promise<void> {
+    const origin = await taskOrigin(taskId, principal);
+    if (origin) {
+      for (const { tool, identity } of await catalogTools(false)) {
+        if (!identity || workflowToolsByName.has(tool.name)) continue;
+        if (!isTaskOrigin(identity, origin)) continue;
+        if (!allowedEffects || allowedEffects.has(mcpToolEffect(tool))) return;
+      }
+    }
+    throw new McpAccessError(404, 'Unknown MCP task.');
+  }
+
+  async function passesTaskPrincipalPolicy(
+    principal: McpAppPrincipal,
+  ): Promise<boolean> {
+    if (!options.taskPrincipalPolicy) return true;
+    try {
+      return Boolean(await options.taskPrincipalPolicy({ principal }));
+    } catch {
+      return false;
+    }
+  }
+
   async function withTaskStore<T>(
+    taskId: string,
     principal: McpAppPrincipal | null | undefined,
     operation: (store: McpTaskStore) => Promise<T>,
   ): Promise<T> {
+    // Principal-level authority (for example live-revoked scopes) is checked
+    // before the task store is touched, independent of the originating tool.
+    if (principal?.id && !(await passesTaskPrincipalPolicy(principal))) {
+      throw new McpAccessError(404, 'Unknown MCP task.');
+    }
     try {
-      return await operation(await taskStoreFor(principal));
+      // taskStoreFor rejects a principal without a stable id first.
+      const store = await taskStoreFor(principal);
+      await assertTaskToolVisible(
+        taskId,
+        principal as McpAppPrincipal & { id: string },
+      );
+      return await operation(store);
     } catch (error) {
       if (error instanceof McpTaskNotFoundError) {
         throw new McpAccessError(404, 'Unknown MCP task.');
@@ -684,7 +836,7 @@ export function createMcpAppServer(
     taskId: string;
     principal?: McpAppPrincipal | null;
   }): Promise<McpTask> {
-    return withTaskStore(input.principal, (store) =>
+    return withTaskStore(input.taskId, input.principal, (store) =>
       store.getTask(input.taskId),
     );
   }
@@ -694,7 +846,7 @@ export function createMcpAppServer(
     inputResponses: Record<string, unknown>;
     principal?: McpAppPrincipal | null;
   }): Promise<void> {
-    await withTaskStore(input.principal, (store) =>
+    await withTaskStore(input.taskId, input.principal, (store) =>
       store.updateTask(input.taskId, input.inputResponses),
     );
   }
@@ -703,7 +855,7 @@ export function createMcpAppServer(
     taskId: string;
     principal?: McpAppPrincipal | null;
   }): Promise<void> {
-    await withTaskStore(input.principal, (store) =>
+    await withTaskStore(input.taskId, input.principal, (store) =>
       store.cancelTask(input.taskId),
     );
   }
