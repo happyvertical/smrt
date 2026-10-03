@@ -1,10 +1,18 @@
 /**
- * Direct-membership permission resolution for bearer principals (#3413
- * review F1). A bearer bound to a tenant is authorized only by its own
- * active membership row in exactly that tenant. The row is pinned into
- * `PermissionResolver`, so ancestor-membership inheritance (which the
- * resolver considers only when no direct row exists) can never stand in for
- * a deleted or missing membership.
+ * Tenant-binding permission resolution for bearer principals (#3413 review
+ * F1, I1). The authentication adapter states how a principal's tenant
+ * authority may be established:
+ *
+ * - `direct`: only the principal's own active membership row in exactly its
+ *   tenant (local owner tokens, the default hosted resolver).
+ * - `direct-or-inherited`: the session step's rule
+ *   ({@link isSessionTenantAuthorized}): that direct row, or, when no direct
+ *   row exists at all, authority inherited from an active inheritable
+ *   ancestor membership (hosted application-owned mappings).
+ *
+ * The direct row, when it exists, is pinned into `PermissionResolver`, so
+ * inheritance never substitutes for a suspended or pending direct row; in
+ * `direct` mode it never substitutes for a deleted one either.
  *
  * @internal
  */
@@ -14,46 +22,62 @@ import type {
   MembershipCollection,
   PermissionResolver,
 } from '@happyvertical/smrt-users';
+import { isSessionTenantAuthorized } from './deployed-runtime.js';
 
-/** The pinned direct membership and the live permissions it grants. */
-export interface DirectMembershipPermissions {
+/** How a bound principal's tenant authority may be established. */
+export type TenantBindingMode = 'direct' | 'direct-or-inherited';
+
+/** The authorizing membership and the live permissions it grants. */
+export interface BoundMembershipPermissions {
   readonly membershipId: string;
+  readonly inheritedFromTenantId: string | null;
   readonly permissions: ReadonlySet<string>;
 }
 
 /**
- * Resolve `userId`'s live permissions in `tenantId` from its active direct
- * membership, or `null` when there is no such row (deleted, suspended,
- * pending, or only inherited authority).
+ * Resolve `userId`'s live permissions in `tenantId` under `binding`, or
+ * `null` when that mode does not authorize the principal there.
  */
-export async function resolveDirectMembershipPermissions(options: {
+export async function resolveBoundMembershipPermissions(options: {
   readonly memberships: MembershipCollection;
   readonly resolver: PermissionResolver;
   readonly userId: string;
   readonly tenantId: string;
-}): Promise<DirectMembershipPermissions | null> {
-  const { memberships, resolver, userId, tenantId } = options;
+  readonly binding: TenantBindingMode;
+}): Promise<BoundMembershipPermissions | null> {
+  const { memberships, resolver, userId, tenantId, binding } = options;
   // Keyed by the explicit user and tenant only; the ambient (cookie) tenant
   // filter must not hide or substitute the row.
-  const membership = await withSystemContext(() =>
+  const direct = await withSystemContext(() =>
     memberships.findByUserAndTenant(userId, tenantId),
   );
-  if (
-    !membership?.id ||
-    membership.userId !== userId ||
-    membership.tenantId !== tenantId ||
-    !membership.isActive()
-  ) {
+  if (direct) {
+    if (
+      direct.userId !== userId ||
+      direct.tenantId !== tenantId ||
+      !direct.isActive()
+    ) {
+      return null;
+    }
+  } else if (binding !== 'direct-or-inherited') {
     return null;
   }
+  // Pin the raw lookup: a direct row authorizes alone; `null` asserts that
+  // no direct row exists and lets the resolver consider inheritance.
   const resolved = await resolver.resolvePermissions(userId, tenantId, {
-    membership,
+    membership: direct ?? null,
   });
-  if (
-    resolved.membershipId !== membership.id ||
-    resolved.inheritedFromTenantId !== null
-  ) {
-    return null;
-  }
-  return { membershipId: membership.id, permissions: resolved.permissions };
+  const authorized = isSessionTenantAuthorized({
+    membership: direct ?? null,
+    tenantAuthorization: {
+      membershipId: resolved.membershipId,
+      inheritedFromTenantId: resolved.inheritedFromTenantId,
+    },
+  });
+  if (!authorized || !resolved.membershipId) return null;
+  return {
+    membershipId: resolved.membershipId,
+    inheritedFromTenantId: resolved.inheritedFromTenantId,
+    permissions: resolved.permissions,
+  };
 }

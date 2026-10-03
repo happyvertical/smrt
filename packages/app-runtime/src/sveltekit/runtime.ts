@@ -69,7 +69,10 @@ import {
   isSessionTenantAuthorized,
   type PublicAuthenticationProvider,
 } from '../deployed-runtime.js';
-import { resolveDirectMembershipPermissions } from '../direct-membership.js';
+import {
+  resolveBoundMembershipPermissions,
+  type TenantBindingMode,
+} from '../direct-membership.js';
 import {
   initializeLocalApplicationRuntime,
   type LocalApplicationRuntime,
@@ -259,6 +262,8 @@ export interface SmrtRuntimeSessionCookie {
   readonly maxAgeSeconds: number;
 }
 
+export type { TenantBindingMode } from '../direct-membership.js';
+
 /** The composed runtime; `handle` and `init` are bound and destructurable. */
 /** A principal a route authenticated itself, for {@link SmrtSvelteKitRuntime.runAsPrincipal}. */
 export interface SmrtRuntimeBoundPrincipal {
@@ -266,6 +271,15 @@ export interface SmrtRuntimeBoundPrincipal {
   readonly tenantId?: string | null;
   /** Granted scopes that cap the live permission set (e.g. token scopes). */
   readonly scopes?: readonly string[];
+  /**
+   * How tenant authority may be established, set by the authenticating
+   * adapter (never request input). `direct` (local owner tokens, the default
+   * hosted resolver) needs an active direct membership in exactly
+   * `tenantId`. `direct-or-inherited` (the default; hosted application-owned
+   * mappings) applies the session step's rule: that direct row, or with no
+   * direct row, authority inherited from an active inheritable ancestor.
+   */
+  readonly tenantBinding?: TenantBindingMode;
 }
 
 /** A verified hosted access-token identity (see `McpVerifiedIdentity`). */
@@ -281,6 +295,8 @@ export interface SmrtRuntimeMcpPrincipalMapping {
   readonly id: string;
   readonly tenantId: string;
   readonly kind: 'human';
+  /** The default resolver maps only direct memberships. */
+  readonly tenantBinding: 'direct';
 }
 
 export interface SmrtSvelteKitRuntime {
@@ -335,9 +351,11 @@ export interface SmrtSvelteKitRuntime {
    * under the RLS transaction rule of {@link databaseConfig} a fresh
    * transaction publishes that user, tenant and permission set, and
    * `databaseConfig()`/`classOptions()` return it inside `fn`. Rejects (before
-   * `fn` runs) without a user id, a tenant, or an active *direct* membership
-   * of that user in exactly that tenant; inherited (ancestor) authority never
-   * authorizes a bound principal.
+   * `fn` runs) without a user id, a tenant, or a membership its
+   * `tenantBinding` accepts: `direct` needs an active direct membership in
+   * exactly that tenant; `direct-or-inherited` (default) also accepts
+   * authority inherited from an active inheritable ancestor when no direct
+   * row exists. A suspended or pending direct row is always authoritative.
    *
    * `fn` receives the principal with `scopes` replaced by that effective
    * permission set (live permissions, capped by the given scopes). Callers
@@ -832,17 +850,24 @@ export function composeSmrtSvelteKitRuntime(
     // Resolution reads the base connection, before any RLS transaction opens.
     // Only the principal's own active direct membership in exactly this
     // tenant authorizes it; it is pinned so inheritance cannot substitute.
-    const resolved = await resolveDirectMembershipPermissions({
+    const binding = principal.tenantBinding ?? 'direct-or-inherited';
+    if (binding !== 'direct' && binding !== 'direct-or-inherited') {
+      throw new Error('Unknown tenant binding mode for a bound principal.');
+    }
+    const resolved = await resolveBoundMembershipPermissions({
       memberships: await MembershipCollection.create(
         baseClassOptions('Membership'),
       ),
       resolver: await permissionResolver(),
       userId,
       tenantId,
+      binding,
     });
     if (!resolved) {
       throw new Error(
-        'The bound principal has no active direct membership in its tenant.',
+        binding === 'direct'
+          ? 'The bound principal has no active direct membership in its tenant.'
+          : 'The bound principal has no authorized membership in its tenant.',
       );
     }
     const cap = principal.scopes ? new Set(principal.scopes) : undefined;
@@ -924,7 +949,12 @@ export function composeSmrtSvelteKitRuntime(
       );
       if (tenants.size !== 1) return null;
       const [tenantId] = tenants;
-      return Object.freeze({ id: user.id, tenantId, kind: 'human' as const });
+      return Object.freeze({
+        id: user.id,
+        tenantId,
+        kind: 'human' as const,
+        tenantBinding: 'direct' as const,
+      });
     });
   };
 

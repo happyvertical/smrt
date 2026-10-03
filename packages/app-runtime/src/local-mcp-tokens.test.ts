@@ -375,12 +375,101 @@ describe('local MCP tokens', () => {
     if (!directRow) throw new Error('direct membership missing');
     await withSystemContext(() => directRow.delete());
     expect(await runtime.verifyLocalMcpToken(issued.token)).toBeNull();
+    // The local-token binding mode is direct-only.
     await expect(
       runtime.runAsPrincipal(
-        { id: owner.userId, tenantId: childTenantId, scopes: [READ] },
+        {
+          id: owner.userId,
+          tenantId: childTenantId,
+          scopes: [READ],
+          tenantBinding: 'direct',
+        },
         async () => 'ran',
       ),
     ).rejects.toThrow('no active direct membership');
+  });
+
+  it('lets a hosted binding use legitimately inherited authority, pinned to the ancestor', async () => {
+    const { runtime, local, owner } = await ownedRuntime('hosted-inherit');
+    const childTenantId = await withSystemContext(async () => {
+      const roles = await RoleCollection.create({ db: local.db });
+      const role = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+      if (!role?.id) throw new Error('owner role missing');
+      role.inheritsToDescendants = true;
+      await role.save();
+      const tenants = await TenantCollection.create({ db: local.db });
+      const child = await tenants.createChild(owner.tenantId, {
+        name: 'Child',
+        slug: 'child',
+      });
+      await child.save();
+      return child.id as string;
+    });
+    const bind = (tenantBinding?: 'direct' | 'direct-or-inherited') =>
+      runtime.runAsPrincipal(
+        {
+          id: owner.userId,
+          tenantId: childTenantId,
+          scopes: [READ, 'notes.unheld'],
+          ...(tenantBinding ? { tenantBinding } : {}),
+        },
+        async (bound) => bound.scopes,
+      );
+    // A custom hosted mapping to a tenant held only through an inheritable
+    // ancestor membership gets the ancestor's permissions (capped by scopes).
+    await expect(bind('direct-or-inherited')).resolves.toEqual([READ]);
+    await expect(bind()).resolves.toEqual([READ]);
+    // A direct-only binding (local tokens, default hosted resolver) refuses.
+    await expect(bind('direct')).rejects.toThrow('no active direct membership');
+
+    // Suspending the authorizing ancestor membership denies the inheritance.
+    // Writes go through the runtime's collection options, as app code does.
+    const memberships = await MembershipCollection.create(
+      runtime.classOptions('Membership'),
+    );
+    const ancestor = await withSystemContext(() =>
+      memberships.get({ id: owner.membershipId }),
+    );
+    if (!ancestor) throw new Error('membership missing');
+    ancestor.status = MembershipStatus.SUSPENDED;
+    await withSystemContext(() => ancestor.save());
+    await expect(bind('direct-or-inherited')).rejects.toThrow('membership');
+    ancestor.status = MembershipStatus.ACTIVE;
+    await withSystemContext(() => ancestor.save());
+    await expect(bind('direct-or-inherited')).resolves.toEqual([READ]);
+
+    // A suspended direct row of the same tenant is authoritative: inheritance
+    // never substitutes for it.
+    const role = await (
+      await RoleCollection.create(runtime.classOptions('Role'))
+    ).findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+    const direct = await withSystemContext(async () => {
+      const row = await memberships.create({
+        userId: owner.userId,
+        tenantId: childTenantId,
+        roleId: role?.id as string,
+      });
+      row.status = MembershipStatus.SUSPENDED;
+      await row.save();
+      return row;
+    });
+    expect(direct.status).toBe(MembershipStatus.SUSPENDED);
+    await expect(bind('direct-or-inherited')).rejects.toThrow('membership');
+  });
+
+  it('rejects an unknown binding mode', async () => {
+    const { runtime, owner } = await ownedRuntime('binding-mode');
+    await expect(
+      runtime.runAsPrincipal(
+        {
+          id: owner.userId,
+          tenantId: owner.tenantId,
+          scopes: [READ],
+          tenantBinding: 'anything' as never,
+        },
+        async () => 'ran',
+      ),
+    ).rejects.toThrow('binding');
   });
 
   it('denies a token whose owner lost the tenant membership or was suspended', async () => {
@@ -396,7 +485,12 @@ describe('local MCP tokens', () => {
     // The bound tenant is the authority: binding to any other tenant fails.
     await expect(
       runtime.runAsPrincipal(
-        { id: owner.userId, tenantId: 'another-tenant', scopes: [READ] },
+        {
+          id: owner.userId,
+          tenantId: 'another-tenant',
+          scopes: [READ],
+          tenantBinding: 'direct',
+        },
         async () => 'ran',
       ),
     ).rejects.toThrow('no active direct membership');
@@ -490,6 +584,8 @@ describe('membership-backed hosted MCP principal', () => {
       id: owner.userId,
       tenantId: owner.tenantId,
       kind: 'human',
+      // It maps only direct memberships, so its binding is direct-only.
+      tenantBinding: 'direct',
     });
     // The local profile never resolves hosted identities.
     await expect(

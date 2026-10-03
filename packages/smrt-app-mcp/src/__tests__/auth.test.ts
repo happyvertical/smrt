@@ -242,8 +242,33 @@ describe('remote protected resource', () => {
         scopes: ['read'],
         roles: undefined,
         kind: undefined,
+        tenantBinding: 'direct-or-inherited',
       },
     });
+  });
+  it('carries the tenant binding mode from the mapping, defaulting to direct-or-inherited', async () => {
+    const auth = (tenantBinding: unknown) =>
+      createMcpResourceAuth(
+        options({
+          resolvePrincipal: async ({ subject }) =>
+            ({ id: subject, tenantId: 'tenant-a', tenantBinding }) as never,
+        }),
+      );
+    const value = await token();
+    for (const [binding, expected] of [
+      [undefined, 'direct-or-inherited'],
+      ['direct', 'direct'],
+      ['direct-or-inherited', 'direct-or-inherited'],
+    ] as const) {
+      expect(await auth(binding).authenticate(request(value))).toMatchObject({
+        ok: true,
+        principal: { tenantBinding: expected },
+      });
+    }
+    for (const binding of ['inherited', '', 1]) {
+      const result = await auth(binding).authenticate(request(value));
+      expect(result.ok).toBe(false);
+    }
   });
   it.each([
     ['issuer', { iss: 'https://evil.example' }],

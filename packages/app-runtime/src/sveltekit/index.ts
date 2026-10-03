@@ -55,6 +55,7 @@ export {
   type SmrtRuntimeSessionOptions,
   type SmrtSvelteKitRuntime,
   type SmrtSvelteKitRuntimeOptions,
+  type TenantBindingMode,
   type WriterLease,
   type WriterLeaseContext,
 } from './runtime.js';

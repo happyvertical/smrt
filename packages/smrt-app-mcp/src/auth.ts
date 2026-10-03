@@ -1,6 +1,6 @@
 /** Server-only OAuth protected-resource boundary. This is not an issuer. */
 import { createRemoteJWKSet, type JWTPayload, jwtVerify } from 'jose';
-import type { McpAppPrincipal } from './server.js';
+import type { McpAppPrincipal, McpTenantBinding } from './server.js';
 
 export type McpDeploymentProfile = 'local' | 'self-hosted' | 'cloud';
 export interface McpVerifiedIdentity {
@@ -14,7 +14,15 @@ export interface McpPrincipalMapping {
   tenantId?: string;
   kind?: string;
   roles?: string[];
+  /**
+   * How the mapped tenant authority may be bound. Defaults to
+   * `direct-or-inherited`; a mapping that selected a direct membership
+   * returns `direct` so inheritance can never substitute for it.
+   */
+  tenantBinding?: McpTenantBinding;
 }
+
+const TENANT_BINDINGS: readonly string[] = ['direct', 'direct-or-inherited'];
 export interface McpResourceAuthOptions {
   profile: McpDeploymentProfile;
   /** Exact public resource identifier; also the required token audience. */
@@ -198,6 +206,8 @@ export function createLocalMcpTokenAuth(
           tenantId: principal.tenantId,
           kind: principal.kind,
           scopes: [...principal.scopes],
+          // Owner tokens bind only through the direct membership.
+          tenantBinding: 'direct' as const,
         },
       };
     },
@@ -416,7 +426,9 @@ export function createMcpResourceAuth(
           (mapping.kind !== undefined && !validString(mapping.kind)) ||
           (mapping.roles !== undefined &&
             (!Array.isArray(mapping.roles) ||
-              !mapping.roles.every(validString)))
+              !mapping.roles.every(validString))) ||
+          (mapping.tenantBinding !== undefined &&
+            !TENANT_BINDINGS.includes(mapping.tenantBinding))
         ) {
           return deny('invalid_token');
         }
@@ -428,6 +440,7 @@ export function createMcpResourceAuth(
             kind: mapping.kind,
             roles: mapping.roles ? [...mapping.roles] : undefined,
             scopes: [...granted],
+            tenantBinding: mapping.tenantBinding ?? 'direct-or-inherited',
           },
         };
       } catch {

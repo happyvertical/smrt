@@ -25,7 +25,7 @@ import {
   UserStatus,
 } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { resolveDirectMembershipPermissions } from './direct-membership.js';
+import { resolveBoundMembershipPermissions } from './direct-membership.js';
 
 /** Runtime-owned system table; ignored by schema diff, parity and portability. */
 export const LOCAL_MCP_TOKEN_TABLE = '_smrt_local_mcp_tokens';
@@ -197,11 +197,12 @@ export function createLocalMcpTokenStore(
         throw error;
       },
     );
-    const resolved = await resolveDirectMembershipPermissions({
+    const resolved = await resolveBoundMembershipPermissions({
       memberships: await MembershipCollection.create({ db }),
       resolver: await resolverPromise,
       userId,
       tenantId,
+      binding: 'direct',
     });
     return resolved?.permissions ?? null;
   };

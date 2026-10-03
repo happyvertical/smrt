@@ -40,6 +40,9 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   principal; a presented bearer must verify (401, never cookie fallback); no
   metadata (404). Hosted, `runtime.resolveMcpPrincipal` is the default
   identity mapping; an explicit `resolvePrincipal` overrides it.
+- Adapters stamp `principal.tenantBinding` for `bindPrincipal`: the local
+  token adapter always `direct`; the JWT adapter the mapping's value or
+  `direct-or-inherited`. Never derive it from request input.
 - Keep tool catalogs private by default. Public caching requires an explicit
   attestation and a global, unauthenticated, read-only, non-tenant catalog with
   no principal-aware policy.

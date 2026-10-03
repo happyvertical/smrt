@@ -91,6 +91,7 @@ function rpc(
 function route(source: ReturnType<typeof createHostedMcpResourceAuth>) {
   const seen: Array<McpAppPrincipal | null> = [];
   const bindings: string[] = [];
+  const bound: McpAppPrincipal[] = [];
   const POST = mountMcpAppRoute({
     models: [],
     requiredScopes: ['notes.read'],
@@ -99,6 +100,7 @@ function route(source: ReturnType<typeof createHostedMcpResourceAuth>) {
     auth: source,
     bindPrincipal: async (principal, run) => {
       bindings.push(principal.id);
+      bound.push(principal);
       return run(principal);
     },
     workflowTools: [
@@ -120,7 +122,7 @@ function route(source: ReturnType<typeof createHostedMcpResourceAuth>) {
       },
     ],
   });
-  return { POST, seen, bindings };
+  return { POST, seen, bindings, bound };
 }
 
 describe('createLocalMcpTokenAuth', () => {
@@ -129,6 +131,7 @@ describe('createLocalMcpTokenAuth', () => {
       ...owner,
       allowCrossTenant: true,
       roles: ['owner'],
+      tenantBinding: 'direct-or-inherited',
     }));
     const auth = createLocalMcpTokenAuth({ verify });
     expect(auth.sessionFallback).toBe(true);
@@ -140,7 +143,11 @@ describe('createLocalMcpTokenAuth', () => {
       }),
     );
     expect(verify).toHaveBeenCalledWith(TOKEN);
-    expect(result).toEqual({ ok: true, principal: owner });
+    // Local owner tokens always bind direct-only, whatever verify returns.
+    expect(result).toEqual({
+      ok: true,
+      principal: { ...owner, tenantBinding: 'direct' },
+    });
   });
 
   it.each([
@@ -251,7 +258,7 @@ describe('createHostedMcpResourceAuth({ runtime })', () => {
 describe('mountMcpAppRoute with the local token adapter', () => {
   it('serves a valid bearer as the token owner through bindPrincipal, ignoring the cookie', async () => {
     const rt = runtime();
-    const { POST, seen, bindings } = route(
+    const { POST, seen, bindings, bound } = route(
       createHostedMcpResourceAuth({ profile: 'local', runtime: rt }),
     );
     const response = await POST(
@@ -263,6 +270,7 @@ describe('mountMcpAppRoute with the local token adapter', () => {
       id: owner.id,
     });
     expect(bindings).toEqual([owner.id]);
+    expect(bound[0]).toMatchObject({ tenantBinding: 'direct' });
     expect(seen[0]).toMatchObject({
       id: owner.id,
       tenantId: owner.tenantId,
