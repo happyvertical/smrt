@@ -25,6 +25,45 @@ entire touched package, not just the new tests added for the change.
 - **Coverage must be wired in**: every actively developed package should enable Vitest coverage reporting in `vitest.config.ts`
 - **Browser harnesses must be exercised**: if a touched package ships a maintained demo app, dev server, or reference-app harness with Playwright coverage, the touched-package release gate includes the Playwright suite too
 
+## Commercial UI suites
+
+Commerce, Assets and Expenses keep their model suites in `test`, followed by
+`test:ui` for the maintained Svelte contracts. Commerce runs parties, quotes,
+invoices, pricing and purchasing SSR configs sequentially. Assets runs attachment
+contracts; Expenses runs its UI config. Turbo includes the isolated config files
+and `test-support/` fixtures in its test cache inputs.
+
+Run each touched package's `test:e2e` separately for the maintained native and
+hydrated browser suites. Commerce sequences all five surfaces; individual
+`test:e2e:parties`, `:quotes`, `:invoices`, `:pricing` and `:purchasing` commands are
+available for focused work. Pricing and purchasing reuse the quote browser host,
+so their scripts enter the repository root before loading the extension.
+
+Use the Node and pnpm versions in the root `package.json` and install/build the
+workspace first. Set a short, writable scratch directory outside `/tmp` before
+running any install, build or test command:
+
+```bash
+mkdir -p "$HOME/Work/tmp/smrt-ui"
+export TMPDIR="$HOME/Work/tmp/smrt-ui"
+export TMP="$TMPDIR" TEMP="$TMPDIR" CI_TEST_TMPDIR="$TMPDIR"
+pnpm --filter @happyvertical/smrt-commerce test
+pnpm --filter @happyvertical/smrt-commerce test:e2e
+pnpm --filter @happyvertical/smrt-assets test
+pnpm --filter @happyvertical/smrt-assets test:e2e
+pnpm --filter @happyvertical/smrt-expenses test
+pnpm --filter @happyvertical/smrt-expenses test:e2e
+```
+
+Keep `TMPDIR` short enough for Chromium's UNIX socket path limit. On hosts with a
+supported system Chromium, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its absolute
+path (for example `/run/current-system/sw/bin/chromium` on NixOS); otherwise install
+the browser using `pnpm exec playwright install chromium`. `CI_TEST_TMPDIR` directs
+supported test artifacts; the quote host also accepts `QUOTE_EVIDENCE_DIR`.
+Run the package browser commands sequentially to avoid shared fixture ports and
+artifact directories. These mock submission fixtures establish UI/native-form
+behavior, not application authorization or financial transaction correctness.
+
 ## Testing Pyramid For SMRT Packages
 
 Every actively developed SMRT package should aim for a balanced test pyramid.

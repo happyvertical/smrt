@@ -36,11 +36,18 @@
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
     "prepack": "node ../../scripts/prepack-package.js",
-    "test": "vitest run",
+    "test": "vitest run && pnpm run test:ui",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
     "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
+    "test:ui": "vitest run --config vitest.parties.config.ts && vitest run --config vitest.quotes.config.ts && vitest run --config vitest.invoices.config.ts && vitest run --config vitest.pricing.config.ts && vitest run --config vitest.purchasing.config.ts",
+    "test:e2e": "pnpm run test:e2e:parties && pnpm run test:e2e:quotes && pnpm run test:e2e:invoices && pnpm run test:e2e:pricing && pnpm run test:e2e:purchasing",
+    "test:e2e:parties": "playwright test -c playwright.parties.config.ts",
+    "test:e2e:quotes": "cd ../.. && node packages/commerce/test-support/quote-browser.mjs",
+    "test:e2e:invoices": "playwright test -c e2e/invoices/playwright.config.ts",
+    "test:e2e:pricing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/pricing-browser.mjs node packages/commerce/test-support/quote-browser.mjs",
+    "test:e2e:purchasing": "cd ../.. && QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/purchasing-browser-extension.mjs node packages/commerce/test-support/quote-browser.mjs"
   },
   "keywords": [
     "smrt",

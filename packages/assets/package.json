@@ -9,6 +9,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "agents",
     "CLAUDE.md",
     "AGENTS.md"
   ],
@@ -50,10 +51,12 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.kit.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
-    "test": "vitest run",
+    "test": "vitest run && pnpm run test:ui",
     "test:watch": "vitest",
     "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
+    "test:ui": "vitest run --config vitest.attachments.config.ts",
+    "test:e2e": "playwright test -c e2e/attachments/playwright.config.ts"
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",

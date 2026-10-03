@@ -142,7 +142,10 @@
         "!src/manifest/test-manifest.json",
         "!src/manifest/test-manifest-stub.ts",
         "!dist/**",
-        "!**/.svelte-kit/**"
+        "!**/.svelte-kit/**",
+        "vitest.*.config.ts",
+        "vitest.*.config.js",
+        "test-support/**"
       ],
       "outputs": [
         "coverage/**"
