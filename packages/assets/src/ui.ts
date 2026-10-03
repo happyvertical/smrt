@@ -11,6 +11,34 @@ import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
  * Assets module UI slots
  */
 export const ASSETS_UI_SLOTS: Record<string, ModuleUISlot> = {
+  'attachment-list': {
+    id: 'attachment-list',
+    label: 'Attachment List',
+    description: 'Authorized private links and supplied version history',
+    icon: 'file-text',
+    category: 'list',
+    order: 8,
+    propsInterface: 'AttachmentListProps',
+  },
+  'attachment-upload': {
+    id: 'attachment-upload',
+    label: 'Attachment Upload',
+    description:
+      'Native multipart upload with retained request fields and recovery guidance',
+    icon: 'upload',
+    category: 'form',
+    order: 9,
+    propsInterface: 'AttachmentUploadProps',
+  },
+  'attachment-panel': {
+    id: 'attachment-panel',
+    label: 'Attachments',
+    description: 'Attachment list and optional native upload composition',
+    icon: 'file-text',
+    category: 'display',
+    order: 10,
+    propsInterface: 'AttachmentPanelProps',
+  },
   'asset-manager': {
     id: 'asset-manager',
     label: 'Asset Manager',
