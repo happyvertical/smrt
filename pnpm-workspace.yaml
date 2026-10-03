@@ -110,6 +110,14 @@ overrides:
   # Verified: html-to-text conversion output is byte-identical on 7.1.5 and
   # 8.0.1 across default, wordwrap, selector-composition, and limits paths.
   'deepmerge-ts@<8.0.0': 8.0.1
+  # figlet <1.11.3 can loop forever in text()/textSync() when whitespaceBreak
+  # is combined with a narrow width (GHSA-62ch-8vmq-8xm7). Its only consumer is
+  # yargonaut (via crawlee's @crawlee/cli and @crawlee/templates), which
+  # declares `figlet: ^1.1.1`, so the patched line is within its own range.
+  # 1.11.4 is the latest 1.11 patch (the fix plus an ESM __dirname bug fix);
+  # 1.12.0 only adds fonts and emoji support. Verified: yargonaut renders with
+  # 1.11.4, and textSync with whitespaceBreak at width 2 now returns.
+  'figlet@<1.11.3': 1.11.4
 
 auditConfig:
   # Every entry here suppresses an advisory for the WHOLE tree, including future
