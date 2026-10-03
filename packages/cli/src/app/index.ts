@@ -38,7 +38,11 @@ export {
   renderAppHelp,
   runAppCommand,
 } from './cli.js';
-export { AppCommandError, redactSecrets } from './errors.js';
+export {
+  AppCommandError,
+  ApplicationStartError,
+  redactSecrets,
+} from './errors.js';
 export {
   type ApplicationStateRootOptions,
   assertExternalArtifactPath,
@@ -66,6 +70,7 @@ export {
   type AppOperation,
   type PortabilityAdapter,
   runApplicationOperation,
+  START_OUTPUT_TAIL_BYTES,
 } from './operations.js';
 export {
   type ExportResult,

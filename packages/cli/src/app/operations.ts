@@ -11,11 +11,15 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
   accessSync,
+  closeSync,
   constants,
   cpSync,
   existsSync,
+  fstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -29,7 +33,7 @@ import {
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
-import { errorCode } from './errors.js';
+import { ApplicationStartError, errorCode, redactSecrets } from './errors.js';
 import {
   assertExternalArtifactPath,
   resolveApplicationStateRoot,
@@ -394,22 +398,32 @@ async function start(
   }
   ensurePrivateDirectory(preparedStateRoot(context));
   const instance = randomBytes(16).toString('hex');
-  const child = spawn(
-    process.execPath,
-    [webLauncherPath(), `--smrt-instance=${instance}`],
-    {
-      cwd: context.sourceRoot,
-      env: {
-        ...env,
-        HOST: runtime.profile === 'local' ? '127.0.0.1' : env.HOST || '0.0.0.0',
-        PORT: env.PORT || '5173',
-        SMRT_PROCESS_INSTANCE: instance,
-        SMRT_OPERATION_INSTANCE: operationLock?.instance,
+  const childEnv: NodeJS.ProcessEnv = {
+    ...env,
+    HOST: runtime.profile === 'local' ? '127.0.0.1' : env.HOST || '0.0.0.0',
+    PORT: env.PORT || '5173',
+    SMRT_PROCESS_INSTANCE: instance,
+    SMRT_OPERATION_INSTANCE: operationLock?.instance,
+  };
+  // The detached server outlives this command, so its output goes to a
+  // private file rather than a pipe that would close (EPIPE) on our exit.
+  const logFile = startLogPath(context);
+  const logFd = openStartLog(logFile);
+  let child: ChildProcess;
+  try {
+    child = spawn(
+      process.execPath,
+      [webLauncherPath(), `--smrt-instance=${instance}`],
+      {
+        cwd: context.sourceRoot,
+        env: childEnv,
+        detached: true,
+        stdio: ['ignore', logFd, logFd],
       },
-      detached: true,
-      stdio: 'ignore',
-    },
-  );
+    );
+  } finally {
+    closeSync(logFd);
+  }
   child.unref();
   const pid = child.pid;
   if (pid === undefined) {
@@ -426,10 +440,68 @@ async function start(
       );
     }
     rmSync(pidPath(context), { force: true });
-    throw error;
+    throw new ApplicationStartError(
+      error instanceof Error
+        ? error.message
+        : 'The application did not become ready.',
+      redactedLogTail(logFile, childEnv),
+      logFile,
+    );
   }
   printJson(context, { schemaVersion: 1, status: 'started', pid });
   return pid;
+}
+
+/** Upper bound on the web-process output a failed `start` reports. */
+export const START_OUTPUT_TAIL_BYTES = 8 * 1024;
+
+/** Window read before redaction, so a cut never splits a reported secret. */
+const START_OUTPUT_WINDOW_BYTES = 64 * 1024;
+
+function startLogPath(context: AppContext): string {
+  return join(preparedStateRoot(context), 'app.log');
+}
+
+/**
+ * Create a fresh 0600 `app.log` for this start. The previous run's log is
+ * removed first and the new one is created exclusively, so a planted link or
+ * file is never written through.
+ */
+function openStartLog(path: string): number {
+  rmSync(path, { force: true });
+  return openSync(path, 'wx', 0o600);
+}
+
+/**
+ * The last {@link START_OUTPUT_TAIL_BYTES} of `path`, redacted against the
+ * child's environment. A bounded window is redacted before it is cut, and a
+ * window that starts mid-file drops its first partial line, so no fragment
+ * of a secret can survive the cut.
+ */
+function redactedLogTail(path: string, env: NodeJS.ProcessEnv): string {
+  let text: string;
+  try {
+    const fd = openSync(path, 'r');
+    try {
+      const size = fstatSync(fd).size;
+      const length = Math.min(size, START_OUTPUT_WINDOW_BYTES);
+      const buffer = Buffer.alloc(length);
+      readSync(fd, buffer, 0, length, size - length);
+      text = buffer.toString('utf8');
+      if (length < size) text = text.slice(text.indexOf('\n') + 1);
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return '';
+  }
+  const redacted = Buffer.from(redactSecrets(text, env), 'utf8');
+  if (redacted.length <= START_OUTPUT_TAIL_BYTES) return redacted.toString();
+  const tail = redacted
+    .subarray(redacted.length - START_OUTPUT_TAIL_BYTES)
+    .toString('utf8');
+  // Drop a leading partial line (and any split multi-byte character).
+  return tail.slice(tail.indexOf('\n') + 1);
 }
 
 /**

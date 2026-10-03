@@ -41,6 +41,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAppCommand } from '../cli.js';
 import { AppCommandError } from '../errors.js';
 import {
+  prepareApplicationStateRoot,
   resolveApplicationStateRoot,
   runtimeConfigurationFingerprint,
 } from '../identity.js';
@@ -71,6 +72,7 @@ const ENV_KEYS = [
   'SMRT_RUNTIME_PROFILE',
   'FAKE_HEALTH',
   'SMRT_FROM_DOTENV',
+  'SMRT_SECRET_KEY',
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -585,12 +587,12 @@ describe('smrt app recover / open / install', () => {
 });
 
 /** A fake production build whose health endpoint is driven by the test. */
-function writeFakeBuild(app: string, body = ''): void {
+function writeFakeBuild(app: string, body = '', prefix = ''): void {
   mkdirSync(join(app, 'build'), { recursive: true });
   writeFileSync(
     join(app, 'build', 'index.js'),
     body ||
-      `
+      `${prefix}
       import { createServer } from 'node:http';
       import { writeFileSync } from 'node:fs';
       writeFileSync('observed.json', JSON.stringify({ origin: process.env.ORIGIN, operation: process.env.SMRT_OPERATION_INSTANCE ?? null, argv: process.argv.slice(1) }));
@@ -703,6 +705,94 @@ describe('smrt app start / stop', () => {
       'The application process exited before becoming ready.',
     );
     expect(existsSync(join(fixture.stateRoot(), 'app.pid'))).toBe(false);
+  });
+
+  it('keeps a bounded, redacted tail of the launcher output in the failure envelope (#3410 item 4)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    const secretKey = 'secret-key-value-must-never-print';
+    process.env.SMRT_SECRET_KEY = secretKey;
+    writeFakeBuild(
+      fixture.app,
+      `
+      for (let line = 0; line < 4000; line += 1) console.log('startup noise ' + line);
+      console.error('Error: connect ECONNREFUSED postgres://smrt:${DB_PASSWORD}@db.internal/app');
+      console.error('loaded key ' + process.env.SMRT_SECRET_KEY);
+      console.error('GET /setup?token=${TOKEN}');
+      console.error('Authorization: Bearer ${TOKEN}');
+      console.error("Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@happyvertical/sql'");
+      process.exit(3);
+      `,
+    );
+    expect(await fixture.run(['start'])).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.message).toBe(
+      'The application process exited before becoming ready.',
+    );
+    expect(envelope.secretValuesIncluded).toBe(false);
+    const output = envelope.output as string;
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(8 * 1024);
+    expect(output).toContain('ERR_MODULE_NOT_FOUND');
+    expect(output).toContain('postgres://[redacted]@db.internal/app');
+    expect(output).toContain('loaded key [redacted]');
+    expect(output).toContain('?token=[redacted]');
+    expect(output).toContain('Bearer [redacted]');
+    // Bounded to the tail: the first lines of noise are gone.
+    expect(output).not.toContain('startup noise 0\n');
+    const everything = allOutput(fixture);
+    for (const secret of [DB_PASSWORD, secretKey, TOKEN]) {
+      expect(everything).not.toContain(secret);
+    }
+    const log = join(fixture.stateRoot(), 'app.log');
+    expect(envelope.logFile).toBe(log);
+    expect(statSync(log).mode & 0o777).toBe(0o600);
+    expect(existsSync(join(fixture.stateRoot(), 'app.pid'))).toBe(false);
+  });
+
+  it('carries the output tail when a server never proves readiness', async () => {
+    const fixture = makeFixture();
+    const port = await freePort();
+    process.env.PORT = port;
+    writeFakeBuild(
+      fixture.app,
+      '',
+      "console.error('readiness probe: database not migrated');",
+    );
+    process.env.FAKE_HEALTH = JSON.stringify({
+      instance: 'ffffffffffffffffffffffffffffffff',
+      configuration: expectedFingerprint(fixture, port),
+    });
+    expect(await fixture.run(['start'])).toBe(1);
+    expect(fixture.stderrJson().output).toContain(
+      'readiness probe: database not migrated',
+    );
+  });
+
+  it('starts each run with a fresh private log and never follows a planted link', async () => {
+    const fixture = makeFixture();
+    const port = await freePort();
+    process.env.PORT = port;
+    writeFakeBuild(fixture.app, '', "console.log('started once');");
+    process.env.FAKE_HEALTH = JSON.stringify({
+      configuration: expectedFingerprint(fixture, port),
+    });
+    const outside = join(fixture.root, 'outside.txt');
+    writeFileSync(outside, 'untouched\n');
+    const log = join(fixture.stateRoot(), 'app.log');
+    prepareApplicationStateRoot({
+      appId: fixture.appId,
+      dataDirectory: fixture.data,
+      sourceRoot: fixture.app,
+    });
+    symlinkSync(outside, log);
+    expect(await fixture.run(['start'])).toBe(0);
+    const started = fixture.stdoutJson() as { pid: number };
+    children.push(started.pid);
+    expect(fixture.stdoutJson()).not.toHaveProperty('output');
+    expect(readFileSync(outside, 'utf8')).toBe('untouched\n');
+    expect(lstatSync(log).isSymbolicLink()).toBe(false);
+    expect(statSync(log).mode & 0o777).toBe(0o600);
+    expect(await fixture.run(['stop'])).toBe(0);
   });
 
   it('install runs setup, start, and open under one operation lock', async () => {

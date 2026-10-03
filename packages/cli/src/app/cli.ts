@@ -7,7 +7,7 @@
  */
 
 import { resolve } from 'node:path';
-import { redactSecrets } from './errors.js';
+import { ApplicationStartError, redactSecrets } from './errors.js';
 import {
   devServerArguments,
   launchVite,
@@ -72,6 +72,13 @@ export interface AppErrorEnvelope {
   /** Stable runtime code when the failure carries one (e.g. `migration_failed`). */
   runtimeCode?: string;
   message: string;
+  /**
+   * `start` only: the redacted, bounded (≤ 8 KiB) tail of the web process's
+   * stdout/stderr when it never proved readiness.
+   */
+  output?: string;
+  /** `start` only: the private (0600) log that `output` was read from. */
+  logFile?: string;
   recovery: string;
   secretValuesIncluded: false;
 }
@@ -92,6 +99,14 @@ export function errorEnvelope(error: unknown): AppErrorEnvelope {
     message: redactSecrets(
       error instanceof Error ? error.message : 'Application operation failed.',
     ),
+    ...(error instanceof ApplicationStartError
+      ? {
+          // Redacted against the child's environment when captured; again
+          // here against this process's, like every other message.
+          output: redactSecrets(error.output),
+          logFile: error.logFile,
+        }
+      : {}),
     recovery: APP_RECOVERY,
     secretValuesIncluded: false,
   };

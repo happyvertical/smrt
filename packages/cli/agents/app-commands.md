@@ -58,6 +58,11 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   plus `runtimeCode` when a `LocalRuntimeError` carries one
   (`migration_failed` + `MIGRATION_FAILED_MESSAGE`). Messages pass through
   `redactSecrets()` (secret-named env values, URL userinfo, `token=`, Bearer).
+  `start` sends the detached web process's stdout/stderr to a fresh 0600
+  `<state>/app.log` per start (removed, then created `wx`; a pipe would EPIPE
+  once the CLI exits); a start that never proves readiness adds `output` (the
+  last ≤ 8 KiB, redacted against the child env before the cut) and `logFile`
+  (`ApplicationStartError`).
   The bootstrap token is written only to mode-0600 `onboarding.json` /
   `onboarding-launch.html`; `open` passes the launch file URL, never the token. `setup`/`recover` print the one-time
   `/setup?token=` URL only to an interactive terminal (`io.operatorTerminal`,

@@ -30,6 +30,23 @@ export class AppCommandError extends Error {
   }
 }
 
+/**
+ * A `smrt app start` whose web process never proved readiness. Carries the
+ * already-redacted, bounded tail of that process's output and the private
+ * log it came from, for the error envelope.
+ */
+export class ApplicationStartError extends Error {
+  readonly output: string;
+  readonly logFile: string;
+
+  constructor(message: string, output: string, logFile: string) {
+    super(message);
+    this.name = 'ApplicationStartError';
+    this.output = output;
+    this.logFile = logFile;
+  }
+}
+
 /** Minimum length before an environment value is treated as redactable. */
 const MIN_REDACTED_VALUE_LENGTH = 8;
 
