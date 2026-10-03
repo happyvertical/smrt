@@ -86,9 +86,15 @@ Application infrastructure composition for the validated runtime profiles in
   transaction-bound request db (class `db` overrides win). Anything that
   outlives a request (session service, tenant selector) must use the base
   config, never these.
-- The writer lease and provider readiness are injected hooks. Apps pass the root entry's `acquireWriterLease` (over
-  `prepareApplicationStateRoot`) and `createProviderReadinessProbe`; deployed
-  startup fails closed without `providerReadiness`.
+- The local writer lease defaults to `defaultWriterLease()` (root
+  `acquireWriterLease` over `prepareApplicationStateRoot`, presenting
+  `SMRT_OPERATION_INSTANCE`); `acquireWriterLease` replaces it, `false` opts
+  out, deployed profiles never take it. Provider readiness stays injected:
+  apps pass `createProviderReadinessProbe`; deployed startup fails closed
+  without `providerReadiness`.
+- `getCollection()` builds from `classOptions()` on every call (RLS request db
+  inside a request); generated routes reach it through core's
+  `createGeneratedCollectionAccess()` over the app's exported `runtime`.
 - Owner setup removes the `smrt app` onboarding hand-off files by default,
   immediately after the claim commits (before cookie serialization or hooks);
   `onOwnerClaimed` is for additional cleanup and

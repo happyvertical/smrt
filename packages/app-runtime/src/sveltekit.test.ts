@@ -28,13 +28,23 @@ import {
 } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { type Handle, isActionFailure, isRedirect } from '@sveltejs/kit';
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import {
   LocalRuntimeError,
   MIGRATION_FAILED_MESSAGE,
   ONBOARDING_HANDOFF_FILES,
   projectRuntimeDiagnostics,
+  readActiveWriterLease,
   resolveApplicationId,
+  resolveApplicationStateRoot,
   runtimeConfigurationFingerprint,
 } from './index.js';
 import {
@@ -93,8 +103,19 @@ afterEach(async () => {
   initializationLockPaths.clear();
 });
 
-afterAll(() => {
+// Local runtimes take the state-root writer lease by default (#3416). Keep
+// every state root (derived from XDG_STATE_HOME, like `smrt app`) inside a
+// test-owned directory instead of the user's real state directory.
+let stateHome = '';
+beforeAll(async () => {
+  stateHome = await realpath(await mkdtemp(join(tmpdir(), 'smrt-sk-state-')));
+  vi.stubEnv('XDG_STATE_HOME', stateHome);
+});
+
+afterAll(async () => {
   disableTenancy();
+  vi.unstubAllEnvs();
+  await rm(stateHome, { recursive: true, force: true });
 });
 
 async function localDirectories(label: string) {
@@ -1025,6 +1046,90 @@ describe('local SvelteKit runtime', () => {
       Promise.resolve(publicHost.runtime.init()),
     ).rejects.toMatchObject({ code: 'unsafe_public_exposure' });
     expect(release).toHaveBeenCalledOnce();
+  });
+
+  describe('default writer lease (#3416)', () => {
+    function stateRootOf(
+      runtime: SmrtSvelteKitRuntime,
+      directories: { sourceRoot: string; dataDirectory: string },
+    ): string {
+      return resolveApplicationStateRoot({
+        appId: runtime.applicationId(),
+        ...directories,
+      });
+    }
+
+    it('holds the state-root writer lease shared with smrt app by default', async () => {
+      const { runtime, ...directories } = await localRuntime('lease-default');
+      await runtime.init();
+      const stateRoot = stateRootOf(runtime, directories);
+      expect(stateRoot.startsWith(stateHome)).toBe(true);
+      expect(readActiveWriterLease(stateRoot)).toMatchObject({
+        schemaVersion: 1,
+        pid: process.pid,
+      });
+    });
+
+    it('takes no lease with acquireWriterLease: false', async () => {
+      const { runtime, ...directories } = await localRuntime('lease-optout', {
+        acquireWriterLease: false,
+      });
+      await runtime.init();
+      expect(readActiveWriterLease(stateRootOf(runtime, directories))).toBe(
+        null,
+      );
+    });
+
+    it('fails closed during a live operation unless it presents that operation instance', async () => {
+      const directories = await localDirectories('lease-operation');
+      const instance = 'a'.repeat(32);
+      const probe = createSmrtSvelteKitRuntime({
+        ...directories,
+        runtime: LOCAL,
+        acquireWriterLease: false,
+      });
+      const stateRoot = stateRootOf(probe, directories);
+      await mkdir(stateRoot, { recursive: true, mode: 0o700 });
+      // A live process other than this one (the test runner's parent).
+      await writeFile(
+        join(stateRoot, 'operation.lock'),
+        JSON.stringify({ schemaVersion: 1, pid: process.ppid, instance }),
+        { mode: 0o600 },
+      );
+
+      const outsider = createSmrtSvelteKitRuntime({
+        ...directories,
+        runtime: LOCAL,
+        env: { NODE_ENV: 'development' },
+      });
+      await expect(Promise.resolve(outsider.init())).rejects.toThrow(
+        'An application operation is active',
+      );
+      expect(readActiveWriterLease(stateRoot)).toBe(null);
+
+      const managed = createSmrtSvelteKitRuntime({
+        ...directories,
+        runtime: LOCAL,
+        env: { NODE_ENV: 'development', SMRT_OPERATION_INSTANCE: instance },
+      });
+      openRuntimes.push(managed);
+      await managed.init();
+      expect(readActiveWriterLease(stateRoot)?.pid).toBe(process.pid);
+    });
+
+    it('releases the default lease when local startup fails', async () => {
+      const { runtime, ...directories } = await localRuntime('lease-release', {
+        prepareDatabase: async () => {
+          throw new Error('migration failed');
+        },
+      });
+      await expect(Promise.resolve(runtime.init())).rejects.toMatchObject({
+        code: 'migration_failed',
+      });
+      expect(readActiveWriterLease(stateRootOf(runtime, directories))).toBe(
+        null,
+      );
+    });
   });
 });
 

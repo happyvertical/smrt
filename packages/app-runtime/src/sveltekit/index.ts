@@ -43,6 +43,7 @@ export {
   authorizedTenantLocalsHandle,
   composeHandles,
   createSmrtSvelteKitRuntime,
+  defaultWriterLease,
   type ProviderReadinessComponent,
   type ProviderReadinessFactory,
   type RuntimeHealthBody,

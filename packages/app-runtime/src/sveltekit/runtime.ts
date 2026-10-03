@@ -26,7 +26,12 @@ import {
   resolveApplicationRuntime,
   resolveConfiguredApplicationRuntime,
 } from '@happyvertical/smrt-config';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmrtClassOptions,
+  type SmrtCollection,
+  type SmrtObject,
+} from '@happyvertical/smrt-core';
 import {
   enableTenancy,
   getCurrentTenant,
@@ -71,8 +76,11 @@ import {
   type RuntimeDiagnostics,
   type RuntimeDiagnosticsProjectionInput,
 } from '../runtime-diagnostics.js';
-import { resolveApplicationStateRoot } from '../state-root.js';
-import type { WriterLease } from '../writer-lease.js';
+import {
+  prepareApplicationStateRoot,
+  resolveApplicationStateRoot,
+} from '../state-root.js';
+import { acquireWriterLease, type WriterLease } from '../writer-lease.js';
 import {
   createSubdomainTenantSelector,
   normalizeTenantSelection,
@@ -194,10 +202,16 @@ export interface SmrtSvelteKitRuntimeOptions {
   /** Session lifetime for the owner-bootstrap session cookie. Default 7 days. */
   readonly sessionTtlSeconds?: number;
   /**
-   * Local single-writer lease held for the web process (for example the CLI's
-   * state-root writer lease). Released when local startup fails.
+   * Local single-writer lease held for the web process, released when local
+   * startup fails. Defaults to the state-root writer lease shared with
+   * `smrt app` operations ({@link defaultWriterLease}: `writer.lease` under
+   * `prepareApplicationStateRoot()`, presenting `SMRT_OPERATION_INSTANCE`).
+   * Pass a factory to replace it, or `false` to hold no lease. Deployed
+   * profiles never take it.
    */
-  readonly acquireWriterLease?: (context: WriterLeaseContext) => WriterLease;
+  readonly acquireWriterLease?:
+    | ((context: WriterLeaseContext) => WriterLease)
+    | false;
   /**
    * Deployed provider readiness probes. Required by `self-hosted` and `cloud`;
    * deployed startup fails closed without them.
@@ -282,6 +296,15 @@ export interface SmrtSvelteKitRuntime {
    * Same per-request rule as {@link databaseConfig}.
    */
   classOptions(className: string): SmrtClassOptions;
+  /**
+   * The registered collection for a class, built from {@link classOptions}
+   * evaluated on this call: inside an RLS request it is bound to the request
+   * transaction. Generated API routes resolve collections through it. Call it
+   * per request and never retain the result beyond that request.
+   */
+  getCollection<T extends SmrtObject = SmrtObject>(
+    className: string,
+  ): Promise<SmrtCollection<T>>;
   /**
    * Run `fn` as a principal the route verified itself (for example a bearer
    * token mapped by an MCP route), replacing the cookie session's permission
@@ -449,6 +472,17 @@ export function composeSmrtSvelteKitRuntime(
     return requestDb ? { ...base, db: requestDb } : base;
   };
 
+  const getCollection = <T extends SmrtObject = SmrtObject>(
+    className: string,
+  ): Promise<SmrtCollection<T>> =>
+    ObjectRegistry.getCollection<T>(className, classOptions(className));
+
+  const writerLease =
+    options.acquireWriterLease === false
+      ? undefined
+      : (options.acquireWriterLease ??
+        ((context: WriterLeaseContext) => defaultWriterLease(context, env)));
+
   let localPromise: Promise<LocalApplicationRuntime> | undefined;
   let localLease: WriterLease | undefined;
   const localRuntime = async (): Promise<LocalApplicationRuntime> => {
@@ -469,7 +503,7 @@ export function composeSmrtSvelteKitRuntime(
       );
     }
     const id = applicationId();
-    localLease ??= options.acquireWriterLease?.({
+    localLease ??= writerLease?.({
       appId: id,
       dataDirectory,
       sourceRoot,
@@ -889,12 +923,32 @@ export function composeSmrtSvelteKitRuntime(
     configurationFingerprint,
     databaseConfig,
     classOptions,
+    getCollection,
     runAsPrincipal,
     localRuntime,
     deployedRuntime,
     health,
     readDiagnostics,
   });
+}
+
+/**
+ * The default local writer lease: the state-root `writer.lease` shared with
+ * `smrt app` operations, presenting the managed operation instance
+ * (`SMRT_OPERATION_INSTANCE`) that `smrt app start` passes to its writer.
+ */
+export function defaultWriterLease(
+  context: WriterLeaseContext,
+  env: NodeJS.ProcessEnv = process.env,
+): WriterLease {
+  return acquireWriterLease(
+    prepareApplicationStateRoot({
+      appId: context.appId,
+      dataDirectory: context.dataDirectory,
+      sourceRoot: context.sourceRoot,
+    }),
+    { operationInstance: env.SMRT_OPERATION_INSTANCE },
+  );
 }
 
 /** Locals whose session tenant passed {@link isSessionTenantAuthorized}. */

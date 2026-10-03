@@ -148,11 +148,18 @@ at most once: its error propagates unchanged, and a session-layer failure
 before it returns 500 with no authenticated locals. Defaults read `SMRT_APP_ID`, `SMRT_DATA_DIR`, `HOST`, `DATABASE_URL`,
 `TENANT_BASE_DOMAIN`, and `SMRT_BACKGROUND_JOBS`; `smrt.config` `runtime`
 selects the profile (local when absent). Deployed profiles additionally require
-`providerReadiness` probes and fail closed without them. Optional hooks:
-`acquireWriterLease` (local single-writer lease), `onBootstrapInvitation`
-(present a newly issued setup token), `selectTenant`, `session`, and
-`classOverrides`. `runtime.classOptions(className)` returns collection options
-for application code.
+`providerReadiness` probes and fail closed without them. In the local profile
+the runtime holds the single-writer lease shared with `smrt app` operations by
+default (`defaultWriterLease()`: `writer.lease` under
+`prepareApplicationStateRoot()`, presenting `SMRT_OPERATION_INSTANCE`); pass
+`acquireWriterLease` to replace it or `acquireWriterLease: false` to hold none.
+Optional hooks: `onBootstrapInvitation` (present a newly issued setup token),
+`selectTenant`, `session`, and `classOverrides`.
+`runtime.getCollection(className)` returns the registered collection built
+from `runtime.classOptions(className)` on that call; generated `/api/*` routes
+resolve collections through it (the `smrt()` Vite plugin's route prelude reads
+the `runtime` exported by `src/lib/server/smrt.ts`), so an app's `smrt.ts` is
+only the runtime and its options.
 
 Mountable routes:
 
@@ -189,21 +196,16 @@ the web health route and process managers.
 The root entry also owns the operator state shared with `smrt app`:
 `prepareApplicationStateRoot()` (private, app-bound state directory),
 `withOperationLock()`, `acquireWriterLease()` / `readActiveWriterLease()`,
-and `createProviderReadinessProbe()`. A SvelteKit app wires the last two into
-its runtime without depending on the CLI:
+and `createProviderReadinessProbe()`. The SvelteKit runtime takes the writer
+lease itself; a SvelteKit app passes only the readiness probe and its own
+options, without depending on the CLI:
 
 ```ts
-import {
-  acquireWriterLease,
-  createProviderReadinessProbe,
-  prepareApplicationStateRoot,
-} from '@happyvertical/smrt-app-runtime';
+// src/lib/server/smrt.ts
+import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
+import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 
 export const runtime = createSmrtSvelteKitRuntime({
-  acquireWriterLease: (context) =>
-    acquireWriterLease(prepareApplicationStateRoot(context), {
-      operationInstance: process.env.SMRT_OPERATION_INSTANCE,
-    }),
   providerReadiness: createProviderReadinessProbe,
 });
 ```
