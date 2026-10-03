@@ -798,6 +798,40 @@ describe('smrt app start / stop', () => {
     expect(everything).not.toContain('x7k2');
   });
 
+  it('masks credentials an env value only partly matches in the captured output (#3410 item 4, review G1/G2)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    const saved = {
+      SMRT_TOKEN: process.env.SMRT_TOKEN,
+      BASE_URL: process.env.BASE_URL,
+    };
+    process.env.SMRT_TOKEN = 'abcdefgh';
+    process.env.BASE_URL = 'postgres://smrt';
+    try {
+      writeFakeBuild(
+        fixture.app,
+        `
+        console.error('Authorization: Bearer abcdefghXYZ123');
+        console.error('connect postgres://smrt:${DB_PASSWORD}@db/app');
+        process.exit(5);
+        `,
+      );
+      expect(await fixture.run(['start'])).toBe(1);
+      const envelope = fixture.stderrJson();
+      expect(envelope.secretValuesIncluded).toBe(false);
+      expect(envelope.output).toContain('Bearer [redacted]');
+      const everything = allOutput(fixture);
+      for (const secret of ['abcdefgh', 'XYZ123', DB_PASSWORD]) {
+        expect(everything).not.toContain(secret);
+      }
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it('carries the output tail when a server never proves readiness', async () => {
     const fixture = makeFixture();
     const port = await freePort();
