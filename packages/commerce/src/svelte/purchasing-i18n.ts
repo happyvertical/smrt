@@ -38,4 +38,26 @@ export const P = defineMessages({
   'commerce.purchase.total': 'Reviewed total',
   'commerce.purchase.uncertain':
     'Retry the same reviewed submission. Its request identity and review fingerprint are retained.',
+  'commerce.purchase.demo_added':
+    'Demo: allocation added; entered values retained.',
+  'commerce.purchase.demo_removed': 'Demo: allocation removed.',
+  'commerce.purchase.demo_invalid':
+    'Demo validation: enter valid CAD amounts and included tax no greater than the total. Your values are retained.',
+  'commerce.purchase.demo_authority':
+    'Local CAD demonstration only; the application server owns validation and authorization.',
+  'commerce.purchase.demo_review': 'Demo review of supplied source evidence.',
+  'commerce.purchase.demo_edit':
+    'Demo: return to editing; request identity retained.',
+  'commerce.purchase.demo_uncertain':
+    'Demo uncertain response. Values, request identity and review fingerprint retained; no financial record was written.',
+  'commerce.purchase.demo_source':
+    'Demo source selected; no commitment recorded.',
+  'commerce.purchase.demo_notice':
+    'This demonstration simulates preparation, review and an uncertain response. No purchase or award is written.',
+  'commerce.purchase.demo_amendment': 'Preview ordinary amendment',
+  'commerce.purchase.demo_reduction': 'Preview explicit reduction',
+  'commerce.purchase.demo_unavailable': 'Unavailable source',
+  'commerce.purchase.demo_order': 'Purchase order',
+  'commerce.purchase.demo_agreement': 'Agreement',
+  'commerce.purchase.demo_additional': 'Additional allocation {number}',
 });

@@ -1,5 +1,7 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { P } from '../purchasing-i18n.js';
 import type {
   PurchaseDraftValues,
   PurchaseReviewSnapshot,
@@ -12,6 +14,7 @@ export interface Props {
   reduction?: boolean;
 }
 let { reduction = false }: Props = $props();
+const { t } = useI18n();
 let values = $state<PurchaseDraftValues>({
   instrument: 'purchase-order',
   tax: '0.00',
@@ -68,18 +71,18 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
       ...values.allocations,
       {
         id: `new-${++sequence}`,
-        label: `Additional allocation ${sequence}`,
+        label: t(P['commerce.purchase.demo_additional'], { number: sequence }),
         amount: '',
       },
     ];
     review = undefined;
-    message = 'Demo: allocation added; entered values retained.';
+    message = t(P['commerce.purchase.demo_added']);
   } else if (intent.startsWith('removeAllocation:')) {
     values.allocations = values.allocations.filter(
       (row) => row.id !== intent.slice('removeAllocation:'.length),
     );
     review = undefined;
-    message = 'Demo: allocation removed.';
+    message = t(P['commerce.purchase.demo_removed']);
   } else if (intent === 'review') {
     const amounts = values.allocations.map((row) => demoCadMinor(row.amount));
     const taxMinor = demoCadMinor(values.tax);
@@ -94,8 +97,7 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
       BigInt(taxMinor) > sum
     ) {
       review = undefined;
-      message =
-        'Demo validation: enter valid CAD amounts and included tax no greater than the total. Your values are retained.';
+      message = t(P['commerce.purchase.demo_invalid']);
       return;
     }
     review = {
@@ -104,17 +106,14 @@ function submit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
       total: { currency: 'CAD', minorUnitDigits: 2, amountMinor: Number(sum) },
       taxMinor,
       scope: values.scope,
-      notices: [
-        'Local CAD demonstration only; the application server owns validation and authorization.',
-      ],
+      notices: [t(P['commerce.purchase.demo_authority'])],
     };
-    message = 'Demo review of supplied source evidence.';
+    message = t(P['commerce.purchase.demo_review']);
   } else if (intent === 'edit') {
     review = undefined;
-    message = 'Demo: return to editing; request identity retained.';
+    message = t(P['commerce.purchase.demo_edit']);
   } else {
-    message =
-      'Demo uncertain response. Values, request identity and review fingerprint retained; no financial record was written.';
+    message = t(P['commerce.purchase.demo_uncertain']);
   }
 }
 function selectSource(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
@@ -125,10 +124,10 @@ function selectSource(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
       ? { id, label: 'Quotation Q-105', vendor: 'South Studio' }
       : { id: 'source-1', label: 'Quotation Q-104', vendor: 'North Studio' };
   review = undefined;
-  message = 'Demo source selected; no commitment recorded.';
+  message = t(P['commerce.purchase.demo_source']);
 }
 </script>
-<p>This demonstration simulates preparation, review and an uncertain response. No purchase or award is written.</p>
-<Button variant="secondary" onclick={()=>{reduction=!reduction;review=undefined;}}>{reduction?'Preview ordinary amendment':'Preview explicit reduction'}</Button>
-<PurchaseSourceSelector disabled={reduction} action="" value={source.id} sources={[{id:'source-1',label:'Quotation Q-104',vendor:'North Studio'},{id:'source-2',label:'Quotation Q-105',vendor:'South Studio'},{id:'source-old',label:'Quotation Q-099',vendor:'Prior Vendor',disabled:true,notice:'Unavailable source'}]} onsubmit={selectSource}/>
-<PurchaseOrderEditor operation={reduction?'reduce':'amend'} {source} currency="CAD" minorUnitDigits={2} {values} instruments={[{value:'purchase-order',label:'Purchase order'},{value:'agreement',label:'Agreement'}]} action="" {review} {message} hiddenFields={[{name:'requestId',value:'demo-purchase-request'},{name:'sourceId',value:source.id},{name:'predecessorId',value:'order-previous'}]} rowActions={{add:'addAllocation',removePrefix:'removeAllocation:'}} onsubmit={submit}/>
+<p>{t(P['commerce.purchase.demo_notice'])}</p>
+<Button variant="secondary" onclick={()=>{reduction=!reduction;review=undefined;}}>{reduction?t(P['commerce.purchase.demo_amendment']):t(P['commerce.purchase.demo_reduction'])}</Button>
+<PurchaseSourceSelector disabled={reduction} action="" value={source.id} sources={[{id:'source-1',label:'Quotation Q-104',vendor:'North Studio'},{id:'source-2',label:'Quotation Q-105',vendor:'South Studio'},{id:'source-old',label:'Quotation Q-099',vendor:'Prior Vendor',disabled:true,notice:t(P['commerce.purchase.demo_unavailable'])}]} onsubmit={selectSource}/>
+<PurchaseOrderEditor operation={reduction?'reduce':'amend'} {source} currency="CAD" minorUnitDigits={2} {values} instruments={[{value:'purchase-order',label:t(P['commerce.purchase.demo_order'])},{value:'agreement',label:t(P['commerce.purchase.demo_agreement'])}]} action="" {review} {message} hiddenFields={[{name:'requestId',value:'demo-purchase-request'},{name:'sourceId',value:source.id},{name:'predecessorId',value:'order-previous'}]} rowActions={{add:'addAllocation',removePrefix:'removeAllocation:'}} onsubmit={submit}/>
