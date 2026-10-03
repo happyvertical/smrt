@@ -22,7 +22,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   acquireWriterLease,
@@ -725,9 +725,24 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
             ),
           label: 'Backup destination',
         });
+        const storageRelative = relative(paths.root, destination);
+        if (
+          storageRelative === '' ||
+          (!isAbsolute(storageRelative) &&
+            storageRelative !== '..' &&
+            !storageRelative.startsWith(`..${sep}`))
+        ) {
+          throw new Error(
+            'Backup destination must remain outside local storage.',
+          );
+        }
         ensurePrivateDirectory(dirname(destination));
+        const ownershipMarker = `.smrt-backup-${randomBytes(12).toString('hex')}`;
         try {
           mkdirSync(destination, { mode: 0o700 });
+          writeFileSync(join(destination, ownershipMarker), '', {
+            mode: 0o600,
+          });
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
             throw error;
@@ -742,9 +757,18 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
               errorOnExist: true,
             });
           }
+          rmSync(join(destination, ownershipMarker), { force: true });
           chmodSync(destination, 0o700);
         } catch (error) {
-          rmSync(destination, { recursive: true, force: true });
+          const quarantine = `${destination}.failed-${randomBytes(6).toString('hex')}`;
+          renameSync(destination, quarantine);
+          if (!existsSync(join(quarantine, ownershipMarker))) {
+            throw new Error(
+              `Backup failed and the reserved destination was replaced; preserved at ${quarantine}`,
+              { cause: error },
+            );
+          }
+          rmSync(quarantine, { recursive: true, force: true });
           throw error;
         }
         printJson(context, {
