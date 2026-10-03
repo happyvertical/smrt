@@ -114,9 +114,12 @@ describe('safe-remote-url SSRF guard', () => {
   });
 
   it('honours allowPrivateNetworkHosts for trusted callers', async () => {
+    const resolveHostname = vi.fn();
     const url = await assertSafeRemoteUrl('http://127.0.0.1:8080/feed', {
       allowPrivateNetworkHosts: true,
+      resolveHostname,
     });
     expect(url.hostname).toBe('127.0.0.1');
+    expect(resolveHostname).not.toHaveBeenCalled();
   });
 });
