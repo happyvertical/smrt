@@ -832,6 +832,28 @@ describe('smrt app start / stop', () => {
     }
   });
 
+  it('keeps a one-character secret masked once, markers intact, within the bound (#3410 item 4, review H1)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    process.env.SMRT_SECRET_KEY = 'e';
+    writeFakeBuild(
+      fixture.app,
+      `
+      for (let line = 0; line < 5000; line += 1) console.error('e');
+      process.exit(6);
+      `,
+    );
+    expect(await fixture.run(['start'])).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.secretValuesIncluded).toBe(false);
+    const output = envelope.output as string;
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(8 * 1024);
+    const lines = output.split('\n').filter((line) => line !== '');
+    expect(lines.length).toBeGreaterThan(100);
+    for (const line of lines) expect(line).toBe('[redacted]');
+    expect(output.replaceAll('[redacted]', '')).not.toContain('e');
+  });
+
   it('carries the output tail when a server never proves readiness', async () => {
     const fixture = makeFixture();
     const port = await freePort();

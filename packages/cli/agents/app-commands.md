@@ -60,7 +60,8 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   (`migration_failed` + `MIGRATION_FAILED_MESSAGE`). Messages pass through
   `redactSecrets()` (secret-named env values, URL userinfo, `token=`, Bearer;
   every span is found on the raw text and the union masked at once, so a
-  literal value never splits a structural match).
+  literal value never splits a structural match; existing `[redacted]`
+  markers are opaque, so a second pass neither corrupts nor grows text).
   `start` sends the detached web process's stdout/stderr to a fresh 0600
   `<state>/app.log` per start (removed, then created `wx`; a pipe would EPIPE
   once the CLI exits); a start that never proves readiness adds `output` (the

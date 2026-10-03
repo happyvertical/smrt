@@ -32,7 +32,7 @@ import {
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { errorEnvelope } from '../cli.js';
-import { redactSecrets } from '../errors.js';
+import { boundedTail, redactSecrets } from '../errors.js';
 import {
   assertExternalArtifactPath,
   prepareApplicationStateRoot,
@@ -438,6 +438,32 @@ describe('secret redaction', () => {
       )) {
         expect(legacy).toContain(segment);
       }
+    });
+
+    it('treats existing markers as opaque and never grows on a second pass (review H1)', () => {
+      const environment = { SMRT_SECRET_KEY: 'e', SMRT_TOKEN: 'abcdefgh' };
+      expect(redactSecrets('[redacted] e', environment, { strict: true })).toBe(
+        '[redacted] [redacted]',
+      );
+      for (const text of [
+        'e\ne\ne\n',
+        'Authorization: Bearer abcdefghXYZ123 then e',
+        `connect postgres://smrt:${PASSWORD}@db/app?token=e&x=1`,
+        'a Bearer x',
+      ]) {
+        const once = redactSecrets(text, environment, { strict: true });
+        const twice = redactSecrets(once, environment, { strict: true });
+        expect(twice).toBe(once);
+        expect(once.replaceAll('[redacted]', '')).not.toContain('e');
+      }
+    });
+
+    it('cuts a tail within the byte bound, even through a multi-byte character', () => {
+      expect(boundedTail('short', 10)).toBe('short');
+      expect(boundedTail('drop me\nkeep', 8)).toBe('keep');
+      const cut = boundedTail('é'.repeat(20), 9);
+      expect(Buffer.byteLength(cut)).toBeLessThanOrEqual(9);
+      expect(cut).toMatch(/^é+$/);
     });
 
     it('keeps the short-value and BASE_URL=/ cases in strict mode', () => {

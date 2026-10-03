@@ -101,7 +101,16 @@ function structuralSpans(text: string, strict: boolean): Span[] {
   return spans;
 }
 
-function literalSpans(text: string, values: readonly string[]): Span[] {
+/** Every existing `[redacted]` marker in `text`: opaque to later passes. */
+function markerSpans(text: string): Span[] {
+  return literalSpans(text, [REDACTED], []);
+}
+
+function literalSpans(
+  text: string,
+  values: readonly string[],
+  opaque: readonly Span[],
+): Span[] {
   const spans: Span[] = [];
   for (const value of values) {
     for (
@@ -109,7 +118,12 @@ function literalSpans(text: string, values: readonly string[]): Span[] {
       index !== -1;
       index = text.indexOf(value, index + 1)
     ) {
-      spans.push([index, index + value.length]);
+      const end = index + value.length;
+      // Never match inside an existing marker (`e` in `[redacted]`).
+      if (opaque.some(([start, stop]) => index >= start && end <= stop)) {
+        continue;
+      }
+      spans.push([index, end]);
     }
   }
   return spans;
@@ -167,11 +181,34 @@ export function redactSecrets(
         SECRET_ENVIRONMENT_NAME.test(name),
     )
     .map(([, value]) => value as string);
+  // Markers already in the text join the union, so a span touching one
+  // merges into it instead of corrupting or duplicating it.
+  const markers = markerSpans(message);
   const masked = maskSpans(message, [
+    ...markers,
     ...structuralSpans(message, strict),
-    ...literalSpans(message, secretValues),
+    ...literalSpans(message, secretValues, markers),
   ]);
   // Monotone cleanup: only adds masks (e.g. a host the literal pass exposed
   // to the userinfo pattern, or an empty `scheme://@` userinfo).
-  return maskSpans(masked, structuralSpans(masked, strict));
+  return maskSpans(masked, [
+    ...markerSpans(masked),
+    ...structuralSpans(masked, strict),
+  ]);
+}
+
+/**
+ * The last `maxBytes` of `text`: a leading partial line (and any split
+ * multi-byte character) is dropped when the cut lands mid-text. Redact
+ * before cutting; cutting never exposes anything redaction masked.
+ */
+export function boundedTail(text: string, maxBytes: number): string {
+  const bytes = Buffer.from(text, 'utf8');
+  if (bytes.length <= maxBytes) return text;
+  const tail = bytes.subarray(bytes.length - maxBytes).toString('utf8');
+  let cut = tail.slice(tail.indexOf('\n') + 1);
+  // No newline to cut at: a split leading character decodes to U+FFFD,
+  // which may be wider than the bytes it replaced; drop it.
+  while (Buffer.byteLength(cut) > maxBytes) cut = cut.slice(1);
+  return cut;
 }

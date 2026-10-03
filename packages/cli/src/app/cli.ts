@@ -7,7 +7,7 @@
  */
 
 import { resolve } from 'node:path';
-import { ApplicationStartError, redactSecrets } from './errors.js';
+import { ApplicationStartError, boundedTail, redactSecrets } from './errors.js';
 import {
   devServerArguments,
   launchVite,
@@ -19,6 +19,7 @@ import {
   APP_OPERATIONS,
   type AppOperation,
   runApplicationOperation,
+  START_OUTPUT_TAIL_BYTES,
 } from './operations.js';
 import {
   type AppCommandDependencies,
@@ -103,7 +104,12 @@ export function errorEnvelope(error: unknown): AppErrorEnvelope {
       ? {
           // Redacted against the child's environment when captured; again
           // here against this process's, like every other message.
-          output: redactSecrets(error.output, process.env, { strict: true }),
+          // Markers are opaque to this pass and the result is re-bounded,
+          // so it can neither corrupt nor grow the captured tail.
+          output: boundedTail(
+            redactSecrets(error.output, process.env, { strict: true }),
+            START_OUTPUT_TAIL_BYTES,
+          ),
           logFile: error.logFile,
         }
       : {}),

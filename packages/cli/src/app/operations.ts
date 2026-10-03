@@ -33,7 +33,12 @@ import {
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
-import { ApplicationStartError, errorCode, redactSecrets } from './errors.js';
+import {
+  ApplicationStartError,
+  boundedTail,
+  errorCode,
+  redactSecrets,
+} from './errors.js';
 import {
   assertExternalArtifactPath,
   resolveApplicationStateRoot,
@@ -496,16 +501,10 @@ function redactedLogTail(path: string, env: NodeJS.ProcessEnv): string {
     return '';
   }
   // Strict: child output is arbitrary text, so no length floor applies.
-  const redacted = Buffer.from(
+  return boundedTail(
     redactSecrets(text, env, { strict: true }),
-    'utf8',
+    START_OUTPUT_TAIL_BYTES,
   );
-  if (redacted.length <= START_OUTPUT_TAIL_BYTES) return redacted.toString();
-  const tail = redacted
-    .subarray(redacted.length - START_OUTPUT_TAIL_BYTES)
-    .toString('utf8');
-  // Drop a leading partial line (and any split multi-byte character).
-  return tail.slice(tail.indexOf('\n') + 1);
 }
 
 /**
