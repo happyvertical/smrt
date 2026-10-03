@@ -60,6 +60,15 @@ export default {
     'Component previews for asset browsing, selection, and media states.',
   entries: [
     {
+      id: 'private-attachments',
+      title: 'Private Attachments',
+      description: 'Native upload, retained metadata and version history.',
+      loadComponent: () => import('./playground/AttachmentPanelPreview.svelte'),
+      order: 8,
+      props: {},
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
       id: 'asset-grid',
       title: 'Asset Grid',
       description:
