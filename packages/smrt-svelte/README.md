@@ -639,7 +639,8 @@ Use `shell.setPanelState(edge, 'hidden' | 'collapsed' | 'expanded')` to persist
 runtime panel preferences; app-configured hidden edges remain unavailable.
 AdminShell keeps a discoverable tenant collapse control with supplied navigation
 (`showTenantToggle={false}` opts out), a Menu opener in narrow layouts, and the
-system toggle alongside a custom `systemBar`. Closed narrow drawers are inert;
+system toggle alongside a custom `systemBar` that has a `systemPanel` to open
+(a `systemBar` with no `systemPanel` owns the bottom band and draws no toggle). Closed narrow drawers are inert;
 opening focuses the first control, and closing or Escape restores the opener.
 TenantNav accepts `density="touch"` for canonical 48px link targets, including
 collapsed rail links; omit density to inherit the theme's control density.
