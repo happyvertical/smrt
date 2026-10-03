@@ -86,10 +86,13 @@ Application infrastructure composition for the validated runtime profiles in
   transaction-bound request db (class `db` overrides win). Anything that
   outlives a request (session service, tenant selector) must use the base
   config, never these.
-- The writer lease, provider readiness, and onboarding file cleanup are
-  injected hooks. Apps pass the root entry's `acquireWriterLease` (over
+- The writer lease and provider readiness are injected hooks. Apps pass the root entry's `acquireWriterLease` (over
   `prepareApplicationStateRoot`) and `createProviderReadinessProbe`; deployed
   startup fails closed without `providerReadiness`.
+- Owner setup removes the `smrt app` onboarding hand-off files by default,
+  immediately after the claim commits (before cookie serialization or hooks);
+  `onOwnerClaimed` is for additional cleanup and
+  `removeOnboardingHandoff: false` is the explicit opt-out.
 - Owner setup re-checks loopback peer and loopback URL host per request and
   returns only fixed `{ code, message }` failures.
 - `resolveApplicationId()` / `runtimeConfigurationFingerprint()` must stay

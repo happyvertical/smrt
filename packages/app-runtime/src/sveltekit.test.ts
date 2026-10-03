@@ -673,6 +673,24 @@ describe('local SvelteKit runtime', () => {
       expect(present(files)).toEqual([true, true]);
     });
 
+    it('removes them even when setting the session cookie throws', async () => {
+      const { runtime } = await localRuntime('handoff-cookie');
+      await runtime.init();
+      const files = await seedHandoff(runtime);
+      const page = createOwnerSetupPage(runtime);
+      const token = await bootstrapToken(runtime);
+      const event = testEvent(SETUP_URL, {
+        form: { token, name: 'Owner', email: 'owner@example.com' },
+      });
+      event.cookies.set = () => {
+        throw new Error('bad cookie');
+      };
+      await expect(page.actions.default(event as never)).rejects.toThrow(
+        'bad cookie',
+      );
+      expect(present(files)).toEqual([false, false]);
+    });
+
     it('does not fail the claim when the state root cannot be cleaned', async () => {
       const { runtime } = await localRuntime('handoff-error');
       await runtime.init();

@@ -190,16 +190,8 @@ export function createOwnerSetupPage(
       return failure(400, 'setup_invalid');
     }
 
-    const cookie = runtime.sessionCookie;
-    event.cookies.set(cookie.name, result.sessionId, {
-      path: cookie.path,
-      ...(cookie.domain ? { domain: cookie.domain } : {}),
-      httpOnly: true,
-      secure: cookie.secure ?? event.url.protocol === 'https:',
-      sameSite: cookie.sameSite,
-      maxAge: cookie.maxAgeSeconds,
-    });
-    // claimOwner resolved, so the claim transaction has committed.
+    // claimOwner resolved, so the claim transaction has committed. Clean up
+    // before cookie serialization, which can throw on a malformed config.
     if (
       options.removeOnboardingHandoff !== false &&
       runtime.applicationStateRoot
@@ -210,6 +202,15 @@ export function createOwnerSetupPage(
         // Best effort: the spent token already fails closed.
       }
     }
+    const cookie = runtime.sessionCookie;
+    event.cookies.set(cookie.name, result.sessionId, {
+      path: cookie.path,
+      ...(cookie.domain ? { domain: cookie.domain } : {}),
+      httpOnly: true,
+      secure: cookie.secure ?? event.url.protocol === 'https:',
+      sameSite: cookie.sameSite,
+      maxAge: cookie.maxAgeSeconds,
+    });
     try {
       await options.onOwnerClaimed?.(result, event);
     } catch {
