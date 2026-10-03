@@ -41,9 +41,77 @@ const sampleUnbilledItems = [
   },
 ];
 
+const sampleCustomer = {
+  id: 'customer-riverstone',
+  profileId: 'profile-riverstone',
+  profile: {
+    id: 'profile-riverstone',
+    name: 'Riverstone Newsroom',
+    email: 'accounts@riverstone.example',
+    description: 'Independent newsroom and publishing customer.',
+    identityKind: 'business',
+  },
+  status: 'active',
+  customerType: 'wholesale',
+  creditLimitMinor: 250000,
+  paymentTerms: 'Net 30',
+  taxExempt: false,
+  defaultShippingAddress: {
+    street1: '88 River Avenue',
+    city: 'Edmonton',
+    state: 'AB',
+    postalCode: 'T5J 0K1',
+    country: 'Canada',
+  },
+  contacts: [
+    {
+      id: 'contact-avery',
+      name: 'Avery Chen',
+      label: 'Accounts payable',
+      email: 'avery@riverstone.example',
+      phone: '+1 780 555 0142',
+    },
+  ],
+};
+
+const sampleVendor = {
+  id: 'vendor-northstar',
+  profileId: 'profile-northstar',
+  profile: {
+    id: 'profile-northstar',
+    name: 'Northstar Supply',
+    email: 'orders@northstar.example',
+    description: 'Regional materials and equipment supplier.',
+    identityKind: 'business',
+  },
+  status: 'active',
+  leadTimeDays: 7,
+  minimumOrderMinor: 50000,
+  paymentTerms: 'Net 45',
+  currency: 'CAD',
+  defaultContactEmail: 'orders@northstar.example',
+  defaultContactPhone: '+1 403 555 0188',
+  contacts: [
+    {
+      id: 'contact-morgan',
+      name: 'Morgan Lee',
+      label: 'Order desk',
+      email: 'morgan@northstar.example',
+      phone: '+1 403 555 0117',
+    },
+  ],
+};
+
+const loadCustomerDirectory = () =>
+  import('./components/CustomerDirectory.svelte');
+const loadCustomerDetail = () => import('./components/CustomerDetail.svelte');
+const loadCustomerForm = () => import('./components/CustomerForm.svelte');
 const loadInvoiceActions = () => import('./components/InvoiceActions.svelte');
 const loadInvoiceCard = () => import('./components/InvoiceCard.svelte');
 const loadUnbilledItems = () => import('./components/UnbilledItems.svelte');
+const loadVendorDirectory = () => import('./components/VendorDirectory.svelte');
+const loadVendorDetail = () => import('./components/VendorDetail.svelte');
+const loadVendorForm = () => import('./components/VendorForm.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-commerce',
@@ -73,13 +141,136 @@ export default {
     },
 
     {
+      id: 'customer-directory',
+      title: 'Customer Directory',
+      description:
+        'Search, paging, responsive cards, and consumer-owned links.',
+      loadComponent: loadCustomerDirectory,
+      order: 1,
+      props: {
+        items: [{ data: sampleCustomer, href: '#customer-detail' }],
+        total: 26,
+        page: 1,
+        pageSize: 25,
+        nextHref: '#customer-page-2',
+        addHref: '#add-customer',
+        canCreate: true,
+      },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
+      id: 'customer-detail',
+      title: 'Customer Detail',
+      description:
+        'Profile identity, commercial terms, addresses, and contacts.',
+      loadComponent: loadCustomerDetail,
+      order: 2,
+      props: {
+        customer: sampleCustomer,
+        currency: 'CAD',
+        backHref: '#customers',
+        editHref: '#edit-customer',
+        canEdit: true,
+      },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
+      id: 'customer-form',
+      title: 'Customer Form',
+      description:
+        'Native create/edit submission with retained values and contacts.',
+      loadComponent: loadCustomerForm,
+      order: 3,
+      props: {
+        mode: 'edit',
+        values: {
+          profileId: sampleCustomer.profileId,
+          identityKind: sampleCustomer.profile.identityKind,
+          name: sampleCustomer.profile.name,
+          email: sampleCustomer.profile.email,
+          status: sampleCustomer.status,
+          customerType: sampleCustomer.customerType,
+          creditLimit: '2500.00',
+          paymentTerms: sampleCustomer.paymentTerms,
+          contacts: sampleCustomer.contacts,
+        },
+        transport: {
+          action: '#customer-save',
+          hiddenFields: { requestId: 'demo-request' },
+        },
+        cancelHref: '#customers',
+      },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
+      id: 'vendor-directory',
+      title: 'Vendor Directory',
+      description:
+        'Search, paging, empty/error states, and consumer-owned links.',
+      loadComponent: loadVendorDirectory,
+      order: 4,
+      props: {
+        items: [{ data: sampleVendor, href: '#vendor-detail' }],
+        total: 1,
+        addHref: '#add-vendor',
+        canCreate: true,
+      },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
+      id: 'vendor-detail',
+      title: 'Vendor Detail',
+      description:
+        'Profile identity, purchasing terms, and contact composition.',
+      loadComponent: loadVendorDetail,
+      order: 5,
+      props: {
+        vendor: sampleVendor,
+        backHref: '#vendors',
+        editHref: '#edit-vendor',
+        canEdit: true,
+      },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
+      id: 'vendor-form',
+      title: 'Vendor Form',
+      description:
+        'Native create/edit submission with retained currency text and contacts.',
+      loadComponent: loadVendorForm,
+      order: 6,
+      props: {
+        mode: 'edit',
+        values: {
+          profileId: sampleVendor.profileId,
+          identityKind: sampleVendor.profile.identityKind,
+          name: sampleVendor.profile.name,
+          email: sampleVendor.profile.email,
+          status: sampleVendor.status,
+          leadTimeDays: String(sampleVendor.leadTimeDays),
+          minimumOrder: '500.00',
+          currency: sampleVendor.currency,
+          paymentTerms: sampleVendor.paymentTerms,
+          defaultContactEmail: sampleVendor.defaultContactEmail,
+          defaultContactPhone: sampleVendor.defaultContactPhone,
+          contacts: sampleVendor.contacts,
+        },
+        transport: {
+          action: '#vendor-save',
+          hiddenFields: { expectedTenantId: 'tenant-demo' },
+        },
+        cancelHref: '#vendors',
+      },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
       id: 'invoice-preparation',
       title: 'Invoice Preparation',
       description:
         'Edit allocations and inspect retained values after a simulated rejection.',
       loadComponent: () =>
         import('./playground/InvoicePreparationPreview.svelte'),
-      order: 4,
+      order: 7,
       props: {},
       modes: { mock: { label: 'Mock' } },
     },
@@ -89,7 +280,7 @@ export default {
       description:
         'Compact invoice summary card used in billing and receivables views.',
       loadComponent: loadInvoiceCard,
-      order: 1,
+      order: 20,
       props: {
         invoice: sampleInvoice,
         currency: 'CAD',
@@ -107,7 +298,7 @@ export default {
       description:
         'Status-aware billing actions for sending, printing, exporting, and payment confirmation.',
       loadComponent: loadInvoiceActions,
-      order: 2,
+      order: 21,
       props: {
         status: 'sent',
         onmarkpaid: noop,
@@ -126,7 +317,7 @@ export default {
       description:
         'Selectable unbilled work list for creating a new invoice from accumulated items.',
       loadComponent: loadUnbilledItems,
-      order: 3,
+      order: 22,
       props: {
         items: sampleUnbilledItems,
         currency: 'CAD',
