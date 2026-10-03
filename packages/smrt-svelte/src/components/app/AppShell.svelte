@@ -25,11 +25,13 @@ import RuntimeDiagnosticsWebMcp from './RuntimeDiagnosticsWebMcp.svelte';
 interface Props {
   /** Application name shown in the shell brand and app panel. */
   title?: string;
+  /** Secondary line under the application name in the shell brand. */
   subtitle?: string;
   /** localStorage key for the user's shell layout preferences. */
   storageKey?: string;
   /** Navigation rendered in the tenant (left) panel. */
   nav?: ShellNavItem[];
+  /** Grouped navigation sections rendered below the flat `nav` items. */
   navGroups?: ShellNavGroup[];
   /** Current path, used to highlight the active link (e.g. `page.url.pathname`). */
   currentHref?: string;
@@ -41,15 +43,17 @@ interface Props {
   settingsHref?: string;
   /** Options for the Provider's WebMCP integration; passed through unchanged. */
   webmcp?: boolean | WebMcpProviderConfig;
-  /** Authenticated user and permissions forwarded to the Provider. */
+  /** Authenticated user forwarded to the Provider; `null` renders the shell signed out. */
   user?: User | null;
+  /** The user's resolved permission slugs, forwarded to the Provider for permission-gated UI. */
   permissions?: string[];
   /** Register the read-only runtime diagnostics WebMCP tool. */
   runtimeDiagnostics?: boolean;
   /** Initial panel states and presentation; forwarded to AdminShell. */
   config?: ShellPanelDefaults;
-  /** Theme preset and color scheme. */
+  /** Theme preset applied by the ThemeProvider. */
   preset?: ThemePreset;
+  /** Light, dark or system color scheme; the user's persisted choice wins. */
   colorScheme?: ColorScheme;
   /** Extra app-panel content (e.g. selected-tenant notes). */
   appPanelDocs?: Snippet;
@@ -137,12 +141,7 @@ const hasNav = $derived(nav.length > 0 || navGroups.length > 0);
   :global(body) {
     background: var(--smrt-color-background);
     color: var(--smrt-color-on-background);
-    font-family: var(
-      --smrt-typography-body-font-family,
-      Inter,
-      system-ui,
-      sans-serif
-    );
+    font-family: var(--smrt-font-family, Inter, system-ui, sans-serif);
   }
   a {
     color: var(--smrt-color-primary);
