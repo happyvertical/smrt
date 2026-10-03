@@ -7,7 +7,7 @@
  * consumer did not configure.
  */
 
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 
 export interface SvelteKitConfigImportOptions {
   configPath?: string;
@@ -92,4 +92,27 @@ export function generateCollectionAccessImports(
     `  '${source.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}',`,
     ');',
   ].join('\n');
+}
+
+/** Base name of the generated registration module beside the config module. */
+const REGISTRATION_MODULE_NAME = /^smrt-register(?:\.[cm]?[jt]sx?)?$/i;
+
+/**
+ * Fail generation, before anything is written, when the configured config
+ * module would resolve to the generated registration module (any script
+ * extension or case). Generation overwrites `smrt-register.ts`, and generated
+ * routes import the config module as the application's runtime, so such a
+ * name would destroy the authored file and leave routes without a runtime.
+ */
+export function assertSvelteKitConfigModuleNotReserved(
+  options: SvelteKitConfigImportOptions,
+): void {
+  const configFileName = options.configFileName || 'smrt.ts';
+  if (REGISTRATION_MODULE_NAME.test(basename(normalizePath(configFileName)))) {
+    throw new Error(
+      `[smrt] svelteKit.configFileName '${configFileName}' is reserved for the ` +
+        'generated registration module (smrt-register.ts). Name the ' +
+        "application's SMRT config module something else, for example smrt.ts.",
+    );
+  }
 }

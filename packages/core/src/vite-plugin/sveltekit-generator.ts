@@ -60,6 +60,7 @@ import {
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
+  assertSvelteKitConfigModuleNotReserved,
   generateCollectionAccessImports,
   resolveSvelteKitConfigImport,
 } from './sveltekit-config-import.js';
@@ -1646,6 +1647,8 @@ export async function generateSvelteKitRoutes(
   hooks: SvelteKitGenerationHooks = {},
 ): Promise<void> {
   if (!options.enabled) return;
+  // Before any write: the config module must not alias generated output.
+  assertSvelteKitConfigModuleNotReserved(options);
 
   console.log('[smrt] Generating SvelteKit routes...');
 
