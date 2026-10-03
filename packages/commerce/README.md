@@ -514,3 +514,10 @@ known limits.
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+## Pricing version UI
+
+`PricingVersionSummary` and `PricingVersionDecision` compose the quote revision
+contract without adding a pricing ledger. Compare versions using
+`QuoteRevisionComparison`; the application owns every decision and native form
+action. See [pricing version presentation](agents/pricing-versions.md).

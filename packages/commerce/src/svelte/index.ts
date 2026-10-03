@@ -127,3 +127,31 @@ ModuleUIRegistry.register(
   'quote-revision-comparison',
   QuoteRevisionComparison,
 );
+
+export type {
+  PricingDecisionAction,
+  PricingHiddenField,
+  PricingVersionData,
+  PricingVersionSource,
+} from './pricing-types.js';
+
+import PricingVersionDecision from './components/PricingVersionDecision.svelte';
+import PricingVersionSummary from './components/PricingVersionSummary.svelte';
+
+export { PricingVersionDecision, PricingVersionSummary };
+export type PricingVersionSummaryProps = ComponentProps<
+  typeof PricingVersionSummary
+>;
+export type PricingVersionDecisionProps = ComponentProps<
+  typeof PricingVersionDecision
+>;
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'pricing-version-summary',
+  PricingVersionSummary,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'pricing-version-decision',
+  PricingVersionDecision,
+);
