@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-messages",
-  "version": "0.53.2",
+  "version": "0.53.3",
   "smrtJsdoc": "strict",
   "description": "Unified multi-channel messaging with STI-based hierarchies",
   "type": "module",
