@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import {
   mkdir,
   mkdtemp,
@@ -31,6 +32,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   LocalRuntimeError,
   MIGRATION_FAILED_MESSAGE,
+  ONBOARDING_HANDOFF_FILES,
   projectRuntimeDiagnostics,
   resolveApplicationId,
   runtimeConfigurationFingerprint,
@@ -594,6 +596,103 @@ describe('local SvelteKit runtime', () => {
     const signedIn = testEvent(SETUP_URL);
     signedIn.locals.user = { id: 'someone' };
     await expect(page.load(signedIn)).rejects.toSatisfy(isRedirect);
+  });
+
+  describe('onboarding hand-off files', () => {
+    async function seedHandoff(runtime: { applicationStateRoot(): string }) {
+      const stateRoot = runtime.applicationStateRoot();
+      await mkdir(stateRoot, { recursive: true, mode: 0o700 });
+      const files = ONBOARDING_HANDOFF_FILES.map((name) =>
+        join(stateRoot, name),
+      );
+      for (const file of files) await writeFile(file, 'spent', { mode: 0o600 });
+      return files;
+    }
+    const present = (files: string[]) => files.map((file) => existsSync(file));
+
+    it('removes them after a successful claim, before the optional hook', async () => {
+      const seen: boolean[][] = [];
+      let files: string[] = [];
+      const { runtime } = await localRuntime('handoff-ok');
+      await runtime.init();
+      files = await seedHandoff(runtime);
+      const onOwnerClaimed = vi.fn(() => {
+        seen.push(present(files));
+      });
+      const page = createOwnerSetupPage(runtime, { onOwnerClaimed });
+      const token = await bootstrapToken(runtime);
+      const { redirect } = await runAction(
+        page,
+        testEvent(SETUP_URL, {
+          form: { token, name: 'Owner', email: 'owner@example.com' },
+        }),
+      );
+      expect(redirect).toMatchObject({ status: 303 });
+      expect(present(files)).toEqual([false, false]);
+      // The hook still runs for apps with extra cleanup.
+      expect(onOwnerClaimed).toHaveBeenCalledOnce();
+      expect(seen).toEqual([[false, false]]);
+    });
+
+    it('leaves them untouched when the claim fails', async () => {
+      const { runtime } = await localRuntime('handoff-fail');
+      await runtime.init();
+      const files = await seedHandoff(runtime);
+      const page = createOwnerSetupPage(runtime);
+      const token = await bootstrapToken(runtime);
+      for (const form of [
+        { token: `${token}x`, name: 'Owner', email: 'owner@example.com' },
+        { token, name: '', email: 'owner@example.com' },
+      ]) {
+        await runAction(page, testEvent(SETUP_URL, { form }));
+      }
+      await runAction(
+        page,
+        testEvent(SETUP_URL, {
+          form: { token, name: 'Owner', email: 'owner@example.com' },
+          clientAddress: '203.0.113.9',
+        }),
+      );
+      expect(present(files)).toEqual([true, true]);
+    });
+
+    it('can be kept with removeOnboardingHandoff: false', async () => {
+      const { runtime } = await localRuntime('handoff-keep');
+      await runtime.init();
+      const files = await seedHandoff(runtime);
+      const page = createOwnerSetupPage(runtime, {
+        removeOnboardingHandoff: false,
+      });
+      const token = await bootstrapToken(runtime);
+      await runAction(
+        page,
+        testEvent(SETUP_URL, {
+          form: { token, name: 'Owner', email: 'owner@example.com' },
+        }),
+      );
+      expect(present(files)).toEqual([true, true]);
+    });
+
+    it('does not fail the claim when the state root cannot be cleaned', async () => {
+      const { runtime } = await localRuntime('handoff-error');
+      await runtime.init();
+      const page = createOwnerSetupPage({
+        resolvedRuntime: () => runtime.resolvedRuntime(),
+        localRuntime: () => runtime.localRuntime(),
+        sessionCookie: runtime.sessionCookie,
+        applicationStateRoot: () => {
+          throw new Error('boom');
+        },
+      });
+      const token = await bootstrapToken(runtime);
+      const { redirect } = await runAction(
+        page,
+        testEvent(SETUP_URL, {
+          form: { token, name: 'Owner', email: 'owner@example.com' },
+        }),
+      );
+      expect(redirect).toMatchObject({ status: 303 });
+    });
   });
 
   it('rejects an expired bootstrap token', async () => {

@@ -71,6 +71,7 @@ import {
   type RuntimeDiagnostics,
   type RuntimeDiagnosticsProjectionInput,
 } from '../runtime-diagnostics.js';
+import { resolveApplicationStateRoot } from '../state-root.js';
 import type { WriterLease } from '../writer-lease.js';
 import {
   createSubdomainTenantSelector,
@@ -259,6 +260,12 @@ export interface SmrtSvelteKitRuntime {
   ready(): Promise<void>;
   /** Canonical application ID. */
   applicationId(): string;
+  /**
+   * Private state root shared with the `smrt app` operator commands (writer
+   * lease, operation lock, onboarding hand-off files). Resolves the path only;
+   * it does not create it.
+   */
+  applicationStateRoot(): string;
   /** Secret-free configuration fingerprint. Requires a resolved runtime. */
   configurationFingerprint(): string;
   /**
@@ -873,6 +880,12 @@ export function composeSmrtSvelteKitRuntime(
     resolvedRuntime,
     ready,
     applicationId,
+    applicationStateRoot: () =>
+      resolveApplicationStateRoot({
+        appId: applicationId(),
+        dataDirectory,
+        sourceRoot,
+      }),
     configurationFingerprint,
     databaseConfig,
     classOptions,
