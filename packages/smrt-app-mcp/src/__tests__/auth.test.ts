@@ -246,6 +246,28 @@ describe('remote protected resource', () => {
       },
     });
   });
+  it('reads the principal mapping from own data only', async () => {
+    const value = await token();
+    for (const mapping of [
+      JSON.parse('{"__proto__":{"id":"victim","tenantId":"tenant-a"}}'),
+      JSON.parse('{"id":"alice","__proto__":{"tenantId":"tenant-b"}}'),
+      JSON.parse(
+        '{"id":"alice","tenantId":"tenant-a","__proto__":{"tenantBinding":"direct"}}',
+      ),
+      Object.create({ id: 'alice', tenantId: 'tenant-a' }),
+      Object.defineProperty({ tenantId: 'tenant-a' }, 'id', {
+        enumerable: true,
+        get: () => 'alice',
+      }),
+      // biome-ignore lint/suspicious/noSparseArray: a sparse array is the case under test.
+      { id: 'alice', tenantId: 'tenant-a', roles: ['a', , 'b'] },
+    ]) {
+      const result = await createMcpResourceAuth(
+        options({ resolvePrincipal: async () => mapping }),
+      ).authenticate(request(value));
+      expect(result.ok).toBe(false);
+    }
+  });
   it('carries the tenant binding mode from the mapping, defaulting to direct-or-inherited', async () => {
     const auth = (tenantBinding: unknown) =>
       createMcpResourceAuth(

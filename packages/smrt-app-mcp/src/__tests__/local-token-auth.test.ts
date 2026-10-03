@@ -150,6 +150,34 @@ describe('createLocalMcpTokenAuth', () => {
     });
   });
 
+  it('reads the verified principal from own data only', async () => {
+    for (const principal of [
+      JSON.parse(
+        '{"__proto__":{"id":"victim","tenantId":"t","scopes":["notes.read"]}}',
+      ),
+      JSON.parse(
+        '{"id":"u","__proto__":{"tenantId":"t"},"scopes":["notes.read"]}',
+      ),
+      JSON.parse('{"id":"u","tenantId":"t","__proto__":{"scopes":["x"]}}'),
+      Object.create({ id: 'u', tenantId: 't', scopes: [] }),
+      Object.defineProperty({ tenantId: 't', scopes: [] }, 'id', {
+        enumerable: true,
+        get: () => 'u',
+      }),
+      // biome-ignore lint/suspicious/noSparseArray: a sparse array is the case under test.
+      { id: 'u', tenantId: 't', scopes: ['a', , 'b'] },
+    ]) {
+      const result = await createLocalMcpTokenAuth({
+        verify: async () => principal,
+      }).authenticate(
+        new Request('http://127.0.0.1/mcp', {
+          headers: { authorization: `Bearer ${TOKEN}` },
+        }),
+      );
+      expect(result.ok).toBe(false);
+    }
+  });
+
   it('copies a frozen scopes array from the verifier', async () => {
     const scopes = Object.freeze(['notes.read']);
     const result = await createLocalMcpTokenAuth({

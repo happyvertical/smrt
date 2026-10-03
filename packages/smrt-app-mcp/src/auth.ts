@@ -1,5 +1,6 @@
 /** Server-only OAuth protected-resource boundary. This is not an issuer. */
 import { createRemoteJWKSet, type JWTPayload, jwtVerify } from 'jose';
+import { ownStringArray, readOwnFields } from './own-data.js';
 import type { McpAppPrincipal, McpTenantBinding } from './server.js';
 
 export type McpDeploymentProfile = 'local' | 'self-hosted' | 'cloud';
@@ -193,26 +194,32 @@ export function createLocalMcpTokenAuth(
       } catch {
         return deny();
       }
+      // Own plain data only: inherited values, accessors and poison keys
+      // never become the bound identity.
+      const fields = readOwnFields(principal, [
+        'id',
+        'tenantId',
+        'kind',
+        'scopes',
+      ]);
+      const scopes = fields ? ownStringArray(fields.scopes) : null;
       if (
-        !principal ||
-        typeof principal !== 'object' ||
-        !validString(principal.id) ||
-        !validString(principal.tenantId) ||
-        (principal.kind !== undefined && !validString(principal.kind)) ||
-        !Array.isArray(principal.scopes) ||
-        !principal.scopes.every(
-          (scope) => typeof scope === 'string' && scopePattern.test(scope),
-        )
+        !fields ||
+        !scopes ||
+        !validString(fields.id) ||
+        !validString(fields.tenantId) ||
+        (fields.kind !== undefined && !validString(fields.kind)) ||
+        !scopes.every((scope) => scopePattern.test(scope))
       ) {
         return deny();
       }
       return {
         ok: true as const,
         principal: {
-          id: principal.id,
-          tenantId: principal.tenantId,
-          kind: principal.kind,
-          scopes: [...principal.scopes],
+          id: fields.id,
+          tenantId: fields.tenantId,
+          kind: fields.kind as string | undefined,
+          scopes,
           // Owner tokens bind only through the direct membership.
           tenantBinding: 'direct' as const,
         },
@@ -425,29 +432,44 @@ export function createMcpResourceAuth(
             claims: Object.freeze(payload),
           }),
         );
+        // Own plain data only: inherited values, accessors and poison keys
+        // never become the bound identity or tenant.
+        const fields = readOwnFields(mapping, [
+          'id',
+          'tenantId',
+          'kind',
+          'roles',
+          'tenantBinding',
+        ]);
+        const roles =
+          fields?.roles === undefined
+            ? undefined
+            : ownStringArray(fields.roles);
         if (
-          !mapping ||
-          !validString(mapping.id) ||
-          (requireTenant && !validString(mapping.tenantId)) ||
-          (mapping.tenantId !== undefined && !validString(mapping.tenantId)) ||
-          (mapping.kind !== undefined && !validString(mapping.kind)) ||
-          (mapping.roles !== undefined &&
-            (!Array.isArray(mapping.roles) ||
-              !mapping.roles.every(validString))) ||
-          (mapping.tenantBinding !== undefined &&
-            !TENANT_BINDINGS.includes(mapping.tenantBinding))
+          !fields ||
+          roles === null ||
+          !validString(fields.id) ||
+          (requireTenant && !validString(fields.tenantId)) ||
+          (fields.tenantId !== undefined && !validString(fields.tenantId)) ||
+          (fields.kind !== undefined && !validString(fields.kind)) ||
+          (roles !== undefined && !roles.every(validString)) ||
+          (fields.tenantBinding !== undefined &&
+            (typeof fields.tenantBinding !== 'string' ||
+              !TENANT_BINDINGS.includes(fields.tenantBinding)))
         ) {
           return deny('invalid_token');
         }
         return {
           ok: true,
           principal: {
-            id: mapping.id,
-            tenantId: mapping.tenantId,
-            kind: mapping.kind,
-            roles: mapping.roles ? [...mapping.roles] : undefined,
+            id: fields.id,
+            tenantId: fields.tenantId as string | undefined,
+            kind: fields.kind as string | undefined,
+            roles,
             scopes: [...granted],
-            tenantBinding: mapping.tenantBinding ?? 'direct-or-inherited',
+            tenantBinding:
+              (fields.tenantBinding as McpTenantBinding | undefined) ??
+              'direct-or-inherited',
           },
         };
       } catch {

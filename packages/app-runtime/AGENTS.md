@@ -46,10 +46,12 @@ Application infrastructure composition for the validated runtime profiles in
   `isSessionTenantAuthorized`'s rule. The direct row, when present, is pinned
   into `PermissionResolver`, so inheritance never substitutes for it.
   `verify()` principals (and their `scopes` arrays) are frozen;
-  `runAsPrincipal` takes a validated, deep-frozen copy of the principal
-  before any await (unknown fields kept only as plain data; functions and
-  class instances rejected), authorizes from it, and hands `fn` that
-  snapshot. They carry
+  `runAsPrincipal` takes a validated, deep-frozen, null-prototype copy of
+  the principal before any await (`plain-data.ts`: own data only; poison
+  keys `__proto__`/`constructor`/`prototype`, accessors, inherited or
+  non-plain data, sparse arrays and functions rejected), authorizes from it,
+  and hands `fn` that snapshot. Token `issue()` input is read the same way.
+  They carry
   `tenantBinding: 'direct'` and the
   `LOCAL_MCP_TOKEN_PRINCIPAL` brand; `runAsPrincipal` rejects a copy that
   widens the binding, so the two public APIs compose safely.

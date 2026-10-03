@@ -83,6 +83,11 @@ import {
   validateApplicationId,
 } from '../index.js';
 import {
+  deepFrozenPlainCopy,
+  ownValue,
+  PlainDataError,
+} from '../plain-data.js';
+import {
   projectRuntimeDiagnostics,
   type RuntimeDiagnostics,
   type RuntimeDiagnosticsProjectionInput,
@@ -869,13 +874,20 @@ export function composeSmrtSvelteKitRuntime(
       throw new Error('A bound principal is required.');
     }
     const snapshot = snapshotBoundPrincipal(principal) as P;
+    // The snapshot has a null prototype: every read below is own data.
     const tokenDerived = isLocalMcpTokenPrincipal(snapshot);
-    const userId = snapshot.id;
-    const tenantId = snapshot.tenantId;
+    const userId = ownValue(snapshot, 'id') as P['id'];
+    const tenantId = ownValue(snapshot, 'tenantId') as P['tenantId'];
+    const snapshotScopes = ownValue(snapshot, 'scopes') as
+      | readonly string[]
+      | undefined;
+    const requestedTenantBinding = ownValue(snapshot, 'tenantBinding') as
+      | TenantBindingMode
+      | undefined;
     const requestedScopes =
-      snapshot.scopes === undefined
+      snapshotScopes === undefined
         ? undefined
-        : Object.freeze([...snapshot.scopes]);
+        : Object.freeze([...snapshotScopes]);
     if (
       requestedScopes !== undefined &&
       !requestedScopes.every((scope) => typeof scope === 'string')
@@ -893,8 +905,8 @@ export function composeSmrtSvelteKitRuntime(
     // its binding is refused rather than silently narrowed.
     if (
       tokenDerived &&
-      snapshot.tenantBinding !== undefined &&
-      snapshot.tenantBinding !== 'direct'
+      requestedTenantBinding !== undefined &&
+      requestedTenantBinding !== 'direct'
     ) {
       throw new Error(
         'A local MCP token principal binds only through its direct membership.',
@@ -902,7 +914,7 @@ export function composeSmrtSvelteKitRuntime(
     }
     const binding: TenantBindingMode = tokenDerived
       ? 'direct'
-      : (snapshot.tenantBinding ?? 'direct-or-inherited');
+      : (requestedTenantBinding ?? 'direct-or-inherited');
     if (binding !== 'direct' && binding !== 'direct-or-inherited') {
       throw new Error('Unknown tenant binding mode for a bound principal.');
     }
@@ -937,13 +949,16 @@ export function composeSmrtSvelteKitRuntime(
       },
       () =>
         fn(
-          Object.freeze({
-            ...snapshot,
-            id: userId,
-            tenantId,
-            tenantBinding: binding,
-            scopes: Object.freeze([...permissions]),
-          }) as unknown as SmrtRuntimeBoundPrincipalSnapshot<P>,
+          // Null prototype like the snapshot: a field the principal lacks
+          // (say `allowCrossTenant`) never resolves to an inherited value.
+          Object.freeze(
+            Object.assign(Object.create(null), snapshot, {
+              id: userId,
+              tenantId,
+              tenantBinding: binding,
+              scopes: Object.freeze([...permissions]),
+            }),
+          ) as SmrtRuntimeBoundPrincipalSnapshot<P>,
         ),
     );
   };
@@ -961,8 +976,9 @@ export function composeSmrtSvelteKitRuntime(
     identity: SmrtRuntimeMcpIdentity,
   ): Promise<SmrtRuntimeMcpPrincipalMapping | null> => {
     if ((await resolvedRuntime()).profile === 'local') return null;
-    const issuer = identity?.issuer;
-    const subject = identity?.subject;
+    if (!identity || typeof identity !== 'object') return null;
+    const issuer = ownValue(identity, 'issuer');
+    const subject = ownValue(identity, 'subject');
     if (
       typeof issuer !== 'string' ||
       issuer.length === 0 ||
@@ -1261,15 +1277,14 @@ async function loadConfiguredRuntime(): Promise<ResolvedApplicationRuntime> {
     : resolveApplicationRuntime({ profile: 'local' });
 }
 
-const MAX_PRINCIPAL_DEPTH = 8;
-
 /**
- * Deep, frozen, validated copy of a bound principal, taken before any await.
- * Known fields are type-checked (`id`, `tenantId`, `kind`, `tenantBinding`:
- * strings; `scopes`, `roles`: string arrays; `allowCrossTenant`: boolean).
- * Every other own enumerable field (string or symbol key) is kept as a deep
- * frozen copy, provided it is plain data: primitives, arrays and plain
- * objects. Functions, class instances and over-deep values are rejected.
+ * Deep, frozen, validated copy of a bound principal, taken before any await
+ * (see `plain-data.ts` for what is rejected: poison keys, accessors,
+ * inherited or non-plain data, sparse arrays, functions, deep nesting).
+ * Known fields are type-checked from own data (`id`, `tenantId`, `kind`,
+ * `tenantBinding`: strings; `scopes`, `roles`: string arrays;
+ * `allowCrossTenant`: boolean). Other own enumerable fields (string or
+ * symbol keys) are kept as deep-frozen copies.
  */
 function snapshotBoundPrincipal(
   principal: unknown,
@@ -1277,15 +1292,23 @@ function snapshotBoundPrincipal(
   if (!principal || typeof principal !== 'object' || Array.isArray(principal)) {
     throw new Error('A bound principal is required.');
   }
-  const snapshot = deepFrozenCopy(principal, 0) as Record<PropertyKey, unknown>;
-  const optionalString = (key: string) => {
-    const value = snapshot[key];
+  let snapshot: Record<PropertyKey, unknown>;
+  try {
+    snapshot = deepFrozenPlainCopy(principal) as Record<PropertyKey, unknown>;
+  } catch (error) {
+    if (error instanceof PlainDataError) {
+      throw new Error(`A bound principal ${error.message}.`);
+    }
+    throw error;
+  }
+  for (const key of ['id', 'tenantId', 'kind', 'tenantBinding']) {
+    const value = ownValue(snapshot, key);
     if (value !== undefined && typeof value !== 'string') {
       throw new Error(`A bound principal has a malformed ${key}.`);
     }
-  };
-  const optionalStrings = (key: string) => {
-    const value = snapshot[key];
+  }
+  for (const key of ['scopes', 'roles']) {
+    const value = ownValue(snapshot, key);
     if (
       value !== undefined &&
       (!Array.isArray(value) ||
@@ -1293,45 +1316,10 @@ function snapshotBoundPrincipal(
     ) {
       throw new Error(`A bound principal has malformed ${key}.`);
     }
-  };
-  for (const key of ['id', 'tenantId', 'kind', 'tenantBinding']) {
-    optionalString(key);
   }
-  optionalStrings('scopes');
-  optionalStrings('roles');
-  if (
-    snapshot.allowCrossTenant !== undefined &&
-    typeof snapshot.allowCrossTenant !== 'boolean'
-  ) {
+  const allowCrossTenant = ownValue(snapshot, 'allowCrossTenant');
+  if (allowCrossTenant !== undefined && typeof allowCrossTenant !== 'boolean') {
     throw new Error('A bound principal has a malformed allowCrossTenant.');
   }
   return snapshot;
-}
-
-function deepFrozenCopy(value: unknown, depth: number): unknown {
-  if (typeof value === 'function') {
-    throw new Error('A bound principal may contain only plain data.');
-  }
-  if (value === null || typeof value !== 'object') return value;
-  if (depth > MAX_PRINCIPAL_DEPTH) {
-    throw new Error('A bound principal is nested too deeply.');
-  }
-  if (Array.isArray(value)) {
-    return Object.freeze(
-      value.map((entry) => deepFrozenCopy(entry, depth + 1)),
-    );
-  }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new Error('A bound principal may contain only plain data.');
-  }
-  const copy: Record<PropertyKey, unknown> = {};
-  for (const key of Reflect.ownKeys(value)) {
-    if (!Object.getOwnPropertyDescriptor(value, key)?.enumerable) continue;
-    copy[key] = deepFrozenCopy(
-      (value as Record<PropertyKey, unknown>)[key],
-      depth + 1,
-    );
-  }
-  return Object.freeze(copy);
 }

@@ -380,6 +380,92 @@ describe('local MCP tokens', () => {
     }
   });
 
+  it('rejects prototype-pollution and inherited authority in a bound principal', async () => {
+    const { runtime, owner } = await ownedRuntime('proto-poison');
+    const ownerJson = (extra: Record<string, unknown> = {}) =>
+      JSON.stringify({ id: owner.userId, tenantId: owner.tenantId, ...extra });
+    const victim = {
+      id: owner.userId,
+      tenantId: owner.tenantId,
+      scopes: [READ],
+      roles: ['owner'],
+      kind: 'human',
+      tenantBinding: 'direct-or-inherited',
+      allowCrossTenant: true,
+    };
+    const poisoned: unknown[] = [
+      // Every authority field supplied only through a JSON `__proto__` key.
+      ...Object.entries(victim).map(([field, value]) =>
+        JSON.parse(
+          `{"__proto__":${JSON.stringify({ [field]: value })}${
+            field === 'id' || field === 'tenantId'
+              ? ''
+              : `,${ownerJson().slice(1, -1)}`
+          }}`,
+        ),
+      ),
+      JSON.parse(`{"__proto__":${JSON.stringify(victim)}}`),
+      // Authority only on the prototype chain.
+      Object.create({ id: owner.userId, tenantId: owner.tenantId }),
+      // Nested poison keys, at any depth.
+      JSON.parse(ownerJson({ meta: JSON.parse('{"__proto__":{"a":1}}') })),
+      JSON.parse(
+        `{"id":"${owner.userId}","tenantId":"${owner.tenantId}","meta":{"deep":{"__proto__":{"a":1}}}}`,
+      ),
+      JSON.parse(ownerJson({ constructor: 'x' })),
+      JSON.parse(ownerJson({ meta: { prototype: { a: 1 } } })),
+      JSON.parse(ownerJson({ roles: [{ constructor: 1 }] })),
+      // Accessors are never invoked or trusted.
+      Object.defineProperty({ tenantId: owner.tenantId }, 'id', {
+        enumerable: true,
+        get: () => owner.userId,
+      }),
+      // Arrays must be dense, plain data.
+      { ...JSON.parse(ownerJson()), scopes: Object.assign([READ], { x: 1 }) },
+      // biome-ignore lint/suspicious/noSparseArray: a sparse array is the case under test.
+      { ...JSON.parse(ownerJson()), scopes: [READ, , READ] },
+    ];
+    for (const principal of poisoned) {
+      await expect(
+        runtime.runAsPrincipal(principal as never, async () => 'ran'),
+        JSON.stringify(principal),
+      ).rejects.toThrow(/bound principal/u);
+    }
+    // A polluted Object.prototype never supplies a missing bound field.
+    const bound = await runtime.runAsPrincipal(
+      { id: owner.userId, tenantId: owner.tenantId, scopes: [READ] },
+      async (value) => value,
+    );
+    expect(Object.getPrototypeOf(bound)).toBeNull();
+    expect('allowCrossTenant' in bound).toBe(false);
+    // A null-prototype plain object with own data is accepted.
+    const own = Object.assign(Object.create(null), {
+      id: owner.userId,
+      tenantId: owner.tenantId,
+      scopes: [READ],
+    });
+    await expect(
+      runtime.runAsPrincipal(own, async (bound) => bound.scopes),
+    ).resolves.toEqual([READ]);
+  });
+
+  it('reads token issue input from own data only', async () => {
+    const { local } = await ownedRuntime('proto-issue');
+    for (const input of [
+      JSON.parse(`{"__proto__":{"scopes":["${READ}"]}}`),
+      Object.create({ scopes: [READ] }),
+    ]) {
+      await expect(local.mcpTokens?.issue(input)).rejects.toMatchObject({
+        code: 'invalid_configuration',
+      });
+    }
+    await expect(
+      local.mcpTokens?.issue(
+        JSON.parse(`{"scopes":["${READ}"],"__proto__":{"expiresInSeconds":1}}`),
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+  });
+
   it('copies caller scopes before binding', async () => {
     const { runtime, owner } = await ownedRuntime('copied-scopes');
     const scopes = [READ];

@@ -26,6 +26,7 @@ import {
 } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { resolveBoundMembershipPermissions } from './direct-membership.js';
+import { deepFrozenPlainCopy, ownValue, PlainDataError } from './plain-data.js';
 
 /** Runtime-owned system table; ignored by schema diff, parity and portability. */
 export const LOCAL_MCP_TOKEN_TABLE = '_smrt_local_mcp_tokens';
@@ -236,9 +237,31 @@ export function createLocalMcpTokenStore(
 
   return Object.freeze({
     async issue(input: IssueLocalMcpTokenInput): Promise<IssuedLocalMcpToken> {
-      const scopes = normalizeScopes(input?.scopes, fail);
+      // Own plain data only: inherited or poisoned fields never set scopes,
+      // lifetime or label.
+      let fields: object;
+      try {
+        fields = deepFrozenPlainCopy(input ?? {}) as object;
+      } catch (error) {
+        if (!(error instanceof PlainDataError)) throw error;
+        throw fail(
+          'invalid_configuration',
+          `MCP token input ${error.message}.`,
+        );
+      }
+      if (fields === null || typeof fields !== 'object') {
+        throw fail(
+          'invalid_configuration',
+          'MCP token input must be an object.',
+        );
+      }
+      const scopes = normalizeScopes(
+        ownValue(fields, 'scopes') as readonly string[] | undefined,
+        fail,
+      );
       const ttl =
-        input?.expiresInSeconds ?? DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS;
+        (ownValue(fields, 'expiresInSeconds') as number | undefined) ??
+        DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS;
       if (
         !Number.isSafeInteger(ttl) ||
         ttl < 60 ||
@@ -249,7 +272,10 @@ export function createLocalMcpTokenStore(
           'MCP token lifetime must be between one minute and 365 days.',
         );
       }
-      const label = normalizeLabel(input?.label, fail);
+      const label = normalizeLabel(
+        ownValue(fields, 'label') as string | undefined,
+        fail,
+      );
       const owner = await deps.findOwner(db);
       if (!owner) {
         throw fail(
