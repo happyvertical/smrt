@@ -8,9 +8,16 @@
  * ```ts
  * // src/routes/api/assistant/[...path]/+server.ts
  * import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
- * import { getAssistantAI } from '$lib/server/ai';
- * export const { GET, POST } = mountAssistantRoutes({ ai: getAssistantAI });
+ * import { runtime } from '$lib/server/smrt';
+ * export const { GET, POST } = mountAssistantRoutes({
+ *   allowedTools: ['notes.read', 'notes.create'],
+ *   db: () => runtime.databaseConfig(),
+ * });
  * ```
+ *
+ * `ai` defaults to the `smrt.config` `ai` block (resolved per turn through
+ * `@happyvertical/smrt-config`); `allowedTools` alone offers the manifest
+ * operations it names; `db` may be a per-request resolver.
  *
  *   GET  threads                        member-scoped thread list
  *   POST threads                        { title } → { thread }
@@ -42,6 +49,12 @@ import type {
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
 import type { DataSurfaceActionAdapter } from '@happyvertical/smrt-agents/server';
+import {
+  getConfig,
+  loadConfig,
+  resolveConfiguredAIProvider,
+  toAIClientOptions,
+} from '@happyvertical/smrt-config';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import {
   type AssistantContinuationStore,
@@ -66,6 +79,7 @@ import {
   clientRequestMessageId,
 } from './services/ChatService.js';
 import {
+  buildManifestToolCatalog,
   type ClientToolResultInput,
   MAX_CLIENT_TOOL_RESULT_CHARS,
   MAX_CLIENT_TOOLS,
@@ -174,17 +188,28 @@ export interface AssistantRouteModel {
 /** Options for {@link mountAssistantRoutes}. */
 export interface MountAssistantRoutesOptions {
   /**
-   * The AI client, or a factory called once per turn. Required: these routes
-   * never read provider credentials from the environment. A factory that
-   * throws answers 503 before anything is written.
+   * The AI client, or a factory called once per turn. Omitted, each turn
+   * builds a client from the `smrt.config` `ai` block through the shared
+   * resolver (`resolveConfiguredAIProvider` → `toAIClientOptions` →
+   * `getAI`), loading the config file first if nothing has. A factory that
+   * throws (including `AIProviderNotConfiguredError` when nothing is
+   * configured) answers 503 before anything is written; the error goes to
+   * `onError` only. Passing `ai` explicitly as `undefined`/`null` is a mount
+   * error, not a fallback.
    */
-  ai:
+  ai?:
     | AIInterface
     | ((
         context: AssistantRequestContext & { model?: string },
       ) => AIInterface | Promise<AIInterface>);
-  /** Database for chat persistence and the principal run. */
-  db?: SmrtClassOptions['db'];
+  /**
+   * Database for chat persistence, the tool catalog and the principal run:
+   * a fixed value, or a resolver called once per request. Under
+   * `database-rls` isolation pass `() => runtime.databaseConfig()` (from
+   * `@happyvertical/smrt-app-runtime/sveltekit`) so every request uses its
+   * own transaction-bound database; never retain the handle it returns.
+   */
+  db?: AssistantRouteValue<SmrtClassOptions['db']>;
   /** Default: {@link resolveAssistantPrincipalFromLocals}. */
   resolvePrincipal?: AssistantPrincipalResolver;
   /** The assistant's agent id (its `bot` profile slug). Default `smrt-assistant`. */
@@ -192,12 +217,20 @@ export interface MountAssistantRoutesOptions {
   systemPrompt?: AssistantRouteValue<string | undefined>;
   /**
    * Server tool allow-list, fail-closed: absent or empty offers NO tools.
-   * Gates `extraTools`, `tools` and the data-surface action adapter.
+   * Gates `extraTools`, `tools` and the data-surface action adapter. Without
+   * `tools`, the route offers the manifest operations named here
+   * (`buildManifestToolCatalog`), except names an `extraTools` entry serves.
+   * A name nothing provides is a configuration error: at mount when its
+   * collection is already registered, otherwise the turn answers 503 (the
+   * check is skipped when `actions` is set, since action tools may be named).
    */
   allowedTools?: AssistantRouteValue<readonly string[]>;
   /** Server tools (e.g. `createDataSurfaceTools()`), narrowed by `allowedTools`. */
   extraTools?: AssistantRouteValue<readonly PrincipalTool[]>;
-  /** Manifest tools (`buildManifestToolCatalog`), narrowed by `allowedTools`. */
+  /**
+   * Manifest tools, narrowed by `allowedTools`. Omitted, they are built from
+   * `allowedTools`; pass a value (even `[]`) to supply them yourself.
+   */
   tools?: AssistantRouteValue<readonly ManifestTool[]>;
   /**
    * Browser tools the page may declare (exact names or `prefix*`). Empty
@@ -412,6 +445,55 @@ async function resolveValue<T>(
   return value;
 }
 
+let configLoad: Promise<unknown> | undefined;
+
+/**
+ * The default AI factory: the `smrt.config` `ai` block (plus its key
+ * variable) through the shared resolver. Loads the config file once when no
+ * one has; throws `AIProviderNotConfiguredError` (variable names only, never
+ * values) when nothing is configured.
+ */
+async function configuredAssistantAI(): Promise<AIInterface> {
+  if (getConfig() === null) {
+    configLoad ??= loadConfig().catch((error: unknown) => {
+      configLoad = undefined;
+      throw error;
+    });
+    await configLoad;
+  }
+  const options = toAIClientOptions(resolveConfiguredAIProvider());
+  // Imported per turn, as the dev routes do: mounting (and SvelteKit's
+  // build-time route analysis) never loads a provider SDK.
+  const { getAI } = await import('@happyvertical/ai');
+  return getAI(options);
+}
+
+/**
+ * Allow-listed names that neither `extraTools` nor the manifest catalog
+ * provides. With `registeredOnly`, only names whose collection the registry
+ * already knows: a class may not be registered yet when a route module is
+ * imported (e.g. during SvelteKit's build analysis), so only those prove a
+ * typo at mount.
+ */
+function unprovidedToolNames(
+  requested: readonly string[],
+  offered: readonly ManifestTool[],
+  registeredOnly: boolean,
+): string[] {
+  const provided = new Set(offered.map((tool) => tool.slug));
+  const missing = requested.filter((name) => !provided.has(name));
+  if (!registeredOnly || missing.length === 0) return missing;
+  // `all: true` only lists collections for this check; nothing it returns is
+  // ever offered to a model.
+  const collections = new Set(
+    buildManifestToolCatalog({ all: true }).map((tool) => tool.collection),
+  );
+  return missing.filter((name) => {
+    const dot = name.lastIndexOf('.');
+    return dot > 0 && collections.has(name.slice(0, dot));
+  });
+}
+
 async function readBounded(request: Request, max: number): Promise<Uint8Array> {
   const declared = Number(request.headers.get('content-length'));
   const tooLarge = () =>
@@ -620,12 +702,44 @@ function matchRoute(segments: string[]): RouteMatch | null {
  * (e.g. `src/routes/api/assistant/[...path]/+server.ts`).
  */
 export function mountAssistantRoutes(
-  options: MountAssistantRoutesOptions,
+  options: MountAssistantRoutesOptions = {},
 ): AssistantRoutes {
-  if (!options?.ai) {
+  if ('ai' in options && options.ai == null) {
     throw new Error(
-      'mountAssistantRoutes: `ai` is required (an AI client or a factory).',
+      'mountAssistantRoutes: `ai` was passed but is empty. Pass an AI client ' +
+        'or a factory, or omit `ai` to use the smrt.config `ai` block.',
     );
+  }
+  const aiSource = options.ai ?? configuredAssistantAI;
+  if (
+    options.tools === undefined &&
+    !options.actions &&
+    Array.isArray(options.allowedTools) &&
+    typeof options.extraTools !== 'function'
+  ) {
+    // Fail fast on a name nothing can provide (a typo), when knowable now.
+    const extra = new Set(
+      ((options.extraTools ?? []) as readonly PrincipalTool[]).map(
+        (tool) => tool.slug,
+      ),
+    );
+    const requested = (options.allowedTools as readonly unknown[]).filter(
+      (name): name is string =>
+        typeof name === 'string' && name.length > 0 && !extra.has(name),
+    );
+    if (requested.length > 0) {
+      const unknown = unprovidedToolNames(
+        requested,
+        buildManifestToolCatalog({ allowedTools: requested }),
+        true,
+      );
+      if (unknown.length > 0) {
+        throw new Error(
+          `mountAssistantRoutes: allowedTools names ${unknown.join(', ')}, ` +
+            'which no manifest operation or extraTools entry provides.',
+        );
+      }
+    }
   }
   const agentId = options.agentId ?? DEFAULT_ASSISTANT_AGENT_ID;
   const paramName = options.paramName ?? 'path';
@@ -668,10 +782,26 @@ export function mountAssistantRoutes(
     return path.split('/').filter((segment) => segment.length > 0);
   };
 
-  const chatFor = async (principal: AssistantPrincipal) => {
+  // The database is resolved once per request (a resolver may return the
+  // request's own RLS transaction) and never shared across requests.
+  const requestDbs = new WeakMap<
+    AssistantRequestContext,
+    Promise<SmrtClassOptions['db'] | undefined>
+  >();
+  const dbFor = (context: AssistantRequestContext) => {
+    let db = requestDbs.get(context);
+    if (!db) {
+      db = resolveValue(options.db, context);
+      requestDbs.set(context, db);
+    }
+    return db;
+  };
+
+  const chatFor = async (context: AssistantRequestContext) => {
+    const db = await dbFor(context);
     const chat = await ChatService.create({
-      tenantId: principal.tenantId,
-      ...(options.db ? { db: options.db } : {}),
+      tenantId: context.principal.tenantId,
+      ...(db ? { db } : {}),
     } as Parameters<typeof ChatService.create>[0]);
     await chat.initialize();
     return chat;
@@ -749,9 +879,9 @@ export function mountAssistantRoutes(
   ): Promise<AIInterface> => {
     try {
       const ai =
-        typeof options.ai === 'function'
-          ? await options.ai({ ...context, ...(model ? { model } : {}) })
-          : options.ai;
+        typeof aiSource === 'function'
+          ? await aiSource({ ...context, ...(model ? { model } : {}) })
+          : aiSource;
       if (!ai || typeof ai.chat !== 'function') {
         throw new Error('The AI factory returned no client.');
       }
@@ -764,6 +894,47 @@ export function mountAssistantRoutes(
         'The assistant is unavailable right now. Please try again later.',
       );
     }
+  };
+
+  /**
+   * The manifest tools a turn is offered: `tools` when given, otherwise the
+   * catalog entries for the allow-listed names `extraTools` does not serve.
+   * A name nothing provides refuses the turn (503, detail to `onError`)
+   * unless `actions` is set (action tools are allow-listed too).
+   */
+  const manifestToolsFor = async (
+    context: AssistantRequestContext,
+    allowedTools: readonly string[],
+    extraTools: readonly PrincipalTool[],
+    db: SmrtClassOptions['db'] | undefined,
+  ): Promise<readonly ManifestTool[]> => {
+    if (options.tools !== undefined) {
+      return (await resolveValue(options.tools, context)) ?? [];
+    }
+    const extra = new Set(extraTools.map((tool) => tool.slug));
+    const requested = allowedTools.filter((name) => !extra.has(name));
+    if (requested.length === 0) return [];
+    const tools = buildManifestToolCatalog({
+      ...(db ? { db } : {}),
+      allowedTools: requested,
+    });
+    if (!options.actions) {
+      const unknown = unprovidedToolNames(requested, tools, false);
+      if (unknown.length > 0) {
+        safeLog(
+          new Error(
+            `mountAssistantRoutes: allowedTools names ${unknown.join(', ')}, ` +
+              'which no manifest operation or extraTools entry provides.',
+          ),
+        );
+        throw new AssistantRouteError(
+          503,
+          'assistant_unavailable',
+          'The assistant is unavailable right now. Please try again later.',
+        );
+      }
+    }
+    return tools;
   };
 
   /** The store suspended turns of this actor's session wait in. */
@@ -805,11 +976,17 @@ export function mountAssistantRoutes(
       options.clientToolAllowList ?? [],
     );
     const ai = await resolveAI(context, model);
-    const [extraTools, tools, systemPrompt] = await Promise.all([
+    const [extraTools, systemPrompt, db] = await Promise.all([
       resolveValue(options.extraTools, context),
-      resolveValue(options.tools, context),
       resolveValue(options.systemPrompt, context),
+      dbFor(context),
     ]);
+    const tools = await manifestToolsFor(
+      context,
+      allowedTools,
+      extraTools ?? [],
+      db,
+    );
     // Mirror the allow-list onto the session so the authoring gate
     // (`sendAgentReply`) agrees with the loop's offer gate.
     if (options.authorInvocation) {
@@ -851,10 +1028,10 @@ export function mountAssistantRoutes(
           tenantId: principal.tenantId,
           allowedTools,
         },
-        ...(options.db ? { db: options.db } : {}),
+        ...(db ? { db } : {}),
         ...(systemPrompt ? { systemPrompt } : {}),
         extraTools: [...(extraTools ?? [])],
-        tools: [...(tools ?? [])],
+        tools: [...tools],
         clientTools,
         continuations,
         continuationKey: String(thread.id),
@@ -928,7 +1105,7 @@ export function mountAssistantRoutes(
   // ---- route bodies ------------------------------------------------------
 
   const listThreads = async (context: AssistantRequestContext) => {
-    const chat = await chatFor(context.principal);
+    const chat = await chatFor(context);
     const session = await findSession(chat, context.principal);
     if (!session?.chatRoomId) return json({ items: [] });
     const threads = await chat.listRoomThreads({
@@ -948,7 +1125,7 @@ export function mountAssistantRoutes(
       );
     }
     const { principal } = context;
-    const chat = await chatFor(principal);
+    const chat = await chatFor(context);
     const allowedTools = await allowedToolsFor(context);
     const { session } = await chat.createAgentSession({
       tenantId: principal.tenantId,
@@ -972,7 +1149,7 @@ export function mountAssistantRoutes(
     threadId: string,
   ) => {
     const { principal } = context;
-    const chat = await chatFor(principal);
+    const chat = await chatFor(context);
     const session = await findSession(chat, principal);
     await requireOwnThread(chat, principal, session, threadId);
     const messages = await chat.getThreadMessages({
@@ -1158,7 +1335,7 @@ export function mountAssistantRoutes(
     resolveModel(body.model);
 
     const { principal } = context;
-    const chat = await chatFor(principal);
+    const chat = await chatFor(context);
     const session = await findSession(chat, principal);
     const thread = await requireOwnThread(chat, principal, session, threadId);
     if (!session?.chatRoomId) throw notFound();
@@ -1320,7 +1497,7 @@ export function mountAssistantRoutes(
     resolveModel(body.model);
 
     const { principal } = context;
-    const chat = await chatFor(principal);
+    const chat = await chatFor(context);
     const session = await findSession(chat, principal);
     const thread = await requireOwnThread(chat, principal, session, threadId);
     if (!session) throw notFound();
@@ -1419,9 +1596,10 @@ export function mountAssistantRoutes(
     if (!adapter) throw new Error('No data-surface action adapter resolved.');
     const { principal } = context;
     const allowedTools = await allowedToolsFor(context);
+    const db = await dbFor(context);
     const actionContext = {
       principal: {
-        ...(options.db ? { db: options.db } : {}),
+        ...(db ? { db } : {}),
         principal: {
           runAsUserId: principal.userId,
           tenantId: principal.tenantId,

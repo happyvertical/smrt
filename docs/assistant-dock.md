@@ -64,10 +64,20 @@ SvelteKit rest route:
 ```ts
 // src/routes/api/assistant/[...path]/+server.ts
 import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
-import { assistantAI } from '$lib/server/ai';
+import { runtime } from '$lib/server/smrt';
 
-export const { GET, POST } = mountAssistantRoutes({ ai: assistantAI });
+export const { GET, POST } = mountAssistantRoutes({
+  // The only tools the model is offered: these manifest operations.
+  allowedTools: ['notes.read', 'notes.create'],
+  // Per request, so `database-rls` requests use their own transaction.
+  db: () => runtime.databaseConfig(),
+});
 ```
+
+With no `ai`, each turn builds its client from the `smrt.config` `ai` block
+(`resolveConfiguredAIProvider` → `toAIClientOptions` → `getAI`; the key comes
+from the variable `apiKeyEnv` names). Pass `ai` (a client or a per-turn
+factory) to choose the client yourself.
 
 ```svelte
 <script lang="ts">
@@ -109,11 +119,19 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   to answers 404. Reads never create a session.
 - **Turns.** A send stores the user message (`ChatService.sendMessage`, with
   `clientRequestId` in `metadata`) and runs `runAssistantTurn`, whose reply is
-  authored through the agent bridge. `ai` is required (a client or a per-turn
-  factory; a failing factory answers 503 before anything is written) and is
-  never read from the environment. Tools are fail-closed: `allowedTools`
-  (absent = none) gates `extraTools`, `tools` and the action adapter, and
-  every tool runs under `executeAsPrincipal`. Browser tools need
+  authored through the agent bridge. `ai` is a client or a per-turn factory;
+  omitted, it is the `smrt.config` `ai` block through the shared resolver.
+  A failing factory, or no configured provider
+  (`AIProviderNotConfiguredError`, which names variables, never values, and
+  goes only to `onError`), answers 503 before anything is written. Tools are
+  fail-closed: `allowedTools` (absent = none) gates `extraTools`, `tools` and
+  the action adapter, and every tool runs under `executeAsPrincipal`. Without
+  `tools`, the route offers the manifest operations `allowedTools` names
+  (`buildManifestToolCatalog`), minus names an `extraTools` entry serves; a
+  name nothing provides is an error, at mount when its collection is already
+  registered, otherwise a 503 turn (not checked when `actions` is set). `db`
+  is a fixed value or a resolver called once per request; under
+  `database-rls`, pass `() => runtime.databaseConfig()`. Browser tools need
   `clientToolAllowList`. Suspended turns wait in the session context
   (`createSessionContinuationStore`), keyed by thread; `continuations`
   replaces the store.

@@ -263,12 +263,18 @@ waiting | done | failed | cancelled`), with `pauseRun` / `continueRun`,
 The server side mounts in one route file. The principal comes from
 `event.locals` (`@happyvertical/smrt-users/sveltekit`); threads are scoped to
 the caller's own assistant session in the active tenant; tools are
-fail-closed (`allowedTools`, absent means none):
+fail-closed (`allowedTools`, absent means none) and, without `tools`, are the
+manifest operations `allowedTools` names. `ai` defaults to the `smrt.config`
+`ai` block; `db` may be a per-request resolver (required under `database-rls`):
 
 ```ts
 // src/routes/api/assistant/[...path]/+server.ts
 import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
-export const { GET, POST } = mountAssistantRoutes({ ai: assistantAI });
+import { runtime } from '$lib/server/smrt';
+export const { GET, POST } = mountAssistantRoutes({
+  allowedTools: ['notes.read', 'notes.create'],
+  db: () => runtime.databaseConfig(),
+});
 ```
 
 In the page, `createAssistantHttpTransport({ endpoint: '/api/assistant' })`
