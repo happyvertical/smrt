@@ -111,7 +111,7 @@ describe('smrt() Vite preset', () => {
     root = mkdtempSync(join(tmpdir(), 'smrt-preset-'));
     writeFileSync(
       join(root, 'package.json'),
-      '{"name":"app","version":"1.0.0"}',
+      '{"name":"@fixture/app","version":"1.0.0"}',
     );
     mkdirSync(join(root, 'src/lib/objects'), { recursive: true });
     mkdirSync(join(root, 'src/lib/server'), { recursive: true });
@@ -225,7 +225,10 @@ describe('smrt() Vite preset', () => {
     it('does not sniff package.json dependencies', async () => {
       writeFileSync(
         join(root, 'package.json'),
-        JSON.stringify({ name: 'app', dependencies: { '@test/pkg': '1.0.0' } }),
+        JSON.stringify({
+          name: '@fixture/app',
+          dependencies: { '@test/pkg': '1.0.0' },
+        }),
       );
       writeConfig(undefined);
       await expect(smrt({ projectRoot: root })).rejects.toThrow(

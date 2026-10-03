@@ -417,11 +417,13 @@ export {
 export { toSnakeCase } from './utils/naming';
 // Qualified name utilities
 export {
+  assertScopedPackageName,
   createQualifiedName,
   getClassName,
   getPackageFromQualifiedName,
   isFromPackage,
   isQualifiedName,
+  isScopedPackageName,
   isType,
   type ParsedQualifiedName,
   parseQualifiedName,

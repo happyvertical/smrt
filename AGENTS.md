@@ -86,7 +86,7 @@ use named `$props()` interfaces to avoid recursive inline intersections.
   materialize as BIGINT, but hydrated values must remain JavaScript-safe integers.
 - Extend serialization with `transformJSON()`, never override `toJSON()`.
 - Use `@foreignKey(Target)` within a package and qualified `@crossPackageRef`
-  across packages. STI discriminators are qualified package/class names.
+  across packages. STI discriminators are `@scope/pkg:Class`; unscoped app names fail build.
 - Use native UUID ids/FKs on PostgreSQL/DuckDB, text on SQLite; repair values or
   casts at their owning boundary, never weaken UUID columns to text.
 - Relationship loads preserve tenant isolation; cross-tenant reads require an

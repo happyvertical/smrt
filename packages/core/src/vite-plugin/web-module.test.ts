@@ -41,7 +41,7 @@ describe('smrtPlugin load (\0smrt:web virtual module)', () => {
     writeFileSync(
       join(projectRoot, 'package.json'),
       JSON.stringify({
-        name: 'mini-web-app',
+        name: '@fixture/mini-web-app',
         version: '0.0.1',
         type: 'module',
       }),
@@ -140,7 +140,7 @@ export class Lookup extends SmrtObject {
     expect(Object.keys(definitions).sort()).toEqual(['categories', 'widgets']);
 
     const widgets = definitions.widgets as Record<string, unknown>;
-    expect(widgets.objectRef).toBe('mini-web-app:Widget');
+    expect(widgets.objectRef).toBe('@fixture/mini-web-app:Widget');
     expect(widgets.className).toBe('Widget');
     expect(widgets.endpoint).toBe('/widgets');
     expect(widgets.idField).toBe('id');
