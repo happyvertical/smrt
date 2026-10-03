@@ -737,12 +737,8 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
           );
         }
         ensurePrivateDirectory(dirname(destination));
-        const ownershipMarker = `.smrt-backup-${randomBytes(12).toString('hex')}`;
         try {
           mkdirSync(destination, { mode: 0o700 });
-          writeFileSync(join(destination, ownershipMarker), '', {
-            mode: 0o600,
-          });
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
             throw error;
@@ -757,19 +753,12 @@ async function backup(context: AppContext, args: string[]): Promise<void> {
               errorOnExist: true,
             });
           }
-          rmSync(join(destination, ownershipMarker), { force: true });
           chmodSync(destination, 0o700);
         } catch (error) {
-          const quarantine = `${destination}.failed-${randomBytes(6).toString('hex')}`;
-          renameSync(destination, quarantine);
-          if (!existsSync(join(quarantine, ownershipMarker))) {
-            throw new Error(
-              `Backup failed and the reserved destination was replaced; preserved at ${quarantine}`,
-              { cause: error },
-            );
-          }
-          rmSync(quarantine, { recursive: true, force: true });
-          throw error;
+          throw new Error(
+            `Backup copy failed; destination preserved at ${destination}`,
+            { cause: error },
+          );
         }
         printJson(context, {
           schemaVersion: 1,
