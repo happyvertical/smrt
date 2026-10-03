@@ -48,6 +48,17 @@ describe('pricing version public contracts', () => {
     expect(html).toContain('disabled');
     expect(html).toContain('value="retained"');
   });
+  it('keeps summaries available when supplied amounts are fractional or unsafe', () => {
+    for (const invalid of [1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN]) {
+      const html = render(PricingVersionSummary, { props: { version: { ...version, total: { ...version.total, amountMinor: invalid }, sources: [{ id: 'bad', label: 'Invalid source', amountMinor: invalid }] } } }).body;
+      expect(html.match(/Amount unavailable/g)).toHaveLength(2);
+      expect(html).toContain('Invalid source');
+    }
+  });
+  it('renders an invalid currency scale as unavailable rather than guessing', () => {
+    const html = render(PricingVersionSummary, { props: { version: { ...version, total: { ...version.total, minorUnitDigits: 9 } } } }).body;
+    expect(html).toContain('Amount unavailable');
+  });
   it('registers public slots with the exact exported components', () => {
     expect(ModuleUIRegistry.get('@happyvertical/smrt-commerce', 'pricing-version-summary')).toBe(PricingVersionSummary);
     expect(ModuleUIRegistry.get('@happyvertical/smrt-commerce', 'pricing-version-decision')).toBe(PricingVersionDecision);

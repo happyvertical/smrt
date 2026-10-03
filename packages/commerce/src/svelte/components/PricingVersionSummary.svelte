@@ -10,9 +10,17 @@ export interface Props {
 }
 const { version }: Props = $props();
 const { t } = useI18n();
-const amount = (value: number | null) =>
-  quoteMinorText({ ...version.total, amountMinor: value }) ??
-  t(M['commerce.pricing.unknown']);
+function amount(value: number | null): string {
+  try {
+    return (
+      quoteMinorText({ ...version.total, amountMinor: value }) ??
+      t(M['commerce.pricing.unknown'])
+    );
+  } catch (error) {
+    if (error instanceof RangeError) return t(M['commerce.pricing.unknown']);
+    throw error;
+  }
+}
 </script>
 
 <section class="pricing-summary" aria-label={version.label}>
