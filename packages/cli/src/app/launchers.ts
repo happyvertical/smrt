@@ -69,8 +69,20 @@ export async function prepareMigration(context: AppContext): Promise<number> {
   return 0;
 }
 
-/** Worker kinds. Anything other than `schedule` runs the task worker. */
+/** Worker kinds. `task` when omitted; anything else is a usage error. */
 export type WorkerKind = 'task' | 'schedule';
+
+const WORKER_USAGE = 'Usage: smrt app worker [task|schedule]';
+
+/** Parse `smrt app worker [kind]`, refusing anything but `task`/`schedule`. */
+export function parseWorkerKind(args: readonly string[]): WorkerKind {
+  if (args.length > 1) throw new AppCommandError(WORKER_USAGE, 2);
+  const kind = args[0] ?? 'task';
+  if (kind !== 'task' && kind !== 'schedule') {
+    throw new AppCommandError(WORKER_USAGE, 2);
+  }
+  return kind;
+}
 
 /**
  * Start a deployed job worker. Resolves once the runner is started; the
@@ -80,6 +92,8 @@ export async function runWorker(
   context: AppContext,
   args: string[],
 ): Promise<number> {
+  // Reject a misspelled kind before resolving or initialising anything.
+  const kind = parseWorkerKind(args);
   const configured = await context.deps.resolveRuntime(context.sourceRoot);
   if (configured.profile === 'local') {
     throw new Error(
@@ -155,8 +169,6 @@ export async function runWorker(
       },
     });
 
-  const kind: WorkerKind = args[0] === 'schedule' ? 'schedule' : 'task';
-  const reportedKind = args[0] || 'task';
   const runner =
     kind === 'schedule'
       ? await runtime.createScheduleWorker()
@@ -172,7 +184,7 @@ export async function runWorker(
     `${JSON.stringify({
       schemaVersion: 1,
       status: 'ready',
-      kind: reportedKind,
+      kind,
       secretValuesIncluded: false,
     })}\n`,
   );

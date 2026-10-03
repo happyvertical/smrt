@@ -1042,7 +1042,42 @@ describe('smrt app worker', () => {
   });
 
   it.each([
+    [['scheduel']],
+    [['Schedule']],
+    [['tasks']],
+    [['task', 'extra']],
+  ])('rejects worker kind %j with a usage error before any runtime initialisation', async (args) => {
+    const fixture = makeFixture();
+    fixture.setProfile('self-hosted');
+    process.env.DATABASE_URL = `postgresql://owner:${DB_PASSWORD}@db.example/app`;
+    mkdirSync(join(fixture.app, '.smrt', 'runtime'), { recursive: true });
+    writeFileSync(
+      join(fixture.app, '.smrt', 'runtime', 'register.js'),
+      `globalThis.__smrtRegisteredByRejected = true;\n`,
+    );
+    const initialize = vi.fn();
+    expect(
+      await fixture.run(['worker', ...args], {
+        runtime: {
+          ...(await import('@happyvertical/smrt-app-runtime')),
+          initializeDeployedApplicationRuntime: initialize as never,
+        },
+      }),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Usage: smrt app worker [task|schedule]',
+    );
+    expect(fixture.output.stdout.join('')).toBe('');
+    expect(initialize).not.toHaveBeenCalled();
+    expect(
+      (globalThis as { __smrtRegisteredByRejected?: boolean })
+        .__smrtRegisteredByRejected,
+    ).toBeUndefined();
+  });
+
+  it.each([
     [[], 'task'],
+    [['task'], 'task'],
     [['schedule'], 'schedule'],
   ])('imports the registration before starting the %s runner and closes on SIGTERM', async (args, kind) => {
     const fixture = makeFixture();

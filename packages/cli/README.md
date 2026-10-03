@@ -266,7 +266,7 @@ app's `package.json` scripts are one-liners:
 | `smrt app backup [destination]` | Local: copy the validated data root to a new private directory outside the checkout |
 | `smrt app export [path]` / `import <path>` | Logical, asset-aware bundle; import requires an empty target (deployed: `SMRT_MAINTENANCE_MODE=true`) |
 | `smrt app migrate` | Establish local storage custody, then `smrt db:migrate`, under the operation lock |
-| `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM |
+| `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM. The kind defaults to `task`; any other value is a usage error before anything starts |
 | `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |
 
 Success output is JSON on stdout; a failure is one JSON envelope on stderr with
