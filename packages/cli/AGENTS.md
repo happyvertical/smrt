@@ -45,6 +45,11 @@ smrt dispatch:*              # Dispatch management (list/process/retry/cleanup)
 smrt app <op>                # App install/setup/start/migrate/worker…: agents/app-commands.md
 ```
 
+Database precedence (`src/database-environment.ts`, applied once in `main()`):
+config `packages.cli.database.url` > `DATABASE_URL` (+ config type,
+`DATABASE_TYPE`, or URL scheme) > `:memory:`; see README. `smrt app` relies
+on the env step, so apps never forward `DATABASE_URL` in config.
+
 File-backed SQL/TypeScript migration generation is not supported. SMRT schema
 migrations are manifest-driven through registered objects and project manifests.
 

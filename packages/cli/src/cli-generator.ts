@@ -2822,6 +2822,12 @@ export async function main() {
   const configStart = timingEnabled ? performance.now() : 0;
   const { loadConfig } = await import('@happyvertical/smrt-config');
   await loadConfig({ cache: true });
+  // `DATABASE_URL`/`DATABASE_TYPE` fill `packages.cli.database` only when no
+  // config layer declares a URL (precedence in database-environment.ts).
+  const { applyDatabaseEnvironment } = await import(
+    './database-environment.js'
+  );
+  await applyDatabaseEnvironment();
   if (timingEnabled) {
     timing.config = performance.now() - configStart;
   }
