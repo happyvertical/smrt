@@ -73,6 +73,17 @@ export default {
     },
 
     {
+      id: 'invoice-preparation',
+      title: 'Invoice Preparation',
+      description:
+        'Edit allocations and inspect retained values after a simulated rejection.',
+      loadComponent: () =>
+        import('./playground/InvoicePreparationPreview.svelte'),
+      order: 4,
+      props: {},
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
       id: 'invoice-card',
       title: 'Invoice Card',
       description:

@@ -514,3 +514,11 @@ known limits.
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+## Invoice preparation UI
+
+`InvoiceEditor` and `InvoiceReview` from `@happyvertical/smrt-commerce/svelte`
+provide native retained-draft forms, reviewed-source allocations, and
+caller-authoritative review presentation. Draft fields retain currency-unit text while source amounts use integer minor
+units. See [the preparation contract](agents/invoice-preparation.md) for props,
+native action payloads, retries, restricted readers, and adoption guidance.
