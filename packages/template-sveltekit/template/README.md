@@ -58,9 +58,12 @@ The source of truth is `src/lib/objects`. Running `pnpm dev`, `pnpm build`, or
 | `src/lib/types/smrt-generated/` | Virtual-module and consumer declarations | No |
 | `src/routes/api/**/+server.ts` | Generated SvelteKit REST routes | No |
 
-Do not edit generated files. `smrtPlugin()` owns local scanning, manifests,
-types, and routes. `smrtConsumer()` explicitly consumes the profiles, tenancy,
-and users manifests so those models are available to setup and tooling.
+Do not edit generated files. The `smrt()` plugin in `vite.config.ts` owns
+local scanning, manifests, types, routes, and the decorator transform. It
+consumes exactly the packages listed in `smrt.config.ts` under
+`consumer.packages` (profiles, tenancy, and users) so those models are
+available to setup and tooling; add a SMRT package there when the app uses its
+objects.
 
 ## 3. Define the first object
 

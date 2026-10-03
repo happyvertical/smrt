@@ -49,9 +49,10 @@ It is the ground-up alternative to `smrt-saas-starter`.
   for the default worker and tenant surfaces. Do not assume pnpm exposes the
   CLI's or core's transitive dependencies to the app root — its strict layout
   does not (#2297).
-- `smrtConsumer()` explicitly consumes profiles, tenancy, and users manifests;
-  `smrtPlugin()` scans `src/lib/objects`, generates Vite virtual definitions,
-  SvelteKit routes, runtime registration, and knowledge artifacts.
+- `vite.config.ts` is `[sveltekit(), smrt()]`. The preset consumes exactly the
+  packages in `smrt.config.ts` `consumer.packages` (profiles, tenancy, users),
+  scans `src/lib/objects`, and generates Vite virtual definitions, SvelteKit
+  routes, runtime registration, and knowledge artifacts.
 - `pnpm db:migrate` builds first to refresh generated artifacts, then the
   migration wrapper holds the shared operation/writer exclusion for the full
   manifest-driven migration command. Do not restore deprecated `smrt db:setup`
