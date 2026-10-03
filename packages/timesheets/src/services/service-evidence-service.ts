@@ -4,7 +4,11 @@ import {
   ServiceCompensationSnapshotCollection,
 } from '../models/service-snapshots.js';
 import type { ServiceTimeEntry } from '../models/service-time-entry.js';
-import { ServiceTimeEntryCollection } from '../models/service-time-entry.js';
+import {
+  SERVICE_DURATION_HOURS_EVIDENCE,
+  ServiceTimeEntryCollection,
+  validateDurationHours,
+} from '../models/service-time-entry.js';
 import type {
   ServiceEvidence,
   ServiceParticipantKind,
@@ -26,7 +30,9 @@ export interface RecordServiceTimeInput {
   description: string;
   startedAt?: Date | null;
   endedAt?: Date | null;
-  durationSeconds?: number;
+  durationSeconds?: number | null;
+  /** Exact positive decimal text; exclusive with seconds and timestamps. */
+  durationHours?: string;
   evidence?: ServiceEvidence[];
   metadata?: Record<string, unknown>;
 }
@@ -50,6 +56,8 @@ export interface CommercialSnapshot {
 }
 
 export interface ServiceCommercialResolver {
+  /** Pure preflight: reject unsupported evidence before approval or snapshot writes. */
+  validateEntry?(entry: ServiceTimeEntry): void | Promise<void>;
   priceClient(entry: ServiceTimeEntry): Promise<CommercialSnapshot>;
   compensateProvider(entry: ServiceTimeEntry): Promise<CommercialSnapshot>;
 }
@@ -86,6 +94,8 @@ export class ServiceEvidenceService {
   }
 
   async record(input: RecordServiceTimeInput): Promise<ServiceTimeEntry> {
+    if (!['timer', 'manual', 'import', 'agent'].includes(input.source))
+      throw new Error('Unsupported service time source.');
     if (Boolean(input.workRefType) !== Boolean(input.workRefId))
       throw new Error('workRefType and workRefId must be provided together.');
     if (!(input.workRefType && input.workRefId))
@@ -98,21 +108,48 @@ export class ServiceEvidenceService {
       throw new Error('Timer service time requires startedAt and endedAt.');
     if (input.startedAt && input.endedAt && input.startedAt >= input.endedAt)
       throw new Error('Service time startedAt must be before endedAt.');
+    const { durationHours, ...fields } = input;
+    if (
+      input.evidence?.some(
+        (item) => item?.kind === SERVICE_DURATION_HOURS_EVIDENCE,
+      )
+    )
+      throw new Error(
+        'Use durationHours to supply reserved decimal-hours evidence.',
+      );
+    const hours =
+      durationHours === undefined ? null : validateDurationHours(durationHours);
+    if (
+      hours !== null &&
+      (input.durationSeconds != null || input.startedAt || input.endedAt)
+    )
+      throw new Error(
+        'Decimal-hours-only service time cannot also supply seconds or timestamps.',
+      );
+    if (hours === null && input.durationSeconds === null)
+      throw new Error('Null durationSeconds requires durationHours.');
     const duration =
-      input.durationSeconds ??
-      (input.startedAt && input.endedAt
-        ? Math.round(
-            (input.endedAt.getTime() - input.startedAt.getTime()) / 1000,
-          )
-        : 0);
-    if (!Number.isInteger(duration) || duration <= 0)
+      hours !== null
+        ? null
+        : (input.durationSeconds ??
+          (input.startedAt && input.endedAt
+            ? Math.round(
+                (input.endedAt.getTime() - input.startedAt.getTime()) / 1000,
+              )
+            : 0));
+    if (duration !== null && (!Number.isSafeInteger(duration) || duration <= 0))
       throw new Error(
         'Service time durationSeconds must be a positive integer.',
       );
     const entry = await this.entries.create({
-      ...input,
+      ...fields,
       durationSeconds: duration,
-      evidence: JSON.stringify(input.evidence ?? []),
+      evidence: JSON.stringify([
+        ...(input.evidence ?? []),
+        ...(hours === null
+          ? []
+          : [{ kind: SERVICE_DURATION_HOURS_EVIDENCE, hours }]),
+      ]),
       metadata: JSON.stringify(input.metadata ?? {}),
       status: 'draft',
       submittedAt: null,
@@ -165,6 +202,8 @@ export class ServiceEvidenceService {
     if (entry.status === 'approved' && existingCharge && existingCompensation)
       return entry;
 
+    await this.commercial.validateEntry?.(entry);
+
     // Commit approval before either commercial resolver runs. The subscription
     // resolver creates an approved ClientCharge as part of priceClient(), so a
     // failed approval must never leave billable spend behind.
@@ -184,6 +223,7 @@ export class ServiceEvidenceService {
         const concurrent = await this.entries.get(timeEntryId);
         if (concurrent?.status !== 'approved') throw error;
         entry = concurrent;
+        await this.commercial.validateEntry?.(entry);
       }
     }
     const provider = existingCompensation

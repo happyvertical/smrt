@@ -39,7 +39,9 @@ const money = (amount = 0, currency = 'USD') => {
       <div>
         <strong>{entry.context}</strong>
         <small>
-          {entry.participant} · {(entry.durationSeconds / 3600).toFixed(2)} h ·
+          {entry.participant} · {entry.durationSeconds === null
+            ? (entry.durationHours ?? '—')
+            : (entry.durationSeconds / 3600).toFixed(2)} h ·
           {entry.status}
         </small>
       </div>

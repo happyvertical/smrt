@@ -84,6 +84,25 @@ describe('ServiceTimeEntry', () => {
     expect(forWork.map((row) => row.id)).toEqual([entry.id]);
   });
 
+  it('records exact decimal-hour-only source evidence without invented seconds', async () => {
+    const entry = await service.record({
+      ...WORK,
+      participantKind: 'agent',
+      agentRef: 'agent:importer',
+      source: 'import',
+      description: 'Exact accepted source',
+      durationHours: '1.0005',
+      evidence: [{ kind: 'original-time', hours: '1.0005' }],
+    });
+    const entries = await ServiceTimeEntryCollection.create({ db });
+    const loaded = (await entries.get(entry.id!))!;
+    expect(loaded.durationSeconds).toBeNull();
+    expect(loaded.startedAt).toBeNull();
+    expect(loaded.endedAt).toBeNull();
+    expect(loaded.durationHoursExact()).toBe('1.0005');
+    expect(loaded.durationHours()).toBe(1.0005);
+  });
+
   it('validates the work reference, participant, and period', async () => {
     const base = {
       participantKind: 'agent' as const,

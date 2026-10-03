@@ -759,6 +759,41 @@ describe('managed application delivery control plane (#1949)', () => {
       },
     );
     const service = await ServiceEvidenceService.create({ db }, commercial);
+    const decimal = await service.record({
+      tenantId: 'tenant-1',
+      workRefType: '@fixture/builder:WorkPackage',
+      workRefId: 'hours-only',
+      participantKind: 'agent',
+      agentRef: 'importer',
+      source: 'import',
+      description: 'Exact hours',
+      durationHours: '1.0005',
+    });
+    await expect(commercial.priceClient(decimal)).rejects.toThrow(
+      /no measured durationSeconds/,
+    );
+    const compensate = vi.spyOn(commercial, 'compensateProvider');
+    await service.submit(decimal);
+    await expect(
+      service.approve(decimal, { approvalPath: 'operator' }),
+    ).rejects.toThrow(/no measured durationSeconds/);
+    expect(compensate).not.toHaveBeenCalled();
+    const decimalReloaded = (await (
+      await ServiceTimeEntryCollection.create({ db })
+    ).get(decimal.id!))!;
+    expect(decimalReloaded.status).toBe('submitted');
+    expect(decimalReloaded.approvedAt).toBeNull();
+    expect(
+      await (await ServiceChargeSnapshotCollection.create({ db })).count({
+        where: { timeEntryId: decimal.id },
+      }),
+    ).toBe(0);
+    expect(
+      await (await ServiceCompensationSnapshotCollection.create({ db })).count({
+        where: { timeEntryId: decimal.id },
+      }),
+    ).toBe(0);
+
     const entry = await service.record({
       tenantId: 'tenant-1',
       workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
@@ -783,6 +818,28 @@ describe('managed application delivery control plane (#1949)', () => {
     expect(charge.sourceChargeRef).toContain(
       '@happyvertical/smrt-subscriptions:ClientCharge:',
     );
+    const hoursAware = await ServiceEvidenceService.create(
+      { db },
+      {
+        priceClient: async (source) => ({
+          amount: 12351,
+          version: 'accepted-v1',
+          terms: { hours: source.durationHoursExact() },
+        }),
+        compensateProvider: async () => ({
+          amount: 6003,
+          version: 'accepted-v1',
+          terms: {},
+        }),
+      },
+    );
+    await hoursAware.approve(decimalReloaded, { approvalPath: 'operator' });
+    expect(decimalReloaded.status).toBe('approved');
+    const [decimalCharge] = await (
+      await ServiceChargeSnapshotCollection.create({ db })
+    ).list({ where: { timeEntryId: decimal.id } });
+    expect(decimalCharge.amount).toBe(12351);
+    expect(JSON.parse(decimalCharge.rateSnapshot)).toEqual({ hours: '1.0005' });
   });
 
   it('routes Assistance Requests to support, development, or both idempotently', async () => {
