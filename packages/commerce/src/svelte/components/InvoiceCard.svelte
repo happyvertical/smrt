@@ -23,8 +23,8 @@ export interface Props {
 
 const { invoice, currency = 'CAD', href, onclick }: Props = $props();
 
-// Format money. Amounts are decimal dollars (the commerce models store DECIMAL
-// dollars — AGENTS.md "Currency in decimal fields"), not integer cents.
+// This legacy InvoiceData display contract uses major-unit amounts.
+// Convert integer minor-unit model values in the caller adapter.
 function formatMoney(amount: number): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
