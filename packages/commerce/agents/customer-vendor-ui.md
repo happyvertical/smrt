@@ -42,6 +42,8 @@ The caller owns action URLs, server authorization, tenancy checks, request token
 
 Forms use the provider-free `Form`, `Input`, `Select`, `Textarea`, and `Checkbox` controls from `@happyvertical/smrt-ui/forms`. They default to native `POST` submission through `preventDefault={false}`. `transport.hiddenFields`, `transport.intentName`, and the field-name maps let an application preserve its existing payload contract. Repeatable contact rows submit repeated field names in DOM order. Add and remove controls are native submitters, so they work without JavaScript; the server returns the revised rows and retained values.
 
+The forms place a non-focusable default save submitter before contact row actions so Enter in a text field cannot accidentally add or remove a contact. This remains in place when the `actions` snippet customizes the visible action bar; set `transport.saveIntent` to the custom save intent.
+
 Use the `extension` snippets for application fields such as construction roles and trades. Keep those fields and their policy in the application:
 
 ```svelte

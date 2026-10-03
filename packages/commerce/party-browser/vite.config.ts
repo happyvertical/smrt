@@ -18,6 +18,12 @@ function nativeFormTestServer(): Plugin {
           response.end(module.renderNativeVendorPage());
           return;
         }
+        if (request.url === '/native-custom-actions') {
+          const module = await server.ssrLoadModule('/native-page.ts');
+          response.setHeader('content-type', 'text/html; charset=utf-8');
+          response.end(module.renderNativeCustomActionsPage());
+          return;
+        }
         if (request.url === '/party-submit' && request.method === 'POST') {
           let body = '';
           request.setEncoding('utf8');

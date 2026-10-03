@@ -1,6 +1,7 @@
 import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
+import CustomActionsFormHarness from '../../party-browser/CustomActionsFormHarness.svelte';
 import PartyI18nHarness from '../../test-support/PartyI18nHarness.svelte';
 import { COMMERCE_UI_SLOTS } from '../ui.js';
 import CustomerDetail from './components/CustomerDetail.svelte';
@@ -215,6 +216,11 @@ describe('customer and vendor SSR surfaces', () => {
     );
     expect(html.indexOf('value="save-customer"')).toBeLessThan(
       html.indexOf('value="removeContact:0"'),
+    );
+
+    const customHtml = render(CustomActionsFormHarness).body;
+    expect(customHtml.indexOf('value="custom-save"')).toBeLessThan(
+      customHtml.indexOf('value="removeContact:0"'),
     );
   });
 

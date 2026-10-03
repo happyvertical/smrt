@@ -108,7 +108,7 @@ const errorList = $derived(
   {#if values.profileId}
     <Input interaction={false} type="hidden" name={names.profileId} value={values.profileId} />
   {/if}
-  {#if !actions && !readOnly && canSubmit}
+  {#if !readOnly && canSubmit}
     <span class="native-default-submit" aria-hidden="true">
       <Button type="submit" name={intentName} value={transport.saveIntent ?? 'save'} tabindex={-1}>
         {labels.save ?? (labels.singular ? t(M[mode === 'create' ? 'commerce.party.add_named' : 'commerce.party.save_named'], { singular: labels.singular }) : t(M[mode === 'create' ? 'commerce.customer.add' : 'commerce.customer.save']))}

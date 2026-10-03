@@ -6,6 +6,7 @@ import VendorDetail from '../src/svelte/components/VendorDetail.svelte';
 import VendorDirectory from '../src/svelte/components/VendorDirectory.svelte';
 import VendorForm from '../src/svelte/components/VendorForm.svelte';
 import PartyFormPreview from '../src/svelte/playground/PartyFormPreview.svelte';
+import CustomActionsFormHarness from './CustomActionsFormHarness.svelte';
 
 const customer = {
   id: 'customer-1',
@@ -54,6 +55,9 @@ const vendor = {
   </section>
   <section data-testid="customer-playground">
     <PartyFormPreview kind="customer" />
+  </section>
+  <section data-testid="custom-actions-form">
+    <CustomActionsFormHarness />
   </section>
 </main>
 

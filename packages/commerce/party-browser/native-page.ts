@@ -1,6 +1,7 @@
 import { render } from 'svelte/server';
 import CustomerForm from '../src/svelte/components/CustomerForm.svelte';
 import VendorForm from '../src/svelte/components/VendorForm.svelte';
+import CustomActionsFormHarness from './CustomActionsFormHarness.svelte';
 
 export function renderNativePage(): string {
   const body = render(CustomerForm, {
@@ -39,4 +40,11 @@ export function renderNativeVendorPage(): string {
     },
   }).body;
   return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Native vendor form</title></head><body>${body}</body></html>`;
+}
+
+export function renderNativeCustomActionsPage(): string {
+  const body = render(CustomActionsFormHarness, {
+    props: { action: '/party-submit' },
+  }).body;
+  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Native custom action form</title></head><body>${body}</body></html>`;
 }

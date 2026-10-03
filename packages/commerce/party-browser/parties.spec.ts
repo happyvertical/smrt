@@ -77,6 +77,28 @@ test('Enter selects save before contact row actions with JavaScript enabled and 
   await context.close();
 });
 
+test('custom action bars retain their caller-controlled default Enter intent', async ({ browser, page }) => {
+  await page.goto('/');
+  const form = page.getByTestId('custom-actions-form').locator('form');
+  await Promise.all([
+    page.waitForURL('**/party-submit'),
+    form.locator('input[name="name"]').press('Enter'),
+  ]);
+  await expect(page.locator('#payload')).toContainText('intent=custom-save');
+  await expect(page.locator('#payload')).not.toContainText('intent=removeContact');
+
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const nativePage = await context.newPage();
+  await nativePage.goto('/native-custom-actions');
+  await Promise.all([
+    nativePage.waitForURL('**/party-submit'),
+    nativePage.locator('input[name="name"]').press('Enter'),
+  ]);
+  await expect(nativePage.locator('#payload')).toContainText('intent=custom-save');
+  await expect(nativePage.locator('#payload')).not.toContainText('intent=removeContact');
+  await context.close();
+});
+
 test('invalid lead time survives browser rendering and a native contact action', async ({ browser, page }) => {
   await page.goto('/');
   const vendorForm = page.getByTestId('vendor-invalid').locator('form');
