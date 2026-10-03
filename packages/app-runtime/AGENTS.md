@@ -33,6 +33,14 @@ Application infrastructure composition for the validated runtime profiles in
   A token that cannot claim fails a read-only preflight before role/catalog
   seeding (#3323); the claim transaction's conditional UPDATE stays the
   authority for single use, expiry, and concurrency.
+- Local MCP tokens (`mcpTokens`, `openLocalMcpTokenStore`, `smrt app token`):
+  owner-bound, scoped, expiring (default 30 d, max 365 d), revocable. Only a
+  domain-separated HMAC (application secret) is stored, in the runtime-owned
+  `_smrt_local_mcp_tokens` system table (created like the bootstrap table;
+  never application schema). Issue refuses scopes the owner lacks; verify
+  returns token scopes ∩ live permissions and `null` for anything else.
+  Never log or return the token outside `issue()`. The operator store opens an
+  uncached connection and takes no writer lease (revocation is per request).
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
 
@@ -103,6 +111,11 @@ Application infrastructure composition for the validated runtime profiles in
   `removeOnboardingHandoff: false` is the explicit opt-out.
 - Owner setup re-checks loopback peer and loopback URL host per request and
   returns only fixed `{ code, message }` failures.
+- `verifyLocalMcpToken` (local only) and `resolveMcpPrincipal` (hosted only:
+  issuer/subject → `oidc_identities` → exactly one active user with exactly
+  one active direct membership, else `null`) are the runtime's MCP credential
+  bindings; pass the runtime as `createHostedMcpResourceAuth({ runtime })`.
+  Token claims never select a tenant.
 - `resolveApplicationId()` / `runtimeConfigurationFingerprint()` must stay
   byte-compatible with process managers (golden vectors in tests).
 

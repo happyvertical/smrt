@@ -49,6 +49,8 @@ export {
   type RuntimeHealthBody,
   type SmrtRuntimeBoundPrincipal,
   type SmrtRuntimeLocals,
+  type SmrtRuntimeMcpIdentity,
+  type SmrtRuntimeMcpPrincipalMapping,
   type SmrtRuntimeSessionCookie,
   type SmrtRuntimeSessionOptions,
   type SmrtSvelteKitRuntime,

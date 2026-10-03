@@ -32,18 +32,23 @@ import {
   type SmrtCollection,
   type SmrtObject,
 } from '@happyvertical/smrt-core';
+import { OidcIdentityCollection } from '@happyvertical/smrt-profiles';
 import {
   enableTenancy,
   getCurrentTenant,
   isTenancyEnabled,
   type MinimalTenantContext,
+  withSystemContext,
 } from '@happyvertical/smrt-tenancy';
 import {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
+  MembershipCollection,
   PermissionResolver,
   SessionService,
   type SessionServiceOptions,
+  UserCollection,
+  UserStatus,
   withPrincipalPermissionContext,
   withSessionPermissionContext,
 } from '@happyvertical/smrt-users';
@@ -67,6 +72,7 @@ import {
 import {
   initializeLocalApplicationRuntime,
   type LocalApplicationRuntime,
+  type LocalMcpTokenPrincipal,
   type LocalOwnerBootstrapInvitation,
   resolveLocalRuntimePaths,
   validateApplicationId,
@@ -261,6 +267,21 @@ export interface SmrtRuntimeBoundPrincipal {
   readonly scopes?: readonly string[];
 }
 
+/** A verified hosted access-token identity (see `McpVerifiedIdentity`). */
+export interface SmrtRuntimeMcpIdentity {
+  /** Exact issuer the token was verified against. */
+  readonly issuer: string;
+  /** Verified `sub` claim. */
+  readonly subject: string;
+}
+
+/** The current account and tenant a hosted MCP identity maps to. */
+export interface SmrtRuntimeMcpPrincipalMapping {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly kind: 'human';
+}
+
 export interface SmrtSvelteKitRuntime {
   /** `hooks.server.ts` `handle`. */
   readonly handle: Handle;
@@ -328,6 +349,27 @@ export interface SmrtSvelteKitRuntime {
     principal: P,
     fn: (bound: P & { scopes: string[] }) => Promise<T>,
   ): Promise<T>;
+  /**
+   * Verify an owner-minted local MCP token (`smrt app token`). Resolves the
+   * token's owner principal with its scopes capped to the owner's live
+   * permissions, or `null` for anything else: a malformed, unknown, revoked
+   * or expired token, an inactive owner or membership, or any non-`local`
+   * profile. Pass the runtime as `createHostedMcpResourceAuth({ runtime })`
+   * so `/mcp` accepts these tokens in the local profile.
+   */
+  verifyLocalMcpToken(token: string): Promise<LocalMcpTokenPrincipal | null>;
+  /**
+   * Default membership-backed hosted MCP principal mapping: the verified
+   * issuer/subject must be linked (`oidc_identities`) to exactly one active
+   * user with exactly one active direct tenant membership. Anything else
+   * (unlinked, ambiguous, inactive, several tenants, the `local` profile)
+   * resolves `null`, which denies the request. Token claims never select the
+   * tenant. Applications with multi-tenant users pass their own
+   * `resolvePrincipal`, which takes precedence.
+   */
+  resolveMcpPrincipal(
+    identity: SmrtRuntimeMcpIdentity,
+  ): Promise<SmrtRuntimeMcpPrincipalMapping | null>;
   /** The local runtime. Rejects outside the `local` profile. */
   localRuntime(): Promise<LocalApplicationRuntime>;
   /** The deployed runtime. Rejects in the `local` profile. */
@@ -809,6 +851,72 @@ export function composeSmrtSvelteKitRuntime(
     );
   };
 
+  const verifyLocalMcpToken = async (
+    token: string,
+  ): Promise<LocalMcpTokenPrincipal | null> => {
+    if ((await resolvedRuntime()).profile !== 'local') return null;
+    const local = await localRuntime();
+    // A runtime without a token store has no tokens: fail closed.
+    return (await local.mcpTokens?.verify(token)) ?? null;
+  };
+
+  const resolveMcpPrincipal = async (
+    identity: SmrtRuntimeMcpIdentity,
+  ): Promise<SmrtRuntimeMcpPrincipalMapping | null> => {
+    if ((await resolvedRuntime()).profile === 'local') return null;
+    const issuer = identity?.issuer;
+    const subject = identity?.subject;
+    if (
+      typeof issuer !== 'string' ||
+      issuer.length === 0 ||
+      typeof subject !== 'string' ||
+      subject.length === 0
+    ) {
+      return null;
+    }
+    // Every read is keyed by the verified issuer/subject and the ids derived
+    // from it, and only ids leave this block (the PermissionResolver rule).
+    return withSystemContext(async () => {
+      const identities = await OidcIdentityCollection.create(
+        baseClassOptions('OidcIdentity'),
+      );
+      let linked: Awaited<ReturnType<typeof identities.findBySubject>>;
+      try {
+        linked = await identities.findBySubject(issuer, subject);
+      } catch {
+        return null; // Ambiguous identity: deny.
+      }
+      if (!linked?.profileId) return null;
+      const users = await UserCollection.create(baseClassOptions('User'));
+      const owners = await users.list({
+        where: { profileId: linked.profileId },
+        limit: 2,
+      });
+      const user = owners.length === 1 ? owners[0] : undefined;
+      if (
+        typeof user?.id !== 'string' ||
+        user.id.length === 0 ||
+        user.status !== UserStatus.ACTIVE
+      ) {
+        return null;
+      }
+      const memberships = await MembershipCollection.create(
+        baseClassOptions('Membership'),
+      );
+      const tenants = new Set(
+        (await memberships.findActiveByUser(user.id))
+          .map((membership) => membership.tenantId)
+          .filter(
+            (tenantId): tenantId is string =>
+              typeof tenantId === 'string' && tenantId.length > 0,
+          ),
+      );
+      if (tenants.size !== 1) return null;
+      const [tenantId] = tenants;
+      return Object.freeze({ id: user.id, tenantId, kind: 'human' as const });
+    });
+  };
+
   let sessionServicePromise: Promise<SessionService> | undefined;
   const sessionService = (): Promise<SessionService> => {
     sessionServicePromise ??= (async () => {
@@ -925,6 +1033,8 @@ export function composeSmrtSvelteKitRuntime(
     classOptions,
     getCollection,
     runAsPrincipal,
+    verifyLocalMcpToken,
+    resolveMcpPrincipal,
     localRuntime,
     deployedRuntime,
     health,
