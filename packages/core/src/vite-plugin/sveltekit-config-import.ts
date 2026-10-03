@@ -49,3 +49,47 @@ export function resolveSvelteKitConfigImport(
   const routeRelative = relative(routeDir, configFile).replace(/\\/g, '/');
   return routeRelative.startsWith('.') ? routeRelative : `./${routeRelative}`;
 }
+
+/** Collection accessors a generated route can take from the access prelude. */
+export type GeneratedCollectionAccessor = 'getCollection' | 'getSmrtConfig';
+
+/**
+ * Import block giving a generated route its collection accessors (#3416).
+ *
+ * The route imports the generated registration module (written beside the
+ * config module in the same generation pass, so it always exists), then
+ * resolves `getCollection`/`getSmrtConfig` through
+ * `createGeneratedCollectionAccess()` over the application's config module:
+ * its exported `runtime` (`runtime.getCollection()`, request-scoped), or a
+ * deprecated `getCollection`/`getSmrtConfig` export. The application no longer
+ * hand-writes the accessors generated routes need.
+ */
+export function generateCollectionAccessImports(
+  projectRoot: string,
+  routeDir: string,
+  options: SvelteKitConfigImportOptions,
+  accessors: readonly GeneratedCollectionAccessor[],
+): string {
+  const configImport = resolveSvelteKitConfigImport(
+    projectRoot,
+    routeDir,
+    options,
+  );
+  const registerImport = resolveSvelteKitConfigImport(projectRoot, routeDir, {
+    configPath: options.configPath,
+    configFileName: 'smrt-register.ts',
+  });
+  const source = `${normalizePath(options.configPath || 'src/lib/server')}/${
+    options.configFileName || 'smrt.ts'
+  }`;
+  return [
+    `import '${registerImport}';`,
+    "import { createGeneratedCollectionAccess } from '@happyvertical/smrt-core';",
+    `import * as smrtApplication from '${configImport}';`,
+    '',
+    `const { ${accessors.join(', ')} } = createGeneratedCollectionAccess(`,
+    '  smrtApplication,',
+    `  '${source.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}',`,
+    ');',
+  ].join('\n');
+}

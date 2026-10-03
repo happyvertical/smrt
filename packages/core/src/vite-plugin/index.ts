@@ -49,6 +49,7 @@ import {
   generateSvelteKitRoutes,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
+import { injectSvelteKitRegistration } from './sveltekit-register-injection.js';
 import {
   assertSvelteKitRouteCoordinationComplete,
   contributeSvelteKitRoutes,
@@ -1080,7 +1081,18 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       }
     },
 
-    transform(_code, id) {
+    transform(code, id) {
+      // SvelteKit apps: register the generated objects before the server
+      // config module (`src/lib/server/smrt.ts`) runs, so the application
+      // never hand-writes the guarded `smrt-register.js` import (#3416).
+      if (svelteKit.enabled && !config?.build?.lib) {
+        const injected = injectSvelteKitRegistration(code, id, {
+          projectRoot: configuredProjectRoot ?? projectRoot,
+          configPath: svelteKit.configPath,
+          configFileName: svelteKit.configFileName,
+        });
+        return injected === null ? null : { code: injected, map: null };
+      }
       // Library builds only: inline the scanned manifest into the package's
       // __smrt-register__ shim so the published dist registers field metadata
       // as data instead of resolving ./manifest.json at runtime. Runtime URL

@@ -22,9 +22,10 @@
  *   station principal reading only its own rows of a table the office can
  *   read in full). Unregistered, behavior is unchanged from pre-#3020.
  * - **Database resolution**: the route anchors on the project's first
- *   generated collection (alphabetical) via the consumer's existing
- *   `getCollection()` helper, inheriting its configuration, request-scoped
- *   database support and system-table bootstrap. Multi-database projects
+ *   generated collection (alphabetical) via the generated route-access
+ *   module's `getCollection()` (the app runtime's request-scoped accessor),
+ *   inheriting its configuration, request-scoped database support and
+ *   system-table bootstrap. Multi-database projects
  *   (per-object `db` overrides) see the anchor collection's feed.
  * - Cleanup rides the existing generated-route sweep: the emitted file
  *   starts with {@link AUTO_GENERATED_ROUTE_HEADER}.
@@ -37,7 +38,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
-import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
+import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /**
@@ -110,7 +111,9 @@ export function generateChangesRoute(
   const content = generateChangesRouteTemplate(
     anchorClassName,
     manifestHasTenantScopedObject(manifest),
-    resolveSvelteKitConfigImport(projectRoot, routeDir, options),
+    generateCollectionAccessImports(projectRoot, routeDir, options, [
+      'getCollection',
+    ]),
   );
 
   if (!existsSync(routeDir)) {
@@ -125,7 +128,7 @@ export function generateChangesRoute(
 function generateChangesRouteTemplate(
   anchorClassName: string,
   tenantScoped: boolean,
-  configImport: string,
+  collectionAccessImports: string,
 ): string {
   const tenantHelper = tenantScoped
     ? `
@@ -168,8 +171,8 @@ function establishTenantContext(locals: unknown): void {
 
 import { error, json } from '@sveltejs/kit';
 import { getAuthorizedTenantScopedChangesSince } from '@happyvertical/smrt-core';
-import { getCollection } from '${configImport}';
 import type { RequestHandler } from './$types';
+${collectionAccessImports}
 
 // Fail-closed authorization (#1540): the change feed spans every table, so
 // it is never public — an authenticated principal on \`locals\` is required.

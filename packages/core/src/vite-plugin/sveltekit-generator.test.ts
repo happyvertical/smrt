@@ -158,6 +158,31 @@ function expectGetCollectionCall(
   );
 }
 
+/**
+ * Generated routes resolve collections through the app runtime (#3416): the
+ * generated registration, then `createGeneratedCollectionAccess()` over the
+ * app's config module — never a hand-written `getCollection` import.
+ */
+function expectCollectionAccessImports(
+  content: string,
+  configImport = '$lib/server/smrt',
+): void {
+  const registerImport = `import '${configImport.replace(/[^/]+$/, 'smrt-register')}';`;
+  const appImport = `import * as smrtApplication from '${configImport}';`;
+  expect(content).toContain(registerImport);
+  expect(content).toContain(
+    "import { createGeneratedCollectionAccess } from '@happyvertical/smrt-core';",
+  );
+  expect(content).toContain(appImport);
+  expect(content.indexOf(registerImport)).toBeLessThan(
+    content.indexOf(appImport),
+  );
+  expect(content).toContain(
+    'const { getCollection } = createGeneratedCollectionAccess(',
+  );
+  expect(content).not.toMatch(/import \{ getCollection \} from/);
+}
+
 describe('SvelteKit Route Generator', () => {
   const projectRoot = '/test/project';
 
@@ -167,6 +192,16 @@ describe('SvelteKit Route Generator', () => {
     vi.mocked(existsSync).mockReturnValue(false);
     vi.mocked(readFileSync).mockReturnValue('');
     vi.mocked(readdirSync).mockReturnValue([]);
+    // Consumer resolution: every package resolves except the application
+    // runtime, so the default config stays the self-contained legacy shape.
+    mockSmrtUsersResolve.mockImplementation((specifier) => {
+      if (specifier.startsWith('@happyvertical/smrt-app-runtime')) {
+        throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+          code: 'MODULE_NOT_FOUND',
+        });
+      }
+      return `/fake/node_modules/${specifier}.js`;
+    });
   });
 
   afterEach(() => {
@@ -241,6 +276,57 @@ describe('SvelteKit Route Generator', () => {
         '{ ...(defaults.db as any), ...(override.db as any) }',
       );
       expect(configContent).toContain('requestScopedDb ?? config.db');
+    });
+
+    it('generates a runtime-shaped config when the app installs smrt-app-runtime (#3416)', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      mockSmrtUsersResolve.mockImplementation(
+        (specifier) => `/fake/node_modules/${specifier}.js`,
+      );
+
+      await generateSvelteKitRoutes(
+        projectRoot,
+        {
+          version: '1',
+          timestamp: 0,
+          objects: {
+            TestObject: {
+              className: 'TestObject',
+              name: 'TestObject',
+              filePath: '',
+              collection: 'testobjects',
+              fields: {},
+              methods: {},
+              decoratorConfig: { api: true },
+            },
+          },
+        },
+        {
+          enabled: true,
+          routesDir: 'src/routes/api',
+          objectsDir: 'src/lib/objects',
+          configPath: 'src/lib/server',
+          configFileName: 'smrt.ts',
+        },
+      );
+
+      const configContent = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(
+          (call) =>
+            call[0].toString() === join(projectRoot, 'src/lib/server/smrt.ts'),
+        )?.[1] as string;
+      expect(configContent).toContain(
+        'export const runtime = createSmrtSvelteKitRuntime({',
+      );
+      expect(configContent).toContain(
+        'providerReadiness: createProviderReadinessProbe',
+      );
+      // App options only: no hand-written accessors, registration import, or
+      // writer-lease wiring.
+      expect(configContent).not.toMatch(/export (async )?function/);
+      expect(configContent).not.toContain("import './smrt-register.js'");
+      expect(configContent).not.toContain('acquireWriterLease(');
     });
 
     it('does not let transitive collection subclasses emit model CRUD routes', async () => {
@@ -660,7 +746,7 @@ describe('SvelteKit Route Generator', () => {
       expect(generatedRouteImports).toEqual(
         expect.arrayContaining([
           expect.stringContaining(
-            "import { getCollection } from '$lib/config/smrt-config'",
+            "import * as smrtApplication from '$lib/config/smrt-config';",
           ),
         ]),
       );
@@ -1012,9 +1098,7 @@ describe('SvelteKit Route Generator', () => {
       const content = collectionRoute?.[1] as string;
 
       // Should import from centralized config
-      expect(content).toContain(
-        "import { getCollection } from '$lib/server/smrt'",
-      );
+      expectCollectionAccessImports(content);
 
       // Should include GET handler for list
       expect(content).toContain('export const GET: RequestHandler');
@@ -1077,9 +1161,7 @@ describe('SvelteKit Route Generator', () => {
       const content = itemRoute?.[1] as string;
 
       // Should use centralized config
-      expect(content).toContain(
-        "import { getCollection } from '$lib/server/smrt'",
-      );
+      expectCollectionAccessImports(content);
 
       // Should use a concrete model type while keeping runtime lookup by name.
       expectGetCollectionCall(content, 'Product', 'Product');
@@ -1156,9 +1238,7 @@ describe('SvelteKit Route Generator', () => {
       expect(analyzeRoute).toBeDefined();
       const analyzeContent = analyzeRoute?.[1] as string;
 
-      expect(analyzeContent).toContain(
-        "import { getCollection } from '$lib/server/smrt'",
-      );
+      expectCollectionAccessImports(analyzeContent);
 
       // Should use a concrete model type while keeping runtime lookup by name.
       expectGetCollectionCall(analyzeContent, 'Document', 'Document');

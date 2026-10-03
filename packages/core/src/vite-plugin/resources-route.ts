@@ -200,6 +200,10 @@ export function generateResourcesRoute(
     filePath,
     generateResourcesRouteTemplate(
       resolveSvelteKitConfigImport(projectRoot, routeDir, options),
+      resolveSvelteKitConfigImport(projectRoot, routeDir, {
+        configPath: options.configPath,
+        configFileName: 'smrt-register.ts',
+      }),
       options,
     ),
     'utf-8',
@@ -210,6 +214,7 @@ export function generateResourcesRoute(
 
 function generateResourcesRouteTemplate(
   configImport: string,
+  registerImport: string,
   options: SvelteKitOptions,
 ): string {
   const kebabRoutesOption = options.kebabRoutes ? '\n  kebabRoutes: true,' : '';
@@ -225,12 +230,14 @@ function generateResourcesRouteTemplate(
 
 import { createResourceListHandler } from '@happyvertical/smrt-users/sveltekit';
 // Side effect: registers @smrt() classes in ObjectRegistry before the
-// handler walks it (mirrors the generated CRUD/changes/events routes'
-// configured SMRT config import).
+// handler walks it (the generated registration, then the app's SMRT config
+// module, as the CRUD/changes/events routes import them).
+import '${registerImport}';
 import '${configImport}';
 
 export const GET = createResourceListHandler({
   ensureRegistry: async () => {
+    await import('${registerImport}');
     await import('${configImport}');
   },${kebabRoutesOption}
 });

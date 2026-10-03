@@ -234,7 +234,7 @@ only when `svelteKit.devPlaneRoute.enabled === true` and
 resolvability guard as `_resources`). The route is dev-only (`$app/environment`
 `dev`, else 404), refuses to start without `SMRT_DEV_MCP_TOKEN` (503), and
 delegates everything else to `createDevPlane`, passing `getSmrtConfig(...).db`
-from the generated `$lib/server/smrt` so the plane shares the app's connection.
+from the route-access prelude (below) so the plane shares the app's connection.
 Core never imports smrt-dev-mcp; only the generated file does, at consumer
 runtime. The route carries the auto-generated header so the sweep owns it.
 
@@ -266,3 +266,21 @@ class, action, and raw generated name to in-process catalog composers. App MCP
 uses it for class allow-lists, tenant checks, and compatible workflow guards;
 those consumers must not reverse protocol aliases. The alias remains the sole
 wire tool name and is still the key for public patterns and generic tool policy.
+
+## Generated route collection access (#3416)
+
+Every generated SvelteKit route that needs collections (CRUD, custom actions,
+`_changes`, `_events`, `sync/apply`, `_dev`) opens with
+`generateCollectionAccessImports()` (`sveltekit-config-import.ts`): it imports
+the generated `smrt-register` module, then the app's config module as a
+namespace, and destructures `getCollection`/`getSmrtConfig` from
+`createGeneratedCollectionAccess()` (`src/generated-collection-access.ts`).
+That helper resolves per call, never caching: a legacy `getCollection` /
+`getSmrtConfig` export wins (deprecated, warned once per module, for one
+release), else the exported app-runtime `runtime.getCollection()` /
+`classOptions()`, else it fails with an error naming the module. `_resources`
+and static collection-scoped actions only need registration, so they import
+`smrt-register` and then the config module. When the config module is missing
+and `@happyvertical/smrt-app-runtime/sveltekit` resolves from the consumer, the
+generator writes a runtime-shaped default instead of the legacy
+`getCollection` file.

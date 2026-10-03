@@ -231,6 +231,12 @@ export {
   type FilesystemAdapterFactory,
   registerFilesystemAdapterFactory,
 } from './filesystem-loader';
+// Generated SvelteKit route collection access (#3416)
+export {
+  createGeneratedCollectionAccess,
+  type GeneratedCollectionAccess,
+  type GeneratedCollectionRuntime,
+} from './generated-collection-access';
 // Code generators (tree-shakeable)
 export * from './generators/index';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
