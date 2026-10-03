@@ -23,14 +23,27 @@ import type { ComponentProps } from 'svelte';
 import { COMMERCE_MODULE_META } from '../ui.js';
 
 // Import components
+import CustomerDetail from './components/CustomerDetail.svelte';
+import CustomerDirectory from './components/CustomerDirectory.svelte';
+import CustomerForm from './components/CustomerForm.svelte';
 import InvoiceActions from './components/InvoiceActions.svelte';
 import InvoiceCard from './components/InvoiceCard.svelte';
 import InvoiceHeader from './components/InvoiceHeader.svelte';
 import InvoiceLineItems from './components/InvoiceLineItems.svelte';
 import InvoiceTotals from './components/InvoiceTotals.svelte';
+import PartyContactFields from './components/PartyContactFields.svelte';
 import UnbilledItems from './components/UnbilledItems.svelte';
+import VendorDetail from './components/VendorDetail.svelte';
+import VendorDirectory from './components/VendorDirectory.svelte';
+import VendorForm from './components/VendorForm.svelte';
 
 // Export component Props types
+export type CustomerDetailProps = ComponentProps<typeof CustomerDetail>;
+export { default as CustomerDetail } from './components/CustomerDetail.svelte';
+export type CustomerDirectoryProps = ComponentProps<typeof CustomerDirectory>;
+export { default as CustomerDirectory } from './components/CustomerDirectory.svelte';
+export type CustomerFormProps = ComponentProps<typeof CustomerForm>;
+export { default as CustomerForm } from './components/CustomerForm.svelte';
 export type InvoiceActionsProps = ComponentProps<typeof InvoiceActions>;
 // Export components
 export { default as InvoiceActions } from './components/InvoiceActions.svelte';
@@ -44,6 +57,41 @@ export type InvoiceTotalsProps = ComponentProps<typeof InvoiceTotals>;
 export { default as InvoiceTotals } from './components/InvoiceTotals.svelte';
 export type UnbilledItemsProps = ComponentProps<typeof UnbilledItems>;
 export { default as UnbilledItems } from './components/UnbilledItems.svelte';
+export type PartyContactFieldsProps = ComponentProps<typeof PartyContactFields>;
+export { default as PartyContactFields } from './components/PartyContactFields.svelte';
+export type VendorDetailProps = ComponentProps<typeof VendorDetail>;
+export { default as VendorDetail } from './components/VendorDetail.svelte';
+export type VendorDirectoryProps = ComponentProps<typeof VendorDirectory>;
+export { default as VendorDirectory } from './components/VendorDirectory.svelte';
+export type VendorFormProps = ComponentProps<typeof VendorForm>;
+export { default as VendorForm } from './components/VendorForm.svelte';
+export type {
+  CustomerDisplayData,
+  CustomerFieldNames,
+  CustomerFormValues,
+  PartyAddressData,
+  PartyContactData,
+  PartyContactLabels,
+  PartyDirectoryExtension,
+  PartyDirectoryItem,
+  PartyExtension,
+  PartyFieldNames,
+  PartyFormErrors,
+  PartyFormTransport,
+  PartyIdentityKind,
+  PartyProfileData,
+  PartySurfaceLabels,
+  VendorDisplayData,
+  VendorFieldNames,
+  VendorFormValues,
+} from './party-types.js';
+export {
+  DEFAULT_CUSTOMER_FIELD_NAMES,
+  DEFAULT_PARTY_FIELD_NAMES,
+  DEFAULT_VENDOR_FIELD_NAMES,
+  formatPartyAddress,
+  formatPartyMinorUnits,
+} from './party-types.js';
 // Export types
 export type {
   InvoiceData,
@@ -54,6 +102,41 @@ export type {
 
 // Auto-register module and components with ModuleUIRegistry
 ModuleUIRegistry.registerModule(COMMERCE_MODULE_META);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'customer-directory',
+  CustomerDirectory,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'customer-detail',
+  CustomerDetail,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'customer-form',
+  CustomerForm,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'vendor-directory',
+  VendorDirectory,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'vendor-detail',
+  VendorDetail,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'vendor-form',
+  VendorForm,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'party-contact-fields',
+  PartyContactFields,
+);
 ModuleUIRegistry.register(
   '@happyvertical/smrt-commerce',
   'invoice-card',
