@@ -48,6 +48,11 @@ export class SubscriptionServiceCommercialResolver
     );
   }
 
+  /** Reject unsupported source quantities before the shared approval writes. */
+  validateEntry(entry: ServiceTimeEntry): void {
+    entry.requireDurationSeconds();
+  }
+
   async priceClient(entry: ServiceTimeEntry): Promise<CommercialSnapshot> {
     if (!entry.id || !entry.tenantId)
       throw new Error(

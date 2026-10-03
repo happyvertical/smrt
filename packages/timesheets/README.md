@@ -93,7 +93,11 @@ and null for ordinary integer-second entries. `entry.durationHours()` is a
 JavaScript-number convenience for display: binary floating-point precision limits
 apply. Use the exact accessor and your accepted commercial terms/amounts when
 creating snapshots; do not recompute historical charges through the convenience
-method. For example, accepted `1.0005` hours at `12345` minor units/hour may carry
+method. Commercial resolvers with representation restrictions implement the optional
+pure `validateEntry(entry)` hook (synchronous or asynchronous). Approval awaits it
+before freezing a submitted entry or invoking either pricing/pay resolver; a
+rejection leaves the entry submitted and creates no snapshots. Fully completed
+approval retries reuse their frozen snapshots without revalidation. For example, accepted `1.0005` hours at `12345` minor units/hour may carry
 an already accepted `12351`-minor-unit charge. A commercial resolver returns that
 amount and `{ hours: '1.0005', rateMinorUnits: '12345' }` in its immutable terms.
 The entry evidence, charge and compensation snapshots freeze on approval;

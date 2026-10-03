@@ -69,7 +69,8 @@ approved duration or evidence.
 The shared service accepts exact `durationHours` text and stores null seconds;
 see [the Timesheets contract](../timesheets/README.md#decimal-hours-only-sources).
 `SubscriptionServiceCommercialResolver` requires integer-second evidence and
-rejects this representation before recording usage. Consumers with accepted
+rejects this representation through its `validateEntry` preflight before approval
+status changes, provider compensation, or usage recording. Consumers with accepted
 hours-based commercial terms use an hours-aware `ServiceCommercialResolver`.
 
 For `ServiceEvidenceList`, pass null `durationSeconds` and the exact accessor's

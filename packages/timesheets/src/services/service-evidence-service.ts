@@ -56,6 +56,8 @@ export interface CommercialSnapshot {
 }
 
 export interface ServiceCommercialResolver {
+  /** Pure preflight: reject unsupported evidence before approval or snapshot writes. */
+  validateEntry?(entry: ServiceTimeEntry): void | Promise<void>;
   priceClient(entry: ServiceTimeEntry): Promise<CommercialSnapshot>;
   compensateProvider(entry: ServiceTimeEntry): Promise<CommercialSnapshot>;
 }
@@ -200,6 +202,8 @@ export class ServiceEvidenceService {
     if (entry.status === 'approved' && existingCharge && existingCompensation)
       return entry;
 
+    await this.commercial.validateEntry?.(entry);
+
     // Commit approval before either commercial resolver runs. The subscription
     // resolver creates an approved ClientCharge as part of priceClient(), so a
     // failed approval must never leave billable spend behind.
@@ -219,6 +223,7 @@ export class ServiceEvidenceService {
         const concurrent = await this.entries.get(timeEntryId);
         if (concurrent?.status !== 'approved') throw error;
         entry = concurrent;
+        await this.commercial.validateEntry?.(entry);
       }
     }
     const provider = existingCompensation

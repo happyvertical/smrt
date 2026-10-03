@@ -126,6 +126,56 @@ export function decimalHoursSuite(
       });
     });
 
+    it('awaits commercial preflight before freezing evidence or writing either snapshot', async () => {
+      await withTenant({ tenantId }, async () => {
+        let resolverCalls = 0;
+        const service = await ServiceEvidenceService.create(
+          { db },
+          {
+            validateEntry: async () => {
+              throw new Error('unsupported hours policy');
+            },
+            priceClient: async () => {
+              resolverCalls++;
+              return commercial.priceClient();
+            },
+            compensateProvider: async () => {
+              resolverCalls++;
+              return commercial.compensateProvider();
+            },
+          },
+        );
+        const entry = await service.record(input);
+        await service.submit(entry);
+        await expect(
+          service.approve(entry, { approvalPath: 'operator' }),
+        ).rejects.toThrow('unsupported hours policy');
+        expect(resolverCalls).toBe(0);
+        const entries = await ServiceTimeEntryCollection.create({ db });
+        const reloaded = (await entries.get(entry.id!))!;
+        expect(reloaded.status).toBe('submitted');
+        expect(reloaded.approvedAt).toBeNull();
+        expect(
+          await (await ServiceChargeSnapshotCollection.create({ db })).count({
+            where: { timeEntryId: entry.id },
+          }),
+        ).toBe(0);
+        expect(
+          await (
+            await ServiceCompensationSnapshotCollection.create({ db })
+          ).count({ where: { timeEntryId: entry.id } }),
+        ).toBe(0);
+        const supported = await ServiceEvidenceService.create(
+          { db },
+          commercial,
+        );
+        await supported.approve(reloaded, { approvalPath: 'operator' });
+        expect(reloaded.status).toBe('approved');
+        await service.approve(reloaded, { approvalPath: 'operator' }); // Completed approval retries retain frozen terms without revalidation.
+        expect(resolverCalls).toBe(0);
+      });
+    });
+
     it('binds every write to an owned transaction and rolls back evidence and snapshots', async () => {
       await withTenant({ tenantId }, async () => {
         if (!db.transaction)
