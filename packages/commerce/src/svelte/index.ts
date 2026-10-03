@@ -84,3 +84,46 @@ ModuleUIRegistry.register(
   'unbilled-items',
   UnbilledItems,
 );
+
+// Quotation and estimate presentation; no backend mutation or domain migration.
+import QuoteEditor from './components/QuoteEditor.svelte';
+import QuoteRevisionComparison from './components/QuoteRevisionComparison.svelte';
+import QuoteRevisionHistory from './components/QuoteRevisionHistory.svelte';
+
+export { QuoteEditor, QuoteRevisionComparison, QuoteRevisionHistory };
+export type QuoteEditorProps = ComponentProps<typeof QuoteEditor>;
+export type QuoteRevisionHistoryProps = ComponentProps<
+  typeof QuoteRevisionHistory
+>;
+export type QuoteRevisionComparisonProps = ComponentProps<
+  typeof QuoteRevisionComparison
+>;
+export type {
+  QuoteDocumentKind,
+  QuoteDraftLine,
+  QuoteDraftValues,
+  QuoteFieldNames,
+  QuoteMoneyMinor,
+  QuoteRevision,
+} from './quote-types.js';
+export {
+  quoteFieldNames,
+  quoteMinorText,
+  quoteRevisionDelta,
+} from './quote-types.js';
+
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'quote-editor',
+  QuoteEditor,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'quote-revision-history',
+  QuoteRevisionHistory,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-commerce',
+  'quote-revision-comparison',
+  QuoteRevisionComparison,
+);

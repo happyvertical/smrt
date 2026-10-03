@@ -18,6 +18,35 @@ import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
  * Commerce module UI slots
  */
 export const COMMERCE_UI_SLOTS: Record<string, ModuleUISlot> = {
+  'quote-editor': {
+    id: 'quote-editor',
+    label: 'Quotation / Estimate Editor',
+    description:
+      'Native retained-value document editor with caller-owned actions',
+    icon: 'file-text',
+    category: 'form',
+    order: 20,
+    propsInterface: 'QuoteEditorProps',
+  },
+  'quote-revision-history': {
+    id: 'quote-revision-history',
+    label: 'Quote Revision History',
+    description: 'Read-only retained quotation and estimate revisions',
+    icon: 'clock',
+    category: 'list',
+    order: 21,
+    propsInterface: 'QuoteRevisionHistoryProps',
+  },
+  'quote-revision-comparison': {
+    id: 'quote-revision-comparison',
+    label: 'Quote Revision Comparison',
+    description: 'Compare explicit minor-unit revision totals and scope',
+    icon: 'file-text',
+    category: 'display',
+    order: 22,
+    propsInterface: 'QuoteRevisionComparisonProps',
+  },
+
   'invoice-card': {
     id: 'invoice-card',
     label: 'Invoice Card',
