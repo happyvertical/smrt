@@ -73,6 +73,16 @@ export default {
     },
 
     {
+      id: 'pricing-version-decision',
+      title: 'Pricing version decisions',
+      description:
+        'Compare retained estimates and rehearse a rejected decision without losing input.',
+      loadComponent: () => import('./playground/PricingVersionPreview.svelte'),
+      order: 30,
+      props: {},
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
       id: 'invoice-preparation',
       title: 'Invoice Preparation',
       description:

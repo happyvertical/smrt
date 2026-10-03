@@ -47,6 +47,24 @@ export const COMMERCE_UI_SLOTS: Record<string, ModuleUISlot> = {
     propsInterface: 'QuoteRevisionComparisonProps',
   },
 
+  'pricing-version-summary': {
+    id: 'pricing-version-summary',
+    label: 'Pricing Version Summary',
+    description: 'Retained estimate version and source amounts',
+    icon: 'file-text',
+    category: 'display',
+    order: 30,
+    propsInterface: 'PricingVersionSummaryProps',
+  },
+  'pricing-version-decision': {
+    id: 'pricing-version-decision',
+    label: 'Pricing Version Decision',
+    description: 'Caller-owned native decisions over retained pricing',
+    icon: 'file-text',
+    category: 'form',
+    order: 31,
+    propsInterface: 'PricingVersionDecisionProps',
+  },
   'invoice-editor': {
     id: 'invoice-editor',
     label: 'Invoice Preparation',
