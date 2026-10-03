@@ -44,7 +44,13 @@ import {
   type McpResourcePolicy,
   prepareMcpAppResource,
 } from './resources.js';
-import { compareMcpToolNames, isPublicMcpTool } from './tools.js';
+import {
+  compareMcpToolNames,
+  isPublicMcpTool,
+  MCP_TOOL_EFFECTS,
+  type McpToolEffect,
+  mcpToolEffect,
+} from './tools.js';
 import {
   createMcpWorkflowTool,
   type McpWorkflowTool,
@@ -175,6 +181,14 @@ export interface CreateMcpAppServerOptions {
    * assertion gates before the handler runs.
    */
   workflowTools?: readonly McpWorkflowToolDefinition[];
+  /**
+   * Restrict the catalog to tools whose effect (see `mcpToolEffect`) is
+   * listed, for example `['read']` until per-operation authorization exists.
+   * Excluded tools are absent from discovery and a direct call receives the
+   * same not-found error as an unknown tool, so they cannot be enumerated.
+   * Omitted: every allow-listed tool, regardless of effect.
+   */
+  effects?: readonly McpToolEffect[];
   resources?: readonly McpAppResourceDefinition[];
   /** Required for private resources; rechecked on catalog/read, errors deny. */
   resourcePolicy?: McpResourcePolicy;
@@ -270,6 +284,21 @@ function configuredToolListCacheHint(
   };
 }
 
+function configuredEffects(
+  effects: readonly McpToolEffect[] | undefined,
+): ReadonlySet<McpToolEffect> | undefined {
+  if (effects === undefined) return undefined;
+  if (
+    !Array.isArray(effects) ||
+    effects.some((effect) => !MCP_TOOL_EFFECTS.includes(effect))
+  ) {
+    throw new TypeError(
+      "MCP effects must be an array of 'read', 'write' or 'destructive'.",
+    );
+  }
+  return new Set(effects);
+}
+
 function isTenantScopedTool(identity: MCPToolIdentity): boolean {
   const objectName = identity.objectName.toLowerCase();
   for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
@@ -329,6 +358,7 @@ export function createMcpAppServer(
     }
     workflowToolsByName.set(workflowTool.tool.name, workflowTool);
   }
+  const allowedEffects = configuredEffects(options.effects);
   const requestedToolListCacheHint = configuredToolListCacheHint(
     options.toolListCache,
   );
@@ -422,9 +452,14 @@ export function createMcpAppServer(
         throw new TypeError('MCP tool references an undeclared resource.');
       }
     }
-    return allTools.sort((left, right) =>
-      compareMcpToolNames(left.tool.name, right.tool.name),
-    );
+    return allTools
+      .filter(
+        ({ tool }) =>
+          !allowedEffects || allowedEffects.has(mcpToolEffect(tool)),
+      )
+      .sort((left, right) =>
+        compareMcpToolNames(left.tool.name, right.tool.name),
+      );
   }
 
   function runWorkflowAssertions(

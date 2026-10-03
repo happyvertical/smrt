@@ -80,7 +80,10 @@ export {
   isPublicMcpTool,
   isPublicToolName,
   isReadOnlyToolName,
+  MCP_TOOL_EFFECTS,
+  type McpToolEffect,
   matchesToolPattern,
+  mcpToolEffect,
 } from './tools.js';
 export {
   createMcpWorkflowTool,

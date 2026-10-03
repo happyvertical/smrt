@@ -81,6 +81,33 @@ export function isPublicMcpTool(
   );
 }
 
+/** Canonical tool effect vocabulary, shared with WebMCP `effects`. */
+export type McpToolEffect = 'read' | 'write' | 'destructive';
+
+/** Every supported {@link McpToolEffect}. */
+export const MCP_TOOL_EFFECTS: readonly McpToolEffect[] = Object.freeze([
+  'read',
+  'write',
+  'destructive',
+]);
+
+/**
+ * Classify a descriptor's effect. `read` uses the same read-only detection as
+ * {@link isPublicMcpTool} (the canonical `readOnlyHint`, else the `_list`/`_get`
+ * name rule). Any other tool is `destructive` unless it explicitly declares
+ * `destructiveHint: false` (MCP's default for a non-read-only tool), so an
+ * undeclared tool never counts as a mere write.
+ */
+export function mcpToolEffect(tool: {
+  name: string;
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
+}): McpToolEffect {
+  const readOnly =
+    tool.annotations?.readOnlyHint ?? isReadOnlyToolName(tool.name);
+  if (readOnly) return 'read';
+  return tool.annotations?.destructiveHint === false ? 'write' : 'destructive';
+}
+
 /**
  * Lower-case `<class>_` prefixes the app considers "allowed core tools"
  * given a list of SMRT class names. Used to build the allow-list for
