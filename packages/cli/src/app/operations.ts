@@ -11,6 +11,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
   accessSync,
+  chmodSync,
   constants,
   cpSync,
   existsSync,
@@ -685,11 +686,7 @@ async function doctor(context: AppContext): Promise<number> {
   return report.status === 'error' ? 1 : 0;
 }
 
-async function backup(
-  context: AppContext,
-  args: string[],
-  operationLock?: OperationLock,
-): Promise<void> {
+async function backup(context: AppContext, args: string[]): Promise<void> {
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   if (runtime.profile !== 'local') {
     throw new Error(
@@ -708,48 +705,50 @@ async function backup(
     dataDirectory: process.env.SMRT_DATA_DIR,
     sourceRoot: context.sourceRoot,
   });
-  const operatorLease = acquireWriterLease(preparedStateRoot(context), {
-    operationInstance: operationLock?.instance,
-  });
-  try {
-    const destination = assertExternalArtifactPath({
-      sourceRoot: context.sourceRoot,
-      path:
-        explicitDestination ||
-        join(
-          dirname(paths.root),
-          'backups',
-          `${context.appId}-${new Date().toISOString().replaceAll(':', '-')}`,
-        ),
-      label: 'Backup destination',
-    });
-    ensurePrivateDirectory(dirname(destination));
-    try {
-      mkdirSync(destination, { mode: 0o700 });
-    } catch (error) {
-      if (errorCode(error) === 'EEXIST') {
-        throw new Error(`Backup destination already exists: ${destination}`);
-      }
-      throw error;
-    }
-    try {
-      cpSync(paths.root, destination, {
-        recursive: true,
-        force: false,
-        errorOnExist: true,
+  await withOperationLock(
+    preparedStateRoot(context),
+    'backup',
+    async (lock) => {
+      const operatorLease = acquireWriterLease(preparedStateRoot(context), {
+        operationInstance: lock.instance,
       });
-    } catch (error) {
-      rmSync(destination, { recursive: true, force: true });
-      throw error;
-    }
-    printJson(context, {
-      schemaVersion: 1,
-      status: 'backed-up',
-      destination,
-    });
-  } finally {
-    operatorLease.release();
-  }
+      try {
+        const destination = assertExternalArtifactPath({
+          sourceRoot: context.sourceRoot,
+          path:
+            explicitDestination ||
+            join(
+              dirname(paths.root),
+              'backups',
+              `${context.appId}-${new Date().toISOString().replaceAll(':', '-')}`,
+            ),
+          label: 'Backup destination',
+        });
+        ensurePrivateDirectory(dirname(destination));
+        if (existsSync(destination)) {
+          throw new Error(`Backup destination already exists: ${destination}`);
+        }
+        try {
+          cpSync(paths.root, destination, {
+            recursive: true,
+            force: false,
+            errorOnExist: true,
+          });
+          chmodSync(destination, 0o700);
+        } catch (error) {
+          rmSync(destination, { recursive: true, force: true });
+          throw error;
+        }
+        printJson(context, {
+          schemaVersion: 1,
+          status: 'backed-up',
+          destination,
+        });
+      } finally {
+        operatorLease.release();
+      }
+    },
+  );
 }
 
 /** Portability adapter contract (built-in or an application override). */
@@ -898,9 +897,7 @@ export async function runApplicationOperation(
       );
       return 0;
     case 'backup':
-      await withOperationLock(preparedStateRoot(context), operation, (lock) =>
-        backup(context, args, lock),
-      );
+      await backup(context, args);
       return 0;
     case 'export':
     case 'import':
