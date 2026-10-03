@@ -42,17 +42,22 @@ const { profile } = await runtime.resolvedRuntime();
  * Stateless SDK-v2 Streamable HTTP MCP endpoint for this app's own `Item`.
  * Locally the principal is the signed session (user, authorized tenant, and
  * permission slugs); hosted profiles verify a bearer token and map it through
- * the application-owned `resolveHostedMcpPrincipal`. Every principal needs
- * `items.read`; browser requests from a foreign `Origin` are refused.
+ * the application-owned `resolveHostedMcpPrincipal`, and the verified bearer
+ * principal is bound into the request permission context (under
+ * `database-rls`, its own RLS transaction). Every principal needs
+ * `items.read`, so only read-only tools are published until per-operation
+ * authorization exists; browser requests from a foreign `Origin` are refused.
  */
 export const POST = mountMcpAppRoute({
   models: [Item],
   requiredScopes: ['items.read'],
+  effects: ['read'],
   smrtOptions: () => ({ db: runtime.databaseConfig() }),
   auth: createHostedMcpResourceAuth({
     profile,
     resolvePrincipal: resolveHostedMcpPrincipal,
   }),
+  bindPrincipal: runtime.runAsPrincipal,
   workflowTools: [itemsOverview],
   resources: [
     {

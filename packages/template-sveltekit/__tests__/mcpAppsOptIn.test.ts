@@ -45,6 +45,20 @@ describe('opt-in MCP Apps runtime', () => {
     expect(route).toContain('csp: {}');
   });
 
+  it('exposes only read-only tools until per-operation authorization exists', () => {
+    const route = source('src/routes/api/mcp/+server.ts');
+    // `items.read` gates every published tool, so the catalog itself must be
+    // limited to read effects; create/update/delete are never enumerable.
+    expect(route).toContain("effects: ['read']");
+  });
+
+  it('binds a verified bearer principal into the request permission context', () => {
+    const route = source('src/routes/api/mcp/+server.ts');
+    // Under database-rls the request transaction must carry the bearer
+    // user, tenant and permissions, not the anonymous or cookie session.
+    expect(route).toContain('bindPrincipal: runtime.runAsPrincipal');
+  });
+
   it('shares one hosted auth configuration between the route and its metadata', () => {
     const route = source('src/routes/api/mcp/+server.ts');
     const metadata = source(
