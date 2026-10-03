@@ -1,6 +1,6 @@
 # @happyvertical/smrt-commerce
 
-Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (5 STI types), invoices with ledger integration, payments, and fulfillment tracking.
+Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (9 STI types), invoices with ledger integration, payments, and fulfillment tracking.
 
 ## Installation
 
