@@ -63,7 +63,7 @@ try {
  assert.equal(await page.getByLabel('Total, including tax').inputValue(),'12..50');
  await page.getByLabel('Reference',{exact:true}).fill('Keyboard retained');
  await page.getByRole('button',{name:'Add line',exact:true}).focus();
- await Promise.all([page.waitForURL('**/post'),page.keyboard.press('Enter')]);
+ await Promise.all([page.waitForEvent('load'),page.keyboard.press('Enter')]);
  assert.equal(await page.getByLabel('Total, including tax').inputValue(),'12..50');
  assert.equal(await page.locator('[name=lineId]').count(),2);
  assert.equal(requests.at(-1).intent,'addLine');
