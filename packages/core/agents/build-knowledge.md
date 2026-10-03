@@ -122,7 +122,10 @@ decorator block, `smrtConsumer`, then `smrtPlugin` with the template path
 conventions. Its package list comes only from the `smrt({ packages })` option, or
 `smrt.config` `consumer.packages` (smrt-config schema); it never sniffs
 `package.json`, and a missing or malformed list throws. Keep its output
-byte-identical to the two-plugin form (`src/vite-preset/index.test.ts`).
+byte-identical to the two-plugin form (`src/vite-preset/index.test.ts`). It
+also dedupes `@sveltejs/kit` (`smrt:shared-runtime`): SvelteKit matches
+`redirect()`/`fail()` by class, and a linked/workspace SMRT SvelteKit entry
+would otherwise import its own copy and turn redirects into 500s.
 
 ```typescript
 // vite.config.ts — required for @smrt() decorators (Vite 8+, oxc transform)

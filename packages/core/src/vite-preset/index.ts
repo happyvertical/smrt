@@ -118,6 +118,25 @@ function decoratorPlugin(): Plugin {
 }
 
 /**
+ * Packages SMRT's SvelteKit entries share with the app by identity. SvelteKit
+ * recognizes `redirect()`/`fail()` results by class, so a server entry such as
+ * `@happyvertical/smrt-app-runtime/sveltekit` must import the app's own copy.
+ * A registry install already resolves that peer from the app; a linked or
+ * workspace package resolves it from its own directory instead, and its
+ * redirects then surface as 500s. Deduping makes both layouts identical.
+ */
+export const SMRT_SHARED_RUNTIME_PACKAGES = ['@sveltejs/kit'] as const;
+
+function sharedRuntimePlugin(): Plugin {
+  return {
+    name: 'smrt:shared-runtime',
+    config() {
+      return { resolve: { dedupe: [...SMRT_SHARED_RUNTIME_PACKAGES] } };
+    },
+  };
+}
+
+/**
  * SMRT Vite preset: decorators, dependency manifests, and app object
  * generation in one entry. Returns a promise because the package list is read
  * from `smrt.config.ts`; Vite accepts promised plugins.
@@ -140,6 +159,7 @@ export async function smrt(options: SmrtPresetOptions = {}): Promise<Plugin[]> {
 
   const plugins: Plugin[] = [];
   if (options.decorators !== false) plugins.push(decoratorPlugin());
+  plugins.push(sharedRuntimePlugin());
   // smrtConsumer must precede smrtPlugin, as in the template's hand-written form.
   // With no declared packages there is nothing to consume, and an empty list
   // would otherwise trigger dependency discovery.

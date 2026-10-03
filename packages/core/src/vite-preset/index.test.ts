@@ -137,6 +137,7 @@ describe('smrt() Vite preset', () => {
       });
       expect(plugins.map((p) => p.name)).toEqual([
         'smrt:decorators',
+        'smrt:shared-runtime',
         smrtConsumer({ packages: ['@test/pkg'] }).name,
         smrtPlugin().name,
       ]);
@@ -173,6 +174,15 @@ describe('smrt() Vite preset', () => {
       ).toEqual({ oxc: { decorator: { emitDecoratorMetadata: true } } });
     });
 
+    it('dedupes @sveltejs/kit so SMRT SvelteKit entries share the app copy', async () => {
+      const plugins = (await smrt({ packages: [] })) as AnyPlugin[];
+      const shared = plugins.find((p) => p.name === 'smrt:shared-runtime');
+      expect(shared).toBeDefined();
+      expect(callHook(shared as AnyPlugin, 'config', {})).toEqual({
+        resolve: { dedupe: ['@sveltejs/kit'] },
+      });
+    });
+
     it('omits the decorator plugin when decorators is false', async () => {
       const plugins = await smrt({ packages: [], decorators: false });
       expect(plugins.map((p) => p.name)).not.toContain('smrt:decorators');
@@ -206,7 +216,10 @@ describe('smrt() Vite preset', () => {
       writeConfig(['@test/pkg']);
       process.chdir(root);
       const plugins = await smrt();
-      expect(plugins).toHaveLength(3);
+      expect(plugins.map((p) => p.name)).toContain(
+        smrtConsumer({ packages: ['@test/pkg'] }).name,
+      );
+      expect(plugins).toHaveLength(4);
     });
 
     it('does not sniff package.json dependencies', async () => {
@@ -254,7 +267,11 @@ describe('smrt() Vite preset', () => {
     it('treats an empty list as "consumes nothing" and skips the consumer plugin', async () => {
       writeConfig([]);
       const names = (await smrt({ projectRoot: root })).map((p) => p.name);
-      expect(names).toEqual(['smrt:decorators', smrtPlugin().name]);
+      expect(names).toEqual([
+        'smrt:decorators',
+        'smrt:shared-runtime',
+        smrtPlugin().name,
+      ]);
     });
 
     it('fails closed when an empty list contradicts an installed provider', async () => {
