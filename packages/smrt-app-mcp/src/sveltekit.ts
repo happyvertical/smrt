@@ -269,8 +269,19 @@ export function principalFromSessionLocals(event: {
  */
 export type McpPrincipalBinder = <T>(
   principal: McpAppPrincipal & { id: string },
-  run: (bound?: McpAppPrincipal & { id: string }) => Promise<T>,
+  run: (bound?: McpBoundPrincipal) => Promise<T>,
 ) => Promise<T>;
+
+/**
+ * The principal a binder hands back to `run`: the authenticated identity,
+ * possibly as a frozen snapshot whose arrays are readonly (for example the
+ * deep-frozen principal `runtime.runAsPrincipal` passes its callback).
+ */
+export type McpBoundPrincipal = Omit<McpAppPrincipal, 'scopes' | 'roles'> & {
+  id: string;
+  scopes?: readonly string[];
+  roles?: readonly string[];
+};
 
 /**
  * The principal dispatch authorizes after binding: the authenticated identity
@@ -279,7 +290,7 @@ export type McpPrincipalBinder = <T>(
  */
 function effectiveBoundPrincipal(
   authenticated: McpAppPrincipal & { id: string },
-  bound: (McpAppPrincipal & { id: string }) | undefined,
+  bound: McpBoundPrincipal | undefined,
 ): (McpAppPrincipal & { id: string }) | undefined {
   if (bound === undefined) return authenticated;
   if (

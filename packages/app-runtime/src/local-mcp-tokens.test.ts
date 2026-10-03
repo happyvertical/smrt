@@ -323,6 +323,63 @@ describe('local MCP tokens', () => {
     expect(frozen).toBe(true);
   });
 
+  it('deep-snapshots every array and object field before resolution awaits', async () => {
+    const { runtime, owner } = await ownedRuntime('deep-snapshot');
+    const principal = {
+      id: owner.userId,
+      tenantId: owner.tenantId,
+      kind: 'human',
+      scopes: [READ],
+      roles: ['viewer'],
+      allowCrossTenant: false,
+      // An application-defined extra field (kept as a frozen deep copy).
+      meta: { flags: ['a'], nested: { level: 'basic' } },
+    };
+    const pending = runtime.runAsPrincipal(principal, async (bound) => {
+      const deepFrozen = (value: unknown): boolean =>
+        value === null ||
+        typeof value !== 'object' ||
+        (Object.isFrozen(value) &&
+          Object.values(value as object).every(deepFrozen));
+      return { bound, deepFrozen: deepFrozen(bound) };
+    });
+    // Membership resolution is awaiting: mutate every array/object field.
+    principal.scopes.push(EXPORT);
+    principal.roles.push('owner');
+    principal.allowCrossTenant = true;
+    principal.meta.flags.push('admin');
+    principal.meta.nested.level = 'admin';
+    principal.meta = { flags: ['replaced'], nested: { level: 'replaced' } };
+    const { bound, deepFrozen } = await pending;
+    expect(bound).toMatchObject({
+      id: owner.userId,
+      tenantId: owner.tenantId,
+      scopes: [READ],
+      roles: ['viewer'],
+      allowCrossTenant: false,
+      meta: { flags: ['a'], nested: { level: 'basic' } },
+    });
+    expect(deepFrozen).toBe(true);
+  });
+
+  it('rejects principals carrying non-data fields', async () => {
+    const { runtime, owner } = await ownedRuntime('non-data');
+    for (const extra of [
+      { callback: () => 'x' },
+      { when: new Date() },
+      { roles: ['ok', 1] },
+      { kind: 1 },
+      { allowCrossTenant: 'yes' },
+    ]) {
+      await expect(
+        runtime.runAsPrincipal(
+          { id: owner.userId, tenantId: owner.tenantId, ...extra } as never,
+          async () => 'ran',
+        ),
+      ).rejects.toThrow('bound principal');
+    }
+  });
+
   it('copies caller scopes before binding', async () => {
     const { runtime, owner } = await ownedRuntime('copied-scopes');
     const scopes = [READ];

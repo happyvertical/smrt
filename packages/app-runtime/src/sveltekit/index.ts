@@ -48,6 +48,8 @@ export {
   type ProviderReadinessFactory,
   type RuntimeHealthBody,
   type SmrtRuntimeBoundPrincipal,
+  type SmrtRuntimeBoundPrincipalSnapshot,
+  type SmrtRuntimeDeepReadonly,
   type SmrtRuntimeLocals,
   type SmrtRuntimeMcpIdentity,
   type SmrtRuntimeMcpPrincipalMapping,

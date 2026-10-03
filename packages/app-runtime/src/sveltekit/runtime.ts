@@ -300,6 +300,25 @@ export interface SmrtRuntimeMcpPrincipalMapping {
   readonly tenantBinding: 'direct';
 }
 
+/** `T` with every nested array and object field readonly. */
+export type SmrtRuntimeDeepReadonly<T> = T extends readonly (infer U)[]
+  ? readonly SmrtRuntimeDeepReadonly<U>[]
+  : T extends object
+    ? { readonly [K in keyof T]: SmrtRuntimeDeepReadonly<T[K]> }
+    : T;
+
+/**
+ * The frozen principal `runAsPrincipal` hands its callback: a deep, frozen
+ * snapshot of the caller's principal taken before any await, with the
+ * effective `tenantBinding` and effective (frozen) `scopes`.
+ */
+export type SmrtRuntimeBoundPrincipalSnapshot<P> = SmrtRuntimeDeepReadonly<
+  Omit<P, 'scopes' | 'tenantBinding'>
+> & {
+  readonly scopes: readonly string[];
+  readonly tenantBinding: TenantBindingMode;
+};
+
 export interface SmrtSvelteKitRuntime {
   /** `hooks.server.ts` `handle`. */
   readonly handle: Handle;
@@ -371,7 +390,7 @@ export interface SmrtSvelteKitRuntime {
     P extends SmrtRuntimeBoundPrincipal = SmrtRuntimeBoundPrincipal,
   >(
     principal: P,
-    fn: (bound: P & { scopes: string[] }) => Promise<T>,
+    fn: (bound: SmrtRuntimeBoundPrincipalSnapshot<P>) => Promise<T>,
   ): Promise<T>;
   /**
    * Verify an owner-minted local MCP token (`smrt app token`). Resolves the
@@ -840,7 +859,7 @@ export function composeSmrtSvelteKitRuntime(
     P extends SmrtRuntimeBoundPrincipal = SmrtRuntimeBoundPrincipal,
   >(
     principal: P,
-    fn: (bound: P & { scopes: string[] }) => Promise<T>,
+    fn: (bound: SmrtRuntimeBoundPrincipalSnapshot<P>) => Promise<T>,
   ): Promise<T> => {
     // One complete snapshot before the first await: authorization, the
     // permission/RLS context and the principal handed to `fn` all come from
@@ -849,8 +868,8 @@ export function composeSmrtSvelteKitRuntime(
     if (!principal || typeof principal !== 'object') {
       throw new Error('A bound principal is required.');
     }
-    const tokenDerived = isLocalMcpTokenPrincipal(principal);
-    const snapshot = { ...principal } as P;
+    const snapshot = snapshotBoundPrincipal(principal) as P;
+    const tokenDerived = isLocalMcpTokenPrincipal(snapshot);
     const userId = snapshot.id;
     const tenantId = snapshot.tenantId;
     const requestedScopes =
@@ -923,8 +942,8 @@ export function composeSmrtSvelteKitRuntime(
             id: userId,
             tenantId,
             tenantBinding: binding,
-            scopes: Object.freeze([...permissions]) as string[],
-          }),
+            scopes: Object.freeze([...permissions]),
+          }) as unknown as SmrtRuntimeBoundPrincipalSnapshot<P>,
         ),
     );
   };
@@ -1240,4 +1259,79 @@ async function loadConfiguredRuntime(): Promise<ResolvedApplicationRuntime> {
   return loaded.runtime
     ? resolveConfiguredApplicationRuntime()
     : resolveApplicationRuntime({ profile: 'local' });
+}
+
+const MAX_PRINCIPAL_DEPTH = 8;
+
+/**
+ * Deep, frozen, validated copy of a bound principal, taken before any await.
+ * Known fields are type-checked (`id`, `tenantId`, `kind`, `tenantBinding`:
+ * strings; `scopes`, `roles`: string arrays; `allowCrossTenant`: boolean).
+ * Every other own enumerable field (string or symbol key) is kept as a deep
+ * frozen copy, provided it is plain data: primitives, arrays and plain
+ * objects. Functions, class instances and over-deep values are rejected.
+ */
+function snapshotBoundPrincipal(
+  principal: unknown,
+): Record<PropertyKey, unknown> {
+  if (!principal || typeof principal !== 'object' || Array.isArray(principal)) {
+    throw new Error('A bound principal is required.');
+  }
+  const snapshot = deepFrozenCopy(principal, 0) as Record<PropertyKey, unknown>;
+  const optionalString = (key: string) => {
+    const value = snapshot[key];
+    if (value !== undefined && typeof value !== 'string') {
+      throw new Error(`A bound principal has a malformed ${key}.`);
+    }
+  };
+  const optionalStrings = (key: string) => {
+    const value = snapshot[key];
+    if (
+      value !== undefined &&
+      (!Array.isArray(value) ||
+        !value.every((entry) => typeof entry === 'string'))
+    ) {
+      throw new Error(`A bound principal has malformed ${key}.`);
+    }
+  };
+  for (const key of ['id', 'tenantId', 'kind', 'tenantBinding']) {
+    optionalString(key);
+  }
+  optionalStrings('scopes');
+  optionalStrings('roles');
+  if (
+    snapshot.allowCrossTenant !== undefined &&
+    typeof snapshot.allowCrossTenant !== 'boolean'
+  ) {
+    throw new Error('A bound principal has a malformed allowCrossTenant.');
+  }
+  return snapshot;
+}
+
+function deepFrozenCopy(value: unknown, depth: number): unknown {
+  if (typeof value === 'function') {
+    throw new Error('A bound principal may contain only plain data.');
+  }
+  if (value === null || typeof value !== 'object') return value;
+  if (depth > MAX_PRINCIPAL_DEPTH) {
+    throw new Error('A bound principal is nested too deeply.');
+  }
+  if (Array.isArray(value)) {
+    return Object.freeze(
+      value.map((entry) => deepFrozenCopy(entry, depth + 1)),
+    );
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error('A bound principal may contain only plain data.');
+  }
+  const copy: Record<PropertyKey, unknown> = {};
+  for (const key of Reflect.ownKeys(value)) {
+    if (!Object.getOwnPropertyDescriptor(value, key)?.enumerable) continue;
+    copy[key] = deepFrozenCopy(
+      (value as Record<PropertyKey, unknown>)[key],
+      depth + 1,
+    );
+  }
+  return Object.freeze(copy);
 }
