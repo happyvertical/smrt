@@ -1,3 +1,5 @@
+import { once } from 'node:events';
+import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContentFeedSource } from './content-feed-source';
 import { syncContentFeedSource } from './content-feed-sync';
@@ -46,6 +48,24 @@ function createRssFeed() {
     </rss>`;
 }
 
+async function startFeedFixture(
+  handler: Parameters<typeof createServer>[0],
+): Promise<{ server: Server; port: number }> {
+  const server = createServer(handler);
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Feed fixture did not expose a TCP port');
+  }
+  return { server, port: address.port };
+}
+
+async function closeFeedFixture(server: Server): Promise<void> {
+  server.close();
+  await once(server, 'close');
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -83,6 +103,20 @@ describe('syncContentFeedSource', () => {
       }),
     );
     expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps a disabled fetch timeout disabled for injected transports', async () => {
+    const source = createSource();
+    const fetch = vi.fn(async () => new Response(null, { status: 304 }));
+
+    await syncContentFeedSource(source, {
+      fetch,
+      fetchTimeoutMs: 0,
+      now: () => FIXED_NOW,
+      resolveHostname: PUBLIC_RESOLVER,
+    });
+
+    expect(fetch.mock.calls[0][1]?.signal).toBeUndefined();
   });
 
   it('imports, updates, and skips feed items while preserving source scope', async () => {
@@ -216,6 +250,80 @@ describe('syncContentFeedSource', () => {
       'https://mirror.example.test/rss.xml',
     );
     expect(result.fetched).toBe(true);
+  });
+
+  it('pins each validated DNS address instead of re-resolving the initial or redirect hostname (#3418)', async () => {
+    let port = 0;
+    const receivedHosts: string[] = [];
+    const { server, port: fixturePort } = await startFeedFixture(
+      (request, response) => {
+        receivedHosts.push(request.headers.host ?? '');
+        if (request.url === '/start') {
+          response.writeHead(302, {
+            location: `http://redirect.rebind.test:${port}/rss.xml`,
+          });
+          response.end();
+          return;
+        }
+        response.writeHead(200, { 'content-type': 'application/rss+xml' });
+        response.end(createRssFeed());
+      },
+    );
+    port = fixturePort;
+
+    try {
+      const source = createSource({
+        feedUrl: `http://initial.rebind.test:${port}/start`,
+      });
+      let initialHostRebound = false;
+      const resolveHostname = vi.fn(async (hostname: string) => {
+        // The test hostnames have no system DNS records. Each address is a
+        // local-only fixture and represents the validator's one-time snapshot.
+        // The initial host changes to a private answer immediately afterward;
+        // the established request must still use the validated snapshot.
+        if (hostname === 'initial.rebind.test') {
+          if (initialHostRebound) {
+            return [{ address: '169.254.169.254', family: 4 }];
+          }
+          initialHostRebound = true;
+          return [{ address: '127.0.0.1', family: 4 }];
+        }
+        if (hostname === 'redirect.rebind.test') {
+          return [{ address: '127.0.0.1', family: 4 }];
+        }
+        return [{ address: '169.254.169.254', family: 4 }];
+      });
+      vi.spyOn(Contents, 'create').mockResolvedValue({
+        query: vi.fn(async () => []),
+      } as unknown as Contents);
+
+      const result = await syncContentFeedSource(source, {
+        allowPrivateNetworkHosts: true,
+        now: () => FIXED_NOW,
+        resolveHostname,
+      });
+
+      expect(result.fetched).toBe(true);
+      expect(resolveHostname).toHaveBeenCalledTimes(2);
+      expect(resolveHostname).toHaveBeenNthCalledWith(1, 'initial.rebind.test');
+      expect(resolveHostname).toHaveBeenNthCalledWith(
+        2,
+        'redirect.rebind.test',
+      );
+      expect(initialHostRebound).toBe(true);
+      // A later DNS answer for the initial hostname is private. The successful
+      // fixture request above proves the request used the earlier validated
+      // address instead of resolving again at connection time.
+      await expect(resolveHostname('initial.rebind.test')).resolves.toEqual([
+        { address: '169.254.169.254', family: 4 },
+      ]);
+      expect(receivedHosts).toEqual([
+        `initial.rebind.test:${port}`,
+        `redirect.rebind.test:${port}`,
+      ]);
+    } finally {
+      await closeFeedFixture(server);
+    }
   });
 
   it('rejects feeds that exceed the redirect limit (S5 #1388)', async () => {
