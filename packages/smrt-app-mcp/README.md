@@ -141,7 +141,7 @@ export const GET = mountMcpProtectedResourceMetadataRoute(auth);
 
 The `runtime` option takes any object with the optional
 `verifyLocalMcpToken(token)` and `resolveMcpPrincipal(identity)` methods; the
-SMRT SvelteKit runtime has both.
+s-m-r-t SvelteKit runtime has both.
 
 - **Local profile.** With `verifyLocalMcpToken`, the source yields the
   `createLocalMcpTokenAuth` adapter for owner-minted tokens

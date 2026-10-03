@@ -156,7 +156,7 @@ route elsewhere, set `mcpPath` on `createAppCli()` or pass it per call
 (`smrt-mcp-bridge`, or `SMRT_MCP_PATH`) and `--mcp-path` / `SMRT_APP_MCP_PATH`
 (`smrt-app`). The path must be same-server and absolute.
 
-For a local-profile SMRT app, mint a credential with
+For a local-profile s-m-r-t app, mint a credential with
 `smrt app token --scopes <scope>` in the app checkout. The token is printed
 once. Then give the bridge the loopback server and that token through the
 app's environment prefix. This Claude Desktop entry is an example:
