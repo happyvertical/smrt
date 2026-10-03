@@ -4,7 +4,7 @@
  *
  * The config module (`src/lib/server/smrt.ts` by default) creates the app
  * runtime and is the first SMRT module the server imports (`hooks.server.ts`,
- * page loads, and the generated route-access module all import it). The
+ * page loads, and every generated route's access prelude import it). The
  * plugin generates `smrt-register.ts` beside it on every dev/build run, so it
  * prepends that import to the config module instead of each application
  * hand-writing it behind a "not generated yet" guard. Registration stays the

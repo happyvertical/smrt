@@ -25,9 +25,12 @@ It is the ground-up alternative to `smrt-saas-starter`.
   `src/lib/server/smrt.ts`, which holds only `runtime` and its options
   (provider readiness via `createProviderReadinessProbe`), so the web process
   never imports the CLI. The runtime takes the local writer lease by default,
-  the `smrt()` plugin injects the generated registration, and generated routes
-  resolve collections through `runtime.getCollection()` (#3416): never re-add
-  a register import, guard, manifest hydration, or `getCollection` export.
+  the `smrt()` plugin injects the generated registration, and each generated
+  route embeds a prelude that imports `$lib/server/smrt` and resolves
+  collections through its exported `runtime.getCollection()` (#3416). A legacy
+  `getCollection`/`getSmrtConfig` export would take precedence (deprecated,
+  honoured for one release): never re-add one, a register import, guard, or
+  manifest hydration.
   Health, diagnostics, layout session, and owner setup routes mount that
   package's handlers.
 - The production baseline uses adapter-node with separate web, task-worker, and

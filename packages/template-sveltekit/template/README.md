@@ -158,8 +158,10 @@ copy an untrusted header directly into `locals.tenantId` or
 `enterTenantContext()`.
 
 `src/lib/server/smrt.ts` holds only the runtime and its options. The `smrt()`
-plugin registers the generated objects before it runs, generated API routes
-resolve collections through `runtime.getCollection()`, and in the local profile
+plugin registers the generated objects before it runs, and each generated API
+route imports this module and resolves collections through its exported
+`runtime.getCollection()` (a `getCollection` export here would take precedence,
+deprecated for one release, so do not add one). In the local profile
 the runtime holds the single-writer lease (`acquireWriterLease: false` opts
 out). `runtime.getCollection()` and `runtime.classOptions()` are
 request-scoped (under `database-rls` isolation they carry the request

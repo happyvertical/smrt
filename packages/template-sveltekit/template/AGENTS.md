@@ -28,7 +28,8 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   app-specific behaviour as options (`selectTenant`, `classOverrides`,
   `session`, `prepareDatabase`); do not reimplement hooks, re-add the
   `smrt-register` import (the `smrt()` plugin injects it), or export
-  `getCollection` (generated routes use `runtime.getCollection()`).
+  `getCollection` (generated routes import this module and use its
+  `runtime.getCollection()`; a legacy export would win, deprecated).
   `runtime.getCollection()`/`runtime.classOptions()` are request-scoped: never
   keep their result beyond the request.
 - Recover an interrupted unclaimed owner invitation with `pnpm app:stop`, then

@@ -93,8 +93,10 @@ Application infrastructure composition for the validated runtime profiles in
   apps pass `createProviderReadinessProbe`; deployed startup fails closed
   without `providerReadiness`.
 - `getCollection()` builds from `classOptions()` on every call (RLS request db
-  inside a request); generated routes reach it through core's
-  `createGeneratedCollectionAccess()` over the app's exported `runtime`.
+  inside a request); each generated route's embedded prelude imports the
+  app's `smrt.ts` and reaches it through core's
+  `createGeneratedCollectionAccess()` (a legacy accessor export wins,
+  deprecated for one release).
 - Owner setup removes the `smrt app` onboarding hand-off files by default,
   immediately after the claim commits (before cookie serialization or hooks);
   `onOwnerClaimed` is for additional cleanup and

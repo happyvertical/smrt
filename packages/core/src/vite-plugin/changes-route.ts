@@ -22,8 +22,8 @@
  *   station principal reading only its own rows of a table the office can
  *   read in full). Unregistered, behavior is unchanged from pre-#3020.
  * - **Database resolution**: the route anchors on the project's first
- *   generated collection (alphabetical) via the generated route-access
- *   module's `getCollection()` (the app runtime's request-scoped accessor),
+ *   generated collection (alphabetical) via the embedded access prelude's
+ *   `getCollection()` (the app runtime's request-scoped accessor),
  *   inheriting its configuration, request-scoped database support and
  *   system-table bootstrap. Multi-database projects
  *   (per-object `db` overrides) see the anchor collection's feed.

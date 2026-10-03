@@ -1,12 +1,12 @@
 /**
  * Collection access for generated SvelteKit routes (#3416).
  *
- * The `smrt()` Vite plugin generates `<configPath>/smrt-collections.ts`, which
- * imports the generated registration module and the application's server
- * config module (`smrt.ts` by default) and hands that module to
- * {@link createGeneratedCollectionAccess}. Generated `/api/*` routes import
- * `getCollection`/`getSmrtConfig` from the generated module, so the
- * application no longer hand-writes them.
+ * Every generated SvelteKit route that needs collections embeds a short
+ * prelude: it imports the generated `smrt-register` module, imports the
+ * application's config module (`$lib/server/smrt` by default) as a namespace,
+ * and destructures `getCollection`/`getSmrtConfig` from
+ * {@link createGeneratedCollectionAccess} over that namespace. The
+ * application therefore exports only its `runtime`, never the accessors.
  *
  * Resolution happens on every call and nothing is cached here: under
  * `database-rls` isolation the runtime's collection options carry the
@@ -28,7 +28,7 @@ export interface GeneratedCollectionRuntime {
   classOptions(className: string): SmrtClassOptions;
 }
 
-/** Accessors exported by the generated route-access module. */
+/** Accessors a generated route destructures from its prelude. */
 export interface GeneratedCollectionAccess {
   getCollection<T extends SmrtObject = SmrtObject>(
     className: string,
@@ -85,7 +85,7 @@ function missingAccessor(source: string): Error {
 }
 
 /**
- * Build the accessors exported by the generated route-access module.
+ * Build the accessors a generated route's prelude destructures.
  *
  * - A `getCollection`/`getSmrtConfig` function exported by the application
  *   module is honoured first (deprecated, warned once per module).

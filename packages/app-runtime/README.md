@@ -156,10 +156,12 @@ default (`defaultWriterLease()`: `writer.lease` under
 Optional hooks: `onBootstrapInvitation` (present a newly issued setup token),
 `selectTenant`, `session`, and `classOverrides`.
 `runtime.getCollection(className)` returns the registered collection built
-from `runtime.classOptions(className)` on that call; generated `/api/*` routes
-resolve collections through it (the `smrt()` Vite plugin's route prelude reads
-the `runtime` exported by `src/lib/server/smrt.ts`), so an app's `smrt.ts` is
-only the runtime and its options.
+from `runtime.classOptions(className)` on that call. Each generated `/api/*`
+route embeds a prelude that imports the app's `src/lib/server/smrt.ts` and
+resolves collections through its exported `runtime` (core's
+`createGeneratedCollectionAccess()`), so an app's `smrt.ts` is only the
+runtime and its options. A legacy `getCollection`/`getSmrtConfig` export there
+still takes precedence for one release, with a deprecation warning.
 
 Mountable routes:
 

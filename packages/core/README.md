@@ -327,6 +327,17 @@ Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its
 default output directory is `src/routes/api`; set `svelteKit.routesDir` when
 your application uses a different route root.
 
+Generated routes do not need a hand-written `getCollection`. Each route embeds
+a prelude that imports the generated `smrt-register` module and the app's
+config module (`svelteKit.configPath`/`configFileName`, `$lib/server/smrt` by
+default), then resolves collections through that module's exported `runtime`
+(`createSmrtSvelteKitRuntime()` from `@happyvertical/smrt-app-runtime/sveltekit`,
+whose `getCollection()` is request-scoped). A `getCollection`/`getSmrtConfig`
+export there still takes precedence for one release, with a deprecation
+warning. The plugin also prepends the registration import to that config
+module, and generation refuses a `configFileName` that names the registration
+module (`smrt-register.*`).
+
 A consumer can host selected dependency models with the same generator. This is
 an explicit HTTP boundary that is separate from the broader `packages`
 registration inventory. Name exact provider-qualified object references; a
