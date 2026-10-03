@@ -62,11 +62,6 @@ const providerReadiness = readFileSync(
   'utf8',
 );
 const compose = readFileSync(join(template, 'compose.yaml'), 'utf8');
-const hooks = readFileSync(join(template, 'src', 'hooks.server.ts'), 'utf8');
-const healthRoute = readFileSync(
-  join(template, 'src', 'routes', 'api', '_runtime', 'health', '+server.ts'),
-  'utf8',
-);
 const dockerfile = readFileSync(join(template, 'Dockerfile'), 'utf8');
 const templatePackage = JSON.parse(
   readFileSync(join(template, 'package.json'), 'utf8'),
@@ -107,9 +102,6 @@ describe('profile-aware application operations', () => {
       expect(appDriver).toContain(`assertLocalOperation('${operation}')`);
     }
     expect(appDriver).toContain('SMRT_PROCESS_INSTANCE: instance');
-    expect(healthRoute).toContain('SMRT_PROCESS_INSTANCE');
-    expect(healthRoute).toContain('applicationRuntimeConfiguration');
-    expect(healthRoute).toContain("applicationRuntime.profile === 'local'");
     expect(migrationPreparation).toContain('resolveApplicationId');
     expect(migrationPreparation).toContain('prepareLocalDatabaseStorage');
     expect(migrationPreparation).toContain('readActiveWriterLease');
@@ -134,25 +126,12 @@ describe('profile-aware application operations', () => {
     expect(migrationPreparation).toContain('shell: windowsFallback');
     expect(migrationPreparation).toContain("startsWith('pnpm')");
     expect(portabilitySource).toContain("custody: 'trusted-parent'");
-    expect(hooks).toContain(
-      'export const init: ServerInit = ensureApplicationRuntimeReady',
-    );
     expect(appDriver).not.toMatch(/console\.(?:log|error)\(process\.env/);
     expect(dockerfile).toContain('ENV SMRT_RUNTIME_PROFILE=self-hosted');
     expect(dockerfile).toContain('USER node');
     expect(providerReadiness).toContain('checkReadiness');
     expect(providerReadiness).toContain('result?.ready !== true');
     expect(appDriver).not.toContain('SMRT_AUTH_READY');
-  });
-
-  it('documents the complete stopped recovery sequence', () => {
-    const setupAction = readFileSync(
-      join(template, 'src', 'routes', 'setup', '+page.server.ts'),
-      'utf8',
-    );
-    expect(setupAction).toContain(
-      'pnpm app:stop, pnpm app:recover, pnpm app:start, then pnpm app:open',
-    );
   });
 
   it('loads the source environment before Vite evaluates runtime identity', () => {
@@ -603,20 +582,6 @@ describe('profile-aware application operations', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
-  });
-
-  it('does not classify post-claim cleanup failures as invitation failures', () => {
-    const setupAction = readFileSync(
-      join(template, 'src', 'routes', 'setup', '+page.server.ts'),
-      'utf8',
-    );
-    expect(setupAction.indexOf("event.cookies.set('sid'")).toBeGreaterThan(
-      setupAction.indexOf('result = await runtime.claimOwner'),
-    );
-    expect(setupAction.lastIndexOf('try {')).toBeGreaterThan(
-      setupAction.indexOf("event.cookies.set('sid'"),
-    );
-    expect(setupAction).toContain('stale mode-0600 handoff files');
   });
 
   it('rejects truncated and incomplete logical exports before import', () => {

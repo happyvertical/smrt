@@ -2,6 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "paths": {
+      "$lib": ["./template/src/lib"],
+      "$lib/*": ["./template/src/lib/*"],
       "@happyvertical/smrt-virt-web": [
         "./__tests__/setup/smrt-virt-web-stub.ts"
       ],
@@ -9,7 +11,7 @@
     }
   },
   "include": [
-    "__tests__/runtimeDiagnostics.test.ts",
+    "__tests__/runtimeEntry.test.ts",
     "__tests__/runtimeProfileReference*.ts",
     "fixtures/**/*.ts",
     "e2e/**/*.ts",

@@ -90,20 +90,22 @@ not documented or shipped.
 
 ## 5. Understand tenant context
 
-The template resolves a URL tenant candidate into separate
-`selectedTenantId`/`selectedTenantSlug` locals. It does not establish query
-context from that selection. The session hook runs afterward and only its
-membership-authorized tenant enters the s-m-r-t tenancy context.
+`src/hooks.server.ts` mounts `createSmrtSvelteKitRuntime()` from
+`@happyvertical/smrt-app-runtime/sveltekit`. It resolves a URL tenant candidate
+into separate `selectedTenantId`/`selectedTenantSlug` locals and does not
+establish query context from that selection. The session step runs afterward
+and only its membership-authorized tenant enters the s-m-r-t tenancy context.
 
-Untrusted tenant headers are ignored. Applications may replace
-`src/lib/server/tenancy.ts` with a path, signed-cookie, or trusted-gateway
-selector, but selection must remain separate from authorization and session
-switches must use `switchSessionTenant()`.
+Untrusted tenant headers are ignored. Applications may pass `selectTenant` for
+a path, signed-cookie, or trusted-gateway selector, but selection must remain
+separate from authorization and session switches must use
+`switchSessionTenant()`.
 
 ## 6. Understand users, profiles, memberships, roles, and permissions
 
 The generated project consumes the current profiles and users manifests and
-wires `createSessionHandler({ enterTenantContext: true })`. A User is the auth
+loads the signed session through the runtime, which enters tenant context only
+for a verified active membership. A User is the auth
 identity, Profile is person-facing metadata, Membership joins a User to a
 Tenant and Role, Role maps to Permission records, and Session publishes the
 resolved permission snapshot.

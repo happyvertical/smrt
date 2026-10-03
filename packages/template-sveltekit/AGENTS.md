@@ -60,11 +60,13 @@ It is the ground-up alternative to `smrt-saas-starter`.
 
 ## Application patterns
 
-- `src/hooks.server.ts` stores a URL-selected tenant candidate separately, then
-  lets `createSessionHandler({ enterTenantContext: true })` establish the only
-  authorized tenant context. Never turn an untrusted header into authority.
+- `src/hooks.server.ts` re-exports the runtime's `handle`/`init`: URL tenant
+  selection stays a separate candidate and only the verified session
+  establishes tenant context. Never turn an untrusted header into authority.
 - `src/lib/server/smrt.ts` imports generated local registrations, loads the
-  generated manifest metadata, and uses the public users request-scoped DB API.
+  generated manifest metadata, creates the runtime, and exposes
+  `getCollection()`/`getSmrtConfig()` over `runtime.classOptions()`, which is
+  request-scoped (RLS transaction) and must never be retained.
 - `Item` is the single example object and demonstrates optional tenant scope,
   a REST writable allowlist, shared CRUD action metadata, and the explicit
   collection registration required by generated CLI/MCP runtime commands.

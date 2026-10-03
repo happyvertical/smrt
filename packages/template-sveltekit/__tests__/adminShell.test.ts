@@ -9,10 +9,6 @@ const routesDir = join(__dirname, '..', 'template', 'src', 'routes');
 
 describe('application shell', () => {
   const layout = readFileSync(join(routesDir, '+layout.svelte'), 'utf8');
-  const layoutServer = readFileSync(
-    join(routesDir, '+layout.server.ts'),
-    'utf8',
-  );
   const settings = readFileSync(
     join(routesDir, 'settings', '+page.svelte'),
     'utf8',
@@ -35,13 +31,6 @@ describe('application shell', () => {
     expect(layout).toContain('const nav: ShellNavItem[]');
     expect(layout).toContain('<TenantNav items={nav} {currentHref} />');
     expect(layout).not.toContain('tenantNavFromManifest');
-  });
-
-  it('loads session tenant and selection state on the server', () => {
-    expect(layoutServer).toContain('activeTenantId: locals.tenantId');
-    expect(layoutServer).toContain(
-      'selectedTenantSlug: locals.selectedTenantSlug',
-    );
   });
 
   it('keeps the current ShellSettingsPanel integration', () => {

@@ -133,22 +133,31 @@ migration command, not by adding schema creation to a request handler.
 
 ## 5. Understand tenant context
 
-`src/hooks.server.ts` keeps tenant selection separate from authorization:
+`src/hooks.server.ts` mounts the runtime configured in `src/lib/server/smrt.ts`
+(`createSmrtSvelteKitRuntime()` from `@happyvertical/smrt-app-runtime/sveltekit`).
+It keeps tenant selection separate from authorization:
 
-1. `src/lib/server/tenancy.ts` reads a subdomain slug and looks up an active
-   Tenant UUID. It stores the candidate in `locals.selectedTenantId` and
-   `locals.selectedTenantSlug`.
+1. A subdomain slug is looked up as an active Tenant UUID and stored only as a
+   candidate in `locals.selectedTenantId` and `locals.selectedTenantSlug`.
 2. That candidate does not enter AsyncLocalStorage and cannot scope queries.
-3. `createSessionHandler({ enterTenantContext: true })` loads the signed session,
-   resolves its membership and permissions, and establishes the authorized
-   `locals.tenantId` context.
-4. `enableTenancy()` makes `@TenantScoped` collections honor that context.
+3. The signed session is loaded. Its tenant is accepted only for an active (or
+   legitimately inherited) membership, which establishes the authorized
+   `locals.tenantId`, the permission set, and the tenant context.
+4. The runtime enables tenancy, so `@TenantScoped` collections honor that
+   context.
 
-The default resolver ignores `x-tenant-id`. If a gateway supplies a tenant
-header, validate the gateway identity/signature before mapping it to a tenant,
-and still use `switchSessionTenant()` for browser session changes. That helper
-checks active membership and rotates the session ID; never copy an untrusted
-header directly into `locals.tenantId` or `enterTenantContext()`.
+The default selector ignores `x-tenant-id`. To select tenants from a path,
+signed cookie, or trusted gateway, pass `selectTenant` to
+`createSmrtSvelteKitRuntime()`; selection must still never establish
+authorization. Validate a gateway's identity/signature before mapping its
+header to a tenant, and use `switchSessionTenant()` for browser session
+changes. That helper checks active membership and rotates the session ID; never
+copy an untrusted header directly into `locals.tenantId` or
+`enterTenantContext()`.
+
+`getCollection()` and `getSmrtConfig()` in `$lib/server/smrt` return
+request-scoped options (under `database-rls` isolation they carry the request
+transaction): call them inside a request and never keep the result.
 
 Set `TENANT_BASE_DOMAIN` for deployed subdomain routing. The fallback parser is
 only for local shapes such as `acme.demo.local`.
