@@ -17,7 +17,11 @@ import { platform, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { OidcIdentityCollection } from '@happyvertical/smrt-profiles';
-import { disableTenancy, withSystemContext } from '@happyvertical/smrt-tenancy';
+import {
+  disableTenancy,
+  getCurrentTenant,
+  withSystemContext,
+} from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
   MembershipCollection,
@@ -283,6 +287,40 @@ describe('local MCP tokens', () => {
     expect(() => {
       (again.scopes as string[]).push(EXPORT);
     }).toThrow(TypeError);
+  });
+
+  it('binds one snapshot of the principal even if the caller mutates it mid-flight', async () => {
+    const { runtime, owner } = await ownedRuntime('snapshot');
+    const principal: {
+      id: string;
+      tenantId: string;
+      scopes: string[];
+      kind?: string;
+    } = {
+      id: owner.userId,
+      tenantId: owner.tenantId,
+      scopes: [READ],
+      kind: 'human',
+    };
+    const pending = runtime.runAsPrincipal(principal, async (bound) => ({
+      bound,
+      frozen: Object.isFrozen(bound) && Object.isFrozen(bound.scopes),
+      contextTenant: getCurrentTenant()?.tenantId,
+    }));
+    // Membership resolution is awaiting: swap the caller's identity.
+    principal.id = 'attacker-user';
+    principal.tenantId = 'attacker-tenant';
+    principal.kind = 'service';
+    const { bound, frozen, contextTenant } = await pending;
+    expect(bound).toMatchObject({
+      id: owner.userId,
+      tenantId: owner.tenantId,
+      kind: 'human',
+      scopes: [READ],
+      tenantBinding: 'direct-or-inherited',
+    });
+    expect(contextTenant).toBe(owner.tenantId);
+    expect(frozen).toBe(true);
   });
 
   it('copies caller scopes before binding', async () => {

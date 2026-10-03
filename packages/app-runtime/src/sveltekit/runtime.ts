@@ -358,8 +358,10 @@ export interface SmrtSvelteKitRuntime {
    * authority inherited from an active inheritable ancestor when no direct
    * row exists. A suspended or pending direct row is always authoritative.
    *
-   * `fn` receives the principal with `scopes` replaced by that effective
-   * permission set (live permissions, capped by the given scopes). Callers
+   * `principal` is read once, before any await: `fn` receives a frozen copy
+   * of that snapshot (its effective `tenantBinding`, and `scopes` replaced by
+   * the effective, frozen permission set: live permissions capped by the
+   * given scopes), never the caller's object. Callers
    * that authorize in code (rather than through database policy, as under
    * `application` isolation) must authorize with these effective scopes so a
    * revoked permission takes effect even while a token still carries it.
@@ -840,14 +842,21 @@ export function composeSmrtSvelteKitRuntime(
     principal: P,
     fn: (bound: P & { scopes: string[] }) => Promise<T>,
   ): Promise<T> => {
-    const userId = principal?.id;
-    const tenantId = principal?.tenantId;
-    // Read-only input: snapshot the requested scopes before any await, so a
-    // caller mutating its array can never widen the binding.
+    // One complete snapshot before the first await: authorization, the
+    // permission/RLS context and the principal handed to `fn` all come from
+    // it, and the caller's object is never read again (a caller mutating it
+    // mid-flight cannot change the bound identity, tenant, binding or scopes).
+    if (!principal || typeof principal !== 'object') {
+      throw new Error('A bound principal is required.');
+    }
+    const tokenDerived = isLocalMcpTokenPrincipal(principal);
+    const snapshot = { ...principal } as P;
+    const userId = snapshot.id;
+    const tenantId = snapshot.tenantId;
     const requestedScopes =
-      principal?.scopes === undefined
+      snapshot.scopes === undefined
         ? undefined
-        : Object.freeze([...principal.scopes]);
+        : Object.freeze([...snapshot.scopes]);
     if (
       requestedScopes !== undefined &&
       !requestedScopes.every((scope) => typeof scope === 'string')
@@ -861,23 +870,20 @@ export function composeSmrtSvelteKitRuntime(
       throw new Error('A bound principal requires a tenant.');
     }
     // Resolution reads the base connection, before any RLS transaction opens.
-    // Only the principal's own active direct membership in exactly this
-    // tenant authorizes it; it is pinned so inheritance cannot substitute.
     // A token-derived principal is direct-only. A copy that tries to widen
     // its binding is refused rather than silently narrowed.
-    const tokenDerived = isLocalMcpTokenPrincipal(principal);
     if (
       tokenDerived &&
-      principal.tenantBinding !== undefined &&
-      principal.tenantBinding !== 'direct'
+      snapshot.tenantBinding !== undefined &&
+      snapshot.tenantBinding !== 'direct'
     ) {
       throw new Error(
         'A local MCP token principal binds only through its direct membership.',
       );
     }
-    const binding = tokenDerived
+    const binding: TenantBindingMode = tokenDerived
       ? 'direct'
-      : (principal.tenantBinding ?? 'direct-or-inherited');
+      : (snapshot.tenantBinding ?? 'direct-or-inherited');
     if (binding !== 'direct' && binding !== 'direct-or-inherited') {
       throw new Error('Unknown tenant binding mode for a bound principal.');
     }
@@ -910,7 +916,16 @@ export function composeSmrtSvelteKitRuntime(
         enterTenantContext: true,
         postgresRls: postgresRls(),
       },
-      () => fn({ ...principal, scopes: [...permissions] }),
+      () =>
+        fn(
+          Object.freeze({
+            ...snapshot,
+            id: userId,
+            tenantId,
+            tenantBinding: binding,
+            scopes: Object.freeze([...permissions]) as string[],
+          }),
+        ),
     );
   };
 
