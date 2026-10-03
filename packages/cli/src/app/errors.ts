@@ -54,6 +54,18 @@ const MIN_REDACTED_VALUE_LENGTH = 8;
 const SECRET_ENVIRONMENT_NAME =
   /(?:^|_)(?:DATABASE_URL|URL|DSN|TOKEN|SECRET|PASSWORD|PASSWD|KEY|CREDENTIALS?|AUTH)(?:_|$)/i;
 
+/** Options for {@link redactSecrets}. */
+export interface RedactSecretsOptions {
+  /**
+   * Redact every non-empty secret-named environment value and every Bearer
+   * token, whatever its length. The default keeps an 8-character floor so a
+   * short flag value (`SMRT_AUTH_ENABLED=1`) does not erase every `1` from an
+   * operator message; arbitrary child-process output (the `start` tail) has
+   * no such guarantee about what it prints, so it is redacted strictly.
+   */
+  strict?: boolean;
+}
+
 /**
  * Remove secret material from an operator-facing message.
  *
@@ -65,13 +77,15 @@ const SECRET_ENVIRONMENT_NAME =
 export function redactSecrets(
   message: string,
   environment: Record<string, string | undefined> = process.env,
+  options: RedactSecretsOptions = {},
 ): string {
+  const minimumLength = options.strict ? 1 : MIN_REDACTED_VALUE_LENGTH;
   let redacted = message;
   const values = Object.entries(environment)
     .filter(
       ([name, value]) =>
         typeof value === 'string' &&
-        value.length >= MIN_REDACTED_VALUE_LENGTH &&
+        value.length >= minimumLength &&
         SECRET_ENVIRONMENT_NAME.test(name),
     )
     .map(([, value]) => value as string)
@@ -88,5 +102,10 @@ export function redactSecrets(
       /([?&;](?:token|password|secret|key|access_token)=)[^&\s"'<>]+/gi,
       '$1[redacted]',
     )
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g, 'Bearer [redacted]');
+    .replace(
+      options.strict
+        ? /\bBearer\s+[A-Za-z0-9._~+/=-]+/g
+        : /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g,
+      'Bearer [redacted]',
+    );
 }

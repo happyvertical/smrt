@@ -41,6 +41,7 @@ export {
 export {
   AppCommandError,
   ApplicationStartError,
+  type RedactSecretsOptions,
   redactSecrets,
 } from './errors.js';
 export {

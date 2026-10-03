@@ -103,7 +103,7 @@ export function errorEnvelope(error: unknown): AppErrorEnvelope {
       ? {
           // Redacted against the child's environment when captured; again
           // here against this process's, like every other message.
-          output: redactSecrets(error.output),
+          output: redactSecrets(error.output, process.env, { strict: true }),
           logFile: error.logFile,
         }
       : {}),

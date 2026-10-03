@@ -307,6 +307,22 @@ describe('secret redaction', () => {
     expect(message).toContain('db.example/app');
   });
 
+  it('strict mode redacts short secret values and short bearer tokens; the default keeps its floor', () => {
+    const environment = { SMRT_SECRET_KEY: 'abc123', SMRT_AUTH: '', PATH: 'x' };
+    const text = 'key abc123, Bearer x7k2, path x';
+    expect(redactSecrets(text, environment, { strict: true })).toBe(
+      'key [redacted], Bearer [redacted], path x',
+    );
+    // Unchanged default: an empty value is never a match, short values pass.
+    expect(redactSecrets(text, environment)).toBe(text);
+    // Strict never redacts less than the default.
+    const long =
+      'postgresql://admin:hunter22@db/app?token=abcDEF123456 Bearer abcdefghijklmnop';
+    expect(redactSecrets(long, {}, { strict: true })).toBe(
+      redactSecrets(long, {}),
+    );
+  });
+
   it('renders a secret-free envelope and surfaces stable runtime codes', () => {
     const failure = Object.assign(
       new Error(

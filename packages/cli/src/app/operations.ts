@@ -473,8 +473,8 @@ function openStartLog(path: string): number {
 }
 
 /**
- * The last {@link START_OUTPUT_TAIL_BYTES} of `path`, redacted against the
- * child's environment. A bounded window is redacted before it is cut, and a
+ * The last {@link START_OUTPUT_TAIL_BYTES} of `path`, strictly redacted
+ * against the child's environment. A bounded window is redacted before it is cut, and a
  * window that starts mid-file drops its first partial line, so no fragment
  * of a secret can survive the cut.
  */
@@ -495,7 +495,11 @@ function redactedLogTail(path: string, env: NodeJS.ProcessEnv): string {
   } catch {
     return '';
   }
-  const redacted = Buffer.from(redactSecrets(text, env), 'utf8');
+  // Strict: child output is arbitrary text, so no length floor applies.
+  const redacted = Buffer.from(
+    redactSecrets(text, env, { strict: true }),
+    'utf8',
+  );
   if (redacted.length <= START_OUTPUT_TAIL_BYTES) return redacted.toString();
   const tail = redacted
     .subarray(redacted.length - START_OUTPUT_TAIL_BYTES)

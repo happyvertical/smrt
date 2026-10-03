@@ -771,6 +771,31 @@ describe('smrt app start / stop', () => {
     expect(existsSync(join(fixture.stateRoot(), 'app.pid'))).toBe(false);
   });
 
+  it('redacts short secret values and short bearer tokens from the captured output (#3410 item 4, review F1)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    process.env.SMRT_SECRET_KEY = 'abc123';
+    writeFakeBuild(
+      fixture.app,
+      `
+      console.error('loaded key ' + process.env.SMRT_SECRET_KEY);
+      console.error('SMRT_SECRET_KEY=' + process.env.SMRT_SECRET_KEY);
+      console.error('Authorization: Bearer x7k2');
+      process.exit(4);
+      `,
+    );
+    expect(await fixture.run(['start'])).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.secretValuesIncluded).toBe(false);
+    const output = envelope.output as string;
+    expect(output).toContain('loaded key [redacted]');
+    expect(output).toContain('SMRT_SECRET_KEY=[redacted]');
+    expect(output).toContain('Bearer [redacted]');
+    const everything = allOutput(fixture);
+    expect(everything).not.toContain('abc123');
+    expect(everything).not.toContain('x7k2');
+  });
+
   it('carries the output tail when a server never proves readiness', async () => {
     const fixture = makeFixture();
     const port = await freePort();
