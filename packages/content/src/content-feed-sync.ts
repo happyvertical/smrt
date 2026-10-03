@@ -137,8 +137,28 @@ function createPinnedDispatcher(addresses: ResolvedAddress[]): Agent {
   });
 }
 
+type FeedResponse = {
+  status: number;
+  statusText: string;
+  ok: boolean;
+  headers: Pick<Headers, 'get'>;
+  body: {
+    locked: boolean;
+    cancel: (reason?: unknown) => Promise<void>;
+    getReader: () => {
+      cancel: (reason?: unknown) => Promise<void>;
+      read: () => Promise<{ done: boolean; value?: Uint8Array }>;
+      releaseLock: () => void;
+    };
+  } | null;
+  text: () => Promise<string>;
+};
+
 type FeedFetchResponse = {
-  response: Response;
+  // `undici` and Node's global fetch expose equivalent response behavior, but
+  // their complete `Headers` declarations differ under Node 26's disposable
+  // iterator types. Feed sync only depends on this shared response surface.
+  response: FeedResponse;
   close: () => Promise<void>;
 };
 
@@ -231,7 +251,7 @@ async function fetchFeedWithRedirectGuard(
 }
 
 async function readResponseText(
-  response: Response,
+  response: FeedResponse,
   maxBytes: number,
 ): Promise<string> {
   const contentLength = response.headers.get('content-length');
