@@ -27,9 +27,14 @@ import {
 import { runAppCommand } from '@happyvertical/smrt-cli/app';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
-import { disableTenancy, getCurrentTenant } from '@happyvertical/smrt-tenancy';
+import {
+  disableTenancy,
+  getCurrentTenant,
+  withSystemContext,
+} from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
+  MembershipCollection,
   PermissionCollection,
   RoleCollection,
   RolePermissionCollection,
@@ -60,6 +65,7 @@ const state = {
   lockPath: '',
   baseUrl: '',
   ownerTenant: '',
+  ownerUser: '',
   otherTenant: '',
   roleId: '',
   readPermissionId: '',
@@ -175,6 +181,7 @@ beforeAll(async () => {
     email: 'owner@example.test',
   });
   state.ownerTenant = owner.tenantId;
+  state.ownerUser = owner.userId;
   const tenants = await TenantCollection.create({ db });
   const other = await tenants.create({ name: 'Elsewhere', slug: 'elsewhere' });
   await other.save();
@@ -398,5 +405,55 @@ describe('local MCP client credentials over the stdio bridge', () => {
     } finally {
       await rolePermissions.addPermission(state.roleId, state.readPermissionId);
     }
+  });
+
+  // Review F1: runs last because it makes the owner role inherit downward.
+  it('denies a token once its direct membership is deleted, even with an inheriting ancestor', async () => {
+    const { childTenantId, childMembershipId } = await withSystemContext(
+      async () => {
+        const roles = await RoleCollection.create({ db });
+        const role = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+        if (!role?.id) throw new Error('owner role missing');
+        role.inheritsToDescendants = true;
+        await role.save();
+        const tenants = await TenantCollection.create({ db });
+        const child = await tenants.createChild(state.ownerTenant, {
+          name: 'Child',
+          slug: 'child',
+        });
+        await child.save();
+        const direct = await (await MembershipCollection.create({ db })).create(
+          {
+            userId: state.ownerUser,
+            tenantId: child.id as string,
+            roleId: role.id,
+          },
+        );
+        await direct.save();
+        return {
+          childTenantId: child.id as string,
+          childMembershipId: direct.id as string,
+        };
+      },
+    );
+    await db.query(
+      `INSERT INTO ${NOTES} (id, tenant_id, title) VALUES ('n3', ?, 'Child note')`,
+      childTenantId,
+    );
+    const issued = await smrtAppToken(['--scopes', READ]);
+    await db.query(
+      'UPDATE _smrt_local_mcp_tokens SET tenant_id = ? WHERE id = ?',
+      childTenantId,
+      String(issued.id),
+    );
+    await withBridge(String(issued.token), async (client) => {
+      await expect(listNotes(client)).resolves.toMatchObject({
+        structuredContent: { tenantId: childTenantId, titles: ['Child note'] },
+      });
+      await db.query('DELETE FROM memberships WHERE id = ?', childMembershipId);
+      await expect(listNotes(client)).rejects.toThrow(
+        'MCP upstream request failed.',
+      );
+    });
   });
 });

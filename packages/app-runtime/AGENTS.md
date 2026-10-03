@@ -39,6 +39,10 @@ Application infrastructure composition for the validated runtime profiles in
   `_smrt_local_mcp_tokens` system table (created like the bootstrap table;
   never application schema). Issue refuses scopes the owner lacks; verify
   returns token scopes ∩ live permissions and `null` for anything else.
+- Bearer principals (`verify`, `runAsPrincipal`) are authorized only by an
+  active direct membership in exactly their tenant, pinned into
+  `PermissionResolver` (`direct-membership.ts`): inherited ancestor authority
+  never substitutes for a deleted or missing row (#3413 review F1).
   Never log or return the token outside `issue()`. The operator store opens an
   uncached connection and takes no writer lease (revocation is per request).
 - Background jobs and application-defined paid capabilities are default-off.

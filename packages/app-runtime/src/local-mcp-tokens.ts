@@ -9,20 +9,23 @@
  *
  * A token never carries more authority than its owner holds *now*: `issue()`
  * refuses scopes the owner does not currently hold, and `verify()` returns
- * the token's scopes intersected with the owner's live permissions in the
- * bound tenant (no membership, an inactive user, a revoked or an expired
- * token all yield `null`). Routes should still bind the principal with
+ * the token's scopes intersected with the owner's live permissions from its
+ * active direct membership in the bound tenant (inherited authority never
+ * substitutes for it; no such membership, an inactive user, a revoked or an
+ * expired token all yield `null`). Routes should still bind the principal with
  * `runtime.runAsPrincipal`, which applies the same intersection inside the
  * request permission context.
  */
 
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import {
+  MembershipCollection,
   PermissionResolver,
   UserCollection,
   UserStatus,
 } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { resolveDirectMembershipPermissions } from './direct-membership.js';
 
 /** Runtime-owned system table; ignored by schema diff, parity and portability. */
 export const LOCAL_MCP_TOKEN_TABLE = '_smrt_local_mcp_tokens';
@@ -180,21 +183,27 @@ export function createLocalMcpTokenStore(
       .digest('hex');
 
   let resolverPromise: Promise<PermissionResolver> | undefined;
+  /**
+   * Live permissions from the owner's active *direct* membership in exactly
+   * this tenant (pinned; inheritance never substitutes), or `null`.
+   */
   const livePermissions = async (
     userId: string,
     tenantId: string,
-  ): Promise<Set<string> | null> => {
+  ): Promise<ReadonlySet<string> | null> => {
     resolverPromise ??= PermissionResolver.create({ db }).catch(
       (error: unknown) => {
         resolverPromise = undefined;
         throw error;
       },
     );
-    const resolved = await (await resolverPromise).resolvePermissions(
+    const resolved = await resolveDirectMembershipPermissions({
+      memberships: await MembershipCollection.create({ db }),
+      resolver: await resolverPromise,
       userId,
       tenantId,
-    );
-    return resolved.membershipId ? new Set(resolved.permissions) : null;
+    });
+    return resolved?.permissions ?? null;
   };
 
   return Object.freeze({

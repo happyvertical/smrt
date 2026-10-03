@@ -69,6 +69,7 @@ import {
   isSessionTenantAuthorized,
   type PublicAuthenticationProvider,
 } from '../deployed-runtime.js';
+import { resolveDirectMembershipPermissions } from '../direct-membership.js';
 import {
   initializeLocalApplicationRuntime,
   type LocalApplicationRuntime,
@@ -334,7 +335,9 @@ export interface SmrtSvelteKitRuntime {
    * under the RLS transaction rule of {@link databaseConfig} a fresh
    * transaction publishes that user, tenant and permission set, and
    * `databaseConfig()`/`classOptions()` return it inside `fn`. Rejects (before
-   * `fn` runs) without a user id, a tenant, or an authorized membership.
+   * `fn` runs) without a user id, a tenant, or an active *direct* membership
+   * of that user in exactly that tenant; inherited (ancestor) authority never
+   * authorizes a bound principal.
    *
    * `fn` receives the principal with `scopes` replaced by that effective
    * permission set (live permissions, capped by the given scopes). Callers
@@ -827,12 +830,20 @@ export function composeSmrtSvelteKitRuntime(
       throw new Error('A bound principal requires a tenant.');
     }
     // Resolution reads the base connection, before any RLS transaction opens.
-    const resolved = await (await permissionResolver()).resolvePermissions(
+    // Only the principal's own active direct membership in exactly this
+    // tenant authorizes it; it is pinned so inheritance cannot substitute.
+    const resolved = await resolveDirectMembershipPermissions({
+      memberships: await MembershipCollection.create(
+        baseClassOptions('Membership'),
+      ),
+      resolver: await permissionResolver(),
       userId,
       tenantId,
-    );
-    if (!resolved.membershipId) {
-      throw new Error('The bound principal has no membership in its tenant.');
+    });
+    if (!resolved) {
+      throw new Error(
+        'The bound principal has no active direct membership in its tenant.',
+      );
     }
     const cap = principal.scopes ? new Set(principal.scopes) : undefined;
     const permissions = [...resolved.permissions].filter(

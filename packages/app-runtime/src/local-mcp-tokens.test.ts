@@ -17,7 +17,7 @@ import { platform, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { OidcIdentityCollection } from '@happyvertical/smrt-profiles';
-import { disableTenancy } from '@happyvertical/smrt-tenancy';
+import { disableTenancy, withSystemContext } from '@happyvertical/smrt-tenancy';
 import {
   DEFAULT_ROLE_SLUGS,
   MembershipCollection,
@@ -315,6 +315,74 @@ describe('local MCP tokens', () => {
     }
   });
 
+  it('requires the direct membership of the bound tenant; inheritance never substitutes for it', async () => {
+    const { runtime, local, owner } = await ownedRuntime('inherited');
+    // A child workspace under the owner's tenant, joined directly, while the
+    // owner role also inherits to descendants.
+    const { childTenantId, childMembershipId } = await withSystemContext(
+      async () => {
+        const roles = await RoleCollection.create({ db: local.db });
+        const role = await roles.findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+        if (!role?.id) throw new Error('owner role missing');
+        role.inheritsToDescendants = true;
+        await role.save();
+        const tenants = await TenantCollection.create({ db: local.db });
+        const child = await tenants.createChild(owner.tenantId, {
+          name: 'Child',
+          slug: 'child',
+        });
+        await child.save();
+        const memberships = await MembershipCollection.create({ db: local.db });
+        const direct = await memberships.create({
+          userId: owner.userId,
+          tenantId: child.id as string,
+          roleId: role.id,
+        });
+        await direct.save();
+        return {
+          childTenantId: child.id as string,
+          childMembershipId: direct.id as string,
+        };
+      },
+    );
+    const issued = await local.mcpTokens?.issue({ scopes: [READ] });
+    if (!issued) throw new Error('not issued');
+    // A token bound to the child workspace (where a direct membership exists).
+    await local.db.query(
+      `UPDATE ${LOCAL_MCP_TOKEN_TABLE} SET tenant_id = ? WHERE id = ?`,
+      childTenantId,
+      issued.id,
+    );
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toMatchObject({
+      tenantId: childTenantId,
+      scopes: [READ],
+    });
+    await expect(
+      runtime.runAsPrincipal(
+        { id: owner.userId, tenantId: childTenantId, scopes: [READ] },
+        async (bound) => bound.scopes,
+      ),
+    ).resolves.toEqual([READ]);
+
+    // Deleting the direct membership (as application code would, through
+    // the runtime's collection options) leaves only the inherited one.
+    const appMemberships = await MembershipCollection.create(
+      runtime.classOptions('Membership'),
+    );
+    const directRow = await withSystemContext(() =>
+      appMemberships.get({ id: childMembershipId }),
+    );
+    if (!directRow) throw new Error('direct membership missing');
+    await withSystemContext(() => directRow.delete());
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toBeNull();
+    await expect(
+      runtime.runAsPrincipal(
+        { id: owner.userId, tenantId: childTenantId, scopes: [READ] },
+        async () => 'ran',
+      ),
+    ).rejects.toThrow('no active direct membership');
+  });
+
   it('denies a token whose owner lost the tenant membership or was suspended', async () => {
     const { runtime, local, owner } = await ownedRuntime('membership');
     const issued = await local.mcpTokens?.issue({ scopes: [READ] });
@@ -331,7 +399,7 @@ describe('local MCP tokens', () => {
         { id: owner.userId, tenantId: 'another-tenant', scopes: [READ] },
         async () => 'ran',
       ),
-    ).rejects.toThrow('no membership');
+    ).rejects.toThrow('no active direct membership');
 
     membership.status = MembershipStatus.ACTIVE;
     await membership.save();
