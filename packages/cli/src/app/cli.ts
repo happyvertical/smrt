@@ -9,6 +9,7 @@
 import { resolve } from 'node:path';
 import { redactSecrets } from './errors.js';
 import {
+  devServerArguments,
   launchVite,
   prepareMigration,
   runWorker,
@@ -156,7 +157,11 @@ export async function runAppCommand(
       }
       return launchVite(
         context,
-        operation === 'vite' ? args : [operation, ...args],
+        operation === 'vite'
+          ? args
+          : operation === 'dev'
+            ? ['dev', ...devServerArguments(args)]
+            : [operation, ...args],
       );
     }
     const deps: AppCommandDependencies = {

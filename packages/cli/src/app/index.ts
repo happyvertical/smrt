@@ -52,6 +52,7 @@ export {
   type StateCustodyOptions,
 } from './identity.js';
 export {
+  devServerArguments,
   launchVite,
   prepareMigration,
   resolveViteEntry,

@@ -247,6 +247,29 @@ export function resolveViteEntry(sourceRoot: string): string {
   return entry;
 }
 
+/** Loopback host every `smrt app` URL (onboarding, `open`, `start`) names. */
+export const LOOPBACK_HOST = '127.0.0.1';
+
+/**
+ * Arguments for `smrt app dev`: the caller's Vite arguments, plus
+ * `--host 127.0.0.1` unless they name `--host`, and `--port $PORT` when
+ * `PORT` is set and they name no `--port`. Vite's own default host is
+ * `localhost`, which Node resolves to `[::1]` first, so the dev server would
+ * not answer the `http://127.0.0.1:<PORT>` URL onboarding and `app:open` hand
+ * out. An explicit `--host`/`--port` (or `smrt app vite dev …`) wins.
+ */
+export function devServerArguments(
+  args: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const names = (flag: string) =>
+    args.some((arg) => arg === flag || arg.startsWith(`${flag}=`));
+  const result = [...args];
+  if (!names('--host')) result.push('--host', LOOPBACK_HOST);
+  if (!names('--port') && env.PORT) result.push('--port', env.PORT);
+  return result;
+}
+
 /**
  * Run the application's Vite CLI in this process with `args` verbatim. The
  * caller has already loaded `.env` without overriding the shell.

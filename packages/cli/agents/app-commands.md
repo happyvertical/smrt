@@ -10,7 +10,7 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | `scripts/smrt-app.mjs <op>` | `smrt app install\|setup\|recover\|start\|stop\|doctor\|open\|backup\|export\|import` |
 | `scripts/smrt-prepare-migration.mjs` | `smrt app migrate` |
 | `scripts/smrt-worker.mjs [task\|schedule]` | `smrt app worker [task\|schedule]` |
-| `node --env-file-if-exists=.env scripts/smrt-vite.mjs <args>` | `smrt app vite <args>` (`smrt app dev …` = `vite dev …`) |
+| `node --env-file-if-exists=.env scripts/smrt-vite.mjs <args>` | `smrt app vite <args>` (`smrt app dev …` = `vite dev …` plus `--host 127.0.0.1` / `--port $PORT` unless given: `devServerArguments`) |
 | `smrt-mcp-apps.mjs validate-if-present && …smrt-vite.mjs build` | `smrt app build [vite args]` |
 | `scripts/smrt-web.mjs` | `bin/smrt-web.mjs` (spawned by `start`) |
 | helper modules | `@happyvertical/smrt-cli/app` (side-effect-free subpath) |
