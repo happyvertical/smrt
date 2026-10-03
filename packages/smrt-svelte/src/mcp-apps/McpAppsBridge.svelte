@@ -116,7 +116,7 @@ async function expand() {
 <style>
 .smrt-mcp-apps-bridge {
   display: grid;
-  gap: var(--smrt-space-3, 0.75rem);
+  gap: var(--smrt-spacing-3, 0.75rem);
   min-width: 0;
   overflow-wrap: anywhere;
 }
