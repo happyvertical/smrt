@@ -58,6 +58,15 @@ export const POST = mountMcpAppRoute({
   Excluded tools are absent from `tools/list`, and a direct call gets the same
   unknown-tool error as a nonexistent name, so they cannot be enumerated.
   Omitted, every allow-listed tool is published (unchanged behaviour).
+  Durable task lifecycle calls (`tasks/get`, `tasks/update`, `tasks/cancel`)
+  re-apply the allow-list and `effects` filter to the task's originating
+  action, the generated tool for the class (simple or qualified name) and
+  method its job persists; a task whose action is excluded, or maps to no
+  allow-listed generated tool, is answered exactly like an unknown task.
+  `toolPolicy` is not re-applied to lifecycle calls: a task created by an
+  application workflow does not record which workflow created it, and such
+  workflows often front a policy-hidden generated task tool. Owner and tenant
+  scoping apply to every lifecycle call.
 - **Server** — `serverInfo` defaults to `{ name: 'smrt-app', version: '0.1.0' }`;
   every other `createMcpAppServer` option (`workflowTools`, `resources`,
   `workflowAssertions`, `toolListCache`, …) passes through. The handler's
@@ -93,7 +102,13 @@ authentication, the `smrtOptions` database thunk, task handling and tool
 execution all run inside a context bound to that principal: under
 `database-rls` the runtime opens a fresh RLS transaction publishing the bearer
 user, tenant and its live membership permissions capped by the token's scopes,
-instead of the anonymous (or a cookie user's) request transaction. A binder
+instead of the anonymous (or a cookie user's) request transaction. The binder
+hands dispatch the principal's effective scopes (`runAsPrincipal` passes the
+token scopes still granted by live permissions), and the tool policy
+authorizes with those, intersected with the token's: a revoked permission
+denies the tool before dispatch even under `application` isolation, while the
+principal keeps the tools its remaining permissions allow. A binder can never
+widen scopes or change the principal's id or tenant. A binder
 that fails before dispatch answers HTTP 403 with the safe
 `mcp_tool_access_denied` error; the response is materialized inside the
 binding. `createHostedMcpResourceAuth` from `./auth` builds that source from

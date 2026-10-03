@@ -29,7 +29,9 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   `mountMcpRoute`) runs before auth and dispatch; no-`Origin` clients pass.
   `effects` filters the catalog by `mcpToolEffect` (excluded tools 404).
   `auth` swaps in bearer principals; `bindPrincipal` runs their dispatch in
-  the app's principal context (RLS transaction), failing closed;
+  the app's principal context (RLS transaction), failing closed, and
+  authorizes with the binder's narrowed (live) scopes; task lifecycle calls
+  re-check the originating action against the allow-list and `effects`;
   `mountMcpProtectedResourceMetadataRoute` serves only the advertised path.
 - Keep tool catalogs private by default. Public caching requires an explicit
   attestation and a global, unauthenticated, read-only, non-tenant catalog with
