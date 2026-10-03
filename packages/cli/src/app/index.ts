@@ -144,3 +144,8 @@ export {
   runtimeEnvironment,
   webLauncherPath,
 } from './runtime.js';
+export {
+  parseTokenLifetime,
+  runTokenOperation,
+  TOKEN_USAGE,
+} from './tokens.js';

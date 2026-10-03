@@ -13,6 +13,7 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | `node --env-file-if-exists=.env scripts/smrt-vite.mjs <args>` | `smrt app vite <args>` (`smrt app dev …` = `vite dev …` plus `--host 127.0.0.1` / `--port $PORT` unless given: `devServerArguments`) |
 | `smrt-mcp-apps.mjs validate-if-present && …smrt-vite.mjs build` | `smrt app build [vite args]` |
 | `scripts/smrt-web.mjs` | `bin/smrt-web.mjs` (spawned by `start`) |
+| — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …]`, `token list`, `token revoke <id>` |
 | helper modules | `@happyvertical/smrt-cli/app` (side-effect-free subpath) |
 
 ## Source
@@ -73,6 +74,12 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   `/setup?token=` URL only to an interactive terminal (`io.operatorTerminal`,
   stderr when both stdio are TTYs), never to stdout/stderr logs or pipes. The
   web runtime deletes the files after a successful owner claim.
+- **`token`** (`tokens.ts`, local only): parses every argument before touching
+  state, opens `openLocalMcpTokenStore` (validated custody, uncached
+  connection, no writer lease, so it runs beside `app:start`), and serializes
+  create/revoke under `operation.lock`. Only the `issued` document carries
+  the token (`secretValuesIncluded: true`); list/revoke/error output never
+  does.
 - **Artifacts**: backup/export/import paths go through
   `assertExternalArtifactPath` (real path of nearest existing ancestor, never
   in or over the checkout). Backup refuses an existing destination; export

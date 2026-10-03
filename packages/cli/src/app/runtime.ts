@@ -58,7 +58,10 @@ export interface AppCommandDependencies {
     | 'prepareLocalDatabaseStorage'
     | 'resolveLocalRuntimePaths'
     | 'validateLocalDatabaseStorage'
-  >;
+  > &
+    // Optional so existing dependency doubles stay valid; `smrt app token`
+    // falls back to the package export.
+    Partial<Pick<typeof AppRuntime, 'openLocalMcpTokenStore'>>;
   /** Resolve the configured runtime after (re)loading `smrt.config`. */
   resolveRuntime(sourceRoot: string): Promise<ResolvedApplicationRuntime>;
   /** Run the application's package manager (`pnpm <args>`). */
