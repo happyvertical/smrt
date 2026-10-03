@@ -162,8 +162,10 @@ export function createProviderReadinessProbe(
         `${setting} must name an installed provider readiness module.`,
       );
     }
+    // The specifier is operator configuration resolved from the app root at
+    // runtime; a bundler must leave it alone.
     const module = (await import(
-      await resolveReadinessModule(
+      /* @vite-ignore */ await resolveReadinessModule(
         specifier,
         options.sourceRoot ?? process.cwd(),
       )
