@@ -163,7 +163,9 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   and an `AppScopePanel`. Panels start collapsed as in `AdminShell`; pass
   `config` to change that. `dock` is a snippet rendered inside the shell: a host
   places its assistant there in a `ShellDockTool`, so this package never
-  imports `smrt-chat`. `runtimeDiagnostics` (default false) mounts the
+  imports `smrt-chat`. It receives the Provider's `DataSurfaceRegistry`
+  (`{#snippet dock(registry)}`), the instance mounted routes register on
+  when `webmcp` UI is on; pass it to `<AssistantDock {registry} />`. `runtimeDiagnostics` (default false) mounts the
   read-only `smrt.runtime.diagnostics.read` WebMCP tool. Server code that
   lists that tool (the diagnostics route's `toolNames`) imports
   `RUNTIME_DIAGNOSTICS_WEBMCP_TOOL_NAME` from `./app/runtime-diagnostics`,

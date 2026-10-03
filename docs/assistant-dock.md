@@ -206,24 +206,35 @@ is the intended host:
 
 ```svelte
 <script lang="ts">
+  import { AppShell } from '@happyvertical/smrt-svelte/app';
   import { ShellDockTool } from '@happyvertical/smrt-svelte/workspace';
-  import { AssistantDock } from '@happyvertical/smrt-chat/svelte';
-  import { createSmrtAssistantTransport } from '@happyvertical/smrt-chat/svelte';
+  import { AssistantDock, createSmrtAssistantTransport } from '@happyvertical/smrt-chat/svelte';
+  import BotIcon from '$lib/BotIcon.svelte'; // optional: `icon` takes a component
 
-  // `registry` is the same DataSurfaceRegistry instance the shell's mounted
-  // routes register their descriptors on (see smrt-svelte/src/data-surface.ts).
   // `readEndpoint` must be a host-supplied, MEMBER-scoped endpoint — see
   // "Transport" below; it is never the generated ChatThread/ChatMessage
   // list REST routes directly.
   const transport = createSmrtAssistantTransport({ readEndpoint, token, writeEndpoint });
 </script>
 
-<ShellDockTool id="assistant" label="Assistant" icon="bot">
-  {#snippet render()}
-    <AssistantDock {transport} {registry} />
+<AppShell webmcp={true} {...shellProps}>
+  {#snippet dock(registry)}
+    <ShellDockTool id="assistant" label="Assistant" icon={BotIcon}>
+      {#snippet render()}
+        <AssistantDock {transport} {registry} />
+      {/snippet}
+    </ShellDockTool>
   {/snippet}
-</ShellDockTool>
+  {@render children()}
+</AppShell>
 ```
+
+`AppShell` passes its `dock` snippet the `DataSurfaceRegistry` of the
+`Provider` it mounts, the same instance the shell's routes register their
+descriptors on (`useListSurface`, `useLinkSurface`, ... register there when
+the Provider's WebMCP UI is on, i.e. `webmcp` is set). The host needs no
+second registry and no direct `smrt-ui` dependency. Outside `AppShell`, read
+the same registry in a Provider descendant with `useWebMcpUi().dataSurfaceRegistry`.
 
 This keeps the smrt-svelte→smrt-chat edge out of the package dependency graph
 entirely — it exists only in application code, matching the "no new
