@@ -47,30 +47,39 @@ const {
   extension,
 }: Props = $props();
 const { t } = useI18n();
+const singular = $derived(labels.singular ?? t(M['commerce.vendor.singular']));
+const plural = $derived(labels.plural ?? t(M['commerce.vendor.plural']));
 const notRecorded = $derived(t(M['commerce.party.not_recorded']));
+
+function statusLabel(value: string): string {
+  if (value === 'active') return t(M['commerce.party.status_active']);
+  if (value === 'inactive') return t(M['commerce.party.status_inactive']);
+  if (value === 'suspended') return t(M['commerce.party.status_suspended']);
+  return value;
+}
 </script>
 
 <section class="party-detail">
-  {#if backHref}<Button href={backHref} variant="ghost">{t(M['commerce.party.back_to'], { plural: labels.plural ?? t(M['commerce.vendor.plural']).toLowerCase() })}</Button>{/if}
+  {#if backHref}<Button href={backHref} variant="ghost">{t(M['commerce.party.back_to'], { plural })}</Button>{/if}
   <PageHeader title={vendor.profile.name} subtitle={vendor.profile.description ?? t(M['commerce.vendor.details'])}>
     {#snippet actions()}
-      {#if canEdit && editHref}<Button href={editHref}>{labels.edit ?? (labels.singular ? `Edit ${labels.singular}` : t(M['commerce.vendor.edit']))}</Button>{/if}
+      {#if canEdit && editHref}<Button href={editHref}>{labels.edit ?? (labels.singular ? t(M['commerce.party.edit_named'], { singular }) : t(M['commerce.vendor.edit']))}</Button>{/if}
     {/snippet}
   </PageHeader>
 
   <div class="summary-grid">
     <Card padding="md">
-      <h2>Identity</h2>
+      <h2>{t(M['commerce.party.identity'])}</h2>
       <dl>
-        <dt>Type</dt><dd>{vendor.profile.identityKind === 'person' ? 'Person' : 'Business'}</dd>
-        <dt>Status</dt><dd><StatusBadge status={vendor.status} label={vendor.status} /></dd>
-        <dt>Email</dt><dd>{#if vendor.profile.email}<a href={`mailto:${vendor.profile.email}`}>{vendor.profile.email}</a>{:else}{notRecorded}{/if}</dd>
+        <dt>{t(M['commerce.party.type'])}</dt><dd>{vendor.profile.identityKind === 'person' ? t(M['commerce.party.identity_person']) : t(M['commerce.party.identity_business'])}</dd>
+        <dt>{t(M['commerce.party.status'])}</dt><dd><StatusBadge status={vendor.status} label={statusLabel(vendor.status)} /></dd>
+        <dt>{t(M['commerce.party.email'])}</dt><dd>{#if vendor.profile.email}<a href={`mailto:${vendor.profile.email}`}>{vendor.profile.email}</a>{:else}{notRecorded}{/if}</dd>
       </dl>
     </Card>
     <Card padding="md">
       <h2>{t(M['commerce.party.commercial_terms'])}</h2>
       <dl>
-        <dt>{t(M['commerce.vendor.lead_time'])}</dt><dd>{vendor.leadTimeDays === undefined ? notRecorded : `${vendor.leadTimeDays} days`}</dd>
+        <dt>{t(M['commerce.vendor.lead_time'])}</dt><dd>{vendor.leadTimeDays === undefined ? notRecorded : t(M['commerce.vendor.lead_time_days'], { days: vendor.leadTimeDays })}</dd>
         <dt>{t(M['commerce.vendor.minimum_order'])}</dt><dd>{vendor.minimumOrderMinor === undefined ? notRecorded : formatPartyMinorUnits(vendor.minimumOrderMinor, vendor.currency ?? 'USD', minorUnitExponent, locale)}</dd>
         <dt>{t(M['commerce.party.payment_terms'])}</dt><dd>{vendor.paymentTerms || notRecorded}</dd>
         <dt>{t(M['commerce.vendor.currency'])}</dt><dd>{vendor.currency || notRecorded}</dd>
@@ -81,13 +90,13 @@ const notRecorded = $derived(t(M['commerce.party.not_recorded']));
   <Card padding="md">
     <h2>{t(M['commerce.vendor.default_order_contact'])}</h2>
     <dl>
-      <dt>Email</dt><dd>{#if vendor.defaultContactEmail}<a href={`mailto:${vendor.defaultContactEmail}`}>{vendor.defaultContactEmail}</a>{:else}{notRecorded}{/if}</dd>
-      <dt>Phone</dt><dd>{#if vendor.defaultContactPhone}<a href={`tel:${vendor.defaultContactPhone}`}>{vendor.defaultContactPhone}</a>{:else}{notRecorded}{/if}</dd>
+      <dt>{t(M['commerce.party.email'])}</dt><dd>{#if vendor.defaultContactEmail}<a href={`mailto:${vendor.defaultContactEmail}`}>{vendor.defaultContactEmail}</a>{:else}{notRecorded}{/if}</dd>
+      <dt>{t(M['commerce.party.phone'])}</dt><dd>{#if vendor.defaultContactPhone}<a href={`tel:${vendor.defaultContactPhone}`}>{vendor.defaultContactPhone}</a>{:else}{notRecorded}{/if}</dd>
     </dl>
   </Card>
 
   <PartyContactFields contacts={vendor.contacts ?? []} labels={contactLabels} readOnly />
-  {#if vendor.notes}<Card padding="md"><h2>Notes</h2><p class="notes">{vendor.notes}</p></Card>{/if}
+  {#if vendor.notes}<Card padding="md"><h2>{t(M['commerce.party.notes'])}</h2><p class="notes">{vendor.notes}</p></Card>{/if}
   {@render extension?.(vendor)}
 </section>
 

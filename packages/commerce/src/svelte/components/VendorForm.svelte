@@ -104,6 +104,13 @@ const errorList = $derived(
   {#if values.profileId}
     <Input interaction={false} type="hidden" name={names.profileId} value={values.profileId} />
   {/if}
+  {#if !actions && !readOnly && canSubmit}
+    <span class="native-default-submit" aria-hidden="true">
+      <Button type="submit" name={intentName} value={transport.saveIntent ?? 'save'} tabindex={-1}>
+        {labels.save ?? (labels.singular ? t(M[mode === 'create' ? 'commerce.party.add_named' : 'commerce.party.save_named'], { singular: labels.singular }) : t(M[mode === 'create' ? 'commerce.vendor.add' : 'commerce.vendor.save']))}
+      </Button>
+    </span>
+  {/if}
 
   {#if errors.form}<p class="form-error" role="alert">{errors.form}</p>{/if}
   <ErrorSummary errors={errorList} />
@@ -122,7 +129,7 @@ const errorList = $derived(
         </Select>
       </FormGroup>
     {/if}
-    <FormGroup label={`${singular} name`} required error={errors.fields?.name}>
+    <FormGroup label={t(M['commerce.party.name'], { singular })} required error={errors.fields?.name}>
       <Input name={names.name} value={values.name ?? ''} maxlength={160} required readonly={readOnly} />
     </FormGroup>
     <div class="field-grid">
@@ -149,7 +156,7 @@ const errorList = $derived(
     <legend>{t(M['commerce.party.commercial_terms'])}</legend>
     <div class="field-grid">
       <FormGroup label={t(M['commerce.vendor.lead_time'])} error={errors.fields?.leadTimeDays}>
-        <Input name={names.leadTimeDays} type="number" min="0" step="1" value={values.leadTimeDays ?? ''} readonly={readOnly} />
+        <Input name={names.leadTimeDays} inputmode="numeric" value={values.leadTimeDays ?? ''} readonly={readOnly} />
       </FormGroup>
       <FormGroup label={t(M['commerce.vendor.minimum_order'])} hint={t(M['commerce.vendor.minimum_order_hint'])} error={errors.fields?.minimumOrder}>
         <Input name={names.minimumOrder} inputmode="decimal" value={values.minimumOrder ?? ''} readonly={readOnly} />
@@ -193,7 +200,7 @@ const errorList = $derived(
     <FormActionBar label={t(M['commerce.party.form_actions'], { singular })}>
       {#if cancelHref}<Button href={cancelHref} variant="ghost">{labels.cancel ?? t(M['commerce.party.cancel'])}</Button>{/if}
       <Button type="submit" name={intentName} value={transport.saveIntent ?? 'save'}>
-        {labels.save ?? (labels.singular ? `${mode === 'create' ? 'Add' : 'Save'} ${labels.singular}` : t(M[mode === 'create' ? 'commerce.vendor.add' : 'commerce.vendor.save']))}
+        {labels.save ?? (labels.singular ? t(M[mode === 'create' ? 'commerce.party.add_named' : 'commerce.party.save_named'], { singular: labels.singular }) : t(M[mode === 'create' ? 'commerce.vendor.add' : 'commerce.vendor.save']))}
       </Button>
     </FormActionBar>
   {/if}
@@ -201,6 +208,7 @@ const errorList = $derived(
 
 <style>
   :global(.party-form) { display: grid; gap: var(--smrt-spacing-5); min-inline-size: 0; padding-block-end: var(--smrt-spacing-8); }
+  .native-default-submit { position: absolute; inline-size: 1px; block-size: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .form-error { margin: 0; padding: var(--smrt-spacing-4); border-inline-start: 4px solid var(--smrt-color-error); background: var(--smrt-color-error-container); color: var(--smrt-color-on-error-container); border-radius: var(--smrt-radius-small); }
   .form-section { min-inline-size: 0; margin: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); }
   legend { padding-inline: var(--smrt-spacing-2); font: var(--smrt-typography-title-medium-font); color: var(--smrt-color-on-surface); }

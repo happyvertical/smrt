@@ -105,13 +105,13 @@ const sampleVendor = {
 const loadCustomerDirectory = () =>
   import('./components/CustomerDirectory.svelte');
 const loadCustomerDetail = () => import('./components/CustomerDetail.svelte');
-const loadCustomerForm = () => import('./components/CustomerForm.svelte');
+const loadPartyFormPreview = () =>
+  import('./playground/PartyFormPreview.svelte');
 const loadInvoiceActions = () => import('./components/InvoiceActions.svelte');
 const loadInvoiceCard = () => import('./components/InvoiceCard.svelte');
 const loadUnbilledItems = () => import('./components/UnbilledItems.svelte');
 const loadVendorDirectory = () => import('./components/VendorDirectory.svelte');
 const loadVendorDetail = () => import('./components/VendorDetail.svelte');
-const loadVendorForm = () => import('./components/VendorForm.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-commerce',
@@ -179,27 +179,9 @@ export default {
       title: 'Customer Form',
       description:
         'Native create/edit submission with retained values and contacts.',
-      loadComponent: loadCustomerForm,
+      loadComponent: loadPartyFormPreview,
       order: 3,
-      props: {
-        mode: 'edit',
-        values: {
-          profileId: sampleCustomer.profileId,
-          identityKind: sampleCustomer.profile.identityKind,
-          name: sampleCustomer.profile.name,
-          email: sampleCustomer.profile.email,
-          status: sampleCustomer.status,
-          customerType: sampleCustomer.customerType,
-          creditLimit: '2500.00',
-          paymentTerms: sampleCustomer.paymentTerms,
-          contacts: sampleCustomer.contacts,
-        },
-        transport: {
-          action: '#customer-save',
-          hiddenFields: { requestId: 'demo-request' },
-        },
-        cancelHref: '#customers',
-      },
+      props: { kind: 'customer' },
       modes: { mock: { label: 'Mock' } },
     },
     {
@@ -237,30 +219,9 @@ export default {
       title: 'Vendor Form',
       description:
         'Native create/edit submission with retained currency text and contacts.',
-      loadComponent: loadVendorForm,
+      loadComponent: loadPartyFormPreview,
       order: 6,
-      props: {
-        mode: 'edit',
-        values: {
-          profileId: sampleVendor.profileId,
-          identityKind: sampleVendor.profile.identityKind,
-          name: sampleVendor.profile.name,
-          email: sampleVendor.profile.email,
-          status: sampleVendor.status,
-          leadTimeDays: String(sampleVendor.leadTimeDays),
-          minimumOrder: '500.00',
-          currency: sampleVendor.currency,
-          paymentTerms: sampleVendor.paymentTerms,
-          defaultContactEmail: sampleVendor.defaultContactEmail,
-          defaultContactPhone: sampleVendor.defaultContactPhone,
-          contacts: sampleVendor.contacts,
-        },
-        transport: {
-          action: '#vendor-save',
-          hiddenFields: { expectedTenantId: 'tenant-demo' },
-        },
-        cancelHref: '#vendors',
-      },
+      props: { kind: 'vendor' },
       modes: { mock: { label: 'Mock' } },
     },
     {

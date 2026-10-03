@@ -72,22 +72,40 @@ const {
 }: Props = $props();
 
 const { t } = useI18n();
+const singular = $derived(
+  labels.singular ?? t(M['commerce.customer.singular']),
+);
+const plural = $derived(labels.plural ?? t(M['commerce.customer.plural']));
 const first = $derived(total === 0 ? 0 : (page - 1) * pageSize + 1);
 const last = $derived(Math.min(page * pageSize, total));
+
+function statusLabel(value: string): string {
+  if (value === 'active') return t(M['commerce.party.status_active']);
+  if (value === 'inactive') return t(M['commerce.party.status_inactive']);
+  if (value === 'suspended') return t(M['commerce.party.status_suspended']);
+  return value;
+}
+
+function customerTypeLabel(value: string | undefined): string {
+  if (value === 'dtc') return t(M['commerce.customer.type_dtc']);
+  if (value === 'wholesale') return t(M['commerce.customer.type_wholesale']);
+  if (value === 'retail') return t(M['commerce.customer.type_retail']);
+  return value ?? singular;
+}
 </script>
 
 <section class="party-directory">
-  <PageHeader title={labels.plural ?? t(M['commerce.customer.plural'])} subtitle={labels.plural ? `Search and manage ${labels.plural.toLowerCase()}.` : t(M['commerce.customer.manage'])}>
+  <PageHeader title={plural} subtitle={labels.plural ? t(M['commerce.party.manage_named'], { plural }) : t(M['commerce.customer.manage'])}>
     {#snippet actions()}
-      {#if canCreate && addHref}<Button href={addHref}>{labels.add ?? (labels.singular ? `Add ${labels.singular}` : t(M['commerce.customer.add']))}</Button>{/if}
+      {#if canCreate && addHref}<Button href={addHref}>{labels.add ?? (labels.singular ? t(M['commerce.party.add_named'], { singular }) : t(M['commerce.customer.add']))}</Button>{/if}
     {/snippet}
   </PageHeader>
 
   <Form class="directory-search" method="get" action={searchAction} preventDefault={false} stagedReview={false}>
-    <FormGroup label={labels.search ?? (labels.plural ? `Search ${labels.plural.toLowerCase()}` : t(M['commerce.customer.search']))}>
+    <FormGroup label={labels.search ?? (labels.plural ? t(M['commerce.party.search_named'], { plural }) : t(M['commerce.customer.search']))}>
       <Input type="search" name={queryName} value={query} maxlength={160} />
     </FormGroup>
-    <FormGroup label="Status">
+    <FormGroup label={t(M['commerce.party.status'])}>
       <Select name={statusName} value={status}>
         <option value="">{t(M['commerce.party.status_all'])}</option>
         {#if status && !['active', 'inactive', 'suspended'].includes(status)}
@@ -117,16 +135,16 @@ const last = $derived(Math.min(page * pageSize, total));
           <div class="party-row">
             <div class="party-copy">
               <h2>{#if item.href}<a href={item.href}>{item.data.profile.name}</a>{:else}{item.data.profile.name}{/if}</h2>
-              <p>{item.data.profile.email || item.data.paymentTerms || 'No contact details recorded'}</p>
-              <p class="meta">{item.data.customerType ?? 'Customer'}{item.data.paymentTerms ? ` · ${item.data.paymentTerms}` : ''}</p>
+              <p>{item.data.profile.email || item.data.paymentTerms || t(M['commerce.party.no_contact_details'])}</p>
+              <p class="meta">{customerTypeLabel(item.data.customerType)}{item.data.paymentTerms ? ` · ${item.data.paymentTerms}` : ''}</p>
             </div>
-            <StatusBadge status={item.data.status} label={item.data.status} />
+            <StatusBadge status={item.data.status} label={statusLabel(item.data.status)} />
           </div>
           {@render extension?.(item.data)}
         </Card>
       {/each}
     </div>
-    <nav class="pagination" aria-label={`${labels.singular ?? 'Customer'} pages`}>
+    <nav class="pagination" aria-label={t(M['commerce.party.pagination'], { singular })}>
       {#if previousHref}<Button href={previousHref} variant="secondary">{labels.previous ?? t(M['commerce.party.previous'])}</Button>{/if}
       <span>{t(M['commerce.party.page'], { page })}</span>
       {#if nextHref}<Button href={nextHref} variant="secondary">{labels.next ?? t(M['commerce.party.next'])}</Button>{/if}

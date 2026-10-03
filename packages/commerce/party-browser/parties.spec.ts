@@ -50,3 +50,64 @@ test('native contact action posts hidden tokens and entered values with JavaScri
   await expect(page.locator('#payload')).toContainText('intent=add-native-contact');
   await context.close();
 });
+
+test('Enter selects save before contact row actions with JavaScript enabled and disabled', async ({ browser, page }) => {
+  await page.goto('/');
+  const customerForm = page.getByTestId('customer-form').locator('form');
+  await customerForm.locator('input[name="clientName"]').fill('Enter saves this client');
+  await Promise.all([
+    page.waitForURL('**/party-submit'),
+    customerForm.locator('input[name="clientName"]').press('Enter'),
+  ]);
+  await expect(page.locator('#payload')).toContainText('intent=save');
+  await expect(page.locator('#payload')).not.toContainText('intent=addContact');
+  await expect(page.locator('#payload')).not.toContainText('intent=removeContact');
+
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const nativePage = await context.newPage();
+  await nativePage.goto('/native');
+  await nativePage.locator('input[name="clientName"]').fill('Native Enter save');
+  await Promise.all([
+    nativePage.waitForURL('**/party-submit'),
+    nativePage.locator('input[name="clientName"]').press('Enter'),
+  ]);
+  await expect(nativePage.locator('#payload')).toContainText('intent=save');
+  await expect(nativePage.locator('#payload')).not.toContainText('intent=add-native-contact');
+  await expect(nativePage.locator('#payload')).not.toContainText('intent=removeContact');
+  await context.close();
+});
+
+test('invalid lead time survives browser rendering and a native contact action', async ({ browser, page }) => {
+  await page.goto('/');
+  const vendorForm = page.getByTestId('vendor-invalid').locator('form');
+  await expect(vendorForm.locator('input[name="leadTimeDays"]')).toHaveValue('7oops');
+  const payload = await vendorForm.evaluate((element) =>
+    Object.fromEntries(new FormData(element as HTMLFormElement).entries()),
+  );
+  expect(payload.leadTimeDays).toBe('7oops');
+
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const nativePage = await context.newPage();
+  await nativePage.goto('/native-vendor');
+  await expect(nativePage.locator('input[name="leadTimeDays"]')).toHaveValue('7oops');
+  await nativePage.getByRole('button', { name: 'Add contact' }).click();
+  await expect(nativePage.locator('#payload')).toContainText('leadTimeDays=7oops');
+  await expect(nativePage.locator('#payload')).toContainText('intent=addContact');
+  await context.close();
+});
+
+test('playground customer form handles add, remove, and retained rejection actions', async ({ page }) => {
+  await page.goto('/');
+  const preview = page.getByTestId('customer-playground');
+  const form = preview.locator('form');
+  await form.locator('input[name="creditLimit"]').fill('12..50');
+  await preview.getByRole('button', { name: 'Add contact' }).click();
+  await expect(form.locator('input[name="contactId"]')).toHaveCount(2);
+  await expect(preview.getByRole('alert').first()).toContainText('Demo contact added');
+  await preview.getByRole('button', { name: 'Remove contact' }).last().click();
+  await expect(form.locator('input[name="contactId"]')).toHaveCount(1);
+  await preview.getByRole('button', { name: 'Save customer' }).click();
+  await expect(preview.getByRole('alert').first()).toContainText('entered values were retained');
+  await expect(form.locator('input[name="creditLimit"]')).toHaveValue('12..50');
+  await expect(page).toHaveURL(/\/$/);
+});

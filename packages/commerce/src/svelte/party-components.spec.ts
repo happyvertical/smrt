@@ -1,6 +1,7 @@
 import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
+import PartyI18nHarness from '../../test-support/PartyI18nHarness.svelte';
 import { COMMERCE_UI_SLOTS } from '../ui.js';
 import CustomerDetail from './components/CustomerDetail.svelte';
 import CustomerDirectory from './components/CustomerDirectory.svelte';
@@ -175,6 +176,7 @@ describe('customer and vendor SSR surfaces', () => {
         values: {
           identityKind: 'person',
           name: 'Sam Supplier',
+          leadTimeDays: '7oops',
           minimumOrder: '500.00',
           contacts: [{ id: 'contact-2', name: 'Sam', phone: 'raw phone' }],
         },
@@ -187,8 +189,46 @@ describe('customer and vendor SSR surfaces', () => {
     }).body;
     expect(html).toContain('value="person" selected');
     expect(html).toContain('value="500.00"');
+    expect(html).toMatch(/<input[^>]+value="7oops"[^>]+name="leadTimeDays"/);
+    expect(html).toMatch(
+      /<input[^>]+name="leadTimeDays"[^>]+inputmode="numeric"/,
+    );
+    expect(html).not.toContain('name="leadTimeDays" type="number"');
     expect(html).toContain('value="raw phone"');
     expect(html).toContain('name="intent" value="add-row"');
     expect(html).toContain('name="intent" value="remove-row-0"');
+  });
+
+  it('places the save intent before contact actions for native Enter submission', () => {
+    const html = render(CustomerForm, {
+      props: {
+        values: {
+          identityKind: 'business',
+          name: 'Keyboard customer',
+          contacts: [{ id: 'contact-1', name: 'Retained contact' }],
+        },
+        transport: { saveIntent: 'save-customer' },
+      },
+    }).body;
+    expect(html.indexOf('value="save-customer"')).toBeLessThan(
+      html.indexOf('value="addContact"'),
+    );
+    expect(html.indexOf('value="save-customer"')).toBeLessThan(
+      html.indexOf('value="removeContact:0"'),
+    );
+  });
+
+  it('resolves formerly hard-coded party copy from a non-English catalog', () => {
+    const html = render(PartyI18nHarness).body;
+    expect(html).toContain('Kunden suchen und verwalten.');
+    expect(html).toContain('Kunde hinzufügen');
+    expect(html).toContain('Kunden suchen');
+    expect(html).toContain('Keine Kontaktdaten erfasst');
+    expect(html).toContain('Identität');
+    expect(html).toContain('Art');
+    expect(html).toContain('Zustand');
+    expect(html).toContain('7 Tage Lieferzeit');
+    expect(html).toContain('Notizen');
+    expect(html).toContain('Name für Kunde');
   });
 });

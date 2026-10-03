@@ -5,6 +5,7 @@ import CustomerForm from '../src/svelte/components/CustomerForm.svelte';
 import VendorDetail from '../src/svelte/components/VendorDetail.svelte';
 import VendorDirectory from '../src/svelte/components/VendorDirectory.svelte';
 import VendorForm from '../src/svelte/components/VendorForm.svelte';
+import PartyFormPreview from '../src/svelte/playground/PartyFormPreview.svelte';
 
 const customer = {
   id: 'customer-1',
@@ -44,6 +45,15 @@ const vendor = {
   </section>
   <section data-testid="vendor-readonly">
     <VendorForm readOnly values={{ identityKind: 'business', name: 'Read only vendor', minimumOrder: '500.00', contacts: vendor.contacts }} />
+  </section>
+  <section data-testid="vendor-invalid">
+    <VendorForm
+      values={{ identityKind: 'business', name: 'Retained Vendor', leadTimeDays: '7oops', minimumOrder: '500.00', contacts: vendor.contacts }}
+      transport={{ action: '/party-submit', hiddenFields: { requestToken: 'vendor-request' } }}
+    />
+  </section>
+  <section data-testid="customer-playground">
+    <PartyFormPreview kind="customer" />
   </section>
 </main>
 

@@ -51,6 +51,10 @@ const {
 }: Props = $props();
 
 const { t } = useI18n();
+const singular = $derived(
+  labels.singular ?? t(M['commerce.customer.singular']),
+);
+const plural = $derived(labels.plural ?? t(M['commerce.customer.plural']));
 const notRecorded = $derived(t(M['commerce.party.not_recorded']));
 const shippingAddress = $derived(
   formatPartyAddress(customer.defaultShippingAddress),
@@ -58,24 +62,38 @@ const shippingAddress = $derived(
 const billingAddress = $derived(
   formatPartyAddress(customer.defaultBillingAddress),
 );
+
+function statusLabel(value: string): string {
+  if (value === 'active') return t(M['commerce.party.status_active']);
+  if (value === 'inactive') return t(M['commerce.party.status_inactive']);
+  if (value === 'suspended') return t(M['commerce.party.status_suspended']);
+  return value;
+}
+
+function customerTypeLabel(value: string | undefined): string {
+  if (value === 'dtc') return t(M['commerce.customer.type_dtc']);
+  if (value === 'wholesale') return t(M['commerce.customer.type_wholesale']);
+  if (value === 'retail') return t(M['commerce.customer.type_retail']);
+  return value ?? notRecorded;
+}
 </script>
 
 <section class="party-detail">
-  {#if backHref}<Button href={backHref} variant="ghost">{t(M['commerce.party.back_to'], { plural: labels.plural ?? t(M['commerce.customer.plural']).toLowerCase() })}</Button>{/if}
+  {#if backHref}<Button href={backHref} variant="ghost">{t(M['commerce.party.back_to'], { plural })}</Button>{/if}
   <PageHeader title={customer.profile.name} subtitle={customer.profile.description ?? t(M['commerce.customer.details'])}>
     {#snippet actions()}
-      {#if canEdit && editHref}<Button href={editHref}>{labels.edit ?? (labels.singular ? `Edit ${labels.singular}` : t(M['commerce.customer.edit']))}</Button>{/if}
+      {#if canEdit && editHref}<Button href={editHref}>{labels.edit ?? (labels.singular ? t(M['commerce.party.edit_named'], { singular }) : t(M['commerce.customer.edit']))}</Button>{/if}
     {/snippet}
   </PageHeader>
 
   <div class="summary-grid">
     <Card padding="md">
-      <h2>Identity</h2>
+      <h2>{t(M['commerce.party.identity'])}</h2>
       <dl>
-        <dt>Type</dt><dd>{customer.profile.identityKind === 'person' ? 'Person' : 'Business'}</dd>
-        <dt>Status</dt><dd><StatusBadge status={customer.status} label={customer.status} /></dd>
-        <dt>{t(M['commerce.customer.type'])}</dt><dd>{customer.customerType ?? notRecorded}</dd>
-        <dt>Email</dt><dd>{#if customer.profile.email}<a href={`mailto:${customer.profile.email}`}>{customer.profile.email}</a>{:else}{notRecorded}{/if}</dd>
+        <dt>{t(M['commerce.party.type'])}</dt><dd>{customer.profile.identityKind === 'person' ? t(M['commerce.party.identity_person']) : t(M['commerce.party.identity_business'])}</dd>
+        <dt>{t(M['commerce.party.status'])}</dt><dd><StatusBadge status={customer.status} label={statusLabel(customer.status)} /></dd>
+        <dt>{t(M['commerce.customer.type'])}</dt><dd>{customerTypeLabel(customer.customerType)}</dd>
+        <dt>{t(M['commerce.party.email'])}</dt><dd>{#if customer.profile.email}<a href={`mailto:${customer.profile.email}`}>{customer.profile.email}</a>{:else}{notRecorded}{/if}</dd>
       </dl>
     </Card>
     <Card padding="md">
@@ -94,7 +112,7 @@ const billingAddress = $derived(
   </div>
 
   <PartyContactFields contacts={customer.contacts ?? []} labels={contactLabels} readOnly />
-  {#if customer.notes}<Card padding="md"><h2>Notes</h2><p class="notes">{customer.notes}</p></Card>{/if}
+  {#if customer.notes}<Card padding="md"><h2>{t(M['commerce.party.notes'])}</h2><p class="notes">{customer.notes}</p></Card>{/if}
   {@render extension?.(customer)}
 </section>
 
