@@ -290,7 +290,7 @@ describe('reconcile()', () => {
       expect(otherType.fact.id).not.toBe(first.fact.id);
     });
 
-    it('rejects semantic candidates outside the requested reconciliation scope', async () => {
+    it('keeps compatible cross-domain semantic candidates within the tenant', async () => {
       const otherTenant = await collection.create({
         textRefined: 'Council adopted the capital plan.',
         type: 'event',
@@ -298,31 +298,79 @@ describe('reconcile()', () => {
         tenantId: 'tenant-b',
         status: 'active',
       });
-      const semanticSearch = vi
-        .spyOn(collection, 'semanticSearch')
-        .mockResolvedValue([Object.assign(otherTenant, { _similarity: 0.99 })]);
-
-      const result = await collection.reconcile({
-        rawInput: 'Council approved the capital plan.',
+      const crossScope = await collection.create({
+        textRefined: 'Council adopted the capital plan.',
         type: 'event',
         domain: 'civic',
         tenantId: 'tenant-a',
+        status: 'active',
+      });
+      const semanticSearch = vi
+        .spyOn(collection, 'semanticSearch')
+        .mockResolvedValue([
+          Object.assign(otherTenant, { _similarity: 0.99 }),
+          Object.assign(crossScope, { _similarity: 0.95 }),
+        ]);
+
+      const result = await collection.reconcile({
+        rawInput: 'Council approved the capital plan.',
+        type: 'assertion',
+        domain: 'finance',
+        tenantId: 'tenant-a',
       });
 
-      expect(result.action).toBe('created');
+      expect(result.action).toBe('merged');
+      expect(result.fact.id).toBe(crossScope.id);
       expect(result.fact.id).not.toBe(otherTenant.id);
-      expect(result.fact.tenantId).toBe('tenant-a');
       expect(semanticSearch).toHaveBeenCalledWith(
         'Council approved the capital plan.',
         expect.objectContaining({
           where: {
             tenantId: 'tenant-a',
-            domain: 'civic',
-            type: 'event',
-            status: 'active',
           },
         }),
       );
+    });
+
+    it('runs unrelated reconciliation identities in parallel', async () => {
+      let releaseFirst!: () => void;
+      const firstSearchEntered = Promise.withResolvers<void>();
+      const secondSearchEntered = Promise.withResolvers<void>();
+      vi.spyOn(collection, 'semanticSearch').mockImplementation(
+        async (input) => {
+          if (input === 'First civic fact') {
+            firstSearchEntered.resolve();
+            await new Promise<void>((resolve) => {
+              releaseFirst = resolve;
+            });
+          } else {
+            secondSearchEntered.resolve();
+          }
+          return [];
+        },
+      );
+
+      const first = collection.reconcile({
+        rawInput: 'First civic fact',
+        type: 'event',
+        domain: 'civic',
+      });
+      await firstSearchEntered.promise;
+      const second = collection.reconcile({
+        rawInput: 'Second finance fact',
+        type: 'assertion',
+        domain: 'finance',
+      });
+
+      expect(
+        await Promise.race([
+          secondSearchEntered.promise.then(() => true),
+          new Promise((resolve) => setTimeout(() => resolve(false), 100)),
+        ]),
+      ).toBe(true);
+      releaseFirst();
+      await expect(first).resolves.toMatchObject({ action: 'created' });
+      await expect(second).resolves.toMatchObject({ action: 'created' });
     });
 
     it('should merge when input is very similar to existing fact', async () => {

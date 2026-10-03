@@ -220,7 +220,7 @@ function asMessageCapableAi(ai: unknown): MessageCapableAi | null {
 
 export class FactCollection extends SmrtCollection<Fact> {
   static readonly _itemClass = Fact;
-  private reconciliationQueue: Promise<void> = Promise.resolve();
+  private readonly reconciliationQueues = new Map<string, Promise<void>>();
 
   /**
    * Fetch one catalog page in SQL. The recursive branch walk may inspect more
@@ -742,17 +742,46 @@ export class FactCollection extends SmrtCollection<Fact> {
     );
   }
 
-  private matchesReconciliationScope(
+  private matchesSemanticReconciliationScope(
     fact: Fact,
     options: ReconcileOptions,
   ): boolean {
     return (
       (fact.tenantId ?? null) ===
-        this.resolveReconciliationTenant(options.tenantId) &&
-      fact.domain === (options.domain ?? '') &&
-      fact.type === (options.type ?? 'assertion') &&
-      fact.status === 'active'
+      this.resolveReconciliationTenant(options.tenantId)
     );
+  }
+
+  private reconciliationIdentity(options: ReconcileOptions): string {
+    return [
+      this.resolveReconciliationTenant(options.tenantId) ?? '__global__',
+      options.domain ?? '',
+      options.type ?? 'assertion',
+      normalizeText(options.rawInput),
+    ].join('\u001f');
+  }
+
+  private async withReconciliationQueue<T>(
+    options: ReconcileOptions,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const identity = this.reconciliationIdentity(options);
+    const previous =
+      this.reconciliationQueues.get(identity) ?? Promise.resolve();
+    let release: () => void = () => undefined;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.reconciliationQueues.set(identity, current);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.reconciliationQueues.get(identity) === current) {
+        this.reconciliationQueues.delete(identity);
+      }
+    }
   }
 
   private async withExactReconciliationLock<T>(
@@ -760,13 +789,7 @@ export class FactCollection extends SmrtCollection<Fact> {
     operation: (collection: FactCollection) => Promise<T>,
   ): Promise<T> {
     const database = this.db;
-    const tenantId = this.resolveReconciliationTenant(options.tenantId);
-    const lockKey = [
-      tenantId ?? '__global__',
-      options.domain ?? '',
-      options.type ?? 'assertion',
-      normalizeText(options.rawInput),
-    ].join('\u001f');
+    const lockKey = this.reconciliationIdentity(options);
 
     const run = async (collection: FactCollection) => {
       if (isPostgresDatabase(collection.db)) {
@@ -804,19 +827,11 @@ export class FactCollection extends SmrtCollection<Fact> {
    * 4. Return { action, fact, source?, similarity?, matchedFact? }
    */
   async reconcile(options: ReconcileOptions): Promise<ReconcileResult> {
-    const previous = this.reconciliationQueue;
-    let release: () => void = () => undefined;
-    this.reconciliationQueue = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      return await this.withExactReconciliationLock(options, (collection) =>
+    return this.withReconciliationQueue(options, () =>
+      this.withExactReconciliationLock(options, (collection) =>
         collection.reconcileLocked(options),
-      );
-    } finally {
-      release();
-    }
+      ),
+    );
   }
 
   private async reconcileLocked(
@@ -890,13 +905,10 @@ export class FactCollection extends SmrtCollection<Fact> {
         minSimilarity: conflictThreshold,
         where: {
           tenantId: this.resolveReconciliationTenant(options.tenantId),
-          domain,
-          type,
-          status: 'active',
         },
       });
       matches = matches.filter((match) =>
-        this.matchesReconciliationScope(match, options),
+        this.matchesSemanticReconciliationScope(match, options),
       );
     } catch {
       // Semantic search may fail if no embeddings exist yet — treat as no match
