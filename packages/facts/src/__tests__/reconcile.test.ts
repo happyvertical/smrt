@@ -209,6 +209,122 @@ describe('reconcile()', () => {
   });
 
   describe('MERGE action', () => {
+    it('reuses an exact normalized fact when semantic search is unavailable', async () => {
+      const existing = await collection.create({
+        textRefined: 'Council approved the capital plan.',
+        type: 'event',
+        domain: 'civic',
+        status: 'active',
+        sourceCount: 0,
+      });
+      vi.spyOn(collection, 'semanticSearch').mockRejectedValue(
+        new Error('embedding provider unavailable'),
+      );
+
+      const result = await collection.reconcile({
+        rawInput: '  council   APPROVED the capital plan. ',
+        type: 'event',
+        domain: 'civic',
+        source: {
+          sourceType: 'minutes',
+          sourceTitle: 'Council minutes',
+          credibility: 0.9,
+        },
+      });
+
+      expect(result.action).toBe('merged');
+      expect(result.fact.id).toBe(existing.id);
+      expect(result.similarity).toBe(1);
+      const scoped = await collection.list({
+        where: { type: 'event', domain: 'civic', status: 'active' },
+      });
+      expect(scoped).toHaveLength(1);
+      const sources = await FactSourceCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+      });
+      expect(await sources.countForFact(existing.id as string)).toBe(1);
+      expect(result.fact.sourceCount).toBe(1);
+    });
+
+    it('does not inflate sourceCount when an exact match adds no provenance', async () => {
+      const existing = await collection.create({
+        textRefined: 'Council approved the capital plan.',
+        type: 'event',
+        domain: 'civic',
+        status: 'active',
+        sourceCount: 3,
+      });
+
+      const result = await collection.reconcile({
+        rawInput: ' council approved the capital plan. ',
+        type: 'event',
+        domain: 'civic',
+      });
+
+      expect(result.fact.id).toBe(existing.id);
+      expect(result.fact.sourceCount).toBe(3);
+    });
+
+    it('does not exact-merge incompatible domain or type scopes', async () => {
+      const first = await collection.reconcile({
+        rawInput: 'Council approved the capital plan.',
+        type: 'event',
+        domain: 'civic',
+      });
+      vi.spyOn(collection, 'semanticSearch').mockRejectedValue(
+        new Error('embedding provider unavailable'),
+      );
+
+      const otherDomain = await collection.reconcile({
+        rawInput: 'Council approved the capital plan.',
+        type: 'event',
+        domain: 'finance',
+      });
+      const otherType = await collection.reconcile({
+        rawInput: 'Council approved the capital plan.',
+        type: 'assertion',
+        domain: 'civic',
+      });
+
+      expect(otherDomain.fact.id).not.toBe(first.fact.id);
+      expect(otherType.fact.id).not.toBe(first.fact.id);
+    });
+
+    it('rejects semantic candidates outside the requested reconciliation scope', async () => {
+      const otherTenant = await collection.create({
+        textRefined: 'Council adopted the capital plan.',
+        type: 'event',
+        domain: 'civic',
+        tenantId: 'tenant-b',
+        status: 'active',
+      });
+      const semanticSearch = vi
+        .spyOn(collection, 'semanticSearch')
+        .mockResolvedValue([Object.assign(otherTenant, { _similarity: 0.99 })]);
+
+      const result = await collection.reconcile({
+        rawInput: 'Council approved the capital plan.',
+        type: 'event',
+        domain: 'civic',
+        tenantId: 'tenant-a',
+      });
+
+      expect(result.action).toBe('created');
+      expect(result.fact.id).not.toBe(otherTenant.id);
+      expect(result.fact.tenantId).toBe('tenant-a');
+      expect(semanticSearch).toHaveBeenCalledWith(
+        'Council approved the capital plan.',
+        expect.objectContaining({
+          where: {
+            tenantId: 'tenant-a',
+            domain: 'civic',
+            type: 'event',
+            status: 'active',
+          },
+        }),
+      );
+    });
+
     it('should merge when input is very similar to existing fact', async () => {
       // Create an existing fact
       const existing = await collection.create({
@@ -229,7 +345,7 @@ describe('reconcile()', () => {
 
       expect(result.action).toBe('merged');
       expect(result.fact.id).toBe(existing.id);
-      expect(result.fact.sourceCount).toBe(2);
+      expect(result.fact.sourceCount).toBe(1);
       expect(result.similarity).toBeDefined();
       expect(result.matchedFact).toBeDefined();
     });
@@ -245,6 +361,7 @@ describe('reconcile()', () => {
 
       const result = await collection.reconcile({
         rawInput: 'The sky is blue',
+        type: 'observation',
         source: {
           sourceType: 'document',
           sourceTitle: 'Weather Report',
@@ -262,8 +379,8 @@ describe('reconcile()', () => {
     async function createAmbiguousMatch(target: FactCollection) {
       const existing = await target.create({
         textRefined: 'The council approved a $2 million budget on Monday',
-        type: 'event',
-        domain: 'civic',
+        type: 'assertion',
+        domain: '',
         status: 'active',
         sourceCount: 1,
       });
