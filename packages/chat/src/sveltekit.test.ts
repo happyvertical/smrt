@@ -27,6 +27,7 @@ import {
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  type AssistantContinuationStore,
   CONTINUATION_CLAIM_TTL_MS,
   createMemoryContinuationStore,
 } from './assistant-turn.js';
@@ -148,6 +149,15 @@ async function events(response: Response) {
   return { seen, thrown };
 }
 
+// The real ChatService methods, captured once before any test spies on them.
+// Spy helpers must delegate to these, never to `ChatService.prototype.x` read
+// at spy time: an attempt that times out never reaches its `finally`, so its
+// spy is still installed when the retry starts, `vi.spyOn` returns that same
+// spy, and a helper that captured it as "the original" calls itself forever
+// (an unbounded async loop that exhausted the CI worker's heap).
+const realSendMessage = ChatService.prototype.sendMessage;
+const realRecordOutcome = ChatService.prototype.recordClientRequestOutcome;
+
 describe('mountAssistantRoutes', () => {
   let dbPath: string;
   let db: { type: 'sqlite'; url: string };
@@ -202,6 +212,8 @@ describe('mountAssistantRoutes', () => {
   });
 
   afterEach(() => {
+    // Runs after a timed-out attempt too, so no spy outlives its test.
+    vi.restoreAllMocks();
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
@@ -1139,14 +1151,13 @@ describe('mountAssistantRoutes', () => {
     });
 
     it('marks a send failed when sendMessage throws after storing it', async () => {
-      const original = ChatService.prototype.sendMessage;
       const spy = vi
         .spyOn(ChatService.prototype, 'sendMessage')
         .mockImplementationOnce(async function (
           this: ChatService,
           ...args: Parameters<ChatService['sendMessage']>
         ) {
-          await original.apply(this, args);
+          await realSendMessage.apply(this, args);
           throw new Error('room save failed after insert');
         });
       try {
@@ -1270,7 +1281,6 @@ describe('mountAssistantRoutes', () => {
 
     /** Slow every `suspended` write, widening any race with a resume. */
     async function withSlowSuspension<T>(fn: () => Promise<T>): Promise<T> {
-      const original = ChatService.prototype.recordClientRequestOutcome;
       const spy = vi
         .spyOn(ChatService.prototype, 'recordClientRequestOutcome')
         .mockImplementation(async function (
@@ -1280,7 +1290,7 @@ describe('mountAssistantRoutes', () => {
           if (args[0].outcome === 'suspended') {
             await new Promise((resolve) => setTimeout(resolve, 1000));
           }
-          return original.apply(this, args);
+          return realRecordOutcome.apply(this, args);
         });
       try {
         return await fn();
@@ -1428,7 +1438,6 @@ describe('mountAssistantRoutes', () => {
       }));
 
     it('treats a stored linked reply as completion when the outcome write was lost (crash)', async () => {
-      const original = ChatService.prototype.recordClientRequestOutcome;
       const spy = vi
         .spyOn(ChatService.prototype, 'recordClientRequestOutcome')
         .mockImplementation(async function (
@@ -1437,7 +1446,7 @@ describe('mountAssistantRoutes', () => {
         ) {
           // The process "dies" between storing the reply and recording it.
           if (args[0].outcome === 'completed') return false;
-          return original.apply(this, args);
+          return realRecordOutcome.apply(this, args);
         });
       try {
         const routes = mount({
@@ -1530,7 +1539,6 @@ describe('mountAssistantRoutes', () => {
       const routes = mount({ ai: turnAI(), clientToolAllowList: ['page_*'] });
       const threadId = await createThread(routes);
       const suspended = await suspendSend(routes, threadId, 'call:p2', 'p2-a');
-      const original = ChatService.prototype.recordClientRequestOutcome;
       let blocked: () => void = () => {};
       const reached = new Promise<void>((resolve) => {
         blocked = resolve;
@@ -1549,7 +1557,7 @@ describe('mountAssistantRoutes', () => {
             blocked();
             await gate;
           }
-          return original.apply(this, args);
+          return realRecordOutcome.apply(this, args);
         });
       try {
         const resumeResponse = await resume(routes, threadId, {
@@ -1594,14 +1602,13 @@ describe('mountAssistantRoutes', () => {
     function onResumedRunning(
       handle: (apply: () => Promise<boolean>) => Promise<boolean>,
     ) {
-      const original = ChatService.prototype.recordClientRequestOutcome;
       return vi
         .spyOn(ChatService.prototype, 'recordClientRequestOutcome')
         .mockImplementation(async function (
           this: ChatService,
           ...args: Parameters<ChatService['recordClientRequestOutcome']>
         ) {
-          const apply = () => original.apply(this, args);
+          const apply = () => realRecordOutcome.apply(this, args);
           return args[0].outcome === 'running' && args[0].resumedFrom
             ? handle(apply)
             : apply();
@@ -1609,11 +1616,22 @@ describe('mountAssistantRoutes', () => {
     }
 
     it('keeps a claimed continuation alive past its original lifetime while the claim holds (Q1)', async () => {
+      // A virtual clock anchored on the continuation's own `createdAt`, so the
+      // test never depends on how fast the runner is (on a slow CI machine a
+      // real-time clock let the continuation expire before the take).
+      let savedAt: number | undefined;
       let offset = 0;
-      const store = createMemoryContinuationStore({
+      const inner = createMemoryContinuationStore({
         ttlMs: 1_000,
-        now: () => Date.now() + offset,
+        now: () => (savedAt ?? Date.now()) + offset,
       });
+      const store: AssistantContinuationStore = {
+        ...inner,
+        async save(key, continuation) {
+          savedAt = continuation.createdAt;
+          await inner.save(key, continuation);
+        },
+      };
       const routes = mount({
         ai: turnAI(),
         clientToolAllowList: ['page_*'],
