@@ -349,7 +349,7 @@ function writeBundle(path: string, bundle: unknown): void {
   chmodSync(path, 0o600);
 }
 
-function hash(value: Buffer): string {
+function hash(value: Buffer | string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 

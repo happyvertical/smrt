@@ -409,6 +409,7 @@ describe('import plan', () => {
 
   it('executes parent/cycle imports and rolls failures back atomically', async () => {
     const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    expect(db.transaction).toBeDefined();
     try {
       await db.query('PRAGMA foreign_keys = ON');
       await db.query('CREATE TABLE parents (id TEXT PRIMARY KEY)');
@@ -423,7 +424,7 @@ describe('import plan', () => {
         ),
         table('parents', []),
       ]);
-      await db.transaction((tx) =>
+      await db.transaction?.((tx) =>
         executeImportPlan(
           tx,
           plan,
@@ -438,7 +439,7 @@ describe('import plan', () => {
       ]);
       // A non-empty target is refused rather than merged into.
       await expect(
-        db.transaction((tx) =>
+        db.transaction?.((tx) =>
           executeImportPlan(
             tx,
             plan,
@@ -456,7 +457,7 @@ describe('import plan', () => {
       await db.query(
         'CREATE TABLE right_nodes (id TEXT PRIMARY KEY, left_id TEXT REFERENCES left_nodes(id))',
       );
-      await db.transaction((tx) =>
+      await db.transaction?.((tx) =>
         executeImportPlan(
           tx,
           planImportTables([
@@ -479,7 +480,7 @@ describe('import plan', () => {
 
       await db.query('CREATE TABLE rollback_items (id TEXT PRIMARY KEY)');
       await expect(
-        db.transaction((tx) =>
+        db.transaction?.((tx) =>
           executeImportPlan(
             tx,
             [{ ...table('rollback_items', []), deferredColumns: new Set() }],

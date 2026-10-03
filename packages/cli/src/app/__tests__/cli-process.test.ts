@@ -85,7 +85,10 @@ describe('smrt app dev/build/vite', () => {
       join(app, '.env'),
       'SMRT_APP_ID=file-app\nSMRT_DATA_DIR=data-root\n',
     );
-    const environment = { ...process.env, SMRT_APP_ID: 'shell-app' };
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      SMRT_APP_ID: 'shell-app',
+    };
     delete environment.SMRT_DATA_DIR;
     const result = smrt(
       app,
