@@ -422,6 +422,25 @@ describe('smrt() Vite preset', () => {
       expect(text).toContain('ItemData');
     });
 
+    it('emits when only the Vite config is resolved, as `svelte-kit sync` does', async () => {
+      // SvelteKit's sync CLI calls vite.resolveConfig(...) and never builds, so
+      // a clean clone must get the declarations from config resolution alone.
+      const { resolveConfig } = await import('vite');
+      const plugins = await smrt({
+        projectRoot: root,
+        packages: ['@test/pkg'],
+      });
+      await resolveConfig(
+        { configFile: false, root, logLevel: 'silent', plugins },
+        'build',
+      );
+      const file = declarations('src/lib/types/smrt-generated');
+      expect(existsSync(file)).toBe(true);
+      expect(readFileSync(file, 'utf8')).toContain(
+        "declare module '@happyvertical/smrt-virt-web'",
+      );
+    });
+
     it('emits at the overridden typesDir', async () => {
       const plugins = await smrt({
         projectRoot: root,
