@@ -119,7 +119,7 @@ function listToolsInput(resolved: ResolvedRequestPrincipal) {
  */
 export type McpRouteResourceAuth = Pick<
   McpResourceAuth,
-  'metadataUrl' | 'metadataResponse' | 'authenticate'
+  'metadataUrl' | 'metadataResponse' | 'authenticate' | 'sessionFallback'
 >;
 
 /**
@@ -338,8 +338,10 @@ export interface MountMcpRouteOptions {
    * bearer token: a failed check returns the adapter's challenge response
    * before any dispatch, and the adapter's mapped principal replaces the
    * session principal (`resolvePrincipal` is not consulted). When it yields
-   * `null`, the route resolves its principal from the request as usual.
-   * Ignored by the deprecated REST-shaped mounts.
+   * `null`, the route resolves its principal from the request as usual. A
+   * `sessionFallback` adapter (the local owner-token adapter) challenges only
+   * requests that carry an `Authorization` header; others keep the session
+   * principal. Ignored by the deprecated REST-shaped mounts.
    */
   auth?: McpRouteResourceAuthSource;
   /** Optional extension discovery projected from the request-authorized tool catalog. */
@@ -398,6 +400,14 @@ export function mountMcpRoute(
     }
     const auth = currentResourceAuth(options.auth);
     if (!auth) return dispatch(event, resolveRequestPrincipal(event, options));
+    // A session-fallback adapter (local owner tokens) leaves requests with no
+    // credentials header on the session path; any presented bearer must verify.
+    if (
+      auth.sessionFallback === true &&
+      !event.request.headers.has('authorization')
+    ) {
+      return dispatch(event, resolveRequestPrincipal(event, options));
+    }
     const checked = await auth.authenticate(event.request);
     if (!checked.ok) return checked.response;
     if (!options.bindPrincipal) {
@@ -559,8 +569,9 @@ export function mountMcpAppRoute(
  * advertises (for `/api/mcp`:
  * `src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts`).
  *
- * Returns 404 when the source yields no adapter (the `local` profile) or when
- * the request path is not the advertised metadata path. This handler does
+ * Returns 404 when the source yields no adapter or the local owner-token
+ * adapter (the `local` profile), or when the request path is not the
+ * advertised metadata path. This handler does
  * not implement an OAuth authorization server; the metadata names the
  * operator-owned issuer.
  */
@@ -571,6 +582,7 @@ export function mountMcpProtectedResourceMetadataRoute(
     const current = currentResourceAuth(auth);
     if (
       !current ||
+      current.sessionFallback === true ||
       event.url.pathname !== new URL(current.metadataUrl).pathname
     )
       return new Response(null, {

@@ -126,10 +126,10 @@ binding. `createHostedMcpResourceAuth` from `./auth` builds that source from
 
 ```ts
 import { createHostedMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
-const auth = createHostedMcpResourceAuth({
-  profile: () => applicationRuntime.profile,
-  resolvePrincipal: resolveHostedMcpPrincipal, // application-owned lookup
-});
+const { profile } = await runtime.resolvedRuntime();
+// `runtime` supplies both credential bindings (see below); pass
+// `resolvePrincipal` as well to override the hosted identity mapping.
+const auth = createHostedMcpResourceAuth({ profile, runtime });
 // api/mcp/+server.ts
 export const POST = mountMcpAppRoute({
   models: [Item], requiredScopes: ['items.read'], effects: ['read'],
@@ -139,9 +139,28 @@ export const POST = mountMcpAppRoute({
 export const GET = mountMcpProtectedResourceMetadataRoute(auth);
 ```
 
+The `runtime` option takes any object with the optional
+`verifyLocalMcpToken(token)` and `resolveMcpPrincipal(identity)` methods; the
+SMRT SvelteKit runtime has both.
+
+- **Local profile.** With `verifyLocalMcpToken`, the source yields the
+  `createLocalMcpTokenAuth` adapter for owner-minted tokens
+  (`smrt app token --scopes items.read`). A request with no `Authorization`
+  header keeps the session principal, exactly as before. A presented bearer
+  must verify: an unknown, revoked or expired token is a bare 401
+  (`WWW-Authenticate: Bearer error="invalid_token"`) and never falls back to
+  the cookie. The origin check still runs first. Without the runtime the
+  source yields `null`, as before.
+- **Hosted profiles.** Without `resolvePrincipal`, the runtime's
+  membership-backed `resolveMcpPrincipal` maps the verified issuer/subject to
+  a user linked through `oidc_identities` with exactly one active tenant
+  membership, and denies anything else. Pass `resolvePrincipal` when users
+  belong to several tenants.
+
 `mountMcpProtectedResourceMetadataRoute` serves the RFC 9728 document only at
-the adapter's advertised `metadataUrl` path and returns 404 otherwise or for
-the `local` profile. It does not implement an OAuth authorization server.
+the adapter's advertised `metadataUrl` path. It returns 404 for any other
+path, and in the `local` profile (no adapter, or the local token adapter). It
+does not implement an OAuth authorization server.
 
 For piping a deployed app's MCP surface to a local stdio MCP client, see `@happyvertical/smrt-app-cli` — the client-side runtime CLI exposes a `startMcpBridge()` default and a generic `smrt-mcp-bridge` bin.
 

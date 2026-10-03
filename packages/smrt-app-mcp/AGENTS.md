@@ -34,6 +34,12 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   re-check the originating action against the allow-list and `effects`,
   after a principal-level `taskPrincipalPolicy` (defaults: scope policy);
   `mountMcpProtectedResourceMetadataRoute` serves only the advertised path.
+- `createHostedMcpResourceAuth({ profile, runtime })`: locally, a runtime
+  `verifyLocalMcpToken` yields the `sessionFallback` adapter
+  (`createLocalMcpTokenAuth`): no `Authorization` header keeps the session
+  principal; a presented bearer must verify (401, never cookie fallback); no
+  metadata (404). Hosted, `runtime.resolveMcpPrincipal` is the default
+  identity mapping; an explicit `resolvePrincipal` overrides it.
 - Keep tool catalogs private by default. Public caching requires an explicit
   attestation and a global, unauthenticated, read-only, non-tenant catalog with
   no principal-aware policy.
