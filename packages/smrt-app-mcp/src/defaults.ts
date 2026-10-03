@@ -16,6 +16,7 @@ import {
   createMcpAppServer,
   type McpAppPrincipal,
   type McpAppServer,
+  type McpTaskPrincipalPolicy,
   type McpToolPolicy,
 } from './server.js';
 
@@ -123,7 +124,11 @@ export function mcpPrincipalScopePolicy(
 export interface CreateDefaultMcpAppServerOptions
   extends Omit<
     CreateMcpAppServerOptions,
-    'allowedClassNames' | 'serverInfo' | 'toolPolicy' | 'resourcePolicy'
+    | 'allowedClassNames'
+    | 'serverInfo'
+    | 'toolPolicy'
+    | 'resourcePolicy'
+    | 'taskPrincipalPolicy'
   > {
   /**
    * The app's own `@smrt()` models to publish. Explicit: nothing else that is
@@ -147,6 +152,12 @@ export interface CreateDefaultMcpAppServerOptions
   toolPolicy?: McpToolPolicy;
   /** Additional resource policy. Composed with the default; it can only narrow. */
   resourcePolicy?: McpResourcePolicy;
+  /**
+   * Additional task lifecycle predicate. Composed with the default principal
+   * scope policy, which already gates `tasks/get`/`update`/`cancel`; it can
+   * only narrow.
+   */
+  taskPrincipalPolicy?: McpTaskPrincipalPolicy;
 }
 
 /**
@@ -166,6 +177,7 @@ export function createDefaultMcpAppServer(
     serverInfo,
     toolPolicy: narrowTool,
     resourcePolicy: narrowResource,
+    taskPrincipalPolicy: narrowTask,
     ...rest
   } = options;
   const allowedClassNames = mcpAllowedClassNames(models);
@@ -180,5 +192,10 @@ export function createDefaultMcpAppServer(
     resourcePolicy: async (context) =>
       base(context) &&
       (narrowResource ? Boolean(await narrowResource(context)) : true),
+    // Lifecycle calls carry no tool; the principal-level requirements
+    // (kind, id, tenant, every required scope of the effective principal)
+    // still apply, so live revocation reaches existing tasks.
+    taskPrincipalPolicy: async (context) =>
+      base(context) && (narrowTask ? Boolean(await narrowTask(context)) : true),
   });
 }

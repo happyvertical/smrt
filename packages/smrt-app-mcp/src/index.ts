@@ -68,6 +68,7 @@ export {
   type McpAppUser,
   type McpPublicToolPatternsThunk,
   type McpSmrtOptionsThunk,
+  type McpTaskPrincipalPolicy,
   type McpToolListCacheHint,
   type McpToolListCacheOptions,
   type McpToolPolicy,

@@ -99,6 +99,16 @@ export type McpToolPolicy = (
 ) => boolean | Promise<boolean>;
 
 /**
+ * Principal-level predicate for durable task lifecycle calls (`tasks/get`,
+ * `tasks/update`, `tasks/cancel`). It receives the authenticated, bound
+ * principal (with effective scopes) and no tool: return `false` to answer
+ * the call as an unknown task. A thrown error is a denial.
+ */
+export type McpTaskPrincipalPolicy = (context: {
+  principal: McpAppPrincipal;
+}) => boolean | Promise<boolean>;
+
+/**
  * Workflow assertion hook signature. Throw `McpAccessError` to reject the
  * call. Implementations may mutate `args` in place to inject server-trusted
  * fields (e.g. clamping `approvedByUserId` to the authenticated user's id).
@@ -191,6 +201,16 @@ export interface CreateMcpAppServerOptions {
    */
   effects?: readonly McpToolEffect[];
   resources?: readonly McpAppResourceDefinition[];
+  /**
+   * Gate every task lifecycle call (`tasks/get`, `tasks/update`,
+   * `tasks/cancel`) on the calling principal before the task store is
+   * touched; a denial is answered as an unknown task. `toolPolicy` is not
+   * re-applied to lifecycle calls (a task does not yet record the tool that
+   * created it), so a server whose `toolPolicy` encodes principal-level
+   * requirements (scopes, roles, revocation) should restate them here.
+   * `createDefaultMcpAppServer` supplies its principal scope policy.
+   */
+  taskPrincipalPolicy?: McpTaskPrincipalPolicy;
   /** Required for private resources; rechecked on catalog/read, errors deny. */
   resourcePolicy?: McpResourcePolicy;
 }
@@ -775,11 +795,27 @@ export function createMcpAppServer(
     throw new McpAccessError(404, 'Unknown MCP task.');
   }
 
+  async function passesTaskPrincipalPolicy(
+    principal: McpAppPrincipal,
+  ): Promise<boolean> {
+    if (!options.taskPrincipalPolicy) return true;
+    try {
+      return Boolean(await options.taskPrincipalPolicy({ principal }));
+    } catch {
+      return false;
+    }
+  }
+
   async function withTaskStore<T>(
     taskId: string,
     principal: McpAppPrincipal | null | undefined,
     operation: (store: McpTaskStore) => Promise<T>,
   ): Promise<T> {
+    // Principal-level authority (for example live-revoked scopes) is checked
+    // before the task store is touched, independent of the originating tool.
+    if (principal?.id && !(await passesTaskPrincipalPolicy(principal))) {
+      throw new McpAccessError(404, 'Unknown MCP task.');
+    }
     try {
       // taskStoreFor rejects a principal without a stable id first.
       const store = await taskStoreFor(principal);
