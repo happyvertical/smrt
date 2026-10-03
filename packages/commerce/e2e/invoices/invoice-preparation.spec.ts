@@ -40,3 +40,21 @@ test('SSR forms add rows and retain malformed values and request identity withou
   await expect(page.getByLabel('Remove this allocation').first()).toBeChecked();
   await context.close();
 });
+
+for (const javaScriptEnabled of [false, true]) {
+  test(`Enter saves instead of adding an allocation (JavaScript ${javaScriptEnabled})`, async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled });
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:5586/${javaScriptEnabled ? 'e2e/invoices/index.html' : 'native'}`);
+    const amount = page.getByLabel('Amount (CAD)');
+    await amount.fill('123..45');
+    const request = page.waitForRequest(req => req.url().endsWith('/save') && req.method() === 'POST');
+    await amount.press('Enter');
+    const payload = new URLSearchParams((await request).postData() ?? '');
+    expect(payload.get('intent')).toBe('save');
+    expect(payload.getAll('allocationAmount')).toEqual(['123..45']);
+    await expect(page.getByLabel('Amount (CAD)')).toHaveCount(1);
+    await expect(page.getByLabel('Amount (CAD)')).toHaveValue('123..45');
+    await context.close();
+  });
+}

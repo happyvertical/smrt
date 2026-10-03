@@ -93,8 +93,8 @@ const busy = $derived(
       <div class="actions">
         {#if cancelHref}<Button href={cancelHref} variant="ghost">{t(M['commerce.preparation.cancel'])}</Button>{/if}
         {#if canEdit}
-          <Button type="submit" name={names.intent} value={addIntent} formnovalidate disabled={busy} variant="secondary">{t(M['commerce.preparation.add'])}</Button>
           <Button type="submit" name={names.intent} value={saveIntent} disabled={busy}>{saveLabel ?? t(M['commerce.preparation.save'])}</Button>
+          <Button type="submit" name={names.intent} value={addIntent} formnovalidate disabled={busy} variant="secondary">{t(M['commerce.preparation.add'])}</Button>
         {/if}
       </div>
     </div>
