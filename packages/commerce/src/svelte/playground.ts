@@ -52,6 +52,27 @@ export default {
   moduleMeta: COMMERCE_MODULE_META,
   entries: [
     {
+      id: 'purchase-order-editor',
+      title: 'Purchase and award preparation',
+      description:
+        'Native allocation entry, review and retained uncertain-response recovery.',
+      loadComponent: () => import('./components/PurchasingPlayground.svelte'),
+      order: 30,
+      props: { reduction: false },
+      modes: { mock: { label: 'Interactive demo' } },
+    },
+    {
+      id: 'purchase-reduction',
+      title: 'Explicit allocation reduction',
+      description:
+        'Every retained allocation remains present; zero is explicit, never inferred from blank.',
+      loadComponent: () => import('./components/PurchasingPlayground.svelte'),
+      order: 31,
+      props: { reduction: true },
+      modes: { mock: { label: 'Interactive demo' } },
+    },
+
+    {
       id: 'quote-editor',
       title: 'Vendor quotation editor',
       description:

@@ -18,6 +18,26 @@ import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
  * Commerce module UI slots
  */
 export const COMMERCE_UI_SLOTS: Record<string, ModuleUISlot> = {
+  'purchase-order-editor': {
+    id: 'purchase-order-editor',
+    label: 'Purchase / Award Editor',
+    description:
+      'Native allocation preparation, review and explicit confirmation',
+    icon: 'file-text',
+    category: 'form',
+    order: 30,
+    propsInterface: 'PurchaseOrderEditorProps',
+  },
+  'purchase-source-selector': {
+    id: 'purchase-source-selector',
+    label: 'Purchasing Source',
+    description: 'Caller-authorized vendor and source selection',
+    icon: 'list',
+    category: 'form',
+    order: 31,
+    propsInterface: 'PurchaseSourceSelectorProps',
+  },
+
   'quote-editor': {
     id: 'quote-editor',
     label: 'Quotation / Estimate Editor',
