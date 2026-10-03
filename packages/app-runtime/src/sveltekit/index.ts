@@ -46,6 +46,7 @@ export {
   type ProviderReadinessComponent,
   type ProviderReadinessFactory,
   type RuntimeHealthBody,
+  type SmrtRuntimeBoundPrincipal,
   type SmrtRuntimeLocals,
   type SmrtRuntimeSessionCookie,
   type SmrtRuntimeSessionOptions,
