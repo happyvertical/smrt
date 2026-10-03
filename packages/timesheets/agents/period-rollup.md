@@ -91,6 +91,11 @@ introduced here.
 
 ## Evidence and immutability
 
+Decimal-hours-only entries have no measured integer seconds. The seconds-only
+rollup rejects these sources explicitly when their approval instant falls in the
+requested period; it never rounds them or counts null as
+zero. Use an hours-aware consumer policy for that source representation.
+
 Only approved human `ServiceTimeEntry` rows for the subject count; corrected
 ancestors do not. Correction chains must remain within that subject/tenant and
 point to corrected parents. Multiple approved descendants of one root are

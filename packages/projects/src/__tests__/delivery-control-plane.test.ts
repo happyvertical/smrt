@@ -759,6 +759,20 @@ describe('managed application delivery control plane (#1949)', () => {
       },
     );
     const service = await ServiceEvidenceService.create({ db }, commercial);
+    const decimal = await service.record({
+      tenantId: 'tenant-1',
+      workRefType: '@fixture/builder:WorkPackage',
+      workRefId: 'hours-only',
+      participantKind: 'agent',
+      agentRef: 'importer',
+      source: 'import',
+      description: 'Exact hours',
+      durationHours: '1.0005',
+    });
+    await expect(commercial.priceClient(decimal)).rejects.toThrow(
+      /no measured durationSeconds/,
+    );
+
     const entry = await service.record({
       tenantId: 'tenant-1',
       workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',

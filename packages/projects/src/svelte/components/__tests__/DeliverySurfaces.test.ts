@@ -10,8 +10,37 @@ import AssistanceLauncher from '../../AssistanceLauncher.svelte';
 import DevelopmentBoard from '../../DevelopmentBoard.svelte';
 import DevelopmentRequestDetail from '../../DevelopmentRequestDetail.svelte';
 import PreviewApprovalPanel from '../../PreviewApprovalPanel.svelte';
+import ServiceEvidenceList from '../../ServiceEvidenceList.svelte';
 
 describe('managed application delivery surfaces', () => {
+  it('renders exact source hours and never presents absent seconds as zero', async () => {
+    const { container } = render(ServiceEvidenceList, {
+      props: {
+        entries: [
+          {
+            id: 'hours',
+            context: 'Exact source',
+            participant: 'Worker',
+            durationSeconds: null,
+            durationHours: '1.0005',
+            status: 'approved',
+          },
+          {
+            id: 'unknown',
+            context: 'Missing quantity',
+            participant: 'Worker',
+            durationSeconds: null,
+            status: 'draft',
+          },
+        ],
+      },
+    });
+    expect(screen.getByText(/1.0005 h/)).toBeVisible();
+    expect(screen.getByText(/— h/)).toBeVisible();
+    expect(screen.queryByText(/0.00 h/)).toBeNull();
+    await expectNoA11yViolations(container);
+  });
+
   it('submits Assistance intake without dropping requester context or evidence', async () => {
     const onsubmit = vi.fn();
     const { container } = render(AssistanceLauncher, {

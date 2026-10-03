@@ -59,7 +59,7 @@ export class SubscriptionServiceCommercialResolver
     const usageEvent = await this.usage.record({
       tenantId: entry.tenantId,
       metricKey: 'duration.seconds',
-      quantity: entry.durationSeconds,
+      quantity: entry.requireDurationSeconds(),
       windowStart: at,
       windowEnd: at,
       source: 'service-time-entry',

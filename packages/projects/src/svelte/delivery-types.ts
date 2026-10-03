@@ -27,7 +27,9 @@ export interface ServiceEvidenceView {
   id: string;
   context: string;
   participant: string;
-  durationSeconds: number;
+  durationSeconds: number | null;
+  /** Original decimal text from durationHoursExact() when seconds are absent. */
+  durationHours?: string;
   status: string;
   /** Integer minor units of `currency` (#2401). */
   chargeAmount?: number;

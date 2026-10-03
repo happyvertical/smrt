@@ -63,3 +63,14 @@ readable. New cross-domain approvals should use `ServiceEvidenceService` with
 `SubscriptionServiceCommercialResolver`; this records a #1925 Client Charge
 reference and a separate provider-compensation snapshot without rewriting the
 approved duration or evidence.
+
+## Decimal-hours-only sources (#3357)
+
+The shared service accepts exact `durationHours` text and stores null seconds;
+see [the Timesheets contract](../timesheets/README.md#decimal-hours-only-sources).
+`SubscriptionServiceCommercialResolver` requires integer-second evidence and
+rejects this representation before recording usage. Consumers with accepted
+hours-based commercial terms use an hours-aware `ServiceCommercialResolver`.
+
+For `ServiceEvidenceList`, pass null `durationSeconds` and the exact accessor's
+string as `durationHours`. Missing hours render as unavailable, never zero.

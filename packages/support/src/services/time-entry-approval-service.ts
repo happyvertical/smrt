@@ -441,7 +441,8 @@ export class TimeEntryApprovalService {
       patch.startedAt !== undefined ? patch.startedAt : original.startedAt;
     const endedAt =
       patch.endedAt !== undefined ? patch.endedAt : original.endedAt;
-    const durationSeconds = patch.durationSeconds ?? original.durationSeconds;
+    const durationSeconds =
+      patch.durationSeconds ?? original.requireDurationSeconds();
     if (!(durationSeconds > 0)) {
       throw new Error(
         `ServiceTimeEntry: correction durationSeconds must be greater than zero (got ${durationSeconds}).`,
@@ -517,7 +518,7 @@ export class TimeEntryApprovalService {
     const isOperator = principal?.can(APPROVE_TIME_ENTRY_PERMISSION) ?? false;
 
     if (policy.mode === 'automatic') {
-      const minutes = entry.durationSeconds / 60;
+      const minutes = entry.requireDurationSeconds() / 60;
       const overMinutes =
         policy.thresholdMinutes !== undefined &&
         minutes > policy.thresholdMinutes;
@@ -571,7 +572,7 @@ export class TimeEntryApprovalService {
     entry: ServiceTimeEntry,
     terms: ResolvedPlanTerms,
   ): Promise<ChargeDerivation> {
-    const billableSeconds = entry.durationSeconds;
+    const billableSeconds = entry.requireDurationSeconds();
     let includedSecondsBefore = 0;
     if (entry.caseId && terms.includedMinutes > 0) {
       const existing = await this.charges.forCase(entry.caseId);
@@ -631,7 +632,7 @@ export class TimeEntryApprovalService {
           { tenantId: entry.tenantId ?? null },
         )
       : null;
-    const payableSeconds = entry.durationSeconds;
+    const payableSeconds = entry.requireDurationSeconds();
 
     if (!plan) {
       return this.upsertCompensationRow(entry, {

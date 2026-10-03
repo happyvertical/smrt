@@ -214,6 +214,14 @@ export class PeriodRollupService {
           throw new Error(
             'Approved evidence needs a start or approval timestamp.',
           );
+        // Hours-only sources are unbounded and attributed at approval. An
+        // unsupported quantity in another period must not block this one.
+        if (
+          entry.durationSeconds === null &&
+          (instant(start) < period.startsAt.getTime() ||
+            instant(start) >= period.endsAt.getTime())
+        )
+          continue;
         const end = entry.startedAt && entry.endedAt ? entry.endedAt : start;
         const source = clipSource(
           {
@@ -221,7 +229,7 @@ export class PeriodRollupService {
             id: String(entry.id),
             startsAt: new Date(instant(start)).toISOString(),
             endsAt: new Date(instant(end)).toISOString(),
-            seconds: integer(entry.durationSeconds),
+            seconds: integer(entry.requireDurationSeconds()),
           },
           period,
         );
