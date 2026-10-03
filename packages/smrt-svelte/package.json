@@ -61,6 +61,11 @@
       "import": "./dist/components/app/index.js",
       "default": "./dist/components/app/index.js"
     },
+    "./app/runtime-diagnostics": {
+      "types": "./dist/components/app/runtime-diagnostics-webmcp.d.ts",
+      "import": "./dist/components/app/runtime-diagnostics-webmcp.js",
+      "default": "./dist/components/app/runtime-diagnostics-webmcp.js"
+    },
     "./workspace/live": {
       "types": "./dist/components/workspace/live/index.d.ts",
       "svelte": "./dist/components/workspace/live/index.js",

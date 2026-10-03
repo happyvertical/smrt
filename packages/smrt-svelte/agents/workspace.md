@@ -164,7 +164,11 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   `config` to change that. `dock` is a snippet rendered inside the shell: a host
   places its assistant there in a `ShellDockTool`, so this package never
   imports `smrt-chat`. `runtimeDiagnostics` (default false) mounts the
-  read-only `smrt.runtime.diagnostics.read` WebMCP tool.
+  read-only `smrt.runtime.diagnostics.read` WebMCP tool. Server code that
+  lists that tool (the diagnostics route's `toolNames`) imports
+  `RUNTIME_DIAGNOSTICS_WEBMCP_TOOL_NAME` from `./app/runtime-diagnostics`,
+  which is plain TypeScript; the `./app` barrel loads Svelte components and
+  theme CSS.
 - `OwnerSetupForm` is props-driven and imports nothing server-side. Contract
   (lane 3369 server): `default` form action; fields `token` (hidden), `name`,
   `email`, optional `tenantName` (`askTenantName`); `load` data
