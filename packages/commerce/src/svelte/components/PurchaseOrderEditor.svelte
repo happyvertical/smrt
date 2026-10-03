@@ -141,6 +141,8 @@ const money = (amountMinor: number | null) =>
   {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} />{/each}
   <fieldset disabled={readonly || busy || source.disabled}>
    <legend>{title}</legend>
+   <!-- The first submitter is the safe default for native Enter-in-input submission. -->
+   {#if !readonly}<Button type="submit" name={intents.name} value={fingerprint ? intents.record : intents.review} density="touch">{fingerprint ? labels.record??t(P['commerce.purchase.record']) : labels.review??t(P['commerce.purchase.review_button'])}</Button>{/if}
    <FormGroup label={t(P['commerce.purchase.instrument'])} error={errors.instrument} required>
     <Select name={fields.instrument} value={values.instrument} required density="touch">
      <option value="">{t(P['commerce.purchase.choose_instrument'])}</option>

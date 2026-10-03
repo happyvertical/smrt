@@ -47,6 +47,8 @@ Optional `rowActions` uses native formnovalidate add/remove POSTs carrying all
 current fields; the caller re-renders unchanged rejected strings and IDs.
 New-row IDs belong to the caller. Row editing never records a commitment.
 
+Pressing Enter in an input activates review or record, preserving draft rows.
+Explicit add/remove actions remain available without JavaScript.
 Default submitter `intent` values are `review`, `record`, `edit`, all configurable.
 Only a caller-produced `review` snapshot or a retained `retryFingerprint` exposes
 explicit confirmation. `review.fingerprint` posts under `reviewFingerprint` by
