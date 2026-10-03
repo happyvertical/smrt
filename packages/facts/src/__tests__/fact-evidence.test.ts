@@ -138,6 +138,18 @@ describe('FactEvidenceCollection', () => {
       tenantId: 'tenant-1',
       metadata: { generatedBy: 'editor' },
     });
+    const retained = await evidence.upsertEvidence({
+      factId: fact.id as string,
+      sourceKind: 'content-reference',
+      sourceId: 'agenda-1',
+      quote: 'Current generated excerpt',
+      tenantId: 'tenant-1',
+      metadata: {
+        generatedBy: 'content.factAudit',
+        contentId: 'article-1',
+        auditRunId: 'current-run',
+      },
+    });
     const otherTenantGenerated = await evidence.upsertEvidence({
       factId: fact.id as string,
       sourceKind: 'content-reference',
@@ -161,6 +173,7 @@ describe('FactEvidenceCollection', () => {
         generatedBy: 'content.factAudit',
         contentId: 'article-1',
         tenantId: 'tenant-1',
+        retainAuditRunId: 'current-run',
       },
     );
 
@@ -170,7 +183,7 @@ describe('FactEvidenceCollection', () => {
       'agenda-1',
     );
     expect(remainingAgendaEvidence.map((entry) => entry.id).sort()).toEqual(
-      [manual.id, otherTenantGenerated.id].sort(),
+      [manual.id, retained.id, otherTenantGenerated.id].sort(),
     );
     await expect(
       evidence.getForSource('content-reference', 'minutes-1'),
