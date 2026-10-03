@@ -16,6 +16,7 @@ import {
   resolveConfiguredContentGovernance,
   resolveEffectiveContentGovernance,
 } from './content-governance';
+import { Contents } from './contents';
 import {
   ContentGovernanceAssignmentCollection,
   ContentGovernancePolicyCollection,
@@ -279,6 +280,58 @@ async function prepareGovernanceSchemas(db: DatabaseInterface) {
 }
 
 describe('Content governance', () => {
+  it.each([
+    'facts',
+    'safety',
+  ] as const)('initializes the deferred AI client for a hydrated %s review action', async (kind) => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await syncSchema({ db, schema: CONTENT_REVIEWS_SCHEMA });
+      configureContentGovernance({
+        assignments: [{ contentType: 'article', enabled: true }],
+      });
+      const message = vi.fn().mockResolvedValue(
+        JSON.stringify({
+          status: 'passed',
+          summary: `${kind} review passed.`,
+          findings: [],
+        }),
+      );
+      const ai = {
+        embed: vi.fn().mockResolvedValue([]),
+        message,
+      };
+      const contents = await Contents.create({ db, ai });
+      const created = await contents.create({
+        name: 'Hydrated review',
+        title: 'Hydrated review',
+        body: 'A reviewable article body.',
+        type: 'article',
+        status: 'draft',
+      });
+      const hydratedContents = await Contents.create({ db, ai });
+      const hydrated = await hydratedContents.get(String(created.id));
+      if (!hydrated) {
+        throw new Error('Expected the persisted content to hydrate');
+      }
+
+      const review = await hydrated.runReviewAction({
+        kind,
+        createVersion: false,
+      });
+
+      expect(message).toHaveBeenCalledTimes(1);
+      expect(review).toMatchObject({ kind, status: 'passed' });
+      expect(await db.list('content_reviews', { kind })).toHaveLength(1);
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
   it('writes no review artifacts when content changes during the AI review', async () => {
     const db: DatabaseInterface = await getTestDatabase({
       type: 'sqlite',
