@@ -2,9 +2,9 @@
  * @happyvertical/smrt-manufacturing/svelte
  *
  * Props-driven Svelte 5 surfaces: the managed list of operations (a list with
- * retire and reinstate, and a form), and assemblies (a list, a policy-driven
- * form, and a bill-of-materials editor whose sub-assemblies expand to their own
- * bills), production runs with their progress and completion reporting, and
+ * retire and reinstate, and a form), and assemblies (a list, a form, and a
+ * bill-of-materials editor whose sub-assemblies expand to their own bills),
+ * production runs with their progress and completion reporting, and
  * the read-only exploded requirements of a bill. Hosts load data through the
  * package services and collections and pass plain view objects.
  * Auto-registers components with ModuleUIRegistry on import.
@@ -46,7 +46,15 @@ export type ProductionRunListProps = ComponentProps<typeof ProductionRunList>;
 export type RequirementsTreeProps = ComponentProps<typeof RequirementsTree>;
 
 export {
+  type AssemblyFieldPolicy,
+  type AssemblyFormDraft,
+  type AssemblyFormField,
+  type AssemblyFormInitial,
+  type AssemblyFormInvalidField,
+  type AssemblyFormValidation,
+  type AssemblyFormValues,
   type AssemblyView,
+  assemblyFormDraft,
   type BomComponentOption,
   type BomEditorLine,
   type BomLineDraft,
@@ -56,7 +64,10 @@ export {
   type CompletionQtyValidation,
   type ComponentKind,
   componentKindLabelKey,
+  currencyExponent,
+  formatPriceInput,
   isProductionRunOpen,
+  keepProtectedFields,
   type OperationFormDraft,
   type OperationFormField,
   type OperationFormInitial,
@@ -77,6 +88,7 @@ export {
   toProductionRunView,
   toRequirementTotals,
   toRequirementTree,
+  validateAssemblyForm,
   validateBomLineInput,
   validateCompletionQty,
   validateOperationForm,

@@ -5,10 +5,12 @@ import { describe, expect, it } from 'vitest';
 import type { BillStructure } from '../../services/AssemblyService.js';
 import {
   componentKindLabelKey,
+  formatPriceInput,
   splitLabourMinutes,
   toAssemblyView,
   toBomEditorLine,
   toBomEditorLines,
+  validateAssemblyForm,
   validateBomLineInput,
 } from '../index.js';
 
@@ -179,5 +181,53 @@ describe('adapters', () => {
     );
     expect(splitLabourMinutes(95)).toEqual({ hours: 1, minutes: 35 });
     expect(splitLabourMinutes(-3)).toEqual({ hours: 0, minutes: 0 });
+  });
+});
+
+describe('validateAssemblyForm', () => {
+  const draft = {
+    name: ' Frame ',
+    price: '12.5',
+    estimatedLabourMinutes: '90',
+    defaultOperationId: ' ',
+    tags: 'a, b,a',
+  };
+
+  it('trims, converts price to minor units and clears a blank operation', () => {
+    expect(validateAssemblyForm(draft)).toEqual({
+      ok: true,
+      values: {
+        name: 'Frame',
+        description: '',
+        category: '',
+        partReference: '',
+        price: 1250,
+        estimatedLabourMinutes: 90,
+        defaultOperationId: null,
+        tags: ['a', 'b'],
+      },
+    });
+  });
+
+  it('rejects what the model rejects: fractional or negative minutes', () => {
+    for (const minutes of ['1.5', '-1', 'x', '1e3']) {
+      expect(
+        validateAssemblyForm({ ...draft, estimatedLabourMinutes: minutes }),
+      ).toEqual({ ok: false, invalid: ['estimatedLabourMinutes'] });
+    }
+  });
+
+  it('skips the fields it is told to', () => {
+    expect(
+      validateAssemblyForm({ name: '', price: 'x' }, ['name', 'price']).ok,
+    ).toBe(true);
+  });
+
+  it('round-trips a price through the input format', () => {
+    expect(formatPriceInput(125050)).toBe('1250.50');
+    expect(formatPriceInput(5)).toBe('0.05');
+    expect(formatPriceInput(-123)).toBe('-1.23');
+    expect(formatPriceInput(1300, 0)).toBe('1300');
+    expect(formatPriceInput(1234, 3)).toBe('1.234');
   });
 });

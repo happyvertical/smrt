@@ -348,17 +348,17 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
     toRequirementTree,
   } from '@happyvertical/smrt-manufacturing/svelte';
 
-  let { assemblies, policy, fields, lines, components, runs, plan } = $props();
+  let { assemblies, policy, assembly, operations, lines, components, runs, plan } = $props();
 </script>
 
 <AssemblyList {assemblies} {policy} onselect={(id) => goto(`/assemblies/${id}`)} />
-<AssemblyForm {fields} {policy} onsubmit={save} />
+<AssemblyForm {assembly} {operations} hiddenFields={['price']} onsubmit={save} />
 <BomEditor {lines} {components} onadd={addLine} loadBill={loadLines} error={saveError} />
 <ProductionRunList {runs} oncomplete={(runId, qty) => report(runId, qty)} />
 <RequirementsTree lines={toRequirementTree(plan)} totals={toRequirementTotals(plan)} />
 ```
 
-`AssemblyList` and `AssemblyForm` follow the consumer's field policy for `@happyvertical/smrt-manufacturing:Assembly` (a hidden price is not shown). Build rows with `toAssemblyView` and editor lines with `toBomEditorLines(await assemblyService.getBillStructure(bomId))`. A sub-assembly line in `BomEditor` says whether it has its own bill and expands read-only through `loadBill`. `ProductionRunList` shows each run's progress and status and, with `oncomplete`, a field to report finished units (rows from `toProductionRunView`). `RequirementsTree` shows an `explode` or `planRequirements` result by level, with available and short per line for a plan.
+`AssemblyList` takes the resolved field `policy` for Assembly and drops the columns it hides (a hidden price is not shown). `AssemblyForm` is a plain form on smrt-ui controls: name, description, category, part reference, price (typed in major units, checked against the `currency` prop's minor-unit exponent, handed over as integer minor units; a field the reader leaves untouched keeps its stored value exactly), estimated labour (whole minutes, zero or more), a default-operation picker over the `operations` you pass (pass the active ones; a retired or unlisted current operation stays selected, marked, and can be cleared) and tags. Pass the `assembly` being edited (omit to add), and map the reader's field policy onto `hiddenFields` (not rendered) and `readonlyFields` (shown, not editable); both carry their initial value through `onsubmit` unchanged, so save only what the reader may write. `onsubmit` receives checked values and the form never persists. Build rows with `toAssemblyView` and editor lines with `toBomEditorLines(await assemblyService.getBillStructure(bomId))`. A sub-assembly line in `BomEditor` says whether it has its own bill and expands read-only through `loadBill`. `ProductionRunList` shows each run's progress and status and, with `oncomplete`, a field to report finished units (rows from `toProductionRunView`). `RequirementsTree` shows an `explode` or `planRequirements` result by level, with available and short per line for a plan.
 
 ## API
 
@@ -437,7 +437,6 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 | `@happyvertical/smrt-core` | SmrtObject / SmrtCollection / DispatchBus |
 | `@happyvertical/smrt-inventory` | StockService (consume / produce target) |
 | `@happyvertical/smrt-products` | `Product` (base of `Assembly`), `Material`, `Sku` |
-| `@happyvertical/smrt-fields` | `ObjectForm` and field-policy columns for the Svelte components |
 | `@happyvertical/smrt-ui` | Svelte controls and i18n |
 | `@happyvertical/smrt-tenancy` | Optional tenant scoping |
 | `@happyvertical/smrt-ui` / `@happyvertical/smrt-types` | Operation list and form (`./svelte`), module slots (`./ui`); `svelte` is an optional peer |

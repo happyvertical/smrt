@@ -52,7 +52,7 @@ Detail: [agents/multilevel-and-runs.md](agents/multilevel-and-runs.md).
 
 ## Svelte components (`./svelte`)
 
-Props-driven; the host loads and persists. `AssemblyList` (field policy drops hidden columns via `policyToVisibleColumnIds`), `AssemblyForm` (smrt-fields `ObjectForm` for `@happyvertical/smrt-manufacturing:Assembly`, so price and every other field follow the consumer's field policy), `BomEditor` (add/edit/remove lines through host handlers; a sub-assembly shows whether it has its own bill and expands read-only through `loadBill`), `BomStructureTree` (the read-only nested view). `ProductionRunList` (progress, status, and with `oncomplete` a quantity field per open run; rows from `toProductionRunView`), `RequirementsTree` (read-only `explode` / `planRequirements` result by level with totals; `toRequirementTree`, `toRequirementTotals`; internal `RequirementsTreeLevel`). Adapters: `toAssemblyView`, `toBomEditorLines`. Strings are under `manufacturing.` in `src/svelte/i18n.ts`; the package is strict for raw primitives, hardcoded strings and JSDoc.
+Props-driven; the host loads and persists. `AssemblyList` (a structural `policy` drops hidden columns), `AssemblyForm` (smrt-ui controls like `OperationForm`: `assembly`, `onsubmit`, `operations` for the default-operation picker, a retired or unlisted current operation stays selected and marked, `hiddenFields`/`readonlyFields` for the reader's field policy; price is major units in the form and integer minor units in `onsubmit`; `validateAssemblyForm` mirrors the model's whole-minutes rule). `smrt-fields` is not a dependency: never add `ObjectForm`, `BomEditor` (add/edit/remove lines through host handlers; a sub-assembly shows whether it has its own bill and expands read-only through `loadBill`), `BomStructureTree` (the read-only nested view). `ProductionRunList` (progress, status, and with `oncomplete` a quantity field per open run; rows from `toProductionRunView`), `RequirementsTree` (read-only `explode` / `planRequirements` result by level with totals; `toRequirementTree`, `toRequirementTotals`; internal `RequirementsTreeLevel`). Adapters: `toAssemblyView`, `toBomEditorLines`. Strings are under `manufacturing.` in `src/svelte/i18n.ts`; the package is strict for raw primitives, hardcoded strings and JSDoc.
 
 
 ## BomService — planning helpers
@@ -202,7 +202,6 @@ These join cleanly with the standard inventory reason codes (`receipt`, `reserva
 | `@happyvertical/smrt-core` | SmrtObject / SmrtCollection / DispatchBus |
 | `@happyvertical/smrt-inventory` | StockService, stock levels, movements (the `Sku` model itself lives in `@happyvertical/smrt-products`; inventory tracks stock motion against the id) |
 | `@happyvertical/smrt-products` | `Product` (the `Assembly` STI base), `Material`, `Sku` for the resolve helper and cycle check |
-| `@happyvertical/smrt-fields` | `ObjectForm` and field-policy column visibility for the Svelte components |
 | `@happyvertical/smrt-ui` / `smrt-types` | Svelte controls, i18n, module UI slots |
 | `@happyvertical/smrt-tenancy` | Optional tenant scoping |
 | `@happyvertical/sql` | Database adapter |
