@@ -319,6 +319,82 @@ describe('exact general invoice calculations', () => {
       ),
     ).toThrow('Invalid invoice line');
   });
+  it('preserves canonical large fractional quantities without toFixed rounding', () => {
+    const input = {
+      quantity: 10000000000.12345,
+      unitPrice: 90000,
+      discount: 0,
+      taxRate: 0,
+    };
+    expect(calculateInvoiceMinorLine(input).totalMinor).toBe(900000000011111);
+    expect(
+      calculateInvoiceMinorLine({ ...input, unitPrice: -90000 }).totalMinor,
+    ).toBe(-900000000011110);
+    expect(
+      resolveInvoiceLineDraft(
+        {
+          ...line,
+          quantity: '10000000000.12345',
+          unitPrice: '900.00',
+          discountValue: '0',
+          taxMode: 'override',
+          taxRate: '0',
+        },
+        context,
+      ).amount,
+    ).toBe(900000000011111);
+    // This distinct source decimal is lost before a Number reaches the model.
+    expect(
+      calculateInvoiceLine(
+        { ...line, quantity: '100000000000.12345', unitPrice: '0' },
+        context,
+      ),
+    ).toMatchObject({ valid: false, errors: { quantity: 'precision' } });
+  });
+  it('expands supported canonical exponent rates and retains precision limits', () => {
+    expect(
+      calculateInvoiceMinorLine({
+        quantity: 1e-6,
+        unitPrice: 100000000,
+        discount: 0,
+        taxRate: 0,
+      }).totalMinor,
+    ).toBe(100);
+    expect(
+      calculateInvoiceMinorLine({
+        quantity: 1,
+        unitPrice: 100000000,
+        discount: 0,
+        taxRate: 1e-8,
+      }).taxMinor,
+    ).toBe(1);
+    expect(
+      calculateInvoiceMinorLine({
+        quantity: 1,
+        unitPrice: 10000000,
+        discount: 0,
+        taxRate: 1e-7,
+      }).taxMinor,
+    ).toBe(1);
+    for (const quantity of [1e-7, 1.0000001, 1.0000000000000002])
+      expect(() =>
+        calculateInvoiceMinorLine({
+          quantity,
+          unitPrice: 1,
+          discount: 0,
+          taxRate: 0,
+        }),
+      ).toThrow(RangeError);
+    for (const taxRate of [1e-9, 0.123456789])
+      expect(() =>
+        calculateInvoiceMinorLine({
+          quantity: 1,
+          unitPrice: 1,
+          discount: 0,
+          taxRate,
+        }),
+      ).toThrow(RangeError);
+  });
   it('keeps existing negative-price credit rounding toward positive infinity', () => {
     expect(
       calculateInvoiceMinorLine({

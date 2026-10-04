@@ -162,15 +162,19 @@ function numberDecimal(value: number, precision: number): Decimal {
     throw new RangeError(
       'Invoice rate or quantity is outside the supported range.',
     );
-  const fixed = value.toFixed(precision);
-  if (Number(fixed) !== value)
+  // The shortest canonical decimal preserves the caller's Number. toFixed can
+  // invent different decimal digits that round back to that same binary value.
+  const [mantissa, exponent = '0'] = value.toString().split('e');
+  const [whole, fraction = ''] = mantissa.split('.');
+  const places = fraction.length - Number(exponent);
+  if (places > precision)
     throw new RangeError(
       'Invoice rate or quantity exceeds the supported decimal precision.',
     );
-  const parsed = decimal(fixed, precision);
-  if (typeof parsed === 'string')
-    throw new RangeError('Invalid invoice rate or quantity.');
-  return parsed;
+  const coefficient = BigInt(whole + fraction);
+  return places < 0
+    ? { coefficient: coefficient * 10n ** BigInt(-places), scale: 1n }
+    : { coefficient, scale: 10n ** BigInt(places) };
 }
 
 function roundSigned(numerator: bigint, denominator: bigint): bigint {

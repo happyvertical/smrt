@@ -32,21 +32,24 @@ export interface InvoiceEditorStorageMigrationResult {
 }
 type QueryExecutor = Pick<DatabaseInterface, 'query'>;
 
-function exactQuantity(raw: unknown): boolean {
-  if (raw === null || raw === undefined) return false;
-  const text = String(raw);
-  const match = /^(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(text);
-  if (!match) return false;
+function scaledQuantity(raw: unknown): bigint | null {
+  if (raw === null || raw === undefined) return null;
+  const match = /^(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(String(raw));
+  if (!match) return null;
   const exponent = Number(match[3] ?? 0) - (match[2]?.length ?? 0) + 6;
-  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 100) return false;
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 100) return null;
   const coefficient = BigInt(match[1] + (match[2] ?? ''));
   const divisor = exponent < 0 ? 10n ** BigInt(-exponent) : 1n;
-  if (coefficient % divisor !== 0n) return false;
-  const scaled =
-    exponent < 0
-      ? coefficient / divisor
-      : coefficient * 10n ** BigInt(exponent);
-  const value = Number(text);
+  if (coefficient % divisor !== 0n) return null;
+  return exponent < 0
+    ? coefficient / divisor
+    : coefficient * 10n ** BigInt(exponent);
+}
+
+function exactQuantity(raw: unknown): boolean {
+  const scaled = scaledQuantity(raw);
+  if (scaled === null) return false;
+  const value = Number(raw);
   try {
     calculateInvoiceMinorLine({
       quantity: value,
@@ -54,7 +57,9 @@ function exactQuantity(raw: unknown): boolean {
       discount: 0,
       taxRate: 0,
     });
-    return BigInt(value.toFixed(6).replace('.', '')) === scaled;
+    // Compare exact source text with canonical numeric text, never toFixed's
+    // rounded binary expansion. DECIMAL values must survive Number hydration.
+    return scaledQuantity(value.toString()) === scaled;
   } catch {
     return false;
   }

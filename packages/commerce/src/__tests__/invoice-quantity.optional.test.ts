@@ -177,6 +177,38 @@ for (const engine of engines) {
         db = undefined;
         cleanup = undefined;
       });
+      it('persists canonical large fractional quantity without a one-cent rounding loss', async () => {
+        const isolated = await createInvoiceTestDatabase(engine, [
+          'Customer',
+          'Vendor',
+          'Contract',
+          'ContractLineItem',
+          'Invoice',
+          'InvoiceLineItem',
+          'Payment',
+          'PaymentAllocation',
+        ]);
+        db = isolated.db;
+        cleanup = isolated.cleanup;
+        const invoices = await InvoiceCollection.create({ db });
+        const invoice = await invoices.create({
+          invoiceNumber: 'CANONICAL-QUANTITY',
+        });
+        const lines = await InvoiceLineItemCollection.create({ db });
+        const item = await lines.create({
+          invoiceId: invoice.id,
+          quantity: 10000000000.12345,
+          unitPrice: 90000,
+          discount: 0,
+          taxRate: 0,
+          amount: 1,
+        });
+        expect(item.amount).toBe(900000000011111);
+        const loaded = await lines.get(item.id);
+        expect(loaded?.quantity).toBe(10000000000.12345);
+        expect(loaded?.amount).toBe(900000000011111);
+        expect(loaded?.calculateAmount()).toBe(900000000011111);
+      });
       it('roundtrips fractional quantity and editor modes, ignores forged amount and clears stale draft', async () => {
         const isolated = await createInvoiceTestDatabase(engine, [
           'Customer',
@@ -279,6 +311,36 @@ for (const engine of engines) {
         (await migrateInvoiceEditorStorage(database, engine)).changed,
       ).toBe(false);
     });
+    it('preflights canonical large fractional storage without inventing decimal digits', async () => {
+      const database = await setup('DOUBLE PRECISION');
+      await database.query(
+        "INSERT INTO invoice_line_items (id,quantity) VALUES ('canonical', 10000000000.12345)",
+      );
+      expect((await preflightInvoiceEditorStorage(database, engine)).ok).toBe(
+        true,
+      );
+      await migrateInvoiceEditorStorage(database, engine);
+      expect(
+        (
+          await database.query(
+            "SELECT quantity FROM invoice_line_items WHERE id='canonical'",
+          )
+        ).rows[0].quantity,
+      ).toBe(10000000000.12345);
+    });
+    if (engine !== 'sqlite')
+      it('rejects original decimal storage that cannot roundtrip through Number', async () => {
+        const database = await setup('DECIMAL(30,10)');
+        await database.query(
+          "INSERT INTO invoice_line_items (id,quantity) VALUES ('lossy', 9007199254740990.1)",
+        );
+        expect(
+          (await preflightInvoiceEditorStorage(database, engine)).invalidRowIds,
+        ).toEqual(['lossy']);
+        await expect(
+          migrateInvoiceEditorStorage(database, engine),
+        ).rejects.toThrow(/refused/);
+      });
     it('refuses invalid rows without rounding them or changing the declaration', async () => {
       const database = await setup('DOUBLE PRECISION');
       await database.query(
