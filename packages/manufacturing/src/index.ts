@@ -110,6 +110,7 @@ export {
   type RecordCompletionInput,
   type RecordCompletionResult,
 } from './production-run-types.js';
+export { QUANTITY_DECIMALS, roundQuantity } from './quantity.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Services and dispatch-bus hook helpers (opt-in)
 // ─────────────────────────────────────────────────────────────────────────────

@@ -189,21 +189,33 @@ export function productionRunSuite(
 
       it('keeps the target exact at large quantities', async () => {
         const { bomId } = await makeBill();
-        const run = await service.createRun({
-          bomId,
-          targetQty: 1_000_000_000,
-        });
+        const big = 100_000_000_000_000; // exactly representable
+        for (const targetQty of [1_000_000_000, big]) {
+          const run = await service.createRun({ bomId, targetQty });
+          expect(
+            await errorOf(
+              service.recordCompletion(run.id!, { qty: targetQty + 1 }),
+            ),
+          ).toBeInstanceOf(ProductionRunOverCompletionError);
+          const almost = await service.recordCompletion(run.id!, {
+            qty: targetQty - 1,
+          });
+          expect(almost.run.status).toBe('in_progress');
+          expect(
+            await errorOf(service.setTarget(run.id!, targetQty - 2)),
+          ).toBeInstanceOf(InvalidProductionRunInputError);
+          expect((await service.setTarget(run.id!, targetQty)).status).toBe(
+            'in_progress',
+          );
+          const last = await service.recordCompletion(run.id!, { qty: 1 });
+          expect(last.run.status).toBe('done');
+          expect(last.run.completedQty).toBe(targetQty);
+        }
+        // A quantity below the precision (a millionth) is not a quantity.
+        const tiny = await service.createRun({ bomId, targetQty: 1 });
         expect(
-          await errorOf(
-            service.recordCompletion(run.id!, { qty: 1_000_000_001 }),
-          ),
-        ).toBeInstanceOf(ProductionRunOverCompletionError);
-        const almost = await service.recordCompletion(run.id!, {
-          qty: 999_999_999,
-        });
-        expect(almost.run.status).toBe('in_progress');
-        const last = await service.recordCompletion(run.id!, { qty: 1 });
-        expect(last.run.status).toBe('done');
+          await errorOf(service.recordCompletion(tiny.id!, { qty: 0.0000001 })),
+        ).toBeInstanceOf(InvalidProductionRunInputError);
       });
 
       it('refuses more than the run has left, changing nothing', async () => {

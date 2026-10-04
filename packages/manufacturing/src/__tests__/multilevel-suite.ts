@@ -604,6 +604,29 @@ export function multilevelSuite(
         },
       );
 
+      it('reports a one-unit shortfall at large quantities, and none for rounding noise', async () => {
+        const f = await frameFixture();
+        const at = await warehouse();
+        const big = 100_000_000_000_000;
+        // 0.25 l of paint per frame: 4 × big frames need big litres.
+        await stock.receive(f.paint.skuId, at, big - 1);
+        const plan = await bomService.planRequirements(f.frameBom, 4 * big, {
+          levels: 1,
+        });
+        expect(lineFor<PlannedLine>(plan.lines, f.paint.skuId).short).toBe(1);
+        // 2 m with 10% waste for 100 units is 220.00000000000003 in
+        // floating point; 220 in stock covers it.
+        const rail = await assembly('Rail');
+        const railBom = await bill(rail.id, [[f.tube.skuId, 2, 'm', 10]]);
+        await stock.receive(f.tube.skuId, at, 220);
+        const noisy = await bomService.planRequirements(railBom, 100, {
+          levels: 1,
+        });
+        expect(noisy.lines[0].totalQty).not.toBe(220);
+        expect(noisy.lines[0].short).toBe(0);
+        expect(noisy.ok).toBe(true);
+      });
+
       it('reports a short sub-assembly past the levels limit as buildable', async () => {
         const f = await frameFixture();
         const plan = await bomService.planRequirements(f.frameBom, 10, {

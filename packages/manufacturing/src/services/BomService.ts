@@ -47,6 +47,7 @@ import type {
   OperationRateResolver,
   RoutingStepEstimate,
 } from '../operation-types.js';
+import { roundQuantity } from '../quantity.js';
 import {
   type BomCostRollup,
   type BomLineCost,
@@ -523,7 +524,9 @@ export class BomService {
           line.componentSkuId,
           Promise.resolve(available - allocated),
         );
-        const short = significant(base.totalQty - allocated, base.totalQty);
+        // Rounded to the quantity precision: `2.2 * 100` against 220 in
+        // stock is not short.
+        const short = Math.max(0, roundQuantity(base.totalQty - allocated));
         const sub = short > 0 ? walk.open(component, level, path) : null;
         lines.push({ ...base, expanded: sub !== null, available, short });
         if (sub) {
@@ -781,16 +784,6 @@ function sumRequirements(lines: ExplodedLine[]): MaterialRequirement[] {
       });
   }
   return Array.from(totals.values());
-}
-
-/**
- * `value`, or `0` when it is floating-point rounding relative to `scale`
- * (`2.2 * 100` is `220.00000000000003`; a stock of 220 covers it). The bound
- * is a few units in the last place of `scale`, so it never hides a real
- * quantity, however large.
- */
-function significant(value: number, scale: number): number {
-  return value > 64 * Number.EPSILON * Math.max(1, Math.abs(scale)) ? value : 0;
 }
 
 /**

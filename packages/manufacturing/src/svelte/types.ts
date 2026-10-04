@@ -382,11 +382,14 @@ export function validateCompletionQty(
   const qty = text === '' ? Number.NaN : Number(text);
   if (!Number.isFinite(qty) || qty <= 0)
     return { ok: false, reason: 'invalid' };
-  const remaining = Math.max(0, run.targetQty - run.completedQty);
-  // Floating-point slack only, as in ProductionRunService.
-  if (qty > remaining + 64 * Number.EPSILON * Math.max(1, run.targetQty))
+  // Rounded to six decimal places and compared exactly, as
+  // ProductionRunService does (QUANTITY_DECIMALS).
+  const round = (value: number) => Number(value.toFixed(6));
+  const rounded = round(qty);
+  if (rounded <= 0) return { ok: false, reason: 'invalid' };
+  if (round(run.completedQty + rounded) > round(run.targetQty))
     return { ok: false, reason: 'too_many' };
-  return { ok: true, qty };
+  return { ok: true, qty: rounded };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

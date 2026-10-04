@@ -248,7 +248,7 @@ await runs.recordCompletion(run.id!, {
 }); // the run is now done
 ```
 
-`start`, `finish` (done short of the target), `cancel` and `setTarget` move the run through `planned`, `in_progress`, `done` and `cancelled`. Concurrent reports all count and never pass the target.
+`start`, `finish` (done short of the target), `cancel` and `setTarget` move the run through `planned`, `in_progress`, `done` and `cancelled`. Concurrent reports all count and never pass the target. Quantities are decimals kept to six places (`roundQuantity`), so `0.1 + 0.2` completes a target of `0.3` and large whole numbers stay exact.
 
 ### Execute consume / produce against a production order
 
