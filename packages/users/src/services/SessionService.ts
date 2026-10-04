@@ -221,6 +221,10 @@ export class SessionService {
           session.parentSessionId as string,
         );
         if (!parentSession) return null;
+        // Layers do not nest: this check sees only the direct parent's row,
+        // so a parent that is itself layered could be dead through ITS
+        // parent while still looking live here. Fail closed.
+        if (parentSession.isLayered()) return null;
         // A child never acts outside its parent's tenant, however it was
         // minted. A cleared (null) tenant context is narrower, so allowed.
         if (
@@ -446,6 +450,26 @@ export class SessionService {
     );
     if (!membership?.isActive()) {
       return failClosed;
+    }
+
+    // A layered session is never rotated. Its only permitted target is its
+    // parent's tenant, so no privilege boundary is crossed; and a rotation
+    // would mint a replacement that the revocation sweeps layered sessions
+    // depend on (PIN reset or clear, hand-over, parent sign-out) read too
+    // early to see — a leaked bearer could outrun its own revocation by
+    // switching in a loop. Same tenant is a no-op; a cleared context is
+    // restored in place.
+    if (session.isLayered()) {
+      if (session.tenantId !== tenantId) {
+        const ok = await this.sessionCollection.setSessionTenant(
+          sessionId,
+          tenantId,
+        );
+        if (!ok) return failClosed;
+      }
+      const current = await this.sessionCollection.findValidSession(sessionId);
+      if (!current) return failClosed;
+      return { switched: true, sessionId, session: current, rotated: false };
     }
 
     // Rotate FAIL-CLOSED: revoke the old session FIRST, then mint the fresh one.

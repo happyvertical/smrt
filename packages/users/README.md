@@ -751,7 +751,8 @@ and give clients `parent.userId` as the device identity
 (`Session.parentSessionId` is a sensitive field and never appears in public
 serialization). Resolve person bearers with `service.loadPersonSession(token)`:
 it re-checks `assertEnrolledDevice` on every call and revokes the person
-session of a device that fails it. A host that resolves them through its own
+session of a device that fails it (the PIN management handlers resolve person
+bearers the same way). A host that resolves them through its own
 `SessionService` must instead revoke the device's bearer session when it
 un-enrols the device. `assertEnrolledDevice` returning `false` is un-enrolment
 (the person session is revoked); a throw only refuses that request. The PIN is

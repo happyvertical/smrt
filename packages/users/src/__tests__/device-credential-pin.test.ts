@@ -1272,6 +1272,83 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
       ).toBeNull();
     });
 
+    it('never rotates a layered session, so it cannot outrun a revocation sweep', async () => {
+      const signedIn = await signIn(service, welderId);
+      // "Switching" to its own tenant is a no-op, not a fresh session.
+      const same = await sessionService.switchTenant(
+        signedIn.sessionId,
+        tenantId,
+      );
+      expect(same).toMatchObject({
+        switched: true,
+        rotated: false,
+        sessionId: signedIn.sessionId,
+      });
+      // A cleared tenant context is restored in place.
+      await sessionService.switchTenant(signedIn.sessionId, null);
+      const restored = await sessionService.switchTenant(
+        signedIn.sessionId,
+        tenantId,
+      );
+      expect(restored).toMatchObject({
+        switched: true,
+        rotated: false,
+        sessionId: signedIn.sessionId,
+      });
+      expect(await sessions.findByUser(welderId)).toHaveLength(1);
+
+      // So the one session there is dies with the PIN.
+      await service.resetPin({
+        actor: adminActor(),
+        userId: welderId,
+        pin: '8642',
+      });
+      expect(
+        await sessionService.loadSessionContext(signedIn.sessionId),
+      ).toBeNull();
+      expect(await sessions.findByUser(welderId)).toHaveLength(0);
+
+      // A first-class session still rotates.
+      const browser = await sessionService.createSession(adminId, undefined, {
+        authMethod: 'oidc',
+      });
+      expect(
+        (await sessionService.switchTenant(browser, tenantId)).rotated,
+      ).toBe(true);
+    });
+
+    it('does not revoke a layered session that is not this service’s kind of device session', async () => {
+      // A host's own layered session, on a parent that is not device-enrolled.
+      const browser = await sessionService.createSession(adminId, tenantId, {
+        authMethod: 'oidc',
+      });
+      const hostLayered = await sessionService.createSession(
+        welderId,
+        tenantId,
+        { authMethod: 'kiosk', parentSessionId: browser },
+      );
+      expect(await service.loadPersonSession(hostLayered)).toBeNull();
+      expect((await sessions.get(hostLayered))?.status).toBe('active');
+
+      // Layers do not nest: a session on a layered parent never loads.
+      const person = await signIn(service, welderId);
+      const nested = await sessionService.createSession(foremanId, tenantId, {
+        authMethod: 'pin',
+        parentSessionId: person.sessionId,
+      });
+      expect(await sessionService.loadSessionContext(nested)).toBeNull();
+    });
+
+    it('refuses PIN management from a person session on an un-enrolled device', async () => {
+      const signedIn = await signIn(service, welderId);
+      expect((await service.resolveActor(signedIn.sessionId))?.user.id).toBe(
+        welderId,
+      );
+      activeDevices.clear();
+      expect(await service.resolveActor(signedIn.sessionId)).toBeNull();
+      expect((await sessions.get(signedIn.sessionId))?.status).toBe('revoked');
+    });
+
     it('rejects non-positive idle and absolute lifetimes', () => {
       for (const extra of [
         { personIdleSeconds: 0 },

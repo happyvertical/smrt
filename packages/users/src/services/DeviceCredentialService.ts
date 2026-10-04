@@ -745,10 +745,12 @@ export class DeviceCredentialService {
     if (!parentSessionId) return null;
     const enrolled = await this.resolveEnrolledDevice(parentSessionId);
     if (!enrolled.device) {
-      // Revoke only on a definite answer. A hook that threw (a registry
-      // outage, say) refuses this request and leaves the session to be
-      // judged again on the next one.
-      if (!enrolled.hookFailed) {
+      // Revoke only when the host said this device is un-enrolled. A hook
+      // that threw (a registry outage, say) refuses this request and leaves
+      // the session to be judged again on the next one; and a parent that
+      // is simply not this service's kind of device session is not this
+      // service's to revoke.
+      if (enrolled.unenrolled) {
         await this.sessionService.destroySession(token).catch(() => false);
       }
       return null;
@@ -762,12 +764,19 @@ export class DeviceCredentialService {
    * Resolve any bearer or cookie session id to its context without applying
    * this service's person TTL to it — for handlers that need the acting
    * session (`setPin` and friends) when the host's hook has not already
-   * resolved it into `locals`. A session that carries its own idle timeout
-   * (a person session) still slides by it: resolving it is activity.
+   * resolved it into `locals`. A person (layered) session goes through
+   * {@link loadPersonSession}: the device's enrollment is re-checked, and
+   * resolving it is activity, so it slides by its own idle timeout.
    */
   async resolveActor(sessionToken: string): Promise<SessionContext | null> {
     const token = sessionToken?.trim();
     if (!token) return null;
+    // A person session is accepted only through the same enrolled-device
+    // gate as everywhere else, so a tablet the host has un-enrolled cannot
+    // keep acting (or keep its person sessions alive) through PIN management.
+    if (await this.readonlySessionService.getParentSessionId(token)) {
+      return this.loadPersonSession(token);
+    }
     return this.readonlySessionService.loadSessionContext(token);
   }
 
@@ -917,9 +926,11 @@ export class DeviceCredentialService {
   // Internals
   // -------------------------------------------------------------------------
 
-  private async resolveEnrolledDevice(
-    deviceToken: string,
-  ): Promise<{ device: SessionContext | null; hookFailed?: boolean }> {
+  private async resolveEnrolledDevice(deviceToken: string): Promise<{
+    device: SessionContext | null;
+    /** The host hook answered `false`: a definite un-enrolment. */
+    unenrolled?: boolean;
+  }> {
     const refused = { device: null };
     const token = deviceToken?.trim();
     if (!token) return refused;
@@ -936,9 +947,9 @@ export class DeviceCredentialService {
     }
     try {
       const ok = await this.options.assertEnrolledDevice(device);
-      if (ok === false) return refused;
+      if (ok === false) return { device: null, unenrolled: true };
     } catch {
-      return { device: null, hookFailed: true };
+      return refused;
     }
     return { device };
   }

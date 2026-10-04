@@ -105,7 +105,8 @@ are not prerequisites for unrelated user-package work.
   session ID for non-null targets, revoking the old session. Persist the returned
   `SwitchTenantResult.sessionId`; `switchSessionTenant()` updates the cookie and
   preserves its security settings. Failed switches mutate nothing; null clears
-  do not rotate. `SessionCollection.setSessionTenant()` is unguarded and must
+  do not rotate, and layered sessions never rotate (a replacement would escape
+  the revocation sweeps they depend on). Layers do not nest. `SessionCollection.setSessionTenant()` is unguarded and must
   never receive an untrusted tenant ID.
 - OIDC provisioning is atomic and fail-closed. Preserve exact issuer/subject
   identifiers, claim-source email verification, unique global Person ownership,
