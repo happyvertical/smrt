@@ -403,6 +403,22 @@ export function operationsSuite(
         expect(await routing.list(bomId)).toHaveLength(1);
       });
 
+      it('rechecks retained occurrences under the lock when replacements race', async () => {
+        const { cut } = await ops();
+        const bomId = await makeBom();
+        const step = { operationId: cut, estimatedMinutes: 1 };
+        await routing.replaceRouting(bomId, [step, step]);
+        await operations.retire(cut);
+        await Promise.allSettled([
+          routing.replaceRouting(bomId, [step]),
+          routing.replaceRouting(bomId, [step, step]),
+        ]);
+        // Whichever commits second validates against the first's routing: a
+        // request for two occurrences after one remains is refused, so the
+        // routing always ends with exactly one.
+        expect(await routing.list(bomId)).toHaveLength(1);
+      });
+
       it('serializes concurrent replacements so the result is one of the requested routings', async () => {
         const { cut, weld, paint } = await ops();
         const bomId = await makeBom();

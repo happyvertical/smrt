@@ -56,24 +56,15 @@ export class RoutingService {
   }
 
   /**
-   * Replace the bill's routing with `inputs`, numbered 1..n in the order given.
-   * An empty list removes the routing.
-   *
-   * Throws {@link BomNotFoundError}, {@link OperationNotFoundError},
-   * {@link OperationRetiredError} (a retired operation may stay on a routing
-   * that already has it but cannot be newly added), or
-   * {@link InvalidOperationInputError} for a negative or non-finite duration.
+   * Check `inputs` against the routing about to be replaced: durations,
+   * operations, and that a retired operation is not added beyond the
+   * occurrences `current` already has.
    */
-  async replaceRouting(
-    bomId: string,
+  private async validate(
+    current: readonly RoutingStep[],
     inputs: readonly RoutingStepInput[],
-  ): Promise<RoutingStep[]> {
-    if (!bomId || !(await this.boms.get(bomId)))
-      throw new BomNotFoundError(bomId);
-
-    const current = await this.steps.findByBom(bomId);
-    // Each occurrence already on the routing may be kept once; a retired
-    // operation cannot be added beyond the occurrences it already has.
+  ): Promise<void> {
+    // Each occurrence already on the routing may be kept once.
     const retained = new Map<string, number>();
     for (const step of current)
       retained.set(step.operationId, (retained.get(step.operationId) ?? 0) + 1);
@@ -92,6 +83,23 @@ export class RoutingService {
       else if (!operation.isActive)
         throw new OperationRetiredError(operation.id as string);
     }
+  }
+
+  /**
+   * Replace the bill's routing with `inputs`, numbered 1..n in the order given.
+   * An empty list removes the routing.
+   *
+   * Throws {@link BomNotFoundError}, {@link OperationNotFoundError},
+   * {@link OperationRetiredError} (a retired operation may stay on a routing
+   * that already has it but cannot be newly added), or
+   * {@link InvalidOperationInputError} for a negative or non-finite duration.
+   */
+  async replaceRouting(
+    bomId: string,
+    inputs: readonly RoutingStepInput[],
+  ): Promise<RoutingStep[]> {
+    if (!bomId || !(await this.boms.get(bomId)))
+      throw new BomNotFoundError(bomId);
 
     const write = async (
       steps: RoutingStepCollection,
@@ -104,7 +112,10 @@ export class RoutingService {
       const bom = await boms.get(bomId);
       if (!bom) throw new BomNotFoundError(bomId);
       await bom.save();
-      for (const step of await steps.findByBom(bomId)) await step.delete();
+      // Validate under the lock, against the routing this attempt will replace.
+      const current = await steps.findByBom(bomId);
+      await this.validate(current, inputs);
+      for (const step of current) await step.delete();
       const saved: RoutingStep[] = [];
       for (const [index, input] of inputs.entries()) {
         // `create()` persists; no second save.
