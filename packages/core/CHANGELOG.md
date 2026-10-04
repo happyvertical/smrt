@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.53.6
+
+### Patch Changes
+
+- ### Features
+  
+  - expose safe remote fetch (#3486) (content)
+  - multi-level bills of materials and production runs (#3484) (manufacturing)
+  
+  ### Other Changes
+  
+  - test: isolate state-root lease fixture (#3489) (app-runtime)
+- @happyvertical/smrt-config@0.53.6
+  - @happyvertical/smrt-scanner@0.53.6
+  - @happyvertical/smrt-types@0.53.6
+
 ## 0.53.5
 
 ### Patch Changes
