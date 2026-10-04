@@ -11,10 +11,13 @@
  *
  * The request transaction is opened exactly as the runtime's session step
  * opens it (`withPrincipalPermissionContext`/`withSessionPermissionContext`
- * share one transaction lifecycle), and `runtime` is a structural stand-in
- * for `@happyvertical/smrt-app-runtime/sveltekit` built from the same
- * smrt-users calls its `databaseConfig()`/`runAsPrincipal()` make (chat does
- * not depend on app-runtime).
+ * share one transaction lifecycle), publishing the permissions live at the
+ * request's start, and `runtime` is a structural stand-in for
+ * `@happyvertical/smrt-app-runtime/sveltekit` built from the same smrt-users
+ * calls its `databaseConfig()`/`runAsPrincipal()` make (chat does not depend
+ * on app-runtime): `runAsPrincipal` resolves live permissions from the
+ * membership rows, caps them to `scopes` when given (omitted = no cap), and
+ * hands `fn` the bound principal with the effective scopes.
  *
  * The application connects as a NOSUPERUSER NOBYPASSRLS role and
  * `chat_messages` carries a FORCEd tenant policy, so a write outside a live
@@ -41,6 +44,13 @@ import {
 import {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
+  MembershipCollection,
+  PermissionCollection,
+  PermissionResolver,
+  RoleCollection,
+  RolePermissionCollection,
+  TenantCollection,
+  UserCollection,
   withPrincipalPermissionContext,
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
@@ -63,6 +73,10 @@ const postgresDescribe = baseUrl ? describe : describe.skip;
 const SCHEMA = `chat_turn_rls_${randomUUID().replaceAll('-', '')}`;
 const ORIGIN = 'http://app.test';
 const PROBE = 'probe.tenant';
+/** Granted through the actor's role at the start. */
+const USE = 'probe.use';
+/** Not granted at the start. */
+const EXTRA = 'probe.extra';
 
 function inSchema(url: string): string {
   const confined = new URL(url);
@@ -87,15 +101,33 @@ let roleUrl = '';
 let tenantA = '';
 let tenantB = '';
 let actor: Actor;
+let adminOptions: { db: { type: 'postgres'; url: string } };
+let roleId = '';
+const permissionIds: Record<string, string> = {};
+
+/** The permissions the actor's memberships grant right now. */
+async function livePermissions(userId: string, tenantId: string) {
+  const resolver = await PermissionResolver.create({
+    db: { type: 'postgres', url: roleUrl },
+  });
+  return [...(await resolver.resolvePermissions(userId, tenantId)).permissions];
+}
+
+/** Grant (or revoke) a permission on the actor's role. */
+async function setGranted(slug: string, granted: boolean) {
+  const grants = await RolePermissionCollection.create(adminOptions);
+  if (granted) await grants.addPermission(roleId, permissionIds[slug]);
+  else await grants.removePermission(roleId, permissionIds[slug]);
+}
 
 /** Run `fn` in a request transaction, as the runtime's session step does. */
-function inRequest<T>(who: Actor, fn: () => Promise<T>): Promise<T> {
+async function inRequest<T>(who: Actor, fn: () => Promise<T>): Promise<T> {
   return withPrincipalPermissionContext(
     {
       db: { type: 'postgres', url: roleUrl },
       userId: who.userId,
       tenantId: who.tenantId,
-      permissions: [],
+      permissions: await livePermissions(who.userId, who.tenantId),
       postgresRls: true,
       enterTenantContext: true,
     },
@@ -109,18 +141,32 @@ const runtime: AssistantRouteRuntime = {
     (getCurrentSessionPermissionContext()?.postgresRls === true
       ? getRequestScopedDatabase()
       : { type: 'postgres', url: roleUrl }) as never,
-  runAsPrincipal: (principal, fn) =>
-    withPrincipalPermissionContext(
+  runAsPrincipal: async (principal, fn) => {
+    const cap = principal.scopes ? new Set(principal.scopes) : undefined;
+    const effective = Object.freeze(
+      (await livePermissions(principal.id, principal.tenantId)).filter(
+        (permission) => !cap || cap.has(permission),
+      ),
+    );
+    return withPrincipalPermissionContext(
       {
         db: { type: 'postgres', url: roleUrl },
         userId: principal.id,
         tenantId: principal.tenantId,
-        permissions: [...(principal.scopes ?? [])],
+        permissions: [...effective],
         postgresRls: true,
         enterTenantContext: true,
       },
-      () => fn(),
-    ),
+      () =>
+        fn(
+          Object.freeze({
+            id: principal.id,
+            tenantId: principal.tenantId,
+            scopes: effective,
+          }),
+        ),
+    );
+  },
 };
 
 /** Rows of `chat_messages` for a thread, as `tenantId` sees them. */
@@ -182,7 +228,10 @@ const callProbe = (): AIResponse =>
     ],
   }) as AIResponse;
 
-/** Reports the tenant and user the tool's database session publishes. */
+/**
+ * Reports the tenant, user and permissions the tool's principal run and its
+ * database session publish.
+ */
 function probeTool(seen: Array<Record<string, unknown>>): PrincipalTool {
   return {
     slug: PROBE,
@@ -200,11 +249,18 @@ function probeTool(seen: Array<Record<string, unknown>>): PrincipalTool {
       const [row] = rows(
         await db.query(
           `SELECT current_setting('smrt.tenant_id', true) AS tenant,
-                  current_setting('smrt.user_id', true) AS "user"`,
+                  current_setting('smrt.user_id', true) AS "user",
+                  current_setting('smrt.permissions', true) AS published`,
         ),
       );
-      seen.push(row ?? {});
-      return row ?? {};
+      const report = {
+        tenant: row?.tenant,
+        user: row?.user,
+        permissions: [...run.permissions].sort(),
+        published: JSON.parse(String(row?.published || '[]')).sort(),
+      };
+      seen.push(report);
+      return report;
     },
   };
 }
@@ -309,23 +365,47 @@ postgresDescribe('streamed assistant turn under database-rls', () => {
       ],
     });
 
-    tenantA = randomUUID();
-    tenantB = randomUUID();
     const options = { db: { type: 'postgres' as const, url: adminUrl } };
+    adminOptions = options;
+    const save = async <T extends { save(): Promise<unknown> }>(value: T) => {
+      await value.save();
+      return value as T & { id: string };
+    };
+    const tenants = await TenantCollection.create(options);
+    tenantA = (await save(await tenants.create({ name: 'Tenant A' }))).id;
+    tenantB = (await save(await tenants.create({ name: 'Tenant B' }))).id;
     const types = await ProfileTypeCollection.create(options);
     const person = await types.getOrCreateBySlug('person', { name: 'Person' });
     const profiles = await ProfileCollection.create(options);
-    const profile = await profiles.create({
-      tenantId: tenantA,
-      typeId: person.id as string,
-      name: 'Owner',
-    });
-    await profile.save();
-    actor = {
-      userId: randomUUID(),
-      profileId: profile.id as string,
-      tenantId: tenantA,
-    };
+    const profile = await save(
+      await profiles.create({
+        tenantId: tenantA,
+        typeId: person.id as string,
+        name: 'Owner',
+      }),
+    );
+    const users = await UserCollection.create(options);
+    const user = await save(
+      await users.create({
+        email: `owner-${randomUUID()}@example.test`,
+        profileId: profile.id,
+      }),
+    );
+    const roles = await RoleCollection.create(options);
+    roleId = (await save(await roles.create({ name: `Owner ${randomUUID()}` })))
+      .id;
+    const permissions = await PermissionCollection.create(options);
+    for (const slug of [USE, EXTRA]) {
+      permissionIds[slug] = (
+        await save(await permissions.create({ slug, name: slug }))
+      ).id;
+    }
+    await setGranted(USE, true);
+    const memberships = await MembershipCollection.create(options);
+    await save(
+      await memberships.create({ userId: user.id, tenantId: tenantA, roleId }),
+    );
+    actor = { userId: user.id, profileId: profile.id, tenantId: tenantA };
 
     // FORCE binds the owning role too: every chat_messages read and write
     // needs a live transaction publishing the row's tenant.
@@ -423,7 +503,14 @@ postgresDescribe('streamed assistant turn under database-rls', () => {
     expect(errors).toEqual([]);
     // The tool ran after the request ended, in a transaction publishing the
     // request's principal.
-    expect(probes).toEqual([{ tenant: tenantA, user: actor.userId }]);
+    expect(probes).toEqual([
+      {
+        tenant: tenantA,
+        user: actor.userId,
+        permissions: [USE],
+        published: [USE],
+      },
+    ]);
 
     // Committed under tenant A: the send, its linked reply, its outcome.
     const stored = await messagesAs(tenantA, threadId);
@@ -459,6 +546,81 @@ postgresDescribe('streamed assistant turn under database-rls', () => {
       outcome: 'completed',
       assistantMessage: { content: 'Delayed reply.' },
     });
+  });
+
+  /**
+   * Send, then change the actor's grants after the request has committed
+   * and before the turn binds its principal (the runtime runs `handoff`
+   * first), then let the model call the probe. Returns what the probe saw.
+   */
+  async function probeAcrossHandoff(
+    clientRequestId: string,
+    handoff: () => Promise<void>,
+    overrides: Partial<MountAssistantRoutesOptions> = {},
+  ) {
+    const model = delayedAI([callProbe, text('Probed.')]);
+    const probes: Array<Record<string, unknown>> = [];
+    let handedOff = false;
+    const handingOff: AssistantRouteRuntime = {
+      databaseConfig: runtime.databaseConfig,
+      runAsPrincipal: async (principal, fn) => {
+        if (!handedOff) {
+          handedOff = true;
+          await handoff();
+        }
+        return runtime.runAsPrincipal(principal, fn);
+      },
+    };
+    const { routes, errors } = mount({
+      ai: model.ai,
+      runtime: handingOff,
+      allowedTools: [PROBE],
+      extraTools: [probeTool(probes)],
+      ...overrides,
+    });
+    const threadId = await createThread(routes);
+    const response = await inRequest(actor, () =>
+      routes.POST(
+        routeEvent('POST', `threads/${threadId}/messages`, actor, {
+          content: 'Probe',
+          clientRequestId,
+        }),
+      ),
+    );
+    model.release();
+    const events = await readEvents(response);
+    expect(events.filter((event) => event.type === 'error')).toEqual([]);
+    expect(errors).toEqual([]);
+    expect(handedOff).toBe(true);
+    expect(probes).toHaveLength(1);
+    return probes[0];
+  }
+
+  it('never regains a snapshotted permission revoked before the turn binds', async () => {
+    try {
+      // The host's resolver snapshots USE; it is revoked during the handoff.
+      const seen = await probeAcrossHandoff(
+        'send-revoked',
+        () => setGranted(USE, false),
+        {
+          resolvePrincipal: (event) => {
+            const locals = event.locals as {
+              user: { id: string; profileId: string };
+              tenantId: string;
+            };
+            return {
+              userId: locals.user.id,
+              profileId: locals.user.profileId,
+              tenantId: locals.tenantId,
+              permissions: [USE],
+            };
+          },
+        },
+      );
+      expect(seen).toMatchObject({ permissions: [], published: [] });
+    } finally {
+      await setGranted(USE, true);
+    }
   });
 
   it('records a turn the client left after the handler returned as cancelled', async () => {
@@ -502,24 +664,14 @@ postgresDescribe('streamed assistant turn under database-rls', () => {
     const failing: AssistantRouteRuntime = {
       databaseConfig: runtime.databaseConfig,
       runAsPrincipal: (principal, fn) =>
-        withPrincipalPermissionContext(
-          {
-            db: { type: 'postgres', url: roleUrl },
-            userId: principal.id,
-            tenantId: principal.tenantId,
-            permissions: [],
-            postgresRls: true,
-            enterTenantContext: true,
-          },
-          async () => {
-            const result = await fn();
-            if (failNext) {
-              failNext = false;
-              throw new Error('turn transaction failed');
-            }
-            return result;
-          },
-        ),
+        runtime.runAsPrincipal(principal, async (bound) => {
+          const result = await fn(bound);
+          if (failNext) {
+            failNext = false;
+            throw new Error('turn transaction failed');
+          }
+          return result;
+        }),
     };
     const { routes, errors } = mount({ ai: model.ai, runtime: failing });
     const threadId = await createThread(routes);

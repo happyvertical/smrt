@@ -201,8 +201,9 @@ export interface AssistantRouteRuntime {
   databaseConfig(): SmrtClassOptions['db'];
   /**
    * Run `fn` as a principal: under `database-rls` in a fresh transaction
-   * publishing that user, tenant and live permissions (capped to `scopes`),
-   * which `databaseConfig()` returns inside `fn`.
+   * publishing that user, tenant and live permissions (capped to `scopes`;
+   * omitted means no cap), which `databaseConfig()` returns inside `fn`.
+   * `fn` receives the bound principal, whose `scopes` are the effective set.
    */
   runAsPrincipal<T>(
     principal: {
@@ -210,8 +211,14 @@ export interface AssistantRouteRuntime {
       readonly tenantId: string;
       readonly scopes?: readonly string[];
     },
-    fn: () => Promise<T>,
+    fn: (bound: AssistantRouteBoundPrincipal) => Promise<T>,
   ): Promise<T>;
+}
+
+/** What {@link AssistantRouteRuntime.runAsPrincipal} hands its callback. */
+export interface AssistantRouteBoundPrincipal {
+  /** The effective permissions: live at bind time, capped to the scopes. */
+  readonly scopes: readonly string[];
 }
 
 /** Options for {@link mountAssistantRoutes}. */
@@ -1226,10 +1233,15 @@ export function mountAssistantRoutes(
             'mountAssistantRoutes: the request transaction did not end; the turn did not run.',
           );
         }
-        await runtime.runAsPrincipal(bound, async () => {
+        await runtime.runAsPrincipal(bound, async (granted) => {
+          // The turn's authority is the bound principal's effective set, as
+          // narrowed at bind time; the pre-bind snapshot never reaches it.
           const turnContext: AssistantRequestContext = {
             event: context.event,
-            principal,
+            principal: {
+              ...principal,
+              permissions: effectiveScopes(granted, bound.scopes),
+            },
           };
           const turnChat = await chatFor(turnContext);
           if (durableSend) {
@@ -1950,6 +1962,29 @@ function requestTransaction(): { isActive?: unknown } | null {
   return (
     (getRequestScopedDatabase() as { isActive?: unknown } | undefined) ?? null
   );
+}
+
+/**
+ * The permissions a turn in its own lifetime runs with: the bound
+ * principal's effective `scopes` (live at bind time, capped by the runtime),
+ * kept within `cap` as well so a runtime that ignored the cap cannot widen
+ * them. Malformed scopes refuse the turn.
+ */
+function effectiveScopes(
+  granted: AssistantRouteBoundPrincipal | undefined,
+  cap: readonly string[] | undefined,
+): string[] {
+  const scopes = granted?.scopes;
+  if (
+    !Array.isArray(scopes) ||
+    !scopes.every((scope) => typeof scope === 'string')
+  ) {
+    throw new Error(
+      'mountAssistantRoutes: runtime.runAsPrincipal bound no effective scopes.',
+    );
+  }
+  const allowed = cap ? new Set(cap) : undefined;
+  return scopes.filter((scope) => !allowed || allowed.has(scope));
 }
 
 /** Resolves `true` once `isActive()` is false, `false` on timeout. */

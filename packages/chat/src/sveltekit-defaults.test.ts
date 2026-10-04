@@ -395,8 +395,11 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
     it('defaults to runtime.databaseConfig() and streams outside RLS unchanged', async () => {
       const runtime = {
         databaseConfig: vi.fn(() => db),
-        runAsPrincipal: vi.fn(async <T>(_p: unknown, fn: () => Promise<T>) =>
-          fn(),
+        runAsPrincipal: vi.fn(
+          async <T>(
+            _p: unknown,
+            fn: (bound: { scopes: readonly string[] }) => Promise<T>,
+          ) => fn({ scopes: [] }),
         ),
       };
       const ai = scriptedAI([text('Streamed.')]);
