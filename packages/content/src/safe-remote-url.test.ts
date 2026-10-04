@@ -20,6 +20,9 @@ describe('safe-remote-url SSRF guard', () => {
       '192.168.1.1',
       '100.64.0.1',
       '198.18.0.1',
+      '192.0.2.1',
+      '198.51.100.1',
+      '203.0.113.1',
       '224.0.0.1',
     ]) {
       expect(isBlockedIPv4(blocked)).toBe(true);
@@ -64,6 +67,8 @@ describe('safe-remote-url SSRF guard', () => {
       'fd12::3',
       'fe80::1',
       'ff02::1',
+      'fec0::1',
+      '2001:db8::1',
       '::ffff:127.0.0.1',
     ]) {
       expect(isBlockedIPv6(blocked)).toBe(true);
@@ -226,5 +231,11 @@ describe('safe-remote-url SSRF guard', () => {
     await expect(
       fetchSafeRemoteUrl('https://example.test/', { timeoutMs: 0 }),
     ).rejects.toThrow('greater than zero');
+
+    await expect(
+      fetchSafeRemoteUrl('https://example.test/', {
+        headers: { 'X-Api-Key': 'secret' },
+      }),
+    ).rejects.toThrow('does not allow request header');
   });
 });

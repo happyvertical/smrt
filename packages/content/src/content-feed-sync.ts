@@ -318,8 +318,8 @@ export async function syncContentFeedSource(
     }
 
     source.markFetchSucceeded(now, {
-      etag: response.headers.etag,
-      lastModified: response.headers['last-modified'],
+      etag: response.headers.etag ?? null,
+      lastModified: response.headers['last-modified'] ?? null,
     });
     await source.save();
 

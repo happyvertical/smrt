@@ -42,7 +42,7 @@ export interface SafeRemoteFetchOptions {
   headers?: Record<string, string>;
   /** Total DNS, request, redirect, and response-body deadline. Defaults to 10s. */
   timeoutMs?: number;
-  /** Maximum returned response-body bytes. Defaults to 2 MiB. */
+  /** Maximum returned response-body bytes. Defaults to 2 MB (2,000,000 bytes). */
   maxBytes?: number;
   /** Maximum validated redirect hops. Defaults to 5. Set 0 to reject redirects. */
   maxRedirects?: number;
@@ -93,7 +93,11 @@ export function isBlockedIPv4(address: string): boolean {
     (first === 169 && second === 254) ||
     (first === 172 && second >= 16 && second <= 31) ||
     (first === 192 && second === 168) ||
-    (first === 198 && (second === 18 || second === 19))
+    (first === 192 && second === 0) ||
+    (first === 192 && second === 2) ||
+    (first === 198 && (second === 18 || second === 19)) ||
+    (first === 198 && second === 51) ||
+    (first === 203 && second === 0)
   );
 }
 
@@ -153,6 +157,9 @@ export function isBlockedIPv6(address: string): boolean {
     normalized === '::1' ||
     normalized.startsWith('fc') ||
     normalized.startsWith('fd') ||
+    normalized.startsWith('fec') ||
+    normalized.startsWith('fed') ||
+    normalized.startsWith('2001:db8:') ||
     /^fe[89ab]/.test(normalized) ||
     normalized.startsWith('ff')
   );
@@ -311,6 +318,23 @@ export function redactUrlCredentials(raw: string): string {
 
 const DEFAULT_MAX_RESPONSE_BYTES = 2_000_000;
 const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+const SAFE_REQUEST_HEADER_NAMES = new Set([
+  'accept',
+  'accept-language',
+  'if-modified-since',
+  'if-none-match',
+  'user-agent',
+]);
+
+function assertSafeRequestHeaders(headers: Record<string, string> | undefined) {
+  for (const name of Object.keys(headers ?? {})) {
+    if (!SAFE_REQUEST_HEADER_NAMES.has(name.toLowerCase())) {
+      throw new Error(
+        `Safe remote fetch does not allow request header ${name}`,
+      );
+    }
+  }
+}
 
 type RemoteResponse = {
   status: number;
@@ -506,6 +530,7 @@ export async function fetchSafeRemoteUrl(
   if (options.timeoutMs === 0) {
     throw new Error('Safe remote fetch timeout must be greater than zero');
   }
+  assertSafeRequestHeaders(options.headers);
   return fetchSafeRemoteUrlInternal(rawUrl, options);
 }
 
