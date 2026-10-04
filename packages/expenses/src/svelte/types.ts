@@ -67,6 +67,8 @@ export interface ExpenseFormProps {
   currencyOptions?: readonly CodeSelectOption[];
   /** Optional native field-name adapter; defaults to draft property names. */
   fields?: Partial<Record<keyof ExpenseDraftValues, string>>;
+  /** Render only these logical fields. Omitted means all; [] means none. Fixed values belong in hiddenFields and remain server-validated. */
+  visibleFields?: readonly (keyof ExpenseDraftValues)[];
   /** Server errors keyed by logical draft property. */
   errors?: Partial<Record<keyof ExpenseDraftValues, string>>;
   /** Caller error/denial/uncertain-outcome message. */

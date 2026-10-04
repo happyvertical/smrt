@@ -138,4 +138,26 @@ describe('private attachments SSR/native contract', () => {
     expect(uncertain).toContain('The upload outcome is uncertain');
     expect(uncertain).toContain('Still here');
   });
+  it('omits unsupported description controls while retaining multipart identity and file recovery', () => {
+    const body = upload({
+      showDescription: false,
+      description: 'Frozen server description',
+      descriptionError: 'Hidden description error',
+      fileField: 'receipt',
+      reselectFile: true,
+      hiddenFields: [
+        { name: 'requestId', value: 'same-request' },
+        { name: 'description', value: 'Fixed value' },
+      ],
+    });
+    expect(body).toContain('enctype="multipart/form-data"');
+    expect(body).toContain('type="file" name="receipt"');
+    expect(body).not.toContain('<textarea');
+    expect(body).not.toContain('Frozen server description');
+    expect(body).not.toContain('Hidden description error');
+    expect(body.match(/name="description"/g)).toHaveLength(1);
+    expect(body).toContain('value="same-request"');
+    expect(body).toContain('Choose the file again before retrying');
+    expect(upload()).toContain('<textarea');
+  });
 });
