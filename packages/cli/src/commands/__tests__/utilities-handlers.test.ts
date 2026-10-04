@@ -7,6 +7,7 @@ import type {
 } from '@happyvertical/smrt-core/schema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { requireCommandHandler } from '../../__tests__/command-handler.js';
+import { parseCliCommandArgs } from '../../cli-generator.js';
 
 type FixtureSchemaDiff = {
   added_tables: Array<
@@ -1416,7 +1417,10 @@ describe('utility command handlers', () => {
 
   // ------------------------------- test ---------------------------------
 
-  it('test command generates a manifest with --manifest-only', async () => {
+  it.each([
+    'parsed CLI option',
+    'legacy handler option',
+  ])('test command generates only a manifest with %s', async (mode) => {
     const dir = await mkdtemp(resolve(process.cwd(), '.tmp-test-cmd-'));
     tempDirs.push(dir);
     const originalCwd = process.cwd();
@@ -1425,14 +1429,22 @@ describe('utility command handlers', () => {
       manifestGenerate.mockResolvedValue({ objects: { '@app:Article': {} } });
       discoverBaseClasses.mockResolvedValue(['B1', 'B2', 'B3', 'B4']);
 
-      await requireCommandHandler(utilityCommands.test)([], {
-        manifestOnly: true,
-      });
+      const parsed = parseCliCommandArgs(
+        ['test', '--manifest-only'],
+        [utilityCommands.test],
+      );
+      expect(parsed.options['manifest-only']).toBe(true);
+      await requireCommandHandler(utilityCommands.test)(
+        parsed.args,
+        mode === 'parsed CLI option' ? parsed.options : { manifestOnly: true },
+      );
 
       const out = logged();
       expect(out).toContain('DEPRECATED');
       expect(out).toContain('Generated test manifest');
       expect(manifestGenerate).toHaveBeenCalled();
+      expect(spawn).not.toHaveBeenCalled();
+      expect(out).not.toContain('Running tests');
     } finally {
       process.chdir(originalCwd);
     }

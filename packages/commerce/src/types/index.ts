@@ -4,6 +4,10 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type {
+  InvoiceCalculationContext,
+  InvoiceLineDraft,
+} from '../svelte/invoices/calculations.js';
 
 // ============================================================================
 // Customer/Vendor Types
@@ -489,10 +493,20 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   terms?: string;
 }
 
-/**
- * Constructor options for {@link InvoiceLineItem}.
- */
+/** Retained editing modes, validated against resolved model fields before reuse. */
+export interface InvoiceLineEditorState {
+  /** Lossless editor draft; never authoritative for ordinary model saves. */
+  draft: InvoiceLineDraft;
+  /** Context used to resolve that draft; caller authority must still match on reload. */
+  context: InvoiceCalculationContext;
+}
+
+/** Constructor options for {@link InvoiceLineItem}. */
 export interface InvoiceLineItemOptions extends SmrtObjectOptions {
+  /** Optional retained editor modes and their original calculation context. */
+  invoiceEditorState?: InvoiceLineEditorState | null;
+  /** Serialized editor state loaded from persistence; malformed JSON is ignored. */
+  invoiceEditorStateJson?: string;
   tenantId?: string | null;
   invoiceId?: string;
   description?: string;

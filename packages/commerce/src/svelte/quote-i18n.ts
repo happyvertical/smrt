@@ -1,0 +1,55 @@
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
+
+/** Localizable quotation and estimate presentation messages. */
+export const Q = defineMessages({
+  'commerce.quote.vendor': 'Vendor quotation',
+  'commerce.quote.estimate': 'Customer estimate',
+  'commerce.quote.vendor_party': 'Vendor',
+  'commerce.quote.customer_party': 'Customer',
+  'commerce.quote.choose': 'Choose a counterparty',
+  'commerce.quote.reference': 'Reference',
+  'commerce.quote.date': 'Document date',
+  'commerce.quote.expiry': 'Valid until',
+  'commerce.quote.currency': 'Currency',
+  'commerce.quote.total': 'Total, including tax',
+  'commerce.quote.tax': 'Tax included in total',
+  'commerce.quote.scope': 'Scope',
+  'commerce.quote.inclusions': 'Inclusions',
+  'commerce.quote.exclusions': 'Exclusions',
+  'commerce.quote.reason': 'Reason for revision',
+  'commerce.quote.lines': 'Source lines',
+  'commerce.quote.line': 'Line {number}',
+  'commerce.quote.description': 'Description',
+  'commerce.quote.quantity': 'Quantity',
+  'commerce.quote.rate': 'Unit rate',
+  'commerce.quote.add': 'Add line',
+  'commerce.quote.remove': 'Remove line {number}',
+  'commerce.quote.save': 'Save draft',
+  'commerce.quote.cancel': 'Cancel',
+  'commerce.quote.empty_lines': 'No source lines supplied.',
+  'commerce.quote.vendor_hint':
+    'Recording a quotation does not select pricing or award work.',
+  'commerce.quote.estimate_hint':
+    'Preparing an estimate does not accept it or change an approved budget.',
+  'commerce.quote.history': 'Revision history',
+  'commerce.quote.empty_history': 'No revisions yet.',
+  'commerce.quote.unavailable': 'Amount unavailable',
+  'commerce.quote.unknown': 'Unknown',
+  'commerce.quote.compare': 'Revision comparison',
+  'commerce.quote.before': 'Previous',
+  'commerce.quote.after': 'Current',
+  'commerce.quote.delta': 'Change in total',
+  'commerce.quote.incomparable':
+    'Totals cannot be compared across document kinds, currencies, scales or unknown pricing.',
+  'commerce.quote.view': 'View revision',
+  'commerce.quote.readonly': 'Read only',
+  'commerce.quote.demo_notice':
+    'This demo simulates validation failure locally. It does not save a quotation or estimate.',
+  'commerce.quote.demo_enable': 'Enable editing',
+  'commerce.quote.demo_readonly': 'Preview read only',
+  'commerce.quote.demo_added': 'Demo: line added; entered values retained.',
+  'commerce.quote.demo_removed': 'Demo: line removed; entered values retained.',
+  'commerce.quote.demo_error': 'Demo server validation: confirm the total.',
+  'commerce.quote.demo_rejected':
+    'Demo rejected submission. Values and request identity remain available for retry.',
+});

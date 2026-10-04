@@ -89,6 +89,13 @@ export {
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
+export {
+  type InvoiceEditorStorageEngine,
+  type InvoiceEditorStorageMigrationResult,
+  type InvoiceEditorStoragePreflight,
+  migrateInvoiceEditorStorage,
+  preflightInvoiceEditorStorage,
+} from './migrations/invoiceEditorStorage.js';
 // Money conventions and the major-units → minor-units migration (#2401)
 export {
   COMMERCE_MONEY_COLUMNS,

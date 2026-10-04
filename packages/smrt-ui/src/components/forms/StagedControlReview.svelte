@@ -153,7 +153,9 @@ $effect(() => {
 $effect(() => {
   if (!formElement) return;
   const element = formElement;
-  const refreshAfterFieldEdit = () => refresh();
+  // Removing a focused input can dispatch change during a Svelte block effect.
+  // This DOM event refresh is independent of the block's reactive evaluation.
+  const refreshAfterFieldEdit = () => untrack(refresh);
   const refreshAfterReset = () => queueMicrotask(refresh);
   const discardAfterResetGesture = (event: MouseEvent) => {
     const target = event.target;

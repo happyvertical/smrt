@@ -1,0 +1,28 @@
+import { expect, test } from '@playwright/test';
+test('native choices, readonly association, disabled option omission, country fallback and reset', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(String(error)));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/e2e/selectors.html');
+  const currency = page.getByLabel('Currency', { exact: true });
+  await expect(currency).toHaveValue('');
+  await page.getByRole('button', { name: 'Submit', exact: true }).click();
+  await expect(currency).toBeFocused();
+  await currency.selectOption('CAD');
+  await currency.focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('Country', { exact: true })).toBeFocused();
+  await page.getByLabel('Country', { exact: true }).selectOption('GB');
+  await expect(page.getByLabel('Province', { exact: true })).toHaveValue('ON');
+  await page.getByLabel('Province', { exact: true }).fill('Greater London');
+  // Removing the focused fallback input dispatches change during Svelte teardown.
+  await page.getByLabel('Country', { exact: true }).selectOption('CA');
+  await expect(page.getByLabel('Province', { exact: true })).toHaveValue('Greater London');
+  await page.getByLabel('Country', { exact: true }).selectOption('GB');
+  await page.getByRole('button', { name: 'Submit', exact: true }).click();
+  await expect(page.getByLabel('Result')).toHaveText(JSON.stringify({ currency: 'CAD', country: 'GB', province: 'Greater London', retained: ' raw ' }));
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await expect(currency).toHaveValue('');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});

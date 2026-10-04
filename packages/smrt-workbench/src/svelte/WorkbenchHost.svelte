@@ -1616,6 +1616,7 @@ function apiTabCount(
   }
 
   .workbench-main {
+    grid-template-columns: minmax(0, 1fr);
     align-content: start;
     padding: 1rem;
     gap: 1rem;
@@ -1628,6 +1629,11 @@ function apiTabCount(
     align-items: start;
     border-bottom: 1px solid var(--smrt-color-outline-variant);
     padding-bottom: 1rem;
+  }
+
+  .main-header > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .scope-pills,

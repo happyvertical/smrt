@@ -1,6 +1,6 @@
 # @happyvertical/smrt-commerce
 
-Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (5 STI types), invoices with ledger integration, payments, and fulfillment tracking.
+Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (9 STI types), invoices with ledger integration, payments, and fulfillment tracking.
 
 ## Installation
 
@@ -514,3 +514,31 @@ known limits.
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+## Pricing version UI
+
+`PricingVersionSummary` and `PricingVersionDecision` compose the quote revision
+contract without adding a pricing ledger. Compare versions using
+`QuoteRevisionComparison`; the application owns every decision and native form
+action. See [pricing version presentation](agents/pricing-versions.md).
+
+## Commercial UI composition
+
+Customer addresses and vendor/quote currencies use the shared localized code
+selectors while preserving native field names and rejected raw drafts. See
+[commercial UI contracts and backend boundaries](agents/commercial-ui.md) for
+native forms, recovery, amount units and consumer adoption, plus the focused
+[customer/vendor](agents/customer-vendor-ui.md) and
+[quotation](agents/quote-ui.md) contracts for selector restrictions.
+
+## Invoice preparation UI
+
+`InvoiceLineEditor` and `InvoiceEditor` from `@happyvertical/smrt-commerce/svelte`
+provide editable descriptions/SKUs, fractional quantities, unit prices, flat or
+percentage discounts, explicit or inherited tax, customer, dates, currency and
+terms. Calculated previews use the same exact minor-unit arithmetic exported
+for server handlers from `@happyvertical/smrt-commerce/invoices`.
+`InvoiceAllocationFields` and `InvoiceReview` extend this foundation with
+caller-owned sources and approvals. See [the editor contract](agents/invoice-preparation.md),
+[calculation rules](agents/invoice-calculations.md), and the required
+[existing-database storage migration](agents/invoice-quantity.md).

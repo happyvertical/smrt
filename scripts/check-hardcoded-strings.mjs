@@ -23,6 +23,13 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+// Standards CI installs trusted validator dependencies outside the workspace.
+const acornPath = process.env.SMRT_ACORN_PATH;
+const { tokenizer } = acornPath
+  ? await import(pathToFileURL(acornPath).href)
+  : await import('acorn');
 
 const ROOT = join(import.meta.dirname, '..');
 const PACKAGES = join(ROOT, 'packages');
@@ -104,15 +111,58 @@ function extractMarkup(source) {
 
 /** Blank `{...}` expressions and HTML comments (kept offset-stable). */
 function blankExpressions(markup) {
-  return markup
-    .replace(/<!--[\s\S]*?-->/g, blank)
-    .replace(/\{[\s\S]*?\}/g, blank);
+  let result = '';
+  let cursor = 0;
+  while (cursor < markup.length) {
+    if (markup.startsWith('<!--', cursor)) {
+      const close = markup.indexOf('-->', cursor + 4);
+      const end = close < 0 ? markup.length : close + 3;
+      result += blank(markup.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+    if (markup[cursor] !== '{') {
+      result += markup[cursor++];
+      continue;
+    }
+
+    // Tokenize, rather than parse: Svelte's each/as and snippet syntax is not
+    // a JavaScript expression. Acorn still handles strings, regexes, comments
+    // and nested template interpolations without mistaking their braces for
+    // the Svelte delimiter. Mask only the Svelte directive prefix, not its body.
+    const tail = markup.slice(cursor);
+    const closing = tail.match(/^\{\/[a-z]+\s*\}/);
+    let length = closing?.[0].length;
+    if (!length) {
+      const body = tail.slice(1).replace(/^[#:@](?:else\s+if|[a-z]+)\b/, blank);
+      let depth = 1;
+      try {
+        for (const token of tokenizer(body, { ecmaVersion: 'latest' })) {
+          const label = token.type.label;
+          if (label === '{' || label === '${') depth++;
+          if (label === '}' && --depth === 0) {
+            length = token.end + 1;
+            break;
+          }
+        }
+      } catch {
+        // Malformed input must not swallow subsequent real markup/prose.
+      }
+    }
+    if (length) {
+      result += blank(markup.slice(cursor, cursor + length));
+      cursor += length;
+    } else {
+      result += markup[cursor++];
+    }
+  }
+  return result;
 }
 
 const PROSE = /[A-Za-z][A-Za-z'’]*\s+[A-Za-z][A-Za-z'’]*/; // ≥ 2 letter-words
 const lineOf = (source, index) => source.slice(0, index).split('\n').length;
 
-function findViolations(source) {
+export function findViolations(source) {
   const markup = blankExpressions(extractMarkup(source));
   const violations = [];
 
@@ -125,7 +175,10 @@ function findViolations(source) {
   }
   if (lastEnd < markup.length) gaps.push([lastEnd, markup.length]);
   for (const [start, end] of gaps) {
-    const text = markup.slice(start, end).replace(/&[a-z#0-9]+;/gi, ' ').trim();
+    const text = markup
+      .slice(start, end)
+      .replace(/&[a-z#0-9]+;/gi, ' ')
+      .trim();
     if (text && PROSE.test(text)) {
       violations.push({ line: lineOf(source, start), kind: 'text', text });
     }
@@ -157,43 +210,54 @@ function isInPackageSrc(relPath) {
   return parts[0] === 'packages' && parts[2] === 'src';
 }
 
-const strictHits = [];
-const reportHits = [];
+function main() {
+  const strictHits = [];
+  const reportHits = [];
 
-for (const file of listSvelteFiles(PACKAGES)) {
-  const rel = relative(ROOT, file);
-  const pkg = packageNameOf(rel);
-  if (!pkg || !isInPackageSrc(rel) || SCOPE_EXCLUDED_PACKAGES.has(pkg)) continue;
-  const violations = findViolations(readFileSync(file, 'utf8'));
-  if (violations.length === 0) continue;
-  const bucket = STRICT_PACKAGES.has(pkg) ? strictHits : reportHits;
-  for (const v of violations) bucket.push({ rel, ...v });
+  for (const file of listSvelteFiles(PACKAGES)) {
+    const rel = relative(ROOT, file);
+    const pkg = packageNameOf(rel);
+    if (!pkg || !isInPackageSrc(rel) || SCOPE_EXCLUDED_PACKAGES.has(pkg))
+      continue;
+    const violations = findViolations(readFileSync(file, 'utf8'));
+    if (violations.length === 0) continue;
+    const bucket = STRICT_PACKAGES.has(pkg) ? strictHits : reportHits;
+    for (const v of violations) bucket.push({ rel, ...v });
+  }
+
+  const fmt = (h) =>
+    `  ${h.rel}:${h.line}  [${h.kind}]  ${JSON.stringify(h.text)}`;
+  const showList = process.argv.includes('--list');
+
+  if (reportHits.length > 0) {
+    const pkgs = new Set(reportHits.map((h) => packageNameOf(h.rel)));
+    console.log(
+      `\nℹ️  ${reportHits.length} hardcoded UI string(s) across ${pkgs.size} ` +
+        `report-only package(s) — route through @happyvertical/smrt-svelte/i18n ` +
+        `in later S13 phases (run \`pnpm check:hardcoded-strings --list\` for the list).`,
+    );
+    if (showList) for (const h of reportHits) console.log(fmt(h));
+  }
+
+  if (strictHits.length > 0) {
+    console.error(
+      `\n❌ ${strictHits.length} hardcoded UI string(s) in strict package(s) ` +
+        `[${[...STRICT_PACKAGES].join(', ')}] — route them through ` +
+        `useI18n().t / <Trans> (see docs/content/architecture/i18n.md):`,
+    );
+    for (const h of strictHits) console.error(fmt(h));
+    process.exit(1);
+  }
+
+  if (reportHits.length === 0) {
+    console.log('✓ check-hardcoded-strings: no hardcoded UI strings found.');
+  }
+  process.exit(0);
 }
 
-const fmt = (h) => `  ${h.rel}:${h.line}  [${h.kind}]  ${JSON.stringify(h.text)}`;
-const showList = process.argv.includes('--list');
-
-if (reportHits.length > 0) {
-  const pkgs = new Set(reportHits.map((h) => packageNameOf(h.rel)));
-  console.log(
-    `\nℹ️  ${reportHits.length} hardcoded UI string(s) across ${pkgs.size} ` +
-      `report-only package(s) — route through @happyvertical/smrt-svelte/i18n ` +
-      `in later S13 phases (run \`pnpm check:hardcoded-strings --list\` for the list).`,
-  );
-  if (showList) for (const h of reportHits) console.log(fmt(h));
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main();
 }
-
-if (strictHits.length > 0) {
-  console.error(
-    `\n❌ ${strictHits.length} hardcoded UI string(s) in strict package(s) ` +
-      `[${[...STRICT_PACKAGES].join(', ')}] — route them through ` +
-      `useI18n().t / <Trans> (see docs/content/architecture/i18n.md):`,
-  );
-  for (const h of strictHits) console.error(fmt(h));
-  process.exit(1);
-}
-
-if (reportHits.length === 0) {
-  console.log('✓ check-hardcoded-strings: no hardcoded UI strings found.');
-}
-process.exit(0);

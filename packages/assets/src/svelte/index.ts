@@ -83,3 +83,33 @@ ModuleUIRegistry.register(
   'asset-create-modal',
   CreateAssetModal,
 );
+
+import AttachmentList from './components/AttachmentList.svelte';
+import AttachmentPanel from './components/AttachmentPanel.svelte';
+import AttachmentUpload from './components/AttachmentUpload.svelte';
+
+export type {
+  AssetAttachment,
+  AssetAttachmentVersion,
+  AttachmentListProps,
+  AttachmentPanelProps,
+  AttachmentRequestField,
+  AttachmentUploadProps,
+} from './attachments/types.js';
+export { AttachmentList, AttachmentPanel, AttachmentUpload };
+
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'attachment-list',
+  AttachmentList,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'attachment-upload',
+  AttachmentUpload,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'attachment-panel',
+  AttachmentPanel,
+);

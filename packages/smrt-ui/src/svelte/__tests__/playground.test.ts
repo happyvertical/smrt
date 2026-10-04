@@ -5,6 +5,7 @@ describe('smrt-ui playground', () => {
   it('publishes themed base-control, data-table, and capture previews', () => {
     expect(playground.packageName).toBe('@happyvertical/smrt-ui');
     expect(playground.entries.map((entry) => entry.id)).toEqual([
+      'code-selectors',
       'base-controls',
       'interactive-controls',
       'feedback-overlays',
