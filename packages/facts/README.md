@@ -248,3 +248,43 @@ the migration/backfill instruction, retaining the original error as cause.
 `Fact` declares `catalog_search` as its permitted final derived column; custom
 normalization must preserve that declaration and cannot replace framework
 identity, tenant, revision or conflict columns.
+
+### Reconciliation access scopes
+
+`reconcile({ rawInput, tenantId, accessScope: 'public' })` partitions candidates
+by both tenant and an exact, application-defined scope token. Exact matching and
+semantic ranking exclude other scopes before candidate text is hydrated or sent
+to disambiguation. Created facts and evolution branches retain that scope;
+`branch()` rejects an explicit scope change. Use public collection predicates
+such as `facts.list({ where: { tenantId, accessScope: 'public' } })` and scoped
+`get()` calls when reusing results. Generic catalog and evolution APIs do not
+implicitly authorize a scope: the application must authorize access and apply
+its scope predicate before returning evidence or associating article facts.
+
+Tokens are case-sensitive, nonblank strings of at most 256 characters without
+control characters or unpaired surrogates. They are partition identifiers, **not authorization
+credentials**. Applications must derive them from trusted authorization state;
+never accept an arbitrary client-selected token as permission to read a scope.
+A fact must only aggregate sources with the visibility represented by its scope.
+Source metadata does not establish candidate visibility.
+
+`accessScope` is server-managed: generated REST/MCP create and update inputs
+strip it while allowing ordinary writable fields. Trusted server-side
+`FactCollection.create()`, `reconcile()` and `branch()` retain persistence access.
+Owner-authorized migration code can assign the field and call `save()` in a
+controlled system context with reconciliation writers stopped; no generated
+reclassification endpoint is exposed. Do not expose that operator procedure or
+forward untrusted request bodies to direct collection writes.
+
+Run the standard `smrt db:migrate` before deploying writers using this field.
+The nullable `Fact.accessScope` column leaves existing rows unclassified.
+Omitting `accessScope` (or passing `null`) searches only this legacy NULL
+partition; explicit scopes never include legacy rows. No migration guesses
+visibility from provenance metadata. Classify legacy facts only through an
+owner-authorized data migration with reconciliation writers stopped, or leave them separate and re-extract into the
+appropriate scope. A scope change is not an ordinary reconciliation operation.
+
+PostgreSQL reconciliation retains its transactional fact/source write and
+per-identity lock. SQLite retains its existing partial-write contract: a failed
+source write may leave the fact, and retry finds the same scoped exact fact.
+Do not record an application extraction receipt until all writes succeed.

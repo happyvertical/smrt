@@ -727,6 +727,7 @@ export class FactCollection extends SmrtCollection<Fact> {
     const candidates = await this.list({
       where: {
         tenantId,
+        accessScope: options.accessScope ?? null,
         domain: options.domain ?? '',
         type: options.type ?? 'assertion',
         status: 'active',
@@ -748,13 +749,15 @@ export class FactCollection extends SmrtCollection<Fact> {
   ): boolean {
     return (
       (fact.tenantId ?? null) ===
-      this.resolveReconciliationTenant(options.tenantId)
+        this.resolveReconciliationTenant(options.tenantId) &&
+      (fact.accessScope ?? null) === (options.accessScope ?? null)
     );
   }
 
   private reconciliationIdentity(options: ReconcileOptions): string {
     return [
       this.resolveReconciliationTenant(options.tenantId) ?? '__global__',
+      options.accessScope ?? '__legacy__',
       options.domain ?? '',
       options.type ?? 'assertion',
       normalizeText(options.rawInput),
@@ -831,6 +834,21 @@ export class FactCollection extends SmrtCollection<Fact> {
    * 4. Return { action, fact, source?, similarity?, matchedFact? }
    */
   async reconcile(options: ReconcileOptions): Promise<ReconcileResult> {
+    if (
+      options.accessScope != null &&
+      (typeof options.accessScope !== 'string' ||
+        !options.accessScope.trim() ||
+        options.accessScope.length > 256 ||
+        /[\uD800-\uDFFF]/u.test(options.accessScope) ||
+        [...options.accessScope].some(
+          (character) =>
+            character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+        ))
+    ) {
+      throw new Error(
+        'accessScope must be a nonempty string of at most 256 characters without control characters or unpaired surrogates',
+      );
+    }
     return this.withReconciliationQueue(options, () =>
       this.withExactReconciliationLock(options, (collection) =>
         collection.reconcileLocked(options),
@@ -901,21 +919,25 @@ export class FactCollection extends SmrtCollection<Fact> {
       };
     }
 
-    // 1. Semantic search against existing facts
-    let matches: Array<Fact & { _similarity: number }> = [];
-    try {
-      matches = await this.semanticSearch(rawInput, {
-        limit: 5,
-        minSimilarity: conflictThreshold,
-        where: {
-          tenantId: this.resolveReconciliationTenant(options.tenantId),
-        },
-      });
-      matches = matches.filter((match) =>
-        this.matchesSemanticReconciliationScope(match, options),
-      );
-    } catch {
-      // Semantic search may fail if no embeddings exist yet — treat as no match
+    // Filter IDs before ranking or hydrating candidate text. Provider absence is
+    // recoverable; authorization/storage failures must propagate, never create.
+    const scope = {
+      tenantId: this.resolveReconciliationTenant(options.tenantId),
+      accessScope: options.accessScope ?? null,
+    };
+    const search = await this.semanticSearchIdsWithAvailability(rawInput, {
+      limit: 5,
+      minSimilarity: conflictThreshold,
+      where: scope,
+    });
+    const matches: Array<Fact & { _similarity: number }> = [];
+    if (search.available) {
+      for (const match of search.matches) {
+        const fact = await this.get({ id: match.id, ...scope });
+        if (fact && this.matchesSemanticReconciliationScope(fact, options)) {
+          matches.push(Object.assign(fact, { _similarity: match.similarity }));
+        }
+      }
     }
 
     let action: 'created' | 'merged' | 'branched';
@@ -930,6 +952,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         textRaw: rawInput,
         type,
         domain,
+        accessScope: options.accessScope ?? null,
         tenantId: this.resolveReconciliationTenant(options.tenantId),
         status: 'active',
         sourceCount: source ? 1 : 0,
@@ -988,6 +1011,7 @@ export class FactCollection extends SmrtCollection<Fact> {
               textRaw: rawInput,
               type,
               domain,
+              accessScope: options.accessScope ?? null,
               tenantId: this.resolveReconciliationTenant(options.tenantId),
               status: 'active',
               sourceCount: source ? 1 : 0,
@@ -1299,6 +1323,13 @@ export class FactCollection extends SmrtCollection<Fact> {
       throw new Error(`Predecessor fact not found: ${previousFactId}`);
     }
 
+    if (
+      data.accessScope !== undefined &&
+      data.accessScope !== predecessor.accessScope
+    ) {
+      throw new Error('A fact branch must retain its predecessor accessScope');
+    }
+
     // Pre-process metadata if it's an object: the persisted column is a
     // serialized string, so normalize object metadata before create.
     const { metadata, ...rest } = data;
@@ -1311,6 +1342,7 @@ export class FactCollection extends SmrtCollection<Fact> {
     // Create successor fact with previousFactId and evolutionType
     const successor = await this.create({
       ...createData,
+      accessScope: predecessor.accessScope,
       previousFactId,
       evolutionType,
       status: data.status || 'active',

@@ -36,12 +36,14 @@ describePostgres('exact fact reconciliation on PostgreSQL (#3400)', () => {
     vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
       new Error('embedding provider unavailable'),
     );
-    vi.spyOn(left, 'semanticSearch').mockRejectedValue(
-      new Error('embedding provider unavailable'),
-    );
-    vi.spyOn(right, 'semanticSearch').mockRejectedValue(
-      new Error('embedding provider unavailable'),
-    );
+    vi.spyOn(
+      left as any,
+      'semanticSearchIdsWithAvailability',
+    ).mockResolvedValue({ available: false });
+    vi.spyOn(
+      right as any,
+      'semanticSearchIdsWithAvailability',
+    ).mockResolvedValue({ available: false });
 
     const [first, second] = await Promise.all([
       left.reconcile({
@@ -95,14 +97,15 @@ describePostgres('exact fact reconciliation on PostgreSQL (#3400)', () => {
     const overlap = new Promise<void>((resolve) => {
       release = resolve;
     });
-    vi.spyOn(FactCollection.prototype, 'semanticSearch').mockImplementation(
-      async () => {
-        entered += 1;
-        if (entered === 2) release();
-        await overlap;
-        throw new Error('embedding provider unavailable');
-      },
-    );
+    vi.spyOn(
+      FactCollection.prototype as any,
+      'semanticSearchIdsWithAvailability',
+    ).mockImplementation(async () => {
+      entered += 1;
+      if (entered === 2) release();
+      await overlap;
+      return { available: false };
+    });
     const originalCreate = FactSourceCollection.prototype.create;
     vi.spyOn(FactSourceCollection.prototype, 'create').mockImplementation(
       async function (input) {
