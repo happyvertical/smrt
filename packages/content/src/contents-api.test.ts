@@ -56,12 +56,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS content_versions_content_id_version_idx ON con
 
 vi.mock('$lib/server/smrt', () => {
   return {
-    getCollection: async () => {
-      if (!currentContents) {
-        throw new Error('Test collection not initialized');
-      }
+    // Defined but absent, as in the real module: generated routes probe the
+    // deprecated accessors before falling back to `runtime`.
+    getCollection: undefined,
+    getSmrtConfig: undefined,
+    runtime: {
+      getCollection: async () => {
+        if (!currentContents) {
+          throw new Error('Test collection not initialized');
+        }
 
-      return currentContents;
+        return currentContents;
+      },
+      classOptions: () => ({}),
     },
   };
 });

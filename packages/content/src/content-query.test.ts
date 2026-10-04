@@ -65,9 +65,16 @@ import { POST as queryRoute } from './routes/api/v1/contents/query/+server';
 let routeContents: Contents | undefined;
 
 vi.mock('$lib/server/smrt', () => ({
-  getCollection: async () => {
-    if (!routeContents) throw new Error('Test collection not initialized');
-    return routeContents;
+  // Defined but absent, as in the real module: generated routes probe the
+  // deprecated accessors before falling back to `runtime`.
+  getCollection: undefined,
+  getSmrtConfig: undefined,
+  runtime: {
+    getCollection: async () => {
+      if (!routeContents) throw new Error('Test collection not initialized');
+      return routeContents;
+    },
+    classOptions: () => ({}),
   },
 }));
 

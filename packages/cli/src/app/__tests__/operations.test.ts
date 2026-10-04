@@ -35,6 +35,8 @@ import {
 import {
   clearCache,
   resolveApplicationRuntime,
+  resolveEffectiveApplicationRuntime,
+  type SmrtConfig,
 } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -337,6 +339,28 @@ describe('runtime profile resolution (#3410 item 1)', () => {
     withConfig(fixture, `export default { runtime: ${value} };\n`);
     await expect(resolveConfiguredRuntime(fixture.app)).rejects.toThrow(
       /Invalid application runtime profile/,
+    );
+  });
+
+  it.each([
+    ['null', null],
+    ['false', false],
+    ['0', 0],
+    ["''", ''],
+  ])('rejects runtime: %s with the shared resolver error the web runtime also throws (#3446)', async (literal, value) => {
+    const fixture = makeFixture();
+    withConfig(fixture, `export default { runtime: ${literal} };\n`);
+    let expected = '';
+    try {
+      resolveEffectiveApplicationRuntime({
+        runtime: value,
+      } as unknown as SmrtConfig);
+    } catch (error) {
+      expected = (error as Error).message;
+    }
+    expect(expected).toMatch(/^Invalid application runtime profile/);
+    await expect(resolveConfiguredRuntime(fixture.app)).rejects.toThrow(
+      expected,
     );
   });
 

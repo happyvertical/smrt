@@ -4,6 +4,10 @@ import {
   resolveAIProviderConfig,
   tryResolveAIProviderConfig,
 } from './ai.js';
+import {
+  type ResolvedCliDatabase,
+  resolveCliDatabase,
+} from './database-environment.js';
 import { loadConfig as _loadConfig, clearConfigCache } from './loader.js';
 import {
   setConfig as _setConfig,
@@ -41,6 +45,13 @@ export {
   tryResolveAIProviderConfig,
   withAIAliases,
 } from './ai.js';
+
+// Re-export the CLI database environment fallback types
+export type {
+  CliDatabaseSource,
+  CliDatabaseType,
+  ResolvedCliDatabase,
+} from './database-environment.js';
 
 // Re-export config export utilities
 export {
@@ -237,7 +248,56 @@ export function getConfig(): SmrtConfig | null {
  * effective provider composition violates a profile invariant.
  */
 export function resolveConfiguredApplicationRuntime(): Readonly<ResolvedApplicationRuntime> {
-  const loadedConfig = getLoadedConfig();
+  return resolveRuntimeLayers(getLoadedConfig());
+}
+
+/**
+ * Resolve the runtime an application actually runs with, from its loaded
+ * file config plus {@link setConfig} runtime overrides.
+ *
+ * The one rule `smrt app` and the SvelteKit runtime share (#3446): when
+ * neither layer declares a `runtime` block — the property is absent, or
+ * explicitly `undefined` — the application runs the `local` profile.
+ * Otherwise this is {@link resolveConfiguredApplicationRuntime}, so a present
+ * value that is not a runtime block (`null`, `false`, `0`, `''`, a string, an
+ * array) fails closed with the same {@link RuntimeProfileValidationError}
+ * instead of silently selecting `local`.
+ *
+ * @param config - The file configuration returned by {@link loadConfig};
+ * `null`/`undefined` means no file configuration.
+ * @returns A validated, deterministic, secret-free runtime snapshot.
+ * @throws {RuntimeProfileValidationError} When a declared runtime block is not
+ * an object or violates a profile invariant.
+ *
+ * @example
+ * ```ts
+ * const runtime = resolveEffectiveApplicationRuntime(await loadConfig());
+ * ```
+ */
+export function resolveEffectiveApplicationRuntime(
+  config: SmrtConfig | null | undefined,
+): Readonly<ResolvedApplicationRuntime> {
+  if (
+    !declaresRuntime(config ?? null) &&
+    !declaresRuntime(getRuntimeConfig())
+  ) {
+    return _resolveApplicationRuntime({ profile: 'local' });
+  }
+  return resolveRuntimeLayers(config ?? null);
+}
+
+/** An own `runtime` property whose value is anything but `undefined`. */
+function declaresRuntime(layer: Partial<SmrtConfig> | null): boolean {
+  return (
+    layer !== null &&
+    Object.hasOwn(layer, 'runtime') &&
+    layer.runtime !== undefined
+  );
+}
+
+function resolveRuntimeLayers(
+  loadedConfig: SmrtConfig | null,
+): Readonly<ResolvedApplicationRuntime> {
   const runtimeConfig = getRuntimeConfig();
   const fileRuntime = (
     loadedConfig && Object.hasOwn(loadedConfig, 'runtime')
@@ -368,6 +428,36 @@ export function getModuleConfig<T extends Record<string, unknown>>(
   const final = mergeConfigs(withModuleConfig, runtimeModuleConfig, {});
 
   return final;
+}
+
+/**
+ * Resolve the database `smrt` commands and `smrt-dev-mcp` use: the declared
+ * `packages.cli.database` from any config layer, else `DATABASE_URL` /
+ * `DATABASE_TYPE` (#3410, #3446).
+ *
+ * A configured `database.url` always wins and the environment is not read.
+ * Otherwise `DATABASE_URL` supplies the URL and its engine comes from the
+ * config's `database.type`, else `DATABASE_TYPE`, else the URL scheme. An
+ * unsupported `DATABASE_TYPE` yields `invalid-environment` instead of a guess.
+ * Read-only: nothing is written to the config. Call after {@link loadConfig}.
+ *
+ * @param env - Environment to read (defaults to `process.env`).
+ * @returns The source and, for `config`/`environment`, the database block.
+ *
+ * @example
+ * ```ts
+ * await loadConfig();
+ * const { source, database } = resolveCliDatabaseConfig();
+ * ```
+ */
+export function resolveCliDatabaseConfig(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ResolvedCliDatabase {
+  // No defaults: only a value some config layer actually declares counts.
+  const declared = getPackageConfig<{
+    database?: { url?: unknown; type?: unknown };
+  }>('cli').database;
+  return resolveCliDatabase(declared, env);
 }
 
 /**

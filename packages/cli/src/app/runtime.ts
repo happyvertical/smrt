@@ -200,29 +200,22 @@ export function createBrowserOpener(sourceRoot: string): (url: string) => void {
 /**
  * Default runtime resolver: reload `smrt.config` without the cache.
  *
- * A config with no `runtime` block (or no config file) is the `local`
- * profile — the same rule the web process applies in app-runtime's SvelteKit
- * entry — so the operator and the server it manages never disagree. A
- * present but invalid block still fails closed.
+ * Profile selection is `resolveEffectiveApplicationRuntime()` from
+ * smrt-config — the rule the web process applies in app-runtime's SvelteKit
+ * entry — so the operator and the server it manages never disagree: no
+ * `runtime` block (or no config file) is the `local` profile, and a present
+ * value that is not a valid block (`null`, `false`, `0`, `''`, ...) fails
+ * closed.
  */
 export async function resolveConfiguredRuntime(
   sourceRoot: string,
 ): Promise<ResolvedApplicationRuntime> {
-  const {
-    loadConfig,
-    resolveApplicationRuntime,
-    resolveConfiguredApplicationRuntime,
-  } = await import('@happyvertical/smrt-config');
+  const { loadConfig, resolveEffectiveApplicationRuntime } = await import(
+    '@happyvertical/smrt-config'
+  );
   const loaded = await loadConfig({ cache: false, searchFrom: sourceRoot });
-  // Only an absent property (or an explicit `undefined`) is "no runtime
-  // block". A present falsy value (`null`, `false`, `0`, `''`) goes to the
-  // validator, which rejects it, rather than silently selecting local.
-  const declaresRuntime =
-    Object.hasOwn(loaded, 'runtime') && loaded.runtime !== undefined;
-  return (
-    declaresRuntime
-      ? resolveConfiguredApplicationRuntime()
-      : resolveApplicationRuntime({ profile: 'local' })
+  return resolveEffectiveApplicationRuntime(
+    loaded,
   ) as ResolvedApplicationRuntime;
 }
 

@@ -17,40 +17,30 @@
  *    sqlite — the same default the commands apply to a typeless config).
  * 3. The built-in default (`:memory:`), which the schema commands refuse.
  *
+ * The rule lives in smrt-config (`resolveCliDatabaseConfig`) so `smrt-dev-mcp`
+ * resolves the same database (#3446); this module applies it to the CLI.
+ *
  * URL and engine travel as a pair: a configured URL never combines with an
  * environment engine. An unrecognised `DATABASE_TYPE` disables the fallback
  * (with a warning that names the variable, never its URL) rather than guess.
  */
 
+import type {
+  CliDatabaseSource,
+  CliDatabaseType as ConfigCliDatabaseType,
+} from '@happyvertical/smrt-config';
+
 /** Database engines the CLI's `packages.cli.database.type` accepts. */
-export type CliDatabaseType = 'sqlite' | 'postgres';
+export type CliDatabaseType = ConfigCliDatabaseType;
 
 /** Where {@link applyDatabaseEnvironment} found the effective database. */
-export type DatabaseConfigSource =
-  /** A config layer declares `database.url`; the environment was not read. */
-  | 'config'
-  /** `DATABASE_URL` was applied as the runtime `packages.cli.database`. */
-  | 'environment'
-  /** `DATABASE_URL` is set but `DATABASE_TYPE` is not a supported engine. */
-  | 'invalid-environment'
-  /** Neither the config nor the environment names a database. */
-  | 'none';
-
-const POSTGRES_URL = /^postgres(?:ql)?:\/\//i;
-
-function environmentType(value: string | undefined): CliDatabaseType | null {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized === 'sqlite') return 'sqlite';
-  if (normalized === 'postgres' || normalized === 'postgresql') {
-    return 'postgres';
-  }
-  throw new TypeError('DATABASE_TYPE must be sqlite or postgres.');
-}
+export type DatabaseConfigSource = CliDatabaseSource;
 
 /**
  * Apply `DATABASE_URL`/`DATABASE_TYPE` as the CLI database when no config
  * layer declares `packages.cli.database.url`. Call after `loadConfig()`.
+ * The precedence itself is smrt-config's `resolveCliDatabaseConfig()`, which
+ * `smrt-dev-mcp` shares (#3446).
  *
  * @param env - Environment to read (defaults to `process.env`).
  * @param warn - Sink for the one-line invalid-type warning.
@@ -61,34 +51,16 @@ export async function applyDatabaseEnvironment(
   warn: (message: string) => void = (message) =>
     void process.stderr.write(`${message}\n`),
 ): Promise<DatabaseConfigSource> {
-  const { getPackageConfig, setConfig } = await import(
+  const { resolveCliDatabaseConfig, setConfig } = await import(
     '@happyvertical/smrt-config'
   );
-  // No defaults: only a value some config layer actually declares counts.
-  const declared = getPackageConfig<{
-    database?: { url?: unknown; type?: unknown };
-  }>('cli').database;
-  if (typeof declared?.url === 'string' && declared.url !== '') {
-    return 'config';
-  }
-
-  const url = env.DATABASE_URL?.trim();
-  if (!url) return 'none';
-
-  let type: CliDatabaseType;
-  try {
-    type =
-      declared?.type === 'sqlite' || declared?.type === 'postgres'
-        ? declared.type
-        : (environmentType(env.DATABASE_TYPE) ??
-          (POSTGRES_URL.test(url) ? 'postgres' : 'sqlite'));
-  } catch (error) {
+  const resolved = resolveCliDatabaseConfig(env);
+  if (resolved.source === 'invalid-environment') {
     warn(
-      `⚠️  Ignoring DATABASE_URL: ${(error as Error).message} Configure packages.cli.database in smrt.config instead.`,
+      `⚠️  Ignoring DATABASE_URL: ${resolved.error} Configure packages.cli.database in smrt.config instead.`,
     );
-    return 'invalid-environment';
+  } else if (resolved.source === 'environment' && resolved.database) {
+    setConfig({ packages: { cli: { database: resolved.database } } });
   }
-
-  setConfig({ packages: { cli: { database: { type, url } } } });
-  return 'environment';
+  return resolved.source;
 }

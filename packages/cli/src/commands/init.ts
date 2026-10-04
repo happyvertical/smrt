@@ -185,68 +185,52 @@ export default {
 `;
 
 /**
- * Template for src/lib/server/smrt.ts
+ * Template for src/lib/server/smrt.ts: the `runtime` export generated routes
+ * resolve collections through (core's `createGeneratedCollectionAccess`).
+ * It deliberately exports no `getCollection`/`getSmrtConfig`, which are
+ * deprecated (#3416, #3446).
  */
 const SERVER_SMRT_TEMPLATE = `/**
- * Centralized SMRT Configuration
+ * The application's SMRT runtime, as generated API routes consume it:
+ * they call \`runtime.getCollection()\` / \`runtime.classOptions()\` on every
+ * request. Call them per request in your own routes too.
  *
- * This file provides configuration for all SMRT objects in your project.
- * Import this file in your routes to get properly configured collections.
+ * For the full application runtime (profiles, owner bootstrap, sessions,
+ * tenancy), replace this object with \`createSmrtSvelteKitRuntime()\` from
+ * \`@happyvertical/smrt-app-runtime/sveltekit\` and mount its \`handle\` and
+ * \`init\` in \`src/hooks.server.ts\`.
  */
 
-import { ObjectRegistry, type SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  type GeneratedCollectionRuntime,
+  ObjectRegistry,
+  type SmrtClassOptions,
+  type SmrtObject,
+} from '@happyvertical/smrt-core';
 
 // Import all SMRT objects to register them
 import '../objects/index.js';
 
-/**
- * Per-object configuration overrides
- *
- * Use this to configure specific objects differently from defaults.
- * Example:
- *   AuditLog: { db: { url: process.env.AUDIT_DB_URL!, type: 'postgres' } }
- */
-const objectOverrides: Record<string, Partial<SmrtClassOptions>> = {
-  // Add object-specific overrides here
-};
+// Per-object overrides, for example:
+//   AuditLog: { db: { type: 'postgres', url: process.env.AUDIT_DB_URL! } }
+const classOverrides: Record<string, Partial<SmrtClassOptions>> = {};
 
-/**
- * Get default configuration for SMRT objects
- */
-function getDefaultConfig(): SmrtClassOptions {
+function classOptions(className: string): SmrtClassOptions {
   return {
     db: {
       url: process.env.DATABASE_URL || './data/app.db',
       type: (process.env.DATABASE_TYPE as 'sqlite' | 'postgres') || 'sqlite',
     },
-    ai: process.env.OPENAI_API_KEY
-      ? {
-          type: 'openai',
-          apiKey: process.env.OPENAI_API_KEY,
-        }
-      : undefined,
+    ...classOverrides[className],
   };
 }
 
-/**
- * Get configuration for a specific SMRT class
- */
-export function getSmrtConfig(className: string): SmrtClassOptions {
-  const defaults = getDefaultConfig();
-  const override = objectOverrides[className];
-  return override ? { ...defaults, ...override } : defaults;
-}
-
-/**
- * Get a collection instance for a SMRT class
- *
- * Usage in routes:
- *   const products = await getCollection<Product>('Product');
- *   const items = await products.list();
- */
-export async function getCollection<T>(className: string) {
-  return await ObjectRegistry.getCollection<T>(className, getSmrtConfig(className));
-}
+export const runtime = {
+  classOptions,
+  getCollection<T extends SmrtObject = SmrtObject>(className: string) {
+    return ObjectRegistry.getCollection<T>(className, classOptions(className));
+  },
+} satisfies GeneratedCollectionRuntime;
 `;
 
 /**
@@ -434,7 +418,7 @@ export const initCommands: Record<string, CLICommand> = {
       writeFile(
         'src/lib/server/smrt.ts',
         SERVER_SMRT_TEMPLATE,
-        'Centralized SMRT config',
+        'SMRT runtime for generated routes',
       );
 
       // 3. Create src/lib/objects/index.ts

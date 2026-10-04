@@ -23,6 +23,10 @@ inspection. It reads no environment variables and contains no connection
 strings, paths, credentials, or secret values. Use
 `resolveApplicationRuntime(config)` only when resolving an explicit value, such
 as a test fixture; `getConfig()` retains its legacy loaded-file-only semantics.
+`smrt app` and the SvelteKit runtime resolve through
+`resolveEffectiveApplicationRuntime(loadedConfig)`: no `runtime` block selects
+`local`, and a present value that is not a block (`null`, `false`, `0`, `''`)
+fails closed.
 
 ## Safe presets
 

@@ -35,7 +35,7 @@ let dbDir: string;
 let dbUrl: string;
 let admin: DatabaseInterface;
 
-const ENV_KEYS = ['SMRT_DEV_DB_URL'] as const;
+const ENV_KEYS = ['SMRT_DEV_DB_URL', 'DATABASE_URL', 'DATABASE_TYPE'] as const;
 
 beforeEach(async () => {
   dbDir = mkdtempSync(join(tmpdir(), 'smrt-dev-mcp-runtime-'));
