@@ -807,7 +807,11 @@ export class FactCollection extends SmrtCollection<Fact> {
     }
 
     return database.transaction(async (transaction) => {
-      return this.withDatabase(transaction, run);
+      const transactionCollection = await FactCollection.create({
+        ...this.options,
+        db: transaction,
+      });
+      return run(transactionCollection);
     });
   }
 
