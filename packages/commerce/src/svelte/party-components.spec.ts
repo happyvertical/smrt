@@ -46,6 +46,35 @@ const vendor: VendorDisplayData = {
   contacts: [{ id: 'contact-2', name: 'Morgan Lee', phone: '+1 403 555 0117' }],
 };
 
+function customerMoney(
+  amountMinor: number,
+  currency = 'CAD',
+  minorUnitExponent = 2,
+): string {
+  return render(CustomerDetail, {
+    props: {
+      customer: { ...customer, creditLimitMinor: amountMinor },
+      currency,
+      minorUnitExponent,
+      locale: 'en',
+    },
+  }).body;
+}
+
+function vendorMoney(
+  amountMinor: number,
+  currency = 'CAD',
+  minorUnitExponent = 2,
+): string {
+  return render(VendorDetail, {
+    props: {
+      vendor: { ...vendor, minimumOrderMinor: amountMinor, currency },
+      minorUnitExponent,
+      locale: 'en',
+    },
+  }).body;
+}
+
 describe('customer and vendor SSR surfaces', () => {
   it('publishes the party UI slots and registers every public surface', async () => {
     ModuleUIRegistry.clear();
@@ -118,6 +147,33 @@ describe('customer and vendor SSR surfaces', () => {
     expect(vendorHtml).toContain('$500.00');
     expect(vendorHtml).toContain('Morgan Lee');
     expect(vendorHtml).toContain('href="/vendors/vendor-1/edit"');
+  });
+
+  it('formats the safe-integer minor-unit limit exactly in both party details', () => {
+    expect(customerMoney(Number.MAX_SAFE_INTEGER)).toContain(
+      'CA$90,071,992,547,409.91',
+    );
+    expect(vendorMoney(Number.MAX_SAFE_INTEGER)).toContain(
+      'CA$90,071,992,547,409.91',
+    );
+  });
+
+  it.each([
+    ['fractional amount', 1.5, 'CAD', 2],
+    ['not-a-number amount', Number.NaN, 'CAD', 2],
+    ['unsafe amount', Number.MAX_SAFE_INTEGER + 1, 'CAD', 2],
+    ['invalid currency', 100, 'invalid', 2],
+    ['fractional exponent', 100, 'CAD', 1.5],
+    ['unsupported exponent', 100, 'CAD', 101],
+    ['huge exponent', 100, 'CAD', Number.MAX_SAFE_INTEGER],
+    ['infinite exponent', 100, 'CAD', Number.POSITIVE_INFINITY],
+  ])('renders localized unavailable money for a %s in both party details', (_label, amountMinor, currency, minorUnitExponent) => {
+    expect(customerMoney(amountMinor, currency, minorUnitExponent)).toContain(
+      'Amount unavailable',
+    );
+    expect(vendorMoney(amountMinor, currency, minorUnitExponent)).toContain(
+      'Amount unavailable',
+    );
   });
 
   it('keeps customer error values, hidden tokens, custom names, and native submitter intent', () => {
@@ -234,6 +290,7 @@ describe('customer and vendor SSR surfaces', () => {
     expect(html).toContain('Art');
     expect(html).toContain('Zustand');
     expect(html).toContain('7 Tage Lieferzeit');
+    expect(html).toContain('Betrag nicht verfügbar');
     expect(html).toContain('Notizen');
     expect(html).toContain('Name für Kunde');
   });

@@ -267,12 +267,28 @@ export function formatPartyMinorUnits(
   minorUnitExponent = 2,
   locale = 'en',
 ): string {
-  return new Intl.NumberFormat(locale, {
+  if (!Number.isSafeInteger(amountMinor))
+    throw new RangeError('Party amountMinor must be a safe integer');
+  if (!Number.isInteger(minorUnitExponent) || minorUnitExponent < 0)
+    throw new RangeError(
+      'Party minorUnitExponent must be a non-negative integer',
+    );
+  const formatter = new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     minimumFractionDigits: minorUnitExponent,
     maximumFractionDigits: minorUnitExponent,
-  }).format(amountMinor / 10 ** minorUnitExponent);
+  });
+  const negative = amountMinor < 0;
+  const raw = BigInt(Math.abs(amountMinor))
+    .toString()
+    .padStart(minorUnitExponent + 1, '0');
+  const majorUnits = minorUnitExponent
+    ? `${negative ? '-' : ''}${raw.slice(0, -minorUnitExponent)}.${raw.slice(-minorUnitExponent)}`
+    : `${negative ? '-' : ''}${raw}`;
+  // Node 26's ECMA-402 implementation accepts a decimal string without
+  // coercing it through Number, preserving all safe-integer minor units.
+  return (formatter.format as unknown as (value: string) => string)(majorUnits);
 }
 
 /** Compact a postal address for read-only display. */

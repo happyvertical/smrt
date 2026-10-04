@@ -56,6 +56,7 @@ const singular = $derived(
 );
 const plural = $derived(labels.plural ?? t(M['commerce.customer.plural']));
 const notRecorded = $derived(t(M['commerce.party.not_recorded']));
+const amountUnavailable = $derived(t(M['commerce.party.amount_unavailable']));
 const shippingAddress = $derived(
   formatPartyAddress(customer.defaultShippingAddress),
 );
@@ -75,6 +76,20 @@ function customerTypeLabel(value: string | undefined): string {
   if (value === 'wholesale') return t(M['commerce.customer.type_wholesale']);
   if (value === 'retail') return t(M['commerce.customer.type_retail']);
   return value ?? notRecorded;
+}
+
+function creditLimit(amountMinor: number): string {
+  try {
+    return formatPartyMinorUnits(
+      amountMinor,
+      currency,
+      minorUnitExponent,
+      locale,
+    );
+  } catch (error) {
+    if (error instanceof RangeError) return amountUnavailable;
+    throw error;
+  }
 }
 </script>
 
@@ -99,7 +114,7 @@ function customerTypeLabel(value: string | undefined): string {
     <Card padding="md">
       <h2>{t(M['commerce.party.commercial_terms'])}</h2>
       <dl>
-        <dt>{t(M['commerce.customer.credit_limit'])}</dt><dd>{customer.creditLimitMinor === undefined ? notRecorded : formatPartyMinorUnits(customer.creditLimitMinor, currency, minorUnitExponent, locale)}</dd>
+        <dt>{t(M['commerce.customer.credit_limit'])}</dt><dd>{customer.creditLimitMinor === undefined ? notRecorded : creditLimit(customer.creditLimitMinor)}</dd>
         <dt>{t(M['commerce.party.payment_terms'])}</dt><dd>{customer.paymentTerms || notRecorded}</dd>
         <dt>{t(M['commerce.customer.tax_exempt'])}</dt><dd>{customer.taxExempt ? t(M['commerce.party.yes']) : t(M['commerce.party.no'])}</dd>
       </dl>

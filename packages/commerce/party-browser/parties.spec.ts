@@ -16,6 +16,22 @@ test('directories and details remain keyboard accessible at 390px with empty, er
   await expect(page.locator(':focus')).toBeVisible();
 });
 
+test('details preserve exact minor-unit money and recover from invalid metadata in Chromium', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTestId('customer-money-extreme')).toContainText(
+    'CA$90,071,992,547,409.91',
+  );
+  await expect(page.getByTestId('vendor-money-negative')).toContainText(
+    '-CA$0.01',
+  );
+  await expect(
+    page.getByTestId('customer-money-invalid-currency'),
+  ).toContainText('Amount unavailable');
+  await expect(
+    page.getByTestId('vendor-money-invalid-exponent'),
+  ).toContainText('Amount unavailable');
+});
+
 test('retained values and caller payload names are present in browser FormData', async ({ page }) => {
   await page.goto('/');
   const form = page.getByTestId('customer-form').locator('form');

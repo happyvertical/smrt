@@ -24,6 +24,7 @@ setI18nContext(
       'commerce.party.search_named': '{plural} suchen',
       'commerce.party.pagination': 'Seiten für {singular}',
       'commerce.party.no_contact_details': 'Keine Kontaktdaten erfasst',
+      'commerce.party.amount_unavailable': 'Betrag nicht verfügbar',
       'commerce.vendor.lead_time_days': '{days} Tage Lieferzeit',
     },
   }),
@@ -39,6 +40,8 @@ const vendor = {
   profile: { name: 'Beispielanbieter', identityKind: 'person' as const },
   status: 'active',
   leadTimeDays: 7,
+  minimumOrderMinor: Number.NaN,
+  currency: 'CAD',
   notes: 'Interne Angaben',
 };
 </script>

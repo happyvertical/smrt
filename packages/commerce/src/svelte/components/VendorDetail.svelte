@@ -50,12 +50,27 @@ const { t } = useI18n();
 const singular = $derived(labels.singular ?? t(M['commerce.vendor.singular']));
 const plural = $derived(labels.plural ?? t(M['commerce.vendor.plural']));
 const notRecorded = $derived(t(M['commerce.party.not_recorded']));
+const amountUnavailable = $derived(t(M['commerce.party.amount_unavailable']));
 
 function statusLabel(value: string): string {
   if (value === 'active') return t(M['commerce.party.status_active']);
   if (value === 'inactive') return t(M['commerce.party.status_inactive']);
   if (value === 'suspended') return t(M['commerce.party.status_suspended']);
   return value;
+}
+
+function minimumOrder(amountMinor: number): string {
+  try {
+    return formatPartyMinorUnits(
+      amountMinor,
+      vendor.currency ?? 'USD',
+      minorUnitExponent,
+      locale,
+    );
+  } catch (error) {
+    if (error instanceof RangeError) return amountUnavailable;
+    throw error;
+  }
 }
 </script>
 
@@ -80,7 +95,7 @@ function statusLabel(value: string): string {
       <h2>{t(M['commerce.party.commercial_terms'])}</h2>
       <dl>
         <dt>{t(M['commerce.vendor.lead_time'])}</dt><dd>{vendor.leadTimeDays === undefined ? notRecorded : t(M['commerce.vendor.lead_time_days'], { days: vendor.leadTimeDays })}</dd>
-        <dt>{t(M['commerce.vendor.minimum_order'])}</dt><dd>{vendor.minimumOrderMinor === undefined ? notRecorded : formatPartyMinorUnits(vendor.minimumOrderMinor, vendor.currency ?? 'USD', minorUnitExponent, locale)}</dd>
+        <dt>{t(M['commerce.vendor.minimum_order'])}</dt><dd>{vendor.minimumOrderMinor === undefined ? notRecorded : minimumOrder(vendor.minimumOrderMinor)}</dd>
         <dt>{t(M['commerce.party.payment_terms'])}</dt><dd>{vendor.paymentTerms || notRecorded}</dd>
         <dt>{t(M['commerce.vendor.currency'])}</dt><dd>{vendor.currency || notRecorded}</dd>
       </dl>
