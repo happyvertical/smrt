@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { ICAL, parseICalendar } from '@happyvertical/icalendar';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
@@ -109,13 +110,117 @@ function applyEvent(
   });
 }
 
+/** Retain one authoritative master document per series, even when the requested
+ * window has no occurrences. Expand retained documents, never a stale payload.
+ * This runs on the same transaction executor as occurrence materialization.
+ */
+async function retainCalendarMasters(
+  series: EventSeriesCollection,
+  options: CalendarSourceSyncOptions,
+): Promise<string> {
+  const parsed = parseICalendarEvents(
+    options.source,
+    options.ics,
+    options.parse,
+  );
+  const components = parseICalendar(
+    options.ics,
+    options.parse?.limits,
+  ).component.getAllSubcomponents('vevent');
+  const calendar = new ICAL.Component('vcalendar');
+  for (let index = 0; index < parsed.length; index++) {
+    const entry = parsed[index];
+    let component = components[index];
+    if (!entry.detached) {
+      const id = stableId(
+        'icalendar-series',
+        options.tenantId ?? '',
+        options.source,
+        entry.identity.uid,
+      );
+      let sourceSeries = await series.get({ id });
+      if (!sourceSeries) {
+        sourceSeries = await series.create({
+          id,
+          tenantId: options.tenantId ?? null,
+          name: entry.name,
+          source: options.source,
+          externalId: entry.identity.uid,
+        });
+      }
+      const previous = sourceSeries.getMetadata().calendar;
+      const record =
+        previous && typeof previous === 'object'
+          ? (previous as Record<string, unknown>)
+          : {};
+      if (
+        typeof record.masterIcs === 'string' &&
+        !isNewer(entry, sourceSeries)
+      ) {
+        const retained = parseICalendar(
+          record.masterIcs,
+          options.parse?.limits,
+        ).component.getFirstSubcomponent('vevent');
+        if (!retained)
+          throw new Error('Stored calendar master is missing VEVENT');
+        component = retained;
+      } else {
+        // Bind floating values to their authoritative source policy before saving
+        // the SDK component. Future window requests cannot reinterpret that policy.
+        for (const propertyName of [
+          'dtstart',
+          'dtend',
+          'recurrence-id',
+          'rdate',
+          'exdate',
+        ]) {
+          for (const property of component.getAllProperties(propertyName)) {
+            const value = property.getFirstValue();
+            if (
+              value instanceof ICAL.Time &&
+              !value.isDate &&
+              value.zone.tzid === 'floating' &&
+              !property.getFirstParameter('tzid') &&
+              entry.timeZone
+            ) {
+              property.setParameter('tzid', entry.timeZone);
+            }
+          }
+        }
+        const document = new ICAL.Component('vcalendar');
+        document.addSubcomponent(component);
+        sourceSeries.name = entry.name || sourceSeries.name;
+        sourceSeries.setMetadata({
+          ...sourceSeries.getMetadata(),
+          calendar: {
+            uid: entry.identity.uid,
+            sequence: entry.sequence,
+            dtstamp: entry.dtstamp?.toISOString() ?? null,
+            cancelled: entry.status === 'cancelled' && !entry.startDate,
+            masterIcs: document.toString(),
+          },
+        });
+        await sourceSeries.save();
+      }
+    }
+    calendar.addSubcomponent(component);
+  }
+  return calendar.toString();
+}
+
 async function syncParsed(
   db: DatabaseInterface,
   options: CalendarSourceSyncOptions,
-  entries: CalendarEventInput[],
 ): Promise<CalendarSourceSyncResult> {
   const events = await EventCollection.create({ db });
   const series = await EventSeriesCollection.create({ db });
+  const authoritativeIcs = await retainCalendarMasters(series, options);
+  const entries = options.expansion
+    ? expandICalendarEvents(options.source, authoritativeIcs, {
+        ...options.parse,
+        ...options.expansion,
+      })
+    : parseICalendarEvents(options.source, authoritativeIcs, options.parse);
   const tenantId = options.tenantId ?? null;
   let created = 0;
   let updated = 0;
@@ -175,6 +280,7 @@ async function syncParsed(
         sourceSeries.setMetadata({
           ...sourceSeries.getMetadata(),
           calendar: {
+            ...(sourceSeries.getMetadata().calendar as Record<string, unknown>),
             uid: entry.identity.uid,
             cancelled: true,
             sequence: entry.sequence,
@@ -240,12 +346,11 @@ export async function syncICalendarSource(
     options.tenantId === undefined ? (activeTenant ?? null) : options.tenantId;
   if (activeTenant && activeTenant !== tenantId)
     throw new Error('Calendar tenant isolation violation');
-  const entries = options.expansion
-    ? expandICalendarEvents(options.source, options.ics, {
-        ...options.parse,
-        ...options.expansion,
-      })
-    : parseICalendarEvents(options.source, options.ics, options.parse);
+  const entries = parseICalendarEvents(
+    options.source,
+    options.ics,
+    options.parse,
+  );
   if (
     !options.expansion &&
     entries.some((e) => e.recurrence || e.additionalRecurrenceIds.length)
@@ -260,6 +365,6 @@ export async function syncICalendarSource(
   if (!db.transaction)
     throw new Error('Calendar source sync requires transaction()');
   return db.transaction((transaction) =>
-    syncParsed(transaction, { ...options, tenantId }, entries),
+    syncParsed(transaction, { ...options, tenantId }),
   );
 }

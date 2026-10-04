@@ -202,13 +202,14 @@ original RECURRENCE-ID (UTC ISO instant for timed events, calendar date for
 all-day events), so a moved instance retains its ID. Non-recurring records use
 UID without an occurrence suffix. Recurring masters live in series/provenance;
 they are not duplicate Event rows alongside their first occurrence. RDATE is
-unioned with RRULE, duplicate slots collapse, and EXDATE slots persist as
+normalized using each RDATE property's own timezone and unioned with RRULE,
+duplicate instants collapse, and EXDATE slots persist as
 cancelled events. Detached records override their original slot, including a
 move beyond the requested window. Duplicate VEVENT identities reject the feed.
 
 Daily, weekly, monthly and yearly RRULEs use the SDK's public recurrence engine.
 The supported bounded subset is daily without BY filters; weekly BYDAY without
-ordinals; monthly BYDAY or BYMONTHDAY (not both), optionally BYSETPOS; and yearly
+ordinals; monthly BYDAY or BYMONTHDAY (not both), with BYSETPOS supported only for BYDAY; and yearly
 BYMONTH/BYMONTHDAY. Other BY combinations reject rather than risking unbounded
 search inside the recurrence engine. COUNT, UNTIL and INTERVAL apply throughout.
 Expansion rejects rather than truncates when it exceeds `limit` (default 1,000;
@@ -230,7 +231,12 @@ across DST. Date-only recurrence remains date-only.
 A higher SEQUENCE **or** a newer DTSTAMP accepts an update; equal/older versions
 are unchanged. Missing SEQUENCE is zero and missing DTSTAMP is the oldest
 stamp. A producer changing payload without either version marker is deliberately
-ignored. A cancellation is an update, and a newer scheduled record restores it.
+ignored. Each series retains the authoritative master's SDK-serialized document
+and version, including when a requested window contains no occurrences. Later
+windows expand that retained document when the supplied master is stale or equal,
+so unseen slots cannot be created from older payloads or recurrence rules. The
+master document is written in the same transaction as occurrence updates.
+A cancellation is an update, and a newer scheduled record restores it.
 A minimal master cancellation (UID/STATUS/version without DTSTART) cancels known
 series events and stores a series tombstone that blocks older resurrection.
 No feed omission deletes events: outside-window records remain; omitted detached

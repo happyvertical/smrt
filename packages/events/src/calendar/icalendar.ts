@@ -373,8 +373,8 @@ export function expandICalendarEvents(
             (part) => !allowedParts[rule.freq]?.includes(part),
           ) ||
           (rule.freq === 'MONTHLY' &&
-            rule.parts.BYDAY &&
-            rule.parts.BYMONTHDAY) ||
+            ((rule.parts.BYMONTHDAY && rule.parts.BYDAY) ||
+              (rule.parts.BYSETPOS && !rule.parts.BYDAY))) ||
           (rule.freq === 'WEEKLY' &&
             rule.parts.BYDAY?.some((day) => !/^[A-Z]{2}$/.test(day)))
         ) {
@@ -389,6 +389,9 @@ export function expandICalendarEvents(
       JSON.parse(JSON.stringify(component.toJSON())),
     );
     expansionComponent.removeAllProperties('exdate');
+    // RDATEs are already normalized with each property's own TZID. Do not
+    // reinterpret their wall fields through the master's zone in the iterator.
+    expansionComponent.removeAllProperties('rdate');
     // ICAL's floating representation has no IANA offset database. Compare an
     // UNTIL instant in the same wall zone as DTSTART, then expand wall slots.
     for (const property of expansionComponent.getAllProperties('rrule')) {
@@ -413,18 +416,13 @@ export function expandICalendarEvents(
       readTime(component, 'dtend')?.subtractDate(start) ??
       ICAL.Duration.fromSeconds(entry.allDay ? 86400 : 0);
     const emitted = new Set<string>();
-    for (;;) {
-      if (++iterations > maxIterations)
-        throw new CalendarEventValidationError(
-          'Calendar iteration limit exceeded',
-        );
-      const occurrence = iterator.next();
-      if (!occurrence) break;
-      const startDate = instant(occurrence, entry.timeZone);
-      if (startDate > rangeEnd) break;
-      if (startDate < rangeStart) continue;
-      const id = recurrenceId(occurrence, entry.timeZone)!;
-      if (emitted.has(id)) continue;
+    const emit = (
+      occurrence: ICalendarTimeValue,
+      startDate: Date,
+      id: string,
+    ) => {
+      if (startDate < rangeStart || startDate > rangeEnd || emitted.has(id))
+        return;
       emitted.add(id);
       const end = occurrence.clone();
       end.addDuration(duration);
@@ -444,6 +442,25 @@ export function expandICalendarEvents(
           ? 'cancelled'
           : entry.status,
       });
+    };
+    for (;;) {
+      if (++iterations > maxIterations)
+        throw new CalendarEventValidationError(
+          'Calendar iteration limit exceeded',
+        );
+      const occurrence = iterator.next();
+      if (!occurrence) break;
+      const startDate = instant(occurrence, entry.timeZone);
+      if (startDate > rangeEnd) break;
+      emit(occurrence, startDate, recurrenceId(occurrence, entry.timeZone)!);
+    }
+    for (const additional of entry.additionalRecurrenceIds) {
+      if (++iterations > maxIterations)
+        throw new CalendarEventValidationError(
+          'Calendar iteration limit exceeded',
+        );
+      const occurrence = ICAL.Time.fromString(additional, undefined);
+      emit(occurrence, instant(occurrence, entry.timeZone), additional);
     }
     for (const excluded of entry.excludedRecurrenceIds) {
       if (emitted.has(excluded)) continue;
