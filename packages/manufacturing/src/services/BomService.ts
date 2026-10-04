@@ -498,12 +498,11 @@ export class BomService {
     const lines: PlannedLine[] = [];
     const shortages: MaterialShortage[] = [];
     const unallocated = new Map<string, Promise<number>>();
+    const tenantId = top.tenantId ?? null;
     const availableFor = (skuId: string): Promise<number> => {
       let pending = unallocated.get(skuId);
       if (!pending) {
-        pending = this.stockService.levels
-          .totalForSku(skuId, 'available')
-          .then((total) => Math.max(0, Number(total) || 0));
+        pending = this.availableInTenant(skuId, tenantId);
         unallocated.set(skuId, pending);
       }
       return pending;
@@ -568,6 +567,27 @@ export class BomService {
     const bom = await this.boms.get(bomId);
     if (!bom) throw new BomNotFoundError(bomId);
     return bom;
+  }
+
+  /**
+   * Available stock of a SKU across locations, counting only the top bill's
+   * tenant's rows and global ones, whatever tenant context is active (the
+   * walk reads its structure the same way).
+   */
+  private async availableInTenant(
+    skuId: string,
+    tenantId: string | null,
+  ): Promise<number> {
+    const rows = await this.stockService.levels.list({
+      where: { skuId, state: 'available' },
+    });
+    let total = 0;
+    for (const row of rows) {
+      const rowTenant = row.tenantId ?? null;
+      if (rowTenant === null || rowTenant === tenantId)
+        total += Number(row.qty ?? 0);
+    }
+    return Math.max(0, total);
   }
 
   /** {@link computeMaterialCost} with `levels` above 1. */
@@ -764,11 +784,13 @@ function sumRequirements(lines: ExplodedLine[]): MaterialRequirement[] {
 }
 
 /**
- * `value`, or `0` when it is floating-point noise relative to `scale`
- * (`2.2 * 100` is `220.00000000000003`; a stock of 220 covers it).
+ * `value`, or `0` when it is floating-point rounding relative to `scale`
+ * (`2.2 * 100` is `220.00000000000003`; a stock of 220 covers it). The bound
+ * is a few units in the last place of `scale`, so it never hides a real
+ * quantity, however large.
  */
 function significant(value: number, scale: number): number {
-  return value > 1e-9 * Math.max(1, Math.abs(scale)) ? value : 0;
+  return value > 64 * Number.EPSILON * Math.max(1, Math.abs(scale)) ? value : 0;
 }
 
 /**

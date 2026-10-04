@@ -167,6 +167,11 @@ describe('ProductionRunList', () => {
       ok: false,
       reason: 'invalid',
     });
+    const large = run({ targetQty: 1_000_000_000, completedQty: 0 });
+    expect(validateCompletionQty('1000000001', large)).toEqual({
+      ok: false,
+      reason: 'too_many',
+    });
   });
 
   it('has no accessibility violations, with reporting and an error shown', async () => {

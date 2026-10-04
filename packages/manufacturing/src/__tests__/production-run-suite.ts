@@ -187,6 +187,25 @@ export function productionRunSuite(
         expect(last.run.status).toBe('done');
       });
 
+      it('keeps the target exact at large quantities', async () => {
+        const { bomId } = await makeBill();
+        const run = await service.createRun({
+          bomId,
+          targetQty: 1_000_000_000,
+        });
+        expect(
+          await errorOf(
+            service.recordCompletion(run.id!, { qty: 1_000_000_001 }),
+          ),
+        ).toBeInstanceOf(ProductionRunOverCompletionError);
+        const almost = await service.recordCompletion(run.id!, {
+          qty: 999_999_999,
+        });
+        expect(almost.run.status).toBe('in_progress');
+        const last = await service.recordCompletion(run.id!, { qty: 1 });
+        expect(last.run.status).toBe('done');
+      });
+
       it('refuses more than the run has left, changing nothing', async () => {
         const { bomId } = await makeBill();
         const run = await service.createRun({ bomId, targetQty: 5 });

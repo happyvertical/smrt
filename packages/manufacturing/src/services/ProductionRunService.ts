@@ -369,9 +369,13 @@ async function withRevisionRetry<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Slack for decimal sums: `0.1 + 0.2` reaches a target of `0.3`. */
+/**
+ * Slack for floating-point rounding in decimal sums (`0.1 + 0.2` reaches a
+ * target of `0.3`): a few units in the last place of `scale`, far below any
+ * real quantity at any scale.
+ */
 function tolerance(scale: number): number {
-  return 1e-9 * Math.max(1, Math.abs(scale));
+  return 64 * Number.EPSILON * Math.max(1, Math.abs(scale));
 }
 
 function positive(value: number, field: string): number {

@@ -576,6 +576,34 @@ export function multilevelSuite(
         });
       });
 
+      vitestIt(
+        "counts only the top bill's tenant's stock, even without a tenant context",
+        async () => {
+          const tenantA = randomUUID();
+          const f = await withTenant({ tenantId: tenantA }, () =>
+            frameFixture(),
+          );
+          const at = await withTenant({ tenantId: tenantA }, () => warehouse());
+          await withTenant({ tenantId: tenantA }, () =>
+            stock.receive(f.paint.skuId, at, 1),
+          );
+          // Another tenant stocks the same SKU.
+          const elsewhere = randomUUID();
+          const theirs = await withTenant({ tenantId: elsewhere }, () =>
+            warehouse(),
+          );
+          await withTenant({ tenantId: elsewhere }, () =>
+            stock.receive(f.paint.skuId, theirs, 1000),
+          );
+          const plan = await bomService.planRequirements(f.frameBom, 10, {
+            levels: 'all',
+          });
+          const paint = lineFor<PlannedLine>(plan.lines, f.paint.skuId);
+          expect(paint.available).toBe(1);
+          expect(paint.short).toBeCloseTo(1.5, 9);
+        },
+      );
+
       it('reports a short sub-assembly past the levels limit as buildable', async () => {
         const f = await frameFixture();
         const plan = await bomService.planRequirements(f.frameBom, 10, {

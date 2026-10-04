@@ -383,7 +383,8 @@ export function validateCompletionQty(
   if (!Number.isFinite(qty) || qty <= 0)
     return { ok: false, reason: 'invalid' };
   const remaining = Math.max(0, run.targetQty - run.completedQty);
-  if (qty > remaining + 1e-9 * Math.max(1, run.targetQty))
+  // Floating-point slack only, as in ProductionRunService.
+  if (qty > remaining + 64 * Number.EPSILON * Math.max(1, run.targetQty))
     return { ok: false, reason: 'too_many' };
   return { ok: true, qty };
 }
