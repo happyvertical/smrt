@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsersCliAuthApproveLimitCollection } from '../collections/CliAuthApproveLimitCollection.js';
 import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
-import { UsersLoginAttemptCollection } from '../collections/LoginAttemptCollection.js';
+import type { UsersLoginAttemptCollection } from '../collections/LoginAttemptCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';

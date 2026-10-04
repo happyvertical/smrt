@@ -150,7 +150,9 @@ CREATE TABLE IF NOT EXISTS "sessions" (
   "user_agent" TEXT DEFAULT '',
   "ip_address" TEXT DEFAULT '',
   "last_accessed_at" TIMESTAMP,
-  "data" JSON DEFAULT '{}'
+  "data" JSON DEFAULT '{}',
+  "auth_method" TEXT,
+  "parent_session_id" TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "sessions_slug_context_idx" ON "sessions" ("slug", "context");
 `;

@@ -53,7 +53,7 @@ import {
 import { LoginRateLimitError } from '../services/LoginAttemptLimiter.js';
 import type { SessionContext } from '../services/SessionService.js';
 
-const logger = createLogger('smrt-users:device-credential-handlers');
+const logger = createLogger({ level: 'info' });
 
 type RequestEvent = {
   getClientAddress?: () => string;
@@ -200,9 +200,7 @@ export function createDeviceCredentialHandlers(
         );
       }
       try {
-        const result = await (
-          await service()
-        ).signInWithPin({
+        const result = await (await service()).signInWithPin({
           deviceToken,
           userId,
           pin,
@@ -235,9 +233,7 @@ export function createDeviceCredentialHandlers(
         );
       const input = await body(event);
       try {
-        await (
-          await service()
-        ).setPin({
+        await (await service()).setPin({
           actor,
           userId: str(input.userId).trim() || (actor.user.id ?? ''),
           pin: str(input.pin),
@@ -259,9 +255,7 @@ export function createDeviceCredentialHandlers(
         );
       const input = await body(event);
       try {
-        const result = await (
-          await service()
-        ).resetPin({
+        const result = await (await service()).resetPin({
           actor,
           userId: str(input.userId).trim(),
           pin: str(input.pin),
@@ -282,9 +276,7 @@ export function createDeviceCredentialHandlers(
         );
       const input = await body(event);
       try {
-        const result = await (
-          await service()
-        ).clearPin({
+        const result = await (await service()).clearPin({
           actor,
           userId: str(input.userId).trim() || (actor.user.id ?? ''),
           ipAddress: event.getClientAddress?.(),
