@@ -209,9 +209,17 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
     // what makes the backoff unavoidable: a client that paces itself one
     // attempt under the budget and waits for the window to roll never
     // exhausts a window, but its streak still crosses the boundary.
+    // A decayed streak can land back on the number it held (one forgiven,
+    // one added); only a failure that moved the streak UP onto the boundary
+    // counts, or a source resting on a boundary would re-lock on every
+    // spaced-out mistake.
+    const previousStreak =
+      row.previous_streak === undefined
+        ? failureStreak - 1
+        : Number(row.previous_streak);
     const budgetExhausted = attemptCount >= input.maxAttempts;
     const streakBoundary =
-      failureStreak > 0 && failureStreak % input.maxAttempts === 0;
+      failureStreak > previousStreak && failureStreak % input.maxAttempts === 0;
     if (!budgetExhausted && !streakBoundary) {
       return { failureStreak, lockedUntil: null };
     }
@@ -311,7 +319,9 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
         streak,
         toIso(currentRow.last_failed_at),
       );
-      if (advanced.rows?.[0]) return advanced.rows[0];
+      if (advanced.rows?.[0]) {
+        return { ...advanced.rows[0], previous_streak: streak };
+      }
     }
     return this.advanceStreak(input.limiterKey, nowIso, retainUntilIso);
   }

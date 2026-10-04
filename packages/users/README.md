@@ -733,7 +733,9 @@ sign-in.
 **Switching people.** `signOut` ends only the person's session. With
 `singleOccupant` (default `true`) a successful sign-in also ends every other
 person's session on that device session, so signing in as the next person is
-the hand-over; a failed sign-in leaves the current person signed in. Set
+the hand-over; a failed sign-in leaves the current person signed in. (Two
+sign-ins that overlap on one device can end each other — both are refused and
+the person signs in again.) Set
 `singleOccupant: false` for devices several people stay signed in on.
 `personIdleSeconds` is a sliding idle timeout stored on the session
 (`data.idleSeconds`), so it slides by that value whichever `SessionService`

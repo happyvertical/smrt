@@ -113,10 +113,18 @@ function errorResponse(error: unknown): Response {
     );
   }
   if (error instanceof DeviceCredentialForbiddenError) {
-    return json({ error: error.message, code: 'forbidden' }, 403);
+    return json(
+      { error: error.message, code: 'forbidden' },
+      403,
+      NO_STORE_HEADERS,
+    );
   }
   if (error instanceof DeviceCredentialPolicyError) {
-    return json({ error: error.message, code: 'pin_policy' }, 400);
+    return json(
+      { error: error.message, code: 'pin_policy' },
+      400,
+      NO_STORE_HEADERS,
+    );
   }
   logger.error('Device credential handler error', { error });
   return json({ error: 'Internal error.', code: 'internal' }, 500);

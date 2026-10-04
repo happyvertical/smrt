@@ -386,6 +386,11 @@ describe('LoginAttemptLimiter', () => {
     await typo();
     expect((await typo()).retryAfterSeconds).toBe(60);
 
+    // Resting on a boundary is not crossing it: one typo an interval later
+    // forgives one and adds one, and must not re-lock everyone.
+    vi.advanceTimersByTime(130_000);
+    expect((await typo()).lockedOut).toBe(false);
+
     // Partial decay: four minutes forgives two of the six, not all of them.
     vi.advanceTimersByTime(240_000);
     await typo();
