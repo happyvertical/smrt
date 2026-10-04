@@ -143,3 +143,13 @@ pnpm --filter @happyvertical/smrt-support build
 
 See [`AGENTS.md`](./AGENTS.md) for lifecycle, idempotency, timing, settlement,
 and concurrency invariants.
+
+## Decimal-hours-only shared evidence
+
+The shared Timesheets service supports exact decimal-hours-only sources with
+null `durationSeconds`; see [Timesheets](../timesheets/README.md#decimal-hours-only-sources).
+The support entry subtype preserves this representation and its view displays
+`durationHours()`. Support case-time recording and support-plan approval remain
+seconds-based; approval rejects absent seconds before writing charges. Use the
+shared `ServiceEvidenceService` with an hours-aware commercial resolver for
+accepted decimal-hours evidence and its immutable commercial snapshots.

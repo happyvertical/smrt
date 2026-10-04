@@ -49,7 +49,8 @@ export class ServiceTimeEntry extends SharedServiceTimeEntry {
   @field({ type: 'text' }) description: string = '';
   startedAt: Date | null = null;
   endedAt: Date | null = null;
-  durationSeconds: number = 0;
+  @field({ type: 'integer', nullable: true })
+  durationSeconds: number | null = 0;
   @field({ type: 'text' }) evidence: string = '[]';
   @field({ type: 'text' }) status: ServiceTimeEntryStatus = 'draft';
   submittedAt: Date | null = null;

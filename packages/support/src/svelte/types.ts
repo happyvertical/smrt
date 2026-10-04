@@ -181,7 +181,7 @@ export function toSupportTimeEntryView(
   const view: SupportTimeEntryView = {
     id: entry.id ?? '',
     date: startIso ? startIso.slice(0, 10) : '',
-    hours: Math.round((entry.durationSeconds / 3600) * 100) / 100,
+    hours: entry.durationHours(),
     description: entry.description,
     status: entry.status,
     source: entry.source,

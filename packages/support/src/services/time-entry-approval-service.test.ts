@@ -8,6 +8,7 @@
  * tenant guard.
  */
 
+import { SERVICE_DURATION_HOURS_EVIDENCE } from '@happyvertical/smrt-timesheets';
 import { createIsolatedTestDbFromManifest } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ServiceTimeEntry } from '../models/service-time-entry.js';
@@ -21,6 +22,7 @@ import {
   APPROVE_TIME_ENTRY_PERMISSION,
   supportPrincipalFromPermissions,
 } from '../permissions.js';
+import { toSupportTimeEntryView } from '../svelte/types.js';
 import type { TimeApprovalPolicy } from '../types.js';
 import { ServiceTimeEntryService } from './service-time-entry-service.js';
 import { SupportCaseService } from './support-case-service.js';
@@ -76,6 +78,23 @@ describe('TimeEntryApprovalService', () => {
 
   afterEach(async () => {
     await ctx.cleanup();
+  });
+
+  it('preserves decimal hours in views and rejects seconds-only support pricing', async () => {
+    const supportCase = await caseUnder(null);
+    const entry = await submittedEntry(supportCase.id!);
+    entry.durationSeconds = null;
+    entry.endedAt = null;
+    entry.setEvidence([
+      { kind: SERVICE_DURATION_HOURS_EVIDENCE, hours: '1.0005' },
+    ]);
+    await entry.save();
+    expect(toSupportTimeEntryView(entry).hours).toBe(1.0005);
+    await expect(
+      approvalService.approve(entry, { principal: operator() }),
+    ).rejects.toThrow(/no measured durationSeconds/);
+    expect(entry.status).toBe('submitted');
+    expect(await approvalService.charges.forCase(supportCase.id!)).toEqual([]);
   });
 
   async function planWith(

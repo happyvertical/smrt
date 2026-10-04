@@ -52,7 +52,7 @@ function frozenView(
       const date = value instanceof Date ? value : new Date(String(value));
       value = Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
     }
-    if (key === 'durationSeconds') value = Number(value ?? 0);
+    if (key === 'durationSeconds' && value !== null) value = Number(value);
     result[key] = value === '' ? null : value;
   }
   return JSON.stringify(result);
@@ -94,7 +94,9 @@ export class ServiceTimeEntry extends SmrtObject {
   @field({ type: 'text' }) description: string = '';
   startedAt: Date | null = null;
   endedAt: Date | null = null;
-  durationSeconds: number = 0;
+  /** Integer seconds, or null for an explicit decimal-hours-only source. */
+  @field({ type: 'integer', nullable: true })
+  durationSeconds: number | null = 0;
   @field({ type: 'text' }) evidence: string = '[]';
   @field({ type: 'text' }) status: ServiceTimeEntryStatus = 'draft';
   submittedAt: Date | null = null;
@@ -123,8 +125,36 @@ export class ServiceTimeEntry extends SmrtObject {
   setMetadata(value: Record<string, unknown>): void {
     this.metadata = JSON.stringify(value ?? {});
   }
+  /** Original decimal-hours text, without binary floating-point conversion. */
+  durationHoursExact(): string | null {
+    const evidence = this.getEvidence();
+    const quantities = (Array.isArray(evidence) ? evidence : []).filter(
+      (item) => item?.kind === SERVICE_DURATION_HOURS_EVIDENCE,
+    );
+    if (quantities.length === 0) return null;
+    if (quantities.length !== 1)
+      throw new Error(
+        'Service time requires exactly one decimal-hours quantity.',
+      );
+    return validateDurationHours(quantities[0].hours);
+  }
+
+  /** Numeric convenience for display; use durationHoursExact() for exact terms. */
   durationHours(): number {
-    return this.durationSeconds / 3600;
+    if (this.durationSeconds !== null) return this.durationSeconds / 3600;
+    const hours = this.durationHoursExact();
+    if (hours === null)
+      throw new Error('Service time has no supported duration quantity.');
+    return Number(hours);
+  }
+
+  /** Guard for consumers whose policies require independently supplied seconds. */
+  requireDurationSeconds(): number {
+    if (this.durationSeconds === null)
+      throw new Error(
+        'Decimal-hours-only service time has no measured durationSeconds; use durationHoursExact() with an hours-aware policy.',
+      );
+    return this.durationSeconds;
   }
 
   /**
@@ -142,6 +172,22 @@ export class ServiceTimeEntry extends SmrtObject {
   }
 
   override async save(): Promise<this> {
+    const hours = this.durationHoursExact();
+    if (hours !== null) {
+      if (
+        this.durationSeconds !== null ||
+        this.startedAt ||
+        this.endedAt ||
+        this.source === 'timer'
+      )
+        throw new Error(
+          'Decimal-hours-only service time cannot also supply seconds or timestamps.',
+        );
+    } else if (this.durationSeconds === null) {
+      throw new Error(
+        'Null durationSeconds requires explicit decimal-hours evidence.',
+      );
+    }
     const prior = await this.readPrior();
     if (
       prior &&
@@ -221,4 +267,23 @@ export class ServiceTimeEntryCollection extends SmrtCollection<ServiceTimeEntry>
       orderBy: 'submitted_at ASC',
     });
   }
+}
+
+/** Reserved evidence kind for a source quantity with no measured elapsed seconds. */
+export const SERVICE_DURATION_HOURS_EVIDENCE =
+  '@happyvertical/smrt-timesheets:duration-hours';
+
+/** Validate without normalizing the original accepted decimal text. */
+export function validateDurationHours(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !/^\d+(?:\.\d+)?$/.test(value) ||
+    !Number.isFinite(Number(value)) ||
+    Number(value) <= 0 ||
+    Number(value) >= Number.MAX_SAFE_INTEGER
+  )
+    throw new Error(
+      'Service time durationHours must be positive plain decimal text within the supported numeric range.',
+    );
+  return value;
 }

@@ -69,6 +69,53 @@ Profile, an agent entry without `agentRef`, a reversed period, and a
 non-positive duration. `correct(entry, input)` records the replacement and
 marks the approved entry `corrected`.
 
+## Decimal-hours-only sources
+
+When the accepted source is decimal hours and there is no independently supplied
+integer elapsed duration, use `record({ ..., durationHours: '1.0005' })` (also
+accepted by `correct`). Do not pass `durationSeconds: 3601.8`, round to an integer,
+or manufacture timestamps. `durationHours` accepts positive plain decimal text,
+without signs, whitespace or exponents, whose numeric conversion is positive,
+finite and below `Number.MAX_SAFE_INTEGER`. The original string, including
+trailing zeros, is retained exactly.
+
+The service stores one reserved evidence item with kind
+`@happyvertical/smrt-timesheets:duration-hours` and an `hours` string. Supply this
+through `durationHours`, not through `record`'s general evidence list. The saved
+entry has `durationSeconds: null`, `startedAt: null`, and `endedAt: null`.
+Seconds or timestamps cannot accompany this quantity; timer sources still
+require measured bounds. Null without the reserved quantity is invalid and is
+never interpreted as zero. Generic collection writers use the same reserved
+item and null fields; model save validates the combination.
+
+`entry.durationHoursExact()` returns the original string for this representation
+and null for ordinary integer-second entries. `entry.durationHours()` is a
+JavaScript-number convenience for display: binary floating-point precision limits
+apply. Use the exact accessor and your accepted commercial terms/amounts when
+creating snapshots; do not recompute historical charges through the convenience
+method. Commercial resolvers with representation restrictions implement the optional
+pure `validateEntry(entry)` hook (synchronous or asynchronous). Approval awaits it
+before freezing a submitted entry or invoking either pricing/pay resolver; a
+rejection leaves the entry submitted and creates no snapshots. Fully completed
+approval retries reuse their frozen snapshots without revalidation. For example, accepted `1.0005` hours at `12345` minor units/hour may carry
+an already accepted `12351`-minor-unit charge. A commercial resolver returns that
+amount and `{ hours: '1.0005', rateMinorUnits: '12345' }` in its immutable terms.
+The entry evidence, charge and compensation snapshots freeze on approval;
+corrections create a new entry and preserve original snapshots. For atomic
+record/approval/correction workflows, create the service with the executor of
+an owned `db.transaction`; approval retries preserve already written snapshots.
+
+The existing nullable integer column and evidence JSON carry this representation:
+no schema migration or rewriting of historical rows is needed. Public
+`durationSeconds` is now `number | null`; readers must handle both cases.
+`requireDurationSeconds()` throws an actionable error for hours-only sources.
+The integer-second period rollup, projects subscription pricing, and support
+plan pricing use this guard: their policies cannot silently convert absent
+measurements into zero or rounded seconds. Use `ServiceEvidenceService` with an
+hours-aware commercial resolver for these sources. Support's separate case-time
+recording facade remains seconds-based; its shared entry view uses
+`durationHours()` for display. Attendance measurement behavior is unchanged.
+
 ## Svelte components
 
 ```svelte

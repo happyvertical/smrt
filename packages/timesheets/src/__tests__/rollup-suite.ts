@@ -2,7 +2,11 @@ import { isPostgresDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AttendanceService, ServiceTimeEntryCollection } from '../index.js';
+import {
+  AttendanceService,
+  SERVICE_DURATION_HOURS_EVIDENCE,
+  ServiceTimeEntryCollection,
+} from '../index.js';
 import {
   PeriodRollupService,
   type PeriodRulesResolver,
@@ -70,6 +74,36 @@ export function rollupSuite(
         });
       });
     }
+    it('rejects decimal-hours-only sources without creating a zero-second card', async () => {
+      await entry(0, {
+        durationSeconds: null,
+        startedAt: null,
+        endedAt: null,
+        evidence: JSON.stringify([
+          { kind: SERVICE_DURATION_HOURS_EVIDENCE, hours: '1.0005' },
+        ]),
+      });
+      await expect(service.rollup(at(12))).rejects.toThrow(
+        /no measured durationSeconds/,
+      );
+      expect(
+        await (await PeriodTimecardCollection.create({ db })).count({
+          where: { tenantId: actor.tenantId },
+        }),
+      ).toBe(0);
+    });
+    it('does not let hours-only evidence outside the period block its rollup', async () => {
+      await entry(0, {
+        durationSeconds: null,
+        startedAt: null,
+        endedAt: null,
+        approvedAt: at(-1),
+        evidence: JSON.stringify([
+          { kind: SERVICE_DURATION_HOURS_EVIDENCE, hours: '1.0005' },
+        ]),
+      });
+      expect((await service.rollup(at(12))).totalSeconds).toBe(0);
+    });
     it('rolls up approved person evidence with integer classification and repeat identity', async () => {
       const source = await entry();
       await entry(300, { status: 'draft' });

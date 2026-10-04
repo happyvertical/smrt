@@ -48,6 +48,11 @@ export class SubscriptionServiceCommercialResolver
     );
   }
 
+  /** Reject unsupported source quantities before the shared approval writes. */
+  validateEntry(entry: ServiceTimeEntry): void {
+    entry.requireDurationSeconds();
+  }
+
   async priceClient(entry: ServiceTimeEntry): Promise<CommercialSnapshot> {
     if (!entry.id || !entry.tenantId)
       throw new Error(
@@ -59,7 +64,7 @@ export class SubscriptionServiceCommercialResolver
     const usageEvent = await this.usage.record({
       tenantId: entry.tenantId,
       metricKey: 'duration.seconds',
-      quantity: entry.durationSeconds,
+      quantity: entry.requireDurationSeconds(),
       windowStart: at,
       windowEnd: at,
       source: 'service-time-entry',
