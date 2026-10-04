@@ -88,7 +88,10 @@ export interface LeaveInput {
 
 /** Input to {@link EmploymentService.linkLogin} and {@link EmploymentService.unlinkLogin}. */
 export interface LoginLinkInput {
-  /** The day the login was linked or unlinked. */
+  /**
+   * The date recorded on the change row. It does not schedule anything: the
+   * link or unlink takes effect as soon as it is recorded.
+   */
   effectiveOn: IsoDate;
 }
 
@@ -789,6 +792,10 @@ export class EmploymentService extends HrService {
    * A login belongs to one employment at a time and stays with it, ended or
    * not, until {@link unlinkLogin} clears it there.
    *
+   * The link takes effect at once, whatever `effectiveOn` says: the date is
+   * only recorded on the change row, and login links are not replayed by
+   * {@link asOf} or `findByUser(userId, on)`.
+   *
    * @throws HrError `HR_INVALID` when already linked to this login, or to another employment (unlink it there first); `HR_NOT_FOUND`
    */
   async linkLogin(
@@ -801,7 +808,8 @@ export class EmploymentService extends HrService {
 
   /**
    * Clear an employment's login, which frees it for another employment. Works
-   * on an ended employment too.
+   * on an ended employment too. The login is cleared at once, whatever
+   * `effectiveOn` says; a future date does not keep it linked until then.
    *
    * @throws HrError `HR_INVALID` when no login is linked, `HR_NOT_FOUND`
    */

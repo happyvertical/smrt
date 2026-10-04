@@ -68,11 +68,30 @@ export class Qualification extends SmrtObject {
 }
 
 /**
+ * Columns of a held qualification that never change once a revocation is
+ * stored. Only the verification fields (`verifiedByProfileId`, `verifiedAt`,
+ * `documentAssetId`) may still be saved on such a row.
+ */
+const FROZEN_WHEN_REVOKED = [
+  ['tenant_id', 'tenantId'],
+  ['qualification_id', 'qualificationId'],
+  ['profile_id', 'profileId'],
+  ['employment_id', 'employmentId'],
+  ['issued_on', 'issuedOn'],
+  ['expires_on', 'expiresOn'],
+  ['certificate_number', 'certificateNumber'],
+  ['status', 'status'],
+  ['renewal_of_id', 'renewalOfId'],
+] as const;
+
+/**
  * A person holds a qualification. `employmentId` is set when the definition's
  * scope is `employment`; such a row is revoked when that employment ends.
  * A renewal is a new row pointing at the one it renews, so past dates still
  * answer correctly. Expiry on a date is computed from `expiresOn`; the stored
- * `expired` status is set by the service sweep.
+ * `expired` status is set by the service sweep. The stored status records the
+ * last change made, not standing on a date, and `revoked` is final: a row
+ * stored `revoked` is saved again only to record a verification.
  */
 @TenantScoped({ mode: 'required' })
 @smrt({
@@ -132,10 +151,18 @@ export class HeldQualification extends SmrtObject {
         'HR_HISTORY_IMMUTABLE',
         'A held qualification keeps its person, qualification and issue date; renew it instead.',
       );
-    if (prior?.status === 'revoked')
+    // A revocation is final. Verification is not a status, so a save that
+    // changes only the verifier, its time and the document is still allowed.
+    if (
+      prior?.status === 'revoked' &&
+      FROZEN_WHEN_REVOKED.some(
+        ([column, property]) =>
+          (prior[column] ?? null) !== (this[property] ?? null),
+      )
+    )
       throw new HrError(
         'HR_HISTORY_IMMUTABLE',
-        'A revoked qualification never changes; grant a new one.',
+        'A revoked qualification never changes, apart from its verification; grant a new one.',
       );
     return (await super.save()) as this;
   }

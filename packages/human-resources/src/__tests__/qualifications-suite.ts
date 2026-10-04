@@ -1349,15 +1349,11 @@ export function qualificationsSuite(
           service.grant({ qualificationId, profileId, issuedOn: '2026-06-01' }),
         ).rejects.toMatchObject({
           code: 'HR_ALREADY_HELD',
-          message: expect.stringContaining('2027-01-01'),
+          message: expect.stringMatching(/2027-01-01.*renew the existing one/),
         });
         await expect(
           service.grant({ qualificationId, profileId, issuedOn: '2026-12-31' }),
         ).rejects.toMatchObject(code('HR_ALREADY_HELD'));
-        // A revoked row is never renewed either, whatever the date.
-        await expect(
-          service.renew(old.id as string, { issuedOn: '2026-06-01' }),
-        ).rejects.toMatchObject(code('HR_INVALID'));
         const fresh = await service.grant({
           qualificationId,
           profileId,
@@ -1618,6 +1614,508 @@ export function qualificationsSuite(
         expect(await listed('2026-06-15')).toHaveLength(1);
       });
 
+      it('suspends, reinstates and revokes earlier a qualification whose revocation is recorded for a later date', async () => {
+        const training = await orientation();
+        const qualificationId = training.id as string;
+        const profileId = uuid();
+        const held = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2026-01-10',
+        });
+        const id = held.id as string;
+        expect(
+          await service.revoke(id, {
+            effectiveOn: '2027-01-01',
+            reason: 'scheme closes',
+          }),
+        ).toMatchObject({ status: 'revoked' });
+        events.length = 0;
+        const on = (date: string) =>
+          service.check(profileId, qualificationId, date);
+        const holderIds = async (date: string) =>
+          (await service.holders(qualificationId, date)).map((row) => row.id);
+        const listed = async (date: string) =>
+          (await service.listForProfile(profileId, date)).map(
+            (entry) => entry.status,
+          );
+        const ok = { ok: true, heldQualificationId: id, expiresOn: null };
+        const suspended = { ok: false, reason: 'suspended' };
+        const revoked = { ok: false, reason: 'revoked' };
+        expect(await on('2026-10-03')).toEqual(ok);
+
+        // The stored status already reads `revoked`, and stays so: the
+        // suspension is a dated change only.
+        expect(
+          await service.suspend(id, {
+            effectiveOn: '2026-10-03',
+            reason: 'incident',
+          }),
+        ).toMatchObject({ status: 'revoked' });
+        expect(await on('2026-10-02')).toEqual(ok);
+        expect(await on('2026-10-03')).toEqual(suspended);
+        expect(await on('2026-12-31')).toEqual(suspended);
+        expect(await on('2027-01-01')).toEqual(revoked);
+        expect(await holderIds('2026-10-02')).toEqual([id]);
+        expect(await holderIds('2026-10-03')).toEqual([]);
+        expect(await listed('2026-10-03')).toEqual(['suspended']);
+        expect(await listed('2027-01-01')).toEqual(['revoked']);
+
+        expect(
+          await service.reinstate(id, { effectiveOn: '2026-10-10' }),
+        ).toMatchObject({ status: 'revoked' });
+        expect(await on('2026-10-09')).toEqual(suspended);
+        expect(await on('2026-10-10')).toEqual(ok);
+        expect(await on('2026-12-31')).toEqual(ok);
+        expect(await on('2027-01-01')).toEqual(revoked);
+        expect(await holderIds('2026-12-31')).toEqual([id]);
+
+        // An urgent revocation ahead of the scheduled one: the earliest wins.
+        expect(
+          await service.revoke(id, {
+            effectiveOn: '2026-10-20',
+            reason: 'fraud',
+          }),
+        ).toMatchObject({ status: 'revoked' });
+        expect(await on('2026-10-19')).toEqual(ok);
+        expect(await on('2026-10-20')).toEqual(revoked);
+        expect(await on('2026-12-31')).toEqual(revoked);
+        expect(await holderIds('2026-10-20')).toEqual([]);
+        expect(await listed('2026-10-19')).toEqual(['valid']);
+        expect(await listed('2026-10-20')).toEqual(['revoked']);
+
+        expect(events.map((event) => [event.type, event.effectiveOn])).toEqual([
+          ['held-qualification.suspended', '2026-10-03'],
+          ['held-qualification.reinstated', '2026-10-10'],
+          ['held-qualification.revoked', '2026-10-20'],
+        ]);
+        expect(await historyOf(id)).toEqual([
+          ['granted', '2026-01-10', ''],
+          ['suspended', '2026-10-03', 'incident'],
+          ['reinstated', '2026-10-10', ''],
+          ['revoked', '2026-10-20', 'fraud'],
+          ['revoked', '2027-01-01', 'scheme closes'],
+        ]);
+      });
+
+      it('suspends and revokes an employment-scoped authorization during the notice period', async () => {
+        const qualificationId = await authorizationFor();
+        const profileId = uuid();
+        const employmentId = await hire(profileId, '2026-01-01');
+        const held = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2026-01-10',
+        });
+        const id = held.id as string;
+        // The end is recorded ahead: stored `revoked`, in force to the last day.
+        await endEmployment(employmentId, '2026-12-31');
+        events.length = 0;
+        const on = (date: string) =>
+          service.check(profileId, qualificationId, date);
+        const ok = { ok: true, heldQualificationId: id, expiresOn: null };
+        expect(await on('2026-10-03')).toEqual(ok);
+
+        expect(
+          await service.suspend(id, {
+            effectiveOn: '2026-10-03',
+            reason: 'incident',
+          }),
+        ).toMatchObject({ status: 'revoked' });
+        expect(await on('2026-10-03')).toEqual({
+          ok: false,
+          reason: 'suspended',
+        });
+        await service.reinstate(id, { effectiveOn: '2026-10-10' });
+        expect(await on('2026-10-10')).toEqual(ok);
+        expect(await on('2026-12-31')).toEqual(ok);
+        expect(await on('2027-01-01')).toEqual({
+          ok: false,
+          reason: 'revoked',
+        });
+
+        await service.revoke(id, {
+          effectiveOn: '2026-11-01',
+          reason: 'misconduct',
+        });
+        expect(await on('2026-10-31')).toEqual(ok);
+        expect(await on('2026-11-01')).toEqual({
+          ok: false,
+          reason: 'revoked',
+        });
+        expect(await service.holders(qualificationId, '2026-11-01')).toEqual(
+          [],
+        );
+        expect(events.map((event) => [event.type, event.effectiveOn])).toEqual([
+          ['held-qualification.suspended', '2026-10-03'],
+          ['held-qualification.reinstated', '2026-10-10'],
+          ['held-qualification.revoked', '2026-11-01'],
+        ]);
+        expect(await historyOf(id)).toEqual([
+          ['granted', '2026-01-10', ''],
+          ['suspended', '2026-10-03', 'incident'],
+          ['reinstated', '2026-10-10', ''],
+          ['revoked', '2026-11-01', 'misconduct'],
+          ['revoked', '2027-01-01', EMPLOYMENT_ENDED_REASON],
+        ]);
+      });
+
+      it('revokes urgently before a suspension recorded ahead of time, and refuses changes on dates already revoked', async () => {
+        const ticket = await firstAid();
+        const qualificationId = ticket.id as string;
+        const profileId = uuid();
+        const held = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2026-01-10',
+          expiresOn: '2026-12-15',
+        });
+        const id = held.id as string;
+        expect(
+          await service.suspend(id, {
+            effectiveOn: '2026-12-01',
+            reason: 'booked audit',
+          }),
+        ).toMatchObject({ status: 'suspended' });
+        const on = (date: string) =>
+          service.check(profileId, qualificationId, date);
+        const expiring = async (today: string) =>
+          (await service.expiringWithin(90, today)).map((row) => row.id);
+        expect(await expiring('2026-10-03')).toEqual([id]);
+
+        expect(
+          await service.revoke(id, {
+            effectiveOn: '2026-10-03',
+            reason: 'forged',
+          }),
+        ).toMatchObject({ status: 'revoked' });
+        expect(await on('2026-10-02')).toEqual({
+          ok: true,
+          heldQualificationId: id,
+          expiresOn: '2026-12-15',
+        });
+        for (const date of ['2026-10-03', '2026-12-01', '2026-12-15'])
+          expect(await on(date)).toEqual({ ok: false, reason: 'revoked' });
+        expect(await expiring('2026-10-02')).toEqual([id]);
+        expect(await expiring('2026-10-03')).toEqual([]);
+        expect(await service.holders(qualificationId, '2026-10-03')).toEqual(
+          [],
+        );
+        expect(
+          (await service.listForProfile(profileId, '2026-12-01')).map(
+            (entry) => entry.status,
+          ),
+        ).toEqual(['revoked']);
+
+        // Revoked from 10-03: a second revocation on or after it, and a
+        // suspension or reinstatement on a revoked date, are refused.
+        const transition = code('HR_STATUS_TRANSITION');
+        for (const effectiveOn of ['2026-10-03', '2026-11-01'])
+          await expect(
+            service.revoke(id, { effectiveOn, reason: 'again' }),
+          ).rejects.toMatchObject(transition);
+        await expect(
+          service.suspend(id, { effectiveOn: '2026-12-02', reason: 'late' }),
+        ).rejects.toMatchObject(transition);
+        await expect(
+          service.reinstate(id, { effectiveOn: '2026-12-05' }),
+        ).rejects.toMatchObject(transition);
+        expect(await historyOf(id)).toEqual([
+          ['granted', '2026-01-10', ''],
+          ['revoked', '2026-10-03', 'forged'],
+          ['suspended', '2026-12-01', 'booked audit'],
+        ]);
+      });
+
+      it('suspends, reinstates and revokes a lapsed ticket the sweep stored as expired', async () => {
+        const ticket = await firstAid();
+        const qualificationId = ticket.id as string;
+        const profileId = uuid();
+        const held = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2025-01-01',
+          expiresOn: '2025-12-31',
+        });
+        const id = held.id as string;
+        expect(
+          (await service.sweepExpired('2026-02-01')).map((row) => row.status),
+        ).toEqual(['expired']);
+        expect(
+          await service.suspend(id, {
+            effectiveOn: '2026-03-01',
+            reason: 'under review',
+          }),
+        ).toMatchObject({ status: 'suspended' });
+        expect(
+          await service.check(profileId, qualificationId, '2026-03-01'),
+        ).toEqual({ ok: false, reason: 'suspended' });
+        // Lifting the suspension leaves the lapse as the sweep stored it.
+        expect(
+          await service.reinstate(id, { effectiveOn: '2026-03-05' }),
+        ).toMatchObject({ status: 'expired' });
+        expect(await service.sweepExpired('2026-04-01')).toEqual([]);
+        expect(
+          await service.check(profileId, qualificationId, '2026-03-05'),
+        ).toEqual({ ok: false, reason: 'expired' });
+        expect(
+          await service.revoke(id, {
+            effectiveOn: '2026-03-10',
+            reason: 'forged',
+          }),
+        ).toMatchObject({ status: 'revoked' });
+        expect(
+          await service.check(profileId, qualificationId, '2026-03-10'),
+        ).toEqual({ ok: false, reason: 'revoked' });
+      });
+
+      it('renews a ticket that lapses during the notice period, and the renewal ends with the employment', async () => {
+        const pass = await service.define({
+          key: 'site-pass',
+          name: 'Site pass',
+          kind: 'authorization',
+          expires: true,
+        });
+        const qualificationId = pass.id as string;
+        const profileId = uuid();
+        const employmentId = await hire(profileId, '2026-01-01');
+        const lapsing = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2026-01-01',
+          expiresOn: '2026-11-15',
+        });
+        await endEmployment(employmentId, '2026-12-31');
+        const on = (date: string) =>
+          service.check(profileId, qualificationId, date);
+        expect(await on('2026-11-16')).toEqual({
+          ok: false,
+          reason: 'expired',
+        });
+        // A fresh grant is not the way out, and the refusal says what is.
+        await expect(
+          service.grant({
+            qualificationId,
+            profileId,
+            issuedOn: '2026-11-16',
+            expiresOn: '2027-11-15',
+          }),
+        ).rejects.toMatchObject({
+          code: 'HR_ALREADY_HELD',
+          message: expect.stringContaining('renew the existing one'),
+        });
+        events.length = 0;
+        const renewal = await service.renew(lapsing.id as string, {
+          issuedOn: '2026-11-16',
+          expiresOn: '2027-11-15',
+        });
+        expect(renewal).toMatchObject({
+          renewalOfId: lapsing.id,
+          employmentId,
+          status: 'revoked',
+        });
+        expect(events.map((event) => [event.type, event.effectiveOn])).toEqual([
+          ['held-qualification.renewed', '2026-11-16'],
+          ['held-qualification.revoked', '2027-01-01'],
+        ]);
+        expect(await historyOf(renewal.id)).toEqual([
+          ['renewed', '2026-11-16', ''],
+          ['revoked', '2027-01-01', EMPLOYMENT_ENDED_REASON],
+        ]);
+        // Past dates answer as before; the gap is closed to the last day.
+        expect(await on('2026-06-01')).toEqual({
+          ok: true,
+          heldQualificationId: lapsing.id,
+          expiresOn: '2026-11-15',
+        });
+        for (const date of ['2026-11-16', '2026-12-31'])
+          expect(await on(date)).toEqual({
+            ok: true,
+            heldQualificationId: renewal.id,
+            expiresOn: '2027-11-15',
+          });
+        expect(await on('2027-01-01')).toEqual({
+          ok: false,
+          reason: 'revoked',
+        });
+        expect(
+          (await service.holders(qualificationId, '2026-12-31')).map(
+            (row) => row.id,
+          ),
+        ).toEqual([renewal.id]);
+        expect(await service.holders(qualificationId, '2027-01-01')).toEqual(
+          [],
+        );
+        expect(
+          (await service.listForProfile(profileId, '2027-01-01')).map(
+            (entry) => [entry.held.id, entry.status],
+          ),
+        ).toEqual([[renewal.id, 'revoked']]);
+      });
+
+      it('renews a ticket whose revocation is scheduled for later and carries the revocation forward', async () => {
+        const ticket = await firstAid();
+        const qualificationId = ticket.id as string;
+        const profileId = uuid();
+        const lapsing = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2026-01-01',
+          expiresOn: '2026-06-30',
+        });
+        await service.revoke(lapsing.id as string, {
+          effectiveOn: '2026-12-01',
+          reason: 'scheme closes',
+        });
+        events.length = 0;
+        const renewal = await service.renew(lapsing.id as string, {
+          issuedOn: '2026-07-01',
+          expiresOn: '2027-06-30',
+        });
+        expect(renewal.status).toBe('revoked');
+        expect(events.map((event) => [event.type, event.effectiveOn])).toEqual([
+          ['held-qualification.renewed', '2026-07-01'],
+          ['held-qualification.revoked', '2026-12-01'],
+        ]);
+        expect(await historyOf(renewal.id)).toEqual([
+          ['renewed', '2026-07-01', ''],
+          ['revoked', '2026-12-01', 'scheme closes'],
+        ]);
+        const on = (date: string) =>
+          service.check(profileId, qualificationId, date);
+        expect(await on('2026-06-30')).toMatchObject({
+          ok: true,
+          heldQualificationId: lapsing.id,
+        });
+        for (const date of ['2026-07-01', '2026-11-30'])
+          expect(await on(date)).toMatchObject({
+            ok: true,
+            heldQualificationId: renewal.id,
+          });
+        expect(await on('2026-12-01')).toEqual({
+          ok: false,
+          reason: 'revoked',
+        });
+        expect(
+          (await service.expiringWithin(400, '2026-11-30')).map(
+            (row) => row.id,
+          ),
+        ).toEqual([renewal.id]);
+        expect(await service.expiringWithin(400, '2026-12-01')).toEqual([]);
+        // Revoked on or before the renewal date is still final.
+        for (const issuedOn of ['2026-12-01', '2027-01-01'])
+          await expect(
+            service.renew(renewal.id as string, { issuedOn }),
+          ).rejects.toMatchObject(code('HR_INVALID'));
+      });
+
+      it('decides the employment-end cutoff per renewal chain, not per row', async () => {
+        const pass = await service.define({
+          key: 'site-pass',
+          name: 'Site pass',
+          kind: 'authorization',
+          expires: true,
+        });
+        const qualificationId = pass.id as string;
+        /** A pass through 2026, renewed in February through January 2027. */
+        const chainFor = async () => {
+          const profileId = uuid();
+          const employmentId = await hire(profileId, '2026-01-01');
+          const first = await service.grant({
+            qualificationId,
+            profileId,
+            issuedOn: '2026-01-01',
+            expiresOn: '2026-12-31',
+          });
+          const latest = await service.renew(first.id as string, {
+            issuedOn: '2026-02-01',
+            expiresOn: '2027-01-31',
+          });
+          return { profileId, employmentId, first, latest };
+        };
+        const summary = (delivered: HrEvent[]) =>
+          delivered.map((event) => [
+            event.type,
+            event.effectiveOn,
+            'heldQualification' in event ? event.heldQualification.id : null,
+          ]);
+
+        // A chain already revoked before the cutoff gets nothing, on any row.
+        const withdrawn = await chainFor();
+        await service.revoke(withdrawn.latest.id as string, {
+          effectiveOn: '2026-03-01',
+          reason: 'withdrawn',
+        });
+        expect(
+          summary(await endEmployment(withdrawn.employmentId, '2026-06-30')),
+        ).toEqual([['employment.ended', '2026-06-30', null]]);
+        expect(await historyOf(withdrawn.first.id)).toEqual([
+          ['granted', '2026-01-01', ''],
+        ]);
+        expect(await historyOf(withdrawn.latest.id)).toEqual([
+          ['renewed', '2026-02-01', ''],
+          ['revoked', '2026-03-01', 'withdrawn'],
+        ]);
+
+        // A chain in force gets one revocation and one event, on its latest
+        // row; the row it renewed is cut off through the chain.
+        const inForce = await chainFor();
+        expect(
+          summary(await endEmployment(inForce.employmentId, '2026-06-30')),
+        ).toEqual([
+          ['held-qualification.revoked', '2026-07-01', inForce.latest.id],
+          ['employment.ended', '2026-06-30', null],
+        ]);
+        expect(await historyOf(inForce.first.id)).toEqual([
+          ['granted', '2026-01-01', ''],
+        ]);
+        expect(await historyOf(inForce.latest.id)).toEqual([
+          ['renewed', '2026-02-01', ''],
+          ['revoked', '2026-07-01', EMPLOYMENT_ENDED_REASON],
+        ]);
+        const on = (date: string) =>
+          service.check(inForce.profileId, qualificationId, date);
+        expect(await on('2026-01-15')).toMatchObject({
+          ok: true,
+          heldQualificationId: inForce.first.id,
+        });
+        expect(await on('2026-06-30')).toMatchObject({
+          ok: true,
+          heldQualificationId: inForce.latest.id,
+        });
+        // The first row has not expired, yet it does not pass either.
+        for (const date of ['2026-07-01', '2026-12-31'])
+          expect(await on(date)).toEqual({ ok: false, reason: 'revoked' });
+        expect(await service.holders(qualificationId, '2026-07-01')).toEqual(
+          [],
+        );
+        expect(
+          (await service.listForProfile(inForce.profileId, '2026-07-01')).map(
+            (entry) => [entry.held.id, entry.status],
+          ),
+        ).toEqual([[inForce.latest.id, 'revoked']]);
+      });
+
+      it('refuses a mutation through a beginTransaction handle', async () => {
+        if (!db.beginTransaction)
+          throw new Error('The test database must support transactions.');
+        const tx = await db.beginTransaction();
+        const delivered: HrEvent[] = [];
+        let refused: unknown;
+        try {
+          refused = await new QualificationService(tx, actor, {
+            onEvent: (event) => void delivered.push(event),
+          })
+            .define({ key: 'in-handle', name: 'In handle', kind: 'training' })
+            .catch((error: unknown) => error);
+        } finally {
+          await tx.rollback();
+        }
+        expect(refused).toMatchObject(code('HR_TRANSACTION_UNSUPPORTED'));
+        expect(delivered).toEqual([]);
+        expect(await service.findByKey('in-handle')).toBeNull();
+      });
+
       it('refuses a mutation through a handle that is already inside a transaction', async () => {
         if (!db.transaction)
           throw new Error('The test database must support transactions.');
@@ -1692,7 +2190,7 @@ export function qualificationsSuite(
         ).toBeNull();
       });
 
-      it('verifies a suspended qualification but never a revoked, unknown or foreign one', async () => {
+      it('verifies a suspended or revoked qualification but never an unknown or foreign one', async () => {
         const training = await orientation();
         const held = await service.grant({
           qualificationId: training.id as string,
@@ -1724,10 +2222,73 @@ export function qualificationsSuite(
         await expect(
           service.verify(id, { documentAssetId: ' ' }),
         ).rejects.toMatchObject(code('HR_INVALID'));
+        // Verification is not a status: a row stored `revoked` (which may
+        // still be in force until the revocation takes effect) is verified
+        // like any other, and nothing else about it changes.
         await service.revoke(id, { effectiveOn: '2026-03-01', reason: 'done' });
-        await expect(service.verify(id)).rejects.toMatchObject(
-          code('HR_STATUS_TRANSITION'),
-        );
+        events.length = 0;
+        const documentAssetId = uuid();
+        const verifier = { tenantId: actor.tenantId, profileId: uuid() };
+        expect(
+          await new QualificationService(db, verifier).verify(id, {
+            documentAssetId,
+          }),
+        ).toMatchObject({
+          status: 'revoked',
+          verifiedByProfileId: verifier.profileId,
+          documentAssetId,
+        });
+        expect(events).toEqual([]);
+        expect((await service.history(id)).map((c) => c.kind)).toEqual([
+          'granted',
+          'suspended',
+          'revoked',
+        ]);
+      });
+
+      it('saves only the verification fields of a revoked row, and only under the write capability', async () => {
+        const training = await orientation();
+        const held = await service.grant({
+          qualificationId: training.id as string,
+          profileId: uuid(),
+          issuedOn: '2026-01-01',
+          certificateNumber: 'C-1',
+        });
+        const id = held.id as string;
+        await service.revoke(id, { effectiveOn: '2027-01-01', reason: 'done' });
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const rows = await HeldQualificationCollection.create({ db });
+          const load = async () =>
+            (await rows.list({ where: { tenantId: actor.tenantId, id } }))[0];
+          const immutable = code('HR_HISTORY_IMMUTABLE');
+          const renumbered = await load();
+          renumbered.certificateNumber = 'C-2';
+          renumbered.verifiedAt = new Date();
+          await expect(persistHr(renumbered)).rejects.toMatchObject(immutable);
+          const restored = await load();
+          restored.status = 'valid';
+          await expect(persistHr(restored)).rejects.toMatchObject(immutable);
+          const extended = await load();
+          extended.expiresOn = '2030-01-01';
+          await expect(persistHr(extended)).rejects.toMatchObject(immutable);
+          const outside = await load();
+          outside.verifiedAt = new Date();
+          await expect(outside.save()).rejects.toMatchObject(
+            code('HR_WRITE_FORBIDDEN'),
+          );
+          const verified = await load();
+          verified.verifiedByProfileId = actor.profileId;
+          verified.verifiedAt = new Date();
+          verified.documentAssetId = uuid();
+          await persistHr(verified);
+          expect(await load()).toMatchObject({
+            status: 'revoked',
+            certificateNumber: 'C-1',
+            expiresOn: null,
+            verifiedByProfileId: actor.profileId,
+            documentAssetId: verified.documentAssetId,
+          });
+        });
       });
     });
 

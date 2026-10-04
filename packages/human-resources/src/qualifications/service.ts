@@ -1,7 +1,10 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { addDays, addMonths, assertIsoDate } from '../dates.js';
-import { EmploymentCollection } from '../employment/models.js';
-import { employmentsOn, termsCovering } from '../employment/queries.js';
+import { addDays, addMonths, assertIsoDate, dateWithin } from '../dates.js';
+import {
+  EmploymentCollection,
+  EmploymentTermCollection,
+} from '../employment/models.js';
+import { employmentsOn } from '../employment/queries.js';
 import { type HrEventQueue, HrService } from '../service-base.js';
 import {
   type HeldQualificationChangeKind,
@@ -174,6 +177,13 @@ export const SUGGESTED_QUALIFICATIONS: readonly DefineQualificationInput[] =
     } as const),
   ]);
 
+/** The cutoff an already closed employment term puts on a qualification. */
+function employmentEnd(endsOn: IsoDate | null): Revocation | null {
+  return endsOn === null
+    ? null
+    : { on: addDays(endsOn, 1), reason: EMPLOYMENT_ENDED_REASON };
+}
+
 const KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KINDS: readonly QualificationKind[] = [
   'ticket',
@@ -331,25 +341,42 @@ function chainStatusesOn(
   return statuses;
 }
 
-/** Changes that alter standing; `granted`, `renewed` and `expired` do not. */
-const STANDING_KINDS: readonly HeldQualificationChangeKind[] = [
+/**
+ * Changes that suspend or lift a suspension. They are recorded in date order;
+ * a revocation is terminal and may be recorded for any date.
+ */
+const SUSPENSION_KINDS: readonly HeldQualificationChangeKind[] = [
   'suspended',
   'reinstated',
-  'revoked',
 ];
+
+/** A revocation: the day it takes effect and why. */
+interface Revocation {
+  /** First day revoked. */
+  on: IsoDate;
+  /** The reason recorded with it. */
+  reason: string;
+}
+
+/** The revocation in force: the earliest one recorded, or null. */
+function revocationOf(
+  changes: readonly HeldQualificationChange[],
+): Revocation | null {
+  let earliest: HeldQualificationChange | null = null;
+  for (const change of changes)
+    if (
+      change.kind === 'revoked' &&
+      (earliest === null || change.effectiveOn < earliest.effectiveOn)
+    )
+      earliest = change;
+  return earliest && { on: earliest.effectiveOn, reason: earliest.reason };
+}
 
 /** The date a revocation takes effect: the earliest one recorded, or null. */
 function revokedFrom(
   changes: readonly HeldQualificationChange[],
 ): IsoDate | null {
-  let earliest: IsoDate | null = null;
-  for (const change of changes)
-    if (
-      change.kind === 'revoked' &&
-      (earliest === null || change.effectiveOn < earliest)
-    )
-      earliest = change.effectiveOn;
-  return earliest;
+  return revocationOf(changes)?.on ?? null;
 }
 
 /** The latest effective date among changes of the given kinds, or null. */
@@ -394,7 +421,10 @@ function longestLasting(rows: readonly HeldQualification[]): HeldQualification {
  * correctly and expiry needs no scheduler. The stored status records the
  * last change made (a revocation or suspension stores at once, even when it
  * takes effect later), so every rule that asks about standing replays the
- * dated history instead. The stored `expired` status is written only by
+ * dated history instead, including the rules that decide whether a
+ * qualification may be suspended, reinstated, revoked or renewed. A stored
+ * `revoked` is final: later changes to such a row are change rows only. The
+ * stored `expired` status is written only by
  * {@link QualificationService.sweepExpired}.
  */
 export class QualificationService extends HrService {
@@ -513,7 +543,7 @@ export class QualificationService extends HrService {
    * effective the day after the term's last day, is recorded in the same
    * transaction and the row is stored `revoked`.
    *
-   * @throws HrError `HR_ALREADY_HELD` unless every earlier grant is revoked effective on or before `issuedOn`, `HR_QUALIFICATION_SCOPE`, `HR_INVALID`, `HR_NOT_FOUND`
+   * @throws HrError `HR_ALREADY_HELD` unless every earlier grant is revoked effective on or before `issuedOn` (renew the existing one instead), `HR_QUALIFICATION_SCOPE`, `HR_INVALID`, `HR_NOT_FOUND`
    */
   async grant(input: GrantQualificationInput): Promise<HeldQualification> {
     const qualificationId = this.id('qualificationId', input?.qualificationId);
@@ -539,14 +569,14 @@ export class QualificationService extends HrService {
         throw new HrError(
           'HR_ALREADY_HELD',
           live.revokedOn
-            ? `This person holds '${definition.key}' until its revocation takes effect on ${live.revokedOn}; grant a new one from that date.`
+            ? `This person holds '${definition.key}' until its revocation takes effect on ${live.revokedOn}; renew the existing one instead.`
             : `This person already holds '${definition.key}'; renew it instead.`,
         );
       const row = await this.insertHeld(db, queue, 'granted', {
         qualificationId,
         profileId,
         employmentId,
-        endsOn,
+        revocation: employmentEnd(endsOn),
         issuedOn,
         expiresOn,
         renewalOfId: null,
@@ -564,12 +594,21 @@ export class QualificationService extends HrService {
    *
    * The renewal is validated against the old row's dated history, not its
    * stored status: `issuedOn` cannot be earlier than the row's latest
-   * suspension, reinstatement or revocation (the renewal would otherwise
-   * answer for dates the history says were suspended), and the row must not
-   * be suspended on `issuedOn`. A row with a revocation recorded, effective
-   * yet or not, is never renewed.
+   * suspension or reinstatement (the renewal would otherwise answer for dates
+   * the history says were suspended), the row must not be suspended on
+   * `issuedOn`, and it must not be revoked on or before `issuedOn`.
    *
-   * @throws HrError `HR_STATUS_TRANSITION` when suspended on `issuedOn` (reinstate it first); `HR_ALREADY_HELD` when the person holds another grant outside this chain that is not revoked on or before `issuedOn`; `HR_INVALID` for a revoked or already renewed row, or an `issuedOn` before the row's own or before its latest standing change; `HR_NOT_FOUND`
+   * A revocation recorded for a later date (a scheduled one, or the end of an
+   * employment whose last day is ahead) does not stop a renewal: the
+   * qualification is still in force, so a ticket that lapses first can be
+   * renewed. The renewal carries the cutoff forward. It is stored `revoked`
+   * with a revocation at the earlier of the old row's pending revocation
+   * (with its reason) and, for an employment-scoped one inside a term whose
+   * end is recorded, the day after the last day employed
+   * (`employment-ended`); `held-qualification.renewed` and
+   * `held-qualification.revoked` are both raised.
+   *
+   * @throws HrError `HR_STATUS_TRANSITION` when suspended on `issuedOn` (reinstate it first); `HR_ALREADY_HELD` when the person holds another grant outside this chain that is not revoked on or before `issuedOn`; `HR_INVALID` for a row revoked on or before `issuedOn`, an already renewed row, or an `issuedOn` before the row's own or before its latest suspension or reinstatement; `HR_NOT_FOUND`
    */
   async renew(
     heldQualificationId: string,
@@ -581,11 +620,17 @@ export class QualificationService extends HrService {
       const prior = await this.held(db, priorId);
       const history =
         (await this.changesByHeld(db, [prior])).get(priorId) ?? [];
-      // Revocation is terminal from the moment it is recorded: an issue date
-      // before it would precede a standing change, and one after it is revoked.
-      if (prior.status === 'revoked' || revokedFrom(history) !== null)
+      // Revocation is terminal from the day it takes effect; until then the
+      // qualification is in force and can be renewed. A stored `revoked` with
+      // no dated revocation (a row written outside the service) has no day to
+      // go by and is treated as revoked throughout.
+      const pending = revocationOf(history);
+      if (
+        (pending !== null && pending.on <= issuedOn) ||
+        (pending === null && prior.status === 'revoked')
+      )
         throw invalid(
-          'A revoked qualification cannot be renewed; grant a new one.',
+          'A qualification revoked on or before the renewal date cannot be renewed; grant a new one.',
         );
       const siblings = await this.rows(db, {
         profileId: prior.profileId,
@@ -599,10 +644,10 @@ export class QualificationService extends HrService {
         throw invalid('A renewal cannot be issued before what it renews.');
       // A renewal starts out in good standing from its issue date, so it must
       // not reach back over a suspension the history records.
-      const changedOn = latestOf(history, STANDING_KINDS);
+      const changedOn = latestOf(history, SUSPENSION_KINDS);
       if (changedOn !== null && issuedOn < changedOn)
         throw invalid(
-          `A renewal cannot be issued before the latest standing change on ${changedOn}.`,
+          `A renewal cannot be issued before the latest suspension or reinstatement on ${changedOn}.`,
         );
       if (standingOn(history, issuedOn) === 'suspended')
         throw new HrError(
@@ -625,11 +670,17 @@ export class QualificationService extends HrService {
         prior.employmentId,
         issuedOn,
       );
+      // The earlier cutoff wins; on the same day the employment end is the
+      // reason kept.
+      const ended = employmentEnd(endsOn);
       const row = await this.insertHeld(db, queue, 'renewed', {
         qualificationId: prior.qualificationId,
         profileId: prior.profileId,
         employmentId,
-        endsOn,
+        revocation:
+          ended !== null && (pending === null || ended.on <= pending.on)
+            ? ended
+            : pending,
         issuedOn,
         expiresOn,
         renewalOfId: priorId,
@@ -641,23 +692,32 @@ export class QualificationService extends HrService {
   }
 
   /**
-   * Suspend a valid qualification from `effectiveOn` until it is reinstated.
-   * Act on the latest row of a renewal chain: the whole chain shares its
-   * standing, so the rows it renewed stop passing checks too.
+   * Suspend a qualification from `effectiveOn` until it is reinstated. Act on
+   * the latest row of a renewal chain: the whole chain shares its standing,
+   * so the rows it renewed stop passing checks too.
+   *
+   * Whether it can be suspended is decided from the chain's dated history as
+   * of `effectiveOn`, never from the stored status: it must be neither
+   * suspended nor revoked on that day. A revocation recorded for a later date
+   * (scheduled, or the end of an employment whose last day is ahead) does not
+   * prevent it, and neither does a stored `expired`.
    *
    * `effectiveOn` may be any date from the chain's first issue date onward,
-   * not before the chain's latest suspension, reinstatement or revocation. It
-   * may precede the latest row's own issue date: with a renewal recorded
-   * ahead of time, that is how the ticket in force today is suspended, and
-   * the renewal is then suspended from its issue date until reinstated.
+   * not before the chain's latest suspension or reinstatement. It may precede
+   * the latest row's own issue date: with a renewal recorded ahead of time,
+   * that is how the ticket in force today is suspended, and the renewal is
+   * then suspended from its issue date until reinstated.
    *
-   * @throws HrError `HR_INVALID` for a row that was renewed, a date outside that range or a bad input; `HR_STATUS_TRANSITION`; `HR_NOT_FOUND`
+   * The stored status becomes `suspended`, except on a row already stored
+   * `revoked`, which keeps it: only the change row is added.
+   *
+   * @throws HrError `HR_INVALID` for a row that was renewed, a date outside that range or a bad input; `HR_STATUS_TRANSITION` when suspended or revoked on `effectiveOn`; `HR_NOT_FOUND`
    */
   async suspend(
     heldQualificationId: string,
     input: HeldQualificationReasonInput,
   ): Promise<HeldQualification> {
-    return this.transition(heldQualificationId, 'suspended', ['valid'], {
+    return this.transition(heldQualificationId, 'suspended', {
       effectiveOn: input?.effectiveOn,
       reason: text('reason', input?.reason, true),
     });
@@ -665,15 +725,17 @@ export class QualificationService extends HrService {
 
   /**
    * Lift a suspension from `effectiveOn`, which follows the same date rule as
-   * {@link suspend}.
+   * {@link suspend}. The chain must be suspended on that day by its dated
+   * history, and not yet revoked. The stored status becomes `valid` (or stays
+   * `revoked` or `expired` when that was stored).
    *
-   * @throws HrError `HR_INVALID` for a row that was renewed, a date before the suspension or a bad input; `HR_STATUS_TRANSITION`; `HR_NOT_FOUND`
+   * @throws HrError `HR_INVALID` for a row that was renewed, a date before the suspension or a bad input; `HR_STATUS_TRANSITION` unless suspended on `effectiveOn`; `HR_NOT_FOUND`
    */
   async reinstate(
     heldQualificationId: string,
     input: ReinstateQualificationInput,
   ): Promise<HeldQualification> {
-    return this.transition(heldQualificationId, 'reinstated', ['suspended'], {
+    return this.transition(heldQualificationId, 'reinstated', {
       effectiveOn: input?.effectiveOn,
       reason: text('reason', input?.reason),
     });
@@ -682,37 +744,42 @@ export class QualificationService extends HrService {
   /**
    * Revoke a qualification from `effectiveOn`. Terminal: grant a new one
    * dated on or after it. Act on the latest row of a renewal chain: the rows
-   * it renewed stop passing checks from the same date. `effectiveOn` follows
-   * the same date rule as {@link suspend}; dated before a renewal recorded
-   * ahead of time, the renewal is revoked from its issue date.
+   * it renewed stop passing checks from the same date; dated before a renewal
+   * recorded ahead of time, the renewal is revoked from its issue date.
+   *
+   * `effectiveOn` may be any date from the chain's first issue date onward,
+   * whatever else is recorded: an urgent revocation may be dated before a
+   * suspension recorded ahead of time, or before a revocation that has not
+   * taken effect yet (a scheduled one, or the end of an employment whose last
+   * day is ahead). The earliest revocation is the one in force. It is refused
+   * only when the chain is already revoked on or before `effectiveOn`.
    *
    * The stored status becomes `revoked` at once, meaning a revocation has
    * been recorded; until `effectiveOn` the qualification still passes
-   * {@link check}.
+   * {@link check}. A row already stored `revoked` is not saved again: the
+   * earlier revocation is one more change row, and the event carries its
+   * date.
    *
-   * @throws HrError `HR_INVALID` for a row that was renewed, a date outside that range or a bad input; `HR_STATUS_TRANSITION`; `HR_NOT_FOUND`
+   * @throws HrError `HR_INVALID` for a row that was renewed, a date before the chain was issued or a bad input; `HR_STATUS_TRANSITION` when already revoked on or before `effectiveOn`; `HR_NOT_FOUND`
    */
   async revoke(
     heldQualificationId: string,
     input: HeldQualificationReasonInput,
   ): Promise<HeldQualification> {
-    return this.transition(
-      heldQualificationId,
-      'revoked',
-      ['valid', 'suspended', 'expired'],
-      {
-        effectiveOn: input?.effectiveOn,
-        reason: text('reason', input?.reason, true),
-      },
-    );
+    return this.transition(heldQualificationId, 'revoked', {
+      effectiveOn: input?.effectiveOn,
+      reason: text('reason', input?.reason, true),
+    });
   }
 
   /**
    * Record that the actor has verified a held qualification's document, now.
    * Optionally attaches, replaces or removes the document. The status and the
-   * dated history do not change, and no event is raised.
+   * dated history do not change, and no event is raised. Verification is not
+   * a status, so it works whatever the standing, including on a row stored
+   * `revoked` (which may still be in force until its revocation takes effect).
    *
-   * @throws HrError `HR_STATUS_TRANSITION` for a revoked row (it never changes), `HR_INVALID`, `HR_NOT_FOUND`
+   * @throws HrError `HR_INVALID`, `HR_NOT_FOUND`
    */
   async verify(
     heldQualificationId: string,
@@ -727,11 +794,6 @@ export class QualificationService extends HrService {
         : this.optionalId('documentAssetId', input.documentAssetId);
     await this.transact(async (db) => {
       const row = await this.held(db, id);
-      if (row.status === 'revoked')
-        throw new HrError(
-          'HR_STATUS_TRANSITION',
-          'A revoked qualification cannot be verified.',
-        );
       if (documentAssetId !== undefined) row.documentAssetId = documentAssetId;
       row.verifiedByProfileId = this.actor.profileId;
       row.verifiedAt = new Date();
@@ -1193,8 +1255,17 @@ export class QualificationService extends HrService {
       throw mismatch(
         `'${definition.key}' belongs to an employment, and this person has no matching employment.`,
       );
-    const term = (await termsCovering(db, this.actor.tenantId, issuedOn)).find(
-      (covering) => covering.employmentId === employment.id,
+    const terms = await EmploymentTermCollection.create({ db });
+    const term = (
+      await terms.list({
+        where: {
+          tenantId: this.actor.tenantId,
+          employmentId: employment.id as string,
+          'startedOn <=': issuedOn,
+        },
+      })
+    ).find((covering) =>
+      dateWithin(issuedOn, covering.startedOn, covering.endedOn),
     );
     if (!term)
       throw mismatch(
@@ -1204,11 +1275,12 @@ export class QualificationService extends HrService {
   }
 
   /**
-   * Insert a granted or renewed row with its change and event. `endsOn` is
-   * the last day of an employment term that is already closed: the row then
-   * ends with it, exactly as `EmploymentService.end()` leaves the rows that
-   * existed when the end was recorded (stored `revoked`, an `employment-ended`
-   * revocation effective the day after, and the revoked event).
+   * Insert a granted or renewed row with its change and event. With a
+   * `revocation` (the end of an employment term that is already closed, or a
+   * pending revocation a renewal carries forward) the row starts out cut off,
+   * exactly as `EmploymentService.end()` leaves the rows that existed when
+   * the end was recorded: stored `revoked`, a revocation on that date, and
+   * the revoked event.
    */
   private async insertHeld(
     db: DatabaseInterface,
@@ -1218,7 +1290,7 @@ export class QualificationService extends HrService {
       qualificationId: string;
       profileId: string;
       employmentId: string | null;
-      endsOn: IsoDate | null;
+      revocation: Revocation | null;
       issuedOn: IsoDate;
       expiresOn: IsoDate | null;
       renewalOfId: string | null;
@@ -1228,7 +1300,7 @@ export class QualificationService extends HrService {
       >;
     },
   ): Promise<HeldQualification> {
-    const { input, endsOn, ...identityFields } = values;
+    const { input, revocation, ...identityFields } = values;
     const verified = flag('verified', input.verified, false);
     const row = await insertHr(HeldQualification, db, {
       tenantId: this.actor.tenantId,
@@ -1238,30 +1310,34 @@ export class QualificationService extends HrService {
         'documentAssetId',
         input.documentAssetId,
       ),
-      status: endsOn === null ? 'valid' : 'revoked',
+      status: revocation === null ? 'valid' : 'revoked',
       verifiedByProfileId: verified ? this.actor.profileId : null,
       verifiedAt: verified ? new Date() : null,
     });
     await this.recordChange(db, row, kind, values.issuedOn, '');
     this.announce(queue, `held-qualification.${kind}`, row, values.issuedOn);
-    if (endsOn !== null) {
-      const revokedOn = addDays(endsOn, 1);
+    if (revocation !== null) {
       await this.recordChange(
         db,
         row,
         'revoked',
-        revokedOn,
-        EMPLOYMENT_ENDED_REASON,
+        revocation.on,
+        revocation.reason,
       );
-      this.announce(queue, 'held-qualification.revoked', row, revokedOn);
+      this.announce(queue, 'held-qualification.revoked', row, revocation.on);
     }
     return row;
   }
 
+  /**
+   * Suspend, reinstate or revoke the latest row of a chain. The change is
+   * validated against the chain's dated history as of `effectiveOn`; the
+   * stored status is not consulted, except that a row stored `revoked` is
+   * never saved again and gets the change row only.
+   */
   private async transition(
     heldQualificationId: string,
     kind: 'suspended' | 'reinstated' | 'revoked',
-    from: readonly HeldQualificationStatus[],
     input: { effectiveOn: IsoDate; reason: string },
   ): Promise<HeldQualification> {
     const id = this.id('heldQualificationId', heldQualificationId);
@@ -1275,11 +1351,6 @@ export class QualificationService extends HrService {
       if (siblings.some((other) => other.renewalOfId === id))
         throw invalid(
           `This qualification was renewed and cannot be ${kind} by itself; act on the latest row in its renewal chain.`,
-        );
-      if (!from.includes(row.status))
-        throw new HrError(
-          'HR_STATUS_TRANSITION',
-          `A ${row.status} qualification cannot be ${kind}.`,
         );
       // The change is the chain's: it may take effect while an earlier row is
       // the one in force, before this row's own issue date.
@@ -1302,22 +1373,46 @@ export class QualificationService extends HrService {
           `effectiveOn must not be before the qualification was issued on ${firstIssuedOn}.`,
         );
       const changes = await this.changesByHeld(db, chain);
-      const latest = [
-        ...chain.map((member) =>
-          latestOf(changes.get(member.id as string) ?? [], STANDING_KINDS),
-        ),
-        latestOf(changes.get(id) ?? [], ['expired']),
-      ].reduce<IsoDate | null>(
-        (max, date) =>
-          date !== null && (max === null || date > max) ? date : max,
-        null,
+      const history = chain.flatMap(
+        (member) => changes.get(member.id as string) ?? [],
       );
-      if (latest !== null && effectiveOn < latest)
-        throw invalid(
-          `effectiveOn must not be before the latest change on ${latest}.`,
+      if (kind === 'revoked') {
+        // Terminal, and the earliest one wins in replay, so it needs no
+        // ordering against other changes: only an earlier or same-day
+        // revocation makes it pointless.
+        const revokedOn = revokedFrom(history);
+        if (revokedOn !== null && revokedOn <= effectiveOn)
+          throw new HrError(
+            'HR_STATUS_TRANSITION',
+            `This qualification is already revoked from ${revokedOn}.`,
+          );
+      } else {
+        // Suspensions and reinstatements are recorded in date order, so the
+        // replay never has to reorder them.
+        const changedOn = latestOf(history, SUSPENSION_KINDS);
+        if (changedOn !== null && effectiveOn < changedOn)
+          throw invalid(
+            `effectiveOn must not be before the latest suspension or reinstatement on ${changedOn}.`,
+          );
+        const standing = standingOn(history, effectiveOn) ?? 'valid';
+        if (standing !== (kind === 'suspended' ? 'valid' : 'suspended'))
+          throw new HrError(
+            'HR_STATUS_TRANSITION',
+            standing === 'valid'
+              ? `A qualification that is not suspended on ${effectiveOn} cannot be reinstated.`
+              : `A qualification that is ${standing} on ${effectiveOn} cannot be ${kind}.`,
+          );
+      }
+      // `revoked` is final in storage: a row that already stores it is never
+      // saved again, and the dated change alone carries the new fact.
+      if (row.status !== 'revoked') {
+        const lapsed = (changes.get(id) ?? []).some(
+          (change) => change.kind === 'expired',
         );
-      row.status = kind === 'reinstated' ? 'valid' : kind;
-      await persistHr(row);
+        row.status =
+          kind === 'reinstated' ? (lapsed ? 'expired' : 'valid') : kind;
+        await persistHr(row);
+      }
       await this.recordChange(db, row, kind, effectiveOn, input.reason);
       this.announce(queue, `held-qualification.${kind}`, row, effectiveOn);
     });

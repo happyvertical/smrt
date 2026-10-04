@@ -6,7 +6,8 @@
  * never persists. The host receives trimmed, checked values in `onsubmit` and
  * calls `EmploymentService`: `hire` for a new hire, or, for an edit,
  * `changePosition` / `changeWorkerType` / `linkLogin` / `unlinkLogin` for
- * each value that changed, dated with the returned `effectiveOn`.
+ * each value that changed, dated with the returned `effectiveOn`. A login
+ * link or unlink takes effect at once whatever that date is.
  *
  * The person is chosen by the host before the form opens: HR holds no
  * identity data, so there is no name field here.

@@ -65,6 +65,8 @@ export interface EmployeeFormInitial {
  * a new hire onto `hire` (with the profile it chose), an edit onto
  * `changePosition` / `changeWorkerType` / `linkLogin` / `unlinkLogin` for each
  * value that differs from the stored employment, each dated `effectiveOn`.
+ * A login link or unlink takes effect at once whatever the date, so a
+ * future-dated edit that also clears the login unlinks it immediately.
  */
 export interface EmployeeFormValues {
   employeeNumber: string;

@@ -2,10 +2,14 @@ import { createLogger } from '@happyvertical/logger';
 import {
   isEmbeddedDatabase,
   isPostgresDatabase,
-  withEmbeddedWriteTransaction,
+  withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
 import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  type DatabaseInterface,
+  NestedTransactionError,
+  type TransactionHandle,
+} from '@happyvertical/sql';
 import {
   type HrActor,
   HrError,
@@ -24,12 +28,15 @@ export type HrEventQueue = (event: HrEvent) => void;
  * Applications authorize the actor before constructing a service. Reads and
  * writes reject conflicting ambient tenancy.
  *
- * Construct a service with the root database handle. A mutation opens and
- * commits its own transaction and then delivers its events; on a handle that
- * is already inside a transaction (the `tx` of `db.transaction()`, or a
- * `beginTransaction()` handle) the commit would belong to the caller, so a
- * mutation is refused with `HR_TRANSACTION_UNSUPPORTED` before anything is
- * written. Reads work on any handle.
+ * Construct a service with the root database handle. A mutation begins and
+ * commits its own transaction with `beginTransaction()` and then delivers its
+ * events; on a handle that is already inside a transaction (the `tx` of
+ * `db.transaction()`, or a `beginTransaction()` handle) the commit would
+ * belong to the caller, so a mutation is refused with
+ * `HR_TRANSACTION_UNSUPPORTED` before anything is written. Such a handle
+ * either has no `beginTransaction` or refuses it with the SDK's
+ * `NestedTransactionError`; the service never opens a nested (savepoint)
+ * transaction. Reads work on any handle.
  */
 export abstract class HrService {
   protected readonly actor: Readonly<HrActor>;
@@ -103,30 +110,47 @@ export abstract class HrService {
     run: (db: DatabaseInterface, queue: HrEventQueue) => Promise<T>,
   ): Promise<T> {
     // `@happyvertical/sql` has no after-commit hook and no marker for "inside
-    // a transaction". Every root handle it ships can begin a transaction of
-    // its own and no transaction-scoped handle can, so that is the test; a
-    // handle without `beginTransaction` is refused rather than trusted.
-    if (typeof this.db.beginTransaction !== 'function')
-      throw new HrError(
+    // a transaction", so the service begins a transaction of its own and
+    // commits it itself; it never calls `transaction()`, which on a
+    // transaction-scoped handle would re-enter the caller's transaction under
+    // a savepoint. Only a root handle can begin one: a transaction-scoped
+    // handle has no `beginTransaction` (libsql SQLite, PostgreSQL, DuckDB,
+    // JSON) or refuses it with `NestedTransactionError` before touching the
+    // connection (the native-capabilities SQLite adapter). Both fail closed.
+    const unsupported = () =>
+      new HrError(
         'HR_TRANSACTION_UNSUPPORTED',
         'HR services must be constructed with the root database handle, not one that is already inside a transaction: events are delivered when the service commits its own transaction.',
       );
+    const begin = this.db.beginTransaction;
+    if (typeof begin !== 'function') throw unsupported();
     const events: HrEvent[] = [];
     const result = await this.scope(() =>
-      withEmbeddedWriteTransaction(
-        this.db,
-        isEmbeddedDatabase(this.db),
-        async (db) => {
-          events.length = 0;
-          if (isPostgresDatabase(db))
-            await db.query(
+      withEmbeddedWriteQueue(this.db, isEmbeddedDatabase(this.db), async () => {
+        let tx: TransactionHandle;
+        try {
+          tx = await begin.call(this.db);
+        } catch (error) {
+          if (error instanceof NestedTransactionError) throw unsupported();
+          throw error;
+        }
+        let value: T;
+        try {
+          if (isPostgresDatabase(this.db))
+            await tx.query(
               'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
               JSON.stringify(['smrt.human-resources', this.actor.tenantId]),
             );
-          return run(db, (event) => events.push(event));
-        },
-        true,
-      ),
+          value = await run(tx, (event) => events.push(event));
+        } catch (error) {
+          await tx.rollback().catch(() => undefined);
+          throw error;
+        }
+        // A failed commit ends the handle itself (the SDK rolls back and
+        // releases the connection), so it is not rolled back again here.
+        await tx.commit();
+        return value;
+      }),
     );
     for (const event of events) await this.emit(event);
     return result;

@@ -67,22 +67,41 @@ with the root database handle, never one that is already inside a transaction
   `HR_INVALID`.
 - **History is append-only.** Changes are new rows. A term is closed once. A
   renewal is a new `HeldQualification` pointing at the old one through
-  `renewalOfId`. A revoked qualification never changes; an earlier cutoff for
-  one (see "Qualification scope") is a further change row, never an edit.
+  `renewalOfId`. A row stored `revoked` is never saved again, except for its
+  verification fields (`HeldQualification.save()` allows a save that changes
+  only `verifiedByProfileId`, `verifiedAt` and `documentAssetId`); a later
+  suspension, reinstatement or earlier revocation of one is a further change
+  row, never an edit.
 - **A stored qualification status is "the last change recorded", not
-  standing.** `revoke` and `suspend` store their status at once even when
-  `effectiveOn` is ahead, and `reinstate` stores `valid` even when it takes
-  effect later. Every rule that asks whether a qualification is held decides
-  from the dated history, as `check` does: the one-live-grant rule, renewal
-  validation, `expiringWithin`, and the employment-end cutoff. Only
-  `suspend` / `reinstate` / `revoke` read the stored status, to validate the
-  next transition on the latest row, where it equals the state after every
-  recorded change.
+  standing, and no rule reads it.** `revoke` and `suspend` store their status
+  at once even when `effectiveOn` is ahead, and `reinstate` stores `valid`
+  even when it takes effect later (`expired` if the sweep had stored that).
+  The one sticky value is `revoked`: once stored it stays, whatever is
+  recorded afterwards. Every rule decides from the dated history, as `check`
+  does: the one-live-grant rule, renewal validation, `expiringWithin`, the
+  employment-end cutoff, and the transitions themselves.
+- **Transitions are validated by replay as of `effectiveOn`.** On the latest
+  row of a chain, from the chain's whole history: `suspend` needs the chain
+  neither suspended nor revoked on `effectiveOn`; `reinstate` needs it
+  suspended (and not revoked) on `effectiveOn`; both are `HR_INVALID` when
+  dated before the chain's latest suspension or reinstatement, so those two
+  are recorded in date order. `revoke` is exempt from that ordering (it is
+  terminal and the earliest one wins in replay) and is refused only when a
+  revocation effective on or before `effectiveOn` is already recorded
+  (`HR_STATUS_TRANSITION`). So a revocation recorded for a later date (a
+  scheduled one, an employment end with a last day ahead, a grant against a
+  closed term) freezes nothing: until it takes effect the qualification can
+  be suspended, reinstated, renewed, or revoked from an earlier day. A stored
+  `expired` blocks none of them.
 - **A term holds its own changes.** `end` rejects an `endedOn` earlier than a
   position, worker-type or leave change recorded in the open term, and
   `rehire` a start before one, so replay (`check().onLeave`, `asOf`) never
   picks up a change dated outside its term. Login links are not replayed and
   are not part of this rule.
+- **Login links are immediate.** `linkLogin` / `unlinkLogin` write the stored
+  `userId` at once; `effectiveOn` is only recorded on the change row. `asOf`
+  does not replay them and `findByUser(userId, on)` reads the stored `userId`
+  (only the terms are dated).
 - **A login is exclusive to the employment that stores it.** `hire`, `rehire`
   and `linkLogin` reject (`HR_INVALID`) a `userId` stored on any other
   employment in the tenant, whatever that employment's status: an ended
@@ -99,32 +118,41 @@ with the root database handle, never one that is already inside a transaction
   chain is suspended or revoked on that date. `suspend`, `reinstate` and
   `revoke` act on the latest row only (`HR_INVALID` on a row that was
   renewed), and the change belongs to the chain: `effectiveOn` may be any
-  date from the chain's first `issuedOn` onward, not before the chain's
-  latest suspension, reinstatement or revocation (nor before an `expired`
-  change the sweep stored on that row). It may precede the latest row's own
-  `issuedOn`. That is how a ticket in force today is withdrawn after its
-  renewal was recorded ahead of time: the earlier row stops passing from
+  date from the chain's first `issuedOn` onward (see "Transitions are
+  validated by replay" for the ordering rule). It may precede the latest
+  row's own `issuedOn`. That is how a ticket in force today is withdrawn
+  after its renewal was recorded ahead of time: the earlier row stops passing from
   `effectiveOn`, and the renewal does not restore standing when its issue
   date arrives (revoked from issue, or suspended from issue until
   reinstated). `listForProfile` reports the status of the latest row issued
   by the date, so it agrees with `check` instead of answering
   `not-yet-issued`.
 - **A renewal is validated by date.** `renew` rejects an `issuedOn` earlier
-  than the row's own, or earlier than its latest suspension, reinstatement or
-  revocation (`HR_INVALID`: the renewal would answer for dates the history
-  says were suspended); a row suspended on `issuedOn` by replay
-  (`HR_STATUS_TRANSITION`: reinstate first); a row with any revocation
-  recorded (`HR_INVALID`); and a person who holds another chain not revoked
+  than the row's own, or earlier than its latest suspension or reinstatement
+  (`HR_INVALID`: the renewal would answer for dates the history says were
+  suspended); a row suspended on `issuedOn` by replay
+  (`HR_STATUS_TRANSITION`: reinstate first); a row revoked on or before
+  `issuedOn` (`HR_INVALID`); and a person who holds another chain not revoked
   on or before `issuedOn` (`HR_ALREADY_HELD`; only rows written outside the
   service can get there).
+- **A renewal carries a pending cutoff forward.** A row whose revocation
+  takes effect after `issuedOn` is still in force and is renewed normally;
+  replay only propagates standing from later rows to earlier ones, so the
+  renewal records the cutoff on itself: a `revoked` change at the earlier of
+  the old row's pending revocation (with its reason) and, inside a closed
+  employment term, `endedOn + 1` (`employment-ended`; it wins a tie). The
+  renewal is stored `revoked` and raises `renewed` then `revoked`. Each
+  remaining latest row therefore holds its chain's revocation, which
+  `expiringWithin`, the one-live-grant rule and `renew` rely on.
 - **One live grant, by date.** `grant` is refused (`HR_ALREADY_HELD`) unless
   every chain the person already holds of that qualification is revoked
   effective on or before the new `issuedOn`. A revocation recorded for a
-  later date does not free an earlier issue date, and a lapsed ticket, swept
-  or not, is renewed instead of granted again.
+  later date does not free an earlier issue date (the message says to renew
+  the existing one), and a lapsed ticket, swept or not, is renewed instead of
+  granted again.
 - **Verification is not a status.** `verify` sets `verifiedByProfileId` and
-  `verifiedAt` (and optionally the document) on a row that is not revoked; it
-  writes no change row and raises no event.
+  `verifiedAt` (and optionally the document) on any row, including one stored
+  `revoked`; it writes no change row and raises no event.
 - **Ids are validated.** A blank or missing id is `HR_INVALID` in both
   services (`HrService.id`); the `check` methods answer `not-employed` /
   `not-held` instead.
@@ -133,11 +161,13 @@ with the root database handle, never one that is already inside a transaction
   is revoked, with reason `employment-ended`, in the transaction that ends the
   employment. The revocation is effective the day after `endedOn`, so the
   qualification is still good on the last day employed. The cutoff is the
-  earliest one, decided by date (`revokeEmploymentQualifications`): every row
-  of the employment gets it unless a revocation effective on or before it is
-  already recorded. A row already stored `revoked` for a later date gets the
-  change row only (a revoked row is never saved again) and a
-  `held-qualification.revoked` event with the earlier date; replay takes the
+  earliest one, decided by date and per renewal chain
+  (`revokeEmploymentQualifications`): the latest row of each chain of the
+  employment gets it, with one `held-qualification.revoked` event, unless a
+  revocation effective on or before it is already recorded anywhere in the
+  chain. Rows that were renewed are not written; replay cuts them off through
+  the chain. A latest row already stored `revoked` for a later date gets the
+  change row only and the event carries the earlier date; replay takes the
   earliest revocation. A grant or renewal dated inside a term whose end is
   already recorded (granted during notice, or backdated) gets the same
   revocation in its own transaction and is stored `revoked` from the start.
@@ -148,18 +178,29 @@ with the root database handle, never one that is already inside a transaction
   { employedOnly })` lists rows that are good on `today` by the same dated
   evaluation as `check` (issued by `today`, not suspended or revoked on it,
   not renewed) and can keep only people employed on `today`.
-- **Events need the root handle.** A mutation opens and commits its own
-  transaction, then delivers its events. `@happyvertical/sql` has no
-  after-commit hook, so on a handle that is already inside a transaction
-  (the `tx` of `db.transaction()`, or a `beginTransaction()` handle) the
-  commit would be the caller's and an outer rollback could follow a delivered
-  event. `HrService.transact` therefore refuses a mutation on such a handle
-  with `HR_TRANSACTION_UNSUPPORTED` before writing anything. It recognises
-  one by the absence of `beginTransaction`, which every root handle the SDK
-  ships has and no transaction-scoped one does (the SDK has no explicit
-  marker). Reads work on any handle. Tests that isolate with
+- **Events need the root handle.** A mutation begins its own transaction
+  with `db.beginTransaction()`, commits it, then delivers its events.
+  `@happyvertical/sql` has no after-commit hook and no marker for "inside a
+  transaction" (happyvertical/sdk#1249), so on a handle that is already
+  inside one (the `tx` of `db.transaction()`, a savepoint scope, or a
+  `beginTransaction()` handle) the commit would be the caller's and an outer
+  rollback could follow a delivered event. `HrService.transact` therefore
+  refuses a mutation on such a handle with `HR_TRANSACTION_UNSUPPORTED`
+  before writing anything. It recognises one by asking it to begin: a
+  transaction-scoped handle either has no `beginTransaction` (libsql SQLite,
+  PostgreSQL, DuckDB, JSON) or exposes one that throws
+  `NestedTransactionError` without touching the connection (the
+  native-capabilities SQLite adapter, opened for `vector` /
+  `notifications`). Never go back to `db.transaction()` /
+  `withEmbeddedWriteTransaction` here: on a transaction-scoped handle those
+  re-enter the caller's transaction under a savepoint, or with
+  `reuseUnsupportedNested` run on the caller's handle, and both fail open.
+  Reads work on any handle. Tests that isolate with
   `createIsolatedTestDb*()` must hand the services `baseDb`, not the
   transaction handle.
+- **Tested on SQLite and PostgreSQL.** `HrService.identity` normalizes ids
+  only on PostgreSQL. On any other adapter (DuckDB included) nothing is
+  normalized, so callers must pass canonical lowercase UUIDs.
 - **Not a permission system.** A qualification says what a person may do in
   the real world. Who may use the software stays with `smrt-users`.
 - **People are `smrt-profiles:Profile` ids** in fields named `profileId` or
@@ -209,7 +250,10 @@ registered as a slot in `HUMAN_RESOURCES_UI_SLOTS` (`src/ui.ts`):
 - **`EmployeeForm` values are not a service input.** A hire returns
   `startedOn`; an edit returns a required `effectiveOn` (prefilled from
   `today`) that the host passes to `changePosition` / `changeWorkerType` /
-  `linkLogin` / `unlinkLogin` for each value that changed. The employee's
+  `linkLogin` / `unlinkLogin` for each value that changed. A login link or
+  unlink takes effect at once whatever the date, so a future-dated edit that
+  also clears the login unlinks it immediately; a host that wants it kept
+  until then calls `unlinkLogin` on that day. The employee's
   current login stays an option even when the host's `logins` omit it, so a
   save never unlinks it by accident. Each validation message is tied to its
   field with `aria-describedby`.

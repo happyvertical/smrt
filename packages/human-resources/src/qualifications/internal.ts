@@ -18,13 +18,15 @@ export const EMPLOYMENT_ENDED_REASON = 'employment-ended';
  * the transaction that ends the employment, so the two never disagree.
  * Person-scoped qualifications are untouched.
  *
- * The decision is made from each row's dated history, not its stored status:
- * a row gets the `employment-ended` revocation unless a revocation effective
- * on or before `effectiveOn` is already recorded. That includes a row whose
- * stored status is already `revoked` because a later-dated revocation was
- * recorded; a revoked row never changes, so only the change row is appended
- * for it, and the dated replay then treats the earliest revocation as in
- * force. Returns the rows that were cut off.
+ * The decision is made per renewal chain, from the chain's dated history and
+ * not from any stored status: the latest row of a chain gets the
+ * `employment-ended` revocation, and one event, unless a revocation effective
+ * on or before `effectiveOn` is already recorded anywhere in the chain. The
+ * rows that latest row renewed are not written: the dated replay cuts them
+ * off through the chain. A latest row whose stored status is already
+ * `revoked` (a later-dated revocation was recorded) is not saved again; only
+ * the change row is appended, and the replay treats the earliest revocation
+ * as in force. Returns the latest rows that were cut off.
  */
 export async function revokeEmploymentQualifications(
   db: DatabaseInterface,
@@ -51,9 +53,24 @@ export async function revokeEmploymentQualifications(
     if (earliest === undefined || change.effectiveOn < earliest)
       revokedOn.set(change.heldQualificationId, change.effectiveOn);
   }
+  const byId = new Map(rows.map((row) => [row.id as string, row]));
+  const renewed = new Set(rows.map((row) => row.renewalOfId));
   const cut: HeldQualification[] = [];
   for (const row of rows) {
-    const already = revokedOn.get(row.id as string);
+    if (renewed.has(row.id as string)) continue;
+    // The earliest revocation recorded on the latest row or any row it renews.
+    let already: IsoDate | undefined;
+    const seen = new Set<string>();
+    for (
+      let member: HeldQualification | undefined = row;
+      member && !seen.has(member.id as string);
+      member = member.renewalOfId ? byId.get(member.renewalOfId) : undefined
+    ) {
+      seen.add(member.id as string);
+      const on = revokedOn.get(member.id as string);
+      if (on !== undefined && (already === undefined || on < already))
+        already = on;
+    }
     if (already !== undefined && already <= effectiveOn) continue;
     if (row.status !== 'revoked') {
       row.status = 'revoked';
