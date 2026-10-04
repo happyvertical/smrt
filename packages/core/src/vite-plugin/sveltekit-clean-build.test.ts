@@ -33,7 +33,7 @@ describe('SvelteKit clean build route generation (#2313)', () => {
     writeFileSync(
       join(projectRoot, 'package.json'),
       JSON.stringify({
-        name: 'smrt-clean-build-fixture',
+        name: '@fixture/smrt-clean-build-fixture',
         private: true,
         type: 'module',
         dependencies: { '@happyvertical/smrt-core': '*' },

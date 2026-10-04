@@ -1,11 +1,11 @@
 /**
  * Minimal `@sveltejs/kit` runtime stub for tests.
  *
- * `@sveltejs/kit` is a dependency of scaffolded consumer projects, not of
- * this template package. Template route modules (`+page.server.ts`) import
- * runtime helpers from it, so `vitest.config.ts` aliases the module here.
- * Only the helpers the template actually uses are stubbed; add more if the
- * template grows.
+ * Template route modules (`+page.server.ts`) and the workspace
+ * `@happyvertical/smrt-app-runtime/sveltekit` handlers they mount (vitest
+ * inlines that linked package, so the alias reaches it too) import runtime
+ * helpers from `@sveltejs/kit`; `vitest.config.ts` aliases the
+ * module here. Only the helpers those modules use are stubbed.
  */
 
 /**
@@ -22,4 +22,20 @@ export function json(data: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
   headers.set('content-type', 'application/json');
   return new Response(JSON.stringify(data), { ...init, headers });
+}
+
+/** Behavioral stand-in for SvelteKit's thrown `Redirect`. */
+export class Redirect {
+  constructor(
+    readonly status: number,
+    readonly location: string,
+  ) {}
+}
+
+/**
+ * Behavioral stand-in for SvelteKit's `redirect()`, used by the owner setup
+ * page from `@happyvertical/smrt-app-runtime/sveltekit`: it always throws.
+ */
+export function redirect(status: number, location: string | URL): never {
+  throw new Redirect(status, location.toString());
 }

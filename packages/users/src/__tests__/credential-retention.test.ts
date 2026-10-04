@@ -19,19 +19,25 @@ import {
   runRetentionSweep,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
+import { UsersLoginAttemptCollection } from '../collections/LoginAttemptCollection.js';
+import { UsersLoginAuditEventCollection } from '../collections/LoginAuditEventCollection.js';
 import { UsersMagicLinkTokenCollection } from '../collections/MagicLinkTokenCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import {
   CLI_AUTH_RETENTION_TASK,
+  DEFAULT_LOGIN_AUDIT_RETENTION_DAYS,
+  LOGIN_ATTEMPTS_RETENTION_TASK,
+  LOGIN_AUDIT_RETENTION_TASK,
   MAGIC_LINK_RETENTION_TASK,
   registerUserRetentionTasks,
   SESSIONS_RETENTION_TASK,
   unregisterUserRetentionTasks,
 } from '../retention.js';
+import { LoginAttemptLimiter } from '../services/LoginAttemptLimiter.js';
 import { SessionStatus } from '../types/index.js';
 
 const MINUTE_MS = 60 * 1000;
@@ -239,6 +245,159 @@ describe('user retention tasks (#2375)', () => {
     const removed = await runRetentionSweep(db);
     expect(
       removed.tasks.some((task) => task.task === SESSIONS_RETENTION_TASK),
+    ).toBe(false);
+  });
+});
+
+describe('login limiter and audit retention tasks (#3273)', () => {
+  const HOUR_MS = 60 * MINUTE_MS;
+  const DAY_MS = 24 * HOUR_MS;
+  const options = () => ({ db: { type: 'sqlite' as const, url: dbPath } });
+  const pruned = (
+    result: Awaited<ReturnType<typeof runRetentionSweep>>,
+    name: string,
+  ) => result.tasks.find((task) => task.task === name)?.pruned;
+
+  /** Fail one attempt for `subject` at the (faked) current time. */
+  async function failOnce(limiter: LoginAttemptLimiter, subject: string) {
+    const lease = await limiter.reserve({ kind: 'test', subject });
+    if (!lease.allowed) throw new Error('expected a lease');
+    await lease.fail();
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('prunes limiter rows only past the horizon of the limiter that wrote them', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+    await UsersLoginAttemptCollection.create(options());
+    // Default horizon: 2 x max(5 min window, 1 h lockout ceiling) = 2 h.
+    const standard = await LoginAttemptLimiter.create({
+      ...options(),
+      audit: false,
+    });
+    // A deliberately long streak horizon the old fixed sweep ignored.
+    const patient = await LoginAttemptLimiter.create({
+      ...options(),
+      audit: false,
+      streakResetSeconds: 24 * 60 * 60,
+    });
+    await failOnce(standard, 'standard@example.com');
+    await failOnce(patient, 'patient@example.com');
+    expect(await countRows('users_login_attempts')).toBe(2);
+
+    registerUserRetentionTasks();
+    vi.advanceTimersByTime(HOUR_MS);
+    expect(
+      pruned(await runRetentionSweep(db), LOGIN_ATTEMPTS_RETENTION_TASK),
+    ).toBe(0);
+
+    vi.advanceTimersByTime(2 * HOUR_MS); // 3 h: past 2 h, well inside 24 h
+    const dryRun = await runRetentionSweep(db, { dryRun: true });
+    expect(pruned(dryRun, LOGIN_ATTEMPTS_RETENTION_TASK)).toBe(1);
+    expect(await countRows('users_login_attempts')).toBe(2);
+
+    const swept = await runRetentionSweep(db);
+    expect(swept.failed).toBe(false);
+    expect(pruned(swept, LOGIN_ATTEMPTS_RETENTION_TASK)).toBe(1);
+    expect(await countRows('users_login_attempts')).toBe(1);
+
+    vi.advanceTimersByTime(22 * HOUR_MS); // 25 h
+    expect(
+      pruned(await runRetentionSweep(db), LOGIN_ATTEMPTS_RETENTION_TASK),
+    ).toBe(1);
+    expect(await countRows('users_login_attempts')).toBe(0);
+  });
+
+  it('never prunes a limiter row while its lockout is live', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+    // Lockout (3 h) deliberately outlives the retention horizon (1 min).
+    const limiter = await LoginAttemptLimiter.create({
+      ...options(),
+      audit: false,
+      maxAttempts: 1,
+      windowSeconds: 30,
+      streakResetSeconds: 60,
+      lockout: { baseSeconds: 3 * 60 * 60, maxSeconds: 3 * 60 * 60 },
+    });
+    await failOnce(limiter, 'locked@example.com');
+
+    registerUserRetentionTasks();
+    vi.advanceTimersByTime(2 * HOUR_MS);
+    expect(
+      pruned(await runRetentionSweep(db), LOGIN_ATTEMPTS_RETENTION_TASK),
+    ).toBe(0);
+    vi.advanceTimersByTime(HOUR_MS + MINUTE_MS);
+    expect(
+      pruned(await runRetentionSweep(db), LOGIN_ATTEMPTS_RETENTION_TASK),
+    ).toBe(1);
+  });
+
+  it('prunes audit events only after the retention period, and honours dry runs', async () => {
+    const events = await UsersLoginAuditEventCollection.create(options());
+    for (const [outcome, ageMs] of [
+      ['failed', (DEFAULT_LOGIN_AUDIT_RETENTION_DAYS + 1) * DAY_MS],
+      ['succeeded', (DEFAULT_LOGIN_AUDIT_RETENTION_DAYS - 1) * DAY_MS],
+    ] as const) {
+      const event = await events.create({
+        kind: 'pin',
+        outcome,
+        occurredAt: new Date(Date.now() - ageMs),
+      });
+      await event.save();
+    }
+
+    registerUserRetentionTasks();
+    const dryRun = await runRetentionSweep(db, { dryRun: true });
+    expect(pruned(dryRun, LOGIN_AUDIT_RETENTION_TASK)).toBe(1);
+    expect(await countRows('users_login_audit_events')).toBe(2);
+
+    const swept = await runRetentionSweep(db);
+    expect(pruned(swept, LOGIN_AUDIT_RETENTION_TASK)).toBe(1);
+    const remaining = await events.list({});
+    expect(remaining.map((event) => event.outcome)).toEqual(['succeeded']);
+  });
+
+  it('can be opted out by name and unregistered', async () => {
+    const events = await UsersLoginAuditEventCollection.create(options());
+    const event = await events.create({
+      kind: 'pin',
+      outcome: 'failed',
+      occurredAt: new Date(
+        Date.now() - (DEFAULT_LOGIN_AUDIT_RETENTION_DAYS + 1) * DAY_MS,
+      ),
+    });
+    await event.save();
+    await UsersLoginAttemptCollection.create(options());
+
+    registerUserRetentionTasks();
+    const optedOut = await runRetentionSweep(db, {
+      tasks: {
+        [LOGIN_AUDIT_RETENTION_TASK]: false,
+        [LOGIN_ATTEMPTS_RETENTION_TASK]: false,
+      },
+    });
+    for (const name of [
+      LOGIN_AUDIT_RETENTION_TASK,
+      LOGIN_ATTEMPTS_RETENTION_TASK,
+    ]) {
+      expect(optedOut.tasks.find((task) => task.task === name)?.skipped).toBe(
+        'disabled',
+      );
+    }
+    expect(await countRows('users_login_audit_events')).toBe(1);
+
+    unregisterUserRetentionTasks();
+    const removed = await runRetentionSweep(db);
+    expect(
+      removed.tasks.some(
+        (task) =>
+          task.task === LOGIN_AUDIT_RETENTION_TASK ||
+          task.task === LOGIN_ATTEMPTS_RETENTION_TASK,
+      ),
     ).toBe(false);
   });
 });

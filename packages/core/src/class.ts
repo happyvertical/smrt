@@ -4,6 +4,13 @@ import type {
   FilesystemAdapterOptions,
 } from '@happyvertical/files';
 import { createLogger, type LoggerConfig } from '@happyvertical/logger';
+import {
+  type AIExplicitConfig,
+  getAIConfigBlock,
+  mergeAIConfigObjects,
+  tryResolveAIProviderConfig,
+  withAIAliases,
+} from '@happyvertical/smrt-config';
 import type {
   AiTokenUsage,
   AiUsageHandler,
@@ -680,9 +687,18 @@ export class SmrtClass {
         const usageConfig = this.mergeAiUsageConfig(globalConfig);
         this.initializeAiUsageHandlers(usageConfig);
 
+        // The smrt.config.ts `ai` block (resolved through smrt-config's shared
+        // resolver) is the lowest-priority declared source, above SMRT_AI_*.
+        // Only a block that names a provider counts: a partial block (model,
+        // baseUrl or apiKeyEnv alone) behaves exactly like an absent block.
+        const declaredBlock = getAIConfigBlock();
+        const aiConfigBlock = declaredBlock?.provider ? declaredBlock : null;
         if (
           !this._ai &&
-          (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER)
+          (this.options.ai ||
+            globalConfig.ai ||
+            aiConfigBlock ||
+            process.env.SMRT_AI_PROVIDER)
         ) {
           // Check if options.ai is already a client-like object with embed method
           // This allows passing mock AI clients for testing
@@ -697,21 +713,23 @@ export class SmrtClass {
           ) {
             this._ai = aiOption as unknown as AIClient;
           } else {
-            // CC-8 follow-up: ideally this would route through
-            // `@happyvertical/smrt-config` for sanitization parity (e.g. via
-            // `getPackageConfig('ai', ...)`), but smrt-config currently only
-            // merges file-based config + runtime overrides — it does NOT
-            // read from `process.env` with a typed prefix/schema. Until
-            // smrt-config grows an env-loader (or wraps `loadEnvConfig`),
-            // we continue to use the underlying utility directly. Tracked
-            // alongside the CC-8 audit on issue #1199.
+            // Passthrough tuning fields (timeout, maxRetries, ...) still come
+            // from `SMRT_AI_*` via loadEnvConfig. Provider/key/model selection
+            // goes through the shared smrt-config resolver below (#3372).
             const { loadEnvConfig } = await import('@happyvertical/utils');
 
             // Start with global defaults
             const baseConfig = globalConfig.ai || {};
 
             // Merge with instance options (takes priority over global)
-            const userConfig = { ...baseConfig, ...this.options.ai };
+            // Provider ownership holds across these two layers too: the shared
+            // canonicalising merge folds provider/type and model/defaultModel,
+            // and drops the global layer's provider, key, base URL and model
+            // when the instance options name a different provider.
+            const userConfig = mergeAIConfigObjects(
+              baseConfig,
+              this.options.ai,
+            );
 
             // Load environment variables and merge (user options take priority).
             // `AIConfig` carries an index signature, so provider-specific keys
@@ -729,6 +747,48 @@ export class SmrtClass {
                 maxTokens: 'number',
               },
             });
+
+            // Provider, key, base URL and model always come from the shared
+            // resolver's bound result (options.ai > core global config >
+            // smrt.config `ai` block > SMRT_AI_*), so a credential is only ever
+            // sent to the provider its own source named; env-loaded values are
+            // replaced, not merged. Tuning fields keep their current source.
+            // Without a block the provider's own key variable is not consulted
+            // (no behaviour change for apps that never declared one).
+            const resolvedAi = tryResolveAIProviderConfig({
+              explicit: userConfig as AIExplicitConfig,
+              config: aiConfigBlock,
+              prefixes: ['SMRT_AI'],
+              autoDetect: false,
+              requireProvider: false,
+              providerKeyEnvFallback: Boolean(aiConfigBlock),
+            });
+            // Replace (never merge) the identity/credential fields with the
+            // resolver's bound result, then set both client-facing aliases so
+            // no stale `type` / `defaultModel` reaches getAI().
+            const bound: Record<string, unknown> = {
+              provider: resolvedAi?.provider,
+              apiKey: resolvedAi?.apiKey,
+              baseUrl: resolvedAi?.baseUrl,
+              model: resolvedAi?.model,
+            };
+            for (const key of [
+              'provider',
+              'type',
+              'apiKey',
+              'baseUrl',
+              'model',
+              'defaultModel',
+            ]) {
+              delete (aiConfig as Record<string, unknown>)[key];
+            }
+            for (const [key, value] of Object.entries(bound)) {
+              if (value) (aiConfig as Record<string, unknown>)[key] = value;
+            }
+            Object.assign(
+              aiConfig,
+              withAIAliases(aiConfig as Record<string, unknown>),
+            );
 
             const existingOnUsage =
               aiConfig.onUsage ??

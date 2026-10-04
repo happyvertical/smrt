@@ -7,5 +7,5 @@
 > `pnpm app:doctor`, show me its secret-free recovery findings, and ask before
 > changing provider configuration.
 
-The prompt is intentionally thin. `scripts/smrt-app.mjs` owns operations and
-recovery.
+The prompt is intentionally thin. `smrt app` (from `@happyvertical/smrt-cli`)
+owns operations and recovery.

@@ -1,6 +1,7 @@
 /** Server-only OAuth protected-resource boundary. This is not an issuer. */
 import { createRemoteJWKSet, type JWTPayload, jwtVerify } from 'jose';
-import type { McpAppPrincipal } from './server.js';
+import { ownStringArray, readOwnFields } from './own-data.js';
+import type { McpAppPrincipal, McpTenantBinding } from './server.js';
 
 export type McpDeploymentProfile = 'local' | 'self-hosted' | 'cloud';
 export interface McpVerifiedIdentity {
@@ -14,7 +15,15 @@ export interface McpPrincipalMapping {
   tenantId?: string;
   kind?: string;
   roles?: string[];
+  /**
+   * How the mapped tenant authority may be bound. Defaults to
+   * `direct-or-inherited`; a mapping that selected a direct membership
+   * returns `direct` so inheritance can never substitute for it.
+   */
+  tenantBinding?: McpTenantBinding;
 }
+
+const TENANT_BINDINGS: readonly string[] = ['direct', 'direct-or-inherited'];
 export interface McpResourceAuthOptions {
   profile: McpDeploymentProfile;
   /** Exact public resource identifier; also the required token audience. */
@@ -74,9 +83,21 @@ function validString(value: unknown): value is string {
 }
 
 export interface McpResourceAuth {
-  /** Mount GET at this URL. Paths use RFC 9728's well-known path insertion. */
+  /**
+   * Mount GET at this URL. Paths use RFC 9728's well-known path insertion.
+   * Empty for a {@link McpResourceAuth.sessionFallback} adapter, which
+   * advertises no OAuth metadata.
+   */
   readonly metadataUrl: string;
   metadataResponse(): Response;
+  /**
+   * When `true`, a request that carries no `Authorization` header is not
+   * challenged: the route resolves its session principal instead (today's
+   * local-profile behaviour). A presented bearer must still verify; an
+   * invalid one is refused and never falls back to the session. Only the
+   * local owner-token adapter ({@link createLocalMcpTokenAuth}) sets it.
+   */
+  readonly sessionFallback?: boolean;
   /** A failure response contains no token, claims or upstream error details. */
   authenticate(
     request: Request,
@@ -84,6 +105,234 @@ export interface McpResourceAuth {
     | { ok: true; principal: McpAppPrincipal & { id: string } }
     | { ok: false; response: Response }
   >;
+}
+
+/**
+ * Credential bindings an application runtime can supply to
+ * {@link createHostedMcpResourceAuth}, structurally satisfied by the SMRT
+ * SvelteKit runtime from `@happyvertical/smrt-app-runtime/sveltekit`.
+ */
+/**
+ * A verified local-token principal as a runtime returns it. Its `scopes` may
+ * be a frozen (readonly) array; the adapter copies it.
+ */
+export type McpLocalTokenPrincipal = Omit<McpAppPrincipal, 'scopes'> & {
+  id: string;
+  scopes?: readonly string[];
+};
+
+export interface McpAuthRuntime {
+  /**
+   * Verify an owner-minted local MCP token (`smrt app token`). Resolve the
+   * token principal (with scopes already capped to live permissions), or
+   * `null` to deny. Used only in the `local` profile.
+   */
+  verifyLocalMcpToken?(token: string): Promise<McpLocalTokenPrincipal | null>;
+  /**
+   * Default hosted identity mapping, used when no explicit
+   * `resolvePrincipal` is given (for example the runtime's membership-backed
+   * resolver).
+   */
+  resolveMcpPrincipal?(
+    identity: McpVerifiedIdentity,
+  ): Promise<McpPrincipalMapping | null>;
+}
+
+/** Options for {@link createLocalMcpTokenAuth}. */
+export interface LocalMcpTokenAuthOptions {
+  /**
+   * Resolve a presented token to its principal, or `null` to deny. A thrown
+   * error is also a denial. The principal needs a non-empty `id` and
+   * `tenantId` and string `scopes`; `allowCrossTenant` is never honoured.
+   */
+  verify(token: string): Promise<McpLocalTokenPrincipal | null>;
+}
+
+const LOCAL_BEARER_PATTERN = /^Bearer +([A-Za-z0-9._~+/-]{16,512}=*)$/iu;
+
+/**
+ * Bearer adapter for owner-minted local MCP tokens. It is a
+ * {@link McpResourceAuth.sessionFallback} adapter: without an `Authorization`
+ * header the route keeps its session principal; with one, the token must
+ * verify, otherwise the response is `401` with
+ * `WWW-Authenticate: Bearer error="invalid_token"` and no token, claim or
+ * upstream detail. It advertises no OAuth metadata (the metadata route 404s).
+ */
+export function createLocalMcpTokenAuth(
+  options: LocalMcpTokenAuthOptions,
+): McpResourceAuth {
+  const verify = options?.verify;
+  if (typeof verify !== 'function') {
+    throw new TypeError('Local MCP token auth requires a verify function.');
+  }
+  const deny = (): { ok: false; response: Response } => ({
+    ok: false,
+    response: new Response(null, {
+      status: 401,
+      headers: {
+        'WWW-Authenticate': 'Bearer error="invalid_token"',
+        'Cache-Control': 'no-store',
+      },
+    }),
+  });
+  return Object.freeze({
+    metadataUrl: '',
+    sessionFallback: true,
+    metadataResponse: () =>
+      new Response(null, {
+        status: 404,
+        headers: { 'Cache-Control': 'no-store' },
+      }),
+    async authenticate(request: Request) {
+      const match = LOCAL_BEARER_PATTERN.exec(
+        request.headers.get('authorization') ?? '',
+      );
+      if (!match) return deny();
+      let principal: McpLocalTokenPrincipal | null;
+      try {
+        principal = await verify(match[1]);
+      } catch {
+        return deny();
+      }
+      // Own plain data only: inherited values, accessors and poison keys
+      // never become the bound identity.
+      const fields = readOwnFields(principal, [
+        'id',
+        'tenantId',
+        'kind',
+        'scopes',
+      ]);
+      const scopes = fields ? ownStringArray(fields.scopes) : null;
+      if (
+        !fields ||
+        !scopes ||
+        !validString(fields.id) ||
+        !validString(fields.tenantId) ||
+        (fields.kind !== undefined && !validString(fields.kind)) ||
+        !scopes.every((scope) => scopePattern.test(scope))
+      ) {
+        return deny();
+      }
+      return {
+        ok: true as const,
+        principal: {
+          id: fields.id,
+          tenantId: fields.tenantId,
+          kind: fields.kind as string | undefined,
+          scopes,
+          // Owner tokens bind only through the direct membership.
+          tenantBinding: 'direct' as const,
+        },
+      };
+    },
+  });
+}
+
+/** Options for {@link createHostedMcpResourceAuth}. */
+export interface HostedMcpResourceAuthOptions {
+  /**
+   * Deployment profile, or a thunk read on every call. `local` disables bearer
+   * authentication; the route then uses its session principal.
+   */
+  profile: McpDeploymentProfile | (() => McpDeploymentProfile);
+  /**
+   * Application-owned mapping from a verified identity to a current account
+   * and active membership; token claims never select a tenant. Overrides
+   * `runtime.resolveMcpPrincipal`. A hosted profile with neither throws on
+   * first use.
+   */
+  resolvePrincipal?: McpResourceAuthOptions['resolvePrincipal'];
+  /**
+   * The application runtime (for example the SMRT SvelteKit runtime). In the
+   * `local` profile its `verifyLocalMcpToken` turns on owner-minted bearer
+   * tokens through {@link createLocalMcpTokenAuth} (requests without a
+   * bearer keep the session principal); without it the thunk yields `null`
+   * as before. In hosted profiles its membership-backed
+   * `resolveMcpPrincipal` is the default identity mapping.
+   */
+  runtime?: McpAuthRuntime;
+  /** Environment source. Defaults to `process.env`, read lazily. */
+  env?: Readonly<Record<string, string | undefined>>;
+  /** Default `['RS256']`. */
+  algorithms?: McpResourceAuthOptions['algorithms'];
+  tokenType?: McpResourceAuthOptions['tokenType'];
+  requireTenant?: McpResourceAuthOptions['requireTenant'];
+}
+
+/** Environment variables read by {@link createHostedMcpResourceAuth}. */
+export const HOSTED_MCP_AUTH_ENV = Object.freeze({
+  resource: 'SMRT_MCP_RESOURCE',
+  issuer: 'SMRT_MCP_ISSUER',
+  jwksUri: 'SMRT_MCP_JWKS_URI',
+  scopes: 'SMRT_MCP_SCOPES',
+});
+
+/**
+ * Lazily build the hosted protected-resource adapter from operator
+ * environment. The returned thunk yields `null` for the `local` profile,
+ * otherwise one cached `createMcpResourceAuth` instance configured from
+ * `SMRT_MCP_RESOURCE`, `SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI` and the
+ * whitespace-separated `SMRT_MCP_SCOPES`. Missing configuration throws (fail
+ * closed); a failed construction is not cached, so a corrected environment
+ * is picked up on the next request. Pass the thunk as the `auth` option of
+ * `mountMcpRoute`/`mountMcpAppRoute` and to
+ * `mountMcpProtectedResourceMetadataRoute`.
+ */
+export function createHostedMcpResourceAuth(
+  options: HostedMcpResourceAuthOptions,
+): () => McpResourceAuth | null {
+  let cached: McpResourceAuth | undefined;
+  let local: McpResourceAuth | undefined;
+  const runtime = options.runtime;
+  return () => {
+    const profile =
+      typeof options.profile === 'function'
+        ? options.profile()
+        : options.profile;
+    if (profile === 'local') {
+      const verify = runtime?.verifyLocalMcpToken;
+      if (typeof verify !== 'function') return null;
+      local ??= createLocalMcpTokenAuth({
+        verify: (token) => verify.call(runtime, token),
+      });
+      return local;
+    }
+    if (cached) return cached;
+    const env =
+      options.env ??
+      (globalThis as { process?: { env?: Record<string, string | undefined> } })
+        .process?.env ??
+      {};
+    const required = (name: string): string => {
+      const value = env[name]?.trim();
+      if (!value) throw new Error(`Hosted MCP requires ${name}.`);
+      return value;
+    };
+    const runtimeResolver = runtime?.resolveMcpPrincipal;
+    const resolvePrincipal =
+      options.resolvePrincipal ??
+      (typeof runtimeResolver === 'function'
+        ? (identity: McpVerifiedIdentity) =>
+            runtimeResolver.call(runtime, identity)
+        : undefined);
+    if (!resolvePrincipal) {
+      throw new Error(
+        'Hosted MCP requires an application-owned resolvePrincipal binding or a runtime with resolveMcpPrincipal.',
+      );
+    }
+    cached = createMcpResourceAuth({
+      profile,
+      resource: required(HOSTED_MCP_AUTH_ENV.resource),
+      issuer: required(HOSTED_MCP_AUTH_ENV.issuer),
+      jwksUri: required(HOSTED_MCP_AUTH_ENV.jwksUri),
+      scopes: required(HOSTED_MCP_AUTH_ENV.scopes).split(/\s+/u),
+      algorithms: options.algorithms ?? ['RS256'],
+      tokenType: options.tokenType,
+      requireTenant: options.requireTenant,
+      resolvePrincipal,
+    });
+    return cached;
+  };
 }
 
 export function createMcpResourceAuth(
@@ -183,26 +432,44 @@ export function createMcpResourceAuth(
             claims: Object.freeze(payload),
           }),
         );
+        // Own plain data only: inherited values, accessors and poison keys
+        // never become the bound identity or tenant.
+        const fields = readOwnFields(mapping, [
+          'id',
+          'tenantId',
+          'kind',
+          'roles',
+          'tenantBinding',
+        ]);
+        const roles =
+          fields?.roles === undefined
+            ? undefined
+            : ownStringArray(fields.roles);
         if (
-          !mapping ||
-          !validString(mapping.id) ||
-          (requireTenant && !validString(mapping.tenantId)) ||
-          (mapping.tenantId !== undefined && !validString(mapping.tenantId)) ||
-          (mapping.kind !== undefined && !validString(mapping.kind)) ||
-          (mapping.roles !== undefined &&
-            (!Array.isArray(mapping.roles) ||
-              !mapping.roles.every(validString)))
+          !fields ||
+          roles === null ||
+          !validString(fields.id) ||
+          (requireTenant && !validString(fields.tenantId)) ||
+          (fields.tenantId !== undefined && !validString(fields.tenantId)) ||
+          (fields.kind !== undefined && !validString(fields.kind)) ||
+          (roles !== undefined && !roles.every(validString)) ||
+          (fields.tenantBinding !== undefined &&
+            (typeof fields.tenantBinding !== 'string' ||
+              !TENANT_BINDINGS.includes(fields.tenantBinding)))
         ) {
           return deny('invalid_token');
         }
         return {
           ok: true,
           principal: {
-            id: mapping.id,
-            tenantId: mapping.tenantId,
-            kind: mapping.kind,
-            roles: mapping.roles ? [...mapping.roles] : undefined,
+            id: fields.id,
+            tenantId: fields.tenantId as string | undefined,
+            kind: fields.kind as string | undefined,
+            roles,
             scopes: [...granted],
+            tenantBinding:
+              (fields.tenantBinding as McpTenantBinding | undefined) ??
+              'direct-or-inherited',
           },
         };
       } catch {

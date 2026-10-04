@@ -1,7 +1,11 @@
-import { hostedMcpAuth } from '$lib/server/mcp-hosted';
+import { createHostedMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
+import { mountMcpProtectedResourceMetadataRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 
-/** Serve exactly the RFC 9728 metadata URL advertised by hosted bearer challenges. */
-export function GET() {
-  const auth = hostedMcpAuth();
-  return auth?.metadataResponse() ?? new Response(null, { status: 404 });
-}
+import { runtime } from '$lib/server/smrt';
+
+const { profile } = await runtime.resolvedRuntime();
+
+/** RFC 9728 metadata at exactly the URL hosted bearer challenges advertise (404 locally). */
+export const GET = mountMcpProtectedResourceMetadataRoute(
+  createHostedMcpResourceAuth({ profile, runtime }),
+);

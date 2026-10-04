@@ -115,7 +115,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     writeFileSync(
       join(tmpDir, 'package.json'),
       JSON.stringify({
-        name: 'test-app',
+        name: '@fixture/test-app',
         version: '1.0.0',
         dependencies: {
           '@happyvertical/smrt-core': '*',
@@ -161,11 +161,11 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
       {
         version: '1.0.0',
         timestamp: 0,
-        packageName: 'test-app',
+        packageName: '@fixture/test-app',
         objects: {
-          'test-app:PrebuiltThing': {
+          '@fixture/test-app:PrebuiltThing': {
             className: 'PrebuiltThing',
-            qualifiedName: 'test-app:PrebuiltThing',
+            qualifiedName: '@fixture/test-app:PrebuiltThing',
             collection: 'prebuilt_things',
             fields: {},
             methods: {},
@@ -529,7 +529,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     writeFileSync(
       join(tmpDir, 'package.json'),
       JSON.stringify({
-        name: 'test-app',
+        name: '@fixture/test-app',
         version: '1.0.0',
         dependencies: {
           '@happyvertical/smrt-core': '*',
@@ -557,7 +557,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     writeFileSync(
       join(tmpDir, 'package.json'),
       JSON.stringify({
-        name: 'test-app',
+        name: '@fixture/test-app',
         version: '1.0.0',
         dependencies: {
           '@happyvertical/smrt-core': '*',
@@ -585,7 +585,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     writeFileSync(
       join(tmpDir, 'package.json'),
       JSON.stringify({
-        name: 'test-app',
+        name: '@fixture/test-app',
         version: '1.0.0',
         dependencies: {
           '@happyvertical/smrt-core': '*',
@@ -628,7 +628,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
       writeFileSync(
         join(tmpDir, 'package.json'),
         JSON.stringify({
-          name: 'test-app',
+          name: '@fixture/test-app',
           version: '1.0.0',
           dependencies: {
             '@happyvertical/smrt-core': '*',
@@ -689,7 +689,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
       await producer.configResolved(viteConfig());
       await aggregateConsumedPackages();
       expect(Object.keys(readManifest().objects)).toContain(
-        'test-app:LocalThing',
+        '@fixture/test-app:LocalThing',
       );
 
       rmSync(join(tmpDir, 'src', 'LocalThing.ts'));
@@ -697,7 +697,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
 
       const manifest = readManifest();
       expect(Object.keys(manifest.objects)).not.toContain(
-        'test-app:LocalThing',
+        '@fixture/test-app:LocalThing',
       );
       expect(Object.keys(manifest.objects)).toContain(externalEntry);
     });
@@ -718,14 +718,14 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
       await producer.configResolved(viteConfig());
       await aggregateConsumedPackages();
       expect(Object.keys(readManifest().objects)).toContain(
-        'test-app:LocalThing',
+        '@fixture/test-app:LocalThing',
       );
 
       rmSync(join(tmpDir, 'src', 'LocalThing.ts'));
       writeFileSync(
         join(tmpDir, 'package.json'),
         JSON.stringify({
-          name: 'renamed-app',
+          name: '@fixture/renamed-app',
           version: '1.0.0',
           dependencies: {
             '@happyvertical/smrt-core': '*',
@@ -737,7 +737,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
 
       const manifest = readManifest();
       expect(Object.keys(manifest.objects)).not.toContain(
-        'test-app:LocalThing',
+        '@fixture/test-app:LocalThing',
       );
       expect(Object.keys(manifest.objects)).toContain(externalEntry);
     });
@@ -784,7 +784,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
         JSON.stringify({
           version: '1.0.0',
           timestamp: 0,
-          packageName: 'test-app',
+          packageName: '@fixture/test-app',
           objects: {},
           smrtDependencies: ['@fixture/undiscovered'],
         }),

@@ -242,6 +242,45 @@ consumer projects receive the CLI's published release line.
 | `smrt playground dev` | Run the shared workspace host or local app playground |
 | `smrt playground list` | Show discovered playground modules and preview entries |
 
+### Application operations (`smrt app`)
+
+Operational commands for a generated s-m-r-t application, run from the
+application root. They replace the template's copied `scripts/*.mjs`, so an
+app's `package.json` scripts are one-liners:
+
+```json
+{
+  "dev": "smrt app dev",
+  "build": "smrt app build",
+  "preview": "smrt app start",
+  "db:migrate": "vite build && smrt app migrate",
+  "app:setup": "smrt app setup",
+  "app:doctor": "smrt app doctor",
+  "worker": "smrt app worker task",
+  "worker:schedule": "smrt app worker schedule"
+}
+```
+
+| Command | Description |
+|---------|------------|
+| `smrt app install` | Local: setup, start, and open owner onboarding under one operation lock |
+| `smrt app setup` | Build, run `smrt db:migrate` explicitly, and prepare the private owner-onboarding handoff |
+| `smrt app recover` | Local: rotate the single-use owner onboarding invitation |
+| `smrt app start` / `stop` | Local: run the production build on loopback; readiness is proven by app id, process instance, and configuration fingerprint |
+| `smrt app doctor` | Secret-free findings (`invalid-runtime-profile`, `unsafe-local-bind`, `runtime-path-unavailable`, `migration-required`, …); exits 1 on any error (default operation) |
+| `smrt app open` | Open the app, or the pending onboarding launch file |
+| `smrt app backup [destination]` | Local: copy the validated data root to a new private directory outside the checkout |
+| `smrt app export [path]` / `import <path>` | Logical, asset-aware bundle; import requires an empty target (deployed: `SMRT_MAINTENANCE_MODE=true`) |
+| `smrt app migrate` | Establish local storage custody, then `smrt db:migrate`, under the operation lock |
+| `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM. The kind defaults to `task`; any other value is a usage error before anything starts |
+| `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |
+
+Success output is JSON on stdout; a failure is one JSON envelope on stderr with
+exit code 1 and never contains secret values. The same primitives (operation
+lock, writer lease, state root, artifact-path custody, portability) are
+importable without side effects from `@happyvertical/smrt-cli/app`. Contract
+details: [agents/app-commands.md](agents/app-commands.md).
+
 ### Auto-Generated Object Commands
 
 For each registered s-m-r-t object, the CLI generates:
@@ -325,6 +364,22 @@ export default {
 };
 ```
 
+### Database precedence
+
+Every `db:*` command resolves its database once, at startup:
+
+1. `packages.cli.database.url` from any config layer — an explicit project
+   setting always wins, so a stray shell `DATABASE_URL` never retargets it.
+2. `DATABASE_URL`, with the engine from the config's `database.type`, else
+   `DATABASE_TYPE` (`sqlite` | `postgres`), else the URL scheme
+   (`postgres://` / `postgresql://` → postgres, anything else sqlite). An
+   unsupported `DATABASE_TYPE` disables this step with a warning.
+3. The `:memory:` default, which schema commands refuse.
+
+`smrt app setup` and `smrt app migrate` hand `smrt db:migrate` the profile's
+database through step 2, so an application does not forward
+`DATABASE_URL` in its own config.
+
 ### Entry Point Discovery
 
 The CLI loads s-m-r-t objects from your project entry point:
@@ -345,4 +400,5 @@ If compiled classes cannot be loaded, the CLI falls back to manifest-only mode (
 
 - `@happyvertical/smrt-core` -- ORM, manifest, code generation
 - `@happyvertical/smrt-config` -- configuration loading
+- `@happyvertical/smrt-app-runtime` -- local storage custody and runtime composition for `smrt app`
 - `@happyvertical/smrt-scanner` -- AST scanning for metadata extraction

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-template-sveltekit",
-  "version": "0.53.2",
+  "version": "0.53.4",
   "description": "Minimal SvelteKit project template with s-m-r-t framework integration",
   "type": "module",
   "main": "index.js",
@@ -44,11 +44,14 @@
     "typecheck": "tsc --noEmit -p tsconfig.fixture.json"
   },
   "devDependencies": {
+    "@happyvertical/smrt-app-cli": "workspace:*",
+    "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-app-runtime": "workspace:*",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
+    "@happyvertical/smrt-mcp-openai": "workspace:*",
     "@happyvertical/smrt-playbooks": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
@@ -58,6 +61,7 @@
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",
     "@happyvertical/sql": "^0.89.12",
+    "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@playwright/test": "^1.63.0",
     "@sveltejs/adapter-node": "^5.5.7",

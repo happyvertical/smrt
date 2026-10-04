@@ -505,6 +505,8 @@ importable, even if it appears in `dist/`.
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, DateTimeInput, Toggle, etc.) |
 | `@happyvertical/smrt-svelte/settings` | Server-paged settings search, selection, and list/detail layout (`SettingsCatalog`, `paginateSettingsCatalog`) |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
+| `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
+| `@happyvertical/smrt-svelte/app/runtime-diagnostics` | Svelte-free diagnostics WebMCP registration and its tool name/endpoint constants, importable from server routes |
 | `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
 | `@happyvertical/smrt-svelte/workspace/server` | Server-side workspace helpers (Node only) |
 | `@happyvertical/smrt-svelte/workspace/live` | `systemFeed` — the AdminShell system scope (jobs/schedules/dispatch) polled from an app status endpoint; deliberately carries no `smrt-web` dependency |
@@ -639,7 +641,8 @@ Use `shell.setPanelState(edge, 'hidden' | 'collapsed' | 'expanded')` to persist
 runtime panel preferences; app-configured hidden edges remain unavailable.
 AdminShell keeps a discoverable tenant collapse control with supplied navigation
 (`showTenantToggle={false}` opts out), a Menu opener in narrow layouts, and the
-system toggle alongside a custom `systemBar`. Closed narrow drawers are inert;
+system toggle alongside a custom `systemBar` that has a `systemPanel` to open
+(a `systemBar` with no `systemPanel` owns the bottom band and draws no toggle). Closed narrow drawers are inert;
 opening focuses the first control, and closing or Escape restores the opener.
 TenantNav accepts `density="touch"` for canonical 48px link targets, including
 collapsed rail links; omit density to inherit the theme's control density.

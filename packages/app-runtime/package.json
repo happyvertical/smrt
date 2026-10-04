@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-app-runtime",
-  "version": "0.53.2",
+  "version": "0.53.4",
   "description": "Validated local, self-hosted, and cloud runtime composition for s-m-r-t applications",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./sveltekit": {
+      "types": "./dist/sveltekit/index.d.ts",
+      "import": "./dist/sveltekit.js"
     }
   },
   "files": [
@@ -26,6 +30,14 @@
     "typecheck": "tsc --noEmit",
     "prepack": "node ../../scripts/prepack-package.js"
   },
+  "peerDependencies": {
+    "@sveltejs/kit": "^2.20.0"
+  },
+  "peerDependenciesMeta": {
+    "@sveltejs/kit": {
+      "optional": true
+    }
+  },
   "dependencies": {
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
@@ -37,7 +49,9 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/kit": "2.70.3",
     "@types/node": "24.13.6",
+    "tsx": "^4.23.13",
     "typescript": "6.0.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

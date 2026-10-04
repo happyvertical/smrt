@@ -101,7 +101,7 @@ test('completes owner onboarding without exposing the bootstrap token', async ({
   await ownerPage.goto(referenceApp.onboardingUrl);
   await expect(ownerPage.locator('input[name="name"]')).toHaveCount(0);
 
-  // Setup's post-claim cleanup removed the on-disk handoff, so the token is
+  // The runtime's post-claim cleanup removed the on-disk handoff, so the token is
   // no longer retrievable from the state root at all.
   expect(existsSync(join(referenceApp.stateRoot, 'onboarding.json'))).toBe(
     false,

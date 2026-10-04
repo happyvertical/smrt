@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types.js';
@@ -175,6 +175,13 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export function ifNoneMatchHasConcreteMatch() { return false; }',
       'export function ifNoneMatchSatisfied() { return false; }',
       'export function normalizeCustomActionFailure() { return undefined; }',
+      // The real route-access helper (#3416): generated routes resolve
+      // collections through it over the app's config module.
+      `export { createGeneratedCollectionAccess } from ${JSON.stringify(
+        fileURLToPath(
+          new URL('../generated-collection-access.ts', import.meta.url),
+        ),
+      )};`,
       'export function normalizeTypedHttpError(error) {',
       "  if (!error || typeof error !== 'object' || !Number.isInteger(error.status) || error.status < 400 || error.status > 499) return undefined;",
       "  const code = typeof error.code === 'string' ? error.code : error.status === 403 ? 'permission_denied' : 'request_rejected';",
@@ -299,9 +306,15 @@ describe('generated SvelteKit helper runtime', () => {
             pluginBuild.onResolve({ filter: /^@sveltejs\/kit$/ }, () => ({
               path: svelteKitShim,
             }));
-            pluginBuild.onResolve({ filter: /^\$lib\/server\/smrt$/ }, () => ({
-              path: join(projectRoot, 'src/lib/server/smrt.ts'),
-            }));
+            pluginBuild.onResolve(
+              { filter: /^\$lib\/server\/smrt(-register)?$/ },
+              (args) => ({
+                path: join(
+                  projectRoot,
+                  `src/lib/server/${args.path.slice(12)}.ts`,
+                ),
+              }),
+            );
           },
         },
       ],

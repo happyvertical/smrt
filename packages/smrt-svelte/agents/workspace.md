@@ -149,3 +149,34 @@ failure; a context change or later successful refresh clears the signal, and
 success applies the new snapshot.
 Availability is never an authorization boundary—server operations must still
 enforce permissions.
+
+## App shell and owner setup (`./app`)
+
+`@happyvertical/smrt-svelte/app` (`src/components/app/`) is browser-only. It
+lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
+`Provider` and its tests.
+
+- `AppShell` composes `Provider` (`webmcp`, `user`, `permissions` pass through
+  unchanged), `ThemeProvider`, the theme CSS (`themes/styles/{all,fonts}.css`
+  are imported by the component — forgetting them leaves `--smrt-*` unresolved),
+  `AdminShell`, `TenantNav` from the consumer's `nav`/`navGroups`/`currentHref`,
+  and an `AppScopePanel`. Panels start collapsed as in `AdminShell`; pass
+  `config` to change that. `dock` is a snippet rendered inside the shell: a host
+  places its assistant there in a `ShellDockTool`, so this package never
+  imports `smrt-chat`. It receives the Provider's `DataSurfaceRegistry`
+  (`{#snippet dock(registry)}`), the instance mounted routes register on
+  when `webmcp` UI is on; pass it to `<AssistantDock {registry} />`. `runtimeDiagnostics` (default false) mounts the
+  read-only `smrt.runtime.diagnostics.read` WebMCP tool. Server code that
+  lists that tool (the diagnostics route's `toolNames`) imports
+  `RUNTIME_DIAGNOSTICS_WEBMCP_TOOL_NAME` from `./app/runtime-diagnostics`,
+  which is plain TypeScript; the `./app` barrel loads Svelte components and
+  theme CSS.
+- `OwnerSetupForm` is props-driven and imports nothing server-side. Contract
+  (lane 3369 server): `default` form action; fields `token` (hidden), `name`,
+  `email`, optional `tenantName` (`askTenantName`); `load` data
+  `{ available, token }` (`available: false` renders a neutral unavailable
+  state); failures `fail(status, { code, message })`, `message` shown as given
+  and never branched on. Pass `data` and `form` straight from the route. The
+  form is a plain `method="POST"`; pass `enhance` from `$app/forms` to enhance
+  it. The token is a hidden field only and is never stored, logged or shown.
+  Single-use, loopback-only enforcement stays server-side.

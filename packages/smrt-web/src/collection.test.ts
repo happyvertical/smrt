@@ -678,6 +678,33 @@ describe('payload normalization', () => {
     expect(unwrapListResult([{ id: '1' }], 'products')).toEqual([{ id: '1' }]);
   });
 
+  it('unwraps the generated list envelope ({ items, count, limit, offset })', () => {
+    expect(
+      unwrapListResult(
+        { items: [{ id: '1' }], count: 1, limit: 50, offset: 0 },
+        'products',
+      ),
+    ).toEqual([{ id: '1' }]);
+    expect(
+      unwrapListResult(
+        { items: [], count: 0, limit: 50, offset: 0 },
+        'products',
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects malformed list payloads', () => {
+    expect(() => unwrapListResult({ items: 'nope' }, 'products')).toThrow(
+      'unexpected payload shape',
+    );
+    expect(() => unwrapListResult(null, 'products')).toThrow(
+      SmrtWebRequestError,
+    );
+    expect(() => unwrapListResult('x', 'products')).toThrow(
+      SmrtWebRequestError,
+    );
+  });
+
   it('tolerates ApiResponse envelopes ({ data: [...] })', () => {
     expect(unwrapListResult({ data: [{ id: '1' }] }, 'products')).toEqual([
       { id: '1' },

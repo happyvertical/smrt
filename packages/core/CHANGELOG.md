@@ -1,5 +1,32 @@
 # @happyvertical/smrt-core
 
+## 0.53.4
+
+### Patch Changes
+
+- ### Features
+  
+  - starter-driven consumer surface — move framework glue into packages (#3367) (#3403)
+  
+  ### Bug Fixes
+  
+  - pin feed fetch DNS resolution (#3419) (content)
+  - emit virtual-module declarations outside the dev server (#3424) (core)
+- @happyvertical/smrt-config@0.53.4
+  - @happyvertical/smrt-scanner@0.53.4
+  - @happyvertical/smrt-types@0.53.4
+
+## 0.53.3
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - clear the three high audit advisories blocking Required CI (#3417) (deps)
+- @happyvertical/smrt-config@0.53.3
+  - @happyvertical/smrt-scanner@0.53.3
+  - @happyvertical/smrt-types@0.53.3
+
 ## 0.53.2
 
 ### Patch Changes

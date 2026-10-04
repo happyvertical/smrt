@@ -299,6 +299,8 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     </p>
   {:else if mainPictureMode === 'automatic'}
     <p class="drawer-main">{t(M['content.content_picture_drawer.main_automatic'])}</p>
+  {:else}
+    <p class="drawer-main">{t(M['content.content_picture_drawer.main_none'])}</p>
   {/if}
 
   <div class="drawer-tools">

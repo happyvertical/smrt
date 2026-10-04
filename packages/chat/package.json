@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-chat",
-  "version": "0.53.2",
+  "version": "0.53.4",
   "smrtJsdoc": "strict",
   "description": "Chat rooms, DMs, threads, and agent conversations for the SMRT framework",
   "type": "module",
@@ -27,6 +27,10 @@
     "./data-surface": {
       "types": "./dist/data-surface-bridge.d.ts",
       "import": "./dist/data-surface-bridge.js"
+    },
+    "./sveltekit": {
+      "types": "./dist/sveltekit.d.ts",
+      "import": "./dist/sveltekit.js"
     },
     "./ui": {
       "types": "./dist/ui.d.ts",
@@ -63,7 +67,7 @@
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:e2e": "playwright test -c playwright.config.ts",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/agent-reply-postgres.test.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/agent-reply-postgres.test.ts src/sveltekit.postgres.test.ts",
     "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
@@ -89,6 +93,7 @@
   "dependencies": {
     "@happyvertical/ai": "catalog:",
     "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",

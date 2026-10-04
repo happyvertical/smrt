@@ -48,6 +48,7 @@ import {
   type RequestJsonResult,
   redactTransportValue,
   requestJsonResult,
+  resolveMcpPath,
 } from './config.js';
 
 /** Namespace shared with the published SMRT app-result contract. */
@@ -79,7 +80,10 @@ export interface McpStdioBridgeOptions extends CliConfigContext {
   toolsPath?: string;
   /** Modern SDK-v2 HTTP by default. Legacy REST requires explicit opt-in. */
   transport?: 'mcp' | 'legacy-rest';
-  /** Same-server modern endpoint. Defaults to /api/mcp. */
+  /**
+   * Same-server modern endpoint path, e.g. `/mcp`. Defaults to `/api/mcp`.
+   * Must be an absolute path with no query, fragment, backslash or `//`.
+   */
   mcpPath?: string;
   /** Override the call endpoint path. Defaults to `/api/mcp/call`. */
   callPath?: string;
@@ -155,15 +159,7 @@ function createModernBridge(options: McpStdioBridgeOptions): {
   server: Server;
   connect: () => Promise<void>;
 } {
-  const path = options.mcpPath ?? '/api/mcp';
-  if (
-    !path.startsWith('/') ||
-    path.startsWith('//') ||
-    path.includes('\\') ||
-    path.includes('?') ||
-    path.includes('#')
-  )
-    throw new TypeError('mcpPath must be a same-server absolute path.');
+  const path = resolveMcpPath(options.mcpPath);
   const server = new Server(options.serverInfo, {
     capabilities: { tools: {}, resources: {} },
     cacheHints: { 'tools/list': { ttlMs: 0, cacheScope: 'private' } },
@@ -364,5 +360,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function runMcpStdioBridge(
   options: McpStdioBridgeOptions,
 ): Promise<void> {
+  // Reject a bad endpoint path before listening, not on the first request.
+  if (options.transport !== 'legacy-rest') resolveMcpPath(options.mcpPath);
   serveStdio(() => createMcpStdioBridge(options).server);
 }

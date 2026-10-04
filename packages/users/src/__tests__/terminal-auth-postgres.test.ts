@@ -42,9 +42,11 @@ describePostgres('TerminalAuthService on PostgreSQL', () => {
             'DELETE FROM sessions WHERE user_id = ?',
             id,
           );
+          // Limiter rows are keyed by hashed subject/source (#3273); the
+          // test subjects are unique per run, so sweep anything stale.
           await isolated.baseDb.query(
-            'DELETE FROM users_cli_auth_approve_limits WHERE user_id = ?',
-            id,
+            'DELETE FROM users_login_attempts WHERE updated_at < ?',
+            new Date(Date.now() + 60_000).toISOString(),
           );
           await isolated.baseDb.query('DELETE FROM users WHERE id = ?', id);
         }
@@ -73,6 +75,8 @@ describePostgres('TerminalAuthService on PostgreSQL', () => {
         'Session',
         'UsersCliAuthApproveLimit',
         'UsersCliAuthRequest',
+        'UsersLoginAttempt',
+        'UsersLoginAuditEvent',
       ],
     });
     if (isolated.config.type !== 'postgres') {

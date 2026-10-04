@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-cli",
-  "version": "0.53.2",
+  "version": "0.53.4",
   "description": "Developer CLI for SMRT framework - introspection, testing, and project management",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,6 +22,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.js"
     }
   },
   "scripts": {
@@ -40,6 +44,7 @@
     "@happyvertical/files": "catalog:",
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-app-runtime": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-dev-mcp": "workspace:*",

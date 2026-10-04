@@ -33,6 +33,30 @@ Application infrastructure composition for the validated runtime profiles in
   A token that cannot claim fails a read-only preflight before role/catalog
   seeding (#3323); the claim transaction's conditional UPDATE stays the
   authority for single use, expiry, and concurrency.
+- Local MCP tokens (`mcpTokens`, `openLocalMcpTokenStore`, `smrt app token`):
+  owner-bound, scoped, expiring (default 30 d, max 365 d), revocable. Only a
+  domain-separated HMAC (application secret) is stored, in the runtime-owned
+  `_smrt_local_mcp_tokens` system table (created like the bootstrap table;
+  never application schema). Issue refuses scopes the owner lacks; verify
+  returns token scopes ∩ live permissions and `null` for anything else.
+- Bearer binding is explicit (`tenantBinding`, set by the auth adapter;
+  `direct-membership.ts`): `direct` (local tokens, default hosted resolver)
+  needs an active direct membership in exactly the tenant; the default
+  `direct-or-inherited` (hosted app mappings) applies
+  `isSessionTenantAuthorized`'s rule. The direct row, when present, is pinned
+  into `PermissionResolver`, so inheritance never substitutes for it.
+  `verify()` principals (and their `scopes` arrays) are frozen;
+  `runAsPrincipal` takes a validated, deep-frozen, null-prototype copy of
+  the principal before any await (`plain-data.ts`: own data only; poison
+  keys `__proto__`/`constructor`/`prototype`, accessors, inherited or
+  non-plain data, sparse arrays and functions rejected), authorizes from it,
+  and hands `fn` that snapshot. Token `issue()` input is read the same way.
+  They carry
+  `tenantBinding: 'direct'` and the
+  `LOCAL_MCP_TOKEN_PRINCIPAL` brand; `runAsPrincipal` rejects a copy that
+  widens the binding, so the two public APIs compose safely.
+  Never log or return the token outside `issue()`. The operator store opens an
+  uncached connection and takes no writer lease (revocation is per request).
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
 
@@ -67,6 +91,62 @@ Application infrastructure composition for the validated runtime profiles in
   probe always gates startup and live readiness.
 - Cloud must keep required tenant context and must never introduce a root or
   unscoped tenant fallback. RLS remains an explicit deployment/migration choice.
+
+## SvelteKit entry (`./sveltekit`)
+
+- Server-only subpath; `@sveltejs/kit` is an optional peer and is externalized
+  in `vite.config.ts` (kit recognizes `redirect`/`fail` by class identity).
+  The root entry must never import kit or Svelte.
+- `createSmrtSvelteKitRuntime()` order is fixed: readiness gate → URL tenant
+  selection (`locals.selectedTenant*`, never tenant context, headers ignored) →
+  verified session (tenant context entered only when
+  `isSessionTenantAuthorized()` accepts it, else unauthenticated; never via
+  `createSessionHandler`, which re-runs `resolve` on downstream errors) →
+  publish `locals.tenantContext` only for that verified tenant.
+- `database-rls` isolation forces `postgresRls: true`, including on
+  `skipPaths` (anonymous principal). `resolve` runs at most once;
+  session-layer failure before it is a 500 with cleared locals.
+- In an RLS request `classOptions()`/`databaseConfig()` return the
+  transaction-bound request db (class `db` overrides win). Anything that
+  outlives a request (session service, tenant selector) must use the base
+  config, never these.
+- The local writer lease defaults to `defaultWriterLease()` (root
+  `acquireWriterLease` over `prepareApplicationStateRoot`, presenting
+  `SMRT_OPERATION_INSTANCE`); `acquireWriterLease` replaces it, `false` opts
+  out, deployed profiles never take it. Provider readiness stays injected:
+  apps pass `createProviderReadinessProbe`; deployed startup fails closed
+  without `providerReadiness`.
+- `getCollection()` builds from `classOptions()` on every call (RLS request db
+  inside a request); each generated route's embedded prelude imports the
+  app's `smrt.ts` and reaches it through core's
+  `createGeneratedCollectionAccess()` (a legacy accessor export wins,
+  deprecated for one release).
+- Owner setup removes the `smrt app` onboarding hand-off files by default,
+  immediately after the claim commits (before cookie serialization or hooks);
+  `onOwnerClaimed` is for additional cleanup and
+  `removeOnboardingHandoff: false` is the explicit opt-out.
+- Owner setup re-checks loopback peer and loopback URL host per request and
+  returns only fixed `{ code, message }` failures.
+- `verifyLocalMcpToken` (local only) and `resolveMcpPrincipal` (hosted only:
+  issuer/subject → `oidc_identities` → exactly one active user with exactly
+  one active direct membership, else `null`) are the runtime's MCP credential
+  bindings; pass the runtime as `createHostedMcpResourceAuth({ runtime })`.
+  Token claims never select a tenant.
+- `resolveApplicationId()` / `runtimeConfigurationFingerprint()` must stay
+  byte-compatible with process managers (golden vectors in tests).
+
+## Operator state (root entry)
+
+- One owner for the state shared by the web process and `smrt app`
+  (`@happyvertical/smrt-cli/app` re-exports these): `resolveApplicationStateRoot`
+  / `prepareApplicationStateRoot` (private app-bound mode-0700 root and
+  marker), `withOperationLock` (`operation.lock`), `acquireWriterLease` /
+  `readActiveWriterLease` (`writer.lease`), `reclaimStaleRecord`, and
+  `createProviderReadinessProbe` (`SMRT_*_READINESS_MODULE`, resolved from the
+  app root with Node's own ESM rules). File names, record formats, and
+  messages are a cross-process contract; never change them unilaterally.
+- Tests that hook `node:fs` interleavings must live in this package: from a
+  consumer the package is an externalized dependency a mock cannot reach.
 
 ## Public runtime diagnostics
 

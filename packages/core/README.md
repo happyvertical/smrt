@@ -180,6 +180,41 @@ export default defineConfig({
 });
 ```
 
+#### One-call preset for SvelteKit apps
+
+`smrt()` applies the Oxc decorator config and composes `smrtConsumer()` and
+`smrtPlugin()` with the SvelteKit conventions (`src/lib/objects`,
+`src/lib/types/smrt-generated`, `src/routes/api`, `src/lib/server/smrt.ts`):
+
+```typescript
+// vite.config.ts
+import { sveltekit } from '@sveltejs/kit/vite';
+import { smrt } from '@happyvertical/smrt-core/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({ plugins: [sveltekit(), smrt()] });
+```
+
+```typescript
+// smrt.config.ts: the declared, deterministic list of consumed packages.
+// Tooling and UI packages are never inferred from package.json.
+export default { consumer: { packages: ['@happyvertical/smrt-users'] } };
+```
+
+`smrt({ packages })` overrides the config list; `[]` declares that none are
+consumed. A missing or malformed list fails the build. `objectsDir`, `typesDir`,
+`routesDir`, `configPath`, `configFileName`, `include`, `exclude` and
+`projectRoot` override the conventions; `decorators: false` omits the decorator
+config (values you set under `oxc.decorator` are never overwritten). `smrt()`
+returns a promise, which Vite accepts in `plugins`. The plugin also writes the
+`virtual-modules.d.ts` ambient declarations (into `typesDir`) whenever it runs
+a build or whenever Vite resolves the config, including `svelte-kit sync`
+(SvelteKit 2.69.3+ resolves the Vite config there), not only under a dev server.
+`svelte-kit sync && tsc` therefore passes on a clean clone with no prior build
+and no copied shim; the file is rewritten
+only when its contents change. The two plugins remain
+public for custom setups.
+
 ```bash
 pnpm vite build
 pnpm smrt db:migrate
@@ -297,6 +332,17 @@ configuration, so a clean checkout receives the physical `@smrt/manifest`,
 Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its
 default output directory is `src/routes/api`; set `svelteKit.routesDir` when
 your application uses a different route root.
+
+Generated routes do not need a hand-written `getCollection`. Each route embeds
+a prelude that imports the generated `smrt-register` module and the app's
+config module (`svelteKit.configPath`/`configFileName`, `$lib/server/smrt` by
+default), then resolves collections through that module's exported `runtime`
+(`createSmrtSvelteKitRuntime()` from `@happyvertical/smrt-app-runtime/sveltekit`,
+whose `getCollection()` is request-scoped). A `getCollection`/`getSmrtConfig`
+export there still takes precedence for one release, with a deprecation
+warning. The plugin also prepends the registration import to that config
+module, and generation refuses a `configFileName` that names the registration
+module (`smrt-register.*`).
 
 A consumer can host selected dependency models with the same generator. This is
 an explicit HTTP boundary that is separate from the broader `packages`
@@ -473,6 +519,7 @@ file has run.
 | --- | --- |
 | `@happyvertical/smrt-core` | Objects, collections, decorators, registry, configuration |
 | `@happyvertical/smrt-core/vite-plugin` | Manifest, route, client, and knowledge generation |
+| `@happyvertical/smrt-core/vite` | One-call preset: decorators, consumer, and producer plugins |
 | `@happyvertical/smrt-core/consumer-plugin` | Consume manifests from installed s-m-r-t packages |
 | `@happyvertical/smrt-core/generators` | REST, OpenAPI, CLI, and MCP generator APIs |
 | `@happyvertical/smrt-core/manifest` | Runtime manifest loading and inspection |

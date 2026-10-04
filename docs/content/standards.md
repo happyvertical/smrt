@@ -417,10 +417,16 @@ never disable the scan.
   `"undici@>=7.0.0 <7.24.0": "7.24.0"`). Scope the key
   to the vulnerable range so unrelated majors aren't force-bumped.
 - **Accept-with-justification.** Only when an advisory can't be remediated without
-  breaking a pinned API (e.g. `protobufjs` 6.x held by `onnx-proto` under the
-  deprecated `@xenova/transformers` v2 fallback) add its GHSA to
-  `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml` — with a justification
-  recorded in the PR.
+  breaking a pinned API, or no patched release exists at all (e.g. `braces` and
+  `http-cache-semantics`, #3396), add its GHSA to `auditConfig.ignoreGhsas` in
+  `pnpm-workspace.yaml` with a `suppressed: true` record in `audit-policy.json`:
+  reachability evidence, the upstream blocker, and a `recheckBy` date.
+  `pnpm audit:policy` enforces the records and fails once a record passes its
+  `recheckBy` date. `pnpm audit:policy:drift` warns about every live
+  `pnpm audit` advisory that has no record, and about unsuppressed records
+  whose advisory has left the tree. It cannot do the latter for suppressed
+  records: pnpm removes ignored GHSAs from the audit payload, so a suppressed
+  record is revisited through its `recheckBy` date instead.
   Revisit baselined advisories when their blocker is removed.
 
 ---

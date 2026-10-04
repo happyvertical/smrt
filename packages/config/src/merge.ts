@@ -1,3 +1,4 @@
+import { mergeAIConfigObjects } from './ai.js';
 import {
   RuntimeProfileValidationError,
   validateApplicationRuntimeConfigShape,
@@ -183,7 +184,27 @@ export function setConfig(config: Partial<SmrtConfig>): void {
     delete resetRuntime.providers;
   }
 
-  globalThis.__smrtRuntimeConfig = deepMerge(current, config);
+  const merged = deepMerge(current, config) as Record<string, unknown>;
+  // The `ai` blocks follow provider ownership: accumulating setConfig() calls
+  // must not pair a later provider with an earlier provider's credentials.
+  const aiOf = (c: unknown) =>
+    isPlainObject(c) && isPlainObject(c.ai) ? c.ai : undefined;
+  const pkgAiOf = (c: unknown) =>
+    isPlainObject(c) &&
+    isPlainObject(c.packages) &&
+    isPlainObject(c.packages.ai)
+      ? c.packages.ai
+      : undefined;
+  if (aiOf(config)) {
+    merged.ai = mergeAIConfigObjects(aiOf(current) ?? {}, aiOf(config));
+  }
+  if (pkgAiOf(config)) {
+    (merged.packages as Record<string, unknown>).ai = mergeAIConfigObjects(
+      pkgAiOf(current) ?? {},
+      pkgAiOf(config),
+    );
+  }
+  globalThis.__smrtRuntimeConfig = merged as Partial<SmrtConfig>;
 }
 
 /**

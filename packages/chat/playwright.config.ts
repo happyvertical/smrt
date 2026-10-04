@@ -9,7 +9,14 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: 'list',
-  use: { baseURL, headless: true },
+  use: {
+    baseURL,
+    headless: true,
+    // An installed Chromium, for hosts where the downloaded one cannot load.
+    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+      ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } }
+      : {}),
+  },
   webServer: {
     command: `pnpm exec vite dev --host 127.0.0.1 --port ${port}`,
     cwd: new URL('.', import.meta.url).pathname,

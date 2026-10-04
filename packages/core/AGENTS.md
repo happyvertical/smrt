@@ -105,6 +105,10 @@ and repository rules.
   a resolved table that differs first (#3106). Stack
   attribution skips smrt-core (including source-mapped installed
   `smrt-core/src` frames, #3109), decorator-helper, and module-runner frames.
+  Qualified names are `@scope/pkg:Class`; the scope is a deliberate
+  discriminator, so manifest generation (`generateManifest`,
+  `applyGenerationPasses`, hence `pnpm build`) throws
+  `CONFIG_UNSCOPED_PACKAGE_NAME` for an unscoped `package.json` name (#3408).
   Instance and collection registry lookups pass the qualified name. The schema
   planner rejects a table claimed by two unrelated classes
   (`CONFIG_TABLE_NAME_COLLISION`): only one STI family shares a table (#3098);

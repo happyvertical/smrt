@@ -28,6 +28,8 @@ import {
   unregisterRetentionTask,
 } from '@happyvertical/smrt-core';
 import { UsersCliAuthRequestCollection } from './collections/CliAuthRequestCollection.js';
+import { UsersLoginAttemptCollection } from './collections/LoginAttemptCollection.js';
+import { UsersLoginAuditEventCollection } from './collections/LoginAuditEventCollection.js';
 import { UsersMagicLinkTokenCollection } from './collections/MagicLinkTokenCollection.js';
 import { SessionCollection } from './collections/SessionCollection.js';
 
@@ -40,11 +42,22 @@ export const MAGIC_LINK_RETENTION_TASK = 'users-magic-link-tokens';
 /** Retention task name for expired CLI device-code requests. */
 export const CLI_AUTH_RETENTION_TASK = 'users-cli-auth-requests';
 
+/** Retention task name for idle login-attempt limiter rows (#3273). */
+export const LOGIN_ATTEMPTS_RETENTION_TASK = 'users-login-attempts';
+
+/** Retention task name for login audit events (#3273). */
+export const LOGIN_AUDIT_RETENTION_TASK = 'users-login-audit-events';
+
+/** How long login audit events are kept by default. */
+export const DEFAULT_LOGIN_AUDIT_RETENTION_DAYS = 90;
+
 /** Every task name {@link registerUserRetentionTasks} installs. */
 export const USER_RETENTION_TASKS = [
   SESSIONS_RETENTION_TASK,
   MAGIC_LINK_RETENTION_TASK,
   CLI_AUTH_RETENTION_TASK,
+  LOGIN_ATTEMPTS_RETENTION_TASK,
+  LOGIN_AUDIT_RETENTION_TASK,
 ] as const;
 
 /**
@@ -84,6 +97,29 @@ export function registerUserRetentionTasks(): void {
     run: async (db, context) => {
       const requests = await UsersCliAuthRequestCollection.create({ db });
       return requests.deleteExpired({ dryRun: context.dryRun });
+    },
+  });
+
+  registerRetentionTask({
+    name: LOGIN_ATTEMPTS_RETENTION_TASK,
+    description: 'Delete idle login-attempt limiter rows',
+    run: async (db, context) => {
+      const attempts = await UsersLoginAttemptCollection.create({ db });
+      // Each row carries the horizon of the limiter that wrote it, so the
+      // sweep cannot erase a budget a custom-configured limiter still uses.
+      return attempts.deleteIdle({ dryRun: context.dryRun });
+    },
+  });
+
+  registerRetentionTask({
+    name: LOGIN_AUDIT_RETENTION_TASK,
+    description: `Delete login audit events older than ${DEFAULT_LOGIN_AUDIT_RETENTION_DAYS} days`,
+    run: async (db, context) => {
+      const events = await UsersLoginAuditEventCollection.create({ db });
+      return events.deleteOlderThan(
+        DEFAULT_LOGIN_AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+        { dryRun: context.dryRun },
+      );
     },
   });
 }

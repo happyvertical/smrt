@@ -128,14 +128,34 @@ test('standalone CLI uses configured TypeScript without workspace node_modules a
   assert.match(unavailable.stderr, /ERR_MODULE_NOT_FOUND/);
 });
 
-test('standalone standards workflow supplies the existing trusted compiler to the MCP gate', () => {
-  const workflow = readFileSync(join(root, '.github/workflows/on-pull-request.yml'), 'utf8');
-  const job = workflow.slice(workflow.indexOf('  check-standards:'));
-  assert.ok(job.indexOf('Install trusted README validator dependency') < job.indexOf('Checkout PR branch'));
+function assertTrustedStandardsWorkflow(workflow) {
+  const jobStart = workflow.search(/^  check-standards:\s*$/m);
+  assert.ok(jobStart >= 0, 'standards job must exist');
+  const job = workflow.slice(jobStart).split(/\n(?= {2}[\w-]+:)/)[0];
+  const installIndex = job.indexOf('Install trusted standards validator dependencies');
+  const checkoutIndex = job.indexOf('Checkout PR branch');
+  assert.ok(installIndex >= 0, 'trusted standards install step must exist');
+  assert.ok(checkoutIndex >= 0, 'PR checkout step must exist');
+  assert.ok(installIndex < checkoutIndex, 'trusted install must precede PR checkout');
   assert.match(job, /pnpm@11\.13\.1 typescript@5\.9\.3 @types\/node@24\.13\.2/);
   const step = job.slice(job.indexOf('      - name: Check MCP 2026-07-28 protocol hygiene')).split('\n      - name:')[0];
   assert.match(step, /SMRT_TYPESCRIPT_PATH: \$\{\{ runner\.temp \}\}\/readme-validator\/node_modules\/typescript\/lib\/typescript\.js/);
   assert.match(step, /run: node scripts\/check-mcp-protocol-hygiene\.mjs/);
+}
+
+test('standalone standards workflow supplies the existing trusted compiler to the MCP gate', () => {
+  assertTrustedStandardsWorkflow(readFileSync(join(root, '.github/workflows/on-pull-request.yml'), 'utf8'));
+});
+
+test('standards checkout cannot be supplied by a later workflow job', () => {
+  const workflow = readFileSync(join(root, '.github/workflows/on-pull-request.yml'), 'utf8');
+  const jobStart = workflow.indexOf('  check-standards:');
+  const checkoutStart = workflow.indexOf('      - name: Checkout PR branch', jobStart);
+  const nextStep = workflow.indexOf('\n      - name:', checkoutStart);
+  assert.ok(jobStart >= 0 && checkoutStart > jobStart && nextStep > checkoutStart);
+  const withoutCheckout = workflow.slice(0, checkoutStart) + workflow.slice(nextStep);
+  assert.ok(withoutCheckout.includes('      - name: Checkout PR branch'), 'later job retains its checkout');
+  assert.throws(() => assertTrustedStandardsWorkflow(withoutCheckout), /PR checkout step must exist/);
 });
 
 

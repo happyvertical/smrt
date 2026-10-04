@@ -49,6 +49,7 @@ import {
   generateSvelteKitRoutes,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
+import { injectSvelteKitRegistration } from './sveltekit-register-injection.js';
 import {
   assertSvelteKitRouteCoordinationComplete,
   contributeSvelteKitRoutes,
@@ -926,7 +927,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // configureServer may be attached between configResolved and buildStart.
       // Emit declarations from the reused manifest even though the scanner
       // itself does not need to run again.
-      if (generateTypes && server && manifest) {
+      if (generateTypes && manifest) {
         await generateTypeDeclarationFile(
           manifest,
           projectRoot,
@@ -1080,7 +1081,18 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       }
     },
 
-    transform(_code, id) {
+    transform(code, id) {
+      // SvelteKit apps: register the generated objects before the server
+      // config module (`src/lib/server/smrt.ts`) runs, so the application
+      // never hand-writes the guarded `smrt-register.js` import (#3416).
+      if (svelteKit.enabled && !config?.build?.lib) {
+        const injected = injectSvelteKitRegistration(code, id, {
+          projectRoot: configuredProjectRoot ?? projectRoot,
+          configPath: svelteKit.configPath,
+          configFileName: svelteKit.configFileName,
+        });
+        return injected === null ? null : { code: injected, map: null };
+      }
       // Library builds only: inline the scanned manifest into the package's
       // __smrt-register__ shim so the published dist registers field metadata
       // as data instead of resolving ./manifest.json at runtime. Runtime URL
@@ -1469,7 +1481,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       console.log(
         `[smrt] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
       );
-      if (generateTypes && server) {
+      if (generateTypes) {
         await generateTypeDeclarationFile(
           verified,
           rootDir,
@@ -1662,7 +1674,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       console.log(`[smrt] OXC scan completed in ${elapsed.toFixed(2)}ms`);
 
       // Generate TypeScript declarations if enabled
-      if (generateTypes && server) {
+      if (generateTypes) {
         await generateTypeDeclarationFile(
           newManifest,
           rootDir,
@@ -1980,7 +1992,7 @@ export async function generateTypeDeclarationFile(
 ): Promise<void> {
   try {
     // Conditionally import path and fs modules
-    const [{ join }, { existsSync, mkdirSync, writeFileSync }] =
+    const [{ join }, { existsSync, mkdirSync, readFileSync, writeFileSync }] =
       await Promise.all([import('node:path'), import('node:fs')]);
 
     const declarationsDir = join(projectRoot, typeDeclarationsPath);
@@ -2382,7 +2394,14 @@ ${webCollectionInterface}
 }
 `;
 
-    // Write the declarations file
+    // Write only on change: emission now runs on every build, and an
+    // unchanged file must not touch mtimes or retrigger watchers.
+    if (
+      existsSync(declarationsFile) &&
+      readFileSync(declarationsFile, 'utf-8') === typeDeclarations
+    ) {
+      return;
+    }
     writeFileSync(declarationsFile, typeDeclarations);
     console.log(
       `[smrt] Generated TypeScript declarations: ${declarationsFile}`,

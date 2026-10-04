@@ -6,46 +6,47 @@ import { describe, expect, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const routesDir = join(__dirname, '..', 'template', 'src', 'routes');
+const read = (path: string) => readFileSync(join(routesDir, path), 'utf8');
 
+/**
+ * The shell, owner setup form, and settings page are shipped by
+ * `@happyvertical/smrt-svelte/app` (#3374) and tested there; their rendering
+ * is proven end to end by the M5 browser gate. These cases pin the app-owned
+ * inputs the template passes.
+ */
 describe('application shell', () => {
-  const layout = readFileSync(join(routesDir, '+layout.svelte'), 'utf8');
-  const layoutServer = readFileSync(
-    join(routesDir, '+layout.server.ts'),
-    'utf8',
-  );
-  const settings = readFileSync(
-    join(routesDir, 'settings', '+page.svelte'),
-    'utf8',
-  );
+  const layout = read('+layout.svelte');
 
-  it('wraps AdminShell in the current provider and theme stack', () => {
-    expect(layout).toContain("import { Provider } from '@happyvertical/smrt-svelte'");
-    expect(layout).toContain("ThemeProvider } from '@happyvertical/smrt-ui/themes'");
-    expect(layout).toContain("@happyvertical/smrt-ui/themes/styles/fonts.css");
-    const providerIndex = layout.indexOf('<Provider {webmcp}>');
-    const themeIndex = layout.indexOf('<ThemeProvider');
-    const shellIndex = layout.indexOf('<AdminShell');
-    expect(providerIndex).toBeGreaterThanOrEqual(0);
-    expect(themeIndex).toBeGreaterThan(providerIndex);
-    expect(shellIndex).toBeGreaterThan(themeIndex);
-    expect(layout).toContain('preset="smrt"');
-  });
-
-  it('uses a small explicit TenantNav instead of generating broken page links', () => {
+  it('uses the shipped AppShell with app-owned navigation only', () => {
+    expect(layout).toContain(
+      "import { AppShell } from '@happyvertical/smrt-svelte/app'",
+    );
     expect(layout).toContain('const nav: ShellNavItem[]');
-    expect(layout).toContain('<TenantNav items={nav} {currentHref} />');
+    expect(layout).toContain('{nav}');
+    expect(layout).toContain('currentHref={page.url.pathname}');
     expect(layout).not.toContain('tenantNavFromManifest');
+    // Provider, ThemeProvider, theme CSS, and AdminShell come from AppShell.
+    expect(layout).not.toMatch(/<(Provider|ThemeProvider|AdminShell)\b/);
   });
 
-  it('loads session tenant and selection state on the server', () => {
-    expect(layoutServer).toContain('activeTenantId: locals.tenantId');
-    expect(layoutServer).toContain(
-      'selectedTenantSlug: locals.selectedTenantSlug',
+  it('registers diagnostics only for a signed-in session and generated tools read-only', () => {
+    expect(layout).toContain(
+      'runtimeDiagnostics={data.session.authenticated}',
+    );
+    expect(layout).toContain("effects: ['read'] as const");
+    expect(layout).toContain("'modelContext' in document");
+  });
+
+  it('mounts the shipped owner setup form over the runtime action', () => {
+    expect(read('setup/+page.svelte')).toContain(
+      '<OwnerSetupForm {data} {form} {enhance} />',
+    );
+    expect(read('setup/+page.server.ts')).toContain(
+      'createOwnerSetupPage(runtime',
     );
   });
 
-  it('keeps the current ShellSettingsPanel integration', () => {
-    expect(settings).toContain('ShellSettingsPanel');
-    expect(settings).toContain("from '@happyvertical/smrt-svelte/workspace'");
+  it('mounts the shipped settings page inside the shell', () => {
+    expect(read('settings/+page.svelte')).toContain('<ShellSettingsPage />');
   });
 });

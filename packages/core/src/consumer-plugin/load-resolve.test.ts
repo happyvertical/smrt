@@ -217,7 +217,7 @@ describe('smrtConsumer load with a populated manifest', () => {
       recursive: true,
     });
     writePackageJson(projectRoot, {
-      name: 'consumer-app',
+      name: '@fixture/consumer-app',
       version: '1.0.0',
     });
     writePackageJson(join(projectRoot, 'node_modules', '@acme', 'widgets'), {
@@ -347,7 +347,10 @@ describe('smrtConsumer load with a populated manifest', () => {
     mkdirSync(join(projectRoot, 'node_modules', '@acme', 'assets', 'dist'), {
       recursive: true,
     });
-    writePackageJson(projectRoot, { name: 'consumer-app', version: '1.0.0' });
+    writePackageJson(projectRoot, {
+      name: '@fixture/consumer-app',
+      version: '1.0.0',
+    });
     writePackageJson(join(projectRoot, 'node_modules', '@acme', 'assets'), {
       name: '@acme/assets',
       version: '1.0.0',
@@ -416,7 +419,10 @@ describe('smrtConsumer load with a populated manifest', () => {
     mkdirSync(join(projectRoot, 'node_modules', '@acme', 'widgets', 'dist'), {
       recursive: true,
     });
-    writePackageJson(projectRoot, { name: 'consumer-app', version: '1.0.0' });
+    writePackageJson(projectRoot, {
+      name: '@fixture/consumer-app',
+      version: '1.0.0',
+    });
     writePackageJson(join(projectRoot, 'node_modules', '@acme', 'widgets'), {
       name: '@acme/widgets',
       version: '2.0.0',
@@ -523,7 +529,7 @@ describe('smrtConsumer load with a populated manifest', () => {
 describe('smrtConsumer buildStart package discovery', () => {
   it('lets both plugins reuse one verified snapshot without discovery or manifest writes (#2328)', async () => {
     writePackageJson(projectRoot, {
-      name: 'consumer-app',
+      name: '@fixture/consumer-app',
       version: '1.0.0',
     });
     const provenance = 'git-tree:fixture';
@@ -632,7 +638,7 @@ describe('smrtConsumer buildStart package discovery', () => {
       { recursive: true },
     );
     writePackageJson(projectRoot, {
-      name: 'consumer-app',
+      name: '@fixture/consumer-app',
       version: '1.0.0',
       dependencies: { '@scope/smrt-things': '^1.0.0' },
     });
@@ -681,7 +687,10 @@ describe('smrtConsumer buildStart package discovery', () => {
   });
 
   it('produces an empty manifest when no SMRT packages are found', async () => {
-    writePackageJson(projectRoot, { name: 'consumer-app', version: '1.0.0' });
+    writePackageJson(projectRoot, {
+      name: '@fixture/consumer-app',
+      version: '1.0.0',
+    });
 
     const plugin = smrtConsumer({
       generateTypes: false,
@@ -698,7 +707,10 @@ describe('smrtConsumer buildStart package discovery', () => {
     mkdirSync(join(projectRoot, 'node_modules', 'plain-pkg', 'dist'), {
       recursive: true,
     });
-    writePackageJson(projectRoot, { name: 'consumer-app', version: '1.0.0' });
+    writePackageJson(projectRoot, {
+      name: '@fixture/consumer-app',
+      version: '1.0.0',
+    });
     writePackageJson(join(projectRoot, 'node_modules', 'plain-pkg'), {
       name: 'plain-pkg',
       version: '1.0.0',
@@ -746,7 +758,10 @@ describe('smrtConsumer buildStart package discovery', () => {
     mkdirSync(join(projectRoot, 'node_modules', 'broken-pkg'), {
       recursive: true,
     });
-    writePackageJson(projectRoot, { name: 'consumer-app', version: '1.0.0' });
+    writePackageJson(projectRoot, {
+      name: '@fixture/consumer-app',
+      version: '1.0.0',
+    });
 
     const plugin = smrtConsumer({
       packages: ['broken-pkg'],
@@ -767,7 +782,7 @@ describe('smrtConsumer buildStart package discovery', () => {
       recursive: true,
     });
     writePackageJson(projectRoot, {
-      name: 'consumer-app',
+      name: '@fixture/consumer-app',
       version: '1.0.0',
       dependencies: { 'smrt-broken-pkg': '1.0.0' },
     });
@@ -857,7 +872,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
 
   beforeEach(() => {
     writePackageJson(projectRoot, {
-      name: 'consumer-app',
+      name: '@fixture/consumer-app',
       version: '1.0.0',
       type: 'module',
     });
@@ -2227,7 +2242,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     const launchRoot = process.cwd();
     const viteRoot = join(projectRoot, 'configured-vite-root');
     mkdirSync(join(viteRoot, 'src/lib/objects'), { recursive: true });
-    writePackageJson(viteRoot, { name: 'configured-vite-root' });
+    writePackageJson(viteRoot, { name: '@fixture/configured-vite-root' });
     writeFileSync(
       join(viteRoot, 'src/lib/objects/LocalWidget.ts'),
       [

@@ -2776,6 +2776,16 @@ export class CLIGenerator {
 // CLI Binary Entry Point
 export async function main() {
   const args = process.argv.slice(2);
+
+  // `smrt app <operation>` is the application operator surface. It owns its
+  // own `.env`/config loading, raw argument passthrough (Vite), JSON output,
+  // and exit codes, so it is dispatched before manifest or config loading.
+  if (args[0] === 'app') {
+    const { runAppCommand } = await import('./app/cli.js');
+    process.exitCode = await runAppCommand(args.slice(1));
+    return;
+  }
+
   const timingEnabled = args.includes('--timing');
   const timing: Record<string, number> = {};
 
@@ -2790,6 +2800,9 @@ export async function main() {
       'smrt.config.js',
       'smrt.config.mjs',
       'smrt.config.cjs',
+      'smrt.config.ts',
+      'smrt.config.mts',
+      'smrt.config.cts',
       'smrt.config.json',
     ];
     let dir = process.cwd();
@@ -2812,6 +2825,12 @@ export async function main() {
   const configStart = timingEnabled ? performance.now() : 0;
   const { loadConfig } = await import('@happyvertical/smrt-config');
   await loadConfig({ cache: true });
+  // `DATABASE_URL`/`DATABASE_TYPE` fill `packages.cli.database` only when no
+  // config layer declares a URL (precedence in database-environment.ts).
+  const { applyDatabaseEnvironment } = await import(
+    './database-environment.js'
+  );
+  await applyDatabaseEnvironment();
   if (timingEnabled) {
     timing.config = performance.now() - configStart;
   }

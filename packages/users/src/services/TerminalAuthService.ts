@@ -23,13 +23,16 @@ import {
   isUniqueViolationError,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
-import { UsersCliAuthApproveLimitCollection } from '../collections/CliAuthApproveLimitCollection.js';
 import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
 import type {
   CliAuthRequestStatus,
   UsersCliAuthRequest,
 } from '../models/CliAuthRequest.js';
 import type { User } from '../models/User.js';
+import {
+  LoginAttemptLimiter,
+  type LoginAuditSink,
+} from './LoginAttemptLimiter.js';
 import { type SessionContext, SessionService } from './SessionService.js';
 
 /** Default polling interval the CLI should honour while waiting for approval. */
@@ -87,7 +90,20 @@ export interface TerminalAuthServiceOptions extends SmrtClassOptions {
    * Defaults to {@link DEFAULT_CLI_AUTH_APPROVE_ATTEMPT_WINDOW_SECONDS}.
    */
   approveAttemptWindowSeconds?: number;
+  /**
+   * Shared {@link LoginAttemptLimiter} (#3273). When supplied, its budget,
+   * backoff and audit configuration win and the two options above are
+   * ignored; otherwise a private limiter is created from them with the
+   * fixed window only (no exponential lockout), which is the behaviour
+   * terminal approval always had.
+   */
+  loginLimiter?: LoginAttemptLimiter;
+  /** Audit sink for the private limiter. Ignored when `loginLimiter` is set. */
+  loginAudit?: LoginAuditSink | false;
 }
+
+/** Credential kind the terminal approve flow reports to the login limiter. */
+export const TERMINAL_APPROVE_LOGIN_KIND = 'terminal-approve';
 
 /**
  * What `createRequest` returns to the CLI.
@@ -152,7 +168,7 @@ export class TerminalAuthService {
   private readonly maxApproveAttempts: number;
   private readonly approveAttemptWindowMs: number;
   private readonly approveQueuesByUser = new Map<string, Promise<void>>();
-  private approveLimitCollection!: UsersCliAuthApproveLimitCollection;
+  private loginLimiter!: LoginAttemptLimiter;
   private requestCollection!: UsersCliAuthRequestCollection;
   private sessionService!: SessionService;
 
@@ -180,8 +196,15 @@ export class TerminalAuthService {
   }
 
   async initialize(): Promise<void> {
-    this.approveLimitCollection =
-      await UsersCliAuthApproveLimitCollection.create(this.options);
+    this.loginLimiter =
+      this.options.loginLimiter ??
+      (await LoginAttemptLimiter.create({
+        ...this.options,
+        audit: this.options.loginAudit,
+        lockout: false,
+        maxAttempts: this.maxApproveAttempts,
+        windowSeconds: this.approveAttemptWindowMs / 1000,
+      }));
     this.requestCollection = await UsersCliAuthRequestCollection.create(
       this.options,
     );
@@ -296,34 +319,49 @@ export class TerminalAuthService {
     const tenantId = input.tenantId;
 
     return await this.withSerializedApprove(userId, async () => {
-      const reservation = await this.approveLimitCollection.reserveAttempt({
-        maxAttempts: this.maxApproveAttempts,
-        userId,
-        windowMs: this.approveAttemptWindowMs,
+      // The limiter is the cross-replica arbiter (#3273), keyed on the
+      // approving user alone, as this throttle always was: the approver is
+      // already authenticated, and a per-address budget would let one user
+      // behind a shared address refuse approvals for everyone else there.
+      // The reservation is only kept for attempts that fail the code check.
+      const lease = await this.loginLimiter.reserve({
+        kind: TERMINAL_APPROVE_LOGIN_KIND,
+        // Prefixed so this budget never pools with the same person's PIN
+        // or password budget, whichever limiter instance is in use: wrong
+        // PINs typed at a tablet must not refuse their terminal approvals,
+        // and an approval must not clear a PIN backoff.
+        subject: `${TERMINAL_APPROVE_LOGIN_KIND}:${userId}`,
       });
-      if (!reservation.allowed) {
+      if (!lease.allowed) {
         throw new TerminalAuthRateLimitError(
           'Too many failed terminal-login attempts. Try again later.',
-          reservation.retryAfterSeconds,
+          lease.retryAfterSeconds,
         );
       }
-      let retainReservation = false;
 
+      // How to settle the reservation: a wrong/expired code keeps it (fail),
+      // the approval of a pending request hands it back and clears the
+      // streak (succeed), and an idempotent re-approval or an unexpected
+      // error hands it back untouched (release).
+      let settle: 'fail' | 'succeed' | 'release' = 'release';
       try {
         const request = await this.getRequestForUserCode(input.userCode);
         if (!request) {
-          retainReservation = true;
+          settle = 'fail';
           throw new TerminalAuthError('Terminal login request not found.');
         }
         if (request.status === 'approved' || request.status === 'consumed') {
-          // Idempotent success — don't penalize a re-approval or a double-click
-          // after the CLI already exchanged the approved token.
+          // Idempotent success — don't penalize a re-approval or a
+          // double-click after the CLI already exchanged the approved token.
+          // Released, not `succeed`: re-submitting an old approved code must
+          // not clear the streak from guessing at other codes.
+          settle = 'release';
           return request;
         }
         if (request.status !== 'pending' || isExpired(request)) {
           request.status = 'expired';
           await request.save();
-          retainReservation = true;
+          settle = 'fail';
           throw new TerminalAuthError('Terminal login request has expired.');
         }
 
@@ -342,9 +380,10 @@ export class TerminalAuthService {
             concurrent?.status === 'approved' ||
             concurrent?.status === 'consumed'
           ) {
+            settle = 'release';
             return concurrent;
           }
-          retainReservation = true;
+          settle = 'fail';
           throw new TerminalAuthError('Terminal login request has expired.');
         }
         request.approvedAt = approved.approvedAt;
@@ -352,28 +391,22 @@ export class TerminalAuthService {
         request.status = 'approved';
         request.tenantId = approved.tenantId;
         request.userId = approved.userId;
+        settle = 'succeed';
         return request;
       } finally {
-        if (!retainReservation) {
-          try {
-            await this.approveLimitCollection.releaseAttempt(
-              userId,
-              reservation.windowStartedAt,
-            );
-          } catch {
-            // The reservation is fail-closed and expires with its window. A
-            // cleanup outage must not turn a committed approval/session into
-            // an apparent browser failure while the CLI can already exchange
-            // the credential. Retaining it is the safe fallback.
-          }
-        }
+        // A reservation that cannot be settled stays reserved: it is
+        // fail-closed and expires with its window, which is the safe side
+        // when the CLI may already be able to exchange a minted credential.
+        await lease[settle]().catch(() => undefined);
       }
     });
   }
 
   /**
-   * Serialize approval attempts per user so parallel requests cannot all pass
-   * the failed-attempt check before any one of them records its failure.
+   * Serialize approval attempts per user within this process so a burst of
+   * parallel approvals of one valid code settles one reservation at a time
+   * instead of each holding its own; the shared limiter row remains the
+   * cross-replica arbiter.
    */
   private async withSerializedApprove<T>(
     userId: string,
