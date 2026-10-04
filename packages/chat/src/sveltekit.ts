@@ -11,13 +11,15 @@
  * import { runtime } from '$lib/server/smrt';
  * export const { GET, POST } = mountAssistantRoutes({
  *   allowedTools: ['notes.read', 'notes.create'],
- *   db: () => runtime.databaseConfig(),
+ *   runtime,
  * });
  * ```
  *
  * `ai` defaults to the `smrt.config` `ai` block (resolved per turn through
  * `@happyvertical/smrt-config`); `allowedTools` alone offers the manifest
- * operations it names; `db` may be a per-request resolver.
+ * operations it names; `runtime` supplies the per-request database and the
+ * streamed turn's own database lifetime (`db` may instead be a per-request
+ * resolver).
  *
  *   GET  threads                        member-scoped thread list
  *   POST threads                        { title } → { thread }
@@ -57,6 +59,11 @@ import {
 } from '@happyvertical/smrt-config';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import {
+  getCurrentSessionPermissionContext,
+  getRequestScopedDatabase,
+} from '@happyvertical/smrt-users';
+import {
+  ASSISTANT_TURN_GENERIC_ERROR,
   type AssistantContinuationStore,
   type AssistantTurnErrorLogger,
   type AssistantTurnState,
@@ -185,6 +192,28 @@ export interface AssistantRouteModel {
   label?: string;
 }
 
+/**
+ * The two application-runtime calls the routes use; the runtime from
+ * `@happyvertical/smrt-app-runtime/sveltekit` satisfies it as is.
+ */
+export interface AssistantRouteRuntime {
+  /** The request's database (its RLS transaction inside one). */
+  databaseConfig(): SmrtClassOptions['db'];
+  /**
+   * Run `fn` as a principal: under `database-rls` in a fresh transaction
+   * publishing that user, tenant and live permissions (capped to `scopes`),
+   * which `databaseConfig()` returns inside `fn`.
+   */
+  runAsPrincipal<T>(
+    principal: {
+      readonly id: string;
+      readonly tenantId: string;
+      readonly scopes?: readonly string[];
+    },
+    fn: () => Promise<T>,
+  ): Promise<T>;
+}
+
 /** Options for {@link mountAssistantRoutes}. */
 export interface MountAssistantRoutesOptions {
   /**
@@ -204,12 +233,24 @@ export interface MountAssistantRoutesOptions {
       ) => AIInterface | Promise<AIInterface>);
   /**
    * Database for chat persistence, the tool catalog and the principal run:
-   * a fixed value, or a resolver called once per request. Under
-   * `database-rls` isolation pass `() => runtime.databaseConfig()` (from
-   * `@happyvertical/smrt-app-runtime/sveltekit`) so every request uses its
-   * own transaction-bound database; never retain the handle it returns.
+   * a fixed value, or a resolver called once per request (and once more
+   * inside a streamed turn's own database lifetime, see `runtime`). Default
+   * with `runtime`: `() => runtime.databaseConfig()`.
    */
   db?: AssistantRouteValue<SmrtClassOptions['db']>;
+  /**
+   * The application runtime (`runtime` from
+   * `@happyvertical/smrt-app-runtime/sveltekit`). A request inside an RLS
+   * transaction (`database-rls`) ends, committing that transaction, when the
+   * handler returns its streaming response, so a turn never keeps it: with
+   * `runtime`, a streamed turn waits for the request's transaction to end and
+   * then runs, persists its reply and records its outcome in its own
+   * transaction for the same principal (`runtime.runAsPrincipal`). Without
+   * it, such a turn runs to completion before the response is returned (the
+   * events arrive at once, not incrementally). Outside an RLS transaction
+   * (SQLite, the local profile) the turn streams as before either way.
+   */
+  runtime?: AssistantRouteRuntime;
   /** Default: {@link resolveAssistantPrincipalFromLocals}. */
   resolvePrincipal?: AssistantPrincipalResolver;
   /** The assistant's agent id (its `bot` profile slug). Default `smrt-assistant`. */
@@ -782,8 +823,15 @@ export function mountAssistantRoutes(
     return path.split('/').filter((segment) => segment.length > 0);
   };
 
-  // The database is resolved once per request (a resolver may return the
-  // request's own RLS transaction) and never shared across requests.
+  const runtime = options.runtime;
+  const dbOption: AssistantRouteValue<SmrtClassOptions['db']> | undefined =
+    options.db !== undefined || !runtime
+      ? options.db
+      : () => runtime.databaseConfig();
+
+  // The database is resolved once per context (a resolver may return the
+  // request's own RLS transaction) and never shared across requests. A
+  // streamed turn's own lifetime gets a fresh context, so it resolves anew.
   const requestDbs = new WeakMap<
     AssistantRequestContext,
     Promise<SmrtClassOptions['db'] | undefined>
@@ -791,7 +839,7 @@ export function mountAssistantRoutes(
   const dbFor = (context: AssistantRequestContext) => {
     let db = requestDbs.get(context);
     if (!db) {
-      db = resolveValue(options.db, context);
+      db = resolveValue(dbOption, context);
       requestDbs.set(context, db);
     }
     return db;
@@ -960,15 +1008,14 @@ export function mountAssistantRoutes(
     });
   };
 
-  /** Everything a turn needs besides its transcript input. */
-  const turnSetup = async (
+  /**
+   * The request-bound part of a turn (model, allow-list, AI client, abort),
+   * resolved once per request before anything is stored.
+   */
+  const prepareTurn = async (
     context: AssistantRequestContext,
-    chat: ChatService,
-    session: AgentSession,
-    thread: ChatThread,
     body: Record<string, unknown>,
   ) => {
-    const { principal } = context;
     const model = resolveModel(body.model);
     const allowedTools = await allowedToolsFor(context);
     const clientTools = sanitizeClientToolDeclarations(
@@ -976,6 +1023,36 @@ export function mountAssistantRoutes(
       options.clientToolAllowList ?? [],
     );
     const ai = await resolveAI(context, model);
+    // The turn stops when the request is aborted OR the response body is
+    // cancelled (a client that left), whichever the adapter reports.
+    const abort = new AbortController();
+    const requestSignal = context.event.request.signal;
+    if (requestSignal.aborted) abort.abort();
+    else {
+      requestSignal.addEventListener('abort', () => abort.abort(), {
+        once: true,
+      });
+    }
+    return { abort, ai, model, allowedTools, clientTools };
+  };
+  type PreparedTurn = Awaited<ReturnType<typeof prepareTurn>>;
+
+  /**
+   * Everything a turn needs that is bound to a database: built for the
+   * request (where every refusal happens), and again inside a streamed
+   * turn's own database lifetime (`mirror: false`: the request already
+   * mirrored the allow-list).
+   */
+  const turnSetup = async (
+    context: AssistantRequestContext,
+    chat: ChatService,
+    session: AgentSession,
+    thread: ChatThread,
+    prepared: PreparedTurn,
+    mirror = true,
+  ) => {
+    const { principal } = context;
+    const { abort, ai, model, allowedTools, clientTools } = prepared;
     const [extraTools, systemPrompt, db] = await Promise.all([
       resolveValue(options.extraTools, context),
       resolveValue(options.systemPrompt, context),
@@ -989,7 +1066,7 @@ export function mountAssistantRoutes(
     );
     // Mirror the allow-list onto the session so the authoring gate
     // (`sendAgentReply`) agrees with the loop's offer gate.
-    if (options.authorInvocation) {
+    if (options.authorInvocation && mirror) {
       const current = session.getAllowedTools();
       if (
         current.length !== allowedTools.length ||
@@ -1004,16 +1081,6 @@ export function mountAssistantRoutes(
       }
     }
     const continuations = continuationStoreFor(context, chat, session);
-    // The turn stops when the request is aborted OR the response body is
-    // cancelled (a client that left), whichever the adapter reports.
-    const abort = new AbortController();
-    const requestSignal = context.event.request.signal;
-    if (requestSignal.aborted) abort.abort();
-    else {
-      requestSignal.addEventListener('abort', () => abort.abort(), {
-        once: true,
-      });
-    }
     return {
       abort,
       ai,
@@ -1101,6 +1168,132 @@ export function mountAssistantRoutes(
       // aborts the request signal on disconnect.
       onCancel: () => abort.abort(),
     });
+
+  type TurnSetup = Awaited<ReturnType<typeof turnSetup>>;
+  type TurnEvent = AssistantTurnEvent<AssistantMessageWire>;
+
+  /**
+   * Answer with a turn's events. `start` runs the turn on a chat service
+   * and setup bound to the database it may use. Outside an RLS request
+   * transaction that is the request's own, and the turn is detached. Inside
+   * one, the transaction commits when the handler returns, so the turn never
+   * keeps it: with `runtime` it runs, once that transaction has ended, in its
+   * own principal-bound transaction (rebinding chat, tools and continuations
+   * there, and first checking that `durableSend`, the stored user message,
+   * committed); without `runtime` it runs to completion before returning.
+   */
+  const respondWithTurn = async (
+    context: AssistantRequestContext,
+    chat: ChatService,
+    session: AgentSession,
+    thread: ChatThread,
+    prepared: PreparedTurn,
+    setup: TurnSetup,
+    first: TurnEvent | null,
+    start: (
+      chat: ChatService,
+      setup: TurnSetup,
+    ) => AsyncGenerator<TurnEvent, unknown>,
+    durableSend?: string,
+  ): Promise<Response> => {
+    const transaction = requestTransaction();
+    if (!transaction) {
+      return stream(
+        detached(first, pump(start(chat, setup))).events,
+        prepared.abort,
+      );
+    }
+    const isActive = transaction.isActive;
+    if (!runtime || typeof isActive !== 'function') {
+      const turn = detached(first, pump(start(chat, setup)));
+      await turn.settled;
+      return stream(turn.events, prepared.abort);
+    }
+    const { principal } = context;
+    const bound = {
+      id: principal.userId,
+      tenantId: principal.tenantId,
+      ...(principal.permissions ? { scopes: principal.permissions } : {}),
+    };
+    const ownLifetime = async (emit: (event: TurnEvent) => void) => {
+      // Events after which the browser acts on stored state (resume, retry,
+      // reload) wait until this lifetime has committed, with all that follow.
+      const held: TurnEvent[] = [];
+      let sendConfirmed = false;
+      try {
+        if (!(await requestEnded(() => isActive.call(transaction)))) {
+          throw new Error(
+            'mountAssistantRoutes: the request transaction did not end; the turn did not run.',
+          );
+        }
+        await runtime.runAsPrincipal(bound, async () => {
+          const turnContext: AssistantRequestContext = {
+            event: context.event,
+            principal,
+          };
+          const turnChat = await chatFor(turnContext);
+          if (durableSend) {
+            const stored = await turnChat.getThreadMessageReplies({
+              threadId: String(thread.id),
+              messageId: durableSend,
+              actorProfileId: principal.profileId,
+              tenantId: principal.tenantId,
+            });
+            if (!stored?.message) {
+              throw new Error(
+                'mountAssistantRoutes: the send was not stored; the turn did not run.',
+              );
+            }
+            sendConfirmed = true;
+          }
+          const turnSetupInLifetime = await turnSetup(
+            turnContext,
+            turnChat,
+            session,
+            thread,
+            prepared,
+            false,
+          );
+          for await (const event of start(turnChat, turnSetupInLifetime)) {
+            if (held.length > 0 || HELD_UNTIL_COMMIT.has(event.type)) {
+              held.push(event);
+            } else {
+              emit(event);
+            }
+          }
+        });
+        for (const event of held) emit(event);
+      } catch (error) {
+        // Nothing the turn wrote committed: settle the send as failed (in a
+        // fresh lifetime) so it does not wait out `abandonedTurnMs`.
+        safeLog(error);
+        if (durableSend && sendConfirmed) {
+          try {
+            await runtime.runAsPrincipal(bound, async () =>
+              settleOutcome(
+                await chatFor({ event: context.event, principal }),
+                principal,
+                String(thread.id),
+                durableSend,
+              )('failed'),
+            );
+          } catch (settleError) {
+            safeLog(settleError);
+          }
+        }
+        emit({
+          type: 'error',
+          error: ASSISTANT_TURN_GENERIC_ERROR,
+          code: 'internal_error',
+        });
+        emit({
+          type: 'status',
+          status: { state: 'error', label: ASSISTANT_TURN_GENERIC_ERROR },
+        });
+      }
+    };
+    return stream(detached(first, ownLifetime).events, prepared.abort);
+  };
 
   // ---- route bodies ------------------------------------------------------
 
@@ -1382,7 +1575,8 @@ export function mountAssistantRoutes(
 
     // Everything that can refuse (the AI factory's 503 included) runs before
     // the reservation, so a refused send stores nothing.
-    const setup = await turnSetup(context, chat, session, thread, body);
+    const prepared = await prepareTurn(context, body);
+    const setup = await turnSetup(context, chat, session, thread, prepared);
 
     // A failure after the reservation may have been stored settles it as
     // failed (a no-op when nothing was stored), so a retry is told so at
@@ -1442,17 +1636,25 @@ export function mountAssistantRoutes(
         }
       }
 
-      const events = runAssistantTurn<AssistantMessageWire>({
-        ...setup.turn,
-        history: history.slice(-historyLimit),
-        userMessage: content,
-        // Every reply links to this send, and a suspension keeps it.
-        originMessageId: userWire.id,
-        onState: recordTurnState(chat, principal, threadId),
-      });
-      return stream(
-        detached({ type: 'message', message: userWire }, events),
-        setup.abort,
+      const transcript = history.slice(-historyLimit);
+      return await respondWithTurn(
+        context,
+        chat,
+        session,
+        thread,
+        prepared,
+        setup,
+        { type: 'message', message: userWire },
+        (turnChat, turnSetupFor) =>
+          runAssistantTurn<AssistantMessageWire>({
+            ...turnSetupFor.turn,
+            history: transcript,
+            userMessage: content,
+            // Every reply links to this send, and a suspension keeps it.
+            originMessageId: userWire.id,
+            onState: recordTurnState(turnChat, principal, threadId),
+          }),
+        userWire.id,
       );
     } catch (error) {
       await recordFailure('failed');
@@ -1501,22 +1703,27 @@ export function mountAssistantRoutes(
     const session = await findSession(chat, principal);
     const thread = await requireOwnThread(chat, principal, session, threadId);
     if (!session) throw notFound();
-    const setup = await turnSetup(context, chat, session, thread, body);
+    const prepared = await prepareTurn(context, body);
+    const setup = await turnSetup(context, chat, session, thread, prepared);
     // The send this leg belongs to comes only from the continuation it
     // consumes (stored server-side when the turn suspended), reported by the
     // runner; a request's `clientRequestId` is ignored here. A missing,
     // foreign or expired continuation is never consumed, so it changes no
     // send.
-    return stream(
-      detached(
-        null,
+    return respondWithTurn(
+      context,
+      chat,
+      session,
+      thread,
+      prepared,
+      setup,
+      null,
+      (turnChat, turnSetupFor) =>
         runAssistantTurn<AssistantMessageWire>({
-          ...setup.turn,
+          ...turnSetupFor.turn,
           resume: { continuationId, results },
-          onState: recordTurnState(chat, principal, threadId),
+          onState: recordTurnState(turnChat, principal, threadId),
         }),
-      ),
-      setup.abort,
     );
   };
 
@@ -1721,20 +1928,69 @@ export function mountAssistantRoutes(
 }
 
 /**
- * Run a turn to its end regardless of the reader. The events are pumped
- * from the moment the handler returns into a buffer the response reads from
- * (after `first`, when given); a reader that leaves only stops reading. The
- * turn itself records its outcome (`onState`), so nothing here depends on
- * how far the reader got. A client disconnect cancels the turn — through the
- * request's abort signal, or the response body's cancellation when the
- * adapter does not abort the request — as the dock's Stop does; the runner
- * then records `cancelled` (or `completed`, if the reply was already
- * stored).
+ * Events after which the browser acts on stored state (resumes a
+ * suspension, retries, reloads the thread): a turn in its own database
+ * lifetime holds them, and every event after them, until it commits.
+ */
+const HELD_UNTIL_COMMIT: ReadonlySet<string> = new Set([
+  'client_tool_calls',
+  'done',
+  'error',
+]);
+
+/** How long a turn waits for its request's transaction to end. */
+const REQUEST_END_TIMEOUT_MS = 60_000;
+
+/**
+ * The RLS request transaction this call runs in (`database-rls`), when
+ * there is one. It commits when the request's handler chain returns.
+ */
+function requestTransaction(): { isActive?: unknown } | null {
+  if (getCurrentSessionPermissionContext()?.postgresRls !== true) return null;
+  return (
+    (getRequestScopedDatabase() as { isActive?: unknown } | undefined) ?? null
+  );
+}
+
+/** Resolves `true` once `isActive()` is false, `false` on timeout. */
+async function requestEnded(isActive: () => boolean): Promise<boolean> {
+  const deadline = Date.now() + REQUEST_END_TIMEOUT_MS;
+  let delay = 2;
+  while (isActive()) {
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, 50);
+  }
+  return true;
+}
+
+/** A producer that forwards a turn's events. */
+function pump<M>(
+  events: AsyncGenerator<AssistantTurnEvent<M>, unknown>,
+): (emit: (event: AssistantTurnEvent<M>) => void) => Promise<void> {
+  return async (emit) => {
+    for await (const event of events) emit(event);
+  };
+}
+
+/**
+ * Run a turn to its end regardless of the reader. `produce` starts at once
+ * and its events go into a buffer the response reads from (after `first`,
+ * when given); a reader that leaves only stops reading, and `settled`
+ * resolves when the producer has finished. The turn itself records its
+ * outcome (`onState`), so nothing here depends on how far the reader got. A
+ * client disconnect cancels the turn — through the request's abort signal,
+ * or the response body's cancellation when the adapter does not abort the
+ * request — as the dock's Stop does; the runner then records `cancelled`
+ * (or `completed`, if the reply was already stored).
  */
 function detached<M>(
   first: AssistantTurnEvent<M> | null,
-  events: AsyncGenerator<AssistantTurnEvent<M>, unknown>,
-): AsyncGenerator<AssistantTurnEvent<M>, void> {
+  produce: (emit: (event: AssistantTurnEvent<M>) => void) => Promise<void>,
+): {
+  events: AsyncGenerator<AssistantTurnEvent<M>, void>;
+  settled: Promise<void>;
+} {
   const buffer: AssistantTurnEvent<M>[] = first ? [first] : [];
   let finished = false;
   let notify: (() => void) | null = null;
@@ -1743,20 +1999,20 @@ function detached<M>(
     notify = null;
     resume?.();
   };
-  void (async () => {
+  const settled = (async () => {
     try {
-      for await (const event of events) {
+      await produce((event) => {
         buffer.push(event);
         wake();
-      }
+      });
     } catch {
-      // runAssistantTurn reports failures in-band and does not throw.
+      // Producers report failures in-band and do not throw.
     } finally {
       finished = true;
       wake();
     }
   })();
-  return (async function* () {
+  const events = (async function* () {
     for (;;) {
       if (buffer.length > 0) {
         yield buffer.shift() as AssistantTurnEvent<M>;
@@ -1768,4 +2024,5 @@ function detached<M>(
       });
     }
   })();
+  return { events, settled };
 }

@@ -150,14 +150,15 @@ Actions: `normalizeDataSurfaceActionRequest` → `AssistantActionClient`
 `list`/`get` are tenant- not member-scoped; the dock never calls them.
 
 **Server routes (#3368).** `./sveltekit` `mountAssistantRoutes()` serves the
-dock from one `[...path]` route; `createAssistantHttpTransport` and
-`createAssistantHttpActionClient` (`./svelte`) are its browser half.
-Principal from `event.locals` or `resolvePrincipal`; threads only from the
-actor's keyed session room in that tenant (else 404). `allowedTools` is
-fail-closed; without `tools` it offers those manifest ops (an unprovided name
-is an error, #3414). `ai` defaults to the config `ai` block; `db` may resolve
-per request (RLS). `clientRequestId` makes the row id a UUIDv5
-(`clientRequestMessageId`): the PK is the retry reservation. Details: [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
+dock from one `[...path]` route; `createAssistantHttp{Transport,ActionClient}`
+(`./svelte`) are its browser half. Principal from `event.locals` or
+`resolvePrincipal`; threads only from the actor's keyed session room in that
+tenant (else 404). `allowedTools` is fail-closed; without `tools` it offers
+those manifest ops (an unprovided name is an error, #3414). `ai` defaults to
+the config `ai` block. Pass `runtime`: a turn never keeps the RLS request tx
+(own `runAsPrincipal` tx). `clientRequestId` makes the row id a UUIDv5
+(`clientRequestMessageId`): the PK is the retry reservation. See
+[docs](../../docs/assistant-dock.md).
 
 ## Gotchas
 

@@ -391,6 +391,30 @@ describe('mountAssistantRoutes defaults (#3414)', () => {
       const list = await call(fixed, 'GET', 'threads', ownerA);
       expect(await list.json()).toEqual({ items: [] });
     });
+
+    it('defaults to runtime.databaseConfig() and streams outside RLS unchanged', async () => {
+      const runtime = {
+        databaseConfig: vi.fn(() => db),
+        runAsPrincipal: vi.fn(async <T>(_p: unknown, fn: () => Promise<T>) =>
+          fn(),
+        ),
+      };
+      const ai = scriptedAI([text('Streamed.')]);
+      // No `db`: the runtime's request database is used.
+      const routes = mount({ ai, db: undefined, runtime });
+      const threadId = await createThread(routes, ownerA);
+      expect(runtime.databaseConfig).toHaveBeenCalledTimes(1);
+      const seen = await events(await send(routes, threadId, ownerA, 'rt1'));
+      expect(seen.find((e) => e.type === 'done')).toMatchObject({
+        message: { content: 'Streamed.' },
+      });
+      expect(runtime.databaseConfig).toHaveBeenCalledTimes(2);
+      // SQLite has no request transaction: the turn needs no own lifetime.
+      expect(runtime.runAsPrincipal).not.toHaveBeenCalled();
+      expect(
+        (await storedMessages(routes, threadId, ownerA)).map((m) => m.role),
+      ).toEqual(['user', 'assistant']);
+    });
   });
 
   // ---- ai from smrt.config -------------------------------------------------

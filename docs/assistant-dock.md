@@ -69,8 +69,8 @@ import { runtime } from '$lib/server/smrt';
 export const { GET, POST } = mountAssistantRoutes({
   // The only tools the model is offered: these manifest operations.
   allowedTools: ['notes.read', 'notes.create'],
-  // Per request, so `database-rls` requests use their own transaction.
-  db: () => runtime.databaseConfig(),
+  // Per-request database, and a turn lifetime of its own under database-rls.
+  runtime,
 });
 ```
 
@@ -130,11 +130,24 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   (`buildManifestToolCatalog`), minus names an `extraTools` entry serves; a
   name nothing provides is an error, at mount when its collection is already
   registered, otherwise a 503 turn (not checked when `actions` is set). `db`
-  is a fixed value or a resolver called once per request; under
-  `database-rls`, pass `() => runtime.databaseConfig()`. Browser tools need
+  is a fixed value or a resolver called once per request (default with
+  `runtime`: `() => runtime.databaseConfig()`). Browser tools need
   `clientToolAllowList`. Suspended turns wait in the session context
   (`createSessionContinuationStore`), keyed by thread; `continuations`
   replaces the store.
+- **Turn lifetime under `database-rls`.** The request's RLS transaction
+  commits when the handler returns its streaming response, before the model
+  has answered, so a turn never keeps it. With `runtime`, the turn waits for
+  that transaction to end, checks that the user message committed, and then
+  runs its tools, stores its reply and records its outcome (including
+  `cancelled`) in a transaction of its own for the same principal
+  (`runtime.runAsPrincipal`); `client_tool_calls`, `done` and `error` reach
+  the browser only after that transaction commits, so a resume or retry
+  always finds what the turn stored. If that transaction fails, the send is
+  recorded as `failed`. Without `runtime`, the turn runs to completion inside
+  the request before the response returns (its events then arrive at once).
+  Outside an RLS transaction (SQLite, the local profile) turns stream as
+  before.
 - **Retries.** The user message's primary key is a UUIDv5 of tenant, room,
   thread, actor and `clientRequestId` (`clientRequestMessageId`), inserted
   (never upserted), so the database itself is the reservation: of any number
