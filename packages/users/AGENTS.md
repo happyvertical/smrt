@@ -80,6 +80,15 @@ are not prerequisites for unrelated user-package work.
   A layered or PIN session can never administer PINs regardless of
   permissions. PIN hashes carry a per-row salt and the configured pepper;
   treat an unset pepper as a production misconfiguration.
+- A person session carries the PERSON's authority (resolved from their own
+  membership on every load), never the device account's. `Session.data` keys
+  in `SESSION_DATA_KEYS` are server-set controls enforced by the model:
+  `permissionCeiling` only ever intersects (malformed fails closed to none)
+  and suppresses `superAdminBypass`/`systemContext`; `absoluteExpiresAt`
+  bounds `extend()` and `isValid()`; `idleSeconds` overrides the resolving
+  service's TTL policy. Never write them from client input. The ceiling is a
+  sign-in snapshot; `singleOccupant` revokes other children only AFTER a
+  successful mint.
 - Tenant switching verifies active membership before writing and rotates the
   session ID for non-null targets, revoking the old session. Persist the returned
   `SwitchTenantResult.sessionId`; `switchSessionTenant()` updates the cookie and

@@ -38,7 +38,7 @@ export {
 } from './AncestorReadPolicy.js';
 export {
   type ClearPinInput,
-  DEFAULT_DEVICE_CREDENTIAL_SESSION_TTL_SECONDS,
+  DEFAULT_DEVICE_PERSON_IDLE_SECONDS,
   DEFAULT_PIN_MANAGE_PERMISSION,
   DeviceCredentialError,
   DeviceCredentialForbiddenError,

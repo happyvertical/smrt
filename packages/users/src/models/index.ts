@@ -51,6 +51,7 @@ export { RolePermission } from './RolePermission.js';
 export {
   DEFAULT_SESSION_TTL,
   generateSessionId,
+  SESSION_DATA_KEYS,
   Session,
   type SessionAuthMethod,
 } from './Session.js';

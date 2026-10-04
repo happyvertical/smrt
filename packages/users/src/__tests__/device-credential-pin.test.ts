@@ -8,8 +8,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
+import { PermissionCollection } from '../collections/PermissionCollection.js';
 import { UsersPinCredentialCollection } from '../collections/PinCredentialCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
+import { RolePermissionCollection } from '../collections/RolePermissionCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
@@ -20,9 +22,11 @@ import {
   DeviceCredentialForbiddenError,
   DeviceCredentialPolicyError,
   DeviceCredentialService,
+  type DeviceCredentialServiceOptions,
   PIN_LOGIN_KIND,
 } from '../services/DeviceCredentialService.js';
 import { LoginRateLimitError } from '../services/LoginAttemptLimiter.js';
+import { withSessionPermissionContext } from '../services/SessionPermissionContext.js';
 import {
   type SessionContext,
   SessionService,
@@ -107,7 +111,7 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
     sessionService = await SessionService.create(options);
     service = await DeviceCredentialService.create({
       ...options,
-      personSessionTtlSeconds: 600,
+      personIdleSeconds: 600,
       pin: { pepper: 'test-pepper', scrypt: { N: 2 ** 10 } },
       limiter: { maxAttempts: 3, windowSeconds: 60, audit: false },
       assertEnrolledDevice: async (device) =>
@@ -121,6 +125,7 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     if (existsSync(dbPath)) rmSync(dbPath, { force: true });
   });
@@ -468,5 +473,384 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
     await expect(
       service.signInWithPin({ deviceToken, userId: personId, pin: '2580' }),
     ).rejects.toBeInstanceOf(DeviceCredentialError);
+  });
+
+  describe('person authority, device ceiling, and switching people (#3276 amendment)', () => {
+    let welderId: string;
+    let foremanId: string;
+
+    const makeService = (
+      extra: Partial<DeviceCredentialServiceOptions> = {},
+    ): Promise<DeviceCredentialService> =>
+      DeviceCredentialService.create({
+        ...options,
+        personIdleSeconds: 600,
+        pin: { pepper: 'test-pepper', scrypt: { N: 2 ** 10 } },
+        limiter: { maxAttempts: 3, windowSeconds: 60, audit: false },
+        assertEnrolledDevice: async (device) =>
+          activeDevices.has(device.user.id as string),
+        ...extra,
+      });
+
+    const signIn = (svc: DeviceCredentialService, userId: string) =>
+      svc.signInWithPin({ deviceToken, userId, pin: '2580' });
+
+    const permissionsOf = async (sessionId: string): Promise<string[]> =>
+      [
+        ...((await sessionService.loadSessionContext(sessionId))?.permissions ??
+          []),
+      ].sort();
+
+    beforeEach(async () => {
+      const roles = await RoleCollection.create(options);
+      const permissions = await PermissionCollection.create(options);
+      const rolePermissions = await RolePermissionCollection.create(options);
+      const memberships = await MembershipCollection.create(options);
+
+      const permissionIds: Record<string, string> = {};
+      for (const slug of [
+        'jobs.read',
+        'jobs.update',
+        'jobs.approve',
+        'devices.heartbeat',
+      ]) {
+        const permission = await permissions.create({ slug, name: slug });
+        await permission.save();
+        permissionIds[slug] = permission.id as string;
+      }
+      const grant = async (roleId: string, slugs: string[]) => {
+        for (const slug of slugs) {
+          await rolePermissions.addPermission(roleId, permissionIds[slug]);
+        }
+      };
+
+      // The device account's own role: what the tablet itself may do.
+      const deviceMembership = await memberships.findByUserAndTenant(
+        deviceUserId,
+        tenantId,
+      );
+      await grant(deviceMembership?.roleId as string, ['devices.heartbeat']);
+
+      const welderRole = await roles.create({ name: 'Welder' });
+      await welderRole.save();
+      await grant(welderRole.id as string, ['jobs.read', 'jobs.update']);
+      const foremanRole = await roles.create({ name: 'Foreman' });
+      await foremanRole.save();
+      await grant(foremanRole.id as string, [
+        'jobs.read',
+        'jobs.update',
+        'jobs.approve',
+      ]);
+
+      const welder = await users.create({ email: 'welder@example.com' });
+      await welder.save();
+      welderId = welder.id as string;
+      const foreman = await users.create({ email: 'foreman@example.com' });
+      await foreman.save();
+      foremanId = foreman.id as string;
+      for (const [userId, roleId] of [
+        [welderId, welderRole.id],
+        [foremanId, foremanRole.id],
+      ] as const) {
+        const membership = await memberships.create({
+          userId,
+          tenantId,
+          roleId: roleId as string,
+        });
+        await membership.save();
+        await service.setPin({ actor: adminActor(), userId, pin: '2580' });
+      }
+    });
+
+    it('gives each person their own authority, never the device account’s', async () => {
+      const device = await permissionsOf(deviceToken);
+      expect(device).toEqual(['devices.heartbeat']);
+
+      const welder = await signIn(service, welderId);
+      const welderPermissions = await permissionsOf(welder.sessionId);
+      const foreman = await signIn(service, foremanId);
+      const foremanPermissions = await permissionsOf(foreman.sessionId);
+
+      expect(welderPermissions).toEqual(['jobs.read', 'jobs.update']);
+      expect(foremanPermissions).toEqual([
+        'jobs.approve',
+        'jobs.read',
+        'jobs.update',
+      ]);
+      expect(welderPermissions).not.toEqual(foremanPermissions);
+      expect(welderPermissions).not.toEqual(device);
+      expect(foremanPermissions).not.toEqual(device);
+      // Both identities are on the resolved context.
+      const context = await sessionService.loadSessionContext(
+        foreman.sessionId,
+      );
+      expect(context?.user.id).toBe(foremanId);
+      expect(context?.parent?.userId).toBe(deviceUserId);
+    });
+
+    it('intersects the person’s permissions with the device ceiling', async () => {
+      const deviceCeiling = vi.fn(async () => [
+        'jobs.read',
+        'jobs.approve',
+        'never.granted',
+      ]);
+      const svc = await makeService({ deviceCeiling });
+
+      const foreman = await signIn(svc, foremanId);
+      expect(deviceCeiling).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: deviceToken }),
+      );
+      expect(await permissionsOf(foreman.sessionId)).toEqual([
+        'jobs.approve',
+        'jobs.read',
+      ]);
+      const context = await sessionService.loadSessionContext(
+        foreman.sessionId,
+      );
+      expect(context?.permissionCeiling).toEqual([
+        'jobs.read',
+        'jobs.approve',
+        'never.granted',
+      ]);
+
+      // A ceiling only removes: it never grants what the person lacks.
+      const welder = await signIn(svc, welderId);
+      expect(await permissionsOf(welder.sessionId)).toEqual(['jobs.read']);
+    });
+
+    it('treats an empty ceiling as no permissions at all', async () => {
+      const svc = await makeService({ deviceCeiling: async () => [] });
+      const foreman = await signIn(svc, foremanId);
+      const context = await sessionService.loadSessionContext(
+        foreman.sessionId,
+      );
+      expect(context?.user.id).toBe(foremanId);
+      expect(context?.permissions).toEqual([]);
+      expect(context?.permissionCeiling).toEqual([]);
+    });
+
+    it('leaves permissions untouched without a ceiling', async () => {
+      const svc = await makeService({ deviceCeiling: async () => null });
+      const viaNullCeiling = await signIn(svc, foremanId);
+      const context = await sessionService.loadSessionContext(
+        viaNullCeiling.sessionId,
+      );
+      expect(context?.permissionCeiling).toBeNull();
+      expect([...(context?.permissions ?? [])].sort()).toEqual([
+        'jobs.approve',
+        'jobs.read',
+        'jobs.update',
+      ]);
+      const stored = await sessions.get(viaNullCeiling.sessionId);
+      expect(stored?.data).not.toHaveProperty('permissionCeiling');
+
+      const viaDefault = await signIn(service, foremanId);
+      expect(await permissionsOf(viaDefault.sessionId)).toEqual([
+        'jobs.approve',
+        'jobs.read',
+        'jobs.update',
+      ]);
+    });
+
+    it('snapshots the ceiling at sign-in: a change applies at the next sign-in', async () => {
+      let ceiling = ['jobs.read'];
+      const svc = await makeService({
+        deviceCeiling: async () => ceiling,
+        singleOccupant: false,
+      });
+      const before = await signIn(svc, foremanId);
+      ceiling = ['jobs.read', 'jobs.update'];
+      expect(await permissionsOf(before.sessionId)).toEqual(['jobs.read']);
+      const after = await signIn(svc, foremanId);
+      expect(await permissionsOf(after.sessionId)).toEqual([
+        'jobs.read',
+        'jobs.update',
+      ]);
+    });
+
+    it('refuses the sign-in without spending the budget when the ceiling hook fails', async () => {
+      const svc = await makeService({
+        deviceCeiling: async () => {
+          throw new Error('policy store unavailable');
+        },
+      });
+      for (let i = 0; i < 4; i++) {
+        await expect(signIn(svc, foremanId)).rejects.toThrow(
+          'policy store unavailable',
+        );
+      }
+      expect(await sessions.findByUser(foremanId)).toHaveLength(0);
+      const malformed = await makeService({
+        deviceCeiling: (async () => 'jobs.read') as never,
+      });
+      await expect(signIn(malformed, foremanId)).rejects.toThrow(
+        /array of permission slugs/u,
+      );
+      expect(await sessions.findByUser(foremanId)).toHaveLength(0);
+    });
+
+    it('suppresses super-admin bypass and system context under a ceiling', async () => {
+      const svc = await makeService({
+        deviceCeiling: async () => ['jobs.read'],
+      });
+      const ceilinged = await signIn(svc, foremanId);
+      const underCeiling = await withSessionPermissionContext(
+        {
+          ...options,
+          sessionId: ceilinged.sessionId,
+          superAdminBypass: true,
+          systemContext: true,
+        },
+        async (context) => ({
+          superAdminBypass: context.superAdminBypass,
+          systemContext: context.systemContext,
+          permissions: context.permissions,
+        }),
+      );
+      expect(underCeiling).toEqual({
+        superAdminBypass: false,
+        systemContext: false,
+        permissions: ['jobs.read'],
+      });
+
+      // Without a ceiling the host's request is honoured as before.
+      const plain = await signIn(service, foremanId);
+      const unceilinged = await withSessionPermissionContext(
+        { ...options, sessionId: plain.sessionId, superAdminBypass: true },
+        async (context) => context.superAdminBypass,
+      );
+      expect(unceilinged).toBe(true);
+    });
+
+    it('ends the previous person’s session when the next one signs in', async () => {
+      const welder = await signIn(service, welderId);
+      expect(
+        await sessionService.loadSessionContext(welder.sessionId),
+      ).not.toBeNull();
+
+      const foreman = await signIn(service, foremanId);
+      expect(
+        await sessionService.loadSessionContext(welder.sessionId),
+      ).toBeNull();
+      expect((await sessions.get(welder.sessionId))?.status).toBe('revoked');
+      expect(
+        (await sessionService.loadSessionContext(foreman.sessionId))?.user.id,
+      ).toBe(foremanId);
+      // The device session is untouched by the hand-over.
+      expect(
+        await sessionService.loadSessionContext(deviceToken),
+      ).not.toBeNull();
+      expect(await sessions.findChildren(deviceToken)).toHaveLength(1);
+    });
+
+    it('does not sign the current person out when the next sign-in fails', async () => {
+      const welder = await signIn(service, welderId);
+      await expect(
+        service.signInWithPin({ deviceToken, userId: foremanId, pin: '1111' }),
+      ).rejects.toBeInstanceOf(DeviceCredentialError);
+      expect(
+        await sessionService.loadSessionContext(welder.sessionId),
+      ).not.toBeNull();
+    });
+
+    it('keeps several people signed in when singleOccupant is off', async () => {
+      const svc = await makeService({ singleOccupant: false });
+      const welder = await signIn(svc, welderId);
+      const foreman = await signIn(svc, foremanId);
+      expect(
+        await sessionService.loadSessionContext(welder.sessionId),
+      ).not.toBeNull();
+      expect(
+        await sessionService.loadSessionContext(foreman.sessionId),
+      ).not.toBeNull();
+    });
+
+    it('slides the idle expiry on activity, whichever service resolves the session', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+      const signedIn = await signIn(service, welderId);
+      expect(signedIn.expiresAt).toBe('2026-10-03T12:10:00.000Z');
+      expect(signedIn.absoluteExpiresAt).toBeNull();
+
+      // `sessionService` is a host-style service: 7-day TTL, no autoExtend.
+      // The person session still slides by its own ten-minute idle timeout.
+      vi.advanceTimersByTime(500_000);
+      expect(
+        await sessionService.loadSessionContext(signedIn.sessionId),
+      ).not.toBeNull();
+      vi.advanceTimersByTime(500_000); // 1000s after sign-in, 500s idle
+      expect(
+        await sessionService.loadSessionContext(signedIn.sessionId),
+      ).not.toBeNull();
+      const stored = await sessions.get(signedIn.sessionId);
+      expect(new Date(stored?.expiresAt as Date).toISOString()).toBe(
+        '2026-10-03T12:26:40.000Z',
+      );
+
+      vi.advanceTimersByTime(601_000); // idle for longer than the timeout
+      expect(
+        await sessionService.loadSessionContext(signedIn.sessionId),
+      ).toBeNull();
+      // The device session outlives the person's idle expiry.
+      expect(
+        await sessionService.loadSessionContext(deviceToken),
+      ).not.toBeNull();
+    });
+
+    it('honours the absolute cap even with continuous activity', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+      const svc = await makeService({ personMaxSeconds: 1200 });
+      const signedIn = await signIn(svc, welderId);
+      expect(signedIn.expiresAt).toBe('2026-10-03T12:10:00.000Z');
+      expect(signedIn.absoluteExpiresAt).toBe('2026-10-03T12:20:00.000Z');
+
+      for (let i = 0; i < 2; i++) {
+        vi.advanceTimersByTime(500_000);
+        expect(
+          await sessionService.loadSessionContext(signedIn.sessionId),
+        ).not.toBeNull();
+      }
+      // Activity never pushes expiry past the cap.
+      const stored = await sessions.get(signedIn.sessionId);
+      expect(new Date(stored?.expiresAt as Date).toISOString()).toBe(
+        '2026-10-03T12:20:00.000Z',
+      );
+
+      vi.advanceTimersByTime(201_000); // 1201s: active 201s ago, past the cap
+      expect(
+        await sessionService.loadSessionContext(signedIn.sessionId),
+      ).toBeNull();
+      expect(await svc.loadPersonSession(signedIn.sessionId)).toBeNull();
+    });
+
+    it('caps the first expiry when the absolute cap is shorter than the idle timeout', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+      const svc = await makeService({ personMaxSeconds: 300 });
+      const signedIn = await signIn(svc, welderId);
+      expect(signedIn.expiresAt).toBe('2026-10-03T12:05:00.000Z');
+      vi.advanceTimersByTime(301_000);
+      expect(
+        await sessionService.loadSessionContext(signedIn.sessionId),
+      ).toBeNull();
+    });
+
+    it('rejects non-positive idle and absolute lifetimes', () => {
+      for (const extra of [
+        { personIdleSeconds: 0 },
+        { personMaxSeconds: -1 },
+        { personIdleSeconds: Number.NaN },
+      ]) {
+        expect(
+          () =>
+            new DeviceCredentialService({
+              ...options,
+              assertEnrolledDevice: async () => true,
+              ...extra,
+            }),
+        ).toThrow(/must be a positive number/u);
+      }
+    });
   });
 });

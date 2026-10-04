@@ -24,10 +24,23 @@
  *    present credential.
  * 5. Require the person to hold an active membership in the device session's
  *    tenant — a device credential never widens tenant scope.
- * 6. Mint the person's session with `authMethod = verifier.kind` and
- *    `parentSessionId = device session`, and return its id. The client sends
- *    that id as its bearer from then on; `SessionService.loadSessionContext`
- *    enforces parent liveness and exposes `parent` for host gates.
+ * 6. Ask the host for the device's permission ceiling (`deviceCeiling`,
+ *    optional) and mint the person's session with `authMethod =
+ *    verifier.kind` and `parentSessionId = device session`, and return its
+ *    id. The client sends that id as its bearer from then on;
+ *    `SessionService.loadSessionContext` enforces parent liveness and exposes
+ *    `parent` for host gates.
+ * 7. On a single-occupant device (the default), end every other person's
+ *    session on that device: signing in is how people hand the tablet over.
+ *
+ * ## Whose authority
+ *
+ * The device session authenticates the tablet; the person's session
+ * authorizes the work. Its permissions are resolved from the *person's* own
+ * membership in the device tenant (role plus per-membership overrides) on
+ * every load — never the device account's — then intersected with the
+ * ceiling snapshotted at sign-in, if the host supplied one. Both identities
+ * are on the resolved context (`user` and `parent`).
  *
  * Anything that is not an enrolled-device bearer session — a browser cookie
  * session, a mobile session, a layered session — is refused before any
@@ -50,7 +63,10 @@ import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { UsersPinCredentialCollection } from '../collections/PinCredentialCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import type { UsersPinCredential } from '../models/PinCredential.js';
-import type { SessionAuthMethod } from '../models/Session.js';
+import {
+  SESSION_DATA_KEYS,
+  type SessionAuthMethod,
+} from '../models/Session.js';
 import {
   InvalidCredentialsError,
   LoginAttemptLimiter,
@@ -63,8 +79,8 @@ import {
 } from './PermissionCatalogService.js';
 import { type SessionContext, SessionService } from './SessionService.js';
 
-/** Default lifetime of a per-person device session (8 hours — a shift). */
-export const DEFAULT_DEVICE_CREDENTIAL_SESSION_TTL_SECONDS = 8 * 60 * 60;
+/** Default idle timeout of a per-person device session (8 hours — a shift). */
+export const DEFAULT_DEVICE_PERSON_IDLE_SECONDS = 8 * 60 * 60;
 /** Default permission required to set, reset, or clear another person's PIN. */
 export const DEFAULT_PIN_MANAGE_PERMISSION = 'users.pin.manage';
 /** Login-limiter kind reported for PIN attempts. */
@@ -141,10 +157,38 @@ export interface DeviceCredentialServiceOptions extends SmrtClassOptions {
    * session cookie so one service resolves cookies and bearers alike.
    */
   sessionCookieName?: string;
-  /** Lifetime of the person's session. Defaults to {@link DEFAULT_DEVICE_CREDENTIAL_SESSION_TTL_SECONDS}. */
-  personSessionTtlSeconds?: number;
-  /** Whether the person's session extends on activity. Defaults to true. */
-  personSessionAutoExtend?: boolean;
+  /**
+   * Sliding idle timeout of the person's session: it ends this long after
+   * its last activity, independently of the device session's own (long)
+   * life. Stored on the session, so it slides by this value whichever
+   * `SessionService` resolves it. Defaults to
+   * {@link DEFAULT_DEVICE_PERSON_IDLE_SECONDS}.
+   */
+  personIdleSeconds?: number;
+  /**
+   * Absolute lifetime of the person's session: once this long after sign-in
+   * it ends whatever its activity. Default: no absolute cap (the device
+   * session's life still bounds it).
+   */
+  personMaxSeconds?: number;
+  /**
+   * One person at a time. When true (the default) a successful sign-in ends
+   * every other person's session on the same device session, so signing in
+   * as the next person is the hand-over. Set false for devices several
+   * people stay signed in on at once.
+   */
+  singleOccupant?: boolean;
+  /**
+   * Host hook: the most any person may do on this device, as permission
+   * slugs. Called on each successful sign-in; a non-null result is
+   * snapshotted into the person's session and intersected with their own
+   * resolved permissions on every load (an empty array leaves none), and
+   * such a session never receives super-admin bypass or system context.
+   * Return null for no ceiling (the default). The snapshot is taken at
+   * sign-in: a ceiling change applies from each person's next sign-in.
+   * Throwing refuses the sign-in without counting a failed attempt.
+   */
+  deviceCeiling?: (device: SessionContext) => Promise<string[] | null>;
   /**
    * Auth methods that count as an enrolled device session. Defaults to
    * `['terminal']` — the device-code grant is how devices enrol.
@@ -200,7 +244,10 @@ export interface DeviceSignInResult {
   userId: string;
   tenantId: string | null;
   authMethod: SessionAuthMethod;
+  /** When the session ends if it sees no further activity. */
   expiresAt: string;
+  /** When the session ends regardless of activity; null without `personMaxSeconds`. */
+  absoluteExpiresAt: string | null;
   /** True when the person must choose a new PIN before continuing. */
   mustReset: boolean;
 }
@@ -339,7 +386,9 @@ export class PinVerifier implements DeviceCredentialVerifier<PinSignInInput> {
 
 export class DeviceCredentialService {
   private readonly options: DeviceCredentialServiceOptions;
-  private readonly personSessionTtlSeconds: number;
+  private readonly personIdleSeconds: number;
+  private readonly personMaxSeconds: number | null;
+  private readonly singleOccupant: boolean;
   private readonly deviceAuthMethods: Set<string>;
   private readonly managePermission: string;
   private readonly pinPolicy: Required<
@@ -351,7 +400,7 @@ export class DeviceCredentialService {
   private sessionService!: SessionService;
   /**
    * Resolves *other* sessions (the device bearer, an actor) without touching
-   * their expiry: `sessionService` auto-extends with the person-session TTL,
+   * their expiry: `sessionService` auto-extends with the person idle timeout,
    * which must never be applied to a device session with its own lifetime.
    */
   private readonlySessionService!: SessionService;
@@ -369,9 +418,20 @@ export class DeviceCredentialService {
     }
     this.options = options;
     ensurePinPermissionsRegistered();
-    this.personSessionTtlSeconds =
-      options.personSessionTtlSeconds ??
-      DEFAULT_DEVICE_CREDENTIAL_SESSION_TTL_SECONDS;
+    this.personIdleSeconds =
+      options.personIdleSeconds ?? DEFAULT_DEVICE_PERSON_IDLE_SECONDS;
+    this.personMaxSeconds = options.personMaxSeconds ?? null;
+    for (const [name, value] of [
+      ['personIdleSeconds', this.personIdleSeconds],
+      ['personMaxSeconds', this.personMaxSeconds],
+    ] as const) {
+      if (value !== null && !(Number.isFinite(value) && value > 0)) {
+        throw new Error(
+          `DeviceCredentialService ${name} must be a positive number.`,
+        );
+      }
+    }
+    this.singleOccupant = options.singleOccupant ?? true;
     this.deviceAuthMethods = new Set(options.deviceAuthMethods ?? ['terminal']);
     this.managePermission =
       options.managePermission ?? DEFAULT_PIN_MANAGE_PERMISSION;
@@ -395,9 +455,9 @@ export class DeviceCredentialService {
   async initialize(): Promise<void> {
     this.sessionService = await SessionService.create({
       ...this.options,
-      autoExtend: this.options.personSessionAutoExtend ?? true,
+      autoExtend: true,
       cookieName: this.options.sessionCookieName,
-      defaultTTL: this.personSessionTtlSeconds,
+      defaultTTL: this.personIdleSeconds,
     });
     this.readonlySessionService = await SessionService.create({
       ...this.options,
@@ -474,6 +534,7 @@ export class DeviceCredentialService {
 
     let verified: { userId: string } | null = null;
     let credentialFailed = false;
+    let mintedSessionId: string | null = null;
     try {
       verified = await verifier.verify(input, { device });
       if (!verified) {
@@ -501,18 +562,43 @@ export class DeviceCredentialService {
         }
       }
 
+      const permissionCeiling = await this.resolveDeviceCeiling(device);
+      const now = Date.now();
+      const absoluteExpiresAt =
+        this.personMaxSeconds === null
+          ? null
+          : new Date(now + this.personMaxSeconds * 1000).toISOString();
+
       const sessionId = await this.sessionService.createSession(
         verified.userId,
         tenantId ?? undefined,
         {
-          ttl: this.personSessionTtlSeconds,
+          ttl: this.personIdleSeconds,
           ipAddress: input.ipAddress,
           userAgent: input.userAgent,
           authMethod: verifier.kind,
           parentSessionId: device.sessionId,
-          data: { deviceUserId: device.user.id },
+          data: {
+            deviceUserId: device.user.id,
+            [SESSION_DATA_KEYS.idleSeconds]: this.personIdleSeconds,
+            ...(absoluteExpiresAt && {
+              [SESSION_DATA_KEYS.absoluteExpiresAt]: absoluteExpiresAt,
+            }),
+            ...(permissionCeiling && {
+              [SESSION_DATA_KEYS.permissionCeiling]: permissionCeiling,
+            }),
+          },
         },
       );
+      mintedSessionId = sessionId;
+
+      // Hand-over: the device now belongs to this person alone. Done after
+      // the mint so a failed sign-in never signs the previous person out.
+      if (this.singleOccupant) {
+        await this.sessionService.destroyChildSessions(device.sessionId, {
+          exceptSessionId: sessionId,
+        });
+      }
 
       let mustReset = false;
       if (verifier.kind === PIN_LOGIN_KIND) {
@@ -529,13 +615,23 @@ export class DeviceCredentialService {
         tenantId: tenantId ?? null,
         authMethod: verifier.kind,
         expiresAt: new Date(
-          Date.now() + this.personSessionTtlSeconds * 1000,
+          Math.min(
+            now + this.personIdleSeconds * 1000,
+            absoluteExpiresAt ? Date.parse(absoluteExpiresAt) : Infinity,
+          ),
         ).toISOString(),
+        absoluteExpiresAt,
         mustReset,
       };
     } catch (error) {
       if (credentialFailed) await lease.fail().catch(() => undefined);
       else await lease.release().catch(() => undefined);
+      // Never leave a session behind for a sign-in that reported failure.
+      if (mintedSessionId) {
+        await this.sessionService
+          .destroySession(mintedSessionId)
+          .catch(() => undefined);
+      }
       throw error;
     }
   }
@@ -720,6 +816,24 @@ export class DeviceCredentialService {
       return null;
     }
     return device;
+  }
+
+  private async resolveDeviceCeiling(
+    device: SessionContext,
+  ): Promise<string[] | null> {
+    if (!this.options.deviceCeiling) return null;
+    const ceiling = await this.options.deviceCeiling(device);
+    if (ceiling === null || ceiling === undefined) return null;
+    if (
+      !Array.isArray(ceiling) ||
+      ceiling.some((slug) => typeof slug !== 'string')
+    ) {
+      // Fail closed: a malformed policy must not read as "no ceiling".
+      throw new Error(
+        'DeviceCredentialService deviceCeiling must resolve to an array of permission slugs or null.',
+      );
+    }
+    return [...new Set(ceiling)];
   }
 
   private assertCanManage(actor: SessionContext): void {

@@ -59,6 +59,13 @@ export interface SessionContext {
    * `loadSessionContext`.
    */
   parent?: SessionParentContext | null;
+  /**
+   * The ceiling `permissions` was intersected with (#3276), snapshotted into
+   * the session at mint — e.g. the device policy a PIN session was signed in
+   * under. Null or absent when the session has no ceiling. A session with a
+   * ceiling never receives super-admin bypass or system context.
+   */
+  permissionCeiling?: string[] | null;
 }
 
 /** Identity of the session a layered session rides on. */
@@ -254,6 +261,14 @@ export class SessionService {
         };
       }
 
+      // A ceiling snapshotted into the session at mint (#3276) caps whatever
+      // the person's own membership resolves to; it can only remove slugs.
+      const permissionCeiling = session.getPermissionCeiling();
+      if (permissionCeiling) {
+        const allowed = new Set(permissionCeiling);
+        permissions = permissions.filter((slug) => allowed.has(slug));
+      }
+
       // Bind identity, tenant and permissions to one authoritative session
       // state. Routine activity may advance the revision without invalidating
       // this snapshot; security-bearing field changes require reconstruction.
@@ -270,6 +285,7 @@ export class SessionService {
         sessionId: session.id as string,
         authMethod: session.authMethod,
         parent,
+        permissionCeiling,
       };
     }
     return null;
@@ -300,6 +316,17 @@ export class SessionService {
       await this.sessionCollection.revokeChildren(sessionId).catch(() => 0);
     }
     return revoked;
+  }
+
+  /**
+   * Revoke the active sessions layered on `parentSessionId`, optionally
+   * sparing one — the hand-over on a single-occupant device (#3276).
+   */
+  async destroyChildSessions(
+    parentSessionId: string,
+    options: { exceptSessionId?: string } = {},
+  ): Promise<number> {
+    return this.sessionCollection.revokeChildren(parentSessionId, options);
   }
 
   /**
@@ -409,7 +436,7 @@ export class SessionService {
     const rotated = await this.sessionCollection.createSession({
       userId: session.userId,
       tenantId,
-      ttl: this.defaultTTL,
+      ttl: session.getIdleSeconds() ?? this.defaultTTL,
       userAgent: session.userAgent,
       ipAddress: session.ipAddress,
       data: session.data,

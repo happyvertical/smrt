@@ -669,7 +669,10 @@ import { createDeviceCredentialHandlers } from '@happyvertical/smrt-users/svelte
 export const deviceAuth = createDeviceCredentialHandlers({
   db,
   pin: { pepper: process.env.PIN_PEPPER },      // required in production
-  personSessionTtlSeconds: 8 * 60 * 60,
+  personIdleSeconds: 15 * 60,                   // sliding; default 8 hours
+  personMaxSeconds: 10 * 60 * 60,               // absolute; default none
+  // Optional: the most anyone may do on this device. Default: no ceiling.
+  deviceCeiling: async (device) => devices.permissionCeilingFor(device.user.id),
   // smrt-users does not own a Device object: say whether this device
   // account is still an enrolled, active device.
   assertEnrolledDevice: async (device) =>
@@ -693,6 +696,43 @@ person **and** per device through the login limiter. Administering PINs needs
 `users.pin.manage` from a non-PIN session; a PIN session can only change its
 own PIN with the current one. An admin reset revokes the person's live PIN
 sessions and flags `mustReset`.
+
+**Whose authority.** The device session authenticates the tablet; the person's
+session authorizes the work. Its `permissions` are resolved on every load from
+the *person's* own membership in the device tenant (role plus per-membership
+overrides) — never the device account's — so a welder and a foreman on the
+same tablet get different permission sets. Both identities are on the resolved
+context: `user` is the person and `parent` (`event.locals.sessionParent`, and
+`session.parent` on the request permission context) is the device session and
+its account, so a consumer can record "this person, at this tablet".
+
+**Device ceiling.** `deviceCeiling(device)` may return permission slugs that
+cap every person on that device. A non-null result is snapshotted into the
+person's session at sign-in (`data.permissionCeiling`) and intersected with
+their resolved permissions on every load; it only removes slugs, and `[]`
+leaves none. A ceilinged session never receives `superAdminBypass` or
+`systemContext` from `withSessionPermissionContext`. Returning `null` (or
+omitting the hook) means no ceiling. Because it is a snapshot, **a ceiling
+change applies at each person's next sign-in**; a throwing hook refuses the
+sign-in.
+
+**Switching people.** `signOut` ends only the person's session. With
+`singleOccupant` (default `true`) a successful sign-in also ends every other
+person's session on that device session, so signing in as the next person is
+the hand-over; a failed sign-in leaves the current person signed in. Set
+`singleOccupant: false` for devices several people stay signed in on.
+`personIdleSeconds` is a sliding idle timeout stored on the session
+(`data.idleSeconds`), so it slides by that value whichever `SessionService`
+resolves the bearer and is independent of the device session's long life.
+`personMaxSeconds` adds an absolute lifetime (`data.absoluteExpiresAt`) that
+activity cannot extend. `permissionCeiling`, `idleSeconds`, and
+`absoluteExpiresAt` are reserved `Session.data` keys (`SESSION_DATA_KEYS`):
+server-set at mint, never to be written from client input.
+
+Existing installations need `smrt db:migrate` for the additive
+`sessions.auth_method` / `sessions.parent_session_id` columns and the
+`users_login_attempts`, `users_login_audit_events`, and
+`users_pin_credentials` tables.
 
 Other credential kinds (a fob or badge reader, say) implement
 `DeviceCredentialVerifier` and go through `service.signIn(verifier, input)`;
@@ -931,7 +971,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `Tenant` | Organizational boundary. STI. Hierarchical via `parentTenantId`/`hierarchyPath`. |
 | `Role` | Permission template. `tenantId = null` for system roles. `isSystem` blocks deletion. |
 | `Permission` | Named capability. Slug format: `resource.action`. |
-| `Session` | Server-side session. Secure UUID. TTL in seconds. `authMethod` records the channel; `parentSessionId` makes it a layered session valid only while its parent is. |
+| `Session` | Server-side session. Secure UUID. TTL in seconds. `authMethod` records the channel; `parentSessionId` makes it a layered session valid only while its parent is. Reserved `data` keys (`SESSION_DATA_KEYS`) carry a permission ceiling, sliding idle timeout, and absolute expiry. |
 | `UsersLoginAttempt`, `UsersLoginAuditEvent` | Hashed-key login budget rows and durable sign-in audit events (#3273). Closed generated surface. |
 | `UsersPinCredential` | Per-person scrypt PIN hash for enrolled-device sign-in (#3276). Closed generated surface. |
 | `Group` | Team within a tenant. Gains permissions via GroupRole. |
@@ -964,7 +1004,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `generatePostgresPermissionSql()`, `applyPostgresPermissionPolicies()` | Preview or apply Postgres RLS helper functions and table policies. |
 | `SessionService` | High-level session management. `createSession()`, `loadSessionContext()`, `destroySession()`; tenant contexts include direct or inherited membership provenance, `authMethod`, and `parent` for layered sessions. |
 | `LoginAttemptLimiter` | Shared sign-in budget with exponential lockout and audit (#3273): `reserve()` → lease `.fail()`/`.succeed()`/`.release()`. `LoginRateLimitError`, `InvalidCredentialsError`, `LoginAuditSink`, `DurableLoginAuditSink`. |
-| `DeviceCredentialService` | Per-person sign-in layered on an enrolled device session (#3276): `signInWithPin()`, `signIn(verifier, input)`, `signOut()`, `setPin()`, `resetPin()`, `clearPin()`. `PinVerifier`, `DeviceCredentialVerifier`. |
+| `DeviceCredentialService` | Per-person sign-in layered on an enrolled device session (#3276): `signInWithPin()`, `signIn(verifier, input)`, `signOut()`, `setPin()`, `resetPin()`, `clearPin()`. Person authority with optional `deviceCeiling`, `singleOccupant` hand-over, `personIdleSeconds` / `personMaxSeconds`. `PinVerifier`, `DeviceCredentialVerifier`. |
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
 | `backfillLegacyUserProfiles` | Transactionally create and link canonical global Person Profiles for legacy Users; never creates OIDC identities or infers ownership. |
 | `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |

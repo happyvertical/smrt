@@ -365,12 +365,18 @@ export async function withSessionPermissionContext<T>(
       ? null
       : await sessionService.loadSessionContext(options.sessionId);
   const baseDatabase = sessionService.getDatabase() as QueryableDatabase;
+  // A session under a permission ceiling (#3276) is capped by policy that
+  // bypass and system context would void, so it never receives either —
+  // whatever the host asked for on this request.
+  const ceilinged = Array.isArray(session?.permissionCeiling);
+  const superAdminBypass = !ceilinged && (options.superAdminBypass ?? false);
+  const systemContext = !ceilinged && (options.systemContext ?? false);
 
   return runWithinPermissionRuntime(
     {
       enterTenantContext: options.enterTenantContext,
       postgresRls: options.postgresRls,
-      systemContext: options.systemContext,
+      systemContext,
     },
     configuredDb,
     baseDatabase,
@@ -379,8 +385,8 @@ export async function withSessionPermissionContext<T>(
       membership: session?.membership ?? null,
       session,
       sessionId: session?.sessionId ?? null,
-      superAdminBypass: options.superAdminBypass ?? false,
-      systemContext: options.systemContext ?? false,
+      superAdminBypass,
+      systemContext,
       tenantId: session?.tenantId ?? null,
       user: session?.user ?? null,
       userId: session?.user.id ?? null,

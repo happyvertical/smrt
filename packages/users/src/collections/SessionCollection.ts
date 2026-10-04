@@ -70,14 +70,11 @@ export class SessionCollection extends SmrtCollection<Session> {
    */
   async createSession(options: CreateSessionOptions): Promise<Session> {
     const ttl = options.ttl ?? DEFAULT_SESSION_TTL;
-    const expiresAt = new Date(Date.now() + ttl * 1000);
-
     const session = await this.create({
       id: generateSessionId(),
       userId: options.userId,
       tenantId: options.tenantId ?? null,
       status: SessionStatus.ACTIVE,
-      expiresAt,
       userAgent: options.userAgent ?? '',
       ipAddress: options.ipAddress ?? '',
       lastAccessedAt: new Date(),
@@ -85,6 +82,8 @@ export class SessionCollection extends SmrtCollection<Session> {
       authMethod: options.authMethod ?? null,
       parentSessionId: options.parentSessionId ?? null,
     });
+    // Through extend() so an absolute cap in `data` bounds the first expiry too.
+    session.extend(ttl);
 
     await session.save();
     return session;
@@ -105,13 +104,19 @@ export class SessionCollection extends SmrtCollection<Session> {
   /**
    * Revoke every active session layered on `parentSessionId`. Children are
    * already invalid once the parent is gone (liveness rule), so this is a
-   * tidy-up that makes "manage sessions" views and audits truthful.
+   * tidy-up that makes "manage sessions" views and audits truthful. With
+   * `exceptSessionId` it ends every *other* child — how a single-occupant
+   * device hands over from one person to the next.
    */
-  async revokeChildren(parentSessionId: string): Promise<number> {
+  async revokeChildren(
+    parentSessionId: string,
+    options: { exceptSessionId?: string } = {},
+  ): Promise<number> {
     const children = await this.findChildren(parentSessionId);
     let count = 0;
     for (const child of children) {
-      if (child.id && (await this.revokeWithRetry(child.id))) count++;
+      if (!child.id || child.id === options.exceptSessionId) continue;
+      if (await this.revokeWithRetry(child.id)) count++;
     }
     return count;
   }

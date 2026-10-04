@@ -49,6 +49,20 @@ export type SessionAuthMethod =
 export const DEFAULT_SESSION_TTL = 7 * 24 * 60 * 60;
 
 /**
+ * Reserved {@link Session.data} keys this package writes at mint time and
+ * enforces on every load (#3276). Server-set only: never copy client input
+ * into them, and do not overwrite them through `setSessionData`.
+ */
+export const SESSION_DATA_KEYS = {
+  /** `string[]` of permission slugs the session's resolved set is intersected with. */
+  permissionCeiling: 'permissionCeiling',
+  /** ISO timestamp after which the session is invalid whatever its activity. */
+  absoluteExpiresAt: 'absoluteExpiresAt',
+  /** Sliding idle timeout in seconds, applied on every recorded activity. */
+  idleSeconds: 'idleSeconds',
+} as const;
+
+/**
  * Generate a cryptographically secure session ID
  */
 export function generateSessionId(): string {
@@ -188,10 +202,54 @@ export class Session extends SmrtObject {
   }
 
   /**
-   * Check if the session is currently valid (active and not expired)
+   * Absolute expiry cap (`data.absoluteExpiresAt`), or null when the session
+   * has none. An unreadable value fails closed as "already passed".
+   */
+  getAbsoluteExpiry(): Date | null {
+    const raw = this.data?.[SESSION_DATA_KEYS.absoluteExpiresAt];
+    if (raw === undefined || raw === null) return null;
+    const parsed =
+      typeof raw === 'string' || typeof raw === 'number'
+        ? new Date(raw)
+        : new Date(Number.NaN);
+    return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+  }
+
+  /**
+   * Sliding idle timeout (`data.idleSeconds`), or null when the session uses
+   * the resolving service's TTL policy.
+   */
+  getIdleSeconds(): number | null {
+    const raw = this.data?.[SESSION_DATA_KEYS.idleSeconds];
+    return typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+      ? raw
+      : null;
+  }
+
+  /**
+   * Permission ceiling (`data.permissionCeiling`), or null when the session
+   * has none. A present but malformed value fails closed as an empty ceiling.
+   */
+  getPermissionCeiling(): string[] | null {
+    const raw = this.data?.[SESSION_DATA_KEYS.permissionCeiling];
+    if (raw === undefined || raw === null) return null;
+    return Array.isArray(raw)
+      ? raw.filter((slug): slug is string => typeof slug === 'string')
+      : [];
+  }
+
+  /**
+   * Check if the session is currently valid (active, not expired, and not
+   * past its absolute cap)
    */
   isValid(): boolean {
-    return this.status === SessionStatus.ACTIVE && new Date() < this.expiresAt;
+    const now = new Date();
+    const cap = this.getAbsoluteExpiry();
+    return (
+      this.status === SessionStatus.ACTIVE &&
+      now < this.expiresAt &&
+      (cap === null || now < cap)
+    );
   }
 
   /**
@@ -219,7 +277,11 @@ export class Session extends SmrtObject {
    * Extend the session expiration by the given TTL (in seconds)
    */
   extend(ttlSeconds: number = DEFAULT_SESSION_TTL): void {
-    this.expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    const next = Date.now() + ttlSeconds * 1000;
+    // Activity never pushes expiry past the absolute cap, so every expiry
+    // consumer (validity, the EXPIRED transition, retention) honours it.
+    const cap = this.getAbsoluteExpiry();
+    this.expiresAt = new Date(cap ? Math.min(next, cap.getTime()) : next);
     this.touch();
   }
 
@@ -230,7 +292,12 @@ export class Session extends SmrtObject {
   ): Promise<boolean> {
     for (let attempt = 0; attempt < 4; attempt += 1) {
       if (attempt > 0 && !(await this.reloadValidActivityState())) return false;
-      if (extendTtl) this.extend(ttlSeconds);
+      // A session minted with its own idle timeout slides by that timeout
+      // whichever service resolves it; the caller's TTL policy applies only
+      // to sessions without one.
+      const idleSeconds = this.getIdleSeconds();
+      if (idleSeconds !== null) this.extend(idleSeconds);
+      else if (extendTtl) this.extend(ttlSeconds);
       else this.touch();
       try {
         await this.save();
