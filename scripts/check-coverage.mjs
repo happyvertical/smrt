@@ -69,6 +69,7 @@ const TIERS = {
   events: 'T3',
   facts: 'T3',
   features: 'T3',
+  'human-resources': 'T3',
   images: 'T3',
   inventory: 'T3',
   languages: 'T3',
