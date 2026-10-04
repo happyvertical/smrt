@@ -55,7 +55,7 @@ function isNewer(entry: CalendarEventInput, existing: Event): boolean {
   const previous = versionFrom(existing);
   const sequence = entry.sequence ?? 0;
   const oldSequence = previous.sequence ?? 0;
-  if (sequence !== oldSequence) return sequence > oldSequence;
+  if (sequence > oldSequence) return true;
   const stamp = entry.dtstamp?.toISOString() ?? '';
   const oldStamp = previous.dtstamp ?? '';
   return stamp > oldStamp;
@@ -123,7 +123,12 @@ async function syncParsed(
       await sourceSeries.save();
     }
 
-    const id = stableId('icalendar-event', options.source, identityKey(entry));
+    const id = stableId(
+      'icalendar-event',
+      tenantId ?? '',
+      options.source,
+      identityKey(entry),
+    );
     const existing = await events.get({ id });
     if (existing && !isNewer(entry, existing)) {
       unchanged += 1;

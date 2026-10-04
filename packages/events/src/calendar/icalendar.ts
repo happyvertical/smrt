@@ -117,7 +117,7 @@ export function parseICalendarEvents(
     const allDay = start?.isDate === true;
     const resolvedTimeZone =
       timeZone(event, 'dtstart') || timeZone(event, 'recurrence-id');
-    if (start && !resolvedTimeZone) {
+    if (start && !allDay && !resolvedTimeZone) {
       throw new CalendarEventValidationError(
         'Floating DTSTART requires an explicit source time-zone policy',
       );
