@@ -1,14 +1,9 @@
 import { render } from 'svelte/server';
-import InvoiceEditor from '../../src/svelte/components/InvoiceEditor.svelte';
-import type { InvoiceEditorProps } from '../../src/svelte/invoices/types.js';
-
-export function page(props: Partial<InvoiceEditorProps> = {}): string {
-  const { body } = render(InvoiceEditor, { props: {
-    action: '/save', currency: 'CAD',
-    allocations: [{ key: 'one', sourceId: 'expense-a', amount: '125.00' }],
-    sources: [{ id: 'expense-a', label: 'Reviewed supplier expense', availableMinor: 25000 }],
-    hiddenFields: [{ name: 'requestId', value: 'keep-request' }, { name: 'tenantId', value: 'keep-tenant' }],
-    ...props,
-  } });
-  return `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native invoice proof</title></head><body>${body}</body></html>`;
+import theme from '@happyvertical/smrt-ui/themes/styles/material.css?inline';
+import Harness from './Harness.svelte';
+import type { InvoiceEditorProps, InvoiceAllocationDraft } from '../../src/svelte/invoices/types.js';
+export function page(props: Partial<InvoiceEditorProps> & { allocations?: InvoiceAllocationDraft[] } = {}): string {
+  const { allocations, ...initial } = props;
+  const { body, head } = render(Harness, { props: { initial, allocations } });
+  return `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native invoice proof</title><style>${theme}body{margin:8px;font-family:system-ui,sans-serif}*{box-sizing:border-box}</style>${head}</head><body>${body}</body></html>`;
 }
