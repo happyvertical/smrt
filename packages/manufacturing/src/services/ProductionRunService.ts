@@ -44,6 +44,7 @@ import {
   roundQuantity,
   toMillionths,
 } from '../quantity.js';
+import { isOwnOrGlobal, readOwnAndGlobal } from '../tenant-scope.js';
 import { BomNotFoundError, NoActiveBomForProductError } from '../types.js';
 import {
   type ConsumeResult,
@@ -145,31 +146,30 @@ export class ProductionRunService {
    */
   async createRun(input: CreateProductionRunInput): Promise<ProductionRun> {
     const targetQty = positive(input.targetQty, 'targetQty');
-    // Pinned to the active tenant (none: global records only), never to
-    // whatever an unscoped read returns.
+    // Pinned to the active tenant's bills and global ones; without a tenant
+    // context, global bills only. Another tenant's bill is never usable.
     const tenantId = getCurrentTenant()?.tenantId ?? null;
-    const usable = (bom: BillOfMaterials | null): bom is BillOfMaterials =>
-      Boolean(bom?.id) &&
-      ((bom?.tenantId ?? null) === null ||
-        tenantId === null ||
-        bom?.tenantId === tenantId);
     let bom: BillOfMaterials | null = null;
     if (input.bomId) {
-      bom = UUID_PATTERN.test(input.bomId)
-        ? await this.boms.get({ id: input.bomId })
-        : null;
-      if (!usable(bom)) throw new BomNotFoundError(input.bomId);
+      const bomId = input.bomId;
+      const found = UUID_PATTERN.test(bomId)
+        ? await readOwnAndGlobal(tenantId, () =>
+            this.boms.list({ where: { id: bomId }, limit: 1 }),
+          )
+        : [];
+      bom = found.find((row) => isOwnOrGlobal(row, tenantId)) ?? null;
+      if (!bom?.id) throw new BomNotFoundError(bomId);
     } else if (input.productId) {
+      const productId = input.productId;
       // The tenant's own active bill first, then a global one.
       const active = (
-        await this.boms.list({
-          where: { productId: input.productId, status: 'active' },
-          orderBy: 'version DESC',
-        })
-      ).filter((candidate) => {
-        const owner = candidate.tenantId ?? null;
-        return owner === tenantId || owner === null;
-      });
+        await readOwnAndGlobal(tenantId, () =>
+          this.boms.list({
+            where: { productId, status: 'active' },
+            orderBy: 'version DESC',
+          }),
+        )
+      ).filter((candidate) => isOwnOrGlobal(candidate, tenantId));
       bom =
         active.find((candidate) => (candidate.tenantId ?? null) === tenantId) ??
         active[0] ??

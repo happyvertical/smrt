@@ -53,10 +53,12 @@ import type {
   StockService,
 } from '@happyvertical/smrt-inventory';
 import { createStockService } from '@happyvertical/smrt-inventory';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollection.js';
 import { BomLineCollection } from '../collections/BomLineCollection.js';
 import type { BillOfMaterials } from '../models/BillOfMaterials.js';
 import type { BomLine } from '../models/BomLine.js';
+import { isOwnOrGlobal, readOwnAndGlobal } from '../tenant-scope.js';
 import { BomNotFoundError, NoActiveBomForProductError } from '../types.js';
 
 /**
@@ -366,10 +368,9 @@ export class ProductionService {
     // line another tenant wrote against this bill id (an unscoped read
     // would return those too).
     const owner = bom.tenantId ?? null;
-    const lines = (await this.lines.findByBom(bom.id!)).filter((line) => {
-      const lineTenant = line.tenantId ?? null;
-      return lineTenant === null || lineTenant === owner;
-    });
+    const lines = (
+      await readOwnAndGlobal(owner, () => this.lines.findByBom(bom.id!))
+    ).filter((line) => isOwnOrGlobal(line, owner));
     return {
       orderId,
       lines,
@@ -461,8 +462,18 @@ export class ProductionService {
     order: ProductionOrderRef,
   ): Promise<BillOfMaterials> {
     if (order.bomId) {
-      const bom = await this.boms.get(order.bomId);
-      if (!bom) throw new BomNotFoundError(order.bomId);
+      const bomId = order.bomId;
+      // Under a tenant context a global bill is hidden from `get`; read the
+      // tenant's bills and global ones instead (another tenant's never).
+      const tenantId = getCurrentTenant()?.tenantId;
+      const bom = tenantId
+        ? ((
+            await readOwnAndGlobal(tenantId, () =>
+              this.boms.list({ where: { id: bomId }, limit: 1 }),
+            )
+          ).find((row) => isOwnOrGlobal(row, tenantId)) ?? null)
+        : await this.boms.get(bomId);
+      if (!bom) throw new BomNotFoundError(bomId);
       return bom;
     }
     const productId = order.productId ?? '';

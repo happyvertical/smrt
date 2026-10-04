@@ -85,6 +85,25 @@ describe('ProductionRunList', () => {
     expect(field).toHaveValue(null);
   });
 
+  it('shows what is left at six decimals', async () => {
+    render(ProductionRunList, {
+      props: {
+        runs: [run({ targetQty: 0.3, completedQty: 0.1 })],
+        oncomplete: vi.fn(),
+      },
+    });
+    await userEvent.type(
+      screen.getByRole('spinbutton', { name: 'Quantity completed for Frame' }),
+      '0.25',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Report a completion for Frame' }),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Only 0.2 left to build.',
+    );
+  });
+
   it('refuses an empty, zero or too-large quantity without calling the host', async () => {
     const oncomplete = vi.fn();
     render(ProductionRunList, { props: { runs: [run()], oncomplete } });

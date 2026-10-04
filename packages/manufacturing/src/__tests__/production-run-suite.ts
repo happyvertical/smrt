@@ -183,7 +183,8 @@ export function productionRunSuite(
       it('sums decimal completions to reach a decimal target', async () => {
         const { bomId } = await makeBill();
         const run = await service.createRun({ bomId, targetQty: 0.3 });
-        await service.recordCompletion(run.id!, { qty: 0.1 });
+        const first = await service.recordCompletion(run.id!, { qty: 0.1 });
+        expect(first.run.remainingQty()).toBe(0.2);
         const last = await service.recordCompletion(run.id!, { qty: 0.2 });
         expect(last.run.status).toBe('done');
       });
@@ -318,12 +319,18 @@ export function productionRunSuite(
             await stock.receive(bolt, at, 100);
           });
 
-          // No context: only global bills resolve by product.
+          // No context: only global bills are usable, by product or by id.
           expect(
             await errorOf(service.createRun({ productId, targetQty: 1 })),
           ).toBeInstanceOf(NoActiveBomForProductError);
-          const run = await service.createRun({ bomId, targetQty: 2 });
+          expect(
+            await errorOf(service.createRun({ bomId, targetQty: 1 })),
+          ).toBeInstanceOf(BomNotFoundError);
+          const run = await withTenant({ tenantId: tenantA }, () =>
+            service.createRun({ bomId, targetQty: 2 }),
+          );
           expect(run.tenantId).toBe(tenantA);
+          // Recorded without a tenant context.
           const result = await service.recordCompletion(run.id!, {
             qty: 1,
             consume: { locationId: at },
@@ -346,6 +353,54 @@ export function productionRunSuite(
           });
         },
       );
+    });
+
+    describe('tenant and global records together', () => {
+      vitestIt(
+        'uses a global bill from a tenant context and consumes its global lines',
+        async () => {
+          const { bomId, productId, tube, bolt } = await makeBill(); // global
+          const tenantA = randomUUID();
+          await withTenant({ tenantId: tenantA }, async () => {
+            const at = await warehouse();
+            await stock.receive(tube, at, 100);
+            await stock.receive(bolt, at, 100);
+            const run = await service.createRun({ productId, targetQty: 2 });
+            expect(run.bomId).toBe(bomId);
+            expect(run.tenantId).toBe(tenantA);
+            const result = await service.recordCompletion(run.id!, {
+              qty: 1,
+              consume: { locationId: at },
+            });
+            expect(result.consumed.map((c) => c.componentSkuId).sort()).toEqual(
+              [tube, bolt].sort(),
+            );
+          });
+        },
+      );
+
+      vitestIt("consumes a global line on a tenant's bill", async () => {
+        const tenantA = randomUUID();
+        const { bomId, tube, bolt } = await withTenant(
+          { tenantId: tenantA },
+          () => makeBill(),
+        );
+        const shared = randomUUID();
+        await lines.create({ bomId, componentSkuId: shared, qtyPerUnit: 1 }); // global line
+        await withTenant({ tenantId: tenantA }, async () => {
+          const at = await warehouse();
+          for (const sku of [tube, bolt, shared])
+            await stock.receive(sku, at, 100);
+          const run = await service.createRun({ bomId, targetQty: 2 });
+          const result = await service.recordCompletion(run.id!, {
+            qty: 1,
+            consume: { locationId: at },
+          });
+          expect(result.consumed.map((c) => c.componentSkuId).sort()).toEqual(
+            [tube, bolt, shared].sort(),
+          );
+        });
+      });
     });
 
     describe('global runs', () => {

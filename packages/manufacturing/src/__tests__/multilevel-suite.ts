@@ -353,6 +353,38 @@ export function multilevelSuite(
         },
       );
 
+      vitestIt(
+        'opens global components and counts global stock from a tenant context',
+        async () => {
+          // A shared catalog: a global material and a global sub-assembly with
+          // a global bill, used by a tenant's bill.
+          const plate = await material('Plate', 'sheet');
+          const bracket = await assembly('Bracket');
+          await bill(bracket.id, [[plate.skuId, 2, 'sheet']]);
+          const at = await warehouse();
+          await stock.receive(plate.skuId, at, 5); // global stock
+          await withTenant({ tenantId: randomUUID() }, async () => {
+            const gate = await assembly('Gate');
+            const gateBom = await bill(gate.id, [[bracket.skuId, 3, 'each']]);
+            const result = await bomService.explode(gateBom, 1, {
+              levels: 'all',
+            });
+            expect(
+              result.lines.map((line) => [line.name, line.kind, line.expanded]),
+            ).toEqual([
+              ['Bracket', 'assembly', true],
+              ['Plate', 'material', false],
+            ]);
+            const plan = await bomService.planRequirements(gateBom, 1, {
+              levels: 'all',
+            });
+            const platePlanned = lineFor<PlannedLine>(plan.lines, plate.skuId);
+            expect(platePlanned.available).toBe(5);
+            expect(platePlanned.short).toBe(1);
+          });
+        },
+      );
+
       it('stops at an assembly with no active bill', async () => {
         const plate = await material('Plate', 'sheet');
         const gusset = await assembly('Gusset');
@@ -752,6 +784,45 @@ export function multilevelSuite(
           single.lineBreakdown.find((l) => l.componentSkuId === f.panel.skuId),
         ).toMatchObject({ costUnavailable: true });
         expect(single.lineBreakdown[0]).not.toHaveProperty('components');
+      });
+
+      it('does not add a sub-assembly bill in another currency', async () => {
+        const f = await frameFixture();
+        const panelBill = await boms.get({ id: f.panelBom });
+        if (!panelBill) throw new Error('missing bill');
+        panelBill.currency = 'EUR';
+        await panelBill.save();
+        const priced = await BomService.create({
+          stockService: stock,
+          costResolver: () => 1,
+          rateResolver: () => 60,
+        });
+        const rollup = await priced.computeMaterialCost(f.frameBom, {
+          levels: 'all',
+        });
+        const panel = rollup.lineBreakdown.find(
+          (line) => line.componentSkuId === f.panel.skuId,
+        );
+        // Priced through the resolver, not rolled up from the EUR bill.
+        expect(panel?.subBomId).toBeUndefined();
+        expect(panel?.unitCost).toBe(1);
+        expect(rollup.currency).toBe('USD');
+
+        const operations = await OperationService.create({ db });
+        const routing = await RoutingService.create({ db });
+        const weld = await operations.define({
+          code: unique('W'),
+          name: 'Weld',
+        });
+        await routing.replaceRouting(f.panelBom, [
+          { operationId: weld.id!, estimatedMinutes: 10 },
+        ]);
+        const estimate = await priced.computeLabourEstimate(f.frameBom, {
+          levels: 'all',
+        });
+        expect(estimate.totalMinutes).toBeCloseTo(21, 9);
+        expect(estimate.totalCost).toBe(0);
+        expect(estimate.hasMissingRates).toBe(true);
       });
 
       it('adds sub-assembly routings, multiplied by the units needed', async () => {

@@ -45,8 +45,9 @@ let drafts = $state<Record<string, string>>({});
 let errors = $state<Record<string, string>>({});
 let busy = $state<Record<string, boolean>>({});
 
+/** What is left, at the six-decimal quantity precision the service uses. */
 function remainingOf(run: ProductionRunView): number {
-  return Math.max(0, run.targetQty - run.completedQty);
+  return Math.max(0, Number((run.targetQty - run.completedQty).toFixed(6)));
 }
 
 async function report(run: ProductionRunView) {

@@ -15,6 +15,7 @@
 
 import type { BillOfMaterials } from '../models/BillOfMaterials.js';
 import type { BomLine } from '../models/BomLine.js';
+import { isOwnOrGlobal, readOwnAndGlobal } from '../tenant-scope.js';
 import {
   BomExplosionLimitError,
   type ExplosionLevels,
@@ -112,15 +113,9 @@ export class StructureWalk {
       // The top bill's structure only: its tenant's lines and global ones,
       // as `AssemblyService` reads a structure.
       const tenantId = this.top.tenantId ?? null;
-      pending = this.assemblies.lines
-        .findByBom(bomId)
-        .then((lines) =>
-          lines.filter(
-            (line) =>
-              (line.tenantId ?? null) === null ||
-              (line.tenantId ?? null) === tenantId,
-          ),
-        );
+      pending = readOwnAndGlobal(tenantId, () =>
+        this.assemblies.lines.findByBom(bomId),
+      ).then((lines) => lines.filter((line) => isOwnOrGlobal(line, tenantId)));
       this.bills.set(bomId, pending);
     }
     const lines = await pending;
@@ -135,14 +130,12 @@ export class StructureWalk {
     const productId = this.top.productId;
     let name = productId;
     if (UUID_PATTERN.test(productId)) {
-      const product = await this.assemblies.products.get({ id: productId });
-      const owner = product?.tenantId ?? null;
       // Only a name the top bill's tenant may see.
-      if (
-        product?.name &&
-        (owner === null || owner === (this.top.tenantId ?? null))
-      )
-        name = product.name;
+      const owner = this.top.tenantId ?? null;
+      const [product] = await readOwnAndGlobal(owner, () =>
+        this.assemblies.products.list({ where: { id: productId }, limit: 1 }),
+      );
+      if (product?.name && isOwnOrGlobal(product, owner)) name = product.name;
     }
     return { bomId: this.top.id as string, productId, name };
   }

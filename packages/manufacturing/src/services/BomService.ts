@@ -48,6 +48,7 @@ import type {
   RoutingStepEstimate,
 } from '../operation-types.js';
 import { roundQuantity } from '../quantity.js';
+import { isOwnOrGlobal, readOwnAndGlobal } from '../tenant-scope.js';
 import {
   type BomCostRollup,
   type BomLineCost,
@@ -581,15 +582,12 @@ export class BomService {
     skuId: string,
     tenantId: string | null,
   ): Promise<number> {
-    const rows = await this.stockService.levels.list({
-      where: { skuId, state: 'available' },
-    });
+    const rows = await readOwnAndGlobal(tenantId, () =>
+      this.stockService.levels.list({ where: { skuId, state: 'available' } }),
+    );
     let total = 0;
-    for (const row of rows) {
-      const rowTenant = row.tenantId ?? null;
-      if (rowTenant === null || rowTenant === tenantId)
-        total += Number(row.qty ?? 0);
-    }
+    for (const row of rows)
+      if (isOwnOrGlobal(row, tenantId)) total += Number(row.qty ?? 0);
     return Math.max(0, total);
   }
 
@@ -599,6 +597,7 @@ export class BomService {
     options: ExplosionOptions,
   ): Promise<BomCostRollup> {
     const top = await this.requireBom(bomId);
+    const currency = top.currency || 'USD';
     const walk = new StructureWalk(this.assemblies, top, options.levels ?? 1);
 
     const rollUp = async (
@@ -623,7 +622,11 @@ export class BomService {
           uom: line.uom,
           costUnavailable: false,
         };
-        if (sub) {
+        // A sub-assembly bill in another currency cannot be added to this
+        // total; its line is priced through the resolver, as an unopened one.
+        const sameCurrency =
+          (component.activeBom?.currency || 'USD') === currency;
+        if (sub && sameCurrency) {
           const inner = await rollUp(sub.bomId, level + 1, [...path, sub]);
           entry.unitCost = inner.totalCost;
           entry.lineCost = inner.totalCost * effectiveQty;
@@ -645,7 +648,7 @@ export class BomService {
     };
 
     const rolled = await rollUp(bomId, 1, [await walk.root()]);
-    return { bomId, currency: top.currency || 'USD', ...rolled };
+    return { bomId, currency, ...rolled };
   }
 
   /** {@link computeLabourEstimate} with `levels` above 1. */
@@ -692,9 +695,17 @@ export class BomService {
 
     let totalMinutes = own.totalMinutes;
     let totalCost = own.totalCost;
+    let hasMissingRates = own.hasMissingRates;
     for (const sub of subAssemblies) {
       totalMinutes += sub.unitsPerUnit * sub.estimate.totalMinutes;
-      totalCost += sub.unitsPerUnit * sub.estimate.totalCost;
+      // Cost in another currency is not added; the total is then a lower
+      // bound, as with a missing rate.
+      if (sub.estimate.currency === own.currency) {
+        totalCost += sub.unitsPerUnit * sub.estimate.totalCost;
+        if (sub.estimate.hasMissingRates) hasMissingRates = true;
+      } else if (sub.estimate.hasRouting) {
+        hasMissingRates = true;
+      }
     }
     return {
       ...own,
@@ -702,9 +713,7 @@ export class BomService {
         own.hasRouting || subAssemblies.some((sub) => sub.estimate.hasRouting),
       totalMinutes,
       totalCost,
-      hasMissingRates:
-        own.hasMissingRates ||
-        subAssemblies.some((sub) => sub.estimate.hasMissingRates),
+      hasMissingRates,
       subAssemblies,
     };
   }

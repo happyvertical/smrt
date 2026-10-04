@@ -29,6 +29,7 @@ import {
   ValidationError,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { roundQuantity } from '../quantity.js';
 import { BillOfMaterials } from './BillOfMaterials.js';
 
 /**
@@ -107,9 +108,15 @@ export class ProductionRun extends SmrtObject {
     if (options.status !== undefined) this.status = options.status;
   }
 
-  /** Units still to build; `0` once the target is reached. */
+  /**
+   * Units still to build, at the six-decimal quantity precision; `0` once
+   * the target is reached.
+   */
   remainingQty(): number {
-    return Math.max(0, Number(this.targetQty) - Number(this.completedQty));
+    return Math.max(
+      0,
+      roundQuantity(Number(this.targetQty) - Number(this.completedQty)),
+    );
   }
 
   /** Refuses a status outside the lifecycle and impossible quantities. */
