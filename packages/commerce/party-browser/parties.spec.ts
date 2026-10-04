@@ -1,4 +1,26 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+const browserDiagnostics = new WeakMap<Page, string[]>();
+test.beforeEach(({ page }) => {
+  const diagnostics: string[] = [];
+  browserDiagnostics.set(page, diagnostics);
+  page.on('pageerror', (error) => diagnostics.push(`pageerror: ${error}`));
+  page.on('requestfailed', (request) =>
+    diagnostics.push(`requestfailed: ${request.url()} ${request.failure()?.errorText}`),
+  );
+  page.on('response', (response) => {
+    if (response.status() >= 400 && !response.url().endsWith('/favicon.ico'))
+      diagnostics.push(`response: ${response.status()} ${response.url()}`);
+  });
+});
+test.afterEach(async ({ page }, testInfo) => {
+  const diagnostics = browserDiagnostics.get(page) ?? [];
+  await testInfo.attach('browser-diagnostics', {
+    body: diagnostics.join('\n') || 'none',
+    contentType: 'text/plain',
+  });
+  expect(diagnostics).toEqual([]);
+});
 
 test('directories and details remain keyboard accessible at 390px with empty, error, and read-only states', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -37,6 +59,8 @@ test('retained values and caller payload names are present in browser FormData',
   const form = page.getByTestId('customer-form').locator('form');
   await expect(form.getByRole('alert').first()).toContainText('Correct the highlighted values');
   await expect(form.locator('input[name="clientName"]')).toHaveValue('Retained Client');
+  await expect(form.locator('select[name="shippingCountry"]')).toHaveValue('CA');
+  await expect(form.locator('select[name="shippingState"]')).toHaveValue('BC');
   const creditLimit = form.locator('input[name="credit_limit"]');
   await expect(creditLimit).toHaveValue('1250.0oops');
   await form.getByRole('button', { name: 'Enter a currency amount' }).click();
@@ -50,6 +74,8 @@ test('retained values and caller payload names are present in browser FormData',
     credit_limit: '1250.0oops',
     requestToken: 'request-123',
     expectedTenantId: 'tenant-9',
+    shippingCountry: 'CA',
+    shippingState: 'BC',
   });
 });
 
@@ -63,6 +89,8 @@ test('native contact action posts hidden tokens and entered values with JavaScri
   await expect(page.locator('#payload')).toContainText('creditLimit=1250.00');
   await expect(page.locator('#payload')).toContainText('requestToken=native-request');
   await expect(page.locator('#payload')).toContainText('expectedTenantId=tenant-native');
+  await expect(page.locator('#payload')).toContainText('shippingCountry=CA');
+  await expect(page.locator('#payload')).toContainText('shippingState=BC');
   await expect(page.locator('#payload')).toContainText('intent=add-native-contact');
   await context.close();
 });
@@ -119,17 +147,21 @@ test('invalid lead time survives browser rendering and a native contact action',
   await page.goto('/');
   const vendorForm = page.getByTestId('vendor-invalid').locator('form');
   await expect(vendorForm.locator('input[name="leadTimeDays"]')).toHaveValue('7oops');
+  await vendorForm.locator('select[name="currency"]').selectOption('JPY');
   const payload = await vendorForm.evaluate((element) =>
     Object.fromEntries(new FormData(element as HTMLFormElement).entries()),
   );
   expect(payload.leadTimeDays).toBe('7oops');
+  expect(payload.currency).toBe('JPY');
 
   const context = await browser.newContext({ javaScriptEnabled: false });
   const nativePage = await context.newPage();
   await nativePage.goto('/native-vendor');
   await expect(nativePage.locator('input[name="leadTimeDays"]')).toHaveValue('7oops');
+  await nativePage.locator('select[name="currency"]').selectOption('JPY');
   await nativePage.getByRole('button', { name: 'Add contact' }).click();
   await expect(nativePage.locator('#payload')).toContainText('leadTimeDays=7oops');
+  await expect(nativePage.locator('#payload')).toContainText('currency=JPY');
   await expect(nativePage.locator('#payload')).toContainText('intent=addContact');
   await context.close();
 });
@@ -138,6 +170,17 @@ test('playground customer form handles add, remove, and retained rejection actio
   await page.goto('/');
   const preview = page.getByTestId('customer-playground');
   const form = preview.locator('form');
+  const country = form.locator('select[name="shippingCountry"]');
+  await expect(country).toHaveValue('CA');
+  await expect(form.locator('select[name="shippingState"]')).toHaveValue('BC');
+  await country.selectOption('US');
+  await expect(form.locator('select[name="shippingState"]')).toHaveValue('BC');
+  await country.selectOption('FR');
+  await expect(form.locator('input[name="shippingState"]')).toHaveValue('BC');
+  await form.locator('input[name="shippingState"]').fill('Île-de-France');
+  await country.selectOption('CA');
+  await expect(form.locator('select[name="shippingState"]')).toHaveValue('Île-de-France');
+  await form.locator('select[name="shippingState"]').selectOption('BC');
   await form.locator('input[name="creditLimit"]').fill('12..50');
   await preview.getByRole('button', { name: 'Add contact' }).click();
   await expect(form.locator('input[name="contactId"]')).toHaveCount(2);
@@ -147,5 +190,7 @@ test('playground customer form handles add, remove, and retained rejection actio
   await preview.getByRole('button', { name: 'Save customer' }).click();
   await expect(preview.getByRole('alert').first()).toContainText('entered values were retained');
   await expect(form.locator('input[name="creditLimit"]')).toHaveValue('12..50');
+  await expect(country).toHaveValue('CA');
+  await expect(form.locator('select[name="shippingState"]')).toHaveValue('BC');
   await expect(page).toHaveURL(/\/$/);
 });

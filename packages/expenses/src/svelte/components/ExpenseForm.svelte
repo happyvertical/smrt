@@ -1,5 +1,6 @@
 <script lang="ts">
 import {
+  CurrencySelect,
   Form,
   FormGroup,
   Input,
@@ -21,6 +22,7 @@ let {
   correcting = false,
   vendors = [],
   commitments = [],
+  currencyOptions,
   fields = {},
   errors = {},
   message,
@@ -33,7 +35,8 @@ let {
   children,
   onsubmit,
 }: Props = $props();
-const { t } = useI18n();
+const i18n = useI18n();
+const { t } = i18n;
 const instanceId = $props.id();
 const formId = $derived(id ?? `expense-form-${instanceId}`);
 const busy = $derived(
@@ -61,7 +64,11 @@ function name(field: keyof ExpenseDraftValues) {
       <fieldset disabled={!canEdit}>
         {#each textFields as field}
           <FormGroup id={`${formId}-${field}`} label={t(M[`expenses.form.${field}`])} error={errors[field]} hint={field === 'amount' ? t(M['expenses.form.amount_help']) : field === 'incurredOn' ? t(M['expenses.form.date_help']) : undefined}>
-            <Input name={name(field)} value={values[field]} inputmode={field === 'amount' ? 'decimal' : undefined} />
+            {#if field === 'currency'}
+              <CurrencySelect name={name(field)} value={values[field]} options={currencyOptions} locale={i18n.locale} readOnly={!canEdit} />
+            {:else}
+              <Input name={name(field)} value={values[field]} inputmode={field === 'amount' ? 'decimal' : undefined} />
+            {/if}
           </FormGroup>
         {/each}
         <FormGroup id={`${formId}-description`} label={t(M['expenses.form.description'])} error={errors.description}>

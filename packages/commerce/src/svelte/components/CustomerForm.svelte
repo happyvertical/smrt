@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { CodeSelectOption } from '@happyvertical/smrt-ui/forms';
 import {
   Checkbox,
   ErrorSummary,
@@ -42,6 +43,10 @@ export interface Props {
   labels?: PartySurfaceLabels;
   /** Contact terminology overrides. */
   contactLabels?: PartyContactLabels;
+  /** Caller-restricted country choices for both addresses. */
+  countryOptions?: readonly CodeSelectOption[];
+  /** Caller-restricted region choices for both addresses. */
+  provinceOptions?: readonly CodeSelectOption[];
   /** Renders values without mutation affordances. */
   readOnly?: boolean;
   /** Controls whether the save submitter is presented. */
@@ -68,6 +73,8 @@ const {
   errors = {},
   labels = {},
   contactLabels,
+  countryOptions,
+  provinceOptions,
   readOnly = false,
   canSubmit = true,
   canAddContact = true,
@@ -183,8 +190,8 @@ const errorList = $derived(
   </fieldset>
 
   <div class="address-pair">
-    <PartyAddressFields heading={t(M['commerce.party.shipping_address'])} value={values.shippingAddress} names={{ street1: names.shippingStreet1, street2: names.shippingStreet2, city: names.shippingCity, state: names.shippingState, postalCode: names.shippingPostalCode, country: names.shippingCountry }} errors={{ street1: errors.fields?.shippingStreet1, street2: errors.fields?.shippingStreet2, city: errors.fields?.shippingCity, state: errors.fields?.shippingState, postalCode: errors.fields?.shippingPostalCode, country: errors.fields?.shippingCountry }} {readOnly} />
-    <PartyAddressFields heading={t(M['commerce.party.billing_address'])} value={values.billingAddress} names={{ street1: names.billingStreet1, street2: names.billingStreet2, city: names.billingCity, state: names.billingState, postalCode: names.billingPostalCode, country: names.billingCountry }} errors={{ street1: errors.fields?.billingStreet1, street2: errors.fields?.billingStreet2, city: errors.fields?.billingCity, state: errors.fields?.billingState, postalCode: errors.fields?.billingPostalCode, country: errors.fields?.billingCountry }} {readOnly} />
+    <PartyAddressFields heading={t(M['commerce.party.shipping_address'])} value={values.shippingAddress} names={{ street1: names.shippingStreet1, street2: names.shippingStreet2, city: names.shippingCity, state: names.shippingState, postalCode: names.shippingPostalCode, country: names.shippingCountry }} errors={{ street1: errors.fields?.shippingStreet1, street2: errors.fields?.shippingStreet2, city: errors.fields?.shippingCity, state: errors.fields?.shippingState, postalCode: errors.fields?.shippingPostalCode, country: errors.fields?.shippingCountry }} {readOnly} {countryOptions} {provinceOptions} />
+    <PartyAddressFields heading={t(M['commerce.party.billing_address'])} value={values.billingAddress} names={{ street1: names.billingStreet1, street2: names.billingStreet2, city: names.billingCity, state: names.billingState, postalCode: names.billingPostalCode, country: names.billingCountry }} errors={{ street1: errors.fields?.billingStreet1, street2: errors.fields?.billingStreet2, city: errors.fields?.billingCity, state: errors.fields?.billingState, postalCode: errors.fields?.billingPostalCode, country: errors.fields?.billingCountry }} {readOnly} {countryOptions} {provinceOptions} />
   </div>
 
   <PartyContactFields

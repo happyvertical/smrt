@@ -1,5 +1,7 @@
 <script lang="ts">
+import type { CodeSelectOption } from '@happyvertical/smrt-ui/forms';
 import {
+  CurrencySelect,
   ErrorSummary,
   Form,
   FormActionBar,
@@ -40,6 +42,8 @@ export interface Props {
   labels?: PartySurfaceLabels;
   /** Contact terminology overrides. */
   contactLabels?: PartyContactLabels;
+  /** Caller-restricted currency choices; omitted uses the shared ISO defaults. */
+  currencyOptions?: readonly CodeSelectOption[];
   /** Renders values without mutation affordances. */
   readOnly?: boolean;
   /** Controls whether the save submitter is presented. */
@@ -66,6 +70,7 @@ const {
   errors = {},
   labels = {},
   contactLabels,
+  currencyOptions,
   readOnly = false,
   canSubmit = true,
   canAddContact = true,
@@ -76,7 +81,8 @@ const {
   actions,
 }: Props = $props();
 
-const { t } = useI18n();
+const i18n = useI18n();
+const { t } = i18n;
 const singular = $derived(labels.singular ?? t(M['commerce.vendor.singular']));
 const names = $derived({ ...DEFAULT_VENDOR_FIELD_NAMES, ...fieldNames });
 const intentName = $derived(transport.intentName ?? 'intent');
@@ -162,7 +168,7 @@ const errorList = $derived(
         <Input name={names.minimumOrder} inputmode="decimal" value={values.minimumOrder ?? ''} readonly={readOnly} />
       </FormGroup>
       <FormGroup label={t(M['commerce.vendor.currency'])} error={errors.fields?.currency}>
-        <Input name={names.currency} value={values.currency ?? 'USD'} maxlength={12} readonly={readOnly} />
+        <CurrencySelect name={names.currency} value={values.currency ?? 'USD'} options={currencyOptions} locale={i18n.locale} readOnly={readOnly} />
       </FormGroup>
       <FormGroup label={t(M['commerce.party.payment_terms'])} error={errors.fields?.paymentTerms}>
         <Input name={names.paymentTerms} value={values.paymentTerms ?? ''} maxlength={120} readonly={readOnly} />

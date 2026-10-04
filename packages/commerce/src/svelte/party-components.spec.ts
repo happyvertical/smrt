@@ -264,7 +264,15 @@ describe('customer and vendor SSR surfaces', () => {
           identityKind: 'business',
           name: 'Retained & raw',
           creditLimit: '1250.0oops',
-          shippingAddress: { city: 'Retained City' },
+          shippingAddress: {
+            city: 'Retained City',
+            state: 'BC',
+            country: 'CA',
+          },
+          billingAddress: {
+            state: 'Île-de-France',
+            country: 'FR',
+          },
           contacts: [
             { id: 'contact-1', name: 'Retained contact', email: 'bad@email' },
           ],
@@ -288,6 +296,10 @@ describe('customer and vendor SSR surfaces', () => {
           addContactIntent: 'appendContact',
         },
         fieldNames: { creditLimit: 'credit_limit' },
+        countryOptions: [
+          { value: 'CA', label: 'Canada only' },
+          { value: 'FR', label: 'France only' },
+        ],
       },
     }).body;
     expect(html).toContain('action="?/update"');
@@ -296,6 +308,20 @@ describe('customer and vendor SSR surfaces', () => {
     expect(html).toContain('name="credit_limit"');
     expect(html).toContain('value="1250.0oops"');
     expect(html).toContain('value="Retained City"');
+    expect(html).toMatch(
+      /<select[^>]+name="shippingCountry"[^>]*>[\s\S]*?<option value="CA" selected/,
+    );
+    expect(html).toMatch(
+      /<select[^>]+name="shippingState"[^>]*>[\s\S]*?<option value="BC" selected/,
+    );
+    expect(html).toMatch(
+      /<input[^>]+value="Île-de-France"[^>]+name="billingState"/,
+    );
+    expect(html).toMatch(
+      /<select[^>]+name="billingCountry"[^>]*>[\s\S]*?<option value="FR" selected/,
+    );
+    expect(html).toContain('Canada only');
+    expect(html).toContain('France only');
     expect(html).toContain('Choose a supported city');
     expect(html).toMatch(
       /<input[^>]+value="request-123"[^>]+name="requestToken"/,
@@ -314,6 +340,7 @@ describe('customer and vendor SSR surfaces', () => {
           name: 'Sam Supplier',
           leadTimeDays: '7oops',
           minimumOrder: '500.00',
+          currency: 'ZZZ',
           contacts: [{ id: 'contact-2', name: 'Sam', phone: 'raw phone' }],
         },
         transport: {
@@ -321,10 +348,15 @@ describe('customer and vendor SSR surfaces', () => {
           addContactIntent: 'add-row',
           removeContactIntent: (index: number) => `remove-row-${index}`,
         },
+        currencyOptions: [{ value: 'CAD', label: 'Canadian dollar only' }],
       },
     }).body;
     expect(html).toContain('value="person" selected');
     expect(html).toContain('value="500.00"');
+    expect(html).toMatch(
+      /<select[^>]+name="currency"[^>]*>[\s\S]*?<option value="ZZZ" selected/,
+    );
+    expect(html).toContain('Canadian dollar only');
     expect(html).toMatch(/<input[^>]+value="7oops"[^>]+name="leadTimeDays"/);
     expect(html).toMatch(
       /<input[^>]+name="leadTimeDays"[^>]+inputmode="numeric"/,
@@ -333,6 +365,38 @@ describe('customer and vendor SSR surfaces', () => {
     expect(html).toContain('value="raw phone"');
     expect(html).toContain('name="intent" value="add-row"');
     expect(html).toContain('name="intent" value="remove-row-0"');
+  });
+
+  it('forwards caller-restricted region choices without changing native address names', () => {
+    const html = render(CustomerForm, {
+      props: {
+        values: {
+          shippingAddress: { country: 'CA', state: 'BC' },
+        },
+        provinceOptions: [
+          { value: 'BC', label: 'British Columbia authorized' },
+        ],
+      },
+    }).body;
+    expect(html).toMatch(
+      /<select[^>]+name="shippingState"[^>]*>[\s\S]*?<option value="BC" selected/,
+    );
+    expect(html).toContain('British Columbia authorized');
+  });
+
+  it('keeps read-only selector values successful for caller-owned submissions', () => {
+    const html = render(VendorForm, {
+      props: {
+        readOnly: true,
+        values: { identityKind: 'business', name: 'Vendor', currency: 'CAD' },
+      },
+    }).body;
+    expect(html).toMatch(
+      /<select(?=[^>]*name="currency")(?=[^>]*disabled)[^>]*>/,
+    );
+    expect(html).toMatch(
+      /<input(?=[^>]*type="hidden")(?=[^>]*name="currency")(?=[^>]*value="CAD")[^>]*>/,
+    );
   });
 
   it('places the save intent before contact actions for native Enter submission', () => {

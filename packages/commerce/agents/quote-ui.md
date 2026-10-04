@@ -31,6 +31,11 @@ terminology. `extensions` composes pricing-source/allocation fields;
 All fixed component text uses the shared i18n catalog; data/status/date labels
 come from the caller.
 
+Currency uses the shared `CurrencySelect`, localized by the active smrt-ui i18n
+context. Its native name still comes from `names.currency`, and rejected or
+unknown raw strings remain selected for a corrected submission. Pass
+`currencyOptions` only when the caller must restrict the catalog.
+
 Rows submit repeated `lineId`, `lineDescription`, `lineQuantity`, `lineUnitRate`.
 Default submitter `intent` is `save`, `addLine`, or `removeLine:<stable-id>`;
 override via `intents`. Add/remove are ordinary `formnovalidate` POSTs, including

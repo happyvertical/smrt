@@ -62,7 +62,19 @@ const invalidExponentVendor = {
   <section data-testid="vendor-money-invalid-exponent"><VendorDetail vendor={invalidExponentVendor} minorUnitExponent={Number.POSITIVE_INFINITY} /></section>
   <section data-testid="customer-form">
     <CustomerForm
-      values={{ identityKind: 'business', name: 'Retained Client', creditLimit: '1250.0oops', contacts: [{ id: 'contact-1', name: 'Avery' }] }}
+      values={{
+        identityKind: 'business',
+        name: 'Retained Client',
+        creditLimit: '1250.0oops',
+        shippingAddress: {
+          street1: '100 Main Street',
+          city: 'Vancouver',
+          state: 'BC',
+          postalCode: 'V6B 1A1',
+          country: 'CA',
+        },
+        contacts: [{ id: 'contact-1', name: 'Avery' }],
+      }}
       errors={{ form: 'Correct the highlighted values', fields: { creditLimit: 'Enter a currency amount' } }}
       transport={{ action: '/party-submit', hiddenFields: { requestToken: 'request-123', expectedTenantId: 'tenant-9' } }}
       fieldNames={{ name: 'clientName', creditLimit: 'credit_limit' }}
@@ -73,7 +85,7 @@ const invalidExponentVendor = {
   </section>
   <section data-testid="vendor-invalid">
     <VendorForm
-      values={{ identityKind: 'business', name: 'Retained Vendor', leadTimeDays: '7oops', minimumOrder: '500.00', contacts: vendor.contacts }}
+      values={{ identityKind: 'business', name: 'Retained Vendor', leadTimeDays: '7oops', minimumOrder: '500.00', currency: 'CAD', contacts: vendor.contacts }}
       transport={{ action: '/party-submit', hiddenFields: { requestToken: 'vendor-request' } }}
     />
   </section>

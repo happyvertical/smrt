@@ -42,6 +42,21 @@ The caller owns action URLs, server authorization, tenancy checks, request token
 
 Forms use the provider-free `Form`, `Input`, `Select`, `Textarea`, and `Checkbox` controls from `@happyvertical/smrt-ui/forms`. They default to native `POST` submission through `preventDefault={false}`. `transport.hiddenFields`, `transport.intentName`, and the field-name maps let an application preserve its existing payload contract. Repeatable contact rows submit repeated field names in DOM order. Add and remove controls are native submitters, so they work without JavaScript; the server returns the revised rows and retained values.
 
+Customer shipping and billing addresses use the shared `CountrySelect` and
+`ProvinceSelect`. The native names remain `shippingCountry`, `shippingState`,
+`billingCountry`, and `billingState` unless `fieldNames` overrides them. Changing
+country changes the region control without clearing its current string; CA and US
+render localized subdivision choices, while unsupported countries render an
+editable text field. Unknown values remain selectable/postable after a failed
+submission. Use `countryOptions` or `provinceOptions` only when the caller must
+restrict the choices. `VendorForm` has no structured address fields in its public
+DTO and does not invent them.
+
+Vendor currency uses the shared `CurrencySelect`. The raw retained string remains
+the native `currency` payload, including unknown values returned after validation.
+Use `currencyOptions` for caller-authorized restrictions; omitted options use the
+shared currency catalog. Selector labels follow the active smrt-ui i18n locale.
+
 The forms place a non-focusable default save submitter before contact row actions so Enter in a text field cannot accidentally add or remove a contact. This remains in place when the `actions` snippet customizes the visible action bar; set `transport.saveIntent` to the custom save intent.
 
 Use the `extension` snippets for application fields such as construction roles and trades. Keep those fields and their policy in the application:

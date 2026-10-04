@@ -62,6 +62,11 @@ The base form performs native POST by default, with or without JavaScript.
 values or creating/rotating request keys. `canEdit=false` disables fields and
 hides save; server-side authorization and replay enforcement remain mandatory.
 
+Currency uses the shared `CurrencySelect`, localized by the active smrt-ui i18n
+context. It preserves the exact retained draft string and the field name from
+`fields.currency`, including native no-JavaScript correction flows. Pass
+`currencyOptions` only when the caller must restrict the shared currency catalog.
+
 `ExpenseReviewSummary` projects public Expense description, integer minor-unit
 amount, currency and incurredOn, with caller-localized `statusLabel` and `note`.
 `duplicates` and `history` are explicit authorized presentation DTOs, not a
