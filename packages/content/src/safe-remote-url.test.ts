@@ -113,6 +113,20 @@ describe('safe-remote-url SSRF guard', () => {
     expect(isBlockedIPv6('2606:4700:4700::1111')).toBe(false);
   });
 
+  it('rejects deprecated compatible IPv6 even when it embeds public IPv4', async () => {
+    const fetchImpl = vi.fn();
+    for (const address of ['::808:808', '::8.8.8.8', '0:0:0:0:0:0:0808:0808']) {
+      expect(isBlockedIPv6(address), address).toBe(true);
+      await expect(
+        fetchSafeRemoteUrlInternal('https://compatible.example.test/', {
+          fetchImpl,
+          resolveHostname: async () => [{ address, family: 6 }],
+        }),
+      ).rejects.toThrow('public network address');
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('blocks loopback/ULA/link-local/multicast and IPv4-mapped IPv6', () => {
     for (const blocked of [
       '::1',
@@ -211,6 +225,30 @@ describe('safe-remote-url SSRF guard', () => {
         redirect: 'manual',
       }),
     );
+  });
+
+  it('returns bodyless 304 despite a large representation Content-Length', async () => {
+    const headers = { 'content-length': '2000001', etag: '"current"' };
+    const resolveHostname = async () => [
+      { address: '93.184.216.34', family: 4 },
+    ];
+    const result = await fetchSafeRemoteUrlInternal(
+      'https://feed.example.test/',
+      {
+        fetchImpl: async () => new Response(null, { status: 304, headers }),
+        resolveHostname,
+      },
+    );
+    expect(result.status).toBe(304);
+    expect(result.headers).toMatchObject(headers);
+    expect(result.body).toEqual(new Uint8Array());
+    await expect(
+      fetchSafeRemoteUrlInternal('https://feed.example.test/', {
+        fetchImpl: async () =>
+          new Response('too large', { status: 200, headers }),
+        resolveHostname,
+      }),
+    ).rejects.toThrow('exceeds 2000000 bytes');
   });
 
   it('revalidates each redirect target before requesting it', async () => {

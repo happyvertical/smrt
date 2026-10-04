@@ -139,12 +139,12 @@ function expandIPv6(address: string): number[] | null {
 export function isBlockedIPv6(address: string): boolean {
   const hextets = expandIPv6(address);
   if (hextets) {
-    // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d, deprecated)
-    // both embed an IPv4 in the last 2 hextets — decode and apply the IPv4
+    // IPv4-mapped (::ffff:a.b.c.d) addresses embed an IPv4 in the last two
+    // hextets — decode and apply the IPv4
     // blocklist so a loopback/private IPv4 can't be smuggled through any IPv6
     // encoding (compressed, expanded, dotted, or hex) (review #1562, P1).
     const firstFiveZero = hextets.slice(0, 5).every((h) => h === 0);
-    if (firstFiveZero && (hextets[5] === 0xffff || hextets[5] === 0)) {
+    if (firstFiveZero && hextets[5] === 0xffff) {
       const [, , , , , , g6, g7] = hextets;
       const ipv4 = `${g6 >> 8}.${g6 & 0xff}.${g7 >> 8}.${g7 & 0xff}`;
       return isBlockedIPv4(ipv4);
@@ -438,6 +438,9 @@ async function readBoundedResponseBytes(
   response: RemoteResponse,
   maxBytes: number,
 ): Promise<Uint8Array> {
+  // A 304 has no message body; its Content-Length describes the selected
+  // representation, not bytes transferred in this response.
+  if (response.status === 304) return new Uint8Array();
   const contentLength = response.headers.get('content-length');
   if (contentLength && Number(contentLength) > maxBytes) {
     throw new Error(`Remote response exceeds ${maxBytes} bytes`);

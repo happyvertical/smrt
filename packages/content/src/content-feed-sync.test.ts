@@ -76,7 +76,13 @@ describe('syncContentFeedSource', () => {
       etag: '"old"',
       lastModified: 'Sat, 09 May 2026 10:00:00 GMT',
     });
-    const fetch = vi.fn(async () => new Response(null, { status: 304 }));
+    const fetch = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 304,
+          headers: { 'content-length': '2000001' },
+        }),
+    );
     const createSpy = vi.spyOn(Contents, 'create');
 
     const result = await syncContentFeedSource(source, {
