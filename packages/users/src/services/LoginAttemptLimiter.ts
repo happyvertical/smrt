@@ -41,7 +41,9 @@
  * `base × factor^n` seconds (capped), where `n` counts consecutive exhausted
  * budgets with no success in between. A success resets the streak; so does
  * going `streakResetSeconds` without a failure. A success resets only the
- * subject's streak: a shared source keeps its history until it decays.
+ * subject's streak. A shared source keeps its history, shedding one failure
+ * per `sourceStreakDecaySeconds` since its last failure, so spaced-out
+ * mistakes never add up while a burst of guesses still escalates.
  *
  * ## Audit
  *
@@ -108,6 +110,17 @@ export interface LoginAttemptLimiterOptions extends SmrtClassOptions {
    * twice the larger of the window and the lockout ceiling.
    */
   streakResetSeconds?: number;
+  /**
+   * Gradual forgiveness for SOURCE keys, which are shared (a tablet, an
+   * office address) and are not reset by anyone's successful sign-in: one
+   * earlier failure is forgiven for each full interval of this length since
+   * the source's last failure. Ordinary mistakes spaced further apart than
+   * this never accumulate into a lockout of everyone behind the source,
+   * while a burst of guesses still escalates because it leaves no time to
+   * decay. Defaults to twice the window; `0` disables the decay, leaving only
+   * `streakResetSeconds`. Subject keys do not decay: a success resets them.
+   */
+  sourceStreakDecaySeconds?: number;
   /**
    * Audit destination. Omit for the durable default; `false` records nothing.
    */
@@ -239,6 +252,7 @@ export class LoginAttemptLimiter {
   private readonly windowMs: number;
   private readonly lockout: Required<LoginLockoutOptions> | null;
   private readonly streakResetMs: number;
+  private readonly sourceStreakDecayMs: number;
   private attempts!: UsersLoginAttemptCollection;
   private audit: LoginAuditSink | null = null;
 
@@ -266,6 +280,12 @@ export class LoginAttemptLimiter {
       options.streakResetSeconds !== undefined
         ? options.streakResetSeconds * 1000
         : Math.max(this.windowMs, lockoutCeilingMs) * 2;
+    this.sourceStreakDecayMs = Math.max(
+      0,
+      options.sourceStreakDecaySeconds !== undefined
+        ? options.sourceStreakDecaySeconds * 1000
+        : this.windowMs * 2,
+    );
   }
 
   static async create(
@@ -406,6 +426,8 @@ export class LoginAttemptLimiter {
             limiterKey: key.hash,
             maxAttempts: this.maxAttempts,
             retainMs: this.retainMs,
+            streakDecayMs:
+              key.scope === 'source' ? this.sourceStreakDecayMs : 0,
             lockoutMsFor: (n) => this.lockoutMsFor(n),
           });
           if (outcome.lockedUntil) {
@@ -471,8 +493,8 @@ export class LoginAttemptLimiter {
           // A success proves something about the subject only. The source
           // (a shared device or address) keeps its streak, or anyone with
           // one valid credential could zero the backoff that stops them
-          // guessing at everyone else's; it decays by time since the last
-          // failure instead.
+          // guessing at everyone else's; it decays gradually with time since
+          // its last failure instead (`sourceStreakDecaySeconds`).
           resetStreak: resetStreak && key.scope === 'subject',
         });
       } catch {

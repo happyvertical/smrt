@@ -651,8 +651,12 @@ or that completes another `maxAttempts` consecutive failures, however they
 were paced across windows — locks the key for `base × factor^n` seconds, where
 `n` counts consecutive exhausted budgets. A success resets the subject's
 streak only; a shared source (a tablet, an office address) keeps its history,
-so one valid credential cannot clear the backoff on guessing at others. Either
-streak is forgiven after `streakResetSeconds` without a failure. Every decision is
+so one valid credential cannot clear the backoff on guessing at others.
+Instead a source sheds one failure per `sourceStreakDecaySeconds` (default:
+twice the window) since its last failure: mistakes spaced further apart than
+that never add up to locking everyone behind the source, while a burst of
+guesses leaves no time to decay and still escalates. Either streak is forgiven
+outright after `streakResetSeconds` without a failure. Every decision is
 reported to a `LoginAuditSink` — by default a durable `UsersLoginAuditEvent`
 row (pruned after 90 days by the retention sweep), or pass `audit` to forward
 into the host's own log, or `audit: false`. `TerminalAuthService` uses this

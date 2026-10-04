@@ -40,6 +40,13 @@ export interface RecordLoginFailureInput {
   maxAttempts: number;
   /** How long after this write the row must survive the retention sweep. */
   retainMs: number;
+  /**
+   * When positive, one earlier failure is forgiven for each full interval of
+   * this length since the key's last failure, before this one is counted.
+   * Used for shared sources so ordinary, spaced-out mistakes never accumulate
+   * while a burst still escalates.
+   */
+  streakDecayMs?: number;
   /** Returns the lockout length for the n-th consecutive exhausted budget (0-based), or 0 for none. */
   lockoutMsFor: (exhaustedBudgets: number) => number;
 }
@@ -186,18 +193,13 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
   ): Promise<RecordedLoginFailure> {
     const now = new Date();
     const nowIso = now.toISOString();
-    const advanced = await this.db.query(
-      `UPDATE ${this.tableName}
-          SET failure_streak = failure_streak + 1, last_failed_at = ?,
-              retain_until = ?, updated_at = ?
-        WHERE limiter_key = ?
-        RETURNING attempt_count, failure_streak`,
-      nowIso,
-      new Date(now.getTime() + input.retainMs).toISOString(),
-      nowIso,
-      input.limiterKey,
-    );
-    const row = advanced.rows?.[0];
+    const retainUntilIso = new Date(
+      now.getTime() + input.retainMs,
+    ).toISOString();
+    const row =
+      (input.streakDecayMs ?? 0) > 0
+        ? await this.advanceDecayedStreak(input, now, retainUntilIso)
+        : await this.advanceStreak(input.limiterKey, nowIso, retainUntilIso);
     if (!row) return { failureStreak: 0, lockedUntil: null };
 
     const failureStreak = Number(row.failure_streak ?? 0);
@@ -239,6 +241,73 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
       lockedUntil,
     );
     return { failureStreak, lockedUntil };
+  }
+
+  /** Count one more consecutive failure for a key. */
+  private async advanceStreak(
+    limiterKey: string,
+    nowIso: string,
+    retainUntilIso: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const advanced = await this.db.query(
+      `UPDATE ${this.tableName}
+          SET failure_streak = failure_streak + 1, last_failed_at = ?,
+              retain_until = ?, updated_at = ?
+        WHERE limiter_key = ?
+        RETURNING attempt_count, failure_streak`,
+      nowIso,
+      retainUntilIso,
+      nowIso,
+      limiterKey,
+    );
+    return advanced.rows?.[0];
+  }
+
+  /**
+   * Count one more failure after forgiving one earlier failure per full
+   * `streakDecayMs` since the key's last failure. The elapsed time is
+   * computed here rather than in SQL so it is identical on every engine; the
+   * write is a compare-and-set on the streak it was computed from, retried on
+   * a concurrent change and falling back to a plain increment (never to
+   * forgiving more than was read).
+   */
+  private async advanceDecayedStreak(
+    input: RecordLoginFailureInput,
+    now: Date,
+    retainUntilIso: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const nowIso = now.toISOString();
+    const decayMs = input.streakDecayMs as number;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const current = await this.db.query(
+        `SELECT failure_streak, last_failed_at FROM ${this.tableName}
+          WHERE limiter_key = ? LIMIT 1`,
+        input.limiterKey,
+      );
+      const currentRow = current.rows?.[0];
+      if (!currentRow) return undefined;
+      const streak = Number(currentRow.failure_streak ?? 0);
+      const elapsedMs = now.getTime() - toMs(currentRow.last_failed_at);
+      const forgiven =
+        Number.isFinite(elapsedMs) && elapsedMs > 0
+          ? Math.floor(elapsedMs / decayMs)
+          : 0;
+      const advanced = await this.db.query(
+        `UPDATE ${this.tableName}
+            SET failure_streak = ?, last_failed_at = ?, retain_until = ?,
+                updated_at = ?
+          WHERE limiter_key = ? AND failure_streak = ?
+          RETURNING attempt_count, failure_streak`,
+        Math.max(0, streak - forgiven) + 1,
+        nowIso,
+        retainUntilIso,
+        nowIso,
+        input.limiterKey,
+        streak,
+      );
+      if (advanced.rows?.[0]) return advanced.rows[0];
+    }
+    return this.advanceStreak(input.limiterKey, nowIso, retainUntilIso);
   }
 
   /**

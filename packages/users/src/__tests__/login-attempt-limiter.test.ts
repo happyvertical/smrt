@@ -303,6 +303,7 @@ describe('LoginAttemptLimiter', () => {
       windowSeconds: 10,
       lockout: { baseSeconds: 30, factor: 2, maxSeconds: 1000 },
       streakResetSeconds: 600,
+      sourceStreakDecaySeconds: 600,
     });
     let victim = 0;
     const guess = async () =>
@@ -343,6 +344,76 @@ describe('LoginAttemptLimiter', () => {
     }
     await guess();
     expect((await guess()).retryAfterSeconds).toBe(30);
+  });
+
+  it('sheds a shared source’s failures gradually, so spaced-out typos never lock it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+    const limiter = await LoginAttemptLimiter.create({
+      ...options,
+      audit: false,
+      maxAttempts: 3,
+      windowSeconds: 60,
+      lockout: { baseSeconds: 30, factor: 2, maxSeconds: 1000 },
+      streakResetSeconds: 100_000,
+      sourceStreakDecaySeconds: 120,
+    });
+    let person = 0;
+    const typo = async () =>
+      expectAllowed(
+        await limiter.reserve({
+          kind: 'pin',
+          subject: `person-${person++}`,
+          source: 'tablet-1',
+        }),
+      ).fail();
+
+    // A typo every five minutes, all day, on a tablet that never goes quiet
+    // for the full streak horizon: each gap forgives the previous one.
+    for (let i = 0; i < 12; i++) {
+      expect((await typo()).lockedOut).toBe(false);
+      vi.advanceTimersByTime(300_000);
+    }
+
+    // A burst leaves no time to decay: it locks, and keeps escalating.
+    await typo();
+    await typo();
+    const first = await typo();
+    expect(first.lockedOut).toBe(true);
+    expect(first.retryAfterSeconds).toBe(30);
+    vi.advanceTimersByTime(31_000);
+    await typo();
+    await typo();
+    expect((await typo()).retryAfterSeconds).toBe(60);
+
+    // Partial decay: four minutes forgives two of the six, not all of them.
+    vi.advanceTimersByTime(240_000);
+    await typo();
+    expect((await typo()).retryAfterSeconds).toBe(60);
+  });
+
+  it('does not decay a subject’s streak, and honours a disabled source decay', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+    const limiter = await LoginAttemptLimiter.create({
+      ...options,
+      audit: false,
+      maxAttempts: 3,
+      windowSeconds: 10,
+      lockout: { baseSeconds: 30, factor: 2, maxSeconds: 1000 },
+      streakResetSeconds: 100_000,
+      sourceStreakDecaySeconds: 0,
+    });
+    for (const key of [{ subject: 'victim' }, { source: 'tablet-1' }]) {
+      const fail = async () =>
+        expectAllowed(await limiter.reserve({ kind: 'pin', ...key })).fail();
+      await fail();
+      vi.advanceTimersByTime(300_000);
+      await fail();
+      vi.advanceTimersByTime(300_000);
+      // The third failure, however far apart, completes the streak.
+      expect((await fail()).lockedOut).toBe(true);
+    }
   });
 
   it('makes an applied lockout the sole gate: once it elapses the window rolls', async () => {
