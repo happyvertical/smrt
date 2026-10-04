@@ -137,7 +137,7 @@ export interface ExpenseReviewPanelProps {
   receipts?: AttachmentPanelProps;
   /** Explicitly enable caller-supplied review actions. */
   canReview?: boolean;
-  /** Authorized review endpoint, required to render action form. */
+  /** Authorized review endpoint; empty posts to this page, undefined hides actions. */
   action?: string;
   /** Caller-defined review actions; no status-derived actions. */
   actions?: readonly ExpenseReviewAction[];

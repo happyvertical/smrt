@@ -5,9 +5,10 @@ export default defineConfig({
     name: 'expense-native-proof',
     configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
-        if (request.url !== '/native' && request.url !== '/save') return next();
+        const review = request.url === '/native-review' || (request.url === '/e2e/index.html?review=1' && request.method === 'POST');
+        if (!review && request.url !== '/native' && request.url !== '/save') return next();
         try {
-          const { page } = await server.ssrLoadModule('/e2e/ssr.ts');
+          const { page, reviewPage } = await server.ssrLoadModule('/e2e/ssr.ts');
           let props = {};
           if (request.method === 'POST') {
             const chunks: Buffer[] = [];
@@ -16,7 +17,7 @@ export default defineConfig({
             props = { values: Object.fromEntries(data), message: 'Expense denied; entries retained', errors: { amount: 'Check amount' }, hiddenFields: ['requestId', 'tenantId', 'predecessorId'].map(name => ({ name, value: data.get(name) ?? '' })) };
             response.statusCode = 422;
           }
-          response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(page(props));
+          response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(review ? await reviewPage(request.method === 'POST' ? 'Review denied; request retained' : '') : page(props));
         } catch (error) { next(error as Error); }
       });
     },

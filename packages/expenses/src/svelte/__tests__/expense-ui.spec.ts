@@ -126,6 +126,43 @@ describe('Expenses native UI contracts', () => {
     expect(body).toContain('href="/authorized/receipt"');
     expect(body).not.toContain('value="approve"');
   });
+  it('supports same-page review while preserving explicit capability, endpoint and action gates', () => {
+    const props = {
+      expense: {
+        description: 'Materials',
+        amount: 0,
+        currency: 'CAD',
+        incurredOn: '',
+        statusLabel: 'Unreviewed',
+      },
+      canReview: true,
+      action: '',
+      actions: [{ intent: 'approve', label: 'Approve expense' }],
+      hiddenFields: [{ name: 'requestId', value: 'same-review' }],
+    };
+    const body = render(ExpenseReviewPanel, { props }).body;
+    expect(body).toContain('action=""');
+    expect(body).toContain('method="post"');
+    expect(body).toContain('name="intent" value="approve"');
+    expect(body).toContain('value="same-review"');
+    for (const overrides of [
+      { action: undefined },
+      { canReview: false },
+      { actions: [] },
+    ]) {
+      expect(
+        render(ExpenseReviewPanel, { props: { ...props, ...overrides } }).body,
+      ).not.toContain('<form');
+    }
+    expect(
+      render(ExpenseReviewPanel, { props: { ...props, pending: true } }).body,
+    ).toMatch(/<button[^>]*disabled/);
+    expect(
+      render(ExpenseReviewPanel, {
+        props: { ...props, actions: [{ ...props.actions[0], disabled: true }] },
+      }).body,
+    ).toMatch(/<button[^>]*disabled/);
+  });
   it('only renders caller-supplied review actions with exact request identity', () => {
     const body = render(ExpenseReviewPanel, {
       props: {

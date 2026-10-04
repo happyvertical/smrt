@@ -24,3 +24,23 @@ for (const javaScriptEnabled of [true, false]) {
     await context.close();
   });
 }
+
+for (const javaScriptEnabled of [true, false]) {
+  test(`empty review action posts to the current page with JavaScript=${javaScriptEnabled}`, async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled });
+    const page = await context.newPage();
+    const url = `http://127.0.0.1:5589/${javaScriptEnabled ? 'e2e/index.html?review=1' : 'native-review'}`;
+    await page.goto(url);
+    await expect(page.locator('form')).toHaveAttribute('action', '');
+    const sent = page.waitForRequest(request => request.url() === url && request.method() === 'POST');
+    await page.getByRole('button', { name: 'Reject expense' }).click();
+    const data = new URLSearchParams((await sent).postData() ?? '');
+    expect(data.get('intent')).toBe('reject');
+    expect(data.get('requestId')).toBe('same-review');
+    expect(data.get('tenantId')).toBe('same-tenant');
+    await expect(page.getByText('Review denied; request retained')).toBeVisible();
+    await expect(page.locator('[name=requestId]')).toHaveValue('same-review');
+    expect(page.url()).toBe(url);
+    await context.close();
+  });
+}

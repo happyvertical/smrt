@@ -68,7 +68,8 @@ amount, currency and incurredOn, with caller-localized `statusLabel` and `note`.
 parallel ledger. The server supplies findings from ExpenseReceipt duplicate
 queries and application history. Unknown labels render verbatim. No state or
 action is inferred: `canReview`, `action`, `actions` and hidden fingerprints
-explicitly provide a native review form; `children` can supply retained reason
+explicitly provide a native review form. `action=""` posts to the current page;
+omitting `action` hides the review form; `children` can supply retained reason
 or duplicate-selection inputs. A server must reauthorize, reload the model and
 invoke `review()`, `reject()`, `markDuplicate()` or `reopen()` under its policy.
 Never assign review fields through UI payload binding. Reviewed money remains

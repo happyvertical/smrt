@@ -41,7 +41,7 @@ const { t } = useI18n();
     {#if history.length === 0}<p>{t(M['expenses.review.no_history'])}</p>{/if}
     <ol>{#each history as entry (entry.id)}<li><strong>{entry.label}</strong>{#if entry.detail}<p>{entry.detail}</p>{/if}</li>{/each}</ol>
   </section>
-  {#if canReview && action && actions.length}
+  {#if canReview && action !== undefined && actions.length}
     <Form {action} method="post" preventDefault={false} {onsubmit} aria-busy={pending}>
       {#each hiddenFields as field}<Input type="hidden" name={field.name} value={field.value} interaction={false} />{/each}
       {@render children?.()}
