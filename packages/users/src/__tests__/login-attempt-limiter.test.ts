@@ -293,35 +293,56 @@ describe('LoginAttemptLimiter', () => {
     expect((await failOnce()).retryAfterSeconds).toBe(60);
   });
 
-  it('keeps a namespaced limiter’s budget apart from other limiters on the same table', async () => {
-    const shared = await LoginAttemptLimiter.create({
+  it('keeps a shared source’s backoff when someone signs in successfully', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+    const limiter = await LoginAttemptLimiter.create({
       ...options,
       audit: false,
-      maxAttempts: 1,
-      windowSeconds: 60,
+      maxAttempts: 2,
+      windowSeconds: 10,
+      lockout: { baseSeconds: 30, factor: 2, maxSeconds: 1000 },
+      streakResetSeconds: 600,
     });
-    const namespaced = await LoginAttemptLimiter.create({
-      ...options,
-      audit: false,
-      keyNamespace: 'terminal-approve',
-      lockout: false,
-      maxAttempts: 1,
-      windowSeconds: 60,
-    });
-    expect(namespaced.hashKey('subject', 'u')).not.toBe(
-      shared.hashKey('subject', 'u'),
-    );
+    let victim = 0;
+    const guess = async () =>
+      expectAllowed(
+        await limiter.reserve({
+          kind: 'pin',
+          subject: `victim-${victim++}`,
+          source: 'tablet-1',
+        }),
+      ).fail();
+
+    await guess();
+    expect((await guess()).retryAfterSeconds).toBe(30);
+    vi.advanceTimersByTime(31_000);
+
+    // An insider's own valid sign-in resets their subject, not the tablet.
     await expectAllowed(
-      await shared.reserve({ kind: 'pin', subject: 'u' }),
-    ).fail();
-    expect((await shared.reserve({ kind: 'pin', subject: 'u' })).allowed).toBe(
-      false,
-    );
-    // The other policy's budget for the same subject is untouched.
-    expect(
-      (await namespaced.reserve({ kind: 'terminal-approve', subject: 'u' }))
-        .allowed,
-    ).toBe(true);
+      await limiter.reserve({
+        kind: 'pin',
+        subject: 'insider',
+        source: 'tablet-1',
+      }),
+    ).succeed();
+    await guess();
+    expect((await guess()).retryAfterSeconds).toBe(60);
+
+    // The tablet's history decays by time since its last failure, even
+    // though it stays in use the whole time.
+    for (let i = 0; i < 7; i++) {
+      vi.advanceTimersByTime(100_000);
+      await expectAllowed(
+        await limiter.reserve({
+          kind: 'pin',
+          subject: 'insider',
+          source: 'tablet-1',
+        }),
+      ).succeed();
+    }
+    await guess();
+    expect((await guess()).retryAfterSeconds).toBe(30);
   });
 
   it('makes an applied lockout the sole gate: once it elapses the window rolls', async () => {

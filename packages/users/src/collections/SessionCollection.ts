@@ -7,6 +7,7 @@ import { SmrtCollection } from '@happyvertical/smrt-core';
 import {
   DEFAULT_SESSION_TTL,
   generateSessionId,
+  resolveSessionExpiry,
   Session,
   type SessionAuthMethod,
 } from '../models/Session.js';
@@ -75,6 +76,8 @@ export class SessionCollection extends SmrtCollection<Session> {
       userId: options.userId,
       tenantId: options.tenantId ?? null,
       status: SessionStatus.ACTIVE,
+      // One write, already bounded by any absolute cap in `data`.
+      expiresAt: resolveSessionExpiry(ttl, options.data),
       userAgent: options.userAgent ?? '',
       ipAddress: options.ipAddress ?? '',
       lastAccessedAt: new Date(),
@@ -82,9 +85,6 @@ export class SessionCollection extends SmrtCollection<Session> {
       authMethod: options.authMethod ?? null,
       parentSessionId: options.parentSessionId ?? null,
     });
-    // Through extend() so an absolute cap in `data` bounds the first expiry too.
-    session.extend(ttl);
-
     await session.save();
     return session;
   }

@@ -26,8 +26,9 @@ export interface ReserveLoginAttemptInput {
   maxAttempts: number;
   windowMs: number;
   /**
-   * A row idle for longer than this has its failure streak forgiven on the
-   * next reservation, so an old lockout history does not haunt a key forever.
+   * A key whose last failure is older than this has its failure streak
+   * forgiven on the next reservation, so an old lockout history does not
+   * haunt a key forever.
    */
   streakResetMs: number;
   /** How long after this write the row must survive the retention sweep. */
@@ -36,7 +37,6 @@ export interface ReserveLoginAttemptInput {
 
 export interface RecordLoginFailureInput {
   limiterKey: string;
-  windowStartedAt: string;
   maxAttempts: number;
   /** How long after this write the row must survive the retention sweep. */
   retainMs: number;
@@ -109,7 +109,8 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
            ELSE ${table}.window_started_at
          END,
          failure_streak = CASE
-           WHEN ${table}.updated_at <= ? THEN 0
+           WHEN ${table}.last_failed_at IS NULL
+             OR ${table}.last_failed_at <= ? THEN 0
            ELSE ${table}.failure_streak
          END,
          locked_until = NULL,
@@ -176,7 +177,8 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
   /**
    * Record that a reserved attempt failed authentication. The reservation is
    * kept (it already counts against the window); the streak advances, and if
-   * this failure exhausted the budget the key is locked for the backoff the
+   * this failure exhausted the window's budget or completed another
+   * `maxAttempts` consecutive failures the key is locked for the backoff the
    * caller computes from how many budgets in a row have been exhausted.
    */
   async recordFailure(
@@ -186,10 +188,11 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
     const nowIso = now.toISOString();
     const advanced = await this.db.query(
       `UPDATE ${this.tableName}
-          SET failure_streak = failure_streak + 1, retain_until = ?,
-              updated_at = ?
+          SET failure_streak = failure_streak + 1, last_failed_at = ?,
+              retain_until = ?, updated_at = ?
         WHERE limiter_key = ?
         RETURNING attempt_count, failure_streak`,
+      nowIso,
       new Date(now.getTime() + input.retainMs).toISOString(),
       nowIso,
       input.limiterKey,
@@ -220,15 +223,19 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
 
     const lockedUntil = new Date(Date.now() + lockoutMs).toISOString();
     // Only ever lengthen a lockout; a concurrent failure that computed a
-    // longer one must not be shortened by this write.
+    // longer one must not be shortened by this write. The streak guard ties
+    // the lock to the state it was computed from: a success that reset the
+    // streak in between must not be followed by this lock.
     await this.db.query(
       `UPDATE ${this.tableName}
           SET locked_until = ?, updated_at = ?
         WHERE limiter_key = ?
+          AND failure_streak >= ?
           AND (locked_until IS NULL OR locked_until < ?)`,
       lockedUntil,
       nowIso,
       input.limiterKey,
+      failureStreak,
       lockedUntil,
     );
     return { failureStreak, lockedUntil };

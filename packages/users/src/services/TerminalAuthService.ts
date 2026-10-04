@@ -201,9 +201,6 @@ export class TerminalAuthService {
       (await LoginAttemptLimiter.create({
         ...this.options,
         audit: this.options.loginAudit,
-        // A private policy (fixed window, no lockout) must not share rows
-        // with limiters that key the same user id under another policy.
-        keyNamespace: TERMINAL_APPROVE_LOGIN_KIND,
         lockout: false,
         maxAttempts: this.maxApproveAttempts,
         windowSeconds: this.approveAttemptWindowMs / 1000,
@@ -329,7 +326,11 @@ export class TerminalAuthService {
       // The reservation is only kept for attempts that fail the code check.
       const lease = await this.loginLimiter.reserve({
         kind: TERMINAL_APPROVE_LOGIN_KIND,
-        subject: userId,
+        // Prefixed so this budget never pools with the same person's PIN
+        // or password budget, whichever limiter instance is in use: wrong
+        // PINs typed at a tablet must not refuse their terminal approvals,
+        // and an approval must not clear a PIN backoff.
+        subject: `${TERMINAL_APPROVE_LOGIN_KIND}:${userId}`,
       });
       if (!lease.allowed) {
         throw new TerminalAuthRateLimitError(

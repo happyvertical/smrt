@@ -649,14 +649,16 @@ attempt, and a refusal on the source hands the subject reservation back so one
 noisy address cannot burn every account. The failure that exhausts a window —
 or that completes another `maxAttempts` consecutive failures, however they
 were paced across windows — locks the key for `base × factor^n` seconds, where
-`n` counts consecutive exhausted budgets; a success or idle time resets the
-streak. Every decision is
+`n` counts consecutive exhausted budgets. A success resets the subject's
+streak only; a shared source (a tablet, an office address) keeps its history,
+so one valid credential cannot clear the backoff on guessing at others. Either
+streak is forgiven after `streakResetSeconds` without a failure. Every decision is
 reported to a `LoginAuditSink` — by default a durable `UsersLoginAuditEvent`
 row (pruned after 90 days by the retention sweep), or pass `audit` to forward
 into the host's own log, or `audit: false`. `TerminalAuthService` uses this
-limiter for approvals, keyed on the approving user only and in its own key
-namespace (`keyNamespace`) so its fixed-window policy never shares a row with
-another limiter; pass `loginLimiter` to share one instance.
+limiter for approvals, keyed on the approving user only under its own subject
+prefix, so that budget never pools with the same person's PIN or password
+budget; pass `loginLimiter` to share one instance and audit sink.
 
 ### Per-person PIN on an enrolled device
 
@@ -750,7 +752,11 @@ un-enrols the device. `assertEnrolledDevice` returning `false` is un-enrolment
 one per person across tenants, so PIN administration (`users.pin.manage`)
 reaches only people whose every active membership is in the administrator's
 session tenant; people who belong to several tenants manage their own PIN from
-a first-class session. Any PIN change ends the sessions minted under the old
+a first-class session. `users.pin.manage` is impersonation-equivalent on
+enrolled devices — whoever sets a person's PIN can sign in as them there, and
+the membership rule is checked when the PIN is written, not when the person
+later joins another tenant — so grant it like an owner-level permission; every
+administrative change is audited with the actor's id. Any PIN change ends the sessions minted under the old
 PIN (a person changing their own keeps the session they changed it from).
 
 Existing installations need `smrt db:migrate` for the additive

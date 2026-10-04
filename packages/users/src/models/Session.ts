@@ -63,6 +63,24 @@ export const SESSION_DATA_KEYS = {
 } as const;
 
 /**
+ * Expiry for a session minted or extended now: `ttlSeconds` ahead, bounded by
+ * an absolute cap in `data` (an unreadable cap fails closed as already past).
+ */
+export function resolveSessionExpiry(
+  ttlSeconds: number,
+  data: Record<string, unknown> | undefined,
+): Date {
+  const next = Date.now() + ttlSeconds * 1000;
+  const raw = data?.[SESSION_DATA_KEYS.absoluteExpiresAt];
+  if (raw === undefined || raw === null) return new Date(next);
+  const cap =
+    typeof raw === 'string' || typeof raw === 'number'
+      ? new Date(raw).getTime()
+      : Number.NaN;
+  return new Date(Number.isNaN(cap) ? 0 : Math.min(next, cap));
+}
+
+/**
  * Generate a cryptographically secure session ID
  */
 export function generateSessionId(): string {
@@ -282,11 +300,9 @@ export class Session extends SmrtObject {
    * Extend the session expiration by the given TTL (in seconds)
    */
   extend(ttlSeconds: number = DEFAULT_SESSION_TTL): void {
-    const next = Date.now() + ttlSeconds * 1000;
     // Activity never pushes expiry past the absolute cap, so every expiry
     // consumer (validity, the EXPIRED transition, retention) honours it.
-    const cap = this.getAbsoluteExpiry();
-    this.expiresAt = new Date(cap ? Math.min(next, cap.getTime()) : next);
+    this.expiresAt = resolveSessionExpiry(ttlSeconds, this.data);
     this.touch();
   }
 

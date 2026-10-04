@@ -58,7 +58,9 @@
  */
 
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createLogger } from '@happyvertical/logger';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { UsersPinCredentialCollection } from '../collections/PinCredentialCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
@@ -79,6 +81,8 @@ import {
   registerPermissionDefinitions,
 } from './PermissionCatalogService.js';
 import { type SessionContext, SessionService } from './SessionService.js';
+
+const logger = createLogger({ level: 'info' });
 
 /** Default idle timeout of a per-person device session (8 hours — a shift). */
 export const DEFAULT_DEVICE_PERSON_IDLE_SECONDS = 8 * 60 * 60;
@@ -517,6 +521,11 @@ export class DeviceCredentialService {
         ...this.options,
         ...this.options.limiter,
       }));
+    if (!this.pinPolicy.pepper) {
+      logger.warn(
+        'DeviceCredentialService: no pin.pepper configured. PIN hashes are only as strong as scrypt over a 4-8 digit space if the table leaks; set a server-side pepper in production.',
+      );
+    }
     // The dummy hash is derived once per service so a missing credential
     // costs the same scrypt call as a present one.
     const dummy = await hashPin(
@@ -967,11 +976,17 @@ export class DeviceCredentialService {
     // tenant-B device, or sign the person out there. People who belong to
     // several tenants manage their own PIN. Unknown, malformed and foreign
     // targets are refused alike.
+    // Read outside any ambient tenant filter, like the permission resolver:
+    // a host that registers Membership tenant-scoped would otherwise narrow
+    // this to the actor's tenant and hide exactly the rows being checked.
+    // Keyed by the explicit target id; only a yes/no leaves this method.
     const active =
       actor.tenantId && UUID_PATTERN.test(targetUserId)
-        ? (await this.memberships.findByUser(targetUserId)).filter(
-            (membership) => membership.isActive(),
-          )
+        ? (
+            await withSystemContext(() =>
+              this.memberships.findByUser(targetUserId),
+            )
+          ).filter((membership) => membership.isActive())
         : [];
     if (
       active.length === 0 ||

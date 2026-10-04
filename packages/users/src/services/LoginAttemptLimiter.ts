@@ -40,7 +40,8 @@
  * failures, however they were paced across windows — locks the key for
  * `base × factor^n` seconds (capped), where `n` counts consecutive exhausted
  * budgets with no success in between. A success resets the streak; so does
- * leaving the key idle.
+ * going `streakResetSeconds` without a failure. A success resets only the
+ * subject's streak: a shared source keeps its history until it decays.
  *
  * ## Audit
  *
@@ -103,7 +104,7 @@ export interface LoginAttemptLimiterOptions extends SmrtClassOptions {
    */
   lockout?: LoginLockoutOptions | false;
   /**
-   * Idle time after which a key's failure streak is forgiven. Defaults to
+   * Time since a key's last failure after which its streak is forgiven. Defaults to
    * twice the larger of the window and the lockout ceiling.
    */
   streakResetSeconds?: number;
@@ -116,18 +117,14 @@ export interface LoginAttemptLimiterOptions extends SmrtClassOptions {
    * joined against a list of known emails or IPs by brute force.
    */
   keyPepper?: string;
-  /**
-   * Isolates this limiter's keys from other limiters on the same table.
-   * Limiters that should share one budget per subject (password, passkey,
-   * PIN) leave it unset and share an instance or configuration; a limiter
-   * with a different window/lockout policy sets it so the two policies never
-   * write the same row.
-   */
-  keyNamespace?: string;
 }
 
 export interface ReserveLoginAttemptOptions {
-  /** Credential kind, for audit only. Keys are shared across kinds on purpose. */
+  /**
+   * Credential kind, for audit only. Keys are shared across kinds on purpose
+   * (password, passkey and PIN for one person are one budget); a flow that
+   * must not pool with the others prefixes its own subject.
+   */
   kind: string;
   /** Identifier the client submitted (email key, user id, tag hash). */
   subject?: string | null;
@@ -299,9 +296,7 @@ export class LoginAttemptLimiter {
   hashKey(scope: LoginAttemptScope, raw: string): string {
     return createHash('sha256')
       .update(
-        `${this.options.keyPepper ?? ''}\u0000${
-          this.options.keyNamespace ? `${this.options.keyNamespace}\u0000` : ''
-        }${scope}:${normalizeKey(scope, raw)}`,
+        `${this.options.keyPepper ?? ''}\u0000${scope}:${normalizeKey(scope, raw)}`,
       )
       .digest('hex');
   }
@@ -409,7 +404,6 @@ export class LoginAttemptLimiter {
         for (const key of reserved) {
           const outcome = await this.attempts.recordFailure({
             limiterKey: key.hash,
-            windowStartedAt: key.windowStartedAt,
             maxAttempts: this.maxAttempts,
             retainMs: this.retainMs,
             lockoutMsFor: (n) => this.lockoutMsFor(n),
@@ -474,7 +468,12 @@ export class LoginAttemptLimiter {
     for (const key of keys) {
       try {
         await this.attempts.releaseAttempt(key.hash, key.windowStartedAt, {
-          resetStreak,
+          // A success proves something about the subject only. The source
+          // (a shared device or address) keeps its streak, or anyone with
+          // one valid credential could zero the backoff that stops them
+          // guessing at everyone else's; it decays by time since the last
+          // failure instead.
+          resetStreak: resetStreak && key.scope === 'subject',
         });
       } catch {
         // Reservations are fail-closed and expire with their window. A

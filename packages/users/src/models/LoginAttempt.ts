@@ -64,6 +64,15 @@ export class UsersLoginAttempt extends SmrtObject {
   lockedUntil: Date | null = null;
 
   /**
+   * When this key last failed. The streak is forgiven once this is older
+   * than the limiter's streak horizon — measured from the last FAILURE, not
+   * the last activity, so a busy shared source (a tablet, an office address)
+   * still sheds old failures while it keeps being used.
+   */
+  @field({ type: 'datetime', nullable: true })
+  lastFailedAt: Date | null = null;
+
+  /**
    * When the limiter that last wrote this row stops reasoning about it (its
    * own window and streak-forgiveness horizon). The retention sweep deletes
    * only rows past this, so it honours each limiter's configuration rather
