@@ -1,5 +1,6 @@
 /** Exact fractional invoice persistence and explicit legacy-column migration on supported engines. */
 
+import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
@@ -99,6 +100,68 @@ describe('invoice quantity arithmetic and validation', () => {
   });
 });
 
+/** Each PostgreSQL test owns a unique schema, including all DDL and committed writes. */
+async function createInvoiceTestDatabase(
+  engine: InvoiceEditorStorageEngine,
+  classes: string[],
+): Promise<{ db: DatabaseInterface; cleanup: () => Promise<void> }> {
+  if (engine !== 'postgres') {
+    const db = await getTestDatabase({
+      type: engine,
+      url: ':memory:',
+      classes,
+    });
+    return {
+      db,
+      cleanup: async () => {
+        await db.close?.();
+      },
+    };
+  }
+  const baseUrl = process.env.DATABASE_URL;
+  if (!baseUrl)
+    throw new Error('PostgreSQL invoice tests require DATABASE_URL.');
+  const admin = await getTestDatabase({
+    type: 'postgres',
+    url: baseUrl,
+    classes: [],
+  });
+  const schema = `invoice_quantity_${randomUUID().replaceAll('-', '')}`;
+  let db: DatabaseInterface | undefined;
+  const cleanup = async () => {
+    try {
+      await db?.close?.();
+    } finally {
+      try {
+        await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      } finally {
+        await admin.close?.();
+      }
+    }
+  };
+  try {
+    await admin.query(`CREATE SCHEMA "${schema}"`);
+    const url = new URL(baseUrl);
+    const options = url.searchParams.get('options');
+    url.searchParams.set(
+      'options',
+      `${options ? `${options} ` : ''}-c search_path=${schema}`,
+    );
+    db = await getTestDatabase({
+      type: 'postgres',
+      url: url.toString(),
+      classes,
+    });
+    expect(
+      (await db.query('SELECT current_schema() AS name')).rows[0].name,
+    ).toBe(schema);
+    return { db, cleanup };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
+}
+
 const engines: InvoiceEditorStorageEngine[] = [
   'sqlite',
   'duckdb',
@@ -108,25 +171,25 @@ for (const engine of engines) {
   if (engine !== 'duckdb')
     describe(`invoice fractional persistence on ${engine}`, () => {
       let db: DatabaseInterface | undefined;
+      let cleanup: (() => Promise<void>) | undefined;
       afterEach(async () => {
-        await db?.close?.();
+        await cleanup?.();
         db = undefined;
+        cleanup = undefined;
       });
       it('roundtrips fractional quantity and editor modes, ignores forged amount and clears stale draft', async () => {
-        db = await getTestDatabase({
-          type: engine,
-          url: engine === 'postgres' ? process.env.DATABASE_URL! : ':memory:',
-          classes: [
-            'Customer',
-            'Vendor',
-            'Contract',
-            'ContractLineItem',
-            'Invoice',
-            'InvoiceLineItem',
-            'Payment',
-            'PaymentAllocation',
-          ],
-        });
+        const isolated = await createInvoiceTestDatabase(engine, [
+          'Customer',
+          'Vendor',
+          'Contract',
+          'ContractLineItem',
+          'Invoice',
+          'InvoiceLineItem',
+          'Payment',
+          'PaymentAllocation',
+        ]);
+        db = isolated.db;
+        cleanup = isolated.cleanup;
         const invoices = await InvoiceCollection.create({ db });
         const invoice = await invoices.create({ invoiceNumber: 'FRACTIONAL' });
         const lines = await InvoiceLineItemCollection.create({ db });
@@ -158,18 +221,16 @@ for (const engine of engines) {
     });
   describe(`legacy quantity migration on ${engine}`, () => {
     let db: DatabaseInterface | undefined;
+    let cleanup: (() => Promise<void>) | undefined;
     afterEach(async () => {
-      await db?.close?.();
+      await cleanup?.();
       db = undefined;
+      cleanup = undefined;
     });
     async function setup(type = 'INTEGER') {
-      db = await getTestDatabase({
-        classes: [],
-        type: engine,
-        url: engine === 'postgres' ? process.env.DATABASE_URL! : ':memory:',
-      });
-      if (engine === 'postgres')
-        await db.query('DROP TABLE IF EXISTS invoice_line_items CASCADE');
+      const isolated = await createInvoiceTestDatabase(engine, []);
+      db = isolated.db;
+      cleanup = isolated.cleanup;
       await db.query(
         `CREATE TABLE invoice_line_items (id VARCHAR PRIMARY KEY, quantity ${type})`,
       );
