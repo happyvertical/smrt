@@ -204,6 +204,12 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
       });
 
       it('preserves PostgreSQL rollback and SQLite convergent retry after source failure', async () => {
+        const hidden = await facts.reconcile({
+          rawInput: 'Retry assertion',
+          tenantId,
+          accessScope: 'private',
+          source: { sourceTitle: 'private memo' },
+        });
         const create = vi
           .spyOn(FactSourceCollection.prototype, 'create')
           .mockRejectedValueOnce(new Error('source failure'));
@@ -225,6 +231,18 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
         expect(
           await facts.list({ where: { tenantId, accessScope: 'public' } }),
         ).toHaveLength(1);
+        expect(result.fact.id).not.toBe(hidden.fact.id);
+        const sources = await FactSourceCollection.create({ db });
+        expect(
+          (await sources.list({ where: { factId: hidden.fact.id } })).map(
+            (source) => source.sourceTitle,
+          ),
+        ).toEqual(['private memo']);
+        expect(
+          (await sources.list({ where: { factId: result.fact.id } })).map(
+            (source) => source.sourceTitle,
+          ),
+        ).toEqual(['minutes']);
       });
 
       it('respects active tenant context and rejects foreign tenant requests', async () => {
@@ -304,6 +322,16 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
           );
           expect(additions).toHaveLength(1);
           await db.query(additions[0]);
+          const repeated = await generateSchemaDiff(
+            db,
+            { [tableName]: expected },
+            { engineHint: dialect },
+          );
+          expect(
+            getSQLFromDiff(repeated).filter((sql) =>
+              /ADD COLUMN.*access_scope/i.test(sql),
+            ),
+          ).toEqual([]);
           const { rows } = await db.query(
             `SELECT text_refined, access_scope FROM ${tableName}`,
           );

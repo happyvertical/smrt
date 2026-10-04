@@ -273,7 +273,7 @@ The nullable `Fact.accessScope` column leaves existing rows unclassified.
 Omitting `accessScope` (or passing `null`) searches only this legacy NULL
 partition; explicit scopes never include legacy rows. No migration guesses
 visibility from provenance metadata. Classify legacy facts only through an
-owner-authorized data migration, or leave them separate and re-extract into the
+owner-authorized data migration with reconciliation writers stopped, or leave them separate and re-extract into the
 appropriate scope. A scope change is not an ordinary reconciliation operation.
 
 PostgreSQL reconciliation retains its transactional fact/source write and
