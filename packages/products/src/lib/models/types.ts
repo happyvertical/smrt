@@ -14,6 +14,9 @@
  *
  * - {@link ProductType.PRODUCT} — plain catalog item (base)
  * - {@link ProductType.MATERIAL} — raw input consumed by manufacturing
+ * - {@link ProductType.ASSEMBLY} — an item that is made from a bill of
+ *   materials; the `Assembly` subtype itself lives in
+ *   `@happyvertical/smrt-manufacturing`
  *
  * The axis-declaration concept ("this product varies along `size` with
  * values `[XS, S, M, L, XL]`") is NOT a Product STI subtype — it lives in
@@ -28,6 +31,11 @@ export enum ProductType {
   PRODUCT = 'product',
   /** A raw input — fabric, trim, packaging, etc. — consumed by manufacturing. */
   MATERIAL = 'material',
+  /**
+   * An item that is made: the `Assembly` subtype in
+   * `@happyvertical/smrt-manufacturing`, built from its bill of materials.
+   */
+  ASSEMBLY = 'assembly',
 }
 
 /**
