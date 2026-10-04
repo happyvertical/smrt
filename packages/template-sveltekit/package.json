@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-template-sveltekit",
-  "version": "0.53.6",
+  "version": "0.54.0",
   "description": "Minimal SvelteKit project template with s-m-r-t framework integration",
   "type": "module",
   "main": "index.js",

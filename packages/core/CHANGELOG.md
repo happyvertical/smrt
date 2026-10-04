@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.54.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - rebuild AssemblyForm on smrt-ui and drop smrt-fields (#3493) (manufacturing)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.54.0
+  - @happyvertical/smrt-scanner@0.54.0
+  - @happyvertical/smrt-types@0.54.0
+
 ## 0.53.6
 
 ### Patch Changes
