@@ -69,6 +69,15 @@ describe('parseICalendarEvents', () => {
       ),
     ).toThrow('VEVENT UID is required');
   });
+  it('accepts RFC 5545 all-day DATE values', () => {
+    expect(
+      parseICalendarEvents(
+        'town',
+        'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:day\r\nDTSTART;VALUE=DATE:20261005\r\nDTEND;VALUE=DATE:20261006\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n',
+      )[0].allDay,
+    ).toBe(true);
+  });
+
   it('does not infer a source policy for floating DTSTART values', () => {
     expect(() =>
       parseICalendarEvents(

@@ -5,10 +5,14 @@ import { describe, expect, it } from 'vitest';
 import { EventCollection } from '../collections/EventCollection.js';
 import { syncICalendarSource } from './sync.js';
 
-const ics = (sequence: number, status = 'CONFIRMED') => `BEGIN:VCALENDAR\r
+const ics = (
+  sequence: number,
+  status = 'CONFIRMED',
+  stamp = '20261001T120000Z',
+) => `BEGIN:VCALENDAR\r
 BEGIN:VEVENT\r
 UID:meeting@example.test\r
-DTSTAMP:20261001T120000Z\r
+DTSTAMP:${stamp}\r
 SEQUENCE:${sequence}\r
 DTSTART;TZID=America/Edmonton:20261005T190000\r
 DTEND;TZID=America/Edmonton:20261005T210000\r
@@ -49,5 +53,31 @@ describe('syncICalendarSource', () => {
       status: 'cancelled',
       tenantId: null,
     });
+  });
+
+  it('keeps tenant identities isolated and accepts newer DTSTAMP with lower sequence', async () => {
+    const database = db();
+    await syncICalendarSource({
+      db: database,
+      source: 'town',
+      tenantId: 'tenant-a',
+      ics: ics(2),
+    });
+    await syncICalendarSource({
+      db: database,
+      source: 'town',
+      tenantId: 'tenant-b',
+      ics: ics(2),
+    });
+    expect(
+      await syncICalendarSource({
+        db: database,
+        source: 'town',
+        tenantId: 'tenant-a',
+        ics: ics(1, 'CANCELLED', '20261002T120000Z'),
+      }),
+    ).toMatchObject({ updated: 1 });
+    const events = await EventCollection.create({ db: database });
+    expect(await events.list({})).toHaveLength(2);
   });
 });
