@@ -76,3 +76,7 @@ pnpm --filter @happyvertical/smrt-assets exec playwright test -c e2e/attachments
 pnpm --filter @happyvertical/smrt-assets build
 pnpm --filter @happyvertical/smrt-assets typecheck
 ```
+
+`AttachmentUpload.showDescription=false` omits the description control and its error. Use this for file-only endpoints or immutable prepared descriptions shown outside the form. It does not silently submit description; a caller may explicitly supply an authorized fixed value through `hiddenFields`. Default true preserves existing behavior.
+
+Composition validation: native Svelte SSR contracts cover defaults, omitted fields, retained malformed values, caller identity, no duplicate fixed inputs, correction/read-only/pending behavior. No persistence, transaction, tenant authority or external provider changes occur; those matrix dimensions are N/A for this presentation-only extension. Node26/Svelte5 native POST markup is the supported runtime edge.

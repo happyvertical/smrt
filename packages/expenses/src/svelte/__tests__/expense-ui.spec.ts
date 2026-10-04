@@ -201,4 +201,50 @@ describe('Expenses native UI contracts', () => {
     expect(body).toContain('value="same-review"');
     expect(body).toContain('Approval invalidated');
   });
+  it('renders a caller-selected subset without inventing or duplicating fixed payer values', () => {
+    const body = form({
+      visibleFields: ['amount', 'currency', 'description'],
+      fields: { amount: 'purchaseAmount' },
+      hiddenFields: [
+        { name: 'paidBy', value: 'company' },
+        { name: 'requestId', value: 'retained' },
+      ],
+      values: { ...values, amount: '12.bad', currency: 'ZZZ' },
+      errors: { amount: 'Bad amount' },
+    });
+    expect(body).toContain('name="purchaseAmount"');
+    expect(body).toContain('value="12.bad"');
+    expect(body).toContain('Bad amount');
+    expect(body).toContain('value="ZZZ" selected');
+    expect(body.match(/name="paidBy"/g)).toHaveLength(1);
+    expect(body).toContain('value="company"');
+    expect(body).toContain('value="retained"');
+    for (const name of [
+      'paidByProfileId',
+      'vendorId',
+      'commitmentId',
+      'incurredOn',
+      'category',
+      'correctionReason',
+    ])
+      expect(body).not.toContain(`name="${name}"`);
+  });
+  it('honors empty subsets and correction visibility without changing readonly or retry controls', () => {
+    const empty = form({ visibleFields: [], correcting: true });
+    for (const name of Object.keys(values))
+      expect(empty).not.toContain(`name="${name}"`);
+    expect(empty).toContain('method="post"');
+    const correction = form({
+      visibleFields: ['correctionReason'],
+      correcting: true,
+      values: { ...values, correctionReason: 'Retained reason' },
+      canEdit: false,
+    });
+    expect(correction).toContain('Retained reason');
+    expect(correction).toContain('<fieldset disabled');
+    expect(correction).not.toContain('value="save"');
+    expect(
+      form({ visibleFields: ['amount'], retryStatus: 'submitting' }),
+    ).toMatch(/<button[^>]*disabled/);
+  });
 });

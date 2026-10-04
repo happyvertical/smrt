@@ -24,6 +24,7 @@ let {
   commitments = [],
   currencyOptions,
   fields = {},
+  visibleFields,
   errors = {},
   message,
   hiddenFields = [],
@@ -49,6 +50,9 @@ const textFields: (keyof ExpenseDraftValues)[] = [
   'category',
   'paidByProfileId',
 ];
+function visible(field: keyof ExpenseDraftValues) {
+  return visibleFields === undefined || visibleFields.includes(field);
+}
 function name(field: keyof ExpenseDraftValues) {
   return fields[field] ?? field;
 }
@@ -62,7 +66,7 @@ function name(field: keyof ExpenseDraftValues) {
       {#if message}<p role="alert">{message}</p>{/if}
       {#if retryStatus === 'transport-error'}<p role="status">{t(M['expenses.form.uncertain'])}</p>{/if}
       <fieldset disabled={!canEdit}>
-        {#each textFields as field}
+        {#each textFields.filter(visible) as field}
           <FormGroup id={`${formId}-${field}`} label={t(M[`expenses.form.${field}`])} error={errors[field]} hint={field === 'amount' ? t(M['expenses.form.amount_help']) : field === 'incurredOn' ? t(M['expenses.form.date_help']) : undefined}>
             {#if field === 'currency'}
               <CurrencySelect name={name(field)} value={values[field]} options={currencyOptions} locale={i18n.locale} readOnly={!canEdit} />
@@ -71,10 +75,12 @@ function name(field: keyof ExpenseDraftValues) {
             {/if}
           </FormGroup>
         {/each}
+        {#if visible('description')}
         <FormGroup id={`${formId}-description`} label={t(M['expenses.form.description'])} error={errors.description}>
           <Textarea name={name('description')} value={values.description} />
         </FormGroup>
-        {#each ['vendorId', 'commitmentId'] as reference}
+        {/if}
+        {#each (['vendorId', 'commitmentId'] as const).filter(visible) as reference}
           {@const field = reference as 'vendorId' | 'commitmentId'}
           {@const options = field === 'vendorId' ? vendors : commitments}
           <FormGroup id={`${formId}-${field}`} label={t(M[`expenses.form.${field}`])} error={errors[field]}>
@@ -85,6 +91,7 @@ function name(field: keyof ExpenseDraftValues) {
             </Select>
           </FormGroup>
         {/each}
+        {#if visible('paidBy')}
         <FormGroup id={`${formId}-paidBy`} label={t(M['expenses.form.paidBy'])} error={errors.paidBy}>
           <Select name={name('paidBy')} value={values.paidBy}>
             {#if !['company', 'person'].includes(values.paidBy)}<option value={values.paidBy}>{values.paidBy}</option>{/if}
@@ -92,11 +99,14 @@ function name(field: keyof ExpenseDraftValues) {
             <option value="person">{t(M['expenses.form.person'])}</option>
           </Select>
         </FormGroup>
+        {/if}
+        {#if visible('correctionReason')}
         {#if correcting}
           <FormGroup id={`${formId}-correctionReason`} label={t(M['expenses.form.correctionReason'])} error={errors.correctionReason}>
             <Textarea name={name('correctionReason')} value={values.correctionReason} />
           </FormGroup>
         {:else}<Input type="hidden" name={name('correctionReason')} value={values.correctionReason} interaction={false} />{/if}
+        {/if}
         {@render children?.()}
       </fieldset>
       {#if canEdit}<div><Button type="submit" name={intentField} value={intent} disabled={busy}>{submitLabel ?? t(M[correcting ? 'expenses.form.correct' : 'expenses.form.save'])}</Button></div>{/if}

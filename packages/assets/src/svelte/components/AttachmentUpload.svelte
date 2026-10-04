@@ -18,6 +18,7 @@ let {
   canUpload = true,
   fileField = 'file',
   descriptionField = 'description',
+  showDescription = true,
   description = '',
   accept,
   help,
@@ -61,9 +62,11 @@ const fileHelp = $derived(
       {#if help}<p id={`${formId}-help`}>{help}</p>{/if}
       {#if fileError}<p id={`${formId}-file-error`} role="alert">{fileError}</p>{/if}
       {#if reselectFile}<p id={`${formId}-reselect`}>{t(M['assets.attachments.reselect'])}</p>{/if}
+      {#if showDescription}
       <FormGroup label={t(M['assets.attachments.description'])} id={`${formId}-description`} error={descriptionError}>
         <Textarea name={descriptionField} value={description} />
       </FormGroup>
+      {/if}
       {@render children?.()}
       <div><Button type="submit" name={intentField} value={intent} disabled={busy}>{submitLabel ?? t(M['assets.attachments.upload'])}</Button></div>
     </div>

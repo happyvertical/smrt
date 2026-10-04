@@ -60,6 +60,8 @@ export interface AttachmentUploadProps {
   canUpload?: boolean;
   /** File input name, default file. */
   fileField?: string;
+  /** Show the editable description; false omits its control and error. Defaults true. */
+  showDescription?: boolean;
   /** Description input name, default description. */
   descriptionField?: string;
   /** Caller-retained description, including values from rejected submissions. */

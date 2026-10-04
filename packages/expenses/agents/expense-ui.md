@@ -90,3 +90,7 @@ selection and reselect-file help; Expenses does not duplicate uploads/storage.
 Validation: `pnpm --filter @happyvertical/smrt-expenses test`, `test:ui`,
 `test:e2e`, `typecheck`, `build`, and `verify:pack`. PostgreSQL model validation
 remains in the existing opt-in `test:postgres` lane; this UI does not alter it.
+
+`visibleFields` optionally limits the logical `ExpenseDraftValues` fields rendered by `ExpenseForm`. Omitted renders all existing fields; an empty array renders none. Excluded fields do not emit hidden fallbacks, including `correctionReason`; fixed values can be supplied explicitly through `hiddenFields` without duplicate names. This supports policy-fixed payer fields and domain-owned reference selectors. Visibility is presentation, never authority: endpoints must validate every fixed or submitted value. Unknown retained values and validation errors remain visible for included fields.
+
+Composition validation: native Svelte SSR contracts cover defaults, omitted fields, retained malformed values, caller identity, no duplicate fixed inputs, correction/read-only/pending behavior. No persistence, transaction, tenant authority or external provider changes occur; those matrix dimensions are N/A for this presentation-only extension. Node26/Svelte5 native POST markup is the supported runtime edge.
