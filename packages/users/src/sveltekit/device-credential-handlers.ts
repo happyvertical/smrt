@@ -127,7 +127,11 @@ function errorResponse(error: unknown): Response {
     );
   }
   logger.error('Device credential handler error', { error });
-  return json({ error: 'Internal error.', code: 'internal' }, 500);
+  return json(
+    { error: 'Internal error.', code: 'internal' },
+    500,
+    NO_STORE_HEADERS,
+  );
 }
 
 /**
@@ -238,6 +242,7 @@ export function createDeviceCredentialHandlers(
         return json(
           { error: 'Unauthenticated.', code: 'unauthenticated' },
           401,
+          NO_STORE_HEADERS,
         );
       const input = await body(event);
       try {
@@ -260,6 +265,7 @@ export function createDeviceCredentialHandlers(
         return json(
           { error: 'Unauthenticated.', code: 'unauthenticated' },
           401,
+          NO_STORE_HEADERS,
         );
       const input = await body(event);
       try {
@@ -281,6 +287,7 @@ export function createDeviceCredentialHandlers(
         return json(
           { error: 'Unauthenticated.', code: 'unauthenticated' },
           401,
+          NO_STORE_HEADERS,
         );
       const input = await body(event);
       try {

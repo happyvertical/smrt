@@ -327,8 +327,25 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
       await sessionService.loadSessionContext(result.sessionId),
     ).toBeNull();
     expect(await sessionService.loadSessionContext(deviceToken)).not.toBeNull();
-    // Signing out with the device token through this API is a no-op.
-    expect(await service.signOut(deviceToken)).toBe(false);
+    // Signing out with the device token through this API is a no-op: it
+    // neither ends the device session nor rewrites its expiry (one hour
+    // here, against a ten-minute person idle timeout). Same for a browser
+    // session presented to it.
+    const browser = await sessions.createSession({
+      userId: adminId,
+      tenantId,
+      ttl: 3600,
+      authMethod: 'oidc',
+    });
+    for (const token of [deviceToken, browser.id as string]) {
+      const before = await sessions.get(token);
+      expect(await service.signOut(token)).toBe(false);
+      const after = await sessions.get(token);
+      expect(after?.status).toBe('active');
+      expect(new Date(after?.expiresAt as Date).getTime()).toBe(
+        new Date(before?.expiresAt as Date).getTime(),
+      );
+    }
     expect(await sessionService.loadSessionContext(deviceToken)).not.toBeNull();
   });
 

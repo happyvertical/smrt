@@ -715,9 +715,15 @@ export class DeviceCredentialService {
    * layered session (never reveals which).
    */
   async signOut(personToken: string): Promise<boolean> {
-    const context = await this.sessionService.loadSessionContext(personToken);
-    if (!context?.parent) return false;
-    return this.sessionService.destroySession(personToken);
+    const token = personToken?.trim();
+    if (!token) return false;
+    // Decide without recording activity: `sessionService` auto-extends with
+    // the person idle timeout, and a device (or browser) bearer presented
+    // here must not have its own expiry rewritten.
+    if (!(await this.readonlySessionService.getParentSessionId(token))) {
+      return false;
+    }
+    return this.sessionService.destroySession(token);
   }
 
   /**
