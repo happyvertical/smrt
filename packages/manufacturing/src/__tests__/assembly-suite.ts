@@ -421,6 +421,29 @@ export function assemblySuite(
         ]);
       });
 
+      it('refuses the natural-key activation inside a tenant without an explicit tenantId', async () => {
+        const tenantId = crypto.randomUUID();
+        enableTenancy();
+        try {
+          await withTenant({ tenantId }, async () => {
+            const frame = await assembly('Frame');
+            const panel = await assembly('Panel');
+            const frameDraft = await bill(frame.row.id!, 'draft', 1);
+            await line(frameDraft.id!, panel.sku.id!);
+            const panelBill = await bill(panel.row.id!);
+            await line(panelBill.id!, frame.sku.id!);
+
+            await cycleOf(bill(frame.row.id!, 'active', 1));
+            const stored = await boms.findByProduct(frame.row.id!);
+            expect(stored.map((b) => [b.id, b.status, b.tenantId])).toEqual([
+              [frameDraft.id, 'draft', tenantId],
+            ]);
+          });
+        } finally {
+          disableTenancy();
+        }
+      });
+
       it('allows a shared sub-assembly used twice in one structure', async () => {
         const frame = await assembly('Frame');
         const left = await assembly('Left panel');

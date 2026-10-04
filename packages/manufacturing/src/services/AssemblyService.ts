@@ -40,6 +40,7 @@ import {
   type Product,
   type Sku,
 } from '@happyvertical/smrt-products/models';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollection.js';
 import { BomLineCollection } from '../collections/BomLineCollection.js';
 import { Assembly } from '../models/Assembly.js';
@@ -340,7 +341,8 @@ export class AssemblyService {
    * structure and pass.
    *
    * The lines checked are the bill's own and those of any stored bill with
-   * the same natural key (`productId`, `version`, `tenantId`): saving a new
+   * the same natural key (`productId`, `version`, and the bill's tenant, or
+   * the active tenant when the bill has none yet): saving a new
    * instance with that key upserts onto the stored bill and activates its
    * lines, so they are part of what the save makes active.
    *
@@ -355,11 +357,14 @@ export class AssemblyService {
     if (bom.status !== 'active') return;
     const billIds = new Set<string>();
     if (isUuid(bom.id)) billIds.add(bom.id);
+    // Validation runs before the tenancy interceptor fills `tenantId`, so an
+    // omitted tenant is the one the save will be stamped with.
+    const tenantId = bom.tenantId ?? getCurrentTenant()?.tenantId ?? null;
     const sameKey = await this.boms.list({
       where: { productId: bom.productId, version: bom.version },
     });
     for (const stored of sameKey) {
-      if (stored.id && (stored.tenantId ?? null) === (bom.tenantId ?? null))
+      if (stored.id && (stored.tenantId ?? null) === tenantId)
         billIds.add(stored.id);
     }
     const componentSkuIds: string[] = [];
