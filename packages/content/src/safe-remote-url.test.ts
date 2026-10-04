@@ -171,6 +171,36 @@ describe('safe-remote-url SSRF guard', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('does not forward credential headers across origins', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://mirror.example.test/feed' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response('ok'));
+
+    await fetchSafeRemoteUrlInternal('https://feed.example.test/', {
+      fetchImpl,
+      headers: {
+        Authorization: 'Bearer secret',
+        Cookie: 'session=secret',
+        'X-Request-Id': 'request-1',
+      },
+      resolveHostname: async () => [{ address: '93.184.216.34', family: 4 }],
+    });
+
+    expect(fetchImpl.mock.calls[1][1]).toMatchObject({
+      headers: { 'X-Request-Id': 'request-1' },
+    });
+    expect(fetchImpl.mock.calls[1][1]?.headers).not.toHaveProperty(
+      'Authorization',
+    );
+    expect(fetchImpl.mock.calls[1][1]?.headers).not.toHaveProperty('Cookie');
+  });
+
   it('bounds DNS, streamed bodies, and HTTPS-only public calls', async () => {
     await expect(
       fetchSafeRemoteUrlInternal('https://slow.example.test/', {

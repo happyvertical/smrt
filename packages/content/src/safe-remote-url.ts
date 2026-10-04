@@ -464,6 +464,21 @@ function copyResponseHeaders(
   return Object.freeze(result);
 }
 
+function removeCrossOriginSensitiveHeaders(
+  headers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  const safeHeaders = Object.fromEntries(
+    Object.entries(headers).filter(
+      ([name]) =>
+        !['authorization', 'cookie', 'proxy-authorization'].includes(
+          name.toLowerCase(),
+        ),
+    ),
+  );
+  return safeHeaders;
+}
+
 function assertFetchLimits(options: InternalSafeRemoteFetchOptions) {
   const timeoutMs = options.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
@@ -517,13 +532,17 @@ export async function fetchSafeRemoteUrlInternal(
       resolveHostnameWhenPrivateAllowed: true,
       resolveHostname: options.resolveHostname,
     });
+    let requestHeaders = options.headers;
     if (!options.allowHttp && current.url.protocol !== 'https:') {
       throw new Error('Remote fetch URL must use https');
     }
     for (let hop = 0; hop <= maxRedirects; hop += 1) {
       const result = await fetchPinnedRemoteUrl(
         current,
-        options,
+        {
+          ...options,
+          headers: requestHeaders,
+        },
         controller?.signal,
       );
       const { response } = result;
@@ -534,6 +553,7 @@ export async function fetchSafeRemoteUrlInternal(
           throw new Error('Remote redirect response missing Location header');
         }
         try {
+          const previousOrigin = current.url.origin;
           current = await validateSafeRemoteUrl(
             new URL(location, current.url).toString(),
             {
@@ -544,6 +564,9 @@ export async function fetchSafeRemoteUrlInternal(
           );
           if (!options.allowHttp && current.url.protocol !== 'https:') {
             throw new Error('Remote fetch URL must use https');
+          }
+          if (current.url.origin !== previousOrigin) {
+            requestHeaders = removeCrossOriginSensitiveHeaders(requestHeaders);
           }
         } finally {
           await closeRemoteResponse(result);
