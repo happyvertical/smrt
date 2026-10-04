@@ -23,7 +23,7 @@ import {
 export interface QuoteFormAttributes {
   /** Native form identity and encoding. */
   id?: string;
-  /** Optional multipart encoding for caller-composed attachments. */
+  /** Optional multipart encoding for file controls composed through extensions. */
   enctype?: HTMLFormAttributes['enctype'];
   /** Native autocomplete setting. */
   autocomplete?: HTMLFormAttributes['autocomplete'];
@@ -149,13 +149,18 @@ const title = $derived(
       {:else}<p>{t(Q['commerce.quote.empty_lines'])}</p>{/each}
       {#if !readonly}<Button type="submit" name={intents.name} value={intents.add} formnovalidate variant="secondary" density="touch">{t(Q['commerce.quote.add'])}</Button>{/if}
       {@render extensions?.()}
-      {@render attachments?.()}
     </fieldset>
     {#if cancelHref}<Button href={cancelHref} variant="secondary" density="touch">{t(Q['commerce.quote.cancel'])}</Button>{/if}
   </Form>
+  {#if attachments}
+    <fieldset class="editor-attachments" disabled={readonly || busy}>
+      {@render attachments()}
+    </fieldset>
+  {/if}
 </section>
 
 <style>
+.editor-attachments { min-width: 0; margin: 0; padding: 0; border: 0; }
 .quote-editor { max-width: 48rem; min-width: 0; color: var(--smrt-color-on-surface); overflow-wrap: anywhere; }
 fieldset { min-width: 0; margin-block: var(--smrt-spacing-4, 1rem); padding: var(--smrt-spacing-4, 1rem); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md, 0.5rem); }
 .actions { margin-top: var(--smrt-spacing-4, 1rem); }

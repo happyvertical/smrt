@@ -76,7 +76,7 @@ export interface Props {
   formAttributes?: QuoteFormAttributes;
   /** Domain-specific allocation, policy or source evidence composition. */
   extensions?: Snippet;
-  /** Authorized private attachment presentation, never loaded by Commerce. */
+  /** Authorized private attachment surface outside the editor form; never loaded by Commerce. */
   attachments?: Snippet;
 }
 let {
@@ -179,7 +179,6 @@ const money = (amountMinor: number | null) =>
     <FormGroup label={t(P[field.label as keyof typeof P])} error={errors[field.key]} required={field.key==='scope' || field.key==='reason'}><Textarea name={fields[field.key as keyof PurchaseFieldNames]} value={values[field.key as 'scope']} required={field.key==='scope' || field.key==='reason'} /></FormGroup>
    {/each}
    {@render extensions?.()}
-   {@render attachments?.()}
    {#if fingerprint}
     <h3>{t(P['commerce.purchase.review'])}</h3>
     {#if review}
@@ -196,8 +195,14 @@ const money = (amountMinor: number | null) =>
   </fieldset>
   {#if cancelHref}<Button href={cancelHref} variant="secondary" density="touch">{t(P['commerce.purchase.cancel'])}</Button>{/if}
  </Form>
+  {#if attachments}
+    <fieldset class="editor-attachments" disabled={readonly || busy}>
+      {@render attachments()}
+    </fieldset>
+  {/if}
 </section>
 <style>
+.editor-attachments { min-width: 0; margin: 0; padding: 0; border: 0; }
 .purchase-editor{max-width:48rem;min-width:0;overflow-wrap:anywhere;color:var(--smrt-color-on-surface)}
 fieldset{min-width:0;margin-block:var(--smrt-spacing-4,1rem);padding:var(--smrt-spacing-4,1rem);border:1px solid var(--smrt-color-outline-variant);border-radius:var(--smrt-radius-md,0.5rem)}
 .allocation{margin-block:var(--smrt-spacing-4,1rem)}
