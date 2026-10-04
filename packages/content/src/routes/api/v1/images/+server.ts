@@ -12,13 +12,13 @@ import { json } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { seedImages } from '$lib/server/seed-images';
-import { getCollection } from '$lib/server/smrt';
+import { runtime } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
 const logger = createLogger({ level: 'info' });
 
 async function ensureImageBaseTables() {
-  await getCollection<Asset>('@happyvertical/smrt-assets:Asset');
+  await runtime.getCollection<Asset>('@happyvertical/smrt-assets:Asset');
 }
 
 function establishTenantContext(locals: unknown): void {
@@ -48,7 +48,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
     await ensureImageBaseTables();
 
-    const collection = await getCollection<Image>(
+    const collection = await runtime.getCollection<Image>(
       '@happyvertical/smrt-images:Image',
     );
     const readScope = tenantReadScope();
@@ -75,7 +75,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   establishTenantContext(locals);
   await ensureImageBaseTables();
 
-  const collection = await getCollection<Image>(
+  const collection = await runtime.getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
   const data: Record<string, unknown> = await request.json();

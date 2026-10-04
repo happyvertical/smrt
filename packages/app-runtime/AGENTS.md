@@ -97,6 +97,9 @@ Application infrastructure composition for the validated runtime profiles in
 - Server-only subpath; `@sveltejs/kit` is an optional peer and is externalized
   in `vite.config.ts` (kit recognizes `redirect`/`fail` by class identity).
   The root entry must never import kit or Svelte.
+- Without a `runtime` option the profile comes from smrt-config's
+  `resolveEffectiveApplicationRuntime(await loadConfig())`, the same rule as
+  `smrt app` (#3446): no block → `local`; `null`/`false`/`0`/`''` fail closed.
 - `createSmrtSvelteKitRuntime()` order is fixed: readiness gate → URL tenant
   selection (`locals.selectedTenant*`, never tenant context, headers ignored) →
   verified session (tenant context entered only when

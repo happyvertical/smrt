@@ -36,16 +36,18 @@ vi.mock('@happyvertical/ai', () => ({
 
 vi.mock('$lib/server/smrt', () => {
   return {
-    getCollection: async () => {
-      if (!currentContents) {
-        throw new Error('Test collection not initialized');
-      }
+    runtime: {
+      getCollection: async () => {
+        if (!currentContents) {
+          throw new Error('Test collection not initialized');
+        }
 
-      return currentContents;
+        return currentContents;
+      },
+      classOptions: () => ({
+        ai: {},
+      }),
     },
-    getSmrtConfig: () => ({
-      ai: {},
-    }),
   };
 });
 

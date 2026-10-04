@@ -1,6 +1,6 @@
 import { createLogger } from '@happyvertical/logger';
 import { json, type RequestHandler } from '@sveltejs/kit';
-import { getCollection, getSmrtConfig } from '$lib/server/smrt';
+import { runtime } from '$lib/server/smrt';
 import type { Content } from '../../../../../../../../content.js';
 import {
   type ContentChatAIConfig,
@@ -29,7 +29,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   }
 
   try {
-    const contentsCollection = await getCollection<Content>(
+    const contentsCollection = await runtime.getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
@@ -90,7 +90,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
   }
 
   try {
-    const contentsCollection = await getCollection<Content>(
+    const contentsCollection = await runtime.getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
@@ -99,7 +99,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
       return json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    const config = getSmrtConfig('@happyvertical/smrt-content:Content');
+    const config = runtime.classOptions('@happyvertical/smrt-content:Content');
     const aiConfig = (config.ai || {}) as ContentChatAIConfig;
     const { session, userMessage, agentMessage } =
       await sendContentEditorChatThreadMessage({
