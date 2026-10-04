@@ -71,6 +71,62 @@ console.log(rollup.totalCost, rollup.currency);
 // Walks lines, applies waste, surfaces a per-line breakdown.
 ```
 
+### Operations, routing and estimated labour
+
+An `Operation` is a kind of work (cut, weld, inspect) kept as a managed list per
+tenant. A bill of materials may carry a routing: an ordered list of operations,
+each with an estimated duration in minutes for one unit. A bill with no routing
+works exactly as before.
+
+```typescript
+import {
+  BomService,
+  OperationService,
+  RoutingService,
+} from '@happyvertical/smrt-manufacturing';
+
+const operations = await OperationService.create({ db });
+const cut = await operations.define({ code: 'CUT', name: 'Cutting', category: 'fabrication' });
+const weld = await operations.define({
+  code: 'WELD',
+  name: 'Welding',
+  // Plain id of a smrt-human-resources Qualification; an application reads it
+  // to decide who may start the operation. Not validated here.
+  requiredQualificationId: qualificationId,
+});
+await operations.rename(cut.id!, 'Plasma cutting');
+await operations.retire(weld.id!); // leaves pickers, stays on history
+await operations.reinstate(weld.id!);
+
+const routing = await RoutingService.create({ db });
+await routing.replaceRouting(bom.id!, [
+  { operationId: cut.id!, estimatedMinutes: 30 },
+  { operationId: weld.id!, estimatedMinutes: 90, notes: 'tack first' },
+]);
+
+const service = await BomService.create({
+  db,
+  // Optional, like costResolver: hourly rate for an operation, or null.
+  rateResolver: (operation) => (operation.code === 'WELD' ? 80 : 60),
+});
+const labour = await service.computeLabourEstimate(bom.id!);
+console.log(labour.totalMinutes, labour.totalCost, labour.steps);
+```
+
+`replaceRouting` swaps the whole routing in one transaction (steps are numbered
+1..n in the order given; an empty list removes it). A retired operation can stay
+on a routing that already has it but cannot be newly added. Without a
+`rateResolver` the estimate reports minutes only and flags each step
+`rateUnavailable`.
+
+### Operation list and form
+
+`@happyvertical/smrt-manufacturing/svelte` exports props-driven `OperationList`
+(with optional edit, retire and reinstate actions) and `OperationForm` (add, or
+edit name, category and required qualification; the code is fixed once set).
+They register with `ModuleUIRegistry` on import. Hosts load rows through
+`OperationService` and perform the actions themselves.
+
 ### Plan a production run
 
 ```typescript
@@ -178,6 +234,8 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 |---|---|
 | `BillOfMaterials` | Recipe for one finished product. Versioned with a `draft` / `active` / `superseded` lifecycle. |
 | `BomLine` | One component on a BOM. `effectiveQtyPerUnit()` returns the qty including waste. |
+| `Operation` | A kind of work: `code` (unique per tenant), `name`, `category`, `isActive` (retired operations stay on history, never deleted), optional `requiredQualificationId` (plain string id of a `smrt-human-resources` qualification). |
+| `RoutingStep` | One operation in a BOM's optional routing: `bomId`, `operationId`, `sequence` (1..n), `estimatedMinutes`, `notes`. |
 
 ### Collections
 
@@ -185,13 +243,18 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 |---|---|
 | `BillOfMaterialsCollection` | `findByProduct`, `findActiveForProduct`, `findByStatus` |
 | `BomLineCollection` | `findByBom`, `findByComponent` |
+| `OperationCollection` | `findByCode`, `listOperations({ includeRetired? })` |
+| `RoutingStepCollection` | `findByBom` (in step order), `findByOperation` |
 
 ### Services
 
 | Export | Description |
 |---|---|
 | `BomService` | Cost rollup, requirements explosion, can-produce check. |
-| `createBomService({ db, costResolver? })` | Convenience factory. |
+| `createBomService({ db, costResolver?, rateResolver? })` | Convenience factory. `computeLabourEstimate(bomId)` rolls up routing minutes and, with a `rateResolver`, cost. |
+| `OperationService` / `createOperationService({ db })` | `define`, `get`, `list`, `rename`, `update`, `retire`, `reinstate`. |
+| `RoutingService` / `createRoutingService({ db })` | `list(bomId)`, `replaceRouting(bomId, steps)`. |
+| `OperationNotFoundError`, `DuplicateOperationCodeError`, `OperationRetiredError`, `InvalidOperationInputError` | Operation and routing errors. |
 | `ProductionService` | Operational consume / produce against a production order. |
 | `createProductionService({ db })` | Convenience factory. |
 | `installManufacturingDispatchHandlers({ dispatchBus, db })` | Opt-in bus wiring. |
@@ -209,6 +272,9 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 | `MaterialShortage` | Entry returned by `canProduce` when stock is insufficient. |
 | `CanProduceResult` | `{ ok: true; shortages: [] } \| { ok: false; shortages: [...] }` |
 | `ComponentCostResolver` | Async (or sync) callback returning unit cost or `null`. |
+| `OperationRateResolver` | Async (or sync) callback returning an operation's hourly rate or `null`. |
+| `LabourEstimate`, `RoutingStepEstimate` | Return shape of `computeLabourEstimate`. |
+| `DefineOperationInput`, `RoutingStepInput` | Inputs to `define` and `replaceRouting`. |
 
 ## Dependencies
 
@@ -217,6 +283,7 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 | `@happyvertical/smrt-core` | SmrtObject / SmrtCollection / DispatchBus |
 | `@happyvertical/smrt-inventory` | StockService (consume / produce target) |
 | `@happyvertical/smrt-tenancy` | Optional tenant scoping |
+| `@happyvertical/smrt-ui` / `@happyvertical/smrt-types` | Operation list and form (`./svelte`), module slots (`./ui`); `svelte` is an optional peer |
 | `@happyvertical/sql` | Database adapter |
 
 ## License

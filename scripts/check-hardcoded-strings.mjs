@@ -50,6 +50,7 @@ const STRICT_PACKAGES = new Set([
   'products',
   'timesheets',
   'human-resources',
+  'manufacturing',
 ]);
 
 // Dev/playground host, not a shippable library (consistent with the other ratchets).
