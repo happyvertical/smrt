@@ -276,8 +276,13 @@ export async function resolveRuntimeConnection(
   const config = await loadCliDatabaseConfig(args.projectPath);
   const configUrl = config?.database?.url?.trim();
   if (configUrl && !isMemoryDatabaseUrl(configUrl)) {
+    // A configured database keeps its engine. For DATABASE_URL, an explicit
+    // `dbType` overrides the environment engine like any env connection; the
+    // CLI-resolved type (DATABASE_TYPE or the URL scheme) is the fallback.
     const databaseType = toRuntimeDatabaseType(
-      config.database?.type || inferDatabaseType(configUrl, args.dbType),
+      config.source === 'environment' && args.dbType?.trim()
+        ? args.dbType
+        : config.database?.type || inferDatabaseType(configUrl, args.dbType),
     );
     const db = await getDatabaseInstance(args.projectPath, {
       type: databaseType,

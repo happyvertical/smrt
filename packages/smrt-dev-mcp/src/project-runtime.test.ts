@@ -400,6 +400,41 @@ describe('selected project runtime boundary (#2961)', () => {
       });
     });
 
+    it('lets an explicit dbType override the DATABASE_URL engine', async () => {
+      vi.stubEnv('SMRT_DEV_DB_URL', '');
+      vi.stubEnv('DATABASE_URL', 'postgres://dev@localhost/from-env');
+      vi.stubEnv('DATABASE_TYPE', 'postgres');
+      const root = projectWithRealConfig(null);
+      const result = await runtimeMigrationStatus({
+        projectPath: root,
+        dbType: 'sqlite',
+      });
+      expect(result.data).toMatchObject({
+        connected: true,
+        file: 'from-env',
+        type: 'sqlite',
+        connectionSource: 'environment',
+      });
+    });
+
+    it('keeps the configured engine over an explicit dbType', async () => {
+      vi.stubEnv('SMRT_DEV_DB_URL', '');
+      vi.stubEnv('DATABASE_URL', '');
+      const root = projectWithRealConfig(
+        "export default { packages: { cli: { database: { type: 'sqlite', url: 'sqlite:./from-config.db' } } } };\n",
+      );
+      const result = await runtimeMigrationStatus({
+        projectPath: root,
+        dbType: 'postgres',
+      });
+      expect(result.data).toMatchObject({
+        connected: true,
+        file: 'from-config.db',
+        type: 'sqlite',
+        connectionSource: 'config',
+      });
+    });
+
     it('stays static-only for an unsupported DATABASE_TYPE', async () => {
       vi.stubEnv('SMRT_DEV_DB_URL', '');
       vi.stubEnv('DATABASE_URL', 'mysql://root:secret@db/app');

@@ -597,7 +597,8 @@ configured URL always wins), resolved by the project's smrt-config
 `resolveCliDatabaseConfig()`; a project on an older smrt-config without it
 reads `cli.database` only. An optional
 `dbType` argument (`sqlite`, `postgres`, `duckdb`) overrides engine inference
-for `dbUrl` or the environment connection; unknown values fail with a safe
+for `dbUrl` or an environment connection (`SMRT_DEV_DB_URL`, or `DATABASE_URL`
+over its `DATABASE_TYPE`), never a configured `cli.database.type`; unknown values fail with a safe
 diagnostic instead of opening the wrong adapter. No configuration
 anywhere → every runtime tool returns a successful static-only result
 (`provenance: 'static'`, `connected: false`) and the server starts and serves
