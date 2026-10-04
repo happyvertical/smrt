@@ -96,8 +96,10 @@ export function multilevelSuite(
       await cleanup();
     });
 
+    /** When set, codes and slugs repeat across calls (two tenants, same codes). */
+    let sharedSuffix: string | null = null;
     const unique = (label: string) =>
-      `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${randomUUID()}`;
+      `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${sharedSuffix ?? randomUUID()}`;
 
     async function assembly(name: string) {
       const row = (await assemblies.create({
@@ -575,6 +577,56 @@ export function multilevelSuite(
           shortages: [],
         });
       });
+
+      vitestIt(
+        'keeps two tenants with the same SKU codes apart without a tenant context',
+        async () => {
+          sharedSuffix = randomUUID();
+          try {
+            const tenantA = randomUUID();
+            const tenantB = randomUUID();
+            const a = await withTenant({ tenantId: tenantA }, () =>
+              frameFixture(),
+            );
+            const b = await withTenant({ tenantId: tenantB }, () =>
+              frameFixture(),
+            );
+            const theirs = await withTenant({ tenantId: tenantB }, () =>
+              warehouse(),
+            );
+            await withTenant({ tenantId: tenantB }, async () => {
+              for (const skuId of [b.panel.skuId, b.paint.skuId, b.tube.skuId])
+                await stock.receive(skuId, theirs, 1000);
+            });
+            const ownSkus = new Set(
+              [a.plate, a.tube, a.bolt, a.paint, a.bracket, a.panel].map(
+                (entry) => entry.skuId,
+              ),
+            );
+            const explosion = await bomService.explode(a.frameBom, 10, {
+              levels: 'all',
+            });
+            expect(explosion.lines).toHaveLength(7);
+            expect(
+              explosion.lines.every((line) => ownSkus.has(line.componentSkuId)),
+            ).toBe(true);
+            expect(
+              explosion.lines.every((line) =>
+                line.path.every((entry) =>
+                  [a.frameBom, a.panelBom, a.bracketBom].includes(entry.bomId),
+                ),
+              ),
+            ).toBe(true);
+            const plan = await bomService.planRequirements(a.frameBom, 10, {
+              levels: 'all',
+            });
+            expect(plan.lines.every((line) => line.available === 0)).toBe(true);
+            expect(plan.ok).toBe(false);
+          } finally {
+            sharedSuffix = null;
+          }
+        },
+      );
 
       vitestIt(
         "counts only the top bill's tenant's stock, even without a tenant context",

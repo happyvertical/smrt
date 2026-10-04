@@ -136,7 +136,13 @@ export class StructureWalk {
     let name = productId;
     if (UUID_PATTERN.test(productId)) {
       const product = await this.assemblies.products.get({ id: productId });
-      if (product?.name) name = product.name;
+      const owner = product?.tenantId ?? null;
+      // Only a name the top bill's tenant may see.
+      if (
+        product?.name &&
+        (owner === null || owner === (this.top.tenantId ?? null))
+      )
+        name = product.name;
     }
     return { bomId: this.top.id as string, productId, name };
   }

@@ -298,6 +298,56 @@ export function productionRunSuite(
       });
     });
 
+    describe('tenant', () => {
+      vitestIt(
+        "pins a run and its stock to the bill's tenant without a tenant context",
+        async () => {
+          const tenantA = randomUUID();
+          const { bomId, productId, tube, bolt } = await withTenant(
+            { tenantId: tenantA },
+            () => makeBill(),
+          );
+          // Another tenant writes a line onto tenant A's bill.
+          const intruder = randomUUID();
+          await withTenant({ tenantId: randomUUID() }, () =>
+            lines.create({ bomId, componentSkuId: intruder, qtyPerUnit: 1 }),
+          );
+          const at = await withTenant({ tenantId: tenantA }, () => warehouse());
+          await withTenant({ tenantId: tenantA }, async () => {
+            await stock.receive(tube, at, 100);
+            await stock.receive(bolt, at, 100);
+          });
+
+          // No context: only global bills resolve by product.
+          expect(
+            await errorOf(service.createRun({ productId, targetQty: 1 })),
+          ).toBeInstanceOf(NoActiveBomForProductError);
+          const run = await service.createRun({ bomId, targetQty: 2 });
+          expect(run.tenantId).toBe(tenantA);
+          const result = await service.recordCompletion(run.id!, {
+            qty: 1,
+            consume: { locationId: at },
+          });
+          expect(result.completion.tenantId).toBe(tenantA);
+          expect(result.consumed.map((c) => c.componentSkuId).sort()).toEqual(
+            [tube, bolt].sort(),
+          );
+          expect(
+            await withTenant({ tenantId: tenantA }, () =>
+              stock.levels.totalForSku(tube, 'available'),
+            ),
+          ).toBe(98);
+
+          // In another tenant's context, tenant A's bill is not usable.
+          await withTenant({ tenantId: randomUUID() }, async () => {
+            expect(
+              await errorOf(service.createRun({ bomId, targetQty: 1 })),
+            ).toBeInstanceOf(BomNotFoundError);
+          });
+        },
+      );
+    });
+
     describe('concurrent completions', () => {
       it('counts every report made at once', async () => {
         const { bomId } = await makeBill();

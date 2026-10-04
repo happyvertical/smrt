@@ -22,9 +22,11 @@ import {
   createStockService,
   type StockService,
 } from '@happyvertical/smrt-inventory';
+import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollection.js';
 import { ProductionRunCollection } from '../collections/ProductionRunCollection.js';
 import { ProductionRunCompletionCollection } from '../collections/ProductionRunCompletionCollection.js';
+import type { BillOfMaterials } from '../models/BillOfMaterials.js';
 import type { ProductionRun } from '../models/ProductionRun.js';
 import type { ProductionRunCompletion } from '../models/ProductionRunCompletion.js';
 import {
@@ -143,22 +145,46 @@ export class ProductionRunService {
    */
   async createRun(input: CreateProductionRunInput): Promise<ProductionRun> {
     const targetQty = positive(input.targetQty, 'targetQty');
-    let bomId = input.bomId;
-    if (bomId) {
-      if (!UUID_PATTERN.test(bomId) || !(await this.boms.get({ id: bomId })))
-        throw new BomNotFoundError(bomId);
+    // Pinned to the active tenant (none: global records only), never to
+    // whatever an unscoped read returns.
+    const tenantId = getCurrentTenant()?.tenantId ?? null;
+    const usable = (bom: BillOfMaterials | null): bom is BillOfMaterials =>
+      Boolean(bom?.id) &&
+      ((bom?.tenantId ?? null) === null ||
+        tenantId === null ||
+        bom?.tenantId === tenantId);
+    let bom: BillOfMaterials | null = null;
+    if (input.bomId) {
+      bom = UUID_PATTERN.test(input.bomId)
+        ? await this.boms.get({ id: input.bomId })
+        : null;
+      if (!usable(bom)) throw new BomNotFoundError(input.bomId);
     } else if (input.productId) {
-      const active = await this.boms.findActiveForProduct(input.productId);
-      if (!active?.id) throw new NoActiveBomForProductError(input.productId);
-      bomId = active.id;
+      // The tenant's own active bill first, then a global one.
+      const active = (
+        await this.boms.list({
+          where: { productId: input.productId, status: 'active' },
+          orderBy: 'version DESC',
+        })
+      ).filter((candidate) => {
+        const owner = candidate.tenantId ?? null;
+        return owner === tenantId || owner === null;
+      });
+      bom =
+        active.find((candidate) => (candidate.tenantId ?? null) === tenantId) ??
+        active[0] ??
+        null;
+      if (!bom?.id) throw new NoActiveBomForProductError(input.productId);
     } else {
       throw new InvalidProductionRunInputError(
         'A production run needs a bomId or a productId.',
       );
     }
-    // `create()` persists; no second save.
+    // `create()` persists; no second save. The run belongs to its bill's
+    // tenant (or the active one, for a global bill).
     return this.runs.create({
-      bomId,
+      tenantId: bom.tenantId ?? tenantId,
+      bomId: bom.id as string,
       targetQty,
       completedQty: 0,
       status: 'planned',
@@ -278,6 +304,7 @@ export class ProductionRunService {
       await run.save();
       // `create()` persists; no second save.
       const completion = await tx.completions.create({
+        tenantId: run.tenantId ?? null,
         runId,
         qty,
         completedAt,
@@ -285,6 +312,10 @@ export class ProductionRunService {
 
       let consumed: ConsumeResult[] = [];
       let produced: ProduceResult | null = null;
+      // Stock reads and writes in the run's tenant, whatever the caller's
+      // context: the bill's lines and the levels are that tenant's.
+      const inRunTenant = <T>(work: () => Promise<T>): Promise<T> =>
+        run.tenantId ? withTenant({ tenantId: run.tenantId }, work) : work();
       if (input.consume || input.produce) {
         // Bound to the open transaction: its own withTransaction joins it.
         const production = await ProductionService.create({
@@ -303,14 +334,17 @@ export class ProductionRunService {
           sourceType,
         };
         if (consume && produce) {
-          ({ consumed, produced } = await production.runProduction(ref, {
-            consume,
-            produce,
-          }));
+          ({ consumed, produced } = await inRunTenant(() =>
+            production.runProduction(ref, { consume, produce }),
+          ));
         } else if (consume) {
-          consumed = await production.consumeMaterials(ref, consume);
+          consumed = await inRunTenant(() =>
+            production.consumeMaterials(ref, consume),
+          );
         } else if (produce) {
-          produced = await production.produceFinishedGoods(ref, produce);
+          produced = await inRunTenant(() =>
+            production.produceFinishedGoods(ref, produce),
+          );
         }
       }
       return { run, completion, consumed, produced };
