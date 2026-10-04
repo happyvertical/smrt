@@ -24,7 +24,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { tokenizer } from 'acorn';
+
+// Standards CI installs trusted validator dependencies outside the workspace.
+const acornPath = process.env.SMRT_ACORN_PATH;
+const { tokenizer } = acornPath
+  ? await import(pathToFileURL(acornPath).href)
+  : await import('acorn');
 
 const ROOT = join(import.meta.dirname, '..');
 const PACKAGES = join(ROOT, 'packages');

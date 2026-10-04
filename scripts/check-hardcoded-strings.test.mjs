@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { findViolations } from './check-hardcoded-strings.mjs';
 
@@ -81,39 +82,51 @@ test('QuoteEditor nested field arrays are not prose', () => {
   assert.deepEqual(findViolations(source), []);
 });
 
-test('CLI retains strict enforcement for genuine shipped prose', () => {
-  const root = mkdtempSync(
-    join(process.env.CI_TEST_TMPDIR ?? tmpdir(), 'scanner-'),
-  );
-  try {
-    mkdirSync(join(root, 'scripts'));
-    mkdirSync(join(root, 'packages/commerce/src'), { recursive: true });
-    copyFileSync(
-      new URL('./check-hardcoded-strings.mjs', import.meta.url),
-      join(root, 'scripts/check-hardcoded-strings.mjs'),
+for (const externalAcorn of [false, true]) {
+  test(`CLI retains strict enforcement with ${externalAcorn ? 'external' : 'workspace'} Acorn`, () => {
+    const root = mkdtempSync(
+      join(process.env.CI_TEST_TMPDIR ?? tmpdir(), 'scanner-'),
     );
-    symlinkSync(
-      new URL('../node_modules', import.meta.url).pathname,
-      join(root, 'node_modules'),
-      'dir',
-    );
-    const fixture = join(root, 'packages/commerce/src/Fixture.svelte');
-    const expression =
-      '{#each [{key: "a"}, {key: "b"}] as field}{field.key}{/each}';
-    writeFileSync(fixture, expression + '<p>Actual visible prose</p>');
-    const run = () =>
-      spawnSync(
-        process.execPath,
-        [join(root, 'scripts/check-hardcoded-strings.mjs')],
-        { encoding: 'utf8' },
+    try {
+      mkdirSync(join(root, 'scripts'));
+      mkdirSync(join(root, 'packages/commerce/src'), { recursive: true });
+      copyFileSync(
+        new URL('./check-hardcoded-strings.mjs', import.meta.url),
+        join(root, 'scripts/check-hardcoded-strings.mjs'),
       );
-    const result = run();
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /Actual visible prose/);
-    assert.doesNotMatch(result.stderr, /as field/);
-    writeFileSync(fixture, expression);
-    assert.equal(run().status, 0);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+      if (!externalAcorn) {
+        symlinkSync(
+          new URL('../node_modules', import.meta.url).pathname,
+          join(root, 'node_modules'),
+          'dir',
+        );
+      }
+      const fixture = join(root, 'packages/commerce/src/Fixture.svelte');
+      const expression =
+        '{#each [{key: "a"}, {key: "b"}] as field}{field.key}{/each}';
+      writeFileSync(fixture, expression + '<p>Actual visible prose</p>');
+      const run = () =>
+        spawnSync(
+          process.execPath,
+          [join(root, 'scripts/check-hardcoded-strings.mjs')],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              SMRT_ACORN_PATH: externalAcorn
+                ? fileURLToPath(import.meta.resolve('acorn'))
+                : '',
+            },
+          },
+        );
+      const result = run();
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /Actual visible prose/);
+      assert.doesNotMatch(result.stderr, /as field/);
+      writeFileSync(fixture, expression);
+      assert.equal(run().status, 0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
