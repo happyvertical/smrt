@@ -11,8 +11,15 @@ import {
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { minorToMajorUnits } from '../billing/units.js';
+import {
+  calculateInvoiceMinorLine,
+  type InvoiceCalculationContext,
+  type InvoiceLineDraft,
+  resolveInvoiceLineDraft,
+} from '../svelte/invoices/calculations.js';
 import type {
   AccountingLineItemInput,
+  InvoiceLineEditorState,
   InvoiceLineItemOptions,
 } from '../types/index.js';
 
@@ -67,16 +74,37 @@ export class InvoiceLineItem extends SmrtObject {
    */
   sku: string = '';
 
-  /**
-   * Quantity (e.g., impressions, hours, units).
-   *
-   * Left INTEGER: this package's own example is `quantity: 50000` impressions,
-   * and nothing in it writes a fractional quantity, so whether fractional
-   * quantities are intended here is unresolved. `ContractLineItem.quantity` is
-   * decimal, which is the inconsistency to settle deliberately rather than by
-   * changing a column type in passing (#2361).
-   */
-  quantity: number = 1;
+  /** Nonnegative decimal quantity (hours, weight, units), up to six fractional digits. */
+  quantity: number = 1.0;
+
+  /** Raw editor modes retained only while they resolve to the authoritative model fields. */
+  invoiceEditorStateJson: string = '';
+
+  /** Guarded editor metadata view; malformed stored JSON is treated as absent. */
+  get invoiceEditorState(): InvoiceLineEditorState | null {
+    try {
+      const value: unknown = JSON.parse(this.invoiceEditorStateJson);
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('draft' in value) ||
+        !('context' in value) ||
+        !value.draft ||
+        typeof value.draft !== 'object' ||
+        !value.context ||
+        typeof value.context !== 'object'
+      )
+        return null;
+      return value as InvoiceLineEditorState;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Store only this model's editor state, preserving unrelated metadata. */
+  set invoiceEditorState(value: InvoiceLineEditorState | null) {
+    this.invoiceEditorStateJson = value ? JSON.stringify(value) : '';
+  }
 
   /**
    * Unit price before discount, in **integer minor units** (cents, satoshis).
@@ -148,6 +176,10 @@ export class InvoiceLineItem extends SmrtObject {
 
   constructor(options: InvoiceLineItemOptions = {}) {
     super(options);
+    if (options.invoiceEditorStateJson !== undefined)
+      this.invoiceEditorStateJson = options.invoiceEditorStateJson;
+    if (options.invoiceEditorState !== undefined)
+      this.invoiceEditorState = structuredClone(options.invoiceEditorState);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.invoiceId !== undefined) this.invoiceId = options.invoiceId;
     if (options.description !== undefined)
@@ -168,42 +200,70 @@ export class InvoiceLineItem extends SmrtObject {
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
   }
 
-  /**
-   * Calculate the line amount, in integer minor units.
-   *
-   * Formula: `getSubtotal() + getTaxAmount()`, i.e.
-   * `(quantity * unitPrice - discount) * (1 + taxRate)` with the tax rounded.
-   *
-   * Tax is calculated on the discounted subtotal. This follows the common
-   * "discount before tax" approach used in most North American jurisdictions.
-   * For jurisdictions requiring different tax calculation methods, override
-   * this method or calculate amounts externally.
-   */
+  /** Calculate exact safe integer-minor totals, rounding gross and tax ties toward positive infinity. */
   calculateAmount(): number {
-    return this.getSubtotal() + this.getTaxAmount();
+    return calculateInvoiceMinorLine(this).totalMinor;
   }
 
-  /**
-   * Get subtotal (before tax), in integer minor units.
-   *
-   * `quantity` is an integer and `unitPrice` / `discount` are integer minor
-   * units, so this is exact with no rounding.
-   */
+  /** Rounded quantity times price, less the resolved flat minor-unit discount. */
   getSubtotal(): number {
-    return this.quantity * this.unitPrice - this.discount;
+    return calculateInvoiceMinorLine(this).subtotalMinor;
   }
 
-  /**
-   * Get tax amount, in integer minor units.
-   *
-   * `taxRate` is a genuine fraction, so this product is where a rate meets
-   * money and the only place rounding is needed. Rounding here — rather than
-   * letting a fractional tax leak into `Invoice.taxAmount` — is what lets the
-   * invoice's guards compare integers exactly instead of tolerating an epsilon
-   * (#2401).
-   */
+  /** Tax on the rounded discounted subtotal, in safe integer minor units. */
   getTaxAmount(): number {
-    return Math.round(this.getSubtotal() * this.taxRate);
+    return calculateInvoiceMinorLine(this).taxMinor;
+  }
+
+  /** Apply a server-validated draft without saving; authorization and transaction stay caller-owned. */
+  applyEditorDraft(
+    draft: InvoiceLineDraft,
+    context: InvoiceCalculationContext,
+  ): void {
+    const resolved = resolveInvoiceLineDraft(draft, context);
+    Object.assign(this, resolved);
+    this.invoiceEditorState = structuredClone({ draft, context });
+  }
+
+  /** Recover original editing modes only when current authority and resolved model fields agree. */
+  getEditorDraft(
+    authorizedContext: InvoiceCalculationContext,
+  ): InvoiceLineDraft | null {
+    const state = this.invoiceEditorState;
+    if (
+      !state ||
+      !authorizedContext ||
+      state.context?.currency !== authorizedContext.currency ||
+      state.context?.inheritedTaxRate !== authorizedContext.inheritedTaxRate
+    )
+      return null;
+    try {
+      const resolved = resolveInvoiceLineDraft(state.draft, authorizedContext);
+      if (
+        resolved.description !== this.description ||
+        resolved.sku !== this.sku ||
+        resolved.quantity !== this.quantity ||
+        resolved.unitPrice !== this.unitPrice ||
+        resolved.discount !== this.discount ||
+        resolved.taxRate !== this.taxRate
+      )
+        return null;
+      return structuredClone(state.draft);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Validate resolved fields and recompute amount before persistence; editor metadata never determines money. */
+  override async save(): Promise<this> {
+    this.amount = this.calculateAmount();
+    const state = this.invoiceEditorState;
+    if (
+      this.invoiceEditorStateJson &&
+      (!state || !this.getEditorDraft(state.context))
+    )
+      this.invoiceEditorState = null;
+    return (await super.save()) as this;
   }
 
   /**
