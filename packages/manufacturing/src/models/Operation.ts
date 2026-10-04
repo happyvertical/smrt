@@ -37,9 +37,11 @@ export interface OperationOptions extends SmrtObjectOptions {
   tableName: 'manufacturing_operations',
   // Natural key: one operation per code per tenant.
   conflictColumns: ['code', 'tenant_id'],
-  api: { include: ['list', 'get', 'create', 'update'] },
+  // Writes go through OperationService, which rejects a duplicate code and
+  // keeps the code fixed; generated create/update would upsert or rename.
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Operation extends SmrtObject {
   /** Tenant scope. `null` means the operation is a global record. */

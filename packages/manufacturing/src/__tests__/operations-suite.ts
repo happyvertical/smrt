@@ -364,6 +364,22 @@ export function operationsSuite(
         ).rejects.toThrow(OperationRetiredError);
       });
 
+      it('serializes concurrent replacements so the result is one of the requested routings', async () => {
+        const { cut, weld, paint } = await ops();
+        const bomId = await makeBom();
+        const long = [cut, weld, paint].map((operationId) => ({
+          operationId,
+          estimatedMinutes: 1,
+        }));
+        const short = [{ operationId: paint, estimatedMinutes: 2 }];
+        await Promise.allSettled([
+          routing.replaceRouting(bomId, long),
+          routing.replaceRouting(bomId, short),
+        ]);
+        const stored = (await routing.list(bomId)).map((s) => s.operationId);
+        expect([[cut, weld, paint], [paint]]).toContainEqual(stored);
+      });
+
       it('tolerates a missing-operation guard even when the steps table is queried directly', async () => {
         const steps = await RoutingStepCollection.create({ db });
         expect(await steps.findByBom(randomUUID())).toEqual([]);

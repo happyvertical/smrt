@@ -87,7 +87,16 @@ export class RoutingService {
         throw new OperationRetiredError(operation.id as string);
     }
 
-    const write = async (steps: RoutingStepCollection) => {
+    const write = async (
+      steps: RoutingStepCollection,
+      boms: BillOfMaterialsCollection,
+    ) => {
+      // Serialize replacements of one bill: saving the bill row takes its row
+      // lock for the rest of the transaction, so a concurrent replacement
+      // waits and then reads the committed routing instead of interleaving.
+      const bom = await boms.get(bomId);
+      if (!bom) throw new BomNotFoundError(bomId);
+      await bom.save();
       for (const step of await steps.findByBom(bomId)) await step.delete();
       const saved: RoutingStep[] = [];
       for (const [index, input] of inputs.entries()) {
@@ -105,10 +114,15 @@ export class RoutingService {
     };
 
     const underlying = this.db as unknown as TransactionalDb;
-    if (typeof underlying.transaction !== 'function') return write(this.steps);
-    return underlying.transaction(async (txDb) =>
-      write(await RoutingStepCollection.create({ db: txDb as DatabaseConfig })),
-    );
+    if (typeof underlying.transaction !== 'function')
+      return write(this.steps, this.boms);
+    return underlying.transaction(async (txDb) => {
+      const db = txDb as DatabaseConfig;
+      return write(
+        await RoutingStepCollection.create({ db }),
+        await BillOfMaterialsCollection.create({ db }),
+      );
+    });
   }
 }
 
