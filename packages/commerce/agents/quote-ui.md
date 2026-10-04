@@ -60,3 +60,7 @@ Set `QUOTE_EVIDENCE_DIR` and `CI_TEST_TMPDIR` to an owned evidence directory out
 `QUOTE_BROWSER_EXTENSION=/absolute/fixture.mjs`: export `handleRequest(req, res,
 {vite, render, css, requests})` returning true when handled, and
 `run({browser, baseUrl, evidence, requests})` for additional assertions.
+
+Invalid or unsafe display amounts/scales render localized unavailable text.
+Strict money helpers continue to reject malformed data; presentation recovery
+does not validate or authorize submitted money.

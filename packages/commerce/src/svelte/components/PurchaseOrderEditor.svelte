@@ -19,7 +19,7 @@ import {
   type PurchaseSourceOption,
   purchaseFieldNames,
 } from '../purchasing-types.js';
-import { quoteMinorText } from '../quote-types.js';
+import { type QuoteMoneyMinor, quoteMinorText } from '../quote-types.js';
 import type { QuoteFormAttributes } from './QuoteEditor.svelte';
 
 /** Native purchase/award preparation, review and explicit confirmation; never writes a record. */
@@ -125,9 +125,17 @@ const title = $derived(
     ),
 );
 const fingerprint = $derived(review?.fingerprint ?? retryFingerprint);
+function displayMoney(value: QuoteMoneyMinor): string {
+  try {
+    return quoteMinorText(value) ?? t(P['commerce.purchase.unknown']);
+  } catch (error) {
+    if (error instanceof RangeError)
+      return t(P['commerce.purchase.unavailable']);
+    throw error;
+  }
+}
 const money = (amountMinor: number | null) =>
-  quoteMinorText({ currency, minorUnitDigits, amountMinor }) ??
-  t(P['commerce.purchase.unknown']);
+  displayMoney({ currency, minorUnitDigits, amountMinor });
 </script>
 <section class="purchase-editor" aria-label={title}>
  <h2>{title}</h2>
@@ -175,8 +183,8 @@ const money = (amountMinor: number | null) =>
    {#if fingerprint}
     <h3>{t(P['commerce.purchase.review'])}</h3>
     {#if review}
-     <p>{review.sourceLabel}</p><p>{t(P['commerce.purchase.total'])}: {quoteMinorText(review.total)??t(P['commerce.purchase.unknown'])} {review.total.currency}</p>
-     <p>{t(P['commerce.purchase.tax'])}: {quoteMinorText({...review.total,amountMinor:review.taxMinor})} {review.total.currency}</p>
+     <p>{review.sourceLabel}</p><p>{t(P['commerce.purchase.total'])}: {displayMoney(review.total)} {review.total.currency}</p>
+     <p>{t(P['commerce.purchase.tax'])}: {displayMoney({...review.total,amountMinor:review.taxMinor})} {review.total.currency}</p>
      <p>{review.scope}</p>{#each review.notices??[] as notice}<p role="status">{notice}</p>{/each}
     {:else}<p>{t(P['commerce.purchase.uncertain'])}</p>{/if}
     <Input type="hidden" name={fields.fingerprint} value={fingerprint} />

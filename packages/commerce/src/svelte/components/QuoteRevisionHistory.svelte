@@ -3,7 +3,11 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { Q } from '../quote-i18n.js';
-import { type QuoteRevision, quoteMinorText } from '../quote-types.js';
+import {
+  type QuoteMoneyMinor,
+  type QuoteRevision,
+  quoteMinorText,
+} from '../quote-types.js';
 /** Read-only revision evidence, in caller-provided order. */
 export interface Props {
   /** Immutable summaries, including unknown caller status labels. */
@@ -15,6 +19,14 @@ export interface Props {
 }
 let { revisions, title, evidence }: Props = $props();
 const { t } = useI18n();
+function amount(money: QuoteMoneyMinor): string {
+  try {
+    return quoteMinorText(money) ?? t(Q['commerce.quote.unknown']);
+  } catch (error) {
+    if (error instanceof RangeError) return t(Q['commerce.quote.unavailable']);
+    throw error;
+  }
+}
 </script>
 <section class="quote-history" aria-label={title ?? t(Q['commerce.quote.history'])}>
   <h2>{title ?? t(Q['commerce.quote.history'])}</h2>
@@ -25,7 +37,7 @@ const { t } = useI18n();
           <h3>{revision.label}</h3>
           <p>{t(Q[revision.kind === 'vendor-quotation' ? 'commerce.quote.vendor' : 'commerce.quote.estimate'])} · {revision.counterparty}</p>
           <p>{revision.status}{#if revision.recordedAt} · {revision.recordedAt}{/if}</p>
-          <p>{quoteMinorText(revision.total) ?? t(Q['commerce.quote.unknown'])} {revision.total.currency}</p>
+          <p>{amount(revision.total)} {revision.total.currency}</p>
           {#if revision.reason}<p>{revision.reason}</p>{/if}
           {#if revision.scope}<p>{revision.scope}</p>{/if}
           {@render evidence?.(revision)}

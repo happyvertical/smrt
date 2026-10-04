@@ -18,6 +18,7 @@ export const P = defineMessages({
   'commerce.purchase.source_amount': 'Source amount',
   'commerce.purchase.minimum': 'Minimum',
   'commerce.purchase.maximum': 'Maximum',
+  'commerce.purchase.unavailable': 'Amount unavailable',
   'commerce.purchase.unknown': 'Unknown',
   'commerce.purchase.empty_allocations': 'No allocations supplied.',
   'commerce.purchase.tax': 'Included tax',
