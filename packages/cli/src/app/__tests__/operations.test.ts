@@ -761,6 +761,12 @@ describe('smrt app backup', () => {
       'Backup destination must remain outside the source tree.',
     );
     expect(existsSync(join(fixture.app, 'backup'))).toBe(false);
+    const nestedStorageDestination = join(fixture.data, 'backup');
+    expect(await fixture.run(['backup', nestedStorageDestination])).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Backup destination must remain outside local storage.',
+    );
+    expect(existsSync(nestedStorageDestination)).toBe(false);
   });
 
   it('refuses while the application writer is live and on deployed profiles', async () => {
