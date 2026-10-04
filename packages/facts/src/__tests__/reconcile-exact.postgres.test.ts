@@ -90,9 +90,17 @@ describePostgres('exact fact reconciliation on PostgreSQL (#3400)', () => {
     vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
       new Error('embedding provider unavailable'),
     );
-    vi.spyOn(collection, 'semanticSearch').mockRejectedValue(
-      new Error('embedding provider unavailable'),
-    );
+    let entered = 0;
+    let release!: () => void;
+    const overlap = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(collection, 'semanticSearch').mockImplementation(async () => {
+      entered += 1;
+      if (entered === 2) release();
+      await overlap;
+      throw new Error('embedding provider unavailable');
+    });
     const originalCreate = FactSourceCollection.prototype.create;
     vi.spyOn(FactSourceCollection.prototype, 'create').mockImplementation(
       async function (input) {
@@ -121,6 +129,9 @@ describePostgres('exact fact reconciliation on PostgreSQL (#3400)', () => {
     await expect(rolledBack).rejects.toThrow('force reconciliation rollback');
     const result = await successful;
     expect(result.action).toBe('created');
+    expect(
+      await collection.count({ where: { tenantId, domain: 'civic' } }),
+    ).toBe(1);
     expect(
       await collection.count({ where: { tenantId, domain: 'planning' } }),
     ).toBe(0);
