@@ -221,6 +221,14 @@ async function syncParsed(
         ...options.expansion,
       })
     : parseICalendarEvents(options.source, authoritativeIcs, options.parse);
+  if (
+    !options.expansion &&
+    entries.some(
+      (entry) => entry.recurrence || entry.additionalRecurrenceIds.length,
+    )
+  ) {
+    throw new Error('Recurring calendar sync requires bounded expansion');
+  }
   const tenantId = options.tenantId ?? null;
   let created = 0;
   let updated = 0;

@@ -235,7 +235,10 @@ ignored. Each series retains the authoritative master's SDK-serialized document
 and version, including when a requested window contains no occurrences. Later
 windows expand that retained document when the supplied master is stale or equal,
 so unseen slots cannot be created from older payloads or recurrence rules. The
-master document is written in the same transaction as occurrence updates.
+master document is written in the same transaction as occurrence updates. The
+expansion requirement also applies to the retained document: a stale minimal
+cancellation that resolves to a recurring master requires a window. Without one,
+sync rejects and rolls back all writes; retry with bounded expansion.
 A cancellation is an update, and a newer scheduled record restores it.
 A minimal master cancellation (UID/STATUS/version without DTSTART) cancels known
 series events and stores a series tombstone that blocks older resurrection.

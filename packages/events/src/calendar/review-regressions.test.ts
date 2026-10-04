@@ -186,3 +186,83 @@ for (const dialect of ['sqlite', 'postgres'] as const) {
     },
   );
 }
+
+for (const dialect of ['sqlite', 'postgres'] as const) {
+  it.skipIf(dialect === 'postgres' && !pgUrl)(
+    `retained recurring master requires expansion atomically (${dialect})`,
+    async () => {
+      const db = await getTestDatabase({
+        type: dialect,
+        url: dialect === 'postgres' ? pgUrl : ':memory:',
+        classes: ['Event', 'EventSeries', 'EventType'],
+      });
+      const source = randomUUID();
+      const master = event(
+        'UID:series\r\nDTSTART:20261005T190000Z\r\nSEQUENCE:10\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\nSUMMARY:Authoritative',
+      );
+      await syncICalendarSource({
+        db,
+        source,
+        ics: feed(master),
+        expansion: {
+          rangeStart: new Date('2026-10-01Z'),
+          rangeEnd: new Date('2026-10-06Z'),
+        },
+      });
+      const events = await EventCollection.create({ db });
+      const series = await EventSeriesCollection.create({ db });
+      const beforeEvents = (await events.list({ where: { source } })).map((e) =>
+        e.toJSON(),
+      );
+      const beforeSeries = (await series.list({ where: { source } })).map((e) =>
+        e.toJSON(),
+      );
+      const notice = event('UID:series\r\nSTATUS:CANCELLED\r\nSEQUENCE:9');
+      // This new master is retained first, proving the rejection rolls back even
+      // writes made earlier in the same transaction while choosing authority.
+      const fresh = event(
+        'UID:fresh\r\nDTSTART:20261015T190000Z\r\nSUMMARY:Fresh',
+      );
+      await expect(
+        syncICalendarSource({ db, source, ics: feed(fresh + notice) }),
+      ).rejects.toThrow('requires bounded expansion');
+      expect(
+        (await events.list({ where: { source } })).map((e) => e.toJSON()),
+      ).toEqual(beforeEvents);
+      expect(
+        (await series.list({ where: { source } })).map((e) => e.toJSON()),
+      ).toEqual(beforeSeries);
+      await syncICalendarSource({
+        db,
+        source,
+        ics: feed(fresh + notice),
+        expansion: window,
+      });
+      const recurring = (await events.list({ where: { source } })).filter(
+        (e) => e.externalId === 'series',
+      );
+      expect(recurring).toHaveLength(3);
+      expect(
+        recurring.every(
+          (e) =>
+            e.status === 'scheduled' &&
+            Boolean(
+              (e.getMetadata().calendar as Record<string, unknown>)
+                .recurrenceId,
+            ),
+        ),
+      ).toBe(true);
+      await syncICalendarSource({
+        db,
+        source,
+        ics: feed(notice.replace('SEQUENCE:9', 'SEQUENCE:11')),
+      });
+      const cancelled = (await events.list({ where: { source } })).filter(
+        (e) => e.externalId === 'series',
+      );
+      expect(cancelled).toHaveLength(3);
+      expect(cancelled.every((e) => e.status === 'cancelled')).toBe(true);
+      await db.close?.();
+    },
+  );
+}
