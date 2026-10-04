@@ -1,5 +1,37 @@
 # @happyvertical/smrt-core
 
+## 0.53.5
+
+### Patch Changes
+
+- ### Features
+  
+  - add Assembly, the product that is made, with bill editor (#3482) (manufacturing)
+  - add reusable activity footer ticker (#3385) (svelte)
+  - preserve exact decimal-hours-only source evidence (#3395) (timesheets)
+  - operations, routing steps and estimated labour (#3481) (manufacturing)
+  - release shared commercial UI and native recovery workflows (#3466)
+  - login rate limiter and per-person PIN on an enrolled device (#3273, #3276) (#3471) (users)
+  - add employment and qualification records (#3470) (human-resources)
+  - synchronize iCalendar sources by UID (#3465) (events)
+  - starter gaps — local MCP tokens, runtime collections, assistant defaults (#3367) (#3472)
+  
+  ### Bug Fixes
+  
+  - initialize deferred AI client before reviews (#3439) (content)
+  - starter-gaps loose ends — runtime parity, dev-mcp db, smrt init, Biome (#3446) (#3477)
+  - bootstrap trusted Acorn for standards checks (#3478) (ci)
+  - AdminShell draws no bottom toggle for a systemBar with no systemPanel (#3364) (smrt-svelte)
+  - make fact reconciliation and audit repair converge (#3406) (content)
+  - make initialized local backups succeed safely (#3437) (cli)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.100.3 (#3467) (deps)
+- @happyvertical/smrt-config@0.53.5
+  - @happyvertical/smrt-scanner@0.53.5
+  - @happyvertical/smrt-types@0.53.5
+
 ## 0.53.4
 
 ### Patch Changes
