@@ -217,9 +217,10 @@ describe('reconcile()', () => {
         status: 'active',
         sourceCount: 0,
       });
-      vi.spyOn(collection, 'semanticSearch').mockRejectedValue(
-        new Error('embedding provider unavailable'),
-      );
+      vi.spyOn(
+        collection as any,
+        'semanticSearchIdsWithAvailability',
+      ).mockResolvedValue({ available: false });
 
       const result = await collection.reconcile({
         rawInput: '  council   APPROVED the capital plan. ',
@@ -271,9 +272,10 @@ describe('reconcile()', () => {
         type: 'event',
         domain: 'civic',
       });
-      vi.spyOn(collection, 'semanticSearch').mockRejectedValue(
-        new Error('embedding provider unavailable'),
-      );
+      vi.spyOn(
+        collection as any,
+        'semanticSearchIdsWithAvailability',
+      ).mockResolvedValue({ available: false });
 
       const otherDomain = await collection.reconcile({
         rawInput: 'Council approved the capital plan.',
@@ -306,11 +308,14 @@ describe('reconcile()', () => {
         status: 'active',
       });
       const semanticSearch = vi
-        .spyOn(collection, 'semanticSearch')
-        .mockResolvedValue([
-          Object.assign(otherTenant, { _similarity: 0.99 }),
-          Object.assign(crossScope, { _similarity: 0.95 }),
-        ]);
+        .spyOn(collection as any, 'semanticSearchIdsWithAvailability')
+        .mockResolvedValue({
+          available: true,
+          matches: [
+            { id: otherTenant.id, similarity: 0.99 },
+            { id: crossScope.id, similarity: 0.95 },
+          ],
+        });
 
       const result = await collection.reconcile({
         rawInput: 'Council approved the capital plan.',
@@ -327,6 +332,7 @@ describe('reconcile()', () => {
         expect.objectContaining({
           where: {
             tenantId: 'tenant-a',
+            accessScope: null,
           },
         }),
       );
@@ -336,19 +342,20 @@ describe('reconcile()', () => {
       let releaseFirst!: () => void;
       const firstSearchEntered = Promise.withResolvers<void>();
       const secondSearchEntered = Promise.withResolvers<void>();
-      vi.spyOn(collection, 'semanticSearch').mockImplementation(
-        async (input) => {
-          if (input === 'First civic fact') {
-            firstSearchEntered.resolve();
-            await new Promise<void>((resolve) => {
-              releaseFirst = resolve;
-            });
-          } else {
-            secondSearchEntered.resolve();
-          }
-          return [];
-        },
-      );
+      vi.spyOn(
+        collection as any,
+        'semanticSearchIdsWithAvailability',
+      ).mockImplementation(async (input) => {
+        if (input === 'First civic fact') {
+          firstSearchEntered.resolve();
+          await new Promise<void>((resolve) => {
+            releaseFirst = resolve;
+          });
+        } else {
+          secondSearchEntered.resolve();
+        }
+        return { available: true, matches: [] };
+      });
 
       const first = collection.reconcile({
         rawInput: 'First civic fact',
@@ -433,9 +440,13 @@ describe('reconcile()', () => {
         sourceCount: 1,
       });
       await existing.generateEmbeddings();
-      vi.spyOn(target, 'semanticSearch').mockResolvedValue([
-        Object.assign(existing, { _similarity: 0.72 }),
-      ]);
+      vi.spyOn(
+        target as any,
+        'semanticSearchIdsWithAvailability',
+      ).mockResolvedValue({
+        available: true,
+        matches: [{ id: existing.id, similarity: 0.72 }],
+      });
       return existing;
     }
 

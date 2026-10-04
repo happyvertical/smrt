@@ -69,6 +69,10 @@ export class Fact extends SmrtObject {
   @field()
   domain: string = '';
 
+  /** Opaque reconciliation partition; NULL denotes unclassified legacy data. */
+  @field({ type: 'text', nullable: true })
+  accessScope: string | null = null;
+
   /**
    * Self-referencing pointer to the predecessor fact in an evolution chain.
    *
@@ -107,6 +111,8 @@ export class Fact extends SmrtObject {
     if (options.type !== undefined) this.type = options.type;
     if (options.status !== undefined) this.status = options.status;
     if (options.domain !== undefined) this.domain = options.domain;
+    if (options.accessScope !== undefined)
+      this.accessScope = options.accessScope;
     if (options.previousFactId !== undefined)
       this.previousFactId = options.previousFactId;
     if (options.evolutionType !== undefined)

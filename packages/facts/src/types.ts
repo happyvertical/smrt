@@ -80,6 +80,8 @@ export type FactContentRelationship =
  * Options for creating a Fact instance
  */
 export interface FactOptions extends SmrtObjectOptions {
+  /** Opaque reconciliation partition. NULL is legacy/unclassified, never public. */
+  accessScope?: string | null;
   id?: string;
   slug?: string;
   type?: FactType;
@@ -176,6 +178,9 @@ export interface FactTagOptions extends SmrtObjectOptions {
  * Options for the reconcile() operation
  */
 export interface ReconcileOptions {
+  /** Exact candidate partition within the tenant. Omission selects legacy NULL only.
+   * The caller must authorize this scope; it is not an authorization credential. */
+  accessScope?: string | null;
   /** Raw text input to reconcile */
   rawInput: string;
   /** Similarity threshold for automatic merge (default: 0.85) */
