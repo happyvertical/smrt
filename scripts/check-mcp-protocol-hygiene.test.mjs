@@ -131,7 +131,11 @@ test('standalone CLI uses configured TypeScript without workspace node_modules a
 test('standalone standards workflow supplies the existing trusted compiler to the MCP gate', () => {
   const workflow = readFileSync(join(root, '.github/workflows/on-pull-request.yml'), 'utf8');
   const job = workflow.slice(workflow.indexOf('  check-standards:'));
-  assert.ok(job.indexOf('Install trusted README validator dependency') < job.indexOf('Checkout PR branch'));
+  const installIndex = job.indexOf('Install trusted standards validator dependencies');
+  const checkoutIndex = job.indexOf('Checkout PR branch');
+  assert.ok(installIndex >= 0, 'trusted standards install step must exist');
+  assert.ok(checkoutIndex >= 0, 'PR checkout step must exist');
+  assert.ok(installIndex < checkoutIndex, 'trusted install must precede PR checkout');
   assert.match(job, /pnpm@11\.13\.1 typescript@5\.9\.3 @types\/node@24\.13\.2/);
   const step = job.slice(job.indexOf('      - name: Check MCP 2026-07-28 protocol hygiene')).split('\n      - name:')[0];
   assert.match(step, /SMRT_TYPESCRIPT_PATH: \$\{\{ runner\.temp \}\}\/readme-validator\/node_modules\/typescript\/lib\/typescript\.js/);
