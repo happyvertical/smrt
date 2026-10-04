@@ -16,6 +16,10 @@
  *  - `SMRT_MCP_APP_SLUG` — directory name under `~/.config`.
  *  - `SMRT_MCP_SERVER_NAME` / `SMRT_MCP_SERVER_VERSION` — local server identity.
  *  - `SMRT_MCP_DEFAULT_SERVER_URL` — fallback server URL.
+ *  - `SMRT_MCP_PATH` (`--mcp-path`) — the app's MCP endpoint path, e.g.
+ *    `/mcp`. Defaults to `/api/mcp`. An explicit value (even an empty
+ *    environment value) must be valid; a malformed, missing or repeated
+ *    value option is a usage error (exit 2) before the bridge listens.
  *
  * Apps that want their own branded bin should call `runMcpStdioBridge`
  * directly from `@happyvertical/smrt-app-cli` — this package's root export —
@@ -23,20 +27,20 @@
  */
 
 import { runMcpStdioBridge } from '../bridge.js';
+import { McpBridgeUsageError, parseMcpBridgeArgs } from '../bridge-args.js';
 
-function readArg(name: string): string | undefined {
-  const prefix = `--${name}=`;
-  const match = process.argv.find((arg) => arg.startsWith(prefix));
-  if (match) return match.slice(prefix.length);
-  const flagIdx = process.argv.indexOf(`--${name}`);
-  if (flagIdx >= 0 && flagIdx + 1 < process.argv.length) {
-    return process.argv[flagIdx + 1];
-  }
-  return undefined;
+let parsed: ReturnType<typeof parseMcpBridgeArgs>;
+try {
+  parsed = parseMcpBridgeArgs(process.argv.slice(2), process.env);
+} catch (error) {
+  if (!(error instanceof McpBridgeUsageError)) throw error;
+  console.error(`smrt-mcp-bridge: ${error.message}`);
+  process.exit(2);
 }
+const arg = (name: Parameters<typeof parsed.values.get>[0]) =>
+  parsed.values.get(name);
 
-const envPrefix =
-  readArg('env-prefix') ?? process.env.SMRT_MCP_ENV_PREFIX ?? '';
+const envPrefix = arg('env-prefix') ?? process.env.SMRT_MCP_ENV_PREFIX ?? '';
 
 if (!envPrefix) {
   console.error(
@@ -45,19 +49,20 @@ if (!envPrefix) {
   process.exit(2);
 }
 
-const appSlug = readArg('app-slug') ?? process.env.SMRT_MCP_APP_SLUG;
+const appSlug = arg('app-slug') ?? process.env.SMRT_MCP_APP_SLUG;
 const defaultServerUrl =
-  readArg('default-server-url') ?? process.env.SMRT_MCP_DEFAULT_SERVER_URL;
+  arg('default-server-url') ?? process.env.SMRT_MCP_DEFAULT_SERVER_URL;
 const serverName =
-  readArg('name') ?? process.env.SMRT_MCP_SERVER_NAME ?? 'smrt-app-mcp';
+  arg('name') ?? process.env.SMRT_MCP_SERVER_NAME ?? 'smrt-app-mcp';
 const serverVersion =
-  readArg('version') ?? process.env.SMRT_MCP_SERVER_VERSION ?? '0.0.0';
+  arg('version') ?? process.env.SMRT_MCP_SERVER_VERSION ?? '0.0.0';
 
 await runMcpStdioBridge({
-  transport: process.argv.includes('--legacy-rest') ? 'legacy-rest' : 'mcp',
+  transport: parsed.legacyRest ? 'legacy-rest' : 'mcp',
   envPrefix,
   appSlug,
   defaultServerUrl,
   requireSecureServerUrl: true,
+  ...(parsed.mcpPath ? { mcpPath: parsed.mcpPath } : {}),
   serverInfo: { name: serverName, version: serverVersion },
 });

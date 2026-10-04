@@ -25,7 +25,7 @@ mutations without hand-wiring cache keys or fetch/state.
   derived from the generated definition (same URL scheme as the generated
   client, but HTTP error statuses reject instead of resolving).
 - `unwrapListResult` / `unwrapItemResult` — normalize generated-client payloads
-  (`T[]`, `{ data }` envelopes, `{ error }` bodies → thrown
+  (`T[]`, `{ items }` list envelopes, `{ data }` envelopes, `{ error }` bodies → thrown
   `SmrtWebRequestError`).
 
 ## Modules

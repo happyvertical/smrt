@@ -42,7 +42,7 @@ import {
   resolveAnchorClassName,
 } from './changes-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
-import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
+import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /**
@@ -76,7 +76,9 @@ export function generateEventsRoute(
     options.eventsRoute?.maxSubscribers,
     normalizeAllowedOrigins(options.eventsRoute?.allowedOrigins),
     options.eventsRoute?.allowCredentials === true,
-    resolveSvelteKitConfigImport(projectRoot, routeDir, options),
+    generateCollectionAccessImports(projectRoot, routeDir, options, [
+      'getCollection',
+    ]),
   );
 
   if (!existsSync(routeDir)) {
@@ -190,7 +192,7 @@ function generateEventsRouteTemplate(
   maxSubscribers: number | undefined,
   allowedOrigins: string[] | undefined,
   allowCredentials: boolean,
-  configImport: string,
+  collectionAccessImports: string,
 ): string {
   const configuredMaxSubscribers =
     maxSubscribers !== undefined &&
@@ -252,8 +254,8 @@ import {
   resolveDispatchTenantScope,
   tryReserveChangeEventSubscriberSlot,
 } from '@happyvertical/smrt-core';
-import { getCollection } from '${configImport}';
 import type { RequestHandler } from './$types';
+${collectionAccessImports}
 
 const MANIFEST_HASH = ${manifestHashLiteral};
 ${corsBlock.helpers}

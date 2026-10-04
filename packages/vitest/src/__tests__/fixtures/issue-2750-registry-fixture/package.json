@@ -1,5 +1,5 @@
 {
-  "name": "smrt-issue-2750-registry-fixture",
+  "name": "@fixture/smrt-issue-2750-registry",
   "private": true,
   "version": "0.0.0",
   "type": "module"

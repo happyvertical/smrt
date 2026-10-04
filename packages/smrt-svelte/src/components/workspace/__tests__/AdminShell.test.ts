@@ -126,7 +126,26 @@ describe('AdminShell', () => {
     }
   });
 
-  it('preserves the system toggle when a custom system bar is supplied', async () => {
+  it('preserves the system toggle when a custom system bar has a system panel', async () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        systemBar: textSnippet('custom status'),
+        systemPanel: textSnippet('status detail'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(
+        container.querySelector('footer .smrt-admin-shell__edge-toggle'),
+      ).not.toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('draws no bottom toggle for a system bar with no system panel', async () => {
     const component = mount(AdminShell, {
       target: container,
       props: {
@@ -136,8 +155,29 @@ describe('AdminShell', () => {
     });
     try {
       await tick();
+      expect(container.querySelector('footer')?.textContent).toContain(
+        'custom status',
+      );
       expect(
         container.querySelector('footer .smrt-admin-shell__edge-toggle'),
+      ).toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('keeps the default bottom toggle when neither system slot is supplied', async () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: { children: textSnippet('main') },
+    });
+    try {
+      await tick();
+      expect(
+        container.querySelector('footer .smrt-admin-shell__edge-toggle'),
+      ).not.toBeNull();
+      expect(
+        container.querySelector('header .smrt-admin-shell__edge-toggle'),
       ).not.toBeNull();
     } finally {
       unmount(component);

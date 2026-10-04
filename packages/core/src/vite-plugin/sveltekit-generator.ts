@@ -12,7 +12,9 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
@@ -57,7 +59,11 @@ import {
   reservesResourcesRoute,
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
-import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
+import {
+  assertSvelteKitConfigModuleNotReserved,
+  generateCollectionAccessImports,
+  resolveSvelteKitConfigImport,
+} from './sveltekit-config-import.js';
 import { canonicalSvelteKitPath } from './sveltekit-path.js';
 import {
   collectSyncApplyTargets,
@@ -1641,6 +1647,8 @@ export async function generateSvelteKitRoutes(
   hooks: SvelteKitGenerationHooks = {},
 ): Promise<void> {
   if (!options.enabled) return;
+  // Before any write: the config module must not alias generated output.
+  assertSvelteKitConfigModuleNotReserved(options);
 
   console.log('[smrt] Generating SvelteKit routes...');
 
@@ -2254,6 +2262,41 @@ function formatRegistrationImport(importedObject: {
 }
 
 /**
+ * Whether `@happyvertical/smrt-app-runtime/sveltekit` resolves from the
+ * consumer at `projectRoot` (same signal as `consumerHasSmrtUsers`).
+ */
+function consumerHasSmrtAppRuntime(projectRoot: string): boolean {
+  try {
+    createRequire(
+      pathToFileURL(join(projectRoot, 'package.json')).href,
+    ).resolve('@happyvertical/smrt-app-runtime/sveltekit');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Default config module for apps that install the application runtime. */
+const RUNTIME_CONFIG_FILE_CONTENT = `/**
+ * The application's SMRT runtime (\`@happyvertical/smrt-app-runtime\`).
+ * Generated once by the smrt() Vite plugin because this file was missing; it
+ * is never overwritten, so add application options here.
+ *
+ * The plugin registers the generated objects before this module runs, and
+ * generated API routes resolve collections through \`runtime.getCollection()\`
+ * (request-scoped). In the local profile the runtime holds the single-writer
+ * lease; pass \`acquireWriterLease: false\` to opt out.
+ */
+
+import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
+import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
+
+export const runtime = createSmrtSvelteKitRuntime({
+  providerReadiness: createProviderReadinessProbe,
+});
+`;
+
+/**
  * Generates centralized SMRT configuration file
  * Only creates if file doesn't exist (preserves user customizations)
  */
@@ -2273,6 +2316,18 @@ async function generateSmrtConfigFile(
   // Don't overwrite existing config file
   if (existsSync(configFilePath)) {
     console.log('[smrt] Config file already exists, skipping generation');
+    return;
+  }
+
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+  }
+
+  // Apps that install the SMRT application runtime get a runtime-shaped
+  // config: generated routes resolve collections through `runtime`.
+  if (consumerHasSmrtAppRuntime(projectRoot)) {
+    writeFileSync(configFilePath, RUNTIME_CONFIG_FILE_CONTENT, 'utf-8');
+    console.log(`[smrt] Generated configuration file: ${configFilePath}`);
     return;
   }
 
@@ -3258,21 +3313,20 @@ function generateCollectionRouteTemplate(
   // for a given manifest — same value the generated virt-web module exports and
   // the client persistence namespace keys on.
   const webManifestHash = computeWebManifestHash(semanticManifest);
-  const configImport = resolveSvelteKitConfigImport(
+  const collectionAccessImports = generateCollectionAccessImports(
     projectRoot,
     routeDir,
     options,
+    ['getCollection'],
   );
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
-${
-  serializerImports ? `${serializerImports}\n` : ''
-}import { getCollection } from '${configImport}';
-${hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
+${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
 ${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
@@ -3451,19 +3505,20 @@ function generateItemRouteTemplate(
   // The build-time web-collection shape digest (#1764) salts the v2 read ETag —
   // same value as the list route and the generated virt-web module (see above).
   const webManifestHash = computeWebManifestHash(semanticManifest);
-  const configImport = resolveSvelteKitConfigImport(
+  const collectionAccessImports = generateCollectionAccessImports(
     projectRoot,
     routeDir,
     options,
+    ['getCollection'],
   );
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '${configImport}';
-${hasPut || hasDelete ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
+${collectionAccessImports}
 ${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
@@ -3624,22 +3679,34 @@ function generateActionRouteTemplate(
     'normalizeTypedHttpError',
     ...[...decoderImports].sort(),
   ].join(', ');
+  const usesCollection =
+    hostType === 'collection' || routeConfig.scope !== 'collection';
   const configImport = resolveSvelteKitConfigImport(
     projectRoot,
     routeDir,
     options,
   );
+  const registerImport = resolveSvelteKitConfigImport(projectRoot, routeDir, {
+    configPath: options.configPath,
+    configFileName: 'smrt-register.ts',
+  });
   const importBlock = [
     "import { error, json } from '@sveltejs/kit';",
     `import { ${coreImports} } from '@happyvertical/smrt-core';`,
-    hostType === 'collection' || routeConfig.scope !== 'collection'
-      ? `import { getCollection } from '${configImport}';`
+    usesCollection
+      ? null
       : [
+          `import '${registerImport}';`,
           `import '${configImport}';`,
           "import { ObjectRegistry } from '@happyvertical/smrt-core';",
         ].join('\n'),
     typeImports,
     "import type { RequestHandler } from './$types';",
+    usesCollection
+      ? generateCollectionAccessImports(projectRoot, routeDir, options, [
+          'getCollection',
+        ])
+      : null,
   ]
     .filter(Boolean)
     .join('\n');

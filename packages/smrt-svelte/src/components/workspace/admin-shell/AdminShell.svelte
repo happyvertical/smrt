@@ -89,7 +89,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     focusRail?: Snippet;
     /** Content for the right focus panel, receives the active tool. */
     focusPanel?: Snippet<[{ tool: ShellFocusTool | null }]>;
-    /** Content for the system bar. */
+    /**
+     * Content for the system bar. When supplied without a `systemPanel` it owns
+     * the bottom band: there is nothing to open, so no bottom toggle is drawn.
+     */
     systemBar?: Snippet;
     /** Content for the system panel. */
     systemPanel?: Snippet;
@@ -1008,7 +1011,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         style:--band-column={2}
       >
         {#if systemBar}{@render systemBar()}{/if}
-        {@render edgeToggle('bottom')}
+        {#if systemPanel || !systemBar}{@render edgeToggle('bottom')}{/if}
       </div>
       {#if bottomRightCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-right">

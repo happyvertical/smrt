@@ -84,7 +84,7 @@ describe('smrtConsumer registration generation', () => {
     writeFileSync(
       join(tmpDir, 'package.json'),
       JSON.stringify({
-        name: 'consumer-app',
+        name: '@fixture/consumer-app',
         version: '1.0.0',
       }),
     );
@@ -319,12 +319,12 @@ describe('smrtConsumer registration generation', () => {
       JSON.stringify({
         version: '1.0.0',
         timestamp: 1,
-        packageName: 'consumer-app',
+        packageName: '@fixture/consumer-app',
         objects: {
-          'consumer-app:Item': {
+          '@fixture/consumer-app:Item': {
             className: 'Item',
-            qualifiedName: 'consumer-app:Item',
-            packageName: 'consumer-app',
+            qualifiedName: '@fixture/consumer-app:Item',
+            packageName: '@fixture/consumer-app',
             collection: 'items',
             fields: { title: { type: 'text' } },
             methods: {},
@@ -348,12 +348,14 @@ describe('smrtConsumer registration generation', () => {
     );
 
     // Local entry survives with its field metadata intact.
-    expect(merged.objects['consumer-app:Item']).toBeDefined();
-    expect(merged.objects['consumer-app:Item'].fields.title.type).toBe('text');
+    expect(merged.objects['@fixture/consumer-app:Item']).toBeDefined();
+    expect(merged.objects['@fixture/consumer-app:Item'].fields.title.type).toBe(
+      'text',
+    );
     // Aggregated external entries are added alongside it.
     expect(merged.objects.ExternalThing).toBeDefined();
     // The local project's packageName remains the manifest cache key.
-    expect(merged.packageName).toBe('consumer-app');
+    expect(merged.packageName).toBe('@fixture/consumer-app');
 
     const knowledge = JSON.parse(
       readFileSync(join(smrtDir, 'smrt-knowledge.json'), 'utf-8'),
@@ -376,7 +378,7 @@ describe('smrtConsumer registration generation', () => {
           risks: ['file risk'],
         },
         packages: {
-          'consumer-app': { knowledge: { tags: ['package-tag'] } },
+          '@fixture/consumer-app': { knowledge: { tags: ['package-tag'] } },
         },
       }),
     );
@@ -565,8 +567,12 @@ export class CurrentOrder extends SmrtObject {
     const manifest = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
     );
-    expect(manifest.objects['consumer-app:CurrentOrder']).toBeDefined();
-    expect(manifest.objects['consumer-app:PreviousOrder']).toBeUndefined();
+    expect(
+      manifest.objects['@fixture/consumer-app:CurrentOrder'],
+    ).toBeDefined();
+    expect(
+      manifest.objects['@fixture/consumer-app:PreviousOrder'],
+    ).toBeUndefined();
   });
 
   it('does not rehash a prior artifact agent surface without a producer', async () => {
@@ -609,7 +615,9 @@ export class CurrentOrder extends SmrtObject {
       join(tmpDir, 'smrt.config.json'),
       JSON.stringify({
         knowledge: { enabled: true, includeDocs: false, includePrompts: false },
-        packages: { 'consumer-app': { knowledge: { enabled: false } } },
+        packages: {
+          '@fixture/consumer-app': { knowledge: { enabled: false } },
+        },
       }),
     );
     const knowledgePath = join(tmpDir, '.smrt', 'smrt-knowledge.json');
@@ -637,7 +645,7 @@ export class CurrentOrder extends SmrtObject {
     const previousManifest = JSON.stringify({
       version: '1.0.0',
       timestamp: 1,
-      packageName: 'consumer-app',
+      packageName: '@fixture/consumer-app',
       objects: {},
     });
     const previousKnowledge = '{"previous":"knowledge"}';
@@ -894,7 +902,7 @@ describe('smrtConsumer manifest resolution through package exports', () => {
     writeFileSync(
       join(tmpDir, 'package.json'),
       JSON.stringify({
-        name: 'consumer-app',
+        name: '@fixture/consumer-app',
         version: '1.0.0',
         dependencies,
       }),

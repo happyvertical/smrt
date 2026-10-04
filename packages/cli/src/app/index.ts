@@ -38,7 +38,12 @@ export {
   renderAppHelp,
   runAppCommand,
 } from './cli.js';
-export { AppCommandError, redactSecrets } from './errors.js';
+export {
+  AppCommandError,
+  ApplicationStartError,
+  type RedactSecretsOptions,
+  redactSecrets,
+} from './errors.js';
 export {
   type ApplicationStateRootOptions,
   assertExternalArtifactPath,
@@ -52,6 +57,7 @@ export {
   type StateCustodyOptions,
 } from './identity.js';
 export {
+  devServerArguments,
   launchVite,
   prepareMigration,
   resolveViteEntry,
@@ -65,6 +71,7 @@ export {
   type AppOperation,
   type PortabilityAdapter,
   runApplicationOperation,
+  START_OUTPUT_TAIL_BYTES,
 } from './operations.js';
 export {
   type ExportResult,
@@ -137,3 +144,8 @@ export {
   runtimeEnvironment,
   webLauncherPath,
 } from './runtime.js';
+export {
+  parseTokenLifetime,
+  runTokenOperation,
+  TOKEN_USAGE,
+} from './tokens.js';

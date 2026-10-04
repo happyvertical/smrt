@@ -412,16 +412,9 @@ async function provisionReferenceApp(
   const instance = randomBytes(16).toString('hex');
   const child = spawn(
     process.execPath,
-    [
-      appCliEntry,
-      'app',
-      'dev',
-      '--host',
-      '127.0.0.1',
-      '--port',
-      String(port),
-      '--strictPort',
-    ],
+    // No `--host`/`--port`: `smrt app dev` binds the loopback host and the
+    // PORT the onboarding URL names (#3410).
+    [appCliEntry, 'app', 'dev', '--strictPort'],
     {
       cwd: appRoot,
       env: { ...environment, SMRT_PROCESS_INSTANCE: instance },

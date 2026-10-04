@@ -59,6 +59,7 @@
   "dependencies": {
     "@happyvertical/ai": "catalog:",
     "@happyvertical/files": "catalog:",
+    "@happyvertical/icalendar": "^0.100.2",
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",

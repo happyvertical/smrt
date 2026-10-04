@@ -10,6 +10,7 @@
 import type { Cookies } from '@sveltejs/kit';
 import { type ActionFailure, fail, redirect } from '@sveltejs/kit';
 import type { LocalOwnerClaimResult } from '../index.js';
+import { removeOnboardingHandoff } from '../state-root.js';
 import type { SmrtSvelteKitRuntime } from './runtime.js';
 
 /** Data returned by the setup page `load`. */
@@ -76,8 +77,15 @@ export interface OwnerSetupPageOptions {
   /** Override where the signed-in user comes from. Defaults to `locals.user`. */
   readonly resolveUser?: (event: OwnerSetupEvent) => unknown;
   /**
-   * Best-effort cleanup after a successful claim (for example removing local
-   * onboarding handoff files). Errors are ignored: the owner and session are
+   * Set false to keep the `smrt app` onboarding hand-off files after a claim.
+   * By default the runtime removes `onboarding.json` and
+   * `onboarding-launch.html` from the private state root once the claim has
+   * committed, so `pnpm app:open` stops offering the spent invitation.
+   */
+  readonly removeOnboardingHandoff?: boolean;
+  /**
+   * Best-effort extra cleanup after a successful claim (the hand-off files are
+   * already removed by default). Errors are ignored: the owner and session are
    * already authoritative and a stale token now fails closed.
    */
   readonly onOwnerClaimed?: (
@@ -113,7 +121,8 @@ export function createOwnerSetupPage(
   runtime: Pick<
     SmrtSvelteKitRuntime,
     'resolvedRuntime' | 'localRuntime' | 'sessionCookie'
-  >,
+  > &
+    Partial<Pick<SmrtSvelteKitRuntime, 'applicationStateRoot'>>,
   options: OwnerSetupPageOptions = {},
 ): OwnerSetupPage {
   const redirectTo = options.redirectTo ?? '/';
@@ -181,6 +190,18 @@ export function createOwnerSetupPage(
       return failure(400, 'setup_invalid');
     }
 
+    // claimOwner resolved, so the claim transaction has committed. Clean up
+    // before cookie serialization, which can throw on a malformed config.
+    if (
+      options.removeOnboardingHandoff !== false &&
+      runtime.applicationStateRoot
+    ) {
+      try {
+        removeOnboardingHandoff(runtime.applicationStateRoot());
+      } catch {
+        // Best effort: the spent token already fails closed.
+      }
+    }
     const cookie = runtime.sessionCookie;
     event.cookies.set(cookie.name, result.sessionId, {
       path: cookie.path,

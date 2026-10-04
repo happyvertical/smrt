@@ -1,5 +1,9 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
-import { FactCollection } from '@happyvertical/smrt-facts';
+import {
+  FactCollection,
+  FactEvidenceCollection,
+  FactSourceCollection,
+} from '@happyvertical/smrt-facts';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { syncSchema } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -983,6 +987,7 @@ describe('Content governance', () => {
         ],
       });
 
+      let referenceExcerpt = 'Council approved the project.';
       const aiMessage = vi.fn(async (prompt: string) => {
         if (prompt.includes('candidate_facts_json')) {
           const matchedId = prompt.match(/"id": "([^"]+)"/)?.[1];
@@ -1026,7 +1031,7 @@ describe('Content governance', () => {
             {
               statement: 'Council approved the project.',
               type: 'event',
-              sourceExcerpt: 'Council approved the project.',
+              sourceExcerpt: referenceExcerpt,
               confidence: 0.95,
             },
           ],
@@ -1125,8 +1130,86 @@ describe('Content governance', () => {
         )?.supportStatus,
       ).toBe('supported');
 
+      const factSources = await FactSourceCollection.create({ db });
+      const generatedSourcesBeforeSecondAudit = (
+        await factSources.list({ where: { tenantId: null } })
+      ).filter(
+        (source) =>
+          source.getMetadata().generatedBy === 'content.factAudit' &&
+          source.getMetadata().contentId === article.id,
+      );
       const secondAudit = await article.repairFactAudit();
       expect(secondAudit.counts.total).toBe(2);
+      const generatedSourcesAfterSecondAudit = (
+        await factSources.list({ where: { tenantId: null } })
+      ).filter(
+        (source) =>
+          source.getMetadata().generatedBy === 'content.factAudit' &&
+          source.getMetadata().contentId === article.id,
+      );
+      expect(generatedSourcesAfterSecondAudit).toHaveLength(
+        generatedSourcesBeforeSecondAudit.length,
+      );
+      for (const factId of new Set(
+        generatedSourcesAfterSecondAudit.map((source) => source.factId),
+      )) {
+        const fact = await facts.get({ id: factId });
+        expect(fact?.sourceCount).toBe(
+          generatedSourcesAfterSecondAudit.filter(
+            (source) => source.factId === factId,
+          ).length,
+        );
+      }
+
+      referenceExcerpt = 'Council unanimously approved the project.';
+      await article.repairFactAudit();
+      const evidences = await FactEvidenceCollection.create({ db });
+      const currentEvidenceIds = new Set(
+        (await evidences.list({ where: { tenantId: null } }))
+          .map((entry) => entry.id)
+          .filter((id): id is string => typeof id === 'string'),
+      );
+      const retainedSupportingEvidenceIds: string[] = [];
+      for (const link of await article.getFactLinks()) {
+        const supportingEvidenceIds = link.getMetadata().supportingEvidenceIds;
+        if (!Array.isArray(supportingEvidenceIds)) continue;
+        retainedSupportingEvidenceIds.push(
+          ...supportingEvidenceIds.filter(
+            (id: unknown): id is string => typeof id === 'string',
+          ),
+        );
+        expect(
+          supportingEvidenceIds.every(
+            (id: unknown) =>
+              typeof id === 'string' && currentEvidenceIds.has(id),
+          ),
+        ).toBe(true);
+      }
+      expect(retainedSupportingEvidenceIds.length).toBeGreaterThan(0);
+
+      const generatedLinkIdsBeforeFailure = (await article.getFactLinks())
+        .filter(
+          (link: any) =>
+            link.getMetadata().generatedBy === 'content.factAudit' ||
+            link.getMetadata().factAudit?.generatedBy === 'content.factAudit',
+        )
+        .map((link: any) => link.id)
+        .sort();
+      aiMessage.mockRejectedValueOnce(new Error('reference extraction failed'));
+      await expect(article.repairFactAudit()).rejects.toThrow(
+        'Failed to extract facts',
+      );
+      const generatedLinkIdsAfterFailure = (await article.getFactLinks())
+        .filter(
+          (link: any) =>
+            link.getMetadata().generatedBy === 'content.factAudit' ||
+            link.getMetadata().factAudit?.generatedBy === 'content.factAudit',
+        )
+        .map((link: any) => link.id)
+        .sort();
+      expect(generatedLinkIdsAfterFailure).toEqual(
+        generatedLinkIdsBeforeFailure,
+      );
 
       const manualLink = (
         await article.getFactLinks({ relationship: 'referenced_in' })
@@ -1262,6 +1345,148 @@ describe('Content governance', () => {
         claimFactIds: [claimIds[0]],
       });
       expect(rechecked.claimRecheck.recheckedClaims).toBe(1);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it.each([
+    ['manual evidence', { manual: true, reviewedBy: 'editor' }],
+    [
+      'evidence generated for another content item',
+      {
+        generatedBy: 'content.factAudit',
+        contentId: 'other-content-id',
+        auditRunId: 'other-audit-run',
+      },
+    ],
+  ])('preserves colliding %s during audit staging', async (_label, metadata) => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      await prepareGovernanceSchemas(db);
+      configureContentGovernance({
+        assignments: [
+          {
+            contentType: 'article',
+            enabled: true,
+            factLinkingEnabled: true,
+            transparencyEnabled: true,
+            defaultFactRelationship: 'supports',
+          },
+        ],
+      });
+
+      const statement = 'Council approved the project.';
+      const aiMessage = vi.fn(async (prompt: string) => {
+        if (prompt.includes('candidate_facts_json')) {
+          const matchedId = prompt.match(/"id": "([^"]+)"/)?.[1];
+          return JSON.stringify({
+            status: 'supported',
+            matchedFactIds: matchedId ? [matchedId] : [],
+            rationale: 'The minutes support the article claim.',
+            confidence: 0.93,
+          });
+        }
+        return JSON.stringify({
+          facts: [
+            {
+              statement,
+              type: 'event',
+              sourceExcerpt: statement,
+              confidence: 0.95,
+            },
+          ],
+        });
+      });
+
+      const article = new Content({
+        name: 'evidence-collision-story',
+        title: 'Council approves project',
+        body: statement,
+        type: 'article',
+        status: 'draft',
+        db,
+        ai: { embed: vi.fn().mockResolvedValue([]), message: aiMessage },
+      });
+      await article.initialize();
+      await article.save();
+
+      const reference = new Content({
+        name: 'evidence-collision-minutes',
+        title: 'Meeting minutes',
+        body: statement,
+        type: 'minutes',
+        status: 'published',
+        db,
+      });
+      await reference.initialize();
+      await reference.save();
+      await article.addReference(reference);
+
+      const facts = await FactCollection.create({ db });
+      const sourceFact = await facts.create({
+        textRefined: statement,
+        textRaw: statement,
+        status: 'active',
+        type: 'event',
+        domain: 'content-audit',
+      });
+      const manualClaimFact = await facts.create({
+        textRefined: statement,
+        textRaw: statement,
+        status: 'pending',
+        type: 'event',
+        domain: 'content-audit',
+      });
+      await article.addFact(manualClaimFact, 'referenced_in', {
+        manual: true,
+      });
+      const evidences = await FactEvidenceCollection.create({ db });
+      const preserved = await evidences.upsertEvidence({
+        factId: sourceFact.id as string,
+        status: 'supports',
+        sourceKind: 'content-reference',
+        sourceId: reference.id as string,
+        sourceUrl: '',
+        sourceTitle: 'Meeting minutes',
+        quote: statement,
+        locator: 'Meeting minutes',
+        extractionMethod: 'manual',
+        confidence: 1,
+        metadata,
+      });
+      const preservedArticleEvidence = await evidences.upsertEvidence({
+        factId: manualClaimFact.id as string,
+        status: 'supports',
+        sourceKind: 'content',
+        sourceId: article.id as string,
+        sourceTitle: 'Council approves project',
+        quote: statement,
+        locator: 'Council approves project',
+        extractionMethod: 'manual',
+        confidence: 1,
+        metadata,
+      });
+
+      await article.repairFactAudit();
+
+      const afterRepair = await evidences.get({ id: preserved.id as string });
+      expect(afterRepair).not.toBeNull();
+      expect(afterRepair?.getMetadata()).toEqual(metadata);
+      expect(afterRepair?.extractionMethod).toBe('manual');
+      const articleEvidenceAfterRepair = await evidences.get({
+        id: preservedArticleEvidence.id as string,
+      });
+      expect(articleEvidenceAfterRepair).not.toBeNull();
+      expect(articleEvidenceAfterRepair?.getMetadata()).toEqual(metadata);
+      expect(articleEvidenceAfterRepair?.extractionMethod).toBe('manual');
     } finally {
       if (typeof db.close === 'function') {
         await db.close();

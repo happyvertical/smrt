@@ -44,6 +44,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.fixture.json"
   },
   "devDependencies": {
+    "@happyvertical/smrt-app-cli": "workspace:*",
     "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-app-runtime": "workspace:*",
     "@happyvertical/smrt-assets": "workspace:*",
@@ -60,6 +61,7 @@
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",
     "@happyvertical/sql": "^0.89.12",
+    "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@playwright/test": "^1.63.0",
     "@sveltejs/adapter-node": "^5.5.7",
