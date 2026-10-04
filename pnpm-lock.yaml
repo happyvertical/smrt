@@ -1635,9 +1635,6 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/smrt-fields':
-        specifier: workspace:*
-        version: link:../fields
       '@happyvertical/smrt-inventory':
         specifier: workspace:*
         version: link:../inventory

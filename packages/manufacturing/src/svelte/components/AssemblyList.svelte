@@ -5,19 +5,19 @@
  * the host loads assemblies, their SKUs and active bills, and adapts each row
  * with `toAssemblyView`.
  *
- * Pass the resolved field `policy` for `@happyvertical/smrt-manufacturing:Assembly`
- * to apply the consumer's field policy: a field the policy hides (price, for
+ * Pass the resolved field `policy` for Assembly (any object whose `fields`
+ * name each field's `visibility`) to apply the consumer's field policy: a field the policy hides (price, for
  * a viewer who may not see it) drops its column.
  */
 
-import {
-  policyToVisibleColumnIds,
-  type ResolvedObjectFieldPolicy,
-} from '@happyvertical/smrt-fields/svelte';
 import { Button, CurrencyDisplay } from '@happyvertical/smrt-ui';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../i18n.js';
-import { type AssemblyView, splitLabourMinutes } from '../types.js';
+import {
+  type AssemblyFieldPolicy,
+  type AssemblyView,
+  splitLabourMinutes,
+} from '../types.js';
 
 const { t } = useI18n();
 
@@ -25,7 +25,7 @@ export interface AssemblyListProps {
   /** Assemblies to show, in the host's order. */
   assemblies: AssemblyView[];
   /** The resolved field policy for Assembly; hidden fields drop their column. */
-  policy?: ResolvedObjectFieldPolicy;
+  policy?: AssemblyFieldPolicy;
   /** ISO 4217 currency of the prices. */
   currency?: string;
   /** Invoked with the assembly id when a name is activated. */
@@ -53,12 +53,18 @@ const POLICY_COLUMNS = [
   { id: 'labour' },
   { id: 'bill' },
 ];
-const FIELD_BY_COLUMN = { labour: 'estimatedLabourMinutes' };
+const FIELD_BY_COLUMN: Record<string, string> = {
+  labour: 'estimatedLabourMinutes',
+};
 
 const visible = $derived(
-  policy
-    ? policyToVisibleColumnIds(policy, POLICY_COLUMNS, FIELD_BY_COLUMN)
-    : new Set(POLICY_COLUMNS.map((column) => column.id)),
+  new Set(
+    POLICY_COLUMNS.filter(
+      (column) =>
+        policy?.fields[FIELD_BY_COLUMN[column.id] ?? column.id]?.visibility !==
+        'hidden',
+    ).map((column) => column.id),
+  ),
 );
 
 /** The row header: the name, or a visible identifier when the name is hidden. */

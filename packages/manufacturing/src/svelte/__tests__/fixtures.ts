@@ -1,8 +1,9 @@
 /** Shared view and policy fixtures for the manufacturing component tests. */
-import type { ResolvedObjectFieldPolicy } from '@happyvertical/smrt-fields/svelte';
-import type { AssemblyView, BomEditorLine } from '../types.js';
-
-export const ASSEMBLY_REF = '@happyvertical/smrt-manufacturing:Assembly';
+import type {
+  AssemblyFieldPolicy,
+  AssemblyView,
+  BomEditorLine,
+} from '../types.js';
 
 export function assemblyView(
   overrides: Partial<AssemblyView> = {},
@@ -38,12 +39,12 @@ export function editorLine(
 }
 
 /**
- * A resolved Assembly field policy. `visibility` maps field name to its
- * visibility; fields not named are basic.
+ * A resolved Assembly field policy for `AssemblyList`. `visibility` maps
+ * field name to its visibility; fields not named are basic.
  */
 export function assemblyPolicy(
   visibility: Record<string, 'basic' | 'advanced' | 'hidden'> = {},
-): ResolvedObjectFieldPolicy {
+): AssemblyFieldPolicy {
   const names = [
     'name',
     'partReference',
@@ -51,30 +52,11 @@ export function assemblyPolicy(
     'estimatedLabourMinutes',
     'description',
   ];
-  const labels: Record<string, string> = {
-    name: 'Name',
-    partReference: 'Part reference',
-    price: 'Price',
-    estimatedLabourMinutes: 'Estimated labour (minutes)',
-    description: 'Description',
-  };
   return {
-    objectRef: ASSEMBLY_REF,
     fields: Object.fromEntries(
-      names.map((fieldName, index) => [
+      names.map((fieldName) => [
         fieldName,
-        {
-          fieldName,
-          hasDefault: false,
-          defaultValue: undefined,
-          visibility: visibility[fieldName] ?? 'basic',
-          help: null,
-          label: labels[fieldName],
-          order: index,
-          group: null,
-          locked: false,
-          required: fieldName === 'name',
-        },
+        { visibility: visibility[fieldName] ?? 'basic' },
       ]),
     ),
   };

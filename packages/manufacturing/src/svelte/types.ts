@@ -101,6 +101,174 @@ export function validateOperationForm(
   };
 }
 
+/**
+ * The part of a resolved field policy `AssemblyList` reads: each field's
+ * visibility. smrt-fields' `ResolvedObjectFieldPolicy` satisfies it.
+ */
+export interface AssemblyFieldPolicy {
+  fields: Readonly<Record<string, { visibility?: string } | undefined>>;
+}
+
+/** A field of `AssemblyForm`, named as `Assembly` and `Product` name it. */
+export type AssemblyFormField =
+  | 'name'
+  | 'description'
+  | 'category'
+  | 'partReference'
+  | 'price'
+  | 'estimatedLabourMinutes'
+  | 'defaultOperationId'
+  | 'tags';
+
+/** Existing values passed to `AssemblyForm` when editing; an `Assembly` satisfies it. */
+export interface AssemblyFormInitial {
+  name: string;
+  description: string;
+  category: string;
+  partReference: string;
+  /** Catalog price in integer minor units (cents). */
+  price: number;
+  /** Labour to build one unit, in whole minutes. */
+  estimatedLabourMinutes: number;
+  /** The default `Operation` id, or `null` for none. */
+  defaultOperationId: string | null;
+  tags: readonly string[];
+}
+
+/**
+ * What `AssemblyForm` hands to `onsubmit`; text is trimmed. A hidden or
+ * read-only field carries its initial value unchanged (a default for a new
+ * assembly), so a host can save every key or only the ones that differ.
+ */
+export interface AssemblyFormValues {
+  name: string;
+  description: string;
+  category: string;
+  partReference: string;
+  /** Integer minor units (cents). */
+  price: number;
+  /** A whole number of minutes, zero or more. */
+  estimatedLabourMinutes: number;
+  /** The chosen `Operation` id, or `null` for none. */
+  defaultOperationId: string | null;
+  tags: string[];
+}
+
+/** A field `validateAssemblyForm` can reject. */
+export type AssemblyFormInvalidField =
+  | 'name'
+  | 'price'
+  | 'estimatedLabourMinutes';
+
+/** The raw text `AssemblyForm` collects, before trimming and checks. */
+export interface AssemblyFormDraft {
+  name: string;
+  description: string;
+  category: string;
+  partReference: string;
+  /** Major units as typed, e.g. `1250.00`. */
+  price: string;
+  estimatedLabourMinutes: string;
+  /** Empty for none. */
+  defaultOperationId: string;
+  /** Comma-separated. */
+  tags: string;
+}
+
+/** Result of {@link validateAssemblyForm}. */
+export type AssemblyFormValidation =
+  | { ok: true; values: AssemblyFormValues }
+  | { ok: false; invalid: AssemblyFormInvalidField[] };
+
+/** Format integer minor units as the major-unit text the price field shows. */
+export function formatPriceInput(minorUnits: number): string {
+  if (!Number.isSafeInteger(minorUnits) || minorUnits <= 0) return '0.00';
+  const whole = Math.floor(minorUnits / 100);
+  return `${whole}.${String(minorUnits - whole * 100).padStart(2, '0')}`;
+}
+
+/** The draft `AssemblyForm` starts from for an assembly, or a blank one. */
+export function assemblyFormDraft(
+  initial: AssemblyFormInitial | null,
+): AssemblyFormDraft {
+  return {
+    name: initial?.name ?? '',
+    description: initial?.description ?? '',
+    category: initial?.category ?? '',
+    partReference: initial?.partReference ?? '',
+    price: formatPriceInput(initial?.price ?? 0),
+    estimatedLabourMinutes: String(initial?.estimatedLabourMinutes ?? 0),
+    defaultOperationId: initial?.defaultOperationId ?? '',
+    tags: (initial?.tags ?? []).join(', '),
+  };
+}
+
+function parseTags(raw: string): string[] {
+  const tags: string[] = [];
+  for (const part of raw.split(',')) {
+    const tag = part.trim();
+    if (tag && !tags.includes(tag)) tags.push(tag);
+  }
+  return tags;
+}
+
+/**
+ * Trim a form draft and check it the way the model does: the name is
+ * required, the labour estimate is a whole number of minutes of zero or more
+ * (empty counts as zero), and the price is an amount of zero or more with at
+ * most two decimals (empty counts as zero). Fields in `skip` (hidden or
+ * read-only in the form) are not checked.
+ */
+export function validateAssemblyForm(
+  draft: Readonly<Partial<AssemblyFormDraft>>,
+  skip: readonly AssemblyFormField[] = [],
+): AssemblyFormValidation {
+  const invalid: AssemblyFormInvalidField[] = [];
+  const name = textOf(draft.name);
+  const minutesText = textOf(draft.estimatedLabourMinutes);
+  const priceText = textOf(draft.price);
+
+  let estimatedLabourMinutes = 0;
+  if (minutesText !== '') {
+    estimatedLabourMinutes = /^\d+$/.test(minutesText)
+      ? Number(minutesText)
+      : Number.NaN;
+  }
+  let price = 0;
+  if (priceText !== '') {
+    const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(priceText);
+    price = match
+      ? Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'))
+      : Number.NaN;
+  }
+
+  if (!name && !skip.includes('name')) invalid.push('name');
+  if (!Number.isSafeInteger(price) && !skip.includes('price'))
+    invalid.push('price');
+  if (
+    !Number.isSafeInteger(estimatedLabourMinutes) &&
+    !skip.includes('estimatedLabourMinutes')
+  )
+    invalid.push('estimatedLabourMinutes');
+  if (invalid.length > 0) return { ok: false, invalid };
+
+  return {
+    ok: true,
+    values: {
+      name,
+      description: textOf(draft.description),
+      category: textOf(draft.category),
+      partReference: textOf(draft.partReference),
+      price: Number.isSafeInteger(price) ? price : 0,
+      estimatedLabourMinutes: Number.isSafeInteger(estimatedLabourMinutes)
+        ? estimatedLabourMinutes
+        : 0,
+      defaultOperationId: textOf(draft.defaultOperationId) || null,
+      tags: parseTags(draft.tags ?? ''),
+    },
+  };
+}
+
 export type { ComponentKind };
 
 /** One row of {@link AssemblyList}. */

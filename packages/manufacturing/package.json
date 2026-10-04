@@ -45,7 +45,6 @@
   "dependencies": {
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-fields": "workspace:*",
     "@happyvertical/smrt-inventory": "workspace:*",
     "@happyvertical/smrt-products": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",

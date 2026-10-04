@@ -37,6 +37,37 @@ export const M = defineMessages({
   'manufacturing.operation_form.error_code': 'Enter a code.',
   'manufacturing.operation_form.error_name': 'Enter a name.',
 
+  'manufacturing.assembly_form.name': 'Name',
+  'manufacturing.assembly_form.description': 'Description',
+  'manufacturing.assembly_form.category': 'Category',
+  'manufacturing.assembly_form.part_reference': 'Part reference',
+  'manufacturing.assembly_form.part_reference_help':
+    'Optional. Your own drawing or part number, alongside the SKU code.',
+  'manufacturing.assembly_form.price': 'Price',
+  'manufacturing.assembly_form.price_help':
+    'Amount in {currency}, for example 1250.00.',
+  'manufacturing.assembly_form.labour': 'Estimated labour (minutes)',
+  'manufacturing.assembly_form.labour_help':
+    'Whole minutes to build one unit. 0 means not estimated.',
+  'manufacturing.assembly_form.operation': 'Default operation',
+  'manufacturing.assembly_form.operation_help':
+    'Optional. The operation work on this assembly is booked to by default.',
+  'manufacturing.assembly_form.operation_none': 'None',
+  'manufacturing.assembly_form.operation_retired': '{label} (retired)',
+  'manufacturing.assembly_form.operation_unknown': 'Unknown operation ({id})',
+  'manufacturing.assembly_form.tags': 'Tags',
+  'manufacturing.assembly_form.tags_help':
+    'Optional. Separate tags with commas.',
+  'manufacturing.assembly_form.submit_add': 'Add assembly',
+  'manufacturing.assembly_form.submit_edit': 'Save changes',
+  'manufacturing.assembly_form.saving': 'Saving...',
+  'manufacturing.assembly_form.cancel': 'Cancel',
+  'manufacturing.assembly_form.error_name': 'Enter a name.',
+  'manufacturing.assembly_form.error_price':
+    'Enter a price of zero or more, with at most two decimals.',
+  'manufacturing.assembly_form.error_labour':
+    'Enter a whole number of minutes, zero or more.',
+
   'manufacturing.assembly_list.caption': 'Assemblies',
   'manufacturing.assembly_list.empty': 'No assemblies',
   'manufacturing.assembly_list.name': 'Name',
