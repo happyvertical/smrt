@@ -70,7 +70,7 @@ export class Fact extends SmrtObject {
   domain: string = '';
 
   /** Opaque reconciliation partition; NULL denotes unclassified legacy data. */
-  @field({ type: 'text', nullable: true })
+  @field({ type: 'text', nullable: true, readonly: true })
   accessScope: string | null = null;
 
   /**

@@ -268,6 +268,14 @@ never accept an arbitrary client-selected token as permission to read a scope.
 A fact must only aggregate sources with the visibility represented by its scope.
 Source metadata does not establish candidate visibility.
 
+`accessScope` is server-managed: generated REST/MCP create and update inputs
+strip it while allowing ordinary writable fields. Trusted server-side
+`FactCollection.create()`, `reconcile()` and `branch()` retain persistence access.
+Owner-authorized migration code can assign the field and call `save()` in a
+controlled system context with reconciliation writers stopped; no generated
+reclassification endpoint is exposed. Do not expose that operator procedure or
+forward untrusted request bodies to direct collection writes.
+
 Run the standard `smrt db:migrate` before deploying writers using this field.
 The nullable `Fact.accessScope` column leaves existing rows unclassified.
 Omitting `accessScope` (or passing `null`) searches only this legacy NULL
