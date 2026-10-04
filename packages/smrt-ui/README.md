@@ -1087,3 +1087,29 @@ their empty shape. Names and paths must be nonempty strings; invalid mixed sets
 are rejected atomically. Sets are snapshotted, so later caller mutations do not
 change glyphs. Register static application assets, never request or identity data,
 and install the same application set for SSR and client hydration.
+
+### Currency, country, and province controls
+
+Import `CurrencySelect`, `CountrySelect`, `ProvinceSelect`, their named `*Props`
+interfaces, and `CodeSelectOption` from `@happyvertical/smrt-ui/forms`. Each composes
+shared Select/Input controls, accepts a bindable string `value`, native Select
+attributes (except children/multiple), density and interaction configuration,
+`locale` (default `en`), `placeholder` (default `—`), and `readOnly`.
+
+Currency choices use existing ISO 4217 metadata. Countries cover 249 ISO 3166-1
+alpha-2 codes; both use Intl.DisplayNames and invalid locales fall back to English.
+ProvinceSelect accepts `country?: string`: built-ins cover Canada's 13 subdivisions
+and the United States' 57 ISO subdivisions (50 states, DC and six territories).
+Region labels default to English. Other/missing countries use a free-text Input.
+Provide `options?: readonly CodeSelectOption[]` to replace built-ins and localize
+region labels; even an empty array deliberately selects the custom Select mode.
+Each option has `value`, optional `label`, and optional `disabled`.
+
+Blank values stay blank; unknown values and country/options changes preserve the
+exact raw string. Callers validate permitted values server-side. Disabled options
+retain native FormData omission. `readOnly` disables the visible control and submits
+the original value via a hidden input, including external `form` association;
+`disabled` and disabled fieldsets omit it. Province event targets can be either
+HTMLInputElement or HTMLSelectElement. All controls expose `focus()` and
+`getElement()`. The Workbench code-selectors entry demonstrates changing countries
+and inspecting native payloads without a provider.
