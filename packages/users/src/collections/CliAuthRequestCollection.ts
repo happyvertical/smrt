@@ -53,6 +53,7 @@ export class UsersCliAuthRequestCollection extends SmrtCollection<UsersCliAuthRe
       return await transaction(async (tx) => {
         const sessions = await SessionCollection.create({ db: tx });
         const session = await sessions.createSession({
+          authMethod: 'terminal',
           data: {
             approvedBy: input.approvedBy,
             kind: 'terminal',

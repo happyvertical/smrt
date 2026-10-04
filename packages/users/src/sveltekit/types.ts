@@ -4,7 +4,9 @@
  */
 
 import type { Membership } from '../models/Membership.js';
+import type { SessionAuthMethod } from '../models/Session.js';
 import type { User } from '../models/User.js';
+import type { SessionParentContext } from '../services/SessionService.js';
 
 /**
  * Extended locals interface for SvelteKit
@@ -29,6 +31,10 @@ export interface SessionLocals {
   tenantId: string | null;
   /** Session ID (null if no session) */
   sessionId: string | null;
+  /** How the session was established (#2944); null when unknown or unauthenticated. */
+  authMethod?: SessionAuthMethod | null;
+  /** For a layered (e.g. PIN) session, the device session it rides on (#3276). */
+  sessionParent?: SessionParentContext | null;
 }
 
 /**
@@ -40,4 +46,6 @@ export const defaultSessionLocals: SessionLocals = {
   permissions: [],
   tenantId: null,
   sessionId: null,
+  authMethod: null,
+  sessionParent: null,
 };

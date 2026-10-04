@@ -7,7 +7,9 @@ import { SmrtCollection } from '@happyvertical/smrt-core';
 import {
   DEFAULT_SESSION_TTL,
   generateSessionId,
+  resolveSessionExpiry,
   Session,
+  type SessionAuthMethod,
 } from '../models/Session.js';
 import { SessionStatus } from '../types/index.js';
 
@@ -27,6 +29,10 @@ export interface CreateSessionOptions {
   ipAddress?: string;
   /** Custom session data */
   data?: Record<string, unknown>;
+  /** How the session was established (server-set; see {@link SessionAuthMethod}). */
+  authMethod?: SessionAuthMethod | null;
+  /** Parent session this one is layered on; the child is valid only while the parent is. */
+  parentSessionId?: string | null;
 }
 
 /**
@@ -65,22 +71,106 @@ export class SessionCollection extends SmrtCollection<Session> {
    */
   async createSession(options: CreateSessionOptions): Promise<Session> {
     const ttl = options.ttl ?? DEFAULT_SESSION_TTL;
-    const expiresAt = new Date(Date.now() + ttl * 1000);
-
     const session = await this.create({
       id: generateSessionId(),
       userId: options.userId,
       tenantId: options.tenantId ?? null,
       status: SessionStatus.ACTIVE,
-      expiresAt,
+      // One write, already bounded by any absolute cap in `data`.
+      expiresAt: resolveSessionExpiry(ttl, options.data),
       userAgent: options.userAgent ?? '',
       ipAddress: options.ipAddress ?? '',
       lastAccessedAt: new Date(),
       data: options.data ?? {},
+      authMethod: options.authMethod ?? null,
+      parentSessionId: options.parentSessionId ?? null,
     });
-
     await session.save();
     return session;
+  }
+
+  /**
+   * Active sessions layered on `parentSessionId` (e.g. every person signed in
+   * on one enrolled device). Expired rows are filtered out.
+   */
+  /**
+   * Ids of ACTIVE sessions matching `column = value`, read with raw SQL so a
+   * caller's `defaultListLimit`/`maxListLimit` can never truncate a
+   * revocation sweep: a dropped row is a session left authorized.
+   */
+  private async activeSessionIds(
+    column: 'parent_session_id' | 'user_id',
+    value: string,
+    extra?: { column: 'auth_method'; value: string },
+  ): Promise<string[]> {
+    const result = await this.db.query(
+      `SELECT id FROM ${this.tableName}
+        WHERE ${column} = ? AND status = ?${extra ? ` AND ${extra.column} = ?` : ''}`,
+      value,
+      SessionStatus.ACTIVE,
+      ...(extra ? [extra.value] : []),
+    );
+    return (result.rows ?? []).map((row) => String(row.id));
+  }
+
+  async findChildren(parentSessionId: string): Promise<Session[]> {
+    // `parentSessionId` is a sensitive field (it is the parent's bearer), so
+    // it cannot be a list() filter; ids come from the unbounded raw read.
+    const children: Session[] = [];
+    for (const id of await this.activeSessionIds(
+      'parent_session_id',
+      parentSessionId,
+    )) {
+      const child = await this.get(id);
+      if (child?.isValid()) children.push(child);
+    }
+    return children.sort(
+      (a, b) => b.lastAccessedAt.getTime() - a.lastAccessedAt.getTime(),
+    );
+  }
+
+  /**
+   * Revoke every active session layered on `parentSessionId`. Children are
+   * already invalid once the parent is gone (liveness rule), so this is a
+   * tidy-up that makes "manage sessions" views and audits truthful. With
+   * `exceptSessionId` it ends every *other* child — how a single-occupant
+   * device hands over from one person to the next.
+   */
+  async revokeChildren(
+    parentSessionId: string,
+    options: { exceptSessionId?: string } = {},
+  ): Promise<number> {
+    const childIds = await this.activeSessionIds(
+      'parent_session_id',
+      parentSessionId,
+    );
+    let count = 0;
+    for (const childId of childIds) {
+      if (childId === options.exceptSessionId) continue;
+      if (await this.revokeWithRetry(childId)) count++;
+    }
+    return count;
+  }
+
+  /**
+   * Revoke a user's active sessions established through one auth method
+   * (e.g. every `pin` session after an admin PIN reset).
+   */
+  async revokeUserSessionsByAuthMethod(
+    userId: string,
+    authMethod: SessionAuthMethod,
+    options: { exceptSessionId?: string } = {},
+  ): Promise<number> {
+    const sessionIds = await this.activeSessionIds('user_id', userId, {
+      column: 'auth_method',
+      value: authMethod,
+    });
+    let count = 0;
+    for (const sessionId of sessionIds) {
+      if (sessionId === options.exceptSessionId) continue;
+      if (await this.revokeWithRetry(sessionId)) count++;
+    }
+    return count;
   }
 
   /**
