@@ -407,10 +407,18 @@ export function multilevelSuite(
             rateResolver: () => 60,
           });
           await withTenant({ tenantId: randomUUID() }, async () => {
-            // The global bill itself is readable from the tenant context.
+            // The global bill itself is readable from the tenant context,
+            // with its global lines, by every single-level method.
             expect(
               (await rated.computeLabourEstimate(bracketBom)).totalMinutes,
             ).toBe(6);
+            expect(await rated.explodeRequirements(bracketBom, 2)).toEqual([
+              { componentSkuId: plate.skuId, totalQty: 2, uom: 'sheet' },
+            ]);
+            const cost = await rated.computeMaterialCost(bracketBom);
+            expect(cost.lineBreakdown).toHaveLength(1);
+            expect(cost.hasMissingCosts).toBe(true);
+            expect((await rated.canProduce(bracketBom, 2)).ok).toBe(false);
             const gate = await assembly('Gate');
             const gateBom = await bill(gate.id, [[bracket.skuId, 2, 'each']]);
             const estimate = await rated.computeLabourEstimate(gateBom, {

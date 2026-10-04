@@ -207,7 +207,7 @@ export class BomService {
     if (isMultiLevel(options.levels))
       return this.computeMultiLevelCost(bomId, options);
     const bom = await this.requireBom(bomId);
-    const lines = await this.lines.findByBom(bomId);
+    const lines = await this.linesOf(bom);
     const lineBreakdown: BomLineCost[] = [];
     let totalCost = 0;
     let hasMissingCosts = false;
@@ -343,8 +343,7 @@ export class BomService {
     if (isMultiLevel(options.levels))
       return (await this.explode(bomId, qty, options)).totals;
     assertPositiveQty(qty, 'explodeRequirements');
-    await this.requireBom(bomId);
-    const lines = await this.lines.findByBom(bomId);
+    const lines = await this.linesOf(await this.requireBom(bomId));
 
     // Sum across duplicate component SKUs. Keep the first-seen `uom` per
     // SKU; if two lines disagree on `uom`, we surface the first one and
@@ -576,6 +575,19 @@ export class BomService {
    * Fetch a BOM by id or throw {@link BomNotFoundError}. Centralises the
    * "missing BOM" error path so callers don't have to repeat the check.
    */
+  /**
+   * A bill's lines: its own tenant's and global ones, whatever tenant
+   * context is active (a context alone would hide a global bill's lines).
+   */
+  private async linesOf(bom: BillOfMaterials): Promise<BomLine[]> {
+    const owner = bom.tenantId ?? null;
+    return (
+      await readOwnAndGlobal(owner, () =>
+        this.lines.findByBom(bom.id as string),
+      )
+    ).filter((line) => isOwnOrGlobal(line, owner));
+  }
+
   private async requireBom(bomId: string): Promise<BillOfMaterials> {
     if (!bomId) throw new BomNotFoundError(bomId);
     // Under a tenant context a global bill is hidden from `get`; read the
