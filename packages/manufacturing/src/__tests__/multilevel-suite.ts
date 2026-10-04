@@ -323,6 +323,34 @@ export function multilevelSuite(
         );
       });
 
+      vitestIt(
+        "reads only the top bill's tenant, even without a tenant context",
+        async () => {
+          const tenantA = randomUUID();
+          const f = await withTenant({ tenantId: tenantA }, () =>
+            frameFixture(),
+          );
+          // Another tenant writes a line onto tenant A's side-panel bill.
+          const intruder = await withTenant({ tenantId: randomUUID() }, () =>
+            material('Intruder', 'each'),
+          );
+          await withTenant({ tenantId: randomUUID() }, () =>
+            lines.create({
+              bomId: f.panelBom,
+              componentSkuId: intruder.skuId,
+              qtyPerUnit: 1,
+            }),
+          );
+          const result = await bomService.explode(f.frameBom, 1, {
+            levels: 'all',
+          });
+          expect(
+            result.lines.some((line) => line.componentSkuId === intruder.skuId),
+          ).toBe(false);
+          expect(result.lines).toHaveLength(7);
+        },
+      );
+
       it('stops at an assembly with no active bill', async () => {
         const plate = await material('Plate', 'sheet');
         const gusset = await assembly('Gusset');

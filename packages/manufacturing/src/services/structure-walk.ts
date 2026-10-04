@@ -102,13 +102,25 @@ export class StructureWalk {
   }
 
   /**
-   * A bill's lines, counted against {@link MAX_EXPLOSION_LINES} every time
-   * the walk visits them (a shared sub-assembly counts once per use).
+   * A bill's lines in the top bill's tenant (and global lines), counted
+   * against {@link MAX_EXPLOSION_LINES} every time the walk visits them (a
+   * shared sub-assembly counts once per use).
    */
   async linesOf(bomId: string): Promise<BomLine[]> {
     let pending = this.bills.get(bomId);
     if (!pending) {
-      pending = this.assemblies.lines.findByBom(bomId);
+      // The top bill's structure only: its tenant's lines and global ones,
+      // as `AssemblyService` reads a structure.
+      const tenantId = this.top.tenantId ?? null;
+      pending = this.assemblies.lines
+        .findByBom(bomId)
+        .then((lines) =>
+          lines.filter(
+            (line) =>
+              (line.tenantId ?? null) === null ||
+              (line.tenantId ?? null) === tenantId,
+          ),
+        );
       this.bills.set(bomId, pending);
     }
     const lines = await pending;
