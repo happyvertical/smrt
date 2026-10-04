@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsersCliAuthApproveLimitCollection } from '../collections/CliAuthApproveLimitCollection.js';
 import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
+import { UsersLoginAttemptCollection } from '../collections/LoginAttemptCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
@@ -610,11 +611,13 @@ describe('TerminalAuthService', () => {
     await user.save();
     if (!user.id) throw new Error('Expected persisted cleanup-failure user.');
     const started = await service.createRequest('https://example.com');
+    // Since #3273 the budget lives in the shared login limiter; its release
+    // path is what a cleanup outage would break.
     const internals = service as unknown as {
-      approveLimitCollection: UsersCliAuthApproveLimitCollection;
+      loginLimiter: { attempts: UsersLoginAttemptCollection };
     };
     vi.spyOn(
-      internals.approveLimitCollection,
+      internals.loginLimiter.attempts,
       'releaseAttempt',
     ).mockRejectedValue(new Error('simulated limiter cleanup outage'));
 

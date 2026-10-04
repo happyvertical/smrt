@@ -28,8 +28,14 @@ import {
   unregisterRetentionTask,
 } from '@happyvertical/smrt-core';
 import { UsersCliAuthRequestCollection } from './collections/CliAuthRequestCollection.js';
+import { UsersLoginAttemptCollection } from './collections/LoginAttemptCollection.js';
+import { UsersLoginAuditEventCollection } from './collections/LoginAuditEventCollection.js';
 import { UsersMagicLinkTokenCollection } from './collections/MagicLinkTokenCollection.js';
 import { SessionCollection } from './collections/SessionCollection.js';
+import {
+  DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS,
+  DEFAULT_LOGIN_LOCKOUT_MAX_SECONDS,
+} from './services/LoginAttemptLimiter.js';
 
 /** Retention task name for expired and revoked sessions. */
 export const SESSIONS_RETENTION_TASK = 'users-sessions';
@@ -40,11 +46,35 @@ export const MAGIC_LINK_RETENTION_TASK = 'users-magic-link-tokens';
 /** Retention task name for expired CLI device-code requests. */
 export const CLI_AUTH_RETENTION_TASK = 'users-cli-auth-requests';
 
+/** Retention task name for idle login-attempt limiter rows (#3273). */
+export const LOGIN_ATTEMPTS_RETENTION_TASK = 'users-login-attempts';
+
+/** Retention task name for login audit events (#3273). */
+export const LOGIN_AUDIT_RETENTION_TASK = 'users-login-audit-events';
+
+/** How long login audit events are kept by default. */
+export const DEFAULT_LOGIN_AUDIT_RETENTION_DAYS = 90;
+
+/**
+ * Limiter rows idle for longer than this are pruned. Twice the largest
+ * default horizon, matching the limiter's own streak-forgiveness default, so
+ * the sweep never deletes a row the limiter still reasons about.
+ */
+const LOGIN_ATTEMPT_IDLE_MS =
+  Math.max(
+    DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS,
+    DEFAULT_LOGIN_LOCKOUT_MAX_SECONDS,
+  ) *
+  2 *
+  1000;
+
 /** Every task name {@link registerUserRetentionTasks} installs. */
 export const USER_RETENTION_TASKS = [
   SESSIONS_RETENTION_TASK,
   MAGIC_LINK_RETENTION_TASK,
   CLI_AUTH_RETENTION_TASK,
+  LOGIN_ATTEMPTS_RETENTION_TASK,
+  LOGIN_AUDIT_RETENTION_TASK,
 ] as const;
 
 /**
@@ -84,6 +114,29 @@ export function registerUserRetentionTasks(): void {
     run: async (db, context) => {
       const requests = await UsersCliAuthRequestCollection.create({ db });
       return requests.deleteExpired({ dryRun: context.dryRun });
+    },
+  });
+
+  registerRetentionTask({
+    name: LOGIN_ATTEMPTS_RETENTION_TASK,
+    description: 'Delete idle login-attempt limiter rows',
+    run: async (db, context) => {
+      const attempts = await UsersLoginAttemptCollection.create({ db });
+      return attempts.deleteIdle(LOGIN_ATTEMPT_IDLE_MS, {
+        dryRun: context.dryRun,
+      });
+    },
+  });
+
+  registerRetentionTask({
+    name: LOGIN_AUDIT_RETENTION_TASK,
+    description: `Delete login audit events older than ${DEFAULT_LOGIN_AUDIT_RETENTION_DAYS} days`,
+    run: async (db, context) => {
+      const events = await UsersLoginAuditEventCollection.create({ db });
+      return events.deleteOlderThan(
+        DEFAULT_LOGIN_AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+        { dryRun: context.dryRun },
+      );
     },
   });
 }

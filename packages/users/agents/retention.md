@@ -24,15 +24,20 @@ reap them.
   optionally for exactly that reason. Registering is not scheduling: nothing is
   deleted until something runs a sweep.
 - **Task names** are `users-sessions`, `users-magic-link-tokens`,
-  `users-cli-auth-requests` — prefixed with the package's short name because
-  the retention registry is one process-global namespace. Opt one out with
+  `users-cli-auth-requests`, `users-login-attempts`, `users-login-audit-events`
+  — prefixed with the package's short name because the retention registry is
+  one process-global namespace. Opt one out with
   `runRetentionSweep(db, { tasks: { 'users-sessions': false } })` or
   `smrt db:prune --skip users-sessions`; `unregisterUserRetentionTasks()`
-  removes all three.
-- **There is no retention window to configure.** An expired credential has
-  nothing worth retaining, so each task deletes only already-expired rows. An
-  application that keeps expired sessions for audit should opt the task out and
-  archive them itself.
+  removes all of them.
+- **The credential tasks have no retention window to configure.** An expired
+  credential has nothing worth retaining, so each deletes only already-expired
+  rows. An application that keeps expired sessions for audit should opt the
+  task out and archive them itself. The two #3273 tasks differ: limiter rows
+  are pruned once idle past the streak-forgiveness horizon (never while a
+  window or lockout is live), and audit events after
+  `DEFAULT_LOGIN_AUDIT_RETENTION_DAYS` (90). A host that needs longer audit
+  retention opts `users-login-audit-events` out and archives.
 - **All three are a single counted DELETE**, not a hydrate-and-delete loop.
   They now run unattended on a timer, and a per-row delete that throws part-way
   leaves the rest of the expired rows un-reaped — the #1400 reasoning that

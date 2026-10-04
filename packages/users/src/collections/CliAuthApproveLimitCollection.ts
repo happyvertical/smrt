@@ -12,6 +12,10 @@ export type CliAuthApproveReservation =
   | { allowed: true; windowStartedAt: string }
   | { allowed: false; retryAfterSeconds: number };
 
+/**
+ * @deprecated Since #3273. Use {@link UsersLoginAttemptCollection} through
+ * `LoginAttemptLimiter`. Kept for schema and cleanup compatibility only.
+ */
 export class UsersCliAuthApproveLimitCollection extends SmrtCollection<UsersCliAuthApproveLimit> {
   static readonly _itemClass = UsersCliAuthApproveLimit;
 

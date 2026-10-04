@@ -16,6 +16,12 @@ export {
 export { Group } from './Group.js';
 export { GroupMember } from './GroupMember.js';
 export { GroupRole } from './GroupRole.js';
+// Login rate limiting, lockout and audit (#3273)
+export { type LoginAttemptScope, UsersLoginAttempt } from './LoginAttempt.js';
+export {
+  type LoginAuditOutcome,
+  UsersLoginAuditEvent,
+} from './LoginAuditEvent.js';
 // Magic Link
 export {
   DEFAULT_TOKEN_EXPIRY_SECONDS,
@@ -31,6 +37,8 @@ export {
   Permission,
   parsePermissionSlug,
 } from './Permission.js';
+// Per-person PIN on an enrolled device (#3276)
+export { UsersPinCredential } from './PinCredential.js';
 export {
   ResourceGrant,
   type ResourceGrantEffect,
@@ -44,6 +52,7 @@ export {
   DEFAULT_SESSION_TTL,
   generateSessionId,
   Session,
+  type SessionAuthMethod,
 } from './Session.js';
 export { MAX_TENANT_HIERARCHY_DEPTH, Tenant } from './Tenant.js';
 export {

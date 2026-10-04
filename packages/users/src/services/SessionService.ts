@@ -11,7 +11,11 @@ import {
 } from '../collections/SessionCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import type { Membership } from '../models/Membership.js';
-import { DEFAULT_SESSION_TTL, type Session } from '../models/Session.js';
+import {
+  DEFAULT_SESSION_TTL,
+  type Session,
+  type SessionAuthMethod,
+} from '../models/Session.js';
 import type { User } from '../models/User.js';
 import { PermissionResolver } from './PermissionResolver.js';
 
@@ -38,6 +42,31 @@ export interface SessionContext {
   tenantId: string | null;
   /** Session ID */
   sessionId: string;
+  /**
+   * How the session was established (#2944). Null for sessions minted
+   * before the column existed or by hosts that do not set it. Hosts gate on
+   * this — "enrolled tablets cannot enumerate other tablets" — instead of
+   * smuggling channel markers through permission lists.
+   *
+   * Optional so contexts built by older hosts and test doubles still type
+   * check; `loadSessionContext` always sets it.
+   */
+  authMethod?: SessionAuthMethod | null;
+  /**
+   * The session this one is layered on (#3276): for a per-person PIN
+   * session, the enrolled device's bearer session and the device account it
+   * belongs to. Null for first-class sessions; always set by
+   * `loadSessionContext`.
+   */
+  parent?: SessionParentContext | null;
+}
+
+/** Identity of the session a layered session rides on. */
+export interface SessionParentContext {
+  sessionId: string;
+  userId: string;
+  tenantId: string | null;
+  authMethod: SessionAuthMethod | null;
 }
 
 /**
@@ -147,6 +176,8 @@ export class SessionService {
       userAgent: options?.userAgent,
       ipAddress: options?.ipAddress,
       data: options?.data,
+      authMethod: options?.authMethod,
+      parentSessionId: options?.parentSessionId,
     });
 
     return session.id as string;
@@ -167,6 +198,27 @@ export class SessionService {
       // valid session indefinitely even though no context is returned.
       const initialUser = await this.userCollection.get(session.userId);
       if (!initialUser?.isActive()) return null;
+
+      // A layered session is valid only while the session it rides on is
+      // (#3276). Un-enrolling a device, or revoking its bearer, therefore
+      // signs out every person on it without any cascade bookkeeping. Checked
+      // before activity is persisted so an orphaned child cannot be kept
+      // alive by probing it, mirroring the inactive-user rule above.
+      let parent: SessionParentContext | null = null;
+      if (session.isLayered()) {
+        const parentSession = await this.sessionCollection.findValidSession(
+          session.parentSessionId as string,
+        );
+        if (!parentSession) return null;
+        const parentUser = await this.userCollection.get(parentSession.userId);
+        if (!parentUser?.isActive()) return null;
+        parent = {
+          sessionId: parentSession.id as string,
+          userId: parentSession.userId,
+          tenantId: parentSession.tenantId,
+          authMethod: parentSession.authMethod,
+        };
+      }
 
       // Activity persistence can conflict-reload the instance. Establish the
       // authorization snapshot only after that reload has converged.
@@ -216,6 +268,8 @@ export class SessionService {
         tenantAuthorization,
         tenantId,
         sessionId: session.id as string,
+        authMethod: session.authMethod,
+        parent,
       };
     }
     return null;
@@ -239,7 +293,27 @@ export class SessionService {
    * Destroy a session (revoke it)
    */
   async destroySession(sessionId: string): Promise<boolean> {
-    return this.sessionCollection.revokeSession(sessionId);
+    const revoked = await this.sessionCollection.revokeSession(sessionId);
+    if (revoked) {
+      // Children are already invalid (liveness rule); mark them so session
+      // listings and audits agree with what the user experiences.
+      await this.sessionCollection.revokeChildren(sessionId).catch(() => 0);
+    }
+    return revoked;
+  }
+
+  /**
+   * Revoke a user's sessions established through one auth method — e.g.
+   * every PIN session after an administrator resets that user's PIN.
+   */
+  async destroyUserSessionsByAuthMethod(
+    userId: string,
+    authMethod: SessionAuthMethod,
+  ): Promise<number> {
+    return this.sessionCollection.revokeUserSessionsByAuthMethod(
+      userId,
+      authMethod,
+    );
   }
 
   /**
@@ -302,6 +376,18 @@ export class SessionService {
       };
     }
 
+    // A layered session (#3276) inherits its tenant scope from the session
+    // it rides on and may never widen it: a person signed in by PIN on a
+    // tenant's tablet stays inside that tenant.
+    if (session.isLayered()) {
+      const parentSession = await this.sessionCollection.findValidSession(
+        session.parentSessionId as string,
+      );
+      if (!parentSession || parentSession.tenantId !== tenantId) {
+        return failClosed;
+      }
+    }
+
     // Fail-closed membership check BEFORE any write.
     const membership = await this.membershipCollection.findByUserAndTenant(
       session.userId,
@@ -317,6 +403,9 @@ export class SessionService {
     // session — so a captured pre-switch id provably stops validating before we
     // ever report success.
     await this.sessionCollection.revokeSession(sessionId);
+    // Anything layered on the old id is already invalid; mark it so listings
+    // agree (a device switching tenant signs its people out).
+    await this.sessionCollection.revokeChildren(sessionId).catch(() => 0);
     const rotated = await this.sessionCollection.createSession({
       userId: session.userId,
       tenantId,
@@ -324,6 +413,8 @@ export class SessionService {
       userAgent: session.userAgent,
       ipAddress: session.ipAddress,
       data: session.data,
+      authMethod: session.authMethod,
+      parentSessionId: session.parentSessionId,
     });
 
     return {

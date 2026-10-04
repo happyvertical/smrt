@@ -8,6 +8,7 @@ import {
   DEFAULT_SESSION_TTL,
   generateSessionId,
   Session,
+  type SessionAuthMethod,
 } from '../models/Session.js';
 import { SessionStatus } from '../types/index.js';
 
@@ -27,6 +28,10 @@ export interface CreateSessionOptions {
   ipAddress?: string;
   /** Custom session data */
   data?: Record<string, unknown>;
+  /** How the session was established (server-set; see {@link SessionAuthMethod}). */
+  authMethod?: SessionAuthMethod | null;
+  /** Parent session this one is layered on; the child is valid only while the parent is. */
+  parentSessionId?: string | null;
 }
 
 /**
@@ -77,10 +82,56 @@ export class SessionCollection extends SmrtCollection<Session> {
       ipAddress: options.ipAddress ?? '',
       lastAccessedAt: new Date(),
       data: options.data ?? {},
+      authMethod: options.authMethod ?? null,
+      parentSessionId: options.parentSessionId ?? null,
     });
 
     await session.save();
     return session;
+  }
+
+  /**
+   * Active sessions layered on `parentSessionId` (e.g. every person signed in
+   * on one enrolled device). Expired rows are filtered out.
+   */
+  async findChildren(parentSessionId: string): Promise<Session[]> {
+    const results = await this.list({
+      where: { parentSessionId, status: SessionStatus.ACTIVE },
+      orderBy: 'last_accessed_at DESC',
+    });
+    return results.filter((session) => session.isValid());
+  }
+
+  /**
+   * Revoke every active session layered on `parentSessionId`. Children are
+   * already invalid once the parent is gone (liveness rule), so this is a
+   * tidy-up that makes "manage sessions" views and audits truthful.
+   */
+  async revokeChildren(parentSessionId: string): Promise<number> {
+    const children = await this.findChildren(parentSessionId);
+    let count = 0;
+    for (const child of children) {
+      if (child.id && (await this.revokeWithRetry(child.id))) count++;
+    }
+    return count;
+  }
+
+  /**
+   * Revoke a user's active sessions established through one auth method
+   * (e.g. every `pin` session after an admin PIN reset).
+   */
+  async revokeUserSessionsByAuthMethod(
+    userId: string,
+    authMethod: SessionAuthMethod,
+  ): Promise<number> {
+    const sessions = await this.list({
+      where: { userId, authMethod, status: SessionStatus.ACTIVE },
+    });
+    let count = 0;
+    for (const session of sessions) {
+      if (session.id && (await this.revokeWithRetry(session.id))) count++;
+    }
+    return count;
   }
 
   /**

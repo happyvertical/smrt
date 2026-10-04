@@ -26,7 +26,22 @@ export interface SessionOptions extends SmrtObjectOptions {
   /** Accepts a Date or any value the Date constructor can coerce. */
   lastAccessedAt?: Date | string | number;
   data?: Record<string, unknown>;
+  authMethod?: SessionAuthMethod | null;
+  parentSessionId?: string | null;
 }
+
+/**
+ * How a session was established. Server-set at mint time, never trusted from
+ * the client. Hosts may use any string for their own flows; these are the
+ * values this package mints.
+ */
+export type SessionAuthMethod =
+  | 'oidc'
+  | 'magic-link'
+  | 'terminal'
+  | 'mobile'
+  | 'pin'
+  | (string & {});
 
 /**
  * Default session TTL: 7 days in seconds
@@ -118,6 +133,29 @@ export class Session extends SmrtObject {
    */
   data: Record<string, unknown> = {};
 
+  /**
+   * Authentication channel that established this session (#3276, #2944).
+   * Null for sessions minted before this column existed or by hosts that do
+   * not set it.
+   */
+  @field({ type: 'text', nullable: true })
+  authMethod: SessionAuthMethod | null = null;
+
+  /**
+   * Session this one is layered on — the enrolled device's bearer session
+   * under a per-person PIN session, for instance. A child is valid only while
+   * its parent is, so revoking the device signs out everyone on it.
+   *
+   * A plain id rather than a foreign key: a self-referencing FK would cascade
+   * the retention sweep's parent deletes, and the liveness rule in
+   * `SessionService.loadSessionContext` already makes an orphan invalid.
+   *
+   * Indexed: `SessionCollection.findChildren()` and the sign-out cascade
+   * query by this column.
+   */
+  @field({ type: 'text', nullable: true, indexed: true })
+  parentSessionId: string | null = null;
+
   constructor(options: SessionOptions = {}) {
     super(options);
     if (options.userId !== undefined) this.userId = options.userId;
@@ -138,6 +176,15 @@ export class Session extends SmrtObject {
           : new Date(options.lastAccessedAt);
     }
     if (options.data !== undefined) this.data = options.data;
+    if (options.authMethod !== undefined) this.authMethod = options.authMethod;
+    if (options.parentSessionId !== undefined) {
+      this.parentSessionId = options.parentSessionId;
+    }
+  }
+
+  /** True when this session is layered on another one. */
+  isLayered(): boolean {
+    return this.parentSessionId !== null && this.parentSessionId !== '';
   }
 
   /**
