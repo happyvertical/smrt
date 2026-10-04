@@ -90,13 +90,14 @@ export async function runTokenOperation(
   args: string[],
 ): Promise<number> {
   const [first, ...rest] = args;
-  const subcommand =
-    first === undefined || first.startsWith('--') ? 'create' : first;
-  const subArgs = subcommand === first ? rest : args;
-  if (subcommand === 'help' || subcommand === '--help') {
+  // Help before the implicit `create`: `--help` is not a create option.
+  if (first === 'help' || first === '--help' || first === '-h') {
     context.io.stdout(`${TOKEN_USAGE}\n`);
     return 0;
   }
+  const subcommand =
+    first === undefined || first.startsWith('--') ? 'create' : first;
+  const subArgs = subcommand === first ? rest : args;
   if (!['create', 'list', 'revoke'].includes(subcommand)) {
     throw new Error(`Unknown token operation: ${subcommand}. ${TOKEN_USAGE}`);
   }

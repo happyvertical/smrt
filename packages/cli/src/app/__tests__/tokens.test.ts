@@ -231,6 +231,16 @@ describe('smrt app token', () => {
     await runtime.db.close?.();
   });
 
+  it('prints usage for --help instead of treating it as a create option', async () => {
+    const { runtime, run } = await ownedApplication('local');
+    for (const spelling of ['--help', 'help', '-h']) {
+      const result = await run([spelling]);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('smrt app token');
+    }
+    await runtime.db.close?.();
+  });
+
   it('parses lifetimes', () => {
     expect(parseTokenLifetime('30d')).toBe(30 * 24 * 60 * 60);
     expect(parseTokenLifetime('12h')).toBe(12 * 60 * 60);
