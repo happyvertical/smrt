@@ -14,9 +14,12 @@ import './__smrt-register__.js';
 export type {
   CalendarEventIdentity,
   CalendarEventInput,
+  CalendarExpansionOptions,
+  CalendarParseOptions,
 } from './calendar/icalendar';
 export {
   CalendarEventValidationError,
+  expandICalendarEvents,
   parseICalendarEvents,
 } from './calendar/icalendar';
 export type {
