@@ -31,8 +31,9 @@ A sub-assembly is a `BomLine` whose component SKU belongs to an `Assembly`; ther
 
 | Method | Behavior |
 |---|---|
-| `resolveComponent(skuId)` | `{ kind, sku, product, assembly, activeBom, buildable }`. `kind` is `assembly`, `material` (`Material`), `bought` (any other `Product`), or `missing` (unknown SKU, SKU with no product, or a non-UUID id; never throws). `activeBom` is the assembly's highest active bill, `null` when it has none; `buildable` is `assembly && activeBom`. Multi-level explosion (#3444) recurses on `activeBom` and stops at every other kind. |
+| `resolveComponent(skuId, { tenantId? })` | `{ kind, sku, product, assembly, activeBom, buildable }`. `kind` is `assembly`, `material` (`Material`), `bought` (any other `Product`), or `missing` (unknown SKU, SKU with no product, or a non-UUID id; never throws). `activeBom` is the assembly's highest active bill, `null` when it has none; `buildable` is `assembly && activeBom`. Multi-level explosion (#3444) recurses on `activeBom` and stops at every other kind. |
 | `isAssembly(skuId)` | `resolveComponent(skuId).kind === 'assembly'`. |
+| `findActiveBom(productId, { tenantId? })` | Highest active bill. With `tenantId` (including `null`), only that tenant's bills count, whatever the tenant context; the cycle walk and `getBillStructure` pass the bill's own tenant, so a shared assembly resolves to the right tenant's bill on writes made without `withTenant()`. |
 | `getBillStructure(bomId)` | One level: the bill plus each line with its resolved component. Throws `BomNotFoundError`. |
 | `findCycle(productId, componentSkuIds)` | The path by which those components would make `productId` contain itself, following sub-assemblies' **active** bills only; `null` when none. |
 | `assertLineAcyclic(line)` / `assertBillAcyclic(bom)` | Throw `BomCycleError` (a `ValidationError`, code `MANUFACTURING_BOM_CYCLE`, `path` from the product back to itself). |

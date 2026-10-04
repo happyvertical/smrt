@@ -444,6 +444,46 @@ export function assemblySuite(
         }
       });
 
+      it("reads the bill's own tenant's structure when saved without a tenant context", async () => {
+        // A shared (global) Panel has an active bill in each of two tenants.
+        // Saving tenant A's rows with no tenant context must walk tenant A's
+        // Panel bill, not the other tenant's higher version.
+        const tenantA = crypto.randomUUID();
+        const tenantB = crypto.randomUUID();
+        const frame = await assembly('Frame');
+        const panel = await assembly('Panel');
+        const tagged = (productId: string, tenantId: string, version: number) =>
+          boms.create({ productId, version, status: 'active', tenantId });
+        const lineIn = (bomId: string, skuId: string, tenantId: string) =>
+          lines.create({
+            bomId,
+            componentSkuId: skuId,
+            qtyPerUnit: 1,
+            tenantId,
+          });
+
+        const panelA = await tagged(panel.row.id!, tenantA, 1);
+        const panelB = await tagged(panel.row.id!, tenantB, 2);
+        await lineIn(panelB.id!, frame.sku.id!, tenantB);
+
+        // Tenant B's Panel contains Frame, but tenant A's does not: allowed.
+        const frameA = await tagged(frame.row.id!, tenantA, 1);
+        await expect(
+          lineIn(frameA.id!, panel.sku.id!, tenantA),
+        ).resolves.toBeTruthy();
+
+        // Tenant A's own loop is still refused, even though tenant B's
+        // higher-version Panel bill does not close it.
+        const frameB = await tagged(frame.row.id!, tenantB, 1);
+        await lineIn(frameB.id!, panel.sku.id!, tenantB).then(
+          () => {
+            throw new Error('tenant B loop should be refused');
+          },
+          (error: unknown) => expect(error).toBeInstanceOf(BomCycleError),
+        );
+        await cycleOf(lineIn(panelA.id!, frame.sku.id!, tenantA));
+      });
+
       it('allows a shared sub-assembly used twice in one structure', async () => {
         const frame = await assembly('Frame');
         const left = await assembly('Left panel');

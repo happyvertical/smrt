@@ -115,6 +115,7 @@ export {
   type ProductionOrderRef,
   ProductionService,
   type ProductionServiceOptions,
+  type ResolveComponentOptions,
   type ResolvedComponent,
   RoutingService,
   type RoutingServiceOptions,

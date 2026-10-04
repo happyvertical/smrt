@@ -139,6 +139,17 @@ export class BomCycleError extends ValidationError {
   }
 }
 
+/** Options for {@link AssemblyService.resolveComponent} and the walks built on it. */
+export interface ResolveComponentOptions {
+  /**
+   * The tenant whose structure is being read. When given (including `null`
+   * for global records), an assembly's active bill is chosen only among
+   * bills with exactly this `tenantId`, whatever tenant context is active.
+   * When omitted, the active tenant context decides what is visible.
+   */
+  tenantId?: string | null;
+}
+
 /** Options accepted by {@link AssemblyService.create}. */
 export interface AssemblyServiceOptions {
   /** Database config or live handle shared by every collection. */
@@ -203,9 +214,14 @@ export class AssemblyService {
    * throws for an unknown id; it reports `missing` instead.
    *
    * This is the documented link a multi-level explosion walks: recurse into
-   * `activeBom` while `kind === 'assembly'`, stop at every other kind.
+   * `activeBom` while `kind === 'assembly'`, stop at every other kind. Pass
+   * the parent bill's `tenantId` so a shared assembly resolves to that
+   * tenant's bill, not another tenant's.
    */
-  async resolveComponent(skuId: string): Promise<ResolvedComponent> {
+  async resolveComponent(
+    skuId: string,
+    options: ResolveComponentOptions = {},
+  ): Promise<ResolvedComponent> {
     const missing = (sku: Sku | null): ResolvedComponent => ({
       skuId,
       kind: 'missing',
@@ -224,7 +240,7 @@ export class AssemblyService {
     if (!product) return missing(sku);
 
     if (product instanceof Assembly) {
-      const activeBom = await this.boms.findActiveForProduct(product.id!);
+      const activeBom = await this.findActiveBom(product.id!, options);
       return {
         skuId,
         kind: 'assembly',
@@ -247,6 +263,25 @@ export class AssemblyService {
     };
   }
 
+  /**
+   * The highest-version active bill for a product, limited to one tenant's
+   * bills when `options.tenantId` is given.
+   */
+  async findActiveBom(
+    productId: string,
+    options: ResolveComponentOptions = {},
+  ): Promise<BillOfMaterials | null> {
+    if (options.tenantId === undefined)
+      return this.boms.findActiveForProduct(productId);
+    const active = await this.boms.list({
+      where: { productId, status: 'active' },
+      orderBy: 'version DESC',
+    });
+    return (
+      active.find((bom) => (bom.tenantId ?? null) === options.tenantId) ?? null
+    );
+  }
+
   /** `true` when the SKU belongs to an {@link Assembly}. */
   async isAssembly(skuId: string): Promise<boolean> {
     return (await this.resolveComponent(skuId)).kind === 'assembly';
@@ -263,12 +298,13 @@ export class AssemblyService {
     const bom = isUuid(bomId) ? await this.boms.get({ id: bomId }) : null;
     if (!bom) throw new BomNotFoundError(bomId);
     const cache = new Map<string, Promise<ResolvedComponent>>();
+    const scope = { tenantId: bom.tenantId ?? null };
     const lines = await this.lines.findByBom(bomId);
     const resolved: BillStructureLine[] = [];
     for (const line of lines) {
       resolved.push({
         line,
-        component: await this.resolveCached(line.componentSkuId, cache),
+        component: await this.resolveCached(line.componentSkuId, cache, scope),
       });
     }
     return { bom, lines: resolved };
@@ -278,11 +314,13 @@ export class AssemblyService {
    * Find the path by which adding `componentSkuIds` to a bill for
    * `productId` would make that product contain itself, or `null` when none
    * would. The walk follows each sub-assembly's **active** bill only; a
-   * draft or superseded bill is not part of the structure.
+   * draft or superseded bill is not part of the structure. Pass the bill's
+   * `tenantId` so the walk reads that tenant's structure.
    */
   async findCycle(
     productId: string,
     componentSkuIds: readonly string[],
+    options: ResolveComponentOptions = {},
   ): Promise<BomCyclePathEntry[] | null> {
     const cache = new Map<string, Promise<ResolvedComponent>>();
     const visited = new Set<string>();
@@ -292,7 +330,7 @@ export class AssemblyService {
       trail: Product[],
     ): Promise<Product[] | null> => {
       for (const skuId of skuIds) {
-        const component = await this.resolveCached(skuId, cache);
+        const component = await this.resolveCached(skuId, cache, options);
         const product = component.product;
         if (!product?.id) continue;
         if (product.id === productId) return [...trail, product];
@@ -331,7 +369,9 @@ export class AssemblyService {
     if (!isUuid(line.bomId)) return;
     const bom = await this.boms.get({ id: line.bomId });
     if (!bom) return;
-    const path = await this.findCycle(bom.productId, [line.componentSkuId]);
+    const path = await this.findCycle(bom.productId, [line.componentSkuId], {
+      tenantId: bom.tenantId ?? null,
+    });
     if (path) throw new BomCycleError(line.bomId, path);
   }
 
@@ -373,17 +413,20 @@ export class AssemblyService {
         componentSkuIds.push(line.componentSkuId);
     }
     if (componentSkuIds.length === 0) return;
-    const path = await this.findCycle(bom.productId, componentSkuIds);
+    const path = await this.findCycle(bom.productId, componentSkuIds, {
+      tenantId,
+    });
     if (path) throw new BomCycleError(bom.id || [...billIds][0] || '', path);
   }
 
   private resolveCached(
     skuId: string,
     cache: Map<string, Promise<ResolvedComponent>>,
+    options: ResolveComponentOptions,
   ): Promise<ResolvedComponent> {
     let pending = cache.get(skuId);
     if (!pending) {
-      pending = this.resolveComponent(skuId);
+      pending = this.resolveComponent(skuId, options);
       cache.set(skuId, pending);
     }
     return pending;

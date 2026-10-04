@@ -332,7 +332,7 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 
 | Export | Description |
 |---|---|
-| `AssemblyService` | `resolveComponent`, `isAssembly`, `getBillStructure`, `findCycle`, `assertLineAcyclic`, `assertBillAcyclic`. |
+| `AssemblyService` | `resolveComponent`, `findActiveBom`, `isAssembly`, `getBillStructure`, `findCycle`, `assertLineAcyclic`, `assertBillAcyclic`. Pass `{ tenantId }` to read one tenant's structure. |
 | `createAssemblyService({ db })` | Convenience factory. |
 | `BomCycleError` | A `ValidationError` naming the `path` by which a save would make a product contain itself. |
 | `BomService` | Cost rollup, requirements explosion, can-produce check. |

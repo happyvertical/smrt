@@ -13,6 +13,7 @@ export {
   type BomCyclePathEntry,
   type ComponentKind,
   createAssemblyService,
+  type ResolveComponentOptions,
   type ResolvedComponent,
 } from './AssemblyService.js';
 export {
