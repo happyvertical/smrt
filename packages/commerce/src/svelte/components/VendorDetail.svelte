@@ -59,6 +59,12 @@ function statusLabel(value: string): string {
   return value;
 }
 
+function identityKindLabel(value: string | undefined): string {
+  if (value === 'business') return t(M['commerce.party.identity_business']);
+  if (value === 'person') return t(M['commerce.party.identity_person']);
+  return value || notRecorded;
+}
+
 function minimumOrder(amountMinor: number): string {
   try {
     return formatPartyMinorUnits(
@@ -86,7 +92,7 @@ function minimumOrder(amountMinor: number): string {
     <Card padding="md">
       <h2>{t(M['commerce.party.identity'])}</h2>
       <dl>
-        <dt>{t(M['commerce.party.type'])}</dt><dd>{vendor.profile.identityKind === 'person' ? t(M['commerce.party.identity_person']) : t(M['commerce.party.identity_business'])}</dd>
+        <dt>{t(M['commerce.party.type'])}</dt><dd>{identityKindLabel(vendor.profile.identityKind)}</dd>
         <dt>{t(M['commerce.party.status'])}</dt><dd><StatusBadge status={vendor.status} label={statusLabel(vendor.status)} /></dd>
         <dt>{t(M['commerce.party.email'])}</dt><dd>{#if vendor.profile.email}<a href={`mailto:${vendor.profile.email}`}>{vendor.profile.email}</a>{:else}{notRecorded}{/if}</dd>
       </dl>

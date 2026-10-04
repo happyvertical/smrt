@@ -24,6 +24,7 @@ setI18nContext(
       'commerce.party.search_named': '{plural} suchen',
       'commerce.party.pagination': 'Seiten für {singular}',
       'commerce.party.no_contact_details': 'Keine Kontaktdaten erfasst',
+      'commerce.party.showing_count': '{count} von {total} angezeigt',
       'commerce.party.amount_unavailable': 'Betrag nicht verfügbar',
       'commerce.vendor.lead_time_days': '{days} Tage Lieferzeit',
     },

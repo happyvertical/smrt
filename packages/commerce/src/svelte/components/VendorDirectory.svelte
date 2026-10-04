@@ -55,7 +55,7 @@ const {
   items = [],
   total = items.length,
   page = 1,
-  pageSize = Math.max(items.length, 1),
+  pageSize,
   query = '',
   status = '',
   searchAction,
@@ -74,8 +74,12 @@ const {
 const { t } = useI18n();
 const singular = $derived(labels.singular ?? t(M['commerce.vendor.singular']));
 const plural = $derived(labels.plural ?? t(M['commerce.vendor.plural']));
-const first = $derived(total === 0 ? 0 : (page - 1) * pageSize + 1);
-const last = $derived(Math.min(page * pageSize, total));
+const first = $derived(
+  pageSize === undefined || total === 0 ? 0 : (page - 1) * pageSize + 1,
+);
+const last = $derived(
+  pageSize === undefined ? 0 : Math.min(page * pageSize, total),
+);
 
 function statusLabel(value: string): string {
   if (value === 'active') return t(M['commerce.party.status_active']);
@@ -129,7 +133,11 @@ function vendorMeta(vendor: VendorDisplayData): string {
   {:else if items.length === 0}
     <EmptyState title={labels.empty ?? t(M['commerce.vendor.no_results'])} description={t(M['commerce.party.try_filters'])} />
   {:else}
-    <p class="result-count">{t(M['commerce.party.showing'], { first, last, total })}</p>
+    <p class="result-count">
+      {pageSize === undefined
+        ? t(M['commerce.party.showing_count'], { count: items.length, total })
+        : t(M['commerce.party.showing'], { first, last, total })}
+    </p>
     <div class="party-list">
       {#each items as item (item.data.id)}
         <Card padding="md" hoverable data-party-id={item.data.id}>

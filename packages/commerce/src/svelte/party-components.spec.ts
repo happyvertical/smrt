@@ -149,6 +149,85 @@ describe('customer and vendor SSR surfaces', () => {
     expect(vendorHtml).toContain('href="/vendors/vendor-1/edit"');
   });
 
+  it('does not invent an identity category when profile identity is missing or unknown', () => {
+    const missingCustomerIdentity = render(CustomerDetail, {
+      props: {
+        customer: {
+          ...customer,
+          profile: { ...customer.profile, identityKind: undefined },
+        },
+      },
+    }).body;
+    const missingVendorIdentity = render(VendorDetail, {
+      props: {
+        vendor: {
+          ...vendor,
+          profile: { ...vendor.profile, identityKind: undefined },
+        },
+      },
+    }).body;
+    expect(missingCustomerIdentity).toMatch(
+      /<dt[^>]*>Type<\/dt><dd[^>]*>Not recorded<\/dd>/,
+    );
+    expect(missingVendorIdentity).toMatch(
+      /<dt[^>]*>Type<\/dt><dd[^>]*>Not recorded<\/dd>/,
+    );
+
+    const unknownCustomerIdentity = render(CustomerDetail, {
+      props: {
+        customer: {
+          ...customer,
+          profile: {
+            ...customer.profile,
+            identityKind: 'cooperative' as never,
+          },
+        },
+      },
+    }).body;
+    const unknownVendorIdentity = render(VendorDetail, {
+      props: {
+        vendor: {
+          ...vendor,
+          profile: { ...vendor.profile, identityKind: 'collective' as never },
+        },
+      },
+    }).body;
+    expect(unknownCustomerIdentity).toMatch(
+      /<dt[^>]*>Type<\/dt><dd[^>]*>cooperative<\/dd>/,
+    );
+    expect(unknownVendorIdentity).toMatch(
+      /<dt[^>]*>Type<\/dt><dd[^>]*>collective<\/dd>/,
+    );
+  });
+
+  it('keeps payment terms out of contact copy and avoids invented ranges without page size', () => {
+    const customerWithoutEmail = {
+      ...customer,
+      profile: { ...customer.profile, email: undefined },
+    };
+    const customerHtml = render(CustomerDirectory, {
+      props: {
+        items: [{ data: customerWithoutEmail }],
+        total: 26,
+        page: 2,
+      },
+    }).body;
+    expect(customerHtml).toMatch(/<p[^>]*>No contact details recorded<\/p>/);
+    expect(customerHtml).toContain('Wholesale · Net 30');
+    expect(customerHtml).toContain('Showing 1 of 26');
+    expect(customerHtml).not.toContain('Showing 2–2 of 26');
+
+    const vendorHtml = render(VendorDirectory, {
+      props: {
+        items: [{ data: vendor }],
+        total: 26,
+        page: 2,
+      },
+    }).body;
+    expect(vendorHtml).toContain('Showing 1 of 26');
+    expect(vendorHtml).not.toContain('Showing 2–2 of 26');
+  });
+
   it('formats the safe-integer minor-unit limit exactly in both party details', () => {
     expect(customerMoney(Number.MAX_SAFE_INTEGER)).toContain(
       'CA$90,071,992,547,409.91',
@@ -286,6 +365,7 @@ describe('customer and vendor SSR surfaces', () => {
     expect(html).toContain('Kunde hinzufügen');
     expect(html).toContain('Kunden suchen');
     expect(html).toContain('Keine Kontaktdaten erfasst');
+    expect(html).toContain('1 von 1 angezeigt');
     expect(html).toContain('Identität');
     expect(html).toContain('Art');
     expect(html).toContain('Zustand');
