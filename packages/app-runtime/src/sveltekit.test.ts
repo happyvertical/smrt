@@ -104,12 +104,14 @@ afterEach(async () => {
 });
 
 // Local runtimes take the state-root writer lease by default (#3416). Keep
-// every state root (derived from XDG_STATE_HOME, like `smrt app`) inside a
-// test-owned directory instead of the user's real state directory.
+// every platform's state root inside a test-owned directory instead of the
+// user's real state directory.
 let stateHome = '';
 beforeAll(async () => {
   stateHome = await realpath(await mkdtemp(join(tmpdir(), 'smrt-sk-state-')));
   vi.stubEnv('XDG_STATE_HOME', stateHome);
+  vi.stubEnv('HOME', stateHome);
+  vi.stubEnv('LOCALAPPDATA', stateHome);
 });
 
 afterAll(async () => {
@@ -1063,7 +1065,11 @@ describe('local SvelteKit runtime', () => {
       const { runtime, ...directories } = await localRuntime('lease-default');
       await runtime.init();
       const stateRoot = stateRootOf(runtime, directories);
-      expect(stateRoot.startsWith(stateHome)).toBe(true);
+      const stateBase =
+        platform() === 'darwin'
+          ? join(stateHome, 'Library', 'Application Support')
+          : stateHome;
+      expect(stateRoot.startsWith(stateBase)).toBe(true);
       expect(readActiveWriterLease(stateRoot)).toMatchObject({
         schemaVersion: 1,
         pid: process.pid,
