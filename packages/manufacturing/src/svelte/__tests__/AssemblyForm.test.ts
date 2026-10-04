@@ -73,6 +73,29 @@ describe('AssemblyForm', () => {
     expect(onsubmit).not.toHaveBeenCalled();
   });
 
+  it('re-shows the stored price when the currency changes on the same form', async () => {
+    const onsubmit = vi.fn();
+    const view = render(AssemblyForm, {
+      props: {
+        assembly: { ...existing, price: 1234 },
+        onsubmit,
+        operations,
+        currency: 'USD',
+      },
+    });
+    expect(screen.getByLabelText('Price')).toHaveValue('12.34');
+    await view.rerender({ currency: 'KWD' });
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText('Price')).toHaveValue('1.234'),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await vi.waitFor(() =>
+      expect(onsubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ price: 1234 }),
+      ),
+    );
+  });
+
   it('uses the currency exponent for the price: JPY has none, KWD three', async () => {
     const onsubmit = vi.fn();
     const jpy = render(AssemblyForm, {

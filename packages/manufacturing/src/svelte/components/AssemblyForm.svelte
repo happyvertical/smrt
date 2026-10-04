@@ -69,9 +69,11 @@ const exponent = $derived(currencyExponent(currency));
 const isNew = $derived(assembly === null);
 
 function getInitialFormState() {
+  const initialExponent = currencyExponent(currency);
   return {
     assembly,
-    draft: assemblyFormDraft(assembly, currencyExponent(currency)),
+    exponent: initialExponent,
+    draft: assemblyFormDraft(assembly, initialExponent),
   };
 }
 
@@ -88,8 +90,16 @@ let defaultOperationId = $state(initialFormState.draft.defaultOperationId);
 let tags = $state(initialFormState.draft.tags);
 let invalid = $state<AssemblyFormInvalidField[]>([]);
 let appliedAssembly: AssemblyFormInitial | null = initialFormState.assembly;
+let appliedExponent = initialFormState.exponent;
 
 // Follow the host when it swaps the assembly being edited.
+// Follow a change of currency: show the stored price in the new minor unit.
+$effect(() => {
+  if (appliedExponent === exponent) return;
+  appliedExponent = exponent;
+  price = assemblyFormDraft(assembly, exponent).price;
+});
+
 $effect(() => {
   if (appliedAssembly === assembly) return;
   appliedAssembly = assembly;
