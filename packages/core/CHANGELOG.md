@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.54.1
+
+### Patch Changes
+
+- ### Features
+  
+  - isolate reconciliation candidates by access scope (#3499) (facts)
+  - let consumers omit unsupported expense and upload fields (#3495) (ui)
+- @happyvertical/smrt-config@0.54.1
+  - @happyvertical/smrt-scanner@0.54.1
+  - @happyvertical/smrt-types@0.54.1
+
 ## 0.54.0
 
 ### Minor Changes
