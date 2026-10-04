@@ -28,6 +28,7 @@ import {
   BomCycleError,
   BomLineCollection,
   BomNotFoundError,
+  OperationService,
 } from '../index.js';
 
 const ASSEMBLY_TYPE = '@happyvertical/smrt-manufacturing:Assembly';
@@ -128,9 +129,13 @@ export function assemblySuite(
       });
 
       it('round-trips its fields and identifies as an assembly', async () => {
+        const weld = await (await OperationService.create({ db })).define({
+          code: `WELD-${crypto.randomUUID()}`,
+          name: 'Weld',
+        });
         const { row } = await assembly('Frame', {
           estimatedLabourMinutes: 95,
-          defaultOperationId: 'op-weld',
+          defaultOperationId: weld.id,
           partReference: 'DWG-1001 rev B',
           price: 125000,
         });
@@ -140,7 +145,7 @@ export function assemblySuite(
         })) as Assembly | null;
         expect(loaded).toBeInstanceOf(Assembly);
         expect(loaded?.estimatedLabourMinutes).toBe(95);
-        expect(loaded?.defaultOperationId).toBe('op-weld');
+        expect(loaded?.defaultOperationId).toBe(weld.id);
         expect(loaded?.partReference).toBe('DWG-1001 rev B');
         expect(loaded?.price).toBe(125000);
         expect(loaded?.productType).toBe('assembly');
@@ -161,6 +166,7 @@ export function assemblySuite(
         const { row } = await assembly('Frame');
         const viaBase = await products.get({ id: row.id! });
         expect(viaBase).toBeInstanceOf(Assembly);
+        expect((viaBase as Assembly).defaultOperationId).toBeNull();
       });
 
       it('lists only assemblies, never materials or plain products', async () => {

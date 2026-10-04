@@ -25,7 +25,7 @@
  * @packageDocumentation
  */
 
-import { field, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, smrt } from '@happyvertical/smrt-core';
 import {
   Product,
   type ProductOptions,
@@ -38,7 +38,7 @@ import { TenantScoped } from '@happyvertical/smrt-tenancy';
  */
 export interface AssemblyOptions extends ProductOptions {
   estimatedLabourMinutes?: number;
-  defaultOperationId?: string;
+  defaultOperationId?: string | null;
   partReference?: string;
 }
 
@@ -69,12 +69,11 @@ export class Assembly extends Product {
   estimatedLabourMinutes: number = 0;
 
   /**
-   * The operation that work on this assembly is booked to by default.
-   * Optional plain string id: the operation model is defined by smrt#3445,
-   * so this is not a foreign key.
+   * The {@link Operation} that work on this assembly is booked to by
+   * default, or `null` for none.
    */
-  @field()
-  defaultOperationId: string = '';
+  @foreignKey('Operation', { nullable: true })
+  defaultOperationId: string | null = null;
 
   /**
    * The organization's own drawing or part number for this assembly,

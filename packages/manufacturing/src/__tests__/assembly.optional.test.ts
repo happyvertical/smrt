@@ -21,6 +21,7 @@ if (isPostgresAvailable()) {
           'Product',
           'Material',
           'Assembly',
+          'Operation',
           'Sku',
           'BillOfMaterials',
           'BomLine',
