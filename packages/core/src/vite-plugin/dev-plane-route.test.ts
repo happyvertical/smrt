@@ -69,6 +69,12 @@ describe('generateDevPlaneRoute (#2782)', () => {
     expect(content).toContain("import { dev } from '$app/environment'");
     expect(content).toContain("from '@happyvertical/smrt-dev-mcp/dev-plane'");
     expect(content).toContain("from '$lib/server/smrt'");
+    // #3416: the app's config module is resolved through the runtime
+    // accessor, after the generated registration.
+    expect(content).toContain("import '$lib/server/smrt-register';");
+    expect(content).toContain(
+      'const { getSmrtConfig } = createGeneratedCollectionAccess(',
+    );
     expect(content).toContain('SMRT_DEV_MCP_TOKEN');
     expect(content).toContain('if (!dev) throw error(404');
     expect(content).toContain('export const GET = handle');

@@ -92,6 +92,34 @@ describe('AppShell', () => {
     ).not.toBeNull();
   });
 
+  it('hands the dock snippet the registry the mounted routes register on', async () => {
+    const seen: unknown[] = [];
+    let routeUi: { dataSurfaceRegistry: unknown } | null = null;
+    component = mount(AppShellDockHarness, {
+      target: container,
+      props: {
+        webmcp: true,
+        onRegistry: (registry: unknown) => seen.push(registry),
+        onUi: (ui: unknown) => {
+          routeUi = ui as typeof routeUi;
+        },
+      },
+    });
+    await tick();
+    await tick();
+    expect(routeUi).not.toBeNull();
+    expect(seen.length).toBeGreaterThan(0);
+    for (const registry of seen) {
+      expect(registry).toBe(routeUi!.dataSurfaceRegistry);
+    }
+    const registry = seen[0] as {
+      list(): Array<{ identity: { surfaceId: string } }>;
+    };
+    expect(registry.list().map((d) => d.identity.surfaceId)).toContain(
+      'route-items',
+    );
+  });
+
   it('shows the settings link only when settingsHref is given', async () => {
     await render({
       settingsHref: '/settings',

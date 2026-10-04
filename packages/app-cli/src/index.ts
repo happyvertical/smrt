@@ -146,6 +146,12 @@ export interface CreateAppCliOptions {
   /** Enforce HTTPS or loopback HTTP for every effective server URL. */
   requireSecureServerUrl?: boolean;
   /**
+   * Same-server path of the app's modern MCP endpoint used by
+   * `startMcpBridge()`. Defaults to `/api/mcp`; apps that mount
+   * `mountMcpAppRoute` elsewhere (for example `/mcp`) set it here or per call.
+   */
+  mcpPath?: string;
+  /**
    * App-specific commands. Dispatched BEFORE built-ins (`auth`,
    * `resources`, `mcp`) and before the resource-slug dispatcher, so an
    * `extraCommands` entry takes precedence over anything with the same
@@ -178,6 +184,8 @@ export interface AppCli {
   startMcpBridge(serverInfo?: {
     name?: string;
     version?: string;
+    /** Endpoint path; overrides `CreateAppCliOptions.mcpPath` (default `/api/mcp`). */
+    mcpPath?: string;
   }): Promise<void>;
 }
 
@@ -200,8 +208,10 @@ export function createAppCli(options: CreateAppCliOptions): AppCli {
     run: (argv) => runCli(context, options, extraByName, argv),
     startMcpBridge: async (serverInfo) => {
       const { runMcpStdioBridge } = await import('./bridge.js');
+      const mcpPath = serverInfo?.mcpPath ?? options.mcpPath;
       await runMcpStdioBridge({
         ...context,
+        ...(mcpPath === undefined ? {} : { mcpPath }),
         serverInfo: {
           name: serverInfo?.name ?? `${options.name}-mcp`,
           version: serverInfo?.version ?? '0.0.0',

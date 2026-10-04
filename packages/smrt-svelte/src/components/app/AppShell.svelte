@@ -6,6 +6,7 @@ import {
 } from '@happyvertical/smrt-ui/themes';
 import '@happyvertical/smrt-ui/themes/styles/all.css';
 import '@happyvertical/smrt-ui/themes/styles/fonts.css';
+import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { M } from '../../i18n/strings.workspace.js';
@@ -20,6 +21,7 @@ import type {
   ShellNavItem,
   ShellPanelDefaults,
 } from '../workspace/admin-shell/types.js';
+import DockSlot from './DockSlot.svelte';
 import RuntimeDiagnosticsWebMcp from './RuntimeDiagnosticsWebMcp.svelte';
 
 interface Props {
@@ -59,9 +61,13 @@ interface Props {
   appPanelDocs?: Snippet;
   /**
    * Dock slot, rendered inside the shell so a host can place an assistant in
-   * a `ShellDockTool` without this package depending on it.
+   * a `ShellDockTool` without this package depending on it. It receives the
+   * `DataSurfaceRegistry` of the Provider the shell mounts, the same instance
+   * mounted routes register their surfaces on, so
+   * `<AssistantDock {registry} />` sees them with no second registry. Routes
+   * register on it when the `webmcp` UI is enabled (`webmcp: true`).
    */
-  dock?: Snippet;
+  dock?: Snippet<[DataSurfaceRegistry]>;
   children: Snippet;
 }
 
@@ -121,7 +127,9 @@ const hasNav = $derived(nav.length > 0 || navGroups.length > 0);
         {/if}
       {/snippet}
 
-      {@render dock?.()}
+      {#if dock}
+        <DockSlot {dock} />
+      {/if}
       {@render children()}
     </AdminShell>
   </ThemeProvider>

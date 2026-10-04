@@ -792,6 +792,37 @@ describe('registerWebMcpTools', () => {
     ]);
   });
 
+  it('executes a list tool against the generated { items, count, limit, offset } envelope', async () => {
+    const registry = installModelContext();
+    const fetchers = mockFetchers();
+    fetchers.list.mockResolvedValue({
+      items: [{ id: 'p1', name: 'Widget' }],
+      count: 1,
+      limit: 50,
+      offset: 0,
+    });
+    registerWebMcpTools([PRODUCT_DEF], { resolveFetchers: () => fetchers });
+
+    const listTool = registry.tools.find((t) => t.name === 'product_list');
+    const result = await listTool?.execute({});
+    expect(JSON.parse(result as string)).toEqual([
+      { id: 'p1', name: 'Widget' },
+    ]);
+
+    fetchers.list.mockResolvedValue({
+      items: [],
+      count: 0,
+      limit: 50,
+      offset: 0,
+    });
+    expect(JSON.parse((await listTool?.execute({})) as string)).toEqual([]);
+
+    fetchers.list.mockResolvedValue({ unexpected: true });
+    await expect(listTool?.execute({})).rejects.toThrow(
+      'unexpected payload shape',
+    );
+  });
+
   it('routes a create tool call through the shared collection mutation path', async () => {
     const registry = installModelContext();
     const fetchers = mockFetchers();

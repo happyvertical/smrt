@@ -30,12 +30,127 @@ export class AppCommandError extends Error {
   }
 }
 
+/**
+ * A `smrt app start` whose web process never proved readiness. Carries the
+ * already-redacted, bounded tail of that process's output and the private
+ * log it came from, for the error envelope.
+ */
+export class ApplicationStartError extends Error {
+  readonly output: string;
+  readonly logFile: string;
+
+  constructor(message: string, output: string, logFile: string) {
+    super(message);
+    this.name = 'ApplicationStartError';
+    this.output = output;
+    this.logFile = logFile;
+  }
+}
+
+/** Replacement marker for every redacted value. */
+const REDACTED = '[redacted]';
+
 /** Minimum length before an environment value is treated as redactable. */
 const MIN_REDACTED_VALUE_LENGTH = 8;
 
 /** Environment names whose values must never reach operator output. */
 const SECRET_ENVIRONMENT_NAME =
   /(?:^|_)(?:DATABASE_URL|URL|DSN|TOKEN|SECRET|PASSWORD|PASSWD|KEY|CREDENTIALS?|AUTH)(?:_|$)/i;
+
+/** Options for {@link redactSecrets}. */
+export interface RedactSecretsOptions {
+  /**
+   * Redact every non-empty secret-named environment value and every Bearer
+   * token, whatever its length. The default keeps an 8-character floor so a
+   * short flag value (`SMRT_AUTH_ENABLED=1`) does not erase every `1` from an
+   * operator message; arbitrary child-process output (the `start` tail) has
+   * no such guarantee about what it prints, so it is redacted strictly.
+   */
+  strict?: boolean;
+}
+
+/** URL userinfo (`scheme://user:pass@`); group 2 is the credential span. */
+const URL_USERINFO =
+  /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:'"]*(?::[^\s/@'"]*)?)@/dgi;
+
+/** Query/parameter credential (`?token=…`); group 2 is the value span. */
+const QUERY_CREDENTIAL =
+  /([?&;](?:token|password|secret|key|access_token)=)([^&\s"'<>]+)/dgi;
+
+/** Bearer token; group 2 is the token span (8+ characters unless strict). */
+const BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/=-]{8,})/dg;
+const BEARER_ANY_LENGTH = /\b(Bearer\s+)([A-Za-z0-9._~+/=-]+)/dg;
+
+type Span = [start: number, end: number];
+
+function structuralSpans(text: string, strict: boolean): Span[] {
+  const spans: Span[] = [];
+  for (const pattern of [
+    URL_USERINFO,
+    QUERY_CREDENTIAL,
+    strict ? BEARER_ANY_LENGTH : BEARER,
+  ]) {
+    for (const match of text.matchAll(pattern)) {
+      const span = match.indices?.[2];
+      // An empty userinfo (`scheme://@`) still gets a marker, as it always did.
+      if (span && (span[1] > span[0] || pattern === URL_USERINFO)) {
+        spans.push([span[0], span[1]]);
+      }
+    }
+  }
+  return spans;
+}
+
+/** Every existing `[redacted]` marker in `text`: opaque to later passes. */
+function markerSpans(text: string): Span[] {
+  return literalSpans(text, [REDACTED], []);
+}
+
+function literalSpans(
+  text: string,
+  values: readonly string[],
+  opaque: readonly Span[],
+): Span[] {
+  const spans: Span[] = [];
+  for (const value of values) {
+    for (
+      let index = text.indexOf(value);
+      index !== -1;
+      index = text.indexOf(value, index + 1)
+    ) {
+      const end = index + value.length;
+      // Never match inside an existing marker (`e` in `[redacted]`).
+      if (opaque.some(([start, stop]) => index >= start && end <= stop)) {
+        continue;
+      }
+      spans.push([index, end]);
+    }
+  }
+  return spans;
+}
+
+/** Replace the union of `spans` (overlapping or touching spans merge). */
+function maskSpans(text: string, spans: Span[]): string {
+  if (spans.length === 0) return text;
+  spans.sort((left, right) => left[0] - right[0] || right[1] - left[1]);
+  let result = '';
+  let cursor = 0;
+  let [start, end] = spans[0];
+  const flush = () => {
+    result += text.slice(cursor, start) + REDACTED;
+    cursor = end;
+  };
+  for (const [nextStart, nextEnd] of spans.slice(1)) {
+    if (nextStart <= end) {
+      end = Math.max(end, nextEnd);
+      continue;
+    }
+    flush();
+    [start, end] = [nextStart, nextEnd];
+  }
+  flush();
+  return result + text.slice(cursor);
+}
 
 /**
  * Remove secret material from an operator-facing message.
@@ -44,32 +159,56 @@ const SECRET_ENVIRONMENT_NAME =
  * connection string, credential, or bootstrap token. Redaction covers:
  * literal values of secret-named environment variables, URL userinfo,
  * `token=`/`password=`/`secret=` query values, and bearer tokens.
+ *
+ * Every span is located on the raw text and the union is masked at once, so
+ * a literal value can never split a structural match (an env value that is
+ * a Bearer-token prefix, or a URL's scheme and host, used to leave the rest
+ * of the token or the URL password visible). A final structural pass over
+ * the masked text keeps everything the earlier sequential order masked.
  */
 export function redactSecrets(
   message: string,
   environment: Record<string, string | undefined> = process.env,
+  options: RedactSecretsOptions = {},
 ): string {
-  let redacted = message;
-  const values = Object.entries(environment)
+  const strict = options.strict === true;
+  const minimumLength = strict ? 1 : MIN_REDACTED_VALUE_LENGTH;
+  const secretValues = Object.entries(environment)
     .filter(
       ([name, value]) =>
         typeof value === 'string' &&
-        value.length >= MIN_REDACTED_VALUE_LENGTH &&
+        value.length >= minimumLength &&
         SECRET_ENVIRONMENT_NAME.test(name),
     )
-    .map(([, value]) => value as string)
-    .sort((left, right) => right.length - left.length);
-  for (const value of values) {
-    redacted = redacted.replaceAll(value, '[redacted]');
-  }
-  return redacted
-    .replace(
-      /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:'"]*(?::[^\s/@'"]*)?@/gi,
-      '$1[redacted]@',
-    )
-    .replace(
-      /([?&;](?:token|password|secret|key|access_token)=)[^&\s"'<>]+/gi,
-      '$1[redacted]',
-    )
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g, 'Bearer [redacted]');
+    .map(([, value]) => value as string);
+  // Markers already in the text join the union, so a span touching one
+  // merges into it instead of corrupting or duplicating it.
+  const markers = markerSpans(message);
+  const masked = maskSpans(message, [
+    ...markers,
+    ...structuralSpans(message, strict),
+    ...literalSpans(message, secretValues, markers),
+  ]);
+  // Monotone cleanup: only adds masks (e.g. a host the literal pass exposed
+  // to the userinfo pattern, or an empty `scheme://@` userinfo).
+  return maskSpans(masked, [
+    ...markerSpans(masked),
+    ...structuralSpans(masked, strict),
+  ]);
+}
+
+/**
+ * The last `maxBytes` of `text`: a leading partial line (and any split
+ * multi-byte character) is dropped when the cut lands mid-text. Redact
+ * before cutting; cutting never exposes anything redaction masked.
+ */
+export function boundedTail(text: string, maxBytes: number): string {
+  const bytes = Buffer.from(text, 'utf8');
+  if (bytes.length <= maxBytes) return text;
+  const tail = bytes.subarray(bytes.length - maxBytes).toString('utf8');
+  let cut = tail.slice(tail.indexOf('\n') + 1);
+  // No newline to cut at: a split leading character decodes to U+FFFD,
+  // which may be wider than the bytes it replaced; drop it.
+  while (Buffer.byteLength(cut) > maxBytes) cut = cut.slice(1);
+  return cut;
 }

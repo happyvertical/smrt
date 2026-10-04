@@ -22,11 +22,17 @@ It is the ground-up alternative to `smrt-saas-starter`.
   Never reintroduce copied operator scripts: fix the CLI command instead.
 - Server composition is `createSmrtSvelteKitRuntime()` from
   `@happyvertical/smrt-app-runtime/sveltekit`, built once in
-  `src/lib/server/smrt.ts` with the writer lease
-  (`acquireWriterLease(prepareApplicationStateRoot(...))`) and provider
-  readiness (`createProviderReadinessProbe`) from app-runtime's root entry, so
-  the web process never imports the CLI. Health, diagnostics, layout session,
-  and owner setup routes mount that package's handlers.
+  `src/lib/server/smrt.ts`, which holds only `runtime` and its options
+  (provider readiness via `createProviderReadinessProbe`), so the web process
+  never imports the CLI. The runtime takes the local writer lease by default,
+  the `smrt()` plugin injects the generated registration, and each generated
+  route embeds a prelude that imports `$lib/server/smrt` and resolves
+  collections through its exported `runtime.getCollection()` (#3416). A legacy
+  `getCollection`/`getSmrtConfig` export would take precedence (deprecated,
+  honoured for one release): never re-add one, a register import, guard, or
+  manifest hydration.
+  Health, diagnostics, layout session, and owner setup routes mount that
+  package's handlers.
 - The production baseline uses adapter-node with separate web, task-worker, and
   schedule-worker processes. Workers import the build-compiled
   `.smrt/runtime/register.js` (#3117) before creating runners so app-defined
@@ -74,9 +80,7 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - `src/hooks.server.ts` re-exports the runtime's `handle`/`init`: URL tenant
   selection stays a separate candidate and only the verified session
   establishes tenant context. Never turn an untrusted header into authority.
-- `src/lib/server/smrt.ts` imports generated local registrations, loads the
-  generated manifest metadata, creates the runtime, and exposes
-  `getCollection()`/`getSmrtConfig()` over `runtime.classOptions()`, which is
+- App code uses `runtime.getCollection()`/`runtime.classOptions()`, which are
   request-scoped (RLS transaction) and must never be retained.
 - `Item` is the single example object and demonstrates optional tenant scope,
   a REST writable allowlist, shared CRUD action metadata, and the explicit
@@ -100,10 +104,12 @@ It is the ground-up alternative to `smrt-saas-starter`.
   (`createRuntimeDiagnosticsHandler`) requires a direct active tenant membership
   plus the owner role or `runtime_diagnostics.read` before any projection or
   probe; it never calls principal-bound server tools.
-- The opt-in `mcp-apps-template/` overlay is one `mountMcpAppRoute()` route,
-  the protected-resource metadata route, and the application-owned
-  `mcp-hosted-principal.ts` binding; `pnpm typecheck` checks it against the
-  template.
+- The opt-in `mcp-apps-template/` overlay is one `mountMcpAppRoute()` route
+  and the protected-resource metadata route, both using
+  `createHostedMcpResourceAuth({ profile, runtime })` (local owner tokens,
+  hosted membership-backed principals); `pnpm typecheck` checks it against
+  the template. `__tests__/localMcpToken.test.ts` proves mint → real
+  `smrt-mcp-bridge` stdio → route against the real runtime.
 
 ## Tests
 

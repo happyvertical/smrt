@@ -4,7 +4,6 @@ import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 import { openAiDisplayMetadata, withOpenAiEntrypoints } from '@happyvertical/smrt-mcp-openai';
 
 import { Item } from '$lib/objects/Item';
-import { resolveHostedMcpPrincipal } from '$lib/server/mcp-hosted-principal';
 import { runtime } from '$lib/server/smrt';
 
 const ITEM_RESOURCE_URI = 'ui://smrt-app/v1/items.html';
@@ -41,22 +40,22 @@ const { profile } = await runtime.resolvedRuntime();
 /**
  * Stateless SDK-v2 Streamable HTTP MCP endpoint for this app's own `Item`.
  * Locally the principal is the signed session (user, authorized tenant, and
- * permission slugs); hosted profiles verify a bearer token and map it through
- * the application-owned `resolveHostedMcpPrincipal`, and the verified bearer
- * principal is bound into the request permission context (under
- * `database-rls`, its own RLS transaction). Every principal needs
- * `items.read`, so only read-only tools are published until per-operation
- * authorization exists; browser requests from a foreign `Origin` are refused.
+ * permission slugs), or an owner-minted bearer token from `smrt app token`
+ * for a local MCP client such as the `smrt-mcp-bridge` stdio bridge. Hosted
+ * profiles verify a bearer access token and map it through the runtime's
+ * membership-backed `resolveMcpPrincipal` (pass `resolvePrincipal` to
+ * override it). A bearer principal is bound into the request permission
+ * context (under `database-rls`, its own RLS transaction) with its scopes
+ * capped to live permissions. Every principal needs `items.read`, so only
+ * read-only tools are published until per-operation authorization exists;
+ * browser requests from a foreign `Origin` are refused.
  */
 export const POST = mountMcpAppRoute({
   models: [Item],
   requiredScopes: ['items.read'],
   effects: ['read'],
   smrtOptions: () => ({ db: runtime.databaseConfig() }),
-  auth: createHostedMcpResourceAuth({
-    profile,
-    resolvePrincipal: resolveHostedMcpPrincipal,
-  }),
+  auth: createHostedMcpResourceAuth({ profile, runtime }),
   bindPrincipal: runtime.runAsPrincipal,
   workflowTools: [itemsOverview],
   resources: [

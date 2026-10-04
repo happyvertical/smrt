@@ -242,8 +242,55 @@ describe('remote protected resource', () => {
         scopes: ['read'],
         roles: undefined,
         kind: undefined,
+        tenantBinding: 'direct-or-inherited',
       },
     });
+  });
+  it('reads the principal mapping from own data only', async () => {
+    const value = await token();
+    for (const mapping of [
+      JSON.parse('{"__proto__":{"id":"victim","tenantId":"tenant-a"}}'),
+      JSON.parse('{"id":"alice","__proto__":{"tenantId":"tenant-b"}}'),
+      JSON.parse(
+        '{"id":"alice","tenantId":"tenant-a","__proto__":{"tenantBinding":"direct"}}',
+      ),
+      Object.create({ id: 'alice', tenantId: 'tenant-a' }),
+      Object.defineProperty({ tenantId: 'tenant-a' }, 'id', {
+        enumerable: true,
+        get: () => 'alice',
+      }),
+      // biome-ignore lint/suspicious/noSparseArray: a sparse array is the case under test.
+      { id: 'alice', tenantId: 'tenant-a', roles: ['a', , 'b'] },
+    ]) {
+      const result = await createMcpResourceAuth(
+        options({ resolvePrincipal: async () => mapping }),
+      ).authenticate(request(value));
+      expect(result.ok).toBe(false);
+    }
+  });
+  it('carries the tenant binding mode from the mapping, defaulting to direct-or-inherited', async () => {
+    const auth = (tenantBinding: unknown) =>
+      createMcpResourceAuth(
+        options({
+          resolvePrincipal: async ({ subject }) =>
+            ({ id: subject, tenantId: 'tenant-a', tenantBinding }) as never,
+        }),
+      );
+    const value = await token();
+    for (const [binding, expected] of [
+      [undefined, 'direct-or-inherited'],
+      ['direct', 'direct'],
+      ['direct-or-inherited', 'direct-or-inherited'],
+    ] as const) {
+      expect(await auth(binding).authenticate(request(value))).toMatchObject({
+        ok: true,
+        principal: { tenantBinding: expected },
+      });
+    }
+    for (const binding of ['inherited', '', 1]) {
+      const result = await auth(binding).authenticate(request(value));
+      expect(result.ok).toBe(false);
+    }
   });
   it.each([
     ['issuer', { iss: 'https://evil.example' }],

@@ -66,6 +66,14 @@ import {
  * application's identity or capability model. A missing principal means the
  * request is unauthenticated.
  */
+/**
+ * How a bearer principal's tenant authority may be established when the
+ * route binds it (`runtime.runAsPrincipal`): `direct` needs an active direct
+ * membership in exactly `tenantId`; `direct-or-inherited` also accepts
+ * authority inherited from an active inheritable ancestor membership.
+ */
+export type McpTenantBinding = 'direct' | 'direct-or-inherited';
+
 export interface McpAppPrincipal {
   id?: string;
   /** Tenant boundary for task ownership and generated tenant-scoped actions. */
@@ -75,6 +83,12 @@ export interface McpAppPrincipal {
   kind?: string;
   roles?: string[];
   scopes?: string[];
+  /**
+   * Binding mode carried from the authentication adapter, never request
+   * input: local owner tokens are `direct`; hosted access tokens default to
+   * `direct-or-inherited` unless their mapping narrows it.
+   */
+  tenantBinding?: McpTenantBinding;
 }
 
 /** Minimal legacy user shape used for generated tool-call attribution. */

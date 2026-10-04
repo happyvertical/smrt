@@ -22,6 +22,12 @@ import {
 export interface AppCommandIo {
   stdout(text: string): void;
   stderr(text: string): void;
+  /**
+   * Operator-only sink for secret material (the one-time onboarding URL).
+   * Present only when it reaches an interactive terminal; never a log, pipe,
+   * or file. Absent means the secret is not printed.
+   */
+  operatorTerminal?(text: string): void;
 }
 
 /** Options for a child command run. */
@@ -52,7 +58,10 @@ export interface AppCommandDependencies {
     | 'prepareLocalDatabaseStorage'
     | 'resolveLocalRuntimePaths'
     | 'validateLocalDatabaseStorage'
-  >;
+  > &
+    // Optional so existing dependency doubles stay valid; `smrt app token`
+    // falls back to the package export.
+    Partial<Pick<typeof AppRuntime, 'openLocalMcpTokenStore'>>;
   /** Resolve the configured runtime after (re)loading `smrt.config`. */
   resolveRuntime(sourceRoot: string): Promise<ResolvedApplicationRuntime>;
   /** Run the application's package manager (`pnpm <args>`). */
@@ -188,15 +197,33 @@ export function createBrowserOpener(sourceRoot: string): (url: string) => void {
   };
 }
 
-/** Default runtime resolver: reload `smrt.config` without the cache. */
+/**
+ * Default runtime resolver: reload `smrt.config` without the cache.
+ *
+ * A config with no `runtime` block (or no config file) is the `local`
+ * profile — the same rule the web process applies in app-runtime's SvelteKit
+ * entry — so the operator and the server it manages never disagree. A
+ * present but invalid block still fails closed.
+ */
 export async function resolveConfiguredRuntime(
   sourceRoot: string,
 ): Promise<ResolvedApplicationRuntime> {
-  const { loadConfig, resolveConfiguredApplicationRuntime } = await import(
-    '@happyvertical/smrt-config'
-  );
-  await loadConfig({ cache: false, searchFrom: sourceRoot });
-  return resolveConfiguredApplicationRuntime() as ResolvedApplicationRuntime;
+  const {
+    loadConfig,
+    resolveApplicationRuntime,
+    resolveConfiguredApplicationRuntime,
+  } = await import('@happyvertical/smrt-config');
+  const loaded = await loadConfig({ cache: false, searchFrom: sourceRoot });
+  // Only an absent property (or an explicit `undefined`) is "no runtime
+  // block". A present falsy value (`null`, `false`, `0`, `''`) goes to the
+  // validator, which rejects it, rather than silently selecting local.
+  const declaresRuntime =
+    Object.hasOwn(loaded, 'runtime') && loaded.runtime !== undefined;
+  return (
+    declaresRuntime
+      ? resolveConfiguredApplicationRuntime()
+      : resolveApplicationRuntime({ profile: 'local' })
+  ) as ResolvedApplicationRuntime;
 }
 
 /** Build the default dependency set for `sourceRoot`. */

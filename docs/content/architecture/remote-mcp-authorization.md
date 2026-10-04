@@ -80,6 +80,14 @@ the server saved with the login. `@happyvertical/smrt-agents` ships no MCP clien
 or OAuth credential store, so RFC 9207 and client registration are not
 applicable to that package today.
 
+In the `local` profile there is no authorization server. Instead, the owner
+mints a scoped, expiring, revocable bearer token on the machine with
+`smrt app token --scopes …`. The runtime stores only its HMAC. The bridge
+sends it as `<PREFIX>_TOKEN`. `createHostedMcpResourceAuth({ profile, runtime })`
+accepts it through the same `auth`/`bindPrincipal` path, capped to the owner's
+live permissions. Hosted profiles use the runtime's membership-backed
+`resolveMcpPrincipal` unless the application supplies `resolvePrincipal`.
+
 ## Deployment verification
 
 Before promoting Anytown or Ergot:
