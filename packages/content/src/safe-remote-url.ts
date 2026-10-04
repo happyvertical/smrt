@@ -38,7 +38,7 @@ export interface ValidatedRemoteUrl {
 
 /** Options for bounded, SSRF-safe HTTPS retrieval. */
 export interface SafeRemoteFetchOptions {
-  /** Request headers, including conditional headers such as If-None-Match. */
+  /** Only Accept, Accept-Language, If-Modified-Since, If-None-Match, and User-Agent. */
   headers?: Record<string, string>;
   /** Total DNS, request, redirect, and response-body deadline. Defaults to 10s. */
   timeoutMs?: number;
@@ -83,7 +83,7 @@ export function isBlockedIPv4(address: string): boolean {
     return true;
   }
 
-  const [first, second] = octets;
+  const [first, second, third] = octets;
   return (
     first === 0 ||
     first === 10 ||
@@ -93,11 +93,11 @@ export function isBlockedIPv4(address: string): boolean {
     (first === 169 && second === 254) ||
     (first === 172 && second >= 16 && second <= 31) ||
     (first === 192 && second === 168) ||
-    (first === 192 && second === 0) ||
-    (first === 192 && second === 2) ||
+    (first === 192 && second === 0 && (third === 0 || third === 2)) ||
+    (first === 192 && second === 88 && third === 99) ||
     (first === 198 && (second === 18 || second === 19)) ||
-    (first === 198 && second === 51) ||
-    (first === 203 && second === 0)
+    (first === 198 && second === 51 && third === 100) ||
+    (first === 203 && second === 0 && third === 113)
   );
 }
 
@@ -151,17 +151,17 @@ export function isBlockedIPv6(address: string): boolean {
     }
   }
 
-  const normalized = address.toLowerCase().replace(/^\[|\]$/g, '');
+  // Conservatively allow global unicast only, excluding IETF special-purpose,
+  // documentation, and transition ranges. Compare parsed hextets so expanded
+  // spellings cannot bypass the guard. IPv4-mapped addresses are checked above.
+  // https://www.iana.org/assignments/iana-ipv6-special-registry/
+  if (!hextets) return true;
   return (
-    normalized === '::' ||
-    normalized === '::1' ||
-    normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    normalized.startsWith('fec') ||
-    normalized.startsWith('fed') ||
-    normalized.startsWith('2001:db8:') ||
-    /^fe[89ab]/.test(normalized) ||
-    normalized.startsWith('ff')
+    (hextets[0] & 0xe000) !== 0x2000 ||
+    (hextets[0] === 0x2001 && hextets[1] < 0x0200) ||
+    (hextets[0] === 0x2001 && hextets[1] === 0x0db8) ||
+    hextets[0] === 0x2002 ||
+    (hextets[0] === 0x3fff && hextets[1] < 0x1000)
   );
 }
 

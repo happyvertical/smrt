@@ -29,6 +29,60 @@ describe('safe-remote-url SSRF guard', () => {
     }
   });
 
+  it('rejects special-purpose ranges without rejecting neighbouring public IPv4', () => {
+    for (const address of [
+      '192.0.0.8',
+      '192.88.99.2',
+      '198.51.100.1',
+      '203.0.113.1',
+    ]) {
+      expect(isBlockedIPv4(address), address).toBe(true);
+    }
+    for (const address of ['192.0.3.1', '198.51.99.1', '203.0.114.1']) {
+      expect(isBlockedIPv4(address), address).toBe(false);
+    }
+    for (const address of [
+      '64:ff9b::a00:1',
+      '64:ff9b:1::1',
+      '100::1',
+      '100:0:0:1::1',
+      '2001:2::1',
+      '2001:10::1',
+      '2001:db8::1',
+      '2001:0db8:0:0:0:0:0:1',
+      '2002:a00:1::1',
+      '3fff::1',
+      '5f00::1',
+      'fee0::1',
+    ]) {
+      expect(isBlockedIPv6(address), address).toBe(true);
+    }
+  });
+
+  it('rejects mixed DNS answers and resolver failures before requesting', async () => {
+    const fetchImpl = vi.fn();
+    for (const answers of [
+      [],
+      [{ address: '93.184.216.34' }, { address: '10.0.0.1' }],
+    ]) {
+      await expect(
+        fetchSafeRemoteUrlInternal('https://example.test/', {
+          fetchImpl,
+          resolveHostname: async () => answers,
+        }),
+      ).rejects.toThrow();
+    }
+    await expect(
+      fetchSafeRemoteUrlInternal('https://example.test/', {
+        fetchImpl,
+        resolveHostname: async () => {
+          throw new Error('DNS unavailable');
+        },
+      }),
+    ).rejects.toThrow('DNS unavailable');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('allows ordinary public IPv4', () => {
     expect(isBlockedIPv4('93.184.216.34')).toBe(false);
     expect(isBlockedIPv4('8.8.8.8')).toBe(false);
@@ -204,6 +258,43 @@ describe('safe-remote-url SSRF guard', () => {
       'Authorization',
     );
     expect(fetchImpl.mock.calls[1][1]?.headers).not.toHaveProperty('Cookie');
+  });
+
+  it('fails closed for malformed redirects, upstream errors, and declared oversized bodies', async () => {
+    const resolveHostname = async () => [
+      { address: '93.184.216.34', family: 4 },
+    ];
+    for (const response of [
+      new Response(null, { status: 302 }),
+      new Response(null, {
+        status: 302,
+        headers: { location: 'https://other.example/' },
+      }),
+      new Response('small', { headers: { 'content-length': '100' } }),
+    ]) {
+      await expect(
+        fetchSafeRemoteUrlInternal('https://example.test/', {
+          resolveHostname,
+          fetchImpl: async () => response,
+          maxRedirects: 0,
+          maxBytes: 5,
+        }),
+      ).rejects.toThrow();
+    }
+    await expect(
+      fetchSafeRemoteUrlInternal('https://example.test/', {
+        resolveHostname,
+        fetchImpl: async () => {
+          throw new Error('upstream unavailable');
+        },
+      }),
+    ).rejects.toThrow('upstream unavailable');
+    const result = await fetchSafeRemoteUrlInternal('https://example.test/', {
+      resolveHostname,
+      fetchImpl: async () => new Response('error', { status: 503 }),
+    });
+    expect(result.status).toBe(503);
+    expect(result.ok).toBe(false);
   });
 
   it('bounds DNS, streamed bodies, and HTTPS-only public calls', async () => {
