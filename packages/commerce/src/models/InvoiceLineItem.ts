@@ -296,7 +296,7 @@ export class InvoiceLineItem extends SmrtObject {
       quantity: this.quantity,
       unitPrice: money(this.unitPrice),
       discount: this.discount ? money(this.discount) : undefined,
-      taxRate: this.taxRate || undefined,
+      taxRate: this.taxRate,
       amount: money(this.amount),
       periodStart: this.periodStart || undefined,
       periodEnd: this.periodEnd || undefined,

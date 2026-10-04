@@ -7,6 +7,7 @@ validates resolved fields and recalculates amount; a supplied amount is never
 trusted. Gross quantity × price and then tax on discounted gross round to minor
 units, with ties toward positive infinity (including existing negative-price
 credit lines). Tax is a resolved fraction in [0, 1], with eight decimal places.
+Accounting export retains an explicit zero rate instead of omitting it.
 
 `applyEditorDraft(draft, authorizedContext)` resolves the shared invoice draft
 helper into description/SKU/quantity/price/flat discount/tax and stores cloned

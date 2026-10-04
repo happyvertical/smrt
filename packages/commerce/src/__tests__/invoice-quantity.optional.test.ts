@@ -28,6 +28,21 @@ const draft: InvoiceLineDraft = {
 };
 
 describe('invoice quantity arithmetic and validation', () => {
+  it('keeps an explicit zero tax rate at the accounting boundary', () => {
+    const item = new InvoiceLineItem();
+    item.applyEditorDraft(
+      { ...draft, taxMode: 'override', taxRate: '0' },
+      context,
+    );
+    expect(item.toAccountingLineItem('CAD')).toMatchObject({
+      taxRate: 0,
+      amount: 112.5,
+    });
+    expect(item.toAccountingLineItem()).toMatchObject({
+      taxRate: 0,
+      amount: 11250,
+    });
+  });
   it('rounds fractional gross and credit tax ties toward positive infinity', () => {
     const item = new InvoiceLineItem({
       quantity: 0.5,
