@@ -854,6 +854,29 @@ describe('smrt app start / stop', () => {
     expect(output.replaceAll('[redacted]', '')).not.toContain('e');
   });
 
+  it('drops an oversized record whose credential prefix lies before the window (#3410 item 4, review F2)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    // One record longer than the 64 KiB redaction window and no newline in
+    // it: the window holds only the credential's suffix, never `Bearer `.
+    writeFakeBuild(
+      fixture.app,
+      `
+      console.error('Error: startup failed');
+      const token = 'tok' + 'q7'.repeat(40 * 1024) + 'CREDENTIALSUFFIX';
+      process.stderr.write('Authorization: Bearer ' + token, () => process.exit(7));
+      `,
+    );
+    expect(await fixture.run(['start'])).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.secretValuesIncluded).toBe(false);
+    const output = envelope.output as string;
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(8 * 1024);
+    const everything = allOutput(fixture);
+    expect(everything).not.toContain('CREDENTIALSUFFIX');
+    expect(everything).not.toContain('q7q7');
+  });
+
   it('carries the output tail when a server never proves readiness', async () => {
     const fixture = makeFixture();
     const port = await freePort();
