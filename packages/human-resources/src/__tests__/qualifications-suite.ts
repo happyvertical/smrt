@@ -723,6 +723,91 @@ export function qualificationsSuite(
     });
 
     describe('renewing', () => {
+      it('refuses a renewal that ends before what it renews, and says how to replace it with a shorter one', async () => {
+        const licence = await service.define({
+          key: 'drivers-licence',
+          name: "Driver's licence",
+          kind: 'ticket',
+          expires: true,
+        });
+        const qualificationId = licence.id as string;
+        const profileId = uuid();
+        const fiveYear = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2026-01-01',
+          expiresOn: '2030-12-31',
+        });
+        // A two-year renewal would lapse while the five-year licence, which
+        // still answers for its own period, kept the person passing.
+        await expect(
+          service.renew(fiveYear.id as string, {
+            issuedOn: '2026-09-01',
+            expiresOn: '2028-08-31',
+          }),
+        ).rejects.toMatchObject({
+          code: 'HR_INVALID',
+          message: expect.stringMatching(
+            /cannot end before what it renews \(2030-12-31\).*revoke it from 2026-09-01 and grant a new one/,
+          ),
+        });
+        expect(await service.history(fiveYear.id as string)).toHaveLength(1);
+        // The same last day, or a later one, is a renewal.
+        // The way to a shorter one is the one the message gives.
+        await service.revoke(fiveYear.id as string, {
+          effectiveOn: '2026-09-01',
+          reason: 'replaced by a two-year licence',
+        });
+        const twoYear = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2026-09-01',
+          expiresOn: '2028-08-31',
+        });
+        const on = (date: string) =>
+          service.check(profileId, qualificationId, date);
+        expect(await on('2026-08-31')).toMatchObject({
+          ok: true,
+          heldQualificationId: fiveYear.id,
+        });
+        expect(await on('2028-08-31')).toMatchObject({
+          ok: true,
+          heldQualificationId: twoYear.id,
+        });
+        expect(await on('2028-09-01')).toEqual({
+          ok: false,
+          reason: 'expired',
+        });
+        // The lapse the sweep announces is one the gate agrees with.
+        events.length = 0;
+        const swept = await service.sweepExpired('2028-09-10');
+        expect(swept.map((row) => row.id)).toEqual([twoYear.id]);
+        const same = await service.renew(twoYear.id as string, {
+          issuedOn: '2028-09-11',
+          expiresOn: '2030-09-10',
+        });
+        expect(same.renewalOfId).toBe(twoYear.id);
+      });
+
+      it('refuses to renew a ticket that never expires with one that does', async () => {
+        const training = await orientation();
+        const held = await service.grant({
+          qualificationId: training.id as string,
+          profileId: uuid(),
+          issuedOn: '2026-01-01',
+        });
+        await service.update(training.id as string, {
+          expires: true,
+          validityMonths: 12,
+        });
+        await expect(
+          service.renew(held.id as string, { issuedOn: '2026-06-01' }),
+        ).rejects.toMatchObject({
+          code: 'HR_INVALID',
+          message: expect.stringContaining('(no expiry)'),
+        });
+      });
+
       it('adds a new row that points at the old one, so past dates still answer from the old row', async () => {
         const ticket = await firstAid();
         const qualificationId = ticket.id as string;

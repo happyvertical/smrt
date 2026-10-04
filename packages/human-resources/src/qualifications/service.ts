@@ -618,7 +618,7 @@ export class QualificationService extends HrService {
    * (`employment-ended`); `held-qualification.renewed` and
    * `held-qualification.revoked` are both raised.
    *
-   * @throws HrError `HR_STATUS_TRANSITION` when suspended on `issuedOn` (reinstate it first); `HR_ALREADY_HELD` when the person holds another grant outside this chain that is not revoked on or before `issuedOn` and starts before the day this renewal is cut off; `HR_INVALID` for a row revoked on or before `issuedOn`, an already renewed row, or an `issuedOn` before the row's own or before its latest suspension or reinstatement; `HR_NOT_FOUND`
+   * @throws HrError `HR_STATUS_TRANSITION` when suspended on `issuedOn` (reinstate it first); `HR_ALREADY_HELD` when the person holds another grant outside this chain that is not revoked on or before `issuedOn` and starts before the day this renewal is cut off; `HR_INVALID` for a row revoked on or before `issuedOn`, an already renewed row, an `issuedOn` before the row's own or before its latest suspension or reinstatement, or an expiry earlier than the row's own (revoke it and grant a new one instead); `HR_NOT_FOUND`
    */
   async renew(
     heldQualificationId: string,
@@ -666,6 +666,16 @@ export class QualificationService extends HrService {
         );
       const definition = await this.grantable(db, prior.qualificationId);
       const expiresOn = resolveExpiry(definition, issuedOn, input.expiresOn);
+      // The row being renewed keeps answering for its own period, so a
+      // renewal that ended sooner would lapse while the person still held the
+      // qualification through the old row.
+      if (
+        expiresOn !== null &&
+        (prior.expiresOn === null || expiresOn < prior.expiresOn)
+      )
+        throw invalid(
+          `A renewal cannot end before what it renews (${prior.expiresOn ?? 'no expiry'}). To replace it with a shorter one, revoke it from ${issuedOn} and grant a new one from that day.`,
+        );
       const { employmentId, endsOn } = await this.employmentFor(
         db,
         definition,

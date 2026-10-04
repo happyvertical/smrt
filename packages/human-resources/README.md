@@ -197,6 +197,10 @@ const after = await qualifications.check(
   suspended or revoked after its renewal was recorded ahead of time: act on
   the renewal with today's date, and the renewal does not restore standing
   when its own issue date arrives.
+- A renewal cannot end before what it renews (`HR_INVALID`): the renewed row
+  keeps answering for its own period, so a shorter renewal would lapse while
+  `check` still passed. To replace a qualification with a shorter one, revoke
+  it from that day and grant a new one.
 - A renewal cannot be issued before the latest suspension or reinstatement
   of the row it renews (`HR_INVALID`), nor while that row is suspended on the
   issue date (`HR_STATUS_TRANSITION`: reinstate it first), nor when the row

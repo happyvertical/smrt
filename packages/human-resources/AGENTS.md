@@ -133,7 +133,12 @@ with the root database handle, never one that is already inside a transaction
   (`HR_INVALID`: the renewal would answer for dates the history says were
   suspended); a row suspended on `issuedOn` by replay
   (`HR_STATUS_TRANSITION`: reinstate first); a row revoked on or before
-  `issuedOn` (`HR_INVALID`); and a person who holds another chain that is not
+  `issuedOn` (`HR_INVALID`); an expiry earlier than the row's own, or any
+  expiry on a renewal of a row that has none (`HR_INVALID`: the renewed row
+  keeps answering for its own period, so a shorter renewal would lapse while
+  `check` still passed; to replace a qualification with a shorter one,
+  revoke it from that day and grant a new one); and a person who holds
+  another chain that is not
   revoked on or before `issuedOn` and overlaps the renewal
   (`HR_ALREADY_HELD`). A chain that only starts on or after the day the
   renewal is cut off (its carried revocation) does not overlap, so a lapsed
