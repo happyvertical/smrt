@@ -106,6 +106,13 @@ calls deep-merge providers while the profile is unchanged; an explicit profile
 switch resets earlier runtime provider selections before applying the new
 profile.
 
+An application that may omit the block uses
+`resolveEffectiveApplicationRuntime(await loadConfig())`, the rule `smrt app`
+and the SvelteKit runtime share: when neither the file nor a `setConfig()`
+override declares `runtime`, the profile is `local`; a present value that is
+not a runtime block (`null`, `false`, `0`, `''`) throws the same
+`RuntimeProfileValidationError` instead of selecting `local`.
+
 ### Use config in code
 
 ```typescript
@@ -237,6 +244,7 @@ Call sites keep their historical order through options: the chat dev routes pass
 | `sanitizeConfig(config)` | Strip secret-matching keys |
 | `resolveApplicationRuntime(config)` | Resolve and fail-closed validate a runtime profile |
 | `resolveConfiguredApplicationRuntime()` | Resolve effective file plus runtime-overridden profile config |
+| `resolveEffectiveApplicationRuntime(config)` | Same, but no `runtime` block (file or override) selects `local`; a present non-block value fails closed |
 | `getApplicationRuntimePreset(profile)` | Inspect an immutable copy of a profile preset |
 | `mergeExportedConfig(baseConfig, exportedConfig)` | Merge an exported config over a base |
 | `parseExportedConfig(raw)` | Parse an exported config string |

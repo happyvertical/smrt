@@ -23,8 +23,7 @@
 import {
   loadConfig,
   type ResolvedApplicationRuntime,
-  resolveApplicationRuntime,
-  resolveConfiguredApplicationRuntime,
+  resolveEffectiveApplicationRuntime,
 } from '@happyvertical/smrt-config';
 import {
   ObjectRegistry,
@@ -194,7 +193,8 @@ export interface SmrtSvelteKitRuntimeOptions {
   readonly env?: NodeJS.ProcessEnv;
   /**
    * Resolved runtime profile. Defaults to `smrt.config` `runtime` when
-   * present, otherwise the `local` profile.
+   * present, otherwise the `local` profile; a present value that is not a
+   * runtime block (`null`, `false`, `0`, `''`) fails closed.
    */
   readonly runtime?:
     | ResolvedApplicationRuntime
@@ -1270,11 +1270,12 @@ function runtimeLocals(locals: unknown): SmrtRuntimeLocals {
   return locals as SmrtRuntimeLocals;
 }
 
+/**
+ * No `runtime` block selects `local`; a present non-block value fails closed.
+ * Shared with `smrt app` through smrt-config (#3446).
+ */
 async function loadConfiguredRuntime(): Promise<ResolvedApplicationRuntime> {
-  const loaded = await loadConfig();
-  return loaded.runtime
-    ? resolveConfiguredApplicationRuntime()
-    : resolveApplicationRuntime({ profile: 'local' });
+  return resolveEffectiveApplicationRuntime(await loadConfig());
 }
 
 /**

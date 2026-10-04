@@ -147,7 +147,8 @@ override), so call them per request and never retain the result. Downstream code
 at most once: its error propagates unchanged, and a session-layer failure
 before it returns 500 with no authenticated locals. Defaults read `SMRT_APP_ID`, `SMRT_DATA_DIR`, `HOST`, `DATABASE_URL`,
 `TENANT_BASE_DOMAIN`, and `SMRT_BACKGROUND_JOBS`; `smrt.config` `runtime`
-selects the profile (local when absent). Deployed profiles additionally require
+selects the profile (local when absent; a present `null`/`false`/`0`/`''`
+fails closed, as in `smrt app`). Deployed profiles additionally require
 `providerReadiness` probes and fail closed without them. In the local profile
 the runtime holds the single-writer lease shared with `smrt app` operations by
 default (`defaultWriterLease()`: `writer.lease` under

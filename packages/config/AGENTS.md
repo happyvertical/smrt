@@ -22,6 +22,7 @@ Configuration management with cosmiconfig, secret sanitization, and SSG export.
 | `sanitizeConfig(config)` | Strips keys matching: apiKey, password, secret, token, credential, private, auth, key |
 | `resolveApplicationRuntime(config)` | Resolve and validate a local, self-hosted, or cloud infrastructure profile |
 | `resolveConfiguredApplicationRuntime()` | Resolve loaded file config plus highest-priority `setConfig()` runtime overrides |
+| `resolveEffectiveApplicationRuntime(config)` | The `smrt app` / SvelteKit runtime rule: no `runtime` block in either layer → `local`; a present non-block value (`null`/`false`/`0`/`''`) fails closed |
 | `resolveConfiguredAIProvider()` / `tryResolveAIProviderConfig()` | One AI provider resolver (`src/ai.ts`): explicit > `ai` block > `SMRT_AI_*`/`HAVE_AI_*` env > selected provider's key var > auto-detect; see README |
 | `getApplicationRuntimePreset(profile)` | Inspect a profile's safe provider defaults |
 

@@ -237,7 +237,56 @@ export function getConfig(): SmrtConfig | null {
  * effective provider composition violates a profile invariant.
  */
 export function resolveConfiguredApplicationRuntime(): Readonly<ResolvedApplicationRuntime> {
-  const loadedConfig = getLoadedConfig();
+  return resolveRuntimeLayers(getLoadedConfig());
+}
+
+/**
+ * Resolve the runtime an application actually runs with, from its loaded
+ * file config plus {@link setConfig} runtime overrides.
+ *
+ * The one rule `smrt app` and the SvelteKit runtime share (#3446): when
+ * neither layer declares a `runtime` block — the property is absent, or
+ * explicitly `undefined` — the application runs the `local` profile.
+ * Otherwise this is {@link resolveConfiguredApplicationRuntime}, so a present
+ * value that is not a runtime block (`null`, `false`, `0`, `''`, a string, an
+ * array) fails closed with the same {@link RuntimeProfileValidationError}
+ * instead of silently selecting `local`.
+ *
+ * @param config - The file configuration returned by {@link loadConfig};
+ * `null`/`undefined` means no file configuration.
+ * @returns A validated, deterministic, secret-free runtime snapshot.
+ * @throws {RuntimeProfileValidationError} When a declared runtime block is not
+ * an object or violates a profile invariant.
+ *
+ * @example
+ * ```ts
+ * const runtime = resolveEffectiveApplicationRuntime(await loadConfig());
+ * ```
+ */
+export function resolveEffectiveApplicationRuntime(
+  config: SmrtConfig | null | undefined,
+): Readonly<ResolvedApplicationRuntime> {
+  if (
+    !declaresRuntime(config ?? null) &&
+    !declaresRuntime(getRuntimeConfig())
+  ) {
+    return _resolveApplicationRuntime({ profile: 'local' });
+  }
+  return resolveRuntimeLayers(config ?? null);
+}
+
+/** An own `runtime` property whose value is anything but `undefined`. */
+function declaresRuntime(layer: Partial<SmrtConfig> | null): boolean {
+  return (
+    layer !== null &&
+    Object.hasOwn(layer, 'runtime') &&
+    layer.runtime !== undefined
+  );
+}
+
+function resolveRuntimeLayers(
+  loadedConfig: SmrtConfig | null,
+): Readonly<ResolvedApplicationRuntime> {
   const runtimeConfig = getRuntimeConfig();
   const fileRuntime = (
     loadedConfig && Object.hasOwn(loadedConfig, 'runtime')
