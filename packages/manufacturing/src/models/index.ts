@@ -11,6 +11,7 @@
 
 import '../__smrt-register__.js';
 
+export { Assembly, type AssemblyOptions } from './Assembly.js';
 export {
   BillOfMaterials,
   type BillOfMaterialsOptions,

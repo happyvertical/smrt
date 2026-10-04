@@ -8,9 +8,67 @@ Bills of materials, cost rollup, and production-order operations for the s-m-r-t
 pnpm add @happyvertical/smrt-manufacturing
 ```
 
-This package depends on `@happyvertical/smrt-inventory` (peer-installed via your workspace) for stock operations.
+This package depends on `@happyvertical/smrt-inventory` for stock operations and on `@happyvertical/smrt-products` for the catalog: `Assembly` is a `Product` subtype, and bill lines point at `Sku` ids.
 
 ## Usage
+
+### Define an assembly and its bill
+
+An `Assembly` is a product that is made, the counterpart to `Material`. It lives in the shared `products` table (`productType: 'assembly'`) and adds three fields of its own: `estimatedLabourMinutes`, `defaultOperationId` and `partReference`. Its part number and stock come from its `Sku`; what it is made of comes from its bill. A sub-assembly is simply a bill line whose SKU belongs to another assembly.
+
+```typescript
+import { SkuCollection } from '@happyvertical/smrt-products/collections';
+import {
+  AssemblyCollection,
+  BillOfMaterialsCollection,
+  BomLineCollection,
+} from '@happyvertical/smrt-manufacturing';
+
+const assemblies = await AssemblyCollection.create({ db });
+const skus = await SkuCollection.create({ db });
+const boms = await BillOfMaterialsCollection.create({ db });
+const lines = await BomLineCollection.create({ db });
+
+const panel = await assemblies.create({ name: 'Side panel', partReference: 'DWG-200' });
+const panelSku = await skus.create({ productId: panel.id!, code: 'SP-100' });
+
+const frame = await assemblies.create({
+  name: 'Frame',
+  partReference: 'DWG-100',
+  estimatedLabourMinutes: 95,
+});
+const frameBom = await boms.create({ productId: frame.id!, version: 1, status: 'active' });
+
+// Two side panels per frame: a sub-assembly line.
+await lines.create({ bomId: frameBom.id!, componentSkuId: panelSku.id!, qtyPerUnit: 2 });
+```
+
+### Resolve a component, and refused cycles
+
+```typescript
+import { AssemblyService, BomCycleError } from '@happyvertical/smrt-manufacturing';
+
+const assemblyService = await AssemblyService.create({ db });
+
+const component = await assemblyService.resolveComponent(panelSku.id!);
+// component.kind: 'assembly' | 'material' | 'bought' | 'missing'
+// component.activeBom: the sub-assembly's active bill, or null when it has none
+// component.buildable: true only for an assembly with an active bill
+
+const frameSku = await skus.create({ productId: frame.id!, code: 'FR-100' });
+const panelBom = await boms.create({ productId: panel.id!, version: 1, status: 'active' });
+try {
+  // The frame contains the panel, so the panel may not contain the frame.
+  await lines.create({ bomId: panelBom.id!, componentSkuId: frameSku.id!, qtyPerUnit: 1 });
+} catch (error) {
+  if (error instanceof BomCycleError) {
+    console.log(error.message);
+    // Refused: "Side panel" would contain itself: Side panel → Frame → Side panel
+  }
+}
+```
+
+Every `BomLine` save, and every save of an `active` bill, runs this check, so the generated REST routes refuse a cycle too. Only active bills of sub-assemblies count; a draft or superseded bill is not part of the structure.
 
 ### Define a BOM with components
 
@@ -180,7 +238,7 @@ Every emitted `StockMovement` is stamped with `sourceType: 'ProductionOrder'` pl
 
 ### Multi-tenancy
 
-Both `BillOfMaterials` and `BomLine` use `@TenantScoped({ mode: 'optional' })` with a nullable `tenantId`. Wrap mutations in `withTenant()` from `@happyvertical/smrt-tenancy` to scope queries automatically.
+`Assembly`, `BillOfMaterials` and `BomLine` use `@TenantScoped({ mode: 'optional' })` with a nullable `tenantId`. Wrap mutations in `withTenant()` from `@happyvertical/smrt-tenancy` to scope queries automatically.
 
 ```typescript
 import { withTenant } from '@happyvertical/smrt-tenancy';
@@ -226,12 +284,35 @@ await bus.emit('production_order:posted', {
 
 Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) let consumers pick exactly the legs they want. The companion `contract:created` and `fulfillment:shipped` handlers live in `@happyvertical/smrt-inventory`.
 
+### Svelte components
+
+`@happyvertical/smrt-manufacturing/svelte` ships props-driven components; the host loads data and saves it.
+
+```svelte
+<script lang="ts">
+  import {
+    AssemblyForm,
+    AssemblyList,
+    BomEditor,
+  } from '@happyvertical/smrt-manufacturing/svelte';
+
+  let { assemblies, policy, fields, lines, components } = $props();
+</script>
+
+<AssemblyList {assemblies} {policy} onselect={(id) => goto(`/assemblies/${id}`)} />
+<AssemblyForm {fields} {policy} onsubmit={save} />
+<BomEditor {lines} {components} onadd={addLine} loadBill={loadLines} error={saveError} />
+```
+
+`AssemblyList` and `AssemblyForm` follow the consumer's field policy for `@happyvertical/smrt-manufacturing:Assembly` (a hidden price is not shown). Build rows with `toAssemblyView` and editor lines with `toBomEditorLines(await assemblyService.getBillStructure(bomId))`. A sub-assembly line in `BomEditor` says whether it has its own bill and expands read-only through `loadBill`.
+
 ## API
 
 ### Models
 
 | Export | Description |
 |---|---|
+| `Assembly` | A product that is made: `Product` STI subtype with `estimatedLabourMinutes`, `defaultOperationId`, `partReference`. |
 | `BillOfMaterials` | Recipe for one finished product. Versioned with a `draft` / `active` / `superseded` lifecycle. |
 | `BomLine` | One component on a BOM. `effectiveQtyPerUnit()` returns the qty including waste. |
 | `Operation` | A kind of work: `code` (unique per tenant), `name`, `category`, `isActive` (retired operations stay on history, never deleted), optional `requiredQualificationId` (plain string id of a `smrt-human-resources` qualification). |
@@ -241,6 +322,7 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 
 | Export | Description |
 |---|---|
+| `AssemblyCollection` | Assembly rows of the shared `products` table. |
 | `BillOfMaterialsCollection` | `findByProduct`, `findActiveForProduct`, `findByStatus` |
 | `BomLineCollection` | `findByBom`, `findByComponent` |
 | `OperationCollection` | `findByCode`, `listOperations({ includeRetired? })` |
@@ -250,6 +332,9 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 
 | Export | Description |
 |---|---|
+| `AssemblyService` | `resolveComponent`, `findActiveBom`, `isAssembly`, `getBillStructure`, `findCycle`, `assertLineAcyclic`, `assertBillAcyclic`. Pass `{ tenantId }` to read one tenant's structure. |
+| `createAssemblyService({ db })` | Convenience factory. |
+| `BomCycleError` | A `ValidationError` naming the `path` by which a save would make a product contain itself. |
 | `BomService` | Cost rollup, requirements explosion, can-produce check. |
 | `createBomService({ db, costResolver?, rateResolver? })` | Convenience factory. `computeLabourEstimate(bomId)` rolls up routing minutes and, with a `rateResolver`, cost. |
 | `OperationService` / `createOperationService({ db })` | `define`, `get`, `list`, `rename`, `update`, `retire`, `reinstate`. |
@@ -266,6 +351,9 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 | Export | Description |
 |---|---|
 | `BomStatus` | `'draft' \| 'active' \| 'superseded'` |
+| `ComponentKind` | `'assembly' \| 'material' \| 'bought' \| 'missing'` |
+| `ResolvedComponent` | Return shape of `resolveComponent`. |
+| `BillStructure` | Return shape of `getBillStructure`. |
 | `BomCostRollup` | Return shape of `computeMaterialCost`. |
 | `BomLineCost` | Per-line entry inside a `BomCostRollup`. |
 | `MaterialRequirement` | Entry returned by `explodeRequirements`. |
@@ -282,6 +370,9 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 |---|---|
 | `@happyvertical/smrt-core` | SmrtObject / SmrtCollection / DispatchBus |
 | `@happyvertical/smrt-inventory` | StockService (consume / produce target) |
+| `@happyvertical/smrt-products` | `Product` (base of `Assembly`), `Material`, `Sku` |
+| `@happyvertical/smrt-fields` | `ObjectForm` and field-policy columns for the Svelte components |
+| `@happyvertical/smrt-ui` | Svelte controls and i18n |
 | `@happyvertical/smrt-tenancy` | Optional tenant scoping |
 | `@happyvertical/smrt-ui` / `@happyvertical/smrt-types` | Operation list and form (`./svelte`), module slots (`./ui`); `svelte` is an optional peer |
 | `@happyvertical/sql` | Database adapter |

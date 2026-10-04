@@ -1,10 +1,12 @@
 {
   "name": "@happyvertical/smrt-manufacturing",
   "version": "0.53.4",
+  "smrtJsdoc": "strict",
   "description": "Bills of materials, cost rollup, and production-order operations for the SMRT framework — strictly industry-neutral",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "smrtRawPrimitives": "strict",
   "files": [
     "dist",
     "CLAUDE.md",
@@ -42,7 +44,9 @@
   "dependencies": {
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-fields": "workspace:*",
     "@happyvertical/smrt-inventory": "workspace:*",
+    "@happyvertical/smrt-products": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
@@ -73,7 +77,8 @@
     "bom",
     "bill-of-materials",
     "production",
-    "cost-rollup"
+    "cost-rollup",
+    "assembly"
   ],
   "author": "HappyVertical",
   "license": "MIT",

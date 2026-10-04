@@ -235,7 +235,7 @@ Status legend:
 | [`smrt-reports`](./packages/reports/README.md) | Preview | Materialized aggregate definitions and refresh orchestration. |
 | [`smrt-marketing`](./packages/marketing/README.md) | Preview | Campaign coordination, budgets, evidence, and Svelte surfaces. |
 | [`smrt-inventory`](./packages/inventory/README.md) | Preview | SKUs, stock locations, levels, movements, and mutation service. |
-| [`smrt-manufacturing`](./packages/manufacturing/README.md) | Preview | Bills of materials, cost rollups, and production orders. |
+| [`smrt-manufacturing`](./packages/manufacturing/README.md) | Preview | Assemblies, bills of materials, cost rollups, and production orders. |
 | [`smrt-events`](./packages/events/README.md) | Stable | Nested events, series, participants, and placements. |
 | [`smrt-places`](./packages/places/README.md) | Stable | Place hierarchies, geocoding, and proximity queries. |
 | [`smrt-facts`](./packages/facts/README.md) | Stable | Knowledge facts, provenance, confidence, and evolution. |

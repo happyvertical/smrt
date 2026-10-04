@@ -9,11 +9,10 @@
  * material consumed but not incorporated into a finished unit.
  *
  * Cross-package references (`componentSkuId`) are plain string ids — never
- * `@foreignKey()` — so this package can ship without a hard runtime
- * dependency on `@happyvertical/smrt-products` (the `Sku` model lives
- * there) or `@happyvertical/smrt-inventory` (which holds the stock
- * levels / movements addressed by the id) even though all three almost
- * always travel together.
+ * `@foreignKey()`. The `Sku` model lives in `@happyvertical/smrt-products`
+ * and `@happyvertical/smrt-inventory` holds the stock levels and movements
+ * addressed by the id. When the SKU belongs to an `Assembly`, the line is a
+ * sub-assembly: `AssemblyService.resolveComponent` says which.
  *
  * @packageDocumentation
  */
@@ -133,5 +132,19 @@ export class BomLine extends SmrtObject {
     const qty = Number(this.qtyPerUnit ?? 0);
     const waste = Number(this.wastePercent ?? 0);
     return qty * (1 + waste / 100);
+  }
+
+  /**
+   * Refuses a line that would make its bill's product contain itself,
+   * directly or through sub-assemblies' active bills, with a
+   * `BomCycleError` naming the path. Runs on every save, so the generated
+   * REST `create`/`update` routes refuse it too.
+   */
+  protected override async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    // Loaded lazily: the service imports this model through its collections.
+    const { AssemblyService } = await import('../services/AssemblyService.js');
+    const service = await AssemblyService.create({ db: this.db });
+    await service.assertLineAcyclic(this);
   }
 }

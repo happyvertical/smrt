@@ -31,8 +31,35 @@ export const MANUFACTURING_UI_SLOTS: Record<string, ModuleUISlot> = {
     order: 2,
     propsInterface: 'OperationFormProps',
   },
+  'assembly-list': {
+    id: 'assembly-list',
+    label: 'Assembly List',
+    description: 'Table of assemblies with part reference, SKU, price and bill',
+    icon: 'list',
+    category: 'list',
+    order: 3,
+    propsInterface: 'AssemblyListProps',
+  },
+  'assembly-form': {
+    id: 'assembly-form',
+    label: 'Assembly Form',
+    description: 'Policy-driven create and edit form for an assembly',
+    icon: 'edit',
+    category: 'form',
+    order: 4,
+    propsInterface: 'AssemblyFormProps',
+  },
+  'bom-editor': {
+    id: 'bom-editor',
+    label: 'Bill of Materials Editor',
+    description:
+      "Edits an assembly's bill: materials and sub-assemblies, each sub-assembly expandable to its own bill",
+    icon: 'tree',
+    category: 'form',
+    order: 5,
+    propsInterface: 'BomEditorProps',
+  },
 };
-
 /**
  * Manufacturing module metadata
  */
@@ -40,10 +67,17 @@ export const MANUFACTURING_MODULE_META: SmrtModuleMeta = {
   name: '@happyvertical/smrt-manufacturing',
   displayName: 'Manufacturing',
   description:
-    'Bills of materials, routing operations, cost and labour rollup, and production-order stock movement',
+    'Assemblies, bills of materials, routing operations, cost and labour rollup, and production-order stock movement',
   uiSlots: MANUFACTURING_UI_SLOTS,
-  models: ['BillOfMaterials', 'BomLine', 'Operation', 'RoutingStep'],
+  models: [
+    'Assembly',
+    'BillOfMaterials',
+    'BomLine',
+    'Operation',
+    'RoutingStep',
+  ],
   collections: [
+    'AssemblyCollection',
     'BillOfMaterialsCollection',
     'BomLineCollection',
     'OperationCollection',
