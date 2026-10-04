@@ -19,6 +19,10 @@ unknown retained IDs remain visible. Currency uses the shared CurrencySelect.
 
 See [server calculation and persistence semantics](invoice-calculations.md).
 
+`InvoiceLineEditor` also recalculates when used independently: it retains a local
+draft copy and calls optional `onchange(line)` with each edit. It never mutates
+the supplied line. Replacing the line prop applies caller/server response values.
+
 The UI invokes the exact, Svelte-free `calculateInvoiceDraft` and
 `calculateInvoiceLine` helpers for previews. The shared public calculation entry
 is `@happyvertical/smrt-commerce/invoices`. Valid totals use safe integer minor

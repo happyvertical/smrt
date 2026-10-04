@@ -149,6 +149,8 @@ export interface InvoiceLineEditorProps {
   intentField?: string;
   /** Remove intent prefix, followed by caller line key. */
   removePrefix?: string;
+  /** Optional notification with a new lossless draft; the supplied line is never mutated. */
+  onchange?: (line: InvoiceLineDraft) => void;
 }
 
 /** General native invoice editor with optional domain extensions. */

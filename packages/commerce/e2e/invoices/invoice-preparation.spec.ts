@@ -120,3 +120,21 @@ test('server adapter recalculates fractional lines and ignores forged totals/def
   const result = await invalid.json();
   expect(result.valid).toBe(false); expect(result.totalMinor).toBeUndefined();
 });
+
+
+test('standalone line primitive recalculates and reports drafts without mutating input', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/e2e/invoices/index.html?line=1');
+  await expect(page.locator('.totals')).toContainText('141.75');
+  await page.getByLabel('Quantity', { exact: true }).fill('2.5');
+  await expect(page.locator('.totals')).toContainText('236.25');
+  await page.getByLabel('Tax mode', { exact: true }).selectOption('override');
+  await page.getByLabel('Line tax (%)', { exact: true }).fill('0');
+  await expect(page.locator('.totals')).toContainText('225.00');
+  await expect(page.locator('[data-reported]')).toHaveText('2.5:override:0');
+  await expect(page.locator('[data-original]')).toHaveText('1.5');
+  await page.getByLabel('Unit price (CAD)', { exact: true }).fill('bad.price');
+  await expect(page.locator('.invoice-line').getByRole('status')).toContainText('Totals unavailable');
+  await expect(page.getByLabel('Unit price (CAD)', { exact: true })).toHaveValue('bad.price');
+  expect(errors).toEqual([]);
+});
