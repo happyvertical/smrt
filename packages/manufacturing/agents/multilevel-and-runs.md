@@ -14,7 +14,7 @@ Every `BomService` method takes `{ levels }` (`1` by default: the single-level b
 | `computeMaterialCost` | An opened sub-assembly is costed from its bill (`subBomId`, nested `components`); a missing price below marks it. |
 | `computeLabourEstimate` | Adds each opened sub-assembly's routing times its units per top unit (`subAssemblies`); `steps` stays the top routing. |
 
-Safety: a loop already in stored data (written around the save-time refusal) fails with `BomStructureCycleError` (a `BomCycleError`) naming it; `'all'` past 32 levels or a walk past `MAX_EXPLOSION_LINES` (10,000, counted per use of a shared sub-assembly) fails with `BomExplosionLimitError`. Stock reads in a plan are summed across locations, as in `canProduce`.
+Safety: a loop already in stored data (written around the save-time refusal) fails with `BomStructureCycleError` (a `BomCycleError`) naming it; `'all'` past 32 levels or a walk past `MAX_EXPLOSION_LINES` (10,000, counted per use of a shared sub-assembly) fails with `BomExplosionLimitError`. Stock in a plan is summed across locations, as in `canProduce`, counting only the top bill's tenant's rows and global ones (like the lines the walk reads), whatever tenant context is active.
 
 ## Production runs
 
