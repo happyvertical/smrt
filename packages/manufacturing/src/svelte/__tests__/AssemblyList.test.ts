@@ -86,6 +86,37 @@ describe('AssemblyList', () => {
     ).toBeInTheDocument();
   });
 
+  it('does not show a name the field policy hides', () => {
+    render(AssemblyList, {
+      props: {
+        assemblies: [
+          assemblyView(),
+          assemblyView({ id: 'asm-2', name: 'Secret', skuCodes: [] }),
+          assemblyView({
+            id: 'asm-3',
+            name: 'Hidden',
+            skuCodes: [],
+            partReference: '',
+          }),
+        ],
+        policy: assemblyPolicy({ name: 'hidden' }),
+      },
+    });
+    expect(screen.queryByText('Frame')).not.toBeInTheDocument();
+    expect(screen.queryByText('Secret')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hidden')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('columnheader', { name: 'Name' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('rowheader', { name: 'FR-100' }),
+    ).toBeInTheDocument();
+    // No SKU: the part reference identifies the row; neither: a placeholder.
+    expect(
+      screen.getAllByRole('rowheader').map((cell) => cell.textContent?.trim()),
+    ).toEqual(['FR-100', 'DWG-1001', 'Unnamed assembly']);
+  });
+
   it('keeps advanced fields visible in the list', () => {
     render(AssemblyList, {
       props: {

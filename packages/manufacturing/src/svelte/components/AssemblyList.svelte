@@ -43,9 +43,10 @@ const {
 }: AssemblyListProps = $props();
 
 // Columns that map to Assembly fields follow the policy; SKU and bill are
-// computed from neighbours and always show. The name is the row header and
-// always shows.
+// computed from neighbours and always show. When the policy hides the name,
+// the row header falls back to the SKU codes, then the part reference.
 const POLICY_COLUMNS = [
+  { id: 'name' },
   { id: 'partReference' },
   { id: 'sku' },
   { id: 'price' },
@@ -59,6 +60,15 @@ const visible = $derived(
     ? policyToVisibleColumnIds(policy, POLICY_COLUMNS, FIELD_BY_COLUMN)
     : new Set(POLICY_COLUMNS.map((column) => column.id)),
 );
+
+/** The row header: the name, or a visible identifier when the name is hidden. */
+function rowLabel(assembly: AssemblyView): string {
+  if (visible.has('name')) return assembly.name;
+  if (assembly.skuCodes.length > 0) return assembly.skuCodes.join(', ');
+  if (visible.has('partReference') && assembly.partReference)
+    return assembly.partReference;
+  return t(M['manufacturing.assembly_list.unnamed']);
+}
 
 function labour(minutes: number): string {
   if (!minutes || minutes <= 0)
@@ -80,7 +90,13 @@ function labour(minutes: number): string {
       <caption class="assembly-list-caption">{t(M['manufacturing.assembly_list.caption'])}</caption>
       <thead>
         <tr>
-          <th scope="col">{t(M['manufacturing.assembly_list.name'])}</th>
+          <th scope="col">
+            {t(
+              visible.has('name')
+                ? M['manufacturing.assembly_list.name']
+                : M['manufacturing.assembly_list.assembly'],
+            )}
+          </th>
           {#if visible.has('partReference')}
             <th scope="col">{t(M['manufacturing.assembly_list.part_reference'])}</th>
           {/if}
@@ -107,12 +123,12 @@ function labour(minutes: number): string {
                   variant="ghost"
                   size="sm"
                   onclick={() => onselect(assembly.id)}
-                  aria-label={t(M['manufacturing.assembly_list.select_aria'], { name: assembly.name })}
+                  aria-label={t(M['manufacturing.assembly_list.select_aria'], { name: rowLabel(assembly) })}
                 >
-                  {assembly.name}
+                  {rowLabel(assembly)}
                 </Button>
               {:else}
-                {assembly.name}
+                {rowLabel(assembly)}
               {/if}
             </th>
             {#if visible.has('partReference')}

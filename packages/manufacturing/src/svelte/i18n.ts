@@ -40,6 +40,8 @@ export const M = defineMessages({
   'manufacturing.assembly_list.caption': 'Assemblies',
   'manufacturing.assembly_list.empty': 'No assemblies',
   'manufacturing.assembly_list.name': 'Name',
+  'manufacturing.assembly_list.assembly': 'Assembly',
+  'manufacturing.assembly_list.unnamed': 'Unnamed assembly',
   'manufacturing.assembly_list.part_reference': 'Part reference',
   'manufacturing.assembly_list.sku': 'SKU',
   'manufacturing.assembly_list.price': 'Price',
