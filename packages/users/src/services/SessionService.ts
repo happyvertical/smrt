@@ -217,6 +217,14 @@ export class SessionService {
           session.parentSessionId as string,
         );
         if (!parentSession) return null;
+        // A child never acts outside its parent's tenant, however it was
+        // minted. A cleared (null) tenant context is narrower, so allowed.
+        if (
+          session.tenantId !== null &&
+          session.tenantId !== parentSession.tenantId
+        ) {
+          return null;
+        }
         const parentUser = await this.userCollection.get(parentSession.userId);
         if (!parentUser?.isActive()) return null;
         parent = {

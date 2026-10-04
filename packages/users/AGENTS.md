@@ -88,7 +88,11 @@ are not prerequisites for unrelated user-package work.
   bounds `extend()` and `isValid()`; `idleSeconds` overrides the resolving
   service's TTL policy. Never write them from client input. The ceiling is a
   sign-in snapshot; `singleOccupant` revokes other children only AFTER a
-  successful mint.
+  successful mint. A `mustReset` sign-in mints with an empty ceiling and
+  `setPin` ends that session; do not grant it authority another way.
+- A layered session whose tenant differs from its parent's never loads (null
+  is allowed: narrower). Limiter rows carry `retain_until`; retention must
+  not fall back to a process-wide horizon.
 - Tenant switching verifies active membership before writing and rotates the
   session ID for non-null targets, revoking the old session. Persist the returned
   `SwitchTenantResult.sessionId`; `switchSessionTenant()` updates the cookie and

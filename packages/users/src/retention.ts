@@ -55,19 +55,6 @@ export const LOGIN_AUDIT_RETENTION_TASK = 'users-login-audit-events';
 /** How long login audit events are kept by default. */
 export const DEFAULT_LOGIN_AUDIT_RETENTION_DAYS = 90;
 
-/**
- * Limiter rows idle for longer than this are pruned. Twice the largest
- * default horizon, matching the limiter's own streak-forgiveness default, so
- * the sweep never deletes a row the limiter still reasons about.
- */
-const LOGIN_ATTEMPT_IDLE_MS =
-  Math.max(
-    DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS,
-    DEFAULT_LOGIN_LOCKOUT_MAX_SECONDS,
-  ) *
-  2 *
-  1000;
-
 /** Every task name {@link registerUserRetentionTasks} installs. */
 export const USER_RETENTION_TASKS = [
   SESSIONS_RETENTION_TASK,
@@ -122,9 +109,9 @@ export function registerUserRetentionTasks(): void {
     description: 'Delete idle login-attempt limiter rows',
     run: async (db, context) => {
       const attempts = await UsersLoginAttemptCollection.create({ db });
-      return attempts.deleteIdle(LOGIN_ATTEMPT_IDLE_MS, {
-        dryRun: context.dryRun,
-      });
+      // Each row carries the horizon of the limiter that wrote it, so the
+      // sweep cannot erase a budget a custom-configured limiter still uses.
+      return attempts.deleteIdle({ dryRun: context.dryRun });
     },
   });
 

@@ -695,7 +695,9 @@ layered session — is refused with the same 401 as a wrong PIN. Lockout is per
 person **and** per device through the login limiter. Administering PINs needs
 `users.pin.manage` from a non-PIN session; a PIN session can only change its
 own PIN with the current one. An admin reset revokes the person's live PIN
-sessions and flags `mustReset`.
+sessions and flags `mustReset`; signing in with the temporary PIN then yields a
+restricted session that resolves to no permissions and can only call `setPin`,
+which ends it — the person signs in again with the new PIN.
 
 **Whose authority.** The device session authenticates the tablet; the person's
 session authorizes the work. Its `permissions` are resolved on every load from

@@ -177,6 +177,13 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
         pin: '2580',
       }),
     ).rejects.toBeInstanceOf(DeviceCredentialError);
+    await expect(
+      service.signInWithPin({
+        deviceToken,
+        userId: crypto.randomUUID(),
+        pin: '2580',
+      }),
+    ).rejects.toBeInstanceOf(DeviceCredentialError);
     expect(await sessions.findByUser(personId)).toHaveLength(0);
   });
 
@@ -834,6 +841,131 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
       expect(
         await sessionService.loadSessionContext(signedIn.sessionId),
       ).toBeNull();
+    });
+
+    it('holds a temporary-PIN session to no authority until the PIN is changed', async () => {
+      await service.resetPin({
+        actor: adminActor(),
+        userId: foremanId,
+        pin: '8642',
+      });
+      const temporary = await service.signInWithPin({
+        deviceToken,
+        userId: foremanId,
+        pin: '8642',
+      });
+      expect(temporary.mustReset).toBe(true);
+      const restricted = (await sessionService.loadSessionContext(
+        temporary.sessionId,
+      )) as SessionContext;
+      // The client cannot ignore the flag: the session has nothing to use.
+      expect(restricted.permissions).toEqual([]);
+      expect(restricted.permissionCeiling).toEqual([]);
+      const bypass = await withSessionPermissionContext(
+        { ...options, sessionId: temporary.sessionId, superAdminBypass: true },
+        async (context) => context.superAdminBypass,
+      );
+      expect(bypass).toBe(false);
+
+      await service.setPin({
+        actor: restricted,
+        userId: foremanId,
+        pin: '7531',
+        currentPin: '8642',
+      });
+      // Changing the PIN ends the restricted session...
+      expect(
+        await sessionService.loadSessionContext(temporary.sessionId),
+      ).toBeNull();
+      // ...and the next sign-in carries the person's own authority.
+      const signedIn = await service.signInWithPin({
+        deviceToken,
+        userId: foremanId,
+        pin: '7531',
+      });
+      expect(signedIn.mustReset).toBe(false);
+      expect(await permissionsOf(signedIn.sessionId)).toEqual([
+        'jobs.approve',
+        'jobs.read',
+        'jobs.update',
+      ]);
+    });
+
+    it('fails a malformed stored ceiling closed instead of salvaging its valid slugs', async () => {
+      const signedIn = await signIn(service, foremanId);
+      for (const malformed of [['jobs.read', 42], 'jobs.read', { a: 1 }]) {
+        await sessions.setSessionData(
+          signedIn.sessionId,
+          'permissionCeiling',
+          malformed,
+        );
+        const context = await sessionService.loadSessionContext(
+          signedIn.sessionId,
+        );
+        expect(context?.permissions).toEqual([]);
+        expect(context?.permissionCeiling).toEqual([]);
+      }
+    });
+
+    it('refuses a layered session minted outside its parent’s tenant', async () => {
+      const memberships = await MembershipCollection.create(options);
+      const welderHere = await memberships.findByUserAndTenant(
+        welderId,
+        tenantId,
+      );
+      const elsewhere = await memberships.create({
+        userId: welderId,
+        tenantId: otherTenantId,
+        roleId: welderHere?.roleId as string,
+      });
+      await elsewhere.save();
+
+      // The public mint API accepts both fields; the load must not.
+      const crossTenant = await sessionService.createSession(
+        welderId,
+        otherTenantId,
+        { authMethod: 'pin', parentSessionId: deviceToken },
+      );
+      expect(await sessionService.loadSessionContext(crossTenant)).toBeNull();
+
+      const sameTenant = await sessionService.createSession(
+        welderId,
+        tenantId,
+        { authMethod: 'pin', parentSessionId: deviceToken },
+      );
+      expect(
+        (await sessionService.loadSessionContext(sameTenant))?.tenantId,
+      ).toBe(tenantId);
+    });
+
+    it('keeps the raw subject out of self-service audit metadata', async () => {
+      const record = vi.fn(async () => undefined);
+      const svc = await makeService({
+        limiter: { maxAttempts: 3, windowSeconds: 60, audit: { record } },
+      });
+      const signedIn = await signIn(svc, welderId);
+      const actor = (await sessionService.loadSessionContext(
+        signedIn.sessionId,
+      )) as SessionContext;
+      await svc.setPin({
+        actor,
+        userId: welderId,
+        pin: '1357',
+        currentPin: '2580',
+      });
+      const selfBrowser = { ...adminActor(), user: { id: welderId } as never };
+      await svc.clearPin({ actor: selfBrowser, userId: welderId });
+      await svc.setPin({ actor: adminActor(), userId: welderId, pin: '2468' });
+
+      const managed = record.mock.calls
+        .map(([entry]) => entry as { outcome: string; metadata?: object })
+        .filter((entry) => entry.outcome === 'managed');
+      expect(managed.map((entry) => entry.metadata)).toEqual([
+        { action: 'set', self: true },
+        { action: 'clear', self: true, revokedSessions: 1 },
+        { action: 'set', self: false, actorId: adminId },
+      ]);
+      expect(JSON.stringify(record.mock.calls)).not.toContain(welderId);
     });
 
     it('rejects non-positive idle and absolute lifetimes', () => {

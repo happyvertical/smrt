@@ -280,6 +280,11 @@ export class LoginAttemptLimiter {
     }
   }
 
+  /** How long a row this limiter writes must outlive the retention sweep. */
+  private get retainMs(): number {
+    return Math.max(this.windowMs, this.streakResetMs);
+  }
+
   /** Stable, peppered hash for a key. Exposed so hosts can correlate audit rows. */
   hashKey(scope: LoginAttemptScope, raw: string): string {
     return createHash('sha256')
@@ -348,6 +353,7 @@ export class LoginAttemptLimiter {
         maxAttempts: this.maxAttempts,
         windowMs: this.windowMs,
         streakResetMs: this.streakResetMs,
+        retainMs: this.retainMs,
       });
       if (reservation.allowed) {
         reserved.push({
@@ -393,6 +399,7 @@ export class LoginAttemptLimiter {
             limiterKey: key.hash,
             windowStartedAt: key.windowStartedAt,
             maxAttempts: this.maxAttempts,
+            retainMs: this.retainMs,
             lockoutMsFor: (n) => this.lockoutMsFor(n),
           });
           if (outcome.lockedUntil) {
@@ -445,7 +452,7 @@ export class LoginAttemptLimiter {
 
   /** Prune idle limiter rows (retention sweep). */
   async cleanupIdle(options: { dryRun?: boolean } = {}): Promise<number> {
-    return this.attempts.deleteIdle(this.streakResetMs, options);
+    return this.attempts.deleteIdle(options);
   }
 
   private async releaseAll(

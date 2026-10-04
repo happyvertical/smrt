@@ -227,7 +227,7 @@ describe('SessionCollection', () => {
             last_accessed_at TIMESTAMP,
             data JSON DEFAULT '{}',
             auth_method TEXT,
-            parent_session_id TEXT
+            parent_session_id UUID
           );
           CREATE UNIQUE INDEX sessions_slug_context_idx
             ON sessions (slug, context);

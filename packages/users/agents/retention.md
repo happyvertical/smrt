@@ -34,8 +34,10 @@ reap them.
   credential has nothing worth retaining, so each deletes only already-expired
   rows. An application that keeps expired sessions for audit should opt the
   task out and archive them itself. The two #3273 tasks differ: limiter rows
-  are pruned once idle past the streak-forgiveness horizon (never while a
-  window or lockout is live), and audit events after
+  are pruned once past their own `retain_until` — written by the limiter from
+  its configured window and streak-forgiveness horizon, so a custom-configured
+  limiter is never swept early — and never while a lockout is live; audit
+  events after
   `DEFAULT_LOGIN_AUDIT_RETENTION_DAYS` (90). A host that needs longer audit
   retention opts `users-login-audit-events` out and archives.
 - **All three are a single counted DELETE**, not a hydrate-and-delete loop.

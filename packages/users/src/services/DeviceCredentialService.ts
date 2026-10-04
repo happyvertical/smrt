@@ -248,7 +248,11 @@ export interface DeviceSignInResult {
   expiresAt: string;
   /** When the session ends regardless of activity; null without `personMaxSeconds`. */
   absoluteExpiresAt: string | null;
-  /** True when the person must choose a new PIN before continuing. */
+  /**
+   * True when the person must choose a new PIN before continuing. Enforced
+   * server-side: this session resolves to no permissions and can only call
+   * `setPin`, which ends it; the person then signs in with the new PIN.
+   */
   mustReset: boolean;
 }
 
@@ -289,6 +293,10 @@ interface ScryptParams {
   r: number;
   p: number;
 }
+
+/** Canonical id shape; anything else cannot name a credential row. */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 const DEFAULT_SCRYPT: ScryptParams = { N: 2 ** 15, r: 8, p: 1 };
 const HASH_BYTES = 32;
@@ -373,7 +381,12 @@ export class PinVerifier implements DeviceCredentialVerifier<PinSignInInput> {
   }
 
   async verify(input: PinSignInInput): Promise<{ userId: string } | null> {
-    const credential = await this.credentials.findByUserId(input.userId);
+    // A malformed id is just an unknown user: never let it reach a native
+    // UUID predicate (PostgreSQL 22P02), which would answer differently and
+    // skip the equal-work hash below.
+    const credential = UUID_PATTERN.test(input.userId)
+      ? await this.credentials.findByUserId(input.userId)
+      : null;
     const encoded = credential?.pinHash || this.dummyHash;
     const ok = await verifyPinHash(input.pin, this.pepper, encoded);
     return ok && credential ? { userId: credential.userId } : null;
@@ -562,7 +575,20 @@ export class DeviceCredentialService {
         }
       }
 
-      const permissionCeiling = await this.resolveDeviceCeiling(device);
+      let mustReset = false;
+      if (verifier.kind === PIN_LOGIN_KIND) {
+        const credential = await this.pinCredentials.findByUserId(
+          verified.userId,
+        );
+        mustReset = credential?.mustReset ?? false;
+      }
+      // A temporary PIN from an administrative reset authenticates the person
+      // only far enough to choose a new one: the session carries an empty
+      // ceiling (no permissions, no bypass) and `setPin` ends it, so the flag
+      // cannot be ignored by the client.
+      const permissionCeiling = mustReset
+        ? []
+        : await this.resolveDeviceCeiling(device);
       const now = Date.now();
       const absoluteExpiresAt =
         this.personMaxSeconds === null
@@ -598,14 +624,6 @@ export class DeviceCredentialService {
         await this.sessionService.destroyChildSessions(device.sessionId, {
           exceptSessionId: sessionId,
         });
-      }
-
-      let mustReset = false;
-      if (verifier.kind === PIN_LOGIN_KIND) {
-        const credential = await this.pinCredentials.findByUserId(
-          verified.userId,
-        );
-        mustReset = credential?.mustReset ?? false;
       }
 
       await lease.succeed();
@@ -684,6 +702,7 @@ export class DeviceCredentialService {
     const self = input.actor.user.id === input.userId;
     if (!self) this.assertCanManage(input.actor);
 
+    let endResetSessions = false;
     // Any layered session — PIN or another device credential kind — sits on
     // a possibly unattended device, so it must prove the current PIN.
     if (
@@ -710,6 +729,7 @@ export class DeviceCredentialService {
           throw new DeviceCredentialError();
         }
         await lease.succeed().catch(() => undefined);
+        endResetSessions = existing.mustReset;
       }
     }
 
@@ -717,11 +737,25 @@ export class DeviceCredentialService {
       mustReset: false,
       rotatedBy: self ? 'self' : (input.actor.user.id ?? 'admin'),
     });
+    // The restricted reset session has done its one job; the person signs in
+    // again with the new PIN to get a session carrying their authority.
+    if (endResetSessions) {
+      await this.sessionService.destroyUserSessionsByAuthMethod(
+        input.userId,
+        PIN_LOGIN_KIND,
+      );
+    }
     await this.limiter.recordManagement({
       kind: PIN_LOGIN_KIND,
       subject: input.userId,
       source: input.ipAddress,
-      metadata: { action: 'set', self, actorId: input.actor.user.id },
+      // The subject is stored hashed; for a self-service change the actor IS
+      // the subject, so its raw id stays out of the metadata.
+      metadata: {
+        action: 'set',
+        self,
+        ...(self ? {} : { actorId: input.actor.user.id }),
+      },
     });
   }
 
@@ -777,7 +811,7 @@ export class DeviceCredentialService {
       metadata: {
         action: 'clear',
         self,
-        actorId: input.actor.user.id,
+        ...(self ? {} : { actorId: input.actor.user.id }),
         revokedSessions,
       },
     });

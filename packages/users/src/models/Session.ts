@@ -160,14 +160,15 @@ export class Session extends SmrtObject {
    * under a per-person PIN session, for instance. A child is valid only while
    * its parent is, so revoking the device signs out everyone on it.
    *
-   * A plain id rather than a foreign key: a self-referencing FK would cascade
+   * A native UUID column where the engine has one, like every other session
+   * id reference, but deliberately not a foreign key: a self-referencing FK would cascade
    * the retention sweep's parent deletes, and the liveness rule in
    * `SessionService.loadSessionContext` already makes an orphan invalid.
    *
    * Indexed: `SessionCollection.findChildren()` and the sign-out cascade
    * query by this column.
    */
-  @field({ type: 'text', nullable: true, indexed: true })
+  @field({ sqlType: 'UUID', nullable: true, indexed: true })
   parentSessionId: string | null = null;
 
   constructor(options: SessionOptions = {}) {
@@ -233,8 +234,8 @@ export class Session extends SmrtObject {
   getPermissionCeiling(): string[] | null {
     const raw = this.data?.[SESSION_DATA_KEYS.permissionCeiling];
     if (raw === undefined || raw === null) return null;
-    return Array.isArray(raw)
-      ? raw.filter((slug): slug is string => typeof slug === 'string')
+    return Array.isArray(raw) && raw.every((slug) => typeof slug === 'string')
+      ? (raw as string[])
       : [];
   }
 

@@ -128,7 +128,7 @@ describePostgres('DeviceCredentialService on PostgreSQL', () => {
       personIdleSeconds: 600,
       personMaxSeconds: 1200,
       pin: { pepper: 'test-pepper', scrypt: { N: 2 ** 10 } },
-      limiter: { maxAttempts: 3, windowSeconds: 60 },
+      limiter: { maxAttempts: 6, windowSeconds: 60 },
       assertEnrolledDevice: async (device) => device.user.id === ids.device,
       deviceCeiling: async () => ['jobs.read'],
     });
@@ -177,7 +177,16 @@ describePostgres('DeviceCredentialService on PostgreSQL', () => {
     );
     expect(stored?.getIdleSeconds()).toBe(600);
 
-    // Lockout through the shared budget, with lockout enabled.
+    // A malformed id never reaches the native UUID predicate: it is the same
+    // credential failure as an unknown user, not a 22P02 database error.
+    for (const userId of ['not-a-uuid', "'; --", randomUUID()]) {
+      await expect(
+        service.signInWithPin({ deviceToken, userId, pin: '2580' }),
+      ).rejects.toBeInstanceOf(DeviceCredentialError);
+    }
+
+    // Lockout through the shared budget, with lockout enabled: the three
+    // refusals above and these three exhaust the device's budget of six.
     for (let i = 0; i < 3; i++) {
       await expect(
         service.signInWithPin({

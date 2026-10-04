@@ -30,12 +30,16 @@ export interface ReserveLoginAttemptInput {
    * next reservation, so an old lockout history does not haunt a key forever.
    */
   streakResetMs: number;
+  /** How long after this write the row must survive the retention sweep. */
+  retainMs: number;
 }
 
 export interface RecordLoginFailureInput {
   limiterKey: string;
   windowStartedAt: string;
   maxAttempts: number;
+  /** How long after this write the row must survive the retention sweep. */
+  retainMs: number;
   /** Returns the lockout length for the n-th consecutive exhausted budget (0-based), or 0 for none. */
   lockoutMsFor: (exhaustedBudgets: number) => number;
 }
@@ -77,6 +81,9 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
     const streakFloorIso = new Date(
       now.getTime() - input.streakResetMs,
     ).toISOString();
+    const retainUntilIso = new Date(
+      now.getTime() + input.retainMs,
+    ).toISOString();
     // limiter_key is the UPSERT arbiter. A derived slug would create a second
     // unique conflict during concurrent first inserts that PostgreSQL cannot
     // arbitrate, so the slug is random and never queried.
@@ -85,8 +92,9 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
     const reserved = await this.db.query(
       `INSERT INTO ${table} (
          id, slug, context, limiter_key, scope, attempt_count,
-         window_started_at, failure_streak, locked_until, created_at, updated_at
-       ) VALUES (?, ?, '', ?, ?, 1, ?, 0, NULL, ?, ?)
+         window_started_at, failure_streak, locked_until, retain_until,
+         created_at, updated_at
+       ) VALUES (?, ?, '', ?, ?, 1, ?, 0, NULL, ?, ?, ?)
        ON CONFLICT (limiter_key) DO UPDATE SET
          attempt_count = CASE
            WHEN ${table}.window_started_at <= ?
@@ -105,6 +113,7 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
            ELSE ${table}.failure_streak
          END,
          locked_until = NULL,
+         retain_until = excluded.retain_until,
          updated_at = excluded.updated_at
        WHERE (${table}.locked_until IS NULL OR ${table}.locked_until <= ?)
          AND (
@@ -118,6 +127,7 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
       input.limiterKey,
       input.scope,
       nowIso,
+      retainUntilIso,
       nowIso,
       nowIso,
       windowFloorIso,
@@ -172,12 +182,15 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
   async recordFailure(
     input: RecordLoginFailureInput,
   ): Promise<RecordedLoginFailure> {
-    const nowIso = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
     const advanced = await this.db.query(
       `UPDATE ${this.tableName}
-          SET failure_streak = failure_streak + 1, updated_at = ?
+          SET failure_streak = failure_streak + 1, retain_until = ?,
+              updated_at = ?
         WHERE limiter_key = ?
         RETURNING attempt_count, failure_streak`,
+      new Date(now.getTime() + input.retainMs).toISOString(),
       nowIso,
       input.limiterKey,
     );
@@ -251,21 +264,19 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
   }
 
   /**
-   * Delete rows that are neither inside a window nor locked out and have been
-   * idle for `idleMs` (retention sweep). Returns the number removed (or, under
-   * `dryRun`, matched).
+   * Delete rows that are not locked out and are past the horizon the limiter
+   * that last wrote them recorded in `retain_until` (retention sweep), so a
+   * limiter configured with a longer window or streak horizon than the
+   * defaults never has a live budget erased. Returns the number removed (or,
+   * under `dryRun`, matched).
    */
-  async deleteIdle(
-    idleMs: number,
-    options: { dryRun?: boolean } = {},
-  ): Promise<number> {
+  async deleteIdle(options: { dryRun?: boolean } = {}): Promise<number> {
     const nowIso = new Date().toISOString();
-    const idleFloorIso = new Date(Date.now() - idleMs).toISOString();
     const predicate =
-      'updated_at < ? AND (locked_until IS NULL OR locked_until < ?)';
+      'retain_until < ? AND (locked_until IS NULL OR locked_until < ?)';
     const counted = await this.db.query(
       `SELECT COUNT(*) AS total FROM ${this.tableName} WHERE ${predicate}`,
-      idleFloorIso,
+      nowIso,
       nowIso,
     );
     const total = Number(counted.rows?.[0]?.total ?? 0);
@@ -273,7 +284,7 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
     if (!options.dryRun) {
       await this.db.query(
         `DELETE FROM ${this.tableName} WHERE ${predicate}`,
-        idleFloorIso,
+        nowIso,
         nowIso,
       );
     }

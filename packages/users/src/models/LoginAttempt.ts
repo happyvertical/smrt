@@ -58,8 +58,17 @@ export class UsersLoginAttempt extends SmrtObject {
    * While set and in the future, every reservation for this key is refused
    * regardless of the window. Null when the key is not locked out.
    *
-   * Indexed: the retention sweep prunes idle rows by this and `updated_at`.
+   * Indexed: the retention sweep prunes idle rows by this and `retain_until`.
    */
   @field({ type: 'datetime', nullable: true, indexed: true })
   lockedUntil: Date | null = null;
+
+  /**
+   * When the limiter that last wrote this row stops reasoning about it (its
+   * own window and streak-forgiveness horizon). The retention sweep deletes
+   * only rows past this, so it honours each limiter's configuration rather
+   * than a process-wide default.
+   */
+  @field({ type: 'datetime', required: true, indexed: true })
+  retainUntil = new Date();
 }
