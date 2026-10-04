@@ -10,9 +10,10 @@ template's scripts so an app's `package.json` scripts become one-liners.
 | `scripts/smrt-app.mjs <op>` | `smrt app install\|setup\|recover\|start\|stop\|doctor\|open\|backup\|export\|import` |
 | `scripts/smrt-prepare-migration.mjs` | `smrt app migrate` |
 | `scripts/smrt-worker.mjs [task\|schedule]` | `smrt app worker [task\|schedule]` |
-| `node --env-file-if-exists=.env scripts/smrt-vite.mjs <args>` | `smrt app vite <args>` (`smrt app dev …` = `vite dev …`) |
+| `node --env-file-if-exists=.env scripts/smrt-vite.mjs <args>` | `smrt app vite <args>` (`smrt app dev …` = `vite dev …` plus `--host 127.0.0.1` / `--port $PORT` unless given: `devServerArguments`) |
 | `smrt-mcp-apps.mjs validate-if-present && …smrt-vite.mjs build` | `smrt app build [vite args]` |
 | `scripts/smrt-web.mjs` | `bin/smrt-web.mjs` (spawned by `start`) |
+| — (new, #3413) | `smrt app token [create] --scopes … [--expires 30d] [--label …]`, `token list`, `token revoke <id>` |
 | helper modules | `@happyvertical/smrt-cli/app` (side-effect-free subpath) |
 
 ## Source
@@ -30,6 +31,12 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
 
 ## Contracts that must not drift
 
+- **Profile**: `resolveConfiguredRuntime` and app-runtime's SvelteKit entry
+  both call smrt-config's `resolveEffectiveApplicationRuntime(loaded)` (#3446),
+  so operator and web process agree: no `runtime` block (or no config) is
+  `local`; any present value other than `undefined` (including
+  `null`/`false`/`0`/`''`) is validated and fails closed when it is not a
+  valid block.
 - **State root** `<XDG_STATE_HOME|~/.local/state|~/Library/Application Support|%LOCALAPPDATA%>/.<appId>-<sha256(dataRoot)[:12]>-state`,
   mode 0700, every ancestor user/root-owned and not group/world-writable,
   app-bound empty 0600 marker `.smrt-state-<appId>`. Shared with the running
@@ -53,9 +60,27 @@ config loading; `bin/smrt.js` imports `dist/` in-process so SIGTERM reaches
   `{schemaVersion:1,status:'error',code:'operation-failed',message,recovery,secretValuesIncluded:false}`
   plus `runtimeCode` when a `LocalRuntimeError` carries one
   (`migration_failed` + `MIGRATION_FAILED_MESSAGE`). Messages pass through
-  `redactSecrets()` (secret-named env values, URL userinfo, `token=`, Bearer).
+  `redactSecrets()` (secret-named env values, URL userinfo, `token=`, Bearer;
+  every span is found on the raw text and the union masked at once, so a
+  literal value never splits a structural match; existing `[redacted]`
+  markers are opaque, so a second pass neither corrupts nor grows text).
+  `start` sends the detached web process's stdout/stderr to a fresh 0600
+  `<state>/app.log` per start (removed, then created `wx`; a pipe would EPIPE
+  once the CLI exits); a start that never proves readiness adds `output` (the
+  last ≤ 8 KiB, redacted against the child env before the cut with
+  `{ strict: true }`: no 8-character floor for env values or Bearer tokens) and `logFile`
+  (`ApplicationStartError`).
   The bootstrap token is written only to mode-0600 `onboarding.json` /
-  `onboarding-launch.html`; `open` passes the launch file URL, never the token.
+  `onboarding-launch.html`; `open` passes the launch file URL, never the token. `setup`/`recover` print the one-time
+  `/setup?token=` URL only to an interactive terminal (`io.operatorTerminal`,
+  stderr when both stdio are TTYs), never to stdout/stderr logs or pipes. The
+  web runtime deletes the files after a successful owner claim.
+- **`token`** (`tokens.ts`, local only): parses every argument before touching
+  state, opens `openLocalMcpTokenStore` (validated custody, uncached
+  connection, no writer lease, so it runs beside `app:start`), and serializes
+  create/revoke under `operation.lock`. Only the `issued` document carries
+  the token (`secretValuesIncluded: true`); list/revoke/error output never
+  does.
 - **Artifacts**: backup/export/import paths go through
   `assertExternalArtifactPath` (real path of nearest existing ancestor, never
   in or over the checkout). Backup refuses an existing destination; export

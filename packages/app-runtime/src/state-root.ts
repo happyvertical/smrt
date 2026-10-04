@@ -18,6 +18,7 @@ import {
   mkdirSync,
   openSync,
   realpathSync,
+  rmSync,
 } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join, parse, resolve } from 'node:path';
@@ -178,4 +179,24 @@ export function prepareApplicationStateRoot(
     if (descriptor !== undefined) closeSync(descriptor);
   }
   return stateRoot;
+}
+
+/**
+ * Hand-off files `smrt app setup` / `recover` leave in the private state root.
+ * They hold the loopback `/setup?token=` URL, so they are spent once the owner
+ * claim commits.
+ */
+export const ONBOARDING_HANDOFF_FILES: readonly string[] = Object.freeze([
+  'onboarding.json',
+  'onboarding-launch.html',
+]);
+
+/**
+ * Remove the onboarding hand-off files from `stateRoot`. Missing files are
+ * fine. Call only after the owner claim transaction has committed.
+ */
+export function removeOnboardingHandoff(stateRoot: string): void {
+  for (const file of ONBOARDING_HANDOFF_FILES) {
+    rmSync(join(stateRoot, file), { force: true });
+  }
 }

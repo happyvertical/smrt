@@ -45,6 +45,8 @@ smrt dispatch:*              # Dispatch management (list/process/retry/cleanup)
 smrt app <op>                # App install/setup/start/migrate/worker…: agents/app-commands.md
 ```
 
+DB target: config `database.url` > `DATABASE_URL` > `:memory:` (README).
+
 File-backed SQL/TypeScript migration generation is not supported. SMRT schema
 migrations are manifest-driven through registered objects and project manifests.
 

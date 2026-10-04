@@ -32,7 +32,7 @@ import {
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { errorEnvelope } from '../cli.js';
-import { redactSecrets } from '../errors.js';
+import { boundedTail, redactSecrets } from '../errors.js';
 import {
   assertExternalArtifactPath,
   prepareApplicationStateRoot,
@@ -305,6 +305,202 @@ describe('secret redaction', () => {
     expect(message).not.toContain('abcdefghijklmnop');
     expect(message).not.toContain('s3cr3t-value-123');
     expect(message).toContain('db.example/app');
+  });
+
+  it('strict mode redacts short secret values and short bearer tokens; the default keeps its floor', () => {
+    const environment = { SMRT_SECRET_KEY: 'abc123', SMRT_AUTH: '', PATH: 'x' };
+    const text = 'key abc123, Bearer x7k2, path x';
+    expect(redactSecrets(text, environment, { strict: true })).toBe(
+      'key [redacted], Bearer [redacted], path x',
+    );
+    // Unchanged default: an empty value is never a match, short values pass.
+    expect(redactSecrets(text, environment)).toBe(text);
+    // A short value that is URL syntax (Vite's BASE_URL=/) must not break the
+    // userinfo pattern: patterns run before the short-value pass.
+    const url = redactSecrets(
+      'connect postgres://smrt:pw-must-not-print@db.internal/app',
+      { BASE_URL: '/', SMRT_PORT_KEY: ':', SMRT_SECRET_KEY: 'ab' },
+      { strict: true },
+    );
+    expect(url).not.toContain('pw-must-not-print');
+    expect(url).not.toContain('smrt:');
+    // Markers are never re-scanned for a shorter value.
+    expect(
+      redactSecrets(
+        'a Bearer x',
+        { SMRT_KEY: 'a', SMRT_TOKEN: 'e' },
+        {
+          strict: true,
+        },
+      ),
+    ).toBe('[redacted] B[redacted]r[redacted]r [redacted]');
+    // Strict never redacts less than the default.
+    const long =
+      'postgresql://admin:hunter22@db/app?token=abcDEF123456 Bearer abcdefghijklmnop';
+    expect(redactSecrets(long, {}, { strict: true })).toBe(
+      redactSecrets(long, {}),
+    );
+  });
+
+  describe('structural credentials are masked before literal values (#3410 review G1/G2)', () => {
+    const PASSWORD = 'pw-must-not-print';
+    // The pre-fix sequential algorithm, kept only as the "never redact less
+    // than today" reference for the default mode.
+    function legacyDefault(
+      message: string,
+      environment: Record<string, string>,
+    ) {
+      let text = message;
+      for (const value of Object.entries(environment)
+        .filter(
+          ([name, value]) =>
+            value.length >= 8 &&
+            /(?:^|_)(?:DATABASE_URL|URL|DSN|TOKEN|SECRET|PASSWORD|PASSWD|KEY|CREDENTIALS?|AUTH)(?:_|$)/i.test(
+              name,
+            ),
+        )
+        .map(([, value]) => value)
+        .sort((left, right) => right.length - left.length)) {
+        text = text.replaceAll(value, '[redacted]');
+      }
+      return text
+        .replace(
+          /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:'"]*(?::[^\s/@'"]*)?@/gi,
+          '$1[redacted]@',
+        )
+        .replace(
+          /([?&;](?:token|password|secret|key|access_token)=)[^&\s"'<>]+/gi,
+          '$1[redacted]',
+        )
+        .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g, 'Bearer [redacted]');
+    }
+
+    const cases: Array<{
+      label: string;
+      text: string;
+      environment: Record<string, string>;
+      secrets: string[];
+    }> = [
+      {
+        label: 'G1: an env value that is a prefix of a Bearer token',
+        text: 'Authorization: Bearer abcdefghXYZ123',
+        environment: { SMRT_TOKEN: 'abcdefgh' },
+        secrets: ['abcdefgh', 'XYZ123'],
+      },
+      {
+        label: 'G2: an env value equal to a URL scheme and host',
+        text: `connect postgres://smrt:${PASSWORD}@db/app`,
+        environment: { BASE_URL: 'postgres://smrt' },
+        secrets: [PASSWORD],
+      },
+      {
+        label: 'an env value inside a query credential',
+        text: 'GET /setup?token=abcdefghXYZ123&next=/',
+        environment: { SMRT_TOKEN: 'abcdefgh' },
+        secrets: ['abcdefgh', 'XYZ123'],
+      },
+      {
+        label: 'an env value straddling the userinfo boundary',
+        text: `postgresql://admin:${PASSWORD}@db.example/app`,
+        environment: { SMRT_DSN: `${PASSWORD}@db.example` },
+        secrets: ['admin', PASSWORD],
+      },
+      {
+        label: 'a literal that exposes a host to the userinfo pattern',
+        text: 'open http://host/abc/def@x and ftp://@y',
+        environment: { SMRT_KEY: '/abc/def' },
+        secrets: ['/abc/def', 'host'],
+      },
+      {
+        label: 'a whole env URL still masks host and path, as before',
+        text: `connect postgres://smrt:${PASSWORD}@db.internal/app failed`,
+        environment: {
+          DATABASE_URL: `postgres://smrt:${PASSWORD}@db.internal/app`,
+        },
+        secrets: [PASSWORD, 'db.internal'],
+      },
+    ];
+
+    it.each(cases)('$label', ({ text, environment, secrets }) => {
+      for (const strict of [false, true]) {
+        const redacted = redactSecrets(text, environment, { strict });
+        for (const secret of secrets) expect(redacted).not.toContain(secret);
+      }
+    });
+
+    it.each(cases)('never redacts less than the previous default ($label)', ({
+      text,
+      environment,
+    }) => {
+      const legacy = legacyDefault(text, environment);
+      for (const segment of redactSecrets(text, environment).split(
+        '[redacted]',
+      )) {
+        expect(legacy).toContain(segment);
+      }
+    });
+
+    it('treats existing markers as opaque and never grows on a second pass (review H1)', () => {
+      const environment = { SMRT_SECRET_KEY: 'e', SMRT_TOKEN: 'abcdefgh' };
+      expect(redactSecrets('[redacted] e', environment, { strict: true })).toBe(
+        '[redacted] [redacted]',
+      );
+      for (const text of [
+        'e\ne\ne\n',
+        'Authorization: Bearer abcdefghXYZ123 then e',
+        `connect postgres://smrt:${PASSWORD}@db/app?token=e&x=1`,
+        'a Bearer x',
+      ]) {
+        const once = redactSecrets(text, environment, { strict: true });
+        const twice = redactSecrets(once, environment, { strict: true });
+        expect(twice).toBe(once);
+        expect(once.replaceAll('[redacted]', '')).not.toContain('e');
+      }
+    });
+
+    it('cuts a tail within the byte bound, even through a multi-byte character', () => {
+      expect(boundedTail('short', 10)).toBe('short');
+      expect(boundedTail('drop me\nkeep', 8)).toBe('keep');
+      const cut = boundedTail('é'.repeat(20), 9);
+      expect(Buffer.byteLength(cut)).toBeLessThanOrEqual(9);
+      expect(cut).toMatch(/^é+$/);
+    });
+
+    it('keeps the short-value and BASE_URL=/ cases in strict mode', () => {
+      const redacted = redactSecrets(
+        `key abc123 at postgres://smrt:${PASSWORD}@db.internal/app with Bearer x7k2`,
+        { BASE_URL: '/', SMRT_SECRET_KEY: 'abc123' },
+        { strict: true },
+      );
+      for (const secret of ['abc123', PASSWORD, 'x7k2', 'smrt:']) {
+        expect(redacted).not.toContain(secret);
+      }
+    });
+
+    it('keeps the envelope claim truthful for a message carrying both shapes', () => {
+      const saved = {
+        SMRT_TOKEN: process.env.SMRT_TOKEN,
+        BASE_URL: process.env.BASE_URL,
+      };
+      process.env.SMRT_TOKEN = 'abcdefgh';
+      process.env.BASE_URL = 'postgres://smrt';
+      try {
+        const envelope = errorEnvelope(
+          new Error(
+            `Bearer abcdefghXYZ123 rejected by postgres://smrt:${PASSWORD}@db/app`,
+          ),
+        );
+        expect(envelope.secretValuesIncluded).toBe(false);
+        for (const secret of ['abcdefgh', 'XYZ123', PASSWORD]) {
+          expect(JSON.stringify(envelope)).not.toContain(secret);
+        }
+      } finally {
+        for (const [key, value] of Object.entries(saved)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    });
   });
 
   it('renders a secret-free envelope and surfaces stable runtime codes', () => {

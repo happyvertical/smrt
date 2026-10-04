@@ -53,7 +53,7 @@ fixtures.
 ## 2. Understand the generated files
 
 The checked-in template contains authored objects, one server module
-(`src/lib/server/smrt.ts`, the runtime and collection access), thin hooks and
+(`src/lib/server/smrt.ts`, the runtime and its options), thin hooks and
 routes that mount package handlers, pages, and configuration. It ships no
 operator scripts. Vite generates `.smrt/manifest.json`,
 `.smrt/smrt-knowledge.json`, `.smrt/register.js`,

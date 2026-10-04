@@ -147,12 +147,22 @@ override), so call them per request and never retain the result. Downstream code
 at most once: its error propagates unchanged, and a session-layer failure
 before it returns 500 with no authenticated locals. Defaults read `SMRT_APP_ID`, `SMRT_DATA_DIR`, `HOST`, `DATABASE_URL`,
 `TENANT_BASE_DOMAIN`, and `SMRT_BACKGROUND_JOBS`; `smrt.config` `runtime`
-selects the profile (local when absent). Deployed profiles additionally require
-`providerReadiness` probes and fail closed without them. Optional hooks:
-`acquireWriterLease` (local single-writer lease), `onBootstrapInvitation`
-(present a newly issued setup token), `selectTenant`, `session`, and
-`classOverrides`. `runtime.classOptions(className)` returns collection options
-for application code.
+selects the profile (local when absent; a present `null`/`false`/`0`/`''`
+fails closed, as in `smrt app`). Deployed profiles additionally require
+`providerReadiness` probes and fail closed without them. In the local profile
+the runtime holds the single-writer lease shared with `smrt app` operations by
+default (`defaultWriterLease()`: `writer.lease` under
+`prepareApplicationStateRoot()`, presenting `SMRT_OPERATION_INSTANCE`); pass
+`acquireWriterLease` to replace it or `acquireWriterLease: false` to hold none.
+Optional hooks: `onBootstrapInvitation` (present a newly issued setup token),
+`selectTenant`, `session`, and `classOverrides`.
+`runtime.getCollection(className)` returns the registered collection built
+from `runtime.classOptions(className)` on that call. Each generated `/api/*`
+route embeds a prelude that imports the app's `src/lib/server/smrt.ts` and
+resolves collections through its exported `runtime` (core's
+`createGeneratedCollectionAccess()`), so an app's `smrt.ts` is only the
+runtime and its options. A legacy `getCollection`/`getSmrtConfig` export there
+still takes precedence for one release, with a deprecation warning.
 
 Mountable routes:
 
@@ -175,7 +185,12 @@ loopback; its `default` action reads `token`, `name`, `email`, and optional
 `tenantName`, sets the session cookie, and redirects 303, or returns
 `fail(status, { code, message })` with `setup_disabled` (404),
 `setup_unavailable` (403), `setup_invalid_input` (400), or `setup_invalid`
-(400). Claim error text is never returned.
+(400). Claim error text is never returned. After the claim commits, the
+runtime removes the `smrt app setup` / `recover` hand-off files
+(`ONBOARDING_HANDOFF_FILES`: `onboarding.json`, `onboarding-launch.html`) from
+`runtime.applicationStateRoot()`, so `pnpm app:open` stops offering the spent
+invitation; failed claims leave them untouched. `onOwnerClaimed` remains for
+extra app cleanup and `removeOnboardingHandoff: false` opts out.
 
 `resolveApplicationId()` and `runtimeConfigurationFingerprint()` (root entry)
 are the canonical app ID and secret-free configuration fingerprint shared by
@@ -184,21 +199,16 @@ the web health route and process managers.
 The root entry also owns the operator state shared with `smrt app`:
 `prepareApplicationStateRoot()` (private, app-bound state directory),
 `withOperationLock()`, `acquireWriterLease()` / `readActiveWriterLease()`,
-and `createProviderReadinessProbe()`. A SvelteKit app wires the last two into
-its runtime without depending on the CLI:
+and `createProviderReadinessProbe()`. The SvelteKit runtime takes the writer
+lease itself; a SvelteKit app passes only the readiness probe and its own
+options, without depending on the CLI:
 
 ```ts
-import {
-  acquireWriterLease,
-  createProviderReadinessProbe,
-  prepareApplicationStateRoot,
-} from '@happyvertical/smrt-app-runtime';
+// src/lib/server/smrt.ts
+import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
+import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 
 export const runtime = createSmrtSvelteKitRuntime({
-  acquireWriterLease: (context) =>
-    acquireWriterLease(prepareApplicationStateRoot(context), {
-      operationInstance: process.env.SMRT_OPERATION_INSTANCE,
-    }),
   providerReadiness: createProviderReadinessProbe,
 });
 ```

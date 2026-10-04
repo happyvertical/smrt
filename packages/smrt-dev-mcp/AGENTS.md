@@ -137,7 +137,10 @@ A server process loads one runtime project. A request for another project fails
 with `runtime_project_mismatch`; start a separate server or restart it for that
 project. Missing/incompatible runtime installations return an actionable,
 sanitized `runtime_dependency_unavailable` diagnostic. Static tools remain usable.
-No DB configuration still returns the existing static-only diagnostic. Runtime
+No DB configuration still returns the existing static-only diagnostic.
+The dev database is `dbUrl` > `SMRT_DEV_DB_URL` > the project smrt-config's
+`resolveCliDatabaseConfig()` (`cli.database`, else `DATABASE_URL`, the CLI's
+precedence); an older project config without it reads `cli.database` only. Runtime
 module import executes installed framework code, never the project's app entry.
 Source enrichment runs in an isolated process with captured logs, preserving
 schema/tenant/inheritance detail without writing onto MCP stdout.

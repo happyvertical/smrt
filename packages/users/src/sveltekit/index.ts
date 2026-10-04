@@ -31,7 +31,10 @@ import type {
   OidcProfileOwnerAuthorizer,
   OidcProfileResolver,
 } from '../collections/UserCollection.js';
-import { DEFAULT_SESSION_TTL } from '../models/Session.js';
+import {
+  DEFAULT_SESSION_TTL,
+  type SessionAuthMethod,
+} from '../models/Session.js';
 import {
   decodeOidcTransaction,
   encodeOidcTransaction,
@@ -99,6 +102,10 @@ export {
   readMobileBearerToken,
   validateMobileRedirectUri,
 } from '../services/MobileAuthService.js';
+export {
+  createDeviceCredentialHandlers,
+  type DeviceCredentialHandlers,
+} from './device-credential-handlers.js';
 export {
   type CreateMobileAuthHandlersOptions,
   createMobileAuthHandlers,
@@ -314,6 +321,8 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
     event.locals.permissions = [];
     event.locals.tenantId = null;
     event.locals.sessionId = null;
+    event.locals.authMethod = null;
+    event.locals.sessionParent = null;
 
     // Skip session loading for certain paths
     if (skipPaths.some((path) => event.url.pathname.startsWith(path))) {
@@ -343,6 +352,8 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
             event.locals.permissions = context.permissions;
             event.locals.tenantId = context.tenantId;
             event.locals.sessionId = context.sessionId;
+            event.locals.authMethod = context.session.authMethod ?? null;
+            event.locals.sessionParent = context.session.parent ?? null;
           }
 
           return resolve(event);
@@ -374,6 +385,14 @@ export interface CreateSessionCookieOptions {
   ipAddress?: string;
   /** Custom session data */
   data?: Record<string, unknown>;
+  /**
+   * How the session was established (#2944). Login helpers in this package
+   * set it (`oidc`, `pin`, …); hosts minting cookies for their own flows
+   * should pass their own value so gates can tell channels apart.
+   */
+  authMethod?: SessionAuthMethod | null;
+  /** Parent session for a layered session (#3276). */
+  parentSessionId?: string | null;
 }
 
 // Store for session service instances (keyed by db config hash)
@@ -451,6 +470,8 @@ export async function createSessionCookie(
     userAgent: options.userAgent,
     ipAddress: options.ipAddress,
     data: options.data,
+    authMethod: options.authMethod,
+    parentSessionId: options.parentSessionId,
   });
 
   event.cookies.set(cookieName, sessionId, {
@@ -946,6 +967,7 @@ export async function completeOidcLogin(
         cookiePath: options.sessionCookiePath,
         cookieSameSite: options.sessionCookieSameSite,
         cookieSecure: useSecureCookie(event, options.sessionCookieSecure),
+        authMethod: 'oidc',
         data: {
           oidcIssuer: result.claims.iss,
           oidcProvider: service.providerName,

@@ -6,7 +6,14 @@
 
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 
-/** Private database arbiter shared by every terminal-auth process. */
+/**
+ * Private database arbiter shared by every terminal-auth process.
+ *
+ * @deprecated Since #3273 `TerminalAuthService` draws from the shared
+ * {@link UsersLoginAttempt} budget instead; this table is no longer written.
+ * The class stays exported so existing schemas and cleanup scripts keep
+ * resolving; it will be removed in a future major.
+ */
 @smrt({
   tableName: 'users_cli_auth_approve_limits',
   api: false,

@@ -22,6 +22,12 @@ import {
 export interface AppCommandIo {
   stdout(text: string): void;
   stderr(text: string): void;
+  /**
+   * Operator-only sink for secret material (the one-time onboarding URL).
+   * Present only when it reaches an interactive terminal; never a log, pipe,
+   * or file. Absent means the secret is not printed.
+   */
+  operatorTerminal?(text: string): void;
 }
 
 /** Options for a child command run. */
@@ -52,7 +58,10 @@ export interface AppCommandDependencies {
     | 'prepareLocalDatabaseStorage'
     | 'resolveLocalRuntimePaths'
     | 'validateLocalDatabaseStorage'
-  >;
+  > &
+    // Optional so existing dependency doubles stay valid; `smrt app token`
+    // falls back to the package export.
+    Partial<Pick<typeof AppRuntime, 'openLocalMcpTokenStore'>>;
   /** Resolve the configured runtime after (re)loading `smrt.config`. */
   resolveRuntime(sourceRoot: string): Promise<ResolvedApplicationRuntime>;
   /** Run the application's package manager (`pnpm <args>`). */
@@ -188,15 +197,26 @@ export function createBrowserOpener(sourceRoot: string): (url: string) => void {
   };
 }
 
-/** Default runtime resolver: reload `smrt.config` without the cache. */
+/**
+ * Default runtime resolver: reload `smrt.config` without the cache.
+ *
+ * Profile selection is `resolveEffectiveApplicationRuntime()` from
+ * smrt-config — the rule the web process applies in app-runtime's SvelteKit
+ * entry — so the operator and the server it manages never disagree: no
+ * `runtime` block (or no config file) is the `local` profile, and a present
+ * value that is not a valid block (`null`, `false`, `0`, `''`, ...) fails
+ * closed.
+ */
 export async function resolveConfiguredRuntime(
   sourceRoot: string,
 ): Promise<ResolvedApplicationRuntime> {
-  const { loadConfig, resolveConfiguredApplicationRuntime } = await import(
+  const { loadConfig, resolveEffectiveApplicationRuntime } = await import(
     '@happyvertical/smrt-config'
   );
-  await loadConfig({ cache: false, searchFrom: sourceRoot });
-  return resolveConfiguredApplicationRuntime() as ResolvedApplicationRuntime;
+  const loaded = await loadConfig({ cache: false, searchFrom: sourceRoot });
+  return resolveEffectiveApplicationRuntime(
+    loaded,
+  ) as ResolvedApplicationRuntime;
 }
 
 /** Build the default dependency set for `sourceRoot`. */

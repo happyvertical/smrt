@@ -64,10 +64,20 @@ SvelteKit rest route:
 ```ts
 // src/routes/api/assistant/[...path]/+server.ts
 import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
-import { assistantAI } from '$lib/server/ai';
+import { runtime } from '$lib/server/smrt';
 
-export const { GET, POST } = mountAssistantRoutes({ ai: assistantAI });
+export const { GET, POST } = mountAssistantRoutes({
+  // The only tools the model is offered: these manifest operations.
+  allowedTools: ['notes.read', 'notes.create'],
+  // Per-request database, and a turn lifetime of its own under database-rls.
+  runtime,
+});
 ```
+
+With no `ai`, each turn builds its client from the `smrt.config` `ai` block
+(`resolveConfiguredAIProvider` → `toAIClientOptions` → `getAI`; the key comes
+from the variable `apiKeyEnv` names). Pass `ai` (a client or a per-turn
+factory) to choose the client yourself.
 
 ```svelte
 <script lang="ts">
@@ -109,14 +119,41 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   to answers 404. Reads never create a session.
 - **Turns.** A send stores the user message (`ChatService.sendMessage`, with
   `clientRequestId` in `metadata`) and runs `runAssistantTurn`, whose reply is
-  authored through the agent bridge. `ai` is required (a client or a per-turn
-  factory; a failing factory answers 503 before anything is written) and is
-  never read from the environment. Tools are fail-closed: `allowedTools`
-  (absent = none) gates `extraTools`, `tools` and the action adapter, and
-  every tool runs under `executeAsPrincipal`. Browser tools need
+  authored through the agent bridge. `ai` is a client or a per-turn factory;
+  omitted, it is the `smrt.config` `ai` block through the shared resolver.
+  A failing factory, or no configured provider
+  (`AIProviderNotConfiguredError`, which names variables, never values, and
+  goes only to `onError`), answers 503 before anything is written. Tools are
+  fail-closed: `allowedTools` (absent = none) gates `extraTools`, `tools` and
+  the action adapter, and every tool runs under `executeAsPrincipal`. Without
+  `tools`, the route offers the manifest operations `allowedTools` names
+  (`buildManifestToolCatalog`), minus names an `extraTools` entry serves; a
+  name nothing provides is an error, at mount when its collection is already
+  registered, otherwise a 503 turn (not checked when `actions` is set). `db`
+  is a fixed value or a resolver called once per request (default with
+  `runtime`: `() => runtime.databaseConfig()`). Browser tools need
   `clientToolAllowList`. Suspended turns wait in the session context
   (`createSessionContinuationStore`), keyed by thread; `continuations`
   replaces the store.
+- **Turn lifetime under `database-rls`.** The request's RLS transaction
+  commits when the handler returns its streaming response, before the model
+  has answered, so a turn never keeps it. With `runtime`, the turn waits for
+  that transaction to end, checks that the user message committed, and then
+  runs its tools, stores its reply and records its outcome (including
+  `cancelled`) in a transaction of its own for the same principal
+  (`runtime.runAsPrincipal`). Its authority is the request's permission set,
+  frozen before the response returns (an empty set stays empty), intersected
+  with the permissions live when it binds: a grant made after the send is
+  never acquired and a revoked one never regained. `client_tool_calls`, `done` and `error` reach
+  the browser only after that transaction commits, so a resume or retry
+  always finds what the turn stored. If that transaction fails, the send is
+  recorded as `failed`. A request transaction still open after
+  `turnStartTimeoutMs` (default 60 s) answers an error without running the
+  turn; the route keeps watching it (up to `abandonedTurnMs`) and records a
+  send that commits late as `failed`. Without `runtime`, the turn runs to completion inside
+  the request before the response returns (its events then arrive at once).
+  Outside an RLS transaction (SQLite, the local profile) turns stream as
+  before.
 - **Retries.** The user message's primary key is a UUIDv5 of tenant, room,
   thread, actor and `clientRequestId` (`clientRequestMessageId`), inserted
   (never upserted), so the database itself is the reservation: of any number
@@ -206,24 +243,35 @@ is the intended host:
 
 ```svelte
 <script lang="ts">
+  import { AppShell } from '@happyvertical/smrt-svelte/app';
   import { ShellDockTool } from '@happyvertical/smrt-svelte/workspace';
-  import { AssistantDock } from '@happyvertical/smrt-chat/svelte';
-  import { createSmrtAssistantTransport } from '@happyvertical/smrt-chat/svelte';
+  import { AssistantDock, createSmrtAssistantTransport } from '@happyvertical/smrt-chat/svelte';
+  import BotIcon from '$lib/BotIcon.svelte'; // optional: `icon` takes a component
 
-  // `registry` is the same DataSurfaceRegistry instance the shell's mounted
-  // routes register their descriptors on (see smrt-svelte/src/data-surface.ts).
   // `readEndpoint` must be a host-supplied, MEMBER-scoped endpoint — see
   // "Transport" below; it is never the generated ChatThread/ChatMessage
   // list REST routes directly.
   const transport = createSmrtAssistantTransport({ readEndpoint, token, writeEndpoint });
 </script>
 
-<ShellDockTool id="assistant" label="Assistant" icon="bot">
-  {#snippet render()}
-    <AssistantDock {transport} {registry} />
+<AppShell webmcp={true} {...shellProps}>
+  {#snippet dock(registry)}
+    <ShellDockTool id="assistant" label="Assistant" icon={BotIcon}>
+      {#snippet render()}
+        <AssistantDock {transport} {registry} />
+      {/snippet}
+    </ShellDockTool>
   {/snippet}
-</ShellDockTool>
+  {@render children()}
+</AppShell>
 ```
+
+`AppShell` passes its `dock` snippet the `DataSurfaceRegistry` of the
+`Provider` it mounts, the same instance the shell's routes register their
+descriptors on (`useListSurface`, `useLinkSurface`, ... register there when
+the Provider's WebMCP UI is on, i.e. `webmcp` is set). The host needs no
+second registry and no direct `smrt-ui` dependency. Outside `AppShell`, read
+the same registry in a Provider descendant with `useWebMcpUi().dataSurfaceRegistry`.
 
 This keeps the smrt-svelte→smrt-chat edge out of the package dependency graph
 entirely — it exists only in application code, matching the "no new

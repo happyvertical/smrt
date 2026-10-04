@@ -92,8 +92,9 @@ answer to the question being asked.
 The six `_smrt_*` diagnostics (`migration-status`, `job-health`,
 `schedule-health`, `dispatch-health`, `recent-changes`, `registry-drift`)
 and `runtime-schema-diff` connect when a database is configured, in this
-order: a `dbUrl` argument, the `SMRT_DEV_DB_URL` environment variable, then
-the project's `cli.database` config. Accepted forms are `file:///abs/dev.db`,
+order: a `dbUrl` argument, the `SMRT_DEV_DB_URL` environment variable, the
+project's `cli.database` config, then `DATABASE_URL`/`DATABASE_TYPE` (the
+`smrt` CLI's precedence: a configured URL always wins). Accepted forms are `file:///abs/dev.db`,
 `sqlite:///abs/dev.db`, a bare path, `postgres://…`, or `duckdb:…`;
 `:memory:` counts as not configured.
 

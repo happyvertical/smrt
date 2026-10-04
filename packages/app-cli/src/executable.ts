@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import { assertSecureServerUrl } from './config.js';
+import { assertSecureServerUrl, resolveMcpPath } from './config.js';
 import {
   type AppCli,
   type CreateAppCliOptions,
@@ -23,6 +23,7 @@ export interface AppCliExecutableConfig {
     | 'configDir'
     | 'defaultServerUrl'
     | 'requireSecureServerUrl'
+    | 'mcpPath'
   >;
   argv: string[];
   mcp?: {
@@ -45,6 +46,7 @@ const CONFIG_KEYS = [
   'default-server-url',
   'mcp-server-name',
   'mcp-server-version',
+  'mcp-path',
 ] as const;
 
 type ConfigKey = (typeof CONFIG_KEYS)[number];
@@ -56,6 +58,7 @@ const ENV_BY_KEY: Record<ConfigKey, string> = {
   'default-server-url': 'SMRT_APP_DEFAULT_SERVER_URL',
   'mcp-server-name': 'SMRT_APP_MCP_SERVER_NAME',
   'mcp-server-version': 'SMRT_APP_MCP_SERVER_VERSION',
+  'mcp-path': 'SMRT_APP_MCP_PATH',
 };
 
 const APP_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/u;
@@ -132,6 +135,15 @@ export function parseAppCliExecutableConfig(
   if (mcpName) validate(mcpName, MCP_IDENTITY_RE, 'MCP server name');
   if (mcpVersion) validate(mcpVersion, MCP_IDENTITY_RE, 'MCP server version');
 
+  const mcpPath = values.get('mcp-path');
+  if (mcpPath !== undefined) {
+    try {
+      resolveMcpPath(mcpPath);
+    } catch {
+      throw new Error('Invalid MCP path configuration.');
+    }
+  }
+
   const commandArgv = argv.slice(cursor);
   if (stdioMcp && commandArgv.length > 0) {
     throw new Error('MCP stdio mode does not accept command arguments.');
@@ -144,6 +156,7 @@ export function parseAppCliExecutableConfig(
       configDir,
       defaultServerUrl,
       requireSecureServerUrl: true,
+      ...(mcpPath === undefined ? {} : { mcpPath }),
     },
     argv: commandArgv,
     mcp:

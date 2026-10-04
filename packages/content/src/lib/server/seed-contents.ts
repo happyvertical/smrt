@@ -4,7 +4,7 @@
  */
 
 import type { Content } from '../../content';
-import { getCollection } from './smrt.js';
+import { runtime } from './smrt.js';
 
 let seeded = false;
 
@@ -80,7 +80,7 @@ export async function seedContents(): Promise<void> {
   seeded = true;
 
   try {
-    const collection = await getCollection<Content>(
+    const collection = await runtime.getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const existing = await collection.list({});

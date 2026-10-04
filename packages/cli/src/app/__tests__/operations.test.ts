@@ -32,16 +32,26 @@ import {
   resolveLocalRuntimePaths,
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
-import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
+import {
+  clearCache,
+  resolveApplicationRuntime,
+  resolveEffectiveApplicationRuntime,
+  type SmrtConfig,
+} from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAppCommand } from '../cli.js';
 import { AppCommandError } from '../errors.js';
 import {
+  prepareApplicationStateRoot,
   resolveApplicationStateRoot,
   runtimeConfigurationFingerprint,
 } from '../identity.js';
-import type { AppCommandDependencies, CommandRunner } from '../runtime.js';
+import {
+  type AppCommandDependencies,
+  type CommandRunner,
+  resolveConfiguredRuntime,
+} from '../runtime.js';
 
 const TOKEN = 'bootstrap-token-must-never-print-0123456789';
 const ROTATED_TOKEN = 'rotated-token-must-never-print-9876543210';
@@ -64,6 +74,7 @@ const ENV_KEYS = [
   'SMRT_RUNTIME_PROFILE',
   'FAKE_HEALTH',
   'SMRT_FROM_DOTENV',
+  'SMRT_SECRET_KEY',
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -99,6 +110,9 @@ interface Fixture {
   appId: string;
   stateRoot: () => string;
   output: { stdout: string[]; stderr: string[] };
+  /** Lines the operator terminal received; null sink when not interactive. */
+  terminal: string[];
+  interactive: boolean;
   calls: {
     pm: Array<{ args: string[]; env?: NodeJS.ProcessEnv }>;
     smrt: Array<{ args: string[]; env?: NodeJS.ProcessEnv }>;
@@ -130,6 +144,7 @@ function makeFixture(): Fixture {
     pm: [] as Array<{ args: string[]; env?: NodeJS.ProcessEnv }>,
     smrt: [] as Array<{ args: string[]; env?: NodeJS.ProcessEnv }>,
   };
+  const terminal: string[] = [];
   const bootstrapStatus = { value: 'available' as 'available' | 'claimed' };
   const ok = {
     status: 0,
@@ -159,6 +174,8 @@ function makeFixture(): Fixture {
         sourceRoot: app,
       }),
     output,
+    terminal,
+    interactive: false,
     calls,
     bootstrapStatus,
     setProfile(next) {
@@ -167,11 +184,15 @@ function makeFixture(): Fixture {
     async run(argv, overrides = {}) {
       output.stdout.length = 0;
       output.stderr.length = 0;
+      terminal.length = 0;
       return runAppCommand(argv, {
         cwd: app,
         io: {
           stdout: (text) => output.stdout.push(text),
           stderr: (text) => output.stderr.push(text),
+          operatorTerminal: fixture.interactive
+            ? (text) => terminal.push(text)
+            : undefined,
         },
         dependencies: {
           resolveRuntime: async () =>
@@ -261,6 +282,114 @@ async function freePort(): Promise<string> {
   return String(address.port);
 }
 
+describe('runtime profile resolution (#3410 item 1)', () => {
+  afterEach(() => {
+    clearCache();
+  });
+
+  function withConfig(fixture: Fixture, source: string | null): void {
+    if (source !== null) {
+      writeFileSync(join(fixture.app, 'smrt.config.mjs'), source);
+    }
+  }
+
+  it.each([
+    ['a config with no runtime block', 'export default { knowledge: {} };\n'],
+    ['no smrt.config at all', null],
+  ])('defaults to the local profile for %s, as the web runtime does', async (_label, source) => {
+    const fixture = makeFixture();
+    withConfig(fixture, source);
+    const runtime = await resolveConfiguredRuntime(fixture.app);
+    expect(runtime.profile).toBe('local');
+    expect(runtime).toEqual(resolveApplicationRuntime({ profile: 'local' }));
+  });
+
+  it('keeps an explicit profile and still fails closed on an invalid runtime block', async () => {
+    // One fixture per config: Node caches an imported config module by URL.
+    const explicit = makeFixture();
+    withConfig(
+      explicit,
+      "export default { runtime: { profile: 'self-hosted' } };\n",
+    );
+    expect((await resolveConfiguredRuntime(explicit.app)).profile).toBe(
+      'self-hosted',
+    );
+    const empty = makeFixture();
+    withConfig(empty, 'export default { runtime: {} };\n');
+    await expect(resolveConfiguredRuntime(empty.app)).rejects.toThrow(
+      /must be local, self-hosted, or cloud/,
+    );
+    const bogus = makeFixture();
+    withConfig(bogus, "export default { runtime: { profile: 'bogus' } };\n");
+    await expect(resolveConfiguredRuntime(bogus.app)).rejects.toThrow(
+      /Invalid application runtime profile/,
+    );
+  });
+
+  it.each([
+    'null',
+    'false',
+    '0',
+    "''",
+    "'local'",
+    '[]',
+    '42',
+  ])('fails closed on a present runtime value that is not a runtime block (runtime: %s)', async (value) => {
+    const fixture = makeFixture();
+    withConfig(fixture, `export default { runtime: ${value} };\n`);
+    await expect(resolveConfiguredRuntime(fixture.app)).rejects.toThrow(
+      /Invalid application runtime profile/,
+    );
+  });
+
+  it.each([
+    ['null', null],
+    ['false', false],
+    ['0', 0],
+    ["''", ''],
+  ])('rejects runtime: %s with the shared resolver error the web runtime also throws (#3446)', async (literal, value) => {
+    const fixture = makeFixture();
+    withConfig(fixture, `export default { runtime: ${literal} };\n`);
+    let expected = '';
+    try {
+      resolveEffectiveApplicationRuntime({
+        runtime: value,
+      } as unknown as SmrtConfig);
+    } catch (error) {
+      expected = (error as Error).message;
+    }
+    expect(expected).toMatch(/^Invalid application runtime profile/);
+    await expect(resolveConfiguredRuntime(fixture.app)).rejects.toThrow(
+      expected,
+    );
+  });
+
+  it('treats an explicitly undefined runtime as absent', async () => {
+    const fixture = makeFixture();
+    withConfig(fixture, 'export default { runtime: undefined };\n');
+    expect((await resolveConfiguredRuntime(fixture.app)).profile).toBe('local');
+  });
+
+  it('runs setup with the default resolver when the config declares no runtime', async () => {
+    const fixture = makeFixture();
+    withConfig(fixture, 'export default {};\n');
+    expect(
+      await fixture.run(['setup'], {
+        resolveRuntime: resolveConfiguredRuntime,
+      }),
+      fixture.output.stderr.join(''),
+    ).toBe(0);
+    expect(fixture.stdoutJson()).toMatchObject({
+      status: 'ready',
+      profile: 'local',
+    });
+    expect(fixture.calls.smrt[0].env).toMatchObject({
+      SMRT_RUNTIME_PROFILE: 'local',
+      DATABASE_TYPE: 'sqlite',
+    });
+  });
+});
+
 describe('smrt app setup', () => {
   it('builds, migrates explicitly, and keeps the bootstrap token in private files only', async () => {
     const fixture = makeFixture();
@@ -300,6 +429,27 @@ describe('smrt app setup', () => {
     });
     expect(statSync(fixture.data).mode & 0o777).toBe(0o700);
     expectNoLocks(fixture);
+  });
+
+  it('prints the one-time URL to an interactive operator terminal only', async () => {
+    const fixture = makeFixture();
+    fixture.interactive = true;
+    expect(await fixture.run(['setup'])).toBe(0);
+    expect(fixture.terminal.join('')).toContain(
+      `http://127.0.0.1:5173/setup?token=${TOKEN}`,
+    );
+    // Never in the stdout/stderr streams that may be logged.
+    expect(allOutput(fixture)).not.toContain(TOKEN);
+    expect(await fixture.run(['recover'])).toBe(0);
+    expect(fixture.terminal.join('')).toContain(ROTATED_TOKEN);
+    expect(allOutput(fixture)).not.toContain(ROTATED_TOKEN);
+  });
+
+  it('prints no URL when there is no interactive terminal', async () => {
+    const fixture = makeFixture();
+    expect(await fixture.run(['setup'])).toBe(0);
+    expect(fixture.terminal).toEqual([]);
+    expect(allOutput(fixture)).not.toContain(TOKEN);
   });
 
   it('removes the handoff once the owner has claimed the application', async () => {
@@ -483,12 +633,12 @@ describe('smrt app recover / open / install', () => {
 });
 
 /** A fake production build whose health endpoint is driven by the test. */
-function writeFakeBuild(app: string, body = ''): void {
+function writeFakeBuild(app: string, body = '', prefix = ''): void {
   mkdirSync(join(app, 'build'), { recursive: true });
   writeFileSync(
     join(app, 'build', 'index.js'),
     body ||
-      `
+      `${prefix}
       import { createServer } from 'node:http';
       import { writeFileSync } from 'node:fs';
       writeFileSync('observed.json', JSON.stringify({ origin: process.env.ORIGIN, operation: process.env.SMRT_OPERATION_INSTANCE ?? null, argv: process.argv.slice(1) }));
@@ -601,6 +751,200 @@ describe('smrt app start / stop', () => {
       'The application process exited before becoming ready.',
     );
     expect(existsSync(join(fixture.stateRoot(), 'app.pid'))).toBe(false);
+  });
+
+  it('keeps a bounded, redacted tail of the launcher output in the failure envelope (#3410 item 4)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    const secretKey = 'secret-key-value-must-never-print';
+    process.env.SMRT_SECRET_KEY = secretKey;
+    writeFakeBuild(
+      fixture.app,
+      `
+      for (let line = 0; line < 4000; line += 1) console.log('startup noise ' + line);
+      console.error('Error: connect ECONNREFUSED postgres://smrt:${DB_PASSWORD}@db.internal/app');
+      console.error('loaded key ' + process.env.SMRT_SECRET_KEY);
+      console.error('GET /setup?token=${TOKEN}');
+      console.error('Authorization: Bearer ${TOKEN}');
+      console.error("Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@happyvertical/sql'");
+      process.exit(3);
+      `,
+    );
+    expect(await fixture.run(['start'])).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.message).toBe(
+      'The application process exited before becoming ready.',
+    );
+    expect(envelope.secretValuesIncluded).toBe(false);
+    const output = envelope.output as string;
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(8 * 1024);
+    expect(output).toContain('ERR_MODULE_NOT_FOUND');
+    // Exact text depends on the runner's env: Vitest's BASE_URL=/ is a
+    // short secret-named value, so strict redaction also masks each `/`.
+    expect(output).toMatch(/postgres:.*\[redacted\]@db\.internal/);
+    expect(output).toContain('loaded key [redacted]');
+    expect(output).toContain('?token=[redacted]');
+    expect(output).toContain('Bearer [redacted]');
+    // Bounded to the tail: the first lines of noise are gone.
+    expect(output).not.toContain('startup noise 0\n');
+    const everything = allOutput(fixture);
+    for (const secret of [DB_PASSWORD, secretKey, TOKEN]) {
+      expect(everything).not.toContain(secret);
+    }
+    const log = join(fixture.stateRoot(), 'app.log');
+    expect(envelope.logFile).toBe(log);
+    expect(statSync(log).mode & 0o777).toBe(0o600);
+    expect(existsSync(join(fixture.stateRoot(), 'app.pid'))).toBe(false);
+  });
+
+  it('redacts short secret values and short bearer tokens from the captured output (#3410 item 4, review F1)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    process.env.SMRT_SECRET_KEY = 'abc123';
+    writeFakeBuild(
+      fixture.app,
+      `
+      console.error('loaded key ' + process.env.SMRT_SECRET_KEY);
+      console.error('SMRT_SECRET_KEY=' + process.env.SMRT_SECRET_KEY);
+      console.error('Authorization: Bearer x7k2');
+      process.exit(4);
+      `,
+    );
+    expect(await fixture.run(['start'])).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.secretValuesIncluded).toBe(false);
+    const output = envelope.output as string;
+    expect(output).toContain('loaded key [redacted]');
+    expect(output).toContain('SMRT_SECRET_KEY=[redacted]');
+    expect(output).toContain('Bearer [redacted]');
+    const everything = allOutput(fixture);
+    expect(everything).not.toContain('abc123');
+    expect(everything).not.toContain('x7k2');
+  });
+
+  it('masks credentials an env value only partly matches in the captured output (#3410 item 4, review G1/G2)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    const saved = {
+      SMRT_TOKEN: process.env.SMRT_TOKEN,
+      BASE_URL: process.env.BASE_URL,
+    };
+    process.env.SMRT_TOKEN = 'abcdefgh';
+    process.env.BASE_URL = 'postgres://smrt';
+    try {
+      writeFakeBuild(
+        fixture.app,
+        `
+        console.error('Authorization: Bearer abcdefghXYZ123');
+        console.error('connect postgres://smrt:${DB_PASSWORD}@db/app');
+        process.exit(5);
+        `,
+      );
+      expect(await fixture.run(['start'])).toBe(1);
+      const envelope = fixture.stderrJson();
+      expect(envelope.secretValuesIncluded).toBe(false);
+      expect(envelope.output).toContain('Bearer [redacted]');
+      const everything = allOutput(fixture);
+      for (const secret of ['abcdefgh', 'XYZ123', DB_PASSWORD]) {
+        expect(everything).not.toContain(secret);
+      }
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it('keeps a one-character secret masked once, markers intact, within the bound (#3410 item 4, review H1)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    process.env.SMRT_SECRET_KEY = 'e';
+    writeFakeBuild(
+      fixture.app,
+      `
+      for (let line = 0; line < 5000; line += 1) console.error('e');
+      process.exit(6);
+      `,
+    );
+    expect(await fixture.run(['start'])).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.secretValuesIncluded).toBe(false);
+    const output = envelope.output as string;
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(8 * 1024);
+    const lines = output.split('\n').filter((line) => line !== '');
+    expect(lines.length).toBeGreaterThan(100);
+    for (const line of lines) expect(line).toBe('[redacted]');
+    expect(output.replaceAll('[redacted]', '')).not.toContain('e');
+  });
+
+  it('drops an oversized record whose credential prefix lies before the window (#3410 item 4, review F2)', async () => {
+    const fixture = makeFixture();
+    process.env.PORT = await freePort();
+    // One record longer than the 64 KiB redaction window and no newline in
+    // it: the window holds only the credential's suffix, never `Bearer `.
+    writeFakeBuild(
+      fixture.app,
+      `
+      console.error('Error: startup failed');
+      const token = 'tok' + 'q7'.repeat(40 * 1024) + 'CREDENTIALSUFFIX';
+      process.stderr.write('Authorization: Bearer ' + token, () => process.exit(7));
+      `,
+    );
+    expect(await fixture.run(['start'])).toBe(1);
+    const envelope = fixture.stderrJson();
+    expect(envelope.secretValuesIncluded).toBe(false);
+    const output = envelope.output as string;
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(8 * 1024);
+    const everything = allOutput(fixture);
+    expect(everything).not.toContain('CREDENTIALSUFFIX');
+    expect(everything).not.toContain('q7q7');
+  });
+
+  it('carries the output tail when a server never proves readiness', async () => {
+    const fixture = makeFixture();
+    const port = await freePort();
+    process.env.PORT = port;
+    writeFakeBuild(
+      fixture.app,
+      '',
+      "console.error('readiness probe: database not migrated');",
+    );
+    process.env.FAKE_HEALTH = JSON.stringify({
+      instance: 'ffffffffffffffffffffffffffffffff',
+      configuration: expectedFingerprint(fixture, port),
+    });
+    expect(await fixture.run(['start'])).toBe(1);
+    expect(fixture.stderrJson().output).toContain(
+      'readiness probe: database not migrated',
+    );
+  });
+
+  it('starts each run with a fresh private log and never follows a planted link', async () => {
+    const fixture = makeFixture();
+    const port = await freePort();
+    process.env.PORT = port;
+    writeFakeBuild(fixture.app, '', "console.log('started once');");
+    process.env.FAKE_HEALTH = JSON.stringify({
+      configuration: expectedFingerprint(fixture, port),
+    });
+    const outside = join(fixture.root, 'outside.txt');
+    writeFileSync(outside, 'untouched\n');
+    const log = join(fixture.stateRoot(), 'app.log');
+    prepareApplicationStateRoot({
+      appId: fixture.appId,
+      dataDirectory: fixture.data,
+      sourceRoot: fixture.app,
+    });
+    symlinkSync(outside, log);
+    expect(await fixture.run(['start'])).toBe(0);
+    const started = fixture.stdoutJson() as { pid: number };
+    children.push(started.pid);
+    expect(fixture.stdoutJson()).not.toHaveProperty('output');
+    expect(readFileSync(outside, 'utf8')).toBe('untouched\n');
+    expect(lstatSync(log).isSymbolicLink()).toBe(false);
+    expect(statSync(log).mode & 0o777).toBe(0o600);
+    expect(await fixture.run(['stop'])).toBe(0);
   });
 
   it('install runs setup, start, and open under one operation lock', async () => {

@@ -44,6 +44,7 @@ export const M = defineMessages({
   'content.content_picture_drawer.use_as_main': 'Use as main picture',
   'content.content_picture_drawer.main_automatic':
     'The first picture in the story is the main picture.',
+  'content.content_picture_drawer.main_none': 'No main picture is set.',
   'content.content_picture_drawer.main_chosen': 'You chose the main picture.',
   'content.content_picture_drawer.main_reset': 'Use the first picture instead',
 

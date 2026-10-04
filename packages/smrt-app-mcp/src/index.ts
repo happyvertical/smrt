@@ -69,6 +69,7 @@ export {
   type McpPublicToolPatternsThunk,
   type McpSmrtOptionsThunk,
   type McpTaskPrincipalPolicy,
+  type McpTenantBinding,
   type McpToolListCacheHint,
   type McpToolListCacheOptions,
   type McpToolPolicy,

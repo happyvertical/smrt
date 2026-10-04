@@ -173,7 +173,7 @@ async function runWithRuntimeConnection(
         {
           severity: 'info',
           code: 'runtime_connection_unavailable',
-          message: `No runtime dev database configured (set SMRT_DEV_DB_URL or cli.database); returning static-only result: ${staticHint}. Static tools are unaffected.`,
+          message: `No runtime dev database configured (set SMRT_DEV_DB_URL, cli.database, or DATABASE_URL); returning static-only result: ${staticHint}. Static tools are unaffected.`,
         },
       ],
       data: {

@@ -26,12 +26,59 @@ export interface SessionOptions extends SmrtObjectOptions {
   /** Accepts a Date or any value the Date constructor can coerce. */
   lastAccessedAt?: Date | string | number;
   data?: Record<string, unknown>;
+  authMethod?: SessionAuthMethod | null;
+  parentSessionId?: string | null;
 }
+
+/**
+ * How a session was established. Server-set at mint time, never trusted from
+ * the client. Hosts may use any string for their own flows; these are the
+ * values this package mints.
+ */
+export type SessionAuthMethod =
+  | 'oidc'
+  | 'magic-link'
+  | 'terminal'
+  | 'mobile'
+  | 'pin'
+  | (string & {});
 
 /**
  * Default session TTL: 7 days in seconds
  */
 export const DEFAULT_SESSION_TTL = 7 * 24 * 60 * 60;
+
+/**
+ * Reserved {@link Session.data} keys this package writes at mint time and
+ * enforces on every load (#3276). Server-set only: never copy client input
+ * into them, and do not overwrite them through `setSessionData`.
+ */
+export const SESSION_DATA_KEYS = {
+  /** `string[]` of permission slugs the session's resolved set is intersected with. */
+  permissionCeiling: 'permissionCeiling',
+  /** ISO timestamp after which the session is invalid whatever its activity. */
+  absoluteExpiresAt: 'absoluteExpiresAt',
+  /** Sliding idle timeout in seconds, applied on every recorded activity. */
+  idleSeconds: 'idleSeconds',
+} as const;
+
+/**
+ * Expiry for a session minted or extended now: `ttlSeconds` ahead, bounded by
+ * an absolute cap in `data` (an unreadable cap fails closed as already past).
+ */
+export function resolveSessionExpiry(
+  ttlSeconds: number,
+  data: Record<string, unknown> | undefined,
+): Date {
+  const next = Date.now() + ttlSeconds * 1000;
+  const raw = data?.[SESSION_DATA_KEYS.absoluteExpiresAt];
+  if (raw === undefined || raw === null) return new Date(next);
+  const cap =
+    typeof raw === 'string' || typeof raw === 'number'
+      ? new Date(raw).getTime()
+      : Number.NaN;
+  return new Date(Number.isNaN(cap) ? 0 : Math.min(next, cap));
+}
 
 /**
  * Generate a cryptographically secure session ID
@@ -118,6 +165,34 @@ export class Session extends SmrtObject {
    */
   data: Record<string, unknown> = {};
 
+  /**
+   * Authentication channel that established this session (#3276, #2944).
+   * Null for sessions minted before this column existed or by hosts that do
+   * not set it.
+   */
+  @field({ type: 'text', nullable: true })
+  authMethod: SessionAuthMethod | null = null;
+
+  /**
+   * Session this one is layered on — the enrolled device's bearer session
+   * under a per-person PIN session, for instance. A child is valid only while
+   * its parent is, so revoking the device signs out everyone on it.
+   *
+   * A native UUID column where the engine has one, like every other session
+   * id reference, but deliberately not a foreign key: a self-referencing FK would cascade
+   * the retention sweep's parent deletes, and the liveness rule in
+   * `SessionService.loadSessionContext` already makes an orphan invalid.
+   *
+   * Sensitive: the value IS the parent's (longer-lived) bearer credential,
+   * so public serialization of a child must never reveal it — otherwise a
+   * stolen person credential could be traded up for the device's.
+   *
+   * Indexed: `SessionCollection.findChildren()` and the sign-out cascade
+   * query by this column.
+   */
+  @field({ sqlType: 'UUID', nullable: true, indexed: true, sensitive: true })
+  parentSessionId: string | null = null;
+
   constructor(options: SessionOptions = {}) {
     super(options);
     if (options.userId !== undefined) this.userId = options.userId;
@@ -138,13 +213,66 @@ export class Session extends SmrtObject {
           : new Date(options.lastAccessedAt);
     }
     if (options.data !== undefined) this.data = options.data;
+    if (options.authMethod !== undefined) this.authMethod = options.authMethod;
+    if (options.parentSessionId !== undefined) {
+      this.parentSessionId = options.parentSessionId;
+    }
+  }
+
+  /** True when this session is layered on another one. */
+  isLayered(): boolean {
+    return this.parentSessionId !== null && this.parentSessionId !== '';
   }
 
   /**
-   * Check if the session is currently valid (active and not expired)
+   * Absolute expiry cap (`data.absoluteExpiresAt`), or null when the session
+   * has none. An unreadable value fails closed as "already passed".
+   */
+  getAbsoluteExpiry(): Date | null {
+    const raw = this.data?.[SESSION_DATA_KEYS.absoluteExpiresAt];
+    if (raw === undefined || raw === null) return null;
+    const parsed =
+      typeof raw === 'string' || typeof raw === 'number'
+        ? new Date(raw)
+        : new Date(Number.NaN);
+    return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+  }
+
+  /**
+   * Sliding idle timeout (`data.idleSeconds`), or null when the session uses
+   * the resolving service's TTL policy.
+   */
+  getIdleSeconds(): number | null {
+    const raw = this.data?.[SESSION_DATA_KEYS.idleSeconds];
+    return typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+      ? raw
+      : null;
+  }
+
+  /**
+   * Permission ceiling (`data.permissionCeiling`), or null when the session
+   * has none. A present but malformed value fails closed as an empty ceiling.
+   */
+  getPermissionCeiling(): string[] | null {
+    const raw = this.data?.[SESSION_DATA_KEYS.permissionCeiling];
+    if (raw === undefined || raw === null) return null;
+    return Array.isArray(raw) && raw.every((slug) => typeof slug === 'string')
+      ? (raw as string[])
+      : [];
+  }
+
+  /**
+   * Check if the session is currently valid (active, not expired, and not
+   * past its absolute cap)
    */
   isValid(): boolean {
-    return this.status === SessionStatus.ACTIVE && new Date() < this.expiresAt;
+    const now = new Date();
+    const cap = this.getAbsoluteExpiry();
+    return (
+      this.status === SessionStatus.ACTIVE &&
+      now < this.expiresAt &&
+      (cap === null || now < cap)
+    );
   }
 
   /**
@@ -172,7 +300,9 @@ export class Session extends SmrtObject {
    * Extend the session expiration by the given TTL (in seconds)
    */
   extend(ttlSeconds: number = DEFAULT_SESSION_TTL): void {
-    this.expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    // Activity never pushes expiry past the absolute cap, so every expiry
+    // consumer (validity, the EXPIRED transition, retention) honours it.
+    this.expiresAt = resolveSessionExpiry(ttlSeconds, this.data);
     this.touch();
   }
 
@@ -183,7 +313,12 @@ export class Session extends SmrtObject {
   ): Promise<boolean> {
     for (let attempt = 0; attempt < 4; attempt += 1) {
       if (attempt > 0 && !(await this.reloadValidActivityState())) return false;
-      if (extendTtl) this.extend(ttlSeconds);
+      // A session minted with its own idle timeout slides by that timeout
+      // whichever service resolves it; the caller's TTL policy applies only
+      // to sessions without one.
+      const idleSeconds = this.getIdleSeconds();
+      if (idleSeconds !== null) this.extend(idleSeconds);
+      else if (extendTtl) this.extend(ttlSeconds);
       else this.touch();
       try {
         await this.save();

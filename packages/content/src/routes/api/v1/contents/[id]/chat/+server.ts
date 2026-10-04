@@ -1,6 +1,6 @@
 import { createLogger } from '@happyvertical/logger';
 import { json, type RequestHandler } from '@sveltejs/kit';
-import { getCollection } from '$lib/server/smrt';
+import { runtime } from '$lib/server/smrt';
 import type { Content } from '../../../../../../content.js';
 import {
   createContentEditorChatThread,
@@ -29,7 +29,7 @@ export const GET: RequestHandler = async ({ params, request, locals }) => {
   }
 
   try {
-    const contents = await getCollection<Content>(
+    const contents = await runtime.getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
@@ -97,7 +97,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
   }
 
   try {
-    const contents = await getCollection<Content>(
+    const contents = await runtime.getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
@@ -116,21 +116,24 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
       sessionId,
       model,
       initializeChatCollections: async () => {
-        await getCollection('@happyvertical/smrt-chat:AgentSession', {
+        await runtime.getCollection('@happyvertical/smrt-chat:AgentSession', {
           db: contents.db,
         });
-        await getCollection('@happyvertical/smrt-chat:ChatThread', {
+        await runtime.getCollection('@happyvertical/smrt-chat:ChatThread', {
           db: contents.db,
         });
-        await getCollection('@happyvertical/smrt-chat:ChatRoom', {
+        await runtime.getCollection('@happyvertical/smrt-chat:ChatRoom', {
           db: contents.db,
         });
-        await getCollection('@happyvertical/smrt-chat:ChatMessage', {
+        await runtime.getCollection('@happyvertical/smrt-chat:ChatMessage', {
           db: contents.db,
         });
-        await getCollection('@happyvertical/smrt-chat:ChatParticipant', {
-          db: contents.db,
-        });
+        await runtime.getCollection(
+          '@happyvertical/smrt-chat:ChatParticipant',
+          {
+            db: contents.db,
+          },
+        );
       },
     });
 

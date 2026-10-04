@@ -24,10 +24,14 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Server composition (profile, storage custody, owner bootstrap, tenant
   selection, session, health, diagnostics) comes from
   `@happyvertical/smrt-app-runtime/sveltekit`, configured once in
-  `src/lib/server/smrt.ts`. Pass app-specific behaviour as options
-  (`selectTenant`, `classOverrides`, `session`, `prepareDatabase`); do not
-  reimplement hooks. `getCollection()`/`getSmrtConfig()` are request-scoped:
-  never keep their result beyond the request.
+  `src/lib/server/smrt.ts`, which holds only `runtime` and its options. Pass
+  app-specific behaviour as options (`selectTenant`, `classOverrides`,
+  `session`, `prepareDatabase`); do not reimplement hooks, re-add the
+  `smrt-register` import (the `smrt()` plugin injects it), or export
+  `getCollection` (generated routes import this module and use its
+  `runtime.getCollection()`; a legacy export would win, deprecated).
+  `runtime.getCollection()`/`runtime.classOptions()` are request-scoped: never
+  keep their result beyond the request.
 - Recover an interrupted unclaimed owner invitation with `pnpm app:stop`, then
   `pnpm app:recover`, `pnpm app:start`, and `pnpm app:open`; never print or copy
   its token.

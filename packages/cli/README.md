@@ -208,6 +208,13 @@ Run the project's package-manager install command after initialization. Existing
 versions are preserved; s-m-r-t workspace projects receive `workspace:*` ranges and
 consumer projects receive the CLI's published release line.
 
+The generated `src/lib/server/smrt.ts` exports only `runtime` (`classOptions()`
+and `getCollection()` over `DATABASE_URL`/`DATABASE_TYPE`), which generated API
+routes call per request; it no longer exports the deprecated
+`getCollection`/`getSmrtConfig` accessors. To adopt the full application
+runtime, replace that object with `createSmrtSvelteKitRuntime()` from
+`@happyvertical/smrt-app-runtime/sveltekit` and mount its `handle`/`init`.
+
 ### Dispatch
 
 | Command | Description |
@@ -363,6 +370,23 @@ export default {
   }
 };
 ```
+
+### Database precedence
+
+Every `db:*` command resolves its database once, at startup:
+
+1. `packages.cli.database.url` from any config layer — an explicit project
+   setting always wins, so a stray shell `DATABASE_URL` never retargets it.
+2. `DATABASE_URL`, with the engine from the config's `database.type`, else
+   `DATABASE_TYPE` (`sqlite` | `postgres`), else the URL scheme
+   (`postgres://` / `postgresql://` → postgres, anything else sqlite). An
+   unsupported `DATABASE_TYPE` disables this step with a warning.
+3. The `:memory:` default, which schema commands refuse.
+
+`smrt app setup` and `smrt app migrate` hand `smrt db:migrate` the profile's
+database through step 2, so an application does not forward
+`DATABASE_URL` in its own config. The rule is smrt-config's
+`resolveCliDatabaseConfig()`, which `smrt-dev-mcp` uses too.
 
 ### Entry Point Discovery
 

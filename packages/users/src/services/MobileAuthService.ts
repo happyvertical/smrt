@@ -922,6 +922,7 @@ export class MobileAuthService {
         ttl: this.sessionTtl,
         userAgent: meta.userAgent,
         ipAddress: meta.ipAddress,
+        authMethod: 'mobile',
         data: {
           source: 'mobile',
           oidcProvider: probe.providerName,

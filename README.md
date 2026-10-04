@@ -202,6 +202,7 @@ Status legend:
 | [`smrt-projects`](./packages/projects/README.md) | Preview | Provider-neutral projects, repositories, issues, and delivery work. |
 | [`smrt-support`](./packages/support/README.md) | Preview | Support Case intake, lifecycle, routing, targets, and service time. |
 | [`smrt-timesheets`](./packages/timesheets/README.md) | Preview | Shared time entries, approval and correction, and immutable charge/compensation snapshots. |
+| [`smrt-human-resources`](./packages/human-resources/README.md) | Preview | Employment records with dated terms, and qualifications with expiry. |
 
 ### Content and media
 
