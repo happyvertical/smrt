@@ -3888,7 +3888,7 @@ export class Content
       },
     });
     const reviewFingerprint = await this.buildReviewFingerprint(policyKey);
-    const ai = (await this.getAiClient()) as {
+    const ai = (await this.getOptionalAiClient()) as {
       message?: (
         prompt: string,
         options?: Record<string, unknown>,
