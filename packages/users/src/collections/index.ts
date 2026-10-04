@@ -18,6 +18,15 @@ export {
 export { GroupCollection } from './GroupCollection.js';
 export { GroupMemberCollection } from './GroupMemberCollection.js';
 export { GroupRoleCollection } from './GroupRoleCollection.js';
+// Login rate limiting, lockout and audit (#3273)
+export {
+  type LoginAttemptReservation,
+  type RecordedLoginFailure,
+  type RecordLoginFailureInput,
+  type ReserveLoginAttemptInput,
+  UsersLoginAttemptCollection,
+} from './LoginAttemptCollection.js';
+export { UsersLoginAuditEventCollection } from './LoginAuditEventCollection.js';
 // Magic Link
 export {
   MagicLinkTokenCollection,
@@ -27,6 +36,11 @@ export {
 export { MembershipCollection } from './MembershipCollection.js';
 export { MembershipOverrideCollection } from './MembershipOverrideCollection.js';
 export { PermissionCollection } from './PermissionCollection.js';
+// Per-person PIN on an enrolled device (#3276)
+export {
+  type PinCredentialWrite,
+  UsersPinCredentialCollection,
+} from './PinCredentialCollection.js';
 export { ResourceGrantCollection } from './ResourceGrantCollection.js';
 export {
   RoleCollection,
