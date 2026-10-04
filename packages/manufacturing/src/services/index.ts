@@ -5,6 +5,17 @@
  */
 
 export {
+  AssemblyService,
+  type AssemblyServiceOptions,
+  type BillStructure,
+  type BillStructureLine,
+  BomCycleError,
+  type BomCyclePathEntry,
+  type ComponentKind,
+  createAssemblyService,
+  type ResolvedComponent,
+} from './AssemblyService.js';
+export {
   BomService,
   type BomServiceOptions,
   type ComponentCostResolver,

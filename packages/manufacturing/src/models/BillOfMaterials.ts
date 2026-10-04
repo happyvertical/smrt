@@ -12,8 +12,8 @@
  * other vertical that builds finished goods from components.
  *
  * Cross-package references (`productId`) are plain string ids — never
- * `@foreignKey()` — so this package can be consumed without pulling in the
- * upstream catalog package.
+ * `@foreignKey()` — so the schema does not couple to the catalog package's
+ * table layout. The product is usually an `Assembly`.
  *
  * @packageDocumentation
  */
@@ -58,8 +58,8 @@ export class BillOfMaterials extends SmrtObject {
   /**
    * Plain string reference to the upstream product this BOM produces.
    * Typically a `Product.id` (or any STI subtype thereof) from
-   * `@happyvertical/smrt-products`. Cross-package id, intentionally not
-   * a `@foreignKey()`, so this package does not pull in `smrt-products`.
+   * `@happyvertical/smrt-products`, usually an `Assembly`. Cross-package
+   * id, intentionally not a `@foreignKey()`.
    */
   @field({ required: true })
   productId: string = '';
@@ -119,5 +119,21 @@ export class BillOfMaterials extends SmrtObject {
     if (options.status !== undefined) this.status = options.status;
     if (options.notes !== undefined) this.notes = options.notes;
     if (options.currency !== undefined) this.currency = options.currency;
+  }
+
+  /**
+   * Refuses saving the bill as `active` when one of its lines would make
+   * its product contain itself, directly or through sub-assemblies' active
+   * bills, with a `BomCycleError` naming the path. Draft and superseded
+   * bills are not part of the structure and are not checked here (their
+   * lines are checked as they are saved).
+   */
+  protected override async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    if (this.status !== 'active') return;
+    // Loaded lazily: the service imports this model through its collections.
+    const { AssemblyService } = await import('../services/AssemblyService.js');
+    const service = await AssemblyService.create({ db: this.db });
+    await service.assertBillAcyclic(this);
   }
 }

@@ -9,6 +9,10 @@
  *
  * **Model hierarchy**
  *
+ * - {@link Assembly} — the product that is made: a `Product` STI subtype
+ *   (`productType: 'assembly'`) in the shared `products` table. Nesting
+ *   lives in its bill: a line whose component SKU belongs to another
+ *   assembly is a sub-assembly.
  * - {@link BillOfMaterials} — recipe for one finished product. Multiple
  *   revisions per product via `version` + `status` lifecycle.
  * - {@link BomLine} — one component on a BOM with `qtyPerUnit`, `uom`,
@@ -19,6 +23,8 @@
  *
  * **Services**
  *
+ * - {@link AssemblyService} — resolve a component SKU to an assembly (and
+ *   its active bill), a material, or a bought item; refuse cycles.
  * - {@link BomService} — cost rollup, requirements explosion,
  *   "can we make this?" stock availability check.
  * - {@link ProductionService} — operational bridge from a production
@@ -40,6 +46,7 @@ import './__smrt-register__.js';
 // Collections
 // ─────────────────────────────────────────────────────────────────────────────
 export {
+  AssemblyCollection,
   BillOfMaterialsCollection,
   BomLineCollection,
   OperationCollection,
@@ -50,6 +57,8 @@ export {
 // Models (and per-model options interfaces)
 // ─────────────────────────────────────────────────────────────────────────────
 export {
+  Assembly,
+  type AssemblyOptions,
   BillOfMaterials,
   type BillOfMaterialsOptions,
   BomLine,
@@ -77,11 +86,19 @@ export {
 // Services and dispatch-bus hook helpers (opt-in)
 // ─────────────────────────────────────────────────────────────────────────────
 export {
+  AssemblyService,
+  type AssemblyServiceOptions,
+  type BillStructure,
+  type BillStructureLine,
+  BomCycleError,
+  type BomCyclePathEntry,
   BomService,
   type BomServiceOptions,
   type ComponentCostResolver,
+  type ComponentKind,
   type ConsumeMaterialsOptions,
   type ConsumeResult,
+  createAssemblyService,
   createBomService,
   createOperationService,
   createProductionService,
@@ -98,6 +115,7 @@ export {
   type ProductionOrderRef,
   ProductionService,
   type ProductionServiceOptions,
+  type ResolvedComponent,
   RoutingService,
   type RoutingServiceOptions,
 } from './services/index.js';
