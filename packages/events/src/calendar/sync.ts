@@ -107,6 +107,7 @@ async function syncParsed(
   for (const entry of entries) {
     const seriesId = stableId(
       'icalendar-series',
+      tenantId ?? '',
       options.source,
       entry.identity.uid,
     );

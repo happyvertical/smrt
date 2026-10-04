@@ -78,6 +78,8 @@ describe('syncICalendarSource', () => {
       }),
     ).toMatchObject({ updated: 1 });
     const events = await EventCollection.create({ db: database });
-    expect(await events.list({})).toHaveLength(2);
+    const rows = await events.list({});
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((event) => event.seriesId)).size).toBe(2);
   });
 });
