@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   assertSafeRemoteUrl,
+  fetchSafeRemoteUrl,
+  fetchSafeRemoteUrlInternal,
   isBlockedAddress,
   isBlockedIPv4,
   isBlockedIPv6,
@@ -121,5 +123,78 @@ describe('safe-remote-url SSRF guard', () => {
     });
     expect(url.hostname).toBe('127.0.0.1');
     expect(resolveHostname).not.toHaveBeenCalled();
+  });
+
+  it('returns a bounded conditional response with status and headers', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(null, { status: 304, headers: { etag: '"current"' } }),
+    );
+
+    const result = await fetchSafeRemoteUrlInternal(
+      'https://feed.example.test/',
+      {
+        fetchImpl,
+        headers: { 'If-None-Match': '"old"' },
+        resolveHostname: async () => [{ address: '93.184.216.34', family: 4 }],
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: 304,
+      headers: { etag: '"current"' },
+    });
+    expect(result.body).toEqual(new Uint8Array());
+    expect(fetchImpl).toHaveBeenCalledWith(
+      new URL('https://feed.example.test/'),
+      expect.objectContaining({
+        headers: { 'If-None-Match': '"old"' },
+        redirect: 'manual',
+      }),
+    );
+  });
+
+  it('revalidates each redirect target before requesting it', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { location: 'http://127.0.0.1/internal' },
+      }),
+    );
+
+    await expect(
+      fetchSafeRemoteUrlInternal('https://feed.example.test/', {
+        fetchImpl,
+        resolveHostname: async () => [{ address: '93.184.216.34', family: 4 }],
+      }),
+    ).rejects.toThrow('public network address');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds DNS, streamed bodies, and HTTPS-only public calls', async () => {
+    await expect(
+      fetchSafeRemoteUrlInternal('https://slow.example.test/', {
+        timeoutMs: 10,
+        resolveHostname: async () => new Promise(() => {}),
+      }),
+    ).rejects.toThrow('timed out');
+
+    await expect(
+      fetchSafeRemoteUrlInternal('https://large.example.test/', {
+        fetchImpl: async () => new Response('12345'),
+        maxBytes: 4,
+        resolveHostname: async () => [{ address: '93.184.216.34', family: 4 }],
+      }),
+    ).rejects.toThrow('exceeds 4 bytes');
+
+    await expect(
+      fetchSafeRemoteUrl('http://example.test/', {
+        resolveHostname: async () => [{ address: '93.184.216.34', family: 4 }],
+      }),
+    ).rejects.toThrow('must use https');
+
+    await expect(
+      fetchSafeRemoteUrl('https://example.test/', { timeoutMs: 0 }),
+    ).rejects.toThrow('greater than zero');
   });
 });

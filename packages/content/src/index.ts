@@ -308,6 +308,11 @@ export type {
   PublishReadinessRequirement,
 } from './publish-readiness';
 export { evaluateContentPublishReadiness } from './publish-readiness';
+export type {
+  SafeRemoteFetchOptions,
+  SafeRemoteFetchResult,
+} from './safe-remote-url';
+export { fetchSafeRemoteUrl } from './safe-remote-url';
 // Thumbnail generation
 export {
   type AIGenerateThumbnailOptions,

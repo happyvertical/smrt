@@ -13,6 +13,7 @@
  */
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { Agent, fetch as undiciFetch } from 'undici';
 
 export type ResolvedAddress = { address: string; family?: number };
 export type ResolveHostname = (hostname: string) => Promise<ResolvedAddress[]>;
@@ -33,6 +34,33 @@ export interface ValidatedRemoteUrlOptions extends SafeRemoteUrlOptions {
 export interface ValidatedRemoteUrl {
   url: URL;
   addresses: ResolvedAddress[];
+}
+
+/** Options for bounded, SSRF-safe HTTPS retrieval. */
+export interface SafeRemoteFetchOptions {
+  /** Request headers, including conditional headers such as If-None-Match. */
+  headers?: Record<string, string>;
+  /** Total DNS, request, redirect, and response-body deadline. Defaults to 10s. */
+  timeoutMs?: number;
+  /** Maximum returned response-body bytes. Defaults to 2 MiB. */
+  maxBytes?: number;
+  /** Maximum validated redirect hops. Defaults to 5. Set 0 to reject redirects. */
+  maxRedirects?: number;
+  /** Injectable DNS resolver. Its results are still validated and pinned. */
+  resolveHostname?: ResolveHostname;
+}
+
+/** A fully buffered response from {@link fetchSafeRemoteUrl}. */
+export interface SafeRemoteFetchResult {
+  /** Final URL after validated redirects. */
+  url: URL;
+  status: number;
+  statusText: string;
+  ok: boolean;
+  /** Lower-cased response header names. */
+  headers: Readonly<Record<string, string>>;
+  /** Bounded response bytes. */
+  body: Uint8Array;
 }
 
 export async function defaultResolveHostname(
@@ -278,5 +306,268 @@ export function redactUrlCredentials(raw: string): string {
     return raw;
   } catch {
     return '[unparseable url]';
+  }
+}
+
+const DEFAULT_MAX_RESPONSE_BYTES = 2_000_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+
+type RemoteResponse = {
+  status: number;
+  statusText: string;
+  ok: boolean;
+  headers: {
+    get: (name: string) => string | null;
+    forEach: (callback: (value: string, key: string) => void) => void;
+  };
+  body: {
+    locked: boolean;
+    cancel: (reason?: unknown) => Promise<void>;
+    getReader: () => {
+      cancel: (reason?: unknown) => Promise<void>;
+      read: () => Promise<{ done: boolean; value?: Uint8Array }>;
+      releaseLock: () => void;
+    };
+  } | null;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+};
+
+type RemoteFetchResult = {
+  response: RemoteResponse;
+  close: () => Promise<void>;
+};
+
+interface InternalSafeRemoteFetchOptions extends SafeRemoteFetchOptions {
+  allowHttp?: boolean;
+  allowPrivateNetworkHosts?: boolean;
+  fetchImpl?: typeof fetch;
+}
+
+function createPinnedDispatcher(addresses: ResolvedAddress[]): Agent {
+  const pinnedAddresses = addresses.map(({ address, family }) => {
+    const resolvedFamily = family ?? isIP(address);
+    if (resolvedFamily !== 4 && resolvedFamily !== 6) {
+      throw new Error('Remote URL resolved to an unrecognised network address');
+    }
+    return { address, family: resolvedFamily };
+  });
+
+  return new Agent({
+    connect: {
+      lookup: (_hostname, lookupOptions, callback) => {
+        if (lookupOptions.all) {
+          callback(null, pinnedAddresses);
+          return;
+        }
+        const selected =
+          pinnedAddresses.find(
+            ({ family }) =>
+              !lookupOptions.family || family === lookupOptions.family,
+          ) ?? pinnedAddresses[0];
+        callback(null, selected.address, selected.family);
+      },
+    },
+  });
+}
+
+async function fetchPinnedRemoteUrl(
+  url: ValidatedRemoteUrl,
+  options: InternalSafeRemoteFetchOptions,
+  signal: AbortSignal | undefined,
+): Promise<RemoteFetchResult> {
+  const init = {
+    headers: options.headers,
+    redirect: 'manual' as const,
+    signal,
+  };
+  // This is an internal trusted test/embedding seam. Public callers use the
+  // Undici transport below, which cannot resolve the hostname a second time.
+  if (options.fetchImpl) {
+    return {
+      response: await options.fetchImpl(url.url, init),
+      close: async () => {},
+    };
+  }
+  const dispatcher = createPinnedDispatcher(url.addresses);
+  try {
+    return {
+      response: await undiciFetch(url.url, { ...init, dispatcher }),
+      close: () => dispatcher.close(),
+    };
+  } catch (error) {
+    await dispatcher.close();
+    throw error;
+  }
+}
+
+async function closeRemoteResponse({ response, close }: RemoteFetchResult) {
+  try {
+    if (response.body && !response.body.locked) await response.body.cancel();
+  } catch {
+    // A failed stream may reject cancellation; the dispatcher still closes.
+  } finally {
+    await close();
+  }
+}
+
+async function readBoundedResponseBytes(
+  response: RemoteResponse,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  const contentLength = response.headers.get('content-length');
+  if (contentLength && Number(contentLength) > maxBytes) {
+    throw new Error(`Remote response exceeds ${maxBytes} bytes`);
+  }
+  if (!response.body) {
+    const body = new Uint8Array(await response.arrayBuffer());
+    if (body.byteLength > maxBytes)
+      throw new Error(`Remote response exceeds ${maxBytes} bytes`);
+    return body;
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new Error(`Remote response exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel(error);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+function copyResponseHeaders(
+  headers: RemoteResponse['headers'],
+): Readonly<Record<string, string>> {
+  const result: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    result[key.toLowerCase()] = value;
+  });
+  return Object.freeze(result);
+}
+
+function assertFetchLimits(options: InternalSafeRemoteFetchOptions) {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0)
+    throw new Error(
+      'Remote fetch timeout must be a non-negative finite number',
+    );
+  if (!Number.isInteger(maxBytes) || maxBytes < 0)
+    throw new Error('Remote fetch maxBytes must be a non-negative integer');
+  if (!Number.isInteger(maxRedirects) || maxRedirects < 0)
+    throw new Error('Remote fetch maxRedirects must be a non-negative integer');
+  return { timeoutMs, maxBytes, maxRedirects };
+}
+
+/**
+ * Fetch an untrusted remote HTTPS URL through a DNS-pinned transport.
+ * Redirect targets are independently validated, and returned bodies are fully
+ * buffered within `maxBytes`; callers never receive a live response stream.
+ */
+export async function fetchSafeRemoteUrl(
+  rawUrl: string,
+  options: SafeRemoteFetchOptions = {},
+): Promise<SafeRemoteFetchResult> {
+  if (options.timeoutMs === 0) {
+    throw new Error('Safe remote fetch timeout must be greater than zero');
+  }
+  return fetchSafeRemoteUrlInternal(rawUrl, options);
+}
+
+/** @internal Shared feed transport; its HTTP/private/test seams are not exported from the package barrel. */
+export async function fetchSafeRemoteUrlInternal(
+  rawUrl: string,
+  options: InternalSafeRemoteFetchOptions = {},
+): Promise<SafeRemoteFetchResult> {
+  const { timeoutMs, maxBytes, maxRedirects } = assertFetchLimits(options);
+  const controller = timeoutMs > 0 ? new AbortController() : undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const timeout =
+    timeoutMs > 0
+      ? new Promise<never>((_resolve, reject) => {
+          deadline = setTimeout(() => {
+            controller?.abort();
+            reject(new Error(`Remote fetch timed out after ${timeoutMs}ms`));
+          }, timeoutMs);
+        })
+      : undefined;
+  const run = async (): Promise<SafeRemoteFetchResult> => {
+    let current = await validateSafeRemoteUrl(rawUrl, {
+      allowPrivateNetworkHosts: options.allowPrivateNetworkHosts,
+      resolveHostnameWhenPrivateAllowed: true,
+      resolveHostname: options.resolveHostname,
+    });
+    if (!options.allowHttp && current.url.protocol !== 'https:') {
+      throw new Error('Remote fetch URL must use https');
+    }
+    for (let hop = 0; hop <= maxRedirects; hop += 1) {
+      const result = await fetchPinnedRemoteUrl(
+        current,
+        options,
+        controller?.signal,
+      );
+      const { response } = result;
+      if (REDIRECT_STATUSES.has(response.status)) {
+        const location = response.headers.get('location');
+        if (!location) {
+          await closeRemoteResponse(result);
+          throw new Error('Remote redirect response missing Location header');
+        }
+        try {
+          current = await validateSafeRemoteUrl(
+            new URL(location, current.url).toString(),
+            {
+              allowPrivateNetworkHosts: options.allowPrivateNetworkHosts,
+              resolveHostnameWhenPrivateAllowed: true,
+              resolveHostname: options.resolveHostname,
+            },
+          );
+          if (!options.allowHttp && current.url.protocol !== 'https:') {
+            throw new Error('Remote fetch URL must use https');
+          }
+        } finally {
+          await closeRemoteResponse(result);
+        }
+        continue;
+      }
+      try {
+        return {
+          url: current.url,
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          headers: copyResponseHeaders(response.headers),
+          body: await readBoundedResponseBytes(response, maxBytes),
+        };
+      } finally {
+        await closeRemoteResponse(result);
+      }
+    }
+    throw new Error('Remote URL exceeded the maximum number of redirects');
+  };
+  try {
+    return timeout ? await Promise.race([run(), timeout]) : await run();
+  } finally {
+    if (deadline) clearTimeout(deadline);
   }
 }

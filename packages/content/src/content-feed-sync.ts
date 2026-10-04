@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { isIP } from 'node:net';
 import {
   ObjectRegistry,
   type SmrtCollectionOptions,
 } from '@happyvertical/smrt-core';
-import { Agent, fetch as undiciFetch } from 'undici';
 import {
   type ParsedContentFeedItem,
   parseContentFeed,
@@ -13,10 +11,8 @@ import type { ContentFeedSource } from './content-feed-source';
 import { Mirror } from './content-types';
 import { Contents } from './contents';
 import {
-  type ResolvedAddress,
+  fetchSafeRemoteUrlInternal,
   type ResolveHostname,
-  type ValidatedRemoteUrl,
-  validateSafeRemoteUrl,
 } from './safe-remote-url';
 
 export interface ContentFeedSyncOptions extends SmrtCollectionOptions {
@@ -45,10 +41,6 @@ export interface ContentFeedSyncResult {
 
 type QueryableCollection = Pick<Contents, 'query'>;
 
-const DEFAULT_MAX_RESPONSE_BYTES = 2_000_000;
-const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
-const MAX_FEED_REDIRECTS = 5;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const FALLBACK_MIRROR_META_TYPE = '@happyvertical/smrt-content:Mirror';
 
 function getMirrorMetaType(): string {
@@ -92,212 +84,6 @@ function createDedupeKey(
   item: ParsedContentFeedItem,
 ): string {
   return `feed:${source.id ?? source.feedUrl}:${item.guid || normalizeUrlIdentity(item.url)}`;
-}
-
-async function validateFeedFetchUrl(
-  feedUrl: string,
-  options: ContentFeedSyncOptions,
-): Promise<ValidatedRemoteUrl> {
-  return validateSafeRemoteUrl(feedUrl, {
-    allowPrivateNetworkHosts: options.allowPrivateNetworkHosts,
-    resolveHostnameWhenPrivateAllowed: true,
-    resolveHostname: options.resolveHostname,
-  });
-}
-
-function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
-  if (timeoutMs <= 0) return undefined;
-  return AbortSignal.timeout(timeoutMs);
-}
-
-function createPinnedDispatcher(addresses: ResolvedAddress[]): Agent {
-  const pinnedAddresses = addresses.map(({ address, family }) => {
-    const resolvedFamily = family ?? isIP(address);
-    if (resolvedFamily !== 4 && resolvedFamily !== 6) {
-      throw new Error('Remote URL resolved to an unrecognised network address');
-    }
-    return { address, family: resolvedFamily };
-  });
-
-  return new Agent({
-    connect: {
-      lookup: (_hostname, lookupOptions, callback) => {
-        if (lookupOptions.all) {
-          callback(null, pinnedAddresses);
-          return;
-        }
-        const selected =
-          pinnedAddresses.find(
-            ({ family }) =>
-              !lookupOptions.family || family === lookupOptions.family,
-          ) ?? pinnedAddresses[0];
-        callback(null, selected.address, selected.family);
-      },
-    },
-  });
-}
-
-type FeedResponse = {
-  status: number;
-  statusText: string;
-  ok: boolean;
-  headers: Pick<Headers, 'get'>;
-  body: {
-    locked: boolean;
-    cancel: (reason?: unknown) => Promise<void>;
-    getReader: () => {
-      cancel: (reason?: unknown) => Promise<void>;
-      read: () => Promise<{ done: boolean; value?: Uint8Array }>;
-      releaseLock: () => void;
-    };
-  } | null;
-  text: () => Promise<string>;
-};
-
-type FeedFetchResponse = {
-  // `undici` and Node's global fetch expose equivalent response behavior, but
-  // their complete `Headers` declarations differ under Node 26's disposable
-  // iterator types. Feed sync only depends on this shared response surface.
-  response: FeedResponse;
-  close: () => Promise<void>;
-};
-
-async function fetchValidatedFeedUrl(
-  url: ValidatedRemoteUrl,
-  headers: Record<string, string>,
-  options: ContentFeedSyncOptions,
-): Promise<FeedFetchResponse> {
-  const init = {
-    headers,
-    redirect: 'manual' as const,
-    signal: createTimeoutSignal(
-      options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS,
-    ),
-  };
-
-  // Production uses Undici with a lookup that cannot perform a second DNS
-  // resolution. The documented injected-fetch seam is a trusted transport.
-  if (options.fetch) {
-    return {
-      response: await options.fetch(url.url, init),
-      close: async () => {},
-    };
-  }
-
-  const dispatcher = createPinnedDispatcher(url.addresses);
-  try {
-    const response = await undiciFetch(url.url, { ...init, dispatcher });
-    return { response, close: () => dispatcher.close() };
-  } catch (error) {
-    await dispatcher.close();
-    throw error;
-  }
-}
-
-async function closeFeedResponse({ response, close }: FeedFetchResponse) {
-  try {
-    if (response.body && !response.body.locked) await response.body.cancel();
-  } catch {
-    // A stream that already failed can reject cancellation. The per-request
-    // dispatcher still must be closed, and the caller retains its read error.
-  } finally {
-    await close();
-  }
-}
-
-/**
- * Fetch a feed following redirects manually so every hop's target is
- * re-validated through {@link validateFeedFetchUrl}. `fetch()`'s default
- * `redirect: 'follow'` would let an allowed public feed 30x-redirect to an
- * internal/link-local/metadata host, defeating the up-front SSRF check
- * (S5 #1388). Returns the response together with the final validated URL so
- * the parser uses the redirect target as the feed base.
- */
-async function fetchFeedWithRedirectGuard(
-  startUrl: ValidatedRemoteUrl,
-  headers: Record<string, string>,
-  options: ContentFeedSyncOptions,
-): Promise<FeedFetchResponse & { finalUrl: URL }> {
-  let current = startUrl;
-
-  for (let hop = 0; hop <= MAX_FEED_REDIRECTS; hop += 1) {
-    const result = await fetchValidatedFeedUrl(current, headers, options);
-    const { response } = result;
-
-    // Only the redirect statuses (not 304 Not Modified / 305 / 306) reroute the
-    // request; everything else (200, 304, 4xx, 5xx) is returned to the caller.
-    if (REDIRECT_STATUSES.has(response.status)) {
-      const location = response.headers.get('location');
-      if (!location) {
-        await closeFeedResponse(result);
-        throw new Error('Feed redirect response missing Location header');
-      }
-      // Re-run the full SSRF validation against the resolved redirect target.
-      try {
-        current = await validateFeedFetchUrl(
-          new URL(location, current.url).toString(),
-          options,
-        );
-      } finally {
-        await closeFeedResponse(result);
-      }
-      continue;
-    }
-
-    return { ...result, finalUrl: current.url };
-  }
-
-  throw new Error('Feed URL exceeded the maximum number of redirects');
-}
-
-async function readResponseText(
-  response: FeedResponse,
-  maxBytes: number,
-): Promise<string> {
-  const contentLength = response.headers.get('content-length');
-  if (contentLength && Number(contentLength) > maxBytes) {
-    throw new Error(`Feed response exceeds ${maxBytes} bytes`);
-  }
-
-  if (!response.body) {
-    const text = await response.text();
-    if (new TextEncoder().encode(text).byteLength > maxBytes) {
-      throw new Error(`Feed response exceeds ${maxBytes} bytes`);
-    }
-    return text;
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      totalBytes += value.byteLength;
-      if (totalBytes > maxBytes) {
-        await reader.cancel();
-        throw new Error(`Feed response exceeds ${maxBytes} bytes`);
-      }
-      chunks.push(value);
-    }
-  } catch (error) {
-    await reader.cancel(error);
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
-
-  const buffer = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    buffer.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  return new TextDecoder().decode(buffer);
 }
 
 async function findExistingMirror(
@@ -475,16 +261,17 @@ export async function syncContentFeedSource(
   await source.save();
 
   try {
-    const feedUrl = await validateFeedFetchUrl(source.feedUrl, options);
-    const fetchResult = await fetchFeedWithRedirectGuard(
-      feedUrl,
+    const response = await fetchSafeRemoteUrlInternal(source.feedUrl, {
+      allowHttp: true,
+      allowPrivateNetworkHosts: options.allowPrivateNetworkHosts,
+      fetchImpl: options.fetch,
       headers,
-      options,
-    );
-    const { response, finalUrl } = fetchResult;
+      maxBytes: options.maxResponseBytes,
+      resolveHostname: options.resolveHostname,
+      timeoutMs: options.fetchTimeoutMs,
+    });
 
     if (response.status === 304) {
-      await closeFeedResponse(fetchResult);
       source.markFetchSucceeded(now);
       await source.save();
       return {
@@ -498,21 +285,13 @@ export async function syncContentFeedSource(
     }
 
     if (!response.ok) {
-      await closeFeedResponse(fetchResult);
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const responseText = await (async () => {
-      try {
-        return await readResponseText(
-          response,
-          options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
-        );
-      } finally {
-        await closeFeedResponse(fetchResult);
-      }
-    })();
-    const parsed = parseContentFeed(responseText, finalUrl.toString());
+    const parsed = parseContentFeed(
+      new TextDecoder().decode(response.body),
+      response.url.toString(),
+    );
     source.format = parsed.format;
     source.homepageUrl = source.homepageUrl || parsed.homepageUrl;
     if (!source.name && parsed.title) source.name = parsed.title;
@@ -539,8 +318,8 @@ export async function syncContentFeedSource(
     }
 
     source.markFetchSucceeded(now, {
-      etag: response.headers.get('etag'),
-      lastModified: response.headers.get('last-modified'),
+      etag: response.headers.etag,
+      lastModified: response.headers['last-modified'],
     });
     await source.save();
 
