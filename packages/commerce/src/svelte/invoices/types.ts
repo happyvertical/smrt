@@ -58,48 +58,143 @@ export interface InvoicePreparationHiddenField {
   value: string;
 }
 
-/** Invoice preparation and retained-draft editor contract. */
-export interface InvoiceEditorProps {
-  /** Caller endpoint; no application routes are embedded. */
-  action: string;
-  /** Native form method (POST by default). */
-  method?: 'post' | 'get';
-  /** Optional stable form id for enhancement and labels. */
-  id?: string;
-  /** Caller-localized heading. */
-  title?: string;
-  /** Currency code; draft amounts are lossless currency-unit text. */
+/** Invoice draft types shared with the Svelte-free exact calculator. */
+export type { InvoiceDraftValues, InvoiceLineDraft } from './calculations.js';
+
+import type { InvoiceDraftValues, InvoiceLineDraft } from './calculations.js';
+
+/** Optional allocation fields, rendered without an enclosing form. */
+export interface InvoiceAllocationFieldsProps {
+  /** Currency for allocation presentation. */
   currency: string;
-  /** Caller-owned rows, rerendered from action results after failure/add/remove. */
+  /** Retained source-allocation rows. */
   allocations: readonly InvoiceAllocationDraft[];
-  /** Only authorized source projections should be supplied. */
+  /** Authorized source projections only. */
   sources?: readonly InvoicePreparationSource[];
-  /** False renders reference inputs without exposing source labels or balances. */
+  /** Hide sensitive source labels and balances when false. */
   mayReadSources?: boolean;
-  /** Presentation capability only; server must independently authorize writes. */
+  /** Presentation capability; server authorizes every action. */
   canEdit?: boolean;
-  /** Action in flight; prevents another submit without clearing entered values. */
+  /** Disable the structural add action while pending. */
   pending?: boolean;
-  /** Optional state from the caller's smrt-ui/form-retry controller. */
-  retryStatus?: FormRetryStatus;
-  /** Caller-localized form-level error/uncertain-outcome message. */
-  message?: string;
-  /** Server review snapshot; never changed automatically by this component. */
-  review?: InvoicePreparationReview;
-  /** Caller-owned tokens, currency, revision/fingerprint and other request fields. */
-  hiddenFields?: readonly InvoicePreparationHiddenField[];
-  /** Adapt native names without rewriting component markup. */
+  /** Native allocation field adapters. */
   fields?: Partial<InvoicePreparationFields>;
-  /** Native submitter value for saving, default save. */
-  saveIntent?: string;
-  /** Native submitter value for adding a row, default addAllocation. */
+  /** Native add-allocation intent, default addAllocation. */
   addIntent?: string;
+  /** Stable label identity. */
+  id?: string;
+}
+
+/** Editable line field names repeat in displayed order. */
+export interface InvoiceLineFieldNames {
+  /** Stable line identity. */
+  key: string;
+  /** Description text. */
+  description: string;
+  /** Product/SKU reference text. */
+  sku: string;
+  /** Fractional quantity text. */
+  quantity: string;
+  /** Currency-unit price text. */
+  unitPrice: string;
+  /** Flat or percentage discount selection. */
+  discountType: string;
+  /** Currency-unit or percent discount text. */
+  discountValue: string;
+  /** Inherited or explicit tax selection. */
+  taxMode: string;
+  /** Explicit percentage tax text, including zero. */
+  taxRate: string;
+}
+
+/** Invoice header and submitter name adapters. */
+export interface InvoiceFieldNames {
+  /** Customer reference. */
+  customerId: string;
+  /** Invoice date text. */
+  issuedOn: string;
+  /** Due date text. */
+  dueOn: string;
+  /** Currency code. */
+  currency: string;
+  /** Payment terms text. */
+  paymentTerms: string;
+  /** Default tax percentage text. */
+  taxRate: string;
+  /** Clicked submitter name. */
+  intent: string;
+}
+
+/** General invoice line fields; never renders a nested form. */
+export interface InvoiceLineEditorProps {
+  /** Lossless caller-owned line values. */
+  line: InvoiceLineDraft;
+  /** Current currency code for shared calculation. */
+  currency: string;
+  /** External default tax percentage; explicit line override remains distinct. */
+  inheritedTaxRate: string;
+  /** One-based display position. */
+  number?: number;
+  /** Stable control-label prefix. */
+  id?: string;
+  /** Native field-name adapters. */
+  fields?: Partial<InvoiceLineFieldNames>;
+  /** Caller errors keyed by canonical line field name. */
+  errors?: Partial<Record<keyof InvoiceLineFieldNames, string>>;
+  /** Presentation capability. */
+  canEdit?: boolean;
+  /** Disable structural actions while pending. */
+  pending?: boolean;
+  /** Native submitter name. */
+  intentField?: string;
+  /** Remove intent prefix, followed by caller line key. */
+  removePrefix?: string;
+}
+
+/** General native invoice editor with optional domain extensions. */
+export interface InvoiceEditorProps {
+  /** Caller native endpoint. */
+  action: string;
+  /** Native method, default POST. */
+  method?: 'post' | 'get';
+  /** Stable form identity. */
+  id?: string;
+  /** Caller-localized title. */
+  title?: string;
+  /** Retained editable strings; never reconstructed from model numbers. */
+  values: InvoiceDraftValues;
+  /** Authorized customer projections; retained unknown references stay visible. */
+  customers?: readonly { id: string; label: string }[];
+  /** Caller field errors: header name or lineKey.fieldName. */
+  errors?: Record<string, string>;
+  /** Header and submitter field adapters. */
+  fields?: Partial<InvoiceFieldNames>;
+  /** Repeated line field adapters. */
+  lineFields?: Partial<InvoiceLineFieldNames>;
+  /** Presentation capability only; server reauthorizes all mutations. */
+  canEdit?: boolean;
+  /** Disable submission while a request is pending. */
+  pending?: boolean;
+  /** Caller-owned retry-controller status. */
+  retryStatus?: FormRetryStatus;
+  /** Caller error or uncertain-outcome message. */
+  message?: string;
+  /** Server-authoritative review snapshot. */
+  review?: InvoicePreparationReview;
+  /** Exact caller tokens/context; repeated names preserved. */
+  hiddenFields?: readonly InvoicePreparationHiddenField[];
+  /** Save intent, default save. */
+  saveIntent?: string;
+  /** Add-line intent, default addLine. */
+  addIntent?: string;
+  /** Remove-line intent prefix, default removeLine:. */
+  removePrefix?: string;
   /** Caller-localized save label. */
   saveLabel?: string;
-  /** Optional cancel URL. */
+  /** Optional cancel navigation URL. */
   cancelHref?: string;
-  /** Extra domain fields inside the form. */
-  children?: Snippet;
-  /** Optional native enhancement; call preventDefault only when handling transport. */
+  /** Domain fields inside the single form; receives current draft for currency-aware extensions. */
+  children?: Snippet<[InvoiceDraftValues]>;
+  /** Optional enhancement; native submission remains the default. */
   onsubmit?: HTMLFormAttributes['onsubmit'];
 }

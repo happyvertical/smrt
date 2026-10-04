@@ -152,7 +152,7 @@ export const COMMERCE_UI_SLOTS: Record<string, ModuleUISlot> = {
     id: 'invoice-editor',
     label: 'Invoice Preparation',
     description:
-      'Native retained-draft editing and reviewed source allocations',
+      'General invoice lines, exact totals and optional allocation fields',
     icon: 'file-text',
     category: 'form',
     order: 8,

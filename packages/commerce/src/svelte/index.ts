@@ -239,14 +239,27 @@ ModuleUIRegistry.register(
   PricingVersionDecision,
 );
 
+import InvoiceAllocationFields from './components/InvoiceAllocationFields.svelte';
 import InvoiceEditor from './components/InvoiceEditor.svelte';
+import InvoiceLineEditor from './components/InvoiceLineEditor.svelte';
 import InvoiceReview from './components/InvoiceReview.svelte';
 
-export { InvoiceEditor, InvoiceReview };
+export {
+  InvoiceAllocationFields,
+  InvoiceEditor,
+  InvoiceLineEditor,
+  InvoiceReview,
+};
 export type InvoiceReviewProps = ComponentProps<typeof InvoiceReview>;
 export type {
   InvoiceAllocationDraft,
+  InvoiceAllocationFieldsProps,
+  InvoiceDraftValues,
   InvoiceEditorProps,
+  InvoiceFieldNames,
+  InvoiceLineDraft,
+  InvoiceLineEditorProps,
+  InvoiceLineFieldNames,
   InvoicePreparationFields,
   InvoicePreparationHiddenField,
   InvoicePreparationReview,
