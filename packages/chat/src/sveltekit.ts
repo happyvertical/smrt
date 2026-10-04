@@ -1217,10 +1217,18 @@ export function mountAssistantRoutes(
       return stream(turn.events, prepared.abort);
     }
     const { principal } = context;
+    // The request's authority, frozen before the response returns (an empty
+    // set stays empty): the principal's snapshot, else the permissions the
+    // request's RLS context published. Always the cap, so the turn runs with
+    // (this snapshot ∩ live at bind) and never gains a later grant.
     const bound = {
       id: principal.userId,
       tenantId: principal.tenantId,
-      ...(principal.permissions ? { scopes: principal.permissions } : {}),
+      scopes: Object.freeze([
+        ...(principal.permissions ??
+          getCurrentSessionPermissionContext()?.permissions ??
+          []),
+      ]),
     };
     const ownLifetime = async (emit: (event: TurnEvent) => void) => {
       // Events after which the browser acts on stored state (resume, retry,

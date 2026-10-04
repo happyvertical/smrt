@@ -623,6 +623,29 @@ postgresDescribe('streamed assistant turn under database-rls', () => {
     }
   });
 
+  it('never acquires a permission granted after the send was accepted', async () => {
+    try {
+      const seen = await probeAcrossHandoff('send-granted', () =>
+        setGranted(EXTRA, true),
+      );
+      expect(seen).toMatchObject({ permissions: [USE], published: [USE] });
+    } finally {
+      await setGranted(EXTRA, false);
+    }
+  });
+
+  it('keeps an empty request permission set empty across the handoff', async () => {
+    await setGranted(USE, false);
+    try {
+      const seen = await probeAcrossHandoff('send-empty', () =>
+        setGranted(USE, true),
+      );
+      expect(seen).toMatchObject({ permissions: [], published: [] });
+    } finally {
+      await setGranted(USE, true);
+    }
+  });
+
   it('records a turn the client left after the handler returned as cancelled', async () => {
     const model = delayedAI([
       () => {

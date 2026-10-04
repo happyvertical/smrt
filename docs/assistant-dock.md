@@ -141,7 +141,10 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   that transaction to end, checks that the user message committed, and then
   runs its tools, stores its reply and records its outcome (including
   `cancelled`) in a transaction of its own for the same principal
-  (`runtime.runAsPrincipal`); `client_tool_calls`, `done` and `error` reach
+  (`runtime.runAsPrincipal`). Its authority is the request's permission set,
+  frozen before the response returns (an empty set stays empty), intersected
+  with the permissions live when it binds: a grant made after the send is
+  never acquired and a revoked one never regained. `client_tool_calls`, `done` and `error` reach
   the browser only after that transaction commits, so a resume or retry
   always finds what the turn stored. If that transaction fails, the send is
   recorded as `failed`. Without `runtime`, the turn runs to completion inside
