@@ -5,27 +5,10 @@
  * See: https://github.com/happyvertical/smrt
  */
 
-import {
-  resolveApplicationId,
-  resolveLocalRuntimePaths,
-} from '@happyvertical/smrt-app-runtime';
-
 const profile = (process.env.SMRT_RUNTIME_PROFILE || 'local') as
   | 'local'
   | 'self-hosted'
   | 'cloud';
-const appId = resolveApplicationId({
-  sourceRoot: process.cwd(),
-  explicitId: process.env.SMRT_APP_ID,
-});
-const localDatabase =
-  profile === 'local'
-    ? resolveLocalRuntimePaths({
-        appId,
-        dataDirectory: process.env.SMRT_DATA_DIR,
-        sourceRoot: process.cwd(),
-      }).database
-    : undefined;
 
 export default {
   // This is the single infrastructure selector for the application. Domain
@@ -58,22 +41,8 @@ export default {
     },
   },
 
-  // Package-specific configuration
-  packages: {
-    // CLI configuration
-    cli: {
-      database: {
-        type:
-          profile === 'local' ? 'sqlite' : 'postgres',
-        // `smrt app` sets DATABASE_URL to the profile-owned data path before
-        // migrations. Deployed profiles require an operator-owned URL.
-        url:
-          profile === 'local'
-            ? process.env.DATABASE_URL || localDatabase
-            : process.env.DATABASE_URL,
-      },
-      verbose: false,
-    },
-
-  },
+  // No `packages.cli.database`: `smrt app setup` / `smrt app migrate` hand
+  // `smrt db:migrate` the profile-owned database through DATABASE_URL and
+  // DATABASE_TYPE (local: the SQLite file in the user data root; deployed: the
+  // operator's URL). See the smrt-cli README for the precedence.
 };

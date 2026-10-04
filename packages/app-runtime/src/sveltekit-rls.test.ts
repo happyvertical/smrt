@@ -14,9 +14,13 @@ import {
   type ResolvedApplicationRuntime,
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  createGeneratedCollectionAccess,
+  ObjectRegistry,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 import type { Handle } from '@sveltejs/kit';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 interface RecordedScope {
   readonly database: { readonly label: string };
@@ -322,5 +326,88 @@ describe('G2: classOptions() follows the request RLS transaction', () => {
       },
     });
     expect(inside?.db).toEqual(base);
+  });
+});
+
+describe('G3: getCollection() and generated routes use the request database (#3416)', () => {
+  const base = { type: 'postgres', url: DATABASE_URL };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Records the options every collection is built from. */
+  function recordCollections(): Array<{ className: string; db: unknown }> {
+    const built: Array<{ className: string; db: unknown }> = [];
+    vi.spyOn(ObjectRegistry, 'getCollection').mockImplementation(
+      async (className, options) => {
+        built.push({ className, db: options?.db });
+        return { className } as never;
+      },
+    );
+    return built;
+  }
+
+  it('builds each collection from the current RLS request transaction, never a retained one', async () => {
+    const built = recordCollections();
+    const requestDbs: unknown[] = [];
+    let runtimeRef: ReturnType<typeof runtimeFor> | undefined;
+    for (let index = 0; index < 2; index += 1) {
+      const result = await request(cloud, {
+        downstream: async (runtime) => {
+          runtimeRef = runtime;
+          requestDbs.push(recorded.scope.getStore()?.database);
+          await runtime.getCollection('Item');
+          return new Response('ok');
+        },
+      });
+      expect(result.response?.status).toBe(200);
+    }
+    expect(built.map((entry) => entry.className)).toEqual(['Item', 'Item']);
+    // Each request's own transaction-bound handle, by identity.
+    expect(built[0]?.db).toBe(requestDbs[0]);
+    expect(built[1]?.db).toBe(requestDbs[1]);
+    expect(built[0]?.db).not.toBe(built[1]?.db);
+    expect(built[0]?.db).toEqual({ label: 'rls-transaction' });
+
+    // Outside any request the runtime is back on the base configuration.
+    await runtimeRef?.getCollection('Item');
+    expect(built[2]?.db).toEqual(base);
+  });
+
+  it('resolves generated route collections through runtime.getCollection()', async () => {
+    const built = recordCollections();
+    const result = await request(cloud, {
+      classOverrides: { AuditLog: { db: { type: 'sqlite', url: 'audit' } } },
+      downstream: async (runtime) => {
+        // What the generated route prelude does with the app's `smrt.ts`.
+        const { getCollection, getSmrtConfig } =
+          createGeneratedCollectionAccess(
+            { runtime },
+            'src/lib/server/smrt.ts',
+          );
+        await getCollection('Item');
+        await getCollection('AuditLog');
+        expect(getSmrtConfig('Item').db).toEqual({ label: 'rls-transaction' });
+        return new Response('ok');
+      },
+    });
+    expect(result.response?.status).toBe(200);
+    expect(built).toEqual([
+      { className: 'Item', db: { label: 'rls-transaction' } },
+      // An explicit per-class database override keeps its own database.
+      { className: 'AuditLog', db: { type: 'sqlite', url: 'audit' } },
+    ]);
+  });
+
+  it('keeps application isolation on the base configuration', async () => {
+    const built = recordCollections();
+    await request(selfHosted, {
+      downstream: async (runtime) => {
+        await runtime.getCollection('Item');
+        return new Response('ok');
+      },
+    });
+    expect(built).toEqual([{ className: 'Item', db: base }]);
   });
 });

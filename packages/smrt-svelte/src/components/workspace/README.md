@@ -66,7 +66,7 @@ below is intentionally application code, not a `workspace/` export:
   import { AssistantDock } from '@happyvertical/smrt-chat/svelte';
 </script>
 
-<ShellDockTool id="assistant" label="Assistant" icon="bot">
+<ShellDockTool id="assistant" label="Assistant">
   {#snippet render()}
     <AssistantDock {transport} {registry} />
   {/snippet}
@@ -74,7 +74,8 @@ below is intentionally application code, not a `workspace/` export:
 ```
 
 `registry` is the same `DataSurfaceRegistry` instance mounted routes register
-their descriptors on. See
+their descriptors on; inside `AppShell` it is the argument of the `dock`
+snippet (`{#snippet dock(registry)}`). `icon` takes a Svelte component. See
 [`docs/assistant-dock.md`](../../../../../docs/assistant-dock.md) for the full
 design.
 

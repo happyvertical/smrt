@@ -8,6 +8,7 @@
  * name collisions when multiple packages define classes with the same name.
  */
 
+import { ConfigurationError } from '../errors.js';
 import type { QualifiedClassName } from '../scanner/types.js';
 
 /**
@@ -120,6 +121,40 @@ export function isQualifiedName(name: string): name is QualifiedClassName {
   }
 
   return true;
+}
+
+/**
+ * Whether a package name can be the package half of a qualified class name,
+ * i.e. exactly what {@link isQualifiedName} requires: a scoped npm name
+ * (`@scope/pkg`). The scope is a deliberate discriminator (#713): a bare
+ * `word:Word` is never treated as qualified by lookups, STI discriminator
+ * classification (`smrt db:sti-upgrade`), aliases or cross-package refs.
+ */
+export function isScopedPackageName(packageName: unknown): boolean {
+  return (
+    typeof packageName === 'string' &&
+    packageName.startsWith('@') &&
+    packageName.includes('/')
+  );
+}
+
+/**
+ * Fail at scan/generation time when a package name cannot produce a qualified
+ * class name, instead of emitting `pkg:Class` keys that the registry's own
+ * validator rejects later (`CONFIG_INVALID_ISOLATED_MANIFEST`, #3408).
+ * `undefined` is allowed: no package name means no qualified names are generated.
+ */
+export function assertScopedPackageName(packageName: string | undefined): void {
+  if (packageName === undefined || isScopedPackageName(packageName)) return;
+  const bare = packageName.replace(/^@[^/]*\/?/u, '');
+  throw new ConfigurationError(
+    `SMRT requires a scoped package name to qualify class names, but the package.json ` +
+      `name is "${packageName}". Rename it to a scoped name such as "@my-app/${bare}". ` +
+      `Qualified class names have the form "@scope/package:ClassName"; unscoped ` +
+      `names are never treated as qualified.`,
+    'CONFIG_UNSCOPED_PACKAGE_NAME',
+    { packageName },
+  );
 }
 
 /**

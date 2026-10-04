@@ -35,6 +35,7 @@ import type {
 import { generateToolManifest } from '../tools/tool-generator.js';
 import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import {
+  assertScopedPackageName,
   createQualifiedName,
   isQualifiedNameAliasFormat,
   readPreviousQualifiedNames,
@@ -263,6 +264,10 @@ export class ManifestGenerator {
       objects: {},
     };
 
+    if (scanResults.some((result) => result.objects.length > 0)) {
+      assertScopedPackageName(options?.packageName);
+    }
+
     // Set package metadata at manifest level if provided
     if (options?.packageName) {
       manifest.packageName = options.packageName;
@@ -382,6 +387,13 @@ export class ManifestGenerator {
     manifest: SmartObjectManifest,
     options?: { packageName?: string; packageJson?: PackageJsonLike },
   ): void {
+    // An unscoped package name would yield `pkg:Class` keys the registry
+    // rejects at startup (#3408); fail here with an actionable message. An app
+    // that declares no classes generates no qualified names and still builds.
+    if (Object.keys(manifest.objects).length > 0) {
+      assertScopedPackageName(options?.packageName);
+    }
+
     // Deprecated qualified-name aliases (#3338) fail closed at build time, the
     // same as the registry refuses them at runtime.
     this.assertQualifiedNameAliases(manifest);

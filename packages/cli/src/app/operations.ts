@@ -12,12 +12,16 @@ import { randomBytes } from 'node:crypto';
 import {
   accessSync,
   chmodSync,
+  closeSync,
   constants,
   cpSync,
   existsSync,
+  fstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -31,7 +35,12 @@ import {
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 import type { ResolvedApplicationRuntime } from '@happyvertical/smrt-config';
-import { errorCode } from './errors.js';
+import {
+  ApplicationStartError,
+  boundedTail,
+  errorCode,
+  redactSecrets,
+} from './errors.js';
 import {
   assertExternalArtifactPath,
   resolveApplicationStateRoot,
@@ -72,7 +81,7 @@ export const APP_OPERATIONS = [
 /** One of {@link APP_OPERATIONS}. */
 export type AppOperation = (typeof APP_OPERATIONS)[number];
 
-/** Report printed by `setup`; `onboardingUrl` is never printed. */
+/** Report printed by `setup`; `onboardingUrl` is never in this JSON. */
 interface SetupReport {
   schemaVersion: 1;
   status: 'ready';
@@ -85,6 +94,14 @@ interface SetupReport {
 function printJson(context: AppContext, value: unknown, pretty = false): void {
   context.io.stdout(
     `${pretty ? JSON.stringify(value, null, 2) : JSON.stringify(value)}\n`,
+  );
+}
+
+/** Print the one-time URL to the operator's terminal only, never to logs. */
+function printOnboardingUrl(context: AppContext, url: string | null): void {
+  if (!url || !context.io.operatorTerminal) return;
+  context.io.operatorTerminal(
+    `Open this one-time owner setup link on this device (it works once and expires):\n  ${url}\n`,
   );
 }
 
@@ -310,6 +327,7 @@ async function recoverOnboarding(
       recovery: 'Run pnpm app:start, then pnpm app:open.',
       secretValuesIncluded: false,
     });
+    printOnboardingUrl(context, url);
   } finally {
     operatorLease.release();
   }
@@ -387,22 +405,32 @@ async function start(
   }
   ensurePrivateDirectory(preparedStateRoot(context));
   const instance = randomBytes(16).toString('hex');
-  const child = spawn(
-    process.execPath,
-    [webLauncherPath(), `--smrt-instance=${instance}`],
-    {
-      cwd: context.sourceRoot,
-      env: {
-        ...env,
-        HOST: runtime.profile === 'local' ? '127.0.0.1' : env.HOST || '0.0.0.0',
-        PORT: env.PORT || '5173',
-        SMRT_PROCESS_INSTANCE: instance,
-        SMRT_OPERATION_INSTANCE: operationLock?.instance,
+  const childEnv: NodeJS.ProcessEnv = {
+    ...env,
+    HOST: runtime.profile === 'local' ? '127.0.0.1' : env.HOST || '0.0.0.0',
+    PORT: env.PORT || '5173',
+    SMRT_PROCESS_INSTANCE: instance,
+    SMRT_OPERATION_INSTANCE: operationLock?.instance,
+  };
+  // The detached server outlives this command, so its output goes to a
+  // private file rather than a pipe that would close (EPIPE) on our exit.
+  const logFile = startLogPath(context);
+  const logFd = openStartLog(logFile);
+  let child: ChildProcess;
+  try {
+    child = spawn(
+      process.execPath,
+      [webLauncherPath(), `--smrt-instance=${instance}`],
+      {
+        cwd: context.sourceRoot,
+        env: childEnv,
+        detached: true,
+        stdio: ['ignore', logFd, logFd],
       },
-      detached: true,
-      stdio: 'ignore',
-    },
-  );
+    );
+  } finally {
+    closeSync(logFd);
+  }
   child.unref();
   const pid = child.pid;
   if (pid === undefined) {
@@ -419,10 +447,71 @@ async function start(
       );
     }
     rmSync(pidPath(context), { force: true });
-    throw error;
+    throw new ApplicationStartError(
+      error instanceof Error
+        ? error.message
+        : 'The application did not become ready.',
+      redactedLogTail(logFile, childEnv),
+      logFile,
+    );
   }
   printJson(context, { schemaVersion: 1, status: 'started', pid });
   return pid;
+}
+
+/** Upper bound on the web-process output a failed `start` reports. */
+export const START_OUTPUT_TAIL_BYTES = 8 * 1024;
+
+/** Window read before redaction, so a cut never splits a reported secret. */
+const START_OUTPUT_WINDOW_BYTES = 64 * 1024;
+
+function startLogPath(context: AppContext): string {
+  return join(preparedStateRoot(context), 'app.log');
+}
+
+/**
+ * Create a fresh 0600 `app.log` for this start. The previous run's log is
+ * removed first and the new one is created exclusively, so a planted link or
+ * file is never written through.
+ */
+function openStartLog(path: string): number {
+  rmSync(path, { force: true });
+  return openSync(path, 'wx', 0o600);
+}
+
+/**
+ * The last {@link START_OUTPUT_TAIL_BYTES} of `path`, strictly redacted
+ * against the child's environment. A bounded window is redacted before it is cut, and a
+ * window that starts mid-file drops its leading partial record (all of it
+ * when the window holds no newline), so no fragment of a secret whose
+ * prefix lies before the window can survive the cut.
+ */
+function redactedLogTail(path: string, env: NodeJS.ProcessEnv): string {
+  let text: string;
+  try {
+    const fd = openSync(path, 'r');
+    try {
+      const size = fstatSync(fd).size;
+      const length = Math.min(size, START_OUTPUT_WINDOW_BYTES);
+      const buffer = Buffer.alloc(length);
+      readSync(fd, buffer, 0, length, size - length);
+      text = buffer.toString('utf8');
+      if (length < size) {
+        // No newline: the whole window is one record's suffix.
+        const newline = text.indexOf('\n');
+        text = newline === -1 ? '' : text.slice(newline + 1);
+      }
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return '';
+  }
+  // Strict: child output is arbitrary text, so no length floor applies.
+  return boundedTail(
+    redactSecrets(text, env, { strict: true }),
+    START_OUTPUT_TAIL_BYTES,
+  );
 }
 
 /**
@@ -890,8 +979,13 @@ export async function runApplicationOperation(
       return 0;
     }
     case 'setup':
-      await withOperationLock(preparedStateRoot(context), operation, (lock) =>
-        setup(context, lock),
+      await withOperationLock(
+        preparedStateRoot(context),
+        operation,
+        async (lock) => {
+          const report = await setup(context, lock);
+          printOnboardingUrl(context, report.onboardingUrl);
+        },
       );
       return 0;
     case 'recover':

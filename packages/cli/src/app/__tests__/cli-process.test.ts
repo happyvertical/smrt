@@ -108,6 +108,42 @@ describe('smrt app dev/build/vite', () => {
     expect(JSON.parse(version.stdout).args).toEqual(['--version']);
   });
 
+  it('binds dev to the loopback host and port the onboarding URL names (#3410 item 3)', () => {
+    const app = application();
+    const environment: NodeJS.ProcessEnv = { ...process.env };
+    delete environment.PORT;
+    const args = (argv: string[], env = environment) => {
+      const result = smrt(app, argv, env);
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(result.stdout).args;
+    };
+    // Vite's own default is `localhost`, which resolves to [::1] first.
+    expect(args(['dev'])).toEqual(['dev', '--host', '127.0.0.1']);
+    expect(
+      args(['dev', '--strictPort'], { ...environment, PORT: '6123' }),
+    ).toEqual(['dev', '--strictPort', '--host', '127.0.0.1', '--port', '6123']);
+    // PORT from the app's .env, like HOST/PORT in the template's .env.example.
+    writeFileSync(join(app, '.env'), 'PORT=6124\n');
+    expect(args(['dev'])).toEqual([
+      'dev',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '6124',
+    ]);
+    rmSync(join(app, '.env'));
+    // An explicit choice is passed through untouched.
+    expect(
+      args(['dev', '--host', '0.0.0.0', '--port=7000'], {
+        ...environment,
+        PORT: '6123',
+      }),
+    ).toEqual(['dev', '--host', '0.0.0.0', '--port=7000']);
+    expect(args(['dev', '--host=::1'])).toEqual(['dev', '--host=::1']);
+    // `smrt app vite` stays verbatim.
+    expect(args(['vite', 'dev'])).toEqual(['dev']);
+  });
+
   it('validates ./mcp-apps before building and stops on findings', () => {
     const app = application();
     const plain = smrt(app, ['build', '--mode', 'production']);

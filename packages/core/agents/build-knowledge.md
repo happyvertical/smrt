@@ -101,6 +101,13 @@ retains legacy filename inference. Vitest selects dev mode explicitly, so tests
 never replace a production `dist/manifest.json`. Relative output directories are
 resolved against the builder's project root.
 
+With `svelteKit.enabled`, `smrtPlugin()`'s transform prepends
+`import './smrt-register.js';` to the configured config module
+(`<configPath>/<configFileName>`, `src/vite-plugin/sveltekit-register-injection.ts`)
+once the register module exists, on the same first line so line numbers hold.
+Apps therefore never hand-write the guarded registration import (#3416); a
+config module that still has it imports the same module twice, harmlessly.
+
 Tracked `src/lib/server/smrt-register.ts` belongs to SvelteKit config/type
 generation. Generic library builds consume it but do not cache or restore it
 as an output; otherwise a concurrent config producer's bytes can be replayed

@@ -364,6 +364,22 @@ export default {
 };
 ```
 
+### Database precedence
+
+Every `db:*` command resolves its database once, at startup:
+
+1. `packages.cli.database.url` from any config layer — an explicit project
+   setting always wins, so a stray shell `DATABASE_URL` never retargets it.
+2. `DATABASE_URL`, with the engine from the config's `database.type`, else
+   `DATABASE_TYPE` (`sqlite` | `postgres`), else the URL scheme
+   (`postgres://` / `postgresql://` → postgres, anything else sqlite). An
+   unsupported `DATABASE_TYPE` disables this step with a warning.
+3. The `:memory:` default, which schema commands refuse.
+
+`smrt app setup` and `smrt app migrate` hand `smrt db:migrate` the profile's
+database through step 2, so an application does not forward
+`DATABASE_URL` in its own config.
+
 ### Entry Point Discovery
 
 The CLI loads s-m-r-t objects from your project entry point:

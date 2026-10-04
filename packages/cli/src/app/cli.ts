@@ -7,8 +7,9 @@
  */
 
 import { resolve } from 'node:path';
-import { redactSecrets } from './errors.js';
+import { ApplicationStartError, boundedTail, redactSecrets } from './errors.js';
 import {
+  devServerArguments,
   launchVite,
   prepareMigration,
   runWorker,
@@ -18,6 +19,7 @@ import {
   APP_OPERATIONS,
   type AppOperation,
   runApplicationOperation,
+  START_OUTPUT_TAIL_BYTES,
 } from './operations.js';
 import {
   type AppCommandDependencies,
@@ -27,6 +29,7 @@ import {
   loadSourceEnvironment,
   resolveContextApplicationId,
 } from './runtime.js';
+import { runTokenOperation } from './tokens.js';
 
 /** Recovery line carried by every error envelope. */
 export const APP_RECOVERY =
@@ -46,6 +49,8 @@ export const APP_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
   'export [path]': 'Write a logical, asset-aware export bundle',
   'import <path>': 'Import a logical export bundle into an empty application',
   migrate: 'Prepare storage custody and run smrt db:migrate under the lock',
+  'token [list|revoke <id>] [--scopes ...]':
+    'Local: issue, list, or revoke a scoped bearer token for a local MCP client',
   'worker [task|schedule]': 'Deployed: run the task or schedule worker',
   'dev [...vite args]': "Run the application's Vite dev server",
   'build [...vite args]':
@@ -71,6 +76,13 @@ export interface AppErrorEnvelope {
   /** Stable runtime code when the failure carries one (e.g. `migration_failed`). */
   runtimeCode?: string;
   message: string;
+  /**
+   * `start` only: the redacted, bounded (≤ 8 KiB) tail of the web process's
+   * stdout/stderr when it never proved readiness.
+   */
+  output?: string;
+  /** `start` only: the private (0600) log that `output` was read from. */
+  logFile?: string;
   recovery: string;
   secretValuesIncluded: false;
 }
@@ -91,6 +103,19 @@ export function errorEnvelope(error: unknown): AppErrorEnvelope {
     message: redactSecrets(
       error instanceof Error ? error.message : 'Application operation failed.',
     ),
+    ...(error instanceof ApplicationStartError
+      ? {
+          // Redacted against the child's environment when captured; again
+          // here against this process's, like every other message.
+          // Markers are opaque to this pass and the result is re-bounded,
+          // so it can neither corrupt nor grow the captured tail.
+          output: boundedTail(
+            redactSecrets(error.output, process.env, { strict: true }),
+            START_OUTPUT_TAIL_BYTES,
+          ),
+          logFile: error.logFile,
+        }
+      : {}),
     recovery: APP_RECOVERY,
     secretValuesIncluded: false,
   };
@@ -108,6 +133,7 @@ export function renderAppHelp(): string {
 const ENV_FILE_OPERATIONS = new Set<string>([
   ...APP_OPERATIONS,
   'migrate',
+  'token',
   'dev',
   'build',
   'vite',
@@ -126,6 +152,12 @@ export async function runAppCommand(
   const io: AppCommandIo = {
     stdout: options.io?.stdout ?? ((text) => void process.stdout.write(text)),
     stderr: options.io?.stderr ?? ((text) => void process.stderr.write(text)),
+    // The onboarding URL is a bearer token: show it only on a real terminal.
+    operatorTerminal: options.io
+      ? options.io.operatorTerminal
+      : process.stderr.isTTY && process.stdout.isTTY
+        ? (text) => void process.stderr.write(text)
+        : undefined,
   };
   const operation = argv[0] || 'doctor';
   const rawArgs = argv.slice(1);
@@ -150,7 +182,11 @@ export async function runAppCommand(
       }
       return launchVite(
         context,
-        operation === 'vite' ? args : [operation, ...args],
+        operation === 'vite'
+          ? args
+          : operation === 'dev'
+            ? ['dev', ...devServerArguments(args)]
+            : [operation, ...args],
       );
     }
     const deps: AppCommandDependencies = {
@@ -165,6 +201,7 @@ export async function runAppCommand(
     };
     if (operation === 'migrate') return await prepareMigration(context);
     if (operation === 'worker') return await runWorker(context, args);
+    if (operation === 'token') return await runTokenOperation(context, args);
     if (!(APP_OPERATIONS as readonly string[]).includes(operation)) {
       throw new Error(`Unknown app operation: ${operation}`);
     }

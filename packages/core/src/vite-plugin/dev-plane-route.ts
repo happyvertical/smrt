@@ -15,7 +15,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
-import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
+import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /** Whether `@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer. */
@@ -64,7 +64,9 @@ export function generateDevPlaneRoute(
   writeFileSync(
     filePath,
     generateDevPlaneRouteTemplate(
-      resolveSvelteKitConfigImport(projectRoot, routeDir, options),
+      generateCollectionAccessImports(projectRoot, routeDir, options, [
+        'getSmrtConfig',
+      ]),
     ),
     'utf-8',
   );
@@ -72,7 +74,9 @@ export function generateDevPlaneRoute(
   return true;
 }
 
-function generateDevPlaneRouteTemplate(configImport: string): string {
+function generateDevPlaneRouteTemplate(
+  collectionAccessImports: string,
+): string {
   return `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 //
@@ -85,7 +89,7 @@ import { dev } from '$app/environment';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createDevPlane, type DevPlane } from '@happyvertical/smrt-dev-mcp/dev-plane';
-import { getSmrtConfig } from '${configImport}';
+${collectionAccessImports}
 
 let plane: DevPlane | null = null;
 

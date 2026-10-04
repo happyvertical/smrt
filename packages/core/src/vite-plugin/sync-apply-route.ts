@@ -25,7 +25,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
-import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
+import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 import { isCollectionManifestClass } from './web-collections.js';
 
@@ -195,7 +195,7 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
  */
 export function generateSyncApplyRouteTemplate(
   targets: SyncTargetSpec[],
-  configImport: string,
+  collectionAccessImports: string,
 ): string {
   const anyTenantScoped = targets.some((target) => target.tenantScoped);
 
@@ -231,8 +231,8 @@ import {
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
 import { json } from '@sveltejs/kit';
-import { getCollection } from '${configImport}';
 import type { RequestHandler } from './$types';
+${collectionAccessImports}
 ${tenantHelper}
 interface SyncTargetConfig {
   /** Manifest registry key (may be package-qualified), as CRUD routes use. */
@@ -381,7 +381,9 @@ export function generateSyncApplyRoute(
     routePath,
     generateSyncApplyRouteTemplate(
       targets,
-      resolveSvelteKitConfigImport(projectRoot, routeDir, options),
+      generateCollectionAccessImports(projectRoot, routeDir, options, [
+        'getCollection',
+      ]),
     ),
     'utf-8',
   );

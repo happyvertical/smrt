@@ -2,7 +2,7 @@ import { assertOperationPermission } from '@happyvertical/smrt-users';
 import { fail } from '@sveltejs/kit';
 
 import type { Item } from '$lib/objects/Item';
-import { getCollection, getSmrtConfig } from '$lib/server/smrt';
+import { runtime } from '$lib/server/smrt';
 import type { Actions, PageServerLoad } from './$types';
 
 const READ_PERMISSION = 'items.read';
@@ -38,7 +38,7 @@ export const load: PageServerLoad = async ({ depends, locals }) => {
   }
 
   try {
-    const items = await getCollection<Item>('Item');
+    const items = await runtime.getCollection<Item>('Item');
     const rows = await items.list({
       orderBy: 'created_at DESC',
       limit: 50,
@@ -72,7 +72,7 @@ export const actions: Actions = {
     }
 
     const decision = await assertOperationPermission({
-      ...getSmrtConfig('Item'),
+      ...runtime.classOptions('Item'),
       action: 'create',
       collection: 'items',
       onDeny: 'return',
@@ -91,7 +91,7 @@ export const actions: Actions = {
     }
 
     try {
-      const items = await getCollection<Item>('Item');
+      const items = await runtime.getCollection<Item>('Item');
       await items.create({ title });
       return { created: title };
     } catch (error) {

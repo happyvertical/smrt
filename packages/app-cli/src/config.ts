@@ -72,6 +72,24 @@ export interface CliConfigContext {
 
 const DEFAULT_LOCAL_SERVER = 'http://localhost:5173';
 
+/**
+ * Validate a same-server MCP endpoint path (default `/api/mcp`): absolute,
+ * with no scheme-relative `//`, backslash, query or fragment.
+ */
+export function resolveMcpPath(value: string | undefined): string {
+  const path = value ?? '/api/mcp';
+  if (
+    typeof path !== 'string' ||
+    !path.startsWith('/') ||
+    path.startsWith('//') ||
+    path.includes('\\') ||
+    path.includes('?') ||
+    path.includes('#')
+  )
+    throw new TypeError('mcpPath must be a same-server absolute path.');
+  return path;
+}
+
 /** Enforce the executable-safe server URL policy without echoing URL values. */
 export function assertSecureServerUrl(value: string): void {
   let url: URL;
