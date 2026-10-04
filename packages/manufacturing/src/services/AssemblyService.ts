@@ -26,7 +26,11 @@
  * @packageDocumentation
  */
 
-import { type DatabaseConfig, ValidationError } from '@happyvertical/smrt-core';
+import {
+  type DatabaseConfig,
+  resolveDatabase,
+  ValidationError,
+} from '@happyvertical/smrt-core';
 import {
   ProductCollection,
   SkuCollection,
@@ -179,11 +183,15 @@ export class AssemblyService {
   static async create(
     options: AssemblyServiceOptions,
   ): Promise<AssemblyService> {
+    // Resolve once so every collection shares one connection: separate
+    // `create` calls with a config object such as `:memory:` would each open
+    // their own database.
+    const db = (await resolveDatabase(options.db)) as unknown as DatabaseConfig;
     const [products, skus, boms, lines] = await Promise.all([
-      ProductCollection.create({ db: options.db }),
-      SkuCollection.create({ db: options.db }),
-      BillOfMaterialsCollection.create({ db: options.db }),
-      BomLineCollection.create({ db: options.db }),
+      ProductCollection.create({ db }),
+      SkuCollection.create({ db }),
+      BillOfMaterialsCollection.create({ db }),
+      BomLineCollection.create({ db }),
     ]);
     return new AssemblyService(products, skus, boms, lines);
   }
