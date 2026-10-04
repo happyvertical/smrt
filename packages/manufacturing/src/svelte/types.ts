@@ -13,7 +13,6 @@ import type {
 } from '../services/AssemblyService.js';
 import { M } from './i18n.js';
 
-
 /** One row of `OperationList`; an `Operation` satisfies it. */
 export interface OperationView {
   /** The `Operation` id. */

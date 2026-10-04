@@ -8,7 +8,13 @@ import { describe, expect, it } from 'vitest';
 import { MANUFACTURING_MODULE_META, MANUFACTURING_UI_SLOTS } from '../../ui.js';
 
 const MODULE = '@happyvertical/smrt-manufacturing';
-const SLOTS = ['operation-list', 'operation-form'];
+const SLOTS = [
+  'operation-list',
+  'operation-form',
+  'assembly-list',
+  'assembly-form',
+  'bom-editor',
+];
 
 describe('manufacturing UI slots', () => {
   it('declares the slots, each keyed by its own id', () => {
@@ -33,5 +39,12 @@ describe('manufacturing UI slots', () => {
     expect(ModuleUIRegistry.get(MODULE, 'operation-form')).toBe(
       entry.OperationForm,
     );
+    expect(ModuleUIRegistry.get(MODULE, 'assembly-list')).toBe(
+      entry.AssemblyList,
+    );
+    expect(ModuleUIRegistry.get(MODULE, 'assembly-form')).toBe(
+      entry.AssemblyForm,
+    );
+    expect(ModuleUIRegistry.get(MODULE, 'bom-editor')).toBe(entry.BomEditor);
   });
 });

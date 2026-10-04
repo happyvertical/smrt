@@ -1,7 +1,6 @@
 /**
  * The view adapters and the bill-line validation behind the components.
  */
-import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import { describe, expect, it } from 'vitest';
 import type { BillStructure } from '../../services/AssemblyService.js';
 import {
@@ -180,14 +179,5 @@ describe('adapters', () => {
     );
     expect(splitLabourMinutes(95)).toEqual({ hours: 1, minutes: 35 });
     expect(splitLabourMinutes(-3)).toEqual({ hours: 0, minutes: 0 });
-  });
-});
-
-describe('module registration', () => {
-  it('registers the components with ModuleUIRegistry on import', () => {
-    for (const slot of ['assembly-list', 'assembly-form', 'bom-editor'])
-      expect(
-        ModuleUIRegistry.get('@happyvertical/smrt-manufacturing', slot),
-      ).toBeDefined();
   });
 });

@@ -69,7 +69,13 @@ export const MANUFACTURING_MODULE_META: SmrtModuleMeta = {
   description:
     'Assemblies, bills of materials, routing operations, cost and labour rollup, and production-order stock movement',
   uiSlots: MANUFACTURING_UI_SLOTS,
-  models: ['Assembly', 'BillOfMaterials', 'BomLine', 'Operation', 'RoutingStep'],
+  models: [
+    'Assembly',
+    'BillOfMaterials',
+    'BomLine',
+    'Operation',
+    'RoutingStep',
+  ],
   collections: [
     'AssemblyCollection',
     'BillOfMaterialsCollection',
