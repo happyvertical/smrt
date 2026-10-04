@@ -64,3 +64,14 @@ Set `QUOTE_EVIDENCE_DIR` and `CI_TEST_TMPDIR` to an owned evidence directory out
 Invalid or unsafe display amounts/scales render localized unavailable text.
 Strict money helpers continue to reject malformed data; presentation recovery
 does not validate or authorize submitted money.
+
+The `attachments` snippet renders outside the editor form so an Assets
+`AttachmentPanel`/`AttachmentUpload` keeps its own multipart action and request
+identity. The attachment region remains disabled while the editor is read-only
+or busy. Use `extensions` only for controls belonging to the editor submission;
+never place another form there.
+
+Composition regression: run the quote SSR lane, then the maintained quote browser
+host with `QUOTE_BROWSER_EXTENSION=packages/commerce/test-support/quote-attachments-browser.mjs`.
+It submits actual Assets upload bytes and the separate editor action with and
+without JavaScript at 390px.
