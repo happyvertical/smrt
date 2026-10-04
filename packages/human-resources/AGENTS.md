@@ -75,7 +75,8 @@ with the root database handle, never one that is already inside a transaction
 - **A stored qualification status is "the last change recorded", not
   standing, and no rule decides standing from it.** `revoke` and `suspend`
   store their status at once even when `effectiveOn` is ahead, and `reinstate` stores `valid`
-  even when it takes effect later (`expired` if the sweep had stored that).
+  even when it takes effect later (`expired` if the sweep has recorded the
+  row's lapse).
   The one sticky value is `revoked`: once stored it stays, whatever is
   recorded afterwards. Every rule decides from the dated history, as `check`
   does: the one-live-grant rule, renewal validation, `expiringWithin`, the
@@ -175,8 +176,9 @@ with the root database handle, never one that is already inside a transaction
   already recorded (granted during notice, or backdated) gets the same
   revocation in its own transaction and is stored `revoked` from the start.
 - **Expiry is computed.** A check on a date reads `expiresOn`; the stored
-  `expired` status is written only by `QualificationService.sweepExpired()`,
-  which the application calls from its own scheduler; it is bookkeeping and
+  `expired` status is written by `QualificationService.sweepExpired()`,
+  which the application calls from its own scheduler (and by reinstating a
+  row whose lapse the sweep has recorded); it is bookkeeping and
   no rule reads standing from it. The sweep decides which rows lapsed by
   date: every row whose last day is before `today`, that has no `expired`
   change yet and was not revoked on or before the day after `expiresOn`,
@@ -184,7 +186,9 @@ with the root database handle, never one that is already inside a transaction
   includes a ticket that runs out while suspended, or while a revocation is
   recorded for a later day (a notice period). Only a row stored `valid` has
   its stored status set to `expired`; a stored `suspended` or `revoked`
-  stays. `expiringWithin(days, today,
+  stays. Those rows are re-read on every run, so a scheduled sweep should
+  pass `{ since }` (a day on or before the last day its previous run
+  covered) to bound the work. `expiringWithin(days, today,
   { employedOnly })` lists rows that are good on `today` by the same dated
   evaluation as `check` (issued by `today`, not suspended or revoked on it,
   not renewed) and can keep only people employed on `today`.

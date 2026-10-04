@@ -2748,6 +2748,25 @@ export function qualificationsSuite(
           ['revoked', '2026-06-01', 'withdrawn'],
         ]);
 
+        // `since` bounds a run to rows whose last day is on or after it.
+        const older = await service.grant({
+          qualificationId: ticket.id as string,
+          profileId: uuid(),
+          issuedOn: '2026-01-01',
+          expiresOn: '2026-03-31',
+        });
+        expect(
+          await service.sweepExpired('2026-11-20', { since: '2026-04-01' }),
+        ).toEqual([]);
+        expect(
+          (
+            await service.sweepExpired('2026-11-20', { since: '2026-03-31' })
+          ).map((row) => row.id),
+        ).toEqual([older.id]);
+        await expect(
+          service.sweepExpired('2026-11-20', { since: 'last week' }),
+        ).rejects.toMatchObject({ code: 'HR_INVALID' });
+
         // Idempotent, and a later reinstatement of the lapsed row stores `expired`.
         events.length = 0;
         expect(await service.sweepExpired('2026-12-01')).toEqual([]);

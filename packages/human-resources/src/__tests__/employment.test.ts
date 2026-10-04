@@ -114,7 +114,9 @@ describe('employment (handle that refuses to begin a transaction)', () => {
         get(target, property, receiver) {
           if (property === 'beginTransaction')
             return async () => {
-              throw new NestedTransactionError();
+              throw new NestedTransactionError(
+                'A transaction is already open on this handle.',
+              );
             };
           return Reflect.get(target, property, receiver);
         },

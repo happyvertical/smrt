@@ -130,6 +130,15 @@ export interface QualificationHoldersOptions {
   employedOnly?: boolean;
 }
 
+/** Options for {@link QualificationService.sweepExpired}. */
+export interface SweepExpiredOptions {
+  /**
+   * Only look at qualifications whose last day is on or after this date.
+   * Bounds the work of a scheduled sweep; omit it to look at all history.
+   */
+  since?: IsoDate | null;
+}
+
 /** Options for {@link QualificationService.expiringWithin}. */
 export interface ExpiringQualificationsOptions {
   /** Only people with an employment term covering `today`. */
@@ -424,8 +433,9 @@ function longestLasting(rows: readonly HeldQualification[]): HeldQualification {
  * dated history instead, including the rules that decide whether a
  * qualification may be suspended, reinstated, revoked or renewed. A stored
  * `revoked` is final: later changes to such a row are change rows only. The
- * stored `expired` status is written only by
- * {@link QualificationService.sweepExpired}.
+ * stored `expired` status is written by
+ * {@link QualificationService.sweepExpired}, and by a reinstatement of a row
+ * whose lapse the sweep has recorded.
  */
 export class QualificationService extends HrService {
   // ── Definitions ──────────────────────────────────────────────────────────
@@ -608,7 +618,7 @@ export class QualificationService extends HrService {
    * (`employment-ended`); `held-qualification.renewed` and
    * `held-qualification.revoked` are both raised.
    *
-   * @throws HrError `HR_STATUS_TRANSITION` when suspended on `issuedOn` (reinstate it first); `HR_ALREADY_HELD` when the person holds another grant outside this chain that is not revoked on or before `issuedOn`; `HR_INVALID` for a row revoked on or before `issuedOn`, an already renewed row, or an `issuedOn` before the row's own or before its latest suspension or reinstatement; `HR_NOT_FOUND`
+   * @throws HrError `HR_STATUS_TRANSITION` when suspended on `issuedOn` (reinstate it first); `HR_ALREADY_HELD` when the person holds another grant outside this chain that is not revoked on or before `issuedOn` and starts before the day this renewal is cut off; `HR_INVALID` for a row revoked on or before `issuedOn`, an already renewed row, or an `issuedOn` before the row's own or before its latest suspension or reinstatement; `HR_NOT_FOUND`
    */
   async renew(
     heldQualificationId: string,
@@ -748,8 +758,9 @@ export class QualificationService extends HrService {
   /**
    * Lift a suspension from `effectiveOn`, which follows the same date rule as
    * {@link suspend}. The chain must be suspended on that day by its dated
-   * history, and not yet revoked. The stored status becomes `valid` (or stays
-   * `revoked` or `expired` when that was stored).
+   * history, and not yet revoked. The stored status becomes `valid`, or
+   * `expired` when the sweep has recorded the row's lapse; a stored `revoked`
+   * stays.
    *
    * @throws HrError `HR_INVALID` for a row that was renewed, a date before the suspension or a bad input; `HR_STATUS_TRANSITION` unless suspended on `effectiveOn`; `HR_NOT_FOUND`
    */
@@ -837,16 +848,29 @@ export class QualificationService extends HrService {
    * it was revoked. The stored status becomes `expired` only on a row stored
    * `valid`; a stored `suspended` or `revoked` stays as it is.
    *
+   * Every run re-reads the lapsed rows stored `suspended` or `revoked`, a set
+   * that only grows with a tenant's history. Pass `since` (a day on or before
+   * the last day the previous run covered) to look only at rows whose last
+   * day is on or after it.
+   *
    * Emits `held-qualification.expired`, and returns the row, only for
    * qualifications that were not renewed.
+   *
+   * @throws HrError `HR_INVALID` for a bad `today` or `since`
    */
-  async sweepExpired(today: IsoDate): Promise<HeldQualification[]> {
+  async sweepExpired(
+    today: IsoDate,
+    options: SweepExpiredOptions = {},
+  ): Promise<HeldQualification[]> {
     assertIsoDate('today', today);
+    const since =
+      options?.since == null ? null : assertIsoDate('since', options.since);
     const ids = await this.transact(async (db, queue) => {
       const candidates = (
         await this.rows(db, {
           status: ['valid', 'suspended', 'revoked'],
           'expiresOn <': today,
+          ...(since === null ? {} : { 'expiresOn >=': since }),
         })
       ).filter((row) => row.expiresOn != null);
       const changes = await this.changesByHeld(db, candidates);
