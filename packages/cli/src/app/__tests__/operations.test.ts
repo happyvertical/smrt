@@ -762,6 +762,12 @@ describe('smrt app backup', () => {
       'Backup destination must remain outside the source tree.',
     );
     expect(existsSync(join(fixture.app, 'backup'))).toBe(false);
+    const nestedStorageDestination = join(fixture.data, 'backup');
+    expect(await fixture.run(['backup', nestedStorageDestination])).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      'Backup destination must remain outside local storage.',
+    );
+    expect(existsSync(nestedStorageDestination)).toBe(false);
   });
 
   it('preserves a destination created by a contender before ownership is acquired', async () => {
@@ -793,7 +799,7 @@ describe('smrt app backup', () => {
     expect(readFileSync(marker, 'utf8')).toBe('preserve me');
   });
 
-  it('removes its owned destination when copying a source entry fails', async () => {
+  it('preserves its partial destination and reports recovery when copying fails', async () => {
     const fixture = makeFixture();
     await fixture.run(['setup']);
     const unreadable = join(fixture.data, 'unreadable');
@@ -802,8 +808,13 @@ describe('smrt app backup', () => {
     chmodSync(unreadable, 0o000);
 
     expect(await fixture.run(['backup', destination])).toBe(1);
-    expect(existsSync(destination)).toBe(false);
+    expect(existsSync(destination)).toBe(true);
+    expect(fixture.stderrJson().message).toBe(
+      `Backup copy failed; destination preserved at ${destination}`,
+    );
+    expect(statSync(destination).mode & 0o777).toBe(0o700);
     expect(existsSync(unreadable)).toBe(true);
+    expectNoLocks(fixture);
   });
 
   it('refuses while the application writer is live and on deployed profiles', async () => {
