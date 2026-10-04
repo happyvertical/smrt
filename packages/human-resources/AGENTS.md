@@ -20,14 +20,19 @@ logins or permissions, and no identity or contact details.
 application subclass may save its own added fields; see "Extending
 Employment"). Both are
 constructed from a trusted `{ tenantId, profileId }` actor the application has
-already authorized, and both take an optional `onEvent` hook.
+already authorized, and both take an optional `onEvent` hook. Construct them
+with the root database handle, never one that is already inside a transaction
+(see "Events need the root handle").
 
 ## Invariants
 
 - **Sensitive and closed.** Every model is `@TenantScoped({ mode: 'required' })`,
   `sensitive: true`, with `api` / `mcp` / `cli` set to `{ include: [] }`.
   `save()` throws outside a service (`src/write.ts`) and `delete()` always
-  throws. A subclass must restate the closed surface: `@smrt` exposure is not
+  throws. Services insert rows only through `insertHr()` in `src/write.ts`,
+  which uses the model's public constructor, `initialize()` and
+  `requireInsertOnSave()`; never reach into a collection's protected
+  `createUnsaved()`. A subclass must restate the closed surface: `@smrt` exposure is not
   inherited, and an empty `@smrt()` exposes everything.
 - **Collections are closed too.** Collection classes are registered like
   models, so each of the six carries
@@ -62,27 +67,61 @@ already authorized, and both take an optional `onEvent` hook.
   `HR_INVALID`.
 - **History is append-only.** Changes are new rows. A term is closed once. A
   renewal is a new `HeldQualification` pointing at the old one through
-  `renewalOfId`. A revoked qualification never changes.
+  `renewalOfId`. A revoked qualification never changes; an earlier cutoff for
+  one (see "Qualification scope") is a further change row, never an edit.
+- **A stored qualification status is "the last change recorded", not
+  standing.** `revoke` and `suspend` store their status at once even when
+  `effectiveOn` is ahead, and `reinstate` stores `valid` even when it takes
+  effect later. Every rule that asks whether a qualification is held decides
+  from the dated history, as `check` does: the one-live-grant rule, renewal
+  validation, `expiringWithin`, and the employment-end cutoff. Only
+  `suspend` / `reinstate` / `revoke` read the stored status, to validate the
+  next transition on the latest row, where it equals the state after every
+  recorded change.
 - **A term holds its own changes.** `end` rejects an `endedOn` earlier than a
   position, worker-type or leave change recorded in the open term, and
   `rehire` a start before one, so replay (`check().onLeave`, `asOf`) never
   picks up a change dated outside its term. Login links are not replayed and
   are not part of this rule.
-- **One live employment per login.** `hire`, `rehire` and `linkLogin` reject a `userId`
-  already linked to another employment whose stored status is not `ended` in
-  the tenant; `findByUser` still fails closed on an ambiguous match as a
-  backstop. `findByUser(userId)` goes by the stored status;
-  `findByUser(userId, on)` goes by terms covering `on`, whatever the status,
-  and is what a host that records end dates ahead of time must call. A login
-  can be linked to a second employment while the first is on notice, so both
-  may cover a date: the dated lookup then returns null.
+- **A login is exclusive to the employment that stores it.** `hire`, `rehire`
+  and `linkLogin` reject (`HR_INVALID`) a `userId` stored on any other
+  employment in the tenant, whatever that employment's status: an ended
+  employment keeps its login through its notice period and after, until
+  `unlinkLogin` (which works on an ended employment) clears it. So two
+  employments never share a login through the service, and neither lookup
+  can be ambiguous; `findByUser` still fails closed on an ambiguous match as
+  a backstop for rows written some other way. `findByUser(userId)` goes by
+  the stored status; `findByUser(userId, on)` goes by terms covering `on`,
+  whatever the status, and is what a host that records end dates ahead of
+  time must call.
 - **A renewal chain shares its standing.** `check`, `holders` and
   `listForProfile` treat a row as not good on a date when a later row in its
   chain is suspended or revoked on that date. `suspend`, `reinstate` and
   `revoke` act on the latest row only (`HR_INVALID` on a row that was
-  renewed). `renew` rejects a suspended row (`HR_STATUS_TRANSITION`: reinstate
-  first, or the renewal would lift the suspension) and a row whose person
-  holds another live row outside the chain (`HR_ALREADY_HELD`).
+  renewed), and the change belongs to the chain: `effectiveOn` may be any
+  date from the chain's first `issuedOn` onward, not before the chain's
+  latest suspension, reinstatement or revocation (nor before an `expired`
+  change the sweep stored on that row). It may precede the latest row's own
+  `issuedOn`. That is how a ticket in force today is withdrawn after its
+  renewal was recorded ahead of time: the earlier row stops passing from
+  `effectiveOn`, and the renewal does not restore standing when its issue
+  date arrives (revoked from issue, or suspended from issue until
+  reinstated). `listForProfile` reports the status of the latest row issued
+  by the date, so it agrees with `check` instead of answering
+  `not-yet-issued`.
+- **A renewal is validated by date.** `renew` rejects an `issuedOn` earlier
+  than the row's own, or earlier than its latest suspension, reinstatement or
+  revocation (`HR_INVALID`: the renewal would answer for dates the history
+  says were suspended); a row suspended on `issuedOn` by replay
+  (`HR_STATUS_TRANSITION`: reinstate first); a row with any revocation
+  recorded (`HR_INVALID`); and a person who holds another chain not revoked
+  on or before `issuedOn` (`HR_ALREADY_HELD`; only rows written outside the
+  service can get there).
+- **One live grant, by date.** `grant` is refused (`HR_ALREADY_HELD`) unless
+  every chain the person already holds of that qualification is revoked
+  effective on or before the new `issuedOn`. A revocation recorded for a
+  later date does not free an earlier issue date, and a lapsed ticket, swept
+  or not, is renewed instead of granted again.
 - **Verification is not a status.** `verify` sets `verifiedByProfileId` and
   `verifiedAt` (and optionally the document) on a row that is not revoked; it
   writes no change row and raises no event.
@@ -93,13 +132,34 @@ already authorized, and both take an optional `onEvent` hook.
   change of employment. An `employment`-scoped one carries `employmentId` and
   is revoked, with reason `employment-ended`, in the transaction that ends the
   employment. The revocation is effective the day after `endedOn`, so the
-  qualification is still good on the last day employed.
+  qualification is still good on the last day employed. The cutoff is the
+  earliest one, decided by date (`revokeEmploymentQualifications`): every row
+  of the employment gets it unless a revocation effective on or before it is
+  already recorded. A row already stored `revoked` for a later date gets the
+  change row only (a revoked row is never saved again) and a
+  `held-qualification.revoked` event with the earlier date; replay takes the
+  earliest revocation. A grant or renewal dated inside a term whose end is
+  already recorded (granted during notice, or backdated) gets the same
+  revocation in its own transaction and is stored `revoked` from the start.
 - **Expiry is computed.** A check on a date reads `expiresOn`; the stored
   `expired` status is written only by `QualificationService.sweepExpired()`,
-  which the application calls from its own scheduler. `grant` goes by the
-  stored status, so a lapsed row nobody swept is renewed, not granted again.
-  `expiringWithin(days, today, { employedOnly })` can keep only people
-  employed on `today`.
+  which the application calls from its own scheduler; it is bookkeeping and
+  no rule reads standing from it. `expiringWithin(days, today,
+  { employedOnly })` lists rows that are good on `today` by the same dated
+  evaluation as `check` (issued by `today`, not suspended or revoked on it,
+  not renewed) and can keep only people employed on `today`.
+- **Events need the root handle.** A mutation opens and commits its own
+  transaction, then delivers its events. `@happyvertical/sql` has no
+  after-commit hook, so on a handle that is already inside a transaction
+  (the `tx` of `db.transaction()`, or a `beginTransaction()` handle) the
+  commit would be the caller's and an outer rollback could follow a delivered
+  event. `HrService.transact` therefore refuses a mutation on such a handle
+  with `HR_TRANSACTION_UNSUPPORTED` before writing anything. It recognises
+  one by the absence of `beginTransaction`, which every root handle the SDK
+  ships has and no transaction-scoped one does (the SDK has no explicit
+  marker). Reads work on any handle. Tests that isolate with
+  `createIsolatedTestDb*()` must hand the services `baseDb`, not the
+  transaction handle.
 - **Not a permission system.** A qualification says what a person may do in
   the real world. Who may use the software stays with `smrt-users`.
 - **People are `smrt-profiles:Profile` ids** in fields named `profileId` or

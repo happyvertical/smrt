@@ -23,6 +23,13 @@ export type HrEventQueue = (event: HrEvent) => void;
  * reads, serialized transactional writes, and after-commit event delivery.
  * Applications authorize the actor before constructing a service. Reads and
  * writes reject conflicting ambient tenancy.
+ *
+ * Construct a service with the root database handle. A mutation opens and
+ * commits its own transaction and then delivers its events; on a handle that
+ * is already inside a transaction (the `tx` of `db.transaction()`, or a
+ * `beginTransaction()` handle) the commit would belong to the caller, so a
+ * mutation is refused with `HR_TRANSACTION_UNSUPPORTED` before anything is
+ * written. Reads work on any handle.
  */
 export abstract class HrService {
   protected readonly actor: Readonly<HrActor>;
@@ -89,10 +96,21 @@ export abstract class HrService {
   /**
    * Run a mutation in one transaction, serialized per tenant, then deliver the
    * events it queued. Nothing is delivered when the transaction fails.
+   *
+   * @throws HrError `HR_TRANSACTION_UNSUPPORTED` when the service was constructed with a handle that is already inside a transaction
    */
   protected async transact<T>(
     run: (db: DatabaseInterface, queue: HrEventQueue) => Promise<T>,
   ): Promise<T> {
+    // `@happyvertical/sql` has no after-commit hook and no marker for "inside
+    // a transaction". Every root handle it ships can begin a transaction of
+    // its own and no transaction-scoped handle can, so that is the test; a
+    // handle without `beginTransaction` is refused rather than trusted.
+    if (typeof this.db.beginTransaction !== 'function')
+      throw new HrError(
+        'HR_TRANSACTION_UNSUPPORTED',
+        'HR services must be constructed with the root database handle, not one that is already inside a transaction: events are delivered when the service commits its own transaction.',
+      );
     const events: HrEvent[] = [];
     const result = await this.scope(() =>
       withEmbeddedWriteTransaction(

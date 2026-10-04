@@ -18,6 +18,7 @@ import {
   Qualification,
   QualificationCollection,
 } from '../index.js';
+import * as write from '../write.js';
 
 const PACKAGE = '@happyvertical/smrt-human-resources';
 const MODELS = [
@@ -76,6 +77,17 @@ describe('HR records are sensitive by default', () => {
         expect(isApiActionEnabledForObject(name, action), action).toBe(false);
     });
   }
+
+  it('inserts rows through one helper built on public core APIs, with no route into collection internals', () => {
+    // `draftHr` used to cast its way to the collection's protected
+    // `createUnsaved()`; the only insert path is now `insertHr`.
+    expect(Object.keys(write).sort()).toEqual([
+      'assertHrWrite',
+      'hasHrWrite',
+      'insertHr',
+      'persistHr',
+    ]);
+  });
 
   it('generates no MCP tool for any employment or qualification model or collection', async () => {
     const tools = await new MCPGenerator({}).generateTools();

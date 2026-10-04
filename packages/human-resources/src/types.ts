@@ -157,15 +157,24 @@ export type HrEvent =
 
 /**
  * Event hook an application provides to react to HR changes (reminders are the
- * application's business). Called after the change commits. Delivery is
- * best-effort: a throwing handler is logged and swallowed, so it never rolls
- * back a persisted change.
+ * application's business). Called after the service's own transaction
+ * commits. Delivery is best-effort: a throwing handler is logged and
+ * swallowed, so it never rolls back a persisted change.
+ *
+ * "After commit" holds because a service only mutates through the root
+ * database handle. A service constructed with a handle that is already inside
+ * a transaction refuses every mutation (`HR_TRANSACTION_UNSUPPORTED`), so an
+ * event is never delivered for rows an outer rollback could still remove.
  */
 export type HrEventHandler = (event: HrEvent) => void | Promise<void>;
 
 /** Options shared by the HR services. */
 export interface HrServiceOptions {
-  /** Optional lifecycle event hook. */
+  /**
+   * Optional lifecycle event hook, called after each mutation commits. The
+   * service must be constructed with the root database handle; see
+   * {@link HrEventHandler}.
+   */
   onEvent?: HrEventHandler;
 }
 
@@ -183,7 +192,8 @@ export type HrErrorCode =
   | 'HR_TERM_OVERLAP'
   | 'HR_QUALIFICATION_KEY_TAKEN'
   | 'HR_ALREADY_HELD'
-  | 'HR_QUALIFICATION_SCOPE';
+  | 'HR_QUALIFICATION_SCOPE'
+  | 'HR_TRANSACTION_UNSUPPORTED';
 
 /** Base error for this package. `code` is stable and safe to branch on. */
 export class HrError extends Error {

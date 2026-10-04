@@ -11,13 +11,13 @@ import {
   type IsoDate,
   type WorkerType,
 } from '../types.js';
-import { draftHr, persistHr } from '../write.js';
+import { insertHr, persistHr } from '../write.js';
 import {
-  type Employment,
-  type EmploymentChange,
+  Employment,
+  EmploymentChange,
   EmploymentChangeCollection,
   EmploymentCollection,
-  type EmploymentTerm,
+  EmploymentTerm,
   EmploymentTermCollection,
 } from './models.js';
 import { employmentsOn } from './queries.js';
@@ -275,19 +275,17 @@ export class EmploymentService extends HrService {
         where: { tenantId: this.actor.tenantId, employmentId },
       })
     ).reduce((max, row) => Math.max(max, createdTime(row)), 0);
-    await persistHr(
-      await draftHr(changes, {
-        tenantId: this.actor.tenantId,
-        employmentId,
-        kind: change.kind,
-        effectiveOn: change.effectiveOn,
-        fromValue: change.fromValue ?? null,
-        toValue: change.toValue ?? null,
-        note: change.note ?? '',
-        actorProfileId: this.actor.profileId,
-        created_at: new Date(Math.max(Date.now(), latest + 1)),
-      }),
-    );
+    await insertHr(EmploymentChange, db, {
+      tenantId: this.actor.tenantId,
+      employmentId,
+      kind: change.kind,
+      effectiveOn: change.effectiveOn,
+      fromValue: change.fromValue ?? null,
+      toValue: change.toValue ?? null,
+      note: change.note ?? '',
+      actorProfileId: this.actor.profileId,
+      created_at: new Date(Math.max(Date.now(), latest + 1)),
+    });
   }
 
   /**
@@ -336,9 +334,11 @@ export class EmploymentService extends HrService {
   }
 
   /**
-   * A login resolves to at most one employment whose stored status is not
-   * `ended`. Two employments can still share a login on a date when one of
-   * them is in a notice period; `findByUser(userId, on)` then answers null.
+   * A login is exclusive to the employment that stores it until it is
+   * explicitly unlinked there, whatever that employment's stored status. An
+   * ended employment keeps its login through its notice period and after, so
+   * two employments never share one and `findByUser(userId, on)` cannot be
+   * ambiguous through the service.
    */
   private async loginFree(
     db: DatabaseInterface,
@@ -349,14 +349,10 @@ export class EmploymentService extends HrService {
     const linked = await employments.list({
       where: { tenantId: this.actor.tenantId, userId },
     });
-    if (
-      linked.some(
-        (other) => other.status !== 'ended' && other.id !== employmentId,
-      )
-    )
+    if (linked.some((other) => other.id !== employmentId))
       throw new HrError(
         'HR_INVALID',
-        'This login is already linked to another employment that has not ended; unlink it there first.',
+        'This login is already linked to another employment; unlink it there first.',
       );
   }
 
@@ -374,7 +370,7 @@ export class EmploymentService extends HrService {
    * change. A profile has one employment per tenant, so a person who worked
    * here before is rehired instead.
    *
-   * @throws HrError `HR_ALREADY_EMPLOYED`, `HR_EMPLOYEE_NUMBER_TAKEN`, `HR_INVALID` (including a login already linked to another employment that has not ended)
+   * @throws HrError `HR_ALREADY_EMPLOYED`, `HR_EMPLOYEE_NUMBER_TAKEN`, `HR_INVALID` (including a login already linked to another employment, ended or not: unlink it there first)
    */
   async hire(input: HireInput): Promise<Employment> {
     const profileId = this.id('profileId', input?.profileId);
@@ -404,28 +400,22 @@ export class EmploymentService extends HrService {
           `Employee number '${employeeNumber}' is already used in this tenant.`,
         );
       if (userId) await this.loginFree(db, userId, null);
-      const employments = await EmploymentCollection.create({ db });
-      const employment = await persistHr(
-        await draftHr(employments, {
-          tenantId: this.actor.tenantId,
-          profileId,
-          userId,
-          employerProfileId,
-          employeeNumber,
-          workerType,
-          position,
-          status: 'active',
-        }),
-      );
+      const employment = await insertHr(Employment, db, {
+        tenantId: this.actor.tenantId,
+        profileId,
+        userId,
+        employerProfileId,
+        employeeNumber,
+        workerType,
+        position,
+        status: 'active',
+      });
       const employmentId = employment.id as string;
-      const terms = await EmploymentTermCollection.create({ db });
-      await persistHr(
-        await draftHr(terms, {
-          tenantId: this.actor.tenantId,
-          employmentId,
-          startedOn,
-        }),
-      );
+      await insertHr(EmploymentTerm, db, {
+        tenantId: this.actor.tenantId,
+        employmentId,
+        startedOn,
+      });
       await this.record(db, employmentId, {
         kind: 'hired',
         effectiveOn: startedOn,
@@ -510,9 +500,8 @@ export class EmploymentService extends HrService {
   /**
    * Rehire an ended employment: adds a term to the same row, so the
    * employment id stays stable. The new term cannot start before a position,
-   * worker-type or leave change already recorded. If the login it still
-   * stores is now linked to another employment that has not ended, unlink it
-   * here first.
+   * worker-type or leave change already recorded. The employment keeps the
+   * login it stored, which no other employment can have taken meanwhile.
    *
    * @throws HrError `HR_STATUS_TRANSITION` unless ended, `HR_TERM_OVERLAP`, `HR_INVALID`, `HR_NOT_FOUND`
    */
@@ -542,7 +531,7 @@ export class EmploymentService extends HrService {
           `A rehire must start after the previous term ended (${overlapping.endedOn ?? 'still open'}).`,
         );
       await this.notBeforeLatest(db, id, TERM_CHANGE_KINDS, startedOn);
-      // The login this employment kept may have moved to someone else since.
+      // Backstop: the service never lets a stored login be linked elsewhere.
       if (employment.userId) await this.loginFree(db, employment.userId, id);
       const from = {
         position: employment.position,
@@ -552,14 +541,11 @@ export class EmploymentService extends HrService {
       if (position !== undefined) employment.position = position;
       if (workerType !== undefined) employment.workerType = workerType;
       await persistHr(employment);
-      const terms = await EmploymentTermCollection.create({ db });
-      await persistHr(
-        await draftHr(terms, {
-          tenantId: this.actor.tenantId,
-          employmentId: id,
-          startedOn,
-        }),
-      );
+      await insertHr(EmploymentTerm, db, {
+        tenantId: this.actor.tenantId,
+        employmentId: id,
+        startedOn,
+      });
       await this.record(db, id, { kind: 'rehired', effectiveOn: startedOn });
       if (employment.position !== from.position)
         await this.record(db, id, {
@@ -800,9 +786,10 @@ export class EmploymentService extends HrService {
   /**
    * Link a login (`smrt-users:User` id) to an employment, replacing any
    * previous one. Grants nothing by itself: permissions stay with smrt-users.
-   * A login belongs to one employment that has not ended at a time.
+   * A login belongs to one employment at a time and stays with it, ended or
+   * not, until {@link unlinkLogin} clears it there.
    *
-   * @throws HrError `HR_INVALID` when already linked to this login, or to another employment that has not ended; `HR_NOT_FOUND`
+   * @throws HrError `HR_INVALID` when already linked to this login, or to another employment (unlink it there first); `HR_NOT_FOUND`
    */
   async linkLogin(
     employmentId: string,
@@ -813,7 +800,8 @@ export class EmploymentService extends HrService {
   }
 
   /**
-   * Clear an employment's login.
+   * Clear an employment's login, which frees it for another employment. Works
+   * on an ended employment too.
    *
    * @throws HrError `HR_INVALID` when no login is linked, `HR_NOT_FOUND`
    */
@@ -853,7 +841,8 @@ export class EmploymentService extends HrService {
 
   /**
    * The employment linked to a login. Fails closed: null when there is none,
-   * or when more than one matches.
+   * or when more than one matches (the service keeps a login on one
+   * employment, so that takes rows written some other way).
    *
    * With `on`, the answer comes from the dated terms: the employment linked
    * to the login that has a term covering `on`, whatever its stored status.

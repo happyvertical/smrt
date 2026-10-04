@@ -3,6 +3,8 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  Employment,
+  EmploymentChange,
   EmploymentChangeCollection,
   EmploymentCollection,
   EmploymentService,
@@ -13,11 +15,13 @@ import {
   type HrEvent,
 } from '../index.js';
 import {
+  HeldQualification,
   HeldQualificationChangeCollection,
   HeldQualificationCollection,
+  Qualification,
   QualificationCollection,
 } from '../qualifications/models.js';
-import { draftHr, persistHr } from '../write.js';
+import { insertHr, persistHr } from '../write.js';
 
 const uuid = () => crypto.randomUUID();
 
@@ -271,16 +275,13 @@ export function employmentSuite(
         // A change dated after its term, as rows written before the end-date
         // rule could hold.
         await withTenant({ tenantId: actor.tenantId }, async () => {
-          const changes = await EmploymentChangeCollection.create({ db });
-          await persistHr(
-            await draftHr(changes, {
-              tenantId: actor.tenantId,
-              employmentId: id as string,
-              kind: 'leave-started',
-              effectiveOn: '2026-09-01',
-              actorProfileId: actor.profileId,
-            }),
-          );
+          await insertHr(EmploymentChange, db, {
+            tenantId: actor.tenantId,
+            employmentId: id as string,
+            kind: 'leave-started',
+            effectiveOn: '2026-09-01',
+            actorProfileId: actor.profileId,
+          });
         });
         expect(
           await code(service.rehire(id as string, { startedOn: '2026-06-01' })),
@@ -935,10 +936,45 @@ export function employmentSuite(
         ]);
       });
 
+      it('keeps the login with a worker on notice, so nobody else can take it and lock them both out', async () => {
+        const { id, userId } = await onNotice();
+        // The end is recorded but the last day is ahead: the login stays put.
+        expect(await code(hire({ userId, startedOn: '2026-12-01' }))).toBe(
+          'HR_INVALID',
+        );
+        const second = await hire({ startedOn: '2026-12-01' });
+        expect(
+          await code(
+            service.linkLogin(second.id as string, userId, {
+              effectiveOn: '2026-12-01',
+            }),
+          ),
+        ).toBe('HR_INVALID');
+        expect((await service.get(second.id as string)).userId).toBeNull();
+        expect((await service.findByUser(userId, '2026-12-15'))?.id).toBe(id);
+
+        // Unlinking it from the employment on notice is what frees it.
+        await service.unlinkLogin(id, { effectiveOn: '2026-12-10' });
+        await service.linkLogin(second.id as string, userId, {
+          effectiveOn: '2026-12-10',
+        });
+        expect((await service.findByUser(userId, '2026-12-15'))?.id).toBe(
+          second.id,
+        );
+        expect((await service.findByUser(userId))?.id).toBe(second.id);
+      });
+
       it('fails closed by date when two employments sharing a login both cover the date', async () => {
         const { id, userId } = await onNotice();
-        // The first employment is stored as ended, so the login is free to link.
-        const second = await hire({ userId, startedOn: '2026-12-01' });
+        // The service refuses to link a login twice, so share it the way
+        // rows written some other way could: directly on the second row.
+        const second = await hire({ startedOn: '2026-12-01' });
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const employments = await EmploymentCollection.create({ db });
+          const [row] = await employments.list({ where: { id: second.id } });
+          row.userId = userId;
+          await persistHr(row);
+        });
         expect((await service.findByUser(userId, '2026-11-30'))?.id).toBe(id);
         expect(await service.findByUser(userId, '2026-12-15')).toBeNull();
         expect((await service.findByUser(userId, '2027-01-01'))?.id).toBe(
@@ -1018,16 +1054,13 @@ export function employmentSuite(
 
         // The database itself refuses a second employment for the profile.
         await expect(
-          withTenant({ tenantId: actor.tenantId }, async () => {
-            const employments = await EmploymentCollection.create({ db });
-            return persistHr(
-              await draftHr(employments, {
-                tenantId: actor.tenantId,
-                profileId: first.profileId,
-                employeeNumber: 'E-2',
-              }),
-            );
-          }),
+          withTenant({ tenantId: actor.tenantId }, () =>
+            insertHr(Employment, db, {
+              tenantId: actor.tenantId,
+              profileId: first.profileId,
+              employeeNumber: 'E-2',
+            }),
+          ),
         ).rejects.toThrow();
         expect(await service.findByEmployeeNumber('E-2')).toBeNull();
       });
@@ -1137,11 +1170,13 @@ export function employmentSuite(
           expect(await code(change.save())).toBe('HR_WRITE_FORBIDDEN');
           expect(await code(change.delete())).toBe('HR_HISTORY_IMMUTABLE');
 
-          const fresh = await draftHr(employments, {
+          const fresh = await new Employment({
+            db,
+            _skipLoad: true,
             tenantId: actor.tenantId,
             profileId: uuid(),
             employeeNumber: 'direct',
-          });
+          }).initialize();
           expect(await code(fresh.save())).toBe('HR_WRITE_FORBIDDEN');
         });
         expect(await service.get(id as string)).toMatchObject({
@@ -1242,6 +1277,71 @@ export function employmentSuite(
         expect((await service.get(id as string)).status).toBe('ended');
       });
 
+      it('refuses a mutation through a handle that is already inside a transaction, so an outer rollback never leaves an event behind', async () => {
+        const delivered: HrEvent[] = [];
+        const listen = {
+          onEvent: (event: HrEvent) => void delivered.push(event),
+        };
+        const profileId = uuid();
+        const input = {
+          profileId,
+          employeeNumber: 'TX-1',
+          startedOn: '2026-01-05',
+        };
+        const existing = await hire();
+        if (!db.transaction || !db.beginTransaction)
+          throw new Error('The test database must support transactions.');
+
+        // The `tx` of db.transaction(): the service would only complete a
+        // savepoint, and the outer work can still fail afterwards.
+        const refused: string[] = [];
+        await expect(
+          db.transaction(async (tx) => {
+            const inside = new EmploymentService(tx, actor, listen);
+            refused.push(await code(inside.hire(input)));
+            refused.push(
+              await code(
+                inside.end(existing.id as string, { endedOn: '2026-03-31' }),
+              ),
+            );
+            // Reads are fine on any handle.
+            expect((await inside.get(existing.id as string)).status).toBe(
+              'active',
+            );
+            throw new Error('outer work failed');
+          }),
+        ).rejects.toThrow('outer work failed');
+
+        // A beginTransaction() handle is the same case.
+        const handle = await db.beginTransaction();
+        try {
+          refused.push(
+            await code(
+              new EmploymentService(handle, actor, listen).hire(input),
+            ),
+          );
+        } finally {
+          await handle.rollback();
+        }
+
+        expect(refused).toEqual([
+          'HR_TRANSACTION_UNSUPPORTED',
+          'HR_TRANSACTION_UNSUPPORTED',
+          'HR_TRANSACTION_UNSUPPORTED',
+        ]);
+        expect(delivered).toEqual([]);
+        expect(await service.findByProfile(profileId)).toBeNull();
+        expect((await service.get(existing.id as string)).status).toBe(
+          'active',
+        );
+
+        // The same service on the root handle writes and delivers.
+        await new EmploymentService(db, actor, listen).hire(input);
+        expect(delivered.map((event) => event.type)).toEqual([
+          'employment.hired',
+        ]);
+      });
+
       it('raises no event for linking or unlinking a login', async () => {
         const { id } = await hire();
         events.length = 0;
@@ -1261,29 +1361,23 @@ export function employmentSuite(
         const held = await withTenant(
           { tenantId: actor.tenantId },
           async () => {
-            const definitions = await QualificationCollection.create({ db });
-            const heldRows = await HeldQualificationCollection.create({ db });
             const grant = async (
               key: string,
               scope: 'person' | 'employment',
             ) => {
-              const definition = await persistHr(
-                await draftHr(definitions, {
-                  tenantId: actor.tenantId,
-                  key,
-                  name: key,
-                  scope,
-                }),
-              );
-              return persistHr(
-                await draftHr(heldRows, {
-                  tenantId: actor.tenantId,
-                  qualificationId: definition.id as string,
-                  profileId,
-                  employmentId: scope === 'employment' ? employmentId : null,
-                  issuedOn: '2026-01-10',
-                }),
-              );
+              const definition = await insertHr(Qualification, db, {
+                tenantId: actor.tenantId,
+                key,
+                name: key,
+                scope,
+              });
+              return insertHr(HeldQualification, db, {
+                tenantId: actor.tenantId,
+                qualificationId: definition.id as string,
+                profileId,
+                employmentId: scope === 'employment' ? employmentId : null,
+                issuedOn: '2026-01-10',
+              });
             };
             return {
               site: await grant('site-induction', 'employment'),
@@ -1364,7 +1458,7 @@ export function employmentSuite(
         ]);
       });
 
-      it('links a login to one employment that has not ended at a time', async () => {
+      it('links a login to one employment at a time, until it is unlinked there', async () => {
         const userId = uuid();
         const date = { effectiveOn: '2026-02-01' };
         const first = await hire({ userId });
@@ -1386,21 +1480,53 @@ export function employmentSuite(
         });
         expect((await hire({ userId }, elsewhere)).userId).toBe(userId);
 
-        // Once the first employment ends, the login is free to move.
+        // Ending the first employment does not free the login, even once
+        // its last day has passed: it stays there until it is unlinked.
         await service.end(first.id as string, { endedOn: '2026-03-31' });
+        expect(
+          await code(
+            service.linkLogin(second.id as string, userId, {
+              effectiveOn: '2026-04-01',
+            }),
+          ),
+        ).toBe('HR_INVALID');
+        expect(await code(hire({ userId, startedOn: '2026-04-01' }))).toBe(
+          'HR_INVALID',
+        );
+        await service.unlinkLogin(first.id as string, {
+          effectiveOn: '2026-04-01',
+        });
         await service.linkLogin(second.id as string, userId, {
           effectiveOn: '2026-04-01',
         });
         expect((await service.findByUser(userId))?.id).toBe(second.id);
+
+        // An ended employment that kept its login is rehired with it.
+        const kept = uuid();
+        const third = await hire({ userId: kept });
+        await service.end(third.id as string, { endedOn: '2026-03-31' });
+        const rehired = await service.rehire(third.id as string, {
+          startedOn: '2026-06-01',
+        });
+        expect(rehired.userId).toBe(kept);
+        expect((await service.findByUser(kept, '2026-06-01'))?.id).toBe(
+          third.id,
+        );
       });
 
-      it('refuses a rehire while the old login is linked to another employment that has not ended', async () => {
+      it('refuses a rehire while the login the ended employment kept is also stored on another employment', async () => {
         const userId = uuid();
         const first = await hire({ userId });
         const second = await hire();
         await service.end(first.id as string, { endedOn: '2026-03-31' });
-        await service.linkLogin(second.id as string, userId, {
-          effectiveOn: '2026-04-01',
+        // The service never lets the kept login move without an unlink, so
+        // put it on a second row directly, as rows written some other way
+        // could hold it.
+        await withTenant({ tenantId: actor.tenantId }, async () => {
+          const employments = await EmploymentCollection.create({ db });
+          const [row] = await employments.list({ where: { id: second.id } });
+          row.userId = userId;
+          await persistHr(row);
         });
 
         // The ended employment still stores the login it had.

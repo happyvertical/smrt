@@ -1,11 +1,11 @@
-import type { SmrtObject, SmrtObjectOptions } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { HrEventQueue } from '../service-base.js';
 import type { HrActor, IsoDate } from '../types.js';
-import { persistHr } from '../write.js';
+import { insertHr, persistHr } from '../write.js';
 import {
   type HeldQualification,
   HeldQualificationChange,
+  HeldQualificationChangeCollection,
   HeldQualificationCollection,
 } from './models.js';
 
@@ -13,25 +13,18 @@ import {
 export const EMPLOYMENT_ENDED_REASON = 'employment-ended';
 
 /**
- * Insert one new HR row through the write capability. `collection.create()`
- * saves outside that capability (and so always throws for HR models), and a
- * plain first `save()` would upsert onto an existing natural key; this builds
- * the instance directly and requires a real INSERT.
- */
-export async function insertHr<T extends SmrtObject>(
-  Model: new (options: SmrtObjectOptions) => T,
-  db: DatabaseInterface,
-  values: Record<string, unknown>,
-): Promise<T> {
-  const row = await new Model({ db, _skipLoad: true, ...values }).initialize();
-  row.requireInsertOnSave();
-  return persistHr(row);
-}
-
-/**
- * Revoke every live qualification that belongs to an employment. Called by
- * EmploymentService inside the transaction that ends the employment, so the
- * two never disagree. Person-scoped qualifications are untouched.
+ * End every qualification that belongs to an employment, from `effectiveOn`
+ * (the day after the last day employed). Called by EmploymentService inside
+ * the transaction that ends the employment, so the two never disagree.
+ * Person-scoped qualifications are untouched.
+ *
+ * The decision is made from each row's dated history, not its stored status:
+ * a row gets the `employment-ended` revocation unless a revocation effective
+ * on or before `effectiveOn` is already recorded. That includes a row whose
+ * stored status is already `revoked` because a later-dated revocation was
+ * recorded; a revoked row never changes, so only the change row is appended
+ * for it, and the dated replay then treats the earliest revocation as in
+ * force. Returns the rows that were cut off.
  */
 export async function revokeEmploymentQualifications(
   db: DatabaseInterface,
@@ -41,16 +34,31 @@ export async function revokeEmploymentQualifications(
   queue: HrEventQueue,
 ): Promise<HeldQualification[]> {
   const held = await HeldQualificationCollection.create({ db });
-  const live = await held.list({
+  const rows = await held.list({
+    where: { tenantId: actor.tenantId, employmentId },
+  });
+  if (rows.length === 0) return [];
+  const changes = await HeldQualificationChangeCollection.create({ db });
+  const revokedOn = new Map<string, IsoDate>();
+  for (const change of await changes.list({
     where: {
       tenantId: actor.tenantId,
-      employmentId,
-      status: ['valid', 'suspended'],
+      heldQualificationId: rows.map((row) => row.id as string),
+      kind: 'revoked',
     },
-  });
-  for (const row of live) {
-    row.status = 'revoked';
-    await persistHr(row);
+  })) {
+    const earliest = revokedOn.get(change.heldQualificationId);
+    if (earliest === undefined || change.effectiveOn < earliest)
+      revokedOn.set(change.heldQualificationId, change.effectiveOn);
+  }
+  const cut: HeldQualification[] = [];
+  for (const row of rows) {
+    const already = revokedOn.get(row.id as string);
+    if (already !== undefined && already <= effectiveOn) continue;
+    if (row.status !== 'revoked') {
+      row.status = 'revoked';
+      await persistHr(row);
+    }
     await insertHr(HeldQualificationChange, db, {
       tenantId: actor.tenantId,
       heldQualificationId: row.id as string,
@@ -66,6 +74,7 @@ export async function revokeEmploymentQualifications(
       at: new Date(),
       byProfileId: actor.profileId,
     });
+    cut.push(row);
   }
-  return live;
+  return cut;
 }

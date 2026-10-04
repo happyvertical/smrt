@@ -99,13 +99,17 @@ const rehired = await hr.rehire(employment.id as string, {
   position, worker-type or leave change already recorded in the term, and
   `rehire` rejects a start before one.
 - The login link (`userId`) is optional, and a login belongs to one
-  employment that has not ended: `hire`, `rehire` and `linkLogin` reject a login already
-  linked to another. `findByUser(userId)` returns only an employment whose
+  employment at a time. It stays with that employment, ended or not, until
+  `unlinkLogin` clears it there: `hire`, `rehire` and `linkLogin` reject
+  (`HR_INVALID`) a login stored on any other employment, so a worker on
+  notice keeps their login and nobody else can take it. To move a login,
+  unlink it first (`unlinkLogin` works on an ended employment).
+  `findByUser(userId)` returns only an employment whose
   stored status is not `ended`, so it stops resolving as soon as an end is
   recorded. `findByUser(userId, on)` answers from the terms instead: the
   linked employment with a term covering `on`, whatever its status. A host
   that records end dates ahead of time should pass the date, or a worker on
-  notice is locked out. Both return nothing when the match is ambiguous.
+  notice is locked out.
 
 ## Qualifications
 
@@ -148,23 +152,45 @@ const after = await qualifications.check(
   fails it says why: `not-held`, `not-yet-issued`, `expired`, `suspended` or
   `revoked`.
 - Expiry is computed from the dates, so a check needs no sweep.
+- Standing is decided by date everywhere. `suspend`, `reinstate` and `revoke`
+  take an `effectiveOn` that may be ahead; the stored `status` changes at
+  once and only says what was last recorded. `check`, `holders`,
+  `listForProfile` and `expiringWithin` all answer from the dated history.
+- A person has one live grant of a qualification at a time. `grant` is
+  refused (`HR_ALREADY_HELD`) unless everything they already hold of it is
+  revoked effective on or before the new `issuedOn`: a revocation scheduled
+  for 2027 does not allow a fresh grant dated 2026, and a lapsed ticket is
+  renewed, not granted again.
 - A definition's `scope` says who a held qualification belongs to. A `person`
   qualification survives a change of employment. An `employment` one is
   revoked, with reason `employment-ended`, when that employment ends: it is
-  still good on the last day employed and revoked from the day after.
+  still good on the last day employed and revoked from the day after. That
+  cutoff always wins: it also applies to a qualification whose own revocation
+  was scheduled for a later date, and to one granted after the end was
+  recorded (during notice, or backdated), which is stored `revoked` at once
+  and passes `check` only through the last day employed.
 - A renewal is a new row, and the chain shares its standing. Suspend, reinstate
   or revoke the latest row: while it is suspended or revoked, the rows it
   renewed do not pass `check` either, and acting on a row that was already
-  renewed is rejected (`HR_INVALID`). A suspended row cannot be renewed until
-  it is reinstated (`HR_STATUS_TRANSITION`), and an old row cannot be renewed
-  while the person holds a newer grant (`HR_ALREADY_HELD`).
+  renewed is rejected (`HR_INVALID`). The change may take effect on any date
+  from the chain's first issue date, so a ticket in force today can still be
+  suspended or revoked after its renewal was recorded ahead of time: act on
+  the renewal with today's date, and the renewal does not restore standing
+  when its own issue date arrives.
+- A renewal cannot be issued before the latest suspension, reinstatement or
+  revocation of the row it renews (`HR_INVALID`), nor while that row is
+  suspended on the issue date (`HR_STATUS_TRANSITION`: reinstate it first). A
+  revoked row is never renewed; grant a new one dated on or after the
+  revocation.
 - `verify(heldQualificationId, { documentAssetId })` records the actor as
   having verified the document, now, and optionally attaches or replaces it.
   It changes no status.
 - `holders(qualificationId, on, { employedOnly: true })` lists, for example,
   the first aiders currently employed. `expiringWithin(days, today)` lists
-  what is about to lapse; `{ employedOnly: true }` keeps only people employed
-  on `today`.
+  what is about to lapse: qualifications that pass `check` on `today` (issued,
+  not suspended or revoked on that day, not already renewed) and whose last
+  day is within the window; `{ employedOnly: true }` keeps only people
+  employed on `today`.
 - A blank id is rejected with `HR_INVALID`; `check` answers `not-held`.
 - `seed(SUGGESTED_QUALIFICATIONS)` creates a few common definitions; it never
   changes ones that already exist.
@@ -179,6 +205,15 @@ Both services take an `onEvent` hook, called after the change commits:
 `held-qualification.granted`, `.renewed`, `.suspended`, `.reinstated`,
 `.revoked`, `.expired`. Delivery is best-effort; bridge it to your own event
 bus if you need more.
+
+Construct the services with your root database handle. Each mutation runs in
+its own transaction and delivers its events once that commits. A service
+built on a handle that is already inside a transaction (the `tx` passed to
+`db.transaction()`, or a `beginTransaction()` handle) could only deliver
+before the outer commit, so it refuses every mutation with
+`HR_TRANSACTION_UNSUPPORTED` and writes nothing; reads still work. An HR
+mutation therefore cannot be made atomic with other work in a caller's
+transaction.
 
 Nothing in the package runs on a schedule. Call
 `qualifications.sweepExpired(today)` from your own scheduler to record lapsed
