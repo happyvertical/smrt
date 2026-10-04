@@ -33,6 +33,7 @@ export const Q = defineMessages({
     'Preparing an estimate does not accept it or change an approved budget.',
   'commerce.quote.history': 'Revision history',
   'commerce.quote.empty_history': 'No revisions yet.',
+  'commerce.quote.unavailable': 'Amount unavailable',
   'commerce.quote.unknown': 'Unknown',
   'commerce.quote.compare': 'Revision comparison',
   'commerce.quote.before': 'Previous',

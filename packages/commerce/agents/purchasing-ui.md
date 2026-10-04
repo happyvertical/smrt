@@ -65,3 +65,7 @@ vitest.purchasing.config.ts`, owning build/typecheck/pack checks, and the shared
 quote native/hydrated browser harness with `QUOTE_BROWSER_EXTENSION` pointing at
 `packages/commerce/test-support/purchasing-browser-extension.mjs`. Full repository
 CI/E2E is consolidated at the #3423 release boundary by owner instruction.
+
+Invalid or unsafe display amounts/scales render localized unavailable text.
+Strict money helpers continue to reject malformed data; presentation recovery
+does not validate or authorize submitted money.

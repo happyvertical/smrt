@@ -62,3 +62,19 @@ describe('purchasing UI contracts',()=>{
   expect(page.querySelector('fieldset')?.disabled).toBe(true);expect(page.querySelector('button[type=submit]')).toBeNull();expect(page.body.textContent).toContain('No allocations supplied.');
  });
 });
+
+describe('purchasing invalid money recovery', () => {
+  for (const field of ['sourceMinor', 'minimumMinor', 'maximumMinor', 'total', 'taxMinor'] as const) {
+    it.each([1.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity])(`${field} renders invalid %s as unavailable`, (invalid) => {
+      const allocations = [{ id: 'a', label: 'Draft', amount: '12..5', ...(['total', 'taxMinor'].includes(field) ? {} : { [field]: invalid }) }];
+      const snapshot = { ...review, total: { ...review.total, ...(field === 'total' ? { amountMinor: invalid } : {}) }, ...(field === 'taxMinor' ? { taxMinor: invalid } : {}) };
+      const html = render(PurchaseOrderEditor, { props: { ...props, values: { ...values, allocations }, review: snapshot } }).body;
+      expect(html).toContain('Amount unavailable');
+      expect(doc(html).querySelector<HTMLInputElement>('[name=allocationAmount]')?.value).toBe('12..5');
+    });
+  }
+  it.each([-1, 9, 1.5, NaN])('invalid scale %s recovers allocation, review total and tax', (minorUnitDigits) => {
+    const html = render(PurchaseOrderEditor, { props: { ...props, minorUnitDigits, review: { ...review, total: { ...review.total, minorUnitDigits } } } }).body;
+    expect(html.match(/Amount unavailable/g)?.length).toBe(5);
+  });
+});

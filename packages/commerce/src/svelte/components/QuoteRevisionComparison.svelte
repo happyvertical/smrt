@@ -18,7 +18,15 @@ export interface Props {
 }
 let { previous, current, title }: Props = $props();
 const { t } = useI18n();
-const delta = $derived(quoteRevisionDelta(previous, current));
+const delta = $derived.by(() => {
+  try {
+    const money = quoteRevisionDelta(previous, current);
+    return money ? { money, text: quoteMinorText(money) } : null;
+  } catch (error) {
+    if (error instanceof RangeError) return undefined;
+    throw error;
+  }
+});
 </script>
 <section class="quote-comparison" aria-label={title ?? t(Q['commerce.quote.compare'])}>
   <h2>{title ?? t(Q['commerce.quote.compare'])}</h2>
@@ -26,7 +34,8 @@ const delta = $derived(quoteRevisionDelta(previous, current));
     <QuoteRevisionHistory revisions={[previous]} title={t(Q['commerce.quote.before'])} />
     <QuoteRevisionHistory revisions={[current]} title={t(Q['commerce.quote.after'])} />
   </div>
-  {#if delta}<p>{t(Q['commerce.quote.delta'])}: {quoteMinorText(delta)} {delta.currency}</p>
+  {#if delta}<p>{t(Q['commerce.quote.delta'])}: {delta.text} {delta.money.currency}</p>
+  {:else if delta === undefined}<p>{t(Q['commerce.quote.unavailable'])}</p>
   {:else}<p>{t(Q['commerce.quote.incomparable'])}</p>{/if}
 </section>
 <style>

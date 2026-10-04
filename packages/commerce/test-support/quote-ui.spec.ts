@@ -228,3 +228,43 @@ describe('quote presentation contract', () => {
     ).toBeNull();
   });
 });
+
+describe('invalid money presentation recovery', () => {
+  const invalid = [
+    { amountMinor: 1.5 }, { amountMinor: Number.MAX_SAFE_INTEGER + 1 },
+    { amountMinor: NaN }, { amountMinor: Infinity },
+    { minorUnitDigits: -1 }, { minorUnitDigits: 9 },
+    { minorUnitDigits: 1.5 }, { minorUnitDigits: NaN },
+  ];
+  it.each(invalid)('history renders unavailable for %j without relaxing the helper', (patch) => {
+    const bad = { ...revision, total: { ...revision.total, ...patch } };
+    expect(() => quoteMinorText(bad.total)).toThrow(RangeError);
+    expect(render(QuoteRevisionHistory, { props: { revisions: [bad] } }).body).toContain('Amount unavailable');
+  });
+  it.each(invalid)('comparison recovers either invalid side for %j', (patch) => {
+    const bad = { ...revision, id: 'bad', total: { ...revision.total, ...patch } };
+    for (const [previous, current] of [[revision, bad], [bad, revision]]) {
+      expect(() => quoteRevisionDelta(previous, current)).toThrow(RangeError);
+      expect(render(QuoteRevisionComparison, { props: { previous, current } }).body).toContain('Amount unavailable');
+    }
+  });
+  it('keeps unknown, mixed currency/scale/kind and overflowing differences incomparable', () => {
+    for (const current of [
+      { ...revision, total: { ...revision.total, amountMinor: null } },
+      { ...revision, total: { ...revision.total, currency: 'USD' } },
+      { ...revision, total: { ...revision.total, minorUnitDigits: 3 } },
+      { ...revision, kind: 'customer-estimate' as const },
+      { ...revision, total: { ...revision.total, amountMinor: Number.MIN_SAFE_INTEGER } },
+    ]) {
+      expect(quoteRevisionDelta(revision, current)).toBeNull();
+      expect(render(QuoteRevisionComparison, { props: { previous: revision, current } }).body).toContain('Totals cannot be compared');
+    }
+  });
+  it('preserves zero and exact negative differences', () => {
+    for (const [amountMinor, expected] of [[1250, '0.00'], [1200, '-0.50']] as const) {
+      const current = { ...revision, total: { ...revision.total, amountMinor } };
+      const page = documentOf(render(QuoteRevisionComparison, { props: { previous: revision, current } }).body);
+      expect(page.body.textContent).toContain(`Change in total: ${expected} CAD`);
+    }
+  });
+});
