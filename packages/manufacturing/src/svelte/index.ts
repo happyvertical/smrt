@@ -4,8 +4,9 @@
  * Props-driven Svelte 5 surfaces: the managed list of operations (a list with
  * retire and reinstate, and a form), and assemblies (a list, a policy-driven
  * form, and a bill-of-materials editor whose sub-assemblies expand to their own
- * bills). Hosts load data through the package services and collections and
- * pass plain view objects.
+ * bills), production runs with their progress and completion reporting, and
+ * the read-only exploded requirements of a bill. Hosts load data through the
+ * package services and collections and pass plain view objects.
  * Auto-registers components with ModuleUIRegistry on import.
  *
  * @packageDocumentation
@@ -20,6 +21,8 @@ import BomEditor from './components/BomEditor.svelte';
 import BomStructureTree from './components/BomStructureTree.svelte';
 import OperationForm from './components/OperationForm.svelte';
 import OperationList from './components/OperationList.svelte';
+import ProductionRunList from './components/ProductionRunList.svelte';
+import RequirementsTree from './components/RequirementsTree.svelte';
 
 export {
   AssemblyForm,
@@ -28,6 +31,8 @@ export {
   BomStructureTree,
   OperationForm,
   OperationList,
+  ProductionRunList,
+  RequirementsTree,
 };
 
 export type AssemblyFormProps = ComponentProps<typeof AssemblyForm>;
@@ -37,6 +42,8 @@ export type BomStructureTreeProps = ComponentProps<typeof BomStructureTree>;
 
 export type OperationFormProps = ComponentProps<typeof OperationForm>;
 export type OperationListProps = ComponentProps<typeof OperationList>;
+export type ProductionRunListProps = ComponentProps<typeof ProductionRunList>;
+export type RequirementsTreeProps = ComponentProps<typeof RequirementsTree>;
 
 export {
   type AssemblyView,
@@ -46,8 +53,10 @@ export {
   type BomLineDraftField,
   type BomLineInput,
   type BomLineValidation,
+  type CompletionQtyValidation,
   type ComponentKind,
   componentKindLabelKey,
+  isProductionRunOpen,
   type OperationFormDraft,
   type OperationFormField,
   type OperationFormInitial,
@@ -55,11 +64,21 @@ export {
   type OperationFormValues,
   type OperationView,
   operationStatusBadgeKey,
+  type ProductionRunStatus,
+  type ProductionRunView,
+  productionRunStatusLabelKey,
+  productionRunStatusTone,
+  type RequirementLineView,
+  type RequirementTotalView,
   splitLabourMinutes,
   toAssemblyView,
   toBomEditorLine,
   toBomEditorLines,
+  toProductionRunView,
+  toRequirementTotals,
+  toRequirementTree,
   validateBomLineInput,
+  validateCompletionQty,
   validateOperationForm,
 } from './types.js';
 
@@ -89,4 +108,14 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-manufacturing',
   'bom-editor',
   BomEditor,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-manufacturing',
+  'production-run-list',
+  ProductionRunList,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-manufacturing',
+  'requirements-tree',
+  RequirementsTree,
 );

@@ -14,6 +14,8 @@ const SLOTS = [
   'assembly-list',
   'assembly-form',
   'bom-editor',
+  'production-run-list',
+  'requirements-tree',
 ];
 
 describe('manufacturing UI slots', () => {
@@ -46,5 +48,11 @@ describe('manufacturing UI slots', () => {
       entry.AssemblyForm,
     );
     expect(ModuleUIRegistry.get(MODULE, 'bom-editor')).toBe(entry.BomEditor);
+    expect(ModuleUIRegistry.get(MODULE, 'production-run-list')).toBe(
+      entry.ProductionRunList,
+    );
+    expect(ModuleUIRegistry.get(MODULE, 'requirements-tree')).toBe(
+      entry.RequirementsTree,
+    );
   });
 });

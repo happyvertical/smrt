@@ -7,6 +7,7 @@
  */
 
 import type { Operation } from './models/Operation.js';
+import type { SubAssemblyLabour } from './types.js';
 
 /**
  * Callback that returns the hourly labour rate for an operation, in the bill's
@@ -61,6 +62,14 @@ export interface LabourEstimate {
   steps: RoutingStepEstimate[];
   /** `true` when a step's rate was unavailable, so `totalCost` is a lower bound. */
   hasMissingRates: boolean;
+  /**
+   * Multi-level only (`{ levels }` above 1): every sub-assembly the walk
+   * opened, at any depth, with its own routing estimate and how many units of
+   * it one unit of this bill's product needs. `totalMinutes`, `totalCost`,
+   * `hasRouting` and `hasMissingRates` then cover them too; `steps` stays this
+   * bill's own routing.
+   */
+  subAssemblies?: SubAssemblyLabour[];
 }
 
 /** One step handed to `RoutingService.replaceRouting`. */

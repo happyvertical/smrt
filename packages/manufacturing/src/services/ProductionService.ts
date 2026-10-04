@@ -110,6 +110,12 @@ export interface ConsumeMaterialsOptions {
    * Optional free-form note attached to every emitted movement.
    */
   note?: string;
+  /**
+   * Optional override of the `sourceType` stamped on each movement, with
+   * the order's `id` as `sourceId`. Defaults to `'ProductionOrder'`;
+   * `ProductionRunService` passes `'ProductionRunCompletion'`.
+   */
+  sourceType?: string;
 }
 
 /**
@@ -142,6 +148,11 @@ export interface ProduceFinishedGoodsOptions {
    * Optional free-form note attached to the emitted movement.
    */
   note?: string;
+  /**
+   * Optional override of the `sourceType` stamped on the movement. Defaults
+   * to `'ProductionOrder'`; see {@link ConsumeMaterialsOptions.sourceType}.
+   */
+  sourceType?: string;
 }
 
 /**
@@ -358,7 +369,7 @@ export class ProductionService {
       runQty: options.qty,
       locationId: options.locationId,
       mutationOptions: {
-        sourceType: 'ProductionOrder',
+        sourceType: options.sourceType ?? 'ProductionOrder',
         sourceId: orderId,
         reasonCode: options.reasonCode ?? 'production_consume',
         note: options.note,
@@ -518,7 +529,7 @@ function prepareProduce(
     qty: options.qty,
     locationId: options.locationId,
     mutationOptions: {
-      sourceType: 'ProductionOrder',
+      sourceType: options.sourceType ?? 'ProductionOrder',
       sourceId: orderId,
       reasonCode: options.reasonCode ?? 'production_produce',
       note: options.note,

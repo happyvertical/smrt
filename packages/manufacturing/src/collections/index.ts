@@ -15,4 +15,6 @@ export { AssemblyCollection } from './AssemblyCollection.js';
 export { BillOfMaterialsCollection } from './BillOfMaterialsCollection.js';
 export { BomLineCollection } from './BomLineCollection.js';
 export { OperationCollection } from './OperationCollection.js';
+export { ProductionRunCollection } from './ProductionRunCollection.js';
+export { ProductionRunCompletionCollection } from './ProductionRunCompletionCollection.js';
 export { RoutingStepCollection } from './RoutingStepCollection.js';

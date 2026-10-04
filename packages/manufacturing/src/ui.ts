@@ -59,6 +59,26 @@ export const MANUFACTURING_UI_SLOTS: Record<string, ModuleUISlot> = {
     order: 5,
     propsInterface: 'BomEditorProps',
   },
+  'production-run-list': {
+    id: 'production-run-list',
+    label: 'Production Run List',
+    description:
+      'Production runs with target, completed quantity and status, and completion reporting',
+    icon: 'list',
+    category: 'list',
+    order: 6,
+    propsInterface: 'ProductionRunListProps',
+  },
+  'requirements-tree': {
+    id: 'requirements-tree',
+    label: 'Requirements Tree',
+    description:
+      "A bill's exploded requirements by level, with totals and available and short stock",
+    icon: 'tree',
+    category: 'detail',
+    order: 7,
+    propsInterface: 'RequirementsTreeProps',
+  },
 };
 /**
  * Manufacturing module metadata
@@ -67,13 +87,15 @@ export const MANUFACTURING_MODULE_META: SmrtModuleMeta = {
   name: '@happyvertical/smrt-manufacturing',
   displayName: 'Manufacturing',
   description:
-    'Assemblies, bills of materials, routing operations, cost and labour rollup, and production-order stock movement',
+    'Assemblies, multi-level bills of materials, routing operations, cost and labour rollup, production runs, and production-order stock movement',
   uiSlots: MANUFACTURING_UI_SLOTS,
   models: [
     'Assembly',
     'BillOfMaterials',
     'BomLine',
     'Operation',
+    'ProductionRun',
+    'ProductionRunCompletion',
     'RoutingStep',
   ],
   collections: [
@@ -81,6 +103,8 @@ export const MANUFACTURING_MODULE_META: SmrtModuleMeta = {
     'BillOfMaterialsCollection',
     'BomLineCollection',
     'OperationCollection',
+    'ProductionRunCollection',
+    'ProductionRunCompletionCollection',
     'RoutingStepCollection',
   ],
 };

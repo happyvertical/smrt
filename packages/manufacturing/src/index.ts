@@ -20,13 +20,19 @@
  * - {@link Operation} — a kind of work (cut, weld, inspect); a managed list.
  * - {@link RoutingStep} — an operation in a BOM's optional routing, with an
  *   estimated duration.
+ * - {@link ProductionRun} — a build of a target quantity against one bill,
+ *   with dated {@link ProductionRunCompletion}s ("25 to build, 12 done").
  *
  * **Services**
  *
  * - {@link AssemblyService} — resolve a component SKU to an assembly (and
  *   its active bill), a material, or a bought item; refuse cycles.
  * - {@link BomService} — cost rollup, requirements explosion,
- *   "can we make this?" stock availability check.
+ *   "can we make this?" stock availability check; one level by default, or
+ *   through sub-assemblies with `{ levels }`.
+ * - {@link ProductionRunService} — create runs and report completions as
+ *   they happen, optionally consuming and producing stock in the same
+ *   transaction.
  * - {@link ProductionService} — operational bridge from a production
  *   order to actual `StockMovement` rows via the inventory
  *   {@link StockService}.
@@ -50,6 +56,8 @@ export {
   BillOfMaterialsCollection,
   BomLineCollection,
   OperationCollection,
+  ProductionRunCollection,
+  ProductionRunCompletionCollection,
   RoutingStepCollection,
 } from './collections/index.js';
 
@@ -65,6 +73,12 @@ export {
   type BomLineOptions,
   Operation,
   type OperationOptions,
+  PRODUCTION_RUN_STATUSES,
+  ProductionRun,
+  ProductionRunCompletion,
+  type ProductionRunCompletionOptions,
+  type ProductionRunOptions,
+  type ProductionRunStatus,
   RoutingStep,
   type RoutingStepOptions,
 } from './models/index.js';
@@ -83,6 +97,20 @@ export {
   type RoutingStepInput,
 } from './operation-types.js';
 // ─────────────────────────────────────────────────────────────────────────────
+// Production runs
+// ─────────────────────────────────────────────────────────────────────────────
+export {
+  type CompletionConsumeOptions,
+  type CompletionProduceOptions,
+  type CreateProductionRunInput,
+  InvalidProductionRunInputError,
+  ProductionRunNotFoundError,
+  ProductionRunOverCompletionError,
+  ProductionRunStateError,
+  type RecordCompletionInput,
+  type RecordCompletionResult,
+} from './production-run-types.js';
+// ─────────────────────────────────────────────────────────────────────────────
 // Services and dispatch-bus hook helpers (opt-in)
 // ─────────────────────────────────────────────────────────────────────────────
 export {
@@ -94,6 +122,7 @@ export {
   type BomCyclePathEntry,
   BomService,
   type BomServiceOptions,
+  BomStructureCycleError,
   type ComponentCostResolver,
   type ComponentKind,
   type ConsumeMaterialsOptions,
@@ -101,6 +130,7 @@ export {
   createAssemblyService,
   createBomService,
   createOperationService,
+  createProductionRunService,
   createProductionService,
   createRoutingService,
   type InstalledManufacturingDispatchHandlers,
@@ -113,6 +143,8 @@ export {
   type ProductionOrderCompletedPayload,
   type ProductionOrderPostedPayload,
   type ProductionOrderRef,
+  ProductionRunService,
+  type ProductionRunServiceOptions,
   ProductionService,
   type ProductionServiceOptions,
   type ResolveComponentOptions,
@@ -126,11 +158,22 @@ export {
 // ─────────────────────────────────────────────────────────────────────────────
 export {
   type BomCostRollup,
+  BomExplosionLimitError,
   type BomLineCost,
   BomNotFoundError,
   type BomStatus,
   type CanProduceResult,
+  type ExplodedLine,
+  type Explosion,
+  type ExplosionLevels,
+  type ExplosionOptions,
+  type ExplosionPathEntry,
+  MAX_EXPLOSION_DEPTH,
+  MAX_EXPLOSION_LINES,
   type MaterialRequirement,
   type MaterialShortage,
   NoActiveBomForProductError,
+  type PlannedLine,
+  type RequirementsPlan,
+  type SubAssemblyLabour,
 } from './types.js';
