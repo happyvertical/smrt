@@ -57,7 +57,7 @@ export class ContractLineItem extends SmrtObject {
 
   /**
    * Quantity ordered. Decimal on purpose — contracts price fractional
-   * quantities (hours, weight, bandwidth), unlike `InvoiceLineItem.quantity`.
+   * quantities (hours, weight, bandwidth), as do invoice line items.
    */
   quantity: number = 1.0;
 

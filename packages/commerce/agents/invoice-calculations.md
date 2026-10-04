@@ -6,7 +6,9 @@ Drafts retain unparsed text. Quantity accepts nonnegative decimals with at most 
 
 Calculation order is quantity × price rounded half up to minor units, discount rounded half up and subtracted, then tax on the discounted subtotal rounded half up. Flat discounts cannot exceed gross. No floating-point multiplication or epsilon comparison determines money. Unsafe individual or aggregate results are rejected; invalid lines produce errors without monetary totals. Header validation requires customer, real issue/due dates with due date not before issue date, valid currency shape/default rate, at least one line, and unique nonblank row keys.
 
-`resolveInvoiceLineDraft` returns the existing model's resolved integer-minor price, flat discount, fractional quantity, effective fractional tax rate, and calculated amount. It verifies exact agreement with model arithmetic. Persist the draft editing mode alongside resolved fields if the original percent/inheritance choices must reopen. `calculateInvoiceMinorLine` is the currency-independent model helper: it permits existing negative-price credit lines, retains their historical ties toward positive infinity, and rejects invalid quantities/rates or unsafe/fractional money.
+`resolveInvoiceLineDraft` returns the existing model's resolved integer-minor price, flat discount, fractional quantity, effective fractional tax rate, and calculated amount. It verifies exact agreement with model arithmetic. `InvoiceLineItem.applyEditorDraft()` retains the editing modes alongside resolved fields; `getEditorDraft(authorizedContext)` restores them only while current authority and fields agree. See [invoice quantity storage](invoice-quantity.md) for the required existing-database migration. `calculateInvoiceMinorLine` is the currency-independent model helper: it permits existing negative-price credit lines, retains their historical ties toward positive infinity, and rejects invalid quantities/rates or unsafe/fractional money.
+
+Trailing zeroes do not make an exact amount invalid: `100.00` JPY is 100 minor units, while `100.01` JPY is rejected. Parsing never rewrites the draft text.
 
 ## Server responsibilities
 

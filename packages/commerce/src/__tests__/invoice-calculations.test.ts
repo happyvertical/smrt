@@ -31,6 +31,31 @@ const invoice: InvoiceDraftValues = {
 };
 
 describe('exact general invoice calculations', () => {
+  it('accepts exact trailing zeroes when changing currency without rewriting the draft', () => {
+    const draft = {
+      ...line,
+      quantity: '1',
+      unitPrice: '100.00',
+      discountValue: '5.000',
+      taxMode: 'override',
+      taxRate: '0',
+    };
+    expect(
+      calculateInvoiceLine(draft, { ...context, currency: 'JPY' }),
+    ).toMatchObject({
+      valid: true,
+      grossMinor: 100,
+      discountMinor: 5,
+      totalMinor: 95,
+    });
+    expect(draft.unitPrice).toBe('100.00');
+    expect(
+      calculateInvoiceLine(
+        { ...draft, unitPrice: '100.01' },
+        { ...context, currency: 'JPY' },
+      ),
+    ).toMatchObject({ valid: false, errors: { unitPrice: 'precision' } });
+  });
   it('rounds fractional quantities then tax to exact minor units', () => {
     expect(calculateInvoiceLine(line, context)).toEqual({
       valid: true,

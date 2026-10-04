@@ -131,9 +131,11 @@ function minor(
   value: string,
   digits: number,
 ): bigint | InvoiceCalculationError {
-  const parsed = decimal(value, digits);
+  const parsed = decimal(value, MAX_TEXT);
   if (typeof parsed === 'string') return parsed;
-  const result = (parsed.coefficient * 10n ** BigInt(digits)) / parsed.scale;
+  const scaled = parsed.coefficient * 10n ** BigInt(digits);
+  if (scaled % parsed.scale !== 0n) return 'precision';
+  const result = scaled / parsed.scale;
   return result > MAX_MINOR ? 'range' : result;
 }
 

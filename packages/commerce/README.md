@@ -533,8 +533,12 @@ native forms, recovery, amount units and consumer adoption, plus the focused
 
 ## Invoice preparation UI
 
-`InvoiceEditor` and `InvoiceReview` from `@happyvertical/smrt-commerce/svelte`
-provide native retained-draft forms, reviewed-source allocations, and
-caller-authoritative review presentation. Draft fields retain currency-unit text while source amounts use integer minor
-units. See [the preparation contract](agents/invoice-preparation.md) for props,
-native action payloads, retries, restricted readers, and adoption guidance.
+`InvoiceLineEditor` and `InvoiceEditor` from `@happyvertical/smrt-commerce/svelte`
+provide editable descriptions/SKUs, fractional quantities, unit prices, flat or
+percentage discounts, explicit or inherited tax, customer, dates, currency and
+terms. Calculated previews use the same exact minor-unit arithmetic exported
+for server handlers from `@happyvertical/smrt-commerce/invoices`.
+`InvoiceAllocationFields` and `InvoiceReview` extend this foundation with
+caller-owned sources and approvals. See [the editor contract](agents/invoice-preparation.md),
+[calculation rules](agents/invoice-calculations.md), and the required
+[existing-database storage migration](agents/invoice-quantity.md).

@@ -259,7 +259,7 @@ export default {
       id: 'invoice-preparation',
       title: 'Invoice Preparation',
       description:
-        'Edit allocations and inspect retained values after a simulated rejection.',
+        'Edit invoice lines, prices, discounts and tax, with optional source allocations and retained rejection recovery.',
       loadComponent: () =>
         import('./playground/InvoicePreparationPreview.svelte'),
       order: 7,
