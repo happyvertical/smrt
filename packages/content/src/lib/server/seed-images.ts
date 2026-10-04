@@ -5,7 +5,7 @@
 
 import '@happyvertical/smrt-images';
 import type { Image } from '@happyvertical/smrt-images';
-import { getCollection } from './smrt.js';
+import { runtime } from './smrt.js';
 
 let seeded = false;
 
@@ -46,7 +46,7 @@ export async function seedImages(): Promise<void> {
   seeded = true;
 
   try {
-    const collection = await getCollection<Image>(
+    const collection = await runtime.getCollection<Image>(
       '@happyvertical/smrt-images:Image',
     );
     const existing = await collection.list({});

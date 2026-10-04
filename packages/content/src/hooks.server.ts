@@ -23,7 +23,7 @@ import { getDatabase } from '@happyvertical/sql';
 import type { Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { seedContents } from '$lib/server/seed-contents';
-import { getSmrtConfig } from '$lib/server/smrt';
+import { runtime } from '$lib/server/smrt';
 import { workspacePackageRoots } from '../workspace-aliases.js';
 
 const logger = createLogger({ level: 'info' });
@@ -160,7 +160,9 @@ async function bootstrapSchema() {
     try {
       await registerContentWorkspaceRuntime();
 
-      const config = getSmrtConfig('@happyvertical/smrt-content:Content');
+      const config = runtime.classOptions(
+        '@happyvertical/smrt-content:Content',
+      );
       // `config.db` is a `DatabaseConfig` union; only the object-config form
       // carries `url`/`type`. Narrow to that shape (the string and
       // DatabaseInterface variants fall through to the defaults below).
@@ -238,7 +240,7 @@ const bootstrapHandle: Handle = async ({ event, resolve }) => {
 // SvelteKit's stricter cookie type, which is runtime-compatible with that
 // record but cannot be inferred across package boundaries.
 const sessionHandle = createSessionHandler({
-  ...getSmrtConfig('@happyvertical/smrt-content:Content'),
+  ...runtime.classOptions('@happyvertical/smrt-content:Content'),
   enterTenantContext: true,
 }) as unknown as Handle;
 
