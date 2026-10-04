@@ -66,6 +66,7 @@ export {
   componentKindLabelKey,
   formatPriceInput,
   isProductionRunOpen,
+  keepProtectedFields,
   type OperationFormDraft,
   type OperationFormField,
   type OperationFormInitial,

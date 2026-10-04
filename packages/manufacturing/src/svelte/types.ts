@@ -203,6 +203,33 @@ export function assemblyFormDraft(
   };
 }
 
+/**
+ * `values` with every field in `protectedFields` replaced by its initial
+ * value, exactly as stored (not trimmed or re-split), or its default for a
+ * new assembly. A hidden or read-only field is never rewritten by the form.
+ */
+export function keepProtectedFields(
+  values: AssemblyFormValues,
+  initial: AssemblyFormInitial | null,
+  protectedFields: readonly AssemblyFormField[],
+): AssemblyFormValues {
+  const kept: AssemblyFormValues = { ...values };
+  const original: AssemblyFormValues = {
+    name: initial?.name ?? '',
+    description: initial?.description ?? '',
+    category: initial?.category ?? '',
+    partReference: initial?.partReference ?? '',
+    price: initial?.price ?? 0,
+    estimatedLabourMinutes: initial?.estimatedLabourMinutes ?? 0,
+    defaultOperationId: initial?.defaultOperationId ?? null,
+    tags: [...(initial?.tags ?? [])],
+  };
+  for (const field of protectedFields) {
+    (kept as unknown as Record<string, unknown>)[field] = original[field];
+  }
+  return kept;
+}
+
 function parseTags(raw: string): string[] {
   const tags: string[] = [];
   for (const part of raw.split(',')) {

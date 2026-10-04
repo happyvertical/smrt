@@ -41,6 +41,29 @@ const operations = [
 ];
 
 describe('AssemblyForm', () => {
+  it('passes hidden and read-only values through exactly as stored', async () => {
+    const odd: AssemblyFormInitial = {
+      ...existing,
+      name: ' Frame ',
+      description: '  padded  ',
+      tags: ['steel, coated', ' lone '],
+    };
+    const onsubmit = vi.fn();
+    render(AssemblyForm, {
+      props: {
+        assembly: odd,
+        onsubmit,
+        operations,
+        hiddenFields: ['tags'],
+        readonlyFields: ['description', 'name'],
+      },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await vi.waitFor(() =>
+      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(odd),
+    );
+  });
+
   it('renders empty add fields', () => {
     render(AssemblyForm, { props: { onsubmit: vi.fn(), operations } });
     expect(screen.getByLabelText(/Name/)).toHaveValue('');

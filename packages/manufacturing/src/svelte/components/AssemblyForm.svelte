@@ -26,6 +26,7 @@ import {
   type AssemblyFormInvalidField,
   type AssemblyFormValues,
   assemblyFormDraft,
+  keepProtectedFields,
   type OperationView,
   validateAssemblyForm,
 } from '../types.js';
@@ -168,6 +169,8 @@ function describedBy(
   return ids.filter(Boolean).join(' ') || undefined;
 }
 
+const protectedFields = $derived([...hiddenFields, ...readonlyFields]);
+
 function handleSubmit() {
   const result = validateAssemblyForm(
     {
@@ -180,14 +183,14 @@ function handleSubmit() {
       defaultOperationId,
       tags,
     },
-    [...hiddenFields, ...readonlyFields],
+    protectedFields,
   );
   if (!result.ok) {
     invalid = result.invalid;
     return;
   }
   invalid = [];
-  onsubmit(result.values);
+  onsubmit(keepProtectedFields(result.values, assembly, protectedFields));
 }
 </script>
 
