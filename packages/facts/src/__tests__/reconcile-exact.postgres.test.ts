@@ -83,4 +83,54 @@ describePostgres('exact fact reconciliation on PostgreSQL (#3400)', () => {
     });
     expect(otherTenant.fact.id).not.toBe(first.fact.id);
   });
+
+  it('keeps concurrent identities transaction-isolated on one collection after a rollback', async () => {
+    const collection = await FactCollection.create({ db });
+    const tenantId = '10000000-0000-4000-8000-000000000003';
+    vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
+      new Error('embedding provider unavailable'),
+    );
+    vi.spyOn(collection, 'semanticSearch').mockRejectedValue(
+      new Error('embedding provider unavailable'),
+    );
+    const originalCreate = FactSourceCollection.prototype.create;
+    vi.spyOn(FactSourceCollection.prototype, 'create').mockImplementation(
+      async function (input) {
+        if (input.sourceTitle === 'rollback') {
+          throw new Error('force reconciliation rollback');
+        }
+        return originalCreate.call(this, input);
+      },
+    );
+
+    const successful = collection.reconcile({
+      rawInput: 'Concurrent successful reconciliation.',
+      type: 'event',
+      domain: 'civic',
+      tenantId,
+      source: { sourceType: 'minutes', sourceTitle: 'success' },
+    });
+    const rolledBack = collection.reconcile({
+      rawInput: 'Concurrent rolled back reconciliation.',
+      type: 'event',
+      domain: 'planning',
+      tenantId,
+      source: { sourceType: 'minutes', sourceTitle: 'rollback' },
+    });
+
+    await expect(rolledBack).rejects.toThrow('force reconciliation rollback');
+    const result = await successful;
+    expect(result.action).toBe('created');
+    expect(
+      await collection.count({ where: { tenantId, domain: 'planning' } }),
+    ).toBe(0);
+
+    const reused = await collection.reconcile({
+      rawInput: 'Collection reuse after rollback.',
+      type: 'event',
+      domain: 'reuse',
+      tenantId,
+    });
+    expect(reused.action).toBe('created');
+  });
 });
