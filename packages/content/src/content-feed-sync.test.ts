@@ -76,7 +76,13 @@ describe('syncContentFeedSource', () => {
       etag: '"old"',
       lastModified: 'Sat, 09 May 2026 10:00:00 GMT',
     });
-    const fetch = vi.fn(async () => new Response(null, { status: 304 }));
+    const fetch = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 304,
+          headers: { 'content-length': '2000001' },
+        }),
+    );
     const createSpy = vi.spyOn(Contents, 'create');
 
     const result = await syncContentFeedSource(source, {
@@ -103,6 +109,23 @@ describe('syncContentFeedSource', () => {
       }),
     );
     expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('clears missing validators after a successful 200 response', async () => {
+    const source = createSource({
+      etag: '"old"',
+      lastModified: 'Sat, 09 May 2026 10:00:00 GMT',
+    });
+    await syncContentFeedSource(source, {
+      fetch: async () =>
+        new Response(
+          '<rss version="2.0"><channel><title>Empty</title></channel></rss>',
+        ),
+      now: () => FIXED_NOW,
+      resolveHostname: PUBLIC_RESOLVER,
+    });
+    expect(source.etag).toBeNull();
+    expect(source.lastModified).toBeNull();
   });
 
   it('keeps a disabled fetch timeout disabled for injected transports', async () => {
