@@ -2,6 +2,12 @@
 
 STI content types (Article, ContentDocument, Mirror) with governance workflows, contribution intake, fact-checking, AI reviews, transparency reports, and thumbnail generation.
 
+Fact-audit repair uses transactional replacement. `repairFactAudit()` stages a
+complete audit, then removes older generated links, evidence, and source
+provenance for that content and tenant. `repairFactEvidence()` applies the same
+contract only to the selected sources. Both methods preserve manual and
+other-content provenance, and a failed extraction rolls back the staged repair.
+
 ## Installation
 
 ```bash

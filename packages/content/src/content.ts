@@ -2377,7 +2377,9 @@ export class Content
     return links.attach(factId, this.id as string, { relationship, metadata });
   }
 
-  private async clearGeneratedFactAudit(): Promise<void> {
+  private async clearGeneratedFactAudit(
+    options: { retainAuditRunId?: string } = {},
+  ): Promise<void> {
     if (!this.id) {
       return;
     }
@@ -2390,12 +2392,16 @@ export class Content
     for (const link of links) {
       const metadata = getLinkMetadata(link);
       const nestedFactAudit = asRecord(metadata.factAudit);
-      if (metadata.generatedBy === FACT_AUDIT_GENERATED_BY) {
+      if (
+        metadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
+        metadata.auditRunId !== options.retainAuditRunId
+      ) {
         await link.delete();
       } else if (
         metadata.factAudit &&
         typeof metadata.factAudit === 'object' &&
-        nestedFactAudit.generatedBy === FACT_AUDIT_GENERATED_BY
+        nestedFactAudit.generatedBy === FACT_AUDIT_GENERATED_BY &&
+        nestedFactAudit.auditRunId !== options.retainAuditRunId
       ) {
         const { factAudit: _removed, ...preservedMetadata } = metadata;
         link.setMetadata?.(preservedMetadata);
@@ -2413,7 +2419,8 @@ export class Content
           : {};
       if (
         metadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
-        metadata.contentId === this.id
+        metadata.contentId === this.id &&
+        metadata.auditRunId !== options.retainAuditRunId
       ) {
         await evidence.delete();
       }
@@ -2421,38 +2428,49 @@ export class Content
   }
 
   private async clearGeneratedFactSourcesForSources(
-    sources: FactAuditSourceMaterial[],
-  ): Promise<string[]> {
-    if (!this.id || sources.length === 0) {
-      return [];
+    sources: FactAuditSourceMaterial[] | undefined,
+    options: { retainAuditRunId?: string } = {},
+  ): Promise<{ deletedSourceIds: string[]; affectedFactIds: string[] }> {
+    if (!this.id || sources?.length === 0) {
+      return { deletedSourceIds: [], affectedFactIds: [] };
     }
 
-    const sourceKeys = new Set(
-      sources.map((source) => `${source.sourceKind}:${source.sourceId}`),
-    );
+    const sourceKeys = sources
+      ? new Set(
+          sources.map((source) => `${source.sourceKind}:${source.sourceId}`),
+        )
+      : null;
     const factSources = await this.getFactSourceCollection();
     const generatedSources = await factSources.list({
       where: { tenantId: this.tenantId ?? null },
     });
     const deletedSourceIds: string[] = [];
+    const affectedFactIds = new Set<string>();
 
     for (const source of generatedSources) {
       const metadata =
         typeof source.getMetadata === 'function' ? source.getMetadata() : {};
       const sourceKey = `${source.sourceType || ''}:${metadata.sourceId || ''}`;
       if (
-        sourceKeys.has(sourceKey) &&
+        (!sourceKeys || sourceKeys.has(sourceKey)) &&
         metadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
-        metadata.contentId === this.id
+        metadata.contentId === this.id &&
+        metadata.auditRunId !== options.retainAuditRunId
       ) {
         if (typeof source.id === 'string') {
           deletedSourceIds.push(source.id);
+        }
+        if (source.factId) {
+          affectedFactIds.add(source.factId);
         }
         await source.delete();
       }
     }
 
-    return deletedSourceIds;
+    return {
+      deletedSourceIds,
+      affectedFactIds: [...affectedFactIds],
+    };
   }
 
   private async extractReferenceFactsForAudit(
@@ -2461,32 +2479,14 @@ export class Content
       auditRunId: string;
       maxFactsPerSource?: number;
       context?: string;
-      replaceGenerated?: boolean;
+      failOnExtractionError?: boolean;
     },
   ) {
     const facts = await this.getFactCollection();
     const evidences = await this.getFactEvidenceCollection();
+    const { createFactEvidenceKey } = await import('@happyvertical/smrt-facts');
     const warnings: string[] = [];
     const referenceFacts = new Map<string, Fact>();
-    let deletedEvidenceIds: string[] = [];
-    let deletedSourceIds: string[] = [];
-
-    if (options.replaceGenerated && sources.length > 0) {
-      const replacement = await evidences.replaceGeneratedForSources(
-        sources.map((source) => ({
-          sourceKind: source.sourceKind,
-          sourceId: source.sourceId,
-        })),
-        {
-          generatedBy: FACT_AUDIT_GENERATED_BY,
-          contentId: this.id as string,
-          tenantId: this.tenantId ?? null,
-        },
-      );
-      deletedEvidenceIds = replacement.deletedEvidenceIds;
-      deletedSourceIds =
-        await this.clearGeneratedFactSourcesForSources(sources);
-    }
 
     for (const source of sources) {
       let candidates: FactExtractionCandidate[] = [];
@@ -2499,9 +2499,11 @@ export class Content
           tenantId: this.tenantId,
         });
       } catch (error) {
-        warnings.push(
-          `Failed to extract facts from ${source.sourceTitle}: ${errorMessage(error)}`,
-        );
+        const warning = `Failed to extract facts from ${source.sourceTitle}: ${errorMessage(error)}`;
+        if (options.failOnExtractionError) {
+          throw new Error(warning, { cause: error });
+        }
+        warnings.push(warning);
         continue;
       }
 
@@ -2528,7 +2530,7 @@ export class Content
         });
         referenceFacts.set(result.fact.id as string, result.fact);
 
-        await evidences.upsertEvidence({
+        const evidenceInput = {
           factId: result.fact.id as string,
           status: 'supports',
           sourceKind: source.sourceKind,
@@ -2546,7 +2548,23 @@ export class Content
             contentId: this.id,
             candidateMetadata: candidate.metadata || {},
           },
+        } as const;
+        const evidenceKey = createFactEvidenceKey(evidenceInput);
+        const existingEvidence = await evidences.get({
+          factId: evidenceInput.factId,
+          evidenceKey,
         });
+        const existingMetadata = existingEvidence?.getMetadata() ?? {};
+        const ownedByThisAudit =
+          existingMetadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
+          existingMetadata.contentId === this.id;
+
+        if (!existingEvidence || ownedByThisAudit) {
+          await evidences.upsertEvidence({
+            ...evidenceInput,
+            evidenceKey,
+          });
+        }
       }
     }
 
@@ -2554,8 +2572,6 @@ export class Content
       referenceFacts,
       warnings,
       referenceFactsExtracted: referenceFacts.size,
-      deletedEvidenceIds,
-      deletedSourceIds,
       repairedSources: sources.map((source) => ({
         sourceKind: source.sourceKind,
         sourceId: source.sourceId,
@@ -2570,6 +2586,7 @@ export class Content
       sources?: FactAuditSourceSelector[];
       sourceIds?: string[];
       maxCandidateEvidence?: number;
+      auditRunId?: string;
     } = {},
   ) {
     const evidences = await this.getFactEvidenceCollection();
@@ -2601,6 +2618,12 @@ export class Content
 
     for (const entry of evidenceEntries) {
       if (!isGeneratedFactAuditEvidence(entry, this.id as string)) {
+        continue;
+      }
+      if (
+        options.auditRunId &&
+        entry.getMetadata().auditRunId !== options.auditRunId
+      ) {
         continue;
       }
       if (entry.sourceKind === 'content') {
@@ -2664,6 +2687,21 @@ export class Content
       context?: string;
     } = {},
   ) {
+    if (!this.db.transaction) {
+      throw new Error('Atomic fact audit repair requires transaction support');
+    }
+    return this.withTransaction((content) =>
+      content.repairFactAuditAtomic(options),
+    );
+  }
+
+  private async repairFactAuditAtomic(
+    options: {
+      maxReferenceFactsPerSource?: number;
+      maxArticleClaims?: number;
+      context?: string;
+    } = {},
+  ) {
     await this.requireFactLinking('fact audit repair');
     if (!this.id) {
       throw new Error('Cannot repair fact audit for unsaved content');
@@ -2677,13 +2715,13 @@ export class Content
 
     const sourceMaterials = await this.getFactAuditSourceMaterials();
     warnings.push(...sourceMaterials.warnings);
-    await this.clearGeneratedFactAudit();
     const referenceRepair = await this.extractReferenceFactsForAudit(
       sourceMaterials.sources,
       {
         auditRunId,
         maxFactsPerSource: options.maxReferenceFactsPerSource,
         context: options.context,
+        failOnExtractionError: true,
       },
     );
     warnings.push(...referenceRepair.warnings);
@@ -2702,8 +2740,9 @@ export class Content
           tenantId: this.tenantId,
         });
       } catch (error) {
-        warnings.push(
+        throw new Error(
           `Failed to extract article claims: ${errorMessage(error)}`,
+          { cause: error },
         );
       }
     }
@@ -2711,6 +2750,7 @@ export class Content
     const { supportCandidates, candidateFactIds, candidateEvidence } =
       await this.getCurrentFactAuditSupportCandidates({
         referenceFacts,
+        auditRunId,
       });
 
     const findings: ContentReviewFinding[] = [];
@@ -2724,16 +2764,10 @@ export class Content
           { tenantId: this.tenantId },
         );
       } catch (error) {
-        warnings.push(
+        throw new Error(
           `Failed to assess claim "${claim.statement}": ${errorMessage(error)}`,
+          { cause: error },
         );
-        assessment = {
-          status: 'needs_review' as FactClaimSupportStatus,
-          matchedFactIds: [],
-          matchedEvidenceIds: [],
-          rationale: 'Support assessment failed.',
-          confidence: undefined,
-        };
       }
 
       const matchedFactIds = assessment.matchedFactIds.filter((factId) =>
@@ -2784,7 +2818,7 @@ export class Content
         await claimFact.save();
       }
 
-      const articleEvidence = await evidences.upsertEvidence({
+      const articleEvidenceInput = {
         factId: claimFact.id as string,
         status: 'supports',
         sourceKind: 'content',
@@ -2801,7 +2835,27 @@ export class Content
           contentId: this.id,
           supportStatus: assessment.status,
         },
+      } as const;
+      const { createFactEvidenceKey } = await import(
+        '@happyvertical/smrt-facts'
+      );
+      const articleEvidenceKey = createFactEvidenceKey(articleEvidenceInput);
+      const existingArticleEvidence = await evidences.get({
+        factId: articleEvidenceInput.factId,
+        evidenceKey: articleEvidenceKey,
       });
+      const existingArticleMetadata =
+        existingArticleEvidence?.getMetadata() ?? {};
+      const articleEvidenceOwnedByThisAudit =
+        existingArticleMetadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
+        existingArticleMetadata.contentId === this.id;
+      const articleEvidence =
+        existingArticleEvidence && !articleEvidenceOwnedByThisAudit
+          ? existingArticleEvidence
+          : await evidences.upsertEvidence({
+              ...articleEvidenceInput,
+              evidenceKey: articleEvidenceKey,
+            });
 
       let supportingEvidenceIds = assessment.matchedEvidenceIds.filter(
         (evidenceId) => candidateEvidence.has(evidenceId),
@@ -2867,6 +2921,18 @@ export class Content
       }
     }
 
+    await this.clearGeneratedFactAudit({ retainAuditRunId: auditRunId });
+    const sourceReplacement = await this.clearGeneratedFactSourcesForSources(
+      undefined,
+      { retainAuditRunId: auditRunId },
+    );
+    for (const factId of new Set([
+      ...sourceReplacement.affectedFactIds,
+      ...referenceFacts.keys(),
+    ])) {
+      await facts.recalculateConfidence(factId);
+    }
+
     const reviews = await this.getContentReviewCollection();
     await reviews.createFromResult({
       contentId: this.id as string,
@@ -2914,6 +2980,19 @@ export class Content
   public async repairFactEvidence(
     options: FactAuditResourceRepairOptions = {},
   ) {
+    if (!this.db.transaction) {
+      throw new Error(
+        'Atomic fact evidence repair requires transaction support',
+      );
+    }
+    return this.withTransaction((content) =>
+      content.repairFactEvidenceAtomic(options),
+    );
+  }
+
+  private async repairFactEvidenceAtomic(
+    options: FactAuditResourceRepairOptions = {},
+  ) {
     await this.requireFactLinking('fact evidence repair');
     if (!this.id) {
       throw new Error('Cannot repair fact evidence for unsaved content');
@@ -2935,9 +3014,34 @@ export class Content
       auditRunId,
       maxFactsPerSource: options.maxFactsPerSource,
       context: options.context,
-      replaceGenerated: true,
+      failOnExtractionError: true,
     });
     warnings.push(...repair.warnings);
+
+    const evidences = await this.getFactEvidenceCollection();
+    const evidenceReplacement = await evidences.replaceGeneratedForSources(
+      sources.map((source) => ({
+        sourceKind: source.sourceKind,
+        sourceId: source.sourceId,
+      })),
+      {
+        generatedBy: FACT_AUDIT_GENERATED_BY,
+        contentId: this.id as string,
+        tenantId: this.tenantId ?? null,
+        retainAuditRunId: auditRunId,
+      },
+    );
+    const sourceReplacement = await this.clearGeneratedFactSourcesForSources(
+      sources,
+      { retainAuditRunId: auditRunId },
+    );
+    const facts = await this.getFactCollection();
+    for (const factId of new Set([
+      ...sourceReplacement.affectedFactIds,
+      ...repair.referenceFacts.keys(),
+    ])) {
+      await facts.recalculateConfidence(factId);
+    }
 
     const state = await this.getFactAuditState();
     return {
@@ -2946,8 +3050,8 @@ export class Content
         auditRunId,
         referenceFactsExtracted: repair.referenceFactsExtracted,
         repairedSources: repair.repairedSources,
-        deletedEvidenceIds: repair.deletedEvidenceIds,
-        deletedSourceIds: repair.deletedSourceIds,
+        deletedEvidenceIds: evidenceReplacement.deletedEvidenceIds,
+        deletedSourceIds: sourceReplacement.deletedSourceIds,
         warnings,
       },
     };

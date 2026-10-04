@@ -42,6 +42,9 @@ await sources.create({
 await facts.recalculateConfidence(fact.id);
 
 // 3-zone semantic reconciliation
+// Exact normalized statements first reuse an active fact only within the same
+// tenant, domain, and type. PostgreSQL callers are serialized on that key, so
+// this identity guarantee also holds when embeddings fail or calls overlap.
 // >= 0.85 similarity: auto-merge (same fact, update metadata)
 // 0.60-0.85: optional typed decision, otherwise AI disambiguation
 // Typed decisions merge only when their selected merge probability meets the

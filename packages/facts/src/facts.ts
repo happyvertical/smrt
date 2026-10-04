@@ -52,7 +52,7 @@ import type {
   ReconcileOptions,
   ReconcileResult,
 } from './types';
-import { calculateConfidence } from './utils';
+import { calculateConfidence, normalizeText } from './utils';
 
 const DEFAULT_EXTRACTION_FACT_TYPES: FactType[] = [
   'assertion',
@@ -220,6 +220,7 @@ function asMessageCapableAi(ai: unknown): MessageCapableAi | null {
 
 export class FactCollection extends SmrtCollection<Fact> {
   static readonly _itemClass = Fact;
+  private readonly reconciliationQueues = new Map<string, Promise<void>>();
 
   /**
    * Fetch one catalog page in SQL. The recursive branch walk may inspect more
@@ -712,6 +713,108 @@ export class FactCollection extends SmrtCollection<Fact> {
   // Reconcile & Evolution (Phase 1b)
   // =========================================================================
 
+  private resolveReconciliationTenant(tenantId: string | null | undefined) {
+    return tenantId !== undefined
+      ? tenantId
+      : (getCurrentTenant()?.tenantId ?? null);
+  }
+
+  private async findExactReconciliationMatch(
+    options: ReconcileOptions,
+  ): Promise<Fact | null> {
+    const normalizedStatement = normalizeText(options.rawInput);
+    const tenantId = this.resolveReconciliationTenant(options.tenantId);
+    const candidates = await this.list({
+      where: {
+        tenantId,
+        domain: options.domain ?? '',
+        type: options.type ?? 'assertion',
+        status: 'active',
+      },
+      orderBy: 'created_at ASC',
+    });
+
+    return (
+      candidates.find(
+        (candidate) =>
+          normalizeText(candidate.textRefined) === normalizedStatement,
+      ) ?? null
+    );
+  }
+
+  private matchesSemanticReconciliationScope(
+    fact: Fact,
+    options: ReconcileOptions,
+  ): boolean {
+    return (
+      (fact.tenantId ?? null) ===
+      this.resolveReconciliationTenant(options.tenantId)
+    );
+  }
+
+  private reconciliationIdentity(options: ReconcileOptions): string {
+    return [
+      this.resolveReconciliationTenant(options.tenantId) ?? '__global__',
+      options.domain ?? '',
+      options.type ?? 'assertion',
+      normalizeText(options.rawInput),
+    ].join('\u001f');
+  }
+
+  private async withReconciliationQueue<T>(
+    options: ReconcileOptions,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const identity = this.reconciliationIdentity(options);
+    const previous =
+      this.reconciliationQueues.get(identity) ?? Promise.resolve();
+    let release: () => void = () => undefined;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.reconciliationQueues.set(identity, current);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.reconciliationQueues.get(identity) === current) {
+        this.reconciliationQueues.delete(identity);
+      }
+    }
+  }
+
+  private async withExactReconciliationLock<T>(
+    options: ReconcileOptions,
+    operation: (collection: FactCollection) => Promise<T>,
+  ): Promise<T> {
+    const database = this.db;
+    const lockKey = this.reconciliationIdentity(options);
+
+    const run = async (collection: FactCollection) => {
+      if (isPostgresDatabase(collection.db)) {
+        await collection.db.query(
+          'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+          'smrt-facts.reconcile',
+          lockKey,
+        );
+      }
+      return operation(collection);
+    };
+
+    if (!isPostgresDatabase(database) || !database.transaction) {
+      return run(this);
+    }
+
+    return database.transaction(async (transaction) => {
+      const transactionCollection = await FactCollection.create({
+        ...this.options,
+        db: transaction,
+      });
+      return run(transactionCollection);
+    });
+  }
+
   /**
    * Reconcile raw input against existing facts using semantic search + AI.
    * Determines whether to create, merge, or branch.
@@ -728,6 +831,16 @@ export class FactCollection extends SmrtCollection<Fact> {
    * 4. Return { action, fact, source?, similarity?, matchedFact? }
    */
   async reconcile(options: ReconcileOptions): Promise<ReconcileResult> {
+    return this.withReconciliationQueue(options, () =>
+      this.withExactReconciliationLock(options, (collection) =>
+        collection.reconcileLocked(options),
+      ),
+    );
+  }
+
+  private async reconcileLocked(
+    options: ReconcileOptions,
+  ): Promise<ReconcileResult> {
     const {
       rawInput,
       similarityThreshold = 0.85,
@@ -748,13 +861,59 @@ export class FactCollection extends SmrtCollection<Fact> {
       );
     }
 
+    const exactMatch = await this.findExactReconciliationMatch(options);
+    if (exactMatch) {
+      exactMatch.textRaw = rawInput;
+      await exactMatch.save();
+
+      let sourceRecord: import('./fact-source').FactSource | undefined;
+      if (source) {
+        const sourceCollection = await FactSourceCollection.create(
+          this.options,
+        );
+        sourceRecord = await sourceCollection.create({
+          factId: exactMatch.id as string,
+          sourceType: source.sourceType || '',
+          sourceUrl: source.sourceUrl || '',
+          sourceTitle: source.sourceTitle || '',
+          credibility: source.credibility ?? 0.5,
+          metadata:
+            source.metadata === undefined
+              ? undefined
+              : typeof source.metadata === 'string'
+                ? source.metadata
+                : JSON.stringify(source.metadata),
+          tenantId: this.resolveReconciliationTenant(options.tenantId),
+        });
+        await this.recalculateConfidence(exactMatch.id as string);
+      }
+
+      let fact = exactMatch;
+      if (sourceRecord) {
+        fact = (await this.get({ id: exactMatch.id })) ?? exactMatch;
+      }
+      return {
+        action: 'merged',
+        fact,
+        source: sourceRecord,
+        similarity: 1,
+        matchedFact: exactMatch,
+      };
+    }
+
     // 1. Semantic search against existing facts
     let matches: Array<Fact & { _similarity: number }> = [];
     try {
       matches = await this.semanticSearch(rawInput, {
         limit: 5,
         minSimilarity: conflictThreshold,
+        where: {
+          tenantId: this.resolveReconciliationTenant(options.tenantId),
+        },
       });
+      matches = matches.filter((match) =>
+        this.matchesSemanticReconciliationScope(match, options),
+      );
     } catch {
       // Semantic search may fail if no embeddings exist yet — treat as no match
     }
@@ -771,7 +930,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         textRaw: rawInput,
         type,
         domain,
-        tenantId: options.tenantId ?? null,
+        tenantId: this.resolveReconciliationTenant(options.tenantId),
         status: 'active',
         sourceCount: source ? 1 : 0,
         confidence: calculateConfidence({
@@ -829,7 +988,7 @@ export class FactCollection extends SmrtCollection<Fact> {
               textRaw: rawInput,
               type,
               domain,
-              tenantId: options.tenantId ?? null,
+              tenantId: this.resolveReconciliationTenant(options.tenantId),
               status: 'active',
               sourceCount: source ? 1 : 0,
             },
@@ -857,7 +1016,7 @@ export class FactCollection extends SmrtCollection<Fact> {
             : typeof source.metadata === 'string'
               ? source.metadata
               : JSON.stringify(source.metadata),
-        tenantId: options.tenantId ?? null,
+        tenantId: this.resolveReconciliationTenant(options.tenantId),
       });
     }
 

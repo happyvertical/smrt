@@ -56,6 +56,11 @@ describe('filterPictures', () => {
 });
 
 describe('ContentPictureDrawer', () => {
+  it('reports when no main picture has been set', () => {
+    const root = render({ pictures: PICTURES, mainPictureMode: 'none' });
+    expect(root.textContent).toContain('No main picture is set.');
+  });
+
   it('uses plain labels and no technical words', () => {
     const root = render({ pictures: PICTURES, onUpload: vi.fn() });
     const text = root.textContent ?? '';
