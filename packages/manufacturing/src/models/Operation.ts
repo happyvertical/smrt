@@ -13,6 +13,7 @@
  */
 
 import {
+  crossPackageRef,
   field,
   SmrtObject,
   type SmrtObjectOptions,
@@ -29,7 +30,7 @@ export interface OperationOptions extends SmrtObjectOptions {
   name?: string;
   category?: string;
   isActive?: boolean;
-  requiredQualificationId?: string;
+  requiredQualificationId?: string | null;
 }
 
 @TenantScoped({ mode: 'optional' })
@@ -73,13 +74,16 @@ export class Operation extends SmrtObject {
   isActive: boolean = true;
 
   /**
-   * Optional plain string id of the qualification definition a worker needs to
-   * start this operation: a `Qualification` from
-   * `@happyvertical/smrt-human-resources`. This package does not import or
-   * validate it; an application reads it to decide who may start the
-   * operation. Empty when no qualification is required.
+   * Optional id of the qualification definition a worker needs to start this
+   * operation: a `Qualification` from `@happyvertical/smrt-human-resources`.
+   * Declared as a cross-package reference (metadata only: this package takes no
+   * dependency on it and does not validate the id); an application reads it to
+   * decide who may start the operation. `null` when none is required.
    */
-  requiredQualificationId: string = '';
+  @crossPackageRef('@happyvertical/smrt-human-resources:Qualification', {
+    nullable: true,
+  })
+  requiredQualificationId: string | null = null;
 
   constructor(options: OperationOptions = {}) {
     super(options);

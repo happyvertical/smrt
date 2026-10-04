@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { DatabaseConfig } from '@happyvertical/smrt-core';
 import {
   disableTenancy,
   enableTenancy,
@@ -41,6 +42,8 @@ export function operationsSuite(
   name: string,
   create: () => Promise<DatabaseInterface>,
   cleanup: () => Promise<void>,
+  /** A config object for the same kind of database; used to check that a config resolves once. */
+  configFor: () => DatabaseConfig = () => ({ type: 'sqlite', url: ':memory:' }),
 ) {
   describe(name, () => {
     let db: DatabaseInterface;
@@ -48,10 +51,12 @@ export function operationsSuite(
     let routing: RoutingService;
     let boms: BillOfMaterialsCollection;
     let lines: BomLineCollection;
+    let dbConfig: DatabaseConfig;
 
     beforeEach(async () => {
       enableTenancy();
       db = await create();
+      dbConfig = configFor();
       operations = await OperationService.create({ db });
       routing = await RoutingService.create({ db });
       boms = await BillOfMaterialsCollection.create({ db });
@@ -83,7 +88,7 @@ export function operationsSuite(
           code: 'CUT',
           name: 'Cutting',
           category: '',
-          requiredQualificationId: '',
+          requiredQualificationId: null,
           isActive: true,
         });
         const qualificationId = randomUUID();
@@ -96,6 +101,19 @@ export function operationsSuite(
         expect(weld.category).toBe('fabrication');
         expect(weld.requiredQualificationId).toBe(qualificationId);
         expect((await operations.get(weld.id as string)).code).toBe('WELD');
+      });
+
+      it('maps a concurrent definition of the same code to the duplicate error', async () => {
+        const results = await Promise.allSettled([
+          operations.define({ code: 'CUT', name: 'One' }),
+          operations.define({ code: 'CUT', name: 'Two' }),
+        ]);
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+        const rejected = results.find((r) => r.status === 'rejected') as
+          | PromiseRejectedResult
+          | undefined;
+        expect(rejected?.reason).toBeInstanceOf(DuplicateOperationCodeError);
+        expect(await operations.list()).toHaveLength(1);
       });
 
       it('requires a code and a name', async () => {
@@ -137,6 +155,7 @@ export function operationsSuite(
       });
 
       it('renames and updates without changing the code', async () => {
+        const qualId = randomUUID();
         const op = await operations.define({ code: 'CUT', name: 'Cutting' });
         const renamed = await operations.rename(
           op.id as string,
@@ -145,21 +164,21 @@ export function operationsSuite(
         expect(renamed).toMatchObject({ code: 'CUT', name: 'Plasma cutting' });
         await operations.update(op.id as string, {
           category: 'fabrication',
-          requiredQualificationId: 'qual-x',
+          requiredQualificationId: qualId,
         });
         const stored = await operations.get(op.id as string);
         expect(stored).toMatchObject({
           code: 'CUT',
           name: 'Plasma cutting',
           category: 'fabrication',
-          requiredQualificationId: 'qual-x',
+          requiredQualificationId: qualId,
         });
         await operations.update(op.id as string, {
           requiredQualificationId: '',
         });
         expect(
           (await operations.get(op.id as string)).requiredQualificationId,
-        ).toBe('');
+        ).toBeNull();
         await expect(operations.rename(op.id as string, ' ')).rejects.toThrow(
           InvalidOperationInputError,
         );
@@ -364,6 +383,26 @@ export function operationsSuite(
         ).rejects.toThrow(OperationRetiredError);
       });
 
+      it('consumes retained occurrences: a retired operation cannot be added beyond those already on the routing', async () => {
+        const { cut } = await ops();
+        const bomId = await makeBom();
+        await routing.replaceRouting(bomId, [
+          { operationId: cut, estimatedMinutes: 10 },
+        ]);
+        await operations.retire(cut);
+        await expect(
+          routing.replaceRouting(bomId, [
+            { operationId: cut, estimatedMinutes: 10 },
+            { operationId: cut, estimatedMinutes: 5 },
+          ]),
+        ).rejects.toThrow(OperationRetiredError);
+        expect(await routing.list(bomId)).toHaveLength(1);
+        await routing.replaceRouting(bomId, [
+          { operationId: cut, estimatedMinutes: 8 },
+        ]);
+        expect(await routing.list(bomId)).toHaveLength(1);
+      });
+
       it('serializes concurrent replacements so the result is one of the requested routings', async () => {
         const { cut, weld, paint } = await ops();
         const bomId = await makeBom();
@@ -508,6 +547,28 @@ export function operationsSuite(
         ).computeLabourEstimate(bomId);
         expect(labour.totalMinutes).toBe(20);
         expect(labour.steps[0].operationCode).toBe('CUT');
+      });
+
+      it('lets collections built from one db config see each other', async () => {
+        // A config object (not a resolved handle) must resolve to one database.
+        const service = await BomService.create({ db: dbConfig });
+        const cut = await service.operations.create({
+          code: 'CUT',
+          name: 'Cutting',
+        });
+        const bom = await service.boms.create({
+          productId: randomUUID(),
+          version: 1,
+        });
+        await service.routingSteps.create({
+          bomId: bom.id as string,
+          operationId: cut.id as string,
+          sequence: 1,
+          estimatedMinutes: 20,
+        });
+        const labour = await service.computeLabourEstimate(bom.id as string);
+        expect(labour.totalMinutes).toBe(20);
+        expect(labour.steps).toHaveLength(1);
       });
 
       it('throws for a missing bill', async () => {

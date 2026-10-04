@@ -13,11 +13,14 @@
 
 import {
   field,
+  foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { BillOfMaterials } from './BillOfMaterials.js';
+import { Operation } from './Operation.js';
 
 /**
  * Options accepted by the {@link RoutingStep} constructor.
@@ -45,12 +48,15 @@ export class RoutingStep extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  /** Plain string id of the owning {@link BillOfMaterials}. */
-  @field({ required: true })
+  /**
+   * The owning {@link BillOfMaterials}. Cascade: a routing belongs to its bill.
+   * (`BomLine.bomId` is still a plain string; see AGENTS.md.)
+   */
+  @foreignKey(BillOfMaterials, { required: true, onDelete: 'CASCADE' })
   bomId: string = '';
 
-  /** Plain string id of the {@link Operation} performed at this step. */
-  @field({ required: true })
+  /** The {@link Operation} performed here. Restrict: operations are retired, never deleted. */
+  @foreignKey(Operation, { required: true, onDelete: 'RESTRICT' })
   operationId: string = '';
 
   /** Position in the routing, starting at 1 and without gaps. */

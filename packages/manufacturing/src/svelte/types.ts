@@ -14,7 +14,7 @@ export interface OperationView {
   category: string;
   isActive: boolean;
   /** Plain string id of the required qualification; empty or omitted for none. */
-  requiredQualificationId?: string;
+  requiredQualificationId?: string | null;
 }
 
 /** Existing values passed to `OperationForm` when editing. */
@@ -22,7 +22,7 @@ export interface OperationFormInitial {
   code: string;
   name: string;
   category: string;
-  requiredQualificationId: string;
+  requiredQualificationId: string | null;
 }
 
 /**

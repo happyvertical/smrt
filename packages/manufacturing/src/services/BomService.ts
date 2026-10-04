@@ -23,7 +23,7 @@
  * @packageDocumentation
  */
 
-import type { DatabaseConfig } from '@happyvertical/smrt-core';
+import { type DatabaseConfig, resolveDatabase } from '@happyvertical/smrt-core';
 import {
   createStockService,
   type StockService,
@@ -135,7 +135,11 @@ export class BomService {
     // one connection / pool. StockService exposes its `db` as a public
     // field specifically so downstream services can compose against it
     // without reaching into Collection internals.
-    const sharedDb = options.db ?? stockService.db;
+    // Resolve once: a config object such as `{ type: 'sqlite', url: ':memory:' }`
+    // would otherwise yield a separate database per collection.
+    const sharedDb = (await resolveDatabase(
+      options.stockService ? (options.db ?? stockService.db) : stockService.db,
+    )) as unknown as DatabaseConfig;
     const [boms, lines, routingSteps, operations] = await Promise.all([
       BillOfMaterialsCollection.create({ db: sharedDb }),
       BomLineCollection.create({ db: sharedDb }),

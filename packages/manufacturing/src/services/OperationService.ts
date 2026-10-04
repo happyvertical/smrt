@@ -47,23 +47,22 @@ export class OperationService {
       throw new InvalidOperationInputError('Operation name is required.');
     if (await this.operations.findByCode(code))
       throw new DuplicateOperationCodeError(code);
-    const operation = await this.operations.create({
-      code,
-      name,
-      category: input.category?.trim() ?? '',
-      requiredQualificationId: input.requiredQualificationId?.trim() ?? '',
-      isActive: true,
-      // A concurrent definer of the same code must fail, not overwrite.
-      _insertOnly: true,
-    });
     try {
-      await operation.save();
+      // `create()` persists. A concurrent definer of the same code must fail
+      // rather than overwrite, hence insert-only.
+      return await this.operations.create({
+        code,
+        name,
+        category: input.category?.trim() ?? '',
+        requiredQualificationId: input.requiredQualificationId?.trim() || null,
+        isActive: true,
+        _insertOnly: true,
+      });
     } catch (error) {
       if (await this.operations.findByCode(code))
         throw new DuplicateOperationCodeError(code);
       throw error;
     }
-    return operation;
   }
 
   /** Fetch an operation or throw {@link OperationNotFoundError}. */
@@ -99,7 +98,7 @@ export class OperationService {
       operation.category = changes.category.trim();
     if (changes.requiredQualificationId !== undefined)
       operation.requiredQualificationId =
-        changes.requiredQualificationId.trim();
+        changes.requiredQualificationId.trim() || null;
     await operation.save();
     return operation;
   }

@@ -1,3 +1,4 @@
+import type { DatabaseConfig } from '@happyvertical/smrt-core';
 import {
   createIsolatedTestDbFromManifest,
   type IsolatedTestDbResult,
@@ -29,6 +30,7 @@ if (isPostgresAvailable()) {
     async () => {
       await isolated?.cleanup();
     },
+    () => isolated.config as DatabaseConfig,
   );
 } else
   describe.skip('operations and routing (postgres; needs database)', () => {});

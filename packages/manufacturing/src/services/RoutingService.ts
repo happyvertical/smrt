@@ -72,7 +72,11 @@ export class RoutingService {
       throw new BomNotFoundError(bomId);
 
     const current = await this.steps.findByBom(bomId);
-    const kept = new Set(current.map((step) => step.operationId));
+    // Each occurrence already on the routing may be kept once; a retired
+    // operation cannot be added beyond the occurrences it already has.
+    const retained = new Map<string, number>();
+    for (const step of current)
+      retained.set(step.operationId, (retained.get(step.operationId) ?? 0) + 1);
     for (const input of inputs) {
       const minutes = Number(input.estimatedMinutes);
       if (!Number.isFinite(minutes) || minutes < 0)
@@ -83,7 +87,9 @@ export class RoutingService {
         ? await this.operations.get(input.operationId)
         : null;
       if (!operation) throw new OperationNotFoundError(input.operationId);
-      if (!operation.isActive && !kept.has(operation.id as string))
+      const left = retained.get(operation.id as string) ?? 0;
+      if (left > 0) retained.set(operation.id as string, left - 1);
+      else if (!operation.isActive)
         throw new OperationRetiredError(operation.id as string);
     }
 
@@ -101,22 +107,26 @@ export class RoutingService {
       for (const step of await steps.findByBom(bomId)) await step.delete();
       const saved: RoutingStep[] = [];
       for (const [index, input] of inputs.entries()) {
-        const step = await steps.create({
-          bomId,
-          operationId: input.operationId,
-          sequence: index + 1,
-          estimatedMinutes: Number(input.estimatedMinutes),
-          notes: input.notes?.trim() ?? '',
-        });
-        await step.save();
-        saved.push(step);
+        // `create()` persists; no second save.
+        saved.push(
+          await steps.create({
+            bomId,
+            operationId: input.operationId,
+            sequence: index + 1,
+            estimatedMinutes: Number(input.estimatedMinutes),
+            notes: input.notes?.trim() ?? '',
+          }),
+        );
       }
       return saved;
     };
 
     const underlying = this.db as unknown as TransactionalDb;
+    // Delete-and-reinsert is only safe atomically; refuse adapters without it.
     if (typeof underlying.transaction !== 'function')
-      return write(this.steps, this.boms);
+      throw new Error(
+        'RoutingService requires a database adapter with transaction() support.',
+      );
     return withRevisionRetry(
       () =>
         underlying.transaction?.(async (txDb) => {
