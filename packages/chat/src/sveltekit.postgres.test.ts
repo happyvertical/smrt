@@ -718,6 +718,86 @@ postgresDescribe('streamed assistant turn under database-rls', () => {
     });
   });
 
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** Poll until `check` holds (bounded). */
+  async function eventually(check: () => Promise<boolean>) {
+    const deadline = Date.now() + 10_000;
+    while (!(await check())) {
+      if (Date.now() > deadline) throw new Error('condition never held');
+      await sleep(50);
+    }
+  }
+
+  it('settles a send whose request committed after the turn start timed out', async () => {
+    const model = delayedAI([text('Never asked.')]);
+    let asked = false;
+    void model.firstCall.then(() => {
+      asked = true;
+    });
+    const { routes, errors } = mount({
+      ai: model.ai,
+      runtime,
+      turnStartTimeoutMs: 50,
+    });
+    const threadId = await createThread(routes);
+    const response = await inRequest(actor, async () => {
+      const answer = await routes.POST(
+        routeEvent('POST', `threads/${threadId}/messages`, actor, {
+          content: 'Hello?',
+          clientRequestId: 'send-late',
+        }),
+      );
+      // The request's transaction outlives the turn's start deadline.
+      await sleep(400);
+      return answer;
+    });
+    const events = await readEvents(response);
+    expect(events.map((event) => event.type)).toContain('error');
+    expect(events.some((event) => event.type === 'done')).toBe(false);
+    expect(errors.map(String).join('\n')).toMatch(/did not end/);
+    // Once the request committed, its send is settled, not left running.
+    await eventually(async () => {
+      const [send] = await messagesAs(tenantA, threadId);
+      return (
+        JSON.parse(String(send?.metadata ?? '{}')).turnOutcome === 'failed'
+      );
+    });
+    expect(asked).toBe(false);
+    expect(
+      (await messagesAs(tenantA, threadId)).map((row) => row.role),
+    ).toEqual(['user']);
+  });
+
+  it('stores and settles nothing when that late request rolls back', async () => {
+    const model = delayedAI([text('Never asked.')]);
+    const { routes, errors } = mount({
+      ai: model.ai,
+      runtime,
+      turnStartTimeoutMs: 50,
+    });
+    const threadId = await createThread(routes);
+    let response: Response | undefined;
+    await expect(
+      inRequest(actor, async () => {
+        response = await routes.POST(
+          routeEvent('POST', `threads/${threadId}/messages`, actor, {
+            content: 'Hello?',
+            clientRequestId: 'send-late-rollback',
+          }),
+        );
+        await sleep(400);
+        throw new Error('downstream failure');
+      }),
+    ).rejects.toThrow('downstream failure');
+    const events = await readEvents(response as Response);
+    expect(events.map((event) => event.type)).toContain('error');
+    await sleep(300);
+    expect(await messagesAs(tenantA, threadId)).toEqual([]);
+    expect(errors.map(String).join('\n')).not.toMatch(/never ended/);
+  });
+
   it('runs no turn for a send whose request transaction rolled back', async () => {
     const model = delayedAI([text('Never stored.')]);
     const { routes, errors } = mount({ ai: model.ai, runtime });

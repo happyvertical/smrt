@@ -147,7 +147,10 @@ Refusals are JSON `{ error, code }` with a user-safe `error`.
   never acquired and a revoked one never regained. `client_tool_calls`, `done` and `error` reach
   the browser only after that transaction commits, so a resume or retry
   always finds what the turn stored. If that transaction fails, the send is
-  recorded as `failed`. Without `runtime`, the turn runs to completion inside
+  recorded as `failed`. A request transaction still open after
+  `turnStartTimeoutMs` (default 60 s) answers an error without running the
+  turn; the route keeps watching it (up to `abandonedTurnMs`) and records a
+  send that commits late as `failed`. Without `runtime`, the turn runs to completion inside
   the request before the response returns (its events then arrive at once).
   Outside an RLS transaction (SQLite, the local profile) turns stream as
   before.

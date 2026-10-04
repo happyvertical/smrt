@@ -309,6 +309,13 @@ export interface MountAssistantRoutesOptions {
    * died) counts as failed after this long. Default 15 minutes.
    */
   abandonedTurnMs?: number;
+  /**
+   * How long a streamed turn waits for its request's RLS transaction to end
+   * before it reports an error instead of running (see `runtime`). It then
+   * keeps watching, up to `abandonedTurnMs`, and settles a send that
+   * committed late as `failed`. Default 60 s.
+   */
+  turnStartTimeoutMs?: number;
   describeTool?: (name: string, args?: Record<string, unknown>) => string;
   /**
    * Persist a server tool invocation into the thread (default: none). Its
@@ -814,6 +821,8 @@ export function mountAssistantRoutes(
   };
   const abandonedTurnMs =
     options.abandonedTurnMs ?? DEFAULT_ASSISTANT_ABANDONED_TURN_MS;
+  const turnStartTimeoutMs =
+    options.turnStartTimeoutMs ?? DEFAULT_ASSISTANT_TURN_START_TIMEOUT_MS;
 
   const segmentsOf = (event: AssistantRouteEvent): string[] | null => {
     const param = event.params?.[paramName];
@@ -1230,13 +1239,61 @@ export function mountAssistantRoutes(
           []),
       ]),
     };
+    /** Record the stored send as failed, in a fresh lifetime. */
+    const settleFailed = async (messageId: string, onlyIfStored = false) => {
+      try {
+        await runtime.runAsPrincipal(bound, async () => {
+          const settleChat = await chatFor({ event: context.event, principal });
+          if (onlyIfStored) {
+            const stored = await settleChat.getThreadMessageReplies({
+              threadId: String(thread.id),
+              messageId,
+              actorProfileId: principal.profileId,
+              tenantId: principal.tenantId,
+            });
+            if (!stored?.message) return;
+          }
+          await settleOutcome(
+            settleChat,
+            principal,
+            String(thread.id),
+            messageId,
+          )('failed');
+        });
+      } catch (settleError) {
+        safeLog(settleError);
+      }
+    };
+    /** After a timed-out start: settle the send once its request ends. */
+    const settleLateSend = async (
+      requestActive: () => boolean,
+      messageId: string,
+    ) => {
+      try {
+        if (await requestEnded(requestActive, abandonedTurnMs)) {
+          await settleFailed(messageId, true);
+        } else {
+          safeLog(
+            new Error(
+              'mountAssistantRoutes: the request transaction never ended; its send was not settled.',
+            ),
+          );
+        }
+      } catch (error) {
+        safeLog(error);
+      }
+    };
     const ownLifetime = async (emit: (event: TurnEvent) => void) => {
       // Events after which the browser acts on stored state (resume, retry,
       // reload) wait until this lifetime has committed, with all that follow.
       const held: TurnEvent[] = [];
       let sendConfirmed = false;
+      const requestActive = () => isActive.call(transaction) as boolean;
       try {
-        if (!(await requestEnded(() => isActive.call(transaction)))) {
+        if (!(await requestEnded(requestActive, turnStartTimeoutMs))) {
+          // Never abandon the send: once the request's transaction ends,
+          // settle it if it committed (a rollback stored nothing).
+          if (durableSend) void settleLateSend(requestActive, durableSend);
           throw new Error(
             'mountAssistantRoutes: the request transaction did not end; the turn did not run.',
           );
@@ -1287,20 +1344,7 @@ export function mountAssistantRoutes(
         // Nothing the turn wrote committed: settle the send as failed (in a
         // fresh lifetime) so it does not wait out `abandonedTurnMs`.
         safeLog(error);
-        if (durableSend && sendConfirmed) {
-          try {
-            await runtime.runAsPrincipal(bound, async () =>
-              settleOutcome(
-                await chatFor({ event: context.event, principal }),
-                principal,
-                String(thread.id),
-                durableSend,
-              )('failed'),
-            );
-          } catch (settleError) {
-            safeLog(settleError);
-          }
-        }
+        if (durableSend && sendConfirmed) await settleFailed(durableSend);
         emit({
           type: 'error',
           error: ASSISTANT_TURN_GENERIC_ERROR,
@@ -1958,8 +2002,8 @@ const HELD_UNTIL_COMMIT: ReadonlySet<string> = new Set([
   'error',
 ]);
 
-/** How long a turn waits for its request's transaction to end. */
-const REQUEST_END_TIMEOUT_MS = 60_000;
+/** Default for `turnStartTimeoutMs`. */
+export const DEFAULT_ASSISTANT_TURN_START_TIMEOUT_MS = 60_000;
 
 /**
  * The RLS request transaction this call runs in (`database-rls`), when
@@ -1995,9 +2039,12 @@ function effectiveScopes(
   return scopes.filter((scope) => !allowed || allowed.has(scope));
 }
 
-/** Resolves `true` once `isActive()` is false, `false` on timeout. */
-async function requestEnded(isActive: () => boolean): Promise<boolean> {
-  const deadline = Date.now() + REQUEST_END_TIMEOUT_MS;
+/** Resolves `true` once `isActive()` is false, `false` after `timeoutMs`. */
+async function requestEnded(
+  isActive: () => boolean,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
   let delay = 2;
   while (isActive()) {
     if (Date.now() >= deadline) return false;
