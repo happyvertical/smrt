@@ -18,6 +18,11 @@ export {
   type ProductionOrderPostedPayload,
 } from './dispatch-handlers.js';
 export {
+  createOperationService,
+  OperationService,
+  type OperationServiceOptions,
+} from './OperationService.js';
+export {
   type ConsumeMaterialsOptions,
   type ConsumeResult,
   createProductionService,
@@ -27,3 +32,8 @@ export {
   ProductionService,
   type ProductionServiceOptions,
 } from './ProductionService.js';
+export {
+  createRoutingService,
+  RoutingService,
+  type RoutingServiceOptions,
+} from './RoutingService.js';

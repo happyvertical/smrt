@@ -1,6 +1,6 @@
 # @happyvertical/smrt-manufacturing
 
-Bills of materials, cost rollup, and production-order operations. Strictly industry-neutral — the same primitives serve apparel, furniture, automotive, CPG, electronics, food production, custom hardware, and any vertical that builds finished goods from a recipe.
+Bills of materials, operations and routing, cost and labour rollup, and production-order stock movement. Strictly industry-neutral — the same primitives serve apparel, furniture, automotive, CPG, electronics, food production, custom hardware, and any vertical that builds finished goods from a recipe.
 
 Sits on top of `@happyvertical/smrt-inventory` (stock) and works alongside the `ProductionOrder` Contract STI subtype already shipped in `@happyvertical/smrt-commerce`.
 
@@ -10,10 +10,19 @@ Sits on top of `@happyvertical/smrt-inventory` (stock) and works alongside the `
 |---|---|
 | `BillOfMaterials` | Recipe for a finished product. `productId` (plain string) references the upstream `Product` or any STI subtype. Multiple revisions per product via `version` + `status` (`draft` / `active` / `superseded`). `conflictColumns: ['product_id', 'version', 'tenant_id']`. |
 | `BomLine` | One component on a BOM. `bomId` (FK), `componentSkuId` (plain string ref — the `Sku` model lives in `@happyvertical/smrt-products`; inventory tracks stock motion against the id), `qtyPerUnit`, `uom` (open-ended — `yards`, `each`, `grams`, `kg`, ...), `wastePercent`, `notes`. `conflictColumns: ['bom_id', 'component_sku_id', 'tenant_id']`. |
+| `Operation` | A kind of work (cut, weld, inspect), a managed list per tenant. `code` (unique per tenant; `conflictColumns: ['code', 'tenant_id']`, fixed once defined), `name`, `category`, `isActive` (retire/reinstate; never deleted, `delete()` throws), `requiredQualificationId` (nullable `@crossPackageRef('@happyvertical/smrt-human-resources:Qualification')`: metadata only, no dependency, unvalidated; an application reads it to gate who may start the operation). |
+| `RoutingStep` | One operation in a BOM's optional routing. `bomId` (`@foreignKey(BillOfMaterials)`, CASCADE: a routing belongs to its bill), `operationId` (`@foreignKey(Operation)`, RESTRICT: operations are retired, never deleted), `sequence` (1..n, unique per bom), `estimatedMinutes` (decimal, per produced unit), `notes`. `conflictColumns: ['bom_id', 'sequence', 'tenant_id']`. |
 
-Both models are `@TenantScoped({ mode: 'optional' })` with a nullable `tenantId` so they can be used either tenant-scoped or globally.
+All models are `@TenantScoped({ mode: 'optional' })` with a nullable `tenantId` so they can be used either tenant-scoped or globally.
 
-`RoutingStep` (labor cost) is intentionally out of scope for v1 — see issue [#1245](https://github.com/happyvertical/smrt/issues/1245) for the planned follow-up.
+## Operations, routing and labour estimate
+
+- `OperationService` maintains the list (`define` rejects a duplicate code, including a retired one's; `rename`, `update`, `retire`, `reinstate`). `RoutingService.replaceRouting(bomId, steps)` swaps a bill's whole routing in one transaction and numbers it 1..n; a retired operation may stay on a routing that has it but cannot be newly added.
+- `BomService.computeLabourEstimate(bomId)` returns minutes and, only when the caller supplies `rateResolver` (hourly rate per `Operation`, mirroring `costResolver`), cost. No resolver means minutes only with `rateUnavailable` on each step. A bill with no routing returns an empty estimate; `computeMaterialCost` is unchanged.
+- `Operation` and `RoutingStep` expose generated list/get only; writes go through the services (generated create/update would upsert on a duplicate code or rename the code). `replaceRouting` saves the bill row inside its transaction (row lock) and retries on a revision conflict, so concurrent replacements serialize.
+- Deliberately absent: a default labour rate class (nothing here would use it; the resolver receives the whole `Operation` and can key on `code`/`category`), setup time, scheduling and work-centre capacity, and time recorded against an operation (that stays in `smrt-timesheets` or the application).
+- `./svelte` exports `OperationList` and `OperationForm` (props-driven; hosts persist through `OperationService`). Messages live in `src/svelte/i18n.ts`; component tests use the shared jsdom harness with axe assertions.
+- Tests: `operations-suite.ts` runs on SQLite (`operations.test.ts`) and PostgreSQL (`operations.optional.test.ts`, `pnpm test:postgres`; each test runs in its own tenant because PostgreSQL test data persists).
 
 ## BomService — planning helpers
 

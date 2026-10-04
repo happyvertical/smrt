@@ -16,3 +16,5 @@ export {
   type BillOfMaterialsOptions,
 } from './BillOfMaterials.js';
 export { BomLine, type BomLineOptions } from './BomLine.js';
+export { Operation, type OperationOptions } from './Operation.js';
+export { RoutingStep, type RoutingStepOptions } from './RoutingStep.js';

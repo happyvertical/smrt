@@ -13,6 +13,9 @@
  *   revisions per product via `version` + `status` lifecycle.
  * - {@link BomLine} — one component on a BOM with `qtyPerUnit`, `uom`,
  *   and optional `wastePercent`.
+ * - {@link Operation} — a kind of work (cut, weld, inspect); a managed list.
+ * - {@link RoutingStep} — an operation in a BOM's optional routing, with an
+ *   estimated duration.
  *
  * **Services**
  *
@@ -39,6 +42,8 @@ import './__smrt-register__.js';
 export {
   BillOfMaterialsCollection,
   BomLineCollection,
+  OperationCollection,
+  RoutingStepCollection,
 } from './collections/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,8 +54,25 @@ export {
   type BillOfMaterialsOptions,
   BomLine,
   type BomLineOptions,
+  Operation,
+  type OperationOptions,
+  RoutingStep,
+  type RoutingStepOptions,
 } from './models/index.js';
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Operations, routing and the labour estimate
+// ─────────────────────────────────────────────────────────────────────────────
+export {
+  type DefineOperationInput,
+  DuplicateOperationCodeError,
+  InvalidOperationInputError,
+  type LabourEstimate,
+  OperationNotFoundError,
+  type OperationRateResolver,
+  OperationRetiredError,
+  type RoutingStepEstimate,
+  type RoutingStepInput,
+} from './operation-types.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Services and dispatch-bus hook helpers (opt-in)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,10 +83,14 @@ export {
   type ConsumeMaterialsOptions,
   type ConsumeResult,
   createBomService,
+  createOperationService,
   createProductionService,
+  createRoutingService,
   type InstalledManufacturingDispatchHandlers,
   type InstallManufacturingDispatchHandlersOptions,
   installManufacturingDispatchHandlers,
+  OperationService,
+  type OperationServiceOptions,
   type ProduceFinishedGoodsOptions,
   type ProduceResult,
   type ProductionOrderCompletedPayload,
@@ -72,6 +98,8 @@ export {
   type ProductionOrderRef,
   ProductionService,
   type ProductionServiceOptions,
+  RoutingService,
+  type RoutingServiceOptions,
 } from './services/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────

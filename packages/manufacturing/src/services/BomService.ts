@@ -23,15 +23,22 @@
  * @packageDocumentation
  */
 
-import type { DatabaseConfig } from '@happyvertical/smrt-core';
+import { type DatabaseConfig, resolveDatabase } from '@happyvertical/smrt-core';
 import {
   createStockService,
   type StockService,
 } from '@happyvertical/smrt-inventory';
 import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollection.js';
 import { BomLineCollection } from '../collections/BomLineCollection.js';
+import { OperationCollection } from '../collections/OperationCollection.js';
+import { RoutingStepCollection } from '../collections/RoutingStepCollection.js';
 import type { BillOfMaterials } from '../models/BillOfMaterials.js';
 import type { BomLine } from '../models/BomLine.js';
+import type {
+  LabourEstimate,
+  OperationRateResolver,
+  RoutingStepEstimate,
+} from '../operation-types.js';
 import {
   type BomCostRollup,
   type BomLineCost,
@@ -84,6 +91,12 @@ export type BomServiceOptions = {
    * costs default to `0` and per-line `costUnavailable` is set.
    */
   costResolver?: ComponentCostResolver;
+  /**
+   * Optional resolver that returns the hourly labour rate for an operation,
+   * used by {@link BomService.computeLabourEstimate}. When omitted, the
+   * estimate reports minutes only and flags every step `rateUnavailable`.
+   */
+  rateResolver?: OperationRateResolver;
 } & (
   | { db: DatabaseConfig; stockService?: StockService }
   | { stockService: StockService; db?: DatabaseConfig }
@@ -107,6 +120,11 @@ export class BomService {
     public readonly lines: BomLineCollection,
     public readonly stockService: StockService,
     private readonly costResolver: ComponentCostResolver | undefined,
+    public readonly routingSteps: RoutingStepCollection,
+    public readonly operations: OperationCollection,
+    private readonly rateResolver:
+      | OperationRateResolver
+      | undefined = undefined,
   ) {}
 
   /** Factory — prefer {@link createBomService}. */
@@ -117,12 +135,26 @@ export class BomService {
     // one connection / pool. StockService exposes its `db` as a public
     // field specifically so downstream services can compose against it
     // without reaching into Collection internals.
-    const sharedDb = options.db ?? stockService.db;
-    const [boms, lines] = await Promise.all([
+    // Resolve once: a config object such as `{ type: 'sqlite', url: ':memory:' }`
+    // would otherwise yield a separate database per collection.
+    const sharedDb = (await resolveDatabase(
+      options.stockService ? (options.db ?? stockService.db) : stockService.db,
+    )) as unknown as DatabaseConfig;
+    const [boms, lines, routingSteps, operations] = await Promise.all([
       BillOfMaterialsCollection.create({ db: sharedDb }),
       BomLineCollection.create({ db: sharedDb }),
+      RoutingStepCollection.create({ db: sharedDb }),
+      OperationCollection.create({ db: sharedDb }),
     ]);
-    return new BomService(boms, lines, stockService, options.costResolver);
+    return new BomService(
+      boms,
+      lines,
+      stockService,
+      options.costResolver,
+      routingSteps,
+      operations,
+      options.rateResolver,
+    );
   }
 
   /**
@@ -174,6 +206,56 @@ export class BomService {
       currency: bom.currency || 'USD',
       lineBreakdown,
       hasMissingCosts,
+    };
+  }
+
+  /**
+   * Roll up the estimated labour to build one unit from the bill's routing:
+   * total minutes, plus cost when a `rateResolver` was supplied (hourly rate
+   * times minutes, per step). A bill with no routing returns an empty
+   * estimate with zero totals, so callers can add it to the material cost
+   * unconditionally. Retired operations still count: the routing names them.
+   *
+   * Throws {@link BomNotFoundError} when the BOM does not exist.
+   */
+  async computeLabourEstimate(bomId: string): Promise<LabourEstimate> {
+    const bom = await this.requireBom(bomId);
+    const routing = await this.routingSteps.findByBom(bomId);
+    const steps: RoutingStepEstimate[] = [];
+    let totalMinutes = 0;
+    let totalCost = 0;
+    let hasMissingRates = false;
+
+    for (const step of routing) {
+      const operation = await this.operations.get(step.operationId);
+      const minutes = Number(step.estimatedMinutes ?? 0);
+      const rate = operation ? await this.resolveRate(operation) : null;
+      const rateUnavailable = rate === null;
+      const stepCost = rate === null ? 0 : (minutes / 60) * rate;
+      totalMinutes += minutes;
+      if (rateUnavailable) hasMissingRates = true;
+      else totalCost += stepCost;
+      steps.push({
+        stepId: step.id as string,
+        sequence: step.sequence,
+        operationId: step.operationId,
+        operationCode: operation?.code ?? '',
+        operationName: operation?.name ?? '',
+        estimatedMinutes: minutes,
+        hourlyRate: rate ?? 0,
+        stepCost,
+        rateUnavailable,
+      });
+    }
+
+    return {
+      bomId,
+      hasRouting: steps.length > 0,
+      totalMinutes,
+      totalCost,
+      currency: bom.currency || 'USD',
+      steps,
+      hasMissingRates,
     };
   }
 
@@ -281,6 +363,17 @@ export class BomService {
     const bom = await this.boms.get(bomId);
     if (!bom) throw new BomNotFoundError(bomId);
     return bom;
+  }
+
+  /** Run the {@link OperationRateResolver}; `null` when there is no rate. */
+  private async resolveRate(
+    operation: Parameters<OperationRateResolver>[0],
+  ): Promise<number | null> {
+    if (!this.rateResolver) return null;
+    const value = await this.rateResolver(operation);
+    if (value === null || value === undefined || !Number.isFinite(value))
+      return null;
+    return Number(value);
   }
 
   /**

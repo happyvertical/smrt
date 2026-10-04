@@ -13,3 +13,5 @@ import '../__smrt-register__.js';
 
 export { BillOfMaterialsCollection } from './BillOfMaterialsCollection.js';
 export { BomLineCollection } from './BomLineCollection.js';
+export { OperationCollection } from './OperationCollection.js';
+export { RoutingStepCollection } from './RoutingStepCollection.js';
