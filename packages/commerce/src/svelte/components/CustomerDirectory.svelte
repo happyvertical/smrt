@@ -55,7 +55,7 @@ const {
   items = [],
   total = items.length,
   page = 1,
-  pageSize = Math.max(items.length, 1),
+  pageSize,
   query = '',
   status = '',
   searchAction,
@@ -76,8 +76,12 @@ const singular = $derived(
   labels.singular ?? t(M['commerce.customer.singular']),
 );
 const plural = $derived(labels.plural ?? t(M['commerce.customer.plural']));
-const first = $derived(total === 0 ? 0 : (page - 1) * pageSize + 1);
-const last = $derived(Math.min(page * pageSize, total));
+const first = $derived(
+  pageSize === undefined || total === 0 ? 0 : (page - 1) * pageSize + 1,
+);
+const last = $derived(
+  pageSize === undefined ? 0 : Math.min(page * pageSize, total),
+);
 
 function statusLabel(value: string): string {
   if (value === 'active') return t(M['commerce.party.status_active']);
@@ -128,14 +132,18 @@ function customerTypeLabel(value: string | undefined): string {
   {:else if items.length === 0}
     <EmptyState title={labels.empty ?? t(M['commerce.customer.no_results'])} description={t(M['commerce.party.try_filters'])} />
   {:else}
-    <p class="result-count">{t(M['commerce.party.showing'], { first, last, total })}</p>
+    <p class="result-count">
+      {pageSize === undefined
+        ? t(M['commerce.party.showing_count'], { count: items.length, total })
+        : t(M['commerce.party.showing'], { first, last, total })}
+    </p>
     <div class="party-list">
       {#each items as item (item.data.id)}
         <Card padding="md" hoverable data-party-id={item.data.id}>
           <div class="party-row">
             <div class="party-copy">
               <h2>{#if item.href}<a href={item.href}>{item.data.profile.name}</a>{:else}{item.data.profile.name}{/if}</h2>
-              <p>{item.data.profile.email || item.data.paymentTerms || t(M['commerce.party.no_contact_details'])}</p>
+              <p>{item.data.profile.email || t(M['commerce.party.no_contact_details'])}</p>
               <p class="meta">{customerTypeLabel(item.data.customerType)}{item.data.paymentTerms ? ` · ${item.data.paymentTerms}` : ''}</p>
             </div>
             <StatusBadge status={item.data.status} label={statusLabel(item.data.status)} />

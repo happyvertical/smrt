@@ -78,6 +78,12 @@ function customerTypeLabel(value: string | undefined): string {
   return value ?? notRecorded;
 }
 
+function identityKindLabel(value: string | undefined): string {
+  if (value === 'business') return t(M['commerce.party.identity_business']);
+  if (value === 'person') return t(M['commerce.party.identity_person']);
+  return value || notRecorded;
+}
+
 function creditLimit(amountMinor: number): string {
   try {
     return formatPartyMinorUnits(
@@ -105,7 +111,7 @@ function creditLimit(amountMinor: number): string {
     <Card padding="md">
       <h2>{t(M['commerce.party.identity'])}</h2>
       <dl>
-        <dt>{t(M['commerce.party.type'])}</dt><dd>{customer.profile.identityKind === 'person' ? t(M['commerce.party.identity_person']) : t(M['commerce.party.identity_business'])}</dd>
+        <dt>{t(M['commerce.party.type'])}</dt><dd>{identityKindLabel(customer.profile.identityKind)}</dd>
         <dt>{t(M['commerce.party.status'])}</dt><dd><StatusBadge status={customer.status} label={statusLabel(customer.status)} /></dd>
         <dt>{t(M['commerce.customer.type'])}</dt><dd>{customerTypeLabel(customer.customerType)}</dd>
         <dt>{t(M['commerce.party.email'])}</dt><dd>{#if customer.profile.email}<a href={`mailto:${customer.profile.email}`}>{customer.profile.email}</a>{:else}{notRecorded}{/if}</dd>

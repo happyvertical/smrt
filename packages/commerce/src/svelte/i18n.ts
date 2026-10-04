@@ -38,6 +38,7 @@ export const M = defineMessages({
   'commerce.party.page': 'Page {page}',
   'commerce.party.back_to': 'Back to {plural}',
   'commerce.party.showing': 'Showing {first}–{last} of {total}',
+  'commerce.party.showing_count': 'Showing {count} of {total}',
   'commerce.party.contacts': 'Contacts',
   'commerce.party.no_contacts': 'No contacts recorded.',
   'commerce.party.contact': 'Contact',
