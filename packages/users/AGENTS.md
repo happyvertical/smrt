@@ -96,7 +96,8 @@ are not prerequisites for unrelated user-package work.
 - `Session.parentSessionId` is the parent's bearer: sensitive, never a
   `list()` filter (raw-SQL id reads, which also keep revocation sweeps free of
   caller list bounds), never serialized to clients. `users.pin.manage` reaches
-  only active members of the actor's tenant. A sign-in re-checks the verified
+  only people whose every active membership is in the actor's tenant (the PIN
+  is global per person). A sign-in re-checks the verified
   credential generation AFTER the mint (`stillValid`); keep that ordering.
   Operation guards deny outside a session's ceiling; `loadPersonSession`
   re-checks device enrollment.

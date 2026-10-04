@@ -36,9 +36,11 @@
  * ## Backoff
  *
  * Inside a window a key gets `maxAttempts` reservations. The failure that
- * exhausts the budget locks the key for `base × factor^n` seconds (capped),
- * where `n` counts consecutive exhausted budgets with no success in between.
- * A success resets the streak; so does leaving the key idle.
+ * exhausts the budget — or that completes another `maxAttempts` consecutive
+ * failures, however they were paced across windows — locks the key for
+ * `base × factor^n` seconds (capped), where `n` counts consecutive exhausted
+ * budgets with no success in between. A success resets the streak; so does
+ * leaving the key idle.
  *
  * ## Audit
  *
@@ -114,6 +116,14 @@ export interface LoginAttemptLimiterOptions extends SmrtClassOptions {
    * joined against a list of known emails or IPs by brute force.
    */
   keyPepper?: string;
+  /**
+   * Isolates this limiter's keys from other limiters on the same table.
+   * Limiters that should share one budget per subject (password, passkey,
+   * PIN) leave it unset and share an instance or configuration; a limiter
+   * with a different window/lockout policy sets it so the two policies never
+   * write the same row.
+   */
+  keyNamespace?: string;
 }
 
 export interface ReserveLoginAttemptOptions {
@@ -289,7 +299,9 @@ export class LoginAttemptLimiter {
   hashKey(scope: LoginAttemptScope, raw: string): string {
     return createHash('sha256')
       .update(
-        `${this.options.keyPepper ?? ''}\u0000${scope}:${normalizeKey(scope, raw)}`,
+        `${this.options.keyPepper ?? ''}\u0000${
+          this.options.keyNamespace ? `${this.options.keyNamespace}\u0000` : ''
+        }${scope}:${normalizeKey(scope, raw)}`,
       )
       .digest('hex');
   }

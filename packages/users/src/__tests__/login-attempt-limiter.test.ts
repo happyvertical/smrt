@@ -257,6 +257,73 @@ describe('LoginAttemptLimiter', () => {
     expect(afterSuccess?.retryAfterSeconds).toBe(30);
   });
 
+  it('locks out a client that paces itself one attempt under the window budget', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+    const limiter = await LoginAttemptLimiter.create({
+      ...options,
+      audit: false,
+      maxAttempts: 3,
+      windowSeconds: 10,
+      lockout: { baseSeconds: 30, factor: 2, maxSeconds: 100 },
+      streakResetSeconds: 10_000,
+    });
+    const failOnce = async () =>
+      expectAllowed(
+        await limiter.reserve({ kind: 'pin', subject: 'u' }),
+      ).fail();
+
+    // Two failures, then wait out the window: no window is ever exhausted.
+    expect((await failOnce()).lockedOut).toBe(false);
+    expect((await failOnce()).lockedOut).toBe(false);
+    vi.advanceTimersByTime(11_000);
+    // The third consecutive failure still locks the key.
+    const third = await failOnce();
+    expect(third.lockedOut).toBe(true);
+    expect(third.retryAfterSeconds).toBe(30);
+    const refused = await limiter.reserve({ kind: 'pin', subject: 'u' });
+    expect(refused.allowed).toBe(false);
+    if (!refused.allowed) expect(refused.lockedOut).toBe(true);
+
+    // And the backoff keeps escalating across paced rounds.
+    vi.advanceTimersByTime(31_000);
+    await failOnce();
+    await failOnce();
+    vi.advanceTimersByTime(11_000);
+    expect((await failOnce()).retryAfterSeconds).toBe(60);
+  });
+
+  it('keeps a namespaced limiter’s budget apart from other limiters on the same table', async () => {
+    const shared = await LoginAttemptLimiter.create({
+      ...options,
+      audit: false,
+      maxAttempts: 1,
+      windowSeconds: 60,
+    });
+    const namespaced = await LoginAttemptLimiter.create({
+      ...options,
+      audit: false,
+      keyNamespace: 'terminal-approve',
+      lockout: false,
+      maxAttempts: 1,
+      windowSeconds: 60,
+    });
+    expect(namespaced.hashKey('subject', 'u')).not.toBe(
+      shared.hashKey('subject', 'u'),
+    );
+    await expectAllowed(
+      await shared.reserve({ kind: 'pin', subject: 'u' }),
+    ).fail();
+    expect((await shared.reserve({ kind: 'pin', subject: 'u' })).allowed).toBe(
+      false,
+    );
+    // The other policy's budget for the same subject is untouched.
+    expect(
+      (await namespaced.reserve({ kind: 'terminal-approve', subject: 'u' }))
+        .allowed,
+    ).toBe(true);
+  });
+
   it('makes an applied lockout the sole gate: once it elapses the window rolls', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));

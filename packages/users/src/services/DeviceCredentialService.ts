@@ -67,6 +67,7 @@ import {
   SESSION_DATA_KEYS,
   type SessionAuthMethod,
 } from '../models/Session.js';
+import { withoutListBounds } from './authorization-read-options.js';
 import {
   InvalidCredentialsError,
   LoginAttemptLimiter,
@@ -207,8 +208,11 @@ export interface DeviceCredentialServiceOptions extends SmrtClassOptions {
    */
   deviceAuthMethods?: SessionAuthMethod[];
   /**
-   * Host hook: throw (or return false) when the device session's account is
-   * not an enrolled, active device. smrt-users guarantees only that the
+   * Host hook: return false (or throw) when the device session's account is
+   * not an enrolled, active device. Either refuses the request; only an
+   * explicit `false` is treated as un-enrolment by `loadPersonSession`,
+   * which then revokes the person session — a throw (for example a registry
+   * outage) refuses that one request without revoking anything. smrt-users guarantees only that the
    * bearer is a live, non-layered device-enrolled session; whether that
    * device is still active is the host's data. Required.
    */
@@ -499,7 +503,10 @@ export class DeviceCredentialService {
       autoExtend: false,
       cookieName: this.options.sessionCookieName,
     });
-    this.memberships = await MembershipCollection.create(this.options);
+    // Unbounded: membership reads here back authorization decisions.
+    this.memberships = await MembershipCollection.create(
+      withoutListBounds(this.options),
+    );
     this.users = await UserCollection.create(this.options);
     this.pinCredentials = await UsersPinCredentialCollection.create(
       this.options,
@@ -553,7 +560,7 @@ export class DeviceCredentialService {
     verifier: DeviceCredentialVerifier<Input>,
     input: Input,
   ): Promise<DeviceSignInResult> {
-    const device = await this.resolveEnrolledDevice(input.deviceToken);
+    const { device } = await this.resolveEnrolledDevice(input.deviceToken);
     if (!device) throw new DeviceCredentialError();
 
     const lease = await this.limiter.reserve({
@@ -644,6 +651,9 @@ export class DeviceCredentialService {
       // reset or clear that completed while this sign-in was in flight must
       // not leave a fresh session behind its revocation sweep.
       if (verified.stillValid && !(await verified.stillValid())) {
+        // The presented credential is no longer the person's: a credential
+        // failure like any other, so the reservation is kept.
+        credentialFailed = true;
         throw new DeviceCredentialError();
       }
 
@@ -653,6 +663,13 @@ export class DeviceCredentialService {
         await this.sessionService.destroyChildSessions(device.sessionId, {
           exceptSessionId: sessionId,
         });
+        // Two overlapping sign-ins can each sweep the other. Never hand
+        // back a session a concurrent hand-over already ended.
+        if (
+          !(await this.readonlySessionService.getParentSessionId(sessionId))
+        ) {
+          throw new DeviceCredentialError();
+        }
       }
 
       await lease.succeed();
@@ -711,8 +728,14 @@ export class DeviceCredentialService {
     const parentSessionId =
       await this.readonlySessionService.getParentSessionId(token);
     if (!parentSessionId) return null;
-    if (!(await this.resolveEnrolledDevice(parentSessionId))) {
-      await this.sessionService.destroySession(token).catch(() => false);
+    const enrolled = await this.resolveEnrolledDevice(parentSessionId);
+    if (!enrolled.device) {
+      // Revoke only on a definite answer. A hook that threw (a registry
+      // outage, say) refuses this request and leaves the session to be
+      // judged again on the next one.
+      if (!enrolled.hookFailed) {
+        await this.sessionService.destroySession(token).catch(() => false);
+      }
       return null;
     }
     const context = await this.sessionService.loadSessionContext(token);
@@ -721,9 +744,11 @@ export class DeviceCredentialService {
   }
 
   /**
-   * Resolve any bearer or cookie session id to its context without extending
-   * it — for handlers that need the acting session (`setPin` and friends)
-   * when the host's hook has not already resolved it into `locals`.
+   * Resolve any bearer or cookie session id to its context without applying
+   * this service's person TTL to it — for handlers that need the acting
+   * session (`setPin` and friends) when the host's hook has not already
+   * resolved it into `locals`. A session that carries its own idle timeout
+   * (a person session) still slides by it: resolving it is activity.
    */
   async resolveActor(sessionToken: string): Promise<SessionContext | null> {
     const token = sessionToken?.trim();
@@ -782,14 +807,19 @@ export class DeviceCredentialService {
       mustReset: false,
       rotatedBy: self ? 'self' : (input.actor.user.id ?? 'admin'),
     });
-    // The restricted reset session has done its one job; the person signs in
+    // A rotated PIN ends the sessions minted under the old one — the reason
+    // to rotate may be that it leaked. A person changing their own PIN keeps
+    // the session they are changing it from, unless it is the restricted
+    // reset session: that one has done its one job, and the person signs in
     // again with the new PIN to get a session carrying their authority.
-    if (endResetSessions) {
-      await this.sessionService.destroyUserSessionsByAuthMethod(
-        input.userId,
-        PIN_LOGIN_KIND,
-      );
-    }
+    await this.sessionService.destroyUserSessionsByAuthMethod(
+      input.userId,
+      PIN_LOGIN_KIND,
+      {
+        exceptSessionId:
+          self && !endResetSessions ? input.actor.sessionId : undefined,
+      },
+    );
     await this.limiter.recordManagement({
       kind: PIN_LOGIN_KIND,
       subject: input.userId,
@@ -874,27 +904,28 @@ export class DeviceCredentialService {
 
   private async resolveEnrolledDevice(
     deviceToken: string,
-  ): Promise<SessionContext | null> {
+  ): Promise<{ device: SessionContext | null; hookFailed?: boolean }> {
+    const refused = { device: null };
     const token = deviceToken?.trim();
-    if (!token) return null;
+    if (!token) return refused;
     // Never through `sessionService`: that one auto-extends with the person
     // TTL and would rewrite the device session's own expiry on every attempt.
     const device = await this.readonlySessionService.loadSessionContext(token);
-    if (!device) return null;
+    if (!device) return refused;
     // Only a first-class, device-enrolled session may carry a person: a
     // browser cookie, a mobile session, or another person's layered session
     // is not a device.
-    if (device.parent) return null;
+    if (device.parent) return refused;
     if (!this.deviceAuthMethods.has(String(device.authMethod ?? ''))) {
-      return null;
+      return refused;
     }
     try {
       const ok = await this.options.assertEnrolledDevice(device);
-      if (ok === false) return null;
+      if (ok === false) return refused;
     } catch {
-      return null;
+      return { device: null, hookFailed: true };
     }
-    return device;
+    return { device };
   }
 
   private async resolveDeviceCeiling(
@@ -929,16 +960,25 @@ export class DeviceCredentialService {
       throw new DeviceCredentialForbiddenError();
     }
     // `permissions` were resolved for the actor's tenant, so they confer
-    // authority only over that tenant's people: the target must be an active
-    // member there. Unknown, malformed and foreign targets are refused alike.
-    const membership =
+    // authority only over that tenant's people. The PIN (and the session
+    // sweep a rotation triggers) is one per person across every tenant, so
+    // the target must be an active member of the actor's tenant AND of no
+    // other: otherwise a tenant-A admin could set a PIN and use it on a
+    // tenant-B device, or sign the person out there. People who belong to
+    // several tenants manage their own PIN. Unknown, malformed and foreign
+    // targets are refused alike.
+    const active =
       actor.tenantId && UUID_PATTERN.test(targetUserId)
-        ? await this.memberships.findByUserAndTenant(
-            targetUserId,
-            actor.tenantId,
+        ? (await this.memberships.findByUser(targetUserId)).filter(
+            (membership) => membership.isActive(),
           )
-        : null;
-    if (!membership?.isActive()) throw new DeviceCredentialForbiddenError();
+        : [];
+    if (
+      active.length === 0 ||
+      active.some((membership) => membership.tenantId !== actor.tenantId)
+    ) {
+      throw new DeviceCredentialForbiddenError();
+    }
   }
 
   private assertPinPolicy(pin: string): void {

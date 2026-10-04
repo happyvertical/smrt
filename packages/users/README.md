@@ -646,13 +646,17 @@ try {
 
 Subject and source are independent budgets; either one exhausted refuses the
 attempt, and a refusal on the source hands the subject reservation back so one
-noisy address cannot burn every account. The failure that exhausts a window
-locks the key for `base × factor^n` seconds, where `n` counts consecutive
-exhausted budgets; a success or idle time resets the streak. Every decision is
+noisy address cannot burn every account. The failure that exhausts a window —
+or that completes another `maxAttempts` consecutive failures, however they
+were paced across windows — locks the key for `base × factor^n` seconds, where
+`n` counts consecutive exhausted budgets; a success or idle time resets the
+streak. Every decision is
 reported to a `LoginAuditSink` — by default a durable `UsersLoginAuditEvent`
 row (pruned after 90 days by the retention sweep), or pass `audit` to forward
 into the host's own log, or `audit: false`. `TerminalAuthService` uses this
-limiter for approvals; pass `loginLimiter` to share one instance.
+limiter for approvals, keyed on the approving user only and in its own key
+namespace (`keyNamespace`) so its fixed-window policy never shares a row with
+another limiter; pass `loginLimiter` to share one instance.
 
 ### Per-person PIN on an enrolled device
 
@@ -741,9 +745,13 @@ serialization). Resolve person bearers with `service.loadPersonSession(token)`:
 it re-checks `assertEnrolledDevice` on every call and revokes the person
 session of a device that fails it. A host that resolves them through its own
 `SessionService` must instead revoke the device's bearer session when it
-un-enrols the device. PIN administration (`users.pin.manage`) reaches only
-people with an active membership in the administrator's session tenant; the
-PIN itself is one per person across tenants.
+un-enrols the device. `assertEnrolledDevice` returning `false` is un-enrolment
+(the person session is revoked); a throw only refuses that request. The PIN is
+one per person across tenants, so PIN administration (`users.pin.manage`)
+reaches only people whose every active membership is in the administrator's
+session tenant; people who belong to several tenants manage their own PIN from
+a first-class session. Any PIN change ends the sessions minted under the old
+PIN (a person changing their own keeps the session they changed it from).
 
 Existing installations need `smrt db:migrate` for the additive
 `sessions.auth_method` / `sessions.parent_session_id` columns and the

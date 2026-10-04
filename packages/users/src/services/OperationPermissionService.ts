@@ -209,10 +209,11 @@ export async function checkOperationPermission(
   // The live resolve below returns the person's full role authority; the
   // session's ceiling must cap it here too, or the guard would allow what
   // `SessionContext.permissions` (and RLS) deny for the same session.
+  // Whatever tenant the guarded resource is in: a resource-tenant check for
+  // the session's own person must not step around the device policy.
   if (
     ceilinged &&
     userId === sessionContext?.userId &&
-    tenantId === sessionContext?.tenantId &&
     !ceiling.includes(permission)
   ) {
     return deny(permission, 'permission_denied');

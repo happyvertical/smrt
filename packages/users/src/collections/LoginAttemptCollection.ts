@@ -199,7 +199,15 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
 
     const failureStreak = Number(row.failure_streak ?? 0);
     const attemptCount = Number(row.attempt_count ?? 0);
-    if (attemptCount < input.maxAttempts) {
+    // Lock when this failure exhausts the window's budget OR completes
+    // another `maxAttempts` consecutive failures. The second condition is
+    // what makes the backoff unavoidable: a client that paces itself one
+    // attempt under the budget and waits for the window to roll never
+    // exhausts a window, but its streak still crosses the boundary.
+    const budgetExhausted = attemptCount >= input.maxAttempts;
+    const streakBoundary =
+      failureStreak > 0 && failureStreak % input.maxAttempts === 0;
+    if (!budgetExhausted && !streakBoundary) {
       return { failureStreak, lockedUntil: null };
     }
 
@@ -217,12 +225,10 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
       `UPDATE ${this.tableName}
           SET locked_until = ?, updated_at = ?
         WHERE limiter_key = ?
-          AND window_started_at = ?
           AND (locked_until IS NULL OR locked_until < ?)`,
       lockedUntil,
       nowIso,
       input.limiterKey,
-      input.windowStartedAt,
       lockedUntil,
     );
     return { failureStreak, lockedUntil };

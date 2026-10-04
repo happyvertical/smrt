@@ -159,6 +159,7 @@ export class SessionCollection extends SmrtCollection<Session> {
   async revokeUserSessionsByAuthMethod(
     userId: string,
     authMethod: SessionAuthMethod,
+    options: { exceptSessionId?: string } = {},
   ): Promise<number> {
     const sessionIds = await this.activeSessionIds('user_id', userId, {
       column: 'auth_method',
@@ -166,6 +167,7 @@ export class SessionCollection extends SmrtCollection<Session> {
     });
     let count = 0;
     for (const sessionId of sessionIds) {
+      if (sessionId === options.exceptSessionId) continue;
       if (await this.revokeWithRetry(sessionId)) count++;
     }
     return count;

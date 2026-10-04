@@ -1019,6 +1019,30 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
         ),
       ).rejects.toBeInstanceOf(OperationPermissionError);
 
+      // Nor does guarding a resource in another tenant, where the person
+      // holds the permission through their own role.
+      const memberships = await MembershipCollection.create(options);
+      const here = await memberships.findByUserAndTenant(foremanId, tenantId);
+      const elsewhere = await memberships.create({
+        userId: foremanId,
+        tenantId: otherTenantId,
+        roleId: here?.roleId as string,
+      });
+      await elsewhere.save();
+      await expect(
+        withSessionPermissionContext(
+          { ...options, sessionId: ceilinged.sessionId },
+          () =>
+            assertOperationPermission({
+              ...options,
+              catalog,
+              collection: 'jobs',
+              action: 'approve',
+              tenantId: otherTenantId,
+            }),
+        ),
+      ).rejects.toBeInstanceOf(OperationPermissionError);
+
       const plain = await signIn(
         await makeService({ singleOccupant: false }),
         foremanId,
@@ -1059,6 +1083,34 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
         ).rejects.toBeInstanceOf(DeviceCredentialForbiddenError);
       }
       expect(await service.hasPin(outsiderId)).toBe(true);
+
+      // The PIN is one per person across tenants, so someone who also
+      // belongs to another tenant is out of a single tenant's admin reach:
+      // otherwise this admin could set a PIN and use it on that tenant's
+      // devices, or sign the person out there.
+      const shared = await memberships.create({
+        userId: welderId,
+        tenantId: otherTenantId,
+        roleId: here?.roleId as string,
+      });
+      await shared.save();
+      const live = await signIn(service, welderId);
+      await expect(
+        service.setPin({ actor: adminActor(), userId: welderId, pin: '1357' }),
+      ).rejects.toBeInstanceOf(DeviceCredentialForbiddenError);
+      await expect(
+        service.resetPin({
+          actor: adminActor(),
+          userId: welderId,
+          pin: '1357',
+        }),
+      ).rejects.toBeInstanceOf(DeviceCredentialForbiddenError);
+      await expect(
+        service.clearPin({ actor: adminActor(), userId: welderId }),
+      ).rejects.toBeInstanceOf(DeviceCredentialForbiddenError);
+      expect(
+        await sessionService.loadSessionContext(live.sessionId),
+      ).not.toBeNull();
       // An administrator with no tenant context administers nobody.
       await expect(
         service.resetPin({
@@ -1142,12 +1194,65 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
       expect(new Date(after?.expiresAt as Date).getTime()).toBe(
         new Date(before?.expiresAt as Date).getTime(),
       );
-      // Not a person session at all: refused without touching anything.
       activeDevices.add(deviceUserId);
+
+      // A hook that throws (a registry outage) refuses the request but is
+      // not un-enrolment: nothing is revoked, and the session works again.
+      let outage = true;
+      const flaky = await makeService({
+        assertEnrolledDevice: async (device) => {
+          if (outage) throw new Error('device registry unavailable');
+          return activeDevices.has(device.user.id as string);
+        },
+      });
+      outage = false;
+      const survivor = await signIn(flaky, foremanId);
+      outage = true;
+      expect(await flaky.loadPersonSession(survivor.sessionId)).toBeNull();
+      expect((await sessions.get(survivor.sessionId))?.status).toBe('active');
+      outage = false;
+      expect((await flaky.loadPersonSession(survivor.sessionId))?.user.id).toBe(
+        foremanId,
+      );
+
+      // Not a person session at all: refused without touching anything.
       expect(await service.loadPersonSession(deviceToken)).toBeNull();
       expect(
         await sessionService.loadSessionContext(deviceToken),
       ).not.toBeNull();
+    });
+
+    it('ends sessions minted under the old PIN whenever the PIN changes', async () => {
+      const multi = await makeService({ singleOccupant: false });
+      const stale = await signIn(multi, welderId);
+      const current = await signIn(multi, welderId);
+      const actor = (await sessionService.loadSessionContext(
+        current.sessionId,
+      )) as SessionContext;
+
+      // A person changing their own PIN keeps the session they did it from.
+      await multi.setPin({
+        actor,
+        userId: welderId,
+        pin: '1357',
+        currentPin: '2580',
+      });
+      expect(
+        await sessionService.loadSessionContext(stale.sessionId),
+      ).toBeNull();
+      expect(
+        await sessionService.loadSessionContext(current.sessionId),
+      ).not.toBeNull();
+
+      // An administrator's change ends them all.
+      await multi.setPin({
+        actor: adminActor(),
+        userId: welderId,
+        pin: '2468',
+      });
+      expect(
+        await sessionService.loadSessionContext(current.sessionId),
+      ).toBeNull();
     });
 
     it('rejects non-positive idle and absolute lifetimes', () => {

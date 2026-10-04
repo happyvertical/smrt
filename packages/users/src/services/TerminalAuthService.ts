@@ -201,6 +201,9 @@ export class TerminalAuthService {
       (await LoginAttemptLimiter.create({
         ...this.options,
         audit: this.options.loginAudit,
+        // A private policy (fixed window, no lockout) must not share rows
+        // with limiters that key the same user id under another policy.
+        keyNamespace: TERMINAL_APPROVE_LOGIN_KIND,
         lockout: false,
         maxAttempts: this.maxApproveAttempts,
         windowSeconds: this.approveAttemptWindowMs / 1000,
@@ -319,12 +322,13 @@ export class TerminalAuthService {
     const tenantId = input.tenantId;
 
     return await this.withSerializedApprove(userId, async () => {
-      // The limiter is the cross-replica arbiter (#3273): the user is the
-      // subject, the approving browser's address the source. The reservation
-      // is only kept for attempts that fail authentication of the code.
+      // The limiter is the cross-replica arbiter (#3273), keyed on the
+      // approving user alone, as this throttle always was: the approver is
+      // already authenticated, and a per-address budget would let one user
+      // behind a shared address refuse approvals for everyone else there.
+      // The reservation is only kept for attempts that fail the code check.
       const lease = await this.loginLimiter.reserve({
         kind: TERMINAL_APPROVE_LOGIN_KIND,
-        source: input.ipAddress,
         subject: userId,
       });
       if (!lease.allowed) {

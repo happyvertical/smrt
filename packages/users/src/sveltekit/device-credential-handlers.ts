@@ -29,7 +29,7 @@
  *   always (does not reveal whether the token was live). Ends only the
  *   person's session.
  * - `setPin` / `resetPin` / `clearPin`: act as the `Authorization: Bearer`
- *   session when present (resolved here, not extended), else as the session
+ *   session when present (resolved here), else as the session
  *   the host's hook put in `event.locals` (which must include `authMethod` —
  *   `createSessionHandler` does), JSON
  *   `{ userId, pin, currentPin? }`; 204 on success, 400 on policy, 403 when
@@ -189,9 +189,9 @@ export function createDeviceCredentialHandlers(
       const input = await body(event);
       const userId = str(input.userId).trim();
       const pin = str(input.pin);
-      // Shape errors are 400 only when no secret was attempted at all;
-      // anything with a device token and a PIN goes through the pipeline so
-      // the response does not reveal which step refused it.
+      // A request missing its token, user id or PIN gets the same 401 the
+      // pipeline gives every other refusal, so the response does not reveal
+      // which step refused it.
       if (!deviceToken || !userId || !pin) {
         return json(
           { error: 'Invalid credentials.', code: 'invalid_credentials' },

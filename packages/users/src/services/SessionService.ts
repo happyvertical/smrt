@@ -358,10 +358,12 @@ export class SessionService {
   async destroyUserSessionsByAuthMethod(
     userId: string,
     authMethod: SessionAuthMethod,
+    options: { exceptSessionId?: string } = {},
   ): Promise<number> {
     return this.sessionCollection.revokeUserSessionsByAuthMethod(
       userId,
       authMethod,
+      options,
     );
   }
 
