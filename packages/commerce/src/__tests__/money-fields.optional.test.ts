@@ -200,7 +200,7 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
     expect(reloaded?.quantity).toBe(2);
     expect(reloaded?.unitPrice).toBe(14999);
     expect(reloaded?.discount).toBe(1234);
-    expect(reloaded?.amount).toBe(28764);
+    expect(reloaded?.amount).toBe(31137); // Save recomputes subtotal plus rounded tax.
     expect(reloaded?.taxRate).toBeCloseTo(0.0825, 6);
   });
 
