@@ -73,7 +73,7 @@ with the root database handle, never one that is already inside a transaction
   suspension, reinstatement or earlier revocation of one is a further change
   row, never an edit.
 - **A stored qualification status is "the last change recorded", not
-  standing, and no rule reads it.** `revoke` and `suspend` store their status
+  standing, and no rule decides standing from it.** `revoke` and `suspend` store their status
   at once even when `effectiveOn` is ahead, and `reinstate` stores `valid`
   even when it takes effect later (`expired` if the sweep had stored that).
   The one sticky value is `revoked`: once stored it stays, whatever is
@@ -174,7 +174,11 @@ with the root database handle, never one that is already inside a transaction
 - **Expiry is computed.** A check on a date reads `expiresOn`; the stored
   `expired` status is written only by `QualificationService.sweepExpired()`,
   which the application calls from its own scheduler; it is bookkeeping and
-  no rule reads standing from it. `expiringWithin(days, today,
+  no rule reads standing from it. The sweep itself selects rows stored
+  `valid`, so a ticket that lapses while a suspension or revocation is
+  recorded (stored `suspended` / `revoked`, for example during a notice
+  period) gets no `expired` change or event; `check` still answers `expired`
+  for it. `expiringWithin(days, today,
   { employedOnly })` lists rows that are good on `today` by the same dated
   evaluation as `check` (issued by `today`, not suspended or revoked on it,
   not renewed) and can keep only people employed on `today`.

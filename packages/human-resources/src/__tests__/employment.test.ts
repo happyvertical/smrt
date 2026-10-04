@@ -1,5 +1,9 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
-import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import {
+  type DatabaseInterface,
+  getDatabase,
+  NestedTransactionError,
+} from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
 import { EmploymentService, type HrEvent } from '../index.js';
 import { employmentSuite } from './employment-suite.js';
@@ -93,6 +97,49 @@ describe('employment (sqlite, native-capabilities adapter)', () => {
       expect(await root.findByEmployeeNumber('on-root')).not.toBeNull();
     } finally {
       await native.close?.();
+    }
+  });
+});
+
+/**
+ * Always runs, unlike the native-adapter test above (whose vector module is
+ * optional): a handle whose `beginTransaction` refuses with
+ * `NestedTransactionError` is treated as transaction-scoped.
+ */
+describe('employment (handle that refuses to begin a transaction)', () => {
+  it('refuses a mutation when beginTransaction reports a nested transaction, and writes nothing', async () => {
+    const root = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    try {
+      const scoped = new Proxy(root, {
+        get(target, property, receiver) {
+          if (property === 'beginTransaction')
+            return async () => {
+              throw new NestedTransactionError();
+            };
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      const actor = {
+        tenantId: crypto.randomUUID(),
+        profileId: crypto.randomUUID(),
+      };
+      const delivered: HrEvent[] = [];
+      const refused = await new EmploymentService(scoped, actor, {
+        onEvent: (event) => void delivered.push(event),
+      })
+        .hire({
+          profileId: crypto.randomUUID(),
+          employeeNumber: 'E-1',
+          startedOn: '2026-01-05',
+        })
+        .catch((error: unknown) => error);
+      expect(refused).toMatchObject({ code: 'HR_TRANSACTION_UNSUPPORTED' });
+      expect(delivered).toEqual([]);
+      expect(
+        await new EmploymentService(root, actor).findByEmployeeNumber('E-1'),
+      ).toBeNull();
+    } finally {
+      await root.close?.();
     }
   });
 });
