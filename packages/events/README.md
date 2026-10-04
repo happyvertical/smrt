@@ -184,3 +184,17 @@ Owned asset helpers are available on both `Event` and `EventCollection` via
 | `@happyvertical/smrt-types` | Shared TypeScript types |
 | `@happyvertical/sql` | Database operations |
 | `@happyvertical/ai` | AI integration |
+
+### iCalendar source synchronization
+
+`syncICalendarSource({ db, source, ics, tenantId? })` persists an already-fetched
+RFC 5545 feed through the published `@happyvertical/icalendar` parser. A calendar
+source plus `UID` identifies a master; `RECURRENCE-ID` identifies a detached
+occurrence. Repeating the same version is a no-op; higher `SEQUENCE` or a newer
+`DTSTAMP` updates the existing event, including `STATUS:CANCELLED`.
+
+The caller owns fetching, authorization, retries, and any transaction supplied by
+its database adapter. The sync deliberately never deletes events merely because a
+later feed omits them, so partial or unavailable feeds cannot erase authoritative
+records. Floating DTSTART values are rejected until a source time-zone policy is
+provided; this API does not infer host-local time. It creates no content or article.
