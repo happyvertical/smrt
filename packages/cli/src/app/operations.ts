@@ -15,6 +15,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -733,11 +734,13 @@ async function backup(
       throw error;
     }
     try {
-      cpSync(paths.root, destination, {
-        recursive: true,
-        force: false,
-        errorOnExist: true,
-      });
+      for (const entry of readdirSync(paths.root)) {
+        cpSync(join(paths.root, entry), join(destination, entry), {
+          recursive: true,
+          force: false,
+          errorOnExist: true,
+        });
+      }
     } catch (error) {
       rmSync(destination, { recursive: true, force: true });
       throw error;

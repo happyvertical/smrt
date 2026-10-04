@@ -30,6 +30,7 @@ import {
   MIGRATION_FAILED_MESSAGE,
   prepareLocalDatabaseStorage,
   resolveLocalRuntimePaths,
+  validateLocalDatabaseStorage,
   withOperationLock,
 } from '@happyvertical/smrt-app-runtime';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
@@ -761,6 +762,48 @@ describe('smrt app backup', () => {
       'Backup destination must remain outside the source tree.',
     );
     expect(existsSync(join(fixture.app, 'backup'))).toBe(false);
+  });
+
+  it('preserves a destination created by a contender before ownership is acquired', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const destination = join(fixture.root, 'backup-contended');
+    const marker = join(destination, 'owned-by-contender');
+    const runtime = await import('@happyvertical/smrt-app-runtime');
+
+    expect(
+      await fixture.run(['backup', destination], {
+        runtime: {
+          ...runtime,
+          initializeLocalApplicationRuntime: fakeInitialize(
+            fixture.bootstrapStatus,
+          ) as never,
+          validateLocalDatabaseStorage: async (options) => {
+            const paths = await validateLocalDatabaseStorage(options);
+            mkdirSync(destination, { mode: 0o700 });
+            writeFileSync(marker, 'preserve me');
+            return paths;
+          },
+        },
+      }),
+    ).toBe(1);
+    expect(fixture.stderrJson().message).toBe(
+      `Backup destination already exists: ${destination}`,
+    );
+    expect(readFileSync(marker, 'utf8')).toBe('preserve me');
+  });
+
+  it('removes its owned destination when copying a source entry fails', async () => {
+    const fixture = makeFixture();
+    await fixture.run(['setup']);
+    const unreadable = join(fixture.data, 'unreadable');
+    const destination = join(fixture.root, 'backup-copy-failure');
+    writeFileSync(unreadable, 'cannot copy');
+    chmodSync(unreadable, 0o000);
+
+    expect(await fixture.run(['backup', destination])).toBe(1);
+    expect(existsSync(destination)).toBe(false);
+    expect(existsSync(unreadable)).toBe(true);
   });
 
   it('refuses while the application writer is live and on deployed profiles', async () => {
