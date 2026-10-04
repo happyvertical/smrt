@@ -348,6 +348,32 @@ export function productionRunSuite(
       );
     });
 
+    describe('global runs', () => {
+      vitestIt(
+        "consume only a global bill's global lines without a tenant context",
+        async () => {
+          const { bomId, tube, bolt } = await makeBill();
+          const intruder = randomUUID();
+          await withTenant({ tenantId: randomUUID() }, () =>
+            lines.create({ bomId, componentSkuId: intruder, qtyPerUnit: 1 }),
+          );
+          const at = await warehouse();
+          await stock.receive(tube, at, 100);
+          await stock.receive(bolt, at, 100);
+          const run = await service.createRun({ bomId, targetQty: 2 });
+          expect(run.tenantId).toBeNull();
+          const result = await service.recordCompletion(run.id!, {
+            qty: 1,
+            consume: { locationId: at },
+          });
+          expect(result.consumed.map((c) => c.componentSkuId).sort()).toEqual(
+            [tube, bolt].sort(),
+          );
+          expect(result.completion.tenantId).toBeNull();
+        },
+      );
+    });
+
     describe('concurrent completions', () => {
       it('counts every report made at once', async () => {
         const { bomId } = await makeBill();

@@ -362,7 +362,14 @@ export class ProductionService {
       );
     }
     const bom = await this.resolveBom(order);
-    const lines = await this.lines.findByBom(bom.id!);
+    // The bill's own structure: its tenant's lines and global ones, never a
+    // line another tenant wrote against this bill id (an unscoped read
+    // would return those too).
+    const owner = bom.tenantId ?? null;
+    const lines = (await this.lines.findByBom(bom.id!)).filter((line) => {
+      const lineTenant = line.tenantId ?? null;
+      return lineTenant === null || lineTenant === owner;
+    });
     return {
       orderId,
       lines,
