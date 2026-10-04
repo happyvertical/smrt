@@ -31,6 +31,7 @@ import {
   BomLineCollection,
   BomNotFoundError,
   InvalidProductionRunInputError,
+  MAX_QUANTITY,
   NoActiveBomForProductError,
   ProductionRunNotFoundError,
   ProductionRunOverCompletionError,
@@ -187,16 +188,15 @@ export function productionRunSuite(
         expect(last.run.status).toBe('done');
       });
 
-      it('keeps the target exact at large quantities', async () => {
+      it('keeps every report exact up to MAX_QUANTITY, and refuses more', async () => {
         const { bomId } = await makeBill();
-        const big = 100_000_000_000_000; // exactly representable
-        for (const targetQty of [1_000_000_000, big]) {
+        for (const targetQty of [1000, MAX_QUANTITY]) {
           const run = await service.createRun({ bomId, targetQty });
           expect(
             await errorOf(
               service.recordCompletion(run.id!, { qty: targetQty + 1 }),
             ),
-          ).toBeInstanceOf(ProductionRunOverCompletionError);
+          ).toBeInstanceOf(Error);
           const almost = await service.recordCompletion(run.id!, {
             qty: targetQty - 1,
           });
@@ -204,13 +204,28 @@ export function productionRunSuite(
           expect(
             await errorOf(service.setTarget(run.id!, targetQty - 2)),
           ).toBeInstanceOf(InvalidProductionRunInputError);
-          expect((await service.setTarget(run.id!, targetQty)).status).toBe(
-            'in_progress',
-          );
-          const last = await service.recordCompletion(run.id!, { qty: 1 });
+          // A fraction on top of large progress still counts.
+          const fraction = await service.recordCompletion(run.id!, {
+            qty: 0.001,
+          });
+          expect(fraction.run.completedQty).toBe(targetQty - 1 + 0.001);
+          expect(fraction.run.status).toBe('in_progress');
+          const last = await service.recordCompletion(run.id!, { qty: 0.999 });
           expect(last.run.status).toBe('done');
           expect(last.run.completedQty).toBe(targetQty);
+          const reports = await service.listCompletions(run.id!);
+          expect(
+            reports.reduce(
+              (sum, c) => sum + Math.round(Number(c.qty) * 1000),
+              0,
+            ),
+          ).toBe(targetQty * 1000);
         }
+        expect(
+          await errorOf(
+            service.createRun({ bomId, targetQty: MAX_QUANTITY + 1 }),
+          ),
+        ).toBeInstanceOf(InvalidProductionRunInputError);
         // A quantity below the precision (a millionth) is not a quantity.
         const tiny = await service.createRun({ bomId, targetQty: 1 });
         expect(

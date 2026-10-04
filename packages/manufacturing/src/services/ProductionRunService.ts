@@ -36,7 +36,12 @@ import {
   type RecordCompletionInput,
   type RecordCompletionResult,
 } from '../production-run-types.js';
-import { roundQuantity } from '../quantity.js';
+import {
+  fromMillionths,
+  MAX_QUANTITY,
+  roundQuantity,
+  toMillionths,
+} from '../quantity.js';
 import { BomNotFoundError, NoActiveBomForProductError } from '../types.js';
 import {
   type ConsumeResult,
@@ -205,13 +210,15 @@ export class ProductionRunService {
   async setTarget(runId: string, targetQty: number): Promise<ProductionRun> {
     const target = positive(targetQty, 'targetQty');
     return this.change(runId, 'retarget', (run) => {
-      const completed = roundQuantity(Number(run.completedQty));
-      if (target < completed)
+      // Whole millionths: exact, see quantity.ts.
+      const completed = toMillionths(Number(run.completedQty));
+      const goal = toMillionths(target);
+      if (goal < completed)
         throw new InvalidProductionRunInputError(
-          `The target cannot be below the ${completed} already done.`,
+          `The target cannot be below the ${fromMillionths(completed)} already done.`,
         );
       run.targetQty = target;
-      if (completed > 0 && completed >= target) run.status = 'done';
+      if (completed > 0 && completed >= goal) run.status = 'done';
     });
   }
 
@@ -253,17 +260,19 @@ export class ProductionRunService {
       const run = await this.load(tx, runId);
       if (!OPEN_STATUSES.has(run.status))
         throw new ProductionRunStateError(runId, run.status, 'complete');
-      // Rounded to the quantity precision and compared exactly.
-      const target = roundQuantity(Number(run.targetQty));
-      const done = roundQuantity(Number(run.completedQty));
-      const total = roundQuantity(done + qty);
-      if (total > target)
+      // Whole millionths, so every report counts exactly (quantity.ts).
+      const target = toMillionths(Number(run.targetQty));
+      const done = toMillionths(Number(run.completedQty));
+      const reported = toMillionths(qty);
+      const remaining = Math.max(0, target - done);
+      if (reported > remaining)
         throw new ProductionRunOverCompletionError(
           runId,
           qty,
-          roundQuantity(Math.max(0, target - done)),
+          fromMillionths(remaining),
         );
-      run.completedQty = total;
+      const total = done + reported;
+      run.completedQty = fromMillionths(total);
       run.status = total >= target ? 'done' : 'in_progress';
       // Revision-guarded: a concurrent report fails here and is retried.
       await run.save();
@@ -374,8 +383,8 @@ async function withRevisionRetry<T>(run: () => Promise<T>): Promise<T> {
 }
 
 /**
- * `value` as a quantity: finite, rounded to the quantity precision, and
- * greater than zero after rounding.
+ * `value` as a quantity: finite, rounded to the quantity precision, greater
+ * than zero after rounding, and no more than {@link MAX_QUANTITY}.
  */
 function positive(value: number, field: string): number {
   const raw = Number(value);
@@ -383,6 +392,10 @@ function positive(value: number, field: string): number {
   if (!Number.isFinite(number) || number <= 0)
     throw new InvalidProductionRunInputError(
       `${field} must be a number greater than zero (got ${String(value)}).`,
+    );
+  if (number > MAX_QUANTITY)
+    throw new InvalidProductionRunInputError(
+      `${field} must be at most ${MAX_QUANTITY} (got ${String(value)}).`,
     );
   return number;
 }

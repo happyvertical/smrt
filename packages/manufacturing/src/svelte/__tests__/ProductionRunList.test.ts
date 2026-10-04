@@ -167,14 +167,18 @@ describe('ProductionRunList', () => {
       ok: false,
       reason: 'invalid',
     });
-    const large = run({ targetQty: 100_000_000_000_000, completedQty: 0 });
-    expect(validateCompletionQty('100000000000001', large)).toEqual({
+    const large = run({ targetQty: 999_999_999, completedQty: 999_999_998 });
+    expect(validateCompletionQty('1.000001', large)).toEqual({
       ok: false,
       reason: 'too_many',
     });
-    expect(validateCompletionQty('100000000000000', large)).toEqual({
+    expect(validateCompletionQty('0.001', large)).toEqual({
       ok: true,
-      qty: 100_000_000_000_000,
+      qty: 0.001,
+    });
+    expect(validateCompletionQty('1000000000', large)).toEqual({
+      ok: false,
+      reason: 'invalid',
     });
   });
 
