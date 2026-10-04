@@ -1,5 +1,7 @@
 <script lang="ts">
+import type { CodeSelectOption } from '@happyvertical/smrt-ui/forms';
 import {
+  CurrencySelect,
   Form,
   FormGroup,
   Input,
@@ -59,6 +61,8 @@ export interface Props {
   intents?: { name: string; save: string; add: string; removePrefix: string };
   /** Text overrides, including Client terminology. */
   labels?: { title?: string; counterparty?: string; save?: string };
+  /** Caller-restricted currency choices; omitted uses the shared ISO defaults. */
+  currencyOptions?: readonly CodeSelectOption[];
   /** Optional navigation destination. */
   cancelHref?: string;
   /** Caller form enhancement; native submission remains enabled unless handler prevents it. */
@@ -89,13 +93,15 @@ let {
     removePrefix: 'removeLine:',
   },
   labels = {},
+  currencyOptions,
   cancelHref,
   onsubmit,
   formAttributes = {},
   extensions,
   attachments,
 }: Props = $props();
-const { t } = useI18n();
+const i18n = useI18n();
+const { t } = i18n;
 const fields = $derived({ ...quoteFieldNames, ...names });
 const title = $derived(
   labels.title ??
@@ -128,7 +134,11 @@ const title = $derived(
       </FormGroup>
       {#each [{key:'reference',label:'commerce.quote.reference'}, {key:'date',label:'commerce.quote.date'}, {key:'validUntil',label:'commerce.quote.expiry'}, {key:'currency',label:'commerce.quote.currency'}, {key:'total',label:'commerce.quote.total'}, {key:'tax',label:'commerce.quote.tax'}] as field}
         <FormGroup label={t(Q[field.label as keyof typeof Q])} error={errors[field.key]}>
-          <Input name={fields[field.key as keyof QuoteFieldNames]} value={values[field.key as 'reference']} inputmode={field.key === 'total' || field.key === 'tax' ? 'decimal' : undefined} density="touch" />
+          {#if field.key === 'currency'}
+            <CurrencySelect name={fields.currency} value={values.currency} options={currencyOptions} locale={i18n.locale} readOnly={readonly} disabled={busy} density="touch" />
+          {:else}
+            <Input name={fields[field.key as keyof QuoteFieldNames]} value={values[field.key as 'reference']} inputmode={field.key === 'total' || field.key === 'tax' ? 'decimal' : undefined} density="touch" />
+          {/if}
         </FormGroup>
       {/each}
       {#each [{key:'scope',label:'commerce.quote.scope'}, {key:'inclusions',label:'commerce.quote.inclusions'}, {key:'exclusions',label:'commerce.quote.exclusions'}, {key:'reason',label:'commerce.quote.reason'}] as field}

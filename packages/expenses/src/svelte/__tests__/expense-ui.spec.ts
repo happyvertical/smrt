@@ -42,11 +42,25 @@ describe('Expenses native UI contracts', () => {
     expect(body).toContain('method="post"');
     expect(body).toContain('name="purchaseAmount"');
     expect(body).toContain('value="125.00"');
+    expect(body).toMatch(
+      /<select[^>]+name="currency"[^>]*>[\s\S]*?<option value="CAD" selected/,
+    );
     expect(body).toContain('value="vendor-a" selected');
     expect(body).toContain('value="contract-a" selected');
     expect(body).toContain('name="operation" value="correct"');
     expect(body).toContain('value="caller-key"');
     expect(body.match(/name="context"/g)).toHaveLength(2);
+  });
+  it('preserves an unknown retained currency and its mapped native name', () => {
+    const body = form({
+      values: { ...values, currency: 'ZZZ' },
+      fields: { currency: 'expenseCurrency' },
+      currencyOptions: [{ value: 'CAD', label: 'Canadian dollar only' }],
+    });
+    expect(body).toMatch(
+      /<select[^>]+name="expenseCurrency"[^>]*>[\s\S]*?<option value="ZZZ" selected/,
+    );
+    expect(body).toContain('Canadian dollar only');
   });
   it('retains malformed dates/amounts and correction errors without model coercion', () => {
     const body = form({

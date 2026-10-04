@@ -185,5 +185,7 @@ pnpm --filter @happyvertical/smrt-expenses test:e2e       # Native browser forms
 
 `ExpenseForm` and `ExpenseReviewPanel` from `@happyvertical/smrt-expenses/svelte`
 provide native purchase entry, caller-driven duplicate/correction review and
-Assets receipt composition. See [the UI contract](agents/expense-ui.md) for
-public props, native payloads, retained errors and server responsibilities.
+Assets receipt composition. `ExpenseForm` uses the shared localized currency
+selector while preserving native field names and rejected raw drafts. See
+[the UI contract](agents/expense-ui.md) for public props, selector restrictions,
+native payloads, retained errors and server responsibilities.

@@ -1,5 +1,6 @@
 import type { AttachmentPanelProps } from '@happyvertical/smrt-assets/svelte';
 import type { FormRetryStatus } from '@happyvertical/smrt-ui/form-retry';
+import type { CodeSelectOption } from '@happyvertical/smrt-ui/forms';
 import type { Snippet } from 'svelte';
 import type { HTMLFormAttributes } from 'svelte/elements';
 import type { Expense } from '../models/Expense.js';
@@ -62,6 +63,8 @@ export interface ExpenseFormProps {
   vendors?: readonly ExpenseReferenceOption[];
   /** Authorized Commerce Contract options. */
   commitments?: readonly ExpenseReferenceOption[];
+  /** Caller-restricted currency choices; omitted uses the shared ISO defaults. */
+  currencyOptions?: readonly CodeSelectOption[];
   /** Optional native field-name adapter; defaults to draft property names. */
   fields?: Partial<Record<keyof ExpenseDraftValues, string>>;
   /** Server errors keyed by logical draft property. */

@@ -56,10 +56,13 @@ try {
  console.log(`Browser: ${browser.version()}`);
  const native=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
  const page=await native.newPage();await page.goto('http://127.0.0.1:5585/native');
+ await page.locator('select[name=currency]').selectOption('JPY');
  await page.getByLabel('Total, including tax').fill('12..50');
  await Promise.all([page.waitForEvent('load'),page.getByLabel('Total, including tax').press('Enter')]);
  assert.equal(requests.at(-1).intent,'save');
+ assert.equal(requests.at(-1).currency,'JPY');
  assert.equal(await page.locator('[name=lineId]').count(),1);
+ assert.equal(await page.locator('select[name=currency]').inputValue(),'JPY');
  assert.equal(await page.getByLabel('Total, including tax').inputValue(),'12..50');
  await page.getByLabel('Reference',{exact:true}).fill('Keyboard retained');
  await page.getByRole('button',{name:'Add line',exact:true}).focus();
@@ -80,11 +83,13 @@ try {
  const hydrated=await browser.newContext({viewport:{width:390,height:844}});const demo=await hydrated.newPage();const errors=[];
  demo.on('pageerror',error=>errors.push(String(error)));
  await demo.goto('http://127.0.0.1:5585/demo');await demo.getByRole('button',{name:'Add line',exact:true}).waitFor();
+ await demo.locator('select[name=currency]').selectOption('JPY');
  await demo.getByLabel('Total, including tax').fill('9..99');
  await demo.getByLabel('Total, including tax').press('Enter');
  await demo.getByText('Demo rejected submission. Values and request identity remain available for retry.',{exact:true}).waitFor();
  assert.equal(await demo.locator('[name=lineId]').count(),1);
  assert.equal(await demo.getByLabel('Total, including tax').inputValue(),'9..99');
+ assert.equal(await demo.locator('select[name=currency]').inputValue(),'JPY');
  await demo.getByRole('button',{name:'Add line',exact:true}).click();
  assert.equal(await demo.locator('[name=lineId]').count(),2);
  await demo.getByRole('button',{name:'Save draft',exact:true}).click();
@@ -93,11 +98,13 @@ try {
  assert.equal(await demo.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
  await demo.getByRole('button',{name:'Preview read only',exact:true}).click();
  assert.equal(await demo.getByLabel('Total, including tax').isDisabled(),true);
+ assert.equal(await demo.locator('select[name=currency]').isDisabled(),true);
+ assert.equal(await demo.locator('input[type=hidden][name=currency]').inputValue(),'JPY');
  assert.equal(await demo.getByRole('button',{name:'Save draft',exact:true}).count(),0);
  await demo.screenshot({path:resolve(evidence,'demo-readonly-390.png'),fullPage:true});
  assert.deepEqual(errors,[]);
  await extension?.run?.({browser,baseUrl:'http://127.0.0.1:5585',evidence,requests});
- console.log('PASS: native no-JS keyboard add/remove, identical uncertain retry, raw value/token retention; hydrated controls/read-only and 390px overflow.');
+ console.log('PASS: native no-JS keyboard add/remove, identical uncertain retry, raw value/token/currency retention; hydrated controls/read-only and 390px overflow.');
 } finally {
  await browser?.close();await new Promise(resolve=>server.close(resolve));await vite.close();
 }

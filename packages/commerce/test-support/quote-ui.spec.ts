@@ -84,6 +84,9 @@ describe('quote presentation contract', () => {
       'not-a-date',
     );
     expect(
+      doc.querySelector<HTMLSelectElement>('select[name=currency]')?.value,
+    ).toBe('CAD');
+    expect(
       doc.querySelector<HTMLInputElement>('[name=lineUnitRate]')?.value,
     ).toBe('bad rate');
     expect(
@@ -110,6 +113,23 @@ describe('quote presentation contract', () => {
     expect(doc.body.textContent).toContain(
       'does not select pricing or award work',
     );
+  });
+  it('preserves an unknown retained currency as a native selected option', () => {
+    const doc = documentOf(
+      render(QuoteEditor, {
+        props: {
+          kind: 'vendor-quotation',
+          values: { ...values, currency: 'ZZZ' },
+          action: '/quotes',
+          counterparties: [],
+          currencyOptions: [{ value: 'CAD', label: 'Canadian dollar only' }],
+        },
+      }).body,
+    );
+    expect(
+      doc.querySelector<HTMLSelectElement>('select[name=currency]')?.value,
+    ).toBe('ZZZ');
+    expect(doc.body.textContent).toContain('Canadian dollar only');
   });
   it('renders estimates with caller terminology, no financial acceptance and disabled read-only fields', () => {
     const { body } = render(QuoteEditor, {

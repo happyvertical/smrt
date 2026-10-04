@@ -1,5 +1,11 @@
 <script lang="ts">
-import { FormGroup, Input } from '@happyvertical/smrt-ui/forms';
+import type { CodeSelectOption } from '@happyvertical/smrt-ui/forms';
+import {
+  CountrySelect,
+  FormGroup,
+  Input,
+  ProvinceSelect,
+} from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../i18n.js';
 import type { PartyAddressData } from '../party-types.js';
@@ -19,6 +25,10 @@ export interface Props {
   names: AddressFieldNames;
   errors?: Record<string, string | undefined>;
   readOnly?: boolean;
+  /** Caller-restricted country choices; omitted uses the shared ISO defaults. */
+  countryOptions?: readonly CodeSelectOption[];
+  /** Caller-restricted region choices; omitted uses CA/US defaults and text elsewhere. */
+  provinceOptions?: readonly CodeSelectOption[];
 }
 
 const {
@@ -27,8 +37,30 @@ const {
   names,
   errors = {},
   readOnly = false,
+  countryOptions,
+  provinceOptions,
 }: Props = $props();
-const { t } = useI18n();
+const i18n = useI18n();
+const { t } = i18n;
+function addressValue(key: 'country' | 'state'): string {
+  return value[key] ?? '';
+}
+let country = $state(addressValue('country'));
+let sourceCountry = $state(addressValue('country'));
+let province = $state(addressValue('state'));
+let sourceProvince = $state(addressValue('state'));
+$effect(() => {
+  const nextCountry = value.country ?? '';
+  if (nextCountry !== sourceCountry) {
+    sourceCountry = nextCountry;
+    country = nextCountry;
+  }
+  const nextProvince = value.state ?? '';
+  if (nextProvince !== sourceProvince) {
+    sourceProvince = nextProvince;
+    province = nextProvince;
+  }
+});
 </script>
 
 <fieldset class="address-fields">
@@ -43,14 +75,14 @@ const { t } = useI18n();
     <FormGroup label={t(M['commerce.party.city'])} error={errors.city}>
       <Input name={names.city} value={value.city ?? ''} maxlength={100} readonly={readOnly} />
     </FormGroup>
+    <FormGroup label={t(M['commerce.party.country'])} error={errors.country}>
+      <CountrySelect name={names.country} bind:value={country} options={countryOptions} locale={i18n.locale} readOnly={readOnly} />
+    </FormGroup>
     <FormGroup label={t(M['commerce.party.state'])} error={errors.state}>
-      <Input name={names.state} value={value.state ?? ''} maxlength={100} readonly={readOnly} />
+      <ProvinceSelect name={names.state} bind:value={province} {country} options={provinceOptions} locale={i18n.locale} readOnly={readOnly} />
     </FormGroup>
     <FormGroup label={t(M['commerce.party.postal_code'])} error={errors.postalCode}>
       <Input name={names.postalCode} value={value.postalCode ?? ''} maxlength={32} readonly={readOnly} />
-    </FormGroup>
-    <FormGroup label={t(M['commerce.party.country'])} error={errors.country}>
-      <Input name={names.country} value={value.country ?? ''} maxlength={100} readonly={readOnly} />
     </FormGroup>
   </div>
 </fieldset>

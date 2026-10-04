@@ -5,6 +5,7 @@ import VendorForm from '../components/VendorForm.svelte';
 import { M } from '../i18n.js';
 import type {
   CustomerFormValues,
+  PartyAddressData,
   PartyContactData,
   PartyFormErrors,
   VendorFormValues,
@@ -27,6 +28,13 @@ let customerValues = $state<CustomerFormValues>({
   customerType: 'wholesale',
   creditLimit: '2500.00',
   paymentTerms: 'Net 30',
+  shippingAddress: {
+    street1: '100 Main Street',
+    city: 'Vancouver',
+    state: 'BC',
+    postalCode: 'V6B 1A1',
+    country: 'CA',
+  },
   contacts: [
     {
       id: 'contact-avery',
@@ -77,6 +85,20 @@ function contacts(data: FormData): PartyContactData[] {
   }));
 }
 
+function address(
+  data: FormData,
+  prefix: 'shipping' | 'billing',
+): PartyAddressData {
+  return {
+    street1: field(data, `${prefix}Street1`),
+    street2: field(data, `${prefix}Street2`),
+    city: field(data, `${prefix}City`),
+    state: field(data, `${prefix}State`),
+    postalCode: field(data, `${prefix}PostalCode`),
+    country: field(data, `${prefix}Country`),
+  };
+}
+
 function retainedCustomer(data: FormData): CustomerFormValues {
   return {
     ...customerValues,
@@ -93,6 +115,8 @@ function retainedCustomer(data: FormData): CustomerFormValues {
     paymentTerms: field(data, 'paymentTerms'),
     taxExempt: data.has('taxExempt'),
     notes: field(data, 'notes'),
+    shippingAddress: address(data, 'shipping'),
+    billingAddress: address(data, 'billing'),
     contacts: contacts(data),
   };
 }

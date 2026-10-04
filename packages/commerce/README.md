@@ -524,7 +524,12 @@ action. See [pricing version presentation](agents/pricing-versions.md).
 
 ## Commercial UI composition
 
-See [commercial UI contracts and backend boundaries](agents/commercial-ui.md) for native forms, recovery, amount units and consumer adoption.
+Customer addresses and vendor/quote currencies use the shared localized code
+selectors while preserving native field names and rejected raw drafts. See
+[commercial UI contracts and backend boundaries](agents/commercial-ui.md) for
+native forms, recovery, amount units and consumer adoption, plus the focused
+[customer/vendor](agents/customer-vendor-ui.md) and
+[quotation](agents/quote-ui.md) contracts for selector restrictions.
 
 ## Invoice preparation UI
 

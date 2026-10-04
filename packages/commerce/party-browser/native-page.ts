@@ -10,6 +10,13 @@ export function renderNativePage(): string {
         identityKind: 'business',
         name: 'Native Client',
         creditLimit: '1250.00',
+        shippingAddress: {
+          street1: '100 Main Street',
+          city: 'Vancouver',
+          state: 'BC',
+          postalCode: 'V6B 1A1',
+          country: 'CA',
+        },
         contacts: [{ id: 'contact-native', name: 'Native Contact' }],
       },
       transport: {
@@ -31,6 +38,7 @@ export function renderNativeVendorPage(): string {
         name: 'Native Vendor',
         leadTimeDays: '7oops',
         minimumOrder: '500.00',
+        currency: 'CAD',
         contacts: [{ id: 'contact-native', name: 'Native Vendor Contact' }],
       },
       transport: {
