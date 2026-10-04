@@ -317,7 +317,9 @@ export class AssemblyService {
     if (!bom) throw new BomNotFoundError(bomId);
     const cache = new Map<string, Promise<ResolvedComponent>>();
     const scope = { tenantId: bom.tenantId ?? null };
-    const lines = await this.lines.findByBom(bomId);
+    const lines = (await this.lines.findByBom(bomId)).filter((line) =>
+      visibleTo(line, scope),
+    );
     const resolved: BillStructureLine[] = [];
     for (const line of lines) {
       resolved.push({
@@ -430,7 +432,8 @@ export class AssemblyService {
     const componentSkuIds: string[] = [];
     for (const billId of billIds) {
       for (const line of await this.lines.findByBom(billId))
-        componentSkuIds.push(line.componentSkuId);
+        if (visibleTo(line, { tenantId }))
+          componentSkuIds.push(line.componentSkuId);
     }
     if (componentSkuIds.length === 0) return;
     const path = await this.findCycle(bom.productId, componentSkuIds, {

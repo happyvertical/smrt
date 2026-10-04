@@ -556,6 +556,20 @@ export function assemblySuite(
           sku: null,
           product: null,
         });
+
+        // A line another tenant wrote onto tenant A's bill is not part of it.
+        await lines.create({
+          bomId: frameA.id!,
+          componentSkuId: sharedSku.id!,
+          qtyPerUnit: 7,
+          notes: 'tenant B note',
+          tenantId: tenantB,
+        });
+        const again = await service.getBillStructure(frameA.id!);
+        expect(again.lines.map((l) => l.line.tenantId)).toEqual([tenantA]);
+        expect(again.lines.some((l) => l.line.notes === 'tenant B note')).toBe(
+          false,
+        );
       });
 
       it('allows a shared sub-assembly used twice in one structure', async () => {
