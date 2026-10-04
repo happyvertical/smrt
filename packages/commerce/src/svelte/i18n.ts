@@ -27,6 +27,7 @@ export const M = defineMessages({
   'commerce.party.payment_terms': 'Payment terms',
   'commerce.party.internal_notes': 'Internal notes',
   'commerce.party.not_recorded': 'Not recorded',
+  'commerce.party.amount_unavailable': 'Amount unavailable',
   'commerce.party.no_contact_details': 'No contact details recorded',
   'commerce.party.try_filters': 'Try changing the search or filters.',
   'commerce.party.search': 'Search',

@@ -26,6 +26,26 @@ const vendor = {
   currency: 'CAD',
   contacts: [{ id: 'contact-2', name: 'Morgan Lee', phone: '+1 403 555 0117' }],
 };
+const extremeCustomer = {
+  ...customer,
+  id: 'customer-extreme',
+  creditLimitMinor: Number.MAX_SAFE_INTEGER,
+};
+const negativeVendor = {
+  ...vendor,
+  id: 'vendor-negative',
+  minimumOrderMinor: -1,
+};
+const invalidCurrencyCustomer = {
+  ...customer,
+  id: 'customer-invalid-currency',
+  creditLimitMinor: 100,
+};
+const invalidExponentVendor = {
+  ...vendor,
+  id: 'vendor-invalid-exponent',
+  minimumOrderMinor: 100,
+};
 </script>
 
 <main>
@@ -36,6 +56,10 @@ const vendor = {
   <section data-testid="vendor-error"><VendorDirectory errorMessage="Vendor service unavailable" /></section>
   <section id="customer-detail" data-testid="customer-detail"><CustomerDetail {customer} editHref="#forbidden" canEdit={false} /></section>
   <section data-testid="vendor-detail"><VendorDetail {vendor} editHref="#edit-vendor" canEdit /></section>
+  <section data-testid="customer-money-extreme"><CustomerDetail customer={extremeCustomer} currency="CAD" locale="en" /></section>
+  <section data-testid="vendor-money-negative"><VendorDetail vendor={negativeVendor} locale="en" /></section>
+  <section data-testid="customer-money-invalid-currency"><CustomerDetail customer={invalidCurrencyCustomer} currency="invalid" /></section>
+  <section data-testid="vendor-money-invalid-exponent"><VendorDetail vendor={invalidExponentVendor} minorUnitExponent={Number.POSITIVE_INFINITY} /></section>
   <section data-testid="customer-form">
     <CustomerForm
       values={{ identityKind: 'business', name: 'Retained Client', creditLimit: '1250.0oops', contacts: [{ id: 'contact-1', name: 'Avery' }] }}
