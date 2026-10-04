@@ -67,6 +67,7 @@ import type {
   SmartObjectManifest,
 } from './scanner/types.js';
 import { toSnakeCase } from './utils/naming.js';
+import { readPreviousQualifiedNames } from './utils/qualified-names.js';
 
 /**
  * Minimal package.json shape consumed by the knowledge builder.
@@ -314,9 +315,14 @@ function buildKnowledgeObject(
       columnType: field.columnType,
     }));
 
+  const previousQualifiedNames = readPreviousQualifiedNames(
+    object.decoratorConfig,
+  ).sort();
+
   return {
     name: object.className,
     qualifiedName: object.qualifiedName,
+    ...(previousQualifiedNames.length > 0 ? { previousQualifiedNames } : {}),
     collection: object.collection,
     tableName: object.schema?.tableName,
     packageName: object.packageName,

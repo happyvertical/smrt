@@ -46,9 +46,34 @@ import {
   UserStatus,
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import {
+  createLocalMcpTokenStore,
+  ensureLocalMcpTokenTable,
+  type LocalMcpTokenStore,
+} from './local-mcp-tokens.js';
 
+export * from './application-identity.js';
 export * from './deployed-runtime.js';
+export {
+  DEFAULT_LOCAL_MCP_TOKEN_TTL_SECONDS,
+  type IssuedLocalMcpToken,
+  type IssueLocalMcpTokenInput,
+  isLocalMcpTokenPrincipal,
+  LOCAL_MCP_TOKEN_PREFIX,
+  LOCAL_MCP_TOKEN_PRINCIPAL,
+  LOCAL_MCP_TOKEN_TABLE,
+  type LocalMcpTokenPrincipal,
+  type LocalMcpTokenRecord,
+  type LocalMcpTokenStatus,
+  type LocalMcpTokenStore,
+  MAX_LOCAL_MCP_TOKEN_TTL_SECONDS,
+} from './local-mcp-tokens.js';
+export * from './operation-lock.js';
+export * from './provider-readiness.js';
 export * from './runtime-diagnostics.js';
+export * from './stale-reclaim.js';
+export * from './state-root.js';
+export * from './writer-lease.js';
 
 const DEFAULT_BIND_HOST = '127.0.0.1';
 const DEFAULT_BOOTSTRAP_TTL_SECONDS = 10 * 60;
@@ -224,6 +249,84 @@ export async function validateLocalDatabaseStorage(
   return paths;
 }
 
+/** Options for {@link openLocalMcpTokenStore}. */
+export interface OpenLocalMcpTokenStoreOptions
+  extends ResolveLocalRuntimePathsOptions {
+  /** Testable clock. */
+  now?: () => Date;
+}
+
+/** A {@link LocalMcpTokenStore} over its own connection; call `close()`. */
+export interface OpenedLocalMcpTokenStore extends LocalMcpTokenStore {
+  close(): Promise<void>;
+}
+
+/**
+ * Open the local MCP token store of an already-initialized application for
+ * an operator command (`smrt app token`). It validates the existing storage
+ * custody exactly like `validateLocalDatabaseStorage()` and opens SQLite
+ * without running migrations or owner bootstrap. It does not take the writer
+ * lease: issuing or revoking a token while the web process runs is the
+ * expected use, and revocation takes effect on the next request.
+ */
+export async function openLocalMcpTokenStore(
+  options: OpenLocalMcpTokenStoreOptions,
+): Promise<OpenedLocalMcpTokenStore> {
+  const paths = await validateLocalDatabaseStorage(options);
+  const canonicalSourceRoot = await realpath(
+    resolve(options.sourceRoot ?? process.cwd()),
+  );
+  // Uncached: `close()` must never close a connection another caller in
+  // this process (for example the web runtime) shares.
+  const db = await getDatabase({
+    type: 'sqlite',
+    url: paths.database,
+    cache: false,
+    secureFile: {
+      driver: 'node:sqlite',
+      custody: 'trusted-parent',
+      root: paths.root,
+    },
+  });
+  try {
+    await tuneLocalSqlite(db);
+    await ensureLocalMcpTokenTable(db);
+  } catch (error) {
+    throw await closeDatabaseAfterFailure(db, error);
+  }
+  const store = localMcpTokenStore(
+    db,
+    paths,
+    canonicalSourceRoot,
+    options.now ?? (() => new Date()),
+  );
+  return Object.freeze({
+    issue: store.issue,
+    list: store.list,
+    revoke: store.revoke,
+    verify: store.verify,
+    close: async () => {
+      await db.close?.();
+    },
+  });
+}
+
+function localMcpTokenStore(
+  db: DatabaseInterface,
+  paths: LocalRuntimePaths,
+  canonicalSourceRoot: string,
+  now: () => Date,
+): LocalMcpTokenStore {
+  return createLocalMcpTokenStore({
+    db,
+    now,
+    readSecret: () =>
+      validateApplicationSecret(paths.applicationSecret, canonicalSourceRoot),
+    findOwner: findExistingOwner,
+    fail: (code, message) => new LocalRuntimeError(code, message),
+  });
+}
+
 export interface LocalOwnerBootstrapInvitation {
   /** Plaintext is returned exactly when a new claim is issued; it is never persisted. */
   readonly token: string;
@@ -298,7 +401,9 @@ export type LocalRuntimeErrorCode =
   | 'bootstrap_unavailable'
   | 'capability_disabled'
   | 'invalid_configuration'
+  | 'invalid_scope'
   | 'migration_failed'
+  | 'owner_unavailable'
   | 'unsafe_public_exposure';
 
 /**
@@ -415,6 +520,7 @@ export async function initializeLocalApplicationRuntime(
       throw migrationFailed(migrationFailure);
     }
     await ensureBootstrapTable(db);
+    await ensureLocalMcpTokenTable(db);
 
     const runtime = new InitializedLocalApplicationRuntime({
       db,
@@ -498,6 +604,13 @@ export interface LocalApplicationRuntime {
   ): ReturnType<SessionService['loadSessionContext']>;
   createEmbeddedJobRunner(config?: TaskRunnerConfig): Promise<TaskRunner>;
   diagnostics(): Promise<LocalRuntimeDiagnostics>;
+  /**
+   * Owner-minted bearer tokens for local MCP clients. Always present on a
+   * runtime returned by {@link initializeLocalApplicationRuntime}; optional
+   * only so structural test doubles stay valid. Absent means "no tokens":
+   * callers fail closed.
+   */
+  readonly mcpTokens?: LocalMcpTokenStore;
 }
 
 class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
@@ -507,6 +620,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   readonly resolvedRuntime: ResolvedApplicationRuntime;
   readonly backgroundJobsEnabled: boolean;
   readonly paidCapabilitiesEnabled: boolean;
+  readonly mcpTokens: LocalMcpTokenStore;
   private readonly bootstrapTtlSeconds: number;
   private readonly sessionTtlSeconds: number;
   private readonly now: () => Date;
@@ -523,6 +637,12 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     this.paidCapabilitiesEnabled = state.paidCapabilities;
     this.now = state.now;
     this.canonicalSourceRoot = state.canonicalSourceRoot;
+    this.mcpTokens = localMcpTokenStore(
+      state.db,
+      state.paths,
+      state.canonicalSourceRoot,
+      state.now,
+    );
   }
 
   /**
@@ -600,11 +720,18 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     const tokenHash = await this.hashBootstrapToken(input.token);
     const now = this.now();
     const nowIso = now.toISOString();
+    // A token that cannot claim is rejected before seeding, so a wrong,
+    // replayed, or expired token stays read-only and never pays for a
+    // catalog-wide write (#3323). This is a preflight only: the conditional
+    // UPDATE in the claim transaction below remains the single authority.
+    if (!(await isBootstrapTokenClaimable(this.db, tokenHash, nowIso))) {
+      await throwBootstrapClaimFailure(this.db, now);
+    }
     // Generated write routes require `<collection>.<action>` grants (#2977),
     // so the owner role must hold the default role matrix over the manifest
     // permission catalog, not only the role itself. Seeding is idempotent and
-    // additive, and runs before the claim transaction because the catalog
-    // sync uses its own collection connections.
+    // additive, and commits in its own transaction before the claim
+    // transaction.
     const roles = await RoleCollection.create({ db: this.db });
     await roles.seedSystemRoles({ seedPermissions: true });
     return this.db.transaction(async (tx) => {
@@ -867,6 +994,25 @@ async function throwBootstrapClaimFailure(
     'bootstrap_invalid',
     'The local owner bootstrap token is invalid.',
   );
+}
+
+async function isBootstrapTokenClaimable(
+  db: DatabaseInterface,
+  tokenHash: string,
+  nowIso: string,
+): Promise<boolean> {
+  const result = await db.query(
+    `SELECT 1 AS claimable
+     FROM ${BOOTSTRAP_TABLE}
+     WHERE slot = 1
+       AND token_hash = ?
+       AND consumed_at IS NULL
+       AND expires_at > ?
+     LIMIT 1`,
+    tokenHash,
+    nowIso,
+  );
+  return result.rows.length > 0;
 }
 
 async function readBootstrapRow(

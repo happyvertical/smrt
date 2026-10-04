@@ -74,6 +74,11 @@ import {
   runPostgresPermissions,
 } from './db-permissions.js';
 import { dbPruneCommand } from './db-prune.js';
+import {
+  dbMigrateQualifiedNamesCommand,
+  formatLegacyQualifiedNameReport,
+  runLegacyQualifiedNameReport,
+} from './db-qualified-names.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
@@ -819,6 +824,20 @@ export function renderAgentSurfaceReport(
  */
 export const utilityCommands: Record<string, CLICommand> = {
   ...mcpAppsCommands,
+  app: {
+    name: 'app',
+    description:
+      'Application operations: install, setup, recover, start, stop, doctor, open, backup, export, import, migrate, worker, dev, build (`smrt app help`)',
+    args: ['[operation]', '[args...]'],
+    // `main()` dispatches `smrt app …` before this registry is consulted;
+    // this entry keeps the group discoverable in `smrt --help` and handles a
+    // programmatic invocation through the generic handler.
+    handler: async (args) => {
+      const { runAppCommand } = await import('../app/cli.js');
+      const code = await runAppCommand(args);
+      if (code !== 0) process.exitCode = code;
+    },
+  },
   introspect: {
     name: 'introspect',
     description: 'Analyze project and discover SMRT objects',
@@ -3737,6 +3756,34 @@ export default testManifest;
           );
         }
         console.log();
+
+        // Stored references to deprecated qualified names (#3338): the
+        // signal that a `previousQualifiedNames` alias can be removed.
+        console.log('🏷️  Deprecated Qualified Names\n');
+        const legacyNames = await runLegacyQualifiedNameReport({
+          discover: false,
+        });
+        if (!legacyNames.report) {
+          check(
+            'Deprecated qualified-name references',
+            false,
+            legacyNames.error ?? 'Could not count stored references',
+          );
+        } else {
+          for (const line of formatLegacyQualifiedNameReport(
+            legacyNames.report,
+          )) {
+            console.log(line);
+          }
+          if (legacyNames.report.total > 0) {
+            warnings.push(
+              `deprecated qualified names: ${legacyNames.report.total} stored reference(s)`,
+            );
+          } else {
+            passed.push('Deprecated qualified-name references');
+          }
+        }
+        console.log();
       }
 
       // ========== Summary ==========
@@ -3799,6 +3846,7 @@ export default testManifest;
   'db:migrate-null-equal-indexes': dbMigrateNullEqualIndexesCommand,
   'db:migrate-agent-schedule-slugs': dbMigrateAgentScheduleSlugsCommand,
   'db:migrate-ledger-accounts': dbMigrateLedgerAccountsCommand,
+  'db:migrate-qualified-names': dbMigrateQualifiedNamesCommand,
   'db:materialize-tenant-hierarchy': dbMaterializeTenantHierarchyCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
   'db:orphans': dbOrphansCommand,

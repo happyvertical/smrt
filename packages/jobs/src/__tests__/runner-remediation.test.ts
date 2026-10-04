@@ -68,7 +68,7 @@ afterEach(() => {
   // into the next test.
   releaseHang?.();
   releaseHang = null;
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
 });
 
 describe('TaskRunner remediation (#1401)', () => {

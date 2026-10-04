@@ -49,6 +49,11 @@ function schemas(
 
 describe.skipIf(!pgUrl)('planned parent foreign-key preflight (#3240)', () => {
   let db: Awaited<ReturnType<typeof getDatabase>>;
+
+  async function tableSchema(tableName: string) {
+    if (!db.getTableSchema) throw new Error('Expected schema introspection');
+    return db.getTableSchema(tableName);
+  }
   let child: string;
   let parent: string;
   let manifest: Record<string, SchemaDefinition>;
@@ -139,7 +144,7 @@ describe.skipIf(!pgUrl)('planned parent foreign-key preflight (#3240)', () => {
     expect((await db.query(`SELECT id FROM "${child}"`)).rows).toEqual([
       { id },
     ]);
-    expect(await db.getTableSchema(parent)).toBeNull();
+    expect(await tableSchema(parent)).toBeNull();
   });
 
   it('rolls back parent creation and constraint addition if a writer inserts after preflight', async () => {
@@ -153,8 +158,8 @@ describe.skipIf(!pgUrl)('planned parent foreign-key preflight (#3240)', () => {
       collectStatementsFromDiff(diff, db, 'postgres'),
     );
     expect(results.some((result) => !result.success)).toBe(true);
-    expect(await db.getTableSchema(parent)).toBeNull();
-    expect((await db.getTableSchema(child))?.foreignKeys ?? []).toEqual([]);
+    expect(await tableSchema(parent)).toBeNull();
+    expect((await tableSchema(child))?.foreignKeys ?? []).toEqual([]);
     expect((await db.query(`SELECT id FROM "${child}"`)).rows).toEqual([
       { id },
     ]);
@@ -181,7 +186,7 @@ describe.skipIf(!pgUrl)('planned parent foreign-key preflight (#3240)', () => {
     await expect(new SchemaComparer(db).compare(manifest)).rejects.toThrow(
       /probe unavailable/,
     );
-    expect(await db.getTableSchema(parent)).toBeNull();
+    expect(await tableSchema(parent)).toBeNull();
   });
 
   it('retains type safety for an integer child pointing at a new UUID parent', async () => {
@@ -216,7 +221,7 @@ describe.skipIf(!pgUrl)('planned parent foreign-key preflight (#3240)', () => {
       randomUUID(),
       instant,
     ]);
-    expect((await db.getTableSchema(child))?.foreignKeys).toEqual(
+    expect((await tableSchema(child))?.foreignKeys).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           column: 'parent_id',
@@ -247,10 +252,10 @@ describe.skipIf(!pgUrl)('planned parent foreign-key preflight (#3240)', () => {
     expect((await apply(statements)).every((result) => result.success)).toBe(
       true,
     );
-    expect((await db.getTableSchema(child))?.foreignKeys ?? []).toEqual([]);
-    expect(
-      (await db.getTableSchema(parent))?.columns.id.type.toUpperCase(),
-    ).toBe('UUID');
+    expect((await tableSchema(child))?.foreignKeys ?? []).toEqual([]);
+    expect((await tableSchema(parent))?.columns.id.type.toUpperCase()).toBe(
+      'UUID',
+    );
   });
 
   it('blocks a planned parent with a missing target column', async () => {

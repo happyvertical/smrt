@@ -11,6 +11,8 @@ import { Icon } from '../display/index.js';
 import type { FilterOption } from './types.js';
 
 export interface Props {
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** Available filter options */
   options: FilterOption[];
   /** Currently selected value */
@@ -32,6 +34,7 @@ const {
   size = 'md',
   showAll = false,
   allLabel = 'All',
+  density,
 }: Props = $props();
 
 // Build full options list with optional "all"
@@ -54,7 +57,7 @@ function handleClick(value: string) {
 }
 </script>
 
-<div class="filter-chips" class:sm={size === 'sm'} role="radiogroup">
+<div data-density={density} class="filter-chips" class:sm={size === 'sm'} role="radiogroup">
   {#each allOptions as option (option.value)}
     {@const isActive = option.value === selected}
     <button
@@ -149,4 +152,8 @@ function handleClick(value: string) {
   .active .chip-count {
     color: var(--smrt-color-on-secondary-container);
   }
+
+  .filter-chips[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .filter-chips[data-density='comfortable'] { --smrt-control-target-min: 0px; }
+  .filter-chip { min-height: var(--smrt-control-target-min, 0px); min-width: var(--smrt-control-target-min, 0px); }
 </style>

@@ -62,12 +62,14 @@ class DecisionProductCollection extends SmrtCollection<DecisionProduct> {
 }
 
 function makeGenerativeClient(reply = '{"result": true}') {
-  const message = vi.fn(async () => reply);
+  const message = vi.fn(
+    async (_prompt: string, _options?: Record<string, unknown>) => reply,
+  );
   return { client: { embed: vi.fn(), message } as any, message };
 }
 
 function makeDecisionClient(probability: number) {
-  const decide = vi.fn(async () => ({
+  const decide = vi.fn(async (_request: unknown) => ({
     model: 'jev-test',
     provenance: { provider: 'typesafe', model: 'jev-test' },
     usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
@@ -384,9 +386,21 @@ describe('SmrtObject.evaluate typed decisions (#3153)', () => {
       usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
       route: 'decision',
     });
-    const request = decision?.decide.mock.calls[0]?.[0];
-    expect(request.state.content).toContain('Public product');
-    expect(request.state.content).not.toContain('secret-decision-key');
+    const request = decision?.decide.mock.calls[0]?.[0] as
+      | DecisionRequest
+      | undefined;
+    if (!request) throw new Error('Expected decision request');
+    const state = request.state;
+    if (
+      !state ||
+      typeof state !== 'object' ||
+      Array.isArray(state) ||
+      typeof state.content !== 'string'
+    ) {
+      throw new Error('Expected decision content state');
+    }
+    expect(state.content).toContain('Public product');
+    expect(state.content).not.toContain('secret-decision-key');
   });
 
   it('keeps a confident false on the decision route', async () => {

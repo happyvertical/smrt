@@ -40,8 +40,7 @@ describe('boolean tenantScoped manifest auto-population (#2431)', () => {
             collectionExportName: 'ManifestTenantDoc2431Collection',
           },
         ],
-        imports: [],
-        exports: [],
+        errors: [],
       },
     ]);
     const definition = manifest.objects.manifestTenantDoc2431;
@@ -91,13 +90,18 @@ describe('boolean tenantScoped manifest auto-population (#2431)', () => {
         return created;
       });
 
-      expect(doc.tenantId).toBe('tenant-2431');
+      // tenantId is injected by the manifest, not declared on the source class.
+      expect((doc as SmrtObject & { tenantId?: string }).tenantId).toBe(
+        'tenant-2431',
+      );
       await withTenant({ tenantId: 'tenant-2431' }, async () => {
         const persisted = await collection.get(doc.id as string);
-        expect(persisted?.tenantId).toBe('tenant-2431');
+        expect(
+          (persisted as (SmrtObject & { tenantId?: string }) | null)?.tenantId,
+        ).toBe('tenant-2431');
       });
     } finally {
-      await db.close();
+      await db.close?.();
     }
   });
 });

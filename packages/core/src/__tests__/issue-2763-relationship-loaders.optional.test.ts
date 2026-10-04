@@ -321,7 +321,7 @@ for (const engine of ['sqlite', 'duckdb', 'postgres'] as const) {
                   await db.query(`DROP TABLE IF EXISTS "${stem}_${suffix}"`);
                 }
               } finally {
-                await db.close();
+                await db.close?.();
               }
             }
           });

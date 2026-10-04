@@ -105,10 +105,8 @@ async function listSqliteTableNames(
   const result = await db.query(
     `SELECT name FROM sqlite_master WHERE type='table'`,
   );
-  const rows = Array.isArray(result)
-    ? result
-    : (result as { rows: Array<{ name: string }> }).rows;
-  return rows.map((row) => row.name);
+  const rows = Array.isArray(result) ? result : result.rows;
+  return rows.map((row) => String(row.name));
 }
 
 describe('issue #2645: getTestDatabase() excludes framework base classes from an implicit class list', () => {

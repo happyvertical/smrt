@@ -16,13 +16,15 @@ import { SmrtJobCollection } from '../smrt-job.js';
 
 @smrt()
 class CapProbe extends SmrtObject {
+  static readonly fixtureKind = 'cap-probe';
+
   async work(): Promise<string> {
     return 'done';
   }
 }
 
 afterEach(() => {
-  ObjectRegistry.clearCollectionCache?.();
+  ObjectRegistry.configureCollectionCache(100);
 });
 
 /**
@@ -101,6 +103,8 @@ describe('lazy background() proxy forwards tenantJobCap', () => {
     const probe = new CapBgProbe({ db });
     await probe.initialize();
 
+    expect(CapBgProbe.fixtureKind).toBe('cap-probe');
+    expect(CapBgProbe.prototype).toBe(CapProbe.prototype);
     const proxy = probe.background('work', {});
     expect(typeof proxy.tenantJobCap).toBe('function');
     // Chaining returns the same fluent proxy.

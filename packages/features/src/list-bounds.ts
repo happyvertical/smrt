@@ -4,6 +4,10 @@ import type {
   SmrtCollectionOptions,
 } from '@happyvertical/smrt-core';
 
+/** Host options this package accepts before stripping internal list bounds. */
+export type FeatureHostOptions = SmrtClassOptions &
+  Pick<SmrtCollectionOptions, 'defaultListLimit' | 'maxListLimit'>;
+
 /**
  * The caller's options with its list bounds removed.
  *

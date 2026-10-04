@@ -567,7 +567,7 @@ describe('managed application delivery control plane (#1949)', () => {
         description: 'Invalid correction',
         durationSeconds: 60,
       }),
-    ).rejects.toThrow(/case or work reference/i);
+    ).rejects.toThrow(/work reference/i);
     expect(entry.status).toBe('approved');
     await expect(
       service.correct(entry, {

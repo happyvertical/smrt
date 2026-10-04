@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import {
+  isPostgresDatabase,
   ObjectRegistry,
   type SmrtObjectOptions,
 } from '@happyvertical/smrt-core';
@@ -41,6 +43,10 @@ interface InternalMessageWrite {
   agentSessionId?: string | null;
   replyToMessageId?: string | null;
   toolCallData?: Record<string, unknown> | null;
+  /** Explicit id: the row is INSERTED (never upserted), so a collision throws. */
+  id?: string;
+  metadata?: Record<string, unknown> | null;
+  attachments?: ChatMessageAttachment[] | null;
   /** Internal-only escape hatch for system-authored writes. */
   skipMembershipCheck?: boolean;
 }
@@ -61,7 +67,90 @@ export interface AgentReplyParams {
    * room/tenant as the session (validated in {@link ChatService.writeMessage}).
    */
   threadId?: string | null;
+  /**
+   * The message this reply answers (e.g. the user send that started the
+   * turn). Validated to the same room/tenant like `threadId`.
+   */
+  replyToMessageId?: string | null;
 }
+
+/**
+ * A file reference stored on a user message (`ChatMessage.attachments`). The
+ * caller must have verified the reference belongs to the actor (for example,
+ * an upload it just stored) — the service stores it as given.
+ */
+export interface ChatMessageAttachment {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  url?: string;
+}
+
+/** UUIDv5 namespace for {@link clientRequestMessageId}. */
+const CLIENT_REQUEST_NAMESPACE = 'b7e2f1c4-5a3d-4e8f-9b6a-2c1d0e9f8a7b';
+
+/**
+ * The deterministic id of the user message a client request stores (#3368):
+ * a UUIDv5 over tenant, room, thread, actor and `clientRequestId`. The same
+ * request always maps to the same primary key, so the database's primary-key
+ * uniqueness is the atomic, durable reservation: a second insert conflicts
+ * and is answered as a duplicate, on any replica. A valid UUID, so it fits
+ * native UUID id columns on PostgreSQL/DuckDB and text ids on SQLite. Not a
+ * secret: reads stay membership-gated.
+ */
+export function clientRequestMessageId(params: {
+  tenantId: string;
+  roomId: string;
+  threadId?: string | null;
+  actorProfileId: string;
+  clientRequestId: string;
+}): string {
+  const namespace = Buffer.from(
+    CLIENT_REQUEST_NAMESPACE.replace(/-/g, ''),
+    'hex',
+  );
+  const name = Buffer.from(
+    JSON.stringify([
+      'smrt-chat:client-request',
+      params.tenantId,
+      params.roomId,
+      params.threadId ?? null,
+      params.actorProfileId,
+      params.clientRequestId,
+    ]),
+    'utf8',
+  );
+  const bytes = createHash('sha1')
+    .update(namespace)
+    .update(name)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * Thrown by {@link ChatService.sendMessage} when a message for the same
+ * `clientRequestId` (same tenant, room, thread and actor) is already stored.
+ */
+export class ChatClientRequestConflictError extends Error {
+  readonly code = 'CHAT_CLIENT_REQUEST_CONFLICT';
+  constructor(readonly messageId: string) {
+    super('A message for this client request is already stored.');
+    this.name = 'ChatClientRequestConflictError';
+  }
+}
+
+/** Where the turn answering a client request stands (`metadata.turnOutcome`); `running` is a resumed leg in flight. */
+export type ChatClientRequestOutcome =
+  | 'running'
+  | 'completed'
+  | 'cancelled'
+  | 'suspended'
+  | 'failed';
 
 /** Tenant-bound agent session lookup descriptor for the read facade. */
 export interface AgentSessionLookup {
@@ -283,18 +372,104 @@ export class ChatService {
     threadId?: string | null;
     agentSessionId?: string | null;
     replyToMessageId?: string | null;
+    /**
+     * The sending client's idempotency key, stored as
+     * `metadata.clientRequestId`. The message then gets the deterministic id
+     * {@link clientRequestMessageId} and is inserted, never upserted: a second
+     * send with the same key throws {@link ChatClientRequestConflictError}.
+     * Untrusted data, never authority.
+     */
+    clientRequestId?: string | null;
+    /** Already-verified file references to store on the message. */
+    attachments?: ChatMessageAttachment[] | null;
   }) {
-    return this.#writeMessage({
-      tenantId: params.tenantId,
-      roomId: params.roomId,
-      senderProfileId: params.actorProfileId,
-      content: params.content,
-      role: 'user',
-      messageType: params.messageType ?? 'text',
-      threadId: params.threadId ?? null,
-      agentSessionId: params.agentSessionId ?? null,
-      replyToMessageId: params.replyToMessageId ?? null,
-    });
+    const id = params.clientRequestId
+      ? clientRequestMessageId({
+          tenantId: params.tenantId,
+          roomId: params.roomId,
+          threadId: params.threadId ?? null,
+          actorProfileId: params.actorProfileId,
+          clientRequestId: params.clientRequestId,
+        })
+      : undefined;
+    // On a PostgreSQL TRANSACTION handle a failed INSERT aborts the whole
+    // transaction, so the reservation runs under a savepoint: a conflict
+    // rolls back to it and the caller can still read the winner's row.
+    // (A base handle autocommits each statement and needs none.)
+    const savepoint = id ? this.#reservationSavepoint() : null;
+    if (savepoint) await savepoint.open();
+    try {
+      const message = await this.#writeMessage({
+        tenantId: params.tenantId,
+        roomId: params.roomId,
+        senderProfileId: params.actorProfileId,
+        content: params.content,
+        role: 'user',
+        messageType: params.messageType ?? 'text',
+        threadId: params.threadId ?? null,
+        agentSessionId: params.agentSessionId ?? null,
+        replyToMessageId: params.replyToMessageId ?? null,
+        ...(id ? { id } : {}),
+        metadata: params.clientRequestId
+          ? { clientRequestId: params.clientRequestId }
+          : null,
+        attachments: params.attachments?.length ? params.attachments : null,
+      });
+      if (savepoint) await savepoint.release();
+      return message;
+    } catch (error) {
+      if (savepoint) await savepoint.rollback();
+      // The deterministic id is the only identity this insert supplies, so a
+      // unique violation means the reservation is already taken. The row is
+      // not re-read here: callers look it up through the membership-gated
+      // read facade.
+      if (
+        id &&
+        (error as { code?: unknown })?.code === 'VALIDATION_UNIQUE_CONSTRAINT'
+      ) {
+        throw new ChatClientRequestConflictError(id);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * A savepoint around a reserved insert when the messages handle is a
+   * PostgreSQL transaction handle (`@happyvertical/sql` transaction handles
+   * have no `beginTransaction`), else `null`.
+   */
+  #reservationSavepoint(): {
+    open(): Promise<void>;
+    release(): Promise<void>;
+    rollback(): Promise<void>;
+  } | null {
+    const db = this.#messages.db as unknown as {
+      url?: string;
+      beginTransaction?: unknown;
+      query(sql: string, ...values: unknown[]): Promise<unknown>;
+    };
+    if (
+      !isPostgresDatabase(db) ||
+      typeof db.beginTransaction === 'function' ||
+      typeof db.query !== 'function'
+    ) {
+      return null;
+    }
+    const name = `smrt_chat_reserve_${createHash('sha1')
+      .update(`${Date.now()}:${Math.random()}`)
+      .digest('hex')
+      .slice(0, 12)}`;
+    return {
+      open: async () => {
+        await db.query(`SAVEPOINT ${name}`);
+      },
+      release: async () => {
+        await db.query(`RELEASE SAVEPOINT ${name}`);
+      },
+      rollback: async () => {
+        await db.query(`ROLLBACK TO SAVEPOINT ${name}`).catch(() => undefined);
+      },
+    };
   }
 
   /**
@@ -367,6 +542,7 @@ export class ChatService {
     }
 
     const message = await this.#messages.create({
+      ...(write.id ? { id: write.id, _insertOnly: true } : {}),
       tenantId: write.tenantId,
       roomId: write.roomId,
       senderProfileId: write.senderProfileId,
@@ -379,6 +555,10 @@ export class ChatService {
       toolCallData: write.toolCallData
         ? JSON.stringify(write.toolCallData)
         : null,
+      ...(write.metadata ? { metadata: JSON.stringify(write.metadata) } : {}),
+      ...(write.attachments
+        ? { attachments: JSON.stringify(write.attachments) }
+        : {}),
     });
 
     // Update room's lastMessageAt
@@ -996,6 +1176,7 @@ export class ChatService {
       messageType: params.messageType ?? 'text',
       threadId: params.threadId ?? null,
       agentSessionId: params.agentSessionId,
+      replyToMessageId: params.replyToMessageId ?? null,
       toolCallData: params.toolCallData ?? null,
     });
   }
@@ -1277,6 +1458,162 @@ export class ChatService {
       limit: params.limit,
     });
     return messages.reverse();
+  }
+
+  /**
+   * A stored message and the replies linked to it (`replyToMessageId`),
+   * oldest first (#3368), or `null` when the message is not in the thread.
+   * Tenant- and membership-bound like {@link ChatService.getThreadMessages}.
+   * Replies are found by their link, not by position, so overlapping turns
+   * in one thread never claim each other's replies.
+   */
+  async getThreadMessageReplies(params: {
+    threadId: string;
+    messageId: string;
+    actorProfileId: string;
+    tenantId: string;
+    limit?: number;
+  }): Promise<{ message: ChatMessage; replies: ChatMessage[] } | null> {
+    const thread = await this.#threads.get({
+      id: params.threadId,
+      tenantId: params.tenantId,
+    });
+    if (!thread) {
+      throw new Error('Thread not found');
+    }
+    await this.#requireActiveMembership(
+      thread.roomId,
+      params.actorProfileId,
+      params.tenantId,
+    );
+    const message = await this.#messages.get({
+      id: params.messageId,
+      threadId: params.threadId,
+      tenantId: params.tenantId,
+    });
+    if (!message || message.isDeleted) return null;
+    const replies = await this.#messages.list({
+      where: {
+        tenantId: params.tenantId,
+        threadId: params.threadId,
+        replyToMessageId: params.messageId,
+        isDeleted: false,
+      },
+      orderBy: 'created_at ASC',
+      limit: params.limit ?? 100,
+    });
+    return { message, replies };
+  }
+
+  /**
+   * Record where the turn answering a client request stands, on the actor's
+   * own user message (`metadata.turnOutcome`, #3368). Only the message's
+   * author, still a member of its room, can record it.
+   *
+   * Transitions only move forward, per leg, and are compare-and-set on the
+   * row's revision (a concurrent writer re-reads and is re-checked):
+   * `unset → running → suspended(c) → running(resumedFrom c) → … →
+   * completed | cancelled | failed`, plus `unset → suspended | terminal` for
+   * a first leg whose earlier write was lost. A write from a leg that is not
+   * the current one (its `resumedFrom` differs), a `running` that does not
+   * consume the waiting continuation, or anything after a terminal outcome
+   * is refused. Returns whether the write was applied.
+   */
+  async recordClientRequestOutcome(params: {
+    tenantId: string;
+    threadId: string;
+    messageId: string;
+    actorProfileId: string;
+    outcome: ChatClientRequestOutcome;
+    /** The continuation the writing leg consumed; `null` for the first leg. */
+    resumedFrom?: string | null;
+    /** The continuation a `suspended` turn now waits on. */
+    continuationId?: string | null;
+  }): Promise<boolean> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const message = await this.#messages.get({
+        id: params.messageId,
+        threadId: params.threadId,
+        tenantId: params.tenantId,
+      });
+      if (
+        message?.role !== 'user' ||
+        message.senderProfileId !== params.actorProfileId
+      ) {
+        throw new Error('Message not found');
+      }
+      await this.#requireActiveMembership(
+        message.roomId,
+        params.actorProfileId,
+        params.tenantId,
+      );
+      const metadata = message.getMetadata();
+      if (
+        !ChatService.#outcomeTransitionAllowed(
+          metadata,
+          params.outcome,
+          params.resumedFrom ?? null,
+          params.continuationId ?? null,
+        )
+      ) {
+        return false;
+      }
+      message.setMetadata({
+        ...metadata,
+        turnOutcome: params.outcome,
+        turnSettledAt: new Date().toISOString(),
+        // While running: the leg (continuation it consumed); while
+        // suspended: the continuation it waits on.
+        turnContinuationId:
+          params.outcome === 'suspended'
+            ? (params.continuationId ?? null)
+            : (params.resumedFrom ?? null),
+      });
+      try {
+        await message.save();
+        return true;
+      } catch (error) {
+        if (
+          (error as { code?: unknown })?.code !== 'RUNTIME_REVISION_CONFLICT'
+        ) {
+          throw error;
+        }
+        // Another writer moved it first: re-read and re-check.
+      }
+    }
+    return false;
+  }
+
+  static #outcomeTransitionAllowed(
+    metadata: Record<string, unknown>,
+    next: ChatClientRequestOutcome,
+    resumedFrom: string | null,
+    continuationId: string | null,
+  ): boolean {
+    const current =
+      typeof metadata.turnOutcome === 'string' ? metadata.turnOutcome : null;
+    const recordedId =
+      typeof metadata.turnContinuationId === 'string'
+        ? metadata.turnContinuationId
+        : null;
+    if (
+      current === 'completed' ||
+      current === 'cancelled' ||
+      current === 'failed'
+    ) {
+      return false;
+    }
+    if (next === 'running') {
+      // A first leg starts from nothing; a resumed leg consumes exactly the
+      // continuation the send is waiting on.
+      return resumedFrom === null
+        ? current === null
+        : current === 'suspended' && recordedId === resumedFrom;
+    }
+    if (next === 'suspended' && !continuationId) return false;
+    // suspended or terminal: written by the leg that is running now.
+    if (current === 'running') return recordedId === resumedFrom;
+    return current === null && resumedFrom === null;
   }
 
   /**

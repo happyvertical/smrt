@@ -5,8 +5,20 @@ Provider-agnostic project management models for the s-m-r-t framework. Manages r
 ## Installation
 
 ```bash
-pnpm add @happyvertical/smrt-projects
+pnpm add @happyvertical/smrt-projects @happyvertical/smrt-timesheets
 ```
+
+Time entries and their commercial snapshots live in
+[`smrt-timesheets`](../timesheets/README.md) (#3288); smrt-projects re-exports
+them. Under pnpm, declare `@happyvertical/smrt-timesheets` directly: the CLI's
+manifest discovery reads only top-level packages, so without it `smrt
+db:migrate` / `db:status` stop planning `service_time_entries`,
+`service_charge_snapshots`, and `service_compensation_snapshots`. Their old
+`@happyvertical/smrt-projects:*` class names keep resolving as deprecated
+aliases; move source references to `@happyvertical/smrt-timesheets:*` (for
+`ServiceTimeEntry` in an app with smrt-support installed, to
+`@happyvertical/smrt-support:ServiceTimeEntry`). See
+[SERVICE_TIME_MIGRATION.md](./SERVICE_TIME_MIGRATION.md).
 
 ## Usage
 
@@ -78,6 +90,25 @@ await issue.rollback();
 ### Options Types
 
 `RepositoryOptions`, `IssueOptions`, `PullRequestOptions`, `ProjectOptions`, `CommentOptions`, `LabelOptions`
+
+### Request-scoped repository clients
+
+`withRepositoryClient(scope, client, callback)` binds an `IRepository` SDK
+client to one async request. Its `RepositoryClientScope` must exactly match the
+repository's provider, owner, name, tenant, and self-hosted `baseUrl`; a
+mismatch throws before environment token resolution. The client is not stored
+on models or persisted, and the previous scope is restored when the callback
+settles. In an active `TenantContext`, its tenant must also match the scoped
+repository; only an explicit `withSystemContext()` authorization bypasses that
+request-tenant check.
+
+```typescript
+await withRepositoryClient(
+  { provider: 'github', owner: 'org', repo: 'my-app', tenantId },
+  installationClient,
+  () => repository.sync(),
+);
+```
 
 ## Key Patterns
 

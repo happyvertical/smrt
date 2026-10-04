@@ -6,13 +6,11 @@
  * Provides a consistent confirmation dialog for destructive actions
  * or important decisions.
  *
- * Accessibility (#1586): the dialog is a `role="dialog" aria-modal="true"`
- * surface with managed focus — on open it records the previously-focused element
- * and moves focus to the confirm button; Tab/Shift+Tab are trapped within the
- * dialog; Escape (caught at the document level while open) cancels; and focus is
- * restored to the opener when the dialog closes.
+ * Native showModal() puts confirmations above existing Modal/Drawer surfaces,
+ * traps focus and makes the background inert. Escape is handled locally so
+ * only the active confirmation requests cancellation.
  */
-import { tick } from 'svelte';
+import { type Snippet, tick } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
 
 /** Props for ConfirmDialog component */
@@ -21,8 +19,8 @@ export interface Props {
   open: boolean;
   /** Dialog title */
   title: string;
-  /** Dialog message */
-  message: string;
+  /** Plain text or rich message snippet */
+  message: string | Snippet;
   /** Confirm button label */
   confirmLabel?: string;
   /** Cancel button label */
@@ -49,7 +47,8 @@ const {
   oncancel,
 }: Props = $props();
 
-let backdropEl = $state<HTMLElement | null>(null);
+const instanceId = $props.id();
+let backdropEl = $state<HTMLDialogElement | null>(null);
 let confirmBtnEl = $state<HTMLButtonElement | null>(null);
 // The element focused before the dialog opened, restored on close.
 let previouslyFocused: HTMLElement | null = null;
@@ -63,28 +62,31 @@ function focusableEls(): HTMLElement[] {
   );
 }
 
-// Move focus into the dialog on open; restore it to the opener on close.
+// Keep the parent's open prop authoritative; native cancellation requests it.
 $effect(() => {
-  if (typeof document === 'undefined') return;
-
-  if (open) {
-    previouslyFocused = document.activeElement as HTMLElement | null;
-    // Wait for the dialog DOM to mount, then move focus into the dialog: the
-    // confirm action by default, the first focusable if confirm is disabled, or
-    // the dialog container itself when every control is disabled (loading) so
-    // focus is still contained and Escape stays reachable.
-    void tick().then(() => {
-      if (!open) return;
-      const target = confirmBtnEl?.disabled
-        ? (focusableEls()[0] ?? backdropEl)
-        : confirmBtnEl;
-      target?.focus();
-    });
-  } else if (previouslyFocused) {
-    previouslyFocused.focus();
+  const dialog = backdropEl;
+  if (!open || !dialog) return;
+  previouslyFocused = document.activeElement as HTMLElement | null;
+  dialog.showModal();
+  void tick().then(() => {
+    if (!dialog.open) return;
+    const target = confirmBtnEl?.disabled
+      ? (focusableEls()[0] ?? dialog)
+      : confirmBtnEl;
+    target?.focus();
+  });
+  return () => {
+    if (dialog.open) dialog.close();
+    previouslyFocused?.focus();
     previouslyFocused = null;
-  }
+  };
 });
+
+function handleCancel(event: Event) {
+  event.preventDefault();
+  event.stopPropagation();
+  oncancel?.();
+}
 
 function handleBackdropClick(e: MouseEvent) {
   if (e.target === e.currentTarget) {
@@ -92,9 +94,11 @@ function handleBackdropClick(e: MouseEvent) {
   }
 }
 
-// Escape handling lives at the document level (below) so it fires regardless of
-// where focus currently is. This handler, bound to the dialog, only traps Tab.
 function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    handleCancel(e);
+    return;
+  }
   if (e.key !== 'Tab') return;
 
   // Trap focus within the dialog so Tab can't escape to the page behind.
@@ -117,33 +121,30 @@ function handleKeydown(e: KeyboardEvent) {
     first.focus();
   }
 }
-
-function handleWindowKeydown(e: KeyboardEvent) {
-  if (open && e.key === 'Escape') {
-    e.preventDefault();
-    oncancel?.();
-  }
-}
 </script>
-
-<svelte:window onkeydown={handleWindowKeydown} />
 
 {#if open}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
+  <dialog
     bind:this={backdropEl}
     class="dialog-backdrop"
-    role="dialog"
     aria-modal="true"
-    aria-labelledby="dialog-title"
-    aria-describedby="dialog-message"
+    aria-labelledby={`${instanceId}-title`}
+    aria-describedby={`${instanceId}-message`}
     tabindex="-1"
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
+    oncancel={handleCancel}
   >
     <div class="dialog-content">
-      <h2 id="dialog-title" class="dialog-title">{title}</h2>
-      <p id="dialog-message" class="dialog-message">{message}</p>
+      <h2 id={`${instanceId}-title`} class="dialog-title">{title}</h2>
+      <div id={`${instanceId}-message`} class="dialog-message">
+        {#if typeof message === 'string'}
+          {message}
+        {:else}
+          {@render message()}
+        {/if}
+      </div>
 
       <div class="dialog-actions">
         <button
@@ -171,7 +172,7 @@ function handleWindowKeydown(e: KeyboardEvent) {
         </button>
       </div>
     </div>
-  </div>
+  </dialog>
 {/if}
 
 <style>
@@ -181,9 +182,19 @@ function handleWindowKeydown(e: KeyboardEvent) {
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: var(--smrt-color-scrim, rgba(0, 0, 0, 0.4));
-    z-index: var(--smrt-z-index-dialog, 1000);
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    margin: 0;
+    border: none;
+    box-sizing: border-box;
+    background: transparent;
     padding: 1rem;
+  }
+
+  .dialog-backdrop::backdrop {
+    background-color: var(--smrt-color-scrim, rgba(0, 0, 0, 0.4));
     backdrop-filter: blur(2px);
   }
 

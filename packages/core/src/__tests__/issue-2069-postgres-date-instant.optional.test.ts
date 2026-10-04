@@ -137,7 +137,7 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
       process.env.TZ = timezone;
       await db.query(`TRUNCATE TABLE "${TABLE}"`);
 
-      await db.transaction(async (tx) => {
+      await db.transaction!(async (tx) => {
         await tx.query(`SET LOCAL TIME ZONE '${timezone}'`);
         const sessionTimezone = rowsOf(await tx.query('SHOW TimeZone'))[0];
         expect(sessionTimezone?.TimeZone ?? sessionTimezone?.timezone).toBe(
@@ -152,13 +152,13 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
           label: `upsert-${timezone}`,
           occurredAt: createdInstant,
         });
-        const createdReload = await instants.get(created.id);
+        const createdReload = await instants.get(created.id!);
         expect(epoch(createdReload?.occurredAt)).toBe(createdInstant.getTime());
 
         const updatedInstant = new Date('2026-11-01T08:30:45.123Z');
         created.occurredAt = updatedInstant;
         await created.save();
-        const updatedReload = await instants.get(created.id);
+        const updatedReload = await instants.get(created.id!);
         expect(epoch(updatedReload?.occurredAt)).toBe(updatedInstant.getTime());
 
         const insertInstant = new Date('2026-03-08T09:59:59.999Z');
@@ -168,7 +168,7 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
           occurredAt: insertInstant,
           _insertOnly: true,
         });
-        const insertReload = await instants.get(inserted.id);
+        const insertReload = await instants.get(inserted.id!);
         expect(epoch(insertReload?.occurredAt)).toBe(insertInstant.getTime());
       });
     });
@@ -271,7 +271,7 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
       }),
     );
 
-    await db.transaction(async (tx) => {
+    await db.transaction!(async (tx) => {
       await tx.query(`SET LOCAL TIME ZONE 'UTC'`);
       for (const sql of getSQLFromDiff(diff)) {
         await tx.query(sql);
@@ -375,19 +375,17 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
   });
 
   it('fails closed outside UTC and rolls back every system-table ALTER on failure', async () => {
-    const migrationFailure = await db
-      .transaction(async (tx) => {
-        await tx.query("SET LOCAL TIME ZONE 'America/Edmonton'");
-        await migratePostgresSystemTimestamps(
-          tx,
-          { legacyTimezone: 'UTC' },
-          'postgres',
-        );
-      })
-      .then(
-        () => undefined,
-        (error: unknown) => error,
+    const migrationFailure = await db.transaction!(async (tx) => {
+      await tx.query("SET LOCAL TIME ZONE 'America/Edmonton'");
+      await migratePostgresSystemTimestamps(
+        tx,
+        { legacyTimezone: 'UTC' },
+        'postgres',
       );
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     expect(migrationFailure).toBeDefined();
     expect(classifyDatabaseError(migrationFailure).driverCodes).toContain(
       'P0001',

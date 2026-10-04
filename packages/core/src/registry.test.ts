@@ -7,6 +7,7 @@ import {
   TestOrder,
 } from './__tests__/fixtures/registry-test-classes.js';
 import { SmrtCollection } from './collection';
+import { field } from './decorators/index.js';
 import { ConfigurationError, ValidationError } from './errors';
 import { GlobalInterceptors } from './interceptors';
 import { SmrtObject } from './object';
@@ -15,6 +16,13 @@ import type { FieldDefinition } from './scanner/types.js';
 import { snapshotObjectRegistryState } from './test-utils.js';
 import { getTestDatabase } from './testing/database.js';
 import { tableNameFromClass } from './utils';
+
+// Fail explicitly when a required value is absent; retain the existing assertions below.
+function requireFixture<T>(value: T | null | undefined): T {
+  if (value == null)
+    throw new Error('Expected test fixture value to be present');
+  return value;
+}
 
 // Helper class to create field definitions for manual registration
 class Field implements FieldDefinition {
@@ -201,9 +209,13 @@ describe('ObjectRegistry', () => {
       expect(metadata?.fields.has('categoryId')).toBe(true);
 
       const nameField = metadata?.fields.get('name');
-      expect(nameField.type).toBe('text');
-      expect(nameField._meta.required).toBe(true);
-      expect(nameField._meta.maxLength).toBe(100);
+      expect(requireFixture(nameField).type).toBe('text');
+      expect(requireFixture(requireFixture(nameField)._meta).required).toBe(
+        true,
+      );
+      expect(requireFixture(requireFixture(nameField)._meta).maxLength).toBe(
+        100,
+      );
     });
 
     it('should include schema definition', () => {
@@ -681,17 +693,17 @@ describe('ObjectRegistry', () => {
       expect(methods.has('sync')).toBe(true);
 
       const analyzeMethod = methods.get('analyze');
-      expect(analyzeMethod.name).toBe('analyze');
-      expect(analyzeMethod.async).toBe(true);
-      expect(analyzeMethod.isPublic).toBe(true);
-      expect(analyzeMethod.returnType).toBe('Promise<any>');
-      expect(analyzeMethod.parameters).toHaveLength(1);
-      expect(analyzeMethod.parameters[0].name).toBe('options');
+      expect(requireFixture(analyzeMethod).name).toBe('analyze');
+      expect(requireFixture(analyzeMethod).async).toBe(true);
+      expect(requireFixture(analyzeMethod).isPublic).toBe(true);
+      expect(requireFixture(analyzeMethod).returnType).toBe('Promise<any>');
+      expect(requireFixture(analyzeMethod).parameters).toHaveLength(1);
+      expect(requireFixture(analyzeMethod).parameters[0].name).toBe('options');
 
       const syncMethod = methods.get('sync');
-      expect(syncMethod.name).toBe('sync');
-      expect(syncMethod.async).toBe(true);
-      expect(syncMethod.parameters).toHaveLength(0);
+      expect(requireFixture(syncMethod).name).toBe('sync');
+      expect(requireFixture(syncMethod).async).toBe(true);
+      expect(requireFixture(syncMethod).parameters).toHaveLength(0);
     });
 
     it('should return empty Map for non-existent class', () => {
@@ -726,9 +738,9 @@ describe('ObjectRegistry', () => {
       expect(metadata?.methods.has('research')).toBe(true);
 
       const researchMethod = metadata?.methods.get('research');
-      expect(researchMethod.name).toBe('research');
-      expect(researchMethod.async).toBe(true);
-      expect(researchMethod.parameters[0].name).toBe('query');
+      expect(requireFixture(researchMethod).name).toBe('research');
+      expect(requireFixture(researchMethod).async).toBe(true);
+      expect(requireFixture(researchMethod).parameters[0].name).toBe('query');
     });
   });
 
@@ -875,10 +887,10 @@ describe('ObjectRegistry', () => {
       expect(registered).toBeDefined();
 
       // Manually set extends to an unregistered class
-      registered.extends = 'NonExistentParent';
+      requireFixture(registered).extends = 'NonExistentParent';
 
       // Clear the inheritance cache so it recomputes
-      registered.inheritanceChain = undefined;
+      requireFixture(registered).inheritanceChain = undefined;
 
       // getInheritanceChain should not throw, and should return a chain
       // that includes only the registered classes.
@@ -1046,7 +1058,9 @@ describe('ObjectRegistry', () => {
       );
       expect(registered?.name).toBe('BundledSecret');
       expect(registered?.qualifiedName).toBe('@test/pkg:BundledSecret');
-      expect(registered?.schema.tableName).toBe('bundled_secrets');
+      expect(requireFixture(registered?.schema).tableName).toBe(
+        'bundled_secrets',
+      );
       expect((BundledSecret as any).SMRT_TABLE_NAME).toBe('bundled_secrets');
     });
 
@@ -1125,7 +1139,9 @@ describe('ObjectRegistry', () => {
         expect(ObjectRegistry.getClassByConstructor(SafePromotionTarget)).toBe(
           original,
         );
-        expect(original?.schema.tableName).toBe('safe_promotion_targets');
+        expect(requireFixture(original?.schema).tableName).toBe(
+          'safe_promotion_targets',
+        );
       }
     });
 
@@ -1210,15 +1226,15 @@ describe('ObjectRegistry', () => {
 
       const registration = ObjectRegistry.getClass('EngineAwareSchemaObject');
       if (!registration) throw new Error('missing test registration');
-      registration.schema.columns.occurred_at = {
+      requireFixture(registration.schema).columns.occurred_at = {
         type: 'TIMESTAMP',
         check: 'occurred_at IS NOT NULL',
       };
-      registration.schema.columns.external_key = {
+      requireFixture(registration.schema).columns.external_key = {
         type: 'TEXT',
         unique: true,
       };
-      registration.schema.indexes.push({
+      requireFixture(registration.schema).indexes.push({
         name: 'uq_engine_aware_occurred_at',
         columns: ['occurred_at'],
         unique: true,
@@ -1281,16 +1297,19 @@ describe('ObjectRegistry', () => {
         'CustomConflictSchemaObject',
       );
       if (!registration) throw new Error('missing test registration');
-      registration.schema.columns.tenant_id = { type: 'TEXT', notNull: true };
-      registration.schema.columns.campaign_key = {
+      requireFixture(registration.schema).columns.tenant_id = {
         type: 'TEXT',
         notNull: true,
       };
-      registration.schema.columns.active = {
+      requireFixture(registration.schema).columns.campaign_key = {
+        type: 'TEXT',
+        notNull: true,
+      };
+      requireFixture(registration.schema).columns.active = {
         type: 'BOOLEAN',
         defaultValue: true,
       };
-      registration.schema.indexes.push({
+      requireFixture(registration.schema).indexes.push({
         name: 'uq_custom_conflict_active',
         columns: ['tenant_id', 'campaign_key'],
         unique: true,
@@ -1395,7 +1414,7 @@ describe('ObjectRegistry', () => {
         (registered?.fields.get('tenantId') as any)?._meta?.__tenancy
           ?.isTenantIdField,
       ).toBe(true);
-      expect(registered?.schema.columns.tenant_id).toEqual(
+      expect(requireFixture(registered?.schema).columns.tenant_id).toEqual(
         expect.objectContaining({
           type: 'UUID',
           referenceKind: 'tenantId',
@@ -1419,6 +1438,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'LegacyCrossRefSecret',
         {
+          name: 'legacycrossrefsecret',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'LegacyCrossRefSecret',
           fields: {
             externalId: {
@@ -1518,7 +1543,8 @@ describe('ObjectRegistry', () => {
       @smrt()
       class MixedFieldsObject extends SmrtObject {
         name = '';
-        date = datetime({ nullable: true }); // Field helper
+        @field({ nullable: true })
+        date: Date | null = null; // Current field metadata declaration
         // Base class fields (created_at, updated_at) are still inferred
       }
 
@@ -1539,9 +1565,11 @@ describe('ObjectRegistry', () => {
     it.skip('should handle mix of Field helpers and custom primitives - OBSOLETE after PR #129', () => {
       @smrt()
       class ProductWithMixedFields extends SmrtObject {
-        title = text({ required: true }); // Field helper
-        price = decimal({ min: 0 }); // Field helper
-        description = text(); // Primitive (should infer TEXT)
+        @field({ required: true })
+        title = ''; // Current field metadata declaration
+        @field({ min: 0 })
+        price = 0.0; // Current field metadata declaration
+        description = ''; // Primitive (should infer TEXT)
         stock: number = 0; // Primitive (should infer INTEGER)
         active: boolean = true; // Primitive (should infer BOOLEAN)
       }
@@ -1587,7 +1615,8 @@ describe('ObjectRegistry', () => {
     it.skip('should handle nullable fields with Field helpers - OBSOLETE after PR #129', () => {
       @smrt()
       class MeetingWithNullableDate extends SmrtObject {
-        date = datetime({ nullable: true }); // Explicit nullable
+        @field({ nullable: true })
+        date: Date | null = null; // Explicit nullable
         title: string = ''; // Primitive
         location: string | null = null; // Nullable primitive (should infer)
       }
@@ -1693,6 +1722,11 @@ describe('ObjectRegistry', () => {
 
     it('treats an explicit empty manifest rule list as authoritative', () => {
       ObjectRegistry.registerFromManifest('AutoPopulatedTenantValidation', {
+        name: 'autopopulatedtenantvalidation',
+        filePath: '',
+        collection: '',
+        decoratorConfig: {},
+
         className: 'AutoPopulatedTenantValidation',
         fields: {
           tenantId: {
@@ -1763,10 +1797,12 @@ describe('ObjectRegistry', () => {
         const doc = await collection.create({ title: 'saved' });
         await doc.save();
 
-        expect(doc.tenantId).toBe('tenant-save');
+        expect(
+          (doc as AutoPopulatedTenantSave & { tenantId?: string }).tenantId,
+        ).toBe('tenant-save');
       } finally {
         GlobalInterceptors.clear();
-        await db.close();
+        await db.close?.();
       }
     });
 
@@ -1778,7 +1814,7 @@ describe('ObjectRegistry', () => {
 
       const errors = await ObjectRegistry.validateWithRules(
         instance,
-        rules!,
+        requireFixture(rules),
         'ValidationRulesTestProduct',
       );
 
@@ -1800,7 +1836,7 @@ describe('ObjectRegistry', () => {
 
       const errors = await ObjectRegistry.validateWithRules(
         instance,
-        rules!,
+        requireFixture(rules),
         'ValidationRulesTestProduct',
       );
 
@@ -1824,7 +1860,7 @@ describe('ObjectRegistry', () => {
 
       const errors = await ObjectRegistry.validateWithRules(
         instance,
-        rules!,
+        requireFixture(rules),
         'ValidationRulesTestProduct',
       );
 
@@ -1846,7 +1882,7 @@ describe('ObjectRegistry', () => {
 
       const errors = await ObjectRegistry.validateWithRules(
         instance,
-        rules!,
+        requireFixture(rules),
         'ValidationRulesTestProduct',
       );
 
@@ -1868,7 +1904,7 @@ describe('ObjectRegistry', () => {
 
       const errors = await ObjectRegistry.validateWithRules(
         instance,
-        rules!,
+        requireFixture(rules),
         'ValidationRulesTestProduct',
       );
 
@@ -1890,7 +1926,7 @@ describe('ObjectRegistry', () => {
 
       const errors = await ObjectRegistry.validateWithRules(
         instance,
-        rules!,
+        requireFixture(rules),
         'ValidationRulesTestProduct',
       );
 
@@ -1914,6 +1950,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'Content',
         {
+          name: 'content',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'Content',
           fields: { title: { type: 'text' } },
           extends: undefined,
@@ -1924,6 +1966,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'Content',
         {
+          name: 'content',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'Content',
           fields: { duration: { type: 'integer' } },
           extends: undefined,
@@ -1937,6 +1985,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'VideoShot',
         {
+          name: 'videoshot',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'VideoShot',
           fields: { shotType: { type: 'text' } },
           extends: 'Content',
@@ -1966,6 +2020,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'Event',
         {
+          name: 'event',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'Event',
           fields: { date: { type: 'datetime' } },
           extends: undefined,
@@ -1976,6 +2036,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'Meeting',
         {
+          name: 'meeting',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'Meeting',
           fields: { agenda: { type: 'text' } },
           extends: '@happyvertical/smrt-events:Event',
@@ -2004,6 +2070,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'Animal',
         {
+          name: 'animal',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'Animal',
           fields: { species: { type: 'text' } },
           extends: undefined,
@@ -2014,6 +2086,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'Dog',
         {
+          name: 'dog',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'Dog',
           fields: { breed: { type: 'text' } },
           extends: 'Animal',
@@ -2040,6 +2118,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'Widget',
         {
+          name: 'widget',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'Widget',
           fields: { label: { type: 'text' } },
           extends: 'SmrtObject',
@@ -2057,6 +2141,12 @@ describe('ObjectRegistry', () => {
       ObjectRegistry.registerFromManifest(
         'Standalone',
         {
+          name: 'standalone',
+          filePath: '',
+          collection: '',
+          methods: {},
+          decoratorConfig: {},
+
           className: 'Standalone',
           fields: { data: { type: 'text' } },
         },

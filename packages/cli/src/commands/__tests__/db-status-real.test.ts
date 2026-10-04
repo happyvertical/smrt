@@ -6,6 +6,7 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { MigrationTracker } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const { autoDiscoverAndLoadMock } = vi.hoisted(() => ({
   autoDiscoverAndLoadMock: vi.fn(),
@@ -117,7 +118,7 @@ describe('db:status (real SQLite rendering)', () => {
       .spyOn(process, 'exit')
       .mockImplementation((() => undefined as never) as any);
 
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(errorOutput()).toContain('Database configuration required');
@@ -127,7 +128,7 @@ describe('db:status (real SQLite rendering)', () => {
   it('reports no applied migrations and a matching schema', async () => {
     await createWidgets();
 
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
 
     const out = output();
     expect(out).toContain('Migration Status');
@@ -139,7 +140,7 @@ describe('db:status (real SQLite rendering)', () => {
   it('lists applied migrations in compact form', async () => {
     await applyMigration();
 
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
 
     const out = output();
     expect(out).toContain('Applied Migrations: 1');
@@ -149,7 +150,7 @@ describe('db:status (real SQLite rendering)', () => {
   it('renders applied migrations as a verbose table', async () => {
     await applyMigration();
 
-    await dbStatusCommand.handler([], { verbose: true });
+    await requireCommandHandler(dbStatusCommand)([], { verbose: true });
 
     const out = output();
     expect(out).toContain('create_widgets');
@@ -171,7 +172,7 @@ describe('db:status (real SQLite rendering)', () => {
       },
     });
 
-    await dbStatusCommand.handler([], { verbose: true });
+    await requireCommandHandler(dbStatusCommand)([], { verbose: true });
 
     const out = output();
     expect(out).toContain('Drift Detected');
@@ -188,7 +189,7 @@ describe('db:status (real SQLite rendering)', () => {
       },
     });
 
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
 
     expect(output()).toContain('Drift Detected');
     expect(output()).toContain('gadgets');
@@ -225,7 +226,7 @@ describe('db:status (real SQLite rendering)', () => {
       },
     });
 
-    await dbStatusCommand.handler([], { verbose: true });
+    await requireCommandHandler(dbStatusCommand)([], { verbose: true });
 
     const out = output();
     expect(out).toContain('Failed migration history');
@@ -235,7 +236,7 @@ describe('db:status (real SQLite rendering)', () => {
   it('formats a recently-applied migration timestamp as "just now"', async () => {
     await applyMigration();
 
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
 
     // The migration was applied seconds ago, exercising getTimeAgo's recent
     // branch in the compact applied-migration list.
@@ -245,7 +246,7 @@ describe('db:status (real SQLite rendering)', () => {
   it('emits a structured JSON status report', async () => {
     await createWidgets();
 
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
 
     const parsed = JSON.parse(output());
     expect(parsed.database.engine).toBeDefined();
@@ -260,7 +261,7 @@ describe('db:status (real SQLite rendering)', () => {
       throw new Error('boom reading schema');
     });
 
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
 
     expect(process.exitCode).toBe(1);
     expect(errorOutput()).toContain('Failed to get migration status');
@@ -273,7 +274,7 @@ describe('db:status (real SQLite rendering)', () => {
       throw new Error('boom reading schema');
     });
 
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
 
     expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(output());

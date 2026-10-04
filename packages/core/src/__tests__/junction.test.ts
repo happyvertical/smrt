@@ -171,7 +171,9 @@ describe('SmrtJunction', () => {
             !competitorId &&
             sql.startsWith('INSERT INTO "junction_test_links"')
           ) {
-            competitorId = (await links.attach('owner-race', 'a')).id;
+            const competitor = await links.attach('owner-race', 'a');
+            if (!competitor.id) throw new Error('Expected attached link id');
+            competitorId = competitor.id;
           }
           return queryOriginal(sql, ...args);
         });

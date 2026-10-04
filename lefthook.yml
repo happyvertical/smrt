@@ -25,7 +25,9 @@ pre-commit:
       # silently rewriting the file. Previously `--unsafe` deleted the offending
       # statement outright and exited 0. Failing loudly is the point.
       glob: "*.{ts,js,tsx,jsx,svelte}"
-      run: npx biome check --write --no-errors-on-unmatched {staged_files}
+      # Pinned to the Biome `pnpm lint` and CI run (#2710, #3446); a bare
+      # `npx biome` resolves the root devDependency, which can differ.
+      run: npx --yes @biomejs/biome@2.5.2 check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
       fail_text: |
         ❌ Formatting/linting failed!
@@ -146,7 +148,7 @@ pre-push:
           pnpm knowledge:check --strict --format markdown
 
     format-check:
-      run: npx biome ci --diagnostic-level=error .
+      run: npx --yes @biomejs/biome@2.5.2 ci --diagnostic-level=error .
       fail_text: |
         ❌ Format check failed!
 

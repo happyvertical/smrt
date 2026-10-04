@@ -1,4 +1,4 @@
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ObjectRegistry } from '../../registry.js';
@@ -34,7 +34,7 @@ function makeDocumentSchema(): SchemaDefinition {
 }
 
 describe('schema orchestration', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
 
   beforeEach(async () => {
     db = await getDatabase({ type: 'sqlite', url: ':memory:' });
@@ -102,7 +102,7 @@ describe('schema orchestration', () => {
     };
 
     const postgresPending = await getPendingSchemaStatements(
-      mockPostgresDb as unknown as DatabaseProvider,
+      mockPostgresDb as unknown as DatabaseInterface,
       {
         engineHint: 'postgres',
       },
@@ -141,7 +141,7 @@ describe('schema orchestration', () => {
     });
 
     const pending = await getPendingSchemaStatements(
-      mockPostgresDb as unknown as DatabaseProvider,
+      mockPostgresDb as unknown as DatabaseInterface,
       {
         engineHint: 'postgres',
       },
@@ -204,7 +204,7 @@ describe('schema orchestration', () => {
     expect(result.results).toHaveLength(1);
     expect(result.results[0].applied).toBe(true);
 
-    const tables = await db.query<{ name: string }>(
+    const tables = await db.query(
       `SELECT name FROM sqlite_master WHERE type='table' AND name='documents'`,
     );
     expect(tables.rows).toHaveLength(1);
@@ -262,7 +262,7 @@ describe('schema orchestration', () => {
     });
 
     expect(result.applied).toBe(true);
-    const tables = await db.query<{ name: string }>(
+    const tables = await db.query(
       `SELECT name FROM sqlite_master WHERE type='table' AND name='documents'`,
     );
     expect(tables.rows).toHaveLength(1);

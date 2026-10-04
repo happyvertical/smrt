@@ -20,11 +20,29 @@
 import {
   type JunctionAttachOptions,
   type JunctionFilterOptions,
+  ObjectRegistry,
   type SmrtCreateInput,
   SmrtJunction,
   smrt,
 } from '@happyvertical/smrt-core';
 import { AssetAssociation } from './asset-association';
+
+/**
+ * `metaType` filter matching every name stored rows may use for the owner's
+ * class: its current qualified name and any deprecated
+ * `previousQualifiedNames` (#3338). Rows written before and after a model
+ * moved package both match; new rows always store the current name
+ * (`SmrtPolymorphicAssociation.save()`).
+ */
+async function metaTypeFilter(metaType: string): Promise<string | string[]> {
+  // Async so an owner class known only from its installed manifest is
+  // lazily loaded first; otherwise its old names are invisible here.
+  const names = await ObjectRegistry.getEquivalentQualifiedNamesAsync(
+    metaType,
+    { source: 'AssetAssociationCollection' },
+  );
+  return names.length === 1 ? names[0] : names;
+}
 
 // Decorator with empty config — only needed so the scanner detects the
 // class. See FactContentCollection for the full rationale; the short
@@ -53,7 +71,7 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
   ): Promise<AssetAssociation[]> {
     return (await this.list({
       // Spread opts first so the fixed polymorphic owner keys always win.
-      where: { ...opts, metaType, metaId },
+      where: { ...opts, metaType: await metaTypeFilter(metaType), metaId },
       orderBy: 'sort_order ASC',
     })) as AssetAssociation[];
   }
@@ -88,7 +106,12 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
     opts: JunctionFilterOptions = {},
   ): Promise<void> {
     const links = (await this.list({
-      where: { ...opts, metaType, metaId, assetId },
+      where: {
+        ...opts,
+        metaType: await metaTypeFilter(metaType),
+        metaId,
+        assetId,
+      },
     })) as AssetAssociation[];
     for (const link of links) {
       await link.delete();
@@ -113,7 +136,11 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
     delete snapshotOpts.assetId;
 
     const existing = (await this.list({
-      where: { ...snapshotOpts, metaType, metaId },
+      where: {
+        ...snapshotOpts,
+        metaType: await metaTypeFilter(metaType),
+        metaId,
+      },
     })) as AssetAssociation[];
     for (const link of existing) {
       await link.delete();

@@ -22,7 +22,10 @@ import {
   resolveTenantColumn,
 } from '../schema/conflict-target.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
-import { resolveForeignKeyDeleteAction } from '../schema/foreign-key-policy.js';
+import {
+  resolveForeignKeyDeleteAction,
+  resolveForeignKeyUpdateAction,
+} from '../schema/foreign-key-policy.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import type {
   ColumnDefinition,
@@ -31,7 +34,12 @@ import type {
 } from '../schema/types.js';
 import { generateToolManifest } from '../tools/tool-generator.js';
 import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
-import { createQualifiedName } from '../utils/qualified-names.js';
+import {
+  assertScopedPackageName,
+  createQualifiedName,
+  isQualifiedNameAliasFormat,
+  readPreviousQualifiedNames,
+} from '../utils/qualified-names.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
   AgentAdminRouteManifest,
@@ -256,6 +264,10 @@ export class ManifestGenerator {
       objects: {},
     };
 
+    if (scanResults.some((result) => result.objects.length > 0)) {
+      assertScopedPackageName(options?.packageName);
+    }
+
     // Set package metadata at manifest level if provided
     if (options?.packageName) {
       manifest.packageName = options.packageName;
@@ -375,6 +387,17 @@ export class ManifestGenerator {
     manifest: SmartObjectManifest,
     options?: { packageName?: string; packageJson?: PackageJsonLike },
   ): void {
+    // An unscoped package name would yield `pkg:Class` keys the registry
+    // rejects at startup (#3408); fail here with an actionable message. An app
+    // that declares no classes generates no qualified names and still builds.
+    if (Object.keys(manifest.objects).length > 0) {
+      assertScopedPackageName(options?.packageName);
+    }
+
+    // Deprecated qualified-name aliases (#3338) fail closed at build time, the
+    // same as the registry refuses them at runtime.
+    this.assertQualifiedNameAliases(manifest);
+
     // Report cache rows are safe to scope by tenant even when a report is
     // global: optional mode keeps tenant-less rows readable outside a tenant
     // context and gives tenant-scoped reports the tenant_id column their raw
@@ -519,6 +542,69 @@ export class ManifestGenerator {
     logger.debug(
       `[manifest-generator] Injected ${fieldName} field for ${objectDef.className} (tenantScoped: ${JSON.stringify(tenantConfig)})`,
     );
+  }
+
+  /**
+   * Validate every `decoratorConfig.previousQualifiedNames` declaration
+   * (#3338). The declaration rides into the manifest verbatim — it is the
+   * lazy loader's alias index — so a malformed or colliding alias must stop
+   * the build rather than ship a manifest the runtime will refuse:
+   *
+   * - an array of scoped `@scope/package:ClassName` strings, each listed once;
+   * - never the object's own qualified name, nor any object of this manifest;
+   * - never declared by two objects of this manifest.
+   */
+  assertQualifiedNameAliases(manifest: SmartObjectManifest): void {
+    const ownNames = new Set<string>();
+    for (const [key, obj] of Object.entries(manifest.objects)) {
+      ownNames.add(obj.qualifiedName ?? key);
+    }
+    const claimedBy = new Map<string, string>();
+    for (const key of Object.keys(manifest.objects).sort(compareText)) {
+      const obj = manifest.objects[key];
+      const owner = obj.qualifiedName ?? key;
+      const declared = (
+        obj.decoratorConfig as { previousQualifiedNames?: unknown } | undefined
+      )?.previousQualifiedNames;
+      if (declared === undefined) continue;
+      if (!Array.isArray(declared)) {
+        throw new Error(
+          `[manifest-generator] ${owner}: previousQualifiedNames must be an array of qualified names ("@package/name:ClassName").`,
+        );
+      }
+      const aliases = readPreviousQualifiedNames(obj.decoratorConfig);
+      if (aliases.length !== declared.length) {
+        throw new Error(
+          `[manifest-generator] ${owner}: previousQualifiedNames must contain only string literals.`,
+        );
+      }
+      const seen = new Set<string>();
+      for (const alias of aliases) {
+        if (!isQualifiedNameAliasFormat(alias)) {
+          throw new Error(
+            `[manifest-generator] ${owner}: previousQualifiedNames entry "${alias}" is not a qualified name ("@package/name:ClassName").`,
+          );
+        }
+        if (seen.has(alias)) {
+          throw new Error(
+            `[manifest-generator] ${owner}: previousQualifiedNames lists "${alias}" more than once.`,
+          );
+        }
+        seen.add(alias);
+        if (ownNames.has(alias)) {
+          throw new Error(
+            `[manifest-generator] ${owner}: previousQualifiedNames "${alias}" names a live object of this package; an alias may only name a class that no longer exists.`,
+          );
+        }
+        const other = claimedBy.get(alias);
+        if (other) {
+          throw new Error(
+            `[manifest-generator] previousQualifiedNames "${alias}" is declared by both ${other} and ${owner}; an old name can resolve to only one class.`,
+          );
+        }
+        claimedBy.set(alias, owner);
+      }
+    }
   }
 
   assertTenantScopedSchemaContract(manifest: SmartObjectManifest): void {
@@ -1105,7 +1191,9 @@ export class ManifestGenerator {
                   table: targetSchema.tableName,
                   column: targetColumn,
                   onDelete: action,
-                  onUpdate: 'CASCADE' as const,
+                  onUpdate: resolveForeignKeyUpdateAction(
+                    field._meta?.onUpdate,
+                  ),
                   ...(typeof field._meta?.constraint === 'object'
                     ? { engines: [...field._meta.constraint.engines] }
                     : {}),
@@ -2621,7 +2709,7 @@ ${fields}
     const include =
       (typeof config === 'object' && config?.include) || undefined;
 
-    const operations = [];
+    const operations: string[] = [];
 
     // Determine which operations to include
     const shouldInclude = (op: string) => {
@@ -2929,7 +3017,7 @@ ${fields}
     const include =
       (typeof config === 'object' && config?.include) || undefined;
 
-    const tools = [];
+    const tools: string[] = [];
 
     const shouldInclude = (op: string) => {
       if (include && !include.includes(op)) return false;

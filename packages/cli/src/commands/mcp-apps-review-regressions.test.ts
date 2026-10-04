@@ -40,6 +40,8 @@ describe('accepted publication regressions', () => {
   });
   it('checks every registry directive and accepts inline comments', () => {
     const p = root();
+    // pnpm reads this fixture's .npmrc as project config when it has a package.
+    writeFileSync(join(p, 'package.json'), '{"name":"mcp-review-fixture"}');
     writeFileSync(
       join(p, '.npmrc'),
       '@happyvertical:registry=https://npm.happyvertical.com/\n@happyvertical:registry=https://other.invalid/\n',

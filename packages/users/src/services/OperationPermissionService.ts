@@ -180,11 +180,17 @@ export async function checkOperationPermission(
   } catch (error) {
     return deny(permission, 'resolution_error', error);
   }
+  // A session under a permission ceiling (#3276) is capped by policy: no
+  // bypass applies inside it, whatever the ambient tenancy context says.
+  const ceiling = sessionContext?.session?.permissionCeiling;
+  const ceilinged = Array.isArray(ceiling);
   const systemContext =
-    sessionContext?.systemContext === true || tenancyContext.systemContext;
+    !ceilinged &&
+    (sessionContext?.systemContext === true || tenancyContext.systemContext);
   const superAdminBypass =
-    sessionContext?.superAdminBypass === true ||
-    tenancyContext.superAdminBypass;
+    !ceilinged &&
+    (sessionContext?.superAdminBypass === true ||
+      tenancyContext.superAdminBypass);
 
   if (systemContext && options.allowSystemContextBypass !== false) {
     return allow(permission, 'system_context_bypass');
@@ -198,6 +204,19 @@ export async function checkOperationPermission(
   const tenantId = options.tenantId ?? sessionContext?.tenantId ?? null;
   if (!userId || !tenantId) {
     return deny(permission, 'missing_principal');
+  }
+
+  // The live resolve below returns the person's full role authority; the
+  // session's ceiling must cap it here too, or the guard would allow what
+  // `SessionContext.permissions` (and RLS) deny for the same session.
+  // Whatever tenant the guarded resource is in: a resource-tenant check for
+  // the session's own person must not step around the device policy.
+  if (
+    ceilinged &&
+    userId === sessionContext?.userId &&
+    !ceiling.includes(permission)
+  ) {
+    return deny(permission, 'permission_denied');
   }
 
   // Explicit set wins over a live re-resolve: authorize against the exact

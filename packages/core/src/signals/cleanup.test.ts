@@ -8,6 +8,12 @@ import { SmrtClass } from '../class.js';
 import { config } from '../config.js';
 import { SignalBus } from './bus.js';
 
+// These lifecycle tests intentionally initialize raw instances before testing teardown.
+async function initializeForTest(instance: SmrtClass): Promise<void> {
+  // @ts-expect-error -- Deliberate access to the protected lifecycle hook under test.
+  await instance.initialize();
+}
+
 // Mock adapter for testing
 class TestAdapter implements SignalAdapter {
   public signals: Signal[] = [];
@@ -51,7 +57,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
 
       bus.emit(signal);
@@ -98,7 +104,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
 
       await bus.emit(signal);
@@ -123,7 +129,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
 
       class TestClass extends SmrtClass {}
       const instance = new TestClass({});
-      await instance.initialize();
+      await initializeForTest(instance);
 
       expect(instance.signalBus).toBeDefined();
       expect(instance.signalBus?.adapterCount).toBe(1);
@@ -144,7 +150,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
         logging: false,
         signals: { bus: sharedBus },
       });
-      await instance.initialize();
+      await initializeForTest(instance);
 
       expect(instance.signalBus).toBe(sharedBus);
       expect(sharedBus.adapterCount).toBe(1);
@@ -175,7 +181,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
 
       class TestClass extends SmrtClass {}
       const instance = new TestClass({});
-      await instance.initialize();
+      await initializeForTest(instance);
 
       instance.destroy();
       instance.destroy(); // Second call should not throw
@@ -198,7 +204,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
       // Create and destroy multiple instances
       for (let i = 0; i < 5; i++) {
         const instance = new TestClass({});
-        await instance.initialize();
+        await initializeForTest(instance);
         expect(instance.signalBus?.adapterCount).toBe(1); // Only global adapter
         instance.destroy();
       }
@@ -206,7 +212,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
       // Global adapter should not accumulate
       // Create new instance to verify
       const finalInstance = new TestClass({});
-      await finalInstance.initialize();
+      await initializeForTest(finalInstance);
       expect(finalInstance.signalBus?.adapterCount).toBe(1);
       finalInstance.destroy();
     });
@@ -221,13 +227,13 @@ describe('Cleanup and Memory Leak Prevention', () => {
         logging: false,
         signals: { adapters: [instanceAdapter1] },
       });
-      await instance1.initialize();
+      await initializeForTest(instance1);
 
       const instance2 = new TestClass({
         logging: false,
         signals: { adapters: [instanceAdapter2] },
       });
-      await instance2.initialize();
+      await initializeForTest(instance2);
 
       expect(instance1.signalBus?.adapterCount).toBe(1);
       expect(instance2.signalBus?.adapterCount).toBe(1);
@@ -255,7 +261,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
       const instance = new TestClass({
         signals: { adapters: [instanceAdapter] },
       });
-      await instance.initialize();
+      await initializeForTest(instance);
 
       // Should have both global and instance adapters
       expect(instance.signalBus?.adapterCount).toBe(2);
@@ -280,7 +286,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
 
       class TestClass extends SmrtClass {}
       const instance = new TestClass({});
-      await instance.initialize();
+      await initializeForTest(instance);
 
       // Should have LoggerAdapter + MetricsAdapter
       expect(instance.signalBus?.adapterCount).toBe(2);
@@ -304,12 +310,12 @@ describe('Cleanup and Memory Leak Prevention', () => {
       const instance1 = new TestClass({
         signals: { adapters: [adapter1] },
       });
-      await instance1.initialize();
+      await initializeForTest(instance1);
 
       const instance2 = new TestClass({
         signals: { adapters: [adapter2] },
       });
-      await instance2.initialize();
+      await initializeForTest(instance2);
 
       // Emit signal to both
       const signal: Signal = {
@@ -318,7 +324,7 @@ describe('Cleanup and Memory Leak Prevention', () => {
         className: 'Test',
         method: 'test',
         type: 'start',
-        timestamp: Date.now(),
+        timestamp: new Date(),
       };
 
       await instance1.signalBus?.emit(signal);

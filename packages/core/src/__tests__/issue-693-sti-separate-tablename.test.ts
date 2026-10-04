@@ -90,9 +90,9 @@ describe('Issue #693: STI subclasses with separate tableName', () => {
   describe('Direct getAllSchemas() verification', () => {
     it('should resolve STI base tableName even when schema declares different tableName', () => {
       // Verify that the classes are registered
-      const meetingClass = ObjectRegistry.findClass('Issue693Meeting');
-      const forecastClass = ObjectRegistry.findClass('Issue693WeatherForecast');
-      const eventClass = ObjectRegistry.findClass('Issue693Event');
+      const meetingClass = ObjectRegistry.getClass('Issue693Meeting');
+      const forecastClass = ObjectRegistry.getClass('Issue693WeatherForecast');
+      const eventClass = ObjectRegistry.getClass('Issue693Event');
 
       expect(meetingClass).toBeDefined();
       expect(forecastClass).toBeDefined();

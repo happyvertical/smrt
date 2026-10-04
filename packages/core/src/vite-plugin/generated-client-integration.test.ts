@@ -115,7 +115,7 @@ describe('generated client <-> generated server integration (#1794/#1796/#1797)'
     writeFileSync(
       join(projectRoot, 'package.json'),
       JSON.stringify({
-        name: 'gen-client-app',
+        name: '@fixture/gen-client-app',
         version: '0.0.1',
         type: 'module',
       }),
@@ -390,6 +390,8 @@ export class GenClientReadonly extends SmrtObject {
         objects: {
           AuditEvent: {
             className: 'AuditEvent',
+            name: 'AuditEvent',
+            filePath: '',
             collection: 'audit-events',
             fields: {},
             methods: {},

@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { assertNoPackedTests } from './package-test-artifacts.mjs';
 import { findUnsupportedDependencyProtocols } from './publish-artifacts-lib.mjs';
 
 function fail(message) {
@@ -225,6 +226,8 @@ for (const pkg of shardPackages) {
   }
   const filename = created[0];
   const tarballPath = join(outputDir, filename);
+
+  assertNoPackedTests(tarballPath);
 
   const packedManifestResult = spawnSync(
     'tar',

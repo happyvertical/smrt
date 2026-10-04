@@ -22,7 +22,7 @@ describe('PostgreSQL permission configuration', () => {
       migrationOwner: 'owner',
       runtimeRole: 'runtime',
       managedTables: ['items'],
-    } as const;
+    } satisfies Parameters<typeof planPostgresPermissions>[1];
     expectTypeOf(legacyContract).toMatchTypeOf<
       Parameters<typeof planPostgresPermissions>[1]
     >();

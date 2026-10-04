@@ -167,9 +167,9 @@ describe('Issue #176: Transient fields', () => {
     // Function types (no field helper) should be completely undefined
     expect(reloaded?.filterFn).toBeUndefined();
     expect(reloaded?.processFn).toBeUndefined();
-    // Field helper with transient option - Field instance exists but value is undefined
-    expect(reloaded?.computedValue).toBeDefined(); // Field instance from class definition
-    expect(reloaded?.computedValue?.value).toBeUndefined(); // But value not restored
+    // A decorated primitive returns to its class default, not the saved value.
+    expect(reloaded?.computedValue).toBeDefined();
+    expect(reloaded?.computedValue).toBe('');
   });
 
   it('should support field helper with transient option', async () => {

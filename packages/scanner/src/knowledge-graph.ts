@@ -165,6 +165,7 @@ export function buildKnowledgeGraph(
   // two packages both declaring `Account` must not point one package's
   // subclass at the other package's `Account` (#2863 review).
   const idBySimpleNamePerPackage = new Map<string, Map<string, string>>();
+  const aliasIds: Array<[string, string]> = [];
 
   for (const input of sortedInputs) {
     const manifestPackageName =
@@ -185,6 +186,32 @@ export function buildKnowledgeGraph(
       idBySimpleName.set(object.name, bySimple);
       perPackage.set(object.name, id);
       idBySimpleNamePerPackage.set(packageName, perPackage);
+      for (const alias of object.previousQualifiedNames ?? []) {
+        aliasIds.push([alias, id]);
+      }
+    }
+  }
+  // A moved object's deprecated qualified names (#3338) resolve to it, but
+  // never shadow a live object's own qualified name. Ownership is tracked
+  // separately so two distinct objects claiming one old name fail the build,
+  // as the runtime registry refuses them, instead of the first in sort order
+  // silently winning; the same object repeated across artifacts is one claim.
+  const aliasOwners = new Map<string, Set<string>>();
+  for (const [alias, id] of aliasIds) {
+    const owners = aliasOwners.get(alias) ?? new Set<string>();
+    owners.add(id);
+    aliasOwners.set(alias, owners);
+  }
+  for (const [alias, owners] of aliasOwners) {
+    if (owners.size > 1) {
+      throw new Error(
+        `[knowledge-graph] previousQualifiedNames "${alias}" is claimed by more than one object: ` +
+          `${[...owners].sort().join(', ')}. An old qualified name can resolve to only one class; ` +
+          'remove the alias from all but one owner.',
+      );
+    }
+    if (!idByQualifiedName.has(alias)) {
+      idByQualifiedName.set(alias, [...owners][0]);
     }
   }
 

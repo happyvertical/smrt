@@ -464,13 +464,17 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
   describe('runtime REST manifest-hash ETag salt (#1862)', () => {
     it('matches the build-time web manifest hash for the same schema shape', () => {
       const scannerManifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           ParityCity: {
             qualifiedName: '@test/smrt:ParityCity',
             className: 'ParityCity',
+            name: 'ParityCity',
+            filePath: '',
             collection: 'paritycities',
             fields: {
-              id: { type: 'uuid' },
+              id: { type: 'text' },
               name: { type: 'text', default: 'Untitled' },
               tenantId: { type: 'text', required: false },
             },
@@ -483,9 +487,11 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           ParityVenue: {
             qualifiedName: '@test/smrt:ParityVenue',
             className: 'ParityVenue',
+            name: 'ParityVenue',
+            filePath: '',
             collection: 'parityvenues_custom',
             fields: {
-              id: { type: 'uuid' },
+              id: { type: 'text' },
               cityId: { type: 'foreignKey', related: 'ParityCity' },
               displayName: {
                 type: 'text',
@@ -505,9 +511,11 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           ParityContent: {
             qualifiedName: '@test/smrt:ParityContent',
             className: 'ParityContent',
+            name: 'ParityContent',
+            filePath: '',
             collection: 'paritycontents',
             fields: {
-              id: { type: 'uuid' },
+              id: { type: 'text' },
               title: { type: 'text', default: 'Draft' },
             },
             methods: {},
@@ -519,10 +527,12 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           ParityArticle: {
             qualifiedName: '@test/smrt:ParityArticle',
             className: 'ParityArticle',
+            name: 'ParityArticle',
+            filePath: '',
             collection: 'paritycontents',
             extends: 'ParityContent',
             fields: {
-              id: { type: 'uuid' },
+              id: { type: 'text' },
               title: { type: 'text', default: 'Draft' },
               body: { type: 'text' },
             },
@@ -540,9 +550,10 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           'ParityCity',
           {
             name: 'ParityCity',
+            constructor: SmrtObject,
             qualifiedName: '@test/smrt:ParityCity',
             fields: new Map([
-              ['id', { type: 'uuid' }],
+              ['id', { type: 'text' }],
               // Runtime decorator registration keeps defaults under `_meta`;
               // scanner manifests expose them at top level. The runtime hash
               // must hoist `_meta.default` before hashing.
@@ -560,10 +571,11 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           'ParityVenue',
           {
             name: 'ParityVenue',
+            constructor: SmrtObject,
             qualifiedName: '@test/smrt:ParityVenue',
             collection: 'parityvenues_custom',
             fields: new Map([
-              ['id', { type: 'uuid' }],
+              ['id', { type: 'text' }],
               ['cityId', { type: 'foreignKey', related: 'ParityCity' }],
               [
                 'displayName',
@@ -591,10 +603,11 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           'ParityContent',
           {
             name: 'ParityContent',
+            constructor: SmrtObject,
             qualifiedName: '@test/smrt:ParityContent',
             collection: 'paritycontents',
             fields: new Map([
-              ['id', { type: 'uuid' }],
+              ['id', { type: 'text' }],
               ['title', { type: 'text', _meta: { default: 'Draft' } }],
             ]),
             methods: new Map(),
@@ -608,11 +621,12 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           'ParityArticle',
           {
             name: 'ParityArticle',
+            constructor: SmrtObject,
             qualifiedName: '@test/smrt:ParityArticle',
             collection: 'paritycontents',
             extends: 'ParityContent',
             fields: new Map([
-              ['id', { type: 'uuid' }],
+              ['id', { type: 'text' }],
               ['title', { type: 'text', _meta: { default: 'Draft' } }],
               ['body', { type: 'text' }],
             ]),

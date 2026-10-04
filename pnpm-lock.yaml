@@ -84,6 +84,7 @@ overrides:
   body-parser@<2.3.0: 2.3.0
   sharp@<0.35.4: 0.35.4
   deepmerge-ts@<8.0.0: 8.0.1
+  figlet@<1.11.3: 1.11.4
 
 importers:
 
@@ -404,9 +405,15 @@ importers:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
+      '@sveltejs/kit':
+        specifier: 2.70.3
+        version: 2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.4)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))(svelte@5.56.4)(typescript@6.0.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -581,6 +588,9 @@ importers:
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
+      '@happyvertical/smrt-config':
+        specifier: workspace:*
+        version: link:../config
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -666,6 +676,9 @@ importers:
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
+      '@happyvertical/smrt-app-runtime':
+        specifier: workspace:*
+        version: link:../app-runtime
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -885,6 +898,9 @@ importers:
       sanitize-html:
         specifier: ^2.17.7
         version: 2.17.7
+      undici:
+        specifier: ^7.29.1
+        version: 7.29.1
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -1031,6 +1047,9 @@ importers:
       '@happyvertical/files':
         specifier: ^0.98.0
         version: 0.98.0(supports-color@10.2.2)
+      '@happyvertical/icalendar':
+        specifier: ^0.100.2
+        version: 0.100.2
       '@happyvertical/logger':
         specifier: ^0.98.0
         version: 0.98.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
@@ -1083,6 +1102,37 @@ importers:
       svelte-check:
         specifier: ^4.7.6
         version: 4.7.6(picomatch@4.0.5)(svelte@5.57.1)(typescript@6.0.3)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 8.1.4
+        version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+
+  packages/expenses:
+    dependencies:
+      '@happyvertical/smrt-assets':
+        specifier: workspace:*
+        version: link:../assets
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@types/node':
+        specifier: 24.13.2
+        version: 24.13.2
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -1258,6 +1308,55 @@ importers:
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 8.1.4
+        version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+
+  packages/human-resources:
+    dependencies:
+      '@happyvertical/logger':
+        specifier: ^0.98.0
+        version: 0.98.0(@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2))
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
+      '@happyvertical/smrt-ui':
+        specifier: workspace:*
+        version: link:../smrt-ui
+      '@happyvertical/sql':
+        specifier: ^0.98.0
+        version: 0.98.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@sveltejs/package':
+        specifier: ^2.5.8
+        version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^7.3.0
+        version: 7.3.0(svelte@5.57.1)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+      '@types/node':
+        specifier: 24.13.2
+        version: 24.13.2
+      svelte:
+        specifier: ^5.57.1
+        version: 5.57.1
+      svelte-check:
+        specifier: ^4.7.6
+        version: 4.7.6(picomatch@4.0.5)(svelte@5.57.1)(typescript@6.0.3)
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -1616,6 +1715,18 @@ importers:
 
   packages/mcp-conformance-fixture:
     dependencies:
+      '@happyvertical/files':
+        specifier: ^0.98.0
+        version: 0.98.0(supports-color@10.2.2)
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@happyvertical/smrt-app-mcp':
+        specifier: workspace:*
+        version: link:../smrt-app-mcp
+      '@happyvertical/smrt-app-runtime':
+        specifier: workspace:*
+        version: link:../app-runtime
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1625,6 +1736,21 @@ importers:
       '@happyvertical/smrt-jobs':
         specifier: workspace:*
         version: link:../jobs
+      '@happyvertical/smrt-mcp-apps':
+        specifier: workspace:*
+        version: link:../mcp-apps
+      '@happyvertical/smrt-mcp-openai':
+        specifier: workspace:*
+        version: link:../mcp-openai
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../users
+      '@happyvertical/sql':
+        specifier: ^0.98.0
+        version: 0.98.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
@@ -1641,15 +1767,24 @@ importers:
       '@modelcontextprotocol/node':
         specifier: 2.0.0
         version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.12.27)
+      '@playwright/test':
+        specifier: ^1.63.0
+        version: 1.63.0
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
       typescript:
         specifier: 6.0.3
         version: 6.0.3
+      vite:
+        specifier: 8.1.4
+        version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -2074,6 +2209,9 @@ importers:
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
+      '@happyvertical/smrt-timesheets':
+        specifier: workspace:*
+        version: link:../timesheets
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
@@ -2943,6 +3081,9 @@ importers:
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
+      '@happyvertical/smrt-timesheets':
+        specifier: workspace:*
+        version: link:../timesheets
       '@happyvertical/smrt-ui':
         specifier: workspace:*
         version: link:../smrt-ui
@@ -3033,6 +3174,12 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@happyvertical/smrt-app-cli':
+        specifier: workspace:*
+        version: link:../app-cli
+      '@happyvertical/smrt-app-mcp':
+        specifier: workspace:*
+        version: link:../smrt-app-mcp
       '@happyvertical/smrt-app-runtime':
         specifier: workspace:*
         version: link:../app-runtime
@@ -3048,6 +3195,9 @@ importers:
       '@happyvertical/smrt-jobs':
         specifier: workspace:*
         version: link:../jobs
+      '@happyvertical/smrt-mcp-openai':
+        specifier: workspace:*
+        version: link:../mcp-openai
       '@happyvertical/smrt-playbooks':
         specifier: workspace:*
         version: link:../playbooks
@@ -3075,6 +3225,9 @@ importers:
       '@happyvertical/sql':
         specifier: ^0.98.0
         version: 0.98.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@modelcontextprotocol/client':
+        specifier: 2.0.0
+        version: 2.0.0
       '@modelcontextprotocol/server':
         specifier: ^2.0.0
         version: 2.0.0
@@ -3126,6 +3279,52 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.98.0
         version: 0.98.0
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@sveltejs/package':
+        specifier: ^2.5.8
+        version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^7.3.0
+        version: 7.3.0(svelte@5.57.1)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+      '@types/node':
+        specifier: 24.13.2
+        version: 24.13.2
+      svelte:
+        specifier: ^5.57.1
+        version: 5.57.1
+      svelte-check:
+        specifier: ^4.7.6
+        version: 4.7.6(picomatch@4.0.5)(svelte@5.57.1)(typescript@6.0.3)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 8.1.4
+        version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+
+  packages/timesheets:
+    dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
+      '@happyvertical/smrt-ui':
+        specifier: workspace:*
+        version: link:../smrt-ui
+      '@happyvertical/sql':
+        specifier: ^0.98.0
+        version: 0.98.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -4485,6 +4684,9 @@ packages:
   '@happyvertical/graphql@0.98.0':
     resolution: {integrity: sha512-0yiI9iVKGAqTaLdeM0zupf/W7QGMB4FNSVBVWop6z/h4sqgd7GICyRqfo/DaDiPBUpsN47xqwGgwdYmLhWrmLQ==}
     hasBin: true
+
+  '@happyvertical/icalendar@0.100.2':
+    resolution: {integrity: sha512-yXx9aFWKf0wSGKZ7+P03+/3ymqthENFo/EJGxHiCUNGu0SgIgrJ4efZtvJgUnDOSxxHRaW/Nh3sjOoBc7zesIw==}
 
   '@happyvertical/images@0.98.0':
     resolution: {integrity: sha512-/Dx2Sf8Jv/QBpKsCrm0uM6v3XRqCLXivOxyLdpzJkHla+4url2zLEgXqNi5+0k5AGuyBxhLjfXfWbrUV7jafEw==}
@@ -7877,8 +8079,8 @@ packages:
   fflate@0.7.4:
     resolution: {integrity: sha512-5u2V/CDW15QM1XbbgS+0DfPxVB+jUKhWEKuuFuHncbk3tEEqzmoXL+2KyOFuKGqOnmdIy0/davWF1CkuwtibCw==}
 
-  figlet@1.11.0:
-    resolution: {integrity: sha512-EEx3OS/l2bFqcUNN2NM9FPJp8vAMrgbCxsbl2hbcJNNxOEwVe3mEzrhan7TbJQViZa8mMqhihlbCaqD+LyYKTQ==}
+  figlet@1.11.4:
+    resolution: {integrity: sha512-ZU41480OncL+NVLQrT0GVnbO0COL24sLSrzksioDgunmdJNYEUxhJJZ4Y3x1csN8XXqN5OcCZTLG8lKdquNyfQ==}
     engines: {node: '>= 17.0.0'}
     hasBin: true
 
@@ -8236,6 +8438,9 @@ packages:
 
   humanize-ms@1.2.1:
     resolution: {integrity: sha512-Fl70vYtsAFb/C06PTS9dZBo7ihau+Tu/DNCk/OyHhea07S+aeMWpFFkUaXRa8fI+ScZbEI8dfSxwY7gxZ9SAVQ==}
+
+  ical.js@2.2.1:
+    resolution: {integrity: sha512-yK/UlPbEs316igb/tjRgbFA8ZV75rCsBJp/hWOatpyaPNlgw0dGDmU+FoicOcwX4xXkeXOkYiOmCqNPFpNPkQg==}
 
   iconv-lite@0.6.3:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
@@ -12140,6 +12345,10 @@ snapshots:
 
   '@happyvertical/graphql@0.98.0': {}
 
+  '@happyvertical/icalendar@0.100.2':
+    dependencies:
+      ical.js: 2.2.1
+
   '@happyvertical/images@0.98.0(jimp@1.6.1(supports-color@10.2.2))(sharp@0.35.4(@types/node@24.13.2))':
     dependencies:
       '@resvg/resvg-js': 2.6.2
@@ -14108,6 +14317,27 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       typescript: 6.0.3
 
+  '@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.56.4)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))(svelte@5.56.4)(typescript@6.0.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))':
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+      '@sveltejs/acorn-typescript': 1.0.13(acorn@8.18.0)
+      '@sveltejs/vite-plugin-svelte': 7.3.0(svelte@5.56.4)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+      '@types/cookie': 0.6.0
+      acorn: 8.18.0
+      cookie: 0.6.0
+      devalue: 5.9.4
+      esm-env: 1.2.2
+      kleur: 4.1.5
+      magic-string: 0.30.21
+      mrmime: 2.0.1
+      set-cookie-parser: 3.0.1
+      sirv: 3.0.2
+      svelte: 5.56.4
+      vite: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
+    optionalDependencies:
+      '@opentelemetry/api': 1.9.1
+      typescript: 6.0.3
+
   '@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.1)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))(svelte@5.57.1)(typescript@6.0.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))':
     dependencies:
       '@standard-schema/spec': 1.1.0
@@ -15411,7 +15641,7 @@ snapshots:
 
   fflate@0.7.4: {}
 
-  figlet@1.11.0:
+  figlet@1.11.4:
     dependencies:
       commander: 14.0.3
 
@@ -15924,6 +16154,8 @@ snapshots:
   humanize-ms@1.2.1:
     dependencies:
       ms: 2.1.3
+
+  ical.js@2.2.1: {}
 
   iconv-lite@0.6.3:
     dependencies:
@@ -18338,7 +18570,7 @@ snapshots:
   yargonaut@1.1.4:
     dependencies:
       chalk: 1.1.3
-      figlet: 1.11.0
+      figlet: 1.11.4
       parent-require: 1.0.0
 
   yargs-parser@21.1.1: {}

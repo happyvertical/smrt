@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const mocks = vi.hoisted(() => ({
   preflight: vi.fn(),
@@ -48,7 +49,9 @@ describe('db:migrate-null-equal-indexes', () => {
       summary: '1 pending',
       indexes: [{ table: 't', index: 'i', state: 'pending' }],
     });
-    await dbMigrateNullEqualIndexesCommand.handler([], { 'dry-run': true });
+    await requireCommandHandler(dbMigrateNullEqualIndexesCommand)([], {
+      'dry-run': true,
+    });
     expect(mocks.migrate).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('DROP INDEX example;');
     expect(mocks.close).toHaveBeenCalledTimes(1);
@@ -69,7 +72,7 @@ describe('db:migrate-null-equal-indexes', () => {
         },
       ],
     });
-    await dbMigrateNullEqualIndexesCommand.handler([], {});
+    await requireCommandHandler(dbMigrateNullEqualIndexesCommand)([], {});
     expect(mocks.migrate).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
     expect(mocks.close).toHaveBeenCalledTimes(1);
@@ -82,7 +85,7 @@ describe('db:migrate-null-equal-indexes', () => {
       indexes: [],
     });
     mocks.migrate.mockResolvedValue({ statements: ['DROP', 'CREATE'] });
-    await dbMigrateNullEqualIndexesCommand.handler([], {});
+    await requireCommandHandler(dbMigrateNullEqualIndexesCommand)([], {});
     expect(mocks.migrate).toHaveBeenCalledTimes(1);
     expect(
       log.mock.calls.some(([message]) =>

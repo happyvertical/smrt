@@ -231,6 +231,12 @@ export {
   type FilesystemAdapterFactory,
   registerFilesystemAdapterFactory,
 } from './filesystem-loader';
+// Generated SvelteKit route collection access (#3416)
+export {
+  createGeneratedCollectionAccess,
+  type GeneratedCollectionAccess,
+  type GeneratedCollectionRuntime,
+} from './generated-collection-access';
 // Code generators (tree-shakeable)
 export * from './generators/index';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
@@ -327,6 +333,7 @@ export {
 } from './query-bounds';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
+export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,
@@ -416,11 +423,13 @@ export {
 export { toSnakeCase } from './utils/naming';
 // Qualified name utilities
 export {
+  assertScopedPackageName,
   createQualifiedName,
   getClassName,
   getPackageFromQualifiedName,
   isFromPackage,
   isQualifiedName,
+  isScopedPackageName,
   isType,
   type ParsedQualifiedName,
   parseQualifiedName,

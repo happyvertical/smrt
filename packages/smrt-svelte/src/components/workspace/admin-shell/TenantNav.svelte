@@ -2,11 +2,17 @@
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Component } from 'svelte';
 import { M } from '../../../i18n/strings.workspace.js';
-import type { ShellNavItem } from './types.js';
+import type { ShellNavGroup, ShellNavItem } from './types.js';
 
 interface Props {
   /** Navigation items with href, label, icon, and optional children. */
-  items: ShellNavItem[];
+  items?: ShellNavItem[];
+  /** Labelled, collapsible navigation groups, rendered after flat items. */
+  groups?: ShellNavGroup[];
+  /** Accessible name for this navigation landmark. */
+  'aria-label'?: string;
+  /** Target density; omit to inherit the theme density. */
+  density?: 'comfortable' | 'touch';
   /** Current URL to highlight the active navigation link. */
   currentHref?: string;
   /** Component used to render icon names as SVG or custom icons. */
@@ -18,7 +24,10 @@ interface Props {
 }
 
 let {
-  items,
+  items = [],
+  groups = [],
+  'aria-label': ariaLabel,
+  density,
   currentHref = '',
   iconComponent: IconComponent,
   collapsed = false,
@@ -60,12 +69,8 @@ function fallbackIcon(label: string): string {
   {/if}
 {/snippet}
 
-<nav
-  class="smrt-tenant-nav"
-  class:smrt-tenant-nav--collapsed={collapsed}
-  aria-label={t(M['ui.tenant_nav.tenant_navigation'])}
->
-  {#each items as item (item.href)}
+{#snippet navItems(entries: ShellNavItem[])}
+  {#each entries as item (item.href)}
     <div class="smrt-tenant-nav__section">
       <a
         href={item.href}
@@ -128,17 +133,70 @@ function fallbackIcon(label: string): string {
       {/if}
     </div>
   {/each}
+{/snippet}
+
+<nav
+  class="smrt-tenant-nav"
+  data-density={density}
+  class:smrt-tenant-nav--collapsed={collapsed}
+  aria-label={ariaLabel || t(M['ui.tenant_nav.tenant_navigation'])}
+>
+
+  {@render navItems(items)}
+  {#each groups as group}
+    <details class="smrt-tenant-nav__group" aria-label={group.heading} open>
+      <summary class="smrt-tenant-nav__heading">
+        {#if collapsed}
+          <span aria-hidden="true">{fallbackIcon(group.heading)}</span>
+          <span class="smrt-tenant-nav__sr-only">{group.heading}</span>
+        {:else}
+          <span>{group.heading}</span>
+        {/if}
+      </summary>
+      <div class="smrt-tenant-nav__group-items">{@render navItems(group.items)}</div>
+    </details>
+  {/each}
 </nav>
 
 <style>
   .smrt-tenant-nav,
   .smrt-tenant-nav__section,
-  .smrt-tenant-nav__children {
+  .smrt-tenant-nav__children,
+  .smrt-tenant-nav__group-items {
     display: grid;
     gap: var(--smrt-spacing-1);
   }
 
+  .smrt-tenant-nav__heading {
+    box-sizing: border-box;
+    min-block-size: var(--smrt-control-target-min, 0px);
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-large-size);
+    font-weight: var(--smrt-typography-weight-semibold);
+    border-radius: var(--smrt-radius-medium);
+    cursor: pointer;
+  }
+  .smrt-tenant-nav__heading:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
+  .smrt-tenant-nav__group-items { margin-block-start: var(--smrt-spacing-1); }
+  .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading {
+    display: grid;
+    place-items: center;
+    list-style: none;
+    inline-size: max(2.25rem, var(--smrt-control-target-min, 0px));
+    block-size: max(2.25rem, var(--smrt-control-target-min, 0px));
+    padding: 0;
+  }
+  .smrt-tenant-nav--collapsed .smrt-tenant-nav__heading::-webkit-details-marker { display: none; }
+
+  .smrt-tenant-nav[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .smrt-tenant-nav[data-density='comfortable'] { --smrt-control-target-min: 0px; }
   .smrt-tenant-nav a {
+    box-sizing: border-box;
+    min-block-size: var(--smrt-control-target-min, 0px);
     display: grid;
     /* Icon, label, then one auto column per trailing mark (badge, dot). */
     grid-template-columns: auto minmax(0, 1fr);
@@ -161,8 +219,8 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav--collapsed a {
     grid-template-columns: minmax(0, 1fr);
     place-items: center;
-    inline-size: 2.25rem;
-    block-size: 2.25rem;
+    inline-size: max(2.25rem, var(--smrt-control-target-min, 0px));
+    block-size: max(2.25rem, var(--smrt-control-target-min, 0px));
     padding: 0;
   }
 

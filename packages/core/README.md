@@ -14,7 +14,7 @@ pnpm add @happyvertical/smrt-core
 pnpm add -D @happyvertical/smrt-cli @happyvertical/smrt-vitest
 ```
 
-Requires Node.js 24.18.0 or newer. s-m-r-t projects use the Vite plugin to generate
+Requires Node.js 26.0.0 or newer. s-m-r-t projects use the Vite plugin to generate
 manifests and the CLI to apply schema migrations before runtime.
 
 ## Usage
@@ -111,7 +111,13 @@ const purchaseOrderId = await runOnce(
   too — a failed attempt never strands a claim, and a retry with the same key
   runs again.
 
-See [`agents/run-once.md`](agents/run-once.md) for the full contract.
+See [`agents/run-once.md`](agents/run-once.md) for the full contract. The
+browser half — minting and keeping the submission key per tab and form,
+refusing a concurrent submit, keeping typed values across a failed submit, and
+opt-in restore after a reload — is `createFormRetry()` in
+`@happyvertical/smrt-ui/form-retry`; the
+[form retry guide](../../docs/content/form-retry.md) shows both halves
+together.
 
 ### Bounded multi-collection reads
 
@@ -173,6 +179,41 @@ export default defineConfig({
   ],
 });
 ```
+
+#### One-call preset for SvelteKit apps
+
+`smrt()` applies the Oxc decorator config and composes `smrtConsumer()` and
+`smrtPlugin()` with the SvelteKit conventions (`src/lib/objects`,
+`src/lib/types/smrt-generated`, `src/routes/api`, `src/lib/server/smrt.ts`):
+
+```typescript
+// vite.config.ts
+import { sveltekit } from '@sveltejs/kit/vite';
+import { smrt } from '@happyvertical/smrt-core/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({ plugins: [sveltekit(), smrt()] });
+```
+
+```typescript
+// smrt.config.ts: the declared, deterministic list of consumed packages.
+// Tooling and UI packages are never inferred from package.json.
+export default { consumer: { packages: ['@happyvertical/smrt-users'] } };
+```
+
+`smrt({ packages })` overrides the config list; `[]` declares that none are
+consumed. A missing or malformed list fails the build. `objectsDir`, `typesDir`,
+`routesDir`, `configPath`, `configFileName`, `include`, `exclude` and
+`projectRoot` override the conventions; `decorators: false` omits the decorator
+config (values you set under `oxc.decorator` are never overwritten). `smrt()`
+returns a promise, which Vite accepts in `plugins`. The plugin also writes the
+`virtual-modules.d.ts` ambient declarations (into `typesDir`) whenever it runs
+a build or whenever Vite resolves the config, including `svelte-kit sync`
+(SvelteKit 2.69.3+ resolves the Vite config there), not only under a dev server.
+`svelte-kit sync && tsc` therefore passes on a clean clone with no prior build
+and no copied shim; the file is rewritten
+only when its contents change. The two plugins remain
+public for custom setups.
 
 ```bash
 pnpm vite build
@@ -291,6 +332,17 @@ configuration, so a clean checkout receives the physical `@smrt/manifest`,
 Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its
 default output directory is `src/routes/api`; set `svelteKit.routesDir` when
 your application uses a different route root.
+
+Generated routes do not need a hand-written `getCollection`. Each route embeds
+a prelude that imports the generated `smrt-register` module and the app's
+config module (`svelteKit.configPath`/`configFileName`, `$lib/server/smrt` by
+default), then resolves collections through that module's exported `runtime`
+(`createSmrtSvelteKitRuntime()` from `@happyvertical/smrt-app-runtime/sveltekit`,
+whose `getCollection()` is request-scoped). A `getCollection`/`getSmrtConfig`
+export there still takes precedence for one release, with a deprecation
+warning. The plugin also prepends the registration import to that config
+module, and generation refuses a `configFileName` that names the registration
+module (`smrt-register.*`).
 
 A consumer can host selected dependency models with the same generator. This is
 an explicit HTTP boundary that is separate from the broader `packages`
@@ -467,6 +519,7 @@ file has run.
 | --- | --- |
 | `@happyvertical/smrt-core` | Objects, collections, decorators, registry, configuration |
 | `@happyvertical/smrt-core/vite-plugin` | Manifest, route, client, and knowledge generation |
+| `@happyvertical/smrt-core/vite` | One-call preset: decorators, consumer, and producer plugins |
 | `@happyvertical/smrt-core/consumer-plugin` | Consume manifests from installed s-m-r-t packages |
 | `@happyvertical/smrt-core/generators` | REST, OpenAPI, CLI, and MCP generator APIs |
 | `@happyvertical/smrt-core/manifest` | Runtime manifest loading and inspection |
@@ -672,3 +725,52 @@ it. Generated stdio servers run an `mcp-tasks` worker automatically.
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+### Consumer runtime restrictions
+
+After importing/registering package models, close their generated surface without
+subclassing or creating another registry key:
+
+```typescript
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+import '@happyvertical/smrt-timesheets';
+import '@happyvertical/smrt-expenses';
+
+for (const name of [
+  '@happyvertical/smrt-timesheets:ServiceTimeEntry',
+  '@happyvertical/smrt-expenses:Expense',
+]) {
+  ObjectRegistry.registerOverride(name, {
+    api: false,
+    mcp: false,
+    cli: false,
+    tenancy: { mode: 'required' },
+  });
+}
+```
+
+Call this at startup after registration (runtime decorators or manifest stubs)
+and before generating/constructing transports. It closes CRUD and custom actions;
+`{ include: [] }` is equivalent to `false`. Omitted keys preserve existing policy.
+Only complete closures and optional-to-required tenancy are supported: reopening,
+partial allowlists, unknown options, and unqualified or unregistered class names
+throw before any policy is installed. Existing tenancy is required; this API does
+not introduce a tenant column or change the database schema. Enable the tenancy
+interceptor with `enableTenancy()` as usual. Required mode also takes precedence
+over an optional direct `registerTenantScopedClass` selector; existing explicit
+system/super-admin bypass semantics remain applicable.
+
+Restrictions are process-local, accumulate monotonically, survive decorator and
+manifest re-registration/HMR, and reset with `ObjectRegistry.clear()`.
+`getRuntimeOverride(qualifiedName)` returns the immutable installed policy.
+Already emitted static route files must be regenerated with closed build-time
+configuration; a runtime override does not rewrite deployed route modules.
+
+Same-named subclasses that share their parent's table replace that parent, even
+across explicitly named packages and across more than two levels. Runtime
+registration uses constructor ancestry; an isolated child manifest supplies its
+own fields, methods, schema, and policy while preserving inherited runtime
+restrictions. Manifests should qualify cross-package
+`extends` names. The deepest subtype wins, including parent replay and late
+intermediate manifests. Unrelated classes and sibling subtypes do not choose a
+winner by registration order: sharing their table still raises a collision.

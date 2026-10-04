@@ -31,6 +31,11 @@ import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  resolveApplicationId,
+  resolveApplicationStateRoot,
+  runtimeConfigurationFingerprint,
+} from '@happyvertical/smrt-app-runtime';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 
 import { copyRuntimeProfileReference } from '../../fixtures/runtime-profile-reference/index.js';
@@ -207,7 +212,8 @@ function assertPrivateFile(path: string): void {
  * release, so the copied app resolves its dependency graph through the
  * workspace package that owns the gate. Everything else — build, schema
  * migration, owner bootstrap, and serving — is the generated app's own code
- * path, invoked through its own `scripts/`.
+ * path, invoked through the `smrt app` commands its `package.json` scripts
+ * call.
  */
 export async function startReferenceApp(): Promise<StartedReferenceApp> {
   // `realpathSync` matters: on macOS `/var` is a symlink, and the app's state
@@ -252,31 +258,51 @@ async function provisionReferenceApp(
   // entries are individually symlinked resolves every dependency to the
   // packages built from this commit while keeping `.vite` inside
   // `temporaryRoot`.
+  //
+  // The same rule applies one level down. The copied app ships its own
+  // `pnpm-workspace.yaml`, and `app:setup` runs `pnpm build` inside it; were a
+  // scope directory (`@happyvertical/`) or `.bin/` linked whole, anything pnpm
+  // relinks there would rewrite this checkout's
+  // `packages/template-sveltekit/node_modules`. Scope directories and `.bin`
+  // are therefore real directories of individually linked entries, so the
+  // copy can only ever change links it owns.
   const appModules = join(appRoot, 'node_modules');
   mkdirSync(appModules, { recursive: true, mode: 0o700 });
   const workspaceModules = join(packageRoot, 'node_modules');
+  const linkEntries = (from: string, to: string): void => {
+    for (const entry of readdirSync(from)) {
+      symlinkSync(join(from, entry), join(to, entry), 'junction');
+    }
+  };
   for (const entry of readdirSync(workspaceModules)) {
-    // `.vite` and friends are the caches this split exists to keep out; the
-    // scoped directories still need to be traversable, so link them as a whole.
-    if (entry.startsWith('.')) continue;
-    symlinkSync(join(workspaceModules, entry), join(appModules, entry), 'junction');
+    const source = join(workspaceModules, entry);
+    // `.vite` and friends are the caches this split exists to keep out. The
+    // launchers the harness and `app:setup` invoke live under `.bin`.
+    if (entry.startsWith('.') && entry !== '.bin') continue;
+    if (entry.startsWith('@') || entry === '.bin') {
+      const target = join(appModules, entry);
+      mkdirSync(target, { mode: 0o700 });
+      linkEntries(source, target);
+      continue;
+    }
+    symlinkSync(source, join(appModules, entry), 'junction');
   }
-  // The launchers the harness invokes live under `node_modules/.bin`, so that
-  // one dot-directory is linked deliberately rather than swept up above.
-  const workspaceBin = join(workspaceModules, '.bin');
-  if (existsSync(workspaceBin)) {
-    symlinkSync(workspaceBin, join(appModules, '.bin'), 'junction');
-  }
-  // `app:setup`'s migration step shells out to `pnpm exec smrt db:migrate`.
-  // `pnpm exec` resolves that from the nearest `node_modules/.bin`, and the
-  // copied app deliberately never runs `pnpm install`, so the binary has to
-  // arrive through the link above — which means this package must depend on
-  // `@happyvertical/smrt-cli`. Check it here: without this the command falls
-  // through to whatever `smrt` happens to be on the developer's PATH, which
-  // passes locally and fails on a clean machine with a migration error that
-  // #2635 deliberately redacts down to "the migration step failed".
+  // `app:setup` builds through `pnpm build` → `smrt app build`, which resolves
+  // `smrt` from the nearest `node_modules/.bin`; the copied app deliberately
+  // never runs `pnpm install`, so the binary has to arrive through the links
+  // above — which means this package must depend on `@happyvertical/smrt-cli`.
+  // Check it here: without this the command falls through to whatever `smrt`
+  // happens to be on the developer's PATH, which passes locally and fails on a
+  // clean machine with a build error.
   const appCli = join(appModules, '.bin', 'smrt');
-  if (!existsSync(appCli)) {
+  const appCliEntry = join(
+    appModules,
+    '@happyvertical',
+    'smrt-cli',
+    'bin',
+    'smrt.js',
+  );
+  if (!existsSync(appCli) || !existsSync(appCliEntry)) {
     throw new Error(
       'The reference app has no local `smrt` binary; ' +
         '`@happyvertical/smrt-cli` must stay a devDependency of this package.',
@@ -317,9 +343,11 @@ async function provisionReferenceApp(
     PATH: `${join(appRoot, 'node_modules', '.bin')}${delimiter}${inheritedEnvironment.PATH ?? ''}`,
   };
 
+  // `pnpm app:setup` is `smrt app setup`; the app's own CLI runs it here so no
+  // package manager resolves anything for the copied app outside its links.
   const setup = spawnSync(
     process.execPath,
-    ['scripts/smrt-app.mjs', 'setup'],
+    [appCliEntry, 'app', 'setup'],
     {
       cwd: appRoot,
       env: environment,
@@ -342,20 +370,10 @@ async function provisionReferenceApp(
     );
   }
 
-  const identityModule = (await import(
-    join(appRoot, 'scripts', 'smrt-runtime-identity.mjs')
-  )) as {
-    resolveApplicationId(options: Record<string, unknown>): string;
-    resolveApplicationStateRoot(options: Record<string, unknown>): string;
-    runtimeConfigurationFingerprint(
-      runtime: unknown,
-      environment: NodeJS.ProcessEnv,
-    ): string;
-  };
-  const application = identityModule.resolveApplicationId({
-    sourceRoot: appRoot,
-  });
-  const stateRoot = identityModule.resolveApplicationStateRoot({
+  // Identity and state root come from the package the served app and the CLI
+  // both use, computed here independently of either process.
+  const application = resolveApplicationId({ sourceRoot: appRoot });
+  const stateRoot = resolveApplicationStateRoot({
     appId: application,
     dataDirectory: dataRoot,
     sourceRoot: appRoot,
@@ -394,15 +412,9 @@ async function provisionReferenceApp(
   const instance = randomBytes(16).toString('hex');
   const child = spawn(
     process.execPath,
-    [
-      'scripts/smrt-vite.mjs',
-      'dev',
-      '--host',
-      '127.0.0.1',
-      '--port',
-      String(port),
-      '--strictPort',
-    ],
+    // No `--host`/`--port`: `smrt app dev` binds the loopback host and the
+    // PORT the onboarding URL names (#3410).
+    [appCliEntry, 'app', 'dev', '--strictPort'],
     {
       cwd: appRoot,
       env: { ...environment, SMRT_PROCESS_INSTANCE: instance },
@@ -446,11 +458,11 @@ async function provisionReferenceApp(
   //    the profile directly. They agree only while the template config
   //    contributes no provider overrides; adding one is what that message is
   //    for.
-  //  - This is NOT `smrt-app.mjs start()`'s fingerprint. That one runs after
+  //  - This is NOT `smrt app start`'s fingerprint. That one runs after
   //    `runtimeEnvironment()` has set `DATABASE_TYPE`/`DATABASE_URL`, so it
   //    carries a database target this one deliberately does not — the gate
   //    serves the app with `vite dev`, not the production writer.
-  const configuration = identityModule.runtimeConfigurationFingerprint(
+  const configuration = runtimeConfigurationFingerprint(
     resolveApplicationRuntime({ profile: 'local' }),
     { ...environment, SMRT_PROCESS_INSTANCE: instance },
   );

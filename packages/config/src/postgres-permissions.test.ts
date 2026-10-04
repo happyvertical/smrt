@@ -40,12 +40,20 @@ describe('PostgreSQL permissions configuration', () => {
         cli: { postgresPermissions: { runtimeRole: 'cli_runtime' } },
       },
     });
-    expect(getPackageConfig('cli', {}).postgresPermissions).toEqual({
+    expect(
+      getPackageConfig<{ postgresPermissions?: PostgresPermissionsConfig }>(
+        'cli',
+      ).postgresPermissions,
+    ).toEqual({
       ...contract,
       runtimeRole: 'cli_runtime',
     });
   });
   it('does not silently enable permissions management by default', () => {
-    expect(getPackageConfig('cli', {}).postgresPermissions).toBeUndefined();
+    expect(
+      getPackageConfig<{ postgresPermissions?: PostgresPermissionsConfig }>(
+        'cli',
+      ).postgresPermissions,
+    ).toBeUndefined();
   });
 });

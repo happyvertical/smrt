@@ -6,7 +6,7 @@ claims, review, and shipping; this guide covers repository setup.
 
 ## Setup
 
-Use Node >=24.18.0 and pnpm >=11.13.1, as specified by `package.json`.
+Use Node >=26.0.0 and pnpm >=11.13.1, as specified by `package.json`.
 The floor excludes 11.13.0 deliberately: pnpm's own `BROKEN_RELEASES` list
 rejects that version, so every command in this repository fails closed on it.
 Git and GitHub CLI are needed for contribution management.

@@ -66,7 +66,7 @@ class PerfTestUsers extends SmrtCollection<PerfTestUser> {
     });
   }
 
-  static async create(options: any): Promise<PerfTestUsers> {
+  static async createForBenchmark(options: any): Promise<PerfTestUsers> {
     const collection = new PerfTestUsers(options);
     await collection.initialize();
     return collection;
@@ -107,7 +107,7 @@ describe.skip('Performance Benchmarks', () => {
   let collection: PerfTestUsers;
 
   beforeEach(async () => {
-    collection = await PerfTestUsers.create({});
+    collection = await PerfTestUsers.createForBenchmark({});
   });
 
   afterEach(async () => {
@@ -149,7 +149,7 @@ describe.skip('Performance Benchmarks', () => {
 
       const { duration } = await measureTime(async () => {
         // Create all users concurrently (limited concurrency)
-        const batches = [];
+        const batches: Promise<PerfTestUser[]>[] = [];
         for (let i = 0; i < users.length; i += 10) {
           const batch = users.slice(i, i + 10);
           batches.push(

@@ -16,6 +16,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { SYNC_THROTTLE_MS } from '../constants';
+import { getScopedRepositoryClient } from '../repository-client-scope';
 import type {
   CreateIssueInput,
   CreatePRInput,
@@ -141,6 +142,10 @@ export class Repository extends SmrtObject {
    * @throws Error if token cannot be resolved
    */
   async getClient(): Promise<IRepository> {
+    const scopedClient = getScopedRepositoryClient(this);
+    if (scopedClient) {
+      return scopedClient;
+    }
     if (this._client) {
       return this._client;
     }

@@ -8,7 +8,19 @@
  * - Accept filter (mime types / extensions)
  * - Multiple file support
  * - Max size validation
+ * - Native form posting via `name` (the accepted list is mirrored onto the
+ *   real input with `DataTransfer`, so picks, drops and removals post exactly
+ *   what the list shows), `required` validation, and camera `capture`
+ * - A reset of the owning form (`form.reset()`, a reset button, SvelteKit
+ *   `enhance`'s `update()` after a success) empties the list, as it empties a
+ *   native file input, and reports it through `onchange([])`
  * - Material 3 styling
+ *
+ * Fallback: where the `DataTransfer` constructor is unavailable (Safari < 14.1,
+ * jsdom), the input keeps the browser's own selection only while it matches the
+ * accepted list exactly; otherwise it is cleared. A native submit then never
+ * posts a file the list does not show, but drops, accumulated picks and
+ * partial removals post nothing until the next matching pick.
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -23,7 +35,7 @@ export interface Props {
   multiple?: boolean;
   /** Selected files (bindable) */
   files?: File[];
-  /** Callback when files change */
+  /** Callback when files change, including the empty list after a form reset */
   onchange?: (files: File[]) => void;
   /** Maximum file size in bytes */
   maxSize?: number;
@@ -33,6 +45,12 @@ export interface Props {
   label?: string;
   /** Hint text shown below the label */
   hint?: string;
+  /** Form field name; the accepted files post under it in a native `multipart/form-data` submit */
+  name?: string;
+  /** Camera hint forwarded to the input: `environment` (rear) or `user` (front) */
+  capture?: 'environment' | 'user';
+  /** Require at least one file for native form validation */
+  required?: boolean;
 }
 
 let {
@@ -44,11 +62,60 @@ let {
   disabled = false,
   label = 'Drag and drop files here',
   hint = 'or click to browse',
+  name,
+  capture,
+  required = false,
 }: Props = $props();
 
 let isDragging = $state(false);
 let error = $state<string | null>(null);
 let inputRef = $state<HTMLInputElement | null>(null);
+
+// Mirror the accepted list onto the real input so a native form submit posts
+// exactly what the list shows (picks, drops, removals, and external resets of
+// the bound `files`). Assigning `input.files` fires no change event.
+$effect(() => {
+  const input = inputRef;
+  const current = files;
+  if (!input) return;
+  if (typeof DataTransfer === 'function') {
+    try {
+      const transfer = new DataTransfer();
+      for (const file of current) transfer.items.add(file);
+      input.files = transfer.files;
+      return;
+    } catch {
+      // Constructor present but unusable; fall through to the fallback.
+    }
+  }
+  const native = input.files ? Array.from(input.files) : [];
+  const matches =
+    native.length === current.length &&
+    native.every((file, i) => file === current[i]);
+  if (!matches) input.value = '';
+});
+
+// The owning form reset: the browser empties the native input, so the list
+// must empty too or it keeps showing files that no longer post. `reset` fires
+// before the browser resets the controls; clearing `files` makes the mirror
+// effect above assign an empty list, so the two agree instead of fighting
+// (and a cancelled reset still leaves list and input both empty). The capture
+// phase on `document` reads the input's form at dispatch time, so moving the
+// input between forms needs no re-wiring and no page listener can hide it.
+$effect(() => {
+  if (typeof document === 'undefined') return;
+  const onReset = (event: Event) => {
+    const form = inputRef?.form;
+    if (!form || event.target !== form) return;
+    const hadFiles = files.length > 0;
+    error = null;
+    isDragging = false;
+    files = [];
+    if (hadFiles) onchange?.(files);
+  };
+  document.addEventListener('reset', onReset, true);
+  return () => document.removeEventListener('reset', onReset, true);
+});
 
 function handleDragEnter(e: DragEvent) {
   e.preventDefault();
@@ -79,8 +146,14 @@ function handleFileSelect(e: Event) {
   const input = e.target as HTMLInputElement;
   if (input.files) {
     addFiles(Array.from(input.files));
-    input.value = '';
   }
+}
+
+function handleInvalid(e: Event) {
+  const input = e.currentTarget as HTMLInputElement;
+  // The input is visually hidden and aria-hidden, so announce the native
+  // validation failure through the live error region as well.
+  error = input.validationMessage || t(M['ui.file_upload.required']);
 }
 
 function handleZoneClick() {
@@ -127,18 +200,24 @@ function addFiles(newFiles: File[]) {
   // Validate accepted types
   const rejected = filtered.filter((f) => !isFileAccepted(f));
   if (rejected.length > 0) {
-    errorMessages.push(`${rejected.length} file(s) rejected: type not allowed`);
+    errorMessages.push(
+      t(M['ui.file_upload.rejected_type'], { count: rejected.length }),
+    );
     filtered = filtered.filter((f) => isFileAccepted(f));
   }
 
   // Validate max size
-  if (maxSize) {
-    const oversized = filtered.filter((f) => f.size > maxSize!);
+  const limit = maxSize;
+  if (limit) {
+    const oversized = filtered.filter((f) => f.size > limit);
     if (oversized.length > 0) {
       errorMessages.push(
-        `${oversized.length} file(s) exceed the maximum size of ${formatFileSize(maxSize)}`,
+        t(M['ui.file_upload.exceeds_max_size'], {
+          count: oversized.length,
+          size: formatFileSize(limit),
+        }),
       );
-      filtered = filtered.filter((f) => f.size <= maxSize!);
+      filtered = filtered.filter((f) => f.size <= limit);
     }
   }
 
@@ -192,16 +271,26 @@ function formatFileSize(bytes: number): string {
     </div>
     <p class="drop-zone__label">{label}</p>
     <p class="drop-zone__hint">{hint}</p>
-    <input
-      bind:this={inputRef}
-      type="file"
-      {accept}
-      {multiple}
-      onchange={handleFileSelect}
-      hidden
-      {disabled}
-    />
   </div>
+  <!-- Visually hidden rather than `hidden`: a hidden control cannot be focused,
+       so the browser could not show its `required` validation bubble and would
+       silently block the submit. The drop zone stays the one control exposed
+       to assistive tech and the tab order. -->
+  <input
+    bind:this={inputRef}
+    class="file-upload__input"
+    type="file"
+    {name}
+    {accept}
+    {multiple}
+    {capture}
+    {required}
+    {disabled}
+    tabindex="-1"
+    aria-hidden="true"
+    onchange={handleFileSelect}
+    oninvalid={handleInvalid}
+  />
 
   {#if error}
     <!-- Live region so async validation/reject errors are announced (C7),
@@ -235,9 +324,24 @@ function formatFileSize(bytes: number): string {
 
 <style>
   .file-upload {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-3, 0.75rem);
+  }
+
+  .file-upload__input {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .file-upload.disabled {

@@ -201,8 +201,8 @@ describe('Issue #2306: collection-cache identity for db config objects', () => {
         expect(viaB).not.toBe(viaA);
         expect(viaAAgain).toBe(viaA);
       } finally {
-        await dbA.close();
-        await dbB.close();
+        await dbA.close?.();
+        await dbB.close?.();
       }
     });
   });

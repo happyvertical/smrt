@@ -9,7 +9,7 @@
  * repaired schema and assert it reports clean.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { getSystemTableDDL } from '../system/schema.js';
@@ -23,9 +23,9 @@ import {
 import { SYSTEM_TABLE_NAMES } from './system-table-shapes.js';
 import type { SchemaDefinition } from './types.js';
 
-let db: DatabaseProvider | undefined;
+let db: DatabaseInterface | undefined;
 
-async function openDatabase(): Promise<DatabaseProvider> {
+async function openDatabase(): Promise<DatabaseInterface> {
   db = await getDatabase({ type: 'sqlite', url: ':memory:' });
   return db;
 }
@@ -114,7 +114,7 @@ describe('checkLiveSchemaParity (application tables)', () => {
           },
         },
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
 
     const report = await checkLiveSchemaParity({
       db: database,
@@ -490,7 +490,7 @@ describe('checkLiveSchemaParity (application tables)', () => {
 
 describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
   async function createRenameTable(
-    database: DatabaseProvider,
+    database: DatabaseInterface,
     extraColumns: string,
   ): Promise<void> {
     await database.query(`
@@ -739,7 +739,7 @@ describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
   function postgresRenameDatabase(options: {
     oldColumnEmpty?: boolean;
     invalidUuidCount?: number;
-  }): DatabaseProvider {
+  }): DatabaseInterface {
     const { oldColumnEmpty = false, invalidUuidCount = 0 } = options;
     return {
       url: 'postgres://localhost/test',
@@ -772,7 +772,7 @@ describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
           old_id: { type: 'text', notNull: false, primaryKey: false },
         },
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
   }
 
   function renameSchema(): Record<string, SchemaDefinition> {
@@ -822,7 +822,9 @@ describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
 });
 
 describe('checkLiveSchemaParity (system tables)', () => {
-  async function createSystemTables(database: DatabaseProvider): Promise<void> {
+  async function createSystemTables(
+    database: DatabaseInterface,
+  ): Promise<void> {
     for (const ddl of getSystemTableDDL('sqlite')) {
       for (const statement of ddl.split(';')) {
         const trimmed = statement.trim();
@@ -911,7 +913,7 @@ describe('checkLiveSchemaParity failure modes', () => {
     const blindDb = {
       url: database.url,
       query: database.query.bind(database),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
 
     await expect(
       checkLiveSchemaParity({
@@ -929,7 +931,7 @@ describe('checkLiveSchemaParity failure modes', () => {
         throw new Error('connection refused');
       },
       getTableSchema: async () => null,
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
 
     await expect(
       checkLiveSchemaParity({ db: brokenDb, includeSystemTables: false }),
@@ -944,7 +946,7 @@ describe('DuckDB index introspection', () => {
    * upsert), so losing that catalog while keeping `duckdb_indexes()` would make
    * every conflict target and unique column look unenforced.
    */
-  function duckDb(options: { constraintsFail: boolean }): DatabaseProvider {
+  function duckDb(options: { constraintsFail: boolean }): DatabaseInterface {
     return {
       url: 'analytics.duckdb',
       query: async (sql: string) => {
@@ -977,7 +979,7 @@ describe('DuckDB index introspection', () => {
         indexes: [],
         foreignKeys: [],
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
   }
 
   const duckDbSchema: Record<string, SchemaDefinition> = {
@@ -1129,7 +1131,7 @@ describe('checkLiveSchemaParity float-width drift (#2770)', () => {
         indexes: [],
         foreignKeys: [],
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
 
     const report = await checkLiveSchemaParity({
       db: duckDb,
@@ -1170,7 +1172,7 @@ describe('checkLiveSchemaParity float-width drift (#2770)', () => {
         indexes: [],
         foreignKeys: [],
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
 
     const report = await checkLiveSchemaParity({
       db: duckDb,
@@ -1245,7 +1247,7 @@ describe('checkLiveSchemaParity JSON-vs-TEXT warning is engine-gated (#2772)', (
         indexes: [],
         foreignKeys: [],
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
 
     const schema: Record<string, SchemaDefinition> = {
       tag_aliases: {
@@ -1302,7 +1304,7 @@ describe('checkLiveSchemaParity uuid/text info finding is engine-gated (#2772)',
         indexes: [],
         foreignKeys: [],
       }),
-    } as unknown as DatabaseProvider;
+    } as unknown as DatabaseInterface;
 
     const schema: Record<string, SchemaDefinition> = {
       widgets: {

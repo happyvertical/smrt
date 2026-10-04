@@ -492,7 +492,12 @@ describe('LearningMemory — real embedding composition', () => {
       db: collection.db,
       ownerClass: 'LearningNote',
       ownerId: '__collection__',
-      semanticSearch: (q, opts) => collection.semanticSearch(q, opts),
+      semanticSearch: async (q, opts) =>
+        (await collection.semanticSearch(q, opts)).map((note) => ({
+          ...note.toJSON(),
+          id: note.id ?? undefined,
+          _similarity: note._similarity,
+        })),
     });
 
     const results = await memory.recall('notes', {

@@ -38,7 +38,11 @@ import {
 } from './collection';
 import type { CollectionCacheConfig } from './collection-cache';
 import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
-import type { FieldOptions, MethodOptions } from './decorators/index.js';
+import type {
+  FieldOptions,
+  MethodOptions,
+  RelationshipFieldOptions,
+} from './decorators/index.js';
 import type {
   ClassEmbeddingConfig,
   ProjectEmbeddingConfig,
@@ -52,8 +56,11 @@ import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.j
 import {
   cloneManifestSchemaColumns,
   discoverCachedManifestSync,
+  getLocalTestManifestCache,
   getManifestCache,
   getNodeBuiltins,
+  getStaticManifestCache,
+  getTestManifestCache,
   loadExternalManifestSyncWithNode,
 } from './manifest/store.js';
 import type { SmrtObject } from './object';
@@ -68,6 +75,17 @@ import {
   isBundledOutputPath,
   isSameSourcePath,
 } from './registry/class-registration';
+import {
+  applyRuntimeOverrides,
+  clearRuntimeOverrides,
+  getRuntimeOverride,
+  type RuntimeRegistrationOverride,
+  registerRuntimeOverride,
+} from './registry/runtime-overrides';
+import { clearSubtypeLineage } from './registry/subtype-lineage';
+
+export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
+
 import { resolveCollectionDbCacheKey } from './registry/db-cache-key';
 import {
   clearRegistryDiagnostics,
@@ -116,6 +134,16 @@ import {
   hasClassCaseInsensitive as _hasClassCaseInsensitive,
   resolveType as _resolveType,
 } from './registry/name-resolver';
+import {
+  collectManifestAliasInventory,
+  getQualifiedNameAliasMap,
+  lookupQualifiedNameAlias,
+  type ManifestAliasInventory,
+  readPreviousQualifiedNames,
+  resetQualifiedNameAliasWarnings,
+  resolveManifestQualifiedNameAlias,
+  warnDeprecatedQualifiedName,
+} from './registry/qualified-name-aliases';
 import {
   getDependencyGraph as _getDependencyGraph,
   getRelationshipMap as _getRelationshipMap,
@@ -230,8 +258,13 @@ let manifestLoaderModule: Promise<ManifestLoaderModule> | undefined;
  */
 function importManifestLoader(): Promise<ManifestLoaderModule> {
   if (!manifestLoaderModule) {
+    // Downstream bundlers must be able to rewrite the emitted JS import.
     manifestLoaderModule = (
-      import(getManifestLoaderSpecifier()) as Promise<ManifestLoaderModule>
+      import.meta.url.endsWith('.ts')
+        ? (import(
+            getManifestLoaderSpecifier()
+          ) as Promise<ManifestLoaderModule>)
+        : import('./manifest/index.js')
     ).catch((error: unknown) => {
       manifestLoaderModule = undefined;
       throw error;
@@ -239,6 +272,14 @@ function importManifestLoader(): Promise<ManifestLoaderModule> {
   }
   return manifestLoaderModule;
 }
+
+/**
+ * Lazy alias claim inventory (#3338), keyed to the registry generation it
+ * was built at. See `ObjectRegistry.loadManifestAliasInventory()`.
+ */
+let manifestAliasInventory:
+  | { generation: number; inventory: ManifestAliasInventory }
+  | undefined;
 
 /**
  * Registered classes whose manifest has been reconciled, keyed to the registry
@@ -273,6 +314,8 @@ interface FieldOptionsView {
  * consumers (`SmrtObject` relationship resolution, schema builder) read back.
  */
 interface FieldDecoratorOptions extends FieldOptions {
+  onDelete?: RelationshipFieldOptions['onDelete'];
+  onUpdate?: RelationshipFieldOptions['onUpdate'];
   /** Exact runtime target, retained until the target registers. */
   relatedConstructor?: Function;
   /** Related class name (foreignKey / crossPackageRef / oneToMany / manyToMany). */
@@ -1119,6 +1162,25 @@ export class ObjectRegistry {
   }
 
   /**
+   * Close package-owned generated surfaces or require existing tenancy.
+   * Call after model registration, before constructing transports. Policy is
+   * monotonic, survives re-registration, and resets only with clear().
+   */
+  static registerOverride(
+    name: string,
+    policy: RuntimeRegistrationOverride,
+  ): void {
+    registerRuntimeOverride(name, policy);
+  }
+
+  /** Read the immutable consumer policy for an exact qualified class. */
+  static getRuntimeOverride(
+    name: string,
+  ): ReturnType<typeof getRuntimeOverride> {
+    return getRuntimeOverride(name);
+  }
+
+  /**
    * Register a new SMRT object class with the global registry
    *
    * @param constructor - The class constructor extending SmrtObject
@@ -1277,8 +1339,94 @@ export class ObjectRegistry {
    */
   static getClassByQualifiedName(
     qualifiedName: string,
+    options: { source?: string } = {},
   ): RegisteredClass | undefined {
-    return _getClassByQualifiedName(qualifiedName);
+    return _getClassByQualifiedName(qualifiedName, options.source);
+  }
+
+  /**
+   * Every deprecated qualified name declared through
+   * `@smrt({ previousQualifiedNames })`, mapped to its class's CURRENT
+   * qualified name and sorted by old name (#3338). Aliases are lookup bridges
+   * only: they never appear in {@link getAllClasses} or any other iteration.
+   */
+  static getQualifiedNameAliases(): Map<string, string> {
+    return getQualifiedNameAliasMap();
+  }
+
+  /**
+   * The current qualified name for `name` — itself when it is a live
+   * qualified name, the class's current name when it is a deprecated alias
+   * (logging the one-time deprecation warning), `undefined` otherwise —
+   * including for every simple (unqualified) name (#3338).
+   * Use it to normalize a stored or declared name before writing it.
+   */
+  static resolveQualifiedName(
+    name: string,
+    options: { source?: string } = {},
+  ): string | undefined {
+    if (!name.includes(':')) return undefined;
+    const registered = _getClassByQualifiedName(name, options.source);
+    if (!registered) return undefined;
+    return registered.qualifiedName ?? name;
+  }
+
+  /**
+   * {@link resolveQualifiedName}, also covering a class that is not
+   * registered yet: on a qualified miss it lazily loads the name from its
+   * package's manifest — or, for a deprecated name, from the manifest of the
+   * class that now declares it — before resolving (#3338). A genuinely
+   * unknown name still returns `undefined`.
+   */
+  static async resolveQualifiedNameAsync(
+    name: string,
+    options: { source?: string } = {},
+  ): Promise<string | undefined> {
+    if (!name.includes(':')) return undefined;
+    const resolved = ObjectRegistry.resolveQualifiedName(name, options);
+    if (resolved) return resolved;
+    if (!(await ObjectRegistry.tryLoadFromExternalPackage(name))) {
+      return undefined;
+    }
+    return ObjectRegistry.resolveQualifiedName(name, options);
+  }
+
+  /**
+   * {@link getEquivalentQualifiedNames}, lazily loading a qualified name's
+   * class from its manifest first when it is not registered yet (#3338), so
+   * stored-name filters see a moved class's old names before anything else
+   * has registered it.
+   */
+  static async getEquivalentQualifiedNamesAsync(
+    name: string,
+    options: { source?: string } = {},
+  ): Promise<string[]> {
+    if (!name.includes(':')) return [name];
+    await ObjectRegistry.resolveQualifiedNameAsync(name, options);
+    return ObjectRegistry.getEquivalentQualifiedNames(name, options);
+  }
+
+  /**
+   * Every qualified name stored data may use for the class `name` resolves
+   * to: its current qualified name first, then its declared
+   * `previousQualifiedNames` (#3338). Readers that match persisted names
+   * (e.g. a polymorphic `metaType` filter) use this so rows written before
+   * and after a model move both match. A simple (unqualified) or
+   * unresolvable `name` is returned alone.
+   */
+  static getEquivalentQualifiedNames(
+    name: string,
+    options: { source?: string } = {},
+  ): string[] {
+    if (!name.includes(':')) return [name];
+    const registered = _getClassByQualifiedName(name, options.source);
+    if (!registered?.qualifiedName) return [name];
+    return [
+      registered.qualifiedName,
+      ...readPreviousQualifiedNames(registered.config).filter(
+        (alias) => alias !== registered.qualifiedName,
+      ),
+    ];
   }
 
   /**
@@ -1439,6 +1587,45 @@ export class ObjectRegistry {
   }
 
   /**
+   * Old-name claims and defined class names across every manifest this
+   * process can see: loaded caches AND every discoverable package's manifest, which this
+   * also loads into the cache so registration-time checks see it (#3338).
+   * Rebuilt only when the registry generation moves, so repeated lookups of
+   * a stale or unknown old name do not rescan every installed manifest.
+   */
+  private static async loadManifestAliasInventory(
+    loadExternalManifest: (
+      packageName: string,
+    ) => Promise<SmartObjectManifest | null>,
+  ): Promise<ManifestAliasInventory> {
+    if (manifestAliasInventory?.generation === getRegistryGeneration()) {
+      return manifestAliasInventory.inventory;
+    }
+    let packages: string[] = [];
+    try {
+      packages = await discoverInstalledSmrtPackages();
+    } catch (error) {
+      verboseLog(
+        `[ObjectRegistry] Package discovery failed while indexing qualified-name aliases: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    for (const packageName of packages) {
+      await loadExternalManifest(packageName);
+    }
+    const inventory = collectManifestAliasInventory([
+      ...getManifestCache().values(),
+      getStaticManifestCache(),
+      getTestManifestCache(),
+      getLocalTestManifestCache(),
+    ]);
+    manifestAliasInventory = {
+      generation: getRegistryGeneration(),
+      inventory,
+    };
+    return inventory;
+  }
+
+  /**
    * Try to load and register a class from external SMRT packages
    *
    * This method attempts to auto-discover classes from @happyvertical/smrt-* packages
@@ -1516,6 +1703,30 @@ export class ObjectRegistry {
     }
 
     if (matches.length === 0) {
+      // #3338: an old package identity resolves through the alias index the
+      // NEW owner's manifest carries, even when the old package's manifest
+      // no longer lists the class (or the package is no longer installed).
+      if (requestedPackageName) {
+        const current = resolveManifestQualifiedNameAlias(
+          await ObjectRegistry.loadManifestAliasInventory(loadExternalManifest),
+          className,
+        );
+        if (current && current !== className) {
+          const loaded =
+            await ObjectRegistry.tryLoadFromExternalPackage(current);
+          if (loaded) {
+            const registered = lookupQualifiedNameAlias(className);
+            if (registered) {
+              warnDeprecatedQualifiedName(
+                className,
+                registered.qualifiedName ?? current,
+                'manifest alias index (lazy load)',
+              );
+            }
+            return true;
+          }
+        }
+      }
       verboseLog(
         `[ObjectRegistry] ❌ Could not find ${className} in any SMRT package`,
       );
@@ -1540,6 +1751,19 @@ export class ObjectRegistry {
     verboseLog(
       `[ObjectRegistry] ✅ Found ${className} in ${packageName} manifest`,
     );
+
+    // #3338: before publishing a lazy registration of a manifest that
+    // declares `previousQualifiedNames`, load the full alias claim inventory
+    // into the manifest cache, so registration's claim check sees every
+    // installed competitor — whether the class was requested by its current
+    // name or by an old one. Manifests without aliases skip the scan.
+    if (
+      Object.values(manifest.objects).some(
+        (def) => readPreviousQualifiedNames(def?.decoratorConfig).length > 0,
+      )
+    ) {
+      await ObjectRegistry.loadManifestAliasInventory(loadExternalManifest);
+    }
 
     // Register the class from manifest
     ObjectRegistry.registerFromManifest(
@@ -1955,6 +2179,8 @@ export class ObjectRegistry {
    * Clear all registered classes (mainly for testing)
    */
   static clear(): void {
+    clearRuntimeOverrides();
+    clearSubtypeLineage();
     bumpRegistryGeneration();
     ObjectRegistry.classes.clear();
     ObjectRegistry.collections.clear();
@@ -1967,6 +2193,7 @@ export class ObjectRegistry {
     ObjectRegistry.constructorTenantScopedDeclarations.clear();
     getLegacyFieldDecorators().clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
+    resetQualifiedNameAliasWarnings();
     // Release B (#1133) dropped classNameMap — case-insensitive lookups
     // iterate the classes Map directly, so there's no secondary index to
     // clear here.
@@ -2293,7 +2520,8 @@ export class ObjectRegistry {
    * const fields = ObjectRegistry.getFields('Place'); // Now has fields
    * ```
    */
-  static async ensureManifestLoaded(className: string): Promise<void> {
+  static async ensureManifestLoaded(requestedName: string): Promise<void> {
+    let className = requestedName;
     const startGeneration = getRegistryGeneration();
     let registered = ObjectRegistry.findClass(className);
     if (
@@ -2344,6 +2572,17 @@ export class ObjectRegistry {
           `Ensure the class is decorated with @smrt() before using it.` +
           testHint,
       );
+    }
+
+    // A deprecated alias resolved to its class (#3338): reconcile the
+    // manifest under the class's CURRENT name, which is what its manifest
+    // is keyed by.
+    if (
+      registered.qualifiedName &&
+      registered.qualifiedName !== className &&
+      lookupQualifiedNameAlias(className) === registered
+    ) {
+      className = registered.qualifiedName;
     }
 
     // Try to load manifest from external package (even if some fields exist)
@@ -3588,6 +3827,7 @@ export class ObjectRegistry {
         return;
       }
       registered.tenantScopedConfig = { ...config };
+      applyRuntimeOverrides();
       registered.tenantScopedConfigSource = 'tenant-decorator';
       ensureTenantScopedField(registered.fields, registered.tenantScopedConfig);
       // Schema assembly reads the registered fields on every generation pass;

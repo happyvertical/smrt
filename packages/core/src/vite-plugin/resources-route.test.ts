@@ -138,6 +138,11 @@ describe('generateResourcesRoute (#2663)', () => {
       "import { createResourceListHandler } from '@happyvertical/smrt-users/sveltekit';",
     );
     expect(content).toContain("import '$lib/server/smrt';");
+    // #3416: registration no longer depends on the app's config module.
+    expect(content.indexOf("import '$lib/server/smrt-register';")).toBeLessThan(
+      content.indexOf("import '$lib/server/smrt';"),
+    );
+    expect(content).toContain("import '$lib/server/smrt-register';");
     expect(content).toContain('export const GET = createResourceListHandler({');
     expect(content).toContain('ensureRegistry: async () => {');
   });

@@ -263,6 +263,21 @@ function cloneConfig(config: TenantScopedConfig): TenantScopedConfig {
 function getDirectTenantScopedConfig(
   className: string,
 ): TenantScopedConfig | undefined {
+  const direct = getDeclaredTenantScopedConfig(className);
+  const qualifiedName = ObjectRegistry.getClass(className)?.qualifiedName;
+  if (
+    direct &&
+    qualifiedName &&
+    ObjectRegistry.getRuntimeOverride(qualifiedName)?.tenancy
+  ) {
+    return { ...direct, mode: 'required' };
+  }
+  return direct;
+}
+
+function getDeclaredTenantScopedConfig(
+  className: string,
+): TenantScopedConfig | undefined {
   // Core marks caught silent-manifest/runtime-decorator conflicts invalid.
   // Check before the simple-name decorator mirror so every identity path
   // fails closed rather than falling through to an unscoped operation.
@@ -431,9 +446,7 @@ export function getTenantScopedConfig(
 ): TenantScopedConfig | undefined {
   // A class's own @TenantScoped / @smrt({ tenantScoped }) declaration wins.
   const direct = getDirectTenantScopedConfig(className);
-  if (direct) {
-    return direct;
-  }
+  if (direct) return direct;
   // Otherwise inherit recognition from a tenant-scoped STI ancestor (#1596).
   return getInheritedTenantScopedConfig(className);
 }

@@ -80,7 +80,9 @@ describe.skipIf(!pgUrl)('bounded STI read scope on PostgreSQL (#2513)', () => {
       orderBy: 'title ASC',
       limit: 2,
     });
-    expect(rows.map((row) => row.title)).toEqual(['current', 'historical']);
+    expect(rows.map((row) => ('title' in row ? row.title : undefined))).toEqual(
+      ['current', 'historical'],
+    );
     expect(rows[0]).toBeInstanceOf(Issue2513PgCurrent);
     expect(rows[1]).toBeInstanceOf(Issue2513PgHistorical);
   });

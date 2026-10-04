@@ -9,9 +9,21 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
+import type { Plugin } from 'vitest/config';
 import { discoverSmrtPackages } from '../../../core/src/manifest/discover-smrt-packages.js';
 import { generateSvelteKitRoutes } from '../../../core/src/vite-plugin/sveltekit-generator.js';
 import { smrtVitestPlugin } from '../index.js';
+
+async function invokeConfigResolved(
+  plugin: Plugin,
+  config: unknown,
+): Promise<void> {
+  const hook = plugin.configResolved;
+  if (!hook) throw new Error('smrtVitestPlugin has no configResolved hook');
+  const handler = typeof hook === 'function' ? hook : hook.handler;
+  // This fixture supplies only the resolved fields the hook reads.
+  await handler.call({} as never, config as never);
+}
 
 it('actual test generation preserves production bytes and never creates a production provider', async () => {
   const root = mkdtempSync(join(tmpdir(), 'smrt-vitest-output-'));
@@ -29,7 +41,7 @@ it('actual test generation preserves production bytes and never creates a produc
     });
     const productionPath = join(root, 'dist/manifest.json');
     writeFileSync(productionPath, sentinel);
-    await smrtVitestPlugin({ root }).configResolved?.({ plugins: [] } as never);
+    await invokeConfigResolved(smrtVitestPlugin({ root }), { plugins: [] });
     expect(readFileSync(productionPath, 'utf8')).toBe(sentinel);
     const local = JSON.parse(
       readFileSync(join(root, '.smrt/manifest.json'), 'utf8'),
@@ -37,7 +49,7 @@ it('actual test generation preserves production bytes and never creates a produc
     expect(local.artifactPurpose).toBe('test');
     expect(local.objects).toEqual({});
     rmSync(productionPath);
-    await smrtVitestPlugin({ root }).configResolved?.({ plugins: [] } as never);
+    await invokeConfigResolved(smrtVitestPlugin({ root }), { plugins: [] });
     expect(existsSync(productionPath)).toBe(false);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -66,11 +78,15 @@ it('keeps actual generated registration byte-identical before and after a depend
         root,
         {
           version: '1.0.0',
-          timestamp: '',
+          timestamp: 0,
           objects: {},
           smrtDependencies: dependencies,
         },
-        { enabled: true, routesDir: 'src/routes/api' },
+        {
+          enabled: true,
+          routesDir: 'src/routes/api',
+          objectsDir: 'src/lib/objects',
+        },
       );
       return readFileSync(
         join(root, 'src/lib/server/smrt-register.ts'),
@@ -78,9 +94,9 @@ it('keeps actual generated registration byte-identical before and after a depend
       );
     };
     const before = await generate();
-    await smrtVitestPlugin({ root: provider }).configResolved?.({
+    await invokeConfigResolved(smrtVitestPlugin({ root: provider }), {
       plugins: [],
-    } as never);
+    });
     expect(
       JSON.parse(readFileSync(join(provider, '.smrt/manifest.json'), 'utf8'))
         .artifactPurpose,
@@ -135,9 +151,9 @@ it('uses the configured root for the initial base-class inventory and generated 
     );
     expect(root).not.toBe(process.cwd());
     expect(discoverSmrtPackages()).not.toContain(provider);
-    await smrtVitestPlugin({ root, verbose: true }).configResolved?.({
+    await invokeConfigResolved(smrtVitestPlugin({ root, verbose: true }), {
       plugins: [],
-    } as never);
+    });
     expect(log).toHaveBeenCalledWith(
       '[smrt-vitest] Discovered 4 base classes (including 1 from external packages)',
     );

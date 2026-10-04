@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { flushSync, mount, unmount } from 'svelte';
+import { type ComponentProps, flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FeatureSettingsView } from '../types.js';
 import PanelContextHarness from './__tests__/panel-context-harness.svelte';
@@ -8,7 +8,9 @@ import FeatureSettingsPanel from './FeatureSettingsPanel.svelte';
 
 const mounted: Array<ReturnType<typeof mount>> = [];
 
-function render(props: Record<string, unknown> = {}): HTMLElement {
+function render(
+  props: ComponentProps<typeof FeatureSettingsPanel> = {},
+): HTMLElement {
   const target = document.createElement('div');
   document.body.appendChild(target);
   mounted.push(mount(FeatureSettingsPanel, { target, props }));
@@ -17,7 +19,7 @@ function render(props: Record<string, unknown> = {}): HTMLElement {
 }
 
 /** Mount the panel behind a harness that can replace `features` afterwards. */
-function renderWithHarness(props: Record<string, unknown>): {
+function renderWithHarness(props: ComponentProps<typeof PanelContextHarness>): {
   target: HTMLElement;
   harness: {
     setFeatures: (next: FeatureSettingsView[]) => void;

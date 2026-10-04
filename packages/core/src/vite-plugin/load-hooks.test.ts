@@ -101,7 +101,11 @@ describe('smrtPlugin load (virtual module generation)', () => {
     mkdirSync(join(projectRoot, 'src'), { recursive: true });
     writeFileSync(
       join(projectRoot, 'package.json'),
-      JSON.stringify({ name: 'mini-app', version: '0.0.1', type: 'module' }),
+      JSON.stringify({
+        name: '@fixture/mini-app',
+        version: '0.0.1',
+        type: 'module',
+      }),
     );
     writeFileSync(
       join(projectRoot, 'src', 'objects.ts'),

@@ -101,6 +101,13 @@ retains legacy filename inference. Vitest selects dev mode explicitly, so tests
 never replace a production `dist/manifest.json`. Relative output directories are
 resolved against the builder's project root.
 
+With `svelteKit.enabled`, `smrtPlugin()`'s transform prepends
+`import './smrt-register.js';` to the configured config module
+(`<configPath>/<configFileName>`, `src/vite-plugin/sveltekit-register-injection.ts`)
+once the register module exists, on the same first line so line numbers hold.
+Apps therefore never hand-write the guarded registration import (#3416); a
+config module that still has it imports the same module twice, harmlessly.
+
 Tracked `src/lib/server/smrt-register.ts` belongs to SvelteKit config/type
 generation. Generic library builds consume it but do not cache or restore it
 as an output; otherwise a concurrent config producer's bytes can be replayed
@@ -116,6 +123,16 @@ admin auth.
 
 
 ## Vite Plugin
+
+`src/vite-preset/` (`@happyvertical/smrt-core/vite`, `smrt()`) composes the Oxc
+decorator block, `smrtConsumer`, then `smrtPlugin` with the template path
+conventions. Its package list comes only from the `smrt({ packages })` option, or
+`smrt.config` `consumer.packages` (smrt-config schema); it never sniffs
+`package.json`, and a missing or malformed list throws. Keep its output
+byte-identical to the two-plugin form (`src/vite-preset/index.test.ts`). It
+also dedupes `@sveltejs/kit` (`smrt:shared-runtime`): SvelteKit matches
+`redirect()`/`fail()` by class, and a linked/workspace SMRT SvelteKit entry
+would otherwise import its own copy and turn redirects into 500s.
 
 ```typescript
 // vite.config.ts — required for @smrt() decorators (Vite 8+, oxc transform)

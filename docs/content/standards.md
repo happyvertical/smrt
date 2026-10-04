@@ -266,6 +266,7 @@ its siblings.
   - `*.test.ts` — unit
   - `*.spec.ts` — integration
   - `*.optional.test.ts` — requires external APIs, skipped in CI
+- **Build output is not a test input**: `smrtVitestPlugin()` excludes `**/dist/**` and `**/.svelte-kit/**` in the root and inline test projects, retaining Vitest defaults and consumer exclusions. Independent projects keep their own custom filters; root filters follow Vitest's explicit `extends` inheritance.
 - **Test location**: tests live under `src/__tests__/`. Colocated tests are deprecated; do not introduce new ones.
 - **Minimum**: every published package has at least one unit test. Stub packages (e.g. `gnode`) document why they don't and link to the implementation issue.
 - **Templates**: at least one Playwright e2e verifying `pnpm scaffold` works end-to-end.
@@ -416,10 +417,16 @@ never disable the scan.
   `"undici@>=7.0.0 <7.24.0": "7.24.0"`). Scope the key
   to the vulnerable range so unrelated majors aren't force-bumped.
 - **Accept-with-justification.** Only when an advisory can't be remediated without
-  breaking a pinned API (e.g. `protobufjs` 6.x held by `onnx-proto` under the
-  deprecated `@xenova/transformers` v2 fallback) add its GHSA to
-  `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml` — with a justification
-  recorded in the PR.
+  breaking a pinned API, or no patched release exists at all (e.g. `braces` and
+  `http-cache-semantics`, #3396), add its GHSA to `auditConfig.ignoreGhsas` in
+  `pnpm-workspace.yaml` with a `suppressed: true` record in `audit-policy.json`:
+  reachability evidence, the upstream blocker, and a `recheckBy` date.
+  `pnpm audit:policy` enforces the records and fails once a record passes its
+  `recheckBy` date. `pnpm audit:policy:drift` warns about every live
+  `pnpm audit` advisory that has no record, and about unsuppressed records
+  whose advisory has left the tree. It cannot do the latter for suppressed
+  records: pnpm removes ignored GHSAs from the audit payload, so a suppressed
+  record is revisited through its `recheckBy` date instead.
   Revisit baselined advisories when their blocker is removed.
 
 ---
@@ -452,7 +459,7 @@ never disable the scan.
 - **`./playground` subpath**: exports the package's playground module for use by `smrt-playground`
 - **`./workbench` subpath**: exports package-owned routes and workbench metadata for use by `smrt-workbench`
 - **Svelte peer**: one uniform floor (currently `svelte: ^5.57.0`), not bumped with the devDependency. Drop the `^4.0.0 || ^5.0.0` range.
-- **Build script**: `vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json`
+- **Build script**: `vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist`
 - **Typecheck script**: packages with `./svelte` exports must run both TypeScript and Svelte checks via the a11y wrapper, e.g. `tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json` (see Accessibility enforcement below). SvelteKit-backed packages should run `svelte-kit sync` before both the TypeScript pass and the `svelte-check-a11y` wrapper pass.
 - **`tsconfig.svelte.json`**: extends `tsconfig.package-svelte.json`, includes `ambient.d.ts` and `*.svelte`
 
@@ -483,6 +490,19 @@ required status check.
   `products` typecheck is tracked with the rest of #1370.
 
 ---
+
+### Test artifacts in Svelte packages
+
+Every `svelte-package` build ends with
+`node ../../scripts/prune-svelte-package-artifacts.js dist` (or its narrower
+Svelte output directory). This removes test/spec files, their declarations and
+source maps, `__tests__`, and `test-stubs`, while preserving runtime components
+and public test-support helpers. The packaging tool itself does not expose a
+file filter. The shared declaration emitter excludes tests and fixture trees
+even when a package supplies additional custom exclusions. `scripts/validate-publish-packages.js` checks the actual packed
+tarball and rejects test artifacts, including files outside `dist` selected by
+a package's `files` allowlist.
+
 
 ## 9. Triple-consumption packages
 

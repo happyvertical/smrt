@@ -33,6 +33,7 @@ pnpm add @happyvertical/smrt-ui
 | Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `Listbox`, `MultiSelect`, `TagsInput`, `SearchInput` |
 | Choices | `Checkbox`, `RadioGroup`/`Radio`, `Switch`, `Toggle`, `ToggleButton`, `SegmentedControl` |
 | Values and files | `Slider`, `RangeSlider`, `DatePicker`, `TimePicker`, `FilePicker` |
+| Capture | `CameraCapture`, `SignaturePad` |
 | Actions and display | `Button`, `Dropdown`/`Menu`, `Badge`, `Chip`, `Avatar`, `Card`, `Skeleton`, `Tooltip`, `Tree` |
 | Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `PhoneSheet`, `ConfirmDialog` |
 | Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay`, `WorkingStrip` |
@@ -91,11 +92,64 @@ kept in view. It carries `data-shell-tabs`, so AdminShell keeps it sticky
 under the phone top bar. Pair it with `useLinkSurface` (smrt-svelte) so
 agents can switch tabs too.
 
-Use the focused subpaths (`/forms`, `/ui`, `/feedback`, `/data`,
+Use the focused subpaths (`/forms`, `/form-retry`, `/ui`, `/feedback`, `/data`,
 `/data-surface`, `/layout`, `/themes`) to keep imports explicit. The
 Svelte-free `/data-surface` entry exposes the registry contracts and shared
-protocol limits for server adapters. The package root remains a compatibility
+protocol limits for server adapters; the Svelte-free `/form-retry` entry
+exposes the form-retry helper. The package root remains a compatibility
 barrel.
+
+### Calendar dates and shop time
+
+`DateDisplay` accepts `timeZone` (an IANA id such as `America/Edmonton`) for
+instant inputs (`Date`, numeric timestamps, and timestamp strings). Omit it to
+keep browser-local absolute formatting and the existing duration-based relative
+format. With an explicit zone, relative today/yesterday/tomorrow boundaries use
+calendar days in that zone, including daylight saving transitions.
+
+A bare `YYYY-MM-DD` string always denotes that calendar date, independent of the
+viewer or shop zone. It formats in UTC, retains a date-only `datetime` attribute,
+and ignores `showTime` because it contains no time. Relative calendar-date
+labels compare it with today's date in the supplied zone (or the browser zone).
+Impossible calendar dates render `fallback`. Invalid explicit zones used for
+instant or relative formatting also render `fallback` rather than throwing.
+
+### Combobox form submission
+
+A named `Combobox` submits its selected option value through a hidden native
+input. Its visible search text and option label are display-only. With
+`allowCustom`, typed text becomes the submitted value; otherwise searching keeps
+the last committed selection. A named empty selection submits an empty string;
+controls with no name or an empty name are omitted. Disabled controls, including
+those inside disabled fieldsets, are omitted by native `FormData`. Native form
+reset restores the initial selection and its label, unless reset is canceled.
+
+### MultiSelect form submission
+
+A named `MultiSelect` submits one hidden native input per selected option value,
+using repeated field names in selection order. Read them with `FormData.getAll`.
+Option labels are display-only, and numeric option values submit as strings.
+Empty selections, missing or empty names, and disabled controls (including
+ancestor fieldsets) contribute no entries. Native reset restores the initial
+selection unless reset is canceled.
+
+### Listbox form submission
+
+A named `Listbox` submits one hidden native input containing its selected option
+value, with numeric values encoded as strings. A named listbox without a
+selection submits an empty string. Missing or empty names and disabled controls
+(including ancestor fieldsets) are omitted. Native reset restores the initial
+selection unless reset is canceled.
+
+### Status badge tones
+
+`StatusBadge` accepts `tone="success"`, `"warning"`, `"danger"`, `"info"`, or
+`"neutral"` for custom status vocabulary such as `awaiting_cert`. An explicit
+tone overrides the built-in domain scheme while label, size, and outline variant
+continue to work independently. Tones use the active theme's paired container
+and text tokens. Without a tone, known domain statuses retain their existing
+colors and unknown statuses retain the neutral fallback. `StatusTone` is exported
+as a TypeScript type from the package root.
 
 ### Touch targets for Checkbox, Radio and Switch
 
@@ -229,6 +283,34 @@ Application-specific editors, maps, charts, media workbenches, and domain
 records remain composites built from this foundation rather than generic base
 components.
 
+## Native and enhanced forms
+
+`Form` forwards native form attributes and Svelte attachments through its rest
+props to the underlying `<form>`. For a SvelteKit action, adapt `enhance` with
+`fromAction` and set `preventDefault={false}` so the enhancement handles submission:
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+  import { fromAction } from 'svelte/attachments';
+  import { Form, Input } from '@happyvertical/smrt-ui/forms';
+</script>
+
+<Form method="POST" action="?/save" preventDefault={false} {@attach fromAction(enhance)}>
+  <Input name="displayName" />
+  <button type="submit">Save</button>
+</Form>
+```
+
+For a customized enhancement, pass its callback as a getter:
+`{@attach fromAction(enhance, () => submitFunction)}`. The attachment runs on the
+native element and cleans up when it unmounts; the interaction registry and
+staged-review surface remain available. A component reference obtained with
+`bind:this` exposes `getFormElement(): HTMLFormElement | null`, which returns
+`null` before mount and after unmount. For ordinary browser GET/POST forms, use
+`preventDefault={false}` without an attachment. The default remains `true` for
+existing handler-driven forms.
+
 ## Agent-addressable forms
 
 `Form` can expose its controls to a chat, voice, tutorial, or test adapter
@@ -361,6 +443,130 @@ property per proposable control (never secret/sensitive, unwritable,
 disabled, read-only, file, or password controls), and staging only ever
 creates reviewable proposals. smrt-svelte's `<Form webmcp>` and `FormScope`
 build their `*_stage_changes` tool from these.
+
+## Form retry
+
+`createFormRetry()` is the browser half of `runOnce()` (`@happyvertical/smrt-core`)
+for a SvelteKit enhanced form: a per-tab, per-form submission key, a refused
+second submit while one is in flight, typed values kept across a validation or
+transport failure, a reset after success only when the fields are unchanged
+since submit, and opt-in restore after a reload (a file that cannot be restored
+is reported, never silently dropped). It is framework-free and imports neither
+Svelte nor SvelteKit; the submit function is typed against SvelteKit's
+`SubmitFunction` shape structurally.
+
+```svelte
+<script lang="ts">
+  import { enhance } from '$app/forms';
+  import { createFormRetry } from '@happyvertical/smrt-ui/form-retry';
+
+  const retry = createFormRetry({ form: 'report' });
+</script>
+
+<form method="POST" use:enhance={retry.enhance()} {@attach retry.attach}>
+  <input name="title" />
+  <button type="submit">Send</button>
+  {#if $retry.status === 'transport-error'}<p role="alert">Send it again unchanged.</p>{/if}
+</form>
+```
+
+With smrt-ui's own `Form`, attach the same two pieces to it (see
+[Native and enhanced forms](#native-and-enhanced-forms)):
+`<Form method="POST" preventDefault={false} {@attach fromAction(enhance, () => retry.enhance())} {@attach retry.attach}>`.
+
+`/forms` re-exports the same API as the Svelte-free `/form-retry` entry. See the
+[form retry guide](../../docs/content/form-retry.md) for the server half, the
+per-result table, storage and private-window behaviour, and restore.
+
+## Camera and signature capture
+
+`CameraCapture` takes a photo from the device camera and `SignaturePad` takes a
+signature, each inside an ordinary form. Both live in `/forms`, need only
+browser APIs, and post their file through a plain multipart form when given a
+`name`; the page wires no hidden input and no submit handler.
+
+```svelte
+<script lang="ts">
+  import { CameraCapture, SignaturePad } from '@happyvertical/smrt-ui/forms';
+</script>
+
+<form method="POST" enctype="multipart/form-data">
+  <CameraCapture name="photo" facingMode="environment" />
+  <SignaturePad name="signature" stylusOnly={settings.signatureStylusOnly} />
+  <button type="submit">Send</button>
+</form>
+```
+
+**CameraCapture** uses `getUserMedia` with a live preview. The user takes a
+photo, reviews it, and can retake it before "Use photo" commits it. Committing
+calls `onCapture({ blob, dataUrl })` and fills the named field (`photo.jpg` by
+default; set `fileName`, `imageType`, and `quality` to change it). "Retake"
+after a commit empties the field and calls `onClear`. The root's `data-state`
+is one of `starting`, `streaming`, `reviewing`, `committed`, `off` (disabled),
+`permission-denied`, `no-camera`, `unsupported`, `error`, or `fallback`. Each
+problem state has its own copy and, where it can help, a "Try again" action.
+`getUserMedia` exists only in a secure context, so a page served over plain
+HTTP renders `unsupported`.
+
+The stream's tracks are stopped on unmount, when `disabled` turns on, when
+`facingMode` changes (the camera is then requested again), and as soon as a
+frame is captured. A permission prompt answered after unmount or disable is
+discarded and its stream released. The lifecycle lives in the framework-free
+`createCameraSession()` (exported with `classifyGetUserMediaError()` and
+`isCameraApiSupported()`), so it can be tested against a fake `MediaDevices`.
+
+`fileInputFallback` is opt-in and off by default. With it on, browsers without
+`getUserMedia` render an `<input type="file" accept="image/*" capture>` that
+carries `name` itself (`disabled` blocks it with `aria-disabled` rather than
+the native attribute, so a committed photo keeps posting). It opens the
+operating system's picker, which has no
+live preview and can offer the gallery, so it is not a substitute for the
+camera flow. With it off, those browsers render the `unsupported` state.
+
+**SignaturePad** draws on its own canvas. "Use signature" stays disabled until
+an accepted stroke exists, then returns a PNG through `onCapture({ blob,
+dataUrl })` and fills the named field (`signature.png` by default). A committed
+pad is locked until "Clear", which empties the field and calls `onClear`.
+`stylusOnly` is a prop the caller resolves; with it on, only `pointerType ===
+'pen'` draws. `isAcceptedPointerType()` and `mapPointerToCanvasPoint()` are
+exported as pure functions. The pad is dark ink on white paper in every theme
+and colour scheme, and the exported PNG is opaque white, so it reads the same
+wherever it is shown.
+
+**Native form posting.** The named field is a hidden `<input type="file">`
+filled through `DataTransfer` (Chrome 60+, Firefox 62+, Safari 14.1+). Where
+`DataTransfer` cannot be constructed or assigned, the field drops its `name`
+and a capture-phase `formdata` listener appends the file while the browser
+builds the request, which covers native navigation submits as well as
+`new FormData(form)`. Where neither API exists, nothing is posted and
+`onCapture` is the only channel. The root's `data-smrt-file-field` attribute
+reports `data-transfer`, `formdata-event`, `file-input`, or `none`. Before a
+commit the field posts what an empty native file input posts. `disabled`
+freezes the controls but keeps a committed file in the submission; unmount the
+component to drop it, or put it in a disabled `<fieldset>`, which leaves the
+field out of the submission (committed or empty) in every posting strategy.
+
+A reset of the owning form (`form.reset()`, a reset button, or SvelteKit
+`enhance`'s `update()` after a success, including `createFormRetry()`'s
+conditional reset) empties the field as it empties a native file input, in
+every posting strategy. A committed photo or signature is discarded as
+"Retake" or "Clear" would and `onClear` is called. A photo under review or
+ink not yet committed is discarded too, without `onClear`, so the next entry
+cannot attach the previous one's capture. `CameraCapture` returns to the live
+camera (`off` while `disabled`, the emptied picker with `fileInputFallback`)
+and supersedes a frame still encoding; with nothing held, a reset changes
+nothing and never re-prompts for the camera. `SignaturePad` returns to blank,
+unlocked paper. A reset clears both even while `disabled`, as it clears a
+disabled native input, and a reset a later listener cancels still leaves the
+component and the posted field both empty.
+
+Text comes from the `ui.camera_capture.*` and `ui.signature_pad.*` i18n keys
+and can be overridden per instance with `labels`. Capture is a touch flow, so
+its actions (and the fallback picker) are touch targets at every density: at
+least `--smrt-touch-target-min` (48px by default; see
+[Touch density](#touch-density)), which ThemeProvider `overrides` can raise.
+Both register with an enclosing `Form`'s interaction registry as non-readable,
+non-writable `file` controls.
 
 ## DataTable controller
 
@@ -789,3 +995,95 @@ pnpm test
 pnpm build
 pnpm verify:pack
 ```
+
+### Touch density
+
+Set `<ThemeProvider density="touch">` for floor tablets and phones, or set
+`density="touch"` on Input, Select, Textarea, Checkbox, Switch, RadioGroup,
+Button (including links), FilterChips, SegmentedControl, or DataTable. DataTable
+applies density to its sort buttons. Density is independent of existing `size`
+props, including native Input/Select sizes. Omitted density inherits; explicitly
+setting `density="comfortable"` opts that control out and keeps its usual size.
+RadioGroup expands each option's clickable label, and Checkbox/Switch expand
+the label hit area while preserving the visual mark.
+
+`--smrt-touch-target-min` defaults to `48px` across all presets and works without
+a provider. Customize it globally with ThemeProvider's `overrides`, for example
+`overrides={{ '--smrt-touch-target-min': '56px' }}`. Touch targets grow with larger
+content; normal density keeps existing component sizing. `CameraCapture` and
+`SignaturePad` actions use `--smrt-touch-target-min` at every density, since
+capture is a touch flow. TenantNav sizing is
+tracked separately in [#3246](https://github.com/happyvertical/smrt/issues/3246).
+
+### Narrow DataTable
+
+Set `responsiveMode="hide-columns"` to adapt to the table's container width.
+The default `responsiveBreakpoint={800}` includes both 768px tablets and 390px
+phones. Narrow mode budgets one column per `responsiveColumnMinWidth={160}`
+pixels, after reserving space for selection and expansion controls. Higher
+`column.responsive.priority` values survive first (missing/nonfinite values are
+zero); ties preserve declared display order. `responsive.keepVisible` columns
+always survive responsive collapse, while explicitly hidden columns stay hidden.
+
+Retained cells wrap, and their desktop width and pinning settings resume when
+the container widens. Responsive presentation never changes controller state,
+sorting, selection, or persisted column visibility. Header groups and structural
+row colspans follow the retained columns. If keepVisible columns exceed the
+budget, all remain visible and share the available width. Custom cell/header
+snippets should fit their cells. Default `responsiveMode="scroll"` preserves
+existing horizontal scrolling.
+
+ConfirmDialog opens a native modal dialog above existing Modal and Drawer surfaces.
+Its `message` accepts plain text or a Svelte snippet (including lists and emphasis);
+each instance owns its accessible title and description ids. Escape and backdrop
+clicks request `oncancel`; the parent controls `open`. The opener regains focus
+on close. Buttons remain disabled while `loading`, and Escape stays available.
+The native top layer replaces the previous fixed div; confirmation now stacks
+above an already open modal and makes its background inert. Escape is scoped to
+the active dialog rather than handled globally. Existing `open`, `loading` and
+action callbacks retain their controlled-state contracts.
+
+Browser feedback contracts run with `pnpm --filter @happyvertical/smrt-ui test:e2e`
+(after installing Playwright Chromium, or setting
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a local Chromium executable).
+
+ToastViewport follows the topmost native modal dialog and restores its original
+host when all modals close. Its live region, dismiss buttons and actions stay
+interactive inside Modal, Drawer and ConfirmDialog. Hover and focus independently
+pause auto-dismiss, then resume the remaining duration. Configure
+`createToaster({ successDuration: 0 })` to keep success records until dismissal;
+per-toast `duration: 0` remains supported. `inset` accepts a CSS length, `anchor`
+accepts a content-region element, and `top-center`/`bottom-center` positions center
+the viewport within that region (or the window). Anchor geometry follows resize
+and scroll. Custom injected Toaster implementations may optionally implement
+`pause(id, reason)` and `resume(id, reason)` to support interaction pausing.
+
+### SegmentedControl forms
+
+SegmentedControl renders native radio inputs. Set `name` to post the selected
+option value with ordinary form submission or FormData; numeric values post as
+strings while bound values retain their declared type. Unselected, unknown,
+disabled-option, disabled-control and disabled-fieldset values are omitted.
+`required` uses native form validation and accepts numeric zero. Nameless controls
+validate without posting a generated field. Arrow keys cycle enabled options;
+Home/End select the first/last enabled option. Touch density applies to the full
+clickable segment.
+
+Native form reset restores the initial bound value if that option is still
+available and enabled; otherwise it clears the selection. Canceling the reset
+event preserves the current selection. Reset does not fire `onvaluechange`,
+matching native controls; bind:value reflects it.
+
+### Application icons
+
+Icon includes the original menu/search/chevron/action glyphs plus `alert`,
+`warning`, `info`, `home`, `user`, `settings`, `trash`, `edit`, `calendar`,
+`clock`, `camera`, `upload`, and `download`. Import `registerIcons` from
+`@happyvertical/smrt-ui` to install an application SVG path map at startup.
+Registrations update mounted icons; the returned cleanup function removes that
+registration and restores the previous active set. Last active registration wins,
+and an explicit Icon `path` prop wins over every named set. Unknown names retain
+their empty shape. Names and paths must be nonempty strings; invalid mixed sets
+are rejected atomically. Sets are snapshotted, so later caller mutations do not
+change glyphs. Register static application assets, never request or identity data,
+and install the same application set for SSR and client hydration.

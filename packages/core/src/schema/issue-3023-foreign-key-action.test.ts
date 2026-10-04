@@ -60,8 +60,7 @@ function councilMemberManifest(onDelete?: ForeignKeyAction) {
           { conflictColumns: ['councilId', 'personName'] },
         ),
       ],
-      imports: [],
-      exports: [],
+      errors: [],
     },
   ]);
 }

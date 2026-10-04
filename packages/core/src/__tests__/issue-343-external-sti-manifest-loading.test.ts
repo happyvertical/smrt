@@ -40,6 +40,10 @@ import {
   loadExternalManifest,
 } from '../manifest/manifest-loader.js';
 import { ObjectRegistry } from '../registry.js';
+import type {
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 
 // Clear manifest cache before and after each test to ensure test isolation
@@ -53,23 +57,10 @@ afterEach(() => {
   clearManifestCache();
 });
 
-// Type definitions for manifest structures
-interface SmartObjectDefinition {
-  fields?: Record<string, unknown>;
-  // Allow additional properties that may exist on object definitions
-  [key: string]: unknown;
-}
-
-interface SmartObjectManifest {
-  objects?: Record<string, SmartObjectDefinition>;
-  // Allow additional properties that may exist on manifests
-  [key: string]: unknown;
-}
-
 // Helper to find object definition in manifest by class name
 // Handles both qualified keys (@pkg:Class) and legacy keys (class, Class)
 function findObjectInManifest(
-  manifest: SmartObjectManifest | undefined,
+  manifest: SmartObjectManifest | null | undefined,
   className: string,
   packageName: string,
 ): SmartObjectDefinition | undefined {
@@ -121,7 +112,7 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
         '@happyvertical/smrt-profiles',
       );
 
-      const registered = ObjectRegistry.findClass('Person');
+      const registered = ObjectRegistry.getClass('Person');
       console.log('[test setup] Person registered:', registered ? 'Yes' : 'No');
       console.log(
         '[test setup] Person fields after registration:',
@@ -210,7 +201,7 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
     // See: beforeAll() hook which registers Person from manifest
 
     // Before calling getCollection, Person should not be registered
-    const beforeLoad = ObjectRegistry.classes.get('Person');
+    const beforeLoad = ObjectRegistry.getClass('Person');
     console.log(
       'Person registered before getCollection:',
       beforeLoad ? 'Yes' : 'No',
@@ -224,7 +215,7 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
       });
 
       // If we get here, auto-loading succeeded
-      const afterLoad = ObjectRegistry.classes.get('Person');
+      const afterLoad = ObjectRegistry.getClass('Person');
       console.log(
         'Person registered after getCollection:',
         afterLoad ? 'Yes' : 'No',

@@ -7,16 +7,25 @@ import {
   getModuleConfig,
   getPackageConfig,
   loadConfig,
+  RuntimeProfileValidationError,
+  resolveApplicationRuntime,
   resolveConfiguredApplicationRuntime,
+  resolveEffectiveApplicationRuntime,
+  type SmrtConfig,
   setConfig,
 } from './index.js';
 import { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';
 
 describe('mergeConfigs', () => {
   it('should not merge null values', () => {
+    // Null is intentionally outside Partial<T>; the merge must ignore it at runtime.
+    const nullOverride = { db: null, enabled: null } as unknown as Partial<{
+      db: { url: string };
+      enabled: boolean;
+    }>;
     const result = mergeConfigs(
       { db: { url: ':memory:' }, enabled: true },
-      { db: null, enabled: null },
+      nullOverride,
       {},
     );
     expect(result.db).toEqual({ url: ':memory:' });
@@ -45,7 +54,11 @@ describe('mergeConfigs', () => {
   });
 
   it('does not alias input arrays/objects into the merged result (#1579)', () => {
-    const defaults = { features: { list: ['a'] }, kept: { tags: ['k'] } };
+    const defaults: {
+      features: { list: string[] };
+      kept: { tags: string[] };
+      extra?: { items: string[] };
+    } = { features: { list: ['a'] }, kept: { tags: ['k'] } };
     const fileConfig = { extra: { items: ['x'] } };
     const merged = mergeConfigs(defaults, fileConfig, {});
 
@@ -55,7 +68,7 @@ describe('mergeConfigs', () => {
     fileConfig.extra.items.push('y');
     expect(merged.features.list).toEqual(['a']);
     expect(merged.kept.tags).toEqual(['k']);
-    expect(merged.extra.items).toEqual(['x']);
+    expect(merged.extra?.items).toEqual(['x']);
 
     // ...and mutating the result must not leak back into the inputs.
     (merged.features.list as string[]).push('c');
@@ -747,6 +760,96 @@ describe('@smrt/config', () => {
       const resolved = resolveConfiguredApplicationRuntime();
       expect(resolved.profile).toBe('self-hosted');
       expect(resolved.providers.assets.provider).toBe('local-files');
+    });
+  });
+
+  describe('resolveEffectiveApplicationRuntime (#3446)', () => {
+    const local = resolveApplicationRuntime({ profile: 'local' });
+
+    it.each([
+      ['no file config', null],
+      ['an undefined file config', undefined],
+      ['a config with no runtime key', { knowledge: {} }],
+      ['an explicitly undefined runtime', { runtime: undefined }],
+    ])('selects the local profile for %s', (_label, config) => {
+      expect(
+        resolveEffectiveApplicationRuntime(
+          config as SmrtConfig | null | undefined,
+        ),
+      ).toEqual(local);
+    });
+
+    it('passes a valid runtime block through the configured resolver', async () => {
+      const runtimeConfigPath = join(testDir, 'effective-runtime.config.js');
+      writeFileSync(
+        runtimeConfigPath,
+        "export default { runtime: { profile: 'self-hosted' } };",
+        'utf-8',
+      );
+      const loaded = await loadConfig({
+        configPath: runtimeConfigPath,
+        cache: false,
+      });
+      const resolved = resolveEffectiveApplicationRuntime(loaded);
+      expect(resolved.profile).toBe('self-hosted');
+      expect(resolved).toEqual(resolveConfiguredApplicationRuntime());
+    });
+
+    it('honours a setConfig runtime override when the file declares none', () => {
+      setConfig({ runtime: { profile: 'self-hosted' } });
+      expect(resolveEffectiveApplicationRuntime({}).profile).toBe(
+        'self-hosted',
+      );
+    });
+
+    it.each([
+      ['null', null],
+      ['false', false],
+      ['0', 0],
+      ["''", ''],
+      ["'local'", 'local'],
+      ['[]', []],
+    ])('fails closed on a present runtime value that is not a block (runtime: %s)', (_label, value) => {
+      const config = { runtime: value } as unknown as SmrtConfig;
+      let thrown: unknown;
+      try {
+        resolveEffectiveApplicationRuntime(config);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(RuntimeProfileValidationError);
+      expect((thrown as RuntimeProfileValidationError).issues).toEqual([
+        expect.objectContaining({ code: 'invalid_config', path: 'runtime' }),
+      ]);
+    });
+
+    it.each([
+      ['null', null],
+      ['false', false],
+      ['0', 0],
+      ["''", ''],
+      ['[]', []],
+    ])('rejects a setConfig runtime override that is not a block (runtime: %s) instead of selecting local', (_label, value) => {
+      let thrown: unknown;
+      try {
+        setConfig({ runtime: value } as unknown as Partial<SmrtConfig>);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(RuntimeProfileValidationError);
+      expect((thrown as RuntimeProfileValidationError).issues).toEqual([
+        expect.objectContaining({ code: 'invalid_config', path: 'runtime' }),
+      ]);
+      // Rejected atomically: nothing was stored, so no override is declared.
+      expect(Object.hasOwn(getRuntimeConfig(), 'runtime')).toBe(false);
+    });
+
+    it('still rejects an invalid profile inside a present block', () => {
+      expect(() =>
+        resolveEffectiveApplicationRuntime({
+          runtime: { profile: 'bogus' },
+        } as unknown as SmrtConfig),
+      ).toThrowError(/must be local, self-hosted, or cloud/);
     });
   });
 

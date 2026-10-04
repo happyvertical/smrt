@@ -28,7 +28,7 @@ describe('Issue #265: External Package Inheritance with Null Manifest', () => {
 
     // Simulate what happens when manifest has "inheritance": null
     // by manually clearing the inheritance data
-    const registered = ObjectRegistry.classes.get('PraecoTest1');
+    const registered = ObjectRegistry.getClass('PraecoTest1');
     if (registered) {
       // Clear manifest inheritance data (simulates "inheritance": null)
       registered.extends = undefined;
@@ -70,7 +70,7 @@ describe('Issue #265: External Package Inheritance with Null Manifest', () => {
     }
 
     // Clear manifest inheritance data
-    const registered = ObjectRegistry.classes.get('PraecoTest2');
+    const registered = ObjectRegistry.getClass('PraecoTest2');
     if (registered) {
       registered.extends = undefined;
       registered.inheritanceChain = undefined;
@@ -103,7 +103,7 @@ describe('Issue #265: External Package Inheritance with Null Manifest', () => {
 
     // Simulate both having null inheritance in manifest
     for (const className of ['ContentTest3', 'PraecoTest3']) {
-      const registered = ObjectRegistry.classes.get(className);
+      const registered = ObjectRegistry.getClass(className);
       if (registered) {
         registered.extends = undefined;
         registered.inheritanceChain = undefined;
@@ -139,7 +139,7 @@ describe('Issue #265: External Package Inheritance with Null Manifest', () => {
     }
 
     // Force inheritance chain to include SmrtObject (shouldn't happen, but testing the skip logic)
-    const registered = ObjectRegistry.classes.get('PraecoTest4');
+    const registered = ObjectRegistry.getClass('PraecoTest4');
     if (registered) {
       // Manually set a chain that includes SmrtObject
       registered.inheritanceChain = ['SmrtObject', 'PraecoTest4'];
@@ -174,7 +174,7 @@ describe('Issue #265: External Package Inheritance with Null Manifest', () => {
     }
 
     // Clear manifest data
-    const registered = ObjectRegistry.classes.get('PraecoTest5');
+    const registered = ObjectRegistry.getClass('PraecoTest5');
     if (registered) {
       registered.extends = undefined;
       registered.inheritanceChain = undefined;

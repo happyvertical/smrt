@@ -75,7 +75,7 @@ function fixtureManifest(
 
 function stripPackageIdentity(...classNames: string[]): void {
   for (const className of classNames) {
-    const registered = ObjectRegistry.findClass(className);
+    const registered = ObjectRegistry.getClass(className);
     if (!registered) {
       continue;
     }
@@ -300,7 +300,7 @@ describe('external runtime field hydration', () => {
       status: string = '';
     }
 
-    const registered = ObjectRegistry.findClass('FixtureMetadataAccount');
+    const registered = ObjectRegistry.getClass('FixtureMetadataAccount');
     expect(registered).toBeDefined();
     registered!.packageName = packageName;
     registered!.qualifiedName = createQualifiedName(
@@ -363,7 +363,7 @@ describe('external runtime field hydration', () => {
       externalId: string = '';
     }
 
-    const registered = ObjectRegistry.findClass('FixtureLegacyCrossRef');
+    const registered = ObjectRegistry.getClass('FixtureLegacyCrossRef');
     if (!registered) {
       throw new Error('FixtureLegacyCrossRef was not registered');
     }
@@ -604,7 +604,7 @@ describe('external runtime field hydration', () => {
       meetingId: string = '';
     }
 
-    const before = ObjectRegistry.findClass(registrationKey);
+    const before = ObjectRegistry.getClass(registrationKey);
     expect(before).toBeDefined();
     expect(before?.schema?.tableName).toBe('fixture_runtime_contents');
     expect(before?.fields.has('meetingId')).toBe(true);
@@ -626,6 +626,9 @@ describe('external runtime field hydration', () => {
       'FixtureRuntimeMeetingRecap',
       {
         className: 'FixtureRuntimeMeetingRecap',
+        name: 'fixtureruntimemeetingrecap',
+        collection: 'fixtureruntimemeetingrecaps',
+        filePath: '/fixtures/FixtureRuntimeMeetingRecap.ts',
         extends: 'FixtureRuntimeContent',
         decoratorConfig: {
           tableStrategy: 'sti',
@@ -639,6 +642,7 @@ describe('external runtime field hydration', () => {
           councilId: { type: 'text' },
           body: { type: 'text' },
         },
+        methods: {},
         schema: {
           tableName: 'fixture_runtime_contents',
           ddl: `CREATE TABLE IF NOT EXISTS "fixture_runtime_contents" (
@@ -654,21 +658,18 @@ describe('external runtime field hydration', () => {
   "body" TEXT DEFAULT ''
 );`,
           columns: {
-            meeting_id: { type: 'TEXT', defaultValue: '' },
-            council_id: { type: 'TEXT', defaultValue: '' },
-            body: { type: 'TEXT', defaultValue: '' },
+            meeting_id: { type: 'TEXT', default: '' },
+            council_id: { type: 'TEXT', default: '' },
+            body: { type: 'TEXT', default: '' },
           },
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: '1.0.0',
         },
       },
       packageName,
     );
 
-    const after = ObjectRegistry.findClass(registrationKey);
+    const after = ObjectRegistry.getClass(registrationKey);
     expect(after).toBeDefined();
     expect(after?.schema?.tableName).toBe('fixture_runtime_contents');
     expect(after?.qualifiedName).toBe(registrationKey);
@@ -708,7 +709,7 @@ describe('external runtime field hydration', () => {
       status: string = '';
     }
 
-    const registered = ObjectRegistry.findClass(registrationKey);
+    const registered = ObjectRegistry.getClass(registrationKey);
     expect(registered).toBeDefined();
     const existingRules = [{ type: 'required', field: 'status' }] as any;
     if (!registered) {
@@ -721,6 +722,9 @@ describe('external runtime field hydration', () => {
       'FixtureRuntimeValidated',
       {
         className: 'FixtureRuntimeValidated',
+        name: 'fixtureruntimevalidated',
+        collection: 'fixtureRuntimeValidateds',
+        filePath: '/fixtures/FixtureRuntimeValidated.ts',
         decoratorConfig: {
           tableStrategy: 'sti',
           tableName: 'fixture_runtime_validated',
@@ -732,11 +736,12 @@ describe('external runtime field hydration', () => {
           status: { type: 'text' },
           category: { type: 'text' },
         },
+        methods: {},
       },
       packageName,
     );
 
-    const after = ObjectRegistry.findClass(registrationKey);
+    const after = ObjectRegistry.getClass(registrationKey);
     expect(after?.validationRules).toBe(existingRules);
     expect(after?.validators).toBeUndefined();
     expect(after?.fields.has('category')).toBe(true);
@@ -762,15 +767,19 @@ describe('external runtime field hydration', () => {
       status: string = '';
     }
 
-    const before = ObjectRegistry.findClass(registrationKey);
+    const before = ObjectRegistry.getClass(registrationKey);
     expect(before).toBeDefined();
     expect(before?.fields.has('unexpectedField')).toBe(false);
 
     ObjectRegistry.registerFromManifest('FixtureRuntimeGuarded', {
       className: 'FixtureRuntimeGuarded',
+      name: 'fixtureruntimeguarded',
+      collection: 'fixtureruntimeguardeds',
+      filePath: '/fixtures/FixtureRuntimeGuarded.ts',
       fields: {
         unexpectedField: { type: 'text' },
       },
+      methods: {},
       decoratorConfig: {
         tableStrategy: 'sti',
         tableName: 'wrong_table_name',
@@ -782,14 +791,11 @@ describe('external runtime field hydration', () => {
           unexpected_field: { type: 'TEXT' },
         },
         indexes: [],
-        triggers: [],
-        foreignKeys: [],
-        dependencies: [],
         version: '1.0.0',
       },
     });
 
-    const after = ObjectRegistry.findClass(registrationKey);
+    const after = ObjectRegistry.getClass(registrationKey);
     expect(after?.fields.has('unexpectedField')).toBe(false);
     expect(after?.schema?.tableName).toBe('fixture_runtime_guarded');
   });
@@ -963,7 +969,7 @@ describe('external runtime field hydration', () => {
 
     await expect(
       ObjectRegistry.getAllFields('FixtureSharedThing'),
-    ).rejects.toMatchObject<Partial<ConfigurationError>>({
+    ).rejects.toMatchObject({
       code: 'CONFIG_AMBIGUOUS_CLASS',
     });
   });
@@ -1206,8 +1212,8 @@ describe('external runtime field hydration', () => {
       alt: string = '';
     }
 
-    const baseRegistered = ObjectRegistry.findClass('FixtureRuntimeAsset');
-    const imageRegistered = ObjectRegistry.findClass('FixtureRuntimeImage');
+    const baseRegistered = ObjectRegistry.getClass('FixtureRuntimeAsset');
+    const imageRegistered = ObjectRegistry.getClass('FixtureRuntimeImage');
 
     expect(baseRegistered).toBeDefined();
     expect(imageRegistered).toBeDefined();

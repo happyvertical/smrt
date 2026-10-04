@@ -24,6 +24,8 @@ export default defineConfig(async ({ command, mode }) => {
         'assistant-turn-events',
         // Authenticated data-surface command/ack/event transport adapter.
         'data-surface-bridge',
+        // Server-only SvelteKit routes for the AssistantDock (#3368).
+        'sveltekit',
         // Internal agent-runtime surface (S5 #1392): emitted under a dedicated
         // subpath, NOT folded into the package index, so only trusted in-process
         // agent runtimes opt into `sendAgentReply`.

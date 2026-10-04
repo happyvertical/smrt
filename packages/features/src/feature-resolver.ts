@@ -2,7 +2,7 @@ import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { importWorkspaceModule } from '@happyvertical/smrt-core/utils/import-workspace-module';
 import { FeatureDefinitionCollection } from './feature-definitions.js';
 import { FeatureOverrideCollection } from './feature-overrides.js';
-import { withoutListBounds } from './list-bounds.js';
+import { type FeatureHostOptions, withoutListBounds } from './list-bounds.js';
 import {
   FeatureOverrideEffect,
   type FeatureResolutionContext,
@@ -18,7 +18,7 @@ import {
 } from './utils.js';
 
 export class FeatureResolver {
-  private readonly options: SmrtClassOptions;
+  private readonly options: FeatureHostOptions;
   private readonly resolverOptions: FeatureResolverOptions;
   private featureDefinitions!: FeatureDefinitionCollection;
   private featureOverrides!: FeatureOverrideCollection;
@@ -27,7 +27,7 @@ export class FeatureResolver {
     null;
 
   constructor(
-    options: SmrtClassOptions = {},
+    options: FeatureHostOptions = {},
     resolverOptions: FeatureResolverOptions = {},
   ) {
     this.options = options;

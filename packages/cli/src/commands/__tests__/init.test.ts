@@ -16,7 +16,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createGeneratedCollectionAccess } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { initCommands } from '../init.js';
 
 let tempDir: string;
@@ -33,7 +36,7 @@ function writePackageJson(content: Record<string, unknown> | string): void {
   );
 }
 
-const init = initCommands.init.handler;
+const init = requireCommandHandler(initCommands.init);
 const INSTALLED_CLI_VERSION = JSON.parse(
   readFileSync(new URL('../../../package.json', import.meta.url), 'utf-8'),
 ).version as string;
@@ -304,5 +307,65 @@ describe('init command', () => {
     expect(readFileSync(join(tempDir, 'package.json'), 'utf-8')).toBe(before);
     const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
     expect(printed).not.toContain('Added SMRT dependencies');
+  });
+});
+
+describe('init src/lib/server/smrt.ts (#3446)', () => {
+  let projectDir: string;
+  let previousCwd: string;
+  let silenced: ReturnType<typeof vi.spyOn>[];
+
+  beforeEach(() => {
+    // Inside the CLI package so the generated module resolves the workspace
+    // `@happyvertical/smrt-core` when it is imported below.
+    projectDir = mkdtempSync(
+      join(fileURLToPath(new URL('../../../', import.meta.url)), '.init-'),
+    );
+    previousCwd = process.cwd();
+    process.chdir(projectDir);
+    silenced = [
+      vi.spyOn(console, 'log').mockImplementation(() => {}),
+      vi.spyOn(console, 'warn').mockImplementation(() => {}),
+    ];
+    writeFileSync(
+      join(projectDir, 'package.json'),
+      JSON.stringify({
+        name: 'demo',
+        devDependencies: { '@sveltejs/kit': '^2.0.0' },
+      }),
+    );
+  });
+
+  afterEach(() => {
+    process.chdir(previousCwd);
+    rmSync(projectDir, { recursive: true, force: true });
+    for (const spy of silenced) spy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it('exports the runtime generated routes use, not the deprecated accessors', async () => {
+    await init([], { database: 'sqlite', skipExample: true });
+    const path = join(projectDir, 'src/lib/server/smrt.ts');
+    const source = readFileSync(path, 'utf-8');
+    expect(source).toContain('export const runtime');
+    expect(source).not.toMatch(/export\s+(async\s+)?function\s+getCollection/);
+    expect(source).not.toMatch(/export\s+function\s+getSmrtConfig/);
+
+    vi.stubEnv('DATABASE_URL', './data/demo.db');
+    vi.stubEnv('DATABASE_TYPE', 'sqlite');
+    const generated = (await import(pathToFileURL(path).href)) as Record<
+      string,
+      unknown
+    >;
+    expect(generated.getCollection).toBeUndefined();
+    expect(generated.getSmrtConfig).toBeUndefined();
+    // With no legacy export, generated routes resolve through `runtime`.
+    const access = createGeneratedCollectionAccess(
+      generated,
+      'src/lib/server/smrt.ts',
+    );
+    expect(access.getSmrtConfig('Example')).toEqual({
+      db: { url: './data/demo.db', type: 'sqlite' },
+    });
   });
 });

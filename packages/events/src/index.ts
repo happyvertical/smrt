@@ -11,6 +11,22 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+export type {
+  CalendarEventIdentity,
+  CalendarEventInput,
+  CalendarExpansionOptions,
+  CalendarParseOptions,
+} from './calendar/icalendar';
+export {
+  CalendarEventValidationError,
+  expandICalendarEvents,
+  parseICalendarEvents,
+} from './calendar/icalendar';
+export type {
+  CalendarSourceSyncOptions,
+  CalendarSourceSyncResult,
+} from './calendar/sync';
+export { syncICalendarSource } from './calendar/sync';
 export { EventAssetCollection } from './collections/EventAssetCollection';
 export { EventCollection } from './collections/EventCollection';
 export { EventParticipantCollection } from './collections/EventParticipantCollection';

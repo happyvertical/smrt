@@ -6,7 +6,7 @@ managed-cloud environments. It does not provision external providers.
 
 ## 1. Install and run
 
-Requirements: Node.js 24.18.0 or newer and pnpm 11.25.0. The exact pnpm version
+Requirements: Node.js 26.0.0 or newer and pnpm 11.25.0. The exact pnpm version
 is declared in `packageManager`.
 
 ```bash
@@ -22,7 +22,9 @@ re-running install, setup, or recovery; each operation is repeatable from that
 stopped state. `pnpm app:doctor`
 prints secret-free JSON diagnostics and recovery steps. Individual
 setup/start/doctor/open/stop/backup/export/import operations are available as
-`pnpm app:<operation>`.
+`pnpm app:<operation>`. Every lifecycle script is a one-line call to
+`smrt app <operation>` from `@happyvertical/smrt-cli`; the app ships no copied
+operator scripts, so upgrading the CLI upgrades them.
 
 `app:start` defaults adapter-node `ORIGIN` to its loopback HTTP URL (including
 the selected `PORT`) and preserves an explicitly configured `ORIGIN`. Origin
@@ -58,9 +60,12 @@ The source of truth is `src/lib/objects`. Running `pnpm dev`, `pnpm build`, or
 | `src/lib/types/smrt-generated/` | Virtual-module and consumer declarations | No |
 | `src/routes/api/**/+server.ts` | Generated SvelteKit REST routes | No |
 
-Do not edit generated files. `smrtPlugin()` owns local scanning, manifests,
-types, and routes. `smrtConsumer()` explicitly consumes the profiles, tenancy,
-and users manifests so those models are available to setup and tooling.
+Do not edit generated files. The `smrt()` plugin in `vite.config.ts` owns
+local scanning, manifests, types, routes, and the decorator transform. It
+consumes exactly the packages listed in `smrt.config.ts` under
+`consumer.packages` (profiles, tenancy, and users) so those models are
+available to setup and tooling; add a SMRT package there when the app uses its
+objects.
 
 ## 3. Define the first object
 
@@ -130,22 +135,37 @@ migration command, not by adding schema creation to a request handler.
 
 ## 5. Understand tenant context
 
-`src/hooks.server.ts` keeps tenant selection separate from authorization:
+`src/hooks.server.ts` mounts the runtime configured in `src/lib/server/smrt.ts`
+(`createSmrtSvelteKitRuntime()` from `@happyvertical/smrt-app-runtime/sveltekit`).
+It keeps tenant selection separate from authorization:
 
-1. `src/lib/server/tenancy.ts` reads a subdomain slug and looks up an active
-   Tenant UUID. It stores the candidate in `locals.selectedTenantId` and
-   `locals.selectedTenantSlug`.
+1. A subdomain slug is looked up as an active Tenant UUID and stored only as a
+   candidate in `locals.selectedTenantId` and `locals.selectedTenantSlug`.
 2. That candidate does not enter AsyncLocalStorage and cannot scope queries.
-3. `createSessionHandler({ enterTenantContext: true })` loads the signed session,
-   resolves its membership and permissions, and establishes the authorized
-   `locals.tenantId` context.
-4. `enableTenancy()` makes `@TenantScoped` collections honor that context.
+3. The signed session is loaded. Its tenant is accepted only for an active (or
+   legitimately inherited) membership, which establishes the authorized
+   `locals.tenantId`, the permission set, and the tenant context.
+4. The runtime enables tenancy, so `@TenantScoped` collections honor that
+   context.
 
-The default resolver ignores `x-tenant-id`. If a gateway supplies a tenant
-header, validate the gateway identity/signature before mapping it to a tenant,
-and still use `switchSessionTenant()` for browser session changes. That helper
-checks active membership and rotates the session ID; never copy an untrusted
-header directly into `locals.tenantId` or `enterTenantContext()`.
+The default selector ignores `x-tenant-id`. To select tenants from a path,
+signed cookie, or trusted gateway, pass `selectTenant` to
+`createSmrtSvelteKitRuntime()`; selection must still never establish
+authorization. Validate a gateway's identity/signature before mapping its
+header to a tenant, and use `switchSessionTenant()` for browser session
+changes. That helper checks active membership and rotates the session ID; never
+copy an untrusted header directly into `locals.tenantId` or
+`enterTenantContext()`.
+
+`src/lib/server/smrt.ts` holds only the runtime and its options. The `smrt()`
+plugin registers the generated objects before it runs, and each generated API
+route imports this module and resolves collections through its exported
+`runtime.getCollection()` (a `getCollection` export here would take precedence,
+deprecated for one release, so do not add one). In the local profile
+the runtime holds the single-writer lease (`acquireWriterLease: false` opts
+out). `runtime.getCollection()` and `runtime.classOptions()` are
+request-scoped (under `database-rls` isolation they carry the request
+transaction): call them inside a request and never keep the result.
 
 Set `TENANT_BASE_DOMAIN` for deployed subdomain routing. The fallback parser is
 only for local shapes such as `acme.demo.local`.
@@ -171,10 +191,10 @@ import {
   RoleCollection,
   syncPermissionCatalog,
 } from '@happyvertical/smrt-users';
-import { getSmrtConfig } from '$lib/server/smrt';
+import { runtime } from '$lib/server/smrt';
 
-await syncPermissionCatalog(getSmrtConfig('Permission'));
-const roles = await RoleCollection.create(getSmrtConfig('Role'));
+await syncPermissionCatalog(runtime.classOptions('Permission'));
+const roles = await RoleCollection.create(runtime.classOptions('Role'));
 await roles.seedSystemRoles({ seedPermissions: true });
 ```
 
@@ -205,7 +225,7 @@ export const load: PageServerLoad = async ({ depends, locals }) => {
     return { items: [] };
   }
 
-  const items = await getCollection<Item>('Item');
+  const items = await runtime.getCollection<Item>('Item');
   const rows = await items.list({ limit: 50 });
   return {
     items: rows.flatMap((item) =>
@@ -234,10 +254,14 @@ non-object or malformed manifests, credential-shaped JSON fields and credential 
 URL userinfo, non-portable schemas, and non-loopback HTTP server URLs. Diagnostics never
 include malformed manifest content.
 
-The option stages `src/routes/api/mcp/+server.ts`, a session-authorized `mcp`
-server, and a bounded static resource with a restrictive CSP. It also includes
-`McpAppsBridge.svelte` for an application-configured trusted host origin and
-the optional OpenAI display adapter; it stays inert until your UI mounts it.
+The option stages `src/routes/api/mcp/+server.ts`, one `mountMcpAppRoute()`
+call from `@happyvertical/smrt-app-mcp/sveltekit` that publishes `Item` to
+principals holding `items.read` (the signed session's permissions locally),
+refuses browser requests from a foreign `Origin`, and serves a bounded static
+resource with a restrictive CSP and the optional OpenAI display metadata. It
+also stages the protected-resource metadata route. For a view, mount
+`McpAppsBridge` from `@happyvertical/smrt-svelte/mcp-apps` with an
+application-configured trusted host origin.
 The scaffold does not enable remote MCP tasks, so a deployment that adds them
 must supply the durable worker's live authorization callback before publication.
 
@@ -300,7 +324,7 @@ narrower tool set.
 ```svelte
 <script lang="ts">
   import { webMcpToolDefinitions } from '@happyvertical/smrt-virt-web';
-  import { Provider } from '@happyvertical/smrt-svelte';
+  import { AppShell } from '@happyvertical/smrt-svelte/app';
 
   const webmcp = $derived(
     typeof document !== 'undefined' && 'modelContext' in document
@@ -309,10 +333,16 @@ narrower tool set.
   );
 </script>
 
-<Provider {webmcp}>
+<!-- AppShell passes `webmcp` to its Provider unchanged. -->
+<AppShell title="s-m-r-t app" {webmcp} {nav}>
   {@render children()}
-</Provider>
+</AppShell>
 ```
+
+The root layout is `AppShell` from `@happyvertical/smrt-svelte/app` (Provider,
+theme and its CSS, the admin shell, and navigation); the app supplies its
+navigation and content. `/setup` and `/settings` use the same package's
+`OwnerSetupForm` and `ShellSettingsPage`.
 
 `registerWebMcpTools()` feature-detects browser support and uses the current
 authenticated page session. Omitted policy exposes all `read`-effect tools:
@@ -399,18 +429,34 @@ Every supported local web
 entry point (`app:start` or `pnpm dev`) holds a shared writer lease. Direct
 production startup must set an explicit loopback `HOST`, and `app:start` is the
 recommended entry point. Stop the app before backup/import. For deployed import, stop
-web/workers and set `SMRT_MAINTENANCE_MODE=true`. Extend
-`scripts/smrt-portability.mjs` for domain-specific transformations.
+web/workers and set `SMRT_MAINTENANCE_MODE=true`. For domain-specific
+transformations, add a `scripts/smrt-portability.mjs` adapter; when present it
+replaces `smrt app export`/`import`'s built-in one.
 
-### Hosted MCP authorization
+### MCP authorization
 
-The opt-in MCP route uses the local signed session only in the `local` profile.
+In the `local` profile, the opt-in MCP route accepts two credentials. One is
+the signed browser session. The other is an owner-minted bearer token for a
+local MCP client such as Claude Desktop through `smrt-mcp-bridge`:
+
+```bash
+pnpm exec smrt app token --scopes items.read --label "Claude Desktop"
+pnpm exec smrt app token list
+pnpm exec smrt app token revoke <id>
+```
+
+The token is printed once and only its hash is stored. It is bound to the
+owner and the owner's workspace. It expires after 30 days unless you pass
+`--expires`, up to 365 days. It never carries a permission the owner no longer
+holds. Point the bridge at `/api/mcp` with `<PREFIX>_SERVER_URL` and
+`<PREFIX>_TOKEN`; see the `@happyvertical/smrt-app-cli` README.
+
 For `self-hosted` and `cloud`, configure HTTPS `SMRT_MCP_RESOURCE`,
 `SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI`, and space-separated
-`SMRT_MCP_SCOPES` values. Bind `resolveHostedMcpPrincipal` in
-`src/lib/server/mcp-hosted-principal.ts` to an application-owned lookup that
-checks the current account and active tenant membership on every request. It
-must return `null` for disabled, revoked, or unmapped identities. The route
-does not derive tenant authority from JWT claims, request headers, or tool
-arguments; missing configuration or a missing binding fails closed before MCP
-dispatch.
+`SMRT_MCP_SCOPES` values. On every request, the runtime maps the verified
+issuer and subject to the user linked through OIDC login. That user must have
+exactly one active tenant membership. Disabled, unmapped, or multi-tenant
+identities are denied. To use a different lookup, pass `resolvePrincipal` to
+`createHostedMcpResourceAuth`. The route never derives tenant authority from
+JWT claims, request headers, or tool arguments. Missing configuration fails
+closed before MCP dispatch.

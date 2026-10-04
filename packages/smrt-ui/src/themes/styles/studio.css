@@ -8,6 +8,8 @@
  */
 
 [data-theme="studio"][data-color-scheme="light"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: studio;
   --smrt-theme-name: Studio;
   --smrt-color-scheme: light;
@@ -233,6 +235,8 @@
 }
 
 [data-theme="studio"][data-color-scheme="dark"] {
+  --smrt-touch-target-min: 48px;
+  --smrt-control-target-min: 0px;
   --smrt-theme-id: studio;
   --smrt-theme-name: Studio;
   --smrt-color-scheme: dark;

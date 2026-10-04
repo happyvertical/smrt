@@ -18,6 +18,7 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { loadEnvConfig } from '@happyvertical/utils';
 import { SYNC_THROTTLE_MS } from '../constants';
 import { issueIncorporateFeedbackPrompt } from '../prompts';
+import { hasRepositoryClientScope } from '../repository-client-scope';
 import type {
   IncorporateFeedbackOptions,
   IncorporateFeedbackResult,
@@ -284,13 +285,18 @@ export class Issue extends SmrtObject {
    * Get the repository client for API operations
    */
   async getClient(): Promise<IRepository> {
-    if (this._client) {
+    // Scoped credentials are request-only. Never reuse an ambient cached
+    // client in a scoped request, and never retain the scoped client after it.
+    if (!hasRepositoryClientScope() && this._client) {
       return this._client;
     }
 
     const repo = await this.getRepository();
-    this._client = await repo.getClient();
-    return this._client;
+    const client = await repo.getClient();
+    if (!hasRepositoryClientScope()) {
+      this._client = client;
+    }
+    return client;
   }
 
   /**

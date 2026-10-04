@@ -10,5 +10,5 @@
 No actor, transaction, dialect, or external-contract edge applies: this is a
 local filesystem and build-task ownership regression. The actor is the test
 runner, the executor is the local Node filesystem and `pnpm` child process,
-and the supported runtime is the repository's Node range (`>=24.18.0`). No
+and the supported runtime is the repository's Node range (`>=26.0.0`). No
 database transaction, SQL dialect, or external contract is involved.

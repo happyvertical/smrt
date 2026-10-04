@@ -6,6 +6,7 @@ import {
 import { MigrationTracker } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { parseCliCommandArgs } from '../../cli-generator.js';
 import { utilityCommands } from '../utilities.js';
 
@@ -165,7 +166,7 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       process.exitCode = undefined;
-      await command.handler(parsed.args, parsed.options);
+      await requireCommandHandler(command)(parsed.args, parsed.options);
       const result = {
         stdout: logSpy.mock.calls.flat().join('\n'),
         stderr: errorSpy.mock.calls.flat().join('\n'),

@@ -43,7 +43,9 @@ class Issue1567Product extends SmrtObject {
  * init, so it is used verbatim instead of constructing a real provider.
  */
 function makeAiClient(reply: string) {
-  const message = vi.fn(async () => reply);
+  const message = vi.fn(
+    async (_prompt: string, _options?: Record<string, unknown>) => reply,
+  );
   return {
     client: { embed: vi.fn(), message } as any,
     message,

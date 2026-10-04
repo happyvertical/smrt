@@ -163,7 +163,7 @@ describe.skipIf(!pgUrl)('ON DELETE convergence on PostgreSQL (#3023)', () => {
       `SELECT conname FROM pg_constraint WHERE conrelid = $1::regclass AND contype = 'f'`,
       [owned],
     );
-    expect(names.rows?.map((row: { conname: string }) => row.conname)).toEqual([
+    expect(names.rows?.map((row) => row.conname as string)).toEqual([
       ownedName,
     ]);
     expect(await foreignKeyChange(owned)).toHaveLength(0);

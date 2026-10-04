@@ -278,6 +278,16 @@ export class ShellState {
   }
 
   setPanel(edge: PanelEdge, state: VisiblePanelState): void {
+    this.setPanelState(edge, state);
+  }
+
+  /** Set and persist a runtime panel preference, including hidden. */
+  setPanelState(edge: PanelEdge, state: PanelState): void {
+    if (
+      !PANEL_EDGES.includes(edge) ||
+      !['hidden', 'collapsed', 'expanded'].includes(state)
+    )
+      return;
     untrack(() => {
       if (this.config.panels[edge].initial === 'hidden') {
         this.panels[edge] = 'hidden';

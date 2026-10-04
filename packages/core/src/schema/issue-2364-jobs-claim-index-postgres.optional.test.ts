@@ -190,7 +190,9 @@ describe.skipIf(!pgUrl)(
                 r.slug,
                 '',
                 r.status,
-                now() + make_interval(secs => r.offset_seconds),
+                -- run_at is timestamp without time zone; match the UTC cutoff
+                -- passed by the runner so future rows stay future in every zone.
+                (now() AT TIME ZONE 'UTC') + make_interval(secs => r.offset_seconds),
                 50,
                 'default',
                 now(),

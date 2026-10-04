@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-ui",
-  "version": "0.52.0",
+  "version": "0.53.4",
   "smrtJsdoc": "strict",
   "description": "Domain-agnostic Svelte 5 UI runtime for SMRT: primitives, i18n client, theme system, and module UI registry",
   "type": "module",
@@ -65,6 +65,11 @@
       "import": "./dist/components/forms/index.js",
       "default": "./dist/components/forms/index.js"
     },
+    "./form-retry": {
+      "types": "./dist/components/forms/form-retry/index.d.ts",
+      "import": "./dist/components/forms/form-retry/index.js",
+      "default": "./dist/components/forms/form-retry/index.js"
+    },
     "./i18n": {
       "types": "./dist/i18n/index.d.ts",
       "svelte": "./dist/i18n/index.js",
@@ -109,13 +114,14 @@
     "AGENTS.md"
   ],
   "scripts": {
-    "build": "svelte-package -i src --tsconfig tsconfig.svelte.json",
+    "build": "svelte-package -i src --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "dev": "svelte-package -i src --watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "bench:data-table": "vitest bench src/components/data/__benchmarks__/DataTable.bench.ts",
     "generate:themes": "tsx scripts/generate-theme-styles.ts",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },

@@ -58,6 +58,11 @@ function manifest(...objects: SmartObjectDefinition[]): SmartObjectManifest {
   } as SmartObjectManifest;
 }
 
+// Malformed scanner metadata is deliberate in sanitization tests below.
+function invalidField(input: Record<string, unknown>): FieldDefinition {
+  return input as unknown as FieldDefinition;
+}
+
 describe('collection item ancestry', () => {
   const baseWidget = obj({
     className: 'Widget',
@@ -1130,7 +1135,7 @@ describe('buildWebFieldDefinitions', () => {
             description: 'Top-level wins',
             _meta: { description: 'Shadowed' },
           }),
-          junk: field({ type: 'text', _meta: { description: 42 } }),
+          junk: invalidField({ type: 'text', _meta: { description: 42 } }),
         },
       }),
     );
@@ -1147,7 +1152,7 @@ describe('buildWebFieldDefinitions', () => {
         className: 'Product',
         collection: 'products',
         fields: {
-          a: field({
+          a: invalidField({
             type: 'text',
             // basic wrong type, order non-finite, group empty, junk extra key —
             // only the valid `locked` survives.
@@ -1161,9 +1166,9 @@ describe('buildWebFieldDefinitions', () => {
               },
             },
           }),
-          b: field({ type: 'text', _meta: { ui: { basic: 'yes' } } }),
-          c: field({ type: 'text', _meta: { ui: 'not-an-object' } }),
-          d: field({ type: 'text', _meta: { ui: ['array'] } }),
+          b: invalidField({ type: 'text', _meta: { ui: { basic: 'yes' } } }),
+          c: invalidField({ type: 'text', _meta: { ui: 'not-an-object' } }),
+          d: invalidField({ type: 'text', _meta: { ui: ['array'] } }),
         },
       }),
     );
@@ -1537,7 +1542,10 @@ describe('computeWebManifestHash (#1764)', () => {
           className: 'Product',
           collection: 'products',
           fields: {
-            name: field({ type: 'text', _meta: { ui: { rogue: 'junk' } } }),
+            name: invalidField({
+              type: 'text',
+              _meta: { ui: { rogue: 'junk' } },
+            }),
           },
         }),
       ),

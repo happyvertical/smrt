@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
+import type { Meta } from '../decorators';
 
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
@@ -303,6 +304,7 @@ describe('STI Polymorphic Queries', () => {
         duration: 60,
       });
       await meeting.save();
+      if (!meeting.id) throw new Error('Meeting did not persist an ID');
 
       // Query via base collection
       const eventCollection = await PolyEventCollection.create({

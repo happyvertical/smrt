@@ -1,5 +1,5 @@
 import { createRawSnippet, flushSync, mount, tick, unmount } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminShell from '../admin-shell/AdminShell.svelte';
 import adminShellSource from '../admin-shell/AdminShell.svelte?raw';
 import { createShellState } from '../admin-shell/state.svelte.js';
@@ -20,15 +20,251 @@ function activeToolSnippet() {
 let container: HTMLDivElement;
 
 beforeEach(() => {
+  vi.stubGlobal('matchMedia', () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   container = document.createElement('div');
   document.body.appendChild(container);
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   container.remove();
 });
 
 describe('AdminShell', () => {
+  it('keeps a single tenant footer reachable when the left edge collapses or hides', async () => {
+    const state = createShellState({
+      config: { left: { initial: 'collapsed' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        tenantFooter: textSnippet('Dana account'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('header')?.textContent).toContain(
+        'Dana account',
+      );
+      state.setPanelState('left', 'expanded');
+      flushSync();
+      expect(container.querySelector('header')?.textContent).not.toContain(
+        'Dana account',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-footer')
+          ?.textContent,
+      ).toContain('Dana account');
+      state.setPanelState('left', 'hidden');
+      flushSync();
+      expect(container.querySelector('header')?.textContent).toContain(
+        'Dana account',
+      );
+      expect(container.textContent?.match(/Dana account/g)).toHaveLength(1);
+    } finally {
+      await unmount(component);
+    }
+  });
+
+  it('keeps an explicit account slot in a custom app bar regardless of left state', async () => {
+    const state = createShellState({
+      config: { left: { initial: 'expanded' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        account: textSnippet('Dana account'),
+        appBar: textSnippet('Custom title'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('header')?.textContent).toContain(
+        'Dana account',
+      );
+    } finally {
+      await unmount(component);
+    }
+  });
+
+  it('keeps the left collapse control with supplied navigation and permits opt-out', async () => {
+    for (const showTenantToggle of [true, false]) {
+      const state = createShellState({
+        config: { left: { initial: 'expanded' } },
+      });
+      const component = mount(AdminShell, {
+        target: container,
+        props: {
+          state,
+          showTenantToggle,
+          tenantPanel: textSnippet('supplied nav'),
+          children: textSnippet('main'),
+        },
+      });
+      try {
+        await tick();
+        const toggle = container.querySelector<HTMLButtonElement>(
+          '.smrt-admin-shell__edge--left .smrt-admin-shell__edge-toggle',
+        );
+        expect(!!toggle).toBe(showTenantToggle);
+        if (toggle) {
+          toggle.click();
+          flushSync();
+          expect(state.panels.left).toBe('collapsed');
+        }
+      } finally {
+        await unmount(component);
+      }
+    }
+  });
+
+  it('preserves the system toggle when a custom system bar has a system panel', async () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        systemBar: textSnippet('custom status'),
+        systemPanel: textSnippet('status detail'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(
+        container.querySelector('footer .smrt-admin-shell__edge-toggle'),
+      ).not.toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('draws no bottom toggle for a system bar with no system panel', async () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        systemBar: textSnippet('custom status'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('footer')?.textContent).toContain(
+        'custom status',
+      );
+      expect(
+        container.querySelector('footer .smrt-admin-shell__edge-toggle'),
+      ).toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('keeps the default bottom toggle when neither system slot is supplied', async () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: { children: textSnippet('main') },
+    });
+    try {
+      await tick();
+      expect(
+        container.querySelector('footer .smrt-admin-shell__edge-toggle'),
+      ).not.toBeNull();
+      expect(
+        container.querySelector('header .smrt-admin-shell__edge-toggle'),
+      ).not.toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('links full and compact branding home with an accessible title', async () => {
+    const state = createShellState({
+      config: { left: { initial: 'collapsed' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        title: 'Shop',
+        homeHref: '/home',
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      const links = container.querySelectorAll<HTMLAnchorElement>(
+        '.smrt-admin-shell__brand-link',
+      );
+      expect(links).toHaveLength(2);
+      expect([...links].map((link) => link.getAttribute('href'))).toEqual([
+        '/home',
+        '/home',
+      ]);
+      expect([...links].map((link) => link.getAttribute('aria-label'))).toEqual(
+        ['Shop', 'Shop'],
+      );
+      expect(links[1].textContent?.trim()).toBe('S');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders a logo and keeps default branding unlinked without homeHref', async () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Shop',
+        logoSrc: '/shop.svg',
+        logoAlt: 'Shop mark',
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('img')?.getAttribute('src')).toBe(
+        '/shop.svg',
+      );
+      expect(container.querySelector('img')?.getAttribute('alt')).toBe(
+        'Shop mark',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__brand-link'),
+      ).toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('passes full and compact context to custom brand snippets', async () => {
+    const brand = createRawSnippet<[{ compact: boolean }]>((context) => ({
+      render: () =>
+        `<span>${context().compact ? 'Compact mark' : 'Full mark'}</span>`,
+    }));
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Shop',
+        homeHref: '/',
+        brand,
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.textContent).toContain('Full mark');
+      expect(container.textContent).toContain('Compact mark');
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('renders the four edge shell and body content', () => {
     const component = mount(AdminShell, {
       target: container,

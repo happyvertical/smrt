@@ -1,4 +1,6 @@
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const {
   autoDiscoverAndLoadMock,
@@ -317,7 +319,8 @@ describe('db:status', () => {
 
     await expect(
       checkTenantIdUuidPreconditions({
-        db,
+        // This preflight only reads these two methods; keep their spies visible on the fixture.
+        db: db as unknown as DatabaseInterface,
         dbType: 'postgres',
         dbUrl: 'postgresql://localhost/db',
         manifestSchemas: {
@@ -353,7 +356,7 @@ describe('db:status', () => {
 
     await expect(
       checkTenantIdUuidPreconditions({
-        db,
+        db: db as unknown as DatabaseInterface,
         dbType: 'postgres',
         dbUrl: 'postgresql://localhost/db',
         manifestSchemas: {
@@ -395,7 +398,7 @@ describe('db:status', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
 
     expect(compareMock).toHaveBeenCalledWith({
       contents: {
@@ -472,7 +475,7 @@ describe('db:status', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbStatusCommand.handler([], { verbose: true });
+    await requireCommandHandler(dbStatusCommand)([], { verbose: true });
 
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
     expect(output).toContain('Drift Detected');
@@ -511,7 +514,7 @@ describe('db:status', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
 
     const parsed = JSON.parse(
       logSpy.mock.calls.map((call) => call.join('')).join('\n'),
@@ -556,7 +559,7 @@ describe('db:status', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
 
     const parsed = JSON.parse(
       logSpy.mock.calls.map((call) => call.join('')).join('\n'),
@@ -594,7 +597,7 @@ describe('db:status', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
 
     const parsed = JSON.parse(
       logSpy.mock.calls.map((call) => call.join('')).join('\n'),
@@ -636,7 +639,7 @@ describe('db:status', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
 
     const parsed = JSON.parse(
       logSpy.mock.calls.map((call) => call.join('')).join('\n'),
@@ -698,7 +701,7 @@ describe('db:status', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
 
     const parsed = JSON.parse(
       logSpy.mock.calls.map((call) => call.join('')).join('\n'),
@@ -767,7 +770,7 @@ describe('db:status', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
 
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
     const parsed = JSON.parse(output);
@@ -841,7 +844,7 @@ describe('db:status', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
 
     expect(output).toContain('Foreign-key orphans found (2)');
@@ -871,7 +874,7 @@ describe('db:status', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
 
     expect(output).not.toContain('Foreign-key orphans found');
@@ -890,7 +893,7 @@ describe('db:status', () => {
     );
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
 
     expect(output).toContain(
@@ -933,7 +936,7 @@ describe('db:status', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
     const payload = JSON.parse(
       logSpy.mock.calls.map((call) => call.join('')).join('\n'),
     );
@@ -974,7 +977,7 @@ describe('db:status', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], {});
+    await requireCommandHandler(dbStatusCommand)([], {});
     const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
 
     expect(output).toContain('foreign-key orphan probe(s) failed');
@@ -1006,7 +1009,7 @@ describe('db:status', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
     const payload = JSON.parse(
       logSpy.mock.calls.map((call) => call.join('')).join('\n'),
     );
@@ -1048,7 +1051,7 @@ describe('db:status', () => {
     });
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await dbStatusCommand.handler([], { json: true });
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
     const payload = JSON.parse(
       logSpy.mock.calls.map((call) => call.join('')).join('\n'),
     );

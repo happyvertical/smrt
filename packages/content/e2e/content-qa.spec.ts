@@ -19,6 +19,38 @@ test('content API denies an anonymous browser context', async ({ request }) => {
   expect(response.status()).toBe(401);
 });
 
+test('authenticated user without grants cannot persist content', async ({
+  browser,
+  baseURL,
+  unprivilegedSessionId,
+}) => {
+  const context = await browser.newContext({ baseURL });
+  try {
+    await context.addCookies([
+      {
+        name: 'sid',
+        value: unprivilegedSessionId,
+        url: baseURL!,
+        httpOnly: true,
+        sameSite: 'Lax',
+      },
+    ]);
+    const before = await context.request.get('/api/v1/contents');
+    expect(before.status()).toBe(200);
+    const original = await before.json();
+    const title = uniqueSlug('denied-write');
+    const denied = await context.request.post('/api/v1/contents', {
+      data: { type: 'article', title, slug: title, status: 'draft' },
+    });
+    expect(denied.status()).toBe(403);
+    const after = await context.request.get('/api/v1/contents');
+    expect(after.status()).toBe(200);
+    expect(await after.json()).toEqual(original);
+  } finally {
+    await context.close();
+  }
+});
+
 test('root playground route renders the shared content previews', async ({
   page,
 }) => {
@@ -94,7 +126,7 @@ test('workspace route supports governed editing and published article viewing', 
     .locator('[contenteditable="true"]')
     .fill('This governed article was created by the Playwright browser suite.');
   await page
-    .getByLabel('Description:')
+    .getByLabel('Description', { exact: true })
     .fill('Browser-created governed content for QA coverage.');
   await page.getByLabel('Status').selectOption('published');
 

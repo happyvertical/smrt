@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-app-cli",
-  "version": "0.52.0",
+  "version": "0.53.4",
   "description": "Reusable CLI factory for SMRT apps — branded `<name> <resource> <command>` CLI + stdio MCP bridge with decorator-driven resource discovery",
   "type": "module",
   "main": "./dist/index.js",
@@ -43,7 +43,7 @@
     "vitest": "4.1.10"
   },
   "engines": {
-    "node": ">=24.18.0"
+    "node": ">=26.0.0"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

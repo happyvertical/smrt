@@ -158,6 +158,31 @@ function expectGetCollectionCall(
   );
 }
 
+/**
+ * Generated routes resolve collections through the app runtime (#3416): the
+ * generated registration, then `createGeneratedCollectionAccess()` over the
+ * app's config module — never a hand-written `getCollection` import.
+ */
+function expectCollectionAccessImports(
+  content: string,
+  configImport = '$lib/server/smrt',
+): void {
+  const registerImport = `import '${configImport.replace(/[^/]+$/, 'smrt-register')}';`;
+  const appImport = `import * as smrtApplication from '${configImport}';`;
+  expect(content).toContain(registerImport);
+  expect(content).toContain(
+    "import { createGeneratedCollectionAccess } from '@happyvertical/smrt-core';",
+  );
+  expect(content).toContain(appImport);
+  expect(content.indexOf(registerImport)).toBeLessThan(
+    content.indexOf(appImport),
+  );
+  expect(content).toContain(
+    'const { getCollection } = createGeneratedCollectionAccess(',
+  );
+  expect(content).not.toMatch(/import \{ getCollection \} from/);
+}
+
 describe('SvelteKit Route Generator', () => {
   const projectRoot = '/test/project';
 
@@ -167,6 +192,16 @@ describe('SvelteKit Route Generator', () => {
     vi.mocked(existsSync).mockReturnValue(false);
     vi.mocked(readFileSync).mockReturnValue('');
     vi.mocked(readdirSync).mockReturnValue([]);
+    // Consumer resolution: every package resolves except the application
+    // runtime, so the default config stays the self-contained legacy shape.
+    mockSmrtUsersResolve.mockImplementation((specifier) => {
+      if (specifier.startsWith('@happyvertical/smrt-app-runtime')) {
+        throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+          code: 'MODULE_NOT_FOUND',
+        });
+      }
+      return `/fake/node_modules/${specifier}.js`;
+    });
   });
 
   afterEach(() => {
@@ -178,9 +213,13 @@ describe('SvelteKit Route Generator', () => {
       vi.mocked(existsSync).mockReturnValue(false);
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -239,11 +278,66 @@ describe('SvelteKit Route Generator', () => {
       expect(configContent).toContain('requestScopedDb ?? config.db');
     });
 
+    it('generates a runtime-shaped config when the app installs smrt-app-runtime (#3416)', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      mockSmrtUsersResolve.mockImplementation(
+        (specifier) => `/fake/node_modules/${specifier}.js`,
+      );
+
+      await generateSvelteKitRoutes(
+        projectRoot,
+        {
+          version: '1',
+          timestamp: 0,
+          objects: {
+            TestObject: {
+              className: 'TestObject',
+              name: 'TestObject',
+              filePath: '',
+              collection: 'testobjects',
+              fields: {},
+              methods: {},
+              decoratorConfig: { api: true },
+            },
+          },
+        },
+        {
+          enabled: true,
+          routesDir: 'src/routes/api',
+          objectsDir: 'src/lib/objects',
+          configPath: 'src/lib/server',
+          configFileName: 'smrt.ts',
+        },
+      );
+
+      const configContent = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(
+          (call) =>
+            call[0].toString() === join(projectRoot, 'src/lib/server/smrt.ts'),
+        )?.[1] as string;
+      expect(configContent).toContain(
+        'export const runtime = createSmrtSvelteKitRuntime({',
+      );
+      expect(configContent).toContain(
+        'providerReadiness: createProviderReadinessProbe',
+      );
+      // App options only: no hand-written accessors, registration import, or
+      // writer-lease wiring.
+      expect(configContent).not.toMatch(/export (async )?function/);
+      expect(configContent).not.toContain("import './smrt-register.js'");
+      expect(configContent).not.toContain('acquireWriterLease(');
+    });
+
     it('does not let transitive collection subclasses emit model CRUD routes', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Widget: {
             className: 'Widget',
+            name: 'Widget',
+            filePath: '',
             collection: 'widgets',
             extends: 'SmrtObject',
             fields: {},
@@ -252,6 +346,8 @@ describe('SvelteKit Route Generator', () => {
           },
           WidgetCollection: {
             className: 'WidgetCollection',
+            name: 'WidgetCollection',
+            filePath: '',
             collection: 'widgets',
             extends: 'SmrtCollection',
             extendsTypeArg: 'Widget',
@@ -261,6 +357,8 @@ describe('SvelteKit Route Generator', () => {
           },
           SpecialWidget: {
             className: 'SpecialWidget',
+            name: 'SpecialWidget',
+            filePath: '',
             collection: 'specialWidgets',
             extends: 'SmrtObject',
             fields: {},
@@ -269,6 +367,8 @@ describe('SvelteKit Route Generator', () => {
           },
           SpecialWidgetCollection: {
             className: 'SpecialWidgetCollection',
+            name: 'SpecialWidgetCollection',
+            filePath: '',
             collection: 'widgets',
             extends: 'WidgetCollection',
             fields: {},
@@ -295,6 +395,8 @@ describe('SvelteKit Route Generator', () => {
 
     it('never generates a route directory for a framework base class, but still does for a genuine domain class (#2642)', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           // A foundation package (e.g. `@happyvertical/smrt-core` itself)
           // declares its own framework base classes as real local classes,
@@ -305,6 +407,8 @@ describe('SvelteKit Route Generator', () => {
           // generation must skip them by class identity, not by config.
           SmrtObject: {
             className: 'SmrtObject',
+            name: 'SmrtObject',
+            filePath: '',
             qualifiedName: '@happyvertical/smrt-core:SmrtObject',
             packageName: '@happyvertical/smrt-core',
             collection: 'smrtobjects',
@@ -314,6 +418,8 @@ describe('SvelteKit Route Generator', () => {
           },
           Widget: {
             className: 'Widget',
+            name: 'Widget',
+            filePath: '',
             collection: 'widgets',
             extends: 'SmrtObject',
             fields: {},
@@ -347,9 +453,13 @@ describe('SvelteKit Route Generator', () => {
 
     it('resolves an inherited collection item type for custom routes', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Widget: {
             className: 'Widget',
+            name: 'Widget',
+            filePath: '',
             collection: 'widgets',
             extends: 'SmrtObject',
             fields: {},
@@ -358,6 +468,8 @@ describe('SvelteKit Route Generator', () => {
           },
           WidgetCollection: {
             className: 'WidgetCollection',
+            name: 'WidgetCollection',
+            filePath: '',
             collection: 'widgets',
             extends: 'SmrtCollection',
             extendsTypeArg: 'Widget',
@@ -367,6 +479,8 @@ describe('SvelteKit Route Generator', () => {
           },
           SpecialWidget: {
             className: 'SpecialWidget',
+            name: 'SpecialWidget',
+            filePath: '',
             collection: 'specialWidgets',
             extends: 'SmrtObject',
             fields: {},
@@ -375,11 +489,14 @@ describe('SvelteKit Route Generator', () => {
           },
           SpecialWidgetCollection: {
             className: 'SpecialWidgetCollection',
+            name: 'SpecialWidgetCollection',
+            filePath: '',
             collection: 'widgets',
             extends: 'WidgetCollection',
             fields: {},
             methods: {
               restoreSpecial: {
+                async: false,
                 name: 'restoreSpecial',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -422,23 +539,34 @@ describe('SvelteKit Route Generator', () => {
 
     it('gates collection-class write actions on the item collection permission (#2977)', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Widget: {
             className: 'Widget',
+            name: 'Widget',
+            filePath: '',
             collection: 'widgets',
             extends: 'SmrtObject',
             fields: {},
             methods: {},
-            decoratorConfig: { api: false, collection: 'gadgets' },
+            // Deliberate legacy config key: route ownership follows the object collection.
+            decoratorConfig: {
+              api: false,
+              collection: 'gadgets',
+            } as SmartObjectManifest['objects'][string]['decoratorConfig'],
           },
           WidgetCollection: {
             className: 'WidgetCollection',
+            name: 'WidgetCollection',
+            filePath: '',
             collection: 'widget_collections',
             extends: 'SmrtCollection',
             extendsTypeArg: 'Widget',
             fields: {},
             methods: {
               importBatch: {
+                async: false,
                 name: 'importBatch',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -478,15 +606,20 @@ describe('SvelteKit Route Generator', () => {
 
     it('keeps an inherited item type name when a partial manifest omits the item', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           WidgetCollection: {
             className: 'WidgetCollection',
+            name: 'WidgetCollection',
+            filePath: '',
             collection: 'widgets',
             extends: 'SmrtCollection',
             extendsTypeArg: 'Widget',
             fields: {},
             methods: {
               restoreSpecial: {
+                async: false,
                 name: 'restoreSpecial',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -527,9 +660,13 @@ describe('SvelteKit Route Generator', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -563,9 +700,13 @@ describe('SvelteKit Route Generator', () => {
       vi.mocked(existsSync).mockReturnValue(false);
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -605,7 +746,7 @@ describe('SvelteKit Route Generator', () => {
       expect(generatedRouteImports).toEqual(
         expect.arrayContaining([
           expect.stringContaining(
-            "import { getCollection } from '$lib/config/smrt-config'",
+            "import * as smrtApplication from '$lib/config/smrt-config';",
           ),
         ]),
       );
@@ -618,6 +759,8 @@ describe('SvelteKit Route Generator', () => {
       vi.mocked(existsSync).mockReturnValue(false);
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         packageName: '@test/app',
         smrtDependencies: [
           '@happyvertical/smrt-core',
@@ -626,6 +769,7 @@ describe('SvelteKit Route Generator', () => {
         objects: {
           LocalThing: {
             className: 'LocalThing',
+            name: 'LocalThing',
             collection: 'localthings',
             fields: {},
             methods: {},
@@ -634,6 +778,7 @@ describe('SvelteKit Route Generator', () => {
           },
           '@test/pkg:ExternalThing': {
             className: 'ExternalThing',
+            name: 'ExternalThing',
             collection: 'externalthings',
             fields: {},
             methods: {},
@@ -701,9 +846,12 @@ describe('SvelteKit Route Generator', () => {
       vi.mocked(existsSync).mockReturnValue(false);
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           LocalThing: {
             className: 'LocalThing',
+            name: 'LocalThing',
             collection: 'localthings',
             fields: {},
             methods: {},
@@ -713,6 +861,7 @@ describe('SvelteKit Route Generator', () => {
           },
           UnqualifiedThing: {
             className: 'UnqualifiedThing',
+            name: 'UnqualifiedThing',
             collection: 'unqualifiedthings',
             fields: {},
             methods: {},
@@ -750,29 +899,46 @@ describe('SvelteKit Route Generator', () => {
       vi.mocked(existsSync).mockReturnValue(false);
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           '@test/a:SharedThing': {
             className: 'SharedThing',
+            name: 'SharedThing',
             collection: 'sharedthings',
             fields: { alpha: { type: 'text' } },
             methods: {},
             packageName: '@test/a',
             filePath: '/virtual/node_modules/@test/a/dist/SharedThing.js',
             decoratorConfig: { tableName: 'a_shared_things' },
-            schema: { tableName: 'a_shared_things' },
+            schema: {
+              tableName: 'a_shared_things',
+              ddl: '',
+              columns: {},
+              indexes: [],
+              version: 'test',
+            },
           },
           '@test/b:SharedThing': {
             className: 'SharedThing',
+            name: 'SharedThing',
             collection: 'sharedthings',
-            fields: { beta: { type: 'number' } },
+            fields: { beta: { type: 'decimal' } },
             methods: {},
             packageName: '@test/b',
             filePath: '/virtual/node_modules/@test/b/dist/SharedThing.js',
             decoratorConfig: { tableName: 'b_shared_things' },
-            schema: { tableName: 'b_shared_things' },
+            schema: {
+              tableName: 'b_shared_things',
+              ddl: '',
+              columns: {},
+              indexes: [],
+              version: 'test',
+            },
           },
           '@test/c:__smrt_SharedThing_1': {
             className: '__smrt_SharedThing_1',
+            name: '__smrt_SharedThing_1',
             collection: 'reservedbindings',
             fields: {},
             methods: {},
@@ -780,7 +946,13 @@ describe('SvelteKit Route Generator', () => {
             filePath:
               '/virtual/node_modules/@test/c/dist/__smrt_SharedThing_1.js',
             decoratorConfig: { tableName: 'reserved_bindings' },
-            schema: { tableName: 'reserved_bindings' },
+            schema: {
+              tableName: 'reserved_bindings',
+              ddl: '',
+              columns: {},
+              indexes: [],
+              version: 'test',
+            },
           },
         },
       };
@@ -832,7 +1004,7 @@ describe('SvelteKit Route Generator', () => {
       expect(
         manifests['@test/b:SharedThing'].objects['@test/b:SharedThing'],
       ).toMatchObject({
-        fields: { beta: { type: 'number' } },
+        fields: { beta: { type: 'decimal' } },
         schema: { tableName: 'b_shared_things' },
       });
     });
@@ -841,9 +1013,12 @@ describe('SvelteKit Route Generator', () => {
       vi.mocked(existsSync).mockReturnValue(false);
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           ImageCollection: {
             className: 'ImageCollection',
+            name: 'ImageCollection',
             collection: 'imagecollections',
             extends: 'SmrtCollection',
             fields: {},
@@ -887,9 +1062,13 @@ describe('SvelteKit Route Generator', () => {
 
     it('should generate collection route with list and create', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Product: {
             className: 'Product',
+            name: 'Product',
+            filePath: '',
             collection: 'products',
             fields: {},
             methods: {},
@@ -919,9 +1098,7 @@ describe('SvelteKit Route Generator', () => {
       const content = collectionRoute?.[1] as string;
 
       // Should import from centralized config
-      expect(content).toContain(
-        "import { getCollection } from '$lib/server/smrt'",
-      );
+      expectCollectionAccessImports(content);
 
       // Should include GET handler for list
       expect(content).toContain('export const GET: RequestHandler');
@@ -948,9 +1125,13 @@ describe('SvelteKit Route Generator', () => {
 
     it('should generate item route with get, update, delete', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Product: {
             className: 'Product',
+            name: 'Product',
+            filePath: '',
             collection: 'products',
             fields: {},
             methods: {},
@@ -980,9 +1161,7 @@ describe('SvelteKit Route Generator', () => {
       const content = itemRoute?.[1] as string;
 
       // Should use centralized config
-      expect(content).toContain(
-        "import { getCollection } from '$lib/server/smrt'",
-      );
+      expectCollectionAccessImports(content);
 
       // Should use a concrete model type while keeping runtime lookup by name.
       expectGetCollectionCall(content, 'Product', 'Product');
@@ -1007,21 +1186,29 @@ describe('SvelteKit Route Generator', () => {
 
     it('should generate custom action routes', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Document: {
             className: 'Document',
+            name: 'Document',
+            filePath: '',
             collection: 'documents',
             fields: {},
             methods: {
               analyze: {
+                async: false,
+                isStatic: false,
                 name: 'analyze',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
               summarize: {
+                async: false,
+                isStatic: false,
                 name: 'summarize',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
@@ -1051,9 +1238,7 @@ describe('SvelteKit Route Generator', () => {
       expect(analyzeRoute).toBeDefined();
       const analyzeContent = analyzeRoute?.[1] as string;
 
-      expect(analyzeContent).toContain(
-        "import { getCollection } from '$lib/server/smrt'",
-      );
+      expectCollectionAccessImports(analyzeContent);
 
       // Should use a concrete model type while keeping runtime lookup by name.
       expectGetCollectionCall(analyzeContent, 'Document', 'Document');
@@ -1085,34 +1270,41 @@ describe('SvelteKit Route Generator', () => {
 
     it('should generate collection-scoped custom routes for static methods', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Document: {
             className: 'Document',
+            name: 'Document',
+            filePath: '',
             collection: 'documents',
             fields: {},
             methods: {
               browseFacts: {
+                async: false,
                 name: 'browseFacts',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isStatic: true,
                 isPublic: true,
               },
               searchFacts: {
+                async: false,
                 name: 'searchFacts',
                 parameters: [
-                  { name: 'query', type: 'string' },
-                  { name: 'limit', type: 'number' },
+                  { name: 'query', type: 'string', optional: false },
+                  { name: 'limit', type: 'number', optional: false },
                 ],
                 returnType: 'Promise<any>',
                 isStatic: true,
                 isPublic: true,
               },
               searchReserved: {
+                async: false,
                 name: 'searchReserved',
                 parameters: [
-                  { name: '__smrt_options', type: 'string' },
-                  { name: 'query', type: 'string' },
+                  { name: '__smrt_options', type: 'string', optional: false },
+                  { name: 'query', type: 'string', optional: false },
                 ],
                 returnType: 'Promise<any>',
                 isStatic: true,
@@ -1220,6 +1412,8 @@ describe('SvelteKit Route Generator', () => {
         objects: {
           Widget: {
             className: 'Widget',
+            name: 'Widget',
+            filePath: '',
             collection: 'widgets',
             fields: {
               name: { type: 'text' },
@@ -1239,6 +1433,8 @@ describe('SvelteKit Route Generator', () => {
           },
           WidgetCollection: {
             className: 'WidgetCollection',
+            name: 'WidgetCollection',
+            filePath: '',
             collection: 'widgets',
             fields: {},
             methods: {
@@ -1284,15 +1480,21 @@ describe('SvelteKit Route Generator', () => {
 
     it('should pass dynamic path params into custom GET action options', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Document: {
             className: 'Document',
+            name: 'Document',
+            filePath: '',
             collection: 'documents',
             fields: {},
             methods: {
               evaluateReviewProfileAction: {
+                async: false,
+                isStatic: false,
                 name: 'evaluateReviewProfileAction',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
@@ -1350,9 +1552,13 @@ describe('SvelteKit Route Generator', () => {
 
     it('should expand multi-parameter collection methods into positional args', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Document: {
             className: 'Document',
+            name: 'Document',
+            filePath: '',
             collection: 'documents',
             fields: {},
             methods: {},
@@ -1363,14 +1569,17 @@ describe('SvelteKit Route Generator', () => {
           },
           DocumentCollection: {
             className: 'DocumentCollection',
+            name: 'DocumentCollection',
+            filePath: '',
             collection: 'documents',
             fields: {},
             methods: {
               restoreIntoContent: {
+                async: false,
                 name: 'restoreIntoContent',
                 parameters: [
-                  { name: 'contentId', type: 'string' },
-                  { name: 'versionNumber', type: 'number' },
+                  { name: 'contentId', type: 'string', optional: false },
+                  { name: 'versionNumber', type: 'number', optional: false },
                 ],
                 returnType: 'Promise<any>',
                 isStatic: false,
@@ -1418,21 +1627,29 @@ describe('SvelteKit Route Generator', () => {
 
     it('should merge custom handlers that share the same route path', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Document: {
             className: 'Document',
+            name: 'Document',
+            filePath: '',
             collection: 'documents',
             fields: {},
             methods: {
               getFactsState: {
+                async: false,
+                isStatic: false,
                 name: 'getFactsState',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
               syncFacts: {
+                async: false,
+                isStatic: false,
                 name: 'syncFacts',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
@@ -1485,15 +1702,20 @@ describe('SvelteKit Route Generator', () => {
         .mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Document: {
             className: 'Document',
+            name: 'Document',
+            filePath: '',
             collection: 'documents',
             fields: {},
             methods: {
               browseFacts: {
+                async: false,
                 name: 'browseFacts',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isStatic: false,
                 isPublic: true,
@@ -1545,19 +1767,27 @@ describe('SvelteKit Route Generator', () => {
 
     it('should skip actions not in api config', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Document: {
             className: 'Document',
+            name: 'Document',
+            filePath: '',
             collection: 'documents',
             fields: {},
             methods: {
               publicAction: {
+                async: false,
+                isStatic: false,
                 name: 'publicAction',
                 parameters: [],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
               privateAction: {
+                async: false,
+                isStatic: false,
                 name: 'privateAction',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -1599,14 +1829,20 @@ describe('SvelteKit Route Generator', () => {
 
     it('should import from package for external objects', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Meeting: {
             className: 'Meeting',
+            name: 'Meeting',
+            filePath: '',
             collection: 'meetings',
             packageName: '@happyvertical/praeco',
             fields: {},
             methods: {
               summarize: {
+                async: false,
+                isStatic: false,
                 name: 'summarize',
                 parameters: [],
                 returnType: 'Promise<string>',
@@ -1659,15 +1895,20 @@ describe('SvelteKit Route Generator', () => {
 
     it('should use $lib path for local objects even when packageName is set', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           '@myapp/dashboard:Invitation': {
             className: 'Invitation',
+            name: 'Invitation',
             collection: 'invitations',
             packageName: '@myapp/dashboard',
             filePath: '/test/project/src/lib/models/Invitation.ts',
             fields: {},
             methods: {
               canBeRedeemed: {
+                async: false,
+                isStatic: false,
                 name: 'canBeRedeemed',
                 parameters: [],
                 returnType: 'boolean',
@@ -1723,9 +1964,12 @@ describe('SvelteKit Route Generator', () => {
 
     it('should use route-relative type imports for local objects outside src/lib', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Product: {
             className: 'Product',
+            name: 'Product',
             collection: 'products',
             filePath: '/test/project/src/models/Product.ts',
             fields: {},
@@ -1768,13 +2012,19 @@ describe('SvelteKit Route Generator', () => {
 
     it('should extract simple class name from qualified names', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           '@blindmanpress/dashboard:Invitation': {
             className: 'Invitation',
+            name: 'Invitation',
+            filePath: '',
             collection: 'invitations',
             fields: {},
             methods: {
               canBeRedeemed: {
+                async: false,
+                isStatic: false,
                 name: 'canBeRedeemed',
                 parameters: [],
                 returnType: 'boolean',
@@ -1825,9 +2075,13 @@ describe('SvelteKit Route Generator', () => {
 
     it('should handle api config exclude list', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Product: {
             className: 'Product',
+            name: 'Product',
+            filePath: '',
             collection: 'products',
             fields: {},
             methods: {},
@@ -1868,9 +2122,13 @@ describe('SvelteKit Route Generator', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           InternalObject: {
             className: 'InternalObject',
+            name: 'InternalObject',
+            filePath: '',
             collection: 'internalobjects',
             fields: {},
             methods: {},
@@ -1932,9 +2190,13 @@ describe('SvelteKit Route Generator', () => {
       });
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -1970,6 +2232,8 @@ describe('SvelteKit Route Generator', () => {
 
     const baseRecord = {
       className: 'BaseRecord',
+      name: 'BaseRecord',
+      filePath: '',
       collection: 'sharedRecords',
       extends: 'SmrtObject',
       fields: {},
@@ -1978,6 +2242,8 @@ describe('SvelteKit Route Generator', () => {
     } as any;
     const childRevision = {
       className: 'ChildRevision',
+      name: 'ChildRevision',
+      filePath: '',
       collection: 'sharedRecords',
       extends: 'SmrtObject',
       fields: {},
@@ -2060,9 +2326,13 @@ describe('SvelteKit Route Generator', () => {
       vi.mocked(readFileSync).mockReturnValue('node_modules/\n.env\n');
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -2121,9 +2391,13 @@ describe('SvelteKit Route Generator', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -2164,9 +2438,13 @@ describe('SvelteKit Route Generator', () => {
       });
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -2215,9 +2493,13 @@ describe('SvelteKit Route Generator', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -2272,9 +2554,13 @@ describe('SvelteKit Route Generator', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -2327,9 +2613,13 @@ describe('SvelteKit Route Generator', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -2368,9 +2658,13 @@ describe('SvelteKit Route Generator', () => {
 
     it('should return early if svelteKit is not enabled', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           TestObject: {
             className: 'TestObject',
+            name: 'TestObject',
+            filePath: '',
             collection: 'testobjects',
             fields: {},
             methods: {},
@@ -2394,9 +2688,13 @@ describe('SvelteKit Route Generator', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Product: {
             className: 'Product',
+            name: 'Product',
+            filePath: '',
             collection: 'products',
             fields: {},
             methods: {},
@@ -2404,6 +2702,8 @@ describe('SvelteKit Route Generator', () => {
           },
           Category: {
             className: 'Category',
+            name: 'Category',
+            filePath: '',
             collection: 'categories',
             fields: {},
             methods: {},
@@ -2411,6 +2711,8 @@ describe('SvelteKit Route Generator', () => {
           },
           Order: {
             className: 'Order',
+            name: 'Order',
+            filePath: '',
             collection: 'orders',
             fields: {},
             methods: {},
@@ -2452,13 +2754,19 @@ describe('SvelteKit Route Generator', () => {
 
     it('should create directories for routes', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Product: {
             className: 'Product',
+            name: 'Product',
+            filePath: '',
             collection: 'products',
             fields: {},
             methods: {
               analyze: {
+                async: false,
+                isStatic: false,
                 name: 'analyze',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -2494,9 +2802,13 @@ describe('SvelteKit Route Generator', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Product: {
             className: 'Product',
+            name: 'Product',
+            filePath: '',
             collection: 'products',
             fields: {},
             methods: {},
@@ -2530,13 +2842,20 @@ describe('SvelteKit Route Generator', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Invitation: {
             className: 'Invitation',
+            name: 'Invitation',
             collection: 'invitations',
             fields: {},
             methods: {
               canBeRedeemed: {
+                name: 'canBeRedeemed',
+                async: false,
+                returnType: 'void',
+                isStatic: false,
                 isPublic: true,
                 parameters: [],
               },
@@ -2546,12 +2865,19 @@ describe('SvelteKit Route Generator', () => {
           },
           InvitationCollection: {
             className: 'InvitationCollection',
+            name: 'InvitationCollection',
             collection: 'invitations', // Same as Invitation (inherited by manifest-generator)
             fields: {},
             methods: {
               findByToken: {
+                name: 'findByToken',
+                async: false,
+                returnType: 'void',
+                isStatic: false,
                 isPublic: true,
-                parameters: [{ name: 'token', type: 'string' }],
+                parameters: [
+                  { name: 'token', type: 'string', optional: false },
+                ],
               },
             },
             decoratorConfig: { api: true },
@@ -2608,9 +2934,12 @@ describe('SvelteKit Route Generator', () => {
 
     it('should not skip non-collection classes that happen to have extends set', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Meeting: {
             className: 'Meeting',
+            name: 'Meeting',
             collection: 'meetings',
             fields: {},
             methods: {},
@@ -2641,9 +2970,13 @@ describe('SvelteKit Route Generator', () => {
   describe('Standard Response Serializers', () => {
     it('should apply the item serializer to standard item and list responses by default', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Content: {
             className: 'Content',
+            name: 'Content',
+            filePath: '',
             collection: 'contents',
             fields: {},
             methods: {},
@@ -2730,9 +3063,13 @@ describe('SvelteKit Route Generator', () => {
 
     it('should support a dedicated list item serializer', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Content: {
             className: 'Content',
+            name: 'Content',
+            filePath: '',
             collection: 'contents',
             fields: {},
             methods: {},
@@ -2787,21 +3124,29 @@ describe('SvelteKit Route Generator', () => {
   describe('Custom-method api.include + api.exclude (smrt#1304)', () => {
     it('should drop methods listed in both api.include and api.exclude', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Thing: {
             className: 'Thing',
+            name: 'Thing',
+            filePath: '',
             collection: 'things',
             fields: {},
             methods: {
               discover: {
+                async: false,
+                isStatic: false,
                 name: 'discover',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
               execute: {
+                async: false,
+                isStatic: false,
                 name: 'execute',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
@@ -2841,9 +3186,13 @@ describe('SvelteKit Route Generator', () => {
   describe('Knowledge Route Generation', () => {
     it('generates the guarded knowledge route only when explicitly enabled', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Thing: {
             className: 'Thing',
+            name: 'Thing',
+            filePath: '',
             collection: 'things',
             fields: {},
             methods: {},
@@ -2911,21 +3260,29 @@ describe('SvelteKit Route Generator', () => {
   describe('kebabRoutes option (smrt#1305)', () => {
     function buildManifest(): SmartObjectManifest {
       return {
+        version: '1',
+        timestamp: 0,
         objects: {
           Praeco: {
             className: 'Praeco',
+            name: 'Praeco',
+            filePath: '',
             collection: 'praecos',
             fields: {},
             methods: {
               discoverFromUrl: {
+                async: false,
+                isStatic: false,
                 name: 'discoverFromUrl',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
               XMLExport: {
+                async: false,
+                isStatic: false,
                 name: 'XMLExport',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
@@ -2991,15 +3348,21 @@ describe('SvelteKit Route Generator', () => {
 
     it('should honor an explicit api.routes[name].path over kebabRoutes', async () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Praeco: {
             className: 'Praeco',
+            name: 'Praeco',
+            filePath: '',
             collection: 'praecos',
             fields: {},
             methods: {
               discoverFromUrl: {
+                async: false,
+                isStatic: false,
                 name: 'discoverFromUrl',
-                parameters: [{ name: 'options', type: 'any' }],
+                parameters: [{ name: 'options', type: 'any', optional: false }],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
@@ -3039,19 +3402,27 @@ describe('SvelteKit Route Generator', () => {
   describe('cli.include vs api.include coherence lint (smrt#1306)', () => {
     function buildManifest(decoratorConfig: any): SmartObjectManifest {
       return {
+        version: '1',
+        timestamp: 0,
         objects: {
           Praeco: {
             className: 'Praeco',
+            name: 'Praeco',
+            filePath: '',
             collection: 'praecos',
             fields: {},
             methods: {
               discover: {
+                async: false,
+                isStatic: false,
                 name: 'discover',
                 parameters: [],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
               audit: {
+                async: false,
+                isStatic: false,
                 name: 'audit',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -3225,31 +3596,45 @@ describe('SvelteKit Route Generator', () => {
         // public method (unlike a cli.include typo) that legitimately has
         // no API route because it takes a non-serializable callback option.
         function buildLudisLikeManifest(
-          cliConfig: unknown,
+          cliConfig: SmartObjectManifest['objects'][string]['decoratorConfig']['cli'],
         ): SmartObjectManifest {
           return {
+            version: '1',
+            timestamp: 0,
             objects: {
               Praeco: {
                 className: 'Praeco',
+                name: 'Praeco',
+                filePath: '',
                 collection: 'praecos',
                 fields: {},
                 methods: {
                   discover: {
+                    async: false,
+                    isStatic: false,
                     name: 'discover',
                     parameters: [],
                     returnType: 'Promise<any>',
                     isPublic: true,
                   },
                   audit: {
+                    async: false,
+                    isStatic: false,
                     name: 'audit',
                     parameters: [],
                     returnType: 'Promise<any>',
                     isPublic: true,
                   },
                   reconcileGame: {
+                    async: false,
+                    isStatic: false,
                     name: 'reconcileGame',
                     parameters: [
-                      { name: 'options', type: '{ reliabilityOf?: Function }' },
+                      {
+                        name: 'options',
+                        type: '{ reliabilityOf?: Function }',
+                        optional: false,
+                      },
                     ],
                     returnType: 'Promise<any>',
                     isPublic: true,
@@ -3361,13 +3746,18 @@ describe('SvelteKit Route Generator', () => {
         // check declining to look at lifecycle methods there, not a sign
         // that naming one in skipApiCheck is stale.
         const manifest: SmartObjectManifest = {
+          version: '1',
+          timestamp: 0,
           objects: {
             LifecycleOnly: {
               className: 'LifecycleOnly',
+              name: 'LifecycleOnly',
+              filePath: '',
               collection: 'lifecycleonlies',
               fields: {},
               methods: {
                 save: {
+                  async: false,
                   name: 'save',
                   parameters: [],
                   returnType: 'Promise<any>',
@@ -3375,6 +3765,8 @@ describe('SvelteKit Route Generator', () => {
                   isStatic: false,
                 },
                 discover: {
+                  async: false,
+                  isStatic: false,
                   name: 'discover',
                   parameters: [],
                   returnType: 'Promise<any>',
@@ -3486,19 +3878,27 @@ describe('SvelteKit Route Generator', () => {
       // naming one in skipApiCheck is still a genuine mistake -- broadening
       // the known-name set to fix F1 must not also swallow this case.
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Praeco: {
             className: 'Praeco',
+            name: 'Praeco',
+            filePath: '',
             collection: 'praecos',
             fields: {},
             methods: {
               discover: {
+                async: false,
+                isStatic: false,
                 name: 'discover',
                 parameters: [],
                 returnType: 'Promise<any>',
                 isPublic: true,
               },
               internalHelper: {
+                async: false,
+                isStatic: false,
                 name: 'internalHelper',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -3544,13 +3944,18 @@ describe('SvelteKit Route Generator', () => {
       // route. Landing the #2638 policy fix and the lint fix separately would
       // make this fail: the lint alone would flag `save` as unreachable.
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           LifecycleOnly: {
             className: 'LifecycleOnly',
+            name: 'LifecycleOnly',
+            filePath: '',
             collection: 'lifecycleonlies',
             fields: {},
             methods: {
               save: {
+                async: false,
                 name: 'save',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -3572,13 +3977,18 @@ describe('SvelteKit Route Generator', () => {
       // A route declaration cannot turn an instance action into a ClassRef
       // call. REST discovery now agrees with MCP/WebMCP's item contract.
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Doc: {
             className: 'Doc',
+            name: 'Doc',
+            filePath: '',
             collection: 'docs',
             fields: {},
             methods: {
               broken: {
+                async: false,
                 name: 'broken',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -3606,15 +4016,20 @@ describe('SvelteKit Route Generator', () => {
       // A collection class has a collection receiver even when its action is
       // not static, so a route-only item override cannot remove it.
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           DocCollection: {
             className: 'DocCollection',
+            name: 'DocCollection',
+            filePath: '',
             collection: 'docs',
             fields: {},
             extends: 'SmrtCollection',
             extendsTypeArg: 'Doc',
             methods: {
               misconfigured: {
+                async: false,
                 name: 'misconfigured',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -3622,6 +4037,7 @@ describe('SvelteKit Route Generator', () => {
                 isStatic: false,
               },
               listSpecial: {
+                async: false,
                 name: 'listSpecial',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -3647,9 +4063,13 @@ describe('SvelteKit Route Generator', () => {
 
     it('does not claim CRUD routes for collection classes', () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           DocCollection: {
             className: 'DocCollection',
+            name: 'DocCollection',
+            filePath: '',
             collection: 'docs',
             fields: {},
             extends: 'SmrtCollection',
@@ -3675,9 +4095,13 @@ describe('SvelteKit Route Generator', () => {
 
     it('uses manifest ancestry for transitive collection CLI/API coherence', () => {
       const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
         objects: {
           Doc: {
             className: 'Doc',
+            name: 'Doc',
+            filePath: '',
             collection: 'docs',
             fields: {},
             methods: {},
@@ -3685,6 +4109,8 @@ describe('SvelteKit Route Generator', () => {
           },
           DocCollection: {
             className: 'DocCollection',
+            name: 'DocCollection',
+            filePath: '',
             collection: 'docs',
             fields: {},
             extends: 'SmrtCollection',
@@ -3694,11 +4120,14 @@ describe('SvelteKit Route Generator', () => {
           },
           SpecialDocCollection: {
             className: 'SpecialDocCollection',
+            name: 'SpecialDocCollection',
+            filePath: '',
             collection: 'docs',
             fields: {},
             extends: 'DocCollection',
             methods: {
               collectionAction: {
+                async: false,
                 name: 'collectionAction',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -3706,6 +4135,7 @@ describe('SvelteKit Route Generator', () => {
                 isStatic: false,
               },
               itemAction: {
+                async: false,
                 name: 'itemAction',
                 parameters: [],
                 returnType: 'Promise<any>',
@@ -3742,9 +4172,13 @@ describe('SvelteKit Route Generator', () => {
   // config, so the documented opt-out was dead).
   describe('_events route generation (#1763)', () => {
     const eventsManifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
       objects: {
         Widget: {
           className: 'Widget',
+          name: 'Widget',
+          filePath: '',
           collection: 'widgets',
           fields: {},
           methods: {},
@@ -3816,9 +4250,13 @@ describe('SvelteKit Route Generator', () => {
   // unresolvable import must never reach a consumer's build.
   describe('_resources route generation (#2663)', () => {
     const resourcesManifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
       objects: {
         Widget: {
           className: 'Widget',
+          name: 'Widget',
+          filePath: '',
           collection: 'widgets',
           fields: {},
           methods: {},
@@ -3938,10 +4376,14 @@ describe('consumer external import and reserved resource routes (#2852)', () => 
   it('uses canonical external importPath and exportName for route types and registration', async () => {
     vi.mocked(existsSync).mockReturnValue(false);
     const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
       packageName: '@test/app',
       objects: {
         '@acme/widgets:Widget': {
           className: 'Widget',
+          name: 'Widget',
+          filePath: '',
           qualifiedName: '@acme/widgets:Widget',
           packageName: '@acme/widgets',
           importPath: '@acme/widgets/objects',
@@ -3991,9 +4433,13 @@ describe('consumer external import and reserved resource routes (#2852)', () => 
     );
     mockSmrtUsersResolve.mockImplementation(() => '/fake/sveltekit.js');
     const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
       objects: {
         Reserved: {
           className: 'Reserved',
+          name: 'Reserved',
+          filePath: '',
           collection: '_resources',
           fields: {},
           methods: {},

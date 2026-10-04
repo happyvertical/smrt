@@ -124,9 +124,9 @@ describe('discovery parity (Release B)', () => {
     });
 
     expect(result.objectsRegistered).toBe(3);
-    expect(ObjectRegistry.findClass('WidgetA')).toBeDefined();
-    expect(ObjectRegistry.findClass('GizmoA')).toBeDefined();
-    expect(ObjectRegistry.findClass('WidgetB')).toBeDefined();
+    expect(ObjectRegistry.getClass('WidgetA')).toBeDefined();
+    expect(ObjectRegistry.getClass('GizmoA')).toBeDefined();
+    expect(ObjectRegistry.getClass('WidgetB')).toBeDefined();
   });
 
   it('discoverManifestSync disambiguates qualified names across packages (review #1138)', () => {

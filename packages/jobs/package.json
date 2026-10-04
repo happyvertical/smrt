@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-jobs",
-  "version": "0.52.0",
+  "version": "0.53.4",
   "smrtJsdoc": "strict",
   "description": "Background job processing for SMRT objects with persistence and scheduling",
   "author": "HappyVertical",
@@ -51,12 +51,12 @@
     }
   },
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte-test.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",

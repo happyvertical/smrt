@@ -9,7 +9,7 @@
  * objects that died with the dropped table come back.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SchemaDefinition } from '../../schema/types.js';
@@ -126,7 +126,7 @@ describe('#2370 SQLite table rebuild — pure DDL rewriting', () => {
 });
 
 describe('#2370 SQLite table rebuild — live database', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
 
   beforeEach(async () => {
     db = await getDatabase({ type: 'sqlite', url: ':memory:' });

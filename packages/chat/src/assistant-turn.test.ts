@@ -702,6 +702,81 @@ describe('assistant turn', () => {
       });
     });
 
+    it('reports its lifecycle itself, suspension before the event, per leg (#3368)', async () => {
+      const store = createMemoryContinuationStore();
+      const states: string[] = [];
+      const onState = (state: {
+        state: string;
+        originMessageId?: string;
+        resumedFrom: string | null;
+        continuationId?: string;
+      }) => {
+        states.push(
+          `${state.state}:${state.originMessageId}:${state.resumedFrom}:${state.continuationId ?? '-'}`,
+        );
+      };
+      const ai = scriptedAI([
+        calls(['articles_update', { id: 'a1' }, 'w1']),
+        text('Proposed.'),
+      ]);
+      const seenAtEvent: string[][] = [];
+      const first = runAssistantTurn({
+        ai,
+        db,
+        principal: principal(),
+        audit: () => {},
+        userMessage: 'rename it',
+        clientTools: PAGE_TOOLS,
+        continuations: store,
+        continuationKey: 'thread-1',
+        originMessageId: 'send-1',
+        createId: () => 'cont-1',
+        onState,
+      });
+      for await (const event of first) {
+        if (event.type === 'client_tool_calls') seenAtEvent.push([...states]);
+      }
+      expect(seenAtEvent[0]).toEqual([
+        'running:send-1:null:-',
+        'suspended:send-1:null:cont-1',
+      ]);
+      // A bogus continuation is never consumed and reports nothing.
+      await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          resume: { continuationId: 'nope', results: [] },
+          continuations: store,
+          continuationKey: 'thread-1',
+          onState,
+        }),
+      );
+      expect(states).toHaveLength(2);
+      // The resumed leg's origin comes from the continuation, not the options.
+      await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          resume: {
+            continuationId: 'cont-1',
+            results: [{ id: 'w1', ok: true, result: 'ok' }],
+          },
+          originMessageId: 'forged',
+          continuations: store,
+          continuationKey: 'thread-1',
+          onState,
+        }),
+      );
+      expect(states.slice(2)).toEqual([
+        'running:send-1:cont-1:-',
+        'completed:send-1:cont-1:-',
+      ]);
+    });
+
     it('refuses a resume under another key', async () => {
       const store = createMemoryContinuationStore();
       const ai = scriptedAI([
@@ -874,6 +949,54 @@ describe('assistant turn', () => {
       });
       now += 500;
       expect(await store.take('k', 'a')).toBeNull();
+    });
+
+    it('reports whether a continuation is still waiting without consuming it (#3368)', async () => {
+      let now = 1_000;
+      let context: Record<string, unknown> = {};
+      const session = {
+        getSessionContext: () => context,
+        async updateSessionContext(updates: Record<string, unknown>) {
+          context = { ...context, ...updates };
+        },
+      };
+      for (const store of [
+        createMemoryContinuationStore({ ttlMs: 100, now: () => now }),
+        createSessionContinuationStore(session, { ttlMs: 100, now: () => now }),
+      ]) {
+        now = 1_000;
+        await store.save('k', {
+          version: 1,
+          id: 'a',
+          createdAt: now,
+          steps: 0,
+          messages: [],
+          pending: [],
+          clientTools: [],
+          originMessageId: 'send-1',
+        });
+        expect(await store.has?.('k', 'a')).toBe(true);
+        expect(await store.has?.('k', 'b')).toBe(false);
+        expect(await store.has?.('other', 'a')).toBe(false);
+        expect(await store.has?.('k', 'a')).toBe(true);
+        expect((await store.take('k', 'a'))?.originMessageId).toBe('send-1');
+        // Claimed, not gone: single-use, still visible until released.
+        expect(await store.has?.('k', 'a')).toBe(true);
+        expect(await store.take('k', 'a')).toBeNull();
+        await store.release?.('k', 'a');
+        expect(await store.has?.('k', 'a')).toBe(false);
+        await store.save('k', {
+          version: 1,
+          id: 'c',
+          createdAt: now,
+          steps: 0,
+          messages: [],
+          pending: [],
+          clientTools: [],
+        });
+        now += 500;
+        expect(await store.has?.('k', 'c')).toBe(false);
+      }
     });
   });
 

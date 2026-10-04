@@ -113,6 +113,8 @@ Catalog sync is additive and fail-closed:
 - it updates `name`, `description`, and `category` by slug
 - it does not auto-grant permissions to roles
 - it does not delete stale permissions in v1
+- it commits created/updated rows in small batched transactions; when calling
+  it inside your own transaction, pass that transaction's database handle
 
 ### App-defined permissions in `smrt.config.ts`
 
@@ -598,6 +600,181 @@ With `enterTenantContext: true`, the same request also enters
 `@happyvertical/smrt-tenancy` context so regular collection access is scoped to
 the current tenant in application code.
 
+### Login rate limiting and lockout
+
+Every credential-based sign-in (terminal approval, device PIN, and any
+password or passkey flow an app adds) draws from one shared budget,
+`LoginAttemptLimiter` (#3273). The budget lives in `users_login_attempts`, so it
+holds across every replica on Postgres; keys are hashed, so the table never
+becomes an index of emails or IPs.
+
+```ts
+import {
+  InvalidCredentialsError,
+  LoginAttemptLimiter,
+  LoginRateLimitError,
+} from '@happyvertical/smrt-users';
+
+const limiter = await LoginAttemptLimiter.create({
+  db,
+  maxAttempts: 5,          // per key, per window
+  windowSeconds: 300,
+  lockout: { baseSeconds: 60, factor: 2, maxSeconds: 3600 },
+  keyPepper: process.env.LOGIN_KEY_PEPPER,
+});
+
+const lease = await limiter.reserve({
+  kind: 'password',
+  subject: submittedEmailKey, // what the client typed — NOT a resolved user
+  source: clientIp,           // or a device/station id
+});
+if (!lease.allowed) throw new LoginRateLimitError(lease); // 429 + Retry-After
+
+try {
+  // Always do the same work for an unknown account as for a wrong password.
+  const ok = await verifyPassword(user?.passwordHash ?? DUMMY_HASH, password);
+  if (!ok || !user) {
+    await lease.fail();
+    throw new InvalidCredentialsError();
+  }
+  await lease.succeed();
+} catch (error) {
+  if (!(error instanceof InvalidCredentialsError)) await lease.release();
+  throw error;
+}
+```
+
+Subject and source are independent budgets; either one exhausted refuses the
+attempt, and a refusal on the source hands the subject reservation back so one
+noisy address cannot burn every account. The failure that exhausts a window —
+or that completes another `maxAttempts` consecutive failures, however they
+were paced across windows — locks the key for `base × factor^n` seconds, where
+`n` counts consecutive exhausted budgets. A success resets the subject's
+streak only; a shared source (a tablet, an office address) keeps its history,
+so one valid credential cannot clear the backoff on guessing at others.
+Instead a source sheds one failure per `sourceStreakDecaySeconds` (default:
+twice the window) since its last failure: mistakes spaced further apart than
+that never add up to locking everyone behind the source, while a burst of
+guesses leaves no time to decay and still escalates. Either streak is forgiven
+outright after `streakResetSeconds` without a failure. Every decision is
+reported to a `LoginAuditSink` — by default a durable `UsersLoginAuditEvent`
+row (pruned after 90 days by the retention sweep), or pass `audit` to forward
+into the host's own log, or `audit: false`. `TerminalAuthService` uses this
+limiter for approvals, keyed on the approving user only under its own subject
+prefix, so that budget never pools with the same person's PIN or password
+budget; pass `loginLimiter` to share one instance and audit sink.
+
+### Per-person PIN on an enrolled device
+
+A shared tablet enrolled through the terminal device-code grant holds a
+device-account bearer session. `DeviceCredentialService` (#3276) lets a person
+sign in **on that device only** with a short credential and mints a session
+*layered on* the device session: it carries `authMethod: 'pin'` and
+`parentSessionId`, is valid only while the device session is, never widens
+tenant scope, and signs out independently.
+
+```ts
+import { createDeviceCredentialHandlers } from '@happyvertical/smrt-users/sveltekit';
+
+export const deviceAuth = createDeviceCredentialHandlers({
+  db,
+  pin: { pepper: process.env.PIN_PEPPER },      // required in production
+  personIdleSeconds: 15 * 60,                   // sliding; default 8 hours
+  personMaxSeconds: 10 * 60 * 60,               // absolute; default none
+  // Optional: the most anyone may do on this device. Default: no ceiling.
+  deviceCeiling: async (device) => devices.permissionCeilingFor(device.user.id),
+  // smrt-users does not own a Device object: say whether this device
+  // account is still an enrolled, active device.
+  assertEnrolledDevice: async (device) =>
+    (await devices.findActiveByUserId(device.user.id)) !== null,
+});
+// POST /api/device/pin/sign-in  → deviceAuth.pinSignIn   (device bearer + { userId, pin })
+// POST /api/device/sign-out     → deviceAuth.signOut     (person bearer)
+// PUT  /api/device/pin          → deviceAuth.setPin      (self with currentPin, or admin)
+// POST /api/device/pin/reset    → deviceAuth.resetPin    (admin; forces a new PIN)
+// DELETE /api/device/pin        → deviceAuth.clearPin
+```
+
+The tablet swaps its `Authorization` bearer to the returned `sessionId` for
+person-attributed work; `loadSessionContext()` resolves it with `parent` set,
+so host gates can tell a person-on-device session from a browser session via
+`authMethod`/`parent` (also on `event.locals.authMethod` and
+`event.locals.sessionParent`). Any bearer that is not a first-class
+device-enrolled session — a browser cookie, a mobile session, another person's
+layered session — is refused with the same 401 as a wrong PIN. Lockout is per
+person **and** per device through the login limiter. Administering PINs needs
+`users.pin.manage` from a non-PIN session; a PIN session can only change its
+own PIN with the current one. An admin reset revokes the person's live PIN
+sessions and flags `mustReset`; signing in with the temporary PIN then yields a
+restricted session that resolves to no permissions and can only call `setPin`,
+which ends it — the person signs in again with the new PIN.
+
+**Whose authority.** The device session authenticates the tablet; the person's
+session authorizes the work. Its `permissions` are resolved on every load from
+the *person's* own membership in the device tenant (role plus per-membership
+overrides) — never the device account's — so a welder and a foreman on the
+same tablet get different permission sets. Both identities are on the resolved
+context: `user` is the person and `parent` (`event.locals.sessionParent`, and
+`session.parent` on the request permission context) is the device session and
+its account, so a consumer can record "this person, at this tablet".
+
+**Device ceiling.** `deviceCeiling(device)` may return permission slugs that
+cap every person on that device. A non-null result is snapshotted into the
+person's session at sign-in (`data.permissionCeiling`) and intersected with
+their resolved permissions on every load; it only removes slugs, and `[]`
+leaves none. A ceilinged session never receives `superAdminBypass` or
+`systemContext` from `withSessionPermissionContext`, and
+`assertOperationPermission` / `checkOperationPermission` called inside that
+session deny anything outside the ceiling. Returning `null` (or
+omitting the hook) means no ceiling. Because it is a snapshot, **a ceiling
+change applies at each person's next sign-in**; a throwing hook refuses the
+sign-in.
+
+**Switching people.** `signOut` ends only the person's session. With
+`singleOccupant` (default `true`) a successful sign-in also ends every other
+person's session on that device session, so signing in as the next person is
+the hand-over; a failed sign-in leaves the current person signed in. (Two
+sign-ins that overlap on one device can end each other — both are refused and
+the person signs in again.) Set
+`singleOccupant: false` for devices several people stay signed in on.
+`personIdleSeconds` is a sliding idle timeout stored on the session
+(`data.idleSeconds`), so it slides by that value whichever `SessionService`
+resolves the bearer and is independent of the device session's long life.
+`personMaxSeconds` adds an absolute lifetime (`data.absoluteExpiresAt`) that
+activity cannot extend. `permissionCeiling`, `idleSeconds`, and
+`absoluteExpiresAt` are reserved `Session.data` keys (`SESSION_DATA_KEYS`):
+server-set at mint, never to be written from client input.
+
+**Operational contracts.** `parent.sessionId` is the device's bearer
+credential: keep `SessionContext.parent` / `locals.sessionParent` server-side
+and give clients `parent.userId` as the device identity
+(`Session.parentSessionId` is a sensitive field and never appears in public
+serialization). Resolve person bearers with `service.loadPersonSession(token)`:
+it re-checks `assertEnrolledDevice` on every call and revokes the person
+session of a device that fails it (the PIN management handlers resolve person
+bearers the same way). A host that resolves them through its own
+`SessionService` must instead revoke the device's bearer session when it
+un-enrols the device. `assertEnrolledDevice` returning `false` is un-enrolment
+(the person session is revoked); a throw only refuses that request. The PIN is
+one per person across tenants, so PIN administration (`users.pin.manage`)
+reaches only people whose every active membership is in the administrator's
+session tenant; people who belong to several tenants manage their own PIN from
+a first-class session. `users.pin.manage` is impersonation-equivalent on
+enrolled devices — whoever sets a person's PIN can sign in as them there, and
+the membership rule is checked when the PIN is written, not when the person
+later joins another tenant — so grant it like an owner-level permission; every
+administrative change is audited with the actor's id. Any PIN change ends the sessions minted under the old
+PIN (a person changing their own keeps the session they changed it from).
+
+Existing installations need `smrt db:migrate` for the additive
+`sessions.auth_method` / `sessions.parent_session_id` columns and the
+`users_login_attempts`, `users_login_audit_events`, and
+`users_pin_credentials` tables.
+
+Other credential kinds (a fob or badge reader, say) implement
+`DeviceCredentialVerifier` and go through `service.signIn(verifier, input)`;
+`PinVerifier` is the reference implementation.
+
 ### Request-scoped database access
 
 Generated SvelteKit helpers and custom server code can read the current
@@ -831,7 +1008,9 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `Tenant` | Organizational boundary. STI. Hierarchical via `parentTenantId`/`hierarchyPath`. |
 | `Role` | Permission template. `tenantId = null` for system roles. `isSystem` blocks deletion. |
 | `Permission` | Named capability. Slug format: `resource.action`. |
-| `Session` | Server-side session. Secure UUID. TTL in seconds. |
+| `Session` | Server-side session. Secure UUID. TTL in seconds. `authMethod` records the channel; `parentSessionId` makes it a layered session valid only while its parent is. Reserved `data` keys (`SESSION_DATA_KEYS`) carry a permission ceiling, sliding idle timeout, and absolute expiry. |
+| `UsersLoginAttempt`, `UsersLoginAuditEvent` | Hashed-key login budget rows and durable sign-in audit events (#3273). Closed generated surface. |
+| `UsersPinCredential` | Per-person scrypt PIN hash for enrolled-device sign-in (#3276). Closed generated surface. |
 | `Group` | Team within a tenant. Gains permissions via GroupRole. |
 | `Membership` | User + Tenant + Role junction. UNIQUE(userId, tenantId). |
 | `MembershipOverride` | Per-user permission grant/deny on a membership. |
@@ -849,6 +1028,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `MembershipOverrideCollection`, `TenantPermissionOverrideCollection` | Override management at membership and tenant levels |
 | `GroupCollection`, `GroupMemberCollection`, `GroupRoleCollection`, `RolePermissionCollection` | Group and role-permission junction management |
 | `AccessRequestCollection` | AccessRequest queries: `findByEmail()`, `findOpenByEmail()`, `findByStatus()`, `findOpen()` |
+| `UsersLoginAttemptCollection`, `UsersLoginAuditEventCollection`, `UsersPinCredentialCollection` | Atomic limiter primitives, audit storage, and PIN credential rows behind the services below |
 
 ### Services
 
@@ -859,7 +1039,9 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `PermissionCatalogService`, `syncPermissionCatalog()` | Discovers manifest/config/runtime permissions and upserts them into `Permission` rows. |
 | `registerPermissionDefinitions()` | Register app or integration permissions at runtime and receive an unregister cleanup function. |
 | `generatePostgresPermissionSql()`, `applyPostgresPermissionPolicies()` | Preview or apply Postgres RLS helper functions and table policies. |
-| `SessionService` | High-level session management. `createSession()`, `loadSessionContext()`, `destroySession()`; tenant contexts include direct or inherited membership provenance. |
+| `SessionService` | High-level session management. `createSession()`, `loadSessionContext()`, `destroySession()`; tenant contexts include direct or inherited membership provenance, `authMethod`, and `parent` for layered sessions. |
+| `LoginAttemptLimiter` | Shared sign-in budget with exponential lockout and audit (#3273): `reserve()` → lease `.fail()`/`.succeed()`/`.release()`. `LoginRateLimitError`, `InvalidCredentialsError`, `LoginAuditSink`, `DurableLoginAuditSink`. |
+| `DeviceCredentialService` | Per-person sign-in layered on an enrolled device session (#3276): `signInWithPin()`, `signIn(verifier, input)`, `signOut()`, `setPin()`, `resetPin()`, `clearPin()`. Person authority with optional `deviceCeiling`, `singleOccupant` hand-over, `personIdleSeconds` / `personMaxSeconds`. `PinVerifier`, `DeviceCredentialVerifier`. |
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
 | `backfillLegacyUserProfiles` | Transactionally create and link canonical global Person Profiles for legacy Users; never creates OIDC identities or infers ownership. |
 | `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |
@@ -884,6 +1066,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `beginOidcLogin`, `completeOidcLogin` | Low-level SvelteKit helpers for custom OIDC login routes |
 | `createOidcLoginHandler`, `createOidcCallbackHandler` | Ready-to-use SvelteKit route handlers for OIDC login and callback |
 | `createMobileAuthHandlers` | Mountable `/api/mobile` PKCE, bearer session, bootstrap, logout, and route-guard handlers |
+| `createDeviceCredentialHandlers` | Mountable PIN sign-in, sign-out, and PIN management handlers for enrolled devices |
 | `resolveMobileUploadDedupKey` | Resolves `clientCaptureId` with `Idempotency-Key` fallback for app-owned multipart routes |
 | `SessionLocals` | Type for `event.locals` (extend in `app.d.ts`) |
 
@@ -904,6 +1087,8 @@ for authentication, deduplication, and status semantics.
 | `ACCESS_REQUEST_CAPABILITIES`, `AccessRequestError` | Operator capability slugs; typed domain error (`error.code`) |
 | `DEFAULT_ROLE_SLUGS`, `DEFAULT_ROLES`, `DEFAULT_TENANT_POLICY` | System role slugs, role configs, default tenant policy |
 | `DEFAULT_SESSION_TTL`, `MAX_TENANT_HIERARCHY_DEPTH` | 604800 (7 days in seconds), 10 |
+| `DEFAULT_LOGIN_MAX_ATTEMPTS`, `DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS`, `DEFAULT_LOGIN_LOCKOUT_*` | 5 attempts per 300 s window; lockout 60 s × 2ⁿ, capped at 3600 s |
+| `DEFAULT_PIN_MANAGE_PERMISSION`, `PIN_LOGIN_KIND` | `users.pin.manage`, `pin` |
 | `TenantHierarchyError` | Thrown on a missing parent, a cycle, or exceeding the hierarchy depth limit (`code`) |
 | `TenantHierarchyMaterializationError` | Thrown by `materializeTenantHierarchy` when any tenant's parent chain is broken; lists `problems` |
 
@@ -918,3 +1103,43 @@ for authentication, deduplication, and status semantics.
 ## License
 
 MIT
+
+### Upgrade duplicate role grants (#3329)
+
+`RolePermission` now has a unique natural key `(role_id, permission_id)`.
+Concurrent seeders converge through core's conflict-tolerant writes, preserving
+one grant ID per pair. Permissions already use `(slug, context)` and system
+roles use the tenant-aware natural key. System-role bootstrap holds a
+PostgreSQL transaction advisory lock across its read/create sequence so two
+seeders also return the same global (`tenant_id = NULL`) role IDs. The concurrent cold-seed test
+checks all three catalogs. Seeding still uses bounded batches and is additive
+unless `prune: true`; concurrent passes must use the same catalog/matrix.
+
+Existing deployments need a maintenance window **before ordinary schema
+migration**: adding the new unique index directly fails if duplicates exist.
+Back up the database, stop every application writer and bootstrap/seed process,
+and run the following once with the new package from an operator process:
+
+```typescript
+import { getDatabase } from '@happyvertical/sql';
+import { deduplicateRolePermissions } from '@happyvertical/smrt-users';
+
+const db = await getDatabase(databaseConfig);
+console.log(await deduplicateRolePermissions(db, { dryRun: true }));
+console.log(await deduplicateRolePermissions(db, {
+  maintenanceConfirmed: true,
+}));
+```
+
+The migration keeps the earliest `created_at` per pair (lowest `id` breaks ties;
+null timestamps sort last), deletes only extra grants, and creates
+`role_permissions_role_id_permission_id_idx` in the same transaction. Other
+pairs and surviving grant data remain intact. Failure rolls the transaction
+back; after resolving its cause, rerun the migration. Dry runs change nothing.
+The helper requires transaction support and supports SQLite, DuckDB and
+PostgreSQL; PostgreSQL locks the grant table while repairing it. Writer shutdown
+is still required because older application versions cannot seed safely
+against the new constraint. Apply the remaining application schema migrations,
+run `smrt doctor --db` / `db:status --parity`, deploy the new version to every
+writer, then resume traffic. Do not roll back application writers without also
+restoring the pre-upgrade schema/database backup.

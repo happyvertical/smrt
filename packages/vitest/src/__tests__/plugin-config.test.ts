@@ -3,7 +3,37 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Plugin, ViteUserConfig } from 'vitest/config';
 import { setupSmrtManifests, smrtVitestPlugin } from '../index.js';
+
+function invokeConfig(
+  plugin: Plugin,
+  userConfig: ViteUserConfig,
+): ViteUserConfig {
+  const hook = plugin.config;
+  if (!hook) throw new Error('smrtVitestPlugin has no config hook');
+  const handler = typeof hook === 'function' ? hook : hook.handler;
+  // This test exercises a partial Vite host; the hook uses no context fields.
+  const result = handler.call({} as never, userConfig, {
+    command: 'serve',
+    mode: 'test',
+  });
+  if (!result || typeof result !== 'object' || 'then' in result) {
+    throw new Error('Expected a synchronous config result');
+  }
+  return result;
+}
+
+async function invokeConfigResolved(
+  plugin: Plugin,
+  config: unknown,
+): Promise<void> {
+  const hook = plugin.configResolved;
+  if (!hook) throw new Error('smrtVitestPlugin has no configResolved hook');
+  const handler = typeof hook === 'function' ? hook : hook.handler;
+  // The test supplies only the config fields read by this hook.
+  await handler.call({} as never, config as never);
+}
 
 const mockedModules = vi.hoisted(() => ({
   hasClass: vi.fn<(name: string) => boolean>(),
@@ -78,7 +108,7 @@ describe('smrtVitestPlugin config', () => {
         ],
       },
     };
-    const config = plugin.config?.(userConfig as any);
+    const config = invokeConfig(plugin, userConfig as any);
 
     expect(config).toMatchObject({
       test: {
@@ -111,19 +141,73 @@ describe('smrtVitestPlugin config', () => {
     });
   });
 
+  it('excludes build copies at root and in projects while preserving exclusions', () => {
+    const userConfig = {
+      test: {
+        exclude: ['**/slow/**'],
+        projects: [{ test: { name: 'unit', exclude: ['**/fixtures/**'] } }],
+      },
+    };
+    const config = invokeConfig(smrtVitestPlugin(), userConfig as any) as any;
+    expect(config.test.exclude).toEqual(
+      expect.arrayContaining([
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/.svelte-kit/**',
+        '**/slow/**',
+      ]),
+    );
+    expect(userConfig.test.projects[0].test.exclude).toEqual(
+      expect.arrayContaining([
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/.svelte-kit/**',
+        '**/fixtures/**',
+      ]),
+    );
+    expect(userConfig.test.projects[0].test.exclude).not.toContain(
+      '**/slow/**',
+    );
+  });
+
+  it('creates test defaults for bare inline configs without mutating deferred configs', () => {
+    const inline: Record<string, unknown> = { root: '/example' };
+    const deferred = Promise.resolve({ test: { name: 'deferred' } });
+    const factory = () => ({ test: { name: 'factory' } });
+    const projects = [inline, deferred, factory, './vitest.project.ts'];
+    invokeConfig(smrtVitestPlugin(), { test: { projects } } as any);
+    expect(inline).toMatchObject({
+      test: {
+        setupFiles: [defaultSetupFile],
+        exclude: expect.arrayContaining([
+          '**/node_modules/**',
+          '**/dist/**',
+          '**/.svelte-kit/**',
+        ]),
+      },
+    });
+    expect(Object.hasOwn(deferred, 'test')).toBe(false);
+    expect(projects[1]).toBe(deferred);
+    expect(projects[2]).toBe(factory);
+    expect(projects[3]).toBe('./vitest.project.ts');
+  });
+
   it('injects CI-aware retry into root and project configs', () => {
     vi.stubEnv('SMRT_VITEST_RETRY', '');
     vi.stubEnv('CI', '1');
     const userConfig = {
       test: { projects: [{ test: { name: 'sqlite' } }] },
     };
-    const config = smrtVitestPlugin().config?.(userConfig as any);
+    const config = invokeConfig(smrtVitestPlugin(), userConfig as any);
     expect((config as any)?.test?.retry).toBe(2);
     expect((userConfig.test.projects[0] as any).test.retry).toBe(2);
 
     vi.stubEnv('CI', '');
     expect(
-      (smrtVitestPlugin().config?.({ test: {} } as any) as any)?.test?.retry,
+      (invokeConfig(smrtVitestPlugin(), { test: {} } as any) as any)?.test
+        ?.retry,
     ).toBe(0);
     vi.unstubAllEnvs();
   });
@@ -136,13 +220,14 @@ describe('smrtVitestPlugin config', () => {
     const rootZero = {
       test: { retry: 0, projects: [{ test: { name: 'sqlite' } }] },
     };
-    smrtVitestPlugin().config?.(rootZero as any);
+    invokeConfig(smrtVitestPlugin(), rootZero as any);
     expect((rootZero.test.projects[0] as any).test.retry).toBe(0);
 
     // Object retry config is preserved as-is, not coerced to a number.
     const objectRetry = { test: { retry: { count: 3, delay: 50 } } };
     expect(
-      (smrtVitestPlugin().config?.(objectRetry as any) as any)?.test?.retry,
+      (invokeConfig(smrtVitestPlugin(), objectRetry as any) as any)?.test
+        ?.retry,
     ).toEqual({ count: 3, delay: 50 });
     vi.unstubAllEnvs();
   });
@@ -151,7 +236,7 @@ describe('smrtVitestPlugin config', () => {
     vi.stubEnv('CI', '1');
     vi.stubEnv('SMRT_VITEST_RETRY', '');
     const retryFor = (userConfig: unknown) =>
-      (smrtVitestPlugin().config?.(userConfig as any) as any)?.test?.retry;
+      (invokeConfig(smrtVitestPlugin(), userConfig as any) as any)?.test?.retry;
 
     // explicit root retry preserved over the CI default
     expect(retryFor({ test: { retry: 5 } })).toBe(5);
@@ -179,7 +264,7 @@ describe('smrtVitestPlugin config', () => {
         ],
       },
     };
-    const config = plugin.config?.(userConfig as any);
+    const config = invokeConfig(plugin, userConfig as any);
 
     expect(config).toMatchObject({
       test: {
@@ -208,7 +293,7 @@ describe('smrtVitestPlugin config', () => {
   });
 
   it('injects the vite 8 oxc defaults when the consumer sets none (#2017)', () => {
-    const config = smrtVitestPlugin().config?.({ test: {} } as any);
+    const config = invokeConfig(smrtVitestPlugin(), { test: {} } as any);
 
     expect((config as any).oxc).toEqual({
       decorator: { legacy: true, emitDecoratorMetadata: true },
@@ -225,7 +310,7 @@ describe('smrtVitestPlugin config', () => {
   it('never overrides consumer-configured oxc fields (#2017)', () => {
     // Explicit decorator config: the decorator default (and its tsconfig
     // mirror) is suppressed; the typescript default still applies.
-    const decoratorOwned = smrtVitestPlugin().config?.({
+    const decoratorOwned = invokeConfig(smrtVitestPlugin(), {
       oxc: { decorator: { legacy: false } },
       test: {},
     } as any);
@@ -234,7 +319,7 @@ describe('smrtVitestPlugin config', () => {
     });
 
     // Explicit onlyRemoveTypeImports: the typescript default is suppressed.
-    const typescriptOwned = smrtVitestPlugin().config?.({
+    const typescriptOwned = invokeConfig(smrtVitestPlugin(), {
       oxc: { typescript: { onlyRemoveTypeImports: false } },
       test: {},
     } as any);
@@ -250,7 +335,7 @@ describe('smrtVitestPlugin config', () => {
 
     // Other typescript options without the flag still receive the default
     // (vite deep-merges, so the consumer's fields survive).
-    const typescriptPartial = smrtVitestPlugin().config?.({
+    const typescriptPartial = invokeConfig(smrtVitestPlugin(), {
       oxc: { typescript: { allowNamespaces: true } },
       test: {},
     } as any);
@@ -260,7 +345,7 @@ describe('smrtVitestPlugin config', () => {
 
     // `oxc: false` disables the transform entirely — nothing is injected
     // (undefined is dropped by vite's config merge).
-    const disabled = smrtVitestPlugin().config?.({
+    const disabled = invokeConfig(smrtVitestPlugin(), {
       oxc: false,
       test: {},
     } as any);
@@ -268,9 +353,12 @@ describe('smrtVitestPlugin config', () => {
   });
 
   it('drops workspace aliases rejected by aliasFilter (#2017)', () => {
-    const config = smrtVitestPlugin({
-      aliasFilter: (entry) => entry.find !== '@happyvertical/smrt-core',
-    }).config?.({ test: {} } as any);
+    const config = invokeConfig(
+      smrtVitestPlugin({
+        aliasFilter: (entry) => entry.find !== '@happyvertical/smrt-core',
+      }),
+      { test: {} },
+    );
 
     const alias = (config as any).resolve.alias as Array<{ find: RegExp }>;
     expect(
@@ -307,7 +395,7 @@ describe('smrtVitestPlugin config', () => {
         generateManifest: false,
       });
 
-      await plugin.configResolved?.({} as never);
+      await invokeConfigResolved(plugin, {});
 
       expect(mockedModules.registerFromManifest).toHaveBeenCalledWith(
         '@test/local-package:LateClass',

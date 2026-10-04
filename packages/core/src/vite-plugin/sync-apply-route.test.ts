@@ -19,6 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types';
+import { generateCollectionAccessImports } from './sveltekit-config-import';
 import {
   collectSyncApplyTargets,
   generateSyncApplyRoute,
@@ -45,6 +46,13 @@ const productDef = {
   methods: {},
   decoratorConfig: { api: true },
 };
+
+const ACCESS_IMPORTS = generateCollectionAccessImports(
+  '/consumer',
+  '/consumer/src/routes/api/sync/apply',
+  {},
+  ['getCollection'],
+);
 
 describe('collectSyncApplyTargets', () => {
   it('collects api-enabled objects with their mutating ops and policy data', () => {
@@ -138,7 +146,7 @@ describe('collectSyncApplyTargets', () => {
     );
     expect(targets[0].registryKey).toBe('@happyvertical/smrt-products:Product');
 
-    const content = generateSyncApplyRouteTemplate(targets, '$lib/server/smrt');
+    const content = generateSyncApplyRouteTemplate(targets, ACCESS_IMPORTS);
     expect(content).toContain(
       'registryKey: "@happyvertical/smrt-products:Product"',
     );
@@ -161,7 +169,7 @@ describe('generateSyncApplyRouteTemplate', () => {
       },
     }),
   );
-  const content = generateSyncApplyRouteTemplate(targets, '$lib/server/smrt');
+  const content = generateSyncApplyRouteTemplate(targets, ACCESS_IMPORTS);
 
   it('marks the file as generated and exports a POST handler', () => {
     expect(
@@ -174,7 +182,13 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(content).toContain('processSyncApplyBatch');
     expect(content).toContain('applySyncWritablePolicy');
     expect(content).toContain("from '@happyvertical/smrt-core'");
-    expect(content).toContain("getCollection } from '$lib/server/smrt'");
+    // #3416: collections resolve through the generated access prelude.
+    expect(content).toContain(
+      "import * as smrtApplication from '$lib/server/smrt';",
+    );
+    expect(content).toContain(
+      'const { getCollection } = createGeneratedCollectionAccess(',
+    );
   });
 
   it('embeds one target entry per syncable model with its policy data', () => {
@@ -202,7 +216,7 @@ describe('generateSyncApplyRouteTemplate', () => {
 
     const withoutTenants = generateSyncApplyRouteTemplate(
       collectSyncApplyTargets(manifestWith({ Product: productDef })),
-      '$lib/server/smrt',
+      ACCESS_IMPORTS,
     );
     expect(withoutTenants).not.toContain('establishTenantContext');
     expect(withoutTenants).not.toContain('@happyvertical/smrt-tenancy');
@@ -311,7 +325,10 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     const routePath = join(projectRoot, 'route.ts');
     writeFileSync(
       routePath,
-      generateSyncApplyRouteTemplate(targets, '$lib/server/smrt'),
+      generateSyncApplyRouteTemplate(
+        targets,
+        "import { getCollection } from '$lib/server/smrt';",
+      ),
     );
     const kitShim = join(projectRoot, 'kit-shim.ts');
     writeFileSync(

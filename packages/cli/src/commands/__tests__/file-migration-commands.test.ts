@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { dbDiffCommand } from '../db-diff.js';
 import { dbGenerateCommand } from '../db-generate.js';
 
@@ -14,7 +15,7 @@ describe('file-backed migration commands', () => {
   it('disables db:generate', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await dbGenerateCommand.handler([], {});
+    await requireCommandHandler(dbGenerateCommand)([], {});
 
     expect(process.exitCode).toBe(1);
     expect(
@@ -25,7 +26,7 @@ describe('file-backed migration commands', () => {
   it('emits JSON when db:generate is rejected in JSON mode', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbGenerateCommand.handler([], { json: true });
+    await requireCommandHandler(dbGenerateCommand)([], { json: true });
 
     expect(process.exitCode).toBe(1);
     expect(
@@ -40,7 +41,7 @@ describe('file-backed migration commands', () => {
   it('disables db:diff --generate before connecting to a database', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await dbDiffCommand.handler([], { generate: true });
+    await requireCommandHandler(dbDiffCommand)([], { generate: true });
 
     expect(process.exitCode).toBe(1);
     expect(
@@ -51,7 +52,10 @@ describe('file-backed migration commands', () => {
   it('disables all file-generation options on db:diff', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await dbDiffCommand.handler([], { name: 'add-users', format: 'ts' });
+    await requireCommandHandler(dbDiffCommand)([], {
+      name: 'add-users',
+      format: 'ts',
+    });
 
     expect(process.exitCode).toBe(1);
     const output = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
@@ -63,7 +67,10 @@ describe('file-backed migration commands', () => {
   it('emits JSON when db:diff file-generation options are rejected in JSON mode', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await dbDiffCommand.handler([], { generate: true, json: true });
+    await requireCommandHandler(dbDiffCommand)([], {
+      generate: true,
+      json: true,
+    });
 
     expect(process.exitCode).toBe(1);
     expect(

@@ -79,8 +79,8 @@ describe('formatDataJs', () => {
         fields,
       );
 
-      expect(result.postgresValue).toBe(Number.MAX_SAFE_INTEGER);
-      expect(result.duckdbValue).toBe(Number.MAX_SAFE_INTEGER);
+      expect(result).toHaveProperty('postgresValue', Number.MAX_SAFE_INTEGER);
+      expect(result).toHaveProperty('duckdbValue', Number.MAX_SAFE_INTEGER);
     });
 
     it('rejects INTEGER values outside JavaScript safe-integer range', () => {
@@ -181,7 +181,7 @@ describe('formatDataJs', () => {
       const data = { created_at: '2024-01-01', updated_at: '2024-01-02' };
       const fields = {};
 
-      const result = formatDataJs(data, fields);
+      const result: Record<string, unknown> = formatDataJs(data, fields);
 
       expect(result.createdAt).toBeDefined();
       expect(result.updatedAt).toBeDefined();
@@ -221,8 +221,8 @@ describe('formatDataJs', () => {
       const result = formatDataJs(data);
 
       // Meta fields are surfaced on the RESULT...
-      expect(result.width).toBe(100);
-      expect(result.height).toBe(50);
+      expect(result).toHaveProperty('width', 100);
+      expect(result).toHaveProperty('height', 50);
 
       // ...but the caller's object must be untouched: no injected meta fields
       // and the original keys/values preserved.

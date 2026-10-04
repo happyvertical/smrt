@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const knowledgeMocks = vi.hoisted(() => ({
   compactContextResult: vi.fn((result) => result),
@@ -73,7 +74,7 @@ describe('dev:knowledge-* handlers', () => {
     ['dev:knowledge-review-context', 'buildReviewContext'],
     ['dev:knowledge-architecture-context', 'buildArchitectureContext'],
   ] as const)('%s forwards explicit complete-document requests', async (command, builder) => {
-    await devKnowledgeCommands[command].handler([], {
+    await requireCommandHandler(devKnowledgeCommands[command])([], {
       complete: true,
       package: 'core',
     });
@@ -94,13 +95,15 @@ describe('dev:knowledge-* handlers', () => {
       promptBundle: { contextMarkdown: 'Selected prose only' },
     };
     knowledgeMocks.compactContextResult.mockReturnValueOnce(projected);
-    await devKnowledgeCommands[command].handler([], { format: 'json' });
+    await requireCommandHandler(devKnowledgeCommands[command])([], {
+      format: 'json',
+    });
     expect(knowledgeMocks.compactContextResult).toHaveBeenLastCalledWith(
       contextResult,
       'full',
     );
     expect(logSpy).toHaveBeenLastCalledWith(JSON.stringify(projected, null, 2));
-    await devKnowledgeCommands[command].handler([], {
+    await requireCommandHandler(devKnowledgeCommands[command])([], {
       json: true,
       complete: true,
     });
@@ -112,10 +115,13 @@ describe('dev:knowledge-* handlers', () => {
 
   describe('dev:knowledge-index', () => {
     it('prints JSON by default', async () => {
-      await devKnowledgeCommands['dev:knowledge-index'].handler([], {
-        format: 'json',
-        scope: 'project',
-      });
+      await requireCommandHandler(devKnowledgeCommands['dev:knowledge-index'])(
+        [],
+        {
+          format: 'json',
+          scope: 'project',
+        },
+      );
       expect(knowledgeMocks.buildKnowledgeIndex).toHaveBeenCalledWith({
         scope: 'project',
         package: undefined,
@@ -126,9 +132,12 @@ describe('dev:knowledge-* handlers', () => {
     });
 
     it('renders markdown when format is markdown', async () => {
-      await devKnowledgeCommands['dev:knowledge-index'].handler([], {
-        format: 'markdown',
-      });
+      await requireCommandHandler(devKnowledgeCommands['dev:knowledge-index'])(
+        [],
+        {
+          format: 'markdown',
+        },
+      );
       expect(knowledgeMocks.renderKnowledgeIndexMarkdown).toHaveBeenCalled();
       expect(logSpy).toHaveBeenCalledWith('# Knowledge Index Markdown');
     });
@@ -136,11 +145,14 @@ describe('dev:knowledge-* handlers', () => {
 
   describe('dev:knowledge-check', () => {
     it('prints markdown freshness output by default', async () => {
-      await devKnowledgeCommands['dev:knowledge-check'].handler([], {
-        format: 'markdown',
-        changed: true,
-        strict: true,
-      });
+      await requireCommandHandler(devKnowledgeCommands['dev:knowledge-check'])(
+        [],
+        {
+          format: 'markdown',
+          changed: true,
+          strict: true,
+        },
+      );
       expect(knowledgeMocks.checkKnowledgeFreshness).toHaveBeenCalledWith({
         changed: true,
         strict: true,
@@ -151,9 +163,12 @@ describe('dev:knowledge-* handlers', () => {
     });
 
     it('honors the deprecated --json alias', async () => {
-      await devKnowledgeCommands['dev:knowledge-check'].handler([], {
-        json: true,
-      });
+      await requireCommandHandler(devKnowledgeCommands['dev:knowledge-check'])(
+        [],
+        {
+          json: true,
+        },
+      );
       expect(logSpy).toHaveBeenCalledWith(
         JSON.stringify({ ok: true }, null, 2),
       );
@@ -165,9 +180,12 @@ describe('dev:knowledge-* handlers', () => {
         .spyOn(process, 'exit')
         .mockImplementation((() => undefined) as any);
 
-      await devKnowledgeCommands['dev:knowledge-check'].handler([], {
-        format: 'markdown',
-      });
+      await requireCommandHandler(devKnowledgeCommands['dev:knowledge-check'])(
+        [],
+        {
+          format: 'markdown',
+        },
+      );
 
       expect(exitSpy).toHaveBeenCalledWith(1);
       exitSpy.mockRestore();
@@ -176,10 +194,13 @@ describe('dev:knowledge-* handlers', () => {
 
   describe('dev:knowledge-diff', () => {
     it('prints a human-readable diff by default', async () => {
-      await devKnowledgeCommands['dev:knowledge-diff'].handler([], {
-        format: 'markdown',
-        base: 'main',
-      });
+      await requireCommandHandler(devKnowledgeCommands['dev:knowledge-diff'])(
+        [],
+        {
+          format: 'markdown',
+          base: 'main',
+        },
+      );
       expect(knowledgeMocks.diffKnowledgeIndex).toHaveBeenCalledWith({
         base: 'main',
         scope: undefined,
@@ -194,9 +215,12 @@ describe('dev:knowledge-* handlers', () => {
     });
 
     it('prints JSON via --json', async () => {
-      await devKnowledgeCommands['dev:knowledge-diff'].handler([], {
-        json: true,
-      });
+      await requireCommandHandler(devKnowledgeCommands['dev:knowledge-diff'])(
+        [],
+        {
+          json: true,
+        },
+      );
       expect(knowledgeMocks.diffKnowledgeIndex).toHaveBeenCalledWith({
         base: 'HEAD',
         scope: undefined,
@@ -209,10 +233,9 @@ describe('dev:knowledge-* handlers', () => {
 
   describe('dev:knowledge-review-context', () => {
     it('renders markdown context including deterministic findings', async () => {
-      await devKnowledgeCommands['dev:knowledge-review-context'].handler(
-        ['focus', 'area'],
-        { format: 'markdown' },
-      );
+      await requireCommandHandler(
+        devKnowledgeCommands['dev:knowledge-review-context'],
+      )(['focus', 'area'], { format: 'markdown' });
       expect(knowledgeMocks.buildReviewContext).toHaveBeenCalledWith({
         focus: 'focus area',
         scope: undefined,
@@ -232,7 +255,9 @@ describe('dev:knowledge-* handlers', () => {
     });
 
     it('prints JSON via --json', async () => {
-      await devKnowledgeCommands['dev:knowledge-review-context'].handler([], {
+      await requireCommandHandler(
+        devKnowledgeCommands['dev:knowledge-review-context'],
+      )([], {
         json: true,
         focus: 'opt-focus',
       });
@@ -249,10 +274,9 @@ describe('dev:knowledge-* handlers', () => {
 
   describe('dev:knowledge-architecture-context', () => {
     it('renders markdown with the idea joined from args', async () => {
-      await devKnowledgeCommands['dev:knowledge-architecture-context'].handler(
-        ['new', 'feature'],
-        { format: 'markdown', focus: 'extra' },
-      );
+      await requireCommandHandler(
+        devKnowledgeCommands['dev:knowledge-architecture-context'],
+      )(['new', 'feature'], { format: 'markdown', focus: 'extra' });
       expect(knowledgeMocks.buildArchitectureContext).toHaveBeenCalledWith({
         idea: 'new feature',
         focus: 'extra',
@@ -265,10 +289,9 @@ describe('dev:knowledge-* handlers', () => {
     });
 
     it('prints JSON via --json and falls back to options.idea', async () => {
-      await devKnowledgeCommands['dev:knowledge-architecture-context'].handler(
-        [],
-        { json: true, idea: 'option-idea' },
-      );
+      await requireCommandHandler(
+        devKnowledgeCommands['dev:knowledge-architecture-context'],
+      )([], { json: true, idea: 'option-idea' });
       expect(knowledgeMocks.buildArchitectureContext).toHaveBeenCalledWith({
         idea: 'option-idea',
         focus: undefined,
@@ -284,10 +307,9 @@ describe('dev:knowledge-* handlers', () => {
         selectedSdkPackages: [],
         promptBundle: { contextMarkdown: 'Only bundle' },
       });
-      await devKnowledgeCommands['dev:knowledge-architecture-context'].handler(
-        [],
-        { format: 'markdown' },
-      );
+      await requireCommandHandler(
+        devKnowledgeCommands['dev:knowledge-architecture-context'],
+      )([], { format: 'markdown' });
       const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(printed).toContain('(none)');
       expect(printed).not.toContain('## Deterministic Findings');

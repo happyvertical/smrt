@@ -200,21 +200,19 @@ describe.skipIf(!pgUrl)(
       // the unique violation that actually failed.
       await collection.create({ sku: 'tx-a', tag: 'tx-dup', label: 'first' });
 
-      const error = await db
-        .transaction(async (tx: DatabaseInterface) => {
-          const txCollection = await Issue2366WidgetCollection.create({
-            db: tx,
-          });
-          await txCollection.create({
-            sku: 'tx-b',
-            tag: 'tx-dup',
-            label: 'second',
-          });
-        })
-        .then(
-          () => null,
-          (thrown: unknown) => thrown,
-        );
+      const error = await db.transaction!(async (tx: DatabaseInterface) => {
+        const txCollection = await Issue2366WidgetCollection.create({
+          db: tx,
+        });
+        await txCollection.create({
+          sku: 'tx-b',
+          tag: 'tx-dup',
+          label: 'second',
+        });
+      }).then(
+        () => null,
+        (thrown: unknown) => thrown,
+      );
 
       expect(error).not.toBeNull();
       const text = `${(error as Error).message} ${JSON.stringify(
@@ -239,7 +237,7 @@ describe.skipIf(!pgUrl)(
         _skipLoad: true,
       });
       await widget.initialize();
-      widget._id = 'definitely-not-a-uuid';
+      widget.id = 'definitely-not-a-uuid';
 
       const started = Date.now();
       const error = await widget.loadFromId().then(

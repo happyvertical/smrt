@@ -1,5 +1,80 @@
 # @happyvertical/smrt-support
 
+## 0.53.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.53.4
+  - @happyvertical/smrt-chat@0.53.4
+  - @happyvertical/smrt-jobs@0.53.4
+  - @happyvertical/smrt-messages@0.53.4
+  - @happyvertical/smrt-projects@0.53.4
+  - @happyvertical/smrt-tenancy@0.53.4
+  - @happyvertical/smrt-timesheets@0.53.4
+  - @happyvertical/smrt-users@0.53.4
+  - @happyvertical/smrt-ui@0.53.4
+
+## 0.53.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.53.3
+  - @happyvertical/smrt-chat@0.53.3
+  - @happyvertical/smrt-jobs@0.53.3
+  - @happyvertical/smrt-messages@0.53.3
+  - @happyvertical/smrt-projects@0.53.3
+  - @happyvertical/smrt-tenancy@0.53.3
+  - @happyvertical/smrt-timesheets@0.53.3
+  - @happyvertical/smrt-users@0.53.3
+  - @happyvertical/smrt-ui@0.53.3
+
+## 0.53.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.53.2
+  - @happyvertical/smrt-chat@0.53.2
+  - @happyvertical/smrt-jobs@0.53.2
+  - @happyvertical/smrt-messages@0.53.2
+  - @happyvertical/smrt-projects@0.53.2
+  - @happyvertical/smrt-tenancy@0.53.2
+  - @happyvertical/smrt-timesheets@0.53.2
+  - @happyvertical/smrt-users@0.53.2
+  - @happyvertical/smrt-ui@0.53.2
+
+## 0.53.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.53.1
+  - @happyvertical/smrt-chat@0.53.1
+  - @happyvertical/smrt-jobs@0.53.1
+  - @happyvertical/smrt-messages@0.53.1
+  - @happyvertical/smrt-projects@0.53.1
+  - @happyvertical/smrt-tenancy@0.53.1
+  - @happyvertical/smrt-timesheets@0.53.1
+  - @happyvertical/smrt-users@0.53.1
+  - @happyvertical/smrt-ui@0.53.1
+
+## 0.53.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.53.0
+  - @happyvertical/smrt-chat@0.53.0
+  - @happyvertical/smrt-jobs@0.53.0
+  - @happyvertical/smrt-messages@0.53.0
+  - @happyvertical/smrt-projects@0.53.0
+  - @happyvertical/smrt-tenancy@0.53.0
+  - @happyvertical/smrt-timesheets@0.53.0
+  - @happyvertical/smrt-users@0.53.0
+  - @happyvertical/smrt-ui@0.53.0
+
 ## 0.52.0
 
 ### Patch Changes

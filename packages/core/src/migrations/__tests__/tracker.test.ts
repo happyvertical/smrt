@@ -4,14 +4,14 @@
  * Tests for migration state management, tracking, and execution.
  */
 
-import type { DatabaseProvider } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MigrationDefinition } from '../../schema/types.js';
 import { MigrationTracker } from '../tracker.js';
 
 describe('MigrationTracker', () => {
-  let db: DatabaseProvider;
+  let db: DatabaseInterface;
   let tracker: MigrationTracker;
 
   beforeEach(async () => {
@@ -36,7 +36,7 @@ describe('MigrationTracker', () => {
       await tracker.initialize();
 
       // Verify table exists
-      const result = await db.query<{ name: string }>(
+      const result = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='_smrt_schema_migrations'`,
       );
 
@@ -49,7 +49,7 @@ describe('MigrationTracker', () => {
       await tracker.initialize();
 
       // Should not throw
-      const result = await db.query<{ count: number }>(
+      const result = await db.query(
         `SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='_smrt_schema_migrations'`,
       );
 
@@ -102,7 +102,7 @@ describe('MigrationTracker', () => {
       expect(result.applied).toBe(true);
 
       // Verify table was created
-      const tables = await db.query<{ name: string }>(
+      const tables = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='users'`,
       );
       expect(tables.rows).toHaveLength(1);
@@ -316,12 +316,12 @@ describe('MigrationTracker', () => {
       expect(result.success).toBe(true);
 
       // Verify all statements executed
-      const tables = await db.query<{ name: string }>(
+      const tables = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users', 'profiles')`,
       );
       expect(tables.rows).toHaveLength(2);
 
-      const indexes = await db.query<{ name: string }>(
+      const indexes = await db.query(
         `SELECT name FROM sqlite_master WHERE type='index' AND name='idx_profiles_user'`,
       );
       expect(indexes.rows).toHaveLength(1);
@@ -387,7 +387,7 @@ describe('MigrationTracker', () => {
       expect(result.success).toBe(true);
       expect(result.applied).toBe(true);
 
-      const tables = await db.query<{ name: string }>(
+      const tables = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='failed_reconcile_test'`,
       );
       expect(tables.rows).toHaveLength(1);
@@ -444,7 +444,7 @@ describe('MigrationTracker', () => {
       expect(dryRun.applied).toBe(false);
       expect(await tracker.getHistory()).toHaveLength(0);
 
-      const tables = await db.query<{ name: string }>(
+      const tables = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='dry_run_new'`,
       );
       expect(tables.rows).toHaveLength(0);
@@ -479,7 +479,7 @@ describe('MigrationTracker', () => {
       expect(result2.applied).toBe(true);
 
       // Verify table was created
-      const tables = await db.query<{ name: string }>(
+      const tables = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='retry_test'`,
       );
       expect(tables.rows).toHaveLength(1);
@@ -620,7 +620,7 @@ describe('MigrationTracker', () => {
       );
       expect(results[1].success).toBe(false);
 
-      const tables = await db.query<{ name: string }>(
+      const tables = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='atomic_first'`,
       );
       expect(tables.rows).toHaveLength(0);
@@ -738,7 +738,7 @@ describe('MigrationTracker', () => {
       expect(result.success).toBe(true);
 
       // Verify table was dropped
-      const tables = await db.query<{ name: string }>(
+      const tables = await db.query(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='users'`,
       );
       expect(tables.rows).toHaveLength(0);

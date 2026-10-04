@@ -2,7 +2,7 @@ import {
   CommercialUsageService,
   type CommercialUsageServiceOptions,
 } from '@happyvertical/smrt-subscriptions';
-import type { ServiceTimeEntry } from '../models/service-evidence.js';
+import type { ServiceTimeEntry } from '@happyvertical/smrt-timesheets';
 import type {
   CommercialSnapshot,
   ServiceCommercialResolver,
@@ -10,6 +10,23 @@ import type {
 
 export interface ProviderCompensationResolver {
   compensate(entry: ServiceTimeEntry): Promise<CommercialSnapshot>;
+}
+
+/**
+ * A support-case subtype (smrt-support's `ServiceTimeEntry`) carries `caseId` /
+ * `specialistId`; the shared entry does not (#3288). Read them when present so
+ * case-attached entries keep their usage-event work reference.
+ */
+function supportContext(entry: ServiceTimeEntry): {
+  caseId: string | null;
+  specialistId: string | null;
+} {
+  const fields = entry as unknown as Record<string, unknown>;
+  return {
+    caseId: typeof fields.caseId === 'string' ? fields.caseId : null,
+    specialistId:
+      typeof fields.specialistId === 'string' ? fields.specialistId : null,
+  };
 }
 
 /** Bridges shared Professional Service evidence to #1925's effective pricing. */
@@ -38,6 +55,7 @@ export class SubscriptionServiceCommercialResolver
       );
     const at = entry.endedAt ?? entry.startedAt ?? new Date();
     const metadata = entry.getMetadata();
+    const { caseId, specialistId } = supportContext(entry);
     const usageEvent = await this.usage.record({
       tenantId: entry.tenantId,
       metricKey: 'duration.seconds',
@@ -50,13 +68,13 @@ export class SubscriptionServiceCommercialResolver
         typeof metadata.projectId === 'string' ? metadata.projectId : undefined,
       workRefType:
         entry.workRefType ??
-        (entry.caseId ? '@happyvertical/smrt-support:SupportCase' : undefined),
-      workRefId: entry.workRefId ?? entry.caseId ?? undefined,
+        (caseId ? '@happyvertical/smrt-support:SupportCase' : undefined),
+      workRefId: entry.workRefId ?? caseId ?? undefined,
       provider: entry.participantKind,
       dimensions: {
         serviceKey: 'professional-services',
         source: entry.source,
-        specialistId: entry.specialistId,
+        specialistId,
         agentRef: entry.agentRef || undefined,
       },
     });

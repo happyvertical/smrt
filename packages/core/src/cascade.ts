@@ -324,10 +324,18 @@ export function buildCascadePlan(
   // `deleteSystemRows()` narrowed further to registry-unambiguous simple
   // names; tracked under #2419 alongside the other same-simple-name
   // collision gaps rather than reworked here.
+  // A class's deprecated qualified names (#3338) still identify it in rows
+  // written before it moved package, so deleting it removes those too.
   const metaTypes: string[] = [];
-  const qualified = registry.getClass(className)?.qualifiedName;
+  const registered = registry.getClass(className);
+  const qualified = registered?.qualifiedName;
   if (qualified) metaTypes.push(qualified);
-  const simple = registry.getClass(className)?.name ?? className;
+  for (const alias of registered?.config?.previousQualifiedNames ?? []) {
+    if (typeof alias === 'string' && !metaTypes.includes(alias)) {
+      metaTypes.push(alias);
+    }
+  }
+  const simple = registered?.name ?? className;
   if (!metaTypes.includes(simple)) metaTypes.push(simple);
 
   return {

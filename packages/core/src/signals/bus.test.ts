@@ -51,7 +51,7 @@ describe('SignalBus', () => {
       className: 'TestClass',
       method: 'testMethod',
       type: 'start',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await bus.emit(signal);
@@ -88,7 +88,7 @@ describe('SignalBus', () => {
       className: 'TestClass',
       method: 'testMethod',
       type: 'end',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     await bus.emit(signal);
@@ -122,7 +122,7 @@ describe('SignalBus', () => {
       className: 'TestClass',
       method: 'testMethod',
       type: 'error',
-      timestamp: Date.now(),
+      timestamp: new Date(),
     };
 
     // Should not throw
@@ -180,7 +180,7 @@ describe('SignalBus', () => {
         className: 'Test',
         method: 'test',
         type,
-        timestamp: Date.now(),
+        timestamp: new Date(),
       });
     }
 

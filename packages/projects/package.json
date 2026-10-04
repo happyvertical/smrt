@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-projects",
-  "version": "0.52.0",
+  "version": "0.53.4",
   "smrtJsdoc": "strict",
   "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
   "type": "module",
@@ -35,7 +35,7 @@
     }
   },
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:watch": "vite build --mode library --watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
@@ -43,7 +43,6 @@
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
     "test:watch": "vitest",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
@@ -58,6 +57,7 @@
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-subscriptions": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-timesheets": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/sql": "catalog:",

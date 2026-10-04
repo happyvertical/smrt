@@ -1,4 +1,5 @@
 <script lang="ts">
+import { untrack } from 'svelte';
 import {
   emitControlChange,
   highlightControl,
@@ -13,6 +14,7 @@ import {
   tryGetControlInteractionContext,
 } from './control-interaction-context.js';
 import {
+  matchingOption,
   prepareEnabledOptionValue,
   validatesEnabledOption,
 } from './control-value-validation.js';
@@ -49,13 +51,14 @@ const instanceId = $props.id();
 const interactionContext = tryGetControlInteractionContext();
 let rootEl = $state<HTMLDivElement | null>(null);
 let optionEls = $state<Array<HTMLButtonElement | null>>([]);
+const initialValue = untrack(() => value);
 const controlId = $derived(
   interaction === false
     ? undefined
     : (interaction?.id ?? name ?? `listbox-${instanceId}`),
 );
 function select(next: unknown, userEdit = false) {
-  const option = options.find((item) => String(item.value) === String(next));
+  const option = matchingOption(options, next);
   if (!option || option.disabled || disabled) return;
   const changed = !Object.is(value, option.value);
   value = option.value;
@@ -85,6 +88,40 @@ function move(event: KeyboardEvent, index: number) {
         : (next + 1) % options.length;
   optionEls[next]?.focus();
 }
+$effect(() => {
+  const form = rootEl?.closest('form');
+  if (!form) return;
+  let disposed = false;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const reset = (event: Event) => {
+    const valueAtDispatch = value;
+    // Native dispatch can checkpoint microtasks between reset listeners.
+    // Wait for the next task so later cancellation and edits win.
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      if (
+        disposed ||
+        event.defaultPrevented ||
+        !Object.is(value, valueAtDispatch)
+      )
+        return;
+      value = initialValue;
+      recordControlUserEdit(
+        interactionContext,
+        controlId,
+        interaction === false ? undefined : interaction?.subject,
+      );
+      if (value !== undefined) onvaluechange?.(value);
+    });
+    timers.add(timer);
+  };
+  form.addEventListener('reset', reset);
+  return () => {
+    disposed = true;
+    form.removeEventListener('reset', reset);
+    for (const timer of timers) clearTimeout(timer);
+  };
+});
 useControlRegistration(() => {
   const root = rootEl;
   if (!root || interaction === false) return false;
@@ -120,6 +157,7 @@ useControlRegistration(() => {
 <div bind:this={rootEl} class="listbox {className}" role="listbox" aria-label={label} aria-disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
+  {#if name}<input type="hidden" {name} value={value ?? ''} disabled={disabled || matchingOption(options, value)?.disabled} />{/if}
   {#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" aria-selected={value === option.value}
     disabled={disabled || option.disabled} tabindex={value === option.value || (value === undefined && index === 0) ? 0 : -1}
     onkeydown={(event) => move(event, index)} onclick={() => select(option.value, true)}>{option.label}</button>{/each}

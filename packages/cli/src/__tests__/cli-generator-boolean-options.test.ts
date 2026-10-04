@@ -7,7 +7,7 @@
  * @see https://github.com/happyvertical/smrt/issues/569
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { ObjectRegistry, SmrtObject } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLIGenerator } from '../cli-generator.js';
 
@@ -58,6 +58,9 @@ describe('CLI Generator - Boolean Options', () => {
           {
             name: 'analyze',
             isPublic: true,
+            isStatic: false,
+            async: false,
+            returnType: 'void',
             parameters: [
               {
                 name: 'options',
@@ -71,7 +74,11 @@ describe('CLI Generator - Boolean Options', () => {
 
       // Mock ObjectRegistry methods
       vi.spyOn(ObjectRegistry, 'getClass').mockReturnValue({
-        constructor: class MockClass {},
+        name: 'MockObject',
+        constructor: class MockClass extends SmrtObject {},
+        config: {},
+        fields: new Map(),
+        methods: mockMethods,
         packageName: 'test',
       });
       vi.spyOn(ObjectRegistry, 'getConfig').mockReturnValue({
@@ -121,6 +128,9 @@ describe('CLI Generator - Boolean Options', () => {
           {
             name: 'refresh',
             isPublic: true,
+            isStatic: false,
+            async: false,
+            returnType: 'void',
             parameters: [
               {
                 name: 'force',
@@ -138,7 +148,11 @@ describe('CLI Generator - Boolean Options', () => {
       ]);
 
       vi.spyOn(ObjectRegistry, 'getClass').mockReturnValue({
-        constructor: class MockClass {},
+        name: 'MockObject',
+        constructor: class MockClass extends SmrtObject {},
+        config: {},
+        fields: new Map(),
+        methods: mockMethods,
         packageName: 'test',
       });
       vi.spyOn(ObjectRegistry, 'getConfig').mockReturnValue({
@@ -179,6 +193,9 @@ describe('CLI Generator - Boolean Options', () => {
           {
             name: 'configure',
             isPublic: true,
+            isStatic: false,
+            async: false,
+            returnType: 'void',
             parameters: [
               {
                 name: 'options',
@@ -191,7 +208,11 @@ describe('CLI Generator - Boolean Options', () => {
       ]);
 
       vi.spyOn(ObjectRegistry, 'getClass').mockReturnValue({
-        constructor: class MockClass {},
+        name: 'MockObject',
+        constructor: class MockClass extends SmrtObject {},
+        config: {},
+        fields: new Map(),
+        methods: mockMethods,
         packageName: 'test',
       });
       vi.spyOn(ObjectRegistry, 'getConfig').mockReturnValue({

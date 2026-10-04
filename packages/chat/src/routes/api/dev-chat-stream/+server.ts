@@ -17,65 +17,12 @@ import {
   type ChatStreamContext,
   createChatStreamHandler,
 } from '../../../chat-stream.js';
+import { resolveDevAIConfig } from '../dev-ai.js';
 
 function nonEmpty(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0
     ? value.trim()
     : undefined;
-}
-
-function env(name: string): string | undefined {
-  return nonEmpty(process.env[name]);
-}
-
-interface DevAIConfig {
-  provider: string;
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
-}
-
-function resolveDevAIConfig(): DevAIConfig | null {
-  const explicitProvider =
-    env('SMRT_CHAT_DEV_PROVIDER') ||
-    env('SMRT_AI_PROVIDER') ||
-    env('HAVE_AI_PROVIDER');
-  const provider =
-    explicitProvider ||
-    (env('OPENAI_API_KEY')
-      ? 'openai'
-      : env('ANTHROPIC_API_KEY')
-        ? 'anthropic'
-        : env('GEMINI_API_KEY')
-          ? 'gemini'
-          : undefined);
-  if (!provider) return null;
-
-  const normalized = provider.toLowerCase();
-  const apiKey =
-    env('SMRT_CHAT_DEV_API_KEY') ||
-    env('SMRT_AI_API_KEY') ||
-    env('HAVE_AI_API_KEY') ||
-    (normalized === 'anthropic'
-      ? env('ANTHROPIC_API_KEY')
-      : normalized === 'gemini'
-        ? env('GEMINI_API_KEY')
-        : normalized === 'openai'
-          ? env('OPENAI_API_KEY')
-          : undefined);
-
-  return {
-    provider,
-    apiKey,
-    baseUrl:
-      env('SMRT_CHAT_DEV_BASE_URL') ||
-      env('SMRT_AI_BASE_URL') ||
-      env('HAVE_AI_BASE_URL'),
-    model:
-      env('SMRT_CHAT_DEV_MODEL') ||
-      env('SMRT_AI_MODEL') ||
-      env('HAVE_AI_MODEL'),
-  };
 }
 
 function lastUserMessage(messages: AIMessage[]): string {

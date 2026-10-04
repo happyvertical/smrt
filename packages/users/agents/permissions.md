@@ -93,7 +93,11 @@ membership or tenant DENY to attenuate inherited role authority.
   seedSystemRoles({ seedPermissions: true }) maps owner/admin to all catalog
   permissions, member to ordinary-resource read/create, viewer to read. Member
   create excludes identity/RBAC/security resources and their joins/overrides.
-  Seeding is additive/idempotent; removal requires prune: true.
+  Seeding is additive/idempotent; removal requires prune: true. Catalog sync
+  and grants plan from one read, then commit in `SEEDING_BATCH_SIZE` batches
+  (#3323): never one durable commit per row (an fsync each on local SQLite),
+  and never one catalog-wide transaction (`@happyvertical/sql` transaction
+  scopes cost superlinearly per statement). Pass a caller transaction's handle.
 - When a package adds built-in self-personalization permissions after role
   creation, explicitly call seedDefaultRolePersonalizationPermissions(). It
   upgrades owner/admin/member/viewer idempotently and never grants custom roles.
@@ -184,3 +188,10 @@ access once principal context is set. Child-tenant sessions receive resolved
 inherited permissions automatically, but RLS row filtering remains bound to the
 session tenant: a root session's app-level guard authorization does not itself
 permit child rows through RLS. Preserve this distinction.
+
+RolePermission's natural key is `(role_id, permission_id)` (#3329); repeated or
+concurrent inserts converge without changing the grant ID. Existing deployments
+must run `deduplicateRolePermissions()` with stopped writers before ordinary
+schema migration; see README's "Upgrade duplicate role grants". It keeps the
+oldest row and installs uniqueness atomically. Runtime seeding never performs
+this schema repair.

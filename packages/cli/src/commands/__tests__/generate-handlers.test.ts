@@ -8,6 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 
 const mocks = vi.hoisted(() => ({
   generateDeclarationsFromCLI: vi.fn(),
@@ -66,16 +67,19 @@ describe('generate-* handlers', () => {
   describe('generate-types', () => {
     it('requires a manifest path', async () => {
       await expect(
-        generateCommands['generate-types'].handler([], {}),
+        requireCommandHandler(generateCommands['generate-types'])([], {}),
       ).rejects.toThrow(/Manifest path is required/);
     });
 
     it('forwards the manifest path and output dir', async () => {
       mocks.generateDeclarationsFromCLI.mockResolvedValue(undefined);
 
-      await generateCommands['generate-types'].handler(['m.json'], {
-        'output-dir': 'out',
-      });
+      await requireCommandHandler(generateCommands['generate-types'])(
+        ['m.json'],
+        {
+          'output-dir': 'out',
+        },
+      );
 
       expect(mocks.generateDeclarationsFromCLI).toHaveBeenCalledWith([
         'm.json',
@@ -86,7 +90,10 @@ describe('generate-* handlers', () => {
     it('passes a single arg when no output dir', async () => {
       mocks.generateDeclarationsFromCLI.mockResolvedValue(undefined);
 
-      await generateCommands['generate-types'].handler(['m.json'], {});
+      await requireCommandHandler(generateCommands['generate-types'])(
+        ['m.json'],
+        {},
+      );
 
       expect(mocks.generateDeclarationsFromCLI).toHaveBeenCalledWith([
         'm.json',
@@ -97,7 +104,10 @@ describe('generate-* handlers', () => {
       mocks.generateDeclarationsFromCLI.mockRejectedValue(new Error('boom'));
 
       await expect(
-        generateCommands['generate-types'].handler(['m.json'], {}),
+        requireCommandHandler(generateCommands['generate-types'])(
+          ['m.json'],
+          {},
+        ),
       ).rejects.toThrow(/Failed to generate types: boom/);
     });
   });
@@ -107,7 +117,7 @@ describe('generate-* handlers', () => {
       mocks.getAllClasses.mockReturnValue(new Map());
       mocks.generateServer.mockResolvedValue(undefined);
 
-      await generateCommands['generate-mcp'].handler([], {
+      await requireCommandHandler(generateCommands['generate-mcp'])([], {
         'output-path': '.smrt/mcp-server/index.js',
         version: '1.0.0',
         name: 'my-server',
@@ -125,7 +135,7 @@ describe('generate-* handlers', () => {
       mocks.getAllClasses.mockReturnValue(new Map([['Widget', {} as never]]));
       mocks.generateServer.mockResolvedValue(undefined);
 
-      await generateCommands['generate-mcp'].handler([], {
+      await requireCommandHandler(generateCommands['generate-mcp'])([], {
         'output-path': 'out/index.js',
         version: '2.0.0',
       });
@@ -145,7 +155,7 @@ describe('generate-* handlers', () => {
       mocks.generateServer.mockRejectedValue(new Error('mcp fail'));
 
       await expect(
-        generateCommands['generate-mcp'].handler([], {
+        requireCommandHandler(generateCommands['generate-mcp'])([], {
           'output-path': 'out/index.js',
           version: '1.0.0',
           name: 'x',
@@ -165,7 +175,7 @@ describe('generate-* handlers', () => {
       }) as any);
 
       await expect(
-        generateCommands['generate-routes'].handler([], {}),
+        requireCommandHandler(generateCommands['generate-routes'])([], {}),
       ).rejects.toThrow();
 
       expect(exitSpy).toHaveBeenCalledWith(1);
@@ -183,7 +193,7 @@ describe('generate-* handlers', () => {
       }) as any);
 
       await expect(
-        generateCommands['generate-routes'].handler([], {}),
+        requireCommandHandler(generateCommands['generate-routes'])([], {}),
       ).rejects.toThrow();
 
       expect(exitSpy).toHaveBeenCalledWith(1);
@@ -202,7 +212,7 @@ describe('generate-* handlers', () => {
       });
       mocks.generateSvelteKitRoutes.mockResolvedValue(undefined);
 
-      await generateCommands['generate-routes'].handler([], {
+      await requireCommandHandler(generateCommands['generate-routes'])([], {
         'routes-dir': 'src/routes/api',
         'objects-dir': 'src/lib/objects',
         'config-path': 'src/lib/server',
@@ -235,7 +245,7 @@ describe('generate-* handlers', () => {
       mocks.generateSvelteKitRoutes.mockRejectedValue(new Error('route fail'));
 
       await expect(
-        generateCommands['generate-routes'].handler([], {}),
+        requireCommandHandler(generateCommands['generate-routes'])([], {}),
       ).rejects.toThrow(/Failed to generate routes: route fail/);
     });
   });

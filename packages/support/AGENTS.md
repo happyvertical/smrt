@@ -7,10 +7,14 @@ systems of record. The package owns the case lifecycle, channel intake, the
 Automated Support Response workflow with lossless **Human Handoff**,
 Project-qualified routing, **Service Target** clocks with timed escalation,
 and auditable **Service Time Entries** whose client charges and provider
-compensation stay separate. Since #1955 the canonical `ServiceTimeEntry` class
-is owned by `smrt-projects`; this package exposes a compatibility subtype that
-restates the shared fields for isolated manifest scanning. Both imports use the
-unchanged `service_time_entries` table, so no data is duplicated.
+compensation stay separate. Since #3288 the shared `ServiceTimeEntry` class
+is owned by `smrt-timesheets` (smrt-projects re-exports it); this package's
+subtype extends it directly, adds `caseId` / `specialistId` (frozen on
+approval via `frozenFieldNames()`), and restates the shared fields for
+isolated manifest scanning. Every import uses the unchanged
+`service_time_entries` table, so no data is duplicated. Keep the subtype a
+direct child of the timesheets entry: a third same-named level on the table
+breaks single-table-family resolution.
 
 **Boundary (FR-29a):** Support owns tickets, interactions, routing, and
 service targets. Delivery Operations owns repository work — a **Delivery
@@ -219,20 +223,23 @@ or a `PermissionResolver`.
 `RoutingRationale` (ranked specialists with eligibility + factor chips and
 an optional reassign action), and `TimeEntryApprovalQueue`
 (date/hours/description/worker/status/amount with
-approve/reject-with-reason actions on submitted rows). Hosts adapt models
+approve/reject-with-reason actions on submitted rows; owned by
+smrt-timesheets since #3288 and re-exported here). Hosts adapt models
 with `toSupportCaseView` / `toCaseTimelineItemView` / `toServiceTargetView`
 / `toSupportTimeEntryView` — the time-entry view's first eight fields
-deliberately match `smrt-projects`' presentation `TimeEntry` contract.
+deliberately match the presentation `TimeEntry` contract, and
+`SupportTimeEntryView` extends smrt-timesheets' `TimeEntryApprovalView`.
 Components use `smrt-ui` primitives (`smrtRawPrimitives: "strict"`).
 
 ## Dependencies
 
 Package dependencies: `smrt-core`, `smrt-tenancy`, `smrt-projects`,
-`smrt-chat`, `smrt-messages`, `smrt-jobs`, `smrt-users`, `smrt-ui`,
+`smrt-timesheets`, `smrt-chat`, `smrt-messages`, `smrt-jobs`, `smrt-users`,
+`smrt-ui`,
 `@happyvertical/logger`, `@happyvertical/sql`. Profile and subscriptions
 references are `@crossPackageRef` string ids or plain string
-keys. `smrt-projects` is the intentional shared delivery/evidence edge added
-by #1955. No inter-`smrt-*` `peerDependencies`.
+keys. `smrt-projects` is the intentional shared delivery edge added by #1955;
+`smrt-timesheets` owns the shared time-entry evidence (#3288). No inter-`smrt-*` `peerDependencies`.
 
 ## Validation
 

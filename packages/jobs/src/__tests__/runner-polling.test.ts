@@ -46,7 +46,7 @@ describe('TaskRunner idle polling (#2820)', () => {
       await runner.stop();
       query.mockRestore();
       vi.useRealTimers();
-      await db.close();
+      await db.close?.();
     }
   }
 
@@ -120,7 +120,7 @@ describe('TaskRunner idle polling (#2820)', () => {
     } finally {
       await runner.stop();
       vi.useRealTimers();
-      await db.close();
+      await db.close?.();
     }
   });
 

@@ -14,6 +14,8 @@ import {
 import { setRadioGroupContext } from './radio-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
+  /** Target density; omit to inherit the ThemeProvider setting. */
+  density?: 'comfortable' | 'touch';
   /** Identifier for this radio group and its form field. */
   name: string;
   /** The currently selected option value. */
@@ -49,6 +51,7 @@ let {
   onvaluechange,
   children,
   class: className = '',
+  density,
 }: Props = $props();
 const interactionContext = tryGetControlInteractionContext();
 let fieldsetEl = $state<HTMLFieldSetElement | null>(null);
@@ -133,7 +136,7 @@ useControlRegistration(() => {
   };
 });
 </script>
-<fieldset bind:this={fieldsetEl} class="radio-group {className}" {disabled}
+<fieldset bind:this={fieldsetEl} data-density={density} class="radio-group {className}" {disabled}
   aria-describedby={description ? `${name}-description` : undefined} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
   data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
   data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
@@ -149,4 +152,7 @@ useControlRegistration(() => {
   .error { color: var(--smrt-color-error); }
   .options { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-3); }
   :global(.radio-group[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
+
+  .radio-group[data-density='touch'] { --smrt-control-target-min: var(--smrt-touch-target-min, 48px); }
+  .radio-group[data-density='comfortable'] { --smrt-control-target-min: 0px; }
 </style>

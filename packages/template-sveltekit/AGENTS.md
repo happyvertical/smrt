@@ -13,9 +13,26 @@ It is the ground-up alternative to `smrt-saas-starter`.
 
 ## Current generated-project contract
 
-- Node `>=24.18.0`; pnpm `11.25.0` via `packageManager` and `engines`.
+- Node `>=26.0.0`; pnpm `11.25.0` via `packageManager` and `engines`. Node 25+
+  images ship no Corepack, so the Dockerfile installs a pinned copy.
 - `runtime.profile` is the canonical infrastructure selector. Generated apps
   expose deterministic `app:*` operations and keep runtime state outside source.
+- Every lifecycle script is a `smrt app <operation>` one-liner
+  (`packages/cli/agents/app-commands.md`); the template ships no `scripts/`.
+  Never reintroduce copied operator scripts: fix the CLI command instead.
+- Server composition is `createSmrtSvelteKitRuntime()` from
+  `@happyvertical/smrt-app-runtime/sveltekit`, built once in
+  `src/lib/server/smrt.ts`, which holds only `runtime` and its options
+  (provider readiness via `createProviderReadinessProbe`), so the web process
+  never imports the CLI. The runtime takes the local writer lease by default,
+  the `smrt()` plugin injects the generated registration, and each generated
+  route embeds a prelude that imports `$lib/server/smrt` and resolves
+  collections through its exported `runtime.getCollection()` (#3416). A legacy
+  `getCollection`/`getSmrtConfig` export would take precedence (deprecated,
+  honoured for one release): never re-add one, a register import, guard, or
+  manifest hydration.
+  Health, diagnostics, layout session, and owner setup routes mount that
+  package's handlers.
 - The production baseline uses adapter-node with separate web, task-worker, and
   schedule-worker processes. Workers import the build-compiled
   `.smrt/runtime/register.js` (#3117) before creating runners so app-defined
@@ -36,8 +53,9 @@ It is the ground-up alternative to `smrt-saas-starter`.
   different or stale server is never accepted as this app. Deployed health
   responses expose only generic status and profile.
 - Directly used `@happyvertical/smrt-*` packages share one current release range.
-- `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
-  its binary. The template includes `@happyvertical/smrt-web` because the root
+- `@happyvertical/smrt-cli` is a direct dev dependency because every
+  lifecycle script runs its binary; the runtime image keeps dev dependencies so
+  workers and operator commands can. The template includes `@happyvertical/smrt-web` because the root
   Provider wires the generated read-only WebMCP definitions for every page.
 - The generated MCP server resolves its imports from the scaffolded app, not
   from the CLI, so every specifier `generate-mcp` emits must be declared here.
@@ -48,9 +66,10 @@ It is the ground-up alternative to `smrt-saas-starter`.
   for the default worker and tenant surfaces. Do not assume pnpm exposes the
   CLI's or core's transitive dependencies to the app root — its strict layout
   does not (#2297).
-- `smrtConsumer()` explicitly consumes profiles, tenancy, and users manifests;
-  `smrtPlugin()` scans `src/lib/objects`, generates Vite virtual definitions,
-  SvelteKit routes, runtime registration, and knowledge artifacts.
+- `vite.config.ts` is `[sveltekit(), smrt()]`. The preset consumes exactly the
+  packages in `smrt.config.ts` `consumer.packages` (profiles, tenancy, users),
+  scans `src/lib/objects`, and generates Vite virtual definitions, SvelteKit
+  routes, runtime registration, and knowledge artifacts.
 - `pnpm db:migrate` builds first to refresh generated artifacts, then the
   migration wrapper holds the shared operation/writer exclusion for the full
   manifest-driven migration command. Do not restore deprecated `smrt db:setup`
@@ -58,11 +77,11 @@ It is the ground-up alternative to `smrt-saas-starter`.
 
 ## Application patterns
 
-- `src/hooks.server.ts` stores a URL-selected tenant candidate separately, then
-  lets `createSessionHandler({ enterTenantContext: true })` establish the only
-  authorized tenant context. Never turn an untrusted header into authority.
-- `src/lib/server/smrt.ts` imports generated local registrations, loads the
-  generated manifest metadata, and uses the public users request-scoped DB API.
+- `src/hooks.server.ts` re-exports the runtime's `handle`/`init`: URL tenant
+  selection stays a separate candidate and only the verified session
+  establishes tenant context. Never turn an untrusted header into authority.
+- App code uses `runtime.getCollection()`/`runtime.classOptions()`, which are
+  request-scoped (RLS transaction) and must never be retained.
 - `Item` is the single example object and demonstrates optional tenant scope,
   a REST writable allowlist, shared CRUD action metadata, and the explicit
   collection registration required by generated CLI/MCP runtime commands.
@@ -70,18 +89,27 @@ It is the ground-up alternative to `smrt-saas-starter`.
   `depends('smrt:items')`, mutations call `invalidate('smrt:items')`, and
   hand-written writes call `assertOperationPermission()` with the session's
   exact permission snapshot.
-- The root layout uses Provider, the current smrt-ui ThemeProvider, AdminShell,
-  and a small explicit TenantNav. Generated REST routes do not imply page routes.
-- The root Provider registers generated WebMCP read tools with the authenticated
-  page session. Write/destructive effects require an explicit page-owned policy.
+- The root layout is `AppShell` from `@happyvertical/smrt-svelte/app` with a
+  small explicit `nav`; `/setup` and `/settings` mount that package's
+  `OwnerSetupForm` and `ShellSettingsPage`. Generated REST routes do not imply
+  page routes.
+- AppShell's Provider registers generated WebMCP read tools with the
+  authenticated page session. Write/destructive effects require an explicit
+  page-owned policy.
   Live browser collections remain opt-in per page and must seed from SSR
   `initialData` to avoid a duplicate first request.
-- `RuntimeDiagnosticsWebMcp` owns exactly one additional read-only tool,
-  `smrt.runtime.diagnostics.read`. It uses same-origin page-session fetch to the
-  authored `/api/_runtime/diagnostics` route and aborts its registration on
-  unmount. The route requires a direct active tenant membership plus either the
-  owner role or the explicit `runtime_diagnostics.read` permission before any
-  runtime projection/probe; it never calls principal-bound server tools.
+- AppShell's `runtimeDiagnostics` (on for signed-in sessions) owns exactly one
+  additional read-only tool, `smrt.runtime.diagnostics.read`, which fetches the
+  mounted `/api/_runtime/diagnostics` route as the page user. That route
+  (`createRuntimeDiagnosticsHandler`) requires a direct active tenant membership
+  plus the owner role or `runtime_diagnostics.read` before any projection or
+  probe; it never calls principal-bound server tools.
+- The opt-in `mcp-apps-template/` overlay is one `mountMcpAppRoute()` route
+  and the protected-resource metadata route, both using
+  `createHostedMcpResourceAuth({ profile, runtime })` (local owner tokens,
+  hosted membership-backed principals); `pnpm typecheck` checks it against
+  the template. `__tests__/localMcpToken.test.ts` proves mint → real
+  `smrt-mcp-bridge` stdio → route against the real runtime.
 
 ## Tests
 
@@ -125,11 +153,13 @@ own. Never add a mocked REST handler, an in-memory database, or DOM automation
 presented as WebMCP execution.
 
 - `@happyvertical/smrt-cli` is a devDependency **because the gate needs it**:
-  the app's `app:setup` migration step shells out to `pnpm exec smrt db:migrate`,
-  and the copied app deliberately never runs `pnpm install`, so `smrt` has to
-  arrive through the linked `node_modules/.bin`. The harness pins the app's own
-  `.bin` ahead of `PATH` and fails with a named error if that binary is missing,
-  so a host-global `smrt` cannot make a local run pass where CI fails.
+  the harness runs the app's own `smrt app setup` and `smrt app dev` from the
+  linked CLI, and setup's `pnpm build` is `smrt app build`. The copied app
+  deliberately never runs `pnpm install`, so `smrt` has to arrive through the
+  linked `node_modules`. The harness pins the app's own `.bin` ahead of `PATH`
+  and fails with a named error if the binary is missing, so a host-global
+  `smrt` cannot make a local run pass where CI fails. Identity and state-root
+  values it checks come from `@happyvertical/smrt-app-runtime`.
 - `pnpm test:e2e` runs the browser half.
 - `pnpm test:m5` runs the whole aggregate gate through
   `e2e/support/gate.mjs`, which requires a PostgreSQL service and fails when a
@@ -144,8 +174,12 @@ presented as WebMCP execution.
   from `testInfo.project.outputDir` and asserts it is outside the repository.
   The harness gives the copied app a real `node_modules` directory of
   individually symlinked entries rather than one symlink to this package's, so
-  the served app's `node_modules/.vite` cache cannot land in the checkout —
-  never replace that loop with a whole-directory symlink.
+  the served app's `node_modules/.vite` cache cannot land in the checkout.
+  Scope directories (`@happyvertical/`) and `.bin/` are real directories of
+  per-entry links too: the copy ships `pnpm-workspace.yaml` and setup runs
+  `pnpm build` in it, so anything pnpm relinks must land in the copy, never in
+  this package's `node_modules`. Never replace either loop with a
+  whole-directory symlink.
 - `e2e/` is outside `biome.json`'s include globs, as every package's `e2e/` is,
   so a green `Lint` job says nothing about this tree. `pnpm typecheck` covers
   the `.ts` files (`tsconfig.fixture.json` includes `e2e/**/*.ts`) but NOT

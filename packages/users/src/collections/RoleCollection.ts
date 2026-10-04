@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  isPostgresDatabase,
+  SmrtCollection,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { Role } from '../models/Role.js';
 import { DEFAULT_ROLES } from '../types/index.js';
 import type {
@@ -114,33 +119,57 @@ export class RoleCollection extends SmrtCollection<Role> {
       }
     }
 
-    for (const roleDef of DEFAULT_ROLES) {
-      const inheritable = inheritableSlugs.has(roleDef.slug);
+    const seed = async (writer: RoleCollection) => {
+      for (const roleDef of DEFAULT_ROLES) {
+        const inheritable = inheritableSlugs.has(roleDef.slug);
 
-      // Check if role already exists
-      const existing = await this.findBySlug(roleDef.slug);
-      if (existing) {
-        // Additive-only convergence: flag a listed slug, never unset one.
-        if (inheritable && !existing.inheritsToDescendants) {
-          existing.inheritsToDescendants = true;
-          await existing.save();
+        // Check if role already exists
+        const existing = await writer.findBySlug(roleDef.slug);
+        if (existing) {
+          // Additive-only convergence: flag a listed slug, never unset one.
+          if (inheritable && !existing.inheritsToDescendants) {
+            existing.inheritsToDescendants = true;
+            await existing.save();
+          }
+          roles.push(existing);
+          continue;
         }
-        roles.push(existing);
-        continue;
-      }
 
-      // Create new system role. `create()` already persists, so the second
-      // `save()` this used to make was a redundant UPDATE plus an extra
-      // change-feed append (#3022).
-      const role = await this.create({
-        slug: roleDef.slug,
-        name: roleDef.name,
-        description: roleDef.description,
-        tenantId: null,
-        isSystem: true,
-        inheritsToDescendants: inheritable,
-      });
-      roles.push(role);
+        // Create new system role. `create()` already persists, so the second
+        // `save()` this used to make was a redundant UPDATE plus an extra
+        // change-feed append (#3022).
+        const role = await writer.create({
+          slug: roleDef.slug,
+          name: roleDef.name,
+          description: roleDef.description,
+          tenantId: null,
+          isSystem: true,
+          inheritsToDescendants: inheritable,
+        });
+        roles.push(role);
+      }
+    };
+    if (isPostgresDatabase(this.db)) {
+      // NULL-tenant keys use the SDK's null-aware upsert. Its lock begins
+      // after core's identity pre-read; lock the whole seeding read/write
+      // sequence so concurrent bootstraps never return an overwritten ID.
+      await withEmbeddedWriteTransaction(
+        this.db as DatabaseInterface,
+        false,
+        async (db) => {
+          await db.query('SELECT pg_advisory_xact_lock(3329, 1)');
+          await seed(await RoleCollection.create({ ...this.options, db }));
+        },
+        true,
+      );
+      // Return objects bound to the caller, not the completed batch handle.
+      roles.length = 0;
+      for (const roleDef of DEFAULT_ROLES) {
+        const role = await this.findBySlug(roleDef.slug);
+        if (role) roles.push(role);
+      }
+    } else {
+      await seed(this);
     }
 
     if (options.seedPermissions) {

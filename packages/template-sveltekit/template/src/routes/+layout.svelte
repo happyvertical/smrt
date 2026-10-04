@@ -1,113 +1,41 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { webMcpToolDefinitions } from '@happyvertical/smrt-virt-web';
-  import { Provider } from '@happyvertical/smrt-svelte';
-  import {
-    AdminShell,
-    AppScopePanel,
-    type ShellNavItem,
-    TenantNav,
-  } from '@happyvertical/smrt-svelte/workspace';
-  import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
-  import '@happyvertical/smrt-ui/themes/styles/fonts.css';
-  import RuntimeDiagnosticsWebMcp from '$lib/RuntimeDiagnosticsWebMcp.svelte';
+  import { AppShell } from '@happyvertical/smrt-svelte/app';
+  import type { ShellNavItem } from '@happyvertical/smrt-svelte/workspace';
   import type { LayoutProps } from './$types';
 
   let { data, children }: LayoutProps = $props();
 
-  const currentHref = $derived(page.url.pathname);
-  const activeTenantLabel = $derived(
-    data.session.activeTenantId ? 'Authorized session tenant' : 'No active tenant',
-  );
-
-  // Keep the optional data-plane runtime out of browsers that do not expose
-  // WebMCP. SSR remains safe because the feature check is document-guarded.
-  const webmcp = $derived(
-    typeof document !== 'undefined' && 'modelContext' in document
-      ? {
-          definitions: webMcpToolDefinitions,
-          basePath: '/api',
-          effects: ['read'] as const,
-        }
-      : false,
-  );
-
   // Add application routes here. Generated REST routes live under /api and do
   // not automatically imply a human-facing page.
   const nav: ShellNavItem[] = [
-    {
-      href: '/',
-      label: 'Items',
-      description: 'The example s-m-r-t object',
-    },
-    {
-      href: '/settings',
-      label: 'Settings',
-      description: 'Workspace layout and shortcuts',
-    },
+    { href: '/', label: 'Items', description: 'The example s-m-r-t object' },
+    { href: '/settings', label: 'Settings', description: 'Workspace layout and shortcuts' },
   ];
+
+  // Generated read-only WebMCP tools, only in browsers that expose WebMCP.
+  const webmcp = $derived(
+    typeof document !== 'undefined' && 'modelContext' in document
+      ? { definitions: webMcpToolDefinitions, basePath: '/api', effects: ['read'] as const }
+      : false,
+  );
 </script>
 
-<Provider {webmcp}>
-  <RuntimeDiagnosticsWebMcp enabled={data.session.authenticated} />
-  <ThemeProvider preset="smrt" colorScheme="system" persist={true}>
-    <AdminShell
-      title="s-m-r-t app"
-      subtitle="SvelteKit"
-      storageKey="smrt-app-shell"
-    >
-      {#snippet appPanel()}
-        <AppScopePanel
-          appName="s-m-r-t app"
-          tenantName={activeTenantLabel}
-          environment="local"
-          showSettings={false}
-        >
-          {#snippet docs()}
-            {#if data.session.selectedTenantSlug}
-              <p class="tenant-selection">
-                Selected URL tenant: <strong>{data.session.selectedTenantSlug}</strong>
-              </p>
-            {/if}
-            <a href="/settings">Shell settings</a>
-          {/snippet}
-        </AppScopePanel>
-      {/snippet}
-
-      {#snippet tenantPanel()}
-        <TenantNav items={nav} {currentHref} />
-      {/snippet}
-
-      {@render children()}
-    </AdminShell>
-  </ThemeProvider>
-</Provider>
-
-<style>
-  :global(*),
-  :global(*::before),
-  :global(*::after) {
-    box-sizing: border-box;
-  }
-
-  :global(html),
-  :global(body) {
-    min-height: 100%;
-    margin: 0;
-  }
-
-  :global(body) {
-    background: var(--smrt-color-background);
-    color: var(--smrt-color-on-background);
-    font-family: var(--smrt-typography-body-font-family, Inter, system-ui, sans-serif);
-  }
-
-  .tenant-selection {
-    margin: 0 0 var(--smrt-spacing-2);
-    color: var(--smrt-color-on-surface-variant);
-  }
-
-  a {
-    color: var(--smrt-color-primary);
-  }
-</style>
+<AppShell
+  title="s-m-r-t app"
+  subtitle="SvelteKit"
+  {webmcp}
+  {nav}
+  currentHref={page.url.pathname}
+  runtimeDiagnostics={data.session.authenticated}
+  tenantLabel={data.session.activeTenantId ? 'Authorized session tenant' : 'No active tenant'}
+  settingsHref="/settings"
+>
+  {#snippet appPanelDocs()}
+    {#if data.session.selectedTenantSlug}
+      <p>Selected URL tenant: <strong>{data.session.selectedTenantSlug}</strong></p>
+    {/if}
+  {/snippet}
+  {@render children()}
+</AppShell>

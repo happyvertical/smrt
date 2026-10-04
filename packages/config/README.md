@@ -106,6 +106,14 @@ calls deep-merge providers while the profile is unchanged; an explicit profile
 switch resets earlier runtime provider selections before applying the new
 profile.
 
+An application that may omit the block uses
+`resolveEffectiveApplicationRuntime(await loadConfig())`, the rule `smrt app`
+and the SvelteKit runtime share: when neither the file nor a `setConfig()`
+override declares `runtime`, the profile is `local`; a present value that is
+not a runtime block (`null`, `false`, `0`, `''`) throws the same
+`RuntimeProfileValidationError` instead of selecting `local`; `setConfig()`
+rejects such a `runtime` override with that error before storing anything.
+
 ### Use config in code
 
 ```typescript
@@ -169,6 +177,56 @@ const safeJson = exportConfig(config, { includeSecrets: false });
 const sanitized = sanitizeConfig(config);
 ```
 
+## AI provider
+
+Declare the assistant model once in `smrt.config.ts`; keep the secret in the environment.
+
+```ts
+export default defineConfig({
+  ai: { provider: 'openai', model: 'gpt-4o', apiKeyEnv: 'OPENAI_API_KEY' },
+});
+```
+
+```ts
+import { resolveConfiguredAIProvider, toAIClientOptions } from '@happyvertical/smrt-config';
+import { getAI } from '@happyvertical/ai';
+
+const ai = await getAI(toAIClientOptions(resolveConfiguredAIProvider()));
+```
+
+Default precedence, applied per field (`provider`, `apiKey`, `baseUrl`, `model`), highest first:
+
+1. `explicit` values passed by the caller (for example a class's `options.ai`)
+2. the `ai` block (`provider`, `model`, `baseUrl`, `apiKeyEnv`; legacy `packages.ai` is read below `ai`)
+3. environment, one prefix at a time: `<PREFIX>_PROVIDER`, `_API_KEY`, `_BASE_URL`, `_MODEL` for `SMRT_AI`, then `HAVE_AI`
+4. the selected provider's own key variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`); a key for any other provider is never used
+5. with no provider selected, auto-detect the first provider whose key variable is set (openai, anthropic, gemini)
+
+Credential binding: a key or base URL belongs to the provider named by its own source (explicit, the
+`ai` block, or one env prefix). If a higher-priority source selects a different provider, the lower
+source's key and base URL are discarded and the key comes only from sources valid for the selected
+provider (then that provider's own key variable). A source that supplies a key but names no provider is
+generic and binds to whichever provider is selected. Displayed base URLs (`toJSON()`,
+`describeAIProviderConfig()`, `redactBaseUrl()`) expose only the origin; the real URL still goes to the client.
+The rule holds at every layer: the `ai` block layers (runtime `ai`, runtime `packages.ai`, file `ai`, file `packages.ai`)
+are merged with provider ownership (`mergeAIConfigLayers`): when a higher layer names a different provider, the lower
+layers' `apiKey`, `apiKeyEnv`, `baseUrl` and `model` are dropped (a model id is provider-specific). A layer with no provider
+binds to the provider selected so far. Core applies the same rule between its global `ai` config and `options.ai`, and always
+builds its client from the resolver's bound result. Aliases are normalised before coalescing (`provider`/`type`,
+`model`/`defaultModel`), so a blank primary never hides the alias.
+All object merges go through one canonicalising helper, `mergeAIConfigObjects(lower, higher)`
+(folds `provider`/`type` and `model`/`defaultModel`, drops blanks, and drops the lower side's provider, key, key variable, base URL and model
+when the higher side names a different provider): accumulating `setConfig({ ai })` / `setConfig({ packages: { ai } })`, `mergeExportedConfig`
+`ai` blocks, and core's global `ai` + `options.ai`. `withAIAliases()` sets both client-facing aliases on the final result.
+Core consults the block only when it names a `provider`; a partial block behaves like no block.
+
+Call sites keep their historical order through options: the chat dev routes pass
+`prefixes: ['SMRT_CHAT_DEV', 'SMRT_AI', 'HAVE_AI']` and `envOverridesConfig: true`; core passes
+`prefixes: ['SMRT_AI']`, `autoDetect: false`. `resolveAIProviderConfig` throws
+`AIProviderNotConfiguredError` (naming variables only) when nothing is configured;
+`tryResolveAIProviderConfig` returns `undefined`. Results redact the key in `toJSON()` /
+`describeAIProviderConfig()`; errors never include key or URL credentials.
+
 ## API
 
 ### Functions
@@ -187,9 +245,15 @@ const sanitized = sanitizeConfig(config);
 | `sanitizeConfig(config)` | Strip secret-matching keys |
 | `resolveApplicationRuntime(config)` | Resolve and fail-closed validate a runtime profile |
 | `resolveConfiguredApplicationRuntime()` | Resolve effective file plus runtime-overridden profile config |
+| `resolveEffectiveApplicationRuntime(config)` | Same, but no `runtime` block (file or override) selects `local`; a present non-block value fails closed |
 | `getApplicationRuntimePreset(profile)` | Inspect an immutable copy of a profile preset |
+| `resolveCliDatabaseConfig(env?)` | The `smrt` / `smrt-dev-mcp` database: configured `packages.cli.database.url`, else `DATABASE_URL` / `DATABASE_TYPE` (read-only) |
 | `mergeExportedConfig(baseConfig, exportedConfig)` | Merge an exported config over a base |
 | `parseExportedConfig(raw)` | Parse an exported config string |
+| `resolveAIProviderConfig(options?)` / `tryResolveAIProviderConfig(options?)` | Pure resolver (throws / returns `undefined` when unconfigured) |
+| `resolveConfiguredAIProvider(options?)` / `tryResolveConfiguredAIProvider(options?)` | Same, against the loaded `ai` block |
+| `getAIConfigBlock()` | Effective `ai` block (runtime > file; `ai` > `packages.ai`) |
+| `toAIClientOptions(resolved)` | `getAI()` options (`type`, `provider`, `apiKey`, `baseUrl`, `defaultModel`) |
 
 ### Priority Order
 

@@ -13,6 +13,7 @@ import https from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../__tests__/command-handler.js';
 import { gnodeCommands } from './gnode.js';
 
 it('extracts an offline Git subdirectory and adds its MCP Apps overlay through the real loaders', async () => {
@@ -52,10 +53,11 @@ it('extracts an offline Git subdirectory and adds its MCP Apps overlay through t
       });
       (callback as (value: unknown) => void)(response);
     });
-    return request as ReturnType<typeof https.get>;
+    // This EventEmitter models only the ClientRequest methods the loader uses.
+    return request as unknown as ReturnType<typeof https.get>;
   });
   try {
-    await gnodeCommands['gnode create'].handler(['offline'], {
+    await requireCommandHandler(gnodeCommands['gnode create'])(['offline'], {
       template: 'github:synthetic/offline/nested',
       outputDir: join(root, 'app'),
       mcpApps: true,

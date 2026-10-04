@@ -17,6 +17,7 @@ import {
   isRestActionRoutable,
   isRestRoutePublic,
   PLAYBOOK_PREFLIGHT_CAPABILITY,
+  type PlaybookPreflightRouteRequest,
   resolveRegisteredObjectName,
   restFieldReadPermissions,
   restMethodForApiAction,
@@ -79,7 +80,9 @@ describe('playbook preflight route (#2590)', () => {
   });
 
   it('serves the provider report for a GET with a key', async () => {
-    const provider = vi.fn(async () => UNIFORM_UNAVAILABLE);
+    const provider = vi.fn(
+      async (_payload: PlaybookPreflightRouteRequest) => UNIFORM_UNAVAILABLE,
+    );
     const response = await handlePlaybookPreflightRoute(
       request('http://local/api/v1/_preflight?key=commerce.cart.checkout'),
       { provider, appAuthConfigured: false },
@@ -98,13 +101,15 @@ describe('playbook preflight route (#2590)', () => {
   });
 
   it('passes only the boolean appAuthConfigured — never an auth handle', async () => {
-    const provider = vi.fn(async () => UNIFORM_UNAVAILABLE);
+    const provider = vi.fn(
+      async (_payload: PlaybookPreflightRouteRequest) => UNIFORM_UNAVAILABLE,
+    );
     await handlePlaybookPreflightRoute(
       request('http://local/api/v1/_preflight?key=k'),
       { provider, appAuthConfigured: true, permissions: ['widgets.read'] },
     );
 
-    const [payload] = provider.mock.calls[0] as [Record<string, unknown>];
+    const [payload] = provider.mock.calls[0];
     expect(payload.appAuthConfigured).toBe(true);
     for (const value of Object.values(payload)) {
       expect(typeof value).not.toBe('function');

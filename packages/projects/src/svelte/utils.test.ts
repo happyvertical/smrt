@@ -9,8 +9,8 @@
  * have exactly two decimal places.
  */
 
+import { formatCurrency as formatCurrencyFromComponents } from '@happyvertical/smrt-timesheets/svelte';
 import { describe, expect, it } from 'vitest';
-import { formatCurrency as formatCurrencyFromComponents } from './components/utils.js';
 import { formatCurrency } from './utils.js';
 
 describe('formatCurrency (#2401)', () => {

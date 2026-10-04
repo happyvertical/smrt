@@ -185,32 +185,13 @@ export type HumanHandoffTrigger =
   | 'policy'
   | 'manual';
 
-/** Service Time Entry lifecycle (FR-36). */
-export type ServiceTimeEntryStatus =
-  | 'draft'
-  | 'submitted'
-  | 'approved'
-  | 'rejected'
-  | 'corrected';
-
-/**
- * Legal Service Time Entry status transitions. `approved → corrected` is the
- * only exit from `approved` and is reachable exclusively through the explicit
- * correction path (the approved snapshot itself stays frozen).
- */
-export const SERVICE_TIME_ENTRY_STATUS_TRANSITIONS: Record<
-  ServiceTimeEntryStatus,
-  ServiceTimeEntryStatus[]
-> = {
-  draft: ['submitted', 'rejected'],
-  submitted: ['approved', 'rejected', 'draft'],
-  approved: ['corrected'],
-  rejected: ['draft', 'submitted'],
-  corrected: [],
-};
-
-/** How a Service Time Entry was produced (FR-40). */
-export type ServiceTimeEntrySource = 'timer' | 'manual' | 'import' | 'agent';
+// Service Time Entry lifecycle (FR-36), its legal transitions, and sources
+// (FR-40) are owned by smrt-timesheets (#3288) and re-exported unchanged.
+export {
+  SERVICE_TIME_ENTRY_STATUS_TRANSITIONS,
+  type ServiceTimeEntrySource,
+  type ServiceTimeEntryStatus,
+} from '@happyvertical/smrt-timesheets';
 
 /** Who/what delivered the work behind a Service Time Entry. */
 export type SupportParticipantKind = 'human' | 'agent';

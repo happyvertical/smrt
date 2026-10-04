@@ -14,6 +14,8 @@ import type {
 import { defaultThemeConfig } from './types.js';
 
 interface Props {
+  /** Default control target density for descendants; individual controls may override. */
+  density?: 'comfortable' | 'touch';
   /** Theme preset to use */
   preset?: ThemePreset;
   /** Color scheme preference */
@@ -59,6 +61,7 @@ let {
   storageKey = defaultThemeConfig.storageKey,
   inlineVariables,
   children,
+  density,
 }: Props = $props();
 
 // Internal state — seed from the props (which already default to
@@ -123,6 +126,12 @@ const styleString = $derived.by(() => {
   if (config.primaryColor) {
     declarations.push(`--smrt-color-primary: ${config.primaryColor}`);
     // Recalculate dependent colors would go here in a full implementation
+  }
+
+  if (density !== undefined) {
+    declarations.push(
+      `--smrt-control-target-min: ${density === 'touch' ? 'var(--smrt-touch-target-min, 48px)' : '0px'}`,
+    );
   }
 
   // Apply custom overrides

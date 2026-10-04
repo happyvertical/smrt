@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-support",
-  "version": "0.52.0",
+  "version": "0.53.4",
   "smrtJsdoc": "strict",
   "description": "AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework",
   "type": "module",
@@ -26,7 +26,7 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
@@ -45,6 +45,7 @@
     "@happyvertical/smrt-messages": "workspace:*",
     "@happyvertical/smrt-projects": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-timesheets": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:"

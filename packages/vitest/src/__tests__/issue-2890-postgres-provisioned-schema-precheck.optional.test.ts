@@ -160,7 +160,7 @@ postgresDescribe(
 
     afterAll(async () => {
       for (const handle of openHandles.splice(0)) {
-        await handle.close();
+        await handle.close?.();
       }
 
       const admin = await getDatabase({
@@ -175,7 +175,7 @@ postgresDescribe(
           await admin.query(`DROP TABLE IF EXISTS "${table}"`);
         }
       } finally {
-        await admin.close();
+        await admin.close?.();
       }
     });
 

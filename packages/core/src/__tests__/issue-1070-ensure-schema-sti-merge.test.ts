@@ -13,12 +13,16 @@ describe('Issue #1070: ensureSchema uses merged STI table schema', () => {
     ObjectRegistry.registerFromManifest(
       '@test/events:Event',
       {
+        name: 'event',
+        collection: '',
+        filePath: '',
         className: 'Event',
         extends: 'SmrtObject',
         decoratorConfig: {
           tableStrategy: 'sti',
           tableName: 'events',
         },
+        methods: {},
         fields: {
           tenantId: { type: 'text' },
           name: { type: 'text', default: '' },
@@ -47,25 +51,25 @@ describe('Issue #1070: ensureSchema uses merged STI table schema', () => {
           columns: {
             id: { type: 'TEXT', primaryKey: true, notNull: true },
             slug: { type: 'TEXT', notNull: true },
-            context: { type: 'TEXT', notNull: true, defaultValue: '' },
+            context: { type: 'TEXT', notNull: true, default: '' },
             _meta_type: { type: 'TEXT', notNull: true },
             _meta_data: { type: 'JSON' },
             created_at: {
               type: 'TIMESTAMP',
               notNull: true,
-              defaultValue: 'current_timestamp',
+              default: 'current_timestamp',
             },
             updated_at: {
               type: 'TIMESTAMP',
               notNull: true,
-              defaultValue: 'current_timestamp',
+              default: 'current_timestamp',
             },
             tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
-            name: { type: 'TEXT', defaultValue: '' },
+            name: { type: 'TEXT', default: '' },
             description: { type: 'TEXT' },
             start_date: { type: 'TIMESTAMP' },
             end_date: { type: 'TIMESTAMP' },
-            status: { type: 'TEXT', defaultValue: 'scheduled' },
+            status: { type: 'TEXT', default: 'scheduled' },
           },
           indexes: [],
           version: 'test-version',
@@ -77,12 +81,16 @@ describe('Issue #1070: ensureSchema uses merged STI table schema', () => {
     ObjectRegistry.registerFromManifest(
       '@test/praeco:Meeting',
       {
+        name: 'meeting',
+        collection: '',
+        filePath: '',
         className: 'Meeting',
         extends: 'Event',
         decoratorConfig: {
           tableStrategy: 'sti',
           tableName: 'events',
         },
+        methods: {},
         fields: {
           councilId: { type: 'text', default: '' },
           agendaUrl: { type: 'text', default: '' },
@@ -111,25 +119,25 @@ describe('Issue #1070: ensureSchema uses merged STI table schema', () => {
           columns: {
             id: { type: 'TEXT', primaryKey: true, notNull: true },
             slug: { type: 'TEXT', notNull: true },
-            context: { type: 'TEXT', notNull: true, defaultValue: '' },
+            context: { type: 'TEXT', notNull: true, default: '' },
             _meta_type: { type: 'TEXT', notNull: true },
             _meta_data: { type: 'JSON' },
             created_at: {
               type: 'TIMESTAMP',
               notNull: true,
-              defaultValue: 'current_timestamp',
+              default: 'current_timestamp',
             },
             updated_at: {
               type: 'TIMESTAMP',
               notNull: true,
-              defaultValue: 'current_timestamp',
+              default: 'current_timestamp',
             },
             tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
-            name: { type: 'TEXT', defaultValue: '' },
+            name: { type: 'TEXT', default: '' },
             description: { type: 'TEXT' },
             start_date: { type: 'TIMESTAMP' },
             end_date: { type: 'TIMESTAMP' },
-            status: { type: 'TEXT', defaultValue: 'scheduled' },
+            status: { type: 'TEXT', default: 'scheduled' },
             council_id: { type: 'TEXT' },
             agenda_url: { type: 'TEXT' },
             minutes_url: { type: 'TEXT' },
@@ -156,7 +164,7 @@ describe('Issue #1070: ensureSchema uses merged STI table schema', () => {
       const rows = Array.isArray(pragmaResult)
         ? pragmaResult
         : pragmaResult.rows;
-      const columnNames = rows.map((row: { name: string }) => row.name);
+      const columnNames = rows.map((row) => row.name);
 
       expect(columnNames).toContain('_meta_type');
       expect(columnNames).toContain('council_id');

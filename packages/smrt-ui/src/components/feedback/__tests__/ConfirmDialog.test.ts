@@ -1,18 +1,10 @@
-/**
- * Golden test for ConfirmDialog (Sweep S11, #1416).
- *
- * ConfirmDialog renders a backdrop `<div role="dialog" aria-modal="true">` only
- * while `open` is true, with a title, message, and cancel/confirm buttons. It
- * exposes `onconfirm`/`oncancel` callbacks; Escape (handled at the document
- * level) and backdrop clicks both route to `oncancel`. On open it manages focus:
- * focus moves to the confirm button, Tab is trapped within the dialog, and focus
- * is restored to the opener on close (#1586).
- */
-import { render, screen, waitFor } from '@testing-library/svelte';
+/** Native confirmation rendering, actions, focus and instance identity. */
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import ConfirmDialog from '../ConfirmDialog.svelte';
+import RichMessage from './confirm-message.fixture.svelte';
 
 const baseProps = {
   open: true,
@@ -32,6 +24,47 @@ describe('ConfirmDialog', () => {
     expect(
       screen.getByText('This action cannot be undone.'),
     ).toBeInTheDocument();
+  });
+
+  it('uses native dialog and unique instance description ids', () => {
+    render(ConfirmDialog, { props: baseProps });
+    render(ConfirmDialog, {
+      props: { ...baseProps, title: 'Second', message: 'Other' },
+    });
+    const dialogs = screen.getAllByRole('dialog');
+    expect(dialogs.every((dialog) => dialog instanceof HTMLDialogElement)).toBe(
+      true,
+    );
+    for (const attribute of ['aria-labelledby', 'aria-describedby']) {
+      const ids = dialogs.map((dialog) => dialog.getAttribute(attribute));
+      expect(new Set(ids).size).toBe(2);
+      for (let index = 0; index < dialogs.length; index++) {
+        expect(
+          dialogs[index].contains(document.getElementById(ids[index]!)),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('handles native cancel without closing outside controlled state', async () => {
+    const oncancel = vi.fn();
+    render(ConfirmDialog, { props: { ...baseProps, oncancel } });
+    const dialog = screen.getByRole('dialog');
+    const event = new Event('cancel', { cancelable: true });
+    await fireEvent(dialog, event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(oncancel).toHaveBeenCalledTimes(1);
+    expect(dialog).toHaveAttribute('open');
+  });
+
+  it('renders a snippet message as accessible rich content', () => {
+    render(RichMessage);
+    const dialog = screen.getByRole('dialog', { name: 'Rich confirmation' });
+    expect(dialog.querySelector('strong')).toHaveTextContent('Record name');
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(dialog).toHaveAccessibleDescription(
+      'Remove Record name? Notes Attachments',
+    );
   });
 
   it('renders nothing when closed', () => {
@@ -131,19 +164,11 @@ describe('ConfirmDialog', () => {
       opener.remove();
     });
 
-    it('cancels via Escape even when focus is outside the dialog', async () => {
+    it('does not consume Escape from outside its dialog', async () => {
       const oncancel = vi.fn();
-      const outside = document.createElement('input');
-      document.body.appendChild(outside);
       render(ConfirmDialog, { props: { ...baseProps, oncancel } });
-
-      // Move focus out of the dialog, then press Escape: the document-level
-      // handler still fires because the dialog is open.
-      outside.focus();
-      await userEvent.keyboard('{Escape}');
-      expect(oncancel).toHaveBeenCalledTimes(1);
-
-      outside.remove();
+      await fireEvent.keyDown(window, { key: 'Escape' });
+      expect(oncancel).not.toHaveBeenCalled();
     });
 
     it('focuses the dialog container when all controls are disabled (loading)', async () => {

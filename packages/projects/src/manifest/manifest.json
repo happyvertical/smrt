@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "timestamp": 0,
   "packageName": "@happyvertical/smrt-projects",
-  "packageVersion": "0.49.2",
+  "packageVersion": "0.51.39",
   "objects": {
     "@happyvertical/smrt-projects:DevelopmentRequestHistoryCollection": {
       "name": "developmentrequesthistorycollection",
@@ -145,7 +145,8 @@
           }
         ],
         "version": "67389678"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:DevelopmentRequestCollection": {
       "name": "developmentrequestcollection",
@@ -380,7 +381,8 @@
           }
         ],
         "version": "4bdaa6ff"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:IssueCollection": {
       "name": "issuecollection",
@@ -776,7 +778,8 @@
           }
         ],
         "version": "c3d5425b"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:ProjectIntegrationAuditCollection": {
       "name": "projectintegrationauditcollection",
@@ -901,7 +904,8 @@
           }
         ],
         "version": "03cc10a2"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:ProjectIntegrationCollection": {
       "name": "projectintegrationcollection",
@@ -1126,7 +1130,8 @@
           }
         ],
         "version": "bfbaa783"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:ProjectCollection": {
       "name": "projectcollection",
@@ -1423,7 +1428,8 @@
           }
         ],
         "version": "2e8c344a"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:PullRequestCollection": {
       "name": "pullrequestcollection",
@@ -1852,7 +1858,8 @@
           }
         ],
         "version": "3f16e583"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:RepositoryCollection": {
       "name": "repositorycollection",
@@ -2120,7 +2127,8 @@
           }
         ],
         "version": "c302a5e5"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:Comment": {
       "name": "comment",
@@ -2227,7 +2235,7 @@
           "name": "getSentiment",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<'positive' | 'negative' | 'neutral'>",
+          "returnType": "Promise<CommentSentiment>",
           "isStatic": false,
           "isPublic": true
         }
@@ -2361,7 +2369,8 @@
           }
         ],
         "version": "ffcc1937"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:DevelopmentRequest": {
       "name": "developmentrequest",
@@ -2644,7 +2653,8 @@
           }
         ],
         "version": "4bdaa6ff"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:DevelopmentRequestHistory": {
       "name": "developmentrequesthistory",
@@ -2831,7 +2841,8 @@
           }
         ],
         "version": "67389678"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:Issue": {
       "name": "issue",
@@ -3045,7 +3056,13 @@
         "suggestLabels": {
           "name": "suggestLabels",
           "async": true,
-          "parameters": [],
+          "parameters": [
+            {
+              "name": "vocabulary",
+              "type": "IssueLabelVocabulary",
+              "optional": true
+            }
+          ],
           "returnType": "Promise<string[]>",
           "isStatic": false,
           "isPublic": true
@@ -3347,7 +3364,8 @@
           }
         ],
         "version": "c3d5425b"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:Label": {
       "name": "label",
@@ -3557,7 +3575,8 @@
           }
         ],
         "version": "d1e8d236"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:Project": {
       "name": "project",
@@ -4047,7 +4066,8 @@
           }
         ],
         "version": "2e8c344a"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:ProjectIntegration": {
       "name": "projectintegration",
@@ -4263,7 +4283,8 @@
           }
         ],
         "version": "bfbaa783"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:ProjectIntegrationAudit": {
       "name": "projectintegrationaudit",
@@ -4417,7 +4438,8 @@
           }
         ],
         "version": "03cc10a2"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:PullRequest": {
       "name": "pullrequest",
@@ -4675,7 +4697,13 @@
         "suggestLabels": {
           "name": "suggestLabels",
           "async": true,
-          "parameters": [],
+          "parameters": [
+            {
+              "name": "vocabulary",
+              "type": "IssueLabelVocabulary",
+              "optional": true
+            }
+          ],
           "returnType": "Promise<string[]>",
           "isStatic": false,
           "isPublic": true
@@ -5059,7 +5087,8 @@
           }
         ],
         "version": "3f16e583"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:Repository": {
       "name": "repository",
@@ -5423,7 +5452,8 @@
           }
         ],
         "version": "c302a5e5"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:DevelopmentRequestWorkLink": {
       "name": "developmentrequestworklink",
@@ -5618,7 +5648,8 @@
           }
         ],
         "version": "adcbaa21"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:ProjectDeliveryEvent": {
       "name": "projectdeliveryevent",
@@ -5863,7 +5894,8 @@
           }
         ],
         "version": "99b9e301"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:PreviewApproval": {
       "name": "previewapproval",
@@ -6069,7 +6101,8 @@
           }
         ],
         "version": "ec7b2b14"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:AssistanceRequest": {
       "name": "assistancerequest",
@@ -6296,7 +6329,8 @@
           }
         ],
         "version": "d1653259"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:AssistanceRequestEvent": {
       "name": "assistancerequestevent",
@@ -6489,7 +6523,8 @@
           }
         ],
         "version": "bcc95ebe"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:DevelopmentRequestWorkLinkCollection": {
       "name": "developmentrequestworklinkcollection",
@@ -6615,7 +6650,8 @@
           }
         ],
         "version": "adcbaa21"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:ProjectDeliveryEventCollection": {
       "name": "projectdeliveryeventcollection",
@@ -6770,7 +6806,8 @@
           }
         ],
         "version": "99b9e301"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:PreviewApprovalCollection": {
       "name": "previewapprovalcollection",
@@ -6900,7 +6937,8 @@
           }
         ],
         "version": "ec7b2b14"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:AssistanceRequestCollection": {
       "name": "assistancerequestcollection",
@@ -7039,7 +7077,8 @@
           }
         ],
         "version": "d1653259"
-      }
+      },
+      "importPath": "@happyvertical/smrt-projects"
     },
     "@happyvertical/smrt-projects:AssistanceRequestEventCollection": {
       "name": "assistancerequesteventcollection",
@@ -7163,1494 +7202,16 @@
           }
         ],
         "version": "bcc95ebe"
-      }
-    },
-    "@happyvertical/smrt-projects:ServiceTimeEntry": {
-      "name": "servicetimeentry",
-      "className": "ServiceTimeEntry",
-      "qualifiedName": "@happyvertical/smrt-projects:ServiceTimeEntry",
-      "collection": "servicetimeentries",
-      "filePath": "packages/projects/src/models/service-evidence.ts",
-      "packageName": "@happyvertical/smrt-projects",
-      "fields": {
-        "tenantId": {
-          "type": "text",
-          "required": false,
-          "_meta": {
-            "sqlType": "UUID",
-            "nullable": true,
-            "__tenancy": {
-              "isTenantIdField": true,
-              "autoFilter": true,
-              "required": false,
-              "autoPopulate": true,
-              "nullable": true,
-              "mode": "optional",
-              "field": "tenantId",
-              "allowSuperAdminBypass": false
-            }
-          }
-        },
-        "caseId": {
-          "type": "crossPackageRef",
-          "required": false,
-          "related": "@happyvertical/smrt-support:SupportCase",
-          "_meta": {
-            "nullable": true
-          }
-        },
-        "workRefType": {
-          "type": "text",
-          "required": false,
-          "_meta": {
-            "nullable": true
-          }
-        },
-        "workRefId": {
-          "type": "text",
-          "required": false,
-          "_meta": {
-            "nullable": true
-          }
-        },
-        "specialistId": {
-          "type": "crossPackageRef",
-          "required": false,
-          "related": "@happyvertical/smrt-support:SupportSpecialist",
-          "_meta": {
-            "nullable": true
-          }
-        },
-        "participantKind": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "participantProfileId": {
-          "type": "crossPackageRef",
-          "required": false,
-          "related": "@happyvertical/smrt-profiles:Profile",
-          "_meta": {
-            "nullable": true
-          }
-        },
-        "agentRef": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "source": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "description": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "startedAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "endedAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "durationSeconds": {
-          "type": "integer",
-          "required": false,
-          "default": 0
-        },
-        "evidence": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "status": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "submittedAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "submittedByProfileId": {
-          "type": "crossPackageRef",
-          "required": false,
-          "related": "@happyvertical/smrt-profiles:Profile",
-          "_meta": {
-            "nullable": true
-          }
-        },
-        "approvedAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "approvedByProfileId": {
-          "type": "crossPackageRef",
-          "required": false,
-          "related": "@happyvertical/smrt-profiles:Profile",
-          "_meta": {
-            "nullable": true
-          }
-        },
-        "approvalPath": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "rejectedAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "rejectedByProfileId": {
-          "type": "crossPackageRef",
-          "required": false,
-          "related": "@happyvertical/smrt-profiles:Profile",
-          "_meta": {
-            "nullable": true
-          }
-        },
-        "rejectionReason": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "correctionOfId": {
-          "type": "foreignKey",
-          "required": false,
-          "related": "ServiceTimeEntry"
-        },
-        "metadata": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        }
       },
-      "methods": {
-        "getEvidence": {
-          "name": "getEvidence",
-          "async": false,
-          "parameters": [],
-          "returnType": "ServiceEvidence[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "setEvidence": {
-          "name": "setEvidence",
-          "async": false,
-          "parameters": [
-            {
-              "name": "value",
-              "type": "ServiceEvidence[]",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getMetadata": {
-          "name": "getMetadata",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string, unknown>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "setMetadata": {
-          "name": "setMetadata",
-          "async": false,
-          "parameters": [
-            {
-              "name": "value",
-              "type": "Record<string, unknown>",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "durationHours": {
-          "name": "durationHours",
-          "async": false,
-          "parameters": [],
-          "returnType": "number",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<this>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<this>",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
-      "decoratorConfig": {
-        "tableName": "service_time_entries",
-        "api": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "cli": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "mcp": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "tenantScoped": {
-          "mode": "optional"
-        },
-        "conflictColumns": [
-          "tenant_id",
-          "slug",
-          "context"
-        ]
-      },
-      "extends": "SmrtObject",
-      "exportName": "ServiceTimeEntry",
-      "collectionExportName": "ServiceTimeEntryCollection",
-      "schema": {
-        "tableName": "service_time_entries",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"service_time_entries\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"case_id\" UUID,\n  \"work_ref_type\" TEXT,\n  \"work_ref_id\" TEXT,\n  \"specialist_id\" UUID,\n  \"participant_kind\" TEXT,\n  \"participant_profile_id\" UUID,\n  \"agent_ref\" TEXT,\n  \"source\" TEXT,\n  \"description\" TEXT,\n  \"started_at\" TIMESTAMP,\n  \"ended_at\" TIMESTAMP,\n  \"duration_seconds\" INTEGER DEFAULT 0,\n  \"evidence\" TEXT,\n  \"status\" TEXT,\n  \"submitted_at\" TIMESTAMP,\n  \"submitted_by_profile_id\" UUID,\n  \"approved_at\" TIMESTAMP,\n  \"approved_by_profile_id\" UUID,\n  \"approval_path\" TEXT,\n  \"rejected_at\" TIMESTAMP,\n  \"rejected_by_profile_id\" UUID,\n  \"rejection_reason\" TEXT,\n  \"correction_of_id\" UUID,\n  \"metadata\" TEXT\n);",
-        "columns": {
-          "id": {
-            "type": "UUID",
-            "primaryKey": true,
-            "referenceKind": "id",
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "tenant_id": {
-            "type": "UUID",
-            "referenceKind": "tenantId",
-            "notNull": false,
-            "unique": false
-          },
-          "case_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "work_ref_type": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "work_ref_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "specialist_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "participant_kind": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "participant_profile_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "agent_ref": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "source": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "description": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "started_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "ended_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "duration_seconds": {
-            "type": "INTEGER",
-            "notNull": false,
-            "unique": false,
-            "default": 0
-          },
-          "evidence": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "status": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "submitted_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "submitted_by_profile_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "approved_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "approved_by_profile_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "approval_path": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "rejected_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "rejected_by_profile_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "rejection_reason": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "correction_of_id": {
-            "type": "UUID",
-            "referenceKind": "foreignKey",
-            "notNull": false,
-            "unique": false,
-            "foreignKey": {
-              "table": "service_time_entries",
-              "column": "id",
-              "onDelete": "NO ACTION",
-              "onUpdate": "CASCADE"
-            }
-          },
-          "metadata": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          }
-        },
-        "indexes": [
-          {
-            "name": "service_time_entries_slug_context_idx",
-            "columns": [
-              "tenant_id",
-              "slug",
-              "context"
-            ],
-            "unique": true,
-            "nullsNotDistinct": true
-          },
-          {
-            "name": "service_time_entries_tenant_id_created_at_idx",
-            "columns": [
-              "tenant_id",
-              "created_at"
-            ]
-          },
-          {
-            "name": "service_time_entries_case_id_idx",
-            "columns": [
-              "case_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_specialist_id_idx",
-            "columns": [
-              "specialist_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_participant_profile_id_idx",
-            "columns": [
-              "participant_profile_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_submitted_by_profile_id_idx",
-            "columns": [
-              "submitted_by_profile_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_approved_by_profile_id_idx",
-            "columns": [
-              "approved_by_profile_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_rejected_by_profile_id_idx",
-            "columns": [
-              "rejected_by_profile_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_correction_of_id_idx",
-            "columns": [
-              "correction_of_id"
-            ]
-          }
-        ],
-        "version": "f0968f50"
-      }
-    },
-    "@happyvertical/smrt-projects:ServiceChargeSnapshot": {
-      "name": "servicechargesnapshot",
-      "className": "ServiceChargeSnapshot",
-      "qualifiedName": "@happyvertical/smrt-projects:ServiceChargeSnapshot",
-      "collection": "servicechargesnapshots",
-      "filePath": "packages/projects/src/models/service-evidence.ts",
-      "packageName": "@happyvertical/smrt-projects",
-      "fields": {
-        "tenantId": {
-          "type": "text",
-          "required": false,
-          "_meta": {
-            "sqlType": "UUID",
-            "nullable": true,
-            "__tenancy": {
-              "isTenantIdField": true,
-              "autoFilter": true,
-              "required": false,
-              "autoPopulate": true,
-              "nullable": true,
-              "mode": "optional",
-              "field": "tenantId",
-              "allowSuperAdminBypass": false
-            }
-          }
-        },
-        "timeEntryId": {
-          "type": "foreignKey",
-          "required": true,
-          "related": "ServiceTimeEntry",
-          "_meta": {
-            "required": true
-          }
-        },
-        "amount": {
-          "type": "integer",
-          "required": false,
-          "default": 0
-        },
-        "currency": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "pricingVersion": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "strategy": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "rateSnapshot": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "sourceChargeRef": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "createdAt": {
-          "type": "datetime",
-          "required": false
-        }
-      },
-      "methods": {
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<this>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<this>",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
-      "decoratorConfig": {
-        "tableName": "service_charge_snapshots",
-        "conflictColumns": [
-          "time_entry_id"
-        ],
-        "api": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "cli": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "mcp": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "tenantScoped": {
-          "mode": "optional"
-        }
-      },
-      "extends": "SmrtObject",
-      "exportName": "ServiceChargeSnapshot",
-      "collectionExportName": "ServiceChargeSnapshotCollection",
-      "validationRules": [
-        {
-          "field": "timeEntryId",
-          "rule": "required",
-          "fieldType": "foreignKey"
-        }
-      ],
-      "schema": {
-        "tableName": "service_charge_snapshots",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"service_charge_snapshots\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"time_entry_id\" UUID NOT NULL,\n  \"amount\" INTEGER DEFAULT 0,\n  \"currency\" TEXT,\n  \"pricing_version\" TEXT,\n  \"strategy\" TEXT,\n  \"rate_snapshot\" TEXT,\n  \"source_charge_ref\" TEXT\n);",
-        "columns": {
-          "id": {
-            "type": "UUID",
-            "primaryKey": true,
-            "referenceKind": "id",
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "tenant_id": {
-            "type": "UUID",
-            "referenceKind": "tenantId",
-            "notNull": false,
-            "unique": false
-          },
-          "time_entry_id": {
-            "type": "UUID",
-            "referenceKind": "foreignKey",
-            "notNull": true,
-            "unique": false,
-            "foreignKey": {
-              "table": "service_time_entries",
-              "column": "id",
-              "onDelete": "CASCADE",
-              "onUpdate": "CASCADE"
-            }
-          },
-          "amount": {
-            "type": "INTEGER",
-            "notNull": false,
-            "unique": false,
-            "default": 0
-          },
-          "currency": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "pricing_version": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "strategy": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "rate_snapshot": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "source_charge_ref": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          }
-        },
-        "indexes": [
-          {
-            "name": "service_charge_snapshots_time_entry_id_idx",
-            "columns": [
-              "time_entry_id"
-            ],
-            "unique": true
-          },
-          {
-            "name": "service_charge_snapshots_slug_context_idx",
-            "columns": [
-              "slug",
-              "context"
-            ]
-          },
-          {
-            "name": "service_charge_snapshots_tenant_id_created_at_idx",
-            "columns": [
-              "tenant_id",
-              "created_at"
-            ]
-          }
-        ],
-        "version": "95a934aa"
-      }
-    },
-    "@happyvertical/smrt-projects:ServiceCompensationSnapshot": {
-      "name": "servicecompensationsnapshot",
-      "className": "ServiceCompensationSnapshot",
-      "qualifiedName": "@happyvertical/smrt-projects:ServiceCompensationSnapshot",
-      "collection": "servicecompensationsnapshots",
-      "filePath": "packages/projects/src/models/service-evidence.ts",
-      "packageName": "@happyvertical/smrt-projects",
-      "fields": {
-        "tenantId": {
-          "type": "text",
-          "required": false,
-          "_meta": {
-            "sqlType": "UUID",
-            "nullable": true,
-            "__tenancy": {
-              "isTenantIdField": true,
-              "autoFilter": true,
-              "required": false,
-              "autoPopulate": true,
-              "nullable": true,
-              "mode": "optional",
-              "field": "tenantId",
-              "allowSuperAdminBypass": false
-            }
-          }
-        },
-        "timeEntryId": {
-          "type": "foreignKey",
-          "required": true,
-          "related": "ServiceTimeEntry",
-          "_meta": {
-            "required": true
-          }
-        },
-        "amount": {
-          "type": "integer",
-          "required": false,
-          "default": 0
-        },
-        "currency": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "termsVersion": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "rateSnapshot": {
-          "type": "text",
-          "required": false,
-          "_meta": {}
-        },
-        "createdAt": {
-          "type": "datetime",
-          "required": false
-        }
-      },
-      "methods": {
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<this>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<this>",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
-      "decoratorConfig": {
-        "tableName": "service_compensation_snapshots",
-        "conflictColumns": [
-          "time_entry_id"
-        ],
-        "api": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "cli": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "mcp": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "tenantScoped": {
-          "mode": "optional"
-        }
-      },
-      "extends": "SmrtObject",
-      "exportName": "ServiceCompensationSnapshot",
-      "collectionExportName": "ServiceCompensationSnapshotCollection",
-      "validationRules": [
-        {
-          "field": "timeEntryId",
-          "rule": "required",
-          "fieldType": "foreignKey"
-        }
-      ],
-      "schema": {
-        "tableName": "service_compensation_snapshots",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"service_compensation_snapshots\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"time_entry_id\" UUID NOT NULL,\n  \"amount\" INTEGER DEFAULT 0,\n  \"currency\" TEXT,\n  \"terms_version\" TEXT,\n  \"rate_snapshot\" TEXT\n);",
-        "columns": {
-          "id": {
-            "type": "UUID",
-            "primaryKey": true,
-            "referenceKind": "id",
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "tenant_id": {
-            "type": "UUID",
-            "referenceKind": "tenantId",
-            "notNull": false,
-            "unique": false
-          },
-          "time_entry_id": {
-            "type": "UUID",
-            "referenceKind": "foreignKey",
-            "notNull": true,
-            "unique": false,
-            "foreignKey": {
-              "table": "service_time_entries",
-              "column": "id",
-              "onDelete": "CASCADE",
-              "onUpdate": "CASCADE"
-            }
-          },
-          "amount": {
-            "type": "INTEGER",
-            "notNull": false,
-            "unique": false,
-            "default": 0
-          },
-          "currency": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "terms_version": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "rate_snapshot": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          }
-        },
-        "indexes": [
-          {
-            "name": "service_compensation_snapshots_time_entry_id_idx",
-            "columns": [
-              "time_entry_id"
-            ],
-            "unique": true
-          },
-          {
-            "name": "service_compensation_snapshots_slug_context_idx",
-            "columns": [
-              "slug",
-              "context"
-            ]
-          },
-          {
-            "name": "service_compensation_snapshots_tenant_id_created_at_idx",
-            "columns": [
-              "tenant_id",
-              "created_at"
-            ]
-          }
-        ],
-        "version": "1b3b9cec"
-      }
-    },
-    "@happyvertical/smrt-projects:ServiceTimeEntryCollection": {
-      "name": "servicetimeentrycollection",
-      "className": "ServiceTimeEntryCollection",
-      "qualifiedName": "@happyvertical/smrt-projects:ServiceTimeEntryCollection",
-      "collection": "servicetimeentries",
-      "filePath": "packages/projects/src/models/service-evidence.ts",
-      "packageName": "@happyvertical/smrt-projects",
-      "fields": {},
-      "methods": {
-        "forWork": {
-          "name": "forWork",
-          "async": true,
-          "parameters": [
-            {
-              "name": "workRefType",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "workRefId",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ServiceTimeEntry[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forCase": {
-          "name": "forCase",
-          "async": true,
-          "parameters": [
-            {
-              "name": "caseId",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ServiceTimeEntry[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forSpecialist": {
-          "name": "forSpecialist",
-          "async": true,
-          "parameters": [
-            {
-              "name": "specialistId",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ServiceTimeEntry[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "pendingApproval": {
-          "name": "pendingApproval",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<ServiceTimeEntry[]>",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
-      "decoratorConfig": {
-        "tableName": "service_time_entries"
-      },
-      "extends": "SmrtCollection",
-      "extendsTypeArg": "ServiceTimeEntry",
-      "exportName": "ServiceTimeEntryCollection",
-      "collectionExportName": "ServiceTimeEntryCollectionCollection",
-      "schema": {
-        "tableName": "service_time_entries",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"service_time_entries\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"case_id\" UUID,\n  \"work_ref_type\" TEXT,\n  \"work_ref_id\" TEXT,\n  \"specialist_id\" UUID,\n  \"participant_kind\" TEXT,\n  \"participant_profile_id\" UUID,\n  \"agent_ref\" TEXT,\n  \"source\" TEXT,\n  \"description\" TEXT,\n  \"started_at\" TIMESTAMP,\n  \"ended_at\" TIMESTAMP,\n  \"duration_seconds\" INTEGER DEFAULT 0,\n  \"evidence\" TEXT,\n  \"status\" TEXT,\n  \"submitted_at\" TIMESTAMP,\n  \"submitted_by_profile_id\" UUID,\n  \"approved_at\" TIMESTAMP,\n  \"approved_by_profile_id\" UUID,\n  \"approval_path\" TEXT,\n  \"rejected_at\" TIMESTAMP,\n  \"rejected_by_profile_id\" UUID,\n  \"rejection_reason\" TEXT,\n  \"correction_of_id\" UUID,\n  \"metadata\" TEXT\n);",
-        "columns": {
-          "id": {
-            "type": "UUID",
-            "primaryKey": true,
-            "referenceKind": "id",
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "tenant_id": {
-            "type": "UUID",
-            "referenceKind": "tenantId",
-            "notNull": false,
-            "unique": false
-          },
-          "case_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "work_ref_type": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "work_ref_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "specialist_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "participant_kind": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "participant_profile_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "agent_ref": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "source": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "description": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "started_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "ended_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "duration_seconds": {
-            "type": "INTEGER",
-            "notNull": false,
-            "unique": false,
-            "default": 0
-          },
-          "evidence": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "status": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "submitted_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "submitted_by_profile_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "approved_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "approved_by_profile_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "approval_path": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "rejected_at": {
-            "type": "TIMESTAMP",
-            "notNull": false,
-            "unique": false
-          },
-          "rejected_by_profile_id": {
-            "type": "UUID",
-            "referenceKind": "crossPackageRef",
-            "notNull": false,
-            "unique": false
-          },
-          "rejection_reason": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "correction_of_id": {
-            "type": "UUID",
-            "referenceKind": "foreignKey",
-            "notNull": false,
-            "unique": false,
-            "foreignKey": {
-              "table": "service_time_entries",
-              "column": "id",
-              "onDelete": "NO ACTION",
-              "onUpdate": "CASCADE"
-            }
-          },
-          "metadata": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          }
-        },
-        "indexes": [
-          {
-            "name": "service_time_entries_slug_context_idx",
-            "columns": [
-              "tenant_id",
-              "slug",
-              "context"
-            ],
-            "unique": true,
-            "nullsNotDistinct": true
-          },
-          {
-            "name": "service_time_entries_tenant_id_created_at_idx",
-            "columns": [
-              "tenant_id",
-              "created_at"
-            ]
-          },
-          {
-            "name": "service_time_entries_case_id_idx",
-            "columns": [
-              "case_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_specialist_id_idx",
-            "columns": [
-              "specialist_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_participant_profile_id_idx",
-            "columns": [
-              "participant_profile_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_submitted_by_profile_id_idx",
-            "columns": [
-              "submitted_by_profile_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_approved_by_profile_id_idx",
-            "columns": [
-              "approved_by_profile_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_rejected_by_profile_id_idx",
-            "columns": [
-              "rejected_by_profile_id"
-            ]
-          },
-          {
-            "name": "service_time_entries_correction_of_id_idx",
-            "columns": [
-              "correction_of_id"
-            ]
-          }
-        ],
-        "version": "f0968f50"
-      }
-    },
-    "@happyvertical/smrt-projects:ServiceChargeSnapshotCollection": {
-      "name": "servicechargesnapshotcollection",
-      "className": "ServiceChargeSnapshotCollection",
-      "qualifiedName": "@happyvertical/smrt-projects:ServiceChargeSnapshotCollection",
-      "collection": "servicechargesnapshots",
-      "filePath": "packages/projects/src/models/service-evidence.ts",
-      "packageName": "@happyvertical/smrt-projects",
-      "fields": {},
-      "methods": {},
-      "decoratorConfig": {
-        "tableName": "service_charge_snapshots"
-      },
-      "extends": "SmrtCollection",
-      "extendsTypeArg": "ServiceChargeSnapshot",
-      "exportName": "ServiceChargeSnapshotCollection",
-      "collectionExportName": "ServiceChargeSnapshotCollectionCollection",
-      "schema": {
-        "tableName": "service_charge_snapshots",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"service_charge_snapshots\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"time_entry_id\" UUID NOT NULL,\n  \"amount\" INTEGER DEFAULT 0,\n  \"currency\" TEXT,\n  \"pricing_version\" TEXT,\n  \"strategy\" TEXT,\n  \"rate_snapshot\" TEXT,\n  \"source_charge_ref\" TEXT\n);",
-        "columns": {
-          "id": {
-            "type": "UUID",
-            "primaryKey": true,
-            "referenceKind": "id",
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "tenant_id": {
-            "type": "UUID",
-            "referenceKind": "tenantId",
-            "notNull": false,
-            "unique": false
-          },
-          "time_entry_id": {
-            "type": "UUID",
-            "referenceKind": "foreignKey",
-            "notNull": true,
-            "unique": false,
-            "foreignKey": {
-              "table": "service_time_entries",
-              "column": "id",
-              "onDelete": "CASCADE",
-              "onUpdate": "CASCADE"
-            }
-          },
-          "amount": {
-            "type": "INTEGER",
-            "notNull": false,
-            "unique": false,
-            "default": 0
-          },
-          "currency": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "pricing_version": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "strategy": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "rate_snapshot": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "source_charge_ref": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          }
-        },
-        "indexes": [
-          {
-            "name": "service_charge_snapshots_time_entry_id_idx",
-            "columns": [
-              "time_entry_id"
-            ],
-            "unique": true
-          },
-          {
-            "name": "service_charge_snapshots_slug_context_idx",
-            "columns": [
-              "slug",
-              "context"
-            ]
-          },
-          {
-            "name": "service_charge_snapshots_tenant_id_created_at_idx",
-            "columns": [
-              "tenant_id",
-              "created_at"
-            ]
-          }
-        ],
-        "version": "95a934aa"
-      }
-    },
-    "@happyvertical/smrt-projects:ServiceCompensationSnapshotCollection": {
-      "name": "servicecompensationsnapshotcollection",
-      "className": "ServiceCompensationSnapshotCollection",
-      "qualifiedName": "@happyvertical/smrt-projects:ServiceCompensationSnapshotCollection",
-      "collection": "servicecompensationsnapshots",
-      "filePath": "packages/projects/src/models/service-evidence.ts",
-      "packageName": "@happyvertical/smrt-projects",
-      "fields": {},
-      "methods": {},
-      "decoratorConfig": {
-        "tableName": "service_compensation_snapshots"
-      },
-      "extends": "SmrtCollection",
-      "extendsTypeArg": "ServiceCompensationSnapshot",
-      "exportName": "ServiceCompensationSnapshotCollection",
-      "collectionExportName": "ServiceCompensationSnapshotCollectionCollection",
-      "schema": {
-        "tableName": "service_compensation_snapshots",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"service_compensation_snapshots\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"time_entry_id\" UUID NOT NULL,\n  \"amount\" INTEGER DEFAULT 0,\n  \"currency\" TEXT,\n  \"terms_version\" TEXT,\n  \"rate_snapshot\" TEXT\n);",
-        "columns": {
-          "id": {
-            "type": "UUID",
-            "primaryKey": true,
-            "referenceKind": "id",
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "tenant_id": {
-            "type": "UUID",
-            "referenceKind": "tenantId",
-            "notNull": false,
-            "unique": false
-          },
-          "time_entry_id": {
-            "type": "UUID",
-            "referenceKind": "foreignKey",
-            "notNull": true,
-            "unique": false,
-            "foreignKey": {
-              "table": "service_time_entries",
-              "column": "id",
-              "onDelete": "CASCADE",
-              "onUpdate": "CASCADE"
-            }
-          },
-          "amount": {
-            "type": "INTEGER",
-            "notNull": false,
-            "unique": false,
-            "default": 0
-          },
-          "currency": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "terms_version": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          },
-          "rate_snapshot": {
-            "type": "TEXT",
-            "notNull": false,
-            "unique": false
-          }
-        },
-        "indexes": [
-          {
-            "name": "service_compensation_snapshots_time_entry_id_idx",
-            "columns": [
-              "time_entry_id"
-            ],
-            "unique": true
-          },
-          {
-            "name": "service_compensation_snapshots_slug_context_idx",
-            "columns": [
-              "slug",
-              "context"
-            ]
-          },
-          {
-            "name": "service_compensation_snapshots_tenant_id_created_at_idx",
-            "columns": [
-              "tenant_id",
-              "created_at"
-            ]
-          }
-        ],
-        "version": "1b3b9cec"
-      }
+      "importPath": "@happyvertical/smrt-projects"
     }
   },
   "moduleType": "smrt",
   "smrtDependencies": [
-    "@happyvertical/smrt-config",
     "@happyvertical/smrt-core",
     "@happyvertical/smrt-prompts",
     "@happyvertical/smrt-subscriptions",
-    "@happyvertical/smrt-svelte",
     "@happyvertical/smrt-tenancy",
-    "@happyvertical/smrt-types",
-    "@happyvertical/smrt-ui"
+    "@happyvertical/smrt-timesheets"
   ]
 }

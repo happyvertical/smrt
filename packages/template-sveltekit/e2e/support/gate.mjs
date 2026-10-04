@@ -29,13 +29,36 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const packagesRoot = resolve(packageRoot, '..');
+
+/**
+ * Where vitest cases run. `template` is this package's whole suite. The
+ * others are the owning packages of code the template used to copy (#3367):
+ * a case whose implementation moved out of the template is proven where that
+ * code now lives, and is matched by name exactly like the template's own.
+ */
+const VITEST_SUITES = [
+  { id: 'template', cwd: packageRoot, files: [] },
+  {
+    id: 'cli',
+    cwd: join(packagesRoot, 'cli'),
+    files: ['src/app/__tests__/portability-assets.test.ts'],
+  },
+  {
+    id: 'app-runtime',
+    cwd: join(packagesRoot, 'app-runtime'),
+    files: ['src/sveltekit.test.ts'],
+  },
+];
 
 /**
  * Every M5 profile/gate case this milestone claims to cover.
  *
  * `match` is tested against the full vitest test name. `dependsOn` records
  * the prerequisite issue that lands the case, so a red gate says which
- * dependency is outstanding instead of just "missing".
+ * dependency is outstanding instead of just "missing". `suite` names the
+ * {@link VITEST_SUITES} entry the case must come from (default `template`), so
+ * a same-named test elsewhere can never satisfy it.
  */
 const REQUIRED_VITEST_CASES = [
   {
@@ -59,13 +82,18 @@ const REQUIRED_VITEST_CASES = [
   {
     id: 'asset-manifest-portability',
     profile: 'sqlite',
+    // `smrt app export`/`import` (#3371) own asset-aware portability.
+    suite: 'cli',
     match: /round-trips the owner, tenant, record, association, bytes, and digest/i,
     dependsOn: '#2576',
   },
   {
     id: 'diagnostics-authorization',
     profile: 'sqlite',
-    match: /fails unauthenticated, unauthorized member, and cross-tenant access/i,
+    // The template mounts `createRuntimeDiagnosticsHandler` (#3369); the
+    // browser cases below exercise that mounted route end to end.
+    suite: 'app-runtime',
+    match: /runtime diagnostics route authorizes before projection and returns only stable errors/i,
     dependsOn: '#2577',
   },
   {
@@ -107,6 +135,7 @@ const REQUIRED_VITEST_CASES = [
   {
     id: 'postgres-asset-portability',
     profile: 'postgres',
+    suite: 'cli',
     match: /imports the same record, authorization links, association, and verified blob/i,
     dependsOn: '#2576',
   },
@@ -195,11 +224,12 @@ const REQUIRED_BROWSER_CASES = [
 /**
  * Each child's exit status.
  *
- * The named case tables cover 13 of the package's vitest tests and all 16
- * browser tests, but `test:m5` runs the package's whole suite. A failure
- * outside the named set — an unrelated test, a global teardown, an unhandled
- * rejection after results were reported — must not be swallowed by a verdict
- * computed only from the named cases.
+ * The named case tables cover 13 vitest tests and all 16 browser tests, but
+ * `test:m5` runs the package's whole suite plus the owning-package files. A
+ * failure outside the named set — an unrelated test, a global teardown, an
+ * unhandled rejection after results were reported — must not be swallowed by
+ * a verdict computed only from the named cases. `vitest` is the first
+ * non-zero exit among the suites.
  */
 const exitStatuses = { vitest: null, playwright: null };
 
@@ -249,6 +279,12 @@ function emit(summary) {
 }
 
 function collectVitestCases() {
+  return VITEST_SUITES.flatMap((suite) =>
+    collectVitestSuite(suite).map((entry) => ({ ...entry, suite: suite.id })),
+  );
+}
+
+function collectVitestSuite(suite) {
   const outputDirectory = mkdtempSync(join(tmpdir(), 'm5-gate-'));
   const outputFile = join(outputDirectory, 'vitest.json');
   try {
@@ -268,15 +304,18 @@ function collectVitestCases() {
         '--reporter=default',
         '--reporter=json',
         `--outputFile=${outputFile}`,
+        ...suite.files,
       ],
       // stdout to fd 2: the reporter is for a human reading the log, and
       // this process's stdout carries only the sanitized summary.
-      { cwd: packageRoot, stdio: ['ignore', 2, 2] },
+      { cwd: suite.cwd, stdio: ['ignore', 2, 2] },
     );
     if (run.error) {
       throw new Error(`vitest could not be started: ${run.error.code ?? 'unknown'}`);
     }
-    exitStatuses.vitest = run.status;
+    if (exitStatuses.vitest === null || exitStatuses.vitest === 0) {
+      exitStatuses.vitest = run.status;
+    }
     const report = JSON.parse(readFileSync(outputFile, 'utf8'));
     return report.testResults.flatMap((file) =>
       file.assertionResults.map((assertion) => ({
@@ -382,7 +421,11 @@ function main() {
 
   const observed = collectVitestCases();
   for (const required of REQUIRED_VITEST_CASES) {
-    const matches = observed.filter((entry) => required.match.test(entry.name));
+    const matches = observed.filter(
+      (entry) =>
+        entry.suite === (required.suite ?? 'template') &&
+        required.match.test(entry.name),
+    );
     const passed =
       matches.length > 0 && matches.every((entry) => entry.status === 'passed');
     summary.cases.push({

@@ -29,13 +29,20 @@ request/delivery projections.
 - `ManagedProjectClient` deliberately exposes no repository or board client;
   delivery and assistance use separate capability-gated service facades.
 
-## Shared Professional Service evidence (#1955)
+## Shared Professional Service evidence (#1955, #3288)
 
-`ServiceTimeEntry` is canonical here on the existing `service_time_entries`
-table. Planning, development, and support use the same immutable evidence and
-correction chain. `SubscriptionServiceCommercialResolver` prices client work
-through `smrt-subscriptions` (#1925); provider compensation remains a separate
-resolver and snapshot. See `SERVICE_TIME_MIGRATION.md`.
+`ServiceTimeEntry`, `ServiceChargeSnapshot`, `ServiceCompensationSnapshot`,
+their collections, and `ServiceEvidenceService` are owned by
+`@happyvertical/smrt-timesheets` (#3288) and **re-exported** here unchanged,
+on the unchanged `service_time_entries` / snapshot tables. Do not reintroduce
+a projects subclass: a third same-named class on the table breaks the
+single-table-family resolution (see `packages/timesheets/AGENTS.md`).
+`caseId` / `specialistId` exist only on smrt-support's subtype;
+`SubscriptionServiceCommercialResolver` reads them duck-typed when a support
+entry is priced. It prices client work through `smrt-subscriptions` (#1925);
+provider compensation remains a separate resolver and snapshot. The
+time-entry Svelte components are re-exported from smrt-timesheets too. See
+`SERVICE_TIME_MIGRATION.md`.
 
 ## Models
 
@@ -63,13 +70,17 @@ All collections provide: `discover({ repository, filters })`, `findByRepository(
 
 - **Money is integer minor units** (cents) — `$19.99` is `1999`.
   `ServiceChargeSnapshot.amount` and `ServiceCompensationSnapshot.amount`
+  (declared in smrt-timesheets)
   initialize `= 0`, never `= 0.0`: the integer literal is what maps them to
   INTEGER columns (BIGINT on fresh PostgreSQL/DuckDB databases; #2401, #2373). The two convert as a pair — the delivery margin is
   `charge - compensation`, an exact integer subtraction with no tolerance —
   and both are fed verbatim by `CommercialSnapshot.amount`, so a resolver that
-  returns major units corrupts the snapshot silently on SQLite and fails with
-  `22P02` on PostgreSQL. `pnpm --filter @happyvertical/smrt-projects
-  test:postgres` is the lane that holds the line.
+  returns major units is wrong on every engine: snapshot `save()` refuses a
+  fractional value (`19.99`) on SQLite and PostgreSQL alike, but a whole
+  major-unit value (`150` for $150.00) is a valid integer and is stored
+  100× too small. `pnpm --filter @happyvertical/smrt-timesheets
+  test:postgres` is the lane that holds the line (moved with the snapshots in
+  #3288).
 - **UI formats by dividing, never by `toFixed`**: `formatCurrency()` and
   `ServiceEvidenceList`'s `money()` scale back to major units using the
   currency's own minor-unit exponent, so zero-decimal currencies (JPY, KRW) are

@@ -38,7 +38,8 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
   let contract: PostgresPermissionContract;
   const q = (value: string) => `"${value.replaceAll('"', '""')}"`;
   async function as(role: string, sql: string) {
-    return db.transaction?.(async (tx) => {
+    if (!db.transaction) throw new Error('PostgreSQL transaction is required');
+    return db.transaction(async (tx) => {
       await tx.query(`SET LOCAL ROLE ${q(role)}`);
       return tx.query(sql);
     });
@@ -98,12 +99,12 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
     };
   });
   afterEach(async () => {
-    await db?.close();
+    await db?.close?.();
     if (database)
       await admin.query(`DROP DATABASE IF EXISTS ${q(database)} WITH (FORCE)`);
     for (const role of [owner, runtime, monitor])
       if (role) await admin.query(`DROP ROLE IF EXISTS ${q(role)}`);
-    await admin?.close();
+    await admin?.close?.();
   });
   it('establishes actual runtime operations and column-only monitoring, excluding DDL and bookkeeping writes', async () => {
     const result = await apply();
@@ -181,7 +182,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         ),
       ).rejects.toThrow();
     } finally {
-      await runtimeDb.close();
+      await runtimeDb.close?.();
     }
     await expect(
       as(monitor, 'SELECT * FROM app._smrt_drain_changes()'),
@@ -842,7 +843,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         [],
       );
     } finally {
-      await migrationDb.close();
+      await migrationDb.close?.();
     }
   });
   it('fails closed for memberships, PUBLIC access, ownership, and global defaults', async () => {
@@ -1012,7 +1013,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         runtimeDb.query('CREATE TABLE app.denied(id int)'),
       ).rejects.toThrow();
     } finally {
-      for (const connection of connections) await connection.close();
+      for (const connection of connections) await connection.close?.();
     }
   });
   it('refuses privileged roles and absent schema without changing ACLs', async () => {
@@ -1067,7 +1068,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         await db.query(
           "SELECT current_setting('server_version_num') AS version",
         )
-      ).rows[0].version,
+      ).rows[0]?.version,
     );
     if (version < 150000) return;
     try {
@@ -1140,7 +1141,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
           'app._smrt_backfills',
           'INSERT',
         )
-      ).rows[0].allowed,
+      ).rows[0]?.allowed,
     ).toBe(true);
     await applyPostgresPermissions(db, contract, {
       expectedFingerprint: restored.fingerprint,
@@ -1303,7 +1304,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         await db.query(
           "SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='information_schema'",
         )
-      ).rows[0].owner,
+      ).rows[0]?.owner,
     );
     for (const role of [runtime, monitor]) {
       await db.query(`ALTER SCHEMA information_schema OWNER TO ${q(role)}`);
@@ -1446,7 +1447,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         await db.query(
           "SELECT lo_from_bytea(0, convert_to('synthetic-only', 'UTF8')) AS oid",
         )
-      ).rows[0].oid,
+      ).rows[0]?.oid,
     );
     try {
       for (const role of [runtime, monitor]) {
@@ -1536,7 +1537,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         await db.query(
           "SELECT lo_from_bytea(0, convert_to('synthetic-only', 'UTF8')) AS oid",
         )
-      ).rows[0].oid,
+      ).rows[0]?.oid,
     );
     try {
       await db.transaction?.(async (tx) => {

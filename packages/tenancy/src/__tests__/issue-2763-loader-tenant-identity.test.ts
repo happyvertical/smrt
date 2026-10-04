@@ -98,6 +98,8 @@ describe('canonical relationship target tenancy (#2763)', () => {
           source.title = 'source';
           source.tenantId = TENANT;
           await source.save();
+          const sourceId = source.id;
+          if (!sourceId) throw new Error('Saved source has no id');
           await withSystemContext(async () => {
             for (const [Ctor, title] of [
               [A, 'A-secret'],
@@ -106,7 +108,7 @@ describe('canonical relationship target tenancy (#2763)', () => {
               const row = await new Ctor({ db }).initialize();
               row.id = id;
               row.title = title;
-              row.sourceId = source.id;
+              row.sourceId = sourceId;
               row.tenantId = TENANT;
               await row.save();
             }
@@ -151,7 +153,7 @@ describe('canonical relationship target tenancy (#2763)', () => {
           else expect(await read()).toMatchObject({ id, title: 'B-owned' });
         } finally {
           disableTenancy();
-          await db.close();
+          await db.close?.();
         }
       });
     }

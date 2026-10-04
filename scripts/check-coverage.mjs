@@ -51,6 +51,7 @@ const TIERS = {
   chat: 'T2',
   commerce: 'T2',
   content: 'T2',
+  expenses: 'T2',
   jobs: 'T2',
   ledgers: 'T2',
   messages: 'T2',
@@ -68,6 +69,7 @@ const TIERS = {
   events: 'T3',
   facts: 'T3',
   features: 'T3',
+  'human-resources': 'T3',
   images: 'T3',
   inventory: 'T3',
   languages: 'T3',
@@ -82,6 +84,7 @@ const TIERS = {
   'smrt-mobile-contract': 'T3',
   social: 'T3',
   tags: 'T3',
+  timesheets: 'T3',
   video: 'T3',
   voice: 'T3',
 };

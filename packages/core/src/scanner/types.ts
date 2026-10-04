@@ -72,6 +72,8 @@ export interface FieldMeta {
   indexed?: boolean;
   /** Foreign-key delete action carried in metadata. */
   onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
+  /** Foreign-key update action carried in metadata. */
+  onUpdate?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
   /** Configures physical DDL while retaining FK relationship metadata. */
   constraint?:
     | boolean

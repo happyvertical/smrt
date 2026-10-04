@@ -35,7 +35,7 @@ cache, tenancy, and lifecycle surface.
 
 ## Requirements
 
-- Node.js 24.18 or newer
+- Node.js 26 or newer
 - pnpm 11.13.1 or newer (11.13.0 is a broken release pnpm itself refuses)
 - A supported database adapter (SQLite is convenient for local development; PostgreSQL and DuckDB are supported where documented)
 
@@ -201,6 +201,8 @@ Status legend:
 | [`smrt-prompts`](./packages/prompts/README.md) | Stable | Typed prompt registry and tenant-aware overrides. |
 | [`smrt-projects`](./packages/projects/README.md) | Preview | Provider-neutral projects, repositories, issues, and delivery work. |
 | [`smrt-support`](./packages/support/README.md) | Preview | Support Case intake, lifecycle, routing, targets, and service time. |
+| [`smrt-timesheets`](./packages/timesheets/README.md) | Preview | Shared time entries, approval and correction, and immutable charge/compensation snapshots. |
+| [`smrt-human-resources`](./packages/human-resources/README.md) | Preview | Employment records with dated terms, and qualifications with expiry. |
 
 ### Content and media
 
@@ -227,6 +229,7 @@ Status legend:
 | [`smrt-affiliates`](./packages/affiliates/README.md) | Deprecated | Compatibility shim over the `smrt-sales` commissions core. |
 | [`smrt-subscriptions`](./packages/subscriptions/README.md) | Preview | Plans, entitlements, usage, pricing, and spending policies. |
 | [`smrt-ledgers`](./packages/ledgers/README.md) | Stable | Double-entry accounting and journal lifecycle. |
+| [`smrt-expenses`](./packages/expenses/README.md) | Preview | Reviewed expenses against a cost object, deduplicated receipts, and commitment drawdown. |
 | [`smrt-ads`](./packages/ads/README.md) | Stable | Ad selection, variation testing, and immutable delivery events. |
 | [`smrt-analytics`](./packages/analytics/README.md) | Stable | Analytics properties, streams, events, and reports. |
 | [`smrt-reports`](./packages/reports/README.md) | Preview | Materialized aggregate definitions and refresh orchestration. |

@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { configExportCommand } from '../config-export.js';
 
 // ---------------------------------------------------------------------------
@@ -51,7 +52,9 @@ vi.mock('@happyvertical/sql', () => ({
 }));
 
 const listFn = vi.fn();
-const createCollection = vi.fn(async () => ({ list: listFn }));
+const createCollection = vi.fn(async (..._args: unknown[]) => ({
+  list: listFn,
+}));
 vi.mock('@happyvertical/smrt-agents', () => ({
   AgentConfigCollection: {
     create: (...args: unknown[]) => createCollection(...args),
@@ -102,34 +105,37 @@ describe('config:export command', () => {
   it('errors and exits when no agent id is supplied', async () => {
     // process.exit() throws our sentinel, but it is raised inside the handler's
     // try block and swallowed by its catch, which sets exitCode + returns.
-    await configExportCommand.handler([], {});
+    await requireCommandHandler(configExportCommand)([], {});
     expect(errored()).toContain('Agent ID is required');
     expect(process.exitCode).toBe(1);
   });
 
   it('errors and exits when the database is not configured', async () => {
     getPackageConfig.mockReturnValue({ database: { url: ':memory:' } });
-    await configExportCommand.handler([], { agent: 'a1' });
+    await requireCommandHandler(configExportCommand)([], { agent: 'a1' });
     expect(errored()).toContain('Database configuration required');
     expect(process.exitCode).toBe(1);
   });
 
   it('emits a JSON error object when db missing and --json is set', async () => {
     getPackageConfig.mockReturnValue({ database: undefined });
-    await configExportCommand.handler([], { agent: 'a1', json: true });
+    await requireCommandHandler(configExportCommand)([], {
+      agent: 'a1',
+      json: true,
+    });
     expect(logged()).toContain('"error":"Database not configured"');
     expect(process.exitCode).toBe(1);
   });
 
   it('reports when no configurations are found for an agent', async () => {
     listFn.mockResolvedValue([]);
-    await configExportCommand.handler([], { agent: 'missing' });
+    await requireCommandHandler(configExportCommand)([], { agent: 'missing' });
     expect(logged()).toContain('No configurations found for agent: missing');
   });
 
   it('mentions the slot filter when no configs found with --slot', async () => {
     listFn.mockResolvedValue([]);
-    await configExportCommand.handler([], {
+    await requireCommandHandler(configExportCommand)([], {
       agent: 'missing',
       slot: 'sources',
     });
@@ -139,7 +145,10 @@ describe('config:export command', () => {
 
   it('returns empty JSON config object when none found and --json', async () => {
     listFn.mockResolvedValue([]);
-    await configExportCommand.handler([], { agent: 'x', json: true });
+    await requireCommandHandler(configExportCommand)([], {
+      agent: 'x',
+      json: true,
+    });
     expect(logged()).toContain('"configs":{}');
   });
 
@@ -154,7 +163,7 @@ describe('config:export command', () => {
       },
     ]);
 
-    await configExportCommand.handler([], {
+    await requireCommandHandler(configExportCommand)([], {
       agent: 'agent-1',
       output: outFile,
       format: 'json',
@@ -177,7 +186,7 @@ describe('config:export command', () => {
       { slotId: 'settings', configData: { apiKey: 'sekret' } },
     ]);
 
-    await configExportCommand.handler([], {
+    await requireCommandHandler(configExportCommand)([], {
       agent: 'agent-1',
       output: outFile,
       format: 'js',
@@ -198,7 +207,10 @@ describe('config:export command', () => {
         configData: { password: 'p', name: 'ok' },
       },
     ]);
-    await configExportCommand.handler([], { agent: 'agent-1', json: true });
+    await requireCommandHandler(configExportCommand)([], {
+      agent: 'agent-1',
+      json: true,
+    });
     const out = logged();
     expect(out).toContain('"agentId": "agent-1"');
     expect(out).toContain('"password": "***"');
@@ -209,7 +221,7 @@ describe('config:export command', () => {
     listFn.mockResolvedValue([
       { slotId: 'settings', configData: { password: 'p' } },
     ]);
-    await configExportCommand.handler([], {
+    await requireCommandHandler(configExportCommand)([], {
       agent: 'agent-1',
       json: true,
       'include-secrets': true,
@@ -219,7 +231,7 @@ describe('config:export command', () => {
 
   it('passes the slot filter through to the collection query', async () => {
     listFn.mockResolvedValue([{ slotId: 'sources', configData: { url: 'x' } }]);
-    await configExportCommand.handler([], {
+    await requireCommandHandler(configExportCommand)([], {
       agent: 'agent-1',
       json: true,
       slot: 'sources',
@@ -231,14 +243,17 @@ describe('config:export command', () => {
 
   it('handles thrown errors and sets exitCode, with --json error output', async () => {
     getDatabase.mockRejectedValue(new Error('connection refused'));
-    await configExportCommand.handler([], { agent: 'agent-1', json: true });
+    await requireCommandHandler(configExportCommand)([], {
+      agent: 'agent-1',
+      json: true,
+    });
     expect(logged()).toContain('"error":"connection refused"');
     expect(process.exitCode).toBe(1);
   });
 
   it('handles thrown errors in non-json mode', async () => {
     getDatabase.mockRejectedValue(new Error('boom'));
-    await configExportCommand.handler([], { agent: 'agent-1' });
+    await requireCommandHandler(configExportCommand)([], { agent: 'agent-1' });
     expect(errored()).toContain('Failed to export configuration');
     expect(errored()).toContain('boom');
     expect(process.exitCode).toBe(1);
@@ -250,7 +265,10 @@ describe('config:export command', () => {
     listFn.mockResolvedValue([
       { slotId: 'settings', configData: { name: 'ok' } },
     ]);
-    await configExportCommand.handler([], { agent: 'agent-1', json: true });
+    await requireCommandHandler(configExportCommand)([], {
+      agent: 'agent-1',
+      json: true,
+    });
     expect(close).toHaveBeenCalled();
   });
 });

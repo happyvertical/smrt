@@ -214,12 +214,10 @@ describe('Multi-level Class Inheritance', () => {
       );
 
       const ageField = allFields.get('age');
-      expect(ageField._meta.min).toBe(18); // Stricter min (child)
-      expect(ageField._meta.max).toBe(65); // Stricter max (child)
+      expect(ageField?._meta).toMatchObject({ min: 18, max: 65 });
 
       const scoreField = allFields.get('score');
-      expect(scoreField._meta.min).toBe(50.0); // Stricter min (child)
-      expect(scoreField._meta.max).toBe(90.0); // Stricter max (child)
+      expect(scoreField?._meta).toMatchObject({ min: 50.0, max: 90.0 });
     });
 
     it('should warn when field types differ (console.warn)', async () => {
@@ -229,7 +227,7 @@ describe('Multi-level Class Inheritance', () => {
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       // Clear cache to force re-merge and trigger warning
-      const registered = ObjectRegistry.classes.get('ChildTypeMismatch');
+      const registered = ObjectRegistry.getClass('ChildTypeMismatch');
       if (registered) {
         registered.inheritedFields = undefined;
       }
@@ -412,7 +410,7 @@ describe('Multi-level Class Inheritance', () => {
       );
 
       // Verify cache was cleared (fields will be rebuilt on next access)
-      const registered = ObjectRegistry.classes.get(
+      const registered = ObjectRegistry.getClass(
         'InheritanceTestBentleyContent',
       );
       expect(registered?.inheritedFields).toBeUndefined();
@@ -433,11 +431,9 @@ describe('Multi-level Class Inheritance', () => {
       ObjectRegistry.invalidateInheritanceCache('InheritanceTestContent');
 
       // Verify all descendants were also invalidated
-      const content = ObjectRegistry.classes.get('InheritanceTestContent');
-      const praeco = ObjectRegistry.classes.get('InheritanceTestPraecoContent');
-      const bentley = ObjectRegistry.classes.get(
-        'InheritanceTestBentleyContent',
-      );
+      const content = ObjectRegistry.getClass('InheritanceTestContent');
+      const praeco = ObjectRegistry.getClass('InheritanceTestPraecoContent');
+      const bentley = ObjectRegistry.getClass('InheritanceTestBentleyContent');
 
       expect(content?.inheritedFields).toBeUndefined();
       expect(praeco?.inheritedFields).toBeUndefined();
@@ -458,7 +454,7 @@ describe('Multi-level Class Inheritance', () => {
       ObjectRegistry.invalidateAllInheritanceCaches();
 
       // Verify all were cleared
-      for (const registered of ObjectRegistry.classes.values()) {
+      for (const registered of ObjectRegistry.getAllClasses().values()) {
         if (registered.extends) {
           expect(registered.inheritedFields).toBeUndefined();
           expect(registered.inheritedMethods).toBeUndefined();

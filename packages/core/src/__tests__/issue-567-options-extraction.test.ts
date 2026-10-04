@@ -24,6 +24,10 @@ class Target567Collection extends SmrtCollection<Target567> {
 
 // A SmrtClass-based parent that gets collections using its own options
 class Parent567 extends SmrtClass {
+  async init(): Promise<this> {
+    return this.initialize();
+  }
+
   async getTargetCollection(): Promise<SmrtCollection<Target567>> {
     // This is the problematic pattern from issue #567
     // Passing this.options which has properties beyond just db/ai
@@ -83,7 +87,9 @@ describe('Issue #567: ObjectRegistry.getCollection() options extraction', () => 
       });
       await created.save();
 
-      const hydrated = await collection.get(created.id);
+      const createdId = created.id;
+      if (!createdId) throw new Error('Expected persisted Target567 id');
+      const hydrated = await collection.get(createdId);
       expect(hydrated).toBeDefined();
       expect(await (hydrated as any).getDecisionClient()).toBe(decisions);
     });
@@ -95,7 +101,7 @@ describe('Issue #567: ObjectRegistry.getCollection() options extraction', () => 
       };
 
       const parent = new Parent567(parentOptions);
-      await parent.initialize();
+      await parent.init();
 
       // Get collections using both methods
       const collectionFull = await parent.getTargetCollection();
@@ -119,7 +125,7 @@ describe('Issue #567: ObjectRegistry.getCollection() options extraction', () => 
       };
 
       const parent = new Parent567(parentOptions as any);
-      await parent.initialize();
+      await parent.init();
 
       // Get collection using full options (with extra properties)
       const collection = await parent.getTargetCollection();
@@ -133,7 +139,7 @@ describe('Issue #567: ObjectRegistry.getCollection() options extraction', () => 
       const parent = new Parent567({
         db: { type: 'sqlite', url: ':memory:' },
       });
-      await parent.initialize();
+      await parent.init();
 
       // Get collection twice
       const collection1 = await parent.getTargetCollection();
@@ -147,7 +153,7 @@ describe('Issue #567: ObjectRegistry.getCollection() options extraction', () => 
       const parent = new Parent567({
         db: { type: 'sqlite', url: ':memory:' },
       });
-      await parent.initialize();
+      await parent.init();
 
       // The parent should have a db instance
       const parentDb = parent.db;

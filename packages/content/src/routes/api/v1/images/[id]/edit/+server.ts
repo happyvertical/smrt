@@ -8,7 +8,7 @@ import {
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
 import { error, json } from '@sveltejs/kit';
-import { getCollection } from '$lib/server/smrt';
+import { runtime } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
 function establishTenantContext(locals: unknown): void {
@@ -32,8 +32,8 @@ function tenantReadScope(): { tenantId: null } | undefined {
 // Mock AI Variation
 export const POST: RequestHandler = async ({ locals, params, request }) => {
   establishTenantContext(locals);
-  await getCollection<Asset>('@happyvertical/smrt-assets:Asset');
-  const collection = await getCollection<Image>(
+  await runtime.getCollection<Asset>('@happyvertical/smrt-assets:Asset');
+  const collection = await runtime.getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
   const readScope = tenantReadScope();

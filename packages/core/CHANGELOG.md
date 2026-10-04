@@ -1,5 +1,101 @@
 # @happyvertical/smrt-core
 
+## 0.53.4
+
+### Patch Changes
+
+- ### Features
+  
+  - starter-driven consumer surface — move framework glue into packages (#3367) (#3403)
+  
+  ### Bug Fixes
+  
+  - pin feed fetch DNS resolution (#3419) (content)
+  - emit virtual-module declarations outside the dev server (#3424) (core)
+- @happyvertical/smrt-config@0.53.4
+  - @happyvertical/smrt-scanner@0.53.4
+  - @happyvertical/smrt-types@0.53.4
+
+## 0.53.3
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - clear the three high audit advisories blocking Required CI (#3417) (deps)
+- @happyvertical/smrt-config@0.53.3
+  - @happyvertical/smrt-scanner@0.53.3
+  - @happyvertical/smrt-types@0.53.3
+
+## 0.53.2
+
+### Patch Changes
+
+- ### Features
+  
+  - add request-scoped repository clients (#3383) (projects)
+  - add configurable period rollups and adjustments (#3363) (timesheets)
+  - add tenant-scoped attendance and offline replay (#3362) (timesheets)
+  - allow consumers to close generated model surfaces at runtime (#3361) (core)
+  
+  ### Bug Fixes
+  
+  - make concurrent permission seeding idempotent (#3354) (users)
+  - exclude compiled tests from package output and discovery (#3353)
+  
+  ### Other Changes
+  
+  - chore: type-check tests across seven packages (#3360) (framework)
+  - chore: type-check all 82 test fixtures (#3359) (cli)
+  - chore: type-check all 434 test fixtures (#3358) (core)
+- @happyvertical/smrt-config@0.53.2
+  - @happyvertical/smrt-scanner@0.53.2
+  - @happyvertical/smrt-types@0.53.2
+
+## 0.53.1
+
+### Patch Changes
+
+- ### Other Changes
+  
+  - chore: register new packages in tooling lists and stage template pins in releases (#3351)
+- @happyvertical/smrt-config@0.53.1
+  - @happyvertical/smrt-scanner@0.53.1
+  - @happyvertical/smrt-types@0.53.1
+
+## 0.53.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - require Node 26 in engines, docs and the template contract (#3340)
+  
+  ### Features
+  
+  - move the shared time entry into smrt-timesheets (#3348) (timesheets)
+  - deprecated qualified-name aliases so moved models keep resolving (#3341) (core)
+  - reviewed expense and deduplicated receipt models in smrt-expenses (#3339) (expenses)
+  - native-posting capture controls and form retry (#3334) (smrt-ui,smrt-svelte)
+  - deliver touch and native form cohort (#3331) (ui)
+  - scaffold and validate portable MCP Apps (#3284) (cli)
+  
+  ### Bug Fixes
+  
+  - run all Linux jobs on ubuntu-latest (#3321) (ci)
+  
+  ### Other Changes
+  
+  - perf: batch permission seeding; run CI and the template image on Node 26 (#3330)
+  - test: add synthetic Iolaus cross-profile conformance (#3327) (mcp-apps)
+  - chore: sync sdk packages to v0.98.0 (#3314) (deps)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.53.0
+  - @happyvertical/smrt-scanner@0.53.0
+  - @happyvertical/smrt-types@0.53.0
+
 ## 0.52.0
 
 ### Minor Changes

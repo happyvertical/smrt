@@ -33,6 +33,15 @@ export function requireForeignKeyAction(
   return normalized;
 }
 
+/** Resolve the explicit update action, preserving the historical CASCADE default. */
+export function resolveForeignKeyUpdateAction(
+  declared: unknown,
+): ForeignKeyAction {
+  return declared === undefined
+    ? 'CASCADE'
+    : requireForeignKeyAction(declared, 'ON UPDATE');
+}
+
 /**
  * Resolve the one delete policy shared by app-side cascade and database DDL.
  *

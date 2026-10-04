@@ -105,6 +105,12 @@ export interface DomainKnowledgeTenant {
 export interface DomainKnowledgeObject {
   name: string;
   qualifiedName?: string;
+  /**
+   * Deprecated qualified names this object still resolves from, declared via
+   * `@smrt({ previousQualifiedNames })` after a package move or rename
+   * (#3338). Sorted; omitted when none are declared.
+   */
+  previousQualifiedNames?: string[];
   collection: string;
   tableName?: string;
   packageName?: string;

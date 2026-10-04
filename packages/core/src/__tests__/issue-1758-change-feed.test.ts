@@ -775,7 +775,7 @@ describe('change feed spine (issue #1758)', () => {
     });
 
     it('installs the Postgres schema under the bootstrap lock when it is missing', async () => {
-      const query = vi.fn(async () => ({ rows: [] }));
+      const query = vi.fn(async (_sql: string) => ({ rows: [] }));
       const rawDb = {
         url: 'postgresql://localhost/smrt',
         query,

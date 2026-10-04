@@ -141,7 +141,9 @@ describe('Template Loader', () => {
       const mockConfig = {
         name: 'Test Template',
         description: 'Test description',
+        framework: 'sveltekit',
         dependencies: {},
+        devDependencies: {},
       };
 
       const mockLoad = vi
@@ -164,7 +166,9 @@ describe('Template Loader', () => {
       const mockConfig = {
         name: 'Git Template',
         description: 'From git',
+        framework: 'sveltekit',
         dependencies: {},
+        devDependencies: {},
       };
 
       const mockLoad = vi
@@ -187,7 +191,9 @@ describe('Template Loader', () => {
       const mockConfig = {
         name: 'Local Template',
         description: 'From filesystem',
+        framework: 'sveltekit',
         dependencies: {},
+        devDependencies: {},
       };
 
       const mockLoad = vi

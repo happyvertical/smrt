@@ -5,5 +5,21 @@ import { defineConfig, searchForWorkspaceRoot } from 'vite';
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [svelte()],
+  build: {
+    outDir: 'dist',
+    rolldownOptions: {
+      input: [
+        'index',
+        'tools-dock',
+        'mcp-apps-binding',
+        'mcp-apps-child',
+        'mcp-apps-bridge',
+        'mcp-apps-bridge-child',
+        'file-upload',
+      ].map((entry) =>
+        fileURLToPath(new URL(`./${entry}.html`, import.meta.url)),
+      ),
+    },
+  },
   server: { fs: { allow: [searchForWorkspaceRoot(process.cwd())] } },
 });

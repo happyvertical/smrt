@@ -8,7 +8,6 @@
  * 4. Search method is available in CrudOperations
  */
 
-import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types';
 
@@ -20,10 +19,12 @@ describe('Issue #66: Virtual Module Type Generation', () => {
     // Create a test manifest with a SMRT object that has custom methods
     const manifest: SmartObjectManifest = {
       version: '1.0.0',
-      timestamp: randomUUID().slice(0, 8),
+      timestamp: Date.now(),
       objects: {
         praeco: {
           className: 'Praeco',
+          name: 'praeco',
+          filePath: '/test/fixtures/Praeco.ts',
           collection: 'praecos',
           fields: {
             name: { type: 'text', required: true },
@@ -32,15 +33,19 @@ describe('Issue #66: Virtual Module Type Generation', () => {
           methods: {
             research: {
               name: 'research',
-              parameters: [{ name: 'topic', type: 'string', required: false }],
+              parameters: [{ name: 'topic', type: 'string', optional: true }],
               returnType: 'Promise<void>',
-              isAsync: true,
+              async: true,
+              isStatic: false,
+              isPublic: true,
             },
             report: {
               name: 'report',
               parameters: [],
               returnType: 'Promise<void>',
-              isAsync: true,
+              async: true,
+              isStatic: false,
+              isPublic: true,
             },
           },
           decoratorConfig: {
@@ -51,6 +56,8 @@ describe('Issue #66: Virtual Module Type Generation', () => {
         },
         council: {
           className: 'Council',
+          name: 'council',
+          filePath: '/test/fixtures/Council.ts',
           collection: 'councils',
           fields: {
             name: { type: 'text', required: true },
@@ -103,10 +110,12 @@ describe('Issue #66: Virtual Module Type Generation', () => {
 
     const manifest: SmartObjectManifest = {
       version: '1.0.0',
-      timestamp: randomUUID().slice(0, 8),
+      timestamp: Date.now(),
       objects: {
         praeco: {
           className: 'Praeco',
+          name: 'praeco',
+          filePath: '/test/fixtures/Praeco.ts',
           collection: 'praecos',
           fields: { name: { type: 'text', required: true } },
           methods: {
@@ -114,13 +123,17 @@ describe('Issue #66: Virtual Module Type Generation', () => {
               name: 'research',
               parameters: [],
               returnType: 'Promise<void>',
-              isAsync: true,
+              async: true,
+              isStatic: false,
+              isPublic: true,
             },
           },
           decoratorConfig: {},
         },
         council: {
           className: 'Council',
+          name: 'council',
+          filePath: '/test/fixtures/Council.ts',
           collection: 'councils',
           fields: { name: { type: 'text', required: true } },
           methods: {},

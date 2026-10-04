@@ -7,6 +7,14 @@
  * @packageDocumentation
  */
 
+// The time-entry components moved to smrt-timesheets (#3288); they stay
+// exported and registered here under their original names and slots.
+import {
+  DurationDisplay,
+  TimeEntryCard,
+  TimeEntryList,
+  TimeSummary,
+} from '@happyvertical/smrt-timesheets/svelte';
 import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import type { ComponentProps } from 'svelte';
 import { PROJECTS_MODULE_META } from '../ui.js';
@@ -16,11 +24,7 @@ import ApprovalActions from './components/ApprovalActions.svelte';
 import BulkActions from './components/BulkActions.svelte';
 import DevelopmentRequestForm from './components/DevelopmentRequestForm.svelte';
 import DevelopmentRequestList from './components/DevelopmentRequestList.svelte';
-import DurationDisplay from './components/DurationDisplay.svelte';
 import RejectDialog from './components/RejectDialog.svelte';
-import TimeEntryCard from './components/TimeEntryCard.svelte';
-import TimeEntryList from './components/TimeEntryList.svelte';
-import TimeSummary from './components/TimeSummary.svelte';
 import DeliveryStatus from './DeliveryStatus.svelte';
 import DevelopmentBoard from './DevelopmentBoard.svelte';
 import DevelopmentRequestDetail from './DevelopmentRequestDetail.svelte';
@@ -63,7 +67,6 @@ export type DevelopmentRequestDetailProps = ComponentProps<
 export type DevelopmentRequestListProps = ComponentProps<
   typeof DevelopmentRequestList
 >;
-export type DurationDisplayProps = ComponentProps<typeof DurationDisplay>;
 export type RejectDialogProps = ComponentProps<typeof RejectDialog>;
 export type PreviewApprovalPanelProps = ComponentProps<
   typeof PreviewApprovalPanel
@@ -72,9 +75,12 @@ export type ProjectBoardProps = ComponentProps<typeof ProjectBoard>;
 export type ServiceEvidenceListProps = ComponentProps<
   typeof ServiceEvidenceList
 >;
-export type TimeEntryCardProps = ComponentProps<typeof TimeEntryCard>;
-export type TimeEntryListProps = ComponentProps<typeof TimeEntryList>;
-export type TimeSummaryProps = ComponentProps<typeof TimeSummary>;
+export type {
+  DurationDisplayProps,
+  TimeEntryCardProps,
+  TimeEntryListProps,
+  TimeSummaryProps,
+} from '@happyvertical/smrt-timesheets/svelte';
 
 export * from './delivery-types.js';
 export type { ProjectBoardMoveIntent } from './project-board-types.js';

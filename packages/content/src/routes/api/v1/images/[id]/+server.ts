@@ -8,7 +8,7 @@ import {
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
 import { error, json } from '@sveltejs/kit';
-import { getCollection } from '$lib/server/smrt';
+import { runtime } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
 const MUTABLE_IMAGE_FIELDS = new Set([
@@ -26,7 +26,7 @@ const MUTABLE_IMAGE_FIELDS = new Set([
 ]);
 
 async function ensureImageBaseTables() {
-  await getCollection<Asset>('@happyvertical/smrt-assets:Asset');
+  await runtime.getCollection<Asset>('@happyvertical/smrt-assets:Asset');
 }
 
 function establishTenantContext(locals: unknown): void {
@@ -57,7 +57,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
   establishTenantContext(locals);
   await ensureImageBaseTables();
 
-  const collection = await getCollection<Image>(
+  const collection = await runtime.getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
   const readScope = tenantReadScope();
@@ -72,7 +72,7 @@ export const PUT: RequestHandler = async ({ locals, params, request }) => {
   establishTenantContext(locals);
   await ensureImageBaseTables();
 
-  const collection = await getCollection<Image>(
+  const collection = await runtime.getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
   const readScope = tenantReadScope();
@@ -92,7 +92,7 @@ export const DELETE: RequestHandler = async ({ locals, params }) => {
   establishTenantContext(locals);
   await ensureImageBaseTables();
 
-  const collection = await getCollection<Image>(
+  const collection = await runtime.getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
   const readScope = tenantReadScope();

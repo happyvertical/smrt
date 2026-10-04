@@ -260,6 +260,30 @@ waiting | done | failed | cancelled`), with `pauseRun` / `continueRun`,
 `matchesToolAllowList` is exported browser-safe. Full guide:
 [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
 
+The server side mounts in one route file. The principal comes from
+`event.locals` (`@happyvertical/smrt-users/sveltekit`); threads are scoped to
+the caller's own assistant session in the active tenant; tools are
+fail-closed (`allowedTools`, absent means none) and, without `tools`, are the
+manifest operations `allowedTools` names. `ai` defaults to the `smrt.config`
+`ai` block. Pass the application `runtime`: each request then uses its own
+database (`runtime.databaseConfig()`), and under `database-rls` a streamed
+turn, which outlives the request's transaction, runs in a transaction of its
+own for the same principal (`runtime.runAsPrincipal`):
+
+```ts
+// src/routes/api/assistant/[...path]/+server.ts
+import { mountAssistantRoutes } from '@happyvertical/smrt-chat/sveltekit';
+import { runtime } from '$lib/server/smrt';
+export const { GET, POST } = mountAssistantRoutes({
+  allowedTools: ['notes.read', 'notes.create'],
+  runtime,
+});
+```
+
+In the page, `createAssistantHttpTransport({ endpoint: '/api/assistant' })`
+is the dock's `transport`, and `createAssistantHttpActionClient` its
+`actionClient` when the route is given `actions: { adapter }`.
+
 ## API
 
 ### Models

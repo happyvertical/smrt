@@ -22,6 +22,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type {
+  FieldDefinition,
+  SmartObjectDefinition,
+} from '../../../scanner/types';
 
 export interface ConsumerWorkspace {
   root: string;
@@ -78,15 +82,16 @@ export function manifestEntry(options: {
   packageName: string;
   filePath: string;
   tableName: string;
-  fields: Record<string, { type: string }>;
-}) {
+  fields: Record<string, FieldDefinition>;
+}): SmartObjectDefinition {
   const { className, packageName, filePath, tableName, fields } = options;
   return {
     name: className.toLowerCase(),
     className,
-    qualifiedName: `${packageName}:${className}`,
+    qualifiedName: `${packageName}:${className}` as const,
     packageName,
     filePath,
+    collection: tableName,
     extends: 'SmrtObject',
     fields,
     methods: {},

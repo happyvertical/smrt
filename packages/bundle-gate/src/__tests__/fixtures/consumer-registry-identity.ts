@@ -73,6 +73,12 @@ ObjectRegistry.register(FieldPolicy, {
   _manifestKey: '@happyvertical/smrt-fields:FieldPolicy',
 });
 
+// Hydration's lazy loader must remain resolvable after the consumer rebundles
+// the registry into its own output directory (#3325).
+await ObjectRegistry.ensureManifestLoaded(
+  '@happyvertical/smrt-fields:FieldPolicy',
+);
+
 const fieldPolicyRegistration =
   ObjectRegistry.getClassByConstructor(FieldPolicy);
 const fieldPolicyMatches = ObjectRegistry.findClassesByName('FieldPolicy');

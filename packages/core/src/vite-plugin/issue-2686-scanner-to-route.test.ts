@@ -124,7 +124,11 @@ describe('#2686 source → manifest → emitted route', () => {
     mkdirSync(join(projectRoot, 'src'), { recursive: true });
     writeFileSync(
       join(projectRoot, 'package.json'),
-      JSON.stringify({ name: 'gadget-app', version: '0.0.1', type: 'module' }),
+      JSON.stringify({
+        name: '@fixture/gadget-app',
+        version: '0.0.1',
+        type: 'module',
+      }),
     );
     writeFileSync(join(projectRoot, 'src', 'objects.ts'), SOURCE);
 
@@ -268,13 +272,13 @@ describe('#2686 source → manifest → emitted route', () => {
     // every other rule routes it — only the aliased `expose: false` withholds
     // it, which is exactly what made the miss silent.
     expect(
-      manifest.objects['gadget-app:Gadget']?.methods?.concealed
+      manifest.objects['@fixture/gadget-app:Gadget']?.methods?.concealed
         ?.decoratorConfig,
     ).toEqual({ expose: false, reason: 'internal bookkeeping' });
     expect(hasRoute('gadgets/[id]/concealed')).toBe(false);
     expect(
       resolveApiActionSet(
-        manifest.objects['gadget-app:Gadget'] as never,
+        manifest.objects['@fixture/gadget-app:Gadget'] as never,
         manifest,
       ),
     ).not.toContain('concealed');
@@ -284,7 +288,7 @@ describe('#2686 source → manifest → emitted route', () => {
     expect(hasRoute('gadgets/[id]/handle')).toBe(true);
     expect(
       resolveApiActionSet(
-        manifest.objects['gadget-app:Gadget'] as never,
+        manifest.objects['@fixture/gadget-app:Gadget'] as never,
         manifest,
       ),
     ).toContain('handle');

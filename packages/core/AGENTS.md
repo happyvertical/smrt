@@ -24,6 +24,7 @@ and repository rules.
 | `src/object.ts`, `src/collection.ts`, `src/learning/memory.ts` | Context memory and semantic search | [agents/memory.md](agents/memory.md) |
 | `src/system/diagnostics.ts` | SELECT-only `_smrt_*` diagnostics reader behind smrt-dev-mcp runtime tools (#1824) | [agents/system-diagnostics.md](agents/system-diagnostics.md) |
 | `src/system/registry-snapshot.ts` | Sanitized plain-JSON projection of the booted `ObjectRegistry` for the smrt-dev-mcp runtime dev-plane (#1831); never constructors, validators, values, or absolute paths | [agents/registry-snapshot.md](agents/registry-snapshot.md) |
+| `src/registry/qualified-name-aliases.ts`, `src/migrations/qualified-name-aliases.ts` | Model moves: `previousQualifiedNames` aliases, deprecation, doctor counts, opt-in backfill (#3338) | [agents/model-moves.md](agents/model-moves.md) |
 | `src/run-once.ts` | Shared idempotency seam: insert-only claim + caller work in one transaction, replay on retry, typed in-flight/unknown-outcome answers (#3080) | [agents/run-once.md](agents/run-once.md) |
 
 ## Cross-module invariants
@@ -104,6 +105,10 @@ and repository rules.
   a resolved table that differs first (#3106). Stack
   attribution skips smrt-core (including source-mapped installed
   `smrt-core/src` frames, #3109), decorator-helper, and module-runner frames.
+  Qualified names are `@scope/pkg:Class`; the scope is a deliberate
+  discriminator, so manifest generation (`generateManifest`,
+  `applyGenerationPasses`, hence `pnpm build`) throws
+  `CONFIG_UNSCOPED_PACKAGE_NAME` for an unscoped `package.json` name (#3408).
   Instance and collection registry lookups pass the qualified name. The schema
   planner rejects a table claimed by two unrelated classes
   (`CONFIG_TABLE_NAME_COLLISION`): only one STI family shares a table (#3098);
@@ -169,6 +174,10 @@ and repository rules.
   Vite 8 requires `oxc.decorator: { legacy: true, emitDecoratorMetadata: true }`.
 
 ## Validation
+
+`typecheck` checks production source first, then the test project in
+`tsconfig.test.json`. Test coverage and the shared relaxed config
+contract are documented in [agents/test-types.md](agents/test-types.md).
 
 Run focused tests first, then applicable package checks:
 

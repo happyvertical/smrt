@@ -1,6 +1,23 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import type {
+  MigrationResult,
+  SchemaChange,
+  SchemaDefinition,
+} from '@happyvertical/smrt-core/schema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
+
+type FixtureSchemaDiff = {
+  added_tables: Array<
+    Pick<SchemaDefinition, 'tableName' | 'columns'> & Partial<SchemaDefinition>
+  >;
+  changes: SchemaChange[];
+};
+
+type SpawnFixture = {
+  on: (event: string, callback: (code?: number) => void) => void;
+};
 
 // ---------------------------------------------------------------------------
 // Module mocks. utilities.ts statically imports @happyvertical/smrt-core and
@@ -11,13 +28,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => {
   const registry = {
     getAllClasses: vi.fn(() => new Map()),
-    getAllSchemasAsDefinitions: vi.fn(() => [] as unknown[]),
-    getClass: vi.fn(() => undefined as unknown),
+    getAllSchemasAsDefinitions: vi.fn<
+      () => Record<string, Partial<SchemaDefinition>>
+    >(() => ({})),
+    getClass: vi.fn((_name: string) => undefined as unknown),
     getFields: vi.fn(() => new Map()),
     getInheritanceChain: vi.fn((name: string) => [name]),
     getInitializationOrder: vi.fn(() => [] as string[]),
-    getSTIBase: vi.fn(() => null as unknown),
-    getTableName: vi.fn(() => null as unknown),
+    getSTIBase: vi.fn((_name: string) => null as string | null),
+    getTableName: vi.fn((_name: string) => null as string | null),
     getTableStrategy: vi.fn(() => 'cti'),
     getSchema: vi.fn(() => undefined as unknown),
     findClassesByName: vi.fn(() => [] as Array<{ qualifiedName?: string }>),
@@ -37,24 +56,50 @@ const h = vi.hoisted(() => {
     applyFixes: vi.fn(),
     trackerInitialize: vi.fn(async () => {}),
     trackerGetEngine: vi.fn(() => 'sqlite'),
-    trackerApplyAll: vi.fn(async () => []),
-    schemaManagerEnsureTables: vi.fn(async () => {}),
-    generateSchema: vi.fn(async () => 'CREATE TABLE t ()'),
+    trackerApplyAll: vi.fn(
+      async (..._args: unknown[]): Promise<MigrationResult[]> => [],
+    ),
+    schemaManagerEnsureTables: vi.fn(async (..._args: unknown[]) => {}),
+    generateSchema: vi.fn(async (..._args: unknown[]) => 'CREATE TABLE t ()'),
     schemaComparerOptions: vi.fn(),
-    schemaCompare: vi.fn(async () => ({ added_tables: [], changes: [] })),
-    planForeignKeyCreation: vi.fn((schemas: unknown[]) => ({
+    schemaCompare: vi.fn(
+      async (..._args: unknown[]): Promise<FixtureSchemaDiff> => ({
+        added_tables: [],
+        changes: [],
+      }),
+    ),
+    planForeignKeyCreation: vi.fn((schemas: unknown[], _engine?: string) => ({
       schemas,
-      deferredStatements: [],
+      deferredStatements: [] as string[],
     })),
-    migratePostgresSystemTimestamps: vi.fn(async () => {}),
-    planPostgresSystemTimestampMigrations: vi.fn(async () => []),
-    manifestGenerate: vi.fn(async () => ({
-      objects: { '@app:Article': {} },
-    })),
-    discoverBaseClasses: vi.fn(async () => ['Base1', 'Base2', 'Base3']),
-    rlQuestion: vi.fn(async () => 'y'),
-    rlClose: vi.fn(),
-    spawn: vi.fn(),
+    migratePostgresSystemTimestamps: vi.fn(async (..._args: unknown[]) => {}),
+    planPostgresSystemTimestampMigrations: vi.fn(
+      async (
+        ..._args: unknown[]
+      ): Promise<
+        Array<{
+          kind: 'column' | 'change-feed-function';
+          tableName: string;
+          columnName?: string;
+          sql: string;
+        }>
+      > => [],
+    ),
+    manifestGenerate: vi.fn(
+      async (
+        ..._args: unknown[]
+      ): Promise<{ objects: Record<string, unknown> }> => ({
+        objects: { '@app:Article': {} },
+      }),
+    ),
+    discoverBaseClasses: vi.fn(async (..._args: unknown[]) => [
+      'Base1',
+      'Base2',
+      'Base3',
+    ]),
+    rlQuestion: vi.fn(async (..._args: unknown[]) => 'y'),
+    rlClose: vi.fn((..._args: unknown[]) => {}),
+    spawn: vi.fn((..._args: unknown[]): SpawnFixture | undefined => undefined),
   };
 });
 
@@ -110,8 +155,8 @@ vi.mock('@happyvertical/smrt-core', () => ({
     indexes: [],
     triggers: [],
   })),
-  planForeignKeyCreation: (...args: unknown[]) =>
-    h.planForeignKeyCreation(...args),
+  planForeignKeyCreation: (schemas: unknown[], engine?: string) =>
+    h.planForeignKeyCreation(schemas, engine),
   migratePostgresSystemTimestamps: (...args: unknown[]) =>
     h.migratePostgresSystemTimestamps(...args),
   planPostgresSystemTimestampMigrations: (...args: unknown[]) =>
@@ -288,7 +333,7 @@ describe('utility command handlers', () => {
 
   it('introspect reports when no manifests are discovered', async () => {
     autoDiscoverAndLoad.mockResolvedValue({ discovered: [], totalObjects: 0 });
-    await utilityCommands.introspect.handler([], {});
+    await requireCommandHandler(utilityCommands.introspect)([], {});
     expect(logged()).toContain('No SMRT manifests found');
   });
 
@@ -316,7 +361,9 @@ describe('utility command handlers', () => {
       ]),
     );
 
-    await utilityCommands.introspect.handler([], { verbose: true });
+    await requireCommandHandler(utilityCommands.introspect)([], {
+      verbose: true,
+    });
 
     const out = logged();
     expect(out).toContain('Discovered 2 manifest(s)');
@@ -328,7 +375,9 @@ describe('utility command handlers', () => {
   // --------------------------- db:clear-cache ---------------------------
 
   it('db:clear-cache clears the connection cache', async () => {
-    await utilityCommands['db:clear-cache'].handler([], { verbose: true });
+    await requireCommandHandler(utilityCommands['db:clear-cache'])([], {
+      verbose: true,
+    });
     expect(clearConnectionCache).toHaveBeenCalled();
     expect(logged()).toContain('Database connection cache cleared');
     expect(logged()).toContain('JSON data files have been modified');
@@ -339,7 +388,7 @@ describe('utility command handlers', () => {
       throw new Error('cache boom');
     });
     await expect(
-      utilityCommands['db:clear-cache'].handler([], {}),
+      requireCommandHandler(utilityCommands['db:clear-cache'])([], {}),
     ).rejects.toThrow('exit:1');
     expect(errored()).toContain('Failed to clear cache');
     expect(errored()).toContain('cache boom');
@@ -351,14 +400,14 @@ describe('utility command handlers', () => {
     getPackageConfig.mockReturnValue({ database: { url: ':memory:' } });
     // process.exit() is invoked inside the try block; the thrown sentinel is
     // caught by the handler, which sets exitCode and returns.
-    await utilityCommands['db:setup'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:setup'])([], {});
     expect(errored()).toContain('Database configuration required for db:setup');
     expect(process.exitCode).toBe(1);
   });
 
   it('db:setup exits when no manifests are found', async () => {
     autoDiscoverAndLoad.mockResolvedValue({ discovered: [], totalObjects: 0 });
-    await utilityCommands['db:setup'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:setup'])([], {});
     expect(errored()).toContain('No SMRT manifests found');
     expect(process.exitCode).toBe(1);
   });
@@ -368,7 +417,7 @@ describe('utility command handlers', () => {
   it('db:validate exits when the data directory cannot be found', async () => {
     resolveDataPath.mockResolvedValue(null);
     await expect(
-      utilityCommands['db:validate'].handler([], {}),
+      requireCommandHandler(utilityCommands['db:validate'])([], {}),
     ).rejects.toThrow('exit:1');
     expect(errored()).toContain('Could not find data directory');
   });
@@ -381,7 +430,7 @@ describe('utility command handlers', () => {
     });
     discoverJsonFiles.mockResolvedValue([]);
 
-    await utilityCommands['db:validate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:validate'])([], {});
     expect(logged()).toContain('No JSON data files found');
   });
 
@@ -393,7 +442,9 @@ describe('utility command handlers', () => {
     });
     discoverJsonFiles.mockResolvedValue([]);
 
-    await utilityCommands['db:validate'].handler([], { json: true });
+    await requireCommandHandler(utilityCommands['db:validate'])([], {
+      json: true,
+    });
     expect(logged()).toContain('"totalFiles": 0');
   });
 
@@ -407,7 +458,7 @@ describe('utility command handlers', () => {
     validateFn.mockResolvedValue({ fixableIssues: [] });
     generateSummary.mockReturnValue({ issues: { errors: 0 } });
 
-    await utilityCommands['db:validate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:validate'])([], {});
     expect(displayValidationResults).toHaveBeenCalled();
   });
 
@@ -422,7 +473,7 @@ describe('utility command handlers', () => {
     generateSummary.mockReturnValue({ issues: { errors: 3 } });
 
     await expect(
-      utilityCommands['db:validate'].handler([], {}),
+      requireCommandHandler(utilityCommands['db:validate'])([], {}),
     ).rejects.toThrow('exit:1');
   });
 
@@ -430,7 +481,7 @@ describe('utility command handlers', () => {
 
   it('db:migrate exits when the database is not configured', async () => {
     getPackageConfig.mockReturnValue({ database: { url: ':memory:' } });
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     expect(errored()).toContain(
       'Database configuration required for db:migrate',
     );
@@ -441,7 +492,7 @@ describe('utility command handlers', () => {
     getPackageConfig.mockReturnValue({
       database: { type: 'json', url: './data' },
     });
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     expect(logged()).toContain('JSON adapter has limited migration support');
   });
 
@@ -450,7 +501,7 @@ describe('utility command handlers', () => {
       database: { type: 'sqlite', url: './dev.db' },
     });
     autoDiscoverAndLoad.mockResolvedValue({ discovered: [], totalObjects: 0 });
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     expect(errored()).toContain('No SMRT manifests found');
     expect(process.exitCode).toBe(1);
   });
@@ -468,7 +519,7 @@ describe('utility command handlers', () => {
     // a db without getTableSchema/alterTable
     getDatabase.mockResolvedValue({ close: vi.fn() });
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     expect(errored()).toContain('does not support schema migration');
     expect(process.exitCode).toBe(1);
   });
@@ -496,14 +547,16 @@ describe('utility command handlers', () => {
     configureMigrate();
     schemaCompare.mockResolvedValue({ added_tables: [], changes: [] });
 
-    await utilityCommands['db:migrate'].handler([], { verbose: true });
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      verbose: true,
+    });
     expect(logged()).toContain('Database schema is up to date');
   });
 
   it('db:migrate upgrades SMRT system timestamps before tracker bootstrap and forwards the exact UTC confirmation', async () => {
     configureMigrate();
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'postgres-timestamp-legacy-timezone': 'UTC',
     });
 
@@ -525,7 +578,7 @@ describe('utility command handlers', () => {
   it('db:migrate forwards the empty-text-as-null opt-in to the comparer (#3226)', async () => {
     configureMigrate();
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'empty-text-as-null': true,
     });
     expect(schemaComparerOptions).toHaveBeenCalledWith(
@@ -534,7 +587,7 @@ describe('utility command handlers', () => {
   });
 
   it('db:migrate rejects non-UTC timestamp conversion provenance', async () => {
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'postgres-timestamp-legacy-timezone': 'America/Edmonton',
     });
 
@@ -558,7 +611,7 @@ describe('utility command handlers', () => {
       },
     ]);
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'dry-run': true,
       'postgres-timestamp-legacy-timezone': 'UTC',
     });
@@ -610,7 +663,7 @@ describe('utility command handlers', () => {
       ],
     });
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'dry-run': true,
       verbose: true,
     });
@@ -650,7 +703,7 @@ describe('utility command handlers', () => {
       },
     ]);
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     expect(trackerApplyAll).toHaveBeenCalled();
     expect(logged()).toContain('Successfully applied');
@@ -681,7 +734,7 @@ describe('utility command handlers', () => {
       },
     ]);
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     expect(errored()).toContain('atomic schema migration failed');
     expect(process.exitCode).toBe(1);
   });
@@ -713,7 +766,7 @@ describe('utility command handlers', () => {
       },
     });
 
-    await utilityCommands['db:setup'].handler([], {
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
       'dry-run': true,
       verbose: true,
     });
@@ -746,7 +799,9 @@ describe('utility command handlers', () => {
     schemaManagerEnsureTables.mockResolvedValue(undefined);
     getDatabase.mockResolvedValue(migratableDb());
 
-    await utilityCommands['db:setup'].handler([], { verbose: true });
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
+      verbose: true,
+    });
 
     expect(schemaManagerEnsureTables).toHaveBeenCalledWith([
       expect.objectContaining({ tableName: 'articles' }),
@@ -771,7 +826,9 @@ describe('utility command handlers', () => {
     registry.getTableName.mockReturnValue('articles');
     getDatabase.mockResolvedValue(migratableDb());
 
-    await utilityCommands['db:setup'].handler([], { drop: true });
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
+      drop: true,
+    });
 
     expect(errored()).toContain('Cannot use --drop in non-interactive mode');
     expect(process.exitCode).toBe(1);
@@ -797,7 +854,9 @@ describe('utility command handlers', () => {
       throw new Error(`[DDL:${engine}] unsupported foreign key`);
     });
 
-    await utilityCommands['db:setup'].handler([], { drop: true });
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
+      drop: true,
+    });
 
     expect(planForeignKeyCreation).toHaveBeenCalledWith(
       expect.any(Array),
@@ -844,7 +903,7 @@ describe('utility command handlers', () => {
         },
       ],
       dependencies: ['related'],
-    };
+    } satisfies Partial<SchemaDefinition>;
     const plannedSchema = {
       ...rawSchema,
       columns: { id: { type: 'TEXT' }, related_id: { type: 'TEXT' } },
@@ -859,7 +918,7 @@ describe('utility command handlers', () => {
     });
     getDatabase.mockResolvedValue(migratableDb());
 
-    await utilityCommands['db:setup'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:setup'])([], {});
 
     expect(schemaManagerEnsureTables).toHaveBeenCalledWith([rawSchema]);
     expect(logged()).toContain('Successfully initialized');
@@ -877,7 +936,7 @@ describe('utility command handlers', () => {
     registry.getTableName.mockReturnValue('legacy_articles');
     registry.getAllSchemasAsDefinitions.mockReturnValue({});
 
-    await utilityCommands['db:setup'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:setup'])([], {});
 
     expect(errored()).toContain(
       'structured schema definitions are missing for: legacy_articles',
@@ -909,10 +968,10 @@ describe('utility command handlers', () => {
     registry.getFields.mockReturnValue(new Map([['title', {}]]));
     schemaManagerEnsureTables.mockResolvedValue(undefined);
     rlQuestion.mockResolvedValue('y');
-    const query = vi.fn(async () => ({ rows: [] }));
+    const query = vi.fn(async (_sql: string) => ({ rows: [] }));
     getDatabase.mockResolvedValue(migratableDb({ query }));
 
-    await utilityCommands['db:setup'].handler([], {
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
       drop: true,
       verbose: true,
     });
@@ -950,7 +1009,9 @@ describe('utility command handlers', () => {
     const query = vi.fn(async () => ({ rows: [] }));
     getDatabase.mockResolvedValue(migratableDb({ query }));
 
-    await utilityCommands['db:setup'].handler([], { drop: true });
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
+      drop: true,
+    });
 
     expect(query).toHaveBeenCalledWith(
       'DROP TABLE IF EXISTS "Mixed""Articles" CASCADE',
@@ -979,7 +1040,7 @@ describe('utility command handlers', () => {
       }),
     );
 
-    await utilityCommands['db:setup'].handler([], {
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
       drop: true,
       verbose: true,
     });
@@ -1006,7 +1067,9 @@ describe('utility command handlers', () => {
     rlQuestion.mockResolvedValue('n');
     getDatabase.mockResolvedValue(migratableDb({ execute: vi.fn() }));
 
-    await utilityCommands['db:setup'].handler([], { drop: true });
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
+      drop: true,
+    });
 
     expect(logged()).toContain('Cancelled by user');
   });
@@ -1034,7 +1097,9 @@ describe('utility command handlers', () => {
     schemaManagerEnsureTables.mockResolvedValue(undefined);
     getDatabase.mockResolvedValue(migratableDb());
 
-    await utilityCommands['db:setup'].handler([], { verbose: true });
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
+      verbose: true,
+    });
 
     expect(logged()).toContain('shares table with');
   });
@@ -1059,7 +1124,9 @@ describe('utility command handlers', () => {
     schemaManagerEnsureTables.mockRejectedValue(new Error('ddl error'));
     getDatabase.mockResolvedValue(migratableDb());
 
-    await utilityCommands['db:setup'].handler([], { verbose: true });
+    await requireCommandHandler(utilityCommands['db:setup'])([], {
+      verbose: true,
+    });
 
     expect(errored()).toContain('ddl error');
     expect(errored()).toContain('Database setup failed');
@@ -1092,7 +1159,7 @@ describe('utility command handlers', () => {
       },
     ]);
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     expect(trackerApplyAll).toHaveBeenCalled();
     expect(logged()).toContain('Successfully applied');
@@ -1112,7 +1179,7 @@ describe('utility command handlers', () => {
       ],
     });
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     const out = logged();
     expect(out).toContain('requires manual intervention');
@@ -1139,7 +1206,7 @@ describe('utility command handlers', () => {
       ],
     });
 
-    await utilityCommands['db:migrate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
 
     const out = logged();
     expect(out).toContain('requires manual intervention');
@@ -1166,7 +1233,9 @@ describe('utility command handlers', () => {
       qualifiedName: `@app:${name}`,
     }));
 
-    await utilityCommands['db:migrate'].handler([], { verbose: true });
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      verbose: true,
+    });
 
     expect(logged()).toContain('Tables to check');
   });
@@ -1186,7 +1255,9 @@ describe('utility command handlers', () => {
       }),
     );
 
-    await utilityCommands['db:migrate'].handler([], { 'repair-data': true });
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      'repair-data': true,
+    });
 
     expect(logged()).toContain('Repairing STI discriminators');
   });
@@ -1206,7 +1277,8 @@ describe('utility command handlers', () => {
           type: 'type_upgrade',
           table: 'contents',
           name: 'count',
-          column: { type: 'BIGINT' },
+          // Schema types stay abstract; the expected live PostgreSQL type is BIGINT.
+          column: { type: 'INTEGER' },
           mismatch: { expected: 'BIGINT', actual: 'INTEGER' },
           sql: 'ALTER TABLE contents ALTER COLUMN count TYPE BIGINT',
         },
@@ -1229,7 +1301,9 @@ describe('utility command handlers', () => {
       },
     ]);
 
-    await utilityCommands['db:migrate'].handler([], { verbose: true });
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      verbose: true,
+    });
     expect(trackerApplyAll).toHaveBeenCalled();
     const definitions = trackerApplyAll.mock.calls[0]?.[0] as Array<{
       id: string;
@@ -1271,7 +1345,7 @@ describe('utility command handlers', () => {
       }),
     );
 
-    await utilityCommands['db:migrate'].handler([], {
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
       'dry-run': true,
       'repair-data': true,
     });
@@ -1312,7 +1386,9 @@ describe('utility command handlers', () => {
       }),
     );
 
-    await utilityCommands['db:migrate'].handler([], { 'repair-data': true });
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      'repair-data': true,
+    });
 
     const out = logged();
     expect(out).toContain('Repairing STI discriminators');
@@ -1329,7 +1405,9 @@ describe('utility command handlers', () => {
       }),
     );
 
-    await utilityCommands['db:migrate'].handler([], { 'upgrade-sti': true });
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      'upgrade-sti': true,
+    });
 
     expect(warnSpy.mock.calls.flat().join('\n')).toContain(
       '--upgrade-sti is deprecated',
@@ -1347,7 +1425,9 @@ describe('utility command handlers', () => {
       manifestGenerate.mockResolvedValue({ objects: { '@app:Article': {} } });
       discoverBaseClasses.mockResolvedValue(['B1', 'B2', 'B3', 'B4']);
 
-      await utilityCommands.test.handler([], { manifestOnly: true });
+      await requireCommandHandler(utilityCommands.test)([], {
+        manifestOnly: true,
+      });
 
       const out = logged();
       expect(out).toContain('DEPRECATED');
@@ -1373,7 +1453,7 @@ describe('utility command handlers', () => {
         },
       });
 
-      await utilityCommands.test.handler([], {});
+      await requireCommandHandler(utilityCommands.test)([], {});
 
       expect(spawn).toHaveBeenCalled();
       expect(logged()).toContain('Running tests');
@@ -1392,7 +1472,7 @@ describe('utility command handlers', () => {
       manifestGenerate.mockRejectedValue(new Error('scan failed'));
 
       await expect(
-        utilityCommands.test.handler([], { manifestOnly: true }),
+        requireCommandHandler(utilityCommands.test)([], { manifestOnly: true }),
       ).rejects.toThrow('exit:1');
       expect(errored()).toContain('Failed to generate test manifest');
       expect(errored()).toContain('scan failed');
@@ -1414,7 +1494,9 @@ describe('utility command handlers', () => {
     applyFixes.mockResolvedValue(1);
     generateSummary.mockReturnValue({ issues: { errors: 0 } });
 
-    await utilityCommands['db:validate'].handler([], { fix: true });
+    await requireCommandHandler(utilityCommands['db:validate'])([], {
+      fix: true,
+    });
 
     expect(applyFixes).toHaveBeenCalledWith([{ id: 'x' }]);
     expect(logged()).toContain('Fixed 1 issue');
@@ -1430,7 +1512,9 @@ describe('utility command handlers', () => {
     validateFn.mockResolvedValue({ fixableIssues: [] });
     generateSummary.mockReturnValue({ issues: { errors: 0 }, totalFiles: 1 });
 
-    await utilityCommands['db:validate'].handler([], { json: true });
+    await requireCommandHandler(utilityCommands['db:validate'])([], {
+      json: true,
+    });
     expect(logged()).toContain('"totalFiles": 1');
     expect(displayValidationResults).not.toHaveBeenCalled();
   });
@@ -1444,7 +1528,7 @@ describe('utility command handlers', () => {
     validateFn.mockResolvedValue({ fixableIssues: [] });
     generateSummary.mockReturnValue({ issues: { errors: 0 } });
 
-    await utilityCommands['db:validate'].handler([], {});
+    await requireCommandHandler(utilityCommands['db:validate'])([], {});
 
     expect(manifestGenerate).toHaveBeenCalled();
     expect(logged()).toContain('Generated manifest from source files');
@@ -1453,7 +1537,7 @@ describe('utility command handlers', () => {
   it('db:validate reports failures and exits', async () => {
     resolveDataPath.mockRejectedValue(new Error('fs boom'));
     await expect(
-      utilityCommands['db:validate'].handler([], {}),
+      requireCommandHandler(utilityCommands['db:validate'])([], {}),
     ).rejects.toThrow('exit:1');
     expect(errored()).toContain('Validation failed');
   });

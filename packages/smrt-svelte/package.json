@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.52.0",
+  "version": "0.53.4",
   "smrtJsdoc": "strict",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
@@ -55,6 +55,17 @@
       "import": "./dist/components/workspace/server/index.js",
       "default": "./dist/components/workspace/server/index.js"
     },
+    "./app": {
+      "types": "./dist/components/app/index.d.ts",
+      "svelte": "./dist/components/app/index.js",
+      "import": "./dist/components/app/index.js",
+      "default": "./dist/components/app/index.js"
+    },
+    "./app/runtime-diagnostics": {
+      "types": "./dist/components/app/runtime-diagnostics-webmcp.d.ts",
+      "import": "./dist/components/app/runtime-diagnostics-webmcp.js",
+      "default": "./dist/components/app/runtime-diagnostics-webmcp.js"
+    },
     "./workspace/live": {
       "types": "./dist/components/workspace/live/index.d.ts",
       "svelte": "./dist/components/workspace/live/index.js",
@@ -104,12 +115,12 @@
     "agents"
   ],
   "scripts": {
-    "build": "svelte-package -i src --tsconfig tsconfig.svelte.json",
+    "build": "svelte-package -i src --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "dev": "svelte-package -i src --watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "pnpm run test:unit && pnpm run test:conformance",
-    "test:unit": "vitest run --exclude src/web/__tests__/data-surface-conformance.integration.svelte.test.ts && node --test scripts/ensure-conformance-build.test.mjs",
+    "test:unit": "vitest run --exclude src/web/__tests__/data-surface-conformance.integration.svelte.test.ts && node --test scripts/*.test.mjs",
     "test:conformance": "node scripts/ensure-conformance-build.mjs && SMRT_SVELTE_PUBLISHED_ENTRY=1 vitest run src/web/__tests__/data-surface-conformance.integration.svelte.test.ts",
     "typecheck:conformance": "tsc --noEmit -p ./tsconfig.conformance.json",
     "typecheck": "tsc --noEmit && pnpm run typecheck:conformance && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",

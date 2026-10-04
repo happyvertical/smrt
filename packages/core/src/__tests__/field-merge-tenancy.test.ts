@@ -201,7 +201,7 @@ describe('Field Merging - __tenancy Metadata Preservation (Issue #841)', () => {
 
       expect(tenantIdField).toBeDefined();
       expect(tenantIdField?.__tenancy).toBeDefined();
-      expect(tenantIdField?.__tenancy?.isTenantIdField).toBe(true);
+      expect(tenantIdField?.__tenancy).toMatchObject({ isTenantIdField: true });
     });
   });
 });

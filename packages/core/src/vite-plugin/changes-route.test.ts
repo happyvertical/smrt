@@ -63,6 +63,8 @@ describe('generateChangesRoute (#1758)', () => {
       buildManifest({
         Zebra: {
           className: 'Zebra',
+          name: 'Zebra',
+          filePath: '',
           collection: 'zebras',
           fields: {},
           methods: {},
@@ -70,6 +72,8 @@ describe('generateChangesRoute (#1758)', () => {
         },
         Apple: {
           className: 'Apple',
+          name: 'Apple',
+          filePath: '',
           collection: 'apples',
           fields: {},
           methods: {},
@@ -116,6 +120,8 @@ describe('generateChangesRoute (#1758)', () => {
       buildManifest({
         '@happyvertical/smrt-ledgers:Account': {
           className: 'Account',
+          name: 'Account',
+          filePath: '',
           collection: 'accounts',
           fields: {},
           methods: {},
@@ -138,6 +144,8 @@ describe('generateChangesRoute (#1758)', () => {
     const scoped = buildManifest({
       Doc: {
         className: 'Doc',
+        name: 'Doc',
+        filePath: '',
         collection: 'docs',
         fields: {},
         methods: {},
@@ -155,6 +163,8 @@ describe('generateChangesRoute (#1758)', () => {
     const unscoped = buildManifest({
       Doc: {
         className: 'Doc',
+        name: 'Doc',
+        filePath: '',
         collection: 'docs',
         fields: {},
         methods: {},
@@ -173,6 +183,8 @@ describe('generateChangesRoute (#1758)', () => {
       buildManifest({
         AardvarkCollection: {
           className: 'AardvarkCollection',
+          name: 'AardvarkCollection',
+          filePath: '',
           collection: 'aardvarks',
           fields: {},
           methods: {},
@@ -181,6 +193,8 @@ describe('generateChangesRoute (#1758)', () => {
         },
         Bird: {
           className: 'Bird',
+          name: 'Bird',
+          filePath: '',
           collection: 'birds',
           fields: {},
           methods: {},
@@ -196,6 +210,8 @@ describe('generateChangesRoute (#1758)', () => {
     const manifest = buildManifest({
       Doc: {
         className: 'Doc',
+        name: 'Doc',
+        filePath: '',
         collection: 'docs',
         fields: {},
         methods: {},

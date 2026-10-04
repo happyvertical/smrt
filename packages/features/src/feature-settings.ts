@@ -1,4 +1,3 @@
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import type { FeatureDefinition } from './feature-definition.js';
 import { FeatureDefinitionCollection } from './feature-definitions.js';
 import type { FeatureOverride } from './feature-override.js';
@@ -8,7 +7,7 @@ import {
 } from './feature-override-service.js';
 import { FeatureOverrideCollection } from './feature-overrides.js';
 import { FeatureResolver } from './feature-resolver.js';
-import { withoutListBounds } from './list-bounds.js';
+import { type FeatureHostOptions, withoutListBounds } from './list-bounds.js';
 import {
   type FeatureMetadata,
   FeatureOverrideEffect,
@@ -218,7 +217,7 @@ export class FeatureSettingsService {
    *   `authorize` for a read-only (load-function) service.
    */
   static async create(
-    options: SmrtClassOptions = {},
+    options: FeatureHostOptions = {},
     serviceOptions: FeatureSettingsServiceOptions = {},
   ): Promise<FeatureSettingsService> {
     // The catalog enumeration (`loadDefinitions()`) and every override read

@@ -243,7 +243,7 @@ describe('NetworkError factories', () => {
     const error = NetworkError.requestFailed('https://api/x', 502, body);
     expect(error.code).toBe('NETWORK_REQUEST_FAILED');
     expect(error.message).toContain('Status: 502');
-    expect(error.details?.responseBody?.length).toBe(500);
+    expect(error.details?.responseBody).toHaveLength(500);
     // Only the first 200 chars are inlined into the message.
     expect(error.message).toContain('x'.repeat(200));
     expect(error.cause).toBeUndefined();

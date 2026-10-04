@@ -2,6 +2,7 @@ import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { dbMigrateAgentScheduleSlugsCommand } from '../db-migrate-agent-schedule-slugs.js';
 import { dbMigrateInt8Command } from '../db-migrate-int8.js';
 import { dbMigrateLedgerAccountsCommand } from '../db-migrate-ledger-accounts.js';
@@ -511,7 +512,7 @@ describePostgres('db:migrate-uuid declared-UUID gating (real Postgres)', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+    await requireCommandHandler(dbMigrateUuidCommand)([], { 'dry-run': false });
 
     logSpy.mockRestore();
     errorSpy.mockRestore();
@@ -655,7 +656,7 @@ describePostgres(
       // Both phases run: rename old_ref→parent_id (backfill + DROP old_ref), then
       // convert id/parent_id/poison_id. poison_id's ALTER fails (view depends on
       // it), so the WHOLE transaction — including the rename — must roll back.
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         rename: 'old_ref:parent_id',
         table: tableName,
       });
@@ -681,7 +682,7 @@ describePostgres(
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         rename: 'old_ref:parent_id',
         table: tableName,
       });
@@ -702,7 +703,7 @@ describePostgres(
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         'dry-run': true,
         rename: 'old_ref:parent_id',
         table: tableName,
@@ -731,7 +732,7 @@ describePostgres(
       await db.query(`UPDATE "${tableName}" SET old_ref = 'dirty-source'`);
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         'dry-run': true,
         rename: 'old_ref:parent_id',
         table: tableName,
@@ -752,7 +753,7 @@ describePostgres(
       );
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         'dry-run': true,
         rename: 'old_ref:parent_id',
         table: tableName,
@@ -770,7 +771,7 @@ describePostgres(
       await db.query(`DROP VIEW "${viewName}"`);
       await db.query(`ALTER TABLE "${tableName}" DROP COLUMN old_ref`);
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         'dry-run': true,
         rename: 'old_ref:parent_id',
         table: tableName,
@@ -948,7 +949,7 @@ describePostgres('db:migrate-uuid inheritance race (real Postgres)', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     process.exitCode = undefined;
 
-    await dbMigrateUuidCommand.handler([], {});
+    await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
     const exitCode = process.exitCode;
     process.exitCode = undefined;
@@ -1013,7 +1014,7 @@ describePostgres('db:migrate-uuid default and retry (real Postgres)', () => {
   it('preserves a castable UUID default and retries as a no-op', async () => {
     const quiet = vi.spyOn(console, 'log').mockImplementation(() => {});
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await dbMigrateUuidCommand.handler([], {});
+    await requireCommandHandler(dbMigrateUuidCommand)([], {});
     expect(errors).not.toHaveBeenCalled();
     const db = await freshDb();
     const afterFirst = await freshDb();
@@ -1023,7 +1024,7 @@ describePostgres('db:migrate-uuid default and retry (real Postgres)', () => {
     );
     expect((first.rows as any[])[0].data_type).toBe('uuid');
     expect((first.rows as any[])[0].column_default).toContain('uuid');
-    await dbMigrateUuidCommand.handler([], {});
+    await requireCommandHandler(dbMigrateUuidCommand)([], {});
     expect(errors).not.toHaveBeenCalled();
     const afterSecond = await freshDb();
     const row = await afterSecond.query(
@@ -1151,7 +1152,9 @@ describePostgres(
     it('rebuilds the bridge, its index, and validated/non-validated FKs while converting the UUID component', async () => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
+        'dry-run': false,
+      });
       expect(errorSpy).not.toHaveBeenCalled();
       logSpy.mockRestore();
       errorSpy.mockRestore();
@@ -1245,7 +1248,9 @@ describePostgres(
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       try {
-        await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': true,
+        });
         expect(errorSpy).not.toHaveBeenCalled();
         const statements = logSpy.mock.calls.flat().map(String);
         const creates = statements.filter(
@@ -1259,7 +1264,7 @@ describePostgres(
         expect(output.indexOf('ADD COLUMN "_integrity_id_text"')).toBeLessThan(
           output.indexOf(creates[0]),
         );
-        await dbMigrateUuidCommand.handler([], {});
+        await requireCommandHandler(dbMigrateUuidCommand)([], {});
         expect(errorSpy).not.toHaveBeenCalled();
         expect(await snapshot()).toEqual(before);
         const { rows } = await (await freshDb()).query(
@@ -1272,7 +1277,7 @@ describePostgres(
             bridge_b: '11111111-1111-1111-1111-111111111111',
           },
         ]);
-        await dbMigrateUuidCommand.handler([], {});
+        await requireCommandHandler(dbMigrateUuidCommand)([], {});
         expect(errorSpy).not.toHaveBeenCalled();
         expect(await snapshot()).toEqual(before);
       } finally {
@@ -1285,7 +1290,9 @@ describePostgres(
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
+        'dry-run': true,
+      });
 
       expect(errorSpy).not.toHaveBeenCalled();
       const output = logSpy.mock.calls.flat().join('\n');
@@ -1318,7 +1325,7 @@ describePostgres(
       );
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      await dbMigrateUuidCommand.handler([], {});
+      await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
       expect(errorSpy).not.toHaveBeenCalled();
       errorSpy.mockRestore();
@@ -1340,7 +1347,7 @@ describePostgres(
       );
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      await dbMigrateUuidCommand.handler([], {});
+      await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
       expect(errorSpy).not.toHaveBeenCalled();
       errorSpy.mockRestore();
@@ -1578,7 +1585,7 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         rename: `${parent}.old_ref:new_ref`,
       });
 
@@ -1608,7 +1615,7 @@ describePostgres(
       const retryErrorSpy = vi
         .spyOn(console, 'error')
         .mockImplementation(() => {});
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         rename: `${parent}.old_ref:new_ref`,
       });
       expect(retryErrorSpy).not.toHaveBeenCalled();
@@ -1708,7 +1715,7 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         rename: `${parent}.old_ref:new_ref`,
         ...options,
       });
@@ -1753,7 +1760,7 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         rename: `${parent}.old_ref:new_ref`,
         ...options,
       });
@@ -1822,7 +1829,7 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], {});
+      await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
       const exitCode = process.exitCode;
       process.exitCode = undefined;
@@ -1894,7 +1901,7 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], {});
+      await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
       const exitCode = process.exitCode;
       process.exitCode = undefined;
@@ -2024,7 +2031,7 @@ describePostgres(
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      await dbMigrateUuidCommand.handler([], {});
+      await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
       expect(errorSpy).not.toHaveBeenCalled();
       logSpy.mockRestore();
@@ -2236,7 +2243,7 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], {});
+      await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
       const exitCode = process.exitCode;
       process.exitCode = undefined;
@@ -2424,7 +2431,7 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], {});
+      await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
       const exitCode = process.exitCode;
       process.exitCode = undefined;
@@ -2445,7 +2452,15 @@ describePostgres(
 describePostgres(
   'db:migrate-uuid rejects each unsupported generated bridge catalog shape (real Postgres)',
   () => {
-    const scenarios = [
+    const scenarios: ReadonlyArray<{
+      name: string;
+      key: string;
+      bridgeDefinition: string;
+      indexSql?: string;
+      statisticsSql?: string;
+      optionsSql?: string;
+      foreignKeyTriggerSql?: string;
+    }> = [
       {
         name: 'a bridge CHECK constraint',
         key: 'check',
@@ -2499,7 +2514,7 @@ describePostgres(
         foreignKeyTriggerSql:
           "DO $$ DECLARE trigger_name text; BEGIN SELECT tgname INTO trigger_name FROM pg_trigger WHERE tgrelid = 'CHILD'::regclass AND tgconstraint <> 0 LIMIT 1; EXECUTE format('ALTER TABLE %I ENABLE ALWAYS TRIGGER %I', 'CHILD', trigger_name); END $$",
       },
-    ] as const;
+    ];
 
     it.each(scenarios)('rejects $name before writes', async (scenario) => {
       const stem = `mu_bridge_reject_${scenario.key}_${Math.random().toString(36).slice(2, 8)}`;
@@ -2675,7 +2690,7 @@ describePostgres(
           .mockImplementation(() => {});
         process.exitCode = undefined;
 
-        await dbMigrateUuidCommand.handler([], {});
+        await requireCommandHandler(dbMigrateUuidCommand)([], {});
 
         const exitCode = process.exitCode;
         process.exitCode = undefined;
@@ -2905,7 +2920,7 @@ describePostgres(
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      await dbMigrateUuidCommand.handler([], {
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
         rename: `${parent}.old_ref:new_ref`,
       });
 
@@ -3107,7 +3122,9 @@ describePostgres(
           .mockImplementation(() => {});
         process.exitCode = undefined;
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
 
         const exitCode = process.exitCode;
         process.exitCode = undefined;
@@ -3136,7 +3153,9 @@ describePostgres(
           .spyOn(console, 'error')
           .mockImplementation(() => {});
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': true,
+        });
 
         const output = logSpy.mock.calls.flat().map(String).join('\n');
         logSpy.mockRestore();
@@ -3154,13 +3173,17 @@ describePostgres(
       it('is a no-op on a second run', async () => {
         const quiet1 = vi.spyOn(console, 'log').mockImplementation(() => {});
         const errors1 = vi.spyOn(console, 'error').mockImplementation(() => {});
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
         quiet1.mockRestore();
         errors1.mockRestore();
 
         const quiet2 = vi.spyOn(console, 'log').mockImplementation(() => {});
         const errors2 = vi.spyOn(console, 'error').mockImplementation(() => {});
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
         expect(errors2).not.toHaveBeenCalled();
         quiet2.mockRestore();
         errors2.mockRestore();
@@ -3254,7 +3277,9 @@ describePostgres(
           .spyOn(console, 'error')
           .mockImplementation(() => {});
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
 
         expect(errorSpy).not.toHaveBeenCalled();
         logSpy.mockRestore();
@@ -3374,7 +3399,9 @@ describePostgres(
           .spyOn(console, 'error')
           .mockImplementation(() => {});
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
 
         expect(errorSpy).not.toHaveBeenCalled();
         logSpy.mockRestore();
@@ -3498,7 +3525,9 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
+        'dry-run': false,
+      });
 
       const exitCode = process.exitCode;
       process.exitCode = undefined;
@@ -3520,7 +3549,9 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
+        'dry-run': true,
+      });
 
       const exitCode = process.exitCode;
       process.exitCode = undefined;
@@ -3651,7 +3682,9 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
+        'dry-run': false,
+      });
 
       const exitCode = process.exitCode;
       process.exitCode = undefined;
@@ -3672,7 +3705,9 @@ describePostgres(
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       process.exitCode = undefined;
 
-      await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
+        'dry-run': true,
+      });
 
       const exitCode = process.exitCode;
       process.exitCode = undefined;
@@ -3811,7 +3846,9 @@ describePostgres(
           .mockImplementation(() => {});
         process.exitCode = undefined;
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
 
         const exitCode = process.exitCode;
         process.exitCode = undefined;
@@ -3917,7 +3954,9 @@ describePostgres(
           .mockImplementation(() => {});
         process.exitCode = undefined;
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
 
         const exitCode = process.exitCode;
         process.exitCode = undefined;
@@ -4028,7 +4067,9 @@ describePostgres(
           .spyOn(console, 'error')
           .mockImplementation(() => {});
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
 
         expect(errorSpy).not.toHaveBeenCalled();
         logSpy.mockRestore();
@@ -4136,7 +4177,9 @@ describePostgres(
           .spyOn(console, 'error')
           .mockImplementation(() => {});
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
 
         expect(errorSpy).not.toHaveBeenCalled();
         logSpy.mockRestore();
@@ -4217,7 +4260,9 @@ describePostgres(
           .spyOn(console, 'error')
           .mockImplementation(() => {});
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
 
         const output = logSpy.mock.calls.flat().map(String).join('\n');
         expect(errorSpy).not.toHaveBeenCalled();
@@ -4298,7 +4343,9 @@ describePostgres(
           .mockImplementation(() => {});
         process.exitCode = undefined;
 
-        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        await requireCommandHandler(dbMigrateUuidCommand)([], {
+          'dry-run': false,
+        });
 
         const exitCode = process.exitCode;
         process.exitCode = undefined;
@@ -4587,7 +4634,9 @@ describePostgres(
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
+        'dry-run': false,
+      });
 
       // Read call history BEFORE mockRestore() — restoring also clears it.
       const output = logSpy.mock.calls.flat().map(String).join('\n');
@@ -4643,13 +4692,17 @@ describePostgres(
     it('is a no-op on a second run', async () => {
       const quiet1 = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errors1 = vi.spyOn(console, 'error').mockImplementation(() => {});
-      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
+        'dry-run': false,
+      });
       quiet1.mockRestore();
       errors1.mockRestore();
 
       const quiet2 = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errors2 = vi.spyOn(console, 'error').mockImplementation(() => {});
-      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      await requireCommandHandler(dbMigrateUuidCommand)([], {
+        'dry-run': false,
+      });
       expect(errors2).not.toHaveBeenCalled();
       quiet2.mockRestore();
       errors2.mockRestore();

@@ -102,6 +102,117 @@ explicitly enabled. With embedded job topology, `createEmbeddedJobRunner()`
 returns the normal s-m-r-t `TaskRunner`, so the application keeps one enqueue
 and execution contract without requiring a separate worker service.
 
+## SvelteKit entry
+
+`@happyvertical/smrt-app-runtime/sveltekit` composes the profile runtime,
+tenant selection, the signed session, and authorized-tenant locals so an app's
+server hooks are a few lines. `@sveltejs/kit` is an optional peer dependency;
+the root entry never imports it.
+
+```ts
+// src/hooks.server.ts
+import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
+
+export const runtime = createSmrtSvelteKitRuntime({
+  prepareDatabase: runApplicationMigrations, // optional, idempotent
+});
+export const { handle, init } = runtime;
+```
+
+```ts
+// src/app.d.ts
+import type { SmrtRuntimeLocals } from '@happyvertical/smrt-app-runtime/sveltekit';
+declare global {
+  namespace App {
+    interface Locals extends SmrtRuntimeLocals {}
+  }
+}
+```
+
+`init` is the fail-closed startup gate (local runtime or deployed bindings) and
+`handle` waits for it, then runs, in order: URL tenant selection into
+`locals.selectedTenant*` (never tenant context; tenant headers are ignored),
+the signed session, and publication of `locals.tenantContext` only when the
+active context matches the verified session tenant. A session's tenant is
+accepted only for an active direct membership or a legitimately inherited
+one (`isSessionTenantAuthorized()`, the same rule deployed `restoreSession()`
+applies); otherwise the request is unauthenticated (no user, permissions,
+tenant, or tenant context). `database-rls` isolation always runs the request
+RLS transaction (`session.postgresRls` cannot disable it); a
+`session.skipPaths` prefix skips session loading only and still runs inside
+that transaction as an anonymous principal. During such a request
+`runtime.classOptions()` / `runtime.databaseConfig()` return the
+transaction-bound request database (unless the class has its own `db`
+override), so call them per request and never retain the result. Downstream code runs
+at most once: its error propagates unchanged, and a session-layer failure
+before it returns 500 with no authenticated locals. Defaults read `SMRT_APP_ID`, `SMRT_DATA_DIR`, `HOST`, `DATABASE_URL`,
+`TENANT_BASE_DOMAIN`, and `SMRT_BACKGROUND_JOBS`; `smrt.config` `runtime`
+selects the profile (local when absent; a present `null`/`false`/`0`/`''`
+fails closed, as in `smrt app`). Deployed profiles additionally require
+`providerReadiness` probes and fail closed without them. In the local profile
+the runtime holds the single-writer lease shared with `smrt app` operations by
+default (`defaultWriterLease()`: `writer.lease` under
+`prepareApplicationStateRoot()`, presenting `SMRT_OPERATION_INSTANCE`); pass
+`acquireWriterLease` to replace it or `acquireWriterLease: false` to hold none.
+Optional hooks: `onBootstrapInvitation` (present a newly issued setup token),
+`selectTenant`, `session`, and `classOverrides`.
+`runtime.getCollection(className)` returns the registered collection built
+from `runtime.classOptions(className)` on that call. Each generated `/api/*`
+route embeds a prelude that imports the app's `src/lib/server/smrt.ts` and
+resolves collections through its exported `runtime` (core's
+`createGeneratedCollectionAccess()`), so an app's `smrt.ts` is only the
+runtime and its options. A legacy `getCollection`/`getSmrtConfig` export there
+still takes precedence for one release, with a deprecation warning.
+
+Mountable routes:
+
+```ts
+// src/routes/api/_runtime/health/+server.ts
+export const GET = createRuntimeHealthHandler(runtime);
+// src/routes/api/_runtime/diagnostics/+server.ts
+export const GET = createRuntimeDiagnosticsHandler({ runtime, toolNames });
+// src/routes/setup/+page.server.ts
+export const { load, actions } = createOwnerSetupPage(runtime);
+// src/routes/+layout.server.ts
+export const load = createSessionLayoutLoad();
+```
+
+Diagnostics authorize (owner role or `runtime_diagnostics.read` on an active,
+session-matching membership) before reading the runtime and return only stable
+`{ schemaVersion: 1, error: { code } }` failures. Owner setup is local-only and
+re-checks on every request that both the peer address and the URL host are
+loopback; its `default` action reads `token`, `name`, `email`, and optional
+`tenantName`, sets the session cookie, and redirects 303, or returns
+`fail(status, { code, message })` with `setup_disabled` (404),
+`setup_unavailable` (403), `setup_invalid_input` (400), or `setup_invalid`
+(400). Claim error text is never returned. After the claim commits, the
+runtime removes the `smrt app setup` / `recover` hand-off files
+(`ONBOARDING_HANDOFF_FILES`: `onboarding.json`, `onboarding-launch.html`) from
+`runtime.applicationStateRoot()`, so `pnpm app:open` stops offering the spent
+invitation; failed claims leave them untouched. `onOwnerClaimed` remains for
+extra app cleanup and `removeOnboardingHandoff: false` opts out.
+
+`resolveApplicationId()` and `runtimeConfigurationFingerprint()` (root entry)
+are the canonical app ID and secret-free configuration fingerprint shared by
+the web health route and process managers.
+
+The root entry also owns the operator state shared with `smrt app`:
+`prepareApplicationStateRoot()` (private, app-bound state directory),
+`withOperationLock()`, `acquireWriterLease()` / `readActiveWriterLease()`,
+and `createProviderReadinessProbe()`. The SvelteKit runtime takes the writer
+lease itself; a SvelteKit app passes only the readiness probe and its own
+options, without depending on the CLI:
+
+```ts
+// src/lib/server/smrt.ts
+import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
+import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
+
+export const runtime = createSmrtSvelteKitRuntime({
+  providerReadiness: createProviderReadinessProbe,
+});
+```
+
 ## Self-hosted and cloud applications
 
 The deployed initializer validates the selected profile against concrete,

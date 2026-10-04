@@ -15,6 +15,82 @@ afterEach(() => {
 });
 
 describe('TenantNav', () => {
+  it('renders named groups alongside flat links and keeps grouped active children', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: {
+        'aria-label': 'Shop navigation',
+        currentHref: '/orders/open',
+        items: [{ href: '/home', label: 'Home' }],
+        groups: [
+          {
+            heading: 'Floor',
+            items: [
+              {
+                href: '/orders',
+                label: 'Orders',
+                children: [{ href: '/orders/open', label: 'Open orders' }],
+              },
+            ],
+          },
+          { heading: 'Office', items: [] },
+        ],
+      },
+    });
+    try {
+      expect(container.querySelector('nav')).toHaveAttribute(
+        'aria-label',
+        'Shop navigation',
+      );
+      expect(
+        container.querySelector('details[aria-label="Floor"]'),
+      ).not.toBeNull();
+      expect(container.querySelectorAll('details')).toHaveLength(2);
+      expect(container.querySelector('a[href="/orders/open"]')).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(container.querySelectorAll('a')).toHaveLength(3);
+    } finally {
+      unmount(component);
+    }
+  });
+  it('keeps collapsed group summaries named and independent of navigation links', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: {
+        items: [],
+        collapsed: true,
+        groups: [
+          { heading: 'Floor', items: [{ href: '/tasks', label: 'Tasks' }] },
+        ],
+      },
+    });
+    try {
+      const summary = container.querySelector('summary');
+      expect(summary?.textContent).toContain('Floor');
+      expect(container.querySelector('details')).toHaveAttribute('open');
+      expect(container.querySelectorAll('a')).toHaveLength(1);
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('accepts per-instance touch density while leaving the default inherited', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: { density: 'touch', items: [{ href: '/tasks', label: 'Tasks' }] },
+    });
+    try {
+      expect(container.querySelector('nav')).toHaveAttribute(
+        'data-density',
+        'touch',
+      );
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('renders custom icon components for nav items', () => {
     const component = mount(TenantNav, {
       target: container,

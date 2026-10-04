@@ -38,6 +38,11 @@ import { getClasses, getInheritanceCache } from '../shared-state';
 /** Track synthetic registry keys we add so afterEach can remove them. */
 const syntheticKeys = new Set<string>();
 
+function present<T>(value: T | null | undefined): NonNullable<T> {
+  if (value == null) throw new Error('Expected fixture metadata');
+  return value as NonNullable<T>;
+}
+
 function addSyntheticClass(key: string, registered: any): void {
   getClasses().set(key, registered);
   syntheticKeys.add(key);
@@ -261,7 +266,7 @@ describe('inheritance-resolver: getAllFields (module)', () => {
 
   it('rewrites SmrtHierarchical parentId into a self-referential foreignKey', async () => {
     const fields = await getAllFields('IRTreeNode');
-    const parentId = fields.get('parentId');
+    const parentId = present(fields.get('parentId'));
     expect(parentId).toBeDefined();
     // normalizeFrameworkInheritedField turns it into a nullable FK back to the child
     expect(parentId.type).toBe('foreignKey');
@@ -333,8 +338,8 @@ describe('inheritance-resolver: mergeFieldConfigs', () => {
       { type: 'integer', _meta: { min: 10, max: 80 } },
       'amount',
     );
-    expect(merged._meta.min).toBe(10); // larger min = stricter lower bound
-    expect(merged._meta.max).toBe(80); // smaller max = stricter upper bound
+    expect(merged._meta?.min).toBe(10); // larger min = stricter lower bound
+    expect(merged._meta?.max).toBe(80); // smaller max = stricter upper bound
   });
 
   it('combines parent and child validators (both must pass)', async () => {
@@ -346,9 +351,12 @@ describe('inheritance-resolver: mergeFieldConfigs', () => {
       'amount',
     );
 
-    expect(await merged._meta.validate(50)).toBe(true); // both pass
-    expect(await merged._meta.validate(-1)).toBe(false); // parent fails
-    expect(await merged._meta.validate(150)).toBe(false); // child fails
+    const validate = merged._meta?.validate as (
+      value: number,
+    ) => Promise<boolean>;
+    expect(await validate(50)).toBe(true); // both pass
+    expect(await validate(-1)).toBe(false); // parent fails
+    expect(await validate(150)).toBe(false); // child fails
     expect(parentValidate).toHaveBeenCalled();
     expect(childValidate).toHaveBeenCalled();
   });
@@ -359,7 +367,7 @@ describe('inheritance-resolver: mergeFieldConfigs', () => {
       { type: 'text', _meta: { unique: true } },
       'email',
     );
-    expect(merged._meta.unique).toBe(true);
+    expect(merged._meta?.unique).toBe(true);
   });
 
   it('preserves __tenancy with parent (decorator) precedence', () => {
@@ -372,8 +380,8 @@ describe('inheritance-resolver: mergeFieldConfigs', () => {
       'tenantId',
     );
     // parent (decorator) wins on the overlapping keys
-    expect(merged.__tenancy.isTenantIdField).toBe(true);
-    expect(merged.__tenancy.src).toBe('parent');
+    expect(merged.__tenancy?.isTenantIdField).toBe(true);
+    expect(merged.__tenancy?.src).toBe('parent');
   });
 
   it('lets the child override the default value', () => {
@@ -398,10 +406,10 @@ describe('inheritance-resolver: mergeFieldConfigs', () => {
 describe('inheritance-resolver: end-to-end constraint merge via getAllFields', () => {
   it('applies the strictest numeric constraints from the chain', async () => {
     const fields = await getAllFields('IRConstraintChild');
-    const amount = fields.get('amount');
+    const amount = present(fields.get('amount'));
     expect(amount).toBeDefined();
-    expect(amount._meta.min).toBe(10);
-    expect(amount._meta.max).toBe(80);
+    expect(amount._meta?.min).toBe(10);
+    expect(amount._meta?.max).toBe(80);
     // Reference the parent fixture so the import is load-bearing.
     expect(typeof IRConstraintChild).toBe('function');
   });
@@ -418,7 +426,7 @@ describe('ObjectRegistry delegates to inheritance-resolver (#1378)', () => {
     expect(typeof IRTreeNode).toBe('function');
 
     const fields = await ObjectRegistry.getAllFields('IRTreeNode');
-    const parentId = fields.get('parentId');
+    const parentId = present(fields.get('parentId'));
     expect(parentId).toBeDefined();
     // This is the behavior the inline copy lacked: a self-referential,
     // nullable foreignKey back to the child class.

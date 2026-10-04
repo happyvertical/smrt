@@ -7,6 +7,7 @@
  * intersections) keep Svelte 5 prop type evaluation cheap.
  */
 
+import type { TimeEntryApprovalView } from '@happyvertical/smrt-timesheets/svelte';
 import type { ServiceTimeEntry } from '../models/service-time-entry.js';
 import type { SupportCase } from '../models/support-case.js';
 import type { SupportCaseEvent } from '../models/support-case-event.js';
@@ -53,40 +54,11 @@ export interface SupportWorkLinkView {
 }
 
 /**
- * View shape for a Service Time Entry in approval/review surfaces. The first
- * eight fields deliberately match `smrt-projects`' presentation `TimeEntry`
- * contract (`packages/projects/src/svelte/utils.ts`) — smrt-support promotes
- * that presentation-only shape into persisted models, so hosts can reuse
- * either package's time surfaces over the same view rows.
+ * View shape for a Service Time Entry in approval/review surfaces: the shared
+ * `TimeEntryApprovalView` from smrt-timesheets (whose first eight fields match
+ * the presentation `TimeEntry` contract) plus the support case.
  */
-export interface SupportTimeEntryView {
-  id: string;
-  /** ISO date part (`YYYY-MM-DD`) of the work period start. */
-  date: string;
-  /** Worked duration in decimal hours, rounded to 2 decimals. */
-  hours: number;
-  description: string;
-  status: string;
-  /**
-   * Client charge in integer minor units, when a derived
-   * {@link SupportCharge} is supplied — `$19.99` is `1999` (#2401).
-   */
-  amount?: number;
-  /**
-   * ISO 4217 code `amount` / `hourlyRate` are denominated in, when a charge is
-   * supplied. Carried on the view because the minor-unit exponent is a property
-   * of the currency, not a constant: `¥1999` is 1999 minor units, not 19.99
-   * (#2401).
-   */
-  currency?: string;
-  workerName?: string;
-  /**
-   * Hourly rate from the charge's frozen `rateSnapshot`, when supplied, in
-   * minor units per hour (#2401).
-   */
-  hourlyRate?: number;
-  source: string;
-  participantKind: string;
+export interface SupportTimeEntryView extends TimeEntryApprovalView {
   caseId: string | null;
 }
 
@@ -190,6 +162,9 @@ export function priorityBadgeKey(priority: string): string {
   }
 }
 
+// Moved to smrt-timesheets with `TimeEntryApprovalQueue` (#3288).
+export { timeEntryStatusBadgeKey } from '@happyvertical/smrt-timesheets/svelte';
+
 /** Human-readable label for a snake_case status value. */
 export function humanizeStatus(value: string): string {
   return (value ?? '').replace(/_/g, ' ');
@@ -225,24 +200,6 @@ export function toSupportTimeEntryView(
     view.workerName = opts.workerName;
   }
   return view;
-}
-
-/** Map a time-entry status onto `StatusBadge` default color-scheme keys. */
-export function timeEntryStatusBadgeKey(status: string): string {
-  switch (status) {
-    case 'draft':
-      return 'inactive';
-    case 'submitted':
-      return 'pending';
-    case 'approved':
-      return 'success';
-    case 'rejected':
-      return 'error';
-    case 'corrected':
-      return 'warning';
-    default:
-      return 'pending';
-  }
 }
 
 /** Serializable Service Target clock view for `TargetList` (#1929). */

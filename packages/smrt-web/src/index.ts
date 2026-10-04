@@ -471,9 +471,11 @@ export type SmrtWebRow<TData extends object> = TData & { id: string };
 /**
  * Normalize a generated-client list result to an array of rows.
  *
- * The generated REST routes return a bare JSON array; `{ error }` payloads are
- * surfaced as failures. The `{ data: [...] }` envelope is tolerated for
- * ApiResponse-shaped clients (e.g. a mock client).
+ * The generated REST list routes return `{ items, count, limit, offset }`
+ * (see the SvelteKit route generator in `@happyvertical/smrt-core`); a bare JSON
+ * array and the `{ data: [...] }` ApiResponse envelope (e.g. a mock client) are
+ * also accepted. `{ error }` payloads are surfaced as failures; any other shape
+ * throws.
  */
 export function unwrapListResult(
   result: unknown,
@@ -485,6 +487,9 @@ export function unwrapListResult(
   }
   if (result && typeof result === 'object') {
     const record = result as Record<string, unknown>;
+    if (Array.isArray(record.items)) {
+      return record.items as Array<Record<string, unknown>>;
+    }
     if (Array.isArray(record.data)) {
       return record.data as Array<Record<string, unknown>>;
     }

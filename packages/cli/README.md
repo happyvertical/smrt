@@ -8,6 +8,12 @@ Developer CLI for the s-m-r-t framework. Provides introspection, code generation
 pnpm add -D @happyvertical/smrt-cli
 ```
 
+For package validation, `pnpm --filter @happyvertical/smrt-cli typecheck`
+checks both CLI source and all `src/**/*.test.ts` / `src/**/*.spec.ts` fixtures.
+The test project uses the repository's test-only TypeScript settings in
+`tsconfig.test.json`; production declarations remain under
+`tsconfig.typecheck.json`.
+
 ## Commands
 
 ### Introspection
@@ -49,6 +55,7 @@ The four snapshot options are atomic: supplying any one requires all four.
 | `smrt db:migrate-uuid` | Convert schema-declared UUID text columns to native PostgreSQL uuid after data has been remapped |
 | `smrt db:migrate-int8` | Widen legacy pre-#2373 int4 columns to BIGINT after reviewing the maintenance-window preflight |
 | `smrt db:migrate-ledger-accounts [--dry-run]` | Move smrt-ledgers accounts out of the pre-#3098 shared `accounts` table into `ledger_accounts` (PostgreSQL; run between two `db:migrate` passes — see the smrt-ledgers README) |
+| `smrt db:migrate-qualified-names [--dry-run] [--tenant <id>] [--force]` | Rewrite stored deprecated qualified names (`@smrt({ previousQualifiedNames })`) to current names. Opt-in, idempotent, tracked in `_smrt_backfills`; `smrt doctor --db` counts what remains (#3338) |
 | `smrt db:drop-framework-base-tables` | One-time removal of the five framework-base tables (`smrt_objects`, `smrt_classes`, `smrt_collections`, `smrt_hierarchicals`, `smrt_polymorphic_associations`) orphaned by #2644; refuses if any target table has rows, an unexpected shape, or an inbound foreign key |
 | `smrt db:drop-framework-base-tables --dry-run` | Print the drop plan (tables and companion indexes) without executing |
 | `smrt db:diff` | Show schema differences without generating migration files |
@@ -201,6 +208,13 @@ Run the project's package-manager install command after initialization. Existing
 versions are preserved; s-m-r-t workspace projects receive `workspace:*` ranges and
 consumer projects receive the CLI's published release line.
 
+The generated `src/lib/server/smrt.ts` exports only `runtime` (`classOptions()`
+and `getCollection()` over `DATABASE_URL`/`DATABASE_TYPE`), which generated API
+routes call per request; it no longer exports the deprecated
+`getCollection`/`getSmrtConfig` accessors. To adopt the full application
+runtime, replace that object with `createSmrtSvelteKitRuntime()` from
+`@happyvertical/smrt-app-runtime/sveltekit` and mount its `handle`/`init`.
+
 ### Dispatch
 
 | Command | Description |
@@ -234,6 +248,45 @@ consumer projects receive the CLI's published release line.
 | `smrt playground init` | Scaffold package or app playground files |
 | `smrt playground dev` | Run the shared workspace host or local app playground |
 | `smrt playground list` | Show discovered playground modules and preview entries |
+
+### Application operations (`smrt app`)
+
+Operational commands for a generated s-m-r-t application, run from the
+application root. They replace the template's copied `scripts/*.mjs`, so an
+app's `package.json` scripts are one-liners:
+
+```json
+{
+  "dev": "smrt app dev",
+  "build": "smrt app build",
+  "preview": "smrt app start",
+  "db:migrate": "vite build && smrt app migrate",
+  "app:setup": "smrt app setup",
+  "app:doctor": "smrt app doctor",
+  "worker": "smrt app worker task",
+  "worker:schedule": "smrt app worker schedule"
+}
+```
+
+| Command | Description |
+|---------|------------|
+| `smrt app install` | Local: setup, start, and open owner onboarding under one operation lock |
+| `smrt app setup` | Build, run `smrt db:migrate` explicitly, and prepare the private owner-onboarding handoff |
+| `smrt app recover` | Local: rotate the single-use owner onboarding invitation |
+| `smrt app start` / `stop` | Local: run the production build on loopback; readiness is proven by app id, process instance, and configuration fingerprint |
+| `smrt app doctor` | Secret-free findings (`invalid-runtime-profile`, `unsafe-local-bind`, `runtime-path-unavailable`, `migration-required`, …); exits 1 on any error (default operation) |
+| `smrt app open` | Open the app, or the pending onboarding launch file |
+| `smrt app backup [destination]` | Local: copy the validated data root to a new private directory outside the checkout |
+| `smrt app export [path]` / `import <path>` | Logical, asset-aware bundle; import requires an empty target (deployed: `SMRT_MAINTENANCE_MODE=true`) |
+| `smrt app migrate` | Establish local storage custody, then `smrt db:migrate`, under the operation lock |
+| `smrt app worker [task\|schedule]` | Deployed: imports `.smrt/runtime/register.js`, then runs the jobs runner until SIGTERM. The kind defaults to `task`; any other value is a usage error before anything starts |
+| `smrt app dev\|build\|vite [args]` | Run the app's installed Vite with `.env` loaded (shell wins); `build` validates `./mcp-apps` first |
+
+Success output is JSON on stdout; a failure is one JSON envelope on stderr with
+exit code 1 and never contains secret values. The same primitives (operation
+lock, writer lease, state root, artifact-path custody, portability) are
+importable without side effects from `@happyvertical/smrt-cli/app`. Contract
+details: [agents/app-commands.md](agents/app-commands.md).
 
 ### Auto-Generated Object Commands
 
@@ -318,6 +371,23 @@ export default {
 };
 ```
 
+### Database precedence
+
+Every `db:*` command resolves its database once, at startup:
+
+1. `packages.cli.database.url` from any config layer — an explicit project
+   setting always wins, so a stray shell `DATABASE_URL` never retargets it.
+2. `DATABASE_URL`, with the engine from the config's `database.type`, else
+   `DATABASE_TYPE` (`sqlite` | `postgres`), else the URL scheme
+   (`postgres://` / `postgresql://` → postgres, anything else sqlite). An
+   unsupported `DATABASE_TYPE` disables this step with a warning.
+3. The `:memory:` default, which schema commands refuse.
+
+`smrt app setup` and `smrt app migrate` hand `smrt db:migrate` the profile's
+database through step 2, so an application does not forward
+`DATABASE_URL` in its own config. The rule is smrt-config's
+`resolveCliDatabaseConfig()`, which `smrt-dev-mcp` uses too.
+
 ### Entry Point Discovery
 
 The CLI loads s-m-r-t objects from your project entry point:
@@ -338,4 +408,5 @@ If compiled classes cannot be loaded, the CLI falls back to manifest-only mode (
 
 - `@happyvertical/smrt-core` -- ORM, manifest, code generation
 - `@happyvertical/smrt-config` -- configuration loading
+- `@happyvertical/smrt-app-runtime` -- local storage custody and runtime composition for `smrt app`
 - `@happyvertical/smrt-scanner` -- AST scanning for metadata extraction

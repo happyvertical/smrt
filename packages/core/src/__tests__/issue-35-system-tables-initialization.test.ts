@@ -250,14 +250,12 @@ describe('Issue #35: System Tables Initialization', () => {
       const db1 = await getDatabase({
         type: 'json',
         url: dataDir1, // SDK now requires url parameter
-        dataDir: dataDir1,
         writeStrategy: 'immediate',
       });
 
       const db2 = await getDatabase({
         type: 'json',
         url: dataDir2, // SDK now requires url parameter
-        dataDir: dataDir2,
         writeStrategy: 'immediate',
       });
 
@@ -309,7 +307,7 @@ describe('Issue #35: System Tables Initialization', () => {
       await obj.initialize();
 
       // Verify system tables were created
-      const db = obj._db as DatabaseInterface;
+      const db = obj.db;
       const migrations = await db.query('SELECT * FROM _smrt_migrations');
       expect(migrations.rows.length).toBeGreaterThan(0);
 
@@ -330,7 +328,7 @@ describe('Issue #35: System Tables Initialization', () => {
       await obj.initialize();
 
       // Verify system tables were created
-      const db = obj._db as DatabaseInterface;
+      const db = obj.db;
       const migrations = await db.query('SELECT * FROM _smrt_migrations');
       expect(migrations.rows.length).toBeGreaterThan(0);
     });

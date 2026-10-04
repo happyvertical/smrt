@@ -142,22 +142,23 @@ always waits. Details: [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
 
 ## AssistantDock (#2904)
 
-`AssistantDock` (`svelte/components/assistant/`, exported from `./svelte`) is a
-shell-mounted, route-aware assistant surface: it discovers currently-mounted
-`DataSurfaceDescriptor`s from a host-supplied `DataSurfaceRegistry`
-(`@happyvertical/smrt-ui/data-surface`) and fails closed to plain chat when
-none are mounted. Action proposals flow through
-`normalizeDataSurfaceActionRequest` → a host-supplied `AssistantActionClient`
-(preview/apply against a server-hosted `DataSurfaceActionAdapter`, not through
-the `data-surface-bridge.ts` live-collaboration command channel) →
-`ToolCallDisplay`'s additive `actionResult` rendering. `AssistantTransport`
-(`assistant-transport.ts`) is a narrower, separate contract from
-`ChatClientBackend` (`client.ts`): `ChatThread`/`ChatMessage` only expose
-generated `list`/`get` REST (`api: { include: ['list', 'get'] }`,
-`models/ChatThread.ts:16`, `models/ChatMessage.ts:26`), so writes need a host-
-supplied `writeEndpoint`. See [`docs/assistant-dock.md`](../../docs/assistant-dock.md)
-for the full design, the anytown `PortalChatTool.svelte` polling/stale-send
-reconnaissance, and open gaps.
+`AssistantDock` (`svelte/components/assistant/`, exported from `./svelte`)
+uses a host `DataSurfaceRegistry`'s mounted descriptors (none: plain chat).
+Actions: `normalizeDataSurfaceActionRequest` → `AssistantActionClient`
+(preview/apply over a server `DataSurfaceActionAdapter`, not the
+`data-surface-bridge.ts` channel). Generated `ChatThread`/`ChatMessage`
+`list`/`get` are tenant- not member-scoped; the dock never calls them.
+
+**Server routes (#3368).** `./sveltekit` `mountAssistantRoutes()` serves the
+dock from one `[...path]` route; `createAssistantHttp{Transport,ActionClient}`
+(`./svelte`) are its browser half. Principal from `event.locals` or
+`resolvePrincipal`; threads only from the actor's keyed session room in that
+tenant (else 404). `allowedTools` is fail-closed; without `tools` it offers
+those manifest ops (an unprovided name is an error, #3414). `ai` defaults to
+the config `ai` block. Pass `runtime`: a turn never keeps the RLS request tx
+(own `runAsPrincipal` tx). `clientRequestId` makes the row id a UUIDv5
+(`clientRequestMessageId`): the PK is the retry reservation. See
+[docs](../../docs/assistant-dock.md).
 
 ## Gotchas
 

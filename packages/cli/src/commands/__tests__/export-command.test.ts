@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requireCommandHandler } from '../../__tests__/command-handler.js';
 import { exportCommand } from '../export.js';
 
 // ---------------------------------------------------------------------------
@@ -109,34 +110,34 @@ describe('export command handler', () => {
 
   it('exits when there is no smrt config', async () => {
     getConfig.mockReturnValue(undefined);
-    await exportCommand.handler([], {});
+    await requireCommandHandler(exportCommand)([], {});
     expect(errored()).toContain('No smrt.config.js found');
     expect(process.exitCode).toBe(1);
   });
 
   it('emits a JSON error when no smrt config and --json', async () => {
     getConfig.mockReturnValue(undefined);
-    await exportCommand.handler([], { json: true });
+    await requireCommandHandler(exportCommand)([], { json: true });
     expect(logged()).toContain('"error":"No smrt.config.js found"');
   });
 
   it('exits when no export configuration is present', async () => {
     getConfig.mockReturnValue({ export: {} });
-    await exportCommand.handler([], {});
+    await requireCommandHandler(exportCommand)([], {});
     expect(errored()).toContain('No export configuration found');
     expect(process.exitCode).toBe(1);
   });
 
   it('emits JSON error for missing export config when --json', async () => {
     getConfig.mockReturnValue({});
-    await exportCommand.handler([], { json: true });
+    await requireCommandHandler(exportCommand)([], { json: true });
     expect(logged()).toContain('"error":"No export configuration found"');
   });
 
   it('exits when the database is not configured', async () => {
     getConfig.mockReturnValue({ export: { contents: { types: ['Article'] } } });
     getPackageConfig.mockReturnValue({ database: { url: ':memory:' } });
-    await exportCommand.handler([], {});
+    await requireCommandHandler(exportCommand)([], {});
     expect(errored()).toContain('Database configuration required');
     expect(process.exitCode).toBe(1);
   });
@@ -144,7 +145,7 @@ describe('export command handler', () => {
   it('emits a JSON db error when db missing and --json', async () => {
     getConfig.mockReturnValue({ export: { contents: { types: ['Article'] } } });
     getPackageConfig.mockReturnValue({ database: undefined });
-    await exportCommand.handler([], { json: true });
+    await requireCommandHandler(exportCommand)([], { json: true });
     expect(logged()).toContain('"error":"Database not configured"');
   });
 
@@ -162,7 +163,7 @@ describe('export command handler', () => {
       ],
     });
 
-    await exportCommand.handler([], { output: dir });
+    await requireCommandHandler(exportCommand)([], { output: dir });
 
     const written = await readFile(join(dir, 'contents.json'), 'utf-8');
     const parsed = JSON.parse(written);
@@ -178,7 +179,10 @@ describe('export command handler', () => {
     });
     dbQuery.mockResolvedValue({ rows: [{ id: '1', title: 'X' }] });
 
-    await exportCommand.handler([], { output: dir, 'dry-run': true });
+    await requireCommandHandler(exportCommand)([], {
+      output: dir,
+      'dry-run': true,
+    });
 
     await expect(
       readFile(join(dir, 'contents.json'), 'utf-8'),
@@ -198,7 +202,7 @@ describe('export command handler', () => {
       ],
     });
 
-    await exportCommand.handler([], { output: dir });
+    await requireCommandHandler(exportCommand)([], { output: dir });
 
     const written = await readFile(join(dir, 'contents.ndjson'), 'utf-8');
     expect(written.split('\n')).toHaveLength(2);
@@ -215,7 +219,7 @@ describe('export command handler', () => {
       ],
     });
 
-    await exportCommand.handler([], { output: dir });
+    await requireCommandHandler(exportCommand)([], { output: dir });
 
     const written = await readFile(join(dir, 'contents.csv'), 'utf-8');
     expect(written.split('\n')[0]).toContain('title');
@@ -226,7 +230,7 @@ describe('export command handler', () => {
     getConfig.mockReturnValue({
       export: { contents: { types: [] } },
     });
-    await exportCommand.handler([], { output: dir });
+    await requireCommandHandler(exportCommand)([], { output: dir });
     expect(warned()).toContain('No types specified for contents');
   });
 
@@ -240,7 +244,7 @@ describe('export command handler', () => {
     });
     dbQuery.mockResolvedValue({ rows: [] });
 
-    await exportCommand.handler([], {
+    await requireCommandHandler(exportCommand)([], {
       output: dir,
       file: 'contents',
       verbose: true,
@@ -257,7 +261,7 @@ describe('export command handler', () => {
     });
     dbQuery.mockResolvedValue({ rows: [{ id: '1', title: 'A' }] });
 
-    await exportCommand.handler([], { output: dir, json: true });
+    await requireCommandHandler(exportCommand)([], { output: dir, json: true });
 
     const out = logged();
     expect(out).toContain('"contents"');
@@ -271,7 +275,10 @@ describe('export command handler', () => {
     });
     dbQuery.mockResolvedValue({ rows: [] });
 
-    await exportCommand.handler([], { output: dir, 'show-drafts': true });
+    await requireCommandHandler(exportCommand)([], {
+      output: dir,
+      'show-drafts': true,
+    });
     expect(logged()).toContain('Including drafts');
   });
 
@@ -282,7 +289,10 @@ describe('export command handler', () => {
     });
     dbQuery.mockRejectedValue(new Error('db blew up'));
 
-    await exportCommand.handler([], { output: dir, verbose: true });
+    await requireCommandHandler(exportCommand)([], {
+      output: dir,
+      verbose: true,
+    });
     expect(errored()).toContain('Export failed');
     expect(process.exitCode).toBe(1);
   });
@@ -294,7 +304,7 @@ describe('export command handler', () => {
     });
     dbQuery.mockRejectedValue(new Error('db blew up'));
 
-    await exportCommand.handler([], { output: dir, json: true });
+    await requireCommandHandler(exportCommand)([], { output: dir, json: true });
     expect(logged()).toContain('"error"');
     expect(process.exitCode).toBe(1);
   });
@@ -306,7 +316,7 @@ describe('export command handler', () => {
     });
     dbQuery.mockResolvedValue({ rows: [] });
 
-    await exportCommand.handler([], { output: dir });
+    await requireCommandHandler(exportCommand)([], { output: dir });
 
     const written = await readFile(join(dir, 'contents.csv'), 'utf-8');
     expect(written).toBe('');
@@ -321,7 +331,7 @@ describe('export command handler', () => {
     });
     dbQuery.mockResolvedValue({ rows: [{ id: '1', title: 'Town hall' }] });
 
-    await exportCommand.handler([], { output: dir });
+    await requireCommandHandler(exportCommand)([], { output: dir });
 
     const written = await readFile(join(dir, 'meetings.json'), 'utf-8');
     expect(JSON.parse(written)).toHaveLength(1);

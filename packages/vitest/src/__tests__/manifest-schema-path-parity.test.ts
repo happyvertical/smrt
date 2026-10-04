@@ -21,7 +21,10 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MigrationGenerator } from '@happyvertical/smrt-core/migrations';
-import { manifestSchemaToDefinition } from '@happyvertical/smrt-core/schema/utils';
+import {
+  type ManifestSchemaLike,
+  manifestSchemaToDefinition,
+} from '@happyvertical/smrt-core/schema/utils';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -92,7 +95,13 @@ sqliteDescribe('manifest test-db ↔ migration path parity (#2358)', () => {
   // A structured manifest as `smrt build` / `smrtVitestPlugin()` writes it:
   // engine-neutral cached `ddl` (CREATE TABLE only, abstract types) plus the
   // authoritative `columns` / `indexes`. Two STI classes share `events`.
-  const manifest = {
+  const manifest: {
+    packageName: string;
+    objects: Record<
+      string,
+      { className: string; extends?: string; schema: ManifestSchemaLike }
+    >;
+  } = {
     packageName: '@test/parity',
     objects: {
       '@test/parity:Event': {

@@ -73,7 +73,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '24.18.0'
+          node-version: '26.9.0'
 
       - name: Validate commit messages
         env:
@@ -255,13 +255,13 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '24.18.0'
+          node-version: '26.9.0'
 
-      - name: Install trusted README validator dependency
+      - name: Install trusted standards validator dependencies
         run: |
           npm install --prefix "$RUNNER_TEMP/readme-validator" \
             --ignore-scripts --no-audit --no-fund \
-            pnpm@11.13.1 typescript@5.9.3 @types/node@24.13.2
+            pnpm@11.13.1 typescript@5.9.3 @types/node@24.13.2 acorn@8.18.0
           echo "$RUNNER_TEMP/readme-validator/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Checkout PR branch
@@ -374,8 +374,11 @@ jobs:
 
       # Flags hardcoded user-facing strings in .svelte markup (Sweep S13,
       # #1418). Report-only in phase 1 (no package fully extracted yet); fails
-      # only for packages in the script's STRICT_PACKAGES set. Node-only, no deps.
+      # only for packages in the script's STRICT_PACKAGES set. The tokenizer
+      # uses trusted Acorn without installing PR-controlled workspace dependencies.
       - name: Check hardcoded UI strings
+        env:
+          SMRT_ACORN_PATH: ${{ runner.temp }}/readme-validator/node_modules/acorn/dist/acorn.mjs
         run: node scripts/check-hardcoded-strings.mjs
 
   dependency-audit:
@@ -399,7 +402,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '24.18.0'
+          node-version: '26.9.0'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6

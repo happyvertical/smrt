@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-events",
-  "version": "0.52.0",
+  "version": "0.53.4",
   "smrtJsdoc": "strict",
   "description": "Hierarchical event management with participant tracking and SMRT framework support",
   "type": "module",
@@ -37,7 +37,7 @@
     }
   },
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite",
@@ -59,6 +59,7 @@
   "dependencies": {
     "@happyvertical/ai": "catalog:",
     "@happyvertical/files": "catalog:",
+    "@happyvertical/icalendar": "^0.100.2",
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",

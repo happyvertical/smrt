@@ -36,7 +36,7 @@ import { createQualifiedName } from '../utils/qualified-names.js';
  * the package's own manifest lives at the same package identity as the class.
  */
 function repinPackageIdentity(className: string, packageName: string): void {
-  const registered = ObjectRegistry.findClass(className);
+  const registered = ObjectRegistry.getClass(className);
   if (!registered) {
     throw new Error(`Test setup error: ${className} not registered`);
   }
@@ -126,7 +126,7 @@ describe('ObjectRegistry.registerPackageManifest', () => {
     })
     class FixtureSeedWidget extends SmrtObject {}
 
-    const registered = ObjectRegistry.findClass('FixtureSeedWidget');
+    const registered = ObjectRegistry.getClass('FixtureSeedWidget');
     expect(registered).toBeDefined();
     expect(registered?.fields.has('sku')).toBe(true);
     expect(registered?.fields.has('price')).toBe(true);
@@ -153,7 +153,7 @@ describe('ObjectRegistry.registerPackageManifest', () => {
     // there), so repin before the manifest hydration call.
     repinPackageIdentity('FixtureLateWidget', packageName);
 
-    const beforeHydration = ObjectRegistry.findClass('FixtureLateWidget');
+    const beforeHydration = ObjectRegistry.getClass('FixtureLateWidget');
     expect(beforeHydration).toBeDefined();
     expect(beforeHydration?.fields.has('externalId')).toBe(false);
 
@@ -179,7 +179,7 @@ describe('ObjectRegistry.registerPackageManifest', () => {
     expect(result.loaded).toBe(true);
     expect(result.objectsRegistered).toBe(1);
 
-    const afterHydration = ObjectRegistry.findClass('FixtureLateWidget');
+    const afterHydration = ObjectRegistry.getClass('FixtureLateWidget');
     expect(afterHydration?.fields.has('externalId')).toBe(true);
     expect(afterHydration?.fields.has('latitude')).toBe(true);
     void FixtureLateWidget;
@@ -372,7 +372,7 @@ describe('ObjectRegistry.registerPackageManifest', () => {
     })
     class FixtureChunkWidget extends SmrtObject {}
 
-    const registered = ObjectRegistry.findClass('FixtureChunkWidget');
+    const registered = ObjectRegistry.getClass('FixtureChunkWidget');
     expect(registered?.fields.has('handle')).toBe(true);
     void FixtureChunkWidget;
   });
@@ -514,7 +514,7 @@ describe('ObjectRegistry.registerPackageManifest', () => {
       })
       class FixtureInlineSession extends SmrtObject {}
 
-      const registered = ObjectRegistry.findClass('FixtureInlineSession');
+      const registered = ObjectRegistry.getClass('FixtureInlineSession');
       expect(registered?.fields.has('expiresAt')).toBe(true);
       expect(registered?.fields.has('userAgent')).toBe(true);
       expect(registered?.fields.has('ipAddress')).toBe(true);
@@ -555,7 +555,7 @@ describe('ObjectRegistry.registerPackageManifest', () => {
       const result = ObjectRegistry.registerPackageManifest(manifest);
 
       expect(result.loaded).toBe(true);
-      const registered = ObjectRegistry.findClass('FixtureInlineLateWidget');
+      const registered = ObjectRegistry.getClass('FixtureInlineLateWidget');
       expect(registered?.fields.has('metricKey')).toBe(true);
       void FixtureInlineLateWidget;
     });

@@ -77,10 +77,9 @@ function schemaFor(ctor: typeof SmrtObject): SchemaDefinition {
   const registration = ObjectRegistry.getClassByConstructor(ctor);
   const className =
     registration?.qualifiedName || registration?.name || ctor.name;
-  const schema =
-    ObjectRegistry.getAllSchemasAsDefinitions()[
-      ObjectRegistry.getTableName(className)
-    ];
+  const tableName = ObjectRegistry.getTableName(className);
+  if (!tableName) throw new Error(`Missing table name for ${className}`);
+  const schema = ObjectRegistry.getAllSchemasAsDefinitions()[tableName];
   if (!schema) throw new Error(`Missing schema for ${className}`);
   return schema;
 }

@@ -1,15 +1,41 @@
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ObjectRegistry } from '../registry.js';
+import type { SmartObjectDefinition } from '../scanner/types.js';
 import { ensureSchema } from '../schema/utils.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
+
+// Complete legacy manifest fixtures with the metadata the scanner now emits.
+function registerManifestFixture(
+  key: string,
+  definition: Omit<SmartObjectDefinition, 'name' | 'collection' | 'filePath'> &
+    Partial<Pick<SmartObjectDefinition, 'name' | 'collection' | 'filePath'>>,
+  packageName: string,
+): void {
+  const lower = definition.className.toLowerCase();
+  const collection = lower.endsWith('y')
+    ? `${lower.slice(0, -1)}ies`
+    : /(?:s|x|z|ch|sh)$/.test(lower)
+      ? `${lower}es`
+      : `${lower}s`;
+  ObjectRegistry.registerFromManifest(
+    key,
+    {
+      name: lower,
+      collection,
+      filePath: `/test/fixtures/${definition.className}.ts`,
+      ...definition,
+    },
+    packageName,
+  );
+}
 
 describe('getTestDatabase manifest schemas', () => {
   let restoreRegistry: () => void;
 
   function registerCollectionStubWithSTIItem(): void {
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:Meetings',
       {
         className: 'Meetings',
@@ -51,7 +77,7 @@ describe('getTestDatabase manifest schemas', () => {
       '@test/pkg',
     );
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:Event',
       {
         className: 'Event',
@@ -108,7 +134,7 @@ describe('getTestDatabase manifest schemas', () => {
   }
 
   function registerNativeUuidThing(): void {
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:NativeUuidThing',
       {
         className: 'NativeUuidThing',
@@ -132,7 +158,7 @@ describe('getTestDatabase manifest schemas', () => {
   });
 
   it('normalizes manifest column defaults into runtime schema definitions', () => {
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:ManifestDefaultedFeedSource',
       {
         className: 'ManifestDefaultedFeedSource',
@@ -189,7 +215,7 @@ describe('getTestDatabase manifest schemas', () => {
   });
 
   it('preserves manifest-defined unique conflict indexes for test databases', async () => {
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:ManifestIndexedJoin',
       {
         className: 'ManifestIndexedJoin',
@@ -287,7 +313,7 @@ describe('getTestDatabase manifest schemas', () => {
       ? indexInfoResult
       : indexInfoResult.rows;
 
-    expect(indexInfo.map((row: { name: string }) => row.name)).toEqual([
+    expect(indexInfo.map((row) => row.name)).toEqual([
       'fact_id',
       'content_id',
       'relationship',
@@ -307,7 +333,7 @@ describe('getTestDatabase manifest schemas', () => {
     const columns = Array.isArray(columnsResult)
       ? columnsResult
       : columnsResult.rows;
-    const columnNames = columns.map((row: { name: string }) => row.name);
+    const columnNames = columns.map((row) => row.name);
 
     expect(columnNames).toContain('_meta_type');
     expect(columnNames).toContain('_meta_data');
@@ -327,7 +353,7 @@ describe('getTestDatabase manifest schemas', () => {
     const columns = Array.isArray(columnsResult)
       ? columnsResult
       : columnsResult.rows;
-    const columnNames = columns.map((row: { name: string }) => row.name);
+    const columnNames = columns.map((row) => row.name);
 
     expect(columnNames).toContain('_meta_type');
     expect(columnNames).toContain('_meta_data');
@@ -344,7 +370,7 @@ describe('getTestDatabase manifest schemas', () => {
       },
     };
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/pkg:JsonIndexedThing',
       {
         className: 'JsonIndexedThing',
@@ -432,7 +458,7 @@ describe('getTestDatabase manifest schemas', () => {
       },
     };
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/fk:RegistryParent',
       {
         className: 'RegistryParent',
@@ -442,7 +468,7 @@ describe('getTestDatabase manifest schemas', () => {
       },
       '@test/fk',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/fk:RegistryChild',
       {
         className: 'RegistryChild',
@@ -478,7 +504,7 @@ describe('getTestDatabase manifest schemas', () => {
   });
 
   it('fails closed when JSON-on-DuckDB cannot enforce a registry FK action (#2413)', async () => {
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/fk:DuckRegistryParent',
       {
         className: 'DuckRegistryParent',
@@ -488,7 +514,7 @@ describe('getTestDatabase manifest schemas', () => {
       },
       '@test/fk',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/fk:DuckRegistryChild',
       {
         className: 'DuckRegistryChild',
@@ -517,7 +543,7 @@ describe('getTestDatabase manifest schemas', () => {
   });
 
   it('preserves explicit manifest FK actions in test-database DDL (#2413)', async () => {
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/fk:ActionParent',
       {
         className: 'ActionParent',
@@ -529,15 +555,12 @@ describe('getTestDatabase manifest schemas', () => {
           ddl: '',
           columns: { id: { type: 'TEXT', primaryKey: true } },
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: '2413',
         },
       },
       '@test/fk',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/fk:ActionChild',
       {
         className: 'ActionChild',
@@ -562,9 +585,6 @@ describe('getTestDatabase manifest schemas', () => {
             },
           },
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: ['action_parents'],
           version: '2413',
         },
       },
@@ -595,7 +615,7 @@ describe('getTestDatabase manifest schemas', () => {
   });
 
   it('does not restore a physical FK excluded by the authoritative manifest (#2413)', async () => {
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/fk:RuntimeOnlyParent',
       {
         className: 'RuntimeOnlyParent',
@@ -605,7 +625,7 @@ describe('getTestDatabase manifest schemas', () => {
       },
       '@test/fk',
     );
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/fk:RuntimeOnlyChild',
       {
         className: 'RuntimeOnlyChild',
@@ -613,7 +633,6 @@ describe('getTestDatabase manifest schemas', () => {
           parentId: {
             type: 'foreignKey',
             related: 'RuntimeOnlyParent.id',
-            __tenancy: { isTenantIdField: true },
             _meta: { __tenancy: { isTenantIdField: true } },
           },
         },
@@ -627,9 +646,6 @@ describe('getTestDatabase manifest schemas', () => {
             parent_id: { type: 'TEXT' },
           },
           indexes: [],
-          triggers: [],
-          foreignKeys: [],
-          dependencies: [],
           version: '2413',
         },
       },
@@ -659,7 +675,7 @@ describe('getTestDatabase manifest schemas', () => {
       targetClass: string,
       targetTable: string,
     ) =>
-      ObjectRegistry.registerFromManifest(
+      registerManifestFixture(
         `@test/cycle:${className}`,
         {
           className,
@@ -684,9 +700,6 @@ describe('getTestDatabase manifest schemas', () => {
               },
             },
             indexes: [],
-            triggers: [],
-            foreignKeys: [],
-            dependencies: [targetTable],
             version: '2413',
           },
         },
@@ -742,7 +755,7 @@ describe('getTestDatabase manifest schemas', () => {
   });
 
   it('maps collection subclasses to their inherited STI item schema before table creation', async () => {
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/messages:MessageCollection',
       {
         className: 'MessageCollection',
@@ -762,12 +775,13 @@ describe('getTestDatabase manifest schemas', () => {
       '@test/messages',
     );
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/messages:EmailCollection',
       {
         className: 'EmailCollection',
         extends: 'MessageCollection',
-        extendsTypeArg: null,
+        // Legacy manifests can encode an absent generic type argument as null.
+        extendsTypeArg: null as unknown as string,
         fields: {},
         methods: {},
         decoratorConfig: {
@@ -804,7 +818,7 @@ describe('getTestDatabase manifest schemas', () => {
       '@test/messages',
     );
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/messages:Message',
       {
         className: 'Message',
@@ -844,7 +858,7 @@ describe('getTestDatabase manifest schemas', () => {
     const columns = Array.isArray(columnsResult)
       ? columnsResult
       : columnsResult.rows;
-    const columnNames = columns.map((row: { name: string }) => row.name);
+    const columnNames = columns.map((row) => row.name);
 
     expect(columnNames).toContain('_meta_type');
     expect(columnNames).toContain('_meta_data');
@@ -853,7 +867,7 @@ describe('getTestDatabase manifest schemas', () => {
   });
 
   it('prefers collection subclass item inference over inherited type args', async () => {
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/messages:AttachmentCollection',
       {
         className: 'AttachmentCollection',
@@ -873,7 +887,7 @@ describe('getTestDatabase manifest schemas', () => {
       '@test/messages',
     );
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/messages:EmailAttachmentCollection',
       {
         className: 'EmailAttachmentCollection',
@@ -892,7 +906,7 @@ describe('getTestDatabase manifest schemas', () => {
       '@test/messages',
     );
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/messages:Attachment',
       {
         className: 'Attachment',
@@ -914,7 +928,7 @@ describe('getTestDatabase manifest schemas', () => {
       '@test/messages',
     );
 
-    ObjectRegistry.registerFromManifest(
+    registerManifestFixture(
       '@test/messages:EmailAttachment',
       {
         className: 'EmailAttachment',
@@ -954,9 +968,7 @@ describe('getTestDatabase manifest schemas', () => {
       ? attachmentColumnsResult
       : attachmentColumnsResult.rows;
 
-    expect(
-      emailAttachmentColumns.map((row: { name: string }) => row.name),
-    ).toContain('id');
+    expect(emailAttachmentColumns.map((row) => row.name)).toContain('id');
     expect(attachmentColumns).toHaveLength(0);
   });
 });

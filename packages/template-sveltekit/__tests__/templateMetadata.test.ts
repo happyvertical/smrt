@@ -60,10 +60,16 @@ describe('generated project metadata', () => {
   });
 
   it('uses the current migration command rather than deprecated db:setup', () => {
-    expect(packageJson.scripts['db:migrate']).toContain(
-      'smrt-prepare-migration.mjs',
+    expect(packageJson.scripts['db:migrate']).toBe(
+      'vite build && smrt app migrate',
     );
     expect(JSON.stringify(packageJson)).not.toContain('db:setup');
+  });
+
+  it('ships typecheck as a TypeScript pass plus svelte-check (standards §10)', () => {
+    expect(packageJson.scripts.typecheck).toBe(
+      'svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json',
+    );
   });
 
   it('keeps scanner-visible CRUD actions literal in the decorator', () => {
