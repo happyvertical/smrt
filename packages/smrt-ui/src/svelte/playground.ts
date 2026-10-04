@@ -15,6 +15,16 @@ export default {
     'Provider-free controls and data primitives rendered in the active s-m-r-t theme.',
   entries: [
     {
+      id: 'code-selectors',
+      title: 'Currency, Country & Province',
+      description:
+        'Localized code choices, retained values, and free-text regions.',
+      loadComponent: () => import('./playground/CodeSelectorsPreview.svelte'),
+      order: 8,
+      tags: ['forms', 'currency', 'address'],
+      modes: { mock: { label: 'Interactive' } },
+    },
+    {
       id: 'base-controls',
       title: 'Base Controls',
       description:
