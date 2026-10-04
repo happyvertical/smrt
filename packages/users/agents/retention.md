@@ -37,7 +37,7 @@ reap them.
   are pruned once past their own `retain_until` — written by the limiter from
   its configured window and streak-forgiveness horizon, so a custom-configured
   limiter is never swept early — and never while a lockout is live; audit
-  events after
+  events are pruned after
   `DEFAULT_LOGIN_AUDIT_RETENTION_DAYS` (90). A host that needs longer audit
   retention opts `users-login-audit-events` out and archives.
 - **All three are a single counted DELETE**, not a hydrate-and-delete loop.

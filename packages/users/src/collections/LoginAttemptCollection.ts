@@ -266,10 +266,14 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
   /**
    * Count one more failure after forgiving one earlier failure per full
    * `streakDecayMs` since the key's last failure. The elapsed time is
-   * computed here rather than in SQL so it is identical on every engine; the
-   * write is a compare-and-set on the streak it was computed from, retried on
-   * a concurrent change and falling back to a plain increment (never to
-   * forgiving more than was read).
+   * computed here rather than in SQL so it is identical on every engine. When
+   * nothing is forgiven the write is the plain atomic increment. Otherwise it
+   * is a compare-and-set on BOTH values the forgiveness was computed from —
+   * the streak and the last-failure time — so concurrent failures cannot
+   * each apply the same forgiveness: the loser re-reads, finds the last
+   * failure is now, forgives nothing and increments. (The streak alone is not
+   * a sufficient guard: forgiving one and adding one writes the same number
+   * back.) After repeated conflicts it falls back to the plain increment.
    */
   private async advanceDecayedStreak(
     input: RecordLoginFailureInput,
@@ -292,11 +296,12 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
         Number.isFinite(elapsedMs) && elapsedMs > 0
           ? Math.floor(elapsedMs / decayMs)
           : 0;
+      if (forgiven === 0 || streak === 0) break;
       const advanced = await this.db.query(
         `UPDATE ${this.tableName}
             SET failure_streak = ?, last_failed_at = ?, retain_until = ?,
                 updated_at = ?
-          WHERE limiter_key = ? AND failure_streak = ?
+          WHERE limiter_key = ? AND failure_streak = ? AND last_failed_at = ?
           RETURNING attempt_count, failure_streak`,
         Math.max(0, streak - forgiven) + 1,
         nowIso,
@@ -304,6 +309,7 @@ export class UsersLoginAttemptCollection extends SmrtCollection<UsersLoginAttemp
         nowIso,
         input.limiterKey,
         streak,
+        toIso(currentRow.last_failed_at),
       );
       if (advanced.rows?.[0]) return advanced.rows[0];
     }

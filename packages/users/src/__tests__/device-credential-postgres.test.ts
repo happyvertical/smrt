@@ -12,6 +12,7 @@ import {
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
 import { afterEach, describe, expect, it } from 'vitest';
+import { UsersLoginAttemptCollection } from '../collections/LoginAttemptCollection.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
@@ -199,6 +200,47 @@ describePostgres('DeviceCredentialService on PostgreSQL', () => {
     await expect(
       service.signInWithPin({ deviceToken, userId: ids.welder, pin: '2580' }),
     ).rejects.toBeInstanceOf(LoginRateLimitError);
+    // The source decay's compare-and-set matches on the stored last-failure
+    // timestamp, so it must round-trip exactly on PostgreSQL: two concurrent
+    // failures one decay interval after the last one forgive once, not twice.
+    const attempts = await UsersLoginAttemptCollection.create(options);
+    const key = `decay-${randomUUID()}`;
+    const reserveKey = () =>
+      attempts.reserveAttempt({
+        limiterKey: key,
+        scope: 'source',
+        maxAttempts: 50,
+        windowMs: 3_600_000,
+        streakResetMs: 86_400_000,
+        retainMs: 86_400_000,
+      });
+    const failKey = () =>
+      attempts.recordFailure({
+        limiterKey: key,
+        maxAttempts: 50,
+        retainMs: 86_400_000,
+        streakDecayMs: 600_000,
+        lockoutMsFor: () => 0,
+      });
+    for (let i = 0; i < 3; i++) {
+      await reserveKey();
+      await failKey();
+    }
+    await attempts.db.query(
+      `UPDATE ${attempts.tableName} SET last_failed_at = ? WHERE limiter_key = ?`,
+      new Date(Date.now() - 900_000).toISOString(),
+      key,
+    );
+    await reserveKey();
+    await reserveKey();
+    await Promise.all([failKey(), failKey()]);
+    const decayed = await attempts.db.query(
+      `SELECT failure_streak FROM ${attempts.tableName} WHERE limiter_key = ?`,
+      key,
+    );
+    // 3, minus one forgiven, plus two failures.
+    expect(Number(decayed.rows?.[0]?.failure_streak)).toBe(4);
+
     // A refused sign-in never signs the current person out.
     expect(
       await sessionService.loadSessionContext(foreman.sessionId),

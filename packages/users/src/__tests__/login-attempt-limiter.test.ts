@@ -392,6 +392,53 @@ describe('LoginAttemptLimiter', () => {
     expect((await typo()).retryAfterSeconds).toBe(60);
   });
 
+  it('applies a source’s forgiveness once when failures land concurrently', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+    const attempts = await UsersLoginAttemptCollection.create(options);
+    const key = 'source-key-under-test';
+    const reserve = () =>
+      attempts.reserveAttempt({
+        limiterKey: key,
+        scope: 'source',
+        maxAttempts: 50,
+        windowMs: 3_600_000,
+        streakResetMs: 86_400_000,
+        retainMs: 86_400_000,
+      });
+    const fail = () =>
+      attempts.recordFailure({
+        limiterKey: key,
+        maxAttempts: 50,
+        retainMs: 86_400_000,
+        streakDecayMs: 600_000,
+        lockoutMsFor: () => 0,
+      });
+    const streak = async () =>
+      Number(
+        (
+          await attempts.db.query(
+            `SELECT failure_streak FROM ${attempts.tableName} WHERE limiter_key = ?`,
+            key,
+          )
+        ).rows?.[0]?.failure_streak,
+      );
+
+    for (let i = 0; i < 4; i++) {
+      await reserve();
+      await fail();
+    }
+    expect(await streak()).toBe(4);
+
+    // One decay interval later, four failures arrive at once. Forgiving one
+    // and adding one writes the same number back, so a guard on the streak
+    // alone would let all four apply the forgiveness: 4 again, not 7.
+    vi.advanceTimersByTime(600_000);
+    for (let i = 0; i < 4; i++) await reserve();
+    await Promise.all([fail(), fail(), fail(), fail()]);
+    expect(await streak()).toBe(7);
+  });
+
   it('does not decay a subject’s streak, and honours a disabled source decay', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
