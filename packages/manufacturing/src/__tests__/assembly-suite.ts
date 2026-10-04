@@ -393,6 +393,28 @@ export function assemblySuite(
         expect(stored?.status).toBe('draft');
       });
 
+      it('refuses activating a stored draft through its natural key', async () => {
+        const frame = await assembly('Frame');
+        const panel = await assembly('Panel');
+        const frameDraft = await bill(frame.row.id!, 'draft', 1);
+        await line(frameDraft.id!, panel.sku.id!);
+        const panelBill = await bill(panel.row.id!);
+        await line(panelBill.id!, frame.sku.id!);
+
+        // A new instance with the stored (product, version) key would upsert
+        // onto the draft and activate its lines.
+        const error = await cycleOf(bill(frame.row.id!, 'active', 1));
+        expect(error.path.map((p) => p.name)).toEqual([
+          'Frame',
+          'Panel',
+          'Frame',
+        ]);
+        const stored = await boms.findByProduct(frame.row.id!);
+        expect(stored.map((b) => [b.id, b.status])).toEqual([
+          [frameDraft.id, 'draft'],
+        ]);
+      });
+
       it('allows a shared sub-assembly used twice in one structure', async () => {
         const frame = await assembly('Frame');
         const left = await assembly('Left panel');

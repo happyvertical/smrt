@@ -37,7 +37,7 @@ A sub-assembly is a `BomLine` whose component SKU belongs to an `Assembly`; ther
 | `findCycle(productId, componentSkuIds)` | The path by which those components would make `productId` contain itself, following sub-assemblies' **active** bills only; `null` when none. |
 | `assertLineAcyclic(line)` / `assertBillAcyclic(bom)` | Throw `BomCycleError` (a `ValidationError`, code `MANUFACTURING_BOM_CYCLE`, `path` from the product back to itself). |
 
-**Cycle refusal runs in the models.** `BomLine.validateBeforeSave` checks every line save (draft bills too, so a loop is refused when written); `BillOfMaterials.validateBeforeSave` checks every save of an `active` bill (activation). The generated REST routes go through `save()`, so they refuse cycles as well. Not covered: re-pointing a `Sku.productId` (owned by `smrt-products`) and two concurrent saves that each close half of a loop.
+**Cycle refusal runs in the models.** `BomLine.validateBeforeSave` checks every line save (draft bills too, so a loop is refused when written); `BillOfMaterials.validateBeforeSave` checks every save of an `active` bill (activation), including the lines of a stored bill with the same `(productId, version, tenantId)` that the save would upsert onto. The generated REST routes go through `save()`, so they refuse cycles as well. Not covered: re-pointing a `Sku.productId` (owned by `smrt-products`) and two concurrent saves that each close half of a loop.
 
 ## Svelte components (`./svelte`)
 

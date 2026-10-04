@@ -331,19 +331,37 @@ export class AssemblyService {
    * product contain itself. Bills in any other status are not part of the
    * structure and pass.
    *
+   * The lines checked are the bill's own and those of any stored bill with
+   * the same natural key (`productId`, `version`, `tenantId`): saving a new
+   * instance with that key upserts onto the stored bill and activates its
+   * lines, so they are part of what the save makes active.
+   *
    * @throws {BomCycleError} naming the path.
    */
   async assertBillAcyclic(
-    bom: Pick<BillOfMaterials, 'id' | 'productId' | 'status'>,
+    bom: Pick<
+      BillOfMaterials,
+      'id' | 'productId' | 'status' | 'version' | 'tenantId'
+    >,
   ): Promise<void> {
-    if (bom.status !== 'active' || !isUuid(bom.id)) return;
-    const lines = await this.lines.findByBom(bom.id);
-    if (lines.length === 0) return;
-    const path = await this.findCycle(
-      bom.productId,
-      lines.map((line) => line.componentSkuId),
-    );
-    if (path) throw new BomCycleError(bom.id, path);
+    if (bom.status !== 'active') return;
+    const billIds = new Set<string>();
+    if (isUuid(bom.id)) billIds.add(bom.id);
+    const sameKey = await this.boms.list({
+      where: { productId: bom.productId, version: bom.version },
+    });
+    for (const stored of sameKey) {
+      if (stored.id && (stored.tenantId ?? null) === (bom.tenantId ?? null))
+        billIds.add(stored.id);
+    }
+    const componentSkuIds: string[] = [];
+    for (const billId of billIds) {
+      for (const line of await this.lines.findByBom(billId))
+        componentSkuIds.push(line.componentSkuId);
+    }
+    if (componentSkuIds.length === 0) return;
+    const path = await this.findCycle(bom.productId, componentSkuIds);
+    if (path) throw new BomCycleError(bom.id || [...billIds][0] || '', path);
   }
 
   private resolveCached(
