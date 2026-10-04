@@ -64,10 +64,12 @@ export class UsersLoginAttempt extends SmrtObject {
   lockedUntil: Date | null = null;
 
   /**
-   * When this key last failed. The streak is forgiven once this is older
-   * than the limiter's streak horizon — measured from the last FAILURE, not
-   * the last activity, so a busy shared source (a tablet, an office address)
-   * still sheds old failures while it keeps being used.
+   * When this key last failed. The whole streak is forgiven once this is
+   * older than the limiter's streak horizon — measured from the last
+   * FAILURE, not the last activity. It is all-or-nothing: a shared source (a
+   * tablet, an office address) that sees a failure more often than the
+   * horizon never sheds its streak, so hosts tune `streakResetSeconds` for
+   * shared devices.
    */
   @field({ type: 'datetime', nullable: true })
   lastFailedAt: Date | null = null;

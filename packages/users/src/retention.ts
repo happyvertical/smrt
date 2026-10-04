@@ -32,10 +32,6 @@ import { UsersLoginAttemptCollection } from './collections/LoginAttemptCollectio
 import { UsersLoginAuditEventCollection } from './collections/LoginAuditEventCollection.js';
 import { UsersMagicLinkTokenCollection } from './collections/MagicLinkTokenCollection.js';
 import { SessionCollection } from './collections/SessionCollection.js';
-import {
-  DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS,
-  DEFAULT_LOGIN_LOCKOUT_MAX_SECONDS,
-} from './services/LoginAttemptLimiter.js';
 
 /** Retention task name for expired and revoked sessions. */
 export const SESSIONS_RETENTION_TASK = 'users-sessions';

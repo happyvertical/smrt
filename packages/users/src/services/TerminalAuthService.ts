@@ -340,8 +340,9 @@ export class TerminalAuthService {
       }
 
       // How to settle the reservation: a wrong/expired code keeps it (fail),
-      // an approval or idempotent re-approval hands it back and clears the
-      // streak (succeed), and an unexpected error hands it back untouched.
+      // the approval of a pending request hands it back and clears the
+      // streak (succeed), and an idempotent re-approval or an unexpected
+      // error hands it back untouched (release).
       let settle: 'fail' | 'succeed' | 'release' = 'release';
       try {
         const request = await this.getRequestForUserCode(input.userCode);
@@ -352,7 +353,9 @@ export class TerminalAuthService {
         if (request.status === 'approved' || request.status === 'consumed') {
           // Idempotent success — don't penalize a re-approval or a
           // double-click after the CLI already exchanged the approved token.
-          settle = 'succeed';
+          // Released, not `succeed`: re-submitting an old approved code must
+          // not clear the streak from guessing at other codes.
+          settle = 'release';
           return request;
         }
         if (request.status !== 'pending' || isExpired(request)) {
@@ -377,7 +380,7 @@ export class TerminalAuthService {
             concurrent?.status === 'approved' ||
             concurrent?.status === 'consumed'
           ) {
-            settle = 'succeed';
+            settle = 'release';
             return concurrent;
           }
           settle = 'fail';
