@@ -226,5 +226,8 @@ describe('validateAssemblyForm', () => {
   it('round-trips a price through the input format', () => {
     expect(formatPriceInput(125050)).toBe('1250.50');
     expect(formatPriceInput(5)).toBe('0.05');
+    expect(formatPriceInput(-123)).toBe('-1.23');
+    expect(formatPriceInput(1300, 0)).toBe('1300');
+    expect(formatPriceInput(1234, 3)).toBe('1.234');
   });
 });

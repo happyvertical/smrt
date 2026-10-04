@@ -64,6 +64,7 @@ export {
   type CompletionQtyValidation,
   type ComponentKind,
   componentKindLabelKey,
+  currencyExponent,
   formatPriceInput,
   isProductionRunOpen,
   keepProtectedFields,

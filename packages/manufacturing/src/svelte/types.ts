@@ -180,23 +180,49 @@ export type AssemblyFormValidation =
   | { ok: true; values: AssemblyFormValues }
   | { ok: false; invalid: AssemblyFormInvalidField[] };
 
-/** Format integer minor units as the major-unit text the price field shows. */
-export function formatPriceInput(minorUnits: number): string {
-  if (!Number.isSafeInteger(minorUnits) || minorUnits <= 0) return '0.00';
-  const whole = Math.floor(minorUnits / 100);
-  return `${whole}.${String(minorUnits - whole * 100).padStart(2, '0')}`;
+/**
+ * The number of decimal places in a currency's minor unit (2 for USD, 0 for
+ * JPY, 3 for KWD), as `Intl` knows it; 2 when the code is not recognized.
+ */
+export function currencyExponent(currency: string): number {
+  try {
+    return (
+      new Intl.NumberFormat('en', {
+        style: 'currency',
+        currency,
+      }).resolvedOptions().maximumFractionDigits ?? 2
+    );
+  } catch {
+    return 2;
+  }
+}
+
+/**
+ * Format integer minor units as the major-unit text the price field shows,
+ * with `exponent` decimals. A negative value keeps its sign so validation
+ * reports it instead of replacing it.
+ */
+export function formatPriceInput(minorUnits: number, exponent = 2): string {
+  if (!Number.isSafeInteger(minorUnits)) return formatPriceInput(0, exponent);
+  const sign = minorUnits < 0 ? '-' : '';
+  const abs = Math.abs(minorUnits);
+  if (exponent <= 0) return `${sign}${abs}`;
+  const scale = 10 ** exponent;
+  const whole = Math.floor(abs / scale);
+  return `${sign}${whole}.${String(abs - whole * scale).padStart(exponent, '0')}`;
 }
 
 /** The draft `AssemblyForm` starts from for an assembly, or a blank one. */
 export function assemblyFormDraft(
   initial: AssemblyFormInitial | null,
+  exponent = 2,
 ): AssemblyFormDraft {
   return {
     name: initial?.name ?? '',
     description: initial?.description ?? '',
     category: initial?.category ?? '',
     partReference: initial?.partReference ?? '',
-    price: formatPriceInput(initial?.price ?? 0),
+    price: formatPriceInput(initial?.price ?? 0, exponent),
     estimatedLabourMinutes: String(initial?.estimatedLabourMinutes ?? 0),
     defaultOperationId: initial?.defaultOperationId ?? '',
     tags: (initial?.tags ?? []).join(', '),
@@ -243,12 +269,14 @@ function parseTags(raw: string): string[] {
  * Trim a form draft and check it the way the model does: the name is
  * required, the labour estimate is a whole number of minutes of zero or more
  * (empty counts as zero), and the price is an amount of zero or more with at
- * most two decimals (empty counts as zero). Fields in `skip` (hidden or
+ * most `exponent` decimals (empty counts as zero; 2 unless the currency says
+ * otherwise). Fields in `skip` (hidden or
  * read-only in the form) are not checked.
  */
 export function validateAssemblyForm(
   draft: Readonly<Partial<AssemblyFormDraft>>,
   skip: readonly AssemblyFormField[] = [],
+  exponent = 2,
 ): AssemblyFormValidation {
   const invalid: AssemblyFormInvalidField[] = [];
   const name = textOf(draft.name);
@@ -263,9 +291,12 @@ export function validateAssemblyForm(
   }
   let price = 0;
   if (priceText !== '') {
-    const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(priceText);
+    const match = new RegExp(
+      exponent > 0 ? `^(\\d+)(?:\\.(\\d{1,${exponent}}))?$` : '^(\\d+)$',
+    ).exec(priceText);
     price = match
-      ? Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'))
+      ? Number(match[1]) * 10 ** exponent +
+        Number((match[2] ?? '').padEnd(exponent, '0') || 0)
       : Number.NaN;
   }
 

@@ -44,8 +44,7 @@ export const M = defineMessages({
   'manufacturing.assembly_form.part_reference_help':
     'Optional. Your own drawing or part number, alongside the SKU code.',
   'manufacturing.assembly_form.price': 'Price',
-  'manufacturing.assembly_form.price_help':
-    'Amount in {currency}, for example 1250.00.',
+  'manufacturing.assembly_form.price_help': 'Amount in {currency}.',
   'manufacturing.assembly_form.labour': 'Estimated labour (minutes)',
   'manufacturing.assembly_form.labour_help':
     'Whole minutes to build one unit. 0 means not estimated.',
@@ -64,7 +63,7 @@ export const M = defineMessages({
   'manufacturing.assembly_form.cancel': 'Cancel',
   'manufacturing.assembly_form.error_name': 'Enter a name.',
   'manufacturing.assembly_form.error_price':
-    'Enter a price of zero or more, with at most two decimals.',
+    'Enter a price of zero or more, with no more decimals than the currency has.',
   'manufacturing.assembly_form.error_labour':
     'Enter a whole number of minutes, zero or more.',
 

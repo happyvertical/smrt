@@ -26,6 +26,7 @@ import {
   type AssemblyFormInvalidField,
   type AssemblyFormValues,
   assemblyFormDraft,
+  currencyExponent,
   keepProtectedFields,
   type OperationView,
   validateAssemblyForm,
@@ -64,10 +65,14 @@ const {
 }: AssemblyFormProps = $props();
 
 const uid = $props.id();
+const exponent = $derived(currencyExponent(currency));
 const isNew = $derived(assembly === null);
 
 function getInitialFormState() {
-  return { assembly, draft: assemblyFormDraft(assembly) };
+  return {
+    assembly,
+    draft: assemblyFormDraft(assembly, currencyExponent(currency)),
+  };
 }
 
 const initialFormState = getInitialFormState();
@@ -88,7 +93,7 @@ let appliedAssembly: AssemblyFormInitial | null = initialFormState.assembly;
 $effect(() => {
   if (appliedAssembly === assembly) return;
   appliedAssembly = assembly;
-  const draft = assemblyFormDraft(assembly);
+  const draft = assemblyFormDraft(assembly, exponent);
   name = draft.name;
   description = draft.description;
   category = draft.category;
@@ -169,28 +174,37 @@ function describedBy(
   return ids.filter(Boolean).join(' ') || undefined;
 }
 
-const protectedFields = $derived([...hiddenFields, ...readonlyFields]);
+const policyProtected = $derived([...hiddenFields, ...readonlyFields]);
 
 function handleSubmit() {
-  const result = validateAssemblyForm(
-    {
-      name,
-      description,
-      category,
-      partReference,
-      price,
-      estimatedLabourMinutes,
-      defaultOperationId,
-      tags,
-    },
-    protectedFields,
+  const draft = {
+    name,
+    description,
+    category,
+    partReference,
+    price,
+    estimatedLabourMinutes,
+    defaultOperationId,
+    tags,
+  };
+  // A field the reader left as it was keeps its stored value exactly (a tag
+  // with a comma, a price this form cannot express); the name is always checked.
+  const initialDraft = assemblyFormDraft(assembly, exponent);
+  const untouched = (Object.keys(draft) as AssemblyFormField[]).filter(
+    (field) => field !== 'name' && draft[field] === initialDraft[field],
   );
-  if (!result.ok) {
-    invalid = result.invalid;
+  const protectedFields = [...policyProtected, ...untouched];
+  const result = validateAssemblyForm(draft, policyProtected, exponent);
+  const checked =
+    result.ok || untouched.length === 0
+      ? result
+      : validateAssemblyForm(draft, protectedFields, exponent);
+  if (!checked.ok) {
+    invalid = checked.invalid;
     return;
   }
   invalid = [];
-  onsubmit(keepProtectedFields(result.values, assembly, protectedFields));
+  onsubmit(keepProtectedFields(checked.values, assembly, protectedFields));
 }
 </script>
 

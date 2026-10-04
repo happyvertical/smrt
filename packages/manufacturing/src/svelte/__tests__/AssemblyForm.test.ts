@@ -41,6 +41,76 @@ const operations = [
 ];
 
 describe('AssemblyForm', () => {
+  it('keeps untouched fields exactly as stored: negative price, comma tag', async () => {
+    const odd: AssemblyFormInitial = {
+      ...existing,
+      price: -123,
+      tags: ['steel, frame', 'steel'],
+    };
+    const onsubmit = vi.fn();
+    render(AssemblyForm, { props: { assembly: odd, onsubmit, operations } });
+    await userEvent.type(screen.getByLabelText(/Name/), '!');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await vi.waitFor(() =>
+      expect(onsubmit).toHaveBeenCalledExactlyOnceWith({
+        ...odd,
+        name: 'Frame!',
+      }),
+    );
+  });
+
+  it('shows and rejects a negative price once the reader edits it', async () => {
+    const onsubmit = vi.fn();
+    render(AssemblyForm, {
+      props: { assembly: { ...existing, price: -123 }, onsubmit, operations },
+    });
+    expect(screen.getByLabelText('Price')).toHaveValue('-1.23');
+    await userEvent.type(screen.getByLabelText('Price'), '0');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole('alert')).toBeInTheDocument(),
+    );
+    expect(onsubmit).not.toHaveBeenCalled();
+  });
+
+  it('uses the currency exponent for the price: JPY has none, KWD three', async () => {
+    const onsubmit = vi.fn();
+    const jpy = render(AssemblyForm, {
+      props: {
+        assembly: { ...existing, price: 1300 },
+        onsubmit,
+        operations,
+        currency: 'JPY',
+      },
+    });
+    expect(screen.getByLabelText('Price')).toHaveValue('1300');
+    const price = screen.getByLabelText('Price');
+    await userEvent.clear(price);
+    await userEvent.type(price, '1500');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await vi.waitFor(() =>
+      expect(onsubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ price: 1500 }),
+      ),
+    );
+    jpy.unmount();
+    const kwd = vi.fn();
+    render(AssemblyForm, {
+      props: { onsubmit: kwd, operations, currency: 'KWD' },
+    });
+    const field = screen.getByLabelText('Price');
+    expect(field).toHaveValue('0.000');
+    await userEvent.clear(field);
+    await userEvent.type(field, '1.234');
+    await userEvent.type(screen.getByLabelText(/Name/), 'Gate');
+    await userEvent.click(screen.getByRole('button', { name: 'Add assembly' }));
+    await vi.waitFor(() =>
+      expect(kwd).toHaveBeenCalledWith(
+        expect.objectContaining({ price: 1234 }),
+      ),
+    );
+  });
+
   it('passes hidden and read-only values through exactly as stored', async () => {
     const odd: AssemblyFormInitial = {
       ...existing,
@@ -155,7 +225,7 @@ describe('AssemblyForm', () => {
     expect(screen.getByText('Enter a name.')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Enter a price of zero or more, with at most two decimals.',
+        'Enter a price of zero or more, with no more decimals than the currency has.',
       ),
     ).toBeInTheDocument();
     expect(
