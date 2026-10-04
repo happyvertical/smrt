@@ -249,8 +249,9 @@ included, pass canonical lowercase UUIDs yourself.
 
 Nothing in the package runs on a schedule. Call
 `qualifications.sweepExpired(today)` from your own scheduler to record lapsed
-qualifications and receive `held-qualification.expired`. Reminders are the
-application's business.
+qualifications and receive `held-qualification.expired`. It decides by date,
+so a ticket that runs out while suspended, or during a notice period, is
+recorded too. Reminders are the application's business.
 
 ## Extending Employment
 

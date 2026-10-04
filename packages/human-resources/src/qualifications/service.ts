@@ -654,13 +654,6 @@ export class QualificationService extends HrService {
           'HR_STATUS_TRANSITION',
           'A suspended qualification cannot be renewed; reinstate it first.',
         );
-      // Earlier rows of this chain are all renewed, so any other latest row
-      // belongs to a different chain.
-      if ((await this.liveChains(db, siblings, issuedOn, priorId)).length > 0)
-        throw new HrError(
-          'HR_ALREADY_HELD',
-          'This person holds another grant of this qualification outside this renewal chain; renew that one, or revoke it first.',
-        );
       const definition = await this.grantable(db, prior.qualificationId);
       const expiresOn = resolveExpiry(definition, issuedOn, input.expiresOn);
       const { employmentId, endsOn } = await this.employmentFor(
@@ -673,14 +666,43 @@ export class QualificationService extends HrService {
       // The earlier cutoff wins; on the same day the employment end is the
       // reason kept.
       const ended = employmentEnd(endsOn);
+      const revocation =
+        ended !== null && (pending === null || ended.on <= pending.on)
+          ? ended
+          : pending;
+      // Earlier rows of this chain are all renewed, so any other latest row
+      // belongs to a different chain. One that only starts on or after the
+      // day this renewal is cut off never overlaps it, whichever of the two
+      // was recorded first.
+      const byId = new Map(siblings.map((row) => [row.id as string, row]));
+      const startsOn = (row: HeldQualification): IsoDate => {
+        let first = row.issuedOn;
+        const seen = new Set<string>();
+        for (
+          let member: HeldQualification | undefined = row;
+          member && !seen.has(member.id as string);
+          member = member.renewalOfId ? byId.get(member.renewalOfId) : undefined
+        ) {
+          seen.add(member.id as string);
+          if (member.issuedOn < first) first = member.issuedOn;
+        }
+        return first;
+      };
+      const overlapping = (
+        await this.liveChains(db, siblings, issuedOn, priorId)
+      ).filter(
+        (other) => revocation === null || startsOn(other.row) < revocation.on,
+      );
+      if (overlapping.length > 0)
+        throw new HrError(
+          'HR_ALREADY_HELD',
+          'This person holds another grant of this qualification outside this renewal chain that overlaps the renewal; renew that one, or revoke it first.',
+        );
       const row = await this.insertHeld(db, queue, 'renewed', {
         qualificationId: prior.qualificationId,
         profileId: prior.profileId,
         employmentId,
-        revocation:
-          ended !== null && (pending === null || ended.on <= pending.on)
-            ? ended
-            : pending,
+        revocation,
         issuedOn,
         expiresOn,
         renewalOfId: priorId,
@@ -803,23 +825,47 @@ export class QualificationService extends HrService {
   }
 
   /**
-   * Store the `expired` status on valid rows whose last day is before `today`.
-   * The application calls this from its own scheduler; checks never depend on
-   * it. Idempotent. Emits `held-qualification.expired`, and returns the row,
-   * only for qualifications that were not renewed.
+   * Record the lapse of every qualification whose last day is before `today`
+   * and that was still in force on it: an `expired` change dated the day
+   * after `expiresOn`. The application calls this from its own scheduler;
+   * checks never depend on it. Idempotent: a row is recorded once.
+   *
+   * Which rows lapsed is decided by date, not by the stored status, so a
+   * ticket that runs out while a suspension is in force, or while a
+   * revocation is recorded for a later day (a notice period), is recorded
+   * too. A row revoked on or before the day after `expiresOn` did not lapse:
+   * it was revoked. The stored status becomes `expired` only on a row stored
+   * `valid`; a stored `suspended` or `revoked` stays as it is.
+   *
+   * Emits `held-qualification.expired`, and returns the row, only for
+   * qualifications that were not renewed.
    */
   async sweepExpired(today: IsoDate): Promise<HeldQualification[]> {
     assertIsoDate('today', today);
     const ids = await this.transact(async (db, queue) => {
-      const due = (
-        await this.rows(db, { status: 'valid', 'expiresOn <': today })
+      const candidates = (
+        await this.rows(db, {
+          status: ['valid', 'suspended', 'revoked'],
+          'expiresOn <': today,
+        })
       ).filter((row) => row.expiresOn != null);
+      const changes = await this.changesByHeld(db, candidates);
+      const due = candidates.filter((row) => {
+        const history = changes.get(row.id as string) ?? [];
+        if (history.some((change) => change.kind === 'expired')) return false;
+        const revokedOn = revokedFrom(history);
+        return (
+          revokedOn === null || revokedOn > addDays(row.expiresOn as IsoDate, 1)
+        );
+      });
       const superseded = await this.supersededIds(db, due);
       const emitted: string[] = [];
       for (const row of due) {
         const effectiveOn = addDays(row.expiresOn as IsoDate, 1);
-        row.status = 'expired';
-        await persistHr(row);
+        if (row.status === 'valid') {
+          row.status = 'expired';
+          await persistHr(row);
+        }
         await this.recordChange(db, row, 'expired', effectiveOn, '');
         if (superseded.has(row.id as string)) continue;
         this.announce(queue, 'held-qualification.expired', row, effectiveOn);

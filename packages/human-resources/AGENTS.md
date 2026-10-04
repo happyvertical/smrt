@@ -73,8 +73,8 @@ with the root database handle, never one that is already inside a transaction
   suspension, reinstatement or earlier revocation of one is a further change
   row, never an edit.
 - **A stored qualification status is "the last change recorded", not
-  standing, and no rule decides standing from it.** `revoke` and `suspend` store their status
-  at once even when `effectiveOn` is ahead, and `reinstate` stores `valid`
+  standing, and no rule decides standing from it.** `revoke` and `suspend`
+  store their status at once even when `effectiveOn` is ahead, and `reinstate` stores `valid`
   even when it takes effect later (`expired` if the sweep had stored that).
   The one sticky value is `revoked`: once stored it stays, whatever is
   recorded afterwards. Every rule decides from the dated history, as `check`
@@ -132,9 +132,12 @@ with the root database handle, never one that is already inside a transaction
   (`HR_INVALID`: the renewal would answer for dates the history says were
   suspended); a row suspended on `issuedOn` by replay
   (`HR_STATUS_TRANSITION`: reinstate first); a row revoked on or before
-  `issuedOn` (`HR_INVALID`); and a person who holds another chain not revoked
-  on or before `issuedOn` (`HR_ALREADY_HELD`; only rows written outside the
-  service can get there).
+  `issuedOn` (`HR_INVALID`); and a person who holds another chain that is not
+  revoked on or before `issuedOn` and overlaps the renewal
+  (`HR_ALREADY_HELD`). A chain that only starts on or after the day the
+  renewal is cut off (its carried revocation) does not overlap, so a lapsed
+  ticket can be renewed up to its scheduled revocation even when the next
+  grant, dated from that day, was recorded first.
 - **A renewal carries a pending cutoff forward.** A row whose revocation
   takes effect after `issuedOn` is still in force and is renewed normally;
   replay only propagates standing from later rows to earlier ones, so the
@@ -174,11 +177,14 @@ with the root database handle, never one that is already inside a transaction
 - **Expiry is computed.** A check on a date reads `expiresOn`; the stored
   `expired` status is written only by `QualificationService.sweepExpired()`,
   which the application calls from its own scheduler; it is bookkeeping and
-  no rule reads standing from it. The sweep itself selects rows stored
-  `valid`, so a ticket that lapses while a suspension or revocation is
-  recorded (stored `suspended` / `revoked`, for example during a notice
-  period) gets no `expired` change or event; `check` still answers `expired`
-  for it. `expiringWithin(days, today,
+  no rule reads standing from it. The sweep decides which rows lapsed by
+  date: every row whose last day is before `today`, that has no `expired`
+  change yet and was not revoked on or before the day after `expiresOn`,
+  gets an `expired` change and (unless it was renewed) the event. That
+  includes a ticket that runs out while suspended, or while a revocation is
+  recorded for a later day (a notice period). Only a row stored `valid` has
+  its stored status set to `expired`; a stored `suspended` or `revoked`
+  stays. `expiringWithin(days, today,
   { employedOnly })` lists rows that are good on `today` by the same dated
   evaluation as `check` (issued by `today`, not suspended or revoked on it,
   not renewed) and can keep only people employed on `today`.

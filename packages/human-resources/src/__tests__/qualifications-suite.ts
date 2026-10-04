@@ -83,6 +83,14 @@ export function qualificationsSuite(
       return [...employmentEvents];
     }
 
+    /** A held qualification's dated changes as `[kind, effectiveOn, reason]`. */
+    const historyOf = async (id: unknown) =>
+      (await service.history(id as string)).map((change) => [
+        change.kind,
+        change.effectiveOn,
+        change.reason,
+      ]);
+
     const firstAid = () =>
       service.define({
         key: 'first-aid',
@@ -1121,6 +1129,48 @@ export function qualificationsSuite(
         expect(await listed('2025-12-31')).toEqual([
           [renewal.id, 'not-yet-issued'],
         ]);
+      });
+
+      it('renews a lapsed ticket up to its scheduled revocation even after the next grant was recorded from that day', async () => {
+        const ticket = await firstAid();
+        const qualificationId = ticket.id as string;
+        const profileId = uuid();
+        const first = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2026-01-01',
+          expiresOn: '2026-05-31',
+        });
+        await service.revoke(first.id as string, {
+          effectiveOn: '2026-07-01',
+          reason: 'replaced by the new scheme',
+        });
+        const next = await service.grant({
+          qualificationId,
+          profileId,
+          issuedOn: '2026-07-01',
+          expiresOn: '2027-06-30',
+        });
+        // The June gap is closed although the July grant was recorded first:
+        // the renewal is cut off on the day the other grant starts.
+        const renewal = await service.renew(first.id as string, {
+          issuedOn: '2026-06-01',
+          expiresOn: '2026-12-31',
+        });
+        expect(await historyOf(renewal.id)).toEqual([
+          ['renewed', '2026-06-01', ''],
+          ['revoked', '2026-07-01', 'replaced by the new scheme'],
+        ]);
+        const on = (date: string) =>
+          service.check(profileId, qualificationId, date);
+        expect(await on('2026-06-15')).toMatchObject({
+          ok: true,
+          heldQualificationId: renewal.id,
+        });
+        expect(await on('2026-07-01')).toMatchObject({
+          ok: true,
+          heldQualificationId: next.id,
+        });
       });
 
       it('refuses to renew an old row while the person holds a newer grant outside its chain', async () => {
@@ -2627,6 +2677,88 @@ export function qualificationsSuite(
     });
 
     describe('the expiry sweep', () => {
+      it('records a lapse during a notice period or a suspension, decided by date and only once', async () => {
+        const pass = await service.define({
+          key: 'site-pass',
+          name: 'Site pass',
+          kind: 'authorization',
+          expires: true,
+        });
+        const ticket = await firstAid();
+        const worker = uuid();
+        const employmentId = await hire(worker, '2026-01-01');
+        // In force until its last day, with the employment end recorded ahead.
+        const onNotice = await service.grant({
+          qualificationId: pass.id as string,
+          profileId: worker,
+          issuedOn: '2026-01-01',
+          expiresOn: '2026-11-15',
+        });
+        await endEmployment(employmentId, '2026-12-31');
+        // Runs out while a suspension is in force.
+        const suspended = await service.grant({
+          qualificationId: ticket.id as string,
+          profileId: uuid(),
+          issuedOn: '2026-01-01',
+          expiresOn: '2026-10-31',
+        });
+        await service.suspend(suspended.id as string, {
+          effectiveOn: '2026-09-01',
+          reason: 'under review',
+        });
+        // Revoked before its last day: it never lapsed.
+        const revokedFirst = await service.grant({
+          qualificationId: ticket.id as string,
+          profileId: uuid(),
+          issuedOn: '2026-01-01',
+          expiresOn: '2026-10-31',
+        });
+        await service.revoke(revokedFirst.id as string, {
+          effectiveOn: '2026-06-01',
+          reason: 'withdrawn',
+        });
+
+        events.length = 0;
+        const swept = await service.sweepExpired('2026-11-20');
+        expect(swept.map((row) => row.id).sort()).toEqual(
+          [onNotice.id, suspended.id].sort(),
+        );
+        expect(
+          events
+            .map((event) => [event.type, event.effectiveOn])
+            .sort((a, b) => a[1].localeCompare(b[1])),
+        ).toEqual([
+          ['held-qualification.expired', '2026-11-01'],
+          ['held-qualification.expired', '2026-11-16'],
+        ]);
+        // The stored status is left alone unless it was `valid`.
+        expect(
+          (await service.listForProfile(worker, '2026-11-20'))[0],
+        ).toMatchObject({
+          held: { id: onNotice.id, status: 'revoked' },
+          status: 'expired',
+        });
+        expect(await historyOf(onNotice.id)).toContainEqual([
+          'expired',
+          '2026-11-16',
+          '',
+        ]);
+        expect(await historyOf(revokedFirst.id)).toEqual([
+          ['granted', '2026-01-01', ''],
+          ['revoked', '2026-06-01', 'withdrawn'],
+        ]);
+
+        // Idempotent, and a later reinstatement of the lapsed row stores `expired`.
+        events.length = 0;
+        expect(await service.sweepExpired('2026-12-01')).toEqual([]);
+        expect(events).toEqual([]);
+        const reinstated = await service.reinstate(suspended.id as string, {
+          effectiveOn: '2026-12-01',
+        });
+        expect(reinstated.status).toBe('expired');
+        expect(await service.sweepExpired('2026-12-02')).toEqual([]);
+      });
+
       it('stores expired once, dates the change the day after expiry, and only announces tickets nobody renewed', async () => {
         const ticket = await firstAid();
         const qualificationId = ticket.id as string;
