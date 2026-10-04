@@ -298,3 +298,32 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
     'Image Studio',
   );
 });
+
+
+for (const entry of ['invoice-actions', 'quote-editor']) {
+  test(`390px host contains ${entry} after navigation closes`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await expect(page.locator('.workbench-shell-root')).toHaveAttribute('data-hydrated', 'true');
+    await page.getByPlaceholder('Package name or description').fill('smrt-commerce');
+    const sectionList = page.locator('.package-node--selected .section-list');
+    if (!(await sectionList.count())) {
+      await page.locator('[data-workbench-package="@happyvertical/smrt-commerce"]').click();
+    }
+    await page.locator(`[data-workbench-playground-entry="@happyvertical/smrt-commerce:${entry}"]`).click();
+    const preview = page.getByTestId('playground-preview-stage');
+    await expect(preview.getByRole('button', { name: entry === 'quote-editor' ? 'Save draft' : 'Mark as Paid', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Close navigation', exact: true }).click();
+    await expect(page.locator('#smrt-admin-shell-left-panel')).toHaveAttribute('data-state', 'collapsed');
+    // Consumer project/worktree paths may contain a single long directory name.
+    await page.getByTestId('workbench-scope').evaluate(element => {
+      element.textContent = `/workspace/${'longcheckoutdirectory'.repeat(5)}`;
+    });
+    await expect.poll(() => page.locator('.workbench-main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const bounds = await preview.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+    await expect(page.locator('.smrt-admin-shell__main').evaluate(element => element.scrollWidth <= element.clientWidth)).resolves.toBe(true);
+  });
+}
