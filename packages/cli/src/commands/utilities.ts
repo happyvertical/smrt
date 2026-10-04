@@ -312,6 +312,8 @@ interface IntrospectOptions {
 
 interface TestOptions {
   output?: string;
+  'manifest-only'?: boolean;
+  /** Compatibility for callers invoking the command handler directly. */
   manifestOnly?: boolean;
 }
 
@@ -1031,7 +1033,7 @@ export default testManifest;
         console.log(`   TS:      ${tsPath}\n`);
 
         // Run tests if requested
-        if (!options.manifestOnly) {
+        if (!(options['manifest-only'] ?? options.manifestOnly)) {
           console.log('🧪 Running tests...\n');
 
           const { spawn } = await import('node:child_process');
