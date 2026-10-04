@@ -246,6 +246,7 @@ Call sites keep their historical order through options: the chat dev routes pass
 | `resolveConfiguredApplicationRuntime()` | Resolve effective file plus runtime-overridden profile config |
 | `resolveEffectiveApplicationRuntime(config)` | Same, but no `runtime` block (file or override) selects `local`; a present non-block value fails closed |
 | `getApplicationRuntimePreset(profile)` | Inspect an immutable copy of a profile preset |
+| `resolveCliDatabaseConfig(env?)` | The `smrt` / `smrt-dev-mcp` database: configured `packages.cli.database.url`, else `DATABASE_URL` / `DATABASE_TYPE` (read-only) |
 | `mergeExportedConfig(baseConfig, exportedConfig)` | Merge an exported config over a base |
 | `parseExportedConfig(raw)` | Parse an exported config string |
 | `resolveAIProviderConfig(options?)` / `tryResolveAIProviderConfig(options?)` | Pure resolver (throws / returns `undefined` when unconfigured) |

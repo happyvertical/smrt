@@ -5,8 +5,11 @@
  * Resolution order per call:
  *   1. explicit `dbUrl`/`dbType` tool arguments
  *   2. `SMRT_DEV_DB_URL` environment variable
- *   3. the project's cosmiconfig CLI section (`getPackageConfig('cli', ...)`
- *      from `@happyvertical/smrt-config`) → `database.{type,url}`
+ *   3. the project's cosmiconfig CLI section → `database.{type,url}`, else
+ *      `DATABASE_URL`/`DATABASE_TYPE` — the `smrt` CLI's own precedence,
+ *      through `resolveCliDatabaseConfig()` from the project's
+ *      `@happyvertical/smrt-config` (#3446; an older install without it
+ *      reads only `getPackageConfig('cli', ...)`)
  *
  * No configured connection → `db: null` with `source: 'none'`; callers return
  * a successful static-only envelope. A connection is always opened lazily per
@@ -282,7 +285,7 @@ export async function resolveRuntimeConnection(
     });
     return {
       db,
-      source: 'config',
+      source: config.source ?? 'config',
       displayUrl: redactConnectionString(configUrl),
       databaseType,
     };
@@ -293,6 +296,14 @@ export async function resolveRuntimeConnection(
 
 interface DatabaseConfigLike {
   database?: { type?: string; url?: string };
+  /** `environment` when `DATABASE_URL` supplied the database. */
+  source?: 'config' | 'environment';
+}
+
+/** The project's smrt-config `resolveCliDatabaseConfig()` result shape. */
+interface CliDatabaseResolution {
+  source?: unknown;
+  database?: { type?: unknown; url?: unknown } | null;
 }
 
 async function loadCliDatabaseConfig(
@@ -313,6 +324,9 @@ async function loadCliDatabaseConfig(
         name: string,
         defaults: Record<string, unknown>,
       ) => unknown;
+      resolveCliDatabaseConfig?: (
+        env: Record<string, string | undefined>,
+      ) => CliDatabaseResolution;
     }>(projectPath, '@happyvertical/smrt-config');
     if (
       typeof configModule.loadConfig !== 'function' ||
@@ -323,6 +337,30 @@ async function loadCliDatabaseConfig(
       searchFrom: projectRuntimeRoot(projectPath),
       cache: false,
     });
+    if (typeof configModule.resolveCliDatabaseConfig === 'function') {
+      // Same precedence as the `smrt` CLI: a configured URL wins and the
+      // environment is not read; otherwise DATABASE_URL/DATABASE_TYPE.
+      const resolved = configModule.resolveCliDatabaseConfig(process.env);
+      const url = resolved?.database?.url;
+      if (
+        (resolved.source === 'config' || resolved.source === 'environment') &&
+        typeof url === 'string'
+      ) {
+        const type = resolved.database?.type;
+        return {
+          source: resolved.source,
+          database: {
+            // A typeless configured URL keeps the CLI's sqlite default.
+            type:
+              typeof type === 'string'
+                ? type
+                : DEFAULT_CLI_DATABASE.database.type,
+            url,
+          },
+        };
+      }
+      return {};
+    }
     const config = configModule.getPackageConfig(
       'cli',
       DEFAULT_CLI_DATABASE as unknown as Record<string, unknown>,

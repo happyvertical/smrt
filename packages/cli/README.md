@@ -378,7 +378,8 @@ Every `db:*` command resolves its database once, at startup:
 
 `smrt app setup` and `smrt app migrate` hand `smrt db:migrate` the profile's
 database through step 2, so an application does not forward
-`DATABASE_URL` in its own config.
+`DATABASE_URL` in its own config. The rule is smrt-config's
+`resolveCliDatabaseConfig()`, which `smrt-dev-mcp` uses too.
 
 ### Entry Point Discovery
 

@@ -25,6 +25,7 @@ Configuration management with cosmiconfig, secret sanitization, and SSG export.
 | `resolveEffectiveApplicationRuntime(config)` | The `smrt app` / SvelteKit runtime rule: no `runtime` block in either layer → `local`; a present non-block value (`null`/`false`/`0`/`''`) fails closed |
 | `resolveConfiguredAIProvider()` / `tryResolveAIProviderConfig()` | One AI provider resolver (`src/ai.ts`): explicit > `ai` block > `SMRT_AI_*`/`HAVE_AI_*` env > selected provider's key var > auto-detect; see README |
 | `getApplicationRuntimePreset(profile)` | Inspect a profile's safe provider defaults |
+| `resolveCliDatabaseConfig(env?)` | CLI database precedence shared by `smrt` and `smrt-dev-mcp`: declared `packages.cli.database.url` > `DATABASE_URL` (engine: config type > `DATABASE_TYPE` > scheme); read-only (`src/database-environment.ts`) |
 
 ## Key Files
 

@@ -4,6 +4,10 @@ import {
   resolveAIProviderConfig,
   tryResolveAIProviderConfig,
 } from './ai.js';
+import {
+  type ResolvedCliDatabase,
+  resolveCliDatabase,
+} from './database-environment.js';
 import { loadConfig as _loadConfig, clearConfigCache } from './loader.js';
 import {
   setConfig as _setConfig,
@@ -41,6 +45,13 @@ export {
   tryResolveAIProviderConfig,
   withAIAliases,
 } from './ai.js';
+
+// Re-export the CLI database environment fallback types
+export type {
+  CliDatabaseSource,
+  CliDatabaseType,
+  ResolvedCliDatabase,
+} from './database-environment.js';
 
 // Re-export config export utilities
 export {
@@ -417,6 +428,36 @@ export function getModuleConfig<T extends Record<string, unknown>>(
   const final = mergeConfigs(withModuleConfig, runtimeModuleConfig, {});
 
   return final;
+}
+
+/**
+ * Resolve the database `smrt` commands and `smrt-dev-mcp` use: the declared
+ * `packages.cli.database` from any config layer, else `DATABASE_URL` /
+ * `DATABASE_TYPE` (#3410, #3446).
+ *
+ * A configured `database.url` always wins and the environment is not read.
+ * Otherwise `DATABASE_URL` supplies the URL and its engine comes from the
+ * config's `database.type`, else `DATABASE_TYPE`, else the URL scheme. An
+ * unsupported `DATABASE_TYPE` yields `invalid-environment` instead of a guess.
+ * Read-only: nothing is written to the config. Call after {@link loadConfig}.
+ *
+ * @param env - Environment to read (defaults to `process.env`).
+ * @returns The source and, for `config`/`environment`, the database block.
+ *
+ * @example
+ * ```ts
+ * await loadConfig();
+ * const { source, database } = resolveCliDatabaseConfig();
+ * ```
+ */
+export function resolveCliDatabaseConfig(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ResolvedCliDatabase {
+  // No defaults: only a value some config layer actually declares counts.
+  const declared = getPackageConfig<{
+    database?: { url?: unknown; type?: unknown };
+  }>('cli').database;
+  return resolveCliDatabase(declared, env);
 }
 
 /**

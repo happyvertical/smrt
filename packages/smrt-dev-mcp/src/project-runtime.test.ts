@@ -3,10 +3,12 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { introspectProject } from './tools/introspect-project.js';
 import { resetRuntimeBootForTests } from './tools/runtime/boot.js';
@@ -319,6 +321,96 @@ describe('selected project runtime boundary (#2961)', () => {
       connected: true,
       file: 'selected.db',
       connectionSource: 'config',
+    });
+  });
+
+  describe('DATABASE_URL fallback through the project smrt-config (#3446)', () => {
+    // The workspace smrt-config itself, so this exercises the precedence the
+    // `smrt` CLI applies, not a stub of it.
+    const workspaceConfig = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../config',
+    );
+
+    function projectWithRealConfig(configSource: string | null): string {
+      const root = project();
+      const core = moduleAt(
+        root,
+        '@happyvertical/smrt-core',
+        'export async function readMigrationStatus(db) { return { file: db.url.split("/").pop(), type: db.type }; }',
+      );
+      moduleAt(
+        core,
+        '@happyvertical/sql',
+        'export async function getDatabase(options) { return { ...options, close() {} }; }',
+      );
+      mkdirSync(join(core, 'node_modules', '@happyvertical'), {
+        recursive: true,
+      });
+      symlinkSync(
+        workspaceConfig,
+        join(core, 'node_modules', '@happyvertical', 'smrt-config'),
+        'dir',
+      );
+      if (configSource !== null) {
+        writeFileSync(join(root, 'smrt.config.mjs'), configSource);
+      }
+      return root;
+    }
+
+    it('opens DATABASE_URL when the config names no database', async () => {
+      vi.stubEnv('SMRT_DEV_DB_URL', '');
+      vi.stubEnv('DATABASE_URL', 'sqlite:./from-env.db');
+      vi.stubEnv('DATABASE_TYPE', '');
+      const root = projectWithRealConfig('export default {};\n');
+      const result = await runtimeMigrationStatus({ projectPath: root });
+      expect(result.data).toMatchObject({
+        connected: true,
+        file: 'from-env.db',
+        type: 'sqlite',
+        connectionSource: 'environment',
+      });
+    });
+
+    it('takes the engine from DATABASE_TYPE like the CLI', async () => {
+      vi.stubEnv('SMRT_DEV_DB_URL', '');
+      vi.stubEnv('DATABASE_URL', 'postgres://dev@localhost/from-env');
+      vi.stubEnv('DATABASE_TYPE', 'postgresql');
+      const root = projectWithRealConfig(null);
+      const result = await runtimeMigrationStatus({ projectPath: root });
+      expect(result.data).toMatchObject({
+        connected: true,
+        file: 'from-env',
+        type: 'postgres',
+        connectionSource: 'environment',
+      });
+    });
+
+    it('lets packages.cli.database win over DATABASE_URL', async () => {
+      vi.stubEnv('SMRT_DEV_DB_URL', '');
+      vi.stubEnv('DATABASE_URL', 'sqlite:./from-env.db');
+      const root = projectWithRealConfig(
+        "export default { packages: { cli: { database: { type: 'sqlite', url: 'sqlite:./from-config.db' } } } };\n",
+      );
+      const result = await runtimeMigrationStatus({ projectPath: root });
+      expect(result.data).toMatchObject({
+        connected: true,
+        file: 'from-config.db',
+        connectionSource: 'config',
+      });
+    });
+
+    it('stays static-only for an unsupported DATABASE_TYPE', async () => {
+      vi.stubEnv('SMRT_DEV_DB_URL', '');
+      vi.stubEnv('DATABASE_URL', 'mysql://root:secret@db/app');
+      vi.stubEnv('DATABASE_TYPE', 'mysql');
+      const root = projectWithRealConfig(null);
+      const result = await runtimeMigrationStatus({ projectPath: root });
+      expect(result.data.provenance).toBe('static');
+      expect(result.diagnostics[0]?.code).toBe(
+        'runtime_connection_unavailable',
+      );
+      expect(JSON.stringify(result)).not.toContain('secret');
     });
   });
 
