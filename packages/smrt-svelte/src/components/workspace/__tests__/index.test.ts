@@ -14,6 +14,7 @@ describe('workspace barrel', () => {
   it('exports settings and activity components', () => {
     expect(workspace.ShellSettingsPanel).toBeDefined();
     expect(workspace.ActivityList).toBeDefined();
+    expect(workspace.ActivityTicker).toBeDefined();
   });
 
   it('exports tenant nav helper from the manifest implementation', () => {
