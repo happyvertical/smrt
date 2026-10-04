@@ -32,6 +32,7 @@ import {
   ProductType,
 } from '@happyvertical/smrt-products/models';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
+import { Operation } from './Operation.js';
 
 /**
  * Options accepted by the {@link Assembly} constructor.
@@ -70,9 +71,10 @@ export class Assembly extends Product {
 
   /**
    * The {@link Operation} that work on this assembly is booked to by
-   * default, or `null` for none.
+   * default, or `null` for none. `RESTRICT`, like `RoutingStep.operationId`:
+   * operations are retired, never deleted.
    */
-  @foreignKey('Operation', { nullable: true })
+  @foreignKey(Operation, { nullable: true, onDelete: 'RESTRICT' })
   defaultOperationId: string | null = null;
 
   /**
