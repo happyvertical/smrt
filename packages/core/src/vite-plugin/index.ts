@@ -927,7 +927,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // configureServer may be attached between configResolved and buildStart.
       // Emit declarations from the reused manifest even though the scanner
       // itself does not need to run again.
-      if (generateTypes && server && manifest) {
+      if (generateTypes && manifest) {
         await generateTypeDeclarationFile(
           manifest,
           projectRoot,
@@ -1481,7 +1481,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       console.log(
         `[smrt] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
       );
-      if (generateTypes && server) {
+      if (generateTypes) {
         await generateTypeDeclarationFile(
           verified,
           rootDir,
@@ -1674,7 +1674,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       console.log(`[smrt] OXC scan completed in ${elapsed.toFixed(2)}ms`);
 
       // Generate TypeScript declarations if enabled
-      if (generateTypes && server) {
+      if (generateTypes) {
         await generateTypeDeclarationFile(
           newManifest,
           rootDir,
@@ -1992,7 +1992,7 @@ export async function generateTypeDeclarationFile(
 ): Promise<void> {
   try {
     // Conditionally import path and fs modules
-    const [{ join }, { existsSync, mkdirSync, writeFileSync }] =
+    const [{ join }, { existsSync, mkdirSync, readFileSync, writeFileSync }] =
       await Promise.all([import('node:path'), import('node:fs')]);
 
     const declarationsDir = join(projectRoot, typeDeclarationsPath);
@@ -2394,7 +2394,14 @@ ${webCollectionInterface}
 }
 `;
 
-    // Write the declarations file
+    // Write only on change: emission now runs on every build, and an
+    // unchanged file must not touch mtimes or retrigger watchers.
+    if (
+      existsSync(declarationsFile) &&
+      readFileSync(declarationsFile, 'utf-8') === typeDeclarations
+    ) {
+      return;
+    }
     writeFileSync(declarationsFile, typeDeclarations);
     console.log(
       `[smrt] Generated TypeScript declarations: ${declarationsFile}`,
