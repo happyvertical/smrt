@@ -25,7 +25,12 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  smrt,
+  ValidationError,
+} from '@happyvertical/smrt-core';
 import {
   Product,
   type ProductOptions,
@@ -92,5 +97,21 @@ export class Assembly extends Product {
       this.defaultOperationId = options.defaultOperationId;
     if (options.partReference !== undefined)
       this.partReference = options.partReference;
+  }
+
+  /**
+   * Refuses a labour estimate that is not a whole number of minutes of zero
+   * or more, on every save (generated REST and collection writes included).
+   */
+  protected override async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    const minutes = this.estimatedLabourMinutes;
+    if (!Number.isSafeInteger(minutes) || minutes < 0) {
+      throw ValidationError.invalidValue(
+        'estimatedLabourMinutes',
+        minutes,
+        'a whole number of minutes, zero or more',
+      );
+    }
   }
 }
