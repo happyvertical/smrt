@@ -22,6 +22,10 @@
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
+    },
+    "./invoices": {
+      "types": "./dist/invoices.d.ts",
+      "import": "./dist/invoices.js"
     }
   },
   "files": [
