@@ -36,6 +36,7 @@ import {
   createStockService,
   type StockService,
 } from '@happyvertical/smrt-inventory';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollection.js';
 import { BomLineCollection } from '../collections/BomLineCollection.js';
 import { OperationCollection } from '../collections/OperationCollection.js';
@@ -269,14 +270,23 @@ export class BomService {
   /** One bill's own routing estimate, per unit of its product. */
   private async labourFor(bom: BillOfMaterials): Promise<LabourEstimate> {
     const bomId = bom.id as string;
-    const routing = await this.routingSteps.findByBom(bomId);
+    // The bill's own tenant's routing and operations, and global ones: a
+    // shared global sub-assembly keeps its routing under a tenant context.
+    const owner = bom.tenantId ?? null;
+    const routing = (
+      await readOwnAndGlobal(owner, () => this.routingSteps.findByBom(bomId))
+    ).filter((step) => isOwnOrGlobal(step, owner));
     const steps: RoutingStepEstimate[] = [];
     let totalMinutes = 0;
     let totalCost = 0;
     let hasMissingRates = false;
 
     for (const step of routing) {
-      const operation = await this.operations.get(step.operationId);
+      const [operation] = (
+        await readOwnAndGlobal(owner, () =>
+          this.operations.list({ where: { id: step.operationId }, limit: 1 }),
+        )
+      ).filter((row) => isOwnOrGlobal(row, owner));
       const minutes = Number(step.estimatedMinutes ?? 0);
       const rate = operation ? await this.resolveRate(operation) : null;
       const rateUnavailable = rate === null;
@@ -568,7 +578,16 @@ export class BomService {
    */
   private async requireBom(bomId: string): Promise<BillOfMaterials> {
     if (!bomId) throw new BomNotFoundError(bomId);
-    const bom = await this.boms.get(bomId);
+    // Under a tenant context a global bill is hidden from `get`; read the
+    // tenant's bills and global ones (another tenant's never).
+    const tenantId = getCurrentTenant()?.tenantId;
+    const bom = tenantId
+      ? ((
+          await readOwnAndGlobal(tenantId, () =>
+            this.boms.list({ where: { id: bomId }, limit: 1 }),
+          )
+        ).find((row) => isOwnOrGlobal(row, tenantId)) ?? null)
+      : await this.boms.get(bomId);
     if (!bom) throw new BomNotFoundError(bomId);
     return bom;
   }

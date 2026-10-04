@@ -385,6 +385,45 @@ export function multilevelSuite(
         },
       );
 
+      vitestIt(
+        "adds a global sub-assembly's routing from a tenant context",
+        async () => {
+          const plate = await material('Plate', 'sheet');
+          const bracket = await assembly('Bracket');
+          const bracketBom = await bill(bracket.id, [
+            [plate.skuId, 1, 'sheet'],
+          ]);
+          const operations = await OperationService.create({ db });
+          const routing = await RoutingService.create({ db });
+          const weld = await operations.define({
+            code: unique('W'),
+            name: 'Weld',
+          });
+          await routing.replaceRouting(bracketBom, [
+            { operationId: weld.id!, estimatedMinutes: 6 },
+          ]); // global routing on a global bill
+          const rated = await BomService.create({
+            stockService: stock,
+            rateResolver: () => 60,
+          });
+          await withTenant({ tenantId: randomUUID() }, async () => {
+            // The global bill itself is readable from the tenant context.
+            expect(
+              (await rated.computeLabourEstimate(bracketBom)).totalMinutes,
+            ).toBe(6);
+            const gate = await assembly('Gate');
+            const gateBom = await bill(gate.id, [[bracket.skuId, 2, 'each']]);
+            const estimate = await rated.computeLabourEstimate(gateBom, {
+              levels: 'all',
+            });
+            expect(estimate.subAssemblies?.[0]?.estimate.steps).toHaveLength(1);
+            expect(estimate.totalMinutes).toBeCloseTo(12, 9);
+            expect(estimate.totalCost).toBeCloseTo(12, 9);
+            expect(estimate.hasMissingRates).toBe(false);
+          });
+        },
+      );
+
       it('stops at an assembly with no active bill', async () => {
         const plate = await material('Plate', 'sheet');
         const gusset = await assembly('Gusset');
