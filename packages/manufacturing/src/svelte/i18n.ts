@@ -90,4 +90,44 @@ export const M = defineMessages({
   'manufacturing.bom_editor.error_uom': 'Enter a unit.',
   'manufacturing.bom_editor.error_waste':
     'Enter a waste percent of zero or more.',
+
+  'manufacturing.production_run_list.caption': 'Production runs',
+  'manufacturing.production_run_list.empty': 'No production runs',
+  'manufacturing.production_run_list.build': 'Build',
+  'manufacturing.production_run_list.progress': 'Progress',
+  'manufacturing.production_run_list.status': 'Status',
+  'manufacturing.production_run_list.report': 'Report completion',
+  'manufacturing.production_run_list.progress_value':
+    '{completed} of {target} done',
+  'manufacturing.production_run_list.qty_aria':
+    'Quantity completed for {label}',
+  'manufacturing.production_run_list.submit': 'Report',
+  'manufacturing.production_run_list.submit_aria':
+    'Report a completion for {label}',
+  'manufacturing.production_run_list.error_qty':
+    'Enter a quantity greater than zero.',
+  'manufacturing.production_run_list.error_too_many':
+    'Only {remaining} left to build.',
+  'manufacturing.production_run_list.error_failed':
+    'The completion could not be recorded.',
+  'manufacturing.production_run_status.planned': 'Planned',
+  'manufacturing.production_run_status.in_progress': 'In progress',
+  'manufacturing.production_run_status.done': 'Done',
+  'manufacturing.production_run_status.cancelled': 'Cancelled',
+
+  'manufacturing.requirements.label': 'Requirements',
+  'manufacturing.requirements.sub_label': 'Building {component} takes',
+  'manufacturing.requirements.required': 'Required: {qty} {uom}',
+  'manufacturing.requirements.available': 'Available: {qty}',
+  'manufacturing.requirements.short': 'Short: {qty}',
+  'manufacturing.requirements.covered': 'Covered',
+  'manufacturing.requirements.buildable': 'Can be built from its bill',
+  'manufacturing.requirements.no_bill': 'No active bill',
+  'manufacturing.requirements.totals_caption': 'Totals',
+  'manufacturing.requirements.component': 'Component',
+  'manufacturing.requirements.total_required': 'Required',
+  'manufacturing.requirements.uom': 'Unit',
+  'manufacturing.requirements.total_short': 'Short',
+  'manufacturing.requirements.empty': 'Nothing is required',
+  'manufacturing.requirements.unnamed': 'Unknown component',
 });

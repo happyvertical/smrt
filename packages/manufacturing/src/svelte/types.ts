@@ -7,10 +7,20 @@
 
 import type { Assembly } from '../models/Assembly.js';
 import type {
+  ProductionRun,
+  ProductionRunStatus,
+} from '../models/ProductionRun.js';
+import type {
   BillStructure,
   BillStructureLine,
   ComponentKind,
 } from '../services/AssemblyService.js';
+import type {
+  ExplodedLine,
+  Explosion,
+  PlannedLine,
+  RequirementsPlan,
+} from '../types.js';
 import { M } from './i18n.js';
 
 /** One row of `OperationList`; an `Operation` satisfies it. */
@@ -284,4 +294,213 @@ export function splitLabourMinutes(minutes: number): {
 } {
   const whole = Math.max(0, Math.round(minutes));
   return { hours: Math.floor(whole / 60), minutes: whole % 60 };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Production runs
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type { ProductionRunStatus };
+
+/** One row of `ProductionRunList`. */
+export interface ProductionRunView {
+  /** The run id. */
+  id: string;
+  /** What is being built, as the host names it (an assembly's name, say). */
+  label: string;
+  /** Units to build. */
+  targetQty: number;
+  /** Units reported done. */
+  completedQty: number;
+  /** The run's status. */
+  status: ProductionRunStatus;
+}
+
+/** Adapt a `ProductionRun` to a {@link ProductionRunView}, with the host's label. */
+export function toProductionRunView(
+  run: Pick<ProductionRun, 'id' | 'targetQty' | 'completedQty' | 'status'>,
+  label: string,
+): ProductionRunView {
+  return {
+    id: run.id as string,
+    label,
+    targetQty: Number(run.targetQty),
+    completedQty: Number(run.completedQty),
+    status: run.status,
+  };
+}
+
+/** The message key naming a run status in words. */
+export function productionRunStatusLabelKey(status: ProductionRunStatus) {
+  switch (status) {
+    case 'planned':
+      return M['manufacturing.production_run_status.planned'];
+    case 'in_progress':
+      return M['manufacturing.production_run_status.in_progress'];
+    case 'done':
+      return M['manufacturing.production_run_status.done'];
+    default:
+      return M['manufacturing.production_run_status.cancelled'];
+  }
+}
+
+/** The `StatusBadge` tone for a run status. */
+export function productionRunStatusTone(
+  status: ProductionRunStatus,
+): 'neutral' | 'info' | 'success' | 'warning' {
+  switch (status) {
+    case 'in_progress':
+      return 'info';
+    case 'done':
+      return 'success';
+    case 'cancelled':
+      return 'warning';
+    default:
+      return 'neutral';
+  }
+}
+
+/** `true` while a run can still take completions. */
+export function isProductionRunOpen(status: ProductionRunStatus): boolean {
+  return status === 'planned' || status === 'in_progress';
+}
+
+/** Result of {@link validateCompletionQty}. */
+export type CompletionQtyValidation =
+  | { ok: true; qty: number }
+  | { ok: false; reason: 'invalid' | 'too_many' };
+
+/**
+ * Check a typed completion quantity against what the run has left (the
+ * service checks again under its lock).
+ */
+export function validateCompletionQty(
+  raw: string,
+  run: Pick<ProductionRunView, 'targetQty' | 'completedQty'>,
+): CompletionQtyValidation {
+  const text = raw.trim();
+  const qty = text === '' ? Number.NaN : Number(text);
+  if (!Number.isFinite(qty) || qty <= 0)
+    return { ok: false, reason: 'invalid' };
+  // Whole millionths compared exactly, as ProductionRunService does
+  // (QUANTITY_DECIMALS = 6, MAX_QUANTITY = 999,999,999).
+  const millionths = (value: number) =>
+    Number(value.toFixed(6).replace('.', ''));
+  const rounded = Number(qty.toFixed(6));
+  if (rounded <= 0 || rounded > 999_999_999)
+    return { ok: false, reason: 'invalid' };
+  const remaining = millionths(run.targetQty) - millionths(run.completedQty);
+  if (millionths(rounded) > remaining) return { ok: false, reason: 'too_many' };
+  return { ok: true, qty: rounded };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Exploded requirements
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One line of `RequirementsTree`, with the lines of its bill when opened. */
+export interface RequirementLineView {
+  /** Unique within the tree: the bills above it plus the line id. */
+  key: string;
+  /** 1 for the top bill's lines. */
+  level: number;
+  /** Component name; empty when it cannot be resolved. */
+  name: string;
+  /** Component SKU code; empty when unknown. */
+  skuCode: string;
+  /** What the component is. */
+  kind: ComponentKind;
+  /** Quantity required for the run (net of stock in a plan). */
+  required: number;
+  /** The line's unit. */
+  uom: string;
+  /** Unallocated available stock; `null` for a gross explosion. */
+  available: number | null;
+  /** How much is short; `null` for a gross explosion. */
+  short: number | null;
+  /** A sub-assembly with an active bill. */
+  buildable: boolean;
+  /** The lines of this sub-assembly's bill that were walked. */
+  children: RequirementLineView[];
+}
+
+/** One row of the totals table of `RequirementsTree`. */
+export interface RequirementTotalView {
+  /** The component SKU. */
+  componentSkuId: string;
+  /** Component name; empty when it cannot be resolved. */
+  name: string;
+  /** Component SKU code; empty when unknown. */
+  skuCode: string;
+  /** Total required, summed over the lines not opened. */
+  required: number;
+  /** The first line's unit. */
+  uom: string;
+  /** Total short; `null` for a gross explosion. */
+  short: number | null;
+}
+
+function isPlanned(line: ExplodedLine): line is PlannedLine {
+  return 'short' in line;
+}
+
+/**
+ * Nest the depth-first lines of an {@link Explosion} or a
+ * {@link RequirementsPlan} for `RequirementsTree`.
+ */
+export function toRequirementTree(
+  source: Pick<Explosion | RequirementsPlan, 'lines'>,
+): RequirementLineView[] {
+  const roots: RequirementLineView[] = [];
+  const open: RequirementLineView[] = [];
+  for (const line of source.lines as ExplodedLine[]) {
+    const view: RequirementLineView = {
+      key: [...line.path.map((entry) => entry.bomId), line.lineId].join('/'),
+      level: line.level,
+      name: line.name,
+      skuCode: line.skuCode,
+      kind: line.kind,
+      required: line.totalQty,
+      uom: line.uom,
+      available: isPlanned(line) ? line.available : null,
+      short: isPlanned(line) ? line.short : null,
+      buildable: line.buildable,
+      children: [],
+    };
+    open.length = Math.min(open.length, line.level - 1);
+    const parent = open[line.level - 2];
+    if (line.level > 1 && parent) parent.children.push(view);
+    else roots.push(view);
+    open[line.level - 1] = view;
+  }
+  return roots;
+}
+
+/**
+ * The totals of an {@link Explosion} or a {@link RequirementsPlan}: every line
+ * not opened, summed per component SKU (first unit kept).
+ */
+export function toRequirementTotals(
+  source: Pick<Explosion | RequirementsPlan, 'lines'>,
+): RequirementTotalView[] {
+  const totals = new Map<string, RequirementTotalView>();
+  for (const line of source.lines as ExplodedLine[]) {
+    if (line.expanded) continue;
+    const short = isPlanned(line) ? line.short : null;
+    const existing = totals.get(line.componentSkuId);
+    if (existing) {
+      existing.required += line.totalQty;
+      if (existing.short !== null && short !== null) existing.short += short;
+    } else {
+      totals.set(line.componentSkuId, {
+        componentSkuId: line.componentSkuId,
+        name: line.name,
+        skuCode: line.skuCode,
+        required: line.totalQty,
+        uom: line.uom,
+        short,
+      });
+    }
+  }
+  return Array.from(totals.values());
 }

@@ -35,6 +35,11 @@ export {
   type OperationServiceOptions,
 } from './OperationService.js';
 export {
+  createProductionRunService,
+  ProductionRunService,
+  type ProductionRunServiceOptions,
+} from './ProductionRunService.js';
+export {
   type ConsumeMaterialsOptions,
   type ConsumeResult,
   createProductionService,
@@ -49,3 +54,4 @@ export {
   RoutingService,
   type RoutingServiceOptions,
 } from './RoutingService.js';
+export { BomStructureCycleError } from './structure-walk.js';

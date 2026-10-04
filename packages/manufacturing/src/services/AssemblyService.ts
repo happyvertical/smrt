@@ -46,6 +46,7 @@ import { BomLineCollection } from '../collections/BomLineCollection.js';
 import { Assembly } from '../models/Assembly.js';
 import type { BillOfMaterials } from '../models/BillOfMaterials.js';
 import type { BomLine } from '../models/BomLine.js';
+import { readOwnAndGlobal } from '../tenant-scope.js';
 import { BomNotFoundError } from '../types.js';
 
 /**
@@ -249,12 +250,13 @@ export class AssemblyService {
     });
 
     if (!isUuid(skuId)) return missing(null);
-    // With an explicit tenant (a write made without a tenant context), a SKU
-    // or product of another tenant is reported as missing, never resolved.
-    const sku = await this.skus.get({ id: skuId });
+    // With an explicit tenant, the SKU and product are read as that tenant's
+    // or global (a shared material stays visible under a tenant context); one
+    // of another tenant is reported as missing, never resolved.
+    const sku = await this.byId(this.skus, skuId, options);
     if (!sku || !visibleTo(sku, options)) return missing(null);
     if (!isUuid(sku.productId)) return missing(sku);
-    const product = await this.products.get({ id: sku.productId });
+    const product = await this.byId(this.products, sku.productId, options);
     if (!product || !visibleTo(product, options)) return missing(sku);
 
     if (product instanceof Assembly) {
@@ -282,22 +284,46 @@ export class AssemblyService {
   }
 
   /**
-   * The highest-version active bill for a product, limited to one tenant's
-   * bills when `options.tenantId` is given.
+   * The highest-version active bill for a product. With `options.tenantId`,
+   * that tenant's own bill, or else a global one; another tenant's never.
    */
   async findActiveBom(
     productId: string,
     options: ResolveComponentOptions = {},
   ): Promise<BillOfMaterials | null> {
-    if (options.tenantId === undefined)
-      return this.boms.findActiveForProduct(productId);
-    const active = await this.boms.list({
-      where: { productId, status: 'active' },
-      orderBy: 'version DESC',
-    });
-    return (
-      active.find((bom) => (bom.tenantId ?? null) === options.tenantId) ?? null
+    const owner = options.tenantId;
+    if (owner === undefined) return this.boms.findActiveForProduct(productId);
+    const active = await readOwnAndGlobal(owner, () =>
+      this.boms.list({
+        where: { productId, status: 'active' },
+        orderBy: 'version DESC',
+      }),
     );
+    return (
+      active.find((bom) => (bom.tenantId ?? null) === owner) ??
+      active.find((bom) => (bom.tenantId ?? null) === null) ??
+      null
+    );
+  }
+
+  /**
+   * One row by id: through the collection's `get` without an explicit
+   * tenant, else as a list read of that tenant's and global rows.
+   */
+  private async byId<T extends { tenantId?: string | null }>(
+    collection: {
+      get(filter: { id: string }): Promise<T | null>;
+      list(options: { where: { id: string }; limit: number }): Promise<T[]>;
+    },
+    id: string,
+    options: ResolveComponentOptions,
+  ): Promise<T | null> {
+    const owner = options.tenantId;
+    if (owner === undefined) return collection.get({ id });
+    const rows = await readOwnAndGlobal(owner, () =>
+      collection.list({ where: { id }, limit: 1 }),
+    );
+    return rows[0] ?? null;
   }
 
   /** `true` when the SKU belongs to an {@link Assembly}. */
@@ -317,9 +343,9 @@ export class AssemblyService {
     if (!bom) throw new BomNotFoundError(bomId);
     const cache = new Map<string, Promise<ResolvedComponent>>();
     const scope = { tenantId: bom.tenantId ?? null };
-    const lines = (await this.lines.findByBom(bomId)).filter((line) =>
-      visibleTo(line, scope),
-    );
+    const lines = (
+      await readOwnAndGlobal(scope.tenantId, () => this.lines.findByBom(bomId))
+    ).filter((line) => visibleTo(line, scope));
     const resolved: BillStructureLine[] = [];
     for (const line of lines) {
       resolved.push({
@@ -356,8 +382,13 @@ export class AssemblyService {
         if (product.id === productId) return [...trail, product];
         if (!component.activeBom || visited.has(product.id)) continue;
         visited.add(product.id);
+        const billId = component.activeBom.id!;
         const lines = (
-          await this.lines.findByBom(component.activeBom.id!)
+          options.tenantId === undefined
+            ? await this.lines.findByBom(billId)
+            : await readOwnAndGlobal(options.tenantId, () =>
+                this.lines.findByBom(billId),
+              )
         ).filter((line) => visibleTo(line, options));
         const found = await walk(
           lines.map((line) => line.componentSkuId),
@@ -422,16 +453,20 @@ export class AssemblyService {
     // Validation runs before the tenancy interceptor fills `tenantId`, so an
     // omitted tenant is the one the save will be stamped with.
     const tenantId = bom.tenantId ?? getCurrentTenant()?.tenantId ?? null;
-    const sameKey = await this.boms.list({
-      where: { productId: bom.productId, version: bom.version },
-    });
+    const sameKey = await readOwnAndGlobal(tenantId, () =>
+      this.boms.list({
+        where: { productId: bom.productId, version: bom.version },
+      }),
+    );
     for (const stored of sameKey) {
       if (stored.id && (stored.tenantId ?? null) === tenantId)
         billIds.add(stored.id);
     }
     const componentSkuIds: string[] = [];
     for (const billId of billIds) {
-      for (const line of await this.lines.findByBom(billId))
+      for (const line of await readOwnAndGlobal(tenantId, () =>
+        this.lines.findByBom(billId),
+      ))
         if (visibleTo(line, { tenantId }))
           componentSkuIds.push(line.componentSkuId);
     }

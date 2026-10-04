@@ -53,10 +53,12 @@ import type {
   StockService,
 } from '@happyvertical/smrt-inventory';
 import { createStockService } from '@happyvertical/smrt-inventory';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollection.js';
 import { BomLineCollection } from '../collections/BomLineCollection.js';
 import type { BillOfMaterials } from '../models/BillOfMaterials.js';
 import type { BomLine } from '../models/BomLine.js';
+import { isOwnOrGlobal, readOwnAndGlobal } from '../tenant-scope.js';
 import { BomNotFoundError, NoActiveBomForProductError } from '../types.js';
 
 /**
@@ -110,6 +112,12 @@ export interface ConsumeMaterialsOptions {
    * Optional free-form note attached to every emitted movement.
    */
   note?: string;
+  /**
+   * Optional override of the `sourceType` stamped on each movement, with
+   * the order's `id` as `sourceId`. Defaults to `'ProductionOrder'`;
+   * `ProductionRunService` passes `'ProductionRunCompletion'`.
+   */
+  sourceType?: string;
 }
 
 /**
@@ -142,6 +150,11 @@ export interface ProduceFinishedGoodsOptions {
    * Optional free-form note attached to the emitted movement.
    */
   note?: string;
+  /**
+   * Optional override of the `sourceType` stamped on the movement. Defaults
+   * to `'ProductionOrder'`; see {@link ConsumeMaterialsOptions.sourceType}.
+   */
+  sourceType?: string;
 }
 
 /**
@@ -351,14 +364,20 @@ export class ProductionService {
       );
     }
     const bom = await this.resolveBom(order);
-    const lines = await this.lines.findByBom(bom.id!);
+    // The bill's own structure: its tenant's lines and global ones, never a
+    // line another tenant wrote against this bill id (an unscoped read
+    // would return those too).
+    const owner = bom.tenantId ?? null;
+    const lines = (
+      await readOwnAndGlobal(owner, () => this.lines.findByBom(bom.id!))
+    ).filter((line) => isOwnOrGlobal(line, owner));
     return {
       orderId,
       lines,
       runQty: options.qty,
       locationId: options.locationId,
       mutationOptions: {
-        sourceType: 'ProductionOrder',
+        sourceType: options.sourceType ?? 'ProductionOrder',
         sourceId: orderId,
         reasonCode: options.reasonCode ?? 'production_consume',
         note: options.note,
@@ -443,8 +462,18 @@ export class ProductionService {
     order: ProductionOrderRef,
   ): Promise<BillOfMaterials> {
     if (order.bomId) {
-      const bom = await this.boms.get(order.bomId);
-      if (!bom) throw new BomNotFoundError(order.bomId);
+      const bomId = order.bomId;
+      // Under a tenant context a global bill is hidden from `get`; read the
+      // tenant's bills and global ones instead (another tenant's never).
+      const tenantId = getCurrentTenant()?.tenantId;
+      const bom = tenantId
+        ? ((
+            await readOwnAndGlobal(tenantId, () =>
+              this.boms.list({ where: { id: bomId }, limit: 1 }),
+            )
+          ).find((row) => isOwnOrGlobal(row, tenantId)) ?? null)
+        : await this.boms.get(bomId);
+      if (!bom) throw new BomNotFoundError(bomId);
       return bom;
     }
     const productId = order.productId ?? '';
@@ -518,7 +547,7 @@ function prepareProduce(
     qty: options.qty,
     locationId: options.locationId,
     mutationOptions: {
-      sourceType: 'ProductionOrder',
+      sourceType: options.sourceType ?? 'ProductionOrder',
       sourceId: orderId,
       reasonCode: options.reasonCode ?? 'production_produce',
       note: options.note,

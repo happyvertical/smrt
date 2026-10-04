@@ -18,4 +18,14 @@ export {
 } from './BillOfMaterials.js';
 export { BomLine, type BomLineOptions } from './BomLine.js';
 export { Operation, type OperationOptions } from './Operation.js';
+export {
+  PRODUCTION_RUN_STATUSES,
+  ProductionRun,
+  type ProductionRunOptions,
+  type ProductionRunStatus,
+} from './ProductionRun.js';
+export {
+  ProductionRunCompletion,
+  type ProductionRunCompletionOptions,
+} from './ProductionRunCompletion.js';
 export { RoutingStep, type RoutingStepOptions } from './RoutingStep.js';

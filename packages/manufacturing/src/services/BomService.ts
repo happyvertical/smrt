@@ -9,6 +9,14 @@
  * - "What do I need to buy / pull to make N units?" via {@link explodeRequirements}
  * - "Do I have enough on hand?" via {@link canProduce}
  *
+ * Every method reads one level of the bill by default. Pass `{ levels }` to
+ * walk sub-assemblies too: a line whose component SKU belongs to an
+ * `Assembly` with an active bill is opened, to the given depth or (`'all'`)
+ * down to materials and bought items. {@link explode} returns that walk line
+ * by line with the rolled-up totals, and {@link planRequirements} nets it
+ * against stock: how much of each sub-assembly is available, how much is
+ * short, and what building the shortfall takes.
+ *
  * Construct via {@link BomService.create} — the static factory wires up
  * the BOM, BOM-line, and inventory collections so a single `db` (or a
  * pre-built {@link StockService}) drives everything.
@@ -28,6 +36,7 @@ import {
   createStockService,
   type StockService,
 } from '@happyvertical/smrt-inventory';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollection.js';
 import { BomLineCollection } from '../collections/BomLineCollection.js';
 import { OperationCollection } from '../collections/OperationCollection.js';
@@ -39,14 +48,25 @@ import type {
   OperationRateResolver,
   RoutingStepEstimate,
 } from '../operation-types.js';
+import { roundQuantity } from '../quantity.js';
+import { isOwnOrGlobal, readOwnAndGlobal } from '../tenant-scope.js';
 import {
   type BomCostRollup,
   type BomLineCost,
   BomNotFoundError,
   type CanProduceResult,
+  type ExplodedLine,
+  type Explosion,
+  type ExplosionOptions,
+  type ExplosionPathEntry,
   type MaterialRequirement,
   type MaterialShortage,
+  type PlannedLine,
+  type RequirementsPlan,
+  type SubAssemblyLabour,
 } from '../types.js';
+import { AssemblyService, type ResolvedComponent } from './AssemblyService.js';
+import { isMultiLevel, StructureWalk } from './structure-walk.js';
 
 /**
  * Callback signature for resolving the unit cost of a component SKU.
@@ -122,9 +142,9 @@ export class BomService {
     private readonly costResolver: ComponentCostResolver | undefined,
     public readonly routingSteps: RoutingStepCollection,
     public readonly operations: OperationCollection,
-    private readonly rateResolver:
-      | OperationRateResolver
-      | undefined = undefined,
+    private readonly rateResolver: OperationRateResolver | undefined,
+    /** Resolves components for the multi-level walks. */
+    public readonly assemblies: AssemblyService,
   ) {}
 
   /** Factory — prefer {@link createBomService}. */
@@ -140,12 +160,14 @@ export class BomService {
     const sharedDb = (await resolveDatabase(
       options.stockService ? (options.db ?? stockService.db) : stockService.db,
     )) as unknown as DatabaseConfig;
-    const [boms, lines, routingSteps, operations] = await Promise.all([
-      BillOfMaterialsCollection.create({ db: sharedDb }),
-      BomLineCollection.create({ db: sharedDb }),
-      RoutingStepCollection.create({ db: sharedDb }),
-      OperationCollection.create({ db: sharedDb }),
-    ]);
+    const [boms, lines, routingSteps, operations, assemblies] =
+      await Promise.all([
+        BillOfMaterialsCollection.create({ db: sharedDb }),
+        BomLineCollection.create({ db: sharedDb }),
+        RoutingStepCollection.create({ db: sharedDb }),
+        OperationCollection.create({ db: sharedDb }),
+        AssemblyService.create({ db: sharedDb }),
+      ]);
     return new BomService(
       boms,
       lines,
@@ -154,6 +176,7 @@ export class BomService {
       routingSteps,
       operations,
       options.rateResolver,
+      assemblies,
     );
   }
 
@@ -168,10 +191,23 @@ export class BomService {
    * set `costUnavailable: true` on their breakdown row; the aggregate
    * `hasMissingCosts` flag mirrors this so callers can surface a UI
    * warning.
+   *
+   * With `{ levels }` above 1, a sub-assembly line whose bill the walk opens
+   * is costed from that bill instead of the resolver: its `unitCost` is the
+   * bill's rolled-up material cost per unit, its `components` hold that
+   * bill's lines, and a missing cost anywhere below marks it and
+   * `hasMissingCosts` (its known part still counts, so the total is a lower
+   * bound). Other lines, including sub-assemblies with no active bill, use
+   * the resolver as before.
    */
-  async computeMaterialCost(bomId: string): Promise<BomCostRollup> {
+  async computeMaterialCost(
+    bomId: string,
+    options: ExplosionOptions = {},
+  ): Promise<BomCostRollup> {
+    if (isMultiLevel(options.levels))
+      return this.computeMultiLevelCost(bomId, options);
     const bom = await this.requireBom(bomId);
-    const lines = await this.lines.findByBom(bomId);
+    const lines = await this.linesOf(bom);
     const lineBreakdown: BomLineCost[] = [];
     let totalCost = 0;
     let hasMissingCosts = false;
@@ -216,18 +252,41 @@ export class BomService {
    * estimate with zero totals, so callers can add it to the material cost
    * unconditionally. Retired operations still count: the routing names them.
    *
+   * With `{ levels }` above 1, every sub-assembly the walk opens adds its own
+   * bill's routing, multiplied by the units of it one unit needs (waste
+   * included); see {@link LabourEstimate.subAssemblies}.
+   *
    * Throws {@link BomNotFoundError} when the BOM does not exist.
    */
-  async computeLabourEstimate(bomId: string): Promise<LabourEstimate> {
-    const bom = await this.requireBom(bomId);
-    const routing = await this.routingSteps.findByBom(bomId);
+  async computeLabourEstimate(
+    bomId: string,
+    options: ExplosionOptions = {},
+  ): Promise<LabourEstimate> {
+    if (isMultiLevel(options.levels))
+      return this.computeMultiLevelLabour(bomId, options);
+    return this.labourFor(await this.requireBom(bomId));
+  }
+
+  /** One bill's own routing estimate, per unit of its product. */
+  private async labourFor(bom: BillOfMaterials): Promise<LabourEstimate> {
+    const bomId = bom.id as string;
+    // The bill's own tenant's routing and operations, and global ones: a
+    // shared global sub-assembly keeps its routing under a tenant context.
+    const owner = bom.tenantId ?? null;
+    const routing = (
+      await readOwnAndGlobal(owner, () => this.routingSteps.findByBom(bomId))
+    ).filter((step) => isOwnOrGlobal(step, owner));
     const steps: RoutingStepEstimate[] = [];
     let totalMinutes = 0;
     let totalCost = 0;
     let hasMissingRates = false;
 
     for (const step of routing) {
-      const operation = await this.operations.get(step.operationId);
+      const [operation] = (
+        await readOwnAndGlobal(owner, () =>
+          this.operations.list({ where: { id: step.operationId }, limit: 1 }),
+        )
+      ).filter((row) => isOwnOrGlobal(row, owner));
       const minutes = Number(step.estimatedMinutes ?? 0);
       const rate = operation ? await this.resolveRate(operation) : null;
       const rateUnavailable = rate === null;
@@ -269,16 +328,22 @@ export class BomService {
    * {@link ProductionService.consumeMaterials} when you're ready to write
    * stock movements.
    *
+   * With `{ levels }` above 1, sub-assemblies with an active bill are
+   * replaced by what their bills need, waste compounding down the levels;
+   * this is {@link explode}'s `totals`.
+   *
    * Throws {@link BomNotFoundError} when the BOM does not exist; throws a
    * plain `Error` when `qty` is not a positive finite number.
    */
   async explodeRequirements(
     bomId: string,
     qty: number,
+    options: ExplosionOptions = {},
   ): Promise<MaterialRequirement[]> {
+    if (isMultiLevel(options.levels))
+      return (await this.explode(bomId, qty, options)).totals;
     assertPositiveQty(qty, 'explodeRequirements');
-    await this.requireBom(bomId);
-    const lines = await this.lines.findByBom(bomId);
+    const lines = await this.linesOf(await this.requireBom(bomId));
 
     // Sum across duplicate component SKUs. Keep the first-seen `uom` per
     // SKU; if two lines disagree on `uom`, we surface the first one and
@@ -313,9 +378,25 @@ export class BomService {
    * "where do we pull from?" is left to the caller of
    * {@link ProductionService.consumeMaterials}).
    *
+   * With `{ levels }` above 1 the check is {@link planRequirements}: a
+   * sub-assembly that is short and has an active bill is opened for its
+   * shortfall, and each shortage is reported on the line where it occurs,
+   * with its `level` and `path`. Stock is allocated as the walk goes, so a
+   * component used in two places is not counted twice.
+   *
    * Throws {@link BomNotFoundError} when the BOM does not exist.
    */
-  async canProduce(bomId: string, qty: number): Promise<CanProduceResult> {
+  async canProduce(
+    bomId: string,
+    qty: number,
+    options: ExplosionOptions = {},
+  ): Promise<CanProduceResult> {
+    if (isMultiLevel(options.levels)) {
+      const plan = await this.planRequirements(bomId, qty, options);
+      return plan.ok
+        ? { ok: true, shortages: [] }
+        : { ok: false, shortages: plan.shortages };
+    }
     const requirements = await this.explodeRequirements(bomId, qty);
 
     // Fan the per-component availability queries out in parallel so a
@@ -350,6 +431,142 @@ export class BomService {
     return { ok: false, shortages };
   }
 
+  /**
+   * Walk the bill for `qty` units and return every line, depth first, with
+   * its level, the path of bills above it and its quantity for the run, plus
+   * the rolled-up `totals`. Gross requirements: stock is not read.
+   *
+   * `levels` (default `1`) says how far to open sub-assemblies; see
+   * {@link ExplosionLevels}. Waste compounds: a sub-assembly line's quantity
+   * includes its own waste, and its bill's lines are multiplied by it.
+   *
+   * Throws {@link BomNotFoundError}, `BomStructureCycleError` when stored
+   * data already has a product containing itself, `BomExplosionLimitError`
+   * past the depth or line limits, and a plain `Error` for a bad `qty` or
+   * `levels`.
+   */
+  async explode(
+    bomId: string,
+    qty: number,
+    options: ExplosionOptions = {},
+  ): Promise<Explosion> {
+    assertPositiveQty(qty, 'explode');
+    const levels = options.levels ?? 1;
+    const top = await this.requireBom(bomId);
+    const walk = new StructureWalk(this.assemblies, top, levels);
+    const lines: ExplodedLine[] = [];
+
+    const visit = async (
+      billId: string,
+      level: number,
+      path: ExplosionPathEntry[],
+      parentQty: number,
+    ): Promise<void> => {
+      for (const line of await walk.linesOf(billId)) {
+        const component = await walk.resolve(line.componentSkuId);
+        const sub = walk.open(component, level, path);
+        const exploded = explodedLine(line, component, level, path, parentQty);
+        exploded.expanded = sub !== null;
+        lines.push(exploded);
+        if (sub)
+          await visit(sub.bomId, level + 1, [...path, sub], exploded.totalQty);
+      }
+    };
+    await visit(bomId, 1, [await walk.root()], qty);
+
+    return {
+      bomId,
+      productId: top.productId,
+      qty,
+      levels,
+      lines,
+      totals: sumRequirements(lines.filter((line) => !line.expanded)),
+    };
+  }
+
+  /**
+   * Net the walk against stock: for each line, the available stock (all
+   * locations) not yet allocated to an earlier line and how much is short.
+   * A sub-assembly that is short and has an active bill is opened for the
+   * shortfall only, so its lines say what building that shortfall takes;
+   * one covered by stock is not opened. Lines that are short and cannot be
+   * opened are the `shortages`, each at its own level.
+   *
+   * These are facts, not a decision: the application decides whether a
+   * short sub-assembly is built or bought. Does not mutate stock.
+   *
+   * Throws as {@link explode} does.
+   */
+  async planRequirements(
+    bomId: string,
+    qty: number,
+    options: ExplosionOptions = {},
+  ): Promise<RequirementsPlan> {
+    assertPositiveQty(qty, 'planRequirements');
+    const levels = options.levels ?? 1;
+    const top = await this.requireBom(bomId);
+    const walk = new StructureWalk(this.assemblies, top, levels);
+    const lines: PlannedLine[] = [];
+    const shortages: MaterialShortage[] = [];
+    const unallocated = new Map<string, Promise<number>>();
+    const tenantId = top.tenantId ?? null;
+    const availableFor = (skuId: string): Promise<number> => {
+      let pending = unallocated.get(skuId);
+      if (!pending) {
+        pending = this.availableInTenant(skuId, tenantId);
+        unallocated.set(skuId, pending);
+      }
+      return pending;
+    };
+
+    const visit = async (
+      billId: string,
+      level: number,
+      path: ExplosionPathEntry[],
+      parentQty: number,
+    ): Promise<void> => {
+      for (const line of await walk.linesOf(billId)) {
+        const component = await walk.resolve(line.componentSkuId);
+        const base = explodedLine(line, component, level, path, parentQty);
+        const available = await availableFor(line.componentSkuId);
+        const allocated = Math.min(available, base.totalQty);
+        unallocated.set(
+          line.componentSkuId,
+          Promise.resolve(available - allocated),
+        );
+        // Rounded to the quantity precision: `2.2 * 100` against 220 in
+        // stock is not short.
+        const short = Math.max(0, roundQuantity(base.totalQty - allocated));
+        const sub = short > 0 ? walk.open(component, level, path) : null;
+        lines.push({ ...base, expanded: sub !== null, available, short });
+        if (sub) {
+          await visit(sub.bomId, level + 1, [...path, sub], short);
+        } else if (short > 0) {
+          shortages.push({
+            componentSkuId: line.componentSkuId,
+            requested: base.totalQty,
+            available,
+            level,
+            path,
+            uom: base.uom,
+            buildable: component.buildable,
+          });
+        }
+      }
+    };
+    await visit(bomId, 1, [await walk.root()], qty);
+
+    return {
+      bomId,
+      productId: top.productId,
+      qty,
+      levels,
+      lines,
+      shortages,
+      ok: shortages.length === 0,
+    };
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Internal helpers
   // ─────────────────────────────────────────────────────────────────────────
@@ -358,11 +575,178 @@ export class BomService {
    * Fetch a BOM by id or throw {@link BomNotFoundError}. Centralises the
    * "missing BOM" error path so callers don't have to repeat the check.
    */
+  /**
+   * A bill's lines: its own tenant's and global ones, whatever tenant
+   * context is active (a context alone would hide a global bill's lines).
+   */
+  private async linesOf(bom: BillOfMaterials): Promise<BomLine[]> {
+    const owner = bom.tenantId ?? null;
+    return (
+      await readOwnAndGlobal(owner, () =>
+        this.lines.findByBom(bom.id as string),
+      )
+    ).filter((line) => isOwnOrGlobal(line, owner));
+  }
+
   private async requireBom(bomId: string): Promise<BillOfMaterials> {
     if (!bomId) throw new BomNotFoundError(bomId);
-    const bom = await this.boms.get(bomId);
+    // Under a tenant context a global bill is hidden from `get`; read the
+    // tenant's bills and global ones (another tenant's never).
+    const tenantId = getCurrentTenant()?.tenantId;
+    const bom = tenantId
+      ? ((
+          await readOwnAndGlobal(tenantId, () =>
+            this.boms.list({ where: { id: bomId }, limit: 1 }),
+          )
+        ).find((row) => isOwnOrGlobal(row, tenantId)) ?? null)
+      : await this.boms.get(bomId);
     if (!bom) throw new BomNotFoundError(bomId);
     return bom;
+  }
+
+  /**
+   * Available stock of a SKU across locations, counting only the top bill's
+   * tenant's rows and global ones, whatever tenant context is active (the
+   * walk reads its structure the same way).
+   */
+  private async availableInTenant(
+    skuId: string,
+    tenantId: string | null,
+  ): Promise<number> {
+    const rows = await readOwnAndGlobal(tenantId, () =>
+      this.stockService.levels.list({ where: { skuId, state: 'available' } }),
+    );
+    let total = 0;
+    for (const row of rows)
+      if (isOwnOrGlobal(row, tenantId)) total += Number(row.qty ?? 0);
+    return Math.max(0, total);
+  }
+
+  /** {@link computeMaterialCost} with `levels` above 1. */
+  private async computeMultiLevelCost(
+    bomId: string,
+    options: ExplosionOptions,
+  ): Promise<BomCostRollup> {
+    const top = await this.requireBom(bomId);
+    const currency = top.currency || 'USD';
+    const walk = new StructureWalk(this.assemblies, top, options.levels ?? 1);
+
+    const rollUp = async (
+      billId: string,
+      level: number,
+      path: ExplosionPathEntry[],
+    ): Promise<Omit<BomCostRollup, 'bomId' | 'currency'>> => {
+      const lineBreakdown: BomLineCost[] = [];
+      let totalCost = 0;
+      let hasMissingCosts = false;
+      for (const line of await walk.linesOf(billId)) {
+        const component = await walk.resolve(line.componentSkuId);
+        const sub = walk.open(component, level, path);
+        const effectiveQty = line.effectiveQtyPerUnit();
+        const entry: BomLineCost = {
+          componentSkuId: line.componentSkuId,
+          qtyPerUnit: Number(line.qtyPerUnit ?? 0),
+          wastePercent: Number(line.wastePercent ?? 0),
+          effectiveQty,
+          unitCost: 0,
+          lineCost: 0,
+          uom: line.uom,
+          costUnavailable: false,
+        };
+        // A sub-assembly bill in another currency cannot be added to this
+        // total; its line is priced through the resolver, as an unopened one.
+        const sameCurrency =
+          (component.activeBom?.currency || 'USD') === currency;
+        if (sub && sameCurrency) {
+          const inner = await rollUp(sub.bomId, level + 1, [...path, sub]);
+          entry.unitCost = inner.totalCost;
+          entry.lineCost = inner.totalCost * effectiveQty;
+          entry.costUnavailable = inner.hasMissingCosts;
+          entry.subBomId = sub.bomId;
+          entry.components = inner.lineBreakdown;
+          totalCost += entry.lineCost;
+        } else {
+          const resolved = await this.resolveCost(line.componentSkuId);
+          entry.unitCost = resolved ?? 0;
+          entry.lineCost = entry.unitCost * effectiveQty;
+          entry.costUnavailable = resolved === null;
+          if (!entry.costUnavailable) totalCost += entry.lineCost;
+        }
+        if (entry.costUnavailable) hasMissingCosts = true;
+        lineBreakdown.push(entry);
+      }
+      return { totalCost, lineBreakdown, hasMissingCosts };
+    };
+
+    const rolled = await rollUp(bomId, 1, [await walk.root()]);
+    return { bomId, currency, ...rolled };
+  }
+
+  /** {@link computeLabourEstimate} with `levels` above 1. */
+  private async computeMultiLevelLabour(
+    bomId: string,
+    options: ExplosionOptions,
+  ): Promise<LabourEstimate> {
+    const top = await this.requireBom(bomId);
+    const walk = new StructureWalk(this.assemblies, top, options.levels ?? 1);
+    const own = await this.labourFor(top);
+    const estimates = new Map<string, Promise<LabourEstimate>>();
+    const subAssemblies: SubAssemblyLabour[] = [];
+
+    const visit = async (
+      billId: string,
+      level: number,
+      path: ExplosionPathEntry[],
+      units: number,
+    ): Promise<void> => {
+      for (const line of await walk.linesOf(billId)) {
+        const component = await walk.resolve(line.componentSkuId);
+        const sub = walk.open(component, level, path);
+        if (!sub || !component.activeBom) continue;
+        const subBill = component.activeBom;
+        let estimate = estimates.get(sub.bomId);
+        if (!estimate) {
+          estimate = this.labourFor(subBill);
+          estimates.set(sub.bomId, estimate);
+        }
+        const unitsPerUnit = units * line.effectiveQtyPerUnit();
+        subAssemblies.push({
+          lineId: line.id as string,
+          componentSkuId: line.componentSkuId,
+          name: sub.name,
+          level,
+          path,
+          unitsPerUnit,
+          estimate: await estimate,
+        });
+        await visit(sub.bomId, level + 1, [...path, sub], unitsPerUnit);
+      }
+    };
+    await visit(bomId, 1, [await walk.root()], 1);
+
+    let totalMinutes = own.totalMinutes;
+    let totalCost = own.totalCost;
+    let hasMissingRates = own.hasMissingRates;
+    for (const sub of subAssemblies) {
+      totalMinutes += sub.unitsPerUnit * sub.estimate.totalMinutes;
+      // Cost in another currency is not added; the total is then a lower
+      // bound, as with a missing rate.
+      if (sub.estimate.currency === own.currency) {
+        totalCost += sub.unitsPerUnit * sub.estimate.totalCost;
+        if (sub.estimate.hasMissingRates) hasMissingRates = true;
+      } else if (sub.estimate.hasRouting) {
+        hasMissingRates = true;
+      }
+    }
+    return {
+      ...own,
+      hasRouting:
+        own.hasRouting || subAssemblies.some((sub) => sub.estimate.hasRouting),
+      totalMinutes,
+      totalCost,
+      hasMissingRates,
+      subAssemblies,
+    };
   }
 
   /** Run the {@link OperationRateResolver}; `null` when there is no rate. */
@@ -388,6 +772,58 @@ export class BomService {
     if (!Number.isFinite(value)) return null;
     return Number(value);
   }
+}
+
+/**
+ * One line of a walk before stock is considered: quantities for the run,
+ * with the parent's quantity (which already carries every waste above it)
+ * times this line's quantity per unit including its own waste.
+ */
+function explodedLine(
+  line: BomLine,
+  component: ResolvedComponent,
+  level: number,
+  path: ExplosionPathEntry[],
+  parentQty: number,
+): ExplodedLine {
+  const effectiveQtyPerUnit = line.effectiveQtyPerUnit();
+  return {
+    lineId: line.id as string,
+    bomId: line.bomId,
+    level,
+    path,
+    componentSkuId: line.componentSkuId,
+    kind: component.kind,
+    name: component.product?.name ?? '',
+    skuCode: component.sku?.code ?? '',
+    qtyPerUnit: Number(line.qtyPerUnit ?? 0),
+    wastePercent: Number(line.wastePercent ?? 0),
+    effectiveQtyPerUnit,
+    uom: line.uom,
+    totalQty: parentQty * effectiveQtyPerUnit,
+    buildable: component.buildable,
+    subBomId: component.activeBom?.id ?? null,
+    expanded: false,
+  };
+}
+
+/**
+ * Sum lines per component SKU, keeping the first unit seen (as the
+ * single-level explosion does).
+ */
+function sumRequirements(lines: ExplodedLine[]): MaterialRequirement[] {
+  const totals = new Map<string, MaterialRequirement>();
+  for (const line of lines) {
+    const existing = totals.get(line.componentSkuId);
+    if (existing) existing.totalQty += line.totalQty;
+    else
+      totals.set(line.componentSkuId, {
+        componentSkuId: line.componentSkuId,
+        totalQty: line.totalQty,
+        uom: line.uom,
+      });
+  }
+  return Array.from(totals.values());
 }
 
 /**

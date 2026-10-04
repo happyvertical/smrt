@@ -202,6 +202,54 @@ if (!check.ok) {
 }
 ```
 
+### Walk sub-assemblies
+
+Every `BomService` method reads one level by default. Pass `{ levels }` (a number of bill levels, or `'all'`) to open each sub-assembly that has an active bill. Waste compounds down the levels; units stay as each line declares them.
+
+```typescript
+const service = await BomService.create({ db });
+
+// Gross: every line with its level and path, plus the rolled-up totals.
+const explosion = await service.explode(frameBom.id!, 10, { levels: 'all' });
+// explosion.lines:  [{ level: 1, name: 'Side panel', totalQty: 20, expanded: true, ... },
+//                    { level: 2, name: 'Steel tube', totalQty: 44, uom: 'm', ... }, ...]
+// explosion.totals: [{ componentSkuId: tubeSku.id, totalQty: 44, uom: 'm' }]
+
+// Net of stock: what is available, what is short, and what building the
+// shortfall of each sub-assembly takes. Facts only; you decide build or buy.
+const plan = await service.planRequirements(frameBom.id!, 10, { levels: 'all' });
+// plan.lines:     [{ name: 'Side panel', totalQty: 20, available: 5, short: 15, expanded: true }, ...]
+// plan.shortages: [{ componentSkuId: tubeSku.id, requested: 33, available: 0, level: 2, path: [...] }]
+
+await service.canProduce(frameBom.id!, 10, { levels: 'all' }); // shortages at their own level
+await service.computeMaterialCost(frameBom.id!, { levels: 'all' }); // sub-assemblies costed from their bills
+await service.computeLabourEstimate(frameBom.id!, { levels: 'all' }); // adds sub-assembly routings
+```
+
+A walk stops at materials, bought items, assemblies without an active bill and the `levels` limit. It refuses a structure deeper than `MAX_EXPLOSION_DEPTH` (32) levels or larger than `MAX_EXPLOSION_LINES`, and a loop already present in stored data fails with `BomStructureCycleError` naming it.
+
+### Record a production run
+
+A `ProductionRun` is a build of a target quantity against one bill, reported as it happens.
+
+```typescript
+import { ProductionRunService } from '@happyvertical/smrt-manufacturing';
+
+const runs = await ProductionRunService.create({ db });
+const run = await runs.createRun({ productId: frame.id!, targetQty: 25 }); // pins the active bill
+
+await runs.recordCompletion(run.id!, { qty: 12 }); // 25 to build, 12 done; no stock moves
+
+// Optionally consume the bill and receive the finished units in the same transaction.
+await runs.recordCompletion(run.id!, {
+  qty: 13,
+  consume: { locationId: factory.id! },
+  produce: { locationId: factory.id!, finishedSkuId: frameSku.id! },
+}); // the run is now done
+```
+
+`start`, `finish` (done short of the target), `cancel` and `setTarget` move the run through `planned`, `in_progress`, `done` and `cancelled`. Concurrent reports all count and never pass the target. Quantities are decimals kept to six places and summed exactly, so `0.1 + 0.2` completes a target of `0.3`; a run accepts quantities up to `MAX_QUANTITY` (999,999,999).
+
 ### Execute consume / produce against a production order
 
 The `ProductionOrder` row itself lives in `@happyvertical/smrt-commerce` as a `Contract` STI subtype. This package mutates the inventory ledger on its behalf.
@@ -294,17 +342,23 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
     AssemblyForm,
     AssemblyList,
     BomEditor,
+    ProductionRunList,
+    RequirementsTree,
+    toRequirementTotals,
+    toRequirementTree,
   } from '@happyvertical/smrt-manufacturing/svelte';
 
-  let { assemblies, policy, fields, lines, components } = $props();
+  let { assemblies, policy, fields, lines, components, runs, plan } = $props();
 </script>
 
 <AssemblyList {assemblies} {policy} onselect={(id) => goto(`/assemblies/${id}`)} />
 <AssemblyForm {fields} {policy} onsubmit={save} />
 <BomEditor {lines} {components} onadd={addLine} loadBill={loadLines} error={saveError} />
+<ProductionRunList {runs} oncomplete={(runId, qty) => report(runId, qty)} />
+<RequirementsTree lines={toRequirementTree(plan)} totals={toRequirementTotals(plan)} />
 ```
 
-`AssemblyList` and `AssemblyForm` follow the consumer's field policy for `@happyvertical/smrt-manufacturing:Assembly` (a hidden price is not shown). Build rows with `toAssemblyView` and editor lines with `toBomEditorLines(await assemblyService.getBillStructure(bomId))`. A sub-assembly line in `BomEditor` says whether it has its own bill and expands read-only through `loadBill`.
+`AssemblyList` and `AssemblyForm` follow the consumer's field policy for `@happyvertical/smrt-manufacturing:Assembly` (a hidden price is not shown). Build rows with `toAssemblyView` and editor lines with `toBomEditorLines(await assemblyService.getBillStructure(bomId))`. A sub-assembly line in `BomEditor` says whether it has its own bill and expands read-only through `loadBill`. `ProductionRunList` shows each run's progress and status and, with `oncomplete`, a field to report finished units (rows from `toProductionRunView`). `RequirementsTree` shows an `explode` or `planRequirements` result by level, with available and short per line for a plan.
 
 ## API
 
@@ -317,6 +371,8 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 | `BomLine` | One component on a BOM. `effectiveQtyPerUnit()` returns the qty including waste. |
 | `Operation` | A kind of work: `code` (unique per tenant), `name`, `category`, `isActive` (retired operations stay on history, never deleted), optional `requiredQualificationId` (plain string id of a `smrt-human-resources` qualification). |
 | `RoutingStep` | One operation in a BOM's optional routing: `bomId`, `operationId`, `sequence` (1..n), `estimatedMinutes`, `notes`. |
+| `ProductionRun` | A build against one bill: `bomId`, `targetQty`, `completedQty`, `status` (`planned` / `in_progress` / `done` / `cancelled`). Written through `ProductionRunService`. |
+| `ProductionRunCompletion` | One dated report of finished units on a run: `runId`, `qty`, `completedAt`. |
 
 ### Collections
 
@@ -327,6 +383,8 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 | `BomLineCollection` | `findByBom`, `findByComponent` |
 | `OperationCollection` | `findByCode`, `listOperations({ includeRetired? })` |
 | `RoutingStepCollection` | `findByBom` (in step order), `findByOperation` |
+| `ProductionRunCollection` | `findByBom`, `findByStatus` |
+| `ProductionRunCompletionCollection` | `findByRun` (in completion order) |
 
 ### Services
 
@@ -335,7 +393,10 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 | `AssemblyService` | `resolveComponent`, `findActiveBom`, `isAssembly`, `getBillStructure`, `findCycle`, `assertLineAcyclic`, `assertBillAcyclic`. Pass `{ tenantId }` to read one tenant's structure. |
 | `createAssemblyService({ db })` | Convenience factory. |
 | `BomCycleError` | A `ValidationError` naming the `path` by which a save would make a product contain itself. |
-| `BomService` | Cost rollup, requirements explosion, can-produce check. |
+| `BomService` | Cost rollup, requirements explosion, can-produce check; `{ levels }` walks sub-assemblies. `explode` (gross lines and totals) and `planRequirements` (net of stock). |
+| `BomStructureCycleError`, `BomExplosionLimitError` | A walk met a loop in stored data, or exceeded `MAX_EXPLOSION_DEPTH` / `MAX_EXPLOSION_LINES`. |
+| `ProductionRunService` / `createProductionRunService({ db })` | `createRun`, `get`, `listCompletions`, `start`, `recordCompletion`, `finish`, `cancel`, `setTarget`. |
+| `ProductionRunNotFoundError`, `ProductionRunStateError`, `ProductionRunOverCompletionError`, `InvalidProductionRunInputError` | Production run errors. |
 | `createBomService({ db, costResolver?, rateResolver? })` | Convenience factory. `computeLabourEstimate(bomId)` rolls up routing minutes and, with a `rateResolver`, cost. |
 | `OperationService` / `createOperationService({ db })` | `define`, `get`, `list`, `rename`, `update`, `retire`, `reinstate`. |
 | `RoutingService` / `createRoutingService({ db })` | `list(bomId)`, `replaceRouting(bomId, steps)`. |
@@ -359,6 +420,11 @@ Per-handler toggles (`installProductionPosted`, `installProductionCompleted`) le
 | `MaterialRequirement` | Entry returned by `explodeRequirements`. |
 | `MaterialShortage` | Entry returned by `canProduce` when stock is insufficient. |
 | `CanProduceResult` | `{ ok: true; shortages: [] } \| { ok: false; shortages: [...] }` |
+| `ExplosionLevels`, `ExplosionOptions` | `levels`: a number of bill levels or `'all'`. |
+| `Explosion`, `ExplodedLine`, `ExplosionPathEntry` | Return shape of `explode`. |
+| `RequirementsPlan`, `PlannedLine` | Return shape of `planRequirements`. |
+| `SubAssemblyLabour` | One sub-assembly in a multi-level `LabourEstimate`. |
+| `CreateProductionRunInput`, `RecordCompletionInput`, `RecordCompletionResult` | Production run inputs and results. |
 | `ComponentCostResolver` | Async (or sync) callback returning unit cost or `null`. |
 | `OperationRateResolver` | Async (or sync) callback returning an operation's hourly rate or `null`. |
 | `LabourEstimate`, `RoutingStepEstimate` | Return shape of `computeLabourEstimate`. |

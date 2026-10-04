@@ -1,6 +1,6 @@
 # @happyvertical/smrt-manufacturing
 
-Bills of materials, operations and routing, cost and labour rollup, and production-order stock movement. Strictly industry-neutral — the same primitives serve apparel, furniture, automotive, CPG, electronics, food production, custom hardware, and any vertical that builds finished goods from a recipe.
+Bills of materials (multi-level through sub-assemblies), operations and routing, cost and labour rollup, production runs, and production-order stock movement. Strictly industry-neutral — the same primitives serve apparel, furniture, automotive, CPG, electronics, food production, custom hardware, and any vertical that builds finished goods from a recipe.
 
 Sits on top of `@happyvertical/smrt-inventory` (stock) and `@happyvertical/smrt-products` (catalog: `Product`, `Material`, `Sku`), and works alongside the `ProductionOrder` Contract STI subtype already shipped in `@happyvertical/smrt-commerce`.
 
@@ -12,6 +12,8 @@ Sits on top of `@happyvertical/smrt-inventory` (stock) and `@happyvertical/smrt-
 | `BillOfMaterials` | Recipe for a finished product. `productId` (plain string) references the upstream `Product` or any STI subtype. Multiple revisions per product via `version` + `status` (`draft` / `active` / `superseded`). `conflictColumns: ['product_id', 'version', 'tenant_id']`. |
 | `BomLine` | One component on a BOM. `bomId` (FK), `componentSkuId` (plain string ref — the `Sku` model lives in `@happyvertical/smrt-products`; inventory tracks stock motion against the id), `qtyPerUnit`, `uom` (open-ended — `yards`, `each`, `grams`, `kg`, ...), `wastePercent`, `notes`. `conflictColumns: ['bom_id', 'component_sku_id', 'tenant_id']`. |
 | `Operation` | A kind of work (cut, weld, inspect), a managed list per tenant. `code` (unique per tenant; `conflictColumns: ['code', 'tenant_id']`, fixed once defined), `name`, `category`, `isActive` (retire/reinstate; never deleted, `delete()` throws), `requiredQualificationId` (nullable `@crossPackageRef('@happyvertical/smrt-human-resources:Qualification')`: metadata only, no dependency, unvalidated; an application reads it to gate who may start the operation). |
+| `ProductionRun` | A build against one bill, reported as it happens ("25 to build, 12 done"). `bomId` (`@foreignKey(BillOfMaterials)`, RESTRICT: pinned when created), `targetQty` and `completedQty` (decimal; completed is the sum of completions), `status` (`planned` / `in_progress` / `done` / `cancelled`). Generated list/get only; `ProductionRunService` owns writes. |
+| `ProductionRunCompletion` | One dated report on a run: `runId` (`@foreignKey(ProductionRun)`, CASCADE), `qty` (decimal, > 0), `completedAt`. Generated list/get only. |
 | `RoutingStep` | One operation in a BOM's optional routing. `bomId` (`@foreignKey(BillOfMaterials)`, CASCADE: a routing belongs to its bill), `operationId` (`@foreignKey(Operation)`, RESTRICT: operations are retired, never deleted), `sequence` (1..n, unique per bom), `estimatedMinutes` (decimal, per produced unit), `notes`. `conflictColumns: ['bom_id', 'sequence', 'tenant_id']`. |
 
 All models are `@TenantScoped({ mode: 'optional' })` with a nullable `tenantId` so they can be used either tenant-scoped or globally.
@@ -33,16 +35,24 @@ A sub-assembly is a `BomLine` whose component SKU belongs to an `Assembly`; ther
 |---|---|
 | `resolveComponent(skuId, { tenantId? })` | `{ kind, sku, product, assembly, activeBom, buildable }`. `kind` is `assembly`, `material` (`Material`), `bought` (any other `Product`), or `missing` (unknown SKU, SKU with no product, or a non-UUID id; never throws). `activeBom` is the assembly's highest active bill, `null` when it has none; `buildable` is `assembly && activeBom`. Multi-level explosion (#3444) recurses on `activeBom` and stops at every other kind. |
 | `isAssembly(skuId)` | `resolveComponent(skuId).kind === 'assembly'`. |
-| `findActiveBom(productId, { tenantId? })` | Highest active bill. With `tenantId` (including `null`), only that tenant's bills count, and `resolveComponent` reports another tenant's SKU, product or bill line as `missing` (global rows stay visible), whatever the tenant context; the cycle walk and `getBillStructure` pass the bill's own tenant, so a shared assembly resolves to the right tenant's bill on writes made without `withTenant()`. |
+| `findActiveBom(productId, { tenantId? })` | Highest active bill. With `tenantId` (including `null`), that tenant's own bill, else a global one, and `resolveComponent` reads the SKU and product as that tenant's or global (through `tenant-scope.ts`, so a shared global component stays visible under a tenant context) and reports another tenant's as `missing`, whatever the tenant context; the cycle walk and `getBillStructure` pass the bill's own tenant, so a shared assembly resolves to the right tenant's bill on writes made without `withTenant()`. |
 | `getBillStructure(bomId)` | One level: the bill plus each line with its resolved component. Throws `BomNotFoundError`. |
 | `findCycle(productId, componentSkuIds)` | The path by which those components would make `productId` contain itself, following sub-assemblies' **active** bills only; `null` when none. |
 | `assertLineAcyclic(line)` / `assertBillAcyclic(bom)` | Throw `BomCycleError` (a `ValidationError`, code `MANUFACTURING_BOM_CYCLE`, `path` from the product back to itself). |
 
 **Cycle refusal runs in the models.** `BomLine.validateBeforeSave` checks every line save (draft bills too, so a loop is refused when written); `BillOfMaterials.validateBeforeSave` checks every save of an `active` bill (activation), including the lines of a stored bill with the same `(productId, version, tenantId)` that the save would upsert onto. The generated REST routes go through `save()`, so they refuse cycles as well. Not covered: re-pointing a `Sku.productId` (owned by `smrt-products`) and two concurrent saves that each close half of a loop.
 
+## Multi-level walks and production runs
+
+Detail: [agents/multilevel-and-runs.md](agents/multilevel-and-runs.md).
+
+- Every `BomService` method takes `{ levels }` (default `1`, unchanged; up to `MAX_EXPLOSION_DEPTH` = 32, or `'all'`). One walk (`services/structure-walk.ts`) serves `explode` (gross lines and totals), `planRequirements` (net of stock: available, short, what building a shortfall takes; facts, no make-or-buy policy), `canProduce`, cost and labour. A loop already in stored data fails with `BomStructureCycleError`; size limits with `BomExplosionLimitError`.
+- `ProductionRunService` writes `ProductionRun` / `ProductionRunCompletion` in one transaction per call, locking the run row through its revision-guarded save and retrying on a revision conflict; no adapter without `transaction()`. Stock moves only when the caller passes `consume` / `produce`.
+- A run is not commerce's `ProductionOrder` (a `Contract` with terms and money, in a package this one does not depend on); an application that has both links them.
+
 ## Svelte components (`./svelte`)
 
-Props-driven; the host loads and persists. `AssemblyList` (field policy drops hidden columns via `policyToVisibleColumnIds`), `AssemblyForm` (smrt-fields `ObjectForm` for `@happyvertical/smrt-manufacturing:Assembly`, so price and every other field follow the consumer's field policy), `BomEditor` (add/edit/remove lines through host handlers; a sub-assembly shows whether it has its own bill and expands read-only through `loadBill`), `BomStructureTree` (the read-only nested view). Adapters: `toAssemblyView`, `toBomEditorLines`. Strings are under `manufacturing.` in `src/svelte/i18n.ts`; the package is strict for raw primitives, hardcoded strings and JSDoc.
+Props-driven; the host loads and persists. `AssemblyList` (field policy drops hidden columns via `policyToVisibleColumnIds`), `AssemblyForm` (smrt-fields `ObjectForm` for `@happyvertical/smrt-manufacturing:Assembly`, so price and every other field follow the consumer's field policy), `BomEditor` (add/edit/remove lines through host handlers; a sub-assembly shows whether it has its own bill and expands read-only through `loadBill`), `BomStructureTree` (the read-only nested view). `ProductionRunList` (progress, status, and with `oncomplete` a quantity field per open run; rows from `toProductionRunView`), `RequirementsTree` (read-only `explode` / `planRequirements` result by level with totals; `toRequirementTree`, `toRequirementTotals`; internal `RequirementsTreeLevel`). Adapters: `toAssemblyView`, `toBomEditorLines`. Strings are under `manufacturing.` in `src/svelte/i18n.ts`; the package is strict for raw primitives, hardcoded strings and JSDoc.
 
 
 ## BomService — planning helpers
@@ -72,6 +82,7 @@ const check = await bom.canProduce(bomId, 100);
 | `computeMaterialCost(bomId)` | Walks every BomLine, applies waste (`qtyPerUnit * (1 + wastePercent / 100)`), resolves unit costs via the optional `costResolver`, returns per-line breakdown plus rolled-up total. Lines with no cost set `costUnavailable: true` and contribute `0`. |
 | `explodeRequirements(bomId, qty)` | Returns a "shopping list" of materials needed for `qty` units. Duplicates across lines are summed. Does NOT mutate stock. |
 | `canProduce(bomId, qty)` | Calls `explodeRequirements`, then sums `available` stock across every location per component, returns `{ ok: true }` if everything's covered, else `{ ok: false, shortages: [...] }`. |
+| `explode` / `planRequirements` | Multi-level walks; see "Multi-level walks" above. Each method above also takes `{ levels }`. |
 
 ## ProductionService — consume / produce
 
@@ -102,7 +113,7 @@ const { consumed, produced } = await production.runProduction(
 );
 ```
 
-All three methods write through `StockService` and stamp every emitted `StockMovement` with `sourceType: 'ProductionOrder'` + the production order id so audit queries can roll them up later.
+All three methods write through `StockService` and stamp every emitted `StockMovement` with `sourceType: 'ProductionOrder'` (override with the `sourceType` option, as `ProductionRunService` does) + the production order id so audit queries can roll them up later.
 
 ### Joint atomicity — `runProduction` vs the two-call form
 
@@ -155,7 +166,7 @@ The companion handlers for `contract:created` (reserve) and `fulfillment:shipped
 
 ## Tests
 
-`src/__tests__/assembly-suite.ts` runs on SQLite (`assembly.test.ts`) and on PostgreSQL (`assembly.optional.test.ts`, skipped without `DATABASE_URL`; `pnpm test:postgres` and the PostgreSQL CI lane run it on a transaction-scoped handle). Component tests under `src/svelte/__tests__` use jsdom and assert axe.
+`multilevel-suite.ts` (rolled back on PostgreSQL) and `production-run-suite.ts` (base handle, per-test tenant, for real concurrent transactions) follow the same SQLite / `*.optional.test.ts` pattern. `src/__tests__/assembly-suite.ts` runs on SQLite (`assembly.test.ts`) and on PostgreSQL (`assembly.optional.test.ts`, skipped without `DATABASE_URL`; `pnpm test:postgres` and the PostgreSQL CI lane run it on a transaction-scoped handle). Component tests under `src/svelte/__tests__` use jsdom and assert axe.
 
 ## Gotchas
 
@@ -165,7 +176,7 @@ The companion handlers for `contract:created` (reserve) and `fulfillment:shipped
 - **`consumeMaterials` propagates `InsufficientStockError`.** If a line would drive `available` below zero, the underlying `StockService.adjust` throws. Pre-flight with `canProduce` before posting if you want to avoid partial-failure mid-run.
 - **`consumeMaterials` is atomic across BOM lines.** All per-line deductions and their audit rows run inside a single `stockService.withTransaction(...)` scope (powered by `@happyvertical/sql >= 0.74.0`'s native `db.transaction()`). An `InsufficientStockError` on line N+1 rolls back lines 1..N so production-order posting never leaves materials half-consumed. The recommended pre-flight (`BomService.canProduce(orderId, qty)`) is still useful when you'd rather know upfront than discover the shortfall mid-run, but a missed pre-flight no longer corrupts state.
 - **`consumeMaterials` + `produceFinishedGoods` are NOT jointly atomic.** Each opens its own transaction. A failure on the produce leg leaves materials deducted with no finished SKU receipt to balance it. Use `runProduction(order, { consume, produce })` when you need both legs to commit or roll back together.
-- **Cross-package references are plain strings.** `productId`, `componentSkuId`, `bomId` (within this package) — all plain string ids, never `@foreignKey()`. The package does depend on `smrt-products` (for `Assembly` and the resolve helper), but the bill schema does not couple to the catalog's table layout.
+- **Cross-package references are plain strings.** `BillOfMaterials.productId`, `BomLine.componentSkuId` and `BomLine.bomId` are plain string ids (changing them to UUID references needs a migration window); the newer models (`RoutingStep`, `ProductionRun`, `ProductionRunCompletion`) reference this package's own models with `@foreignKey`. The package does depend on `smrt-products` (for `Assembly` and the resolve helper), but the bill schema does not couple to the catalog's table layout.
 - **`Assembly` fields are columns, not `Meta<T>`.** Unlike `Material`, its own fields are ordinary columns this package adds to `products` (filterable over REST). The PostgreSQL suite asserts they land there.
 - **`AssemblyCollection` lists exact `Assembly` rows.** An application subtype (e.g. one adding a customer) has its own `_meta_type`; read it through its own collection or `ProductCollection` (`resolveComponent` uses `instanceof Assembly`, so subtypes resolve as assemblies).
 - **`conflictColumns` include `tenant_id`** on both models. NULL-matching semantics are handled by `@happyvertical/sql >= 0.74.0`; two saves with the same `(product_id, version, NULL)` tuple merge in place.
@@ -180,6 +191,7 @@ Every emitted `StockMovement` carries `sourceType: 'ProductionOrder'` plus `sour
 |---|---|---|
 | `production_consume` | `ProductionService.consumeMaterials` | One per BOM line per consume call |
 | `production_produce` | `ProductionService.produceFinishedGoods` | One per produce call |
+| either, with `sourceType: 'ProductionRunCompletion'` | `ProductionRunService.recordCompletion` | Only when the caller passes `consume` / `produce` |
 
 These join cleanly with the standard inventory reason codes (`receipt`, `reservation`, `release`, `fulfillment`, `transfer_out`, `transfer_in`, `adjustment`) defined in `@happyvertical/smrt-inventory`.
 
