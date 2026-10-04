@@ -93,12 +93,40 @@ export class SessionCollection extends SmrtCollection<Session> {
    * Active sessions layered on `parentSessionId` (e.g. every person signed in
    * on one enrolled device). Expired rows are filtered out.
    */
+  /**
+   * Ids of ACTIVE sessions matching `column = value`, read with raw SQL so a
+   * caller's `defaultListLimit`/`maxListLimit` can never truncate a
+   * revocation sweep: a dropped row is a session left authorized.
+   */
+  private async activeSessionIds(
+    column: 'parent_session_id' | 'user_id',
+    value: string,
+    extra?: { column: 'auth_method'; value: string },
+  ): Promise<string[]> {
+    const result = await this.db.query(
+      `SELECT id FROM ${this.tableName}
+        WHERE ${column} = ? AND status = ?${extra ? ` AND ${extra.column} = ?` : ''}`,
+      value,
+      SessionStatus.ACTIVE,
+      ...(extra ? [extra.value] : []),
+    );
+    return (result.rows ?? []).map((row) => String(row.id));
+  }
+
   async findChildren(parentSessionId: string): Promise<Session[]> {
-    const results = await this.list({
-      where: { parentSessionId, status: SessionStatus.ACTIVE },
-      orderBy: 'last_accessed_at DESC',
-    });
-    return results.filter((session) => session.isValid());
+    // `parentSessionId` is a sensitive field (it is the parent's bearer), so
+    // it cannot be a list() filter; ids come from the unbounded raw read.
+    const children: Session[] = [];
+    for (const id of await this.activeSessionIds(
+      'parent_session_id',
+      parentSessionId,
+    )) {
+      const child = await this.get(id);
+      if (child?.isValid()) children.push(child);
+    }
+    return children.sort(
+      (a, b) => b.lastAccessedAt.getTime() - a.lastAccessedAt.getTime(),
+    );
   }
 
   /**
@@ -112,11 +140,14 @@ export class SessionCollection extends SmrtCollection<Session> {
     parentSessionId: string,
     options: { exceptSessionId?: string } = {},
   ): Promise<number> {
-    const children = await this.findChildren(parentSessionId);
+    const childIds = await this.activeSessionIds(
+      'parent_session_id',
+      parentSessionId,
+    );
     let count = 0;
-    for (const child of children) {
-      if (!child.id || child.id === options.exceptSessionId) continue;
-      if (await this.revokeWithRetry(child.id)) count++;
+    for (const childId of childIds) {
+      if (childId === options.exceptSessionId) continue;
+      if (await this.revokeWithRetry(childId)) count++;
     }
     return count;
   }
@@ -129,12 +160,13 @@ export class SessionCollection extends SmrtCollection<Session> {
     userId: string,
     authMethod: SessionAuthMethod,
   ): Promise<number> {
-    const sessions = await this.list({
-      where: { userId, authMethod, status: SessionStatus.ACTIVE },
+    const sessionIds = await this.activeSessionIds('user_id', userId, {
+      column: 'auth_method',
+      value: authMethod,
     });
     let count = 0;
-    for (const session of sessions) {
-      if (session.id && (await this.revokeWithRetry(session.id))) count++;
+    for (const sessionId of sessionIds) {
+      if (await this.revokeWithRetry(sessionId)) count++;
     }
     return count;
   }

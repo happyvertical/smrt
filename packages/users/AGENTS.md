@@ -93,6 +93,13 @@ are not prerequisites for unrelated user-package work.
 - A layered session whose tenant differs from its parent's never loads (null
   is allowed: narrower). Limiter rows carry `retain_until`; retention must
   not fall back to a process-wide horizon.
+- `Session.parentSessionId` is the parent's bearer: sensitive, never a
+  `list()` filter (raw-SQL id reads, which also keep revocation sweeps free of
+  caller list bounds), never serialized to clients. `users.pin.manage` reaches
+  only active members of the actor's tenant. A sign-in re-checks the verified
+  credential generation AFTER the mint (`stillValid`); keep that ordering.
+  Operation guards deny outside a session's ceiling; `loadPersonSession`
+  re-checks device enrollment.
 - Tenant switching verifies active membership before writing and rotates the
   session ID for non-null targets, revoking the old session. Persist the returned
   `SwitchTenantResult.sessionId`; `switchSessionTenant()` updates the cookie and

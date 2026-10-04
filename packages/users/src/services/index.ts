@@ -45,6 +45,7 @@ export {
   DeviceCredentialPolicyError,
   DeviceCredentialService,
   type DeviceCredentialServiceOptions,
+  type DeviceCredentialVerification,
   type DeviceCredentialVerifier,
   type DeviceSignInContext,
   type DeviceSignInInput,

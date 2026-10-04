@@ -713,7 +713,9 @@ cap every person on that device. A non-null result is snapshotted into the
 person's session at sign-in (`data.permissionCeiling`) and intersected with
 their resolved permissions on every load; it only removes slugs, and `[]`
 leaves none. A ceilinged session never receives `superAdminBypass` or
-`systemContext` from `withSessionPermissionContext`. Returning `null` (or
+`systemContext` from `withSessionPermissionContext`, and
+`assertOperationPermission` / `checkOperationPermission` called inside that
+session deny anything outside the ceiling. Returning `null` (or
 omitting the hook) means no ceiling. Because it is a snapshot, **a ceiling
 change applies at each person's next sign-in**; a throwing hook refuses the
 sign-in.
@@ -730,6 +732,18 @@ resolves the bearer and is independent of the device session's long life.
 activity cannot extend. `permissionCeiling`, `idleSeconds`, and
 `absoluteExpiresAt` are reserved `Session.data` keys (`SESSION_DATA_KEYS`):
 server-set at mint, never to be written from client input.
+
+**Operational contracts.** `parent.sessionId` is the device's bearer
+credential: keep `SessionContext.parent` / `locals.sessionParent` server-side
+and give clients `parent.userId` as the device identity
+(`Session.parentSessionId` is a sensitive field and never appears in public
+serialization). Resolve person bearers with `service.loadPersonSession(token)`:
+it re-checks `assertEnrolledDevice` on every call and revokes the person
+session of a device that fails it. A host that resolves them through its own
+`SessionService` must instead revoke the device's bearer session when it
+un-enrols the device. PIN administration (`users.pin.manage`) reaches only
+people with an active membership in the administrator's session tenant; the
+PIN itself is one per person across tenants.
 
 Existing installations need `smrt db:migrate` for the additive
 `sessions.auth_method` / `sessions.parent_session_id` columns and the

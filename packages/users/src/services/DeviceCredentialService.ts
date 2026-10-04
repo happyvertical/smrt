@@ -144,11 +144,23 @@ export interface DeviceCredentialVerifier<Input> {
   readonly kind: SessionAuthMethod;
   /** The identifier the limiter keys the subject budget on. */
   subjectKey(input: Input): string;
-  /** Returns the authenticated user id, or null for any failure. */
+  /**
+   * Returns the authenticated user id, or null for any failure. `stillValid`,
+   * when supplied, is called AFTER the session is minted: return false if the
+   * credential that was verified has since been rotated or removed, and the
+   * sign-in is undone. Checking after the mint is what closes the race with
+   * a concurrent reset/clear — their revocation sweep runs after their write,
+   * so either this check sees the write or that sweep sees the session.
+   */
   verify(
     input: Input,
     context: DeviceSignInContext,
-  ): Promise<{ userId: string } | null>;
+  ): Promise<DeviceCredentialVerification | null>;
+}
+
+export interface DeviceCredentialVerification {
+  userId: string;
+  stillValid?: () => Promise<boolean>;
 }
 
 export interface DeviceCredentialServiceOptions extends SmrtClassOptions {
@@ -380,7 +392,9 @@ export class PinVerifier implements DeviceCredentialVerifier<PinSignInInput> {
     return input.userId;
   }
 
-  async verify(input: PinSignInInput): Promise<{ userId: string } | null> {
+  async verify(
+    input: PinSignInInput,
+  ): Promise<DeviceCredentialVerification | null> {
     // A malformed id is just an unknown user: never let it reach a native
     // UUID predicate (PostgreSQL 22P02), which would answer differently and
     // skip the equal-work hash below.
@@ -389,7 +403,15 @@ export class PinVerifier implements DeviceCredentialVerifier<PinSignInInput> {
       : null;
     const encoded = credential?.pinHash || this.dummyHash;
     const ok = await verifyPinHash(input.pin, this.pepper, encoded);
-    return ok && credential ? { userId: credential.userId } : null;
+    if (!ok || !credential) return null;
+    const { userId, pinHash } = credential;
+    return {
+      userId,
+      // The salted hash is unique per write, so it identifies the credential
+      // generation across both rotation and delete-then-recreate.
+      stillValid: async () =>
+        (await this.credentials.findByUserId(userId))?.pinHash === pinHash,
+    };
   }
 }
 
@@ -545,7 +567,7 @@ export class DeviceCredentialService {
     });
     if (!lease.allowed) throw new LoginRateLimitError(lease);
 
-    let verified: { userId: string } | null = null;
+    let verified: DeviceCredentialVerification | null = null;
     let credentialFailed = false;
     let mintedSessionId: string | null = null;
     try {
@@ -618,6 +640,13 @@ export class DeviceCredentialService {
       );
       mintedSessionId = sessionId;
 
+      // Bind the session to the credential generation that was verified: a
+      // reset or clear that completed while this sign-in was in flight must
+      // not leave a fresh session behind its revocation sweep.
+      if (verified.stillValid && !(await verified.stillValid())) {
+        throw new DeviceCredentialError();
+      }
+
       // Hand-over: the device now belongs to this person alone. Done after
       // the mint so a failed sign-in never signs the previous person out.
       if (this.singleOccupant) {
@@ -667,10 +696,26 @@ export class DeviceCredentialService {
 
   /**
    * Resolve a person's bearer. Returns null unless it is a live layered
-   * session whose parent is still an enrolled device.
+   * session whose parent is still an enrolled device — the host's
+   * `assertEnrolledDevice` is consulted on every call, and a person session
+   * on a device that fails it is revoked. Hosts that resolve person bearers
+   * through their own `SessionService` instead must revoke the device's
+   * bearer session when they un-enrol it.
    */
   async loadPersonSession(personToken: string): Promise<SessionContext | null> {
-    const context = await this.sessionService.loadSessionContext(personToken);
+    const token = personToken?.trim();
+    if (!token) return null;
+    // Vet the device BEFORE the child is accepted or its idle expiry
+    // extended: un-enrolling a device in the host's registry ends the people
+    // on it even if the host never revoked the device bearer.
+    const parentSessionId =
+      await this.readonlySessionService.getParentSessionId(token);
+    if (!parentSessionId) return null;
+    if (!(await this.resolveEnrolledDevice(parentSessionId))) {
+      await this.sessionService.destroySession(token).catch(() => false);
+      return null;
+    }
+    const context = await this.sessionService.loadSessionContext(token);
     if (!context?.parent) return null;
     return context;
   }
@@ -700,7 +745,7 @@ export class DeviceCredentialService {
   async setPin(input: SetPinInput): Promise<void> {
     this.assertPinPolicy(input.pin);
     const self = input.actor.user.id === input.userId;
-    if (!self) this.assertCanManage(input.actor);
+    if (!self) await this.assertCanManage(input.actor, input.userId);
 
     let endResetSessions = false;
     // Any layered session — PIN or another device credential kind — sits on
@@ -764,7 +809,7 @@ export class DeviceCredentialService {
    * next use, and revokes every live PIN session the person holds.
    */
   async resetPin(input: ResetPinInput): Promise<{ revokedSessions: number }> {
-    this.assertCanManage(input.actor);
+    await this.assertCanManage(input.actor, input.userId);
     this.assertPinPolicy(input.pin);
     await this.writePin(input.userId, input.pin, {
       mustReset: true,
@@ -796,7 +841,7 @@ export class DeviceCredentialService {
       input.actor.authMethod === PIN_LOGIN_KIND ||
       input.actor.parent
     ) {
-      this.assertCanManage(input.actor);
+      await this.assertCanManage(input.actor, input.userId);
     }
     await this.pinCredentials.deleteByUserId(input.userId);
     const revokedSessions =
@@ -870,7 +915,10 @@ export class DeviceCredentialService {
     return [...new Set(ceiling)];
   }
 
-  private assertCanManage(actor: SessionContext): void {
+  private async assertCanManage(
+    actor: SessionContext,
+    targetUserId: string,
+  ): Promise<void> {
     // A PIN session can never administer PINs, whatever permissions the
     // person holds: a stolen unlocked tablet must not be able to rotate
     // other people's credentials.
@@ -880,6 +928,17 @@ export class DeviceCredentialService {
     if (!actor.permissions.includes(this.managePermission)) {
       throw new DeviceCredentialForbiddenError();
     }
+    // `permissions` were resolved for the actor's tenant, so they confer
+    // authority only over that tenant's people: the target must be an active
+    // member there. Unknown, malformed and foreign targets are refused alike.
+    const membership =
+      actor.tenantId && UUID_PATTERN.test(targetUserId)
+        ? await this.memberships.findByUserAndTenant(
+            targetUserId,
+            actor.tenantId,
+          )
+        : null;
+    if (!membership?.isActive()) throw new DeviceCredentialForbiddenError();
   }
 
   private assertPinPolicy(pin: string): void {

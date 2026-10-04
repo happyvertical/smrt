@@ -165,10 +165,14 @@ export class Session extends SmrtObject {
    * the retention sweep's parent deletes, and the liveness rule in
    * `SessionService.loadSessionContext` already makes an orphan invalid.
    *
+   * Sensitive: the value IS the parent's (longer-lived) bearer credential,
+   * so public serialization of a child must never reveal it — otherwise a
+   * stolen person credential could be traded up for the device's.
+   *
    * Indexed: `SessionCollection.findChildren()` and the sign-out cascade
    * query by this column.
    */
-  @field({ sqlType: 'UUID', nullable: true, indexed: true })
+  @field({ sqlType: 'UUID', nullable: true, indexed: true, sensitive: true })
   parentSessionId: string | null = null;
 
   constructor(options: SessionOptions = {}) {

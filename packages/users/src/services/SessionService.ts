@@ -68,7 +68,11 @@ export interface SessionContext {
   permissionCeiling?: string[] | null;
 }
 
-/** Identity of the session a layered session rides on. */
+/**
+ * Identity of the session a layered session rides on. Server-side only:
+ * `sessionId` is the parent's bearer credential, so never serialize this
+ * object to a client — `userId` is the non-secret device identity.
+ */
 export interface SessionParentContext {
   sessionId: string;
   userId: string;
@@ -324,6 +328,16 @@ export class SessionService {
       await this.sessionCollection.revokeChildren(sessionId).catch(() => 0);
     }
     return revoked;
+  }
+
+  /**
+   * The parent session id of a live layered session, or null. Records no
+   * activity: for callers that must vet the parent before the child is
+   * accepted and its idle expiry extended.
+   */
+  async getParentSessionId(sessionId: string): Promise<string | null> {
+    const session = await this.sessionCollection.findValidSession(sessionId);
+    return session?.isLayered() ? session.parentSessionId : null;
   }
 
   /**

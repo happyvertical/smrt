@@ -26,6 +26,10 @@ import {
   PIN_LOGIN_KIND,
 } from '../services/DeviceCredentialService.js';
 import { LoginRateLimitError } from '../services/LoginAttemptLimiter.js';
+import {
+  assertOperationPermission,
+  OperationPermissionError,
+} from '../services/OperationPermissionService.js';
 import { withSessionPermissionContext } from '../services/SessionPermissionContext.js';
 import {
   type SessionContext,
@@ -966,6 +970,184 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
         { action: 'set', self: false, actorId: adminId },
       ]);
       expect(JSON.stringify(record.mock.calls)).not.toContain(welderId);
+    });
+
+    it('never reveals the device bearer through a person session’s public serialization', async () => {
+      const signedIn = await signIn(service, welderId);
+      const stored = await sessions.get(signedIn.sessionId);
+      expect(stored?.parentSessionId).toBe(deviceToken);
+      expect(JSON.stringify(stored?.toPublicJSON())).not.toContain(deviceToken);
+    });
+
+    it('enforces the ceiling in the standard operation guard, not only in context.permissions', async () => {
+      const catalog = {
+        permissions: ['jobs.read', 'jobs.approve'].map((slug) => ({ slug })),
+      } as never;
+      const guard = (sessionId: string, action: string) =>
+        withSessionPermissionContext({ ...options, sessionId }, () =>
+          assertOperationPermission({
+            ...options,
+            catalog,
+            collection: 'jobs',
+            action,
+          }),
+        );
+
+      const svc = await makeService({
+        deviceCeiling: async () => ['jobs.read'],
+        singleOccupant: false,
+      });
+      const ceilinged = await signIn(svc, foremanId);
+      expect((await guard(ceilinged.sessionId, 'read')).allowed).toBe(true);
+      // The foreman's role grants jobs.approve; the device does not.
+      await expect(
+        guard(ceilinged.sessionId, 'approve'),
+      ).rejects.toBeInstanceOf(OperationPermissionError);
+      // Naming the same principal explicitly does not step around it.
+      await expect(
+        withSessionPermissionContext(
+          { ...options, sessionId: ceilinged.sessionId },
+          () =>
+            assertOperationPermission({
+              ...options,
+              catalog,
+              collection: 'jobs',
+              action: 'approve',
+              userId: foremanId,
+              tenantId,
+            }),
+        ),
+      ).rejects.toBeInstanceOf(OperationPermissionError);
+
+      const plain = await signIn(
+        await makeService({ singleOccupant: false }),
+        foremanId,
+      );
+      expect((await guard(plain.sessionId, 'approve')).allowed).toBe(true);
+    });
+
+    it('limits PIN administration to people in the administrator’s own tenant', async () => {
+      const outsider = await users.create({ email: 'outsider@example.com' });
+      await outsider.save();
+      const outsiderId = outsider.id as string;
+      const memberships = await MembershipCollection.create(options);
+      const here = await memberships.findByUserAndTenant(welderId, tenantId);
+      const elsewhere = await memberships.create({
+        userId: outsiderId,
+        tenantId: otherTenantId,
+        roleId: here?.roleId as string,
+      });
+      await elsewhere.save();
+      const otherAdmin = { ...adminActor(), tenantId: otherTenantId };
+      await service.setPin({
+        actor: otherAdmin,
+        userId: outsiderId,
+        pin: '2580',
+      });
+
+      // A tenant-A admin holding users.pin.manage has no say over a
+      // tenant-B-only user, an unknown user, or a malformed id.
+      for (const userId of [outsiderId, crypto.randomUUID(), 'not-a-uuid']) {
+        await expect(
+          service.setPin({ actor: adminActor(), userId, pin: '1357' }),
+        ).rejects.toBeInstanceOf(DeviceCredentialForbiddenError);
+        await expect(
+          service.resetPin({ actor: adminActor(), userId, pin: '1357' }),
+        ).rejects.toBeInstanceOf(DeviceCredentialForbiddenError);
+        await expect(
+          service.clearPin({ actor: adminActor(), userId }),
+        ).rejects.toBeInstanceOf(DeviceCredentialForbiddenError);
+      }
+      expect(await service.hasPin(outsiderId)).toBe(true);
+      // An administrator with no tenant context administers nobody.
+      await expect(
+        service.resetPin({
+          actor: { ...adminActor(), tenantId: null },
+          userId: welderId,
+          pin: '1357',
+        }),
+      ).rejects.toBeInstanceOf(DeviceCredentialForbiddenError);
+    });
+
+    it.each([
+      'reset',
+      'clear',
+    ] as const)('does not let an in-flight sign-in survive a concurrent PIN %s', async (operation) => {
+      // The ceiling hook runs after the PIN verified and before the mint:
+      // complete the rotation (write + revocation sweep) inside that gap.
+      let svc: DeviceCredentialService;
+      svc = await makeService({
+        deviceCeiling: async () => {
+          if (operation === 'reset') {
+            await svc.resetPin({
+              actor: adminActor(),
+              userId: welderId,
+              pin: '8642',
+            });
+          } else {
+            await svc.clearPin({ actor: adminActor(), userId: welderId });
+          }
+          return null;
+        },
+      });
+      await expect(signIn(svc, welderId)).rejects.toBeInstanceOf(
+        DeviceCredentialError,
+      );
+      expect(await sessions.findByUser(welderId)).toHaveLength(0);
+    });
+
+    it('revokes every session under restrictive caller list bounds', async () => {
+      const bounded = { defaultListLimit: 1, maxListLimit: 1 };
+      const multi = await makeService({ ...bounded, singleOccupant: false });
+      const first = await signIn(multi, welderId);
+      const second = await signIn(multi, welderId);
+      const third = await signIn(multi, foremanId);
+      expect(
+        (
+          await multi.resetPin({
+            actor: adminActor(),
+            userId: welderId,
+            pin: '8642',
+          })
+        ).revokedSessions,
+      ).toBe(2);
+      for (const { sessionId } of [first, second]) {
+        expect(await sessionService.loadSessionContext(sessionId)).toBeNull();
+      }
+
+      // Hand-over ends every previous occupant, not just one page of them.
+      const fourth = await signIn(multi, foremanId);
+      const single = await makeService(bounded);
+      const next = await signIn(single, foremanId);
+      for (const { sessionId } of [third, fourth]) {
+        expect(await sessionService.loadSessionContext(sessionId)).toBeNull();
+      }
+      expect(
+        await sessionService.loadSessionContext(next.sessionId),
+      ).not.toBeNull();
+    });
+
+    it('ends a person session once the host no longer considers the device enrolled', async () => {
+      const signedIn = await signIn(service, welderId);
+      expect(
+        (await service.loadPersonSession(signedIn.sessionId))?.user.id,
+      ).toBe(welderId);
+      const before = await sessions.get(signedIn.sessionId);
+
+      // Un-enrol in the host registry only; the device bearer is not revoked.
+      activeDevices.clear();
+      expect(await service.loadPersonSession(signedIn.sessionId)).toBeNull();
+      const after = await sessions.get(signedIn.sessionId);
+      expect(after?.status).toBe('revoked');
+      expect(new Date(after?.expiresAt as Date).getTime()).toBe(
+        new Date(before?.expiresAt as Date).getTime(),
+      );
+      // Not a person session at all: refused without touching anything.
+      activeDevices.add(deviceUserId);
+      expect(await service.loadPersonSession(deviceToken)).toBeNull();
+      expect(
+        await sessionService.loadSessionContext(deviceToken),
+      ).not.toBeNull();
     });
 
     it('rejects non-positive idle and absolute lifetimes', () => {
