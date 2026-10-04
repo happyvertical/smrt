@@ -144,8 +144,10 @@ export interface ResolveComponentOptions {
   /**
    * The tenant whose structure is being read. When given (including `null`
    * for global records), an assembly's active bill is chosen only among
-   * bills with exactly this `tenantId`, whatever tenant context is active.
-   * When omitted, the active tenant context decides what is visible.
+   * bills with exactly this `tenantId`, and a SKU, product or bill line
+   * belonging to another tenant is treated as missing (global rows stay
+   * visible), whatever tenant context is active. When omitted, the active
+   * tenant context decides what is visible.
    */
   tenantId?: string | null;
 }
@@ -161,6 +163,20 @@ export interface AssemblyServiceOptions {
 // resolved as `missing` without a query.
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Whether a row belongs to the structure being read: with an explicit
+ * `tenantId`, a global row (`tenantId` null) or one of that tenant's rows;
+ * without one, whatever the active tenant context returned.
+ */
+function visibleTo(
+  row: { tenantId?: string | null },
+  options: ResolveComponentOptions,
+): boolean {
+  if (options.tenantId === undefined) return true;
+  const rowTenant = row.tenantId ?? null;
+  return rowTenant === null || rowTenant === options.tenantId;
+}
 
 function isUuid(value: string | null | undefined): value is string {
   return typeof value === 'string' && UUID_PATTERN.test(value);
@@ -233,11 +249,13 @@ export class AssemblyService {
     });
 
     if (!isUuid(skuId)) return missing(null);
+    // With an explicit tenant (a write made without a tenant context), a SKU
+    // or product of another tenant is reported as missing, never resolved.
     const sku = await this.skus.get({ id: skuId });
-    if (!sku) return missing(null);
+    if (!sku || !visibleTo(sku, options)) return missing(null);
     if (!isUuid(sku.productId)) return missing(sku);
     const product = await this.products.get({ id: sku.productId });
-    if (!product) return missing(sku);
+    if (!product || !visibleTo(product, options)) return missing(sku);
 
     if (product instanceof Assembly) {
       const activeBom = await this.findActiveBom(product.id!, options);
@@ -336,7 +354,9 @@ export class AssemblyService {
         if (product.id === productId) return [...trail, product];
         if (!component.activeBom || visited.has(product.id)) continue;
         visited.add(product.id);
-        const lines = await this.lines.findByBom(component.activeBom.id!);
+        const lines = (
+          await this.lines.findByBom(component.activeBom.id!)
+        ).filter((line) => visibleTo(line, options));
         const found = await walk(
           lines.map((line) => line.componentSkuId),
           [...trail, product],

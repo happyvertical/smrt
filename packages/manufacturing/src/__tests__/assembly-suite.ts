@@ -7,7 +7,11 @@
  * the cycle refusal on bill lines and bill activation.
  */
 
-import { isPostgresDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  isPostgresDatabase,
+  ObjectRegistry,
+  ValidationError,
+} from '@happyvertical/smrt-core';
 import {
   MaterialCollection,
   ProductCollection,
@@ -167,6 +171,20 @@ export function assemblySuite(
         const viaBase = await products.get({ id: row.id! });
         expect(viaBase).toBeInstanceOf(Assembly);
         expect((viaBase as Assembly).defaultOperationId).toBeNull();
+      });
+
+      it('refuses a negative or fractional labour estimate', async () => {
+        for (const estimatedLabourMinutes of [-5, 2.5]) {
+          await expect(
+            assemblies.create({
+              name: 'Frame',
+              slug: slug('frame'),
+              estimatedLabourMinutes,
+            }),
+          ).rejects.toBeInstanceOf(ValidationError);
+        }
+        const { row } = await assembly('Frame', { estimatedLabourMinutes: 0 });
+        expect(row.estimatedLabourMinutes).toBe(0);
       });
 
       it('lists only assemblies, never materials or plain products', async () => {
@@ -482,6 +500,62 @@ export function assemblySuite(
           (error: unknown) => expect(error).toBeInstanceOf(BomCycleError),
         );
         await cycleOf(lineIn(panelA.id!, frame.sku.id!, tenantA));
+      });
+
+      it("never resolves another tenant's SKU when reading one tenant's structure", async () => {
+        const tenantA = crypto.randomUUID();
+        const tenantB = crypto.randomUUID();
+        const secret = await assemblies.create({
+          name: 'Tenant B secret',
+          slug: slug('secret'),
+          tenantId: tenantB,
+        });
+        const secretSku = await skus.create({
+          productId: secret.id!,
+          code: `SECRET-${crypto.randomUUID()}`,
+          tenantId: tenantB,
+        });
+        const sharedSku = await skuFor(
+          (await assembly('Shared')).row.id!,
+          'SHARED',
+        );
+
+        const other = await service.resolveComponent(secretSku.id!, {
+          tenantId: tenantA,
+        });
+        expect(other).toMatchObject({
+          kind: 'missing',
+          sku: null,
+          product: null,
+        });
+        const own = await service.resolveComponent(secretSku.id!, {
+          tenantId: tenantB,
+        });
+        expect(own.product?.name).toBe('Tenant B secret');
+        // Global catalog rows stay visible to every tenant.
+        expect(
+          (await service.resolveComponent(sharedSku.id!, { tenantId: tenantA }))
+            .kind,
+        ).toBe('assembly');
+
+        const frameA = await boms.create({
+          productId: (await assembly('Frame')).row.id!,
+          version: 1,
+          status: 'active',
+          tenantId: tenantA,
+        });
+        await lines.create({
+          bomId: frameA.id!,
+          componentSkuId: secretSku.id!,
+          qtyPerUnit: 1,
+          tenantId: tenantA,
+        });
+        const structure = await service.getBillStructure(frameA.id!);
+        expect(structure.lines[0].component).toMatchObject({
+          kind: 'missing',
+          sku: null,
+          product: null,
+        });
       });
 
       it('allows a shared sub-assembly used twice in one structure', async () => {
