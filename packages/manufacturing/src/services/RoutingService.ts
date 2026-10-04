@@ -93,7 +93,8 @@ export class RoutingService {
     ) => {
       // Serialize replacements of one bill: saving the bill row takes its row
       // lock for the rest of the transaction, so a concurrent replacement
-      // waits and then reads the committed routing instead of interleaving.
+      // waits instead of interleaving. The waiter's revision check then fails;
+      // `withRevisionRetry` reruns it against the committed routing.
       const bom = await boms.get(bomId);
       if (!bom) throw new BomNotFoundError(bomId);
       await bom.save();
@@ -116,13 +117,31 @@ export class RoutingService {
     const underlying = this.db as unknown as TransactionalDb;
     if (typeof underlying.transaction !== 'function')
       return write(this.steps, this.boms);
-    return underlying.transaction(async (txDb) => {
-      const db = txDb as DatabaseConfig;
-      return write(
-        await RoutingStepCollection.create({ db }),
-        await BillOfMaterialsCollection.create({ db }),
-      );
-    });
+    return withRevisionRetry(
+      () =>
+        underlying.transaction?.(async (txDb) => {
+          const db = txDb as DatabaseConfig;
+          return write(
+            await RoutingStepCollection.create({ db }),
+            await BillOfMaterialsCollection.create({ db }),
+          );
+        }) as Promise<RoutingStep[]>,
+    );
+  }
+}
+
+/**
+ * Rerun a whole routing transaction when it lost the bill's revision race to a
+ * concurrent replacement; the rerun reads the routing the winner committed.
+ */
+async function withRevisionRetry<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      if (code !== 'RUNTIME_REVISION_CONFLICT' || attempt >= 5) throw error;
+    }
   }
 }
 

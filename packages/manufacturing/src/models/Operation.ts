@@ -41,7 +41,7 @@ export interface OperationOptions extends SmrtObjectOptions {
   // keeps the code fixed; generated create/update would upsert or rename.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: { skipApiCheck: true },
+  cli: { include: ['list', 'get'] },
 })
 export class Operation extends SmrtObject {
   /** Tenant scope. `null` means the operation is a global record. */

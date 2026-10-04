@@ -372,9 +372,13 @@ export function operationsSuite(
           estimatedMinutes: 1,
         }));
         const short = [{ operationId: paint, estimatedMinutes: 2 }];
-        await Promise.allSettled([
+        const results = await Promise.allSettled([
           routing.replaceRouting(bomId, long),
           routing.replaceRouting(bomId, short),
+        ]);
+        expect(results.map((r) => r.status)).toEqual([
+          'fulfilled',
+          'fulfilled',
         ]);
         const stored = (await routing.list(bomId)).map((s) => s.operationId);
         expect([[cut, weld, paint], [paint]]).toContainEqual(stored);
