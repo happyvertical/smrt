@@ -133,6 +133,7 @@ export class FactEvidenceCollection extends SmrtCollection<FactEvidence> {
       generatedBy?: string;
       contentId?: string;
       tenantId?: string | null;
+      retainAuditRunId?: string;
     } = {},
   ): Promise<{ deletedEvidenceIds: string[] }> {
     const deletedEvidenceIds: string[] = [];
@@ -182,6 +183,12 @@ export class FactEvidenceCollection extends SmrtCollection<FactEvidence> {
         continue;
       }
       if (options.contentId && metadata.contentId !== options.contentId) {
+        continue;
+      }
+      if (
+        options.retainAuditRunId &&
+        metadata.auditRunId === options.retainAuditRunId
+      ) {
         continue;
       }
 
