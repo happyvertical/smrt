@@ -823,6 +823,27 @@ describe('@smrt/config', () => {
       ]);
     });
 
+    it.each([
+      ['null', null],
+      ['false', false],
+      ['0', 0],
+      ["''", ''],
+      ['[]', []],
+    ])('rejects a setConfig runtime override that is not a block (runtime: %s) instead of selecting local', (_label, value) => {
+      let thrown: unknown;
+      try {
+        setConfig({ runtime: value } as unknown as Partial<SmrtConfig>);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(RuntimeProfileValidationError);
+      expect((thrown as RuntimeProfileValidationError).issues).toEqual([
+        expect.objectContaining({ code: 'invalid_config', path: 'runtime' }),
+      ]);
+      // Rejected atomically: nothing was stored, so no override is declared.
+      expect(Object.hasOwn(getRuntimeConfig(), 'runtime')).toBe(false);
+    });
+
     it('still rejects an invalid profile inside a present block', () => {
       expect(() =>
         resolveEffectiveApplicationRuntime({

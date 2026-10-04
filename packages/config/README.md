@@ -111,7 +111,8 @@ An application that may omit the block uses
 and the SvelteKit runtime share: when neither the file nor a `setConfig()`
 override declares `runtime`, the profile is `local`; a present value that is
 not a runtime block (`null`, `false`, `0`, `''`) throws the same
-`RuntimeProfileValidationError` instead of selecting `local`.
+`RuntimeProfileValidationError` instead of selecting `local`; `setConfig()`
+rejects such a `runtime` override with that error before storing anything.
 
 ### Use config in code
 

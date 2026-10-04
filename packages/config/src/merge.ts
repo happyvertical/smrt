@@ -148,6 +148,19 @@ export function setConfig(config: Partial<SmrtConfig>): void {
   const incomingRuntime = Object.hasOwn(config, 'runtime')
     ? (config.runtime as unknown)
     : undefined;
+  // A declared override that is not a block (`null`, `false`, `0`, `''`, an
+  // array) is rejected here: deepMerge would drop `null`, leaving no override
+  // and silently selecting the local profile (#3446).
+  if (
+    incomingRuntime !== undefined &&
+    (incomingRuntime === null ||
+      typeof incomingRuntime !== 'object' ||
+      Array.isArray(incomingRuntime))
+  ) {
+    throw new RuntimeProfileValidationError([
+      ...validateApplicationRuntimeConfigShape(incomingRuntime),
+    ]);
+  }
   if (
     incomingRuntime !== null &&
     (typeof incomingRuntime === 'object' ||
