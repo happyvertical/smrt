@@ -795,8 +795,9 @@ meantime. A sign-in for an unknown email, or a user with no password, runs
 the same scrypt verification against a dummy hash, so timing does not reveal
 whether the account or credential exists. Passwords are NFKC-normalized.
 
-**Sign-in.** The submitted email is normalized exactly as `User.emailKey` is,
-and the attempt is reserved through the shared `LoginAttemptLimiter` *before*
+**Sign-in.** The submitted email is normalized exactly as `User.emailKey` is
+and matched against that column (legacy users need `backfillUserEmailKeys()`
+first), and the attempt is reserved through the shared `LoginAttemptLimiter` *before*
 any credential work: per account (the email key, whether or not it exists) and
 per client address. The person must be `ACTIVE` and, when a tenant is given,
 hold an `ACTIVE` membership in it. A successful sign-in mints a first-class
