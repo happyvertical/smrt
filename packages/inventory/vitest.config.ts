@@ -10,5 +10,6 @@ export default defineConfig({
     testTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
+    coverage: { provider: 'v8', reporter: ['text', 'json', 'html'] },
   },
 });

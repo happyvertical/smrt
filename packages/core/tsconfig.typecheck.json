@@ -9,7 +9,8 @@
   "exclude": [
     "**/*.test.ts",
     "**/*.spec.ts",
-    "src/vite-plugin/templates/**"
+    "src/vite-plugin/templates/**",
+    "**/__test-consumer-*/**"
   ],
   "references": [
     { "path": "../config" },

@@ -194,11 +194,12 @@ export class StockService {
     // Resolving once means every collection (and the public `db` field
     // exposed for downstream composition) share the same handle.
     const resolved = await resolveDatabase(options.db);
-    const [levels, movements, locations] = await Promise.all([
-      StockLevelCollection.create({ db: resolved }),
-      StockMovementCollection.create({ db: resolved }),
-      InventoryLocationCollection.create({ db: resolved }),
-    ]);
+    // Schema probes share one connection; do not interleave their initialization.
+    const levels = await StockLevelCollection.create({ db: resolved });
+    const movements = await StockMovementCollection.create({ db: resolved });
+    const locations = await InventoryLocationCollection.create({
+      db: resolved,
+    });
     return new StockService(
       resolved as unknown as DatabaseConfig,
       levels,
@@ -242,11 +243,16 @@ export class StockService {
     }
 
     return underlying.transaction(async (txDb) => {
-      const [levels, movements, locations] = await Promise.all([
-        StockLevelCollection.create({ db: txDb as DatabaseConfig }),
-        StockMovementCollection.create({ db: txDb as DatabaseConfig }),
-        InventoryLocationCollection.create({ db: txDb as DatabaseConfig }),
-      ]);
+      // The transaction handle also shares a single connection for schema probes.
+      const levels = await StockLevelCollection.create({
+        db: txDb as DatabaseConfig,
+      });
+      const movements = await StockMovementCollection.create({
+        db: txDb as DatabaseConfig,
+      });
+      const locations = await InventoryLocationCollection.create({
+        db: txDb as DatabaseConfig,
+      });
       // Expose the tx-scoped db (not `this.db`) as the tx instance's
       // public `db` field. Callers compose this through `tx.db` when
       // spinning up adjacent services that should also write in the same
