@@ -50,7 +50,7 @@ components are exempt — they *are* the primitives.
 | `./data` | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable` and their types — a **component barrel**: it re-exports `.svelte` files, so a plain Node `import()` of it throws `ERR_UNKNOWN_FILE_EXTENSION` |
 | `./data-surface` | **Svelte-free**: registry contracts and shared protocol limits (`DATA_SURFACE_MAX_REQUEST_BYTES`, `DATA_SURFACE_IDENTIFIER_MAX_LENGTH`, …). Server adapters must import these from here, not from `./data` — a server entry that reaches the barrel breaks the `smrt` CLI's plain-Node `.smrt/register.js` load (issue #2924) |
 | `./layout` | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, … |
-| `./calendar` | `CalendarView` (time-zone-aware month grid + phone agenda) and its Svelte-free date model (`toEntries`, `layoutMonth`, `dateKeyInZone`, …); deprecated `Calendar`, `DayView` |
+| `./calendar` | `CalendarView` (time-zone-aware month/week grids + phone agenda) and its Svelte-free date model (`toEntries`, `layoutMonth`, `layoutWeek`, `dateKeyInZone`, …); deprecated `Calendar`, `DayView` |
 | `./chat` | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
 | `./forms` | Provider-free fields, choice controls, sliders/ranges, combobox/listbox/multiselect/tags, date/time/file controls, `CameraCapture`/`SignaturePad` capture, plus the transport-neutral control interaction registry |
 | `./form-retry` | **Svelte-free** form retry (#3291): submission key, in-flight refusal, conditional reset, opt-in restore-after-reload, browser `runOnce()` digest. Also re-exported from `./forms`. Framework-free TS typed structurally against SvelteKit's `SubmitFunction` — never import `@sveltejs/kit` here. Guide: `docs/content/form-retry.md` |

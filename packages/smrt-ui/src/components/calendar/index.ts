@@ -1,7 +1,7 @@
 /**
  * Calendar components.
  *
- * `CalendarView` is the generic, time-zone-aware month grid + phone agenda.
+ * `CalendarView` is the generic, time-zone-aware month/week grids + phone agenda.
  * `Calendar` and `DayView` are deprecated: they compute days in the browser
  * zone, print English-only names, hard-code game/meeting/event item types
  * and `/events/y/m/d` links. Migrate to `CalendarView` (see the package
@@ -18,6 +18,7 @@ export type {
   CalendarItem,
   CalendarMode,
   CalendarMonth,
+  CalendarNavigation,
   CalendarTone,
   CalendarWeek,
 } from './calendar-model.js';
@@ -31,6 +32,7 @@ export {
   formatKey,
   isDateKey,
   layoutMonth,
+  layoutWeek,
   monthKeys,
   monthOfKey,
   monthWeeks,
@@ -40,6 +42,7 @@ export {
   toEntries,
   toneFor,
   weekdayOfKey,
+  weekKeys,
 } from './calendar-model.js';
 /** @deprecated Use `CalendarView` (agenda mode or its day panel); see the smrt-ui README. */
 export { default as DayView } from './DayView.svelte';

@@ -1,11 +1,13 @@
 <script lang="ts">
 /**
- * CalendarView — a generic month calendar with a phone agenda.
+ * CalendarView — generic month and week grids with a phone agenda.
  *
  * - `month` mode: a month grid (`role="grid"`, roving focus, arrow keys).
  *   All-day and multi-day items render as bands across the days they cover;
  *   a day that has more than fits shows "+N more", which opens the day in a
  *   panel under the grid (never a modal) or follows `dayHref`.
+ * - `week` mode: one seven-day grid controlled by `date`. In `auto`,
+ *   `autoMode="week"` selects a week grid with its seven-day phone agenda.
  * - `agenda` mode: a scrollable strip of the month's days above a day-by-day
  *   list. `auto` (default) uses the agenda below 48rem, the grid above.
  *
@@ -26,11 +28,13 @@ import {
   type CalendarItem,
   type CalendarMode,
   type CalendarMonth,
+  type CalendarNavigation,
   defaultTimeZone,
   defaultWeekStart,
   entriesOnDay,
   formatKey,
   layoutMonth,
+  layoutWeek,
   monthKeys,
   monthOfKey,
   monthWeeks,
@@ -41,6 +45,7 @@ import {
   toEntries,
   toneFor,
   weekdayOfKey,
+  weekKeys,
 } from './calendar-model.js';
 
 export interface Props {
@@ -50,6 +55,10 @@ export interface Props {
   year?: number;
   /** Visible month, 1-12 (controlled together with `year`). */
   month?: number;
+  /** A YYYY-MM-DD date in the visible week (controlled). */
+  date?: string;
+  /** Desktop grid in auto mode; defaults to month. */
+  autoMode?: 'month' | 'week';
   /** Selected day as `YYYY-MM-DD` (controlled). */
   selectedDate?: string | null;
   /** IANA time zone every day is computed in. Defaults to the browser's. */
@@ -60,9 +69,9 @@ export interface Props {
   weekStartsOn?: number;
   /** `auto` switches to the agenda below 48rem. */
   mode?: CalendarMode;
-  /** Rows per day in the month grid, including band rows. */
+  /** Rows per day in either grid, including band rows. */
   maxPerDay?: number;
-  /** Heading level of the month title. */
+  /** Heading level of the visible period title. */
   headingLevel?: 2 | 3 | 4;
   /**
    * "Now", for today highlighting (tests, server rendering). Without it the
@@ -72,8 +81,8 @@ export interface Props {
    * (or `now`) so the server and the browser pick the same month.
    */
   now?: Date;
-  /** Called when the visible month changes (prev/next/today/keyboard). */
-  onNavigate?: (month: CalendarMonth) => void;
+  /** Reports month navigation, or week navigation with its first date key. */
+  onNavigate?: (period: CalendarNavigation) => void;
   /** Called when a day is selected. */
   onSelectDate?: (date: string) => void;
   /** Called when an item is activated (also for items with `href`). */
@@ -90,6 +99,8 @@ let {
   items = [],
   year,
   month,
+  date,
+  autoMode = 'month',
   selectedDate = null,
   timeZone: timeZoneProp,
   locale: localeProp,
@@ -155,13 +166,30 @@ let current = $derived<CalendarMonth>(
       ? monthOfKey(selectedDate)
       : monthOfKey(fallbackKey),
 );
+const isWeek = $derived(
+  mode === 'week' || (mode === 'auto' && autoMode === 'week'),
+);
+let currentDate = $derived(
+  date ??
+    selectedDate ??
+    (year !== undefined && month !== undefined
+      ? formatKey(year, month, 1)
+      : fallbackKey),
+);
+const visibleWeekKeys = $derived(weekKeys(currentDate, weekStartsOn));
 let selected = $derived<string | null>(selectedDate ?? null);
 let focusKey = $derived(
-  selected && sameMonth(selected, current)
-    ? selected
-    : today && sameMonth(today, current)
-      ? today
-      : formatKey(current.year, current.month, 1),
+  isWeek
+    ? selected && visibleWeekKeys.includes(selected)
+      ? selected
+      : visibleWeekKeys.includes(today)
+        ? today
+        : visibleWeekKeys[0]
+    : selected && sameMonth(selected, current)
+      ? selected
+      : today && sameMonth(today, current)
+        ? today
+        : formatKey(current.year, current.month, 1),
 );
 
 let isPhone = $state(false);
@@ -175,7 +203,7 @@ $effect(() => {
   query.addEventListener('change', onChange);
   return () => query.removeEventListener('change', onChange);
 });
-const view = $derived(mode === 'auto' ? (isPhone ? 'agenda' : 'month') : mode);
+const view = $derived(mode === 'auto' ? (isPhone ? 'agenda' : autoMode) : mode);
 
 let root: HTMLElement | undefined = $state();
 
@@ -187,9 +215,11 @@ const entries = $derived(
   ),
 );
 const weeks = $derived(
-  layoutMonth(current, entries, { weekStartsOn, maxPerDay }),
+  isWeek
+    ? [layoutWeek(currentDate, entries, { weekStartsOn, maxPerDay })]
+    : layoutMonth(current, entries, { weekStartsOn, maxPerDay }),
 );
-const daysOfMonth = $derived(monthKeys(current));
+const daysOfMonth = $derived(isWeek ? visibleWeekKeys : monthKeys(current));
 const agendaDays = $derived(
   daysOfMonth
     .map((key) => ({ key, entries: entriesOnDay(entries, key) }))
@@ -202,11 +232,18 @@ const selectedEntries = $derived(
 // ---- Intl formatting (all in `timeZone` / `locale`) ----
 
 const monthTitle = $derived(
-  new Intl.DateTimeFormat(locale, {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(Date.UTC(current.year, current.month - 1, 15)),
+  isWeek
+    ? new Intl.DateTimeFormat(locale, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).formatRange(keyDate(visibleWeekKeys[0]), keyDate(visibleWeekKeys[6]))
+    : new Intl.DateTimeFormat(locale, {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(Date.UTC(current.year, current.month - 1, 15)),
 );
 const longDateFormat = $derived(
   new Intl.DateTimeFormat(locale, {
@@ -302,10 +339,24 @@ function navigate(next: CalendarMonth): void {
   onNavigate?.(next);
 }
 
+function navigateWeek(key: string): void {
+  currentDate = key;
+  current = monthOfKey(key);
+  const first = weekKeys(key, weekStartsOn)[0];
+  onNavigate?.({ ...monthOfKey(first), date: first });
+}
+
+function stepPeriod(delta: number): void {
+  if (isWeek) navigateWeek(addDays(currentDate, delta * 7));
+  else navigate(shiftMonth(current, delta));
+}
+
 function goToday(): void {
   const key = today || todayKey(timeZone);
   const target = monthOfKey(key);
-  if (target.year !== current.year || target.month !== current.month) {
+  if (isWeek) {
+    navigateWeek(key);
+  } else if (target.year !== current.year || target.month !== current.month) {
     navigate(target);
   }
   focusKey = key;
@@ -348,7 +399,9 @@ async function revealAgendaDay(key: string): Promise<void> {
 }
 
 function moveFocus(key: string): void {
-  if (!sameMonth(key, current)) navigate(monthOfKey(key));
+  if (isWeek) {
+    if (!visibleWeekKeys.includes(key)) navigateWeek(key);
+  } else if (!sameMonth(key, current)) navigate(monthOfKey(key));
   focusKey = key;
   void focusDay(key);
 }
@@ -379,10 +432,10 @@ function onGridKeydown(event: KeyboardEvent): void {
       next = addDays(key, 6 - column);
       break;
     case 'PageUp':
-      next = addMonthsToKey(key, -1);
+      next = isWeek ? addDays(key, -7) : addMonthsToKey(key, -1);
       break;
     case 'PageDown':
-      next = addMonthsToKey(key, 1);
+      next = isWeek ? addDays(key, 7) : addMonthsToKey(key, 1);
       break;
     default:
       return;
@@ -493,8 +546,8 @@ $effect(() => {
       <button
         type="button"
         class="cv-icon-btn"
-        aria-label={t(M['ui.calendar.previous_month'])}
-        onclick={() => navigate(shiftMonth(current, -1))}
+        aria-label={t(M[isWeek ? 'ui.calendar.previous_week' : 'ui.calendar.previous_month'])}
+        onclick={() => stepPeriod(-1)}
       >
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
           <path d="M12 15L7 10L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -506,8 +559,8 @@ $effect(() => {
       <button
         type="button"
         class="cv-icon-btn"
-        aria-label={t(M['ui.calendar.next_month'])}
-        onclick={() => navigate(shiftMonth(current, 1))}
+        aria-label={t(M[isWeek ? 'ui.calendar.next_week' : 'ui.calendar.next_month'])}
+        onclick={() => stepPeriod(1)}
       >
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
           <path d="M8 5L13 10L8 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -516,7 +569,7 @@ $effect(() => {
     </div>
   </header>
 
-  {#if view === 'month'}
+  {#if view === 'month' || view === 'week'}
     <div
       class="cv-grid"
       role="grid"
@@ -544,7 +597,7 @@ $effect(() => {
             {@const href = dayHref?.(day.key)}
             <div
               class="cv-day"
-              class:cv-day--out={!day.inMonth}
+              class:cv-day--out={!isWeek && !day.inMonth}
               class:cv-day--today={day.key === today}
               class:cv-day--selected={day.key === selected}
               role="gridcell"
@@ -732,7 +785,7 @@ $effect(() => {
     </div>
 
     {#if agendaDays.length === 0}
-      <p class="cv-empty">{t(M['ui.calendar.nothing_month'])}</p>
+      <p class="cv-empty">{t(M[isWeek ? 'ui.calendar.nothing_week' : 'ui.calendar.nothing_month'])}</p>
     {:else}
       <ol class="cv-agenda">
         {#each agendaDays as day (day.key)}

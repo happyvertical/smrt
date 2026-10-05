@@ -93,6 +93,7 @@ const items: CalendarItem[] = [
       options={[
         { value: 'auto', label: 'Auto' },
         { value: 'month', label: 'Month' },
+        { value: 'week', label: 'Week' },
         { value: 'agenda', label: 'Agenda' },
       ]}
       onvaluechange={(value) => (mode = value as CalendarMode)}

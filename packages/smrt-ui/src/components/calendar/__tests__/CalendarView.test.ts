@@ -279,3 +279,128 @@ describe('CalendarView robustness', () => {
     }
   });
 });
+
+describe('CalendarView (week)', () => {
+  const props = {
+    mode: 'week' as const,
+    date: '2026-09-29',
+    weekStartsOn: 1,
+    timeZone: tz,
+    locale: 'en-US',
+    now,
+  };
+
+  it('renders seven days across months, zoned items, bands and day links', async () => {
+    const onSelectDate = vi.fn();
+    const { container } = render(CalendarView, {
+      props: {
+        ...props,
+        onSelectDate,
+        dayHref: (key) => `/day/${key}`,
+        items: [
+          {
+            id: 'band',
+            title: 'Holiday',
+            start: '2026-09-27',
+            end: '2026-09-30',
+            tone: 'warning',
+          },
+          { id: 'timed', title: 'Meeting', start: '2026-09-29T01:00:00Z' },
+        ],
+      },
+    });
+    expect(screen.getAllByRole('gridcell')).toHaveLength(7);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(7);
+    expect(container.querySelector('.cv-band')?.getAttribute('data-tone')).toBe(
+      'warning',
+    );
+    expect(
+      screen
+        .getByRole('link', { name: /Monday, September 28, 2026, 2 items/ })
+        .getAttribute('href'),
+    ).toBe('/day/2026-09-28');
+    await userEvent.click(
+      screen.getByRole('link', { name: /Sunday, October 4, 2026/ }),
+    );
+    expect(onSelectDate).toHaveBeenCalledWith('2026-10-04');
+    await expectNoA11yViolations(container);
+  });
+
+  it('reports date-based navigation within a month, today and controlled changes', async () => {
+    const onNavigate = vi.fn();
+    const { rerender } = render(CalendarView, {
+      props: { ...props, onNavigate },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Previous week' }),
+    );
+    expect(onNavigate).toHaveBeenLastCalledWith({
+      year: 2026,
+      month: 9,
+      date: '2026-09-21',
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Next week' }));
+    expect(onNavigate).toHaveBeenLastCalledWith({
+      year: 2026,
+      month: 9,
+      date: '2026-09-28',
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(onNavigate).toHaveBeenLastCalledWith({
+      year: 2026,
+      month: 9,
+      date: '2026-09-28',
+    });
+    await rerender({ ...props, date: '2027-01-01', onNavigate });
+    expect(
+      screen.getByRole('button', { name: 'Friday, January 1, 2027' }),
+    ).toBeTruthy();
+  });
+
+  it('moves roving keyboard focus across weeks and selects the focused day', async () => {
+    const onNavigate = vi.fn();
+    const onSelectDate = vi.fn();
+    const { container } = render(CalendarView, {
+      props: { ...props, onNavigate, onSelectDate },
+    });
+    screen.getByRole('button', { name: 'Tuesday, September 29, 2026' }).focus();
+    await userEvent.keyboard('{End}{ArrowRight}');
+    expect(document.activeElement?.getAttribute('data-cv-day')).toBe(
+      '2026-10-05',
+    );
+    expect(onNavigate).toHaveBeenLastCalledWith({
+      year: 2026,
+      month: 10,
+      date: '2026-10-05',
+    });
+    await userEvent.keyboard('{PageUp}{Home}{Enter}');
+    expect(onSelectDate).toHaveBeenLastCalledWith('2026-09-28');
+    expect(
+      container.querySelectorAll('[data-cv-day][tabindex="0"]'),
+    ).toHaveLength(1);
+  });
+
+  it('uses a seven-day phone agenda when auto selects the week grid', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    try {
+      const { container } = render(CalendarView, {
+        props: { ...props, mode: 'auto', autoMode: 'week' },
+      });
+      await act();
+      expect(container.querySelector('[data-view="agenda"]')).toBeTruthy();
+      expect(container.querySelectorAll('[data-cv-day]')).toHaveLength(7);
+      expect(screen.getByText('Nothing scheduled this week')).toBeTruthy();
+      await userEvent.click(screen.getByRole('button', { name: 'Next week' }));
+      expect(
+        container.querySelector('[data-cv-day="2026-10-05"]'),
+      ).toBeTruthy();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+});
