@@ -182,7 +182,7 @@ constrained to where that cannot cost a neighbour a click:
 
 ## Calendar
 
-`CalendarView` (`@happyvertical/smrt-ui/calendar`) is a generic month grid
+`CalendarView` (`@happyvertical/smrt-ui/calendar`) provides generic month and week grids
 with a phone agenda:
 
 ```svelte
@@ -220,10 +220,19 @@ with a phone agenda:
   month's days (44px targets, arrow keys) above a day-by-day list. `auto`
   (default) uses the agenda below 48rem, matching AdminShell's phone
   breakpoint. No modals.
+- **Week view**: pass `mode="week"` and `date="2026-09-29"` to show the seven
+  days containing that date. `onNavigate` reports `{ year, month, date }`, where
+  `date` is the first day of the week. Previous/next and PageUp/PageDown move
+  one week; Today uses `timeZone`. Use `mode="auto" autoMode="week"` for a week
+  grid above 48rem and that week's agenda below it (the default `autoMode`
+  remains `month`). The week title uses the requested locale's date range.
+  Bands, overflow, day links, selection and keyboard grid behavior match month
+  mode. Handle `onNavigate` with `if (next.date) week = next.date` to retain the
+  controlled date in a page or URL.
 - **URL state**: `year` + `month` (1-12) and `selectedDate` (`YYYY-MM-DD`) are
   controlled when passed; changes are reported via `onNavigate` and
   `onSelectDate`, so a page can keep them in its URL.
-- The Svelte-free date model (`toEntries`, `layoutMonth`, `dateKeyInZone`,
+- The Svelte-free date model (`toEntries`, `layoutMonth`, `layoutWeek`, `weekKeys`, `dateKeyInZone`,
   `monthWeeks`, `shiftMonth`, …) is exported from the same subpath for
   server-side range queries and tests.
 

@@ -17,6 +17,9 @@ export const M = defineMessages({
   'ui.calendar.select_year': 'Select year',
 
   // calendar/CalendarView.svelte
+  'ui.calendar.previous_week': 'Previous week',
+  'ui.calendar.next_week': 'Next week',
+  'ui.calendar.nothing_week': 'Nothing scheduled this week',
   'ui.calendar.today': 'Today',
   'ui.calendar.more': '+{count} more',
   'ui.calendar.more_short': '+{count}',

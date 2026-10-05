@@ -54,8 +54,14 @@ export interface CalendarMonth {
   month: number;
 }
 
-/** Month grid, agenda list, or month grid above 48rem and agenda below. */
-export type CalendarMode = 'auto' | 'month' | 'agenda';
+/** Navigation state; week navigation also reports its first date key. */
+export interface CalendarNavigation extends CalendarMonth {
+  /** First date of the visible week, present for week navigation. */
+  date?: string;
+}
+
+/** Month/week grid, agenda, or a responsive grid with a phone agenda. */
+export type CalendarMode = 'auto' | 'month' | 'week' | 'agenda';
 
 /** An item projected onto calendar day keys. */
 export interface CalendarEntry {
@@ -446,11 +452,45 @@ export function layoutMonth(
   entries: readonly CalendarEntry[],
   options: { weekStartsOn: number; maxPerDay: number },
 ): CalendarWeek[] {
-  const maxPerDay = Math.max(1, Math.floor(options.maxPerDay));
+  return layoutWeeks(
+    monthWeeks(value, options.weekStartsOn),
+    value,
+    entries,
+    options.maxPerDay,
+  );
+}
+
+/** Seven date keys containing `date`, starting on `weekStartsOn` (0 = Sunday). */
+export function weekKeys(date: string, weekStartsOn: number): string[] {
+  const first = addDays(date, -((weekdayOfKey(date) - weekStartsOn + 7) % 7));
+  return Array.from({ length: 7 }, (_, index) => addDays(first, index));
+}
+
+/** Lay out one week using the same band lanes and overflow budget as a month. */
+export function layoutWeek(
+  date: string,
+  entries: readonly CalendarEntry[],
+  options: { weekStartsOn: number; maxPerDay: number },
+): CalendarWeek {
+  return layoutWeeks(
+    [weekKeys(date, options.weekStartsOn)],
+    monthOfKey(date),
+    entries,
+    options.maxPerDay,
+  )[0];
+}
+
+function layoutWeeks(
+  weeks: string[][],
+  value: CalendarMonth,
+  entries: readonly CalendarEntry[],
+  rowBudget: number,
+): CalendarWeek[] {
+  const maxPerDay = Math.max(1, Math.floor(rowBudget));
   const bands = entries.filter((entry) => entry.band);
   const timed = entries.filter((entry) => !entry.band);
 
-  return monthWeeks(value, options.weekStartsOn).map((keys) => {
+  return weeks.map((keys) => {
     const weekStart = keys[0];
     const weekEnd = keys[6];
     const hidden = new Map<string, number>();
