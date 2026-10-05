@@ -195,9 +195,11 @@ describe('mountMcpAppRoute with an unrelated registry collision (#3490)', () => 
       {},
       ownerLocals,
     );
+    // The allow-list names a class two registrations share: core refuses to
+    // pick one rather than publish either.
     expect(body.error).toMatchObject({ code: -32603 });
     expect(body.error.message).toContain(
-      'Duplicate MCP tool name: collisionagentconfig_list',
+      "MCP class scope 'collisionagentconfig' is ambiguous",
     );
   });
 });

@@ -17,6 +17,7 @@ import { ObjectRegistry } from '../registry';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type { RegisteredClass } from '../registry/types.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
+import { isQualifiedName } from '../utils/qualified-names.js';
 import {
   buildCustomActionInvocationArgs,
   type CustomActionFailure,
@@ -417,6 +418,8 @@ function buildTaskActionInvocationArgs(
  */
 export class MCPGenerator {
   private readonly toolTargets = new WeakMap<MCPTool, McpToolTarget>();
+  /** Registry key of each generated tool's class (#3490). */
+  private readonly toolRegistryKeys = new WeakMap<MCPTool, string>();
 
   private toolTarget(tool: MCPTool): McpToolTarget {
     const target = this.toolTargets.get(tool);
@@ -478,24 +481,20 @@ export class MCPGenerator {
   async generateTools(): Promise<MCPTool[]> {
     const tools: MCPTool[] = [];
     const registeredClasses = ObjectRegistry.getAllClasses();
-    const scope = this.config.classNames
-      ? new Set(this.config.classNames.map((name) => name.toLowerCase()))
-      : undefined;
+    const scope = this.resolveClassScope(registeredClasses);
+    const generated = new Set<RegisteredClass>();
 
     for (const [key, classInfo] of registeredClasses) {
-      // Issue #951: Use simple name for tool naming, map key for registry lookups
+      // Issue #951: Use simple name for tool naming, map key for registry
+      // lookups. Configuration, fields, methods and dispatch all resolve
+      // through `key`, so two packages' same-named classes never borrow each
+      // other's (#3490).
       const simpleName = classInfo.name || key;
 
-      if (
-        scope &&
-        !scope.has(simpleName.toLowerCase()) &&
-        !(
-          classInfo.qualifiedName &&
-          scope.has(classInfo.qualifiedName.toLowerCase())
-        )
-      ) {
-        continue;
-      }
+      // One class, one set of tools, even when an alias key repeats it.
+      if (generated.has(classInfo)) continue;
+      generated.add(classInfo);
+      if (scope && !scope.has(classInfo)) continue;
 
       // The framework's own abstract base classes (SmrtObject,
       // SmrtCollection, ...) are scaffolding every application model
@@ -506,7 +505,7 @@ export class MCPGenerator {
         continue;
       }
 
-      const config = ObjectRegistry.getConfig(simpleName);
+      const config = ObjectRegistry.getConfig(key);
       const mcpConfig = config.mcp;
 
       // `mcp: false` disables MCP generation entirely for the class. Without
@@ -536,6 +535,7 @@ export class MCPGenerator {
       const objectTools = await this.generateObjectTools(
         simpleName,
         shouldInclude,
+        key,
       );
       tools.push(...objectTools);
     }
@@ -550,22 +550,70 @@ export class MCPGenerator {
   }
 
   /**
-   * Generate tools for a specific object
+   * The registered classes `MCPConfig.classNames` selects, or undefined when
+   * unscoped. A qualified name selects exactly that registration; a simple
+   * name must match one class only, so the scope never picks one of several
+   * same-named classes on its own (#3490).
+   */
+  private resolveClassScope(
+    classes: Map<string, RegisteredClass>,
+  ): Set<RegisteredClass> | undefined {
+    if (!this.config.classNames) return undefined;
+    const scope = new Set<RegisteredClass>();
+    for (const requested of this.config.classNames) {
+      const wanted = requested.toLowerCase();
+      const qualified = isQualifiedName(requested);
+      const matches = new Set<RegisteredClass>();
+      for (const [key, info] of classes) {
+        const candidate = qualified
+          ? (info.qualifiedName ?? key)
+          : info.name || key;
+        if (candidate.toLowerCase() === wanted) matches.add(info);
+      }
+      if (matches.size > 1) {
+        const names = [...matches]
+          .map((info) => info.qualifiedName ?? info.name)
+          .sort()
+          .join(', ');
+        throw new Error(
+          `MCP class scope '${requested}' is ambiguous: it matches ${names}. Scope it by qualified name.`,
+        );
+      }
+      for (const info of matches) scope.add(info);
+    }
+    return scope;
+  }
+
+  /** The registry key of the class a generated tool belongs to. */
+  private toolClass(
+    tool: MCPTool,
+  ): { key: string; classInfo: RegisteredClass } | undefined {
+    const key = this.toolRegistryKeys.get(tool);
+    const classInfo = key ? ObjectRegistry.getAllClasses().get(key) : undefined;
+    return key && classInfo ? { key, classInfo } : undefined;
+  }
+
+  /**
+   * Generate tools for a specific object. `objectName` names the tools;
+   * `registryKey` (the class's registry key) resolves everything else.
    */
   private async generateObjectTools(
-    objectName: string,
+    displayName: string,
     shouldInclude: (endpoint: string) => boolean,
+    registryKey: string = displayName,
   ): Promise<MCPTool[]> {
+    // Every registry lookup below goes through the exact registration.
+    const objectName = registryKey;
     const tools: MCPTool[] = [];
     const fields = ObjectRegistry.getFields(objectName);
-    const lowerName = objectName.toLowerCase();
+    const lowerName = displayName.toLowerCase();
     const classInfo = ObjectRegistry.getClass(objectName);
 
     // LIST tool
     if (shouldInclude('list')) {
       tools.push({
         name: `${lowerName}_list`,
-        description: `List ${objectName} objects with optional filtering`,
+        description: `List ${displayName} objects with optional filtering`,
         inputSchema: this.buildInputSchema(objectName, 'list', fields),
         outputSchema: this.buildOutputSchema(objectName, 'list', fields),
         annotations: mcpToolAnnotations('list'),
@@ -576,7 +624,7 @@ export class MCPGenerator {
     if (shouldInclude('get')) {
       tools.push({
         name: `${lowerName}_get`,
-        description: `Get a specific ${objectName} by ID or slug`,
+        description: `Get a specific ${displayName} by ID or slug`,
         inputSchema: this.buildInputSchema(objectName, 'get', fields),
         outputSchema: this.buildOutputSchema(objectName, 'get', fields),
         annotations: mcpToolAnnotations('get'),
@@ -587,7 +635,7 @@ export class MCPGenerator {
     if (shouldInclude('create')) {
       tools.push({
         name: `${lowerName}_create`,
-        description: `Create a new ${objectName}`,
+        description: `Create a new ${displayName}`,
         inputSchema: this.buildInputSchema(objectName, 'create', fields),
         outputSchema: this.buildOutputSchema(objectName, 'create', fields),
         annotations: mcpToolAnnotations('create'),
@@ -598,7 +646,7 @@ export class MCPGenerator {
     if (shouldInclude('update')) {
       tools.push({
         name: `${lowerName}_update`,
-        description: `Update an existing ${objectName}`,
+        description: `Update an existing ${displayName}`,
         inputSchema: this.buildInputSchema(objectName, 'update', fields),
         outputSchema: this.buildOutputSchema(objectName, 'update', fields),
         annotations: mcpToolAnnotations('update'),
@@ -609,7 +657,7 @@ export class MCPGenerator {
     if (shouldInclude('delete')) {
       tools.push({
         name: `${lowerName}_delete`,
-        description: `Delete a ${objectName} by ID`,
+        description: `Delete a ${displayName} by ID`,
         inputSchema: this.buildInputSchema(objectName, 'delete', fields),
         outputSchema: this.buildOutputSchema(objectName, 'delete', fields),
         annotations: mcpToolAnnotations('delete'),
@@ -661,7 +709,7 @@ export class MCPGenerator {
           if (!isCrudToolAction(item)) return true;
           if (!isCrudOperation(item)) {
             console.warn(
-              `Warning: MCP include entry '${item}' for ${objectName} resolves to the reserved CRUD tool '${lowerName}_${item.toLowerCase()}' and was ignored; use '${item.toLowerCase()}' to expose that operation`,
+              `Warning: MCP include entry '${item}' for ${displayName} resolves to the reserved CRUD tool '${lowerName}_${item.toLowerCase()}' and was ignored; use '${item.toLowerCase()}' to expose that operation`,
             );
           }
           return false;
@@ -713,7 +761,7 @@ export class MCPGenerator {
           if (!existsInManifest && !existsOnClass) {
             // Warn about missing methods
             console.warn(
-              `Warning: Custom action '${methodName}' specified in MCP config for ${objectName}, but method ${methodName}() not found on class`,
+              `Warning: Custom action '${methodName}' specified in MCP config for ${displayName}, but method ${methodName}() not found on class`,
             );
             continue;
           }
@@ -737,11 +785,12 @@ export class MCPGenerator {
           if (methodDef && !methodDef.isPublic) continue;
 
           const tool = this.buildCustomActionTool(
-            objectName,
+            displayName,
             lowerName,
             methodName,
             methodDef,
             this.hasCollectionReceiver(classInfo),
+            registryKey,
           );
           // Two include entries differing only in case (or an include entry
           // colliding with an already-emitted tool) fold onto the same
@@ -784,11 +833,12 @@ export class MCPGenerator {
           if (excludedLower.has(methodName.toLowerCase())) continue;
 
           const tool = this.buildCustomActionTool(
-            objectName,
+            displayName,
             lowerName,
             methodName,
             methodDef,
             this.hasCollectionReceiver(classInfo),
+            registryKey,
           );
           // Two discovered methods differing only in case — e.g. `Refresh`
           // and `refresh` — both lowercase onto the same tool id
@@ -804,10 +854,11 @@ export class MCPGenerator {
 
     for (const tool of tools) {
       this.toolTargets.set(tool, {
-        objectName,
+        objectName: displayName,
         action: tool.name.slice(lowerName.length + 1),
         originalName: tool.name,
       });
+      this.toolRegistryKeys.set(tool, registryKey);
     }
     return tools;
   }
@@ -818,9 +869,10 @@ export class MCPGenerator {
     methodName: string,
     methodDef?: MethodDefinition,
     collectionReceiver = false,
+    registryKey: string = objectName,
   ): MCPTool {
     const metadata = this.resolveCustomActionMetadata(
-      objectName,
+      registryKey,
       methodName,
       methodDef,
       collectionReceiver,
@@ -829,15 +881,15 @@ export class MCPGenerator {
       name: `${lowerName}_${methodName}`.toLowerCase(),
       description: `Execute ${methodName} action on ${objectName}`,
       inputSchema: this.buildInputSchema(
-        objectName,
+        registryKey,
         methodName,
-        ObjectRegistry.getFields(objectName),
+        ObjectRegistry.getFields(registryKey),
         metadata,
       ),
       outputSchema: this.buildOutputSchema(
-        objectName,
+        registryKey,
         methodName,
-        ObjectRegistry.getFields(objectName),
+        ObjectRegistry.getFields(registryKey),
       ),
       annotations: mcpToolAnnotations(methodName, metadata),
     };
@@ -1158,24 +1210,13 @@ export class MCPGenerator {
 
       const { objectName, action } = this.toolTarget(tool);
 
-      // Find the registered class (case-insensitive)
-      const registeredClasses = ObjectRegistry.getAllClasses();
-      let classInfo: RegisteredClass | null = null;
-      let actualObjectName = '';
-
-      for (const [_key, info] of registeredClasses) {
-        // Issue #951: Match by simple name, not the qualified map key
-        const simpleName = info.name || _key;
-        if (simpleName.toLowerCase() === objectName.toLowerCase()) {
-          classInfo = info;
-          actualObjectName = simpleName;
-          break;
-        }
-      }
-
-      if (!classInfo) {
+      // The exact registration that generated the tool, never another
+      // class that shares its simple name (#3490).
+      const owner = this.toolClass(tool);
+      if (!owner) {
         throw new Error(`Object type '${objectName}' not found`);
       }
+      const { key: actualObjectName, classInfo } = owner;
 
       // Get or create collection
       const collection = await this.getCollection(actualObjectName, classInfo);
@@ -1285,19 +1326,13 @@ export class MCPGenerator {
     const tools = await this.generateTools();
     const tool = tools.find((candidate) => candidate.name === toolName);
     if (!tool) return null;
-    const { objectName: objectPrefix, action } = this.toolTarget(tool);
+    const { action } = this.toolTarget(tool);
     if (isCrudToolAction(action)) {
       return null;
     }
-    const classEntry = Array.from(
-      ObjectRegistry.getAllClasses().entries(),
-    ).find(
-      ([key, info]) =>
-        (info.name || key).toLowerCase() === objectPrefix.toLowerCase(),
-    );
-    if (!classEntry) return null;
-    const [key, classInfo] = classEntry;
-    const objectName = classInfo.name || key;
+    const owner = this.toolClass(tool);
+    if (!owner) return null;
+    const { key: objectName, classInfo } = owner;
     const mcpConfig = ObjectRegistry.getConfig(objectName).mcp;
     const configuredTasks =
       typeof mcpConfig === 'object' ? mcpConfig.tasks : undefined;
@@ -1655,13 +1690,21 @@ export class MCPGenerator {
     if ((await this.tenantScopedObjectNames(tools)).length > 0) return true;
 
     for (const tool of tools) {
+      const owner = this.toolClass(tool);
+      if (owner) {
+        if (ObjectRegistry.isTenantScoped(owner.key)) return true;
+        continue;
+      }
+      // No recorded registration: fail closed on any same-named class.
       const { objectName } = this.toolTarget(tool);
       if (!objectName) continue;
       for (const [key, info] of ObjectRegistry.getAllClasses()) {
         const simpleName = info.name || key;
-        if (simpleName.toLowerCase() === objectName.toLowerCase()) {
-          if (ObjectRegistry.isTenantScoped(simpleName)) return true;
-          break;
+        if (
+          simpleName.toLowerCase() === objectName.toLowerCase() &&
+          ObjectRegistry.isTenantScoped(simpleName)
+        ) {
+          return true;
         }
       }
     }
