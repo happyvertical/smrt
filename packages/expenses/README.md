@@ -189,3 +189,11 @@ Assets receipt composition. `ExpenseForm` uses the shared localized currency
 selector while preserving native field names and rejected raw drafts. See
 [the UI contract](agents/expense-ui.md) for public props, selector restrictions,
 native payloads, retained errors and server responsibilities.
+
+
+The Svelte export also provides `ExpenseList` for a caller-authorized cost-object
+projection, `ExpenseReceiptCapture` for native file upload or shared camera
+capture, and `ExpenseReviewQueue` for native approval/rejection with retained
+reasons. `ExpenseForm` includes an optional amount keypad and editable
+cost-object references. See [the UI contract](agents/expense-ui.md) for public
+Props, request identity, no-JavaScript behavior and server responsibilities.

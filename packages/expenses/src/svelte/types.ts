@@ -51,6 +51,14 @@ export interface ExpenseFormProps {
   action: string;
   /** Retained draft strings from load or the failed action response. */
   values: ExpenseDraftValues;
+  /** Optional editable cost-object references; omit when supplied as fixed hidden fields. */
+  costObject?: { type: string; id: string };
+  /** Native cost-object field names. */
+  costObjectFields?: { type?: string; id?: string };
+  /** Server validation messages for editable cost-object references. */
+  costObjectErrors?: { type?: string; id?: string };
+  /** Enable the optional amount keypad; ordinary keyboard entry remains available. */
+  amountKeypad?: boolean;
   /** Optional stable form identity for enhancement. */
   id?: string;
   /** Caller-localized heading, including Purchase terminology. */
@@ -158,4 +166,90 @@ export interface ExpenseReviewPanelProps {
   children?: Snippet;
   /** Optional review-form enhancement. */
   onsubmit?: HTMLFormAttributes['onsubmit'];
+}
+
+/** Public model projection; monetary amounts are integer minor units. */
+export interface ExpenseListItem extends ExpenseReviewSummary {
+  /** Stable expense identity. */
+  id: string;
+  /** Qualified cost-object class name. */
+  costObjectType: string;
+  /** Bare cost-object reference. */
+  costObjectId: string;
+  /** Optional authorized detail link. */
+  href?: string;
+}
+
+/** Caller-authorized expenses filtered to one exact cost object. */
+export interface ExpenseListProps {
+  /** Authorized rows; this presentation filter never authorizes access. */
+  expenses: readonly ExpenseListItem[];
+  /** Exact qualified cost-object class. */
+  costObjectType: string;
+  /** Exact bare cost-object reference. */
+  costObjectId: string;
+  /** Optional localized heading. */
+  title?: string;
+  /** Server load error; existing rows remain visible. */
+  message?: string;
+}
+
+/** Separate native receipt upload, composed with the shared camera. */
+export interface ExpenseReceiptCaptureProps {
+  /** Authorized endpoint which stores and attaches the file. */
+  action: string;
+  /** Stable request identity and expense reference; never generated here. */
+  hiddenFields?: readonly ExpenseRequestField[];
+  /** Native multipart file name. */
+  fileField?: string;
+  /** Posted camera filename. */
+  fileName?: string;
+  /** Caller capability; server reauthorizes upload and attachment. */
+  canAttach?: boolean;
+  /** In-flight state; held camera files remain postable after retry. */
+  pending?: boolean;
+  /** Server denial/upload error; file must be reselected after navigation. */
+  message?: string;
+  /** Native submitter name. */
+  intentField?: string;
+  /** Native submitter value. */
+  intent?: string;
+  /** Optional native form enhancement. */
+  onsubmit?: HTMLFormAttributes['onsubmit'];
+}
+
+/** A server-authorized review row with retained row-specific action state. */
+export interface ExpenseReviewQueueItem extends ExpenseListItem {
+  /** Authorized native review endpoint; undefined hides decisions. */
+  action?: string;
+  /** Explicit row-specific capability. */
+  canReview?: boolean;
+  /** Retained rejection reason. */
+  reason?: string;
+  /** Server validation error or uncertain-outcome message. */
+  message?: string;
+  /** Exact row-specific request identity/context. */
+  hiddenFields?: readonly ExpenseRequestField[];
+  /** In-flight state for this row. */
+  pending?: boolean;
+}
+
+/** Native approve/reject queue. The server decides allowed state transitions. */
+export interface ExpenseReviewQueueProps {
+  /** Authorized rows, supplied in display order. */
+  expenses: readonly ExpenseReviewQueueItem[];
+  /** Global presentation capability, in addition to each row's capability. */
+  canReview?: boolean;
+  /** Server load error. */
+  message?: string;
+  /** Native expense identity field name. */
+  expenseField?: string;
+  /** Native reason field name. */
+  reasonField?: string;
+  /** Native decision submitter field name. */
+  intentField?: string;
+  /** Approval submitter value, normally mapped to Expense.review(). */
+  approveIntent?: string;
+  /** Rejection submitter value, normally mapped to Expense.reject(). */
+  rejectIntent?: string;
 }
