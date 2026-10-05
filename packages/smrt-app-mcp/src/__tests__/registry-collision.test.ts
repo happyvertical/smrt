@@ -24,6 +24,7 @@ import {
   PROTOCOL_VERSION_META_KEY,
 } from '@modelcontextprotocol/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createMcpAppServer } from '../server.js';
 import { mountMcpAppRoute } from '../sveltekit.js';
 
 @smrt({ mcp: { include: ['list', 'get'] } })
@@ -40,6 +41,17 @@ class CollisionAgentConfig extends SmrtObject {
   agentId: string = '';
 }
 
+/**
+ * Another package's class with the app model's simple name, on its own
+ * table: the route holds the app's constructor, so it serves the app's class.
+ */
+const OtherRouteNote = class extends SmrtObject {};
+Object.defineProperty(OtherRouteNote, 'name', { value: 'CollisionRouteNote' });
+class OtherRouteNoteCollection extends SmrtCollection<SmrtObject> {
+  static readonly _itemClass = OtherRouteNote;
+}
+const OTHER_NOTE = '@fixture/other3490:CollisionRouteNote';
+
 let db: Awaited<ReturnType<typeof getTestDatabase>>;
 beforeAll(async () => {
   ObjectRegistry.registerCollection(
@@ -52,6 +64,18 @@ beforeAll(async () => {
     slug: 'first',
     context: '',
     title: 'first note',
+  });
+  ObjectRegistry.register(OtherRouteNote, {
+    packageName: '@fixture/other3490',
+    tableName: 'other_route_notes',
+    mcp: { include: ['list', 'get'] },
+  });
+  ObjectRegistry.registerCollection(OTHER_NOTE, OtherRouteNoteCollection);
+  await getTestDatabase({ db, classes: [OTHER_NOTE] });
+  await db.insert('other_route_notes', {
+    id: '00000000-0000-4000-8000-0000000034ff',
+    slug: 'other-package-note',
+    context: '',
   });
   ObjectRegistry.registerPackageManifest({
     version: '1',
@@ -188,18 +212,55 @@ describe('mountMcpAppRoute with an unrelated registry collision (#3490)', () => 
     });
   });
 
-  it('still fails closed when the collision is inside the allow-list', async () => {
+  it('serves the mounted constructor when its simple name is shared', async () => {
+    for (const [model, slug, absent] of [
+      [CollisionRouteNote, 'first', 'other-package-note'],
+      [OtherRouteNote, 'other-package-note', 'first'],
+    ] as const) {
+      const handler = route([model as never]);
+      const list = await send(handler, 'tools/list', {}, ownerLocals);
+      expect(list.error).toBeUndefined();
+      expect(
+        (list.result.tools as Array<{ name: string }>).map(({ name }) => name),
+      ).toEqual(['collisionroutenote_get', 'collisionroutenote_list']);
+      const call = await send(
+        handler,
+        'tools/call',
+        { name: 'collisionroutenote_list', arguments: {} },
+        ownerLocals,
+      );
+      expect(call.error).toBeUndefined();
+      const rows = JSON.stringify(call.result.structuredContent);
+      expect(rows).toContain(slug);
+      expect(rows).not.toContain(absent);
+    }
+  });
+
+  it("publishes the mounted class, not another package's same-named stub", async () => {
     const body = await send(
       route([CollisionRouteNote, CollisionAgentConfig]),
       'tools/list',
       {},
       ownerLocals,
     );
-    // The allow-list names a class two registrations share: core refuses to
-    // pick one rather than publish either.
-    expect(body.error).toMatchObject({ code: -32603 });
-    expect(body.error.message).toContain(
-      "MCP class scope 'collisionagentconfig' is ambiguous",
-    );
+    expect(body.error).toBeUndefined();
+    expect(
+      (body.result.tools as Array<{ name: string }>).map(({ name }) => name),
+    ).toEqual([
+      'collisionagentconfig_list',
+      'collisionroutenote_get',
+      'collisionroutenote_list',
+    ]);
+  });
+
+  it('fails closed on a raw simple-name allow-list two classes share', async () => {
+    const server = createMcpAppServer({
+      serverInfo: { name: 'lane-3490', version: '0.0.0' },
+      allowedClassNames: ['CollisionAgentConfig'],
+      smrtOptions: () => ({ db }),
+    });
+    await expect(
+      server.listTools({ principal: { id: 'owner-1', tenantId: 'tenant-a' } }),
+    ).rejects.toThrow("MCP class scope 'collisionagentconfig' is ambiguous");
   });
 });

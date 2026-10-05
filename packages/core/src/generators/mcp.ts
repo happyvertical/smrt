@@ -304,6 +304,12 @@ export interface MCPToolIdentity {
   objectName: string;
   action: string;
   originalName: string;
+  /**
+   * Registry identity of the generating class (its qualified name, or its
+   * registry key when it has no package), so a composer can tell same-named
+   * classes of different packages apart (#3490).
+   */
+  qualifiedName?: string;
 }
 
 /** Return a copied, canonical tool sequence for byte-stable tools/list output. */
@@ -430,10 +436,14 @@ export class MCPGenerator {
   /** Return the validated source identity for a tool returned by this generator. */
   getToolIdentity(tool: MCPTool): MCPToolIdentity {
     const target = this.toolTarget(tool);
+    const owner = this.toolClass(tool);
     return {
       objectName: target.objectName,
       action: target.action,
       originalName: target.originalName ?? tool.name,
+      ...(owner
+        ? { qualifiedName: owner.classInfo.qualifiedName ?? owner.key }
+        : {}),
     };
   }
 

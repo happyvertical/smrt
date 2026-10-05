@@ -57,6 +57,39 @@ export function mcpAllowedClassNames(models: readonly McpAppModel[]): string[] {
   return [...names];
 }
 
+/**
+ * The registry identity (qualified name, or registry key for a class without
+ * a package) of each model constructor, looked up by the constructor itself.
+ * The route holds the constructors, so its allow-list names exactly those
+ * classes even when another registered class shares a simple name (#3490).
+ * An unregistered constructor fails closed.
+ */
+function mcpAllowedRegistryNames(models: readonly McpAppModel[]): string[] {
+  if (!Array.isArray(models)) {
+    throw new TypeError('MCP models must be an explicit array.');
+  }
+  const classes = ObjectRegistry.getAllClasses();
+  const names = new Set<string>();
+  for (const model of models) {
+    const registered =
+      typeof model === 'function'
+        ? ObjectRegistry.getClassByConstructor(model)
+        : undefined;
+    const key = registered
+      ? registered.qualifiedName && classes.get(registered.qualifiedName)
+        ? registered.qualifiedName
+        : [...classes].find(([, info]) => info === registered)?.[0]
+      : undefined;
+    if (!registered || !key || registered.constructor !== model) {
+      throw new TypeError(
+        'MCP models must be registered @smrt() class constructors.',
+      );
+    }
+    names.add(key);
+  }
+  return [...names];
+}
+
 /** Options for {@link mcpPrincipalScopePolicy}. */
 export interface McpPrincipalScopePolicyOptions {
   /** Every scope an authenticated principal must hold. May be empty. */
@@ -180,7 +213,7 @@ export function createDefaultMcpAppServer(
     taskPrincipalPolicy: narrowTask,
     ...rest
   } = options;
-  const allowedClassNames = mcpAllowedClassNames(models);
+  const allowedClassNames = mcpAllowedRegistryNames(models);
   const base = mcpPrincipalScopePolicy({ requiredScopes, principalKinds });
   return createMcpAppServer({
     ...rest,

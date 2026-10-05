@@ -121,6 +121,9 @@ describe('canonical MCP tool identifiers (#3219)', () => {
       action: 'seeddefaultrolepersonalizationpermissions',
       originalName:
         'rolepermissioncollection_seeddefaultrolepersonalizationpermissions',
+      qualifiedName: ObjectRegistry.getClassByConstructor(
+        RolePermissionCollection,
+      )?.qualifiedName,
     });
     const receivers: string[] = [];
     for (const tool of tools) {

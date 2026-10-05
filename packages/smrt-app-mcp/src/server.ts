@@ -335,6 +335,13 @@ function configuredEffects(
 }
 
 function isTenantScopedTool(identity: MCPToolIdentity): boolean {
+  // The generating class itself, never another class sharing its name (#3490).
+  if (identity.qualifiedName) {
+    return (
+      ObjectRegistry.isTenantScoped(identity.qualifiedName) ||
+      isTenantScopedClassResolved(identity.qualifiedName)
+    );
+  }
   const objectName = identity.objectName.toLowerCase();
   for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
     const name = classInfo.name || key;
@@ -471,8 +478,11 @@ export function createMcpAppServer(
     const generator = makeGenerator();
     const coreTools = (await generator.generateTools())
       .map((tool) => ({ tool, identity: generator.getToolIdentity(tool) }))
-      .filter(({ identity }) =>
-        allowedClassNames.has(identity.objectName.toLowerCase()),
+      .filter(
+        ({ identity }) =>
+          allowedClassNames.has(identity.objectName.toLowerCase()) ||
+          (!!identity.qualifiedName &&
+            allowedClassNames.has(identity.qualifiedName.toLowerCase())),
       );
     const names = new Set(coreTools.map(({ tool }) => tool.name));
     for (const workflowTool of workflowTools) {
@@ -777,6 +787,13 @@ export function createMcpAppServer(
   ): boolean {
     if (identity.action.toLowerCase() !== origin.method.toLowerCase()) {
       return false;
+    }
+    if (identity.qualifiedName) {
+      const info = ObjectRegistry.getAllClasses().get(identity.qualifiedName);
+      return (
+        origin.objectType === identity.qualifiedName ||
+        (!!info && origin.objectType === (info.name || identity.qualifiedName))
+      );
     }
     for (const [key, info] of ObjectRegistry.getAllClasses()) {
       const name = info.name || key;
