@@ -12,114 +12,36 @@
  * initialized when the class is defined, before its decorators run, so the
  * registry reads the identity from the exact constructor at decoration time,
  * in any bundle and in any registration order.
+ *
+ * Positions come from the parser's class node (`bodyStart`), never from
+ * rescanning the text: a string, template, comment or regex literal that
+ * looks like `class X {` cannot receive the stamp.
  */
 
 /** A decorated class the scanner found in a module. */
 export interface PackageStampTarget {
   /** Class name as declared in source. */
   className: string;
-  /** 1-based line the class node (decorators included) starts on. */
-  startLine: number;
+  /** Parser offset of the class body's opening `{`. */
+  bodyStart?: number;
 }
 
 /** The static property the registry reads (`getStampedPackageName`). */
 export const PACKAGE_STAMP_PROPERTY = '__smrtPackage__';
 
-function isIdentifierChar(char: string | undefined): boolean {
-  return !!char && /[A-Za-z0-9_$]/.test(char);
-}
-
-/** Index just past the string, template or comment starting at `index`, or -1. */
-function skipNonCode(code: string, index: number): number {
-  const char = code[index];
-  if (char === '/' && code[index + 1] === '/') {
-    const end = code.indexOf('\n', index);
-    return end === -1 ? code.length : end;
-  }
-  if (char === '/' && code[index + 1] === '*') {
-    const end = code.indexOf('*/', index + 2);
-    return end === -1 ? code.length : end + 2;
-  }
-  if (char === '"' || char === "'" || char === '`') {
-    let cursor = index + 1;
-    while (cursor < code.length && code[cursor] !== char) {
-      cursor += code[cursor] === '\\' ? 2 : 1;
-    }
-    return cursor + 1;
-  }
-  return -1;
-}
-
-/** Offset of the first character of a 1-based line. */
-function lineOffset(code: string, line: number): number {
-  let offset = 0;
-  for (let current = 1; current < line && offset !== -1; current++) {
-    offset = code.indexOf('\n', offset);
-    if (offset !== -1) offset += 1;
-  }
-  return offset === -1 ? code.length : offset;
-}
-
-/**
- * Offset just past the `{` opening the body of `class <className>`, searching
- * code (not strings or comments) from `from`; -1 when not found.
- */
-function findClassBody(code: string, className: string, from: number): number {
-  const keyword = `class`;
-  let cursor = from;
-  while (cursor < code.length) {
-    const skipped = skipNonCode(code, cursor);
-    if (skipped !== -1) {
-      cursor = skipped;
-      continue;
-    }
-    if (
-      code.startsWith(keyword, cursor) &&
-      !isIdentifierChar(code[cursor - 1]) &&
-      /\s/.test(code[cursor + keyword.length] ?? '')
-    ) {
-      let nameStart = cursor + keyword.length;
-      while (/\s/.test(code[nameStart] ?? '')) nameStart++;
-      const nameEnd = nameStart + className.length;
-      if (
-        code.slice(nameStart, nameEnd) === className &&
-        !isIdentifierChar(code[nameEnd])
-      ) {
-        // Walk the heritage clause to the body, ignoring nested brackets
-        // (`extends Base<{ a: 1 }>`, `extends mixin(A, { b })`).
-        let depth = 0;
-        let scan = nameEnd;
-        while (scan < code.length) {
-          const inner = skipNonCode(code, scan);
-          if (inner !== -1) {
-            scan = inner;
-            continue;
-          }
-          const char = code[scan];
-          if (char === '(' || char === '[' || char === '<') depth++;
-          else if (char === ')' || char === ']') depth--;
-          else if (char === '>' && code[scan - 1] !== '=') depth--;
-          else if (char === '{') {
-            if (depth === 0) return scan + 1;
-            depth++;
-          } else if (char === '}') depth--;
-          scan++;
-        }
-        return -1;
-      }
-    }
-    cursor++;
-  }
-  return -1;
+/** The text inserted right after a stamped class body's `{`. */
+export function packageStampText(packageName: string): string {
+  return ` static ${PACKAGE_STAMP_PROPERTY} = ${JSON.stringify(packageName)};`;
 }
 
 /**
  * Stamp each target class's body with its package. Returns the new source,
- * or null when nothing was stamped.
+ * or null when there is nothing to stamp.
  *
- * @throws Error when a target class cannot be located: an unstamped class
- *   of a stamping package would lose its identity in consumer bundles, so the
- *   library build fails rather than shipping it.
+ * @throws Error when a target has no parser body offset or the offset is not
+ *   a class body's `{`: an unstamped class of a stamping package would lose
+ *   its identity in consumer bundles, so the library build fails rather than
+ *   shipping it.
  */
 export function injectPackageStamps(
   code: string,
@@ -127,24 +49,20 @@ export function injectPackageStamps(
   packageName: string,
   moduleId = '<module>',
 ): string | null {
-  const insertions: number[] = [];
+  const insertions = new Set<number>();
   for (const target of targets) {
-    const at = findClassBody(
-      code,
-      target.className,
-      lineOffset(code, target.startLine),
-    );
-    if (at === -1) {
+    const at = target.bodyStart;
+    if (typeof at !== 'number' || code[at] !== '{') {
       throw new Error(
         `[smrt] Could not locate the body of class ${target.className} in ${moduleId} to stamp its package (#3490).`,
       );
     }
-    insertions.push(at);
+    insertions.add(at + 1);
   }
-  if (insertions.length === 0) return null;
-  const stamp = ` static ${PACKAGE_STAMP_PROPERTY} = ${JSON.stringify(packageName)};`;
+  if (insertions.size === 0) return null;
+  const stamp = packageStampText(packageName);
   let result = code;
-  for (const at of [...new Set(insertions)].sort((a, b) => b - a)) {
+  for (const at of [...insertions].sort((a, b) => b - a)) {
     result = result.slice(0, at) + stamp + result.slice(at);
   }
   return result;

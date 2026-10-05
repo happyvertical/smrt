@@ -123,6 +123,7 @@ export interface ScannerModule {
     classes: Array<{
       className: string;
       startLine: number;
+      bodyStart?: number;
       hasSmartDecorator: boolean;
     }>;
   };

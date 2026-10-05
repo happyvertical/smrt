@@ -44,7 +44,7 @@ import {
   generateClientModule,
 } from './generated-client.js';
 import { importBuildAwareModule } from './import-build-aware.js';
-import { injectPackageStamps } from './package-stamp.js';
+import { injectPackageStamps, packageStampText } from './package-stamp.js';
 import {
   findCliApiCoherenceViolations,
   generateSvelteKitRoutes,
@@ -438,12 +438,32 @@ export async function stampPackageModule(
     return null;
   }
   const scanner = await importScanner();
-  const parsed = scanner.parseSource(code, cleanId);
-  const targets = parsed.classes
-    .filter((candidate) => candidate.hasSmartDecorator)
-    .map(({ className, startLine }) => ({ className, startLine }));
+  const decorated = (source: string) =>
+    scanner
+      .parseSource(source, cleanId)
+      .classes.filter((candidate) => candidate.hasSmartDecorator);
+  const targets = decorated(code);
   const stamped = injectPackageStamps(code, targets, packageName, cleanId);
-  return stamped === null ? null : { code: stamped, map: null };
+  if (stamped === null) return null;
+  // Verify by re-parsing: every decorated class now opens with its stamp
+  // and the module declares exactly as many stamps as decorated classes.
+  const stamp = packageStampText(packageName);
+  const after = decorated(stamped);
+  const stampCount = stamped.split(stamp).length - 1;
+  if (
+    after.length !== targets.length ||
+    stampCount !== targets.length ||
+    after.some(
+      ({ bodyStart }) =>
+        typeof bodyStart !== 'number' ||
+        !stamped.startsWith(stamp, bodyStart + 1),
+    )
+  ) {
+    throw new Error(
+      `[smrt] Package stamping of ${cleanId} did not stamp exactly its ${targets.length} @smrt() class(es) (#3490).`,
+    );
+  }
+  return { code: stamped, map: null };
 }
 
 /**

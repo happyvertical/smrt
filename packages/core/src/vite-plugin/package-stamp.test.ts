@@ -85,10 +85,72 @@ describe('library package stamps (#3490)', () => {
     expect(() =>
       injectPackageStamps(
         'const x = 1;',
-        [{ className: 'Missing', startLine: 1 }],
+        [{ className: 'Missing' }],
         '@fixture/agents3490',
       ),
     ).toThrow('Could not locate the body of class Missing');
+    expect(() =>
+      injectPackageStamps(
+        'const x = 1;',
+        [{ className: 'Missing', bodyStart: 2 }],
+        '@fixture/agents3490',
+      ),
+    ).toThrow('Could not locate the body of class Missing');
+  });
+
+  const stamp = ' static __smrtPackage__ = "@fixture/agents3490";';
+  const stampOf = (source: string) =>
+    stampPackageModule(source, '/repo/packages/agents/src/thing.ts', manifest);
+
+  it.each([
+    [
+      'a regex literal that looks like the class',
+      `import { smrt, SmrtObject } from '@happyvertical/smrt-core';
+@smrt({ description: /class Thing {/.source }) export class Thing extends SmrtObject {}
+`,
+      ['export class Thing extends SmrtObject {'],
+    ],
+    [
+      'a template literal whose substitution contains the class text',
+      `import { smrt, SmrtObject } from '@happyvertical/smrt-core';
+const label = \`\${'class Thing {'} and \${\`class Thing {\`}\`;
+@smrt({ description: \`\${label} class Thing {\` })
+export class Thing extends SmrtObject {
+  name = '';
+}
+`,
+      ['export class Thing extends SmrtObject {'],
+    ],
+    [
+      'a class expression of the same name assigned to a const',
+      `import { smrt, SmrtObject } from '@happyvertical/smrt-core';
+const Decoy = class Thing extends SmrtObject {};
+@smrt()
+export class Thing extends SmrtObject {}
+`,
+      ['export class Thing extends SmrtObject {'],
+    ],
+    [
+      'two classes on one line, after non-ASCII text',
+      `import { smrt, SmrtObject } from '@happyvertical/smrt-core';
+// Ünïcödé — 🦀 before the classes moves UTF-8 byte offsets, not UTF-16 ones.
+@smrt() export class First extends SmrtObject {} @smrt() export class Second extends SmrtObject {}
+`,
+      [
+        'export class First extends SmrtObject {',
+        'export class Second extends SmrtObject {',
+      ],
+    ],
+  ])('stamps only the real class body beside %s', async (_label, source, bodies) => {
+    const result = await stampOf(source);
+    expect(result).not.toBeNull();
+    const code = result?.code ?? '';
+    for (const body of bodies) {
+      expect(code).toContain(`${body}${stamp}`);
+    }
+    expect(code.split(stamp)).toHaveLength(bodies.length + 1);
+    // Everything else is untouched: removing the stamps restores the source.
+    expect(code.split(stamp).join('')).toBe(source);
   });
 
   it('records stamping in the published manifest of a scoped package', () => {

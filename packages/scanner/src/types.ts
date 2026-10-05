@@ -45,6 +45,13 @@ export interface RawClassDefinition {
 
   /** End line in source file */
   endLine: number;
+
+  /**
+   * Offset of the class body's opening `{` in the parsed source, from the
+   * parser's class node. Build tooling inserts into the body by position
+   * (#3490); absent when the parser reports none.
+   */
+  bodyStart?: number;
 }
 
 /**
