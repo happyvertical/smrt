@@ -211,3 +211,15 @@ All catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in [`@h
 ## License
 
 MIT
+
+### Database initialization
+
+`StockService.create()` and transaction-scoped service construction initialize
+their three collections sequentially. Each initialization checks framework
+system tables on the shared connection; parallel probes can interfere on
+DuckDB. This ordering does not change the single-transaction stock/audit contract
+or provision application schema at runtime.
+
+The package test suite covers cold SQLite/DuckDB initialization and repeated
+transaction rollback. Set `SMRT_TEST_POSTGRES_URL` to an isolated PostgreSQL
+database to exercise the same fixture on PostgreSQL.
