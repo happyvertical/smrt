@@ -210,6 +210,22 @@ function jobCondition(chunk) {
   return match ? match[1].replace(/#.*$/gm, '') : '';
 }
 
+function requiresMain(condition) {
+  // The main comparison must be a top-level conjunct: an `||` outside
+  // parentheses would let another ref through.
+  let depth = 0;
+  let topLevel = '';
+  for (const ch of condition) {
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth -= 1;
+    else if (depth === 0) topLevel += ch;
+  }
+  return (
+    /github\.ref == 'refs\/heads\/main'/.test(topLevel) &&
+    !topLevel.includes('||')
+  );
+}
+
 test('every job that reads a publish token runs in the release environment', () => {
   let seen = 0;
   for (const { file, source } of allWorkflows()) {
@@ -225,9 +241,8 @@ test('every job that reads a publish token runs in the release environment', () 
         /^    environment: release$/m,
         `${file} job ${id} reads a publish secret and must declare environment: release`,
       );
-      assert.match(
-        jobCondition(chunk),
-        /github\.ref == 'refs\/heads\/main'/,
+      assert.ok(
+        requiresMain(jobCondition(chunk)),
         `${file} job ${id} must be skipped outside main by a job-level if`,
       );
     }
@@ -252,4 +267,12 @@ test('the main-ref check only counts when it is on the job-level if', () => {
   assert.match(jobCondition(guarded), /refs\/heads\/main/);
   assert.doesNotMatch(jobCondition(stepOnly), /refs\/heads\/main/);
   assert.doesNotMatch(jobCondition(commentOnly), /refs\/heads\/main/);
+  assert.ok(requiresMain(jobCondition(guarded)));
+  assert.ok(
+    requiresMain(
+      "  j:\n    if: |\n      github.ref == 'refs/heads/main' &&\n      (a == 1 || b == 2)\n",
+    ),
+  );
+  const offMain = "  j:\n    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'\n";
+  assert.ok(!requiresMain(jobCondition(offMain)));
 });
