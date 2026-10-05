@@ -57,6 +57,19 @@ release still reads third-party dependencies from it. Four rules follow.
   with `NPM_TOKEN`. The primary proxies npmjs for the scope, so versions
   published that way remain installable from it.
 
+- **Publish credentials live in the `release` environment**, not in repository
+  or organisation secrets (happyvertical/iac#2165). A `pull_request` run
+  executes the pull request's own workflow files, so any repository or
+  organisation secret is readable by pull-request code; only an environment
+  whose deployment-branch rule allows just `main` prevents that. Every job in
+  `publish.yml` that reads `NPM_HAPPYVERTICAL_PUBLISH_TOKEN` or `NPM_TOKEN`
+  declares `environment: release` and is skipped off `main`, and no workflow
+  triggered by `pull_request`, `pull_request_target` or `merge_group` may
+  reference either secret (`scripts/publish-workflow-policy.test.mjs`
+  enforces both). Store or rotate a token with
+  `gh secret set NPM_HAPPYVERTICAL_PUBLISH_TOKEN --env release --repo happyvertical/smrt`
+  (and likewise `NPM_TOKEN`).
+
 Consumers point the scope at the primary with one line and need no token:
 
 ```ini
