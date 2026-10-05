@@ -832,16 +832,28 @@ function assertStiSensitivity(
   };
   const incomingRoot = rootOf(incoming);
   if (!incomingRoot) return;
+  // A replacement manifest and the existing root are distinct objects with
+  // the same canonical identity. Keep both objects for their physical aliases.
+  const canonicalName = (node: typeof incoming | RegisteredClass) =>
+    node.qualifiedName ?? ('name' in node ? node.name : qualifiedName);
+  const rootName = canonicalName(incomingRoot);
+  const belongsToHierarchy = (node: typeof incoming | RegisteredClass) => {
+    const root = rootOf(node);
+    return root !== undefined && canonicalName(root) === rootName;
+  };
   for (const existing of getClasses().values()) {
     const root = rootOf(existing);
-    if (!root || root !== incomingRoot) continue;
+    if (!root || !belongsToHierarchy(existing)) continue;
+    // The incoming declaration replaces this member's config; comparing its
+    // superseded config would falsely reject a uniform/singleton update.
+    if (canonicalName(existing) === canonicalName(incoming)) continue;
     if ((existing.config.sensitive === true) !== (config.sensitive === true)) {
       // A caller may catch registration errors; keep historical rows/signals
       // closed even then, without accepting the invalid hierarchy.
       // Close every known physical alias, including the incoming manifest's
       // schema-only name: validation throws before registration can declare it.
       for (const member of [incoming, ...getClasses().values()]) {
-        if (rootOf(member) !== incomingRoot) continue;
+        if (!belongsToHierarchy(member)) continue;
         for (const table of [
           member.schema?.tableName,
           member.config.tableName,

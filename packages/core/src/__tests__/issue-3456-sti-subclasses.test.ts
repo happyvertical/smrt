@@ -6,6 +6,10 @@ import {
   getChangesSince,
 } from '../change-feed.js';
 import { isChangeFeedSensitiveTable } from '../change-feed-sensitivity.js';
+import {
+  publishChangeSignal,
+  subscribeToChangeSignals,
+} from '../change-signals.js';
 import { SchemaComparer } from '../migrations/differ.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
@@ -64,6 +68,111 @@ describe('STI subclass contracts (#3456)', () => {
   });
   afterEach(() => restore());
 
+  it.each([
+    false,
+    true,
+  ])('closes old and incoming root aliases after a rejected merge (child-first=%s)', async (childFirst) => {
+    const objects = Object.values(fixture().objects);
+    const oldTable = childFirst
+      ? 'old_alias_child_first_3456'
+      : 'old_alias_root_first_3456';
+    const newTable = childFirst
+      ? 'new_alias_child_first_3456'
+      : 'new_alias_root_first_3456';
+    const root = objects[0];
+    root.decoratorConfig.tableName = oldTable;
+    delete objects[1].decoratorConfig.conflictColumns;
+    class Calendar3456 extends SmrtObject {}
+    const ordered = childFirst ? [...objects].reverse() : objects;
+    for (const object of ordered) {
+      if (object === root)
+        ObjectRegistry.register(Calendar3456, {
+          ...root.decoratorConfig,
+          packageName: pkg,
+        });
+      else ObjectRegistry.registerFromManifest(object.className, object, pkg);
+    }
+    const update = structuredClone(root);
+    update.decoratorConfig.sensitive = true;
+    update.schema = {
+      tableName: newTable,
+      version: '1',
+      columns: {},
+      indexes: [],
+      ddl: '',
+    };
+    expect(() =>
+      ObjectRegistry.registerFromManifest(update.className, update, pkg),
+    ).toThrow(/mixed sensitivity/);
+    expect(isChangeFeedSensitiveTable(oldTable)).toBe(true);
+    expect(isChangeFeedSensitiveTable(newTable)).toBe(true);
+    expect(
+      ObjectRegistry.getClass(`${pkg}:Calendar3456`)?.config.sensitive,
+    ).not.toBe(true);
+    const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    const signals: string[] = [];
+    const unsubscribe = subscribeToChangeSignals(db, (signal) =>
+      signals.push(signal.table),
+    );
+    try {
+      await ensureChangeFeedTable(db);
+      for (const [index, table] of [
+        oldTable,
+        newTable,
+        'public_alias_control_3456',
+      ].entries()) {
+        await db.query(
+          `INSERT INTO ${CHANGE_FEED_TABLE}
+          (seq, table_name, row_id, operation, tenant_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+          index + 1,
+          table,
+          'historical-row',
+          'update',
+          null,
+          new Date().toISOString(),
+        );
+        publishChangeSignal(db, {
+          table,
+          rowId: 'historical-row',
+          operation: 'update',
+          tenantId: null,
+          seq: index + 1,
+        });
+      }
+      expect(
+        (await getChangesSince(db, { since: 0 })).changes.map(
+          (change) => change.table,
+        ),
+      ).toEqual(['public_alias_control_3456']);
+      expect(signals).toEqual(['public_alias_control_3456']);
+    } finally {
+      unsubscribe();
+      await db.close?.();
+    }
+  });
+  it('allows a singleton root sensitivity update without comparing its superseded config to itself', () => {
+    const root = Object.values(fixture().objects)[0];
+    root.decoratorConfig.tableName = 'singleton_old_alias_3456';
+    class Calendar3456 extends SmrtObject {}
+    ObjectRegistry.register(Calendar3456, {
+      ...root.decoratorConfig,
+      packageName: pkg,
+    });
+    const update = structuredClone(root);
+    update.decoratorConfig.sensitive = true;
+    update.schema = {
+      tableName: 'singleton_new_alias_3456',
+      version: '1',
+      columns: {},
+      indexes: [],
+      ddl: '',
+    };
+    expect(() =>
+      ObjectRegistry.registerFromManifest(update.className, update, pkg),
+    ).not.toThrow();
+    expect(isChangeFeedSensitiveTable('singleton_new_alias_3456')).toBe(true);
+  });
   it('closes the schema-only physical table after a caught child-first sensitivity error', async () => {
     const objects = Object.values(fixture(true).objects);
     const root = objects[0];
