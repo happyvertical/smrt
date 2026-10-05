@@ -9,8 +9,11 @@ import type { AuditHistoryEntry, AuditListFilter } from './types.js';
 interface Props {
   /** Authorized data only. For server paging use onfilter to reload the authorized page. */
   entries: AuditHistoryEntry[];
+  /** Shows the loading state and disables filter submission while a page is loading. */
   loading?: boolean;
+  /** Displays a history-loading error above the entries. */
   error?: string | null;
+  /** Requests an authorized server page for the submitted filters instead of filtering locally. */
   onfilter?: (filter: AuditListFilter) => void;
 }
 let { entries, loading = false, error = null, onfilter }: Props = $props();

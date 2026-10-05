@@ -8,9 +8,13 @@ interface Props {
   entries: AuditHistoryEntry[];
   /** Optional resource identity for a per-record page. Both must be supplied together. */
   resourceType?: string;
+  /** Limits entries to this record identifier when supplied with resourceType. */
   resourceId?: string;
+  /** Announces that history is loading and suppresses the empty-state message. */
   loading?: boolean;
+  /** Displays a history-loading error as an alert. */
   error?: string | null;
+  /** Overrides the translated accessible label for the history section. */
   label?: string;
 }
 let {
