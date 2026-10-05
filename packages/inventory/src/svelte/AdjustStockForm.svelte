@@ -1,5 +1,5 @@
 <script lang="ts">
-import { FormGroup, Input } from '@happyvertical/smrt-ui/forms';
+import { Form, FormGroup, Input } from '@happyvertical/smrt-ui/forms';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { StockAdjustmentInput } from './types.js';
 export interface Props {
@@ -48,7 +48,7 @@ async function submit(event: SubmitEvent) {
   }
 }
 </script>
-<form onsubmit={submit} aria-label="Adjust stock">
+<Form onsubmit={submit} aria-label="Adjust stock">
   <p>SKU: {skuId} · Location: {locationId}</p>
   <FormGroup label="Quantity adjustment"><Input type="number" step="any" bind:value={delta} required disabled={disabled || pending} /></FormGroup>
   <FormGroup label="Reason"><Input bind:value={reasonCode} required disabled={disabled || pending} /></FormGroup>
@@ -56,4 +56,4 @@ async function submit(event: SubmitEvent) {
   {#if error}<p role="alert">{error}</p>{/if}
   {#if saved}<p role="status">Stock adjusted</p>{/if}
   <Button type="submit" disabled={disabled || pending}>{pending ? 'Saving…' : 'Adjust stock'}</Button>
-</form>
+</Form>

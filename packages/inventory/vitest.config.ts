@@ -12,7 +12,6 @@ export default defineConfig({
     testTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
-
     setupFiles: ['@happyvertical/smrt-vitest/svelte-setup'],
     coverage: { provider: 'v8', reporter: ['text', 'json', 'html'] },
   },

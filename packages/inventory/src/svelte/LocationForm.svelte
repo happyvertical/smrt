@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Checkbox, FormGroup, Input } from '@happyvertical/smrt-ui/forms';
+import { Checkbox, Form, FormGroup, Input } from '@happyvertical/smrt-ui/forms';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { untrack } from 'svelte';
 import type { InventoryLocationData } from './types.js';
@@ -53,7 +53,7 @@ async function submit(event: SubmitEvent) {
   }
 }
 </script>
-<form onsubmit={submit} aria-label="Inventory location">
+<Form onsubmit={submit} aria-label="Inventory location">
   <FormGroup label="Code"><Input bind:value={code} required disabled={disabled || pending} /></FormGroup>
   <FormGroup label="Name"><Input bind:value={name} required disabled={disabled || pending} /></FormGroup>
   <FormGroup label="Kind"><Input bind:value={kind} required disabled={disabled || pending} /></FormGroup>
@@ -62,4 +62,4 @@ async function submit(event: SubmitEvent) {
   {#if error}<p role="alert">{error}</p>{/if}
   {#if saved}<p role="status">Location saved</p>{/if}
   <Button type="submit" disabled={disabled || pending}>{pending ? 'Saving…' : 'Save location'}</Button>
-</form>
+</Form>
