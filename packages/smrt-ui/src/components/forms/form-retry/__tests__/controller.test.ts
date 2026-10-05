@@ -409,13 +409,14 @@ describe('a reload', () => {
       { storage, restore: { owner: 'person-1', exclude: ['card'] } },
       `<input name="title" /><input type="password" name="pin" /><input name="card" />`,
     );
-    fill(form, { title: 'T', pin: '1234', card: '4111' });
+    // Values no timestamp or UUID in the stored record can contain.
+    fill(form, { title: 'T', pin: 'pin-zq7', card: 'card-zq8' });
     server.next('lost-response');
     await kit.submit();
     const raw = storage.store.get('smrt:form-retry:report:draft') ?? '';
     expect(raw).toContain('"title"');
-    expect(raw).not.toContain('1234');
-    expect(raw).not.toContain('4111');
+    expect(raw).not.toContain('pin-zq7');
+    expect(raw).not.toContain('card-zq8');
     expect(raw).not.toContain('submissionKey');
   });
 
