@@ -106,8 +106,18 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
       packages: [],
       overrides: { ...Object.fromEntries(externalVersions), ...Object.fromEntries([...packed.keys()].map((name) => [name, dependencies[name]])), ...overrides },
     }, null, 2));
+    // Honor the project's public registry routing without copying credentials.
+    const npmrc = resolve(root, '.npmrc');
+    const registryLines = existsSync(npmrc)
+      ? readFileSync(npmrc, 'utf8').split(/\r?\n/).filter((line) => /^\s*(?:@[\w-]+:)?registry\s*=/.test(line))
+      : [];
+    for (const line of registryLines) {
+      const url = new URL(line.slice(line.indexOf('=') + 1).trim());
+      assert.ok(url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash, 'Consumer registry must be a public HTTPS endpoint without credentials');
+    }
+    if (registryLines.length) writeFileSync(resolve(fixture, '.npmrc'), `${registryLines.join('\n')}\n`);
     // Type-only fixture: normal producer install/build checks retain lifecycle scripts.
-    const install = run('pnpm', ['install', '--ignore-scripts', '--no-frozen-lockfile', '--registry', 'https://registry.npmjs.org']);
+    const install = run('pnpm', ['install', '--ignore-scripts', '--no-frozen-lockfile']);
     const installedJson = run('pnpm', ['list', '--depth', 'Infinity', '--json']);
     const expectedTarballs = new Map([...packed].map(([name, path]) => [name, `file:${path}`]));
     for (const [name, target] of Object.entries(overrides)) {
@@ -131,6 +141,7 @@ export function createPackedConsumer({ root, packageNames, evidence, consumerDep
       copyFileSync(resolve(fixture, 'package.json'), resolve(evidence, 'consumer-package.json'));
       copyFileSync(resolve(fixture, 'pnpm-workspace.yaml'), resolve(evidence, 'consumer-pnpm-workspace.yaml'));
       copyFileSync(resolve(fixture, 'pnpm-lock.yaml'), resolve(evidence, 'consumer-pnpm-lock.yaml'));
+      if (registryLines.length) copyFileSync(resolve(fixture, '.npmrc'), resolve(evidence, 'consumer-npmrc'));
       writeFileSync(resolve(evidence, 'consumer-install.log'), `${install}\nexit=0\n`);
       writeFileSync(resolve(evidence, 'consumer-installed.json'), installedJson);
     }

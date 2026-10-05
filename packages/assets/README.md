@@ -158,7 +158,8 @@ checks actual core/assets tarballs in the standard Bundler mode with
 Full NodeNext declaration portability is tracked separately in #3524.
 
 The consumer fixture installs declared dependencies in a temporary directory
-with no ancestor `node_modules`; it never links producer dependencies. Set
+with no ancestor `node_modules`; it never links producer dependencies. It retains
+the project’s public registry routing without copying credentials. Set
 `SMRT_PACKED_EVIDENCE_DIR` to retain tarballs and the consumer lockfile. For an
 explicitly separate upstream-candidate proof, `SMRT_PACKED_OVERRIDES` may name
 a JSON file of pnpm overrides; such a proof does not establish that the normal
