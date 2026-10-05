@@ -57,7 +57,7 @@
  * @packageDocumentation
  */
 
-import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { createLogger } from '@happyvertical/logger';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
@@ -70,6 +70,11 @@ import {
   type SessionAuthMethod,
 } from '../models/Session.js';
 import { withoutListBounds } from './authorization-read-options.js';
+import {
+  hashSecret,
+  type ScryptParams,
+  verifySecretHash,
+} from './credential-hash.js';
 import {
   InvalidCredentialsError,
   LoginAttemptLimiter,
@@ -308,63 +313,14 @@ export interface ClearPinInput {
 // PIN hashing
 // ---------------------------------------------------------------------------
 
-interface ScryptParams {
-  N: number;
-  r: number;
-  p: number;
-}
-
 /** Canonical id shape; anything else cannot name a credential row. */
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 const DEFAULT_SCRYPT: ScryptParams = { N: 2 ** 15, r: 8, p: 1 };
-const HASH_BYTES = 32;
 
-async function hashPin(
-  pin: string,
-  pepper: string,
-  params: ScryptParams,
-  salt: Buffer = randomBytes(16),
-): Promise<string> {
-  const derived = await new Promise<Buffer>((resolve, reject) => {
-    scrypt(
-      `${pepper}\u0000${pin}`,
-      salt,
-      HASH_BYTES,
-      {
-        N: params.N,
-        r: params.r,
-        p: params.p,
-        // Node's default maxmem (32 MiB) is below 128·N·r for the default
-        // parameters; allow headroom so the derivation never throws.
-        maxmem: 128 * params.N * params.r * 2,
-      },
-      (error, key) => (error ? reject(error) : resolve(key)),
-    );
-  });
-  return `scrypt$${params.N}$${params.r}$${params.p}$${salt.toString('base64')}$${derived.toString('base64')}`;
-}
-
-async function verifyPinHash(
-  pin: string,
-  pepper: string,
-  encoded: string,
-): Promise<boolean> {
-  const [scheme, N, r, p, saltB64, hashB64] = encoded.split('$');
-  if (scheme !== 'scrypt' || !saltB64 || !hashB64) return false;
-  const params = { N: Number(N), r: Number(r), p: Number(p) };
-  if (![params.N, params.r, params.p].every(Number.isFinite)) return false;
-  const expected = Buffer.from(hashB64, 'base64');
-  const candidate = await hashPin(
-    pin,
-    pepper,
-    params,
-    Buffer.from(saltB64, 'base64'),
-  );
-  const actual = Buffer.from(candidate.split('$')[5] ?? '', 'base64');
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
+const hashPin = hashSecret;
+const verifyPinHash = verifySecretHash;
 
 function isTrivialPin(pin: string): boolean {
   if (/^(\d)\1+$/u.test(pin)) return true;

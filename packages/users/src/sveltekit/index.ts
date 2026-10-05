@@ -115,6 +115,12 @@ export {
   resolveMobileUploadDedupKey,
 } from './mobile-handlers.js';
 export {
+  type CreatePasswordCredentialHandlersOptions,
+  createPasswordCredentialHandlers,
+  type PasswordCredentialHandlers,
+  type PasswordRequestEvent,
+} from './password-handlers.js';
+export {
   type CliResource,
   type CommandDefinition,
   type CommandKind,

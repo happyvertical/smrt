@@ -255,21 +255,21 @@ export class SessionCollection extends SmrtCollection<Session> {
   }
 
   /**
-   * Revoke all sessions for a user (soft delete)
+   * Revoke all sessions for a user (soft delete), optionally sparing one —
+   * the session a person changes their password from (#3274). Ids come from
+   * the unbounded raw read, so caller list bounds can never leave a session
+   * of the user un-revoked.
    */
-  async revokeUserSessions(userId: string): Promise<number> {
-    const sessions = await this.list({
-      where: {
-        userId,
-        status: SessionStatus.ACTIVE,
-      },
-    });
-
+  async revokeUserSessions(
+    userId: string,
+    options: { exceptSessionId?: string } = {},
+  ): Promise<number> {
+    const sessionIds = await this.activeSessionIds('user_id', userId);
     let count = 0;
-    for (const session of sessions) {
-      if (session.id && (await this.revokeWithRetry(session.id))) count++;
+    for (const sessionId of sessionIds) {
+      if (sessionId === options.exceptSessionId) continue;
+      if (await this.revokeWithRetry(sessionId)) count++;
     }
-
     return count;
   }
 
