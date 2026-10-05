@@ -523,7 +523,15 @@ export function composeSmrtSvelteKitRuntime(
         sourceRoot,
         env,
       });
-      return { type: 'sqlite', url: paths.database };
+      return {
+        type: 'sqlite',
+        url: paths.database,
+        secureFile: {
+          driver: 'node:sqlite',
+          custody: 'trusted-parent',
+          root: paths.root,
+        },
+      };
     }
     const databaseUrl = env.DATABASE_URL;
     if (!databaseUrl) {

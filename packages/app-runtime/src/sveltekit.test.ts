@@ -75,8 +75,11 @@ import {
 const temporaryRoots: string[] = [];
 const initializationLockPaths = new Set<string>();
 const openRuntimes: SmrtSvelteKitRuntime[] = [];
+const openApplicationDatabases = new Set<DatabaseInterface>();
 
 afterEach(async () => {
+  for (const db of openApplicationDatabases) await db.close?.();
+  openApplicationDatabases.clear();
   for (const runtime of openRuntimes.splice(0)) {
     try {
       const local = await runtime.localRuntime();
@@ -484,6 +487,27 @@ describe('application identity', () => {
 // ---------------------------------------------------------------------------
 
 describe('local SvelteKit runtime', () => {
+  it('retains secure SQLite custody in public options while honoring class overrides', async () => {
+    const override = { type: 'sqlite' as const, url: ':memory:' };
+    const { runtime } = await localRuntime('secure-options', {
+      classOverrides: { Membership: { db: override } },
+    });
+    await runtime.init();
+    const local = await runtime.localRuntime();
+    const expected = {
+      type: 'sqlite',
+      url: local.paths.database,
+      secureFile: {
+        driver: 'node:sqlite',
+        custody: 'trusted-parent',
+        root: local.paths.root,
+      },
+    };
+    expect(runtime.databaseConfig()).toEqual(expected);
+    expect(runtime.classOptions('User').db).toEqual(expected);
+    expect(runtime.classOptions('Membership').db).toBe(override);
+  });
+
   it('keeps owner bootstrap loopback-only, single-use, and HMAC-only end to end', async () => {
     const onOwnerClaimed = vi.fn(() => {
       throw new Error('cleanup failure must not surface');
@@ -853,6 +877,16 @@ describe('local SvelteKit runtime', () => {
       otherTenantId,
       sid,
     );
+    const requestDb = await applicationDb(runtime);
+    expect(requestDb).not.toBe(local.db);
+    expect(
+      (
+        await requestDb.query(
+          'SELECT tenant_id FROM sessions WHERE id = ?',
+          sid,
+        )
+      ).rows[0],
+    ).toEqual({ tenant_id: otherTenantId });
     const unauthorized = await runHandle(
       runtime.handle,
       testEvent('http://other.example.test/', { sid }),
@@ -862,8 +896,8 @@ describe('local SvelteKit runtime', () => {
       sid,
     );
     expect(sessionRow.rows[0]).toEqual({ tenant_id: otherTenantId });
-    // Whatever the session layer resolves, the published context is never
-    // the membership-less tenant: it is the tenant of an active membership.
+    // The request connection sees the changed session tenant. A session for a
+    // membership-less tenant is unauthenticated; it cannot retain old authority.
     const published = {
       tenantId: unauthorized.locals.tenantId,
       membershipTenant: (
@@ -877,16 +911,28 @@ describe('local SvelteKit runtime', () => {
     expect(published.context).not.toBe(otherTenantId);
     expect(published.active).not.toBe(otherTenantId);
     expect(published).toEqual({
-      tenantId: ownerTenantId,
-      membershipTenant: ownerTenantId,
-      context: ownerTenantId,
-      active: ownerTenantId,
+      tenantId: null,
+      membershipTenant: undefined,
+      context: undefined,
+      active: undefined,
     });
+    expect(unauthorized.locals.user).toBeNull();
+    expect(unauthorized.locals.sessionId).toBeNull();
+    expect(unauthorized.locals.permissions).toEqual([]);
     await local.db.query(
       'UPDATE sessions SET tenant_id = ? WHERE id = ?',
       ownerTenantId,
       sid,
     );
+    const restored = await runHandle(
+      runtime.handle,
+      testEvent('http://127.0.0.1:5173/', { sid }),
+    );
+    expect(restored.locals.tenantId).toBe(ownerTenantId);
+    expect(restored.activeTenantId).toBe(ownerTenantId);
+    expect(
+      (restored.locals.tenantContext as { tenantId: string }).tenantId,
+    ).toBe(ownerTenantId);
 
     // The SvelteKit layer created no tables while serving requests.
     expect(await tableNames(local.db)).toEqual(tablesBefore);
@@ -1511,7 +1557,9 @@ async function applicationDb(
   const { SessionService } = await import('@happyvertical/smrt-users');
   const service = new SessionService(runtime.classOptions('Session'));
   await service.initialize();
-  return service.getDatabase() as unknown as DatabaseInterface;
+  const db = service.getDatabase() as unknown as DatabaseInterface;
+  openApplicationDatabases.add(db);
+  return db;
 }
 
 function expectNoTenantAuthority(observed: Observation): void {
