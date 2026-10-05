@@ -173,6 +173,8 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: ${JSON.stringify(configuredViteRoot)},
+  // This isolated consumer must not inherit the core package decorator config.
+  oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } },
   resolve: { alias: { '@happyvertical/smrt-core': ${JSON.stringify(coreUrl)} } },
   plugins: [
     sveltekit(),
