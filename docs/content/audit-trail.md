@@ -67,7 +67,9 @@ use a root connection for the automatic mutation boundary.
 Each successful create, update, or delete records a `created`, `updated`, or
 `deleted` action with qualified resource type, id, tenant, actor, optional reason
 and field changes. Ownership comes from the model's registered tenant field,
-including custom fields such as `organizationId`; system/admin context never
+including custom fields such as `organizationId` declared on the model or
+registered at runtime with `registerTenantScopedClass`. Multiple conflicting
+runtime ownership columns refuse the mutation atomically. System/admin context never
 replaces the resource's actual owner. `getOrUpsert` audits its existing-record
 update path too.
 The public serialization projection omits sensitive fields and fields requiring

@@ -8,6 +8,8 @@ import {
 import {
   disableTenancy,
   enableTenancy,
+  registerTenantScopedClass,
+  unregisterTenantScopedClass,
   withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
@@ -39,6 +41,14 @@ class Issue3460OrganizationRecord extends SmrtObject {
 }
 class Issue3460OrganizationRecords extends SmrtCollection<Issue3460OrganizationRecord> {
   static readonly _itemClass = Issue3460OrganizationRecord;
+}
+@smrt({ tableName: 'issue_3460_runtime_organization_records', audit: true })
+class Issue3460RuntimeOrganizationRecord extends SmrtObject {
+  organizationId: string = '';
+  title: string = '';
+}
+class Issue3460RuntimeOrganizationRecords extends SmrtCollection<Issue3460RuntimeOrganizationRecord> {
+  static readonly _itemClass = Issue3460RuntimeOrganizationRecord;
 }
 @smrt({
   tableName: 'issue_3460_tenant_records',
@@ -73,6 +83,7 @@ for (const type of ['sqlite', 'postgres'] as const) {
             '@happyvertical/smrt-profiles:AuditLog',
             '@happyvertical/smrt-profiles:Issue3460OrganizationRecord',
             '@happyvertical/smrt-profiles:Issue3460TenantRecord',
+            '@happyvertical/smrt-profiles:Issue3460RuntimeOrganizationRecord',
           ],
         });
         db = isolated.db;
@@ -93,6 +104,9 @@ for (const type of ['sqlite', 'postgres'] as const) {
       });
     });
     afterEach(async () => {
+      unregisterTenantScopedClass(
+        '@happyvertical/smrt-profiles:Issue3460RuntimeOrganizationRecord',
+      );
       disableTenancy();
       if (isolated) await isolated.cleanup();
       else await db?.close?.();
@@ -177,8 +191,24 @@ for (const type of ['sqlite', 'postgres'] as const) {
       });
     });
 
-    it('retains actual custom and default tenant ownership across administrative CRUD, tenant reads and retention', async () => {
-      const records = await Issue3460OrganizationRecords.create({
+    it.each([
+      'declarative',
+      'runtime',
+    ] as const)('retains actual %s custom and default tenant ownership across administrative CRUD, tenant reads and retention', async (mode) => {
+      if (mode === 'runtime') {
+        registerTenantScopedClass(
+          '@happyvertical/smrt-profiles:Issue3460RuntimeOrganizationRecord',
+          {
+            field: 'organizationId',
+            allowSuperAdminBypass: true,
+          },
+        );
+      }
+      const collection =
+        mode === 'runtime'
+          ? Issue3460RuntimeOrganizationRecords
+          : Issue3460OrganizationRecords;
+      const records = await collection.create({
         db,
         auditTrail: { actorId, writer: createAuditWriter() },
       });

@@ -107,7 +107,15 @@ export async function writeAudit(
   );
   const resourceType =
     registered?.qualifiedName || registered?.name || instance.constructor.name;
-  const tenantColumn = ObjectRegistry.getOwnershipTenantColumn(resourceType);
+  const runtimeColumns =
+    ObjectRegistry.getRuntimeOwnershipColumns(resourceType);
+  if (runtimeColumns.size > 1) {
+    throw new Error('Audited mutation has ambiguous runtime tenant ownership');
+  }
+  const tenantColumn =
+    runtimeColumns.size === 1
+      ? runtimeColumns.values().next().value
+      : ObjectRegistry.getOwnershipTenantColumn(resourceType);
   const fields = await ObjectRegistry.getAllFields(resourceType);
   const tenantField = tenantColumn
     ? [...fields.keys()].find((key) => toSnakeCase(key) === tenantColumn)

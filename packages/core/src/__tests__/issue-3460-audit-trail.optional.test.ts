@@ -44,6 +44,14 @@ class Issue3460CustomOwner extends SmrtObject {
 class Issue3460CustomOwners extends SmrtCollection<Issue3460CustomOwner> {
   static readonly _itemClass = Issue3460CustomOwner;
 }
+@smrt({ tableName: 'issue_3460_runtime_owner', audit: true })
+class Issue3460RuntimeOwner extends SmrtObject {
+  organizationId: string = '';
+  title: string = '';
+}
+class Issue3460RuntimeOwners extends SmrtCollection<Issue3460RuntimeOwner> {
+  static readonly _itemClass = Issue3460RuntimeOwner;
+}
 @smrt({ tableName: 'issue_3460_audit_entries' })
 class Issue3460Entry extends SmrtObject {
   entry: Record<string, unknown> = {};
@@ -95,10 +103,12 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
           'Issue3460Plain',
           'Issue3460Child',
           'Issue3460CustomOwner',
+          'Issue3460RuntimeOwner',
         ],
       });
       if (type === 'postgres') {
         for (const table of [
+          'issue_3460_runtime_owner',
           'issue_3460_custom_owner',
           'issue_3460_children',
           'issue_3460_records',
@@ -298,6 +308,61 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         'deleted',
       ]);
       expect(entries.every((entry) => entry.tenantId === owner)).toBe(true);
+    });
+
+    it('uses fresh qualified runtime ownership and refuses ambiguous sources atomically', async () => {
+      const runtime = await Issue3460RuntimeOwners.create({
+        db,
+        auditTrail: { actorId: 'actor-1', writer },
+      });
+      const name = ObjectRegistry.getClassByConstructor(
+        Issue3460RuntimeOwner,
+      )?.qualifiedName;
+      expect(name).toBeTruthy();
+      expect(
+        ObjectRegistry.getOwnershipTenantColumn(name as string),
+      ).toBeUndefined();
+      const dispose = ObjectRegistry.registerOwnershipColumnSource((key) =>
+        key === name ? ['organization_id'] : undefined,
+      );
+      try {
+        const row = await runtime.create({
+          organizationId: '00000000-0000-4000-8000-0000000000a1',
+          title: 'Before',
+        });
+        await runtime.update(row.id as string, { title: 'After' });
+        await runtime.delete(row.id as string);
+        expect(entries.map((entry) => entry.action)).toEqual([
+          'created',
+          'updated',
+          'deleted',
+        ]);
+        expect(
+          entries.every((entry) => entry.tenantId === row.organizationId),
+        ).toBe(true);
+        const conflict = ObjectRegistry.registerOwnershipColumnSource((key) =>
+          key === name ? ['tenant_id'] : undefined,
+        );
+        try {
+          await expect(
+            runtime.create({
+              organizationId: row.organizationId,
+              title: 'Ambiguous',
+            }),
+          ).rejects.toThrow('ambiguous runtime tenant ownership');
+          expect(await runtime.count()).toBe(0);
+          expect(entries).toHaveLength(3);
+        } finally {
+          conflict();
+        }
+      } finally {
+        dispose();
+      }
+      expect(
+        ObjectRegistry.getRuntimeOwnershipColumns(name as string).size,
+      ).toBe(0);
+      await runtime.create({ title: 'Unscoped after disposal' });
+      expect(entries.at(-1)?.tenantId).toBeNull();
     });
 
     it('isolates async request principals and restores context after each request', async () => {

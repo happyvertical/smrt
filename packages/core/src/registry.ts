@@ -3686,7 +3686,7 @@ export class ObjectRegistry {
    * package's `registerTenantScopedClass('Team', { field: 'organizationId' })`
    * is the canonical producer.
    *
-   * Core reads these only to protect ownership on save
+   * Core reads these to protect ownership on save and record audit ownership
    * ({@link ObjectRegistry.getOwnershipColumns}); they never change the
    * conflict target or the schema, which are build-time contracts a runtime
    * registration cannot alter without breaking `ON CONFLICT` binding. The
@@ -3729,6 +3729,15 @@ export class ObjectRegistry {
         columns.add(toSnakeCase(name));
       }
     }
+    for (const column of ObjectRegistry.getRuntimeOwnershipColumns(className)) {
+      columns.add(column);
+    }
+    return columns;
+  }
+
+  /** Runtime ownership sources only; fresh, qualified and independent of schema/conflict targets. */
+  static getRuntimeOwnershipColumns(className: string): Set<string> {
+    const columns = new Set<string>();
     const registered = ObjectRegistry.findClass(className);
     const qualifiedName = registered?.qualifiedName ?? className;
     for (const source of ObjectRegistry.ownershipColumnSources) {
