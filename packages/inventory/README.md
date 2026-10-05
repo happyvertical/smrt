@@ -242,7 +242,7 @@ every ledger row including both transfer legs. Omission records `null` for
 legacy callers and unattended automation. Supply the profile ID from trusted
 server context; this attribution field does not authorize the caller.
 
-Existing deployments must generate and apply their normal SMRT schema migration
+Existing deployments must generate and apply their normal s-m-r-t schema migration
 before using these fields: add nullable decimal `reorder_point` and
 `reorder_quantity` to `inventory_stock_levels`, and nullable profile-reference
 `actor_profile_id` to `inventory_stock_movements` (UUID on PostgreSQL/DuckDB,
