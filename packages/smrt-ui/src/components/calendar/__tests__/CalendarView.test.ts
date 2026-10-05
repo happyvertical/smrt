@@ -326,6 +326,52 @@ describe('CalendarView (week)', () => {
     await expectNoA11yViolations(container);
   });
 
+  it('opens cross-month selection and overflow only inside the visible week', async () => {
+    const { container, rerender } = render(CalendarView, {
+      props: {
+        ...props,
+        maxPerDay: 1,
+        items: [
+          { id: 'first', title: 'First event', start: '2026-10-01T18:00:00Z' },
+          {
+            id: 'hidden',
+            title: 'Hidden event',
+            start: '2026-10-01T19:00:00Z',
+          },
+        ],
+      },
+    });
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: /Thursday, October 1, 2026, 2 items/,
+      }),
+    );
+    expect(
+      screen.getByRole('heading', { name: 'Thursday, October 1, 2026' }),
+    ).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole('button', { name: /Close.*Thursday, October 1, 2026/ }),
+    );
+    await userEvent.click(screen.getByText('+2 more'));
+    const panel = container.querySelector('.cv-day-panel') as HTMLElement;
+    expect(within(panel).getByText('Hidden event')).toBeTruthy();
+
+    await rerender({
+      ...props,
+      date: '2027-01-01',
+      selectedDate: '2027-01-01',
+    });
+    expect(
+      screen.getByRole('heading', { name: 'Friday, January 1, 2027' }),
+    ).toBeTruthy();
+    await rerender({
+      ...props,
+      date: '2027-01-08',
+      selectedDate: '2027-01-01',
+    });
+    expect(container.querySelector('.cv-day-panel')).toBeNull();
+  });
+
   it('reports date-based navigation within a month, today and controlled changes', async () => {
     const onNavigate = vi.fn();
     const { rerender } = render(CalendarView, {

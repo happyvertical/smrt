@@ -729,7 +729,7 @@ $effect(() => {
       {/each}
     </div>
 
-    {#if selected && !dayHref && sameMonth(selected, current)}
+    {#if selected && !dayHref && (isWeek ? visibleWeekKeys.includes(selected) : sameMonth(selected, current))}
       <section class="cv-day-panel" aria-labelledby="cv-day-{uid}">
         <div class="cv-day-panel-head">
           <h3 class="cv-day-title" id="cv-day-{uid}">{longDate(selected)}</h3>
