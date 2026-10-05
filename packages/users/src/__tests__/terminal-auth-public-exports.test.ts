@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_PASSWORD_MANAGE_PERMISSION,
   DeviceCredentialService,
   LoginAttemptLimiter,
+  PASSWORD_LOGIN_KIND,
+  PasswordCredentialService,
   UsersCliAuthApproveLimit,
   UsersCliAuthApproveLimitCollection,
   UsersLoginAttempt,
   UsersLoginAttemptCollection,
   UsersLoginAuditEvent,
   UsersLoginAuditEventCollection,
+  UsersPasswordCredential,
+  UsersPasswordCredentialCollection,
   UsersPinCredential,
   UsersPinCredentialCollection,
 } from '../index.js';
@@ -29,5 +34,15 @@ describe('terminal auth public exports', () => {
     expect(DeviceCredentialService).toBeTypeOf('function');
     expect(UsersPinCredential).toBeTypeOf('function');
     expect(UsersPinCredentialCollection).toBeTypeOf('function');
+  });
+
+  it('exports the password credential classes and constants (#3274)', async () => {
+    expect(PasswordCredentialService).toBeTypeOf('function');
+    expect(UsersPasswordCredential).toBeTypeOf('function');
+    expect(UsersPasswordCredentialCollection).toBeTypeOf('function');
+    expect(DEFAULT_PASSWORD_MANAGE_PERMISSION).toBe('users.password.manage');
+    expect(PASSWORD_LOGIN_KIND).toBe('password');
+    const sveltekit = await import('../sveltekit/index.js');
+    expect(sveltekit.createPasswordCredentialHandlers).toBeTypeOf('function');
   });
 });

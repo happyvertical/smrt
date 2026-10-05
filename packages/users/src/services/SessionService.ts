@@ -374,8 +374,11 @@ export class SessionService {
   /**
    * Destroy all sessions for a user (logout from all devices)
    */
-  async destroyAllUserSessions(userId: string): Promise<number> {
-    return this.sessionCollection.revokeUserSessions(userId);
+  async destroyAllUserSessions(
+    userId: string,
+    options: { exceptSessionId?: string } = {},
+  ): Promise<number> {
+    return this.sessionCollection.revokeUserSessions(userId, options);
   }
 
   /**

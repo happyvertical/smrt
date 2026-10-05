@@ -602,8 +602,8 @@ the current tenant in application code.
 
 ### Login rate limiting and lockout
 
-Every credential-based sign-in (terminal approval, device PIN, and any
-password or passkey flow an app adds) draws from one shared budget,
+Every credential-based sign-in (terminal approval, device PIN, password
+sign-in, and any passkey flow an app adds) draws from one shared budget,
 `LoginAttemptLimiter` (#3273). The budget lives in `users_login_attempts`, so it
 holds across every replica on Postgres; keys are hashed, so the table never
 becomes an index of emails or IPs.
@@ -774,6 +774,113 @@ Existing installations need `smrt db:migrate` for the additive
 Other credential kinds (a fob or badge reader, say) implement
 `DeviceCredentialVerifier` and go through `service.signIn(verifier, input)`;
 `PinVerifier` is the reference implementation.
+
+### Password sign-in
+
+`PasswordCredentialService` (#3274) gives an app without an identity provider
+email + password sign-in for **existing, active** users. It never creates a
+user. The password lives in its own object, `UsersPasswordCredential`
+(`users_password_credentials`, one row per person), not on `User`: it is
+`sensitive`, has no generated REST/MCP/CLI surface, never enters the change
+feed, and `toPublicJSON()` omits the hash. The service and the handlers below
+are its only read and write paths.
+
+**Hashing.** scrypt from `node:crypto` (no native dependency) with a random
+per-hash salt; the parameters are stored in each hash
+(`scrypt$N$r$p$salt$hash`) and compared with `timingSafeEqual`. Raising
+`password.scrypt` never breaks existing passwords: a weaker hash still
+verifies and is rehashed under the current parameters on the next successful
+sign-in, by a guarded update that never overwrites a password changed in the
+meantime. A sign-in for an unknown email, or a user with no password, runs
+the same scrypt verification against a dummy hash, so timing does not reveal
+whether the account or credential exists. Passwords are NFKC-normalized.
+
+**Sign-in.** The submitted email is normalized exactly as `User.emailKey` is,
+and the attempt is reserved through the shared `LoginAttemptLimiter` *before*
+any credential work: per account (the email key, whether or not it exists) and
+per client address. The person must be `ACTIVE` and, when a tenant is given,
+hold an `ACTIVE` membership in it. A successful sign-in mints a first-class
+session with `authMethod: 'password'` through `SessionService.createSession`,
+re-checks that the verified password is still current (so a concurrent change
+or reset cannot leave a session behind), and revokes the browser's previous
+cookie session. Every refusal — unknown email, no password, wrong password,
+inactive user, no membership, malformed or over-long input — is the same
+`PasswordCredentialError` / 401; a rate limit is `LoginRateLimitError` / 429
+with `Retry-After`, and it is reached the same way for an unknown email as for
+a real one. Audit rows carry hashed keys and the tenant only: never the email,
+the password, the hash, or the user id.
+
+**Policy** (`password` option): `minLength` (default 10), `maxLength`
+(default 256, hard ceiling 1024 — longer input is refused before hashing,
+at sign-in too), a small built-in `DEFAULT_PASSWORD_DENYLIST` extended by
+`denylist`, a refusal of the person's own email, and a `reject(password,
+{ userId, email })` hook for anything else (a breached-password check, shop
+words). There are no composition rules. Optional `pepper`. Violations are
+`PasswordPolicyError` (400) with a message fit to display.
+
+**Lifecycle and authority.**
+
+| Call | Who | Sessions ended |
+|---|---|---|
+| `setPassword` | the person, for their **first** password; or an admin with `users.password.manage` | none; all of the person's if an admin replaced an existing one |
+| `changePassword` | the person, proving the current password (from the sign-in budget) | every other session of theirs |
+| `resetPassword` | an admin with `users.password.manage`, never for themself; `mustChange` defaults to true | every session of the person |
+| `clearPassword` | an admin, or the person proving the current password | the person's password sessions |
+
+A reset with `mustChange` makes the next sign-in a restricted session: it
+resolves to no permissions (an empty permission ceiling) and can only call
+`changePassword`, which ends it; the person then signs in with the new
+password. A device PIN (layered) session never manages passwords. Like the
+PIN, the password is one per person across tenants, so `users.password.manage`
+reaches only people whose every active membership is in the administrator's
+session tenant. It is impersonation-equivalent — grant it like an owner-level
+permission. It is registered in the runtime catalog
+(`ensurePasswordPermissionsRegistered()`, called by the service), so
+`syncPermissionCatalog()` creates it and the default role matrix
+(`seedRolePermissions()`) grants it to `owner` and `admin` (`*`), not to
+`member` or `viewer`.
+
+#### Consumer wiring (SvelteKit)
+
+```ts
+// src/lib/server/password-auth.ts
+import { createPasswordCredentialHandlers } from '@happyvertical/smrt-users/sveltekit';
+
+export const passwordAuth = createPasswordCredentialHandlers({
+  db,
+  tenantId: () => SHOP_TENANT_ID,   // value or (event) => …; omit for no tenant context
+  cookieName: 'sid',                // the same cookie createSessionHandler reads
+  sessionTtl: 12 * 60 * 60,         // default 7 days
+  loginLimiter,                     // optional: share one limiter with PIN/terminal
+  password: { minLength: 12, denylist: ['teamworks fabrication'] },
+});
+// POST   /auth/password            → passwordAuth.signIn          ({ email, password }, JSON or form)
+// PUT    /account/password         → passwordAuth.changePassword  ({ currentPassword, newPassword })
+// POST   /account/password         → passwordAuth.setPassword     ({ password } or admin { userId, password })
+// DELETE /account/password         → passwordAuth.clearPassword   ({ currentPassword } or admin { userId })
+// POST   /admin/users/password     → passwordAuth.resetPassword   ({ userId, password, mustChange? })
+// sign out                         → destroySessionCookie(event, { db })
+```
+
+What the app must do:
+
+- Mount `createSessionHandler` with the same `cookieName`; the management
+  handlers act as the session it puts in `event.locals` and refuse (401) when
+  `locals.authMethod` is absent.
+- Put the sign-in route on the signed-out allowlist; leave CSRF protection on
+  (SvelteKit's origin check covers form posts, JSON needs CORS preflight).
+- On `mustChange: true` (or a 200 from `changePassword` with
+  `signedOut: true`), send the person to the change-password page or back to
+  sign-in.
+- Run `syncPermissionCatalog()` (or `seedRolePermissions()`) after the
+  service is first constructed, and grant `users.password.manage` to any
+  other role that administers passwords.
+- Run `smrt db:migrate` once for the new `users_password_credentials` table.
+- For a form action instead of an endpoint, call
+  `(await passwordAuth.service()).signIn({ … })` and set the cookie with the
+  returned `sessionId`; keep the session id out of page data.
+
+Passkeys/WebAuthn are a separate credential (#3275).
 
 ### Request-scoped database access
 
@@ -1011,6 +1118,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `Session` | Server-side session. Secure UUID. TTL in seconds. `authMethod` records the channel; `parentSessionId` makes it a layered session valid only while its parent is. Reserved `data` keys (`SESSION_DATA_KEYS`) carry a permission ceiling, sliding idle timeout, and absolute expiry. |
 | `UsersLoginAttempt`, `UsersLoginAuditEvent` | Hashed-key login budget rows and durable sign-in audit events (#3273). Closed generated surface. |
 | `UsersPinCredential` | Per-person scrypt PIN hash for enrolled-device sign-in (#3276). Closed generated surface. |
+| `UsersPasswordCredential` | Per-person scrypt password hash for email + password sign-in (#3274). Sensitive; closed generated surface. |
 | `Group` | Team within a tenant. Gains permissions via GroupRole. |
 | `Membership` | User + Tenant + Role junction. UNIQUE(userId, tenantId). |
 | `MembershipOverride` | Per-user permission grant/deny on a membership. |
@@ -1028,7 +1136,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `MembershipOverrideCollection`, `TenantPermissionOverrideCollection` | Override management at membership and tenant levels |
 | `GroupCollection`, `GroupMemberCollection`, `GroupRoleCollection`, `RolePermissionCollection` | Group and role-permission junction management |
 | `AccessRequestCollection` | AccessRequest queries: `findByEmail()`, `findOpenByEmail()`, `findByStatus()`, `findOpen()` |
-| `UsersLoginAttemptCollection`, `UsersLoginAuditEventCollection`, `UsersPinCredentialCollection` | Atomic limiter primitives, audit storage, and PIN credential rows behind the services below |
+| `UsersLoginAttemptCollection`, `UsersLoginAuditEventCollection`, `UsersPinCredentialCollection`, `UsersPasswordCredentialCollection` | Atomic limiter primitives, audit storage, and PIN and password credential rows behind the services below |
 
 ### Services
 
@@ -1042,6 +1150,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `SessionService` | High-level session management. `createSession()`, `loadSessionContext()`, `destroySession()`; tenant contexts include direct or inherited membership provenance, `authMethod`, and `parent` for layered sessions. |
 | `LoginAttemptLimiter` | Shared sign-in budget with exponential lockout and audit (#3273): `reserve()` → lease `.fail()`/`.succeed()`/`.release()`. `LoginRateLimitError`, `InvalidCredentialsError`, `LoginAuditSink`, `DurableLoginAuditSink`. |
 | `DeviceCredentialService` | Per-person sign-in layered on an enrolled device session (#3276): `signInWithPin()`, `signIn(verifier, input)`, `signOut()`, `setPin()`, `resetPin()`, `clearPin()`. Person authority with optional `deviceCeiling`, `singleOccupant` hand-over, `personIdleSeconds` / `personMaxSeconds`. `PinVerifier`, `DeviceCredentialVerifier`. |
+| `PasswordCredentialService` | Email + password sign-in for existing active users (#3274): `signIn()`, `setPassword()`, `changePassword()`, `resetPassword()`, `clearPassword()`, `hasPassword()`, `validatePassword()`. `PasswordCredentialError`, `PasswordCredentialForbiddenError`, `PasswordPolicyError`. |
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
 | `backfillLegacyUserProfiles` | Transactionally create and link canonical global Person Profiles for legacy Users; never creates OIDC identities or infers ownership. |
 | `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |
@@ -1067,6 +1176,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `createOidcLoginHandler`, `createOidcCallbackHandler` | Ready-to-use SvelteKit route handlers for OIDC login and callback |
 | `createMobileAuthHandlers` | Mountable `/api/mobile` PKCE, bearer session, bootstrap, logout, and route-guard handlers |
 | `createDeviceCredentialHandlers` | Mountable PIN sign-in, sign-out, and PIN management handlers for enrolled devices |
+| `createPasswordCredentialHandlers` | Mountable password sign-in (sets the session cookie) and password set/change/reset/clear handlers |
 | `resolveMobileUploadDedupKey` | Resolves `clientCaptureId` with `Idempotency-Key` fallback for app-owned multipart routes |
 | `SessionLocals` | Type for `event.locals` (extend in `app.d.ts`) |
 
@@ -1089,6 +1199,8 @@ for authentication, deduplication, and status semantics.
 | `DEFAULT_SESSION_TTL`, `MAX_TENANT_HIERARCHY_DEPTH` | 604800 (7 days in seconds), 10 |
 | `DEFAULT_LOGIN_MAX_ATTEMPTS`, `DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS`, `DEFAULT_LOGIN_LOCKOUT_*` | 5 attempts per 300 s window; lockout 60 s × 2ⁿ, capped at 3600 s |
 | `DEFAULT_PIN_MANAGE_PERMISSION`, `PIN_LOGIN_KIND` | `users.pin.manage`, `pin` |
+| `DEFAULT_PASSWORD_MANAGE_PERMISSION`, `PASSWORD_LOGIN_KIND` | `users.password.manage`, `password` |
+| `DEFAULT_PASSWORD_MIN_LENGTH`, `DEFAULT_PASSWORD_MAX_LENGTH`, `PASSWORD_MAX_LENGTH_CEILING`, `DEFAULT_PASSWORD_DENYLIST` | 10, 256, 1024, built-in common-password list |
 | `TenantHierarchyError` | Thrown on a missing parent, a cycle, or exceeding the hierarchy depth limit (`code`) |
 | `TenantHierarchyMaterializationError` | Thrown by `materializeTenantHierarchy` when any tenant's parent chain is broken; lists `problems` |
 

@@ -35,6 +35,11 @@ export {
 // Membership collections
 export { MembershipCollection } from './MembershipCollection.js';
 export { MembershipOverrideCollection } from './MembershipOverrideCollection.js';
+// Password credential (#3274)
+export {
+  type PasswordCredentialWrite,
+  UsersPasswordCredentialCollection,
+} from './PasswordCredentialCollection.js';
 export { PermissionCollection } from './PermissionCollection.js';
 // Per-person PIN on an enrolled device (#3276)
 export {

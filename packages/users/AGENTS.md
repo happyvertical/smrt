@@ -14,6 +14,7 @@ are not prerequisites for unrelated user-package work.
 | `src/services/MobileAuthService.ts` | mobile handshake, bearer sessions, bootstrap extension boundary | [agents/mobile-auth.md](agents/mobile-auth.md) |
 | `src/services/TerminalAuthService.ts`, `src/services/LoginAttemptLimiter.ts`, `src/collections/LoginAttemptCollection.ts` | terminal approval concurrency, shared login budget and lockout (#3273), retry-safe database fixtures | [agents/terminal-auth-testing.md](agents/terminal-auth-testing.md) |
 | `src/services/DeviceCredentialService.ts` | per-person PIN layered on a device session (#3276), verifier seam for other credential kinds | this file, "Security boundaries" |
+| `src/services/PasswordCredentialService.ts`, `src/sveltekit/password-handlers.ts` | email + password sign-in and password lifecycle (#3274); shared scrypt in `credential-hash.ts` | this file, "Security boundaries"; README "Password sign-in" |
 | `src/retention.ts` | expired session/token/CLI-auth reaping and retention sweep wiring | [agents/retention.md](agents/retention.md) |
 
 ## Models and authority
@@ -90,6 +91,18 @@ are not prerequisites for unrelated user-package work.
   sign-in snapshot; `singleOccupant` revokes other children only AFTER a
   successful mint. A `mustReset` sign-in mints with an empty ceiling and
   `setPin` ends that session; do not grant it authority another way.
+- `UsersPasswordCredential` is one row per person, sensitive, with no
+  generated surface; `PasswordCredentialService` and its handlers are its only
+  read/write paths. Sign-in normalizes the email like `emailKey`, reserves
+  before work, always runs one scrypt verify (dummy hash when absent), never
+  creates a user, and maps every non-rate-limit refusal to one
+  `PasswordCredentialError`. It re-checks the credential after the mint (a
+  rehash that keeps row and version is confirmed by re-verifying); the
+  parameter-upgrade write is a guarded UPDATE that must never replace a
+  rotated password. Self-service needs the current password except for a
+  first set; `users.password.manage` follows the PIN's single-tenant target
+  rule and never resets the actor's own. Layered sessions never manage
+  passwords; a `mustChange` sign-in mints an empty ceiling.
 - A layered session whose tenant differs from its parent's never loads (null
   is allowed: narrower). Limiter rows carry `retain_until`; retention must
   not fall back to a process-wide horizon.
