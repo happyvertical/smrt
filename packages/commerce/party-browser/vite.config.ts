@@ -24,6 +24,17 @@ function nativeFormTestServer(): Plugin {
           response.end(module.renderNativeCustomActionsPage());
           return;
         }
+        if (request.url === '/native-directories') {
+          const module = await server.ssrLoadModule('/native-page.ts');
+          response.setHeader('content-type', 'text/html; charset=utf-8');
+          response.end(module.renderNativeDirectoriesPage());
+          return;
+        }
+        if (request.url?.startsWith('/directory-search?')) {
+          response.setHeader('content-type', 'text/html; charset=utf-8');
+          response.end('<p id="search-complete">Search complete</p>');
+          return;
+        }
         if (request.url === '/party-submit' && request.method === 'POST') {
           let body = '';
           request.setEncoding('utf8');

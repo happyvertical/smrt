@@ -126,6 +126,56 @@ describe('customer and vendor SSR surfaces', () => {
     ).toContain('Service unavailable');
   });
 
+  it('carries caller search state without overriding customer or vendor filters', () => {
+    const customerHtml = render(CustomerDirectory, {
+      props: {
+        query: 'Riverstone',
+        status: 'active',
+        queryName: 'term',
+        statusName: 'state',
+        hiddenFields: {
+          pageSize: '10',
+          sort: 'name',
+          term: 'ignored query',
+          state: 'suspended',
+        },
+      },
+    }).body;
+    expect(customerHtml).toMatch(
+      /<input(?=[^>]*name="pageSize")(?=[^>]*value="10")[^>]*>/,
+    );
+    expect(customerHtml).toMatch(
+      /<input(?=[^>]*name="sort")(?=[^>]*value="name")[^>]*>/,
+    );
+    expect(customerHtml.match(/name="term"/g)).toHaveLength(1);
+    expect(customerHtml).toMatch(
+      /<input(?=[^>]*name="term")(?=[^>]*value="Riverstone")[^>]*>/,
+    );
+    expect(customerHtml.match(/name="state"/g)).toHaveLength(1);
+    expect(customerHtml).toMatch(/<option value="active" selected="">/);
+
+    const vendorHtml = render(VendorDirectory, {
+      props: {
+        query: 'Northstar',
+        status: 'inactive',
+        hiddenFields: {
+          direction: 'desc',
+          q: 'ignored query',
+          status: 'suspended',
+        },
+      },
+    }).body;
+    expect(vendorHtml).toMatch(
+      /<input(?=[^>]*name="direction")(?=[^>]*value="desc")[^>]*>/,
+    );
+    expect(vendorHtml.match(/name="q"/g)).toHaveLength(1);
+    expect(vendorHtml).toMatch(
+      /<input(?=[^>]*name="q")(?=[^>]*value="Northstar")[^>]*>/,
+    );
+    expect(vendorHtml.match(/name="status"/g)).toHaveLength(1);
+    expect(vendorHtml).toMatch(/<option value="inactive" selected="">/);
+  });
+
   it('renders customer and vendor details with contacts and presentation-only capabilities', () => {
     const customerHtml = render(CustomerDetail, {
       props: {

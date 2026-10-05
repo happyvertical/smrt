@@ -95,6 +95,44 @@ test('native contact action posts hidden tokens and entered values with JavaScri
   await context.close();
 });
 
+test('directory search preserves caller state in native GET while visible filters win collisions', async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto('/native-directories');
+
+  const customer = page.locator('#customer-directory form');
+  await customer.locator('input[name="term"]').fill('Native client');
+  await customer.locator('select[name="state"]').selectOption('inactive');
+  await customer.getByRole('button', { name: 'Search' }).click();
+  let url = new URL(page.url());
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    page: '1',
+    pageSize: '10',
+    sort: 'name',
+    direction: 'desc',
+    term: 'Native client',
+    state: 'inactive',
+  });
+  expect(url.searchParams.getAll('term')).toEqual(['Native client']);
+  expect(url.searchParams.getAll('state')).toEqual(['inactive']);
+
+  await page.goto('/native-directories');
+  const vendor = page.locator('#vendor-directory form');
+  await vendor.locator('input[name="q"]').fill('Native vendor');
+  await vendor.locator('select[name="status"]').selectOption('active');
+  await vendor.getByRole('button', { name: 'Search' }).click();
+  url = new URL(page.url());
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    pageSize: '25',
+    direction: 'asc',
+    q: 'Native vendor',
+    status: 'active',
+  });
+  expect(url.searchParams.getAll('q')).toEqual(['Native vendor']);
+  expect(url.searchParams.getAll('status')).toEqual(['active']);
+  await context.close();
+});
+
 test('Enter selects save before contact row actions with JavaScript enabled and disabled', async ({ browser, page }) => {
   await page.goto('/');
   const customerForm = page.getByTestId('customer-form').locator('form');

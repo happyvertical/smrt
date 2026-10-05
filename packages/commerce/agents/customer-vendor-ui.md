@@ -42,6 +42,8 @@ The caller owns action URLs, server authorization, tenancy checks, request token
 
 Forms use the provider-free `Form`, `Input`, `Select`, `Textarea`, and `Checkbox` controls from `@happyvertical/smrt-ui/forms`. They default to native `POST` submission through `preventDefault={false}`. `transport.hiddenFields`, `transport.intentName`, and the field-name maps let an application preserve its existing payload contract. Repeatable contact rows submit repeated field names in DOM order. Add and remove controls are native submitters, so they work without JavaScript; the server returns the revised rows and retained values.
 
+Directory search forms accept `hiddenFields` as a string record for caller-owned GET state such as sort direction and page size. Fields whose names equal the resolved `queryName` or `statusName` are omitted so the visible search controls remain authoritative.
+
 Customer shipping and billing addresses use the shared `CountrySelect` and
 `ProvinceSelect`. The native names remain `shippingCountry`, `shippingState`,
 `billingCountry`, and `billingState` unless `fieldNames` overrides them. Changing
