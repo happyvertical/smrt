@@ -66,8 +66,9 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import { buildWhere, type DatabaseInterface } from '@happyvertical/sql';
 import { classifyDatabaseError } from './db-errors.js';
+import { isPostgresDatabase } from './embedded-write-queue.js';
 import { ConfigurationError, DatabaseError } from './errors.js';
 // Type-only: erased at runtime, so it cannot re-enter the
 // `registry → object → cascade` import cycle.
@@ -526,8 +527,12 @@ async function selectIds(
 ): Promise<string[]> {
   const found: string[] = [];
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
+    const dialect = isPostgresDatabase(db) ? 'postgres' : 'sqlite';
+    const where = buildWhere(idPredicate(column, batch), 1, dialect);
+    const table = `"${tableName.replaceAll('"', '""')}"`;
+    const sql = `SELECT CAST("id" AS VARCHAR) AS "id" FROM ${table} ${where.sql}`;
     const rows = await tolerateMissingTable(
-      () => db.list(tableName, idPredicate(column, batch)),
+      () => db.query(sql, ...where.values).then((result) => result.rows),
       [] as Record<string, unknown>[],
       { table: tableName, action: 'CASCADE select' },
     );
