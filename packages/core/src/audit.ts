@@ -2,6 +2,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import type { SmrtObject } from './object.js';
 import type { SmrtObjectConstructor } from './registry/types.js';
 import { ObjectRegistry } from './registry.js';
+import { toSnakeCase } from './utils/naming.js';
 
 /** Caller identity comes from trusted server context, never a request body. */
 export interface AuditContext {
@@ -104,6 +105,16 @@ export async function writeAudit(
   const registered = ObjectRegistry.getClassByConstructor(
     instance.constructor as SmrtObjectConstructor,
   );
+  const resourceType =
+    registered?.qualifiedName || registered?.name || instance.constructor.name;
+  const tenantColumn = ObjectRegistry.getOwnershipTenantColumn(resourceType);
+  const fields = await ObjectRegistry.getAllFields(resourceType);
+  const tenantField = tenantColumn
+    ? [...fields.keys()].find((key) => toSnakeCase(key) === tenantColumn)
+    : undefined;
+  const tenantId = tenantField
+    ? (instance as unknown as Record<string, unknown>)[tenantField]
+    : null;
   await options.writer(
     {
       actorId: options.actorId,
@@ -111,13 +122,9 @@ export async function writeAudit(
       source: options.source,
       onBehalfOfId: options.onBehalfOfId,
       action,
-      resourceType:
-        registered?.qualifiedName ||
-        registered?.name ||
-        instance.constructor.name,
+      resourceType,
       resourceId: instance.id as string,
-      tenantId:
-        (instance as unknown as { tenantId?: string | null }).tenantId ?? null,
+      tenantId: typeof tenantId === 'string' ? tenantId : null,
       changes: auditChanges(before, after),
     },
     instance.db,

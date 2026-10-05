@@ -32,6 +32,18 @@ class Issue3460Record extends SmrtObject {
 class Issue3460Records extends SmrtCollection<Issue3460Record> {
   static readonly _itemClass = Issue3460Record;
 }
+@smrt({
+  tableName: 'issue_3460_custom_owner',
+  audit: true,
+  tenantScoped: { field: 'organizationId' },
+})
+class Issue3460CustomOwner extends SmrtObject {
+  organizationId: string = '';
+  title: string = '';
+}
+class Issue3460CustomOwners extends SmrtCollection<Issue3460CustomOwner> {
+  static readonly _itemClass = Issue3460CustomOwner;
+}
 @smrt({ tableName: 'issue_3460_audit_entries' })
 class Issue3460Entry extends SmrtObject {
   entry: Record<string, unknown> = {};
@@ -82,10 +94,12 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
           'Issue3460Entry',
           'Issue3460Plain',
           'Issue3460Child',
+          'Issue3460CustomOwner',
         ],
       });
       if (type === 'postgres') {
         for (const table of [
+          'issue_3460_custom_owner',
           'issue_3460_children',
           'issue_3460_records',
           'issue_3460_audit_entries',
@@ -264,6 +278,26 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
       await plain.update(row.id as string, { title: 'After' });
       await plain.delete(row.id as string);
       expect(entries).toHaveLength(0);
+    });
+
+    it('records the configured custom owner for every mutation rather than assuming tenantId', async () => {
+      const custom = await Issue3460CustomOwners.create({
+        db,
+        auditTrail: { actorId: 'actor-1', writer },
+      });
+      const owner = '00000000-0000-4000-8000-0000000000a1';
+      const row = await custom.create({
+        organizationId: owner,
+        title: 'Before',
+      });
+      await custom.update(row.id as string, { title: 'After' });
+      await custom.delete(row.id as string);
+      expect(entries.map((entry) => entry.action)).toEqual([
+        'created',
+        'updated',
+        'deleted',
+      ]);
+      expect(entries.every((entry) => entry.tenantId === owner)).toBe(true);
     });
 
     it('isolates async request principals and restores context after each request', async () => {

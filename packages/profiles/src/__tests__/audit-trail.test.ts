@@ -1,4 +1,10 @@
-import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  getTestDatabase,
+  ObjectRegistry,
+  SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import {
   disableTenancy,
   enableTenancy,
@@ -22,6 +28,31 @@ import {
   readAuditTrail,
 } from '../index.js';
 
+@smrt({
+  tableName: 'issue_3460_organization_records',
+  audit: true,
+  tenantScoped: { field: 'organizationId', allowSuperAdminBypass: true },
+})
+class Issue3460OrganizationRecord extends SmrtObject {
+  organizationId: string = '';
+  title: string = '';
+}
+class Issue3460OrganizationRecords extends SmrtCollection<Issue3460OrganizationRecord> {
+  static readonly _itemClass = Issue3460OrganizationRecord;
+}
+@smrt({
+  tableName: 'issue_3460_tenant_records',
+  audit: true,
+  tenantScoped: true,
+})
+class Issue3460TenantRecord extends SmrtObject {
+  tenantId: string = '';
+  title: string = '';
+}
+class Issue3460TenantRecords extends SmrtCollection<Issue3460TenantRecord> {
+  static readonly _itemClass = Issue3460TenantRecord;
+}
+
 const A = '00000000-0000-4000-8000-0000000000a1';
 const B = '00000000-0000-4000-8000-0000000000b1';
 
@@ -40,6 +71,8 @@ for (const type of ['sqlite', 'postgres'] as const) {
             '@happyvertical/smrt-profiles:Profile',
             '@happyvertical/smrt-profiles:ProfileType',
             '@happyvertical/smrt-profiles:AuditLog',
+            '@happyvertical/smrt-profiles:Issue3460OrganizationRecord',
+            '@happyvertical/smrt-profiles:Issue3460TenantRecord',
           ],
         });
         db = isolated.db;
@@ -141,6 +174,77 @@ for (const type of ['sqlite', 'postgres'] as const) {
       });
       await withTenant({ tenantId: B }, async () => {
         expect(await readAuditTrail(logs, () => true)).toHaveLength(1);
+      });
+    });
+
+    it('retains actual custom and default tenant ownership across administrative CRUD, tenant reads and retention', async () => {
+      const records = await Issue3460OrganizationRecords.create({
+        db,
+        auditTrail: { actorId, writer: createAuditWriter() },
+      });
+      const defaults = await Issue3460TenantRecords.create({
+        db,
+        auditTrail: { actorId, writer: createAuditWriter() },
+      });
+      let resourceId = '';
+      await withSystemContext(async () => {
+        const owned = await records.create({
+          organizationId: A,
+          title: 'Before',
+        });
+        resourceId = owned.id as string;
+        await records.create({ organizationId: B, title: 'Foreign' });
+        await defaults.create({ tenantId: B, title: 'Default administrative' });
+      });
+      await withTenant({ tenantId: B, superAdminBypass: true }, async () => {
+        await records.update(resourceId, { title: 'After' });
+        await records.delete(resourceId);
+      });
+      await withSystemContext(async () => {
+        const entries = await logs.list({ where: { resourceId } });
+        expect(entries).toHaveLength(3);
+        expect(entries.every((entry) => entry.tenantId === A)).toBe(true);
+        expect(entries.map((entry) => entry.action).sort()).toEqual([
+          'created',
+          'deleted',
+          'updated',
+        ]);
+        for (const entry of entries) {
+          entry.occurredAt = new Date('2025-01-01');
+          await entry.save();
+        }
+      });
+      await withTenant({ tenantId: A }, async () => {
+        expect(
+          await readAuditTrail(logs, () => true, { resourceId }),
+        ).toHaveLength(3);
+        const normal = await records.create({ title: 'Normal tenant' });
+        expect(normal.organizationId).toBe(A);
+        const normalDefault = await defaults.create({
+          title: 'Default normal',
+        });
+        expect(normalDefault.tenantId).toBe(A);
+        const visible = await readAuditTrail(logs, () => true);
+        expect(visible).toHaveLength(5);
+        expect(visible.every((entry) => entry.tenantId === A)).toBe(true);
+        expect(
+          await pruneAuditTrail(logs, {
+            maxAgeDays: 90,
+            now: new Date(),
+          }),
+        ).toBe(3);
+        expect(await readAuditTrail(logs, () => true, { resourceId })).toEqual(
+          [],
+        );
+        expect(await readAuditTrail(logs, () => true)).toHaveLength(2);
+      });
+      await withTenant({ tenantId: B }, async () => {
+        const foreign = await readAuditTrail(logs, () => true);
+        expect(foreign).toHaveLength(2);
+        expect(foreign.every((entry) => entry.tenantId === B)).toBe(true);
+        expect(await readAuditTrail(logs, () => true, { resourceId })).toEqual(
+          [],
+        );
       });
     });
 

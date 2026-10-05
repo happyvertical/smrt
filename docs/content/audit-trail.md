@@ -66,7 +66,10 @@ use a root connection for the automatic mutation boundary.
 
 Each successful create, update, or delete records a `created`, `updated`, or
 `deleted` action with qualified resource type, id, tenant, actor, optional reason
-and field changes. `getOrUpsert` audits its existing-record update path too.
+and field changes. Ownership comes from the model's registered tenant field,
+including custom fields such as `organizationId`; system/admin context never
+replaces the resource's actual owner. `getOrUpsert` audits its existing-record
+update path too.
 The public serialization projection omits sensitive fields and fields requiring
 read permission, including nested SMRT objects and STI metadata. Core revision
 timestamps are omitted from the diff. Missing values appear as `null`.
