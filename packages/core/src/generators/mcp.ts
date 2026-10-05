@@ -424,8 +424,6 @@ function buildTaskActionInvocationArgs(
  */
 export class MCPGenerator {
   private readonly toolTargets = new WeakMap<MCPTool, McpToolTarget>();
-  /** Registry key of each generated tool's class (#3490). */
-  private readonly toolRegistryKeys = new WeakMap<MCPTool, string>();
 
   private toolTarget(tool: MCPTool): McpToolTarget {
     const target = this.toolTargets.get(tool);
@@ -598,7 +596,7 @@ export class MCPGenerator {
   private toolClass(
     tool: MCPTool,
   ): { key: string; classInfo: RegisteredClass } | undefined {
-    const key = this.toolRegistryKeys.get(tool);
+    const key = this.toolTargets.get(tool)?.registryKey;
     const classInfo = key ? ObjectRegistry.getAllClasses().get(key) : undefined;
     return key && classInfo ? { key, classInfo } : undefined;
   }
@@ -867,8 +865,8 @@ export class MCPGenerator {
         objectName: displayName,
         action: tool.name.slice(lowerName.length + 1),
         originalName: tool.name,
+        registryKey,
       });
-      this.toolRegistryKeys.set(tool, registryKey);
     }
     return tools;
   }
@@ -2236,6 +2234,7 @@ export class MCPGenerator {
       actions[tool.name] = {
         objectName,
         objectType: classInfo.qualifiedName || objectName,
+        registryKey: key,
       };
     }
     return actions;
@@ -2455,6 +2454,8 @@ export const tools: Array<{
           const target = this.toolTarget(tool);
           const objectName = target.objectName.toLowerCase();
           const action = target.action;
+          // Registry identity for every emitted lookup (#3490).
+          const lookup = target.registryKey ?? target.objectName;
 
           switch (action) {
             case 'list':
@@ -2463,7 +2464,7 @@ ${indent}  const limit = args.limit ?? 50;
 ${indent}  const offset = args.offset ?? 0;
 ${indent}  const where = args.where ?? {};
 
-${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(target.objectName)}, {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -2483,7 +2484,7 @@ ${indent}  if (!args.id && !args.slug) {
 ${indent}    throw new Error('Either id or slug is required');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(target.objectName)}, {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -2500,7 +2501,7 @@ ${indent}}`;
 
             case 'create':
               return `${indent}case '${tool.name}': {
-${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, args, aiConfig);
+${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, ${JSON.stringify(lookup)}, args, aiConfig);
 
 ${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
 ${indent}  await newItem.save();
@@ -2515,7 +2516,7 @@ ${indent}  if (!id) {
 ${indent}    throw new Error('ID is required for update');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(target.objectName)}, {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -2525,7 +2526,7 @@ ${indent}  if (!existing) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  Object.assign(existing, applyWritablePolicy(${JSON.stringify(target.objectName)}, updateData));
+${indent}  Object.assign(existing, applyWritablePolicy(${JSON.stringify(lookup)}, updateData));
 ${indent}  await existing.save();
 
 ${indent}  return successResult(existing.toPublicJSON(PUBLIC_JSON_OPTIONS));
@@ -2537,7 +2538,7 @@ ${indent}  if (!args.id) {
 ${indent}    throw new Error('ID is required for delete');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(target.objectName)}, {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -2556,19 +2557,13 @@ ${indent}}`;
               // Custom actions use the same canonical receiver/argument contract
               // as the in-process and standalone MCP runtimes. In particular,
               // a route config cannot turn an instance method into a static one.
-              const matched = Array.from(
-                ObjectRegistry.getAllClasses().entries(),
-              ).find(
-                ([key, info]) =>
-                  (info.name || key).toLowerCase() === objectName.toLowerCase(),
-              );
-              if (!matched) {
+              const owner = this.toolClass(tool);
+              if (!owner) {
                 throw new Error(
                   `Unable to resolve custom-action target for tool '${tool.name}'`,
                 );
               }
-              const [classKey, classInfo] = matched;
-              const registeredName = classInfo.name || classKey;
+              const { key: registeredName, classInfo } = owner;
               const [methodName, method] = resolveCustomActionMethod(
                 await ObjectRegistry.getAllMethods(registeredName),
                 action,
@@ -2695,7 +2690,7 @@ const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true
     : ''
 }
 
-const TOOL_TARGETS: Record<string, { objectName: string; action: string }> = ${JSON.stringify(toolTargets)};
+const TOOL_TARGETS: Record<string, { objectName: string; action: string; registryKey?: string }> = ${JSON.stringify(toolTargets)};
 const PUBLIC_JSON_OPTIONS = {
   permissions: (process.env.SMRT_MCP_PERMISSIONS || '')
     .split(',')
@@ -2738,10 +2733,10 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
 }
 
 /** Resolve an advertised STI discriminator to its registered subtype collection. */
-async function resolveCreateTarget(baseObjectName: string, args: Record<string, any>, aiConfig: any) {
+async function resolveCreateTarget(stiKey: string, baseObjectName: string, args: Record<string, any>, aiConfig: any) {
   let objectName = baseObjectName;
   const discriminator = args._meta_type;
-  const targets = STI_TARGETS[baseObjectName];
+  const targets = STI_TARGETS[stiKey];
   if (typeof discriminator === 'string' && targets) {
     const target = targets[discriminator];
     if (!target) throw new Error('Unknown STI discriminator: ' + discriminator);

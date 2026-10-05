@@ -295,7 +295,9 @@ describe('canonical MCP tool identifiers (#3219)', () => {
             RolePermissionCollection: { seedDefaultRolePersonalizationPermissions() {return {receiver:'first'}}, seedDefaultRolePersonalizationPermissionsAgain() {return {receiver:'second'}}, record_payment() {return {receiver:'underscore'}}, $special() {return {receiver:'special'}}, ["quoted'action"]() {return {receiver:'quoted'}} },
             MCP_Underscore: { record_payment() {return {receiver:'class_underscore'}} }
           };
-          export const ObjectRegistry = { loadAllManifests() {}, getClass(name) { if (!classes[name]) throw Error('wrong class '+name); return {constructor: classes[name]}; }, async getCollection(name) {if(!classes[name]) throw Error('wrong collection '+name); return {};} };
+          // Generated lookups carry the registry key (#3490): '@pkg:Class'.
+          const simple = (name) => name.slice(name.lastIndexOf(':') + 1);
+          export const ObjectRegistry = { loadAllManifests() {}, getClass(name) { if (!name.includes(':') || !classes[simple(name)]) throw Error('wrong class '+name); return {constructor: classes[simple(name)]}; }, async getCollection(name) {if(!name.includes(':') || !classes[simple(name)]) throw Error('wrong collection '+name); return {};} };
           export function normalizeCustomActionFailure() {}
           export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
         `,
@@ -364,6 +366,10 @@ describe('canonical MCP tool identifiers (#3219)', () => {
     class QuotedRecord extends SmrtObject {}
     Object.defineProperty(QuotedRecord, 'name', { value: "Owner'sRecord" });
     ObjectRegistry.register(QuotedRecord, { mcp: { include: ['create'] } });
+    // Generated create resolves the class's exact registry key (#3490).
+    const quotedKey = [...ObjectRegistry.getAllClasses()].find(
+      ([, info]) => info.constructor === QuotedRecord,
+    )?.[0];
     const dir = await mkdtemp(join(tmpdir(), 'smrt-quoted-class-'));
     try {
       await writeFile(join(dir, 'package.json'), '{"type":"module"}');
@@ -387,7 +393,7 @@ describe('canonical MCP tool identifiers (#3219)', () => {
             getConfig() { return {}; },
             getFields() { return new Map(); },
             async getCollection(name) {
-              if (name !== "owner'srecord") throw Error('wrong target '+name);
+              if (name !== ${JSON.stringify(quotedKey)}) throw Error('wrong target '+name);
               return { async create() { return { async save() {}, toPublicJSON() { return { receiver: "Owner'sRecord" }; } }; } };
             }
           };
