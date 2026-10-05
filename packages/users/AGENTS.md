@@ -99,8 +99,11 @@ are not prerequisites for unrelated user-package work.
   `PasswordCredentialError`. It re-checks the credential after the mint (a
   rehash that keeps row and version is confirmed by re-verifying); the
   parameter-upgrade write is a guarded UPDATE that must never replace a
-  rotated password. Self-service needs the current password except for a
-  first set; `users.password.manage` follows the PIN's single-tenant target
+  rotated password, and verification against a weaker stored hash is padded
+  to the policy's scrypt cost. Self-service writes are guarded on the proven
+  credential (first set insert-only); session sweeps run before and after
+  each write. Self-service needs the current password except for a first
+  set; `users.password.manage` follows the PIN's single-tenant target
   rule and never resets the actor's own. Layered sessions never manage
   passwords; a `mustChange` sign-in mints an empty ceiling.
 - A layered session whose tenant differs from its parent's never loads (null

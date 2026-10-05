@@ -59,6 +59,7 @@ import { withoutListBounds } from './authorization-read-options.js';
 import {
   hashSecret,
   isValidScryptParams,
+  padScryptWork,
   type ScryptParams,
   scryptHashNeedsUpgrade,
   verifySecretHash,
@@ -439,15 +440,16 @@ export class PasswordCredentialService {
         ? normalizeEmail(identifier)
         : '';
     const password = typeof input.password === 'string' ? input.password : '';
-    // Nothing to key a budget on, or nothing to check: the same refusal as a
-    // wrong password, before any credential work.
-    if (!emailKey || !password) throw new PasswordCredentialError();
+    const source = input.ipAddress?.trim() || null;
+    // Nothing to key any budget on: refuse like a wrong password. Every other
+    // request, malformed or not, reserves before anything else.
+    if (!emailKey && !source) throw new PasswordCredentialError();
 
     const tenantId = input.tenantId || null;
     const lease = await this.limiter.reserve({
       kind: PASSWORD_LOGIN_KIND,
-      subject: emailKey,
-      source: input.ipAddress,
+      subject: emailKey || null,
+      source,
       // Never the identifier, the user id, or a session id: the subject and
       // source hashes already correlate the attempt.
       metadata: { tenantId },
@@ -457,6 +459,11 @@ export class PasswordCredentialService {
     let credentialFailed = false;
     let mintedSessionId: string | null = null;
     try {
+      // A missing identifier or password is a failed attempt like any other.
+      if (!emailKey || !password) {
+        credentialFailed = true;
+        throw new PasswordCredentialError();
+      }
       const candidate = normalizePassword(password);
       // Longer than any password policy accepts: it cannot be right, so skip
       // the hash rather than let the client choose its cost.
@@ -467,10 +474,9 @@ export class PasswordCredentialService {
         user?.id && UUID_PATTERN.test(user.id)
           ? await this.credentials.findByUserId(user.id)
           : null;
-      const encoded = credential?.passwordHash || this.dummyHash;
       const ok = tooLong
         ? false
-        : await verifySecretHash(candidate, this.policy.pepper, encoded);
+        : await this.verifyEqualWork(candidate, credential?.passwordHash);
       if (!ok || !credential || !user?.id) {
         credentialFailed = true;
         throw new PasswordCredentialError();
@@ -589,13 +595,32 @@ export class PasswordCredentialService {
     if (self && existing) throw new PasswordCredentialForbiddenError();
     const password = await this.assertPolicy(input.password, user);
 
-    await this.writePassword(input.userId, password, {
+    const write = {
+      passwordHash: await this.hashPassword(password),
       mustChange: false,
+      rotatedAt: new Date(),
       rotatedBy: self ? 'self' : (input.actor.user.id ?? 'admin'),
-    });
-    const revokedSessions = existing
-      ? await this.sessionService.destroyAllUserSessions(input.userId)
-      : 0;
+    };
+    let revokedSessions = 0;
+    if (self) {
+      // Insert-only: a first password never replaces one set concurrently.
+      if (!(await this.credentials.insertIfAbsent(input.userId, write))) {
+        throw new PasswordCredentialForbiddenError();
+      }
+    } else if (existing) {
+      // Replacing someone's password ends their sessions before AND after
+      // the write: a failure between the two leaves them signed out, never
+      // signed in under a password that is gone.
+      revokedSessions += await this.sessionService.destroyAllUserSessions(
+        input.userId,
+      );
+      await this.credentials.upsertForUser(input.userId, write);
+      revokedSessions += await this.sessionService.destroyAllUserSessions(
+        input.userId,
+      );
+    } else {
+      await this.credentials.upsertForUser(input.userId, write);
+    }
     await this.recordManagement(input.userId, input.ipAddress, {
       action: 'set',
       self,
@@ -625,22 +650,32 @@ export class PasswordCredentialService {
       'change-password',
     );
     const password = await this.assertPolicy(input.newPassword, user);
+    const passwordHash = await this.hashPassword(password);
 
-    await this.writePassword(userId, password, {
-      mustChange: false,
-      rotatedBy: 'self',
-    });
     // The restricted must-change session has done its one job: end it too,
     // and the person signs in again to get a session with their authority.
     const endedCurrentSession = existing.mustChange;
-    const revokedSessions = await this.sessionService.destroyAllUserSessions(
-      userId,
-      {
+    const endOthers = () =>
+      this.sessionService.destroyAllUserSessions(userId, {
         exceptSessionId: endedCurrentSession
           ? undefined
           : input.actor.sessionId,
-      },
-    );
+      });
+    // Sessions end before AND after the write, so a failure between the two
+    // never leaves the old password's sessions standing.
+    let revokedSessions = await endOthers();
+    // Guarded on the exact credential just proved: a reset or other write
+    // that landed meanwhile is never overwritten under the old password.
+    if (
+      !(await this.credentials.replaceIfCurrent(existing, {
+        passwordHash,
+        rotatedAt: new Date(),
+        rotatedBy: 'self',
+      }))
+    ) {
+      throw new PasswordCredentialError();
+    }
+    revokedSessions += await endOthers();
     await this.recordManagement(userId, input.ipAddress, {
       action: 'change',
       self: true,
@@ -668,11 +703,19 @@ export class PasswordCredentialService {
     const password = await this.assertPolicy(input.password, user);
     const mustChange = input.mustChange ?? true;
 
-    await this.writePassword(input.userId, password, {
+    const write = {
+      passwordHash: await this.hashPassword(password),
       mustChange,
+      rotatedAt: new Date(),
       rotatedBy: input.actor.user.id ?? 'admin',
-    });
-    const revokedSessions = await this.sessionService.destroyAllUserSessions(
+    };
+    // Before AND after the write: a failure between the two leaves the
+    // person signed out rather than signed in under the old password.
+    let revokedSessions = await this.sessionService.destroyAllUserSessions(
+      input.userId,
+    );
+    await this.credentials.upsertForUser(input.userId, write);
+    revokedSessions += await this.sessionService.destroyAllUserSessions(
       input.userId,
     );
     await this.recordManagement(input.userId, input.ipAddress, {
@@ -694,24 +737,34 @@ export class PasswordCredentialService {
   ): Promise<{ revokedSessions: number }> {
     this.assertNotLayered(input.actor);
     const self = input.actor.user.id === input.userId;
+    let proven: UsersPasswordCredential | null = null;
     if (self) {
       const user = await this.requireUser(input.userId);
-      const existing = await this.verifyCurrent(
+      proven = await this.verifyCurrent(
         user,
         input.currentPassword ?? '',
         input.ipAddress,
         'clear-password',
       );
-      if (existing.mustChange) throw new PasswordCredentialForbiddenError();
+      if (proven.mustChange) throw new PasswordCredentialForbiddenError();
     } else {
       await this.assertCanManage(input.actor, input.userId);
     }
-    await this.credentials.deleteByUserId(input.userId);
-    const revokedSessions =
-      await this.sessionService.destroyUserSessionsByAuthMethod(
+    const endPasswordSessions = () =>
+      this.sessionService.destroyUserSessionsByAuthMethod(
         input.userId,
         PASSWORD_LOGIN_KIND,
       );
+    let revokedSessions = await endPasswordSessions();
+    if (proven) {
+      // Guarded on the credential just proved (see changePassword).
+      if (!(await this.credentials.deleteIfCurrent(proven))) {
+        throw new PasswordCredentialError();
+      }
+    } else {
+      await this.credentials.deleteByUserId(input.userId);
+    }
+    revokedSessions += await endPasswordSessions();
     await this.recordManagement(input.userId, input.ipAddress, {
       action: 'clear',
       self,
@@ -780,11 +833,7 @@ export class PasswordCredentialService {
       const tooLong = codePointLength(candidate) > this.policy.maxLength;
       const ok = tooLong
         ? false
-        : await verifySecretHash(
-            candidate,
-            this.policy.pepper,
-            existing?.passwordHash || this.dummyHash,
-          );
+        : await this.verifyEqualWork(candidate, existing?.passwordHash);
       if (!ok || !existing) {
         await lease.fail().catch(() => undefined);
         throw new PasswordCredentialError();
@@ -874,22 +923,26 @@ export class PasswordCredentialService {
     return normalized;
   }
 
-  private async writePassword(
-    userId: string,
-    password: string,
-    meta: { mustChange: boolean; rotatedBy: string },
-  ): Promise<UsersPasswordCredential> {
-    const passwordHash = await hashSecret(
-      password,
-      this.policy.pepper,
-      this.policy.scrypt,
-    );
-    return this.credentials.upsertForUser(userId, {
-      passwordHash,
-      mustChange: meta.mustChange,
-      rotatedAt: new Date(),
-      rotatedBy: meta.rotatedBy,
-    });
+  private hashPassword(password: string): Promise<string> {
+    return hashSecret(password, this.policy.pepper, this.policy.scrypt);
+  }
+
+  /**
+   * Verify against the stored hash, or the dummy hash when there is none,
+   * doing the same scrypt work either way. A stored hash derived under
+   * weaker parameters than the current policy (before its upgrade rehash)
+   * would otherwise verify faster than the dummy does and reveal that the
+   * credential exists, so its verification is padded up to the policy's
+   * cost.
+   */
+  private async verifyEqualWork(
+    candidate: string,
+    encoded: string | null | undefined,
+  ): Promise<boolean> {
+    const stored = encoded || this.dummyHash;
+    const ok = await verifySecretHash(candidate, this.policy.pepper, stored);
+    await padScryptWork(stored, this.policy.scrypt);
+    return ok;
   }
 
   /**

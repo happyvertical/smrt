@@ -23,7 +23,11 @@ import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { UsersPasswordCredential } from '../models/PasswordCredential.js';
-import { parseScryptHash } from '../services/credential-hash.js';
+import {
+  parseScryptHash,
+  scryptCost,
+  scryptPaddingParams,
+} from '../services/credential-hash.js';
 import {
   type LoginAuditEntry,
   LoginRateLimitError,
@@ -44,8 +48,11 @@ import {
 } from '../services/SessionService.js';
 import { MembershipStatus, UserStatus } from '../types/index.js';
 
-/** Every encoded hash a verification ran against, in order. */
-const verified = vi.hoisted(() => ({ encodings: [] as string[] }));
+/** Every encoded hash a verification ran against, and every padded one. */
+const verified = vi.hoisted(() => ({
+  encodings: [] as string[],
+  padded: [] as string[],
+}));
 
 vi.mock('../services/credential-hash.js', async (importOriginal) => {
   const actual =
@@ -59,6 +66,13 @@ vi.mock('../services/credential-hash.js', async (importOriginal) => {
     ) => {
       verified.encodings.push(encoded);
       return actual.verifySecretHash(secret, pepper, encoded);
+    },
+    padScryptWork: async (
+      encoded: string,
+      policy: import('../services/credential-hash.js').ScryptParams,
+    ) => {
+      verified.padded.push(encoded);
+      return actual.padScryptWork(encoded, policy);
     },
   };
 });
@@ -151,6 +165,7 @@ describe('PasswordCredentialService', () => {
 
   beforeEach(async () => {
     verified.encodings.length = 0;
+    verified.padded.length = 0;
     audit = [];
     dbPath = join(
       tmpdir(),
@@ -187,6 +202,7 @@ describe('PasswordCredentialService', () => {
     });
     audit.length = 0;
     verified.encodings.length = 0;
+    verified.padded.length = 0;
   });
 
   afterEach(() => {
@@ -334,6 +350,7 @@ describe('PasswordCredentialService', () => {
       ['pat@example.com', PASSWORD],
     ].entries()) {
       verified.encodings.length = 0;
+      verified.padded.length = 0;
       // A fresh address each time so the source budget never trips.
       await signIn(identifier, password, {
         ipAddress: `203.0.113.${index + 50}`,
@@ -341,6 +358,69 @@ describe('PasswordCredentialService', () => {
       expect(verified.encodings, identifier).toHaveLength(1);
       expect(parseScryptHash(verified.encodings[0])?.params).toEqual(SCRYPT);
     }
+  });
+
+  it('pads a wrong-password check against a weaker stored hash to the work an unknown account costs', async () => {
+    const weak = await make({ password: { scrypt: { N: 2 ** 8 } } });
+    await weak.resetPassword({
+      actor: adminActor(),
+      userId: personId,
+      password: PASSWORD,
+      mustChange: false,
+    });
+    const stored = (await credentials.findByUserId(personId))
+      ?.passwordHash as string;
+    verified.encodings.length = 0;
+    verified.padded.length = 0;
+    await expect(
+      signIn('pat@example.com', 'wrong horse battery'),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(verified.encodings).toEqual([stored]);
+    expect(verified.padded).toEqual([stored]);
+    const padding = scryptPaddingParams(stored, SCRYPT);
+    if (!padding) throw new Error('expected padding');
+    const total =
+      scryptCost(parseScryptHash(stored)?.params ?? SCRYPT) +
+      scryptCost(padding);
+    expect(Math.abs(total - scryptCost(SCRYPT))).toBeLessThanOrEqual(
+      scryptCost(SCRYPT) / 8,
+    );
+    // The dummy and current-policy hashes need no padding.
+    verified.padded.length = 0;
+    await expect(
+      signIn('nobody@example.com', PASSWORD, { ipAddress: '203.0.113.99' }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    expect(verified.padded).toHaveLength(1);
+    expect(scryptPaddingParams(verified.padded[0], SCRYPT)).toBeNull();
+    // A malformed stored encoding owes the whole policy cost.
+    expect(scryptCost(scryptPaddingParams('junk', SCRYPT) ?? SCRYPT)).toBe(
+      scryptCost(SCRYPT),
+    );
+  });
+
+  it('reserves and fails malformed attempts like any other', async () => {
+    for (const [identifier, password] of [
+      ['', PASSWORD],
+      ['pat@example.com', ''],
+      ['   ', ''],
+    ]) {
+      await expect(
+        signIn(identifier, password, { ipAddress: '192.0.2.150' }),
+      ).rejects.toBeInstanceOf(PasswordCredentialError);
+    }
+    expect(audit.map((entry) => entry.outcome)).toEqual([
+      'failed',
+      'failed',
+      'locked',
+    ]);
+    // The address is now out of budget, even with the right password.
+    await expect(
+      signIn('pat@example.com', PASSWORD, { ipAddress: '192.0.2.150' }),
+    ).rejects.toBeInstanceOf(LoginRateLimitError);
+    // With nothing at all to key a budget on, it is refused outright.
+    await expect(
+      service.signIn({ identifier: '', password: PASSWORD }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
   });
 
   it('keeps identifiers, passwords, and hashes out of audit metadata', async () => {
@@ -722,6 +802,101 @@ describe('PasswordCredentialService', () => {
     await expect(
       signIn('pat@example.com', PASSWORD, { ipAddress: '192.0.2.99' }),
     ).rejects.toBeInstanceOf(LoginRateLimitError);
+  });
+
+  it('never lets a change or self-clear proven with the old password overwrite a reset that landed meanwhile', async () => {
+    const internals = service as unknown as {
+      hashPassword: (password: string) => Promise<string>;
+      sessionService: SessionService;
+    };
+    const live = await signIn('pat@example.com', PASSWORD);
+    const actor = await sessionService.loadSessionContext(live.sessionId);
+    if (!actor) throw new Error('missing session');
+    const resetMeanwhile = () =>
+      service.resetPassword({
+        actor: adminActor(),
+        userId: personId,
+        password: 'admin chosen secret',
+        mustChange: false,
+      });
+
+    // Change: the reset lands after the current password was proven.
+    const hash = internals.hashPassword.bind(service);
+    const hashSpy = vi
+      .spyOn(internals, 'hashPassword')
+      .mockImplementationOnce(async (password) => {
+        await resetMeanwhile();
+        return hash(password);
+      });
+    await expect(
+      service.changePassword({
+        actor,
+        currentPassword: PASSWORD,
+        newPassword: 'attacker chosen secret',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    hashSpy.mockRestore();
+    await expect(
+      signIn('pat@example.com', 'attacker chosen secret'),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    const afterChange = await signIn('pat@example.com', 'admin chosen secret');
+
+    // Self-clear: the reset lands between the proof and the delete.
+    const self = await sessionService.loadSessionContext(afterChange.sessionId);
+    if (!self) throw new Error('missing session');
+    const sweep = internals.sessionService.destroyUserSessionsByAuthMethod.bind(
+      internals.sessionService,
+    );
+    const sweepSpy = vi
+      .spyOn(internals.sessionService, 'destroyUserSessionsByAuthMethod')
+      .mockImplementationOnce(async (...args) => {
+        await service.resetPassword({
+          actor: adminActor(),
+          userId: personId,
+          password: 'second admin secret',
+          mustChange: false,
+        });
+        return sweep(...args);
+      });
+    await expect(
+      service.clearPassword({
+        actor: self,
+        userId: personId,
+        currentPassword: 'admin chosen secret',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialError);
+    sweepSpy.mockRestore();
+    expect(await service.hasPassword(personId)).toBe(true);
+    expect(
+      (await signIn('pat@example.com', 'second admin secret')).userId,
+    ).toBe(personId);
+  });
+
+  it('never lets a first password overwrite one set concurrently', async () => {
+    const internals = service as unknown as {
+      hashPassword: (password: string) => Promise<string>;
+    };
+    const hash = internals.hashPassword.bind(service);
+    vi.spyOn(internals, 'hashPassword').mockImplementationOnce(
+      async (password) => {
+        await service.setPassword({
+          actor: adminActor(),
+          userId: noPasswordId,
+          password: 'admin chosen secret',
+        });
+        return hash(password);
+      },
+    );
+    await expect(
+      service.setPassword({
+        actor: actorFor(noPasswordId),
+        userId: noPasswordId,
+        password: 'self chosen secret',
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+    expect(
+      (await signIn('nopass@example.com', 'admin chosen secret')).userId,
+    ).toBe(noPasswordId);
   });
 
   it('resets a password, ends every session, and forces a change at next sign-in', async () => {

@@ -132,6 +132,47 @@ export async function verifySecretHash(
 }
 
 /**
+ * The scrypt parameters whose work makes up the difference between
+ * verifying `encoded` and verifying a hash under `policy`, or null when there
+ * is no meaningful difference. A malformed encoding verifies without deriving,
+ * so it owes the policy's whole cost. Spent at block size about 8: N is the
+ * largest power of two with N·8 <= deficit and r absorbs the remainder
+ * (8–16), so the total matches the policy's cost to within one block and the
+ * memory touched stays within the policy's own.
+ */
+export function scryptPaddingParams(
+  encoded: string,
+  policy: ScryptParams,
+): ScryptParams | null {
+  const parsed = parseScryptHash(encoded);
+  const deficit = scryptCost(policy) - (parsed ? scryptCost(parsed.params) : 0);
+  if (deficit < scryptCost(policy) / 64) return null;
+  const N = 2 ** Math.max(1, Math.floor(Math.log2(deficit / 8)));
+  return { N, r: Math.max(1, Math.round(deficit / N)), p: 1 };
+}
+
+/**
+ * After verifying against `encoded`, spend the work verifying under
+ * `policy` would have cost beyond it ({@link scryptPaddingParams}), so a hash
+ * still carrying weaker parameters costs about what a current-policy hash —
+ * such as the dummy hash a missing credential is compared against — does.
+ */
+export async function padScryptWork(
+  encoded: string,
+  policy: ScryptParams,
+): Promise<void> {
+  const padding = scryptPaddingParams(encoded, policy);
+  if (padding) {
+    await derive('', '', padding, randomBytes(SCRYPT_SALT_BYTES));
+  }
+}
+
+/** Relative scrypt work: ROMix runs `2·N` BlockMix rounds of cost `r`, `p` times. */
+export function scryptCost(params: ScryptParams): number {
+  return params.N * params.r * params.p;
+}
+
+/**
  * True when the stored hash was derived with weaker parameters than
  * `policy` on any axis (or cannot be parsed), so it should be rehashed after
  * the next successful verification.

@@ -792,14 +792,19 @@ per-hash salt; the parameters are stored in each hash
 verifies and is rehashed under the current parameters on the next successful
 sign-in, by a guarded update that never overwrites a password changed in the
 meantime. A sign-in for an unknown email, or a user with no password, runs
-the same scrypt verification against a dummy hash, so timing does not reveal
-whether the account or credential exists. Passwords are NFKC-normalized.
+the same scrypt verification against a dummy hash, and a check against a hash
+still carrying weaker parameters is padded with extra scrypt work up to the
+current policy's cost, so timing does not reveal whether the account or
+credential exists. Only ever raise the parameters: hashes stronger than the
+policy are not rehashed downward and would verify slower than the dummy.
+Passwords are NFKC-normalized.
 
 **Sign-in.** The submitted email is normalized exactly as `User.emailKey` is
 and matched against that column (legacy users need `backfillUserEmailKeys()`
 first), and the attempt is reserved through the shared `LoginAttemptLimiter` *before*
 any credential work: per account (the email key, whether or not it exists) and
-per client address. The person must be `ACTIVE` and, when a tenant is given,
+per client address. A request missing its email or password is reserved and
+failed like a wrong password. The person must be `ACTIVE` and, when a tenant is given,
 hold an `ACTIVE` membership in it. A successful sign-in mints a first-class
 session with `authMethod: 'password'` through `SessionService.createSession`,
 re-checks that the verified password is still current (so a concurrent change
@@ -827,6 +832,14 @@ words). There are no composition rules. Optional `pepper`. Violations are
 | `changePassword` | the person, proving the current password (from the sign-in budget) | every other session of theirs |
 | `resetPassword` | an admin with `users.password.manage`, never for themself; `mustChange` defaults to true | every session of the person |
 | `clearPassword` | an admin, or the person proving the current password | the person's password sessions |
+
+Self-service writes are guarded on the exact credential the person proved
+(or, for a first password, insert-only), so a reset that lands while a change
+or clear is in flight is never overwritten with a password chosen under the
+old one; the slower request fails with `PasswordCredentialError`. Every write
+that ends sessions ends them both before and after the credential write, so
+a failure between the two leaves the person signed out rather than signed in
+under a password that is gone.
 
 A reset with `mustChange` makes the next sign-in a restricted session: it
 resolves to no permissions (an empty permission ceiling) and can only call

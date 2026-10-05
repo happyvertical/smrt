@@ -157,6 +157,25 @@ describePostgres('PasswordCredentialService on PostgreSQL', () => {
       newPassword: 'a brand new secret',
     });
     expect(changed.revokedSessions).toBe(1);
+    // The guarded change wrote a new generation through raw SQL.
+    const rotated = await credentials.findByUserId(ids.person);
+    expect(rotated?.version).toBe(2);
+    expect(rotated?.mustChange).toBe(false);
+    expect(rotated?.rotatedBy).toBe('self');
+    expect(rotated?.rotatedAt).toBeInstanceOf(Date);
+    // A write guarded on the superseded generation changes nothing.
+    if (!upgraded) throw new Error('missing credential');
+    expect(
+      await credentials.replaceIfCurrent(upgraded, {
+        passwordHash: 'scrypt$stale',
+        rotatedAt: new Date(),
+        rotatedBy: 'self',
+      }),
+    ).toBe(false);
+    expect(await credentials.deleteIfCurrent(upgraded)).toBe(false);
+    expect((await credentials.findByUserId(ids.person))?.passwordHash).toBe(
+      rotated?.passwordHash,
+    );
     expect(
       await sessionService.loadSessionContext(second.sessionId),
     ).toBeNull();

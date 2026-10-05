@@ -282,14 +282,11 @@ export function createPasswordCredentialHandlers(
     signIn: async (event) => {
       try {
         const input = await body(event);
-        const identifier = str(input.email) || str(input.identifier);
-        const password = str(input.password);
-        // A request missing a field gets the same 401 as every other
-        // refusal, so the response does not reveal which step refused it.
-        if (!identifier.trim() || !password) return invalidCredentials();
+        // A request missing a field goes through the service like any other:
+        // it is reserved against the limiter and refused with the same 401.
         const result = await (await service()).signIn({
-          identifier,
-          password,
+          identifier: str(input.email) || str(input.identifier),
+          password: str(input.password),
           tenantId: await resolveTenant(event),
           ipAddress: event.getClientAddress?.(),
           userAgent: event.request.headers.get('user-agent') ?? undefined,
