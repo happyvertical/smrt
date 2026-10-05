@@ -1,5 +1,10 @@
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  CHANGE_FEED_TABLE,
+  ensureChangeFeedTable,
+  getChangesSince,
+} from '../change-feed.js';
 import { isChangeFeedSensitiveTable } from '../change-feed-sensitivity.js';
 import { SchemaComparer } from '../migrations/differ.js';
 import { SmrtObject } from '../object.js';
@@ -59,6 +64,86 @@ describe('STI subclass contracts (#3456)', () => {
   });
   afterEach(() => restore());
 
+  it('closes the schema-only physical table after a caught child-first sensitivity error', async () => {
+    const objects = Object.values(fixture(true).objects);
+    const root = objects[0];
+    delete root.decoratorConfig.tableName;
+    root.schema = {
+      tableName: 'schema_only_sensitive_3456',
+      version: '1',
+      columns: {},
+      indexes: [],
+      ddl: '',
+    };
+    ObjectRegistry.registerFromManifest(objects[1].className, objects[1], pkg);
+    expect(() =>
+      ObjectRegistry.registerFromManifest(root.className, root, pkg),
+    ).toThrow(/mixed sensitivity/);
+    expect(isChangeFeedSensitiveTable('schema_only_sensitive_3456')).toBe(true);
+    const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    try {
+      await ensureChangeFeedTable(db);
+      // A historical build wrote this credential row before the declaration.
+      await db.query(
+        `INSERT INTO ${CHANGE_FEED_TABLE}
+        (seq, table_name, row_id, operation, tenant_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)`,
+        1,
+        'schema_only_sensitive_3456',
+        'historical-credential',
+        'update',
+        null,
+        new Date().toISOString(),
+      );
+      expect(
+        (
+          await getChangesSince(db, {
+            since: 0,
+            tables: ['schema_only_sensitive_3456'],
+          })
+        ).changes,
+      ).toEqual([]);
+    } finally {
+      await db.close?.();
+    }
+  });
+  it.each([
+    false,
+    true,
+  ])('synthesizes child partial constraints from raw registrations (child-first=%s)', async (childFirst) => {
+    const manifest = fixture();
+    const objects = Object.values(manifest.objects);
+    if (childFirst) objects.reverse();
+    for (const obj of objects)
+      ObjectRegistry.registerFromManifest(obj.className, obj, pkg);
+    const merged = ObjectRegistry.getAllSchemasAsDefinitions().calendars_3456;
+    const childKey = merged.indexes.find(
+      (index) => index.where === `_meta_type = '${pkg}:Holiday3456'`,
+    );
+    expect(childKey).toMatchObject({
+      columns: ['tenant_id', 'date', 'name'],
+      unique: true,
+      description: 'STI subclass conflict target',
+    });
+    const runtime = await new SchemaGenerator().generateSTISchemaFromRegistry(
+      `${pkg}:Calendar3456`,
+      'calendars_3456',
+      new Map(),
+      {
+        conflictColumns: ObjectRegistry.getConflictColumns(
+          `${pkg}:Calendar3456`,
+        ),
+        registry: ObjectRegistry,
+      },
+    );
+    expect(childKey).toEqual(
+      runtime.indexes.find((index) => index.name === childKey!.name),
+    );
+    for (const engine of ['sqlite', 'postgres'] as const) {
+      const ddl = ObjectRegistry.getAllSchemas(engine).calendars_3456;
+      expect(ddl.indexes!.join('\n')).toContain(childKey!.name);
+    }
+  });
   it('uses the child conflict key instead of the root slug key', () => {
     const manifest = fixture();
     for (const obj of Object.values(manifest.objects))

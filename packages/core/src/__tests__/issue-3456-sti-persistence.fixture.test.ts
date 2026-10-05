@@ -9,6 +9,7 @@ import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import { SchemaGenerator } from '../schema/generator.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 
 const TABLE = 'issue_3456_persistence';
 @smrt({
@@ -80,6 +81,68 @@ export function runSti3456Persistence(engine: 'sqlite' | 'postgres'): void {
       }
     });
 
+    it('bootstraps raw aggregated child constraints for usable upserts and convergent parity', async () => {
+      const restore = snapshotObjectRegistryState();
+      const table = 'issue_3456_raw_aggregate';
+      const packageName = '@test/sti3456raw';
+      const childName = `${packageName}:RawChild3456`;
+      try {
+        ObjectRegistry.clear();
+        ObjectRegistry.registerFromManifest(
+          'RawRoot3456',
+          {
+            className: 'RawRoot3456',
+            name: 'rawroot3456',
+            collection: 'rawroots3456',
+            filePath: '/test/RawRoot3456.ts',
+            fields: {},
+            methods: {},
+            decoratorConfig: { tableStrategy: 'sti', tableName: table },
+          },
+          packageName,
+        );
+        ObjectRegistry.registerFromManifest(
+          'RawChild3456',
+          {
+            className: 'RawChild3456',
+            name: 'rawchild3456',
+            collection: 'rawchildren3456',
+            filePath: '/test/RawChild3456.ts',
+            extends: 'RawRoot3456',
+            extendsQualified: `${packageName}:RawRoot3456`,
+            fields: { date: { type: 'text' }, name: { type: 'text' } },
+            methods: {},
+            decoratorConfig: { conflictColumns: ['date', 'name'] },
+          },
+          packageName,
+        );
+        // No lazy generator or pre-generated manifest schema runs before this bootstrap.
+        const schema = ObjectRegistry.getAllSchemasAsDefinitions()[table];
+        const strategy = getDDLStrategy(engine);
+        await db.query(strategy.generateCreateTable(schema));
+        for (const sql of strategy.generateIndexes(schema)) await db.query(sql);
+        const firstId = randomUUID();
+        await db.query(`INSERT INTO "${table}" (id, _meta_type, date, name, slug)
+          VALUES ('${firstId}', '${childName}', '2026-01-01', 'Holiday', 'first')`);
+        const upsert =
+          await db.query(`INSERT INTO "${table}" (id, _meta_type, date, name, slug)
+          VALUES ('${randomUUID()}', '${childName}', '2026-01-01', 'Holiday', 'updated')
+          ON CONFLICT (date, name) WHERE _meta_type = '${childName}'
+          DO UPDATE SET slug = EXCLUDED.slug RETURNING id, slug`);
+        expect(upsert.rows).toEqual([{ id: firstId, slug: 'updated' }]);
+        await expect(
+          db.query(`INSERT INTO "${table}" (id, _meta_type, date, name, slug)
+          VALUES ('${randomUUID()}', '${childName}', '2026-01-01', 'Holiday', 'duplicate')`),
+        ).rejects.toThrow(/unique|duplicate/i);
+        const diff = await new SchemaComparer(db, {
+          engineHint: engine,
+        }).compare({ [table]: schema });
+        expect(getSQLFromDiff(diff)).toEqual([]);
+      } finally {
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        restore();
+      }
+    });
     it('preserves distinct dates sharing a slug and adopts only the same subtype/tenant natural key', async () => {
       const collection = await HolidaysPersistence3456.create({ db });
       const a = await collection.create({

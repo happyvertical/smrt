@@ -802,9 +802,15 @@ function assertStiSensitivity(
   config: SmartObjectConfig,
   qualifiedName: string,
   extendsName?: string,
+  schemaTableName?: string,
 ): void {
   if (config.tableStrategy === 'cti') return;
-  const incoming = { config, qualifiedName, extends: extendsName };
+  const incoming = {
+    config,
+    qualifiedName,
+    extends: extendsName,
+    schema: schemaTableName ? { tableName: schemaTableName } : undefined,
+  };
   const resolve = (name: string) => {
     if (name === qualifiedName) return incoming;
     const existing = findClass(name);
@@ -832,10 +838,17 @@ function assertStiSensitivity(
     if ((existing.config.sensitive === true) !== (config.sensitive === true)) {
       // A caller may catch registration errors; keep historical rows/signals
       // closed even then, without accepting the invalid hierarchy.
-      const table =
-        ('schema' in root ? root.schema?.tableName : undefined) ??
-        root.config.tableName;
-      if (table) declareChangeFeedSensitiveTable(table);
+      // Close every known physical alias, including the incoming manifest's
+      // schema-only name: validation throws before registration can declare it.
+      for (const member of [incoming, ...getClasses().values()]) {
+        if (rootOf(member) !== incomingRoot) continue;
+        for (const table of [
+          member.schema?.tableName,
+          member.config.tableName,
+        ]) {
+          if (table) declareChangeFeedSensitiveTable(table);
+        }
+      }
       throw new ConfigurationError(
         `STI hierarchy ${root.qualifiedName} has mixed sensitivity; mark every class sensitive or use separate tables.`,
         'CONFIG_STI_MIXED_SENSITIVITY',
@@ -988,6 +1001,7 @@ function registerUntracked(
       },
       nextKey,
       existing.extends,
+      existing.schema?.tableName,
     );
     // Capture pre-mutation identity so descendants whose `extends` still
     // references the old name/qualifiedName are caught by the post-mutation
@@ -1884,6 +1898,7 @@ function registerUntracked(
     mergedConfig,
     packageName ? `${packageName}:${name}` : name,
     getConstructorIndex().get(Object.getPrototypeOf(ctor)) ?? extendsClass,
+    schema?.tableName,
   );
 
   // Declare from the MERGED config, not the raw one: generated consumer
@@ -2393,6 +2408,7 @@ function mergeManifestIntoExistingRegistration(
     nextConfig,
     existing.qualifiedName || existing.name,
     objectDef.extendsQualified ?? existing.extends ?? objectDef.extends,
+    objectDef.schema?.tableName ?? existing.schema?.tableName,
   );
   existing.config = nextConfig;
 
@@ -2685,6 +2701,7 @@ function registerFromManifestUntracked(
     { ...config, tableName },
     qualifiedNameEarly || name,
     objectDef.extendsQualified ?? objectDef.extends,
+    objectDef.schema?.tableName,
   );
   // A manifest-only registration (a consumed package's stub) still carries the
   // credential declaration, and is often the ONLY registration a consumer app
