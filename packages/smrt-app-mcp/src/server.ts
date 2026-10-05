@@ -334,6 +334,24 @@ function configuredEffects(
   return new Set(effects);
 }
 
+type RegistryEntry =
+  ReturnType<typeof ObjectRegistry.getAllClasses> extends Map<string, infer V>
+    ? V
+    : never;
+
+/** Distinct registrations whose simple name matches, case-insensitively. */
+function sameNamedClasses(simpleName: string): Array<[string, RegistryEntry]> {
+  const wanted = simpleName.toLowerCase();
+  const seen = new Set<RegistryEntry>();
+  const matches: Array<[string, RegistryEntry]> = [];
+  for (const [key, info] of ObjectRegistry.getAllClasses()) {
+    if (seen.has(info) || (info.name || key).toLowerCase() !== wanted) continue;
+    seen.add(info);
+    matches.push([key, info]);
+  }
+  return matches;
+}
+
 function isTenantScopedTool(identity: MCPToolIdentity): boolean {
   // The generating class itself, never another class sharing its name (#3490).
   if (identity.qualifiedName) {
@@ -342,13 +360,16 @@ function isTenantScopedTool(identity: MCPToolIdentity): boolean {
       isTenantScopedClassResolved(identity.qualifiedName)
     );
   }
+  // An identity without its registration: fail closed if any class of that
+  // name is tenant-scoped.
   const objectName = identity.objectName.toLowerCase();
   for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
     const name = classInfo.name || key;
-    if (name.toLowerCase() === objectName) {
-      return (
-        ObjectRegistry.isTenantScoped(name) || isTenantScopedClassResolved(name)
-      );
+    if (
+      name.toLowerCase() === objectName &&
+      (ObjectRegistry.isTenantScoped(key) || isTenantScopedClassResolved(key))
+    ) {
+      return true;
     }
   }
   return false;
@@ -405,13 +426,26 @@ export function createMcpAppServer(
   const requestedToolListCacheHint = configuredToolListCacheHint(
     options.toolListCache,
   );
-  const tasksEnabled = options.allowedClassNames.some((className) => {
-    const mcp = ObjectRegistry.getConfig(className).mcp;
-    return (
-      typeof mcp === 'object' &&
-      (mcp.tasks === true || (Array.isArray(mcp.tasks) && mcp.tasks.length > 0))
-    );
-  });
+  // Configuration is read per registration: an allow-list entry names a
+  // registry key / qualified name exactly, or every class of a simple name.
+  const tasksEnabled = [...ObjectRegistry.getAllClasses()].some(
+    ([key, classInfo]) => {
+      const names = [key, classInfo.qualifiedName, classInfo.name];
+      if (
+        !names.some(
+          (name) => !!name && allowedClassNames.has(name.toLowerCase()),
+        )
+      ) {
+        return false;
+      }
+      const mcp = ObjectRegistry.getConfig(key).mcp;
+      return (
+        typeof mcp === 'object' &&
+        (mcp.tasks === true ||
+          (Array.isArray(mcp.tasks) && mcp.tasks.length > 0))
+      );
+    },
+  );
 
   function userForGenerator(
     principal?: McpAppPrincipal | null,
@@ -789,20 +823,24 @@ export function createMcpAppServer(
       return false;
     }
     if (identity.qualifiedName) {
+      if (origin.objectType === identity.qualifiedName) return true;
+      // A persisted simple name identifies the class only while no other
+      // registered class shares it (#3490).
       const info = ObjectRegistry.getAllClasses().get(identity.qualifiedName);
       return (
-        origin.objectType === identity.qualifiedName ||
-        (!!info && origin.objectType === (info.name || identity.qualifiedName))
+        !!info?.name &&
+        origin.objectType === info.name &&
+        sameNamedClasses(info.name).length === 1
       );
     }
-    for (const [key, info] of ObjectRegistry.getAllClasses()) {
-      const name = info.name || key;
-      if (name.toLowerCase() !== identity.objectName.toLowerCase()) continue;
-      return (
-        origin.objectType === name || origin.objectType === info.qualifiedName
-      );
-    }
-    return false;
+    // An identity without its registration resolves only an unambiguous name.
+    const matches = sameNamedClasses(identity.objectName);
+    if (matches.length !== 1) return false;
+    const [[key, info]] = matches;
+    const name = info.name || key;
+    return (
+      origin.objectType === name || origin.objectType === info.qualifiedName
+    );
   }
 
   /**
