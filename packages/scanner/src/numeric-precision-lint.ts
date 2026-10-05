@@ -98,6 +98,7 @@ const TRAILING_QUALIFIERS = new Set([
 const PERSISTED_BASE_CLASSES = new Set([
   'SmrtObject',
   'SmrtJunction',
+  'SmrtJunctionBase',
   'SmrtHierarchical',
   'SmrtPolymorphicAssociation',
 ]);

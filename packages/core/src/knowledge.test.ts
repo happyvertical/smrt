@@ -572,6 +572,20 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(childSurfaces).toEqual([]);
   });
 
+  it('retains junction knowledge for composite-owner collections', () => {
+    const manifest = fixtureManifest();
+    manifest.objects['@example/orders:OrderLinks'].extends = 'SmrtJunctionBase';
+    const artifact = buildDomainKnowledgeManifest({
+      manifest,
+      rootDir,
+      manifestPath: join(rootDir, '.smrt', 'manifest.json'),
+    });
+    expect(
+      artifact.objects.find((object) => object.name === 'OrderLinks')
+        ?.relationshipFeatures,
+    ).toContain('SmrtJunction');
+  });
+
   it('projects structural facts without exposing sensitive fields', () => {
     const artifact = buildFixtureArtifact(rootDir);
     const order = artifact.objects.find((object) => object.name === 'Order');

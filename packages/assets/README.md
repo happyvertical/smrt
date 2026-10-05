@@ -142,3 +142,24 @@ private links, caller-supplied version history, and native multipart uploads.
 They preserve request identity and failed-action metadata without deriving
 public storage URLs. See [the attachment contract](agents/attachments.md) for
 public types, native payloads, recovery, and server responsibilities.
+
+### Polymorphic junction collection types
+
+`AssetAssociationCollection` extends `SmrtJunctionBase`, sharing `byRight`,
+ordering, positioning, and registration guards with ordinary junctions. Its
+`byLeft`, `attach`, `detach`, and `setLinks` methods still require both `metaType`
+and `metaId`; they do not implement the single-owner `SmrtJunction` contract.
+Use `instanceof SmrtJunctionBase` when recognizing either kind of junction.
+Asset associations no longer satisfy `instanceof SmrtJunction`.
+
+After building the workspace, `node scripts/verify-packed-junction-types.mjs`
+checks actual core/assets tarballs in the standard Bundler mode with
+`skipLibCheck: false`, inherited result types, and negative owner-argument tests.
+Full NodeNext declaration portability is tracked separately in #3524.
+
+The consumer fixture installs declared dependencies in a temporary directory
+with no ancestor `node_modules`; it never links producer dependencies. Set
+`SMRT_PACKED_EVIDENCE_DIR` to retain tarballs and the consumer lockfile. For an
+explicitly separate upstream-candidate proof, `SMRT_PACKED_OVERRIDES` may name
+a JSON file of pnpm overrides; such a proof does not establish that the normal
+published dependency graph passes.

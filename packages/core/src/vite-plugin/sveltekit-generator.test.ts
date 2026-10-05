@@ -393,7 +393,10 @@ describe('SvelteKit Route Generator', () => {
       expect(generatedWidgetRoutes).toEqual([]);
     });
 
-    it('never generates a route directory for a framework base class, but still does for a genuine domain class (#2642)', async () => {
+    it.each([
+      'SmrtObject',
+      'SmrtJunctionBase',
+    ])('never generates routes for framework base %s but retains domain routes', async (baseName) => {
       const manifest: SmartObjectManifest = {
         version: '1',
         timestamp: 0,
@@ -405,13 +408,13 @@ describe('SvelteKit Route Generator', () => {
           // genuine bare `@smrt()`. `ObjectRegistry.loadAllManifests()`
           // registers them like any genuine domain class, so route
           // generation must skip them by class identity, not by config.
-          SmrtObject: {
-            className: 'SmrtObject',
-            name: 'SmrtObject',
+          [baseName]: {
+            className: baseName,
+            name: baseName,
             filePath: '',
-            qualifiedName: '@happyvertical/smrt-core:SmrtObject',
+            qualifiedName: `@happyvertical/smrt-core:${baseName}`,
             packageName: '@happyvertical/smrt-core',
-            collection: 'smrtobjects',
+            collection: `${baseName.toLowerCase()}s`,
             fields: {},
             methods: {},
             decoratorConfig: {},
@@ -439,7 +442,9 @@ describe('SvelteKit Route Generator', () => {
       const generatedFrameworkBaseRoutes = vi
         .mocked(writeFileSync)
         .mock.calls.filter(([filePath]) =>
-          String(filePath).includes('/src/routes/api/smrtobjects/'),
+          String(filePath).includes(
+            `/src/routes/api/${baseName.toLowerCase()}s/`,
+          ),
         );
       expect(generatedFrameworkBaseRoutes).toEqual([]);
 

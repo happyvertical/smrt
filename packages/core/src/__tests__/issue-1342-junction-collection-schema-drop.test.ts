@@ -105,6 +105,7 @@ function junctionItemManifest(
 function junctionCollectionManifest(
   itemName: string,
   tableName: string,
+  baseName = 'SmrtJunction',
 ): SmartObjectDefinition {
   return {
     className: `${itemName}Collection`,
@@ -113,7 +114,7 @@ function junctionCollectionManifest(
     collection: `${itemName.toLowerCase()}s`,
     filePath: `/src/collections/${itemName}Collection.ts`,
     packageName: PKG,
-    extends: 'SmrtJunction',
+    extends: baseName,
     extendsTypeArg: itemName,
     fields: {},
     methods: {},
@@ -162,7 +163,10 @@ describe('#1342 junction Collection schema drop', () => {
     clearManifestCache();
   });
 
-  it('keeps junction columns when the Collection registers before its item class', async () => {
+  it.each([
+    'SmrtJunction',
+    'SmrtJunctionBase',
+  ])('keeps junction columns when a %s Collection registers before its item class', async (baseName) => {
     ObjectRegistry.clear();
     clearManifestCache();
 
@@ -172,7 +176,11 @@ describe('#1342 junction Collection schema drop', () => {
     // and profile_assets (works by luck of order) on the published packages.
     ObjectRegistry.registerFromManifest(
       'PlaceFixtureAssetCollection',
-      junctionCollectionManifest('PlaceFixtureAsset', 'place_fixture_assets'),
+      junctionCollectionManifest(
+        'PlaceFixtureAsset',
+        'place_fixture_assets',
+        baseName,
+      ),
       PKG,
     );
     ObjectRegistry.registerFromManifest(

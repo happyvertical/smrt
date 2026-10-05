@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getChangesSince, registerChangeFeedWriter } from '../change-feed';
 import { field } from '../decorators/index';
 import { GlobalInterceptors } from '../interceptors';
-import { SmrtJunction } from '../junction';
+import { SmrtJunction, SmrtJunctionBase } from '../junction';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -69,6 +69,14 @@ describe('SmrtJunction', () => {
   let dbPath: string;
   let dbUrl: string;
   let links: JunctionTestLinkCollection;
+
+  it('preserves the ordinary junction prototype chain', () => {
+    expect(JunctionTestLinkCollection.prototype).toBeInstanceOf(SmrtJunction);
+    expect(JunctionTestLinkCollection.prototype).toBeInstanceOf(
+      SmrtJunctionBase,
+    );
+    expect(JunctionTestLinkCollection._isJunctionBase).toBe(true);
+  });
 
   beforeEach(async () => {
     dbUrl = tmpDbUrl('basic');

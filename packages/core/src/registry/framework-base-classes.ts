@@ -46,7 +46,7 @@
  * answering a different question — not "is this class a resource?" but
  * "should this ancestor's METHODS merge into a subclass that doesn't declare
  * them?" `SmrtReportCollection` and `SmrtJunction` are deliberately in this
- * 8-name resource set but NOT in that 3-name method-merge set: their declared
+ * resource set but NOT in that 3-name method-merge set: their declared
  * methods (`list`/`get` overrides, `attach`/`detach`/`byLeft`/`byRight`/
  * `setLinks`) are real, subclass-inherited API, not generic object-lifecycle
  * plumbing. Unifying the two sets — applying this one to method merging too —
@@ -72,6 +72,7 @@ const FRAMEWORK_BASE_CLASS_PACKAGES: ReadonlyMap<string, string> = new Map([
   ['SmrtClass', '@happyvertical/smrt-core'],
   ['SmrtCollection', '@happyvertical/smrt-core'],
   ['SmrtJunction', '@happyvertical/smrt-core'],
+  ['SmrtJunctionBase', '@happyvertical/smrt-core'],
   ['SmrtHierarchical', '@happyvertical/smrt-core'],
   ['SmrtPolymorphicAssociation', '@happyvertical/smrt-core'],
   ['SmrtReport', '@happyvertical/smrt-reports'],
