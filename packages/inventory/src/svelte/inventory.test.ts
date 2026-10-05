@@ -64,6 +64,8 @@ describe('inventory components', () => {
             locationId: 'warehouse',
             qty: 2,
             reasonCode: 'custom-count',
+            fromState: 'available',
+            toState: null,
             actorProfileId: 'profile',
             sourceType: 'Count',
             sourceId: '123',
@@ -74,6 +76,8 @@ describe('inventory components', () => {
     });
     expect(screen.getByText('profile')).toBeTruthy();
     expect(screen.getByText('custom-count')).toBeTruthy();
+    expect(screen.getByText('available')).toBeTruthy();
+    expect(screen.getByText('Outside inventory')).toBeTruthy();
     expect(screen.getByText('Count 123')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
   });

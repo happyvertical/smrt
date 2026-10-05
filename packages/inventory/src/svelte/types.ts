@@ -9,6 +9,8 @@ export interface StockLevelData {
   reorderQuantity?: number | null;
 }
 export interface StockMovementData {
+  fromState?: string | null;
+  toState?: string | null;
   id?: string;
   skuId: string;
   locationId: string;
