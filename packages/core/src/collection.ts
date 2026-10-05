@@ -1,5 +1,13 @@
 import { createLogger } from '@happyvertical/logger';
 import { buildWhere, type DatabaseInterface } from '@happyvertical/sql';
+import {
+  type AuditContext,
+  auditSnapshot,
+  type CollectionAuditOptions,
+  isAudited,
+  requireAuditOptions,
+  writeAudit,
+} from './audit.js';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -580,6 +588,8 @@ interface CollectionFieldDefinition {
  * Configuration options for SmrtCollection
  */
 export interface SmrtCollectionOptions extends SmrtClassOptions {
+  /** Trusted actor and transaction-bound sink for models declaring audit: true. */
+  auditTrail?: CollectionAuditOptions;
   /**
    * Page size `list()` applies when the caller passes no `limit` (#2367).
    *
@@ -2486,6 +2496,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       _reuseInitializedDb,
       db,
       defaultListLimit, // #2367
+      auditTrail,
       persistence, // Also extract persistence alias
       ai,
       decisions,
@@ -2507,6 +2518,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       ai,
       decisions,
       defaultListLimit,
+      auditTrail,
       fs,
       logging,
       maxListLimit,
@@ -3571,9 +3583,105 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @see {@link getOrUpsert} to avoid duplicates by finding-or-creating
    */
-  public async create(options: SmrtCreateInput<ModelType>) {
+  public async create(
+    options: SmrtCreateInput<ModelType>,
+    context?: Partial<AuditContext>,
+  ) {
     const instance = await this.createUnsaved(options);
+    if (isAudited(instance)) {
+      // A create must never silently overwrite an existing natural-key row.
+      instance.requireInsertOnSave();
+      await this.withAuditMutation(
+        instance,
+        'created',
+        async (bound) => {
+          await bound.save();
+        },
+        context,
+      );
+      return instance;
+    }
     await instance.save();
+    return instance;
+  }
+
+  /** Owning seam for generated CRUD that already validates fields and permissions. */
+  public async withAuditMutation<T>(
+    instance: ModelType,
+    action: 'created' | 'updated' | 'deleted',
+    mutate: (bound: ModelType) => Promise<T>,
+    context?: Partial<AuditContext>,
+  ): Promise<T> {
+    if (!isAudited(instance)) return await mutate(instance);
+    const audit = requireAuditOptions(
+      (this.options as SmrtCollectionOptions).auditTrail,
+      context,
+    );
+    const adapter = instance.db as unknown as {
+      inferSchemaFromJSON?: unknown;
+      getTableLoadErrors?: unknown;
+    };
+    if (
+      typeof adapter.inferSchemaFromJSON === 'function' ||
+      typeof adapter.getTableLoadErrors === 'function'
+    ) {
+      throw new Error(
+        'Automatic auditing requires transactional persistence; JSON export adapters are unsupported',
+      );
+    }
+    return await instance.withTransaction(async (bound) => {
+      const before = action === 'created' ? {} : auditSnapshot(bound);
+      const result = await mutate(bound);
+      const after = action === 'deleted' ? {} : auditSnapshot(bound);
+      await writeAudit(bound, action, before, after, audit);
+      return result;
+    });
+  }
+
+  /** Update registered mutable fields, with revision guards and optional audit. */
+  public async update(
+    id: string,
+    values: Partial<SmrtCreateInput<ModelType>>,
+    context?: Partial<AuditContext>,
+  ): Promise<ModelType | null> {
+    const instance = await this.get(id, { cache: false });
+    if (!instance) return null;
+    const registered = ObjectRegistry.getClassByConstructor(
+      instance.constructor as SmrtObjectConstructor,
+    );
+    const name =
+      registered?.qualifiedName ||
+      registered?.name ||
+      instance.constructor.name;
+    const fields = await ObjectRegistry.getAllFields(name);
+    for (const key of Object.keys(values)) {
+      const definition = fields.get(key);
+      if (
+        !definition ||
+        definition.readonly ||
+        definition._meta?.readonly ||
+        [
+          'id',
+          'slug',
+          'context',
+          'tenantId',
+          'createdAt',
+          'updatedAt',
+        ].includes(key) ||
+        key.startsWith('_')
+      ) {
+        throw new Error(`Collection update cannot assign field '${key}'`);
+      }
+    }
+    await this.withAuditMutation(
+      instance,
+      'updated',
+      async (bound) => {
+        Object.assign(bound, values);
+        await bound.save();
+      },
+      context,
+    );
     return instance;
   }
 
@@ -3779,7 +3887,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   public async getOrUpsert(
     data: Record<string, unknown>,
     defaults: Record<string, unknown> = {},
-  ) {
+  ): Promise<ModelType> {
     const logicalData = this.normalizeLogicalData(data);
     const logicalDefaults = this.normalizeLogicalData(defaults);
     let where: Record<string, unknown> = {};
@@ -3802,6 +3910,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (existing) {
       const diff = this.getDiffSync(existing, diffData);
       if (diff) {
+        if (isAudited(existing)) {
+          const updated = await this.update(
+            existing.id as string,
+            diff as Partial<SmrtCreateInput<ModelType>>,
+          );
+          if (!updated) {
+            throw new Error('Record disappeared before getOrUpsert update');
+          }
+          return updated;
+        }
         Object.assign(existing, diff);
         await existing.save();
       }
@@ -4096,7 +4214,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * }
    * ```
    */
-  public async delete(id: string): Promise<boolean> {
+  public async delete(
+    id: string,
+    context?: Partial<AuditContext>,
+  ): Promise<boolean> {
     // Schema already initialized in Collection.create() static factory
 
     // Ensure manifest is loaded for external packages
@@ -4117,7 +4238,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // - Database deletion
     // - afterDelete lifecycle hooks
     // - afterDelete interceptors
-    await instance.delete();
+    const audited = isAudited(instance);
+    await this.withAuditMutation(
+      instance,
+      'deleted',
+      async (bound) => {
+        if (audited && !bound.updated_at)
+          throw new Error('Audited delete requires a persisted revision');
+        await bound.delete(
+          audited ? { expectedUpdatedAt: bound.updated_at ?? undefined } : {},
+        );
+      },
+      context,
+    );
 
     return true;
   }

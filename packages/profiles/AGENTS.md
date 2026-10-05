@@ -10,7 +10,7 @@ Central identity system with multi-auth, relationships, controlled metadata, and
 - **Profile.isPublic**: optional public-figure flag (boolean, default false). Records the fact only; consumers decide visibility.
 - **ProfileRelationship**: bidirectional — creating one auto-creates reciprocal inverse. `contextProfileId` for tertiary relationships. `ProfileRelationshipTerm` tracks start/end dates.
 - **ProfileMetafield**: controlled vocabulary with `validationSchema`. **ProfileMetadata**: per-profile values linked to metafields. `addMetadata()` stamps new rows with the profile's `tenantId` (never rely on auto-population, which super-admin/system context skips, #3235) and resolves the metafield as profile-tenant first, then global, never another tenant's.
-- **AuditLog**: action, resourceType/Id, `source` (web/cli/ci/webhook/mcp), `onBehalfOfId` for CI pass-through identity. `allowSuperAdminBypass: true`.
+- **AuditLog**: sensitive audit persistence with actor, action, reason, before/after `changes`, indexed `occurredAt`, resourceType/Id, source, and delegated identity. No generated read routes. `createAuditWriter`, consumer-authorized `readAuditTrail`, and bounded `pruneAuditTrail` live in `src/audit-trail.ts`; see [audit contract](../../docs/content/audit-trail.md).
 
 ## Auth Methods
 

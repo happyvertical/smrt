@@ -568,16 +568,14 @@ describe('generated SvelteKit helper runtime', () => {
     const route = await importGeneratedItemDelete();
     const routeCollection = globalThis as Record<string, unknown>;
     routeCollection.__smrtGeneratedRouteCollection = {
-      get: async () => ({
-        delete: async () => {
-          throw Object.assign(new Error('foreign tenant=secret-tenant'), {
-            code: 'tenant_isolation',
-            publicMessage:
-              'This request is not permitted for the active tenant',
-            status: 403,
-          });
-        },
-      }),
+      get: async () => ({ id: 'foreign-policy' }),
+      delete: async () => {
+        throw Object.assign(new Error('foreign tenant=secret-tenant'), {
+          code: 'tenant_isolation',
+          publicMessage: 'This request is not permitted for the active tenant',
+          status: 403,
+        });
+      },
     };
 
     const denied = await route.DELETE({
@@ -595,14 +593,13 @@ describe('generated SvelteKit helper runtime', () => {
     });
 
     routeCollection.__smrtGeneratedRouteCollection = {
-      get: async () => ({
-        delete: async () => {
-          throw Object.assign(new Error('database secret leaked'), {
-            code: 'database_failed',
-            status: 500,
-          });
-        },
-      }),
+      get: async () => ({ id: 'foreign-policy' }),
+      delete: async () => {
+        throw Object.assign(new Error('database secret leaked'), {
+          code: 'database_failed',
+          status: 500,
+        });
+      },
     };
     const failed = await route.DELETE({
       locals: { permissions: ['widgets.delete'], user: { id: 'user-1' } },
@@ -766,16 +763,22 @@ describe('generated SvelteKit helper runtime', () => {
         'perm-item-route.mjs',
       );
       const saved: string[] = [];
+      const item = {
+        save: async () => {
+          saved.push('save');
+        },
+        toPublicJSON: () => ({ id: 'widget-1' }),
+      };
       (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
-        get: async () => ({
-          delete: async () => {
-            saved.push('delete');
-          },
-          save: async () => {
-            saved.push('save');
-          },
-          toPublicJSON: () => ({ id: 'widget-1' }),
-        }),
+        delete: async () => {
+          saved.push('delete');
+        },
+        get: async () => item,
+        withAuditMutation: async (
+          bound: typeof item,
+          _action: string,
+          mutate: (bound: typeof item) => Promise<void>,
+        ) => mutate(bound),
       };
       const putRequest = () =>
         new Request('http://localhost/api/widgets/widget-1', {

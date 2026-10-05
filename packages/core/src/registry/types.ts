@@ -281,6 +281,8 @@ export interface ReportConfig {
  * @interface SmartObjectConfig
  */
 export interface SmartObjectConfig {
+  /** Opt in to transactional collection CRUD audit recording. */
+  audit?: boolean;
   /**
    * Custom name for the object (defaults to class name)
    */

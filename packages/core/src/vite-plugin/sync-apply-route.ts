@@ -320,6 +320,16 @@ ${anyTenantScoped ? '  establishTenantContext(locals);\n' : ''}
       return {
         objectName: target.registryKey,
         collection,
+        mutate: async (row, op, data) => {
+          await collection.withAuditMutation(row as import('@happyvertical/smrt-core').SmrtObject, op === 'update' ? 'updated' : 'deleted', async (bound) => {
+            if (op === 'update') {
+              Object.assign(bound, data);
+              await bound.save();
+            } else {
+              await bound.delete({ expectedUpdatedAt: bound.updated_at ?? undefined });
+            }
+          });
+        },
         isOpAllowed: (op: SyncApplyOp) => target.ops.includes(op),
         authorize: (op: SyncApplyOp) => {
           // \`public: true\` keeps its unauthenticated write semantics, as on

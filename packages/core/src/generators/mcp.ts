@@ -1718,7 +1718,6 @@ export class MCPGenerator {
         const newItem = await collection.create(
           createData as Parameters<typeof collection.create>[0],
         );
-        await newItem.save();
 
         return this.toPublicData(newItem);
       }
@@ -1737,16 +1736,22 @@ export class MCPGenerator {
         // Mass-assignment guard (#1540): strip server-managed/read-only keys
         // (incl. `id`) before applying caller-supplied updates.
         const updateData = this.applyWritablePolicy(objectName, args);
-        Object.assign(existing, updateData);
+        await collection.withAuditMutation(
+          existing,
+          'updated',
+          async (bound) => {
+            Object.assign(bound, updateData);
 
-        // Add user context. `updated_by` is a server-set audit column, not a
-        // declared model field, so assign it through a record view.
-        if (this.context.user) {
-          (existing as unknown as Record<string, unknown>).updated_by =
-            this.context.user.id;
-        }
+            // Add user context. `updated_by` is a server-set audit column, not a
+            // declared model field, so assign it through a record view.
+            if (this.context.user) {
+              (bound as unknown as Record<string, unknown>).updated_by =
+                this.context.user.id;
+            }
 
-        await existing.save();
+            await bound.save();
+          },
+        );
 
         return this.toPublicData(existing);
       }
@@ -1761,7 +1766,7 @@ export class MCPGenerator {
           throw new Error('Object not found');
         }
 
-        await toDelete.delete();
+        await collection.delete(args.id as string);
 
         return { success: true, message: 'Object deleted successfully' };
       }
@@ -2392,7 +2397,6 @@ ${indent}}`;
 ${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, args, aiConfig);
 
 ${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
-${indent}  await newItem.save();
 
 ${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -2414,8 +2418,10 @@ ${indent}  if (!existing) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  Object.assign(existing, applyWritablePolicy(${JSON.stringify(target.objectName)}, updateData));
-${indent}  await existing.save();
+${indent}  await collection.withAuditMutation(existing, 'updated', async (bound) => {
+${indent}    Object.assign(bound, applyWritablePolicy(${JSON.stringify(target.objectName)}, updateData));
+${indent}    await bound.save();
+${indent}  });
 
 ${indent}  return successResult(existing.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -2436,7 +2442,7 @@ ${indent}  if (!toDelete) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  await toDelete.delete();
+${indent}  await collection.delete(args.id);
 
 ${indent}  return successResult({ success: true, message: 'Object deleted successfully' });
 ${indent}}`;

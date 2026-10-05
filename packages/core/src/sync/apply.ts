@@ -188,6 +188,12 @@ export type SyncApplyAuthzDecision = 'ok' | 'auth_required' | 'forbidden';
  * and mass-assignment rules as the host's plain CRUD routes.
  */
 export interface SyncApplyTarget {
+  /** Host-owned transactional mutation seam (including opt-in audit recording). */
+  mutate?: (
+    row: SyncApplyRowLike,
+    op: 'update' | 'delete',
+    data: Record<string, unknown>,
+  ) => Promise<void>;
   /** Registry/class name, for diagnostics. */
   objectName: string;
   /** Collection whose get/create/save/delete run the full interceptor stack. */
@@ -570,8 +576,11 @@ async function applyValidatedItem(
           updatedAt: rowUpdatedAtIso(row),
         };
       }
-      Object.assign(row, data);
-      await row.save();
+      if (target.mutate) await target.mutate(row, 'update', data);
+      else {
+        Object.assign(row, data);
+        await row.save();
+      }
       return { ...base, status: 'applied', updatedAt: rowUpdatedAtIso(row) };
     }
 
@@ -589,7 +598,8 @@ async function applyValidatedItem(
           updatedAt: rowUpdatedAtIso(row),
         };
       }
-      await row.delete();
+      if (target.mutate) await target.mutate(row, 'delete', data);
+      else await row.delete();
       return { ...base, status: 'applied' };
     }
   }

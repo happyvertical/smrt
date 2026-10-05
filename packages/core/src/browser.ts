@@ -17,6 +17,7 @@
 
 // Built-in signal adapters
 export * from './adapters/index';
+export * from './audit.js';
 // Core SMRT framework
 export * from './class';
 export * from './collection';

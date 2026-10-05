@@ -2,7 +2,7 @@
  * AuditLogCollection - Collection for querying audit logs
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { type AuditChange, SmrtCollection } from '@happyvertical/smrt-core';
 import { AuditLog, type AuditSource } from '../models/AuditLog';
 import type { Profile } from '../models/Profile';
 
@@ -73,11 +73,15 @@ export class AuditLogCollection extends SmrtCollection<AuditLog> {
     source?: AuditSource;
     metadata?: Record<string, unknown>;
     onBehalfOf?: Profile | null;
+    reason?: string;
+    changes?: Record<string, AuditChange>;
   }): Promise<AuditLog> {
     const log = new AuditLog({
       ...this.options,
       profileId: options.profile.id as string,
       action: options.action,
+      reason: options.reason,
+      changes: options.changes,
       resourceType: options.resourceType,
       resourceId: options.resourceId,
       source: options.source || 'web',

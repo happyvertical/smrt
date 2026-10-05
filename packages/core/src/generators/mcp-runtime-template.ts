@@ -238,7 +238,6 @@ ${indent}}`;
 ${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, args, aiConfig);
 
 ${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
-${indent}  await newItem.save();
 
 ${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -260,8 +259,10 @@ ${indent}  if (!existing) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  Object.assign(existing, applyWritablePolicy(${JSON.stringify(toolTargets[tool.name].objectName)}, updateData));
-${indent}  await existing.save();
+${indent}  await collection.withAuditMutation(existing, 'updated', async (bound) => {
+${indent}    Object.assign(bound, applyWritablePolicy(${JSON.stringify(toolTargets[tool.name].objectName)}, updateData));
+${indent}    await bound.save();
+${indent}  });
 
 ${indent}  return successResult(existing.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
@@ -282,7 +283,7 @@ ${indent}  if (!toDelete) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  await toDelete.delete();
+${indent}  await collection.delete(args.id);
 
 ${indent}  return successResult({ success: true, message: 'Object deleted successfully' });
 ${indent}}`;

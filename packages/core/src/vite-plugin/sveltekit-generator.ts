@@ -3579,9 +3579,11 @@ ${generateNotFoundError(className)}
 
   const body: unknown = await request.json();
   const data = applyWritablePolicy(body);
-  Object.assign(item, data);
   try {
-    await item.save();
+    await collection.withAuditMutation(item, 'updated', async (bound) => {
+      Object.assign(bound, data);
+      await bound.save();
+    });
   } catch (cause) {
     return smrtRouteErrorResponse(cause);
   }
@@ -3608,7 +3610,7 @@ ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${generateNotFoundError(className)}
 
   try {
-    await item.delete();
+    await collection.delete(params.id);
   } catch (cause) {
     return smrtRouteErrorResponse(cause);
   }
