@@ -89,7 +89,7 @@ declare global {
   // eslint-disable-next-line no-var
   var __smrtRegistryDiscoveryAttemptCache: Map<string, boolean> | undefined;
   // eslint-disable-next-line no-var
-  var __smrtRegistryProvisionalIdentities: WeakSet<RegisteredClass> | undefined;
+  var __smrtRegistryConstructorStampingPackages: Set<string> | undefined;
 }
 
 /**
@@ -363,21 +363,32 @@ export function getConstructorIndex(): WeakMap<SmrtObjectConstructor, string> {
 }
 
 /**
- * Registrations whose package identity is provisional (#3490): the package
- * came only from the declaring file's stack frame, that file is bundled
- * output, and nothing confirmed it — no explicit `packageName`, no
- * registration manifest, and no loaded manifest describing the class. In
- * bundled output the stack names the bundle's package, so the declaring
- * package's manifest adopts such a registration when it arrives
- * (`registerFromManifest`). Explicit re-registration confirms the identity
- * and removes the entry from this set.
+ * Packages whose build stamps each of its decorated classes with the package
+ * name (`static __smrtPackage__`, #3490), recorded from their manifests'
+ * `stampsConstructors`. A class such a package declares carries its identity
+ * from the moment it is decorated, so an unstamped class that merely shares
+ * a simple name and table with one of its manifest entries is never that
+ * package's class, in any registration order.
  */
-export function getProvisionalIdentities(): WeakSet<RegisteredClass> {
-  if (!globalThis.__smrtRegistryProvisionalIdentities) {
-    globalThis.__smrtRegistryProvisionalIdentities =
-      new WeakSet<RegisteredClass>();
+export function getConstructorStampingPackages(): Set<string> {
+  if (!globalThis.__smrtRegistryConstructorStampingPackages) {
+    globalThis.__smrtRegistryConstructorStampingPackages = new Set<string>();
   }
-  return globalThis.__smrtRegistryProvisionalIdentities;
+  return globalThis.__smrtRegistryConstructorStampingPackages;
+}
+
+/**
+ * The package a library build stamped on this exact constructor (#3490).
+ * Own property only: a subclass declared elsewhere inherits the static but is
+ * not that package's class.
+ */
+export function getStampedPackageName(ctor: unknown): string | undefined {
+  if (typeof ctor !== 'function') return undefined;
+  if (!Object.hasOwn(ctor, '__smrtPackage__')) {
+    return undefined;
+  }
+  const value = (ctor as { __smrtPackage__?: unknown }).__smrtPackage__;
+  return typeof value === 'string' && value.startsWith('@') ? value : undefined;
 }
 
 export function getInheritanceCache(): LRUCache<string, string[]> {

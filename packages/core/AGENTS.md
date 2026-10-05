@@ -105,10 +105,11 @@ and repository rules.
   a resolved table that differs first (#3106). Stack
   attribution skips smrt-core (including source-mapped installed
   `smrt-core/src` frames, #3109), decorator-helper, and module-runner frames,
-  and drops a frame's Vite `?v=` query (#3490). In bundled output an
-  unconfirmed stack identity is provisional: the declaring package's manifest
-  adopts that same-name, same-table registration instead of adding a stub
-  beside it — one class, one entry (#3490, `issue-3490-*.test.ts`).
+  and drops a frame's Vite `?v=` query (#3490). Library builds stamp each
+  decorated class with `static __smrtPackage__` (own property, read at
+  decoration as its explicit package) and publish `stampsConstructors`; an
+  unstamped class never takes a stamping package's entry by name and table,
+  in either order (#3490, `issue-3490-*.test.ts`, `package-stamp.test.ts`).
   Qualified names are `@scope/pkg:Class`; the scope is a deliberate
   discriminator, so manifest generation (`generateManifest`,
   `applyGenerationPasses`, hence `pnpm build`) throws

@@ -593,6 +593,12 @@ export interface SmartObjectManifest {
   artifactPurpose?: 'runtime' | 'test';
   moduleType?: string; // Module type identifier (e.g., "smrt") for package discovery
   smrtDependencies?: string[]; // Discovered SMRT packages from dependency tree
+  /**
+   * The package's library build stamps every decorated class it declares
+   * with `static __smrtPackage__` (#3490), so its classes carry their package
+   * identity wherever a consumer bundles them.
+   */
+  stampsConstructors?: true;
 }
 
 export interface ScanResult {

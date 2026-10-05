@@ -115,4 +115,15 @@ export interface ScannerModule {
       uiToolPrefixes?: readonly string[];
     },
   ): ScannerAgentSurface['diagnostics'];
+  /** Parse one module's source; used to locate decorated classes (#3490). */
+  parseSource(
+    sourceText: string,
+    filename?: string,
+  ): {
+    classes: Array<{
+      className: string;
+      startLine: number;
+      hasSmartDecorator: boolean;
+    }>;
+  };
 }
