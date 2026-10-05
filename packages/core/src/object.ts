@@ -2373,6 +2373,9 @@ export class SmrtObject extends SmrtClass {
     }
     const columns = prepared[0] ? Object.keys(prepared[0].data) : [];
     const conflict = prepared[0]?.conflictColumns ?? [];
+    // Partial conflict targets need the per-instance identity guard.
+    if (ObjectRegistry.getConflictPredicate(first.getResolvedQualifiedName()))
+      return false;
     const identities = new Set<string>();
     // The multi-row `DO UPDATE SET` cannot run save()'s natural-key identity
     // guard, so a conflict target that omits an ownership column present in
@@ -3043,7 +3046,11 @@ export class SmrtObject extends SmrtClass {
                 } else {
                   await this.db.upsert(
                     this.tableName,
-                    upsertConflictColumns,
+                    ObjectRegistry.getConflictPredicate(
+                      this.getResolvedQualifiedName(),
+                    )
+                      ? ['id']
+                      : upsertConflictColumns,
                     data,
                   );
                 }
@@ -3332,6 +3339,7 @@ export class SmrtObject extends SmrtClass {
     }
     const filter: Record<string, unknown> = {};
     for (const column of conflictColumns) filter[column] = data[column] ?? null;
+    this.scopePartialConflictFilter(filter, data);
     const existing = await this.readNaturalKeyRow(filter);
     if (existing && existing.id !== data.id) {
       const column =
@@ -3432,6 +3440,7 @@ export class SmrtObject extends SmrtClass {
         const value = data[column];
         filter[column] = value === undefined ? null : value;
       }
+      this.scopePartialConflictFilter(filter, data);
       return filter;
     };
     const atomic =
@@ -3452,7 +3461,10 @@ export class SmrtObject extends SmrtClass {
         // Atomic: the conflicting row vanished between the two statements;
         // try the insert again. Otherwise nothing is there to adopt.
         if (atomic) continue;
-        return derived ? 'insert' : 'upsert';
+        return derived ||
+          ObjectRegistry.getConflictPredicate(this.getResolvedQualifiedName())
+          ? 'insert'
+          : 'upsert';
       }
       if (derived) {
         // A moved slug INSERTs, so it can never take over anyone's row; no
@@ -3490,6 +3502,17 @@ export class SmrtObject extends SmrtClass {
         'The natural key kept colliding with concurrent writes; retry the save.',
       ),
     );
+  }
+
+  private scopePartialConflictFilter(
+    filter: Record<string, unknown>,
+    data: Record<string, unknown>,
+  ): void {
+    const className = this.getResolvedQualifiedName();
+    const overrides = ObjectRegistry.getSTIConflictOverrides(className);
+    if (!overrides.length) return;
+    if (overrides.includes(className)) filter._meta_type = data._meta_type;
+    else filter['_meta_type not in'] = overrides;
   }
 
   /**
@@ -3558,8 +3581,12 @@ export class SmrtObject extends SmrtClass {
       );
     }
     const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
+    const predicate = ObjectRegistry.getConflictPredicate(
+      this.getResolvedQualifiedName(),
+    );
+    const conflictWhere = predicate ? ` WHERE ${predicate}` : '';
     const result = await this.db.query(
-      `INSERT INTO ${quote(this.tableName)} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT (${conflictColumns.map(quote).join(', ')}) DO NOTHING RETURNING ${quote('id')}`,
+      `INSERT INTO ${quote(this.tableName)} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT (${conflictColumns.map(quote).join(', ')})${conflictWhere} DO NOTHING RETURNING ${quote('id')}`,
       ...values,
     );
     return (result?.rows?.length ?? 0) > 0;

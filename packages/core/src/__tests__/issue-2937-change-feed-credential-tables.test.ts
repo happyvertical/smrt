@@ -94,7 +94,7 @@ class Issue2937PublicNoteCollection extends SmrtCollection<Issue2937PublicNote> 
  * in the BASE class's table, so this pins that a `sensitive` declaration follows
  * the rows rather than the declaring class's own name.
  */
-@smrt({ tableStrategy: 'sti' })
+@smrt({ tableStrategy: 'sti', sensitive: true })
 class Issue2937StiBase extends SmrtObject {
   label: string = '';
   tenantId: string = '';

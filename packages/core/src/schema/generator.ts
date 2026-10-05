@@ -108,7 +108,10 @@ type SchemaGeneratorConfig = {
       className: string,
       fieldName: string,
     ): string | null | undefined;
-    getConfig?(className: string): { idType?: 'uuid' | 'text' };
+    getConfig?(className: string): {
+      idType?: 'uuid' | 'text';
+      conflictColumns?: string[];
+    };
     getDescendants(baseClassName: string): string[];
     getAllFields(className: string): Promise<Map<string, RegistryField>>;
     getFields?(className: string): Map<string, RegistryField>;
@@ -474,7 +477,7 @@ export class SchemaGenerator {
     const name = `${tableName}_${orderingColumns.join('_')}_idx`;
     if (indexes.some((index) => index.name === name)) return;
 
-    // No `description`: ManifestIndexDefinition has no such field, and this
+    // Omit descriptive metadata here: this
     // helper feeds the manifest paths as well as the structured ones.
     indexes.push({ name, columns: orderingColumns });
   }
@@ -547,7 +550,7 @@ export class SchemaGenerator {
     const name = `${tableName}_${ownerColumns.join('_')}_idx`;
     if (indexes.some((index) => index.name === name)) return;
 
-    // No `description`: ManifestIndexDefinition has no such field, and this
+    // Omit descriptive metadata here: this
     // helper feeds the manifest paths as well as the structured ones.
     indexes.push({ name, columns: ownerColumns });
   }
@@ -615,7 +618,7 @@ export class SchemaGenerator {
         );
       }
 
-      // No `description`: ManifestIndexDefinition has no such field, and this
+      // Omit descriptive metadata here: this
       // helper feeds the manifest paths as well as the structured ones.
       const index = {
         name: spec.name,
@@ -794,7 +797,7 @@ export class SchemaGenerator {
       const name = `${tableName}_${columnName}_idx`;
       if (indexes.some((index) => index.name === name)) continue;
 
-      // No `description`: ManifestIndexDefinition has no such field, and this
+      // Omit descriptive metadata here: this
       // helper feeds the manifest paths as well as the structured ones.
       indexes.push({ name, columns: [columnName] });
     }
@@ -976,6 +979,48 @@ export class SchemaGenerator {
         ? { nullsNotDistinct: true }
         : {}),
     });
+  }
+
+  /** Separate a child's natural key from the root's slug identity. */
+  private emitStiSubclassConflictIndexes(
+    indexes: IndexDefinition[],
+    columns: Record<string, ColumnDefinition>,
+    tableName: string,
+    overrides: Array<{ className: string; conflictColumns: string[] }>,
+  ): void {
+    overrides = overrides.filter(
+      ({ conflictColumns }) => conflictColumns.length > 0,
+    );
+    if (!overrides.length) return;
+    overrides = [...overrides].sort((a, b) =>
+      a.className < b.className ? -1 : a.className > b.className ? 1 : 0,
+    );
+    const rootIndex = indexes.find((index) => index.unique);
+    if (rootIndex) {
+      rootIndex.description = 'STI subclass conflict target';
+      rootIndex.where = overrides
+        .map(
+          ({ className }) => `_meta_type <> ${quoteStringLiteral(className)}`,
+        )
+        .join(' AND ');
+    }
+    for (const { className, conflictColumns } of overrides) {
+      if (this.conflictColumnsArePrimaryKey(conflictColumns, columns)) continue;
+      const digest = createHash('sha256')
+        .update(className)
+        .digest('hex')
+        .slice(0, 8);
+      indexes.push({
+        description: 'STI subclass conflict target',
+        name: `${tableName}_${digest}_conflict_idx`,
+        columns: conflictColumns,
+        unique: true,
+        where: `_meta_type = ${quoteStringLiteral(className)}`,
+        ...(nullableConflictIdentity(conflictColumns, columns)
+          ? { nullsNotDistinct: true }
+          : {}),
+      });
+    }
   }
 
   /**
@@ -1659,6 +1704,16 @@ export class SchemaGenerator {
     // carry a matching unique index; the migration differ repairs older
     // deployments in place by name (issue #1165, #2360).
     this.emitStiConflictIndex(indexes, columns, tableName, config);
+    this.emitStiSubclassConflictIndexes(
+      indexes,
+      columns,
+      tableName,
+      descendants.flatMap((className) => {
+        const conflictColumns =
+          ObjectRegistry.getConfig?.(className)?.conflictColumns;
+        return conflictColumns ? [{ className, conflictColumns }] : [];
+      }),
+    );
 
     // Index on type column (for polymorphic queries)
     indexes.push({
@@ -1917,6 +1972,16 @@ export class SchemaGenerator {
     // Unique conflict index (default slug, context, _meta_type; custom or
     // tenant-led per the root's config) — see generateSTISchemaFromRegistry.
     this.emitStiConflictIndex(indexes, columns, tableName, config);
+    this.emitStiSubclassConflictIndexes(
+      indexes,
+      this.convertManifestColumnsToSchemaColumns(columns),
+      tableName,
+      descendants.flatMap((className) => {
+        const conflictColumns =
+          manifest.objects[className]?.decoratorConfig?.conflictColumns;
+        return conflictColumns ? [{ className, conflictColumns }] : [];
+      }),
+    );
 
     // Index on type column (for polymorphic queries)
     indexes.push({
@@ -1984,6 +2049,7 @@ export class SchemaGenerator {
         name: idx.name,
         columns: idx.columns,
         unique: idx.unique,
+        ...(idx.description ? { description: idx.description } : {}),
         ...(idx.nullsNotDistinct ? { nullsNotDistinct: true } : {}),
         where: idx.where,
         jsonPath: idx.jsonPath,

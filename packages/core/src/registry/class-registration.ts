@@ -797,6 +797,53 @@ function anySensitive(...configs: (SmartObjectConfig | undefined)[]): boolean {
   return configs.some((config) => config?.sensitive === true);
 }
 
+/** Validate ancestry too: a raw child manifest may not carry an inherited table name. */
+function assertStiSensitivity(
+  config: SmartObjectConfig,
+  qualifiedName: string,
+  extendsName?: string,
+): void {
+  if (config.tableStrategy === 'cti') return;
+  const incoming = { config, qualifiedName, extends: extendsName };
+  const resolve = (name: string) => {
+    if (name === qualifiedName) return incoming;
+    const existing = findClass(name);
+    if (existing?.qualifiedName === qualifiedName) return incoming;
+    if (existing) return existing;
+    return name === qualifiedName.split(':').at(-1) ? incoming : undefined;
+  };
+  const rootOf = (node: typeof incoming | RegisteredClass) => {
+    let root: typeof incoming | RegisteredClass | undefined;
+    const visited = new Set<string>();
+    let current: typeof incoming | RegisteredClass | undefined = node;
+    while (current && !visited.has(current.qualifiedName ?? '')) {
+      visited.add(current.qualifiedName ?? '');
+      if (current.config.tableStrategy === 'cti') return undefined;
+      if (current.config.tableStrategy === 'sti') root = current;
+      current = current.extends ? resolve(current.extends) : undefined;
+    }
+    return root;
+  };
+  const incomingRoot = rootOf(incoming);
+  if (!incomingRoot) return;
+  for (const existing of getClasses().values()) {
+    const root = rootOf(existing);
+    if (!root || root !== incomingRoot) continue;
+    if ((existing.config.sensitive === true) !== (config.sensitive === true)) {
+      // A caller may catch registration errors; keep historical rows/signals
+      // closed even then, without accepting the invalid hierarchy.
+      const table =
+        ('schema' in root ? root.schema?.tableName : undefined) ??
+        root.config.tableName;
+      if (table) declareChangeFeedSensitiveTable(table);
+      throw new ConfigurationError(
+        `STI hierarchy ${root.qualifiedName} has mixed sensitivity; mark every class sensitive or use separate tables.`,
+        'CONFIG_STI_MIXED_SENSITIVITY',
+      );
+    }
+  }
+}
+
 function declareSensitiveTable(
   config: SmartObjectConfig,
   ...tableNames: (string | undefined)[]
@@ -933,6 +980,15 @@ function registerUntracked(
     const nextKey = nextPackageName
       ? createQualifiedName(nextPackageName, name)
       : name;
+    assertStiSensitivity(
+      {
+        ...existing.config,
+        ...config,
+        ...(anySensitive(existing.config, config) ? { sensitive: true } : {}),
+      },
+      nextKey,
+      existing.extends,
+    );
     // Capture pre-mutation identity so descendants whose `extends` still
     // references the old name/qualifiedName are caught by the post-mutation
     // invalidation sweep (#1139 Gap 2).
@@ -980,6 +1036,7 @@ function registerUntracked(
         ? { sensitive: true as const }
         : {}),
     };
+    existing.collection = existing.config.collection ?? existing.collection;
     if (!existing.schema) {
       existing.schema = {
         ddl: '',
@@ -1823,6 +1880,12 @@ function registerUntracked(
       : {}),
   };
 
+  assertStiSensitivity(
+    mergedConfig,
+    packageName ? `${packageName}:${name}` : name,
+    getConstructorIndex().get(Object.getPrototypeOf(ctor)) ?? extendsClass,
+  );
+
   // Declare from the MERGED config, not the raw one: generated consumer
   // registration passes the declaration through `manifestEntry.decoratorConfig`
   // rather than the call's own `config` (#2937). Both the resolved name and the
@@ -1865,6 +1928,7 @@ function registerUntracked(
     // no manifest entry. (smrt#1311.) An STI subtype with no manifest entry
     // takes its registered STI base's, as the manifest would (#3125).
     collection:
+      config.collection ??
       manifestEntry?.collection ??
       inheritedStiCollection(ctor) ??
       pluralizeCollection(name),
@@ -2316,7 +2380,7 @@ function mergeManifestIntoExistingRegistration(
     existing.config.tableName ||
     tableNameFromClass(existing.constructor);
 
-  existing.config = {
+  const nextConfig = {
     ...manifestConfig,
     ...existing.config,
     tableName: manifestTableName,
@@ -2325,6 +2389,12 @@ function mergeManifestIntoExistingRegistration(
       ? { sensitive: true as const }
       : {}),
   };
+  assertStiSensitivity(
+    nextConfig,
+    existing.qualifiedName || existing.name,
+    objectDef.extendsQualified ?? existing.extends ?? objectDef.extends,
+  );
+  existing.config = nextConfig;
 
   // The merge can move the recorded name onto the manifest's (#2937). Nothing
   // else on this path re-declares, so a sensitive class merged here would
@@ -2460,7 +2530,7 @@ function mergeManifestIntoExistingRegistration(
   // a class decorated before its manifest loaded registered a derived one,
   // which permission slugs and route segments would otherwise keep (#3125).
   if (objectDef.collection) {
-    existing.collection = objectDef.collection;
+    existing.collection = existing.config.collection ?? objectDef.collection;
   }
 
   existing.visibility =
@@ -2611,6 +2681,11 @@ function registerFromManifestUntracked(
   // Get config from manifest
   const config = objectDef.decoratorConfig || {};
   const tableName = config.tableName || tableNameFromClass(stubConstructor);
+  assertStiSensitivity(
+    { ...config, tableName },
+    qualifiedNameEarly || name,
+    objectDef.extendsQualified ?? objectDef.extends,
+  );
   // A manifest-only registration (a consumed package's stub) still carries the
   // credential declaration, and is often the ONLY registration a consumer app
   // performs for that class (#2937). `tableName` here is derived from
@@ -2721,7 +2796,10 @@ function registerFromManifestUntracked(
     tools: objectDef.tools, // AI-callable tool schemas (used for CLI param schemas)
     // Pluralized endpoint name; fall back to simple pluralization if a
     // (legacy) manifest lacks it. (smrt#1311.)
-    collection: objectDef.collection ?? pluralizeCollection(simpleClassName),
+    collection:
+      config.collection ??
+      objectDef.collection ??
+      pluralizeCollection(simpleClassName),
     packageName,
     sourceFilePath: objectDef.filePath, // Store source file for collision detection (Issue #555)
     replacedQualifiedNames: [...replacedQualifiedNames],

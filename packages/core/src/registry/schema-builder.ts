@@ -308,6 +308,7 @@ function withConflictIndex(
   columns: Record<string, ColumnDefinition>,
   indexes: IndexDefinition[],
   conflictColumns: string[],
+  conflictPredicate?: string,
 ): IndexDefinition[] {
   if (
     conflictColumns.length === 0 ||
@@ -367,6 +368,15 @@ function withConflictIndex(
     name,
     columns: conflictColumns,
     unique: true,
+    // Consumer subclasses may be absent from the provider's root manifest.
+    ...(conflictPredicate
+      ? {
+          where: conflictPredicate,
+          description: 'STI subclass conflict target',
+        }
+      : canonical?.description === 'STI subclass conflict target'
+        ? { where: canonical.where, description: canonical.description }
+        : {}),
     ...(nullableConflictIdentity(conflictColumns, columns)
       ? { nullsNotDistinct: true }
       : {}),
@@ -773,6 +783,18 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
         }
       }
     }
+    // Recompute from the complete runtime hierarchy, rather than whichever
+    // package happened to provide the first same-name root index.
+    const tableSchema = tableSchemas[tableName];
+    tableSchema.indexes = withConflictIndex(
+      tableName,
+      tableSchema.columns,
+      tableSchema.indexes,
+      tableSchema.conflictColumns,
+      tableSchema.isSTI
+        ? ObjectRegistry.getConflictPredicate(contributors[0].conflictKey)
+        : undefined,
+    );
   }
 
   return tableSchemas;

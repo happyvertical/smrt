@@ -3547,6 +3547,11 @@ export class ObjectRegistry {
         ? (ObjectRegistry.findClass(ownerName) ?? registered)
         : registered;
 
+    // A child may own a discriminator-scoped key on the shared table.
+    if (registered !== owner && registered.config?.conflictColumns?.length) {
+      return registered.config.conflictColumns;
+    }
+
     // Explicit config wins
     if (owner.config?.conflictColumns) {
       return owner.config.conflictColumns;
@@ -3579,6 +3584,33 @@ export class ObjectRegistry {
       tableStrategy,
       ObjectRegistry.getOwnershipTenantColumn(className),
     );
+  }
+
+  /** Subtypes with their own partial unique conflict index. */
+  static getSTIConflictOverrides(className: string): string[] {
+    if (ObjectRegistry.getTableStrategy(className) !== 'sti') return [];
+    const root = ObjectRegistry.getSTIBase(className);
+    if (!root) return [];
+    return ObjectRegistry.getDescendants(root)
+      .filter((name) =>
+        Boolean(
+          ObjectRegistry.findClass(name)?.config?.conflictColumns?.length,
+        ),
+      )
+      .sort();
+  }
+
+  /** SQL predicate shared by partial conflict indexes and atomic insert targets. */
+  static getConflictPredicate(className: string): string | undefined {
+    const overrides = ObjectRegistry.getSTIConflictOverrides(className);
+    const qualified =
+      ObjectRegistry.findClass(className)?.qualifiedName ?? className;
+    const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+    if (overrides.includes(qualified))
+      return `_meta_type = ${quote(qualified)}`;
+    return overrides.length
+      ? overrides.map((name) => `_meta_type <> ${quote(name)}`).join(' AND ')
+      : undefined;
   }
 
   /**

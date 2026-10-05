@@ -438,6 +438,21 @@ describe('extractIndexPredicate', () => {
     ).toBe("_meta_type='ClassA'");
   });
 
+  it.each([
+    'NULLS NOT DISTINCT',
+    'NULLS DISTINCT',
+  ])('extracts PostgreSQL partial predicates after %s (#3456)', (nullSemantics) => {
+    expect(
+      extractIndexPredicate(
+        `CREATE UNIQUE INDEX idx ON public.t USING btree (tenant_id, context) ${nullSemantics} WHERE ((_meta_type)::text <> 'Holiday'::text) AND ((_meta_type)::text <> 'TimeOff'::text)`,
+      ),
+    ).toBe(
+      normalizeIndexPredicate(
+        "_meta_type <> 'Holiday' AND _meta_type <> 'TimeOff'",
+      ),
+    );
+  });
+
   it('returns empty string for a non-partial index', () => {
     expect(extractIndexPredicate('CREATE INDEX idx ON t(owner_id)')).toBe('');
   });
