@@ -94,3 +94,65 @@ remains in the existing opt-in `test:postgres` lane; this UI does not alter it.
 `visibleFields` optionally limits the logical `ExpenseDraftValues` fields rendered by `ExpenseForm`. Omitted renders all existing fields; an empty array renders none. Excluded fields do not emit hidden fallbacks, including `correctionReason`; fixed values can be supplied explicitly through `hiddenFields` without duplicate names. This supports policy-fixed payer fields and domain-owned reference selectors. Visibility is presentation, never authority: endpoints must validate every fixed or submitted value. Unknown retained values and validation errors remain visible for included fields.
 
 Composition validation: native Svelte SSR contracts cover defaults, omitted fields, retained malformed values, caller identity, no duplicate fixed inputs, correction/read-only/pending behavior. No persistence, transaction, tenant authority or external provider changes occur; those matrix dimensions are N/A for this presentation-only extension. Node26/Svelte5 native POST markup is the supported runtime edge.
+
+## Cost-object lifecycle (#3462)
+
+The existing #3423/#3429 entry and review controls are extended with
+`ExpenseList`, `ExpenseReceiptCapture` and `ExpenseReviewQueue` in the same
+`./svelte` export. Their registry slots are `expense-list`,
+`expense-receipt-capture` and `expense-review-queue`; named Props and row types
+are public. The playground composes these with the existing controls.
+
+`ExpenseForm` defaults to an optional touch keypad beside amount entry. It is
+available after hydration, with ordinary text/keyboard entry and native POST
+available without JavaScript. `amountKeypad=false` hides it. Digits, decimal and
+backspace edit the exact currency-unit string at its selection; no parsing or
+rounding occurs. The server validates currency precision and safe minor units.
+`costObject={{ type, id }}` enables two editable native reference inputs, with
+`costObjectFields` name adapters and `costObjectErrors` retained server errors.
+Omit it when references are fixed in `hiddenFields` (the existing consumer
+contract). Do not supply the same reference both ways. Qualified type and bare
+id are caller strings and must be validated/authorized by the endpoint.
+
+`ExpenseList` takes caller-authorized `ExpenseListItem[]` plus exact
+`costObjectType`/`costObjectId`; both keys must match. It displays each amount
+in its own currency, never sums different currencies, and retains unknown
+`statusLabel`, optional `note`, authorized `href`, empty and load-error states.
+Filtering is presentation only: do not pass unauthorized rows to the browser.
+
+`ExpenseReceiptCapture` is a separate multipart POST action, with
+`canAttach=false` by default. `fileField` defaults to `receipt`, submitter to
+`intent=attach-receipt`. It forwards `hiddenFields` exactly, including the
+expense and caller-owned request tokens. A native file picker works without
+JavaScript; “Use camera” mounts the existing smrt-ui `CameraCapture` only after
+an explicit click. Capture/retake/commit and stream cleanup are owned by that
+shared component. Toggle back to file selection to recover from camera denial
+or unsupported APIs. Switching modes discards the previous file; selection is
+never uploaded automatically. Pending prevents another upload or mode change;
+a committed camera photo remains held for retry. Navigation cannot restore
+file inputs: select the file again after a failed upload or page reload. The
+server authenticates, validates file content/limits and expense visibility,
+stores the Asset and uses `ExpenseReceiptCollection.attachReceipt()` with its
+duplicate guard; this component performs no storage, deduplication or model
+mutation. Do not place this component inside another form.
+
+`ExpenseReviewQueue` takes authorized `ExpenseReviewQueueItem[]` in caller order.
+Decisions require both queue `canReview=true`, row `canReview=true`, and a row
+`action` (empty string explicitly means this page). Each row posts its own
+`expenseId`, retained `reason`, hidden request context and clicked
+`intent=approve|reject`. Field and intent names are configurable. Rejection
+requires a reason in native browser validation; approval bypasses that browser
+requirement. The server must enforce the reason and reauthorize/reload before
+calling `review()` or `reject()`; these UI gates provide no authority. Return
+row `reason`, `message` and original request tokens after rejection or an
+uncertain outcome. Pending disables decisions. No action is inferred from
+status, no submitted row is removed optimistically, and no request key rotates.
+Avoid collisions between hidden field names and component identity/reason/intent
+fields. Empty, read-only, unknown status and load-error states remain visible.
+
+Lifecycle evidence is in the maintained `test:ui` SSR contracts and `test:e2e`
+Chromium proofs: 390px keypad, exact cost-object payload, native multipart file
+selection with and without JavaScript, camera denial recovery, and native queue
+approve/reject with retained reason and row request identity. Persistence,
+transaction affinity and tenant authorization remain existing server contracts;
+no database/model surface is changed by these presentation components.

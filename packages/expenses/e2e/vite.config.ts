@@ -4,7 +4,26 @@ export default defineConfig({
   plugins: [svelte(), {
     name: 'expense-native-proof',
     configureServer(server) {
+      let receiptBody = '';
       server.middlewares.use(async (request, response, next) => {
+        if (request.url === '/receipt-proof') {
+          response.setHeader('Content-Type', 'application/json');
+          response.end(JSON.stringify({ body: receiptBody }));
+          return;
+        }
+        if (request.url === '/native-lifecycle' || request.url === '/queue-review' || request.url === '/attach') {
+          try {
+            const { lifecyclePage } = await server.ssrLoadModule('/e2e/ssr.ts');
+            const chunks: Buffer[] = [];
+            if (request.method === 'POST') for await (const chunk of request) chunks.push(Buffer.from(chunk));
+            if (request.url === '/attach') receiptBody = Buffer.concat(chunks).toString('latin1');
+            const data = new URLSearchParams(Buffer.concat(chunks).toString());
+            response.statusCode = request.method === 'POST' ? 422 : 200;
+            response.setHeader('Content-Type', 'text/html; charset=utf-8');
+            response.end(await lifecyclePage(data.get('reason') ?? '', request.method === 'POST' ? 'Decision denied; reason retained' : ''));
+          } catch (error) { next(error as Error); }
+          return;
+        }
         const review = request.url === '/native-review' || (request.url === '/e2e/index.html?review=1' && request.method === 'POST');
         if (!review && request.url !== '/native' && request.url !== '/save') return next();
         try {

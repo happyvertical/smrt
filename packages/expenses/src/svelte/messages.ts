@@ -1,5 +1,23 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 export const expenseMessages = defineMessages({
+  'expenses.form.costObjectType': 'Cost object type',
+  'expenses.form.costObjectId': 'Cost object reference',
+  'expenses.keypad.open': 'Amount keypad',
+  'expenses.keypad.delete': 'Delete last character',
+  'expenses.keypad.decimal': 'Decimal point',
+  'expenses.receipt.title': 'Attach receipt',
+  'expenses.receipt.camera': 'Use camera',
+  'expenses.receipt.file': 'Receipt file',
+  'expenses.receipt.save': 'Attach receipt',
+  'expenses.receipt.reselect':
+    'After a failed upload or page reload, select the file again. The server must confirm attachment before it is considered saved.',
+  'expenses.list.title': 'Expenses',
+  'expenses.list.empty': 'No expenses for this cost object.',
+  'expenses.queue.title': 'Expense review queue',
+  'expenses.queue.empty': 'No expenses awaiting review.',
+  'expenses.queue.reason': 'Rejection reason',
+  'expenses.queue.approve': 'Approve expense',
+  'expenses.queue.reject': 'Reject expense',
   'expenses.form.title': 'Record expense',
   'expenses.form.amount': 'Amount',
   'expenses.form.currency': 'Currency',

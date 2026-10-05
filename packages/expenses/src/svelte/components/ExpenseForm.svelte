@@ -11,12 +11,17 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { expenseMessages as M } from '../messages.js';
 import type { ExpenseDraftValues, ExpenseFormProps } from '../types.js';
+import ExpenseAmountInput from './ExpenseAmountInput.svelte';
 /** Native expense entry preserving every caller-owned submitted value. */
 export interface Props extends ExpenseFormProps {}
 let {
   action,
   values,
   id,
+  costObject,
+  costObjectFields = {},
+  costObjectErrors = {},
+  amountKeypad = true,
   title,
   canEdit = true,
   correcting = false,
@@ -68,13 +73,23 @@ function name(field: keyof ExpenseDraftValues) {
       <fieldset disabled={!canEdit}>
         {#each textFields.filter(visible) as field}
           <FormGroup id={`${formId}-${field}`} label={t(M[`expenses.form.${field}`])} error={errors[field]} hint={field === 'amount' ? t(M['expenses.form.amount_help']) : field === 'incurredOn' ? t(M['expenses.form.date_help']) : undefined}>
-            {#if field === 'currency'}
+            {#if field === 'amount'}
+              <ExpenseAmountInput name={name(field)} value={values[field]} keypad={amountKeypad} disabled={!canEdit} />
+            {:else if field === 'currency'}
               <CurrencySelect name={name(field)} value={values[field]} options={currencyOptions} locale={i18n.locale} readOnly={!canEdit} />
             {:else}
-              <Input name={name(field)} value={values[field]} inputmode={field === 'amount' ? 'decimal' : undefined} />
+              <Input name={name(field)} value={values[field]} />
             {/if}
           </FormGroup>
         {/each}
+        {#if costObject}
+          <FormGroup id={`${formId}-costObjectType`} label={t(M['expenses.form.costObjectType'])} error={costObjectErrors.type}>
+            <Input name={costObjectFields.type ?? 'costObjectType'} value={costObject.type} />
+          </FormGroup>
+          <FormGroup id={`${formId}-costObjectId`} label={t(M['expenses.form.costObjectId'])} error={costObjectErrors.id}>
+            <Input name={costObjectFields.id ?? 'costObjectId'} value={costObject.id} />
+          </FormGroup>
+        {/if}
         {#if visible('description')}
         <FormGroup id={`${formId}-description`} label={t(M['expenses.form.description'])} error={errors.description}>
           <Textarea name={name('description')} value={values.description} />
