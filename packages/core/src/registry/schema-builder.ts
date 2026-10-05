@@ -4,6 +4,7 @@
  * Extracted from registry.ts as part of issue #1006.
  */
 
+import { createHash } from 'node:crypto';
 import { ConfigurationError } from '../errors';
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
@@ -308,6 +309,7 @@ function withConflictIndex(
   columns: Record<string, ColumnDefinition>,
   indexes: IndexDefinition[],
   conflictColumns: string[],
+  conflictPredicate?: string,
 ): IndexDefinition[] {
   if (
     conflictColumns.length === 0 ||
@@ -367,6 +369,15 @@ function withConflictIndex(
     name,
     columns: conflictColumns,
     unique: true,
+    // Consumer subclasses may be absent from the provider's root manifest.
+    ...(conflictPredicate
+      ? {
+          where: conflictPredicate,
+          description: 'STI subclass conflict target',
+        }
+      : canonical?.description === 'STI subclass conflict target'
+        ? { where: canonical.where, description: canonical.description }
+        : {}),
     ...(nullableConflictIdentity(conflictColumns, columns)
       ? { nullsNotDistinct: true }
       : {}),
@@ -712,7 +723,8 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
 
   for (const [tableName, contributors] of contributorsByTable) {
     assertSingleTableFamily(tableName, contributors);
-    for (const contributor of sortTableContributors(contributors)) {
+    const orderedContributors = sortTableContributors(contributors);
+    for (const contributor of orderedContributors) {
       const { registered, simpleName, isSTI } = contributor;
       const conflictColumns = ObjectRegistry.getConflictColumns(
         contributor.conflictKey,
@@ -771,6 +783,57 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
             existingNames.add(index.name);
           }
         }
+      }
+    }
+    // Recompute from the complete runtime hierarchy, rather than whichever
+    // package happened to provide the first same-name root index.
+    const tableSchema = tableSchemas[tableName];
+    tableSchema.indexes = withConflictIndex(
+      tableName,
+      tableSchema.columns,
+      tableSchema.indexes,
+      tableSchema.conflictColumns,
+      tableSchema.isSTI
+        ? ObjectRegistry.getConflictPredicate(
+            orderedContributors[0].conflictKey,
+          )
+        : undefined,
+    );
+    if (tableSchema.isSTI) {
+      // Raw registrations may have no generated schema at all. Excluding a
+      // child from the root key requires its replacement constraint here too.
+      for (const className of ObjectRegistry.getSTIConflictOverrides(
+        orderedContributors[0].conflictKey,
+      )) {
+        const conflictColumns = ObjectRegistry.getConflictColumns(className);
+        const primaryKeys = Object.entries(tableSchema.columns)
+          .filter(([, column]) => column.primaryKey)
+          .map(([name]) => name);
+        if (
+          primaryKeys.length === conflictColumns.length &&
+          primaryKeys.every((name) => conflictColumns.includes(name))
+        )
+          continue;
+        const digest = createHash('sha256')
+          .update(className)
+          .digest('hex')
+          .slice(0, 8);
+        const name = shortenIdentifier(`${tableName}_${digest}_conflict_idx`);
+        const childIndex: IndexDefinition = {
+          name,
+          columns: conflictColumns,
+          unique: true,
+          description: 'STI subclass conflict target',
+          where: ObjectRegistry.getConflictPredicate(className),
+          ...(nullableConflictIdentity(conflictColumns, tableSchema.columns)
+            ? { nullsNotDistinct: true }
+            : {}),
+        };
+        const existing = tableSchema.indexes.findIndex(
+          (index) => index.name === name,
+        );
+        if (existing >= 0) tableSchema.indexes[existing] = childIndex;
+        else tableSchema.indexes.push(childIndex);
       }
     }
   }

@@ -39,6 +39,8 @@ export default defineConfig({
       '**/dist/**',
       '**/docs/**',
       '**/*.d.ts',
+      // Class definitions shared by the SQLite/PG suites; no standalone suite.
+      'src/__tests__/issue-3456-sti-persistence.fixture.test.ts',
       '**/coverage/**',
       // Cross-package integration tests that traverse the entire monorepo.
       // These are run locally or in a dedicated CI step, not in sharded runs.

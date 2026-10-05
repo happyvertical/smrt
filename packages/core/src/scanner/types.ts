@@ -255,6 +255,8 @@ export interface ManifestColumnDefinition {
  * Pre-generated schema index definition for manifest
  */
 export interface ManifestIndexDefinition {
+  /** Optional generated index purpose, preserved across materialization. */
+  description?: string;
   name: string;
   columns: string[];
   unique?: boolean;

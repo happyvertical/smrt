@@ -21,6 +21,15 @@ export class DuckDBStrategy extends BaseDDLStrategy {
   readonly engine: DatabaseEngine = 'duckdb';
 
   override generateCreateTable(schema: SchemaDefinition): string {
+    if (
+      schema.indexes.some(
+        (index) => index.description === 'STI subclass conflict target',
+      )
+    ) {
+      throw new Error(
+        '[DDL:duckdb] STI subclass conflict keys require partial unique indexes; use PostgreSQL or SQLite.',
+      );
+    }
     const foreignKeys = schemaForeignKeysForEngine(schema, this.engine).map(
       (foreignKey) => {
         if (foreignKey.referencesTable === schema.tableName) {

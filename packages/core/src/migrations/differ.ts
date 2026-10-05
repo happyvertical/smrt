@@ -410,10 +410,12 @@ function normalizeNonLiteralPredicateRun(run: string): string {
  * `pg_indexes.indexdef`. Returns '' for a non-partial index.
  */
 export function extractIndexPredicate(createIndexSql: string): string {
-  // The predicate is the tail after the column-list ')': `... (cols) WHERE x`.
-  // Anchoring on `) WHERE` (rather than a bare `WHERE`) avoids matching a
-  // column literally named "where" inside the indexed column list.
-  const match = createIndexSql.match(/\)\s*WHERE\s+([\s\S]+?)\s*;?\s*$/i);
+  // PostgreSQL can render NULLS [NOT] DISTINCT between the column list and WHERE.
+  // Anchor on the column-list close rather than a bare WHERE, which could be
+  // an indexed column's name.
+  const match = createIndexSql.match(
+    /\)\s*(?:NULLS\s+(?:NOT\s+)?DISTINCT\s*)?WHERE\s+([\s\S]+?)\s*;?\s*$/i,
+  );
   if (!match) return '';
   return normalizeIndexPredicate(match[1]);
 }
@@ -648,6 +650,8 @@ export class SchemaComparer {
   async compare(
     manifestSchemas: Record<string, SchemaDefinition>,
   ): Promise<SchemaDiff> {
+    for (const schema of Object.values(manifestSchemas))
+      this.assertStiConflictSupport(schema);
     const diff: SchemaDiff = {
       added_tables: [],
       dropped_tables: [],
@@ -768,14 +772,27 @@ export class SchemaComparer {
     }
   }
 
-  /**
-   * Compare a single table's schema to manifest
-   */
+  /** Reject unsupported identities before introspection or migration planning. */
+  private assertStiConflictSupport(schema: SchemaDefinition): void {
+    if (
+      !this.supportsPartialIndexes() &&
+      schema.indexes.some(
+        (index) => index.description === 'STI subclass conflict target',
+      )
+    ) {
+      throw new Error(
+        `[SchemaComparer:${this.engine}] STI subclass conflict keys require partial unique indexes; use PostgreSQL or SQLite.`,
+      );
+    }
+  }
+
+  /** Compare a single table's schema to manifest. */
   async compareTable(
     tableName: string,
     manifest: SchemaDefinition,
     manifestSchemas: Record<string, SchemaDefinition> = {},
   ): Promise<SchemaChange[]> {
+    this.assertStiConflictSupport(manifest);
     const changes: SchemaChange[] = [];
     this.batchIndexes.delete(tableName);
     // #3008: single-column unique targets (unique indexes / conflict
