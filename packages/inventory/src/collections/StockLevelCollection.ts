@@ -51,6 +51,21 @@ export class StockLevelCollection extends SmrtCollection<StockLevel> {
   }
 
   /**
+   * Available rows strictly below their configured reorder point.
+   * Reads use the public collection pipeline to preserve tenant filtering.
+   */
+  async findBelowReorderPoint(locationId?: string): Promise<StockLevel[]> {
+    const where: Record<string, unknown> = { state: 'available' };
+    if (locationId !== undefined) where.locationId = locationId;
+    const levels = await this.list({ where });
+    return levels.filter(
+      (level) =>
+        level.reorderPoint !== null &&
+        Number(level.qty) < Number(level.reorderPoint),
+    );
+  }
+
+  /**
    * Sum `qty` across all level rows for the given SKU. Pass `state` to
    * narrow the sum to one logical state (e.g. only `available`);
    * omit it for grand total across all states.

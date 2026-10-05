@@ -86,6 +86,102 @@ describe('StockService', () => {
     }
   });
 
+  describe('reorder policy and actors', () => {
+    it('stores decimal settings independently of balance and queries strict available thresholds', async () => {
+      await service.setReorderPolicy(skuA, warehouse, 4.5, 10.25);
+      expect(await movements.findBySku(skuA)).toHaveLength(0);
+      expect(await levels.findBelowReorderPoint()).toHaveLength(1);
+      expect(await levels.findBelowReorderPoint(store)).toHaveLength(0);
+      await service.receive(skuA, warehouse, 4.5);
+      expect(await levels.findBelowReorderPoint()).toHaveLength(0);
+      await service.reserve(skuA, warehouse, 1);
+      const low = await levels.findBelowReorderPoint(warehouse);
+      expect(low).toHaveLength(1);
+      expect(low[0].state).toBe('available');
+      expect(Number(low[0].reorderQuantity)).toBe(10.25);
+      await service.receive(skuA, store, 1);
+      expect(await levels.findBelowReorderPoint(store)).toHaveLength(0);
+      await service.setReorderPolicy(skuA, warehouse, null);
+      expect(await levels.findBelowReorderPoint()).toHaveLength(0);
+      expect(
+        (await levels.getLevel(skuA, warehouse))?.reorderQuantity,
+      ).toBeNull();
+    });
+
+    it('rejects malformed settings without creating rows and rolls back composed metadata writes', async () => {
+      for (const value of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        await expect(
+          service.setReorderPolicy(skuA, warehouse, value),
+        ).rejects.toThrow('non-negative');
+        await expect(
+          service.setReorderPolicy(skuA, warehouse, 1, value),
+        ).rejects.toThrow('non-negative');
+      }
+      expect(await levels.getLevel(skuA, warehouse)).toBeNull();
+      await expect(
+        service.withTransaction(async (tx) => {
+          await tx.setReorderPolicy(skuA, warehouse, 3);
+          throw new Error('rollback policy');
+        }),
+      ).rejects.toThrow('rollback policy');
+      expect(await levels.getLevel(skuA, warehouse)).toBeNull();
+      await service.setReorderPolicy(skuA, warehouse, 0);
+      expect(await levels.findBelowReorderPoint()).toHaveLength(0);
+    });
+
+    it('propagates actors through every mutation and both transfer legs', async () => {
+      const actorProfileId = randomUUID();
+      const options = { actorProfileId };
+      await service.receive(skuA, warehouse, 20, options);
+      await service.reserve(skuA, warehouse, 5, options);
+      await service.release(skuA, warehouse, 1, options);
+      await service.fulfill(skuA, warehouse, 2, options);
+      await service.transfer(skuA, warehouse, store, 3, options);
+      await service.adjust(skuA, warehouse, -1, options);
+      const audit = await movements.findBySku(skuA);
+      expect(audit).toHaveLength(7);
+      expect(audit.every((row) => row.actorProfileId === actorProfileId)).toBe(
+        true,
+      );
+      await expect(
+        service.adjust(skuA, warehouse, -1000, options),
+      ).rejects.toThrow(InsufficientStockError);
+      expect(await movements.findBySku(skuA)).toHaveLength(7);
+      await service.adjust(skuA, store, 1);
+      expect(
+        (await movements.findBySku(skuA)).filter(
+          (row) => row.actorProfileId === null,
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('keeps reorder queries and updates inside the active tenant', async () => {
+      enableTenancy();
+      const tenantA = randomUUID();
+      const tenantB = randomUUID();
+      try {
+        await withTenant({ tenantId: tenantA }, async () => {
+          await service.setReorderPolicy(skuA, warehouse, 5);
+          expect(await levels.findBelowReorderPoint()).toHaveLength(1);
+        });
+        await withTenant({ tenantId: tenantB }, async () => {
+          expect(await levels.findBelowReorderPoint()).toHaveLength(0);
+          await service.setReorderPolicy(skuA, warehouse, 9);
+          expect(
+            Number((await levels.findBelowReorderPoint())[0].reorderPoint),
+          ).toBe(9);
+        });
+        await withTenant({ tenantId: tenantA }, async () => {
+          expect(
+            Number((await levels.findBelowReorderPoint())[0].reorderPoint),
+          ).toBe(5);
+        });
+      } finally {
+        disableTenancy();
+      }
+    });
+  });
+
   describe('receive', () => {
     it('increments available stock and writes a receipt movement', async () => {
       await service.receive(skuA, warehouse, 50, {

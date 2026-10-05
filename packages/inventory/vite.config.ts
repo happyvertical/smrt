@@ -1,3 +1,3 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
-export default createPackageConfig('inventory');
+export default createPackageConfig('inventory', { svelte: 'svelte' });

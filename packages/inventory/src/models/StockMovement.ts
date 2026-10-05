@@ -22,6 +22,7 @@
  */
 
 import {
+  crossPackageRef,
   field,
   SmrtObject,
   type SmrtObjectOptions,
@@ -43,6 +44,7 @@ export interface StockMovementOptions extends SmrtObjectOptions {
   reasonCode?: StockMovementReason;
   sourceType?: string;
   sourceId?: string;
+  actorProfileId?: string | null;
   note?: string;
   occurredAt?: Date | string;
 }
@@ -118,6 +120,10 @@ export class StockMovement extends SmrtObject {
    */
   sourceId: string = '';
 
+  /** Profile responsible for this movement; null for unattributed automation. */
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+  actorProfileId: string | null = null;
+
   /** Optional free-form note shown in audit UIs. */
   note: string = '';
 
@@ -138,6 +144,8 @@ export class StockMovement extends SmrtObject {
     if (options.reasonCode !== undefined) this.reasonCode = options.reasonCode;
     if (options.sourceType !== undefined) this.sourceType = options.sourceType;
     if (options.sourceId !== undefined) this.sourceId = options.sourceId;
+    if (options.actorProfileId !== undefined)
+      this.actorProfileId = options.actorProfileId;
     if (options.note !== undefined) this.note = options.note;
     if (options.occurredAt !== undefined) {
       this.occurredAt =

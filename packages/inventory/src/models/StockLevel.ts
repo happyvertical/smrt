@@ -34,6 +34,8 @@ export interface StockLevelOptions extends SmrtObjectOptions {
   locationId?: string;
   state?: StockState;
   qty?: number;
+  reorderPoint?: number | null;
+  reorderQuantity?: number | null;
 }
 
 @TenantScoped({ mode: 'optional' })
@@ -77,6 +79,14 @@ export class StockLevel extends SmrtObject {
   @field({ type: 'decimal' })
   qty: number = 0.0;
 
+  /** Available-stock threshold; null disables reorder monitoring. */
+  @field({ type: 'decimal', nullable: true })
+  reorderPoint: number | null = null;
+
+  /** Optional suggested replenishment quantity, independent of stock balance. */
+  @field({ type: 'decimal', nullable: true })
+  reorderQuantity: number | null = null;
+
   constructor(options: StockLevelOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -84,5 +94,9 @@ export class StockLevel extends SmrtObject {
     if (options.locationId !== undefined) this.locationId = options.locationId;
     if (options.state !== undefined) this.state = options.state;
     if (options.qty !== undefined) this.qty = options.qty;
+    if (options.reorderPoint !== undefined)
+      this.reorderPoint = options.reorderPoint;
+    if (options.reorderQuantity !== undefined)
+      this.reorderQuantity = options.reorderQuantity;
   }
 }
