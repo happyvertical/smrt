@@ -119,3 +119,19 @@ Every `StockMovement` carries `sourceType` + `sourceId` so downstream queries ca
 | `CycleCount` | (your code) | Adjustments from physical counts |
 | `TransferOrder` | (your code) | Both legs of a transfer |
 | `ProductionOrder` | `smrt-manufacturing` (issue #1250) | Materials consumed + finished goods produced |
+
+## Replenishment and browser components
+
+`StockService.setReorderPolicy()` is the sanctioned metadata writer for nullable
+`StockLevel.reorderPoint` / `reorderQuantity` on the available SKU/location row.
+It does not change quantity or emit a movement. `findBelowReorderPoint()` uses
+public tenant-filtered collection reads and strict less-than semantics.
+`StockMutationOptions.actorProfileId` propagates to every movement, including
+both transfer legs; null retains compatibility for automation. It is a qualified
+cross-package profile reference, not an authorization decision.
+
+`src/svelte/` exports data-driven components through `./svelte`. Server callers
+own authentication and persistence callbacks; never import backend models into
+this entry or expose ledger mutations as CRUD. Package `typecheck` includes
+Svelte checks and `test` includes DOM component tests. See README for the public
+props, service contracts, and additive schema upgrade requirements.

@@ -1,8 +1,10 @@
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 import { smrtVitestPlugin } from '../vitest/src/index.ts';
 
 export default defineConfig({
-  plugins: [smrtVitestPlugin({ verbose: true })],
+  plugins: [smrtVitestPlugin({ verbose: true }), svelte()],
+  resolve: { conditions: ['browser'] },
   test: {
     globals: true,
     environment: 'node',
@@ -10,6 +12,7 @@ export default defineConfig({
     testTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
+    setupFiles: ['@happyvertical/smrt-vitest/svelte-setup'],
     coverage: { provider: 'v8', reporter: ['text', 'json', 'html'] },
   },
 });
