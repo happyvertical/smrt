@@ -88,6 +88,8 @@ declare global {
     | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryDiscoveryAttemptCache: Map<string, boolean> | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryProvisionalIdentities: WeakSet<RegisteredClass> | undefined;
 }
 
 /**
@@ -358,6 +360,24 @@ export function getConstructorIndex(): WeakMap<SmrtObjectConstructor, string> {
     >();
   }
   return globalThis.__smrtRegistryConstructorIndex;
+}
+
+/**
+ * Registrations whose package identity is provisional (#3490): the package
+ * came only from the declaring file's stack frame, that file is bundled
+ * output, and nothing confirmed it — no explicit `packageName`, no
+ * registration manifest, and no loaded manifest describing the class. In
+ * bundled output the stack names the bundle's package, so the declaring
+ * package's manifest adopts such a registration when it arrives
+ * (`registerFromManifest`). Explicit re-registration confirms the identity
+ * and removes the entry from this set.
+ */
+export function getProvisionalIdentities(): WeakSet<RegisteredClass> {
+  if (!globalThis.__smrtRegistryProvisionalIdentities) {
+    globalThis.__smrtRegistryProvisionalIdentities =
+      new WeakSet<RegisteredClass>();
+  }
+  return globalThis.__smrtRegistryProvisionalIdentities;
 }
 
 export function getInheritanceCache(): LRUCache<string, string[]> {

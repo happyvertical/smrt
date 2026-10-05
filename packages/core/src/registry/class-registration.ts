@@ -81,6 +81,7 @@ import {
   getConstructorTenantScopedDeclarations,
   getInheritanceCache,
   getLegacyFieldDecorators,
+  getProvisionalIdentities,
   getSourceFileFromStack,
   getStiSiblingsLoaded,
   verboseLog,
@@ -961,6 +962,8 @@ function registerUntracked(
 
     existing.name = name;
     existing.packageName = nextPackageName;
+    // An explicit package confirms a provisional bundle identity (#3490).
+    if (explicitPackageName) getProvisionalIdentities().delete(existing);
     bumpRegistryGeneration();
     existing.qualifiedName = nextPackageName
       ? (createQualifiedName(nextPackageName, name) as QualifiedClassName)
@@ -1901,6 +1904,20 @@ function registerUntracked(
     });
   }
   getClasses().set(registrationKey, registration);
+  // #3490: in bundled output the stack names the bundle's package, not the
+  // declaring one. An identity nothing else confirmed is provisional until
+  // the declaring package's manifest adopts it (`registerFromManifest`).
+  if (
+    newInBundledContext &&
+    packageName &&
+    packageName === stackPackageName &&
+    !explicitPackageName &&
+    !config._manifest &&
+    !ownPackageDeclaresClass &&
+    !manifestEntry?.packageName
+  ) {
+    getProvisionalIdentities().add(registration);
+  }
 
   // Release B (#1133): case-insensitive lookups iterate the classes Map
   // directly instead of maintaining a parallel classNameMap index.
@@ -2441,6 +2458,9 @@ function mergeManifestIntoExistingRegistration(
       packageName,
       existing.name,
     ) as QualifiedClassName;
+    // A package manifest now describes the class: its identity is confirmed
+    // and no other manifest may adopt it (#3490).
+    getProvisionalIdentities().delete(existing);
   } else if (!existing.packageName && objectDef.packageName) {
     existing.packageName = objectDef.packageName;
   }
@@ -2466,6 +2486,99 @@ function mergeManifestIntoExistingRegistration(
   existing.visibility =
     objectDef.visibility || manifestConfig.visibility || existing.visibility;
   invalidateInheritanceEntries(existing);
+}
+
+/**
+ * #3490: a package manifest adopts the registration of a class it declares
+ * when that class was decorated first, in bundled output, under the bundle's
+ * package — a provisional identity (see `getProvisionalIdentities`). A server
+ * bundle that inlines a dependency evaluates a class before the package's
+ * `__smrt-register__` whenever the bundler orders the class's chunk first
+ * (smrt-agents' `AgentConfig` sits in a shared chunk its index imports before
+ * its own registration). Without adoption the class kept the bundle's package
+ * and the manifest registered a stub beside it: one class, two entries, so
+ * every generated surface listed it twice and MCP refused a duplicate tool.
+ *
+ * Invariant: one class, one entry, under the package whose manifest declares
+ * it. Adoption requires the evidence the decorator path uses for the reverse
+ * order (`manifest-stub-replacement`): the same simple name and the same
+ * table. A same-named class on another table is a different class and still
+ * coexists (#3106); a confirmed identity is never adopted.
+ *
+ * @returns true when the manifest entry was folded into an adopted
+ *   registration and needs no registration of its own.
+ */
+function adoptProvisionalRegistration(
+  className: string,
+  objectDef: SmartObjectDefinition,
+  packageName: string | undefined,
+  registrationKey: string,
+): boolean {
+  if (!packageName) return false;
+  const manifestTable =
+    objectDef.schema?.tableName || objectDef.decoratorConfig?.tableName;
+  if (!manifestTable) return false;
+
+  const provisional = getProvisionalIdentities();
+  const keysByEntry = new Map<RegisteredClass, string[]>();
+  for (const [key, entry] of getClasses()) {
+    if (
+      !provisional.has(entry) ||
+      entry.name !== className ||
+      entry.packageName === packageName ||
+      (entry.schema?.tableName || entry.config.tableName) !== manifestTable
+    ) {
+      continue;
+    }
+    keysByEntry.set(entry, [...(keysByEntry.get(entry) ?? []), key]);
+  }
+  if (keysByEntry.size !== 1) return false;
+  const [[existing, existingKeys]] = keysByEntry;
+
+  const occupant = getClasses().get(registrationKey);
+  const occupantIsStub =
+    !!occupant &&
+    (occupant.constructor as { _isManifestStub?: boolean })._isManifestStub ===
+      true;
+  if (occupant && occupant !== existing && !occupantIsStub) return false;
+
+  const previousIdentity = {
+    name: existing.name,
+    qualifiedName: existing.qualifiedName as string | undefined,
+  };
+  assertQualifiedNameAliasesAvailable(
+    registrationKey,
+    {
+      ...existing,
+      packageName,
+      qualifiedName: createQualifiedName(
+        packageName,
+        className,
+      ) as QualifiedClassName,
+    },
+    existing,
+  );
+  // Sets the manifest's package, qualified name, parent and schema on the
+  // live entry; validates before it mutates.
+  mergeManifestIntoExistingRegistration(existing, objectDef, packageName);
+  provisional.delete(existing);
+
+  const classes = getClasses();
+  if (occupant && occupant !== existing) classes.delete(registrationKey);
+  for (const key of existingKeys) {
+    if (key === registrationKey) continue;
+    transferRuntimeOverride(key, registrationKey);
+    classes.delete(key);
+  }
+  classes.set(registrationKey, existing);
+  getConstructorIndex().set(existing.constructor, registrationKey);
+  setSmrtQualifiedName(existing.constructor, existing.qualifiedName);
+  invalidateInheritanceEntries(existing, previousIdentity);
+
+  verboseLog(
+    `[registry] ${registrationKey} adopted the bundled registration ${existingKeys.join(', ')} (#3490)`,
+  );
+  return true;
 }
 
 export function registerFromManifest(
@@ -2517,6 +2630,17 @@ function registerFromManifestUntracked(
   const replacedQualifiedNames = new Set<string>();
   const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
   recordSubtypeParent(registrationKey, manifestParent);
+
+  if (
+    adoptProvisionalRegistration(
+      simpleClassName,
+      objectDef,
+      packageName,
+      registrationKey,
+    )
+  ) {
+    return;
+  }
 
   // Release C (#1134): collision resolution routes through
   // decideCollisionPolicy. See collision-policy.ts for the 16-row decision
