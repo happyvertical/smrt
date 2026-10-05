@@ -1377,6 +1377,19 @@ export class MCPGenerator {
     objectName: string,
     classInfo: RegisteredClass,
   ): Promise<SmrtCollection<SmrtObject>> {
+    if (!this.collections.has(objectName) && !classInfo.collectionConstructor) {
+      // A model that declares no collection class gets the registry's
+      // default one, exactly as generated REST routes do.
+      this.collections.set(
+        objectName,
+        await ObjectRegistry.getCollection(
+          classInfo.qualifiedName || objectName,
+          { ai: this.context.ai, db: this.context.db } as Parameters<
+            typeof ObjectRegistry.getCollection
+          >[1],
+        ),
+      );
+    }
     if (!this.collections.has(objectName)) {
       // Ensure we have a valid collection constructor
       if (
