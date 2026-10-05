@@ -379,6 +379,7 @@ export function createMcpAppServer(
   const allowedClassNames = new Set(
     options.allowedClassNames.map((name) => name.toLowerCase()),
   );
+  const generatorScope = Object.freeze([...allowedClassNames]);
   const getPublicPatterns =
     options.publicToolPatterns ?? ((): readonly string[] => []);
   const toolPolicy = options.toolPolicy;
@@ -437,7 +438,13 @@ export function createMcpAppServer(
     taskStore?: McpTaskStore,
   ): MCPGenerator {
     const user = userForGenerator(principal);
-    return new MCPGenerator(options.serverInfo as MCPConfig, {
+    // Generate only the allow-listed classes: a name collision among classes
+    // this server never publishes must not fail its catalog or calls (#3490).
+    const config: MCPConfig = {
+      ...(options.serverInfo as MCPConfig),
+      classNames: generatorScope,
+    };
+    return new MCPGenerator(config, {
       ...options.smrtOptions(),
       user,
       tenantId: principal?.tenantId,

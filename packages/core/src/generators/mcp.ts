@@ -113,6 +113,15 @@ export interface MCPConfig {
     name: string;
     version: string;
   };
+  /**
+   * Generate tools only for these registered classes: simple names
+   * (case-insensitive) or qualified `@scope/pkg:Class` names. Omitted, every
+   * registered class is a candidate. A host that publishes an allow-list
+   * (`@happyvertical/smrt-app-mcp`) passes it here so that classes it never
+   * lists — and any name collision among them — cannot affect its catalog
+   * or calls (#3490). Duplicate tool names within the scope still fail.
+   */
+  classNames?: readonly string[];
 }
 
 export const MCP_STABLE_CATALOG_TTL_MS = 86_400_000;
@@ -469,10 +478,24 @@ export class MCPGenerator {
   async generateTools(): Promise<MCPTool[]> {
     const tools: MCPTool[] = [];
     const registeredClasses = ObjectRegistry.getAllClasses();
+    const scope = this.config.classNames
+      ? new Set(this.config.classNames.map((name) => name.toLowerCase()))
+      : undefined;
 
     for (const [key, classInfo] of registeredClasses) {
       // Issue #951: Use simple name for tool naming, map key for registry lookups
       const simpleName = classInfo.name || key;
+
+      if (
+        scope &&
+        !scope.has(simpleName.toLowerCase()) &&
+        !(
+          classInfo.qualifiedName &&
+          scope.has(classInfo.qualifiedName.toLowerCase())
+        )
+      ) {
+        continue;
+      }
 
       // The framework's own abstract base classes (SmrtObject,
       // SmrtCollection, ...) are scaffolding every application model

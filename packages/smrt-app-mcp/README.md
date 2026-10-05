@@ -378,7 +378,10 @@ re-resolves credentials per request, refuses redirects, and forwards resource
 and tool metadata without inventing UI or extension capabilities.
 
 Generated tool allow-lists use the generator-owned original class identity, even
-when the advertised name is a canonical alias. Guards keyed by either the alias
+when the advertised name is a canonical alias. Core generates tools only for the
+allow-listed classes, so a duplicate tool name among registered classes the app
+does not publish (a consumed package's models, say) cannot fail `tools/list` or
+`tools/call`; a duplicate within the allow-list still fails closed. Guards keyed by either the alias
 or original tool name run before both direct and task dispatch. Authored workflows
 retain their explicit names and effect policy; catalogs containing authored
 workflows keep private cache scope because they have no generated tenant identity.

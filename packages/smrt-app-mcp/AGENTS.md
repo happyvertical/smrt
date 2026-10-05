@@ -13,7 +13,10 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
 
 ## Patterns
 
-- Generate tools from core, then filter by allowed class-name prefixes.
+- Generate tools from core scoped to the allow-list (`MCPConfig.classNames`),
+  then filter by allowed class names: a duplicate tool name among registered
+  classes the app never publishes must not fail its catalog or calls (#3490).
+  A duplicate inside the allow-list still fails closed.
 - Treat list/get tools as read-only; mutating tools require authentication unless the app deliberately wraps them with stronger policy.
 - Keep app policy outside generated tool schemas. The wrapper owns auth, allow-list, and workflow assertion behavior.
 - Return 404 for tools outside the app allow-list so private generated tools are not enumerated by mistake.
