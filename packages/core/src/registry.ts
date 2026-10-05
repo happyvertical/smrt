@@ -162,7 +162,6 @@ import {
   getCollections,
   getCollectionTableNames,
   getConstructorFieldDecorators,
-  getConstructorStampingPackages,
   getConstructorTenantScopedDeclarations,
   getDbInstanceIds,
   getDiscoveryAttemptCache,
@@ -2118,9 +2117,6 @@ export class ObjectRegistry {
     // @smrt() decorators run for classes in this package.
     const cacheKey = packageName || sourceLabel;
     getManifestCache().set(cacheKey, manifest);
-    if (packageName && manifest.stampsConstructors === true) {
-      getConstructorStampingPackages().add(packageName);
-    }
 
     // Merge manifest fields into any already-registered classes. This covers
     // the case where class modules were evaluated before the package's

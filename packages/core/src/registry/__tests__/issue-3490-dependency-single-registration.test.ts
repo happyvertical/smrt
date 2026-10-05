@@ -83,6 +83,9 @@ function classModule(
 const APP = '@fixture/app3490';
 const AGENTS = '@fixture/agents3490';
 const LEGACY = '@fixture/legacy3490';
+const EXPLICIT = '@fixture/explicit3490';
+const DISCOVERED = '@happyvertical/smrt-fixture3490';
+const RELOADED = '@fixture/reloaded3490';
 
 const keysNamed = (className: string) =>
   [...ObjectRegistry.getAllClasses()]
@@ -185,6 +188,44 @@ describe('#3490: dependency classes register once, under their own package', () 
     });
     bundled('app-extends-agent', 'AppAgentConfig', {});
     bundled('legacy-widget', 'LegacyWidget', { tableName: 'legacy_widgets' });
+    bundled('app-ledger-explicit', 'LedgerExplicit', {
+      tableName: 'ledgers_explicit',
+    });
+    bundled('app-ledger-discovered', 'LedgerDiscovered', {
+      tableName: 'ledgers_discovered',
+    });
+    bundled('reloaded-widget', 'ReloadedWidget', {
+      tableName: 'reloaded_widgets',
+    });
+    // Stamping manifests reached only through `loadAllManifests()`: an
+    // explicit path, and an installed package the auto-discovery finds.
+    ws.write(
+      'manifests/explicit.json',
+      JSON.stringify({
+        version: '1',
+        timestamp: 0,
+        packageName: EXPLICIT,
+        stampsConstructors: true,
+        objects: entryFor(EXPLICIT, 'LedgerExplicit', 'ledgers_explicit'),
+      }),
+    );
+    ws.write(
+      `apps/app/node_modules/${DISCOVERED}/package.json`,
+      JSON.stringify({
+        name: DISCOVERED,
+        exports: { './manifest.json': './dist/manifest.json' },
+      }),
+    );
+    ws.write(
+      `apps/app/node_modules/${DISCOVERED}/dist/manifest.json`,
+      JSON.stringify({
+        version: '1',
+        timestamp: 0,
+        packageName: DISCOVERED,
+        stampsConstructors: true,
+        objects: entryFor(DISCOVERED, 'LedgerDiscovered', 'ledgers_discovered'),
+      }),
+    );
     previousCwd = process.cwd();
     process.chdir(ws.path('apps/app'));
   });
@@ -200,7 +241,9 @@ describe('#3490: dependency classes register once, under their own package', () 
 
   afterEach(() => {
     restoreRegistry();
-    for (const pkg of [APP, AGENTS, LEGACY]) getManifestCache().delete(pkg);
+    for (const pkg of [APP, AGENTS, LEGACY, EXPLICIT, DISCOVERED, RELOADED]) {
+      getManifestCache().delete(pkg);
+    }
   });
 
   describe('dev server frames carry a module-runner query (smrt app dev)', () => {
@@ -376,6 +419,58 @@ describe('#3490: dependency classes register once, under their own package', () 
       expect(
         ObjectRegistry.getClassByConstructor(LegacyWidget)?.qualifiedName,
       ).toBe(`${LEGACY}:LegacyWidget`);
+    });
+  });
+
+  describe('stamping capability travels with the stored manifest', () => {
+    it.each([
+      [
+        'an explicit manifest path',
+        () =>
+          ObjectRegistry.loadAllManifests({
+            manifestPaths: [ws.path('manifests/explicit.json')],
+          }),
+        'app-ledger-explicit',
+        'LedgerExplicit',
+        EXPLICIT,
+      ],
+      [
+        'auto-discovery of installed packages',
+        () => ObjectRegistry.loadAllManifests(),
+        'app-ledger-discovered',
+        'LedgerDiscovered',
+        DISCOVERED,
+      ],
+    ])('keeps an app class its identity beside a stamping manifest loaded through %s', async (_label, load, file, className, dependency) => {
+      expect(load().objectsRegistered).toBeGreaterThanOrEqual(1);
+      const Ledger = await defineFrom(chunk(file));
+
+      expect(ObjectRegistry.getClassByConstructor(Ledger)?.qualifiedName).toBe(
+        `${APP}:${className}`,
+      );
+      expect(
+        isStub(
+          ObjectRegistry.getClass(`${dependency}:${className}`)?.constructor,
+        ),
+      ).toBe(true);
+    });
+
+    it('treats a later legacy manifest as legacy after the registry is cleared', async () => {
+      registerManifest(
+        RELOADED,
+        entryFor(RELOADED, 'ReloadedWidget', 'reloaded_widgets'),
+      );
+      ObjectRegistry.clear();
+      registerManifest(
+        RELOADED,
+        entryFor(RELOADED, 'ReloadedWidget', 'reloaded_widgets'),
+        false,
+      );
+      const ReloadedWidget = await defineFrom(chunk('reloaded-widget'));
+      // Legacy: the bundled class adopts the package's stub, as before.
+      expect(
+        ObjectRegistry.getClassByConstructor(ReloadedWidget)?.qualifiedName,
+      ).toBe(`${RELOADED}:ReloadedWidget`);
     });
   });
 });

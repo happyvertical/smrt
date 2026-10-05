@@ -27,6 +27,7 @@ import {
   getNodeBuiltins,
   getStaticManifestCache,
   getTestManifestCache,
+  packageStampsConstructors,
 } from '../manifest/store.js';
 import { SmrtObject } from '../object';
 import type {
@@ -78,7 +79,6 @@ import {
   getCollections,
   getConstructorFieldDecorators,
   getConstructorIndex,
-  getConstructorStampingPackages,
   getConstructorTenantScopedDeclarations,
   getInheritanceCache,
   getLegacyFieldDecorators,
@@ -391,8 +391,7 @@ function buildDecoratorCollisionInputs(args: {
       !!existingTableName &&
       newDeclaredTableName !== existingTableName,
     existingPackageStampsConstructors:
-      !!existing.packageName &&
-      getConstructorStampingPackages().has(existing.packageName),
+      !!existing.packageName && packageStampsConstructors(existing.packageName),
   };
 }
 
@@ -1323,10 +1322,7 @@ function registerUntracked(
     if (!foreignEntry) return entry;
     // A stamping package's classes carry their package from decoration on;
     // this unstamped class is not one of them, whatever it shares (#3490).
-    if (
-      entry?.packageName &&
-      getConstructorStampingPackages().has(entry.packageName)
-    ) {
+    if (entry?.packageName && packageStampsConstructors(entry.packageName)) {
       return undefined;
     }
     // Another package's entry describes this class only when it describes

@@ -88,8 +88,6 @@ declare global {
     | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryDiscoveryAttemptCache: Map<string, boolean> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryConstructorStampingPackages: Set<string> | undefined;
 }
 
 /**
@@ -360,21 +358,6 @@ export function getConstructorIndex(): WeakMap<SmrtObjectConstructor, string> {
     >();
   }
   return globalThis.__smrtRegistryConstructorIndex;
-}
-
-/**
- * Packages whose build stamps each of its decorated classes with the package
- * name (`static __smrtPackage__`, #3490), recorded from their manifests'
- * `stampsConstructors`. A class such a package declares carries its identity
- * from the moment it is decorated, so an unstamped class that merely shares
- * a simple name and table with one of its manifest entries is never that
- * package's class, in any registration order.
- */
-export function getConstructorStampingPackages(): Set<string> {
-  if (!globalThis.__smrtRegistryConstructorStampingPackages) {
-    globalThis.__smrtRegistryConstructorStampingPackages = new Set<string>();
-  }
-  return globalThis.__smrtRegistryConstructorStampingPackages;
 }
 
 /**
