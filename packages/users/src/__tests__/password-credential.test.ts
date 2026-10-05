@@ -24,6 +24,7 @@ import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { UsersPasswordCredential } from '../models/PasswordCredential.js';
 import {
+  isValidScryptParams,
   parseScryptHash,
   scryptCost,
   scryptPaddingParams,
@@ -378,12 +379,11 @@ describe('PasswordCredentialService', () => {
     expect(verified.encodings).toEqual([stored]);
     expect(verified.padded).toEqual([stored]);
     const padding = scryptPaddingParams(stored, SCRYPT);
-    if (!padding) throw new Error('expected padding');
     const total =
       scryptCost(parseScryptHash(stored)?.params ?? SCRYPT) +
-      scryptCost(padding);
+      padding.reduce((sum, params) => sum + scryptCost(params), 0);
     expect(Math.abs(total - scryptCost(SCRYPT))).toBeLessThanOrEqual(
-      scryptCost(SCRYPT) / 8,
+      scryptCost(SCRYPT) / 16,
     );
     // The dummy and current-policy hashes need no padding.
     verified.padded.length = 0;
@@ -391,9 +391,58 @@ describe('PasswordCredentialService', () => {
       signIn('nobody@example.com', PASSWORD, { ipAddress: '203.0.113.99' }),
     ).rejects.toBeInstanceOf(PasswordCredentialError);
     expect(verified.padded).toHaveLength(1);
-    expect(scryptPaddingParams(verified.padded[0], SCRYPT)).toBeNull();
+    expect(scryptPaddingParams(verified.padded[0], SCRYPT)).toEqual([]);
+  });
+
+  it('pads within the policy’s memory shape for every kind of parameter increase', async () => {
+    const encode = (params: { N: number; r: number; p: number }) =>
+      `scrypt$${params.N}$${params.r}$${params.p}$${Buffer.alloc(16).toString('base64')}$${Buffer.alloc(32).toString('base64')}`;
+    const transitions: Array<
+      [{ N: number; r: number; p: number }, { N: number; r: number; p: number }]
+    > = [
+      [
+        { N: 2 ** 14, r: 8, p: 1 },
+        { N: 2 ** 15, r: 8, p: 1 },
+      ],
+      [
+        { N: 2 ** 15, r: 8, p: 1 },
+        { N: 2 ** 15, r: 8, p: 16 },
+      ],
+      [
+        { N: 2 ** 15, r: 8, p: 1 },
+        { N: 2 ** 15, r: 16, p: 1 },
+      ],
+      [
+        { N: 2 ** 12, r: 4, p: 2 },
+        { N: 2 ** 20, r: 32, p: 16 },
+      ],
+      [
+        { N: 2 ** 15, r: 8, p: 1 },
+        { N: 2 ** 15, r: 9, p: 3 },
+      ],
+    ];
+    for (const [stored, policy] of transitions) {
+      const label = `${JSON.stringify(stored)} -> ${JSON.stringify(policy)}`;
+      const padding = scryptPaddingParams(encode(stored), policy);
+      expect(padding.length, label).toBeGreaterThan(0);
+      for (const params of padding) {
+        expect(isValidScryptParams(params), label).toBe(true);
+        // Never more memory than one policy verification touches.
+        expect(params.N * params.r, label).toBeLessThanOrEqual(
+          policy.N * policy.r,
+        );
+        expect(params.p, label).toBeLessThanOrEqual(policy.p);
+      }
+      const total =
+        scryptCost(stored) +
+        padding.reduce((sum, params) => sum + scryptCost(params), 0);
+      expect(Math.abs(total - scryptCost(policy)), label).toBeLessThanOrEqual(
+        (policy.N * policy.r) / 16,
+      );
+    }
     // A malformed stored encoding owes the whole policy cost.
-    expect(scryptCost(scryptPaddingParams('junk', SCRYPT) ?? SCRYPT)).toBe(
+    const whole = scryptPaddingParams('junk', SCRYPT);
+    expect(whole.reduce((sum, params) => sum + scryptCost(params), 0)).toBe(
       scryptCost(SCRYPT),
     );
   });
@@ -894,6 +943,40 @@ describe('PasswordCredentialService', () => {
         password: 'self chosen secret',
       }),
     ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+    expect(
+      (await signIn('nopass@example.com', 'admin chosen secret')).userId,
+    ).toBe(noPasswordId);
+  });
+
+  it('ends sessions when an administrator’s first password lands on one set concurrently', async () => {
+    const internals = service as unknown as {
+      hashPassword: (password: string) => Promise<string>;
+    };
+    const hash = internals.hashPassword.bind(service);
+    let concurrent: string | null = null;
+    vi.spyOn(internals, 'hashPassword').mockImplementationOnce(
+      async (password) => {
+        // Between the admin's read (no password) and its write, the person
+        // sets a first password and signs in with it.
+        await service.setPassword({
+          actor: actorFor(noPasswordId),
+          userId: noPasswordId,
+          password: 'self chosen secret',
+        });
+        concurrent = (await signIn('nopass@example.com', 'self chosen secret'))
+          .sessionId;
+        return hash(password);
+      },
+    );
+    const result = await service.setPassword({
+      actor: adminActor(),
+      userId: noPasswordId,
+      password: 'admin chosen secret',
+    });
+    expect(result.revokedSessions).toBeGreaterThanOrEqual(1);
+    expect(
+      await sessionService.loadSessionContext(concurrent as unknown as string),
+    ).toBeNull();
     expect(
       (await signIn('nopass@example.com', 'admin chosen secret')).userId,
     ).toBe(noPasswordId);

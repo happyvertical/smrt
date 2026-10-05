@@ -73,9 +73,10 @@ function derive(
         N: params.N,
         r: params.r,
         p: params.p,
-        // Node's default maxmem (32 MiB) is below 128·N·r for the default
-        // parameters; allow headroom so the derivation never throws.
-        maxmem: 128 * params.N * params.r * 2,
+        // Node's default maxmem (32 MiB) is below scrypt's 128·r·(N + p + 2)
+        // bytes for the default parameters; allow headroom so the derivation
+        // never throws.
+        maxmem: 128 * params.r * (params.N + params.p + 2) * 2,
       },
       (error, key) => (error ? reject(error) : resolve(key)),
     );
@@ -132,23 +133,39 @@ export async function verifySecretHash(
 }
 
 /**
- * The scrypt parameters whose work makes up the difference between
- * verifying `encoded` and verifying a hash under `policy`, or null when there
- * is no meaningful difference. A malformed encoding verifies without deriving,
- * so it owes the policy's whole cost. Spent at block size about 8: N is the
- * largest power of two with N·8 <= deficit and r absorbs the remainder
- * (8–16), so the total matches the policy's cost to within one block and the
- * memory touched stays within the policy's own.
+ * The scrypt derivations whose work makes up the difference between
+ * verifying `encoded` and verifying a hash under `policy` — empty when there
+ * is no meaningful difference. A malformed encoding verifies without
+ * deriving, so it owes the policy's whole cost.
+ *
+ * Every derivation keeps the policy's memory shape, so padding never touches
+ * more memory than one current-policy verification: whole lanes are spent as
+ * one derivation at the policy's own `N` and `r` with `p` lanes (`p` never
+ * exceeds the policy's), and the remainder as up to six single-lane
+ * derivations at the policy's `r` with halving powers of two for `N`. The
+ * total matches the policy's cost to within 1/64 of a lane.
  */
 export function scryptPaddingParams(
   encoded: string,
   policy: ScryptParams,
-): ScryptParams | null {
+): ScryptParams[] {
   const parsed = parseScryptHash(encoded);
-  const deficit = scryptCost(policy) - (parsed ? scryptCost(parsed.params) : 0);
-  if (deficit < scryptCost(policy) / 64) return null;
-  const N = 2 ** Math.max(1, Math.floor(Math.log2(deficit / 8)));
-  return { N, r: Math.max(1, Math.round(deficit / N)), p: 1 };
+  const total = scryptCost(policy);
+  let deficit = total - (parsed ? scryptCost(parsed.params) : 0);
+  const padding: ScryptParams[] = [];
+  const lane = policy.N * policy.r;
+  const lanes = Math.floor(deficit / lane);
+  if (lanes >= 1) {
+    padding.push({ N: policy.N, r: policy.r, p: lanes });
+    deficit -= lanes * lane;
+  }
+  for (let step = 0; step < 6 && deficit >= lane / 64; step++) {
+    const N = 2 ** Math.floor(Math.log2(deficit / policy.r));
+    if (N < 2) break;
+    padding.push({ N, r: policy.r, p: 1 });
+    deficit -= N * policy.r;
+  }
+  return padding;
 }
 
 /**
@@ -161,9 +178,8 @@ export async function padScryptWork(
   encoded: string,
   policy: ScryptParams,
 ): Promise<void> {
-  const padding = scryptPaddingParams(encoded, policy);
-  if (padding) {
-    await derive('', '', padding, randomBytes(SCRYPT_SALT_BYTES));
+  for (const params of scryptPaddingParams(encoded, policy)) {
+    await derive('', '', params, randomBytes(SCRYPT_SALT_BYTES));
   }
 }
 

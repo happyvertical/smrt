@@ -607,10 +607,14 @@ export class PasswordCredentialService {
       if (!(await this.credentials.insertIfAbsent(input.userId, write))) {
         throw new PasswordCredentialForbiddenError();
       }
-    } else if (existing) {
-      // Replacing someone's password ends their sessions before AND after
-      // the write: a failure between the two leaves them signed out, never
-      // signed in under a password that is gone.
+    } else if (
+      existing ||
+      !(await this.credentials.insertIfAbsent(input.userId, write))
+    ) {
+      // Replacing someone's password — including one set concurrently after
+      // the read above — ends their sessions before AND after the write: a
+      // failure between the two leaves them signed out, never signed in
+      // under a password that is gone.
       revokedSessions += await this.sessionService.destroyAllUserSessions(
         input.userId,
       );
@@ -618,8 +622,6 @@ export class PasswordCredentialService {
       revokedSessions += await this.sessionService.destroyAllUserSessions(
         input.userId,
       );
-    } else {
-      await this.credentials.upsertForUser(input.userId, write);
     }
     await this.recordManagement(input.userId, input.ipAddress, {
       action: 'set',
