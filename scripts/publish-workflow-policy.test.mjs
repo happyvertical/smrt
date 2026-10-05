@@ -203,11 +203,21 @@ function jobsOf(source) {
     .filter((chunk) => /^  [A-Za-z_][\w-]*:\s*$/m.test(chunk));
 }
 
+function jobCondition(chunk) {
+  // The job-level `if:` only (4-space indent, plus its indented continuation
+  // lines), never a step condition or a comment.
+  const match = chunk.match(/^    if:(.*(?:\n {6,}.*)*)/m);
+  return match ? match[1].replace(/#.*$/gm, '') : '';
+}
+
 test('every job that reads a publish token runs in the release environment', () => {
   let seen = 0;
   for (const { file, source } of allWorkflows()) {
     for (const chunk of jobsOf(source)) {
       if (!PUBLISH_SECRET.test(chunk)) continue;
+      // A job that calls a reusable workflow only forwards the secret; the
+      // environment is declared on the called job that uses it.
+      if (/^    uses: /m.test(chunk)) continue;
       seen += 1;
       const id = chunk.split('\n', 1)[0].trim();
       assert.match(
@@ -216,9 +226,9 @@ test('every job that reads a publish token runs in the release environment', () 
         `${file} job ${id} reads a publish secret and must declare environment: release`,
       );
       assert.match(
-        chunk,
+        jobCondition(chunk),
         /github\.ref == 'refs\/heads\/main'/,
-        `${file} job ${id} must be skipped outside main`,
+        `${file} job ${id} must be skipped outside main by a job-level if`,
       );
     }
   }
@@ -233,4 +243,13 @@ test('no pull_request, pull_request_target or merge_group workflow references a 
     }
     assert.doesNotMatch(source, PUBLISH_SECRET, `${file} must not reference a publish secret`);
   }
+});
+
+test('the main-ref check only counts when it is on the job-level if', () => {
+  const guarded = "  j:\n    if: github.ref == 'refs/heads/main'\n    steps:\n";
+  const stepOnly = "  j:\n    steps:\n      - if: github.ref == 'refs/heads/main'\n";
+  const commentOnly = "  j:\n    # if: github.ref == 'refs/heads/main'\n    if: true\n";
+  assert.match(jobCondition(guarded), /refs\/heads\/main/);
+  assert.doesNotMatch(jobCondition(stepOnly), /refs\/heads\/main/);
+  assert.doesNotMatch(jobCondition(commentOnly), /refs\/heads\/main/);
 });

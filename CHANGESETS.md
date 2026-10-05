@@ -68,7 +68,10 @@ release still reads third-party dependencies from it. Four rules follow.
   reference either secret (`scripts/publish-workflow-policy.test.mjs`
   enforces both). Store or rotate a token with
   `gh secret set NPM_HAPPYVERTICAL_PUBLISH_TOKEN --env release --repo happyvertical/smrt`
-  (and likewise `NPM_TOKEN`).
+  and `gh secret set NPM_TOKEN --env release --repo happyvertical/smrt`. Once
+  both are stored there, delete the repository-level and organisation-level
+  copies of the same names (or remove this repository from their access):
+  while they exist, branch-controlled workflows can still read them.
 
 Consumers point the scope at the primary with one line and need no token:
 
