@@ -33,6 +33,8 @@ export interface Props {
   queryName?: string;
   /** HTML name used for the status field. */
   statusName?: string;
+  /** Caller-owned state carried through the native GET form. Query and status names are ignored. */
+  hiddenFields?: Record<string, string>;
   /** Caller-owned URL for the previous page. */
   previousHref?: string;
   /** Caller-owned URL for the next page. */
@@ -61,6 +63,7 @@ const {
   searchAction,
   queryName = 'q',
   statusName = 'status',
+  hiddenFields = {},
   previousHref,
   nextHref,
   addHref,
@@ -81,6 +84,11 @@ const first = $derived(
 );
 const last = $derived(
   pageSize === undefined ? 0 : Math.min(page * pageSize, total),
+);
+const searchHiddenFields = $derived(
+  Object.entries(hiddenFields).filter(
+    ([name]) => name !== queryName && name !== statusName,
+  ),
 );
 
 function statusLabel(value: string): string {
@@ -106,6 +114,9 @@ function customerTypeLabel(value: string | undefined): string {
   </PageHeader>
 
   <Form class="directory-search" method="get" action={searchAction} preventDefault={false} stagedReview={false}>
+    {#each searchHiddenFields as [name, value]}
+      <Input interaction={false} type="hidden" {name} {value} />
+    {/each}
     <FormGroup label={labels.search ?? (labels.plural ? t(M['commerce.party.search_named'], { plural }) : t(M['commerce.customer.search']))}>
       <Input type="search" name={queryName} value={query} maxlength={160} />
     </FormGroup>

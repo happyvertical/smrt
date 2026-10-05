@@ -1,6 +1,8 @@
 import { render } from 'svelte/server';
 import CustomerForm from '../src/svelte/components/CustomerForm.svelte';
+import CustomerDirectory from '../src/svelte/components/CustomerDirectory.svelte';
 import VendorForm from '../src/svelte/components/VendorForm.svelte';
+import VendorDirectory from '../src/svelte/components/VendorDirectory.svelte';
 import CustomActionsFormHarness from './CustomActionsFormHarness.svelte';
 
 export function renderNativePage(): string {
@@ -55,4 +57,39 @@ export function renderNativeCustomActionsPage(): string {
     props: { action: '/party-submit' },
   }).body;
   return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Native custom action form</title></head><body>${body}</body></html>`;
+}
+
+export function renderNativeDirectoriesPage(): string {
+  const customer = render(CustomerDirectory, {
+    props: {
+      searchAction: '/directory-search',
+      query: 'Initial client',
+      status: 'active',
+      queryName: 'term',
+      statusName: 'state',
+      hiddenFields: {
+        page: '1',
+        pageSize: '10',
+        sort: 'name',
+        direction: 'desc',
+        term: 'ignored query',
+        state: 'suspended',
+      },
+      labels: { singular: 'Client', plural: 'Clients' },
+    },
+  }).body;
+  const vendor = render(VendorDirectory, {
+    props: {
+      searchAction: '/directory-search',
+      query: 'Initial vendor',
+      status: 'inactive',
+      hiddenFields: {
+        pageSize: '25',
+        direction: 'asc',
+        q: 'ignored query',
+        status: 'suspended',
+      },
+    },
+  }).body;
+  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Native party directories</title></head><body><section id="customer-directory">${customer}</section><section id="vendor-directory">${vendor}</section></body></html>`;
 }
