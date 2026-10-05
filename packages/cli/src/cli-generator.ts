@@ -1395,6 +1395,14 @@ export class CLIGenerator {
     // If not found in utility commands, try lazy-loading object commands
     if (!command && parsed.command) {
       command = await this.findObjectCommand(parsed.command);
+      if (
+        command &&
+        matchLeadingCommand(processedArgv, [command], {}).command
+      ) {
+        const reParsed = parseCliCommandArgs(processedArgv, [command], {});
+        parsed.args = reParsed.args;
+        parsed.options = reParsed.options;
+      }
     }
 
     if (command) {
