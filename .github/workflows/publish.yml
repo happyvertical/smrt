@@ -53,6 +53,9 @@ env:
   # scripts also refuse any host outside their own allowlist.
   RELEASE_PRIMARY_REGISTRY: 'https://npm.happyvertical.com/'
 
+# Every job below that reads NPM_HAPPYVERTICAL_PUBLISH_TOKEN or NPM_TOKEN runs
+# in the `release` environment, whose deployment-branch rule allows only main
+# (happyvertical/iac#2165), and is skipped on any other ref.
 permissions:
   actions: read
   contents: write
@@ -65,6 +68,8 @@ permissions:
 jobs:
   prepare-release:
     name: Prepare Release
+    if: github.ref == 'refs/heads/main'
+    environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
@@ -256,7 +261,10 @@ jobs:
 
   validate-release-shards:
     needs: prepare-release
-    if: needs.prepare-release.outputs.should-publish == 'true'
+    if: |
+      github.ref == 'refs/heads/main' &&
+      needs.prepare-release.outputs.should-publish == 'true'
+    environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -318,8 +326,10 @@ jobs:
       - prepare-release
       - validate-release-shards
     if: |
+      github.ref == 'refs/heads/main' &&
       needs.prepare-release.outputs.should-publish == 'true' &&
       needs.validate-release-shards.result == 'success'
+    environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:
@@ -553,10 +563,12 @@ jobs:
     name: Mirror Release to npmjs
     needs: [prepare-release, publish-release]
     if: |
+      github.ref == 'refs/heads/main' &&
       always() && !cancelled() &&
       (needs.publish-release.result == 'success' || needs.publish-release.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: release
     continue-on-error: true
     permissions:
       contents: read

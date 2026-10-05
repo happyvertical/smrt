@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.54.2
+
+### Patch Changes
+
+- ### Features
+  
+  - retain directory search state (#3513) (commerce)
+  - password credential and SvelteKit password sign-in (#3274) (#3511) (users)
+- @happyvertical/smrt-config@0.54.2
+  - @happyvertical/smrt-scanner@0.54.2
+  - @happyvertical/smrt-types@0.54.2
+
 ## 0.54.1
 
 ### Patch Changes
