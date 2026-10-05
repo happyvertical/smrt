@@ -563,8 +563,8 @@ jobs:
     name: Mirror Release to npmjs
     needs: [prepare-release, publish-release]
     if: |
-      always() && !cancelled() &&
       github.ref == 'refs/heads/main' &&
+      always() && !cancelled() &&
       (needs.publish-release.result == 'success' || needs.publish-release.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 30

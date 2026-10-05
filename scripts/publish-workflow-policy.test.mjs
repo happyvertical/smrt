@@ -211,17 +211,23 @@ function jobCondition(chunk) {
 }
 
 function requiresMain(condition) {
-  // The main comparison must be a top-level conjunct: an `||` outside
-  // parentheses would let another ref through.
+  // No YAML parser is a root dependency here, so accept one canonical form
+  // only: the literal main comparison as the FIRST operand, followed by the
+  // end or a top-level `&&`, and no top-level `||`. Anything else (an
+  // inverted or compared-again expression, an `||`, a prefix operand) fails.
+  const text = condition
+    .replace(/^\s*[|>][-+]?\s*/, '')
+    .replace(/\$\{\{|\}\}/g, '')
+    .trim();
   let depth = 0;
   let topLevel = '';
-  for (const ch of condition) {
+  for (const ch of text) {
     if (ch === '(') depth += 1;
     else if (ch === ')') depth -= 1;
     else if (depth === 0) topLevel += ch;
   }
   return (
-    /github\.ref == 'refs\/heads\/main'/.test(topLevel) &&
+    /^github\.ref == 'refs\/heads\/main'(\s*&&|\s*$)/.test(text) &&
     !topLevel.includes('||')
   );
 }
@@ -270,9 +276,20 @@ test('the main-ref check only counts when it is on the job-level if', () => {
   assert.ok(requiresMain(jobCondition(guarded)));
   assert.ok(
     requiresMain(
-      "  j:\n    if: |\n      github.ref == 'refs/heads/main' &&\n      (a == 1 || b == 2)\n",
+      jobCondition("  j:\n    if: |\n      github.ref == 'refs/heads/main' &&\n      (a == 1 || b == 2)\n"),
     ),
   );
   const offMain = "  j:\n    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'\n";
   assert.ok(!requiresMain(jobCondition(offMain)));
+  for (const bad of [
+    "github.ref == 'refs/heads/main' == false",
+    "${{ github.ref == 'refs/heads/main' == false }}",
+    "always() && github.ref == 'refs/heads/main'",
+    "!(github.ref == 'refs/heads/main')",
+    "github.ref == 'refs/heads/main' || true",
+    "github.ref != 'refs/heads/main'",
+  ]) {
+    assert.ok(!requiresMain(bad), bad);
+  }
+  assert.ok(requiresMain("${{ github.ref == 'refs/heads/main' && !inputs.dry-run }}"));
 });
