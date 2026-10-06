@@ -1,6 +1,6 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
 export default createPackageConfig('manufacturing', {
-  entries: ['ui'],
+  entries: ['ui', 'views'],
   svelte: 'svelte',
 });

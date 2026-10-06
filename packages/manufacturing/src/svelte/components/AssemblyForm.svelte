@@ -14,13 +14,22 @@
  * `readonlyFields` is shown but not editable (a price a viewer may see but
  * not change). Neither is checked, and `onsubmit` carries its initial value
  * unchanged, so a host should save only fields the reader may write.
+ *
+ * `showSkuCode` adds the part number (the code of the assembly's `Sku`): it
+ * must not be empty, arrives trimmed as `values.skuCode`, and takes the
+ * host's own message (a code already in use) through `errors.fields.skuCode`.
+ * `extraFields` renders host fields inside the form itself, so they submit
+ * with it: `onsubmit` receives the form's `FormData` as its second argument,
+ * carrying every named control, the host's included.
  */
 
 import { Button } from '@happyvertical/smrt-ui';
 import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
 import {
+  type AssemblyFormErrors,
   type AssemblyFormField,
   type AssemblyFormInitial,
   type AssemblyFormInvalidField,
@@ -37,8 +46,12 @@ const { t } = useI18n();
 export interface AssemblyFormProps {
   /** The assembly being edited; omit or pass null to add one. */
   assembly?: AssemblyFormInitial | null;
-  /** Invoked with trimmed, checked values. The form never persists. */
-  onsubmit: (values: AssemblyFormValues) => void;
+  /**
+   * Invoked with trimmed, checked values, and the form's `FormData` (every
+   * named control, including those from `extraFields`). The form never
+   * persists.
+   */
+  onsubmit: (values: AssemblyFormValues, formData: FormData) => void;
   /** Invoked when the form is canceled; omit to hide the cancel button. */
   oncancel?: () => void;
   /** Blocks input and submission while the host saves. */
@@ -51,6 +64,12 @@ export interface AssemblyFormProps {
   hiddenFields?: readonly AssemblyFormField[];
   /** Fields the reader may see but not change: rendered read-only. */
   readonlyFields?: readonly AssemblyFormField[];
+  /** Shows the part number (SKU code) field, required when shown. */
+  showSkuCode?: boolean;
+  /** Host-reported errors: a message under a field, or for the whole form. */
+  errors?: AssemblyFormErrors;
+  /** Host fields rendered inside the form, before its actions. */
+  extraFields?: Snippet;
 }
 
 const {
@@ -62,6 +81,9 @@ const {
   currency = 'USD',
   hiddenFields = [],
   readonlyFields = [],
+  showSkuCode = false,
+  errors: hostErrors = {},
+  extraFields,
 }: AssemblyFormProps = $props();
 
 const uid = $props.id();
@@ -88,6 +110,7 @@ let estimatedLabourMinutes = $state(
 );
 let defaultOperationId = $state(initialFormState.draft.defaultOperationId);
 let tags = $state(initialFormState.draft.tags);
+let skuCode = $state(initialFormState.draft.skuCode ?? '');
 let invalid = $state<AssemblyFormInvalidField[]>([]);
 let appliedAssembly: AssemblyFormInitial | null = initialFormState.assembly;
 let appliedExponent = initialFormState.exponent;
@@ -112,10 +135,12 @@ $effect(() => {
   estimatedLabourMinutes = draft.estimatedLabourMinutes;
   defaultOperationId = draft.defaultOperationId;
   tags = draft.tags;
+  skuCode = draft.skuCode ?? '';
   invalid = [];
 });
 
-const shown = (field: AssemblyFormField) => !hiddenFields.includes(field);
+const shown = (field: AssemblyFormField) =>
+  !hiddenFields.includes(field) && (field !== 'skuCode' || showSkuCode);
 const locked = (field: AssemblyFormField) =>
   loading || readonlyFields.includes(field);
 
@@ -160,33 +185,49 @@ function errorMessage(field: AssemblyFormInvalidField): string {
       return t(M['manufacturing.assembly_form.error_name']);
     case 'price':
       return t(M['manufacturing.assembly_form.error_price']);
+    case 'skuCode':
+      return t(M['manufacturing.assembly_form.error_sku_code']);
     default:
       return t(M['manufacturing.assembly_form.error_labour']);
   }
 }
 
-const errors = $derived(
-  invalid.map((field) => ({ field, message: errorMessage(field) })),
-);
+const errors = $derived([
+  ...invalid.map((field) => ({ field, message: errorMessage(field) })),
+  // A host message on a field the form already rejected is not repeated.
+  ...Object.entries(hostErrors.fields ?? {})
+    .filter(
+      ([field, message]) =>
+        message &&
+        shown(field as AssemblyFormField) &&
+        !invalid.includes(field as AssemblyFormInvalidField),
+    )
+    .map(([field, message]) => ({
+      field: field as AssemblyFormField,
+      message: message as string,
+    })),
+]);
 
-function errorId(field: AssemblyFormInvalidField): string {
+function errorId(field: AssemblyFormField): string {
   return `${uid}-error-${field}`;
 }
 
 function describedBy(
-  field: AssemblyFormInvalidField | null,
+  field: AssemblyFormField | null,
   hintId?: string,
 ): string | undefined {
   const ids = [
     hintId,
-    field && invalid.includes(field) ? errorId(field) : undefined,
+    field && errors.some((error) => error.field === field)
+      ? errorId(field)
+      : undefined,
   ];
   return ids.filter(Boolean).join(' ') || undefined;
 }
 
 const policyProtected = $derived([...hiddenFields, ...readonlyFields]);
 
-function handleSubmit() {
+function handleSubmit(event?: Event) {
   const draft = {
     name,
     description,
@@ -196,12 +237,16 @@ function handleSubmit() {
     estimatedLabourMinutes,
     defaultOperationId,
     tags,
+    ...(showSkuCode ? { skuCode } : {}),
   };
   // A field the reader left as it was keeps its stored value exactly (a tag
   // with a comma, a price this form cannot express); the name is always checked.
   const initialDraft = assemblyFormDraft(assembly, exponent);
   const untouched = (Object.keys(draft) as AssemblyFormField[]).filter(
-    (field) => field !== 'name' && draft[field] === initialDraft[field],
+    (field) =>
+      field !== 'name' &&
+      field !== 'skuCode' &&
+      draft[field] === initialDraft[field],
   );
   const protectedFields = [...policyProtected, ...untouched];
   const result = validateAssemblyForm(draft, policyProtected, exponent);
@@ -214,7 +259,14 @@ function handleSubmit() {
     return;
   }
   invalid = [];
-  onsubmit(keepProtectedFields(checked.values, assembly, protectedFields));
+  const form = (event?.currentTarget ?? event?.target) as
+    | HTMLFormElement
+    | null
+    | undefined;
+  onsubmit(
+    keepProtectedFields(checked.values, assembly, protectedFields),
+    new FormData(form instanceof HTMLFormElement ? form : undefined),
+  );
 }
 </script>
 
@@ -266,6 +318,29 @@ function handleSubmit() {
         />
         <span class="hint" id="{uid}-part-reference-hint">
           {t(M['manufacturing.assembly_form.part_reference_help'])}
+        </span>
+      </div>
+    {/if}
+
+    {#if shown('skuCode')}
+      <div class="field">
+        <label for="{uid}-sku-code">
+          {t(M['manufacturing.assembly_form.sku_code'])}<span class="required" aria-hidden="true">*</span>
+        </label>
+        <Input
+          id="{uid}-sku-code"
+          name="skuCode"
+          type="text"
+          autocomplete="off"
+          bind:value={skuCode}
+          required
+          readonly={readonlyFields.includes('skuCode')}
+          disabled={loading}
+          aria-invalid={errors.some((error) => error.field === 'skuCode') ? 'true' : undefined}
+          aria-describedby={describedBy('skuCode', `${uid}-sku-code-hint`)}
+        />
+        <span class="hint" id="{uid}-sku-code-hint">
+          {t(M['manufacturing.assembly_form.sku_code_help'])}
         </span>
       </div>
     {/if}
@@ -364,6 +439,12 @@ function handleSubmit() {
           {t(M['manufacturing.assembly_form.tags_help'])}
         </span>
       </div>
+    {/if}
+
+    {@render extraFields?.()}
+
+    {#if hostErrors.form}
+      <p class="errors" role="alert">{hostErrors.form}</p>
     {/if}
 
     {#if errors.length > 0}

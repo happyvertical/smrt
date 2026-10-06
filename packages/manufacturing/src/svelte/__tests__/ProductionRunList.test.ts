@@ -17,6 +17,7 @@ import {
   type ProductionRunView,
   toProductionRunView,
   validateCompletionQty,
+  validateTargetQty,
 } from '../types.js';
 
 function run(overrides: Partial<ProductionRunView> = {}): ProductionRunView {
@@ -213,5 +214,154 @@ describe('ProductionRunList', () => {
       screen.getByRole('button', { name: 'Report a completion for Frame' }),
     );
     await expectNoA11yViolations(container);
+  });
+});
+
+describe('ProductionRunList management controls', () => {
+  it('renders no management column or control without a handler', () => {
+    render(ProductionRunList, { props: { runs: [run()] } });
+    expect(
+      screen.queryByRole('columnheader', { name: 'Manage run' }),
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: /Finish|Cancel/ })).toBeNull();
+    expect(screen.queryByRole('spinbutton')).toBeNull();
+  });
+
+  it('renders only the controls whose handler is given, on open runs only', () => {
+    render(ProductionRunList, {
+      props: {
+        runs: [run(), run({ id: 'run-2', label: 'Gate', status: 'done' })],
+        onfinish: vi.fn(),
+      },
+    });
+    expect(
+      screen.getByRole('button', { name: 'Finish Frame' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel Frame' })).toBeNull();
+    expect(screen.queryByRole('spinbutton')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Finish Gate' })).toBeNull();
+  });
+
+  it('sets a target through the handler with the run and the number', async () => {
+    const onsettarget = vi.fn(() => true);
+    render(ProductionRunList, { props: { runs: [run()], onsettarget } });
+    const field = screen.getByRole('spinbutton', {
+      name: 'Target quantity for Frame',
+    });
+    await userEvent.type(field, '30');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Set the target quantity for Frame' }),
+    );
+    expect(onsettarget).toHaveBeenCalledExactlyOnceWith(run(), 30);
+    expect(field).toHaveValue(null);
+  });
+
+  it('refuses a target that is empty, zero or below what is done, without calling the host', async () => {
+    const onsettarget = vi.fn();
+    render(ProductionRunList, { props: { runs: [run()], onsettarget } });
+    const field = screen.getByRole('spinbutton', {
+      name: 'Target quantity for Frame',
+    });
+    const submit = screen.getByRole('button', {
+      name: 'Set the target quantity for Frame',
+    });
+    await userEvent.click(submit);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Enter a target greater than zero.',
+    );
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    await userEvent.type(field, '11');
+    await userEvent.click(submit);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The target cannot be below the 12 already done.',
+    );
+    expect(onsettarget).not.toHaveBeenCalled();
+  });
+
+  it('keeps the typed target and says so when the handler fails', async () => {
+    const onsettarget = vi.fn(() => false);
+    render(ProductionRunList, { props: { runs: [run()], onsettarget } });
+    const field = screen.getByRole('spinbutton', {
+      name: 'Target quantity for Frame',
+    });
+    await userEvent.type(field, '30');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Set the target quantity for Frame' }),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The target could not be changed.',
+    );
+    expect(field).toHaveValue(30);
+  });
+
+  it('finishes only after the confirmation, and not when it is dismissed', async () => {
+    const onfinish = vi.fn(() => true);
+    render(ProductionRunList, { props: { runs: [run()], onfinish } });
+    await userEvent.click(screen.getByRole('button', { name: 'Finish Frame' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Finish this run?')).toBeInTheDocument();
+    expect(onfinish).not.toHaveBeenCalled();
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Cancel' }),
+    );
+    expect(onfinish).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Finish Frame' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Finish run',
+      }),
+    );
+    expect(onfinish).toHaveBeenCalledExactlyOnceWith(run());
+  });
+
+  it('cancels a run only after the confirmation, and reports a failure', async () => {
+    const oncancel = vi.fn(() => {
+      throw new Error('locked');
+    });
+    render(ProductionRunList, { props: { runs: [run()], oncancel } });
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel Frame' }));
+    expect(oncancel).not.toHaveBeenCalled();
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Cancel run',
+      }),
+    );
+    expect(oncancel).toHaveBeenCalledExactlyOnceWith(run());
+    await vi.waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'The run could not be cancelled.',
+      ),
+    );
+  });
+
+  it('validates a target the way the service does', () => {
+    const done = { completedQty: 12 };
+    expect(validateTargetQty('12', done)).toEqual({ ok: true, qty: 12 });
+    expect(validateTargetQty(' 30.5 ', done)).toEqual({ ok: true, qty: 30.5 });
+    expect(validateTargetQty('11.999999', done)).toEqual({
+      ok: false,
+      reason: 'below_done',
+    });
+    for (const bad of ['', 'x', '0', '-1', '1000000000']) {
+      expect(validateTargetQty(bad, done)).toEqual({
+        ok: false,
+        reason: 'invalid',
+      });
+    }
+  });
+
+  it('has no accessibility violations with the controls and a dialog open', async () => {
+    const { container } = render(ProductionRunList, {
+      props: {
+        runs: [run()],
+        oncomplete: vi.fn(),
+        onsettarget: vi.fn(),
+        onfinish: vi.fn(),
+        oncancel: vi.fn(),
+      },
+    });
+    await expectNoA11yViolations(container);
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel Frame' }));
+    await expectNoA11yViolations(document.body);
   });
 });
