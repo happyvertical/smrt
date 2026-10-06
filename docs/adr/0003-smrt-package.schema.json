@@ -129,22 +129,39 @@
       "pattern": "^/([a-z0-9][a-z0-9-]*|\\[[a-z][A-Za-z0-9]*\\])(/([a-z0-9][a-z0-9-]*|\\[[a-z][A-Za-z0-9]*\\]))*$"
     },
     "jsonValue": {
-      "description": "Any JSON value; functions and component references are not expressible.",
-      "type": ["string", "number", "boolean", "null", "array", "object"]
+      "description": "Plain JSON; functions and component references are not expressible. An object carrying a `$mount` key, at any depth, is rejected here, so it can only validate as a mountValue.",
+      "anyOf": [
+        { "type": ["string", "number", "boolean", "null"] },
+        { "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
+        {
+          "type": "object",
+          "not": {
+            "required": ["$mount"],
+            "properties": { "$mount": true }
+          },
+          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+        }
+      ]
     },
     "mountValue": {
-      "description": "A value the mount computes: where consumer.routes are hosted, this package's mounted navigation, or the mounted path of a page.",
+      "description": "A value the mount computes. The closed set: routesBase (where consumer.routes are hosted), navigation (this package's mounted pages) and href:<page id> (the mounted path of a page; the id must name a page in the same descriptor, a semantic check the schema cannot express).",
       "type": "object",
       "additionalProperties": false,
       "required": ["$mount"],
       "properties": {
         "$mount": {
-          "type": "string",
-          "pattern": "^(routesBase|navigation|href:[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+)$"
+          "anyOf": [
+            { "enum": ["routesBase", "navigation"] },
+            {
+              "type": "string",
+              "pattern": "^href:[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+            }
+          ]
         }
       }
     },
     "props": {
+      "description": "Each value is a mountValue (an object with `$mount`) or plain JSON with no `$mount` key anywhere.",
       "type": "object",
       "additionalProperties": {
         "anyOf": [

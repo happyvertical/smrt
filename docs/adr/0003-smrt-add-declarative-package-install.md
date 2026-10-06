@@ -92,7 +92,13 @@ and plan-time validation fails on any that does not resolve:
 A page's props are JSON plus a closed set of mount-computed values:
 `{"$mount": "routesBase"}`, `{"$mount": "navigation"}` (this package's mounted
 pages, as `SmrtRouteNavigationItem[]`) and `{"$mount": "href:<page id>"}`. That
-is what step 9 of the hand-add needed, without functions in the descriptor.
+is what step 9 of the hand-add needed, without functions in the descriptor. The
+set is closed: the schema validates any object with a `$mount` key, at any
+depth, only as one of these three forms, so a misspelling such as
+`{"$mount": "routesBsae"}` fails instead of passing as plain JSON. One rule is
+semantic: an `href:` target must name a page `id` in the same descriptor (a
+page the app excludes resolves to no link), and plan-time validation rejects
+any other target.
 
 **A package without `smrt-package.json` is wiring-only:** `smrt add` treats it
 as an implicit preset with no pages, routes or tools (dependency,
