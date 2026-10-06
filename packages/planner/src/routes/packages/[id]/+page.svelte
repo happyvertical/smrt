@@ -1,7 +1,7 @@
 <script lang="ts">
 import { Switch } from '@happyvertical/smrt-ui/forms';
 import { exposedModels, getPackage } from '$lib/catalog/index.ts';
-import SurfacePanel from '$lib/components/SurfacePanel.svelte';
+import ConnectTools from '$lib/components/ConnectTools.svelte';
 import { humanize } from '$lib/data/format.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
@@ -58,7 +58,7 @@ const lockedBy = $derived(selection.requiredBy(data.id));
       </ul>
     </section>
 
-    <SurfacePanel models={pkg.models} />
+    <ConnectTools models={pkg.models} />
   </main>
 {/if}
 

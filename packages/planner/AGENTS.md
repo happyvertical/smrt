@@ -27,7 +27,9 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `index.ts` is the one seam to swap for catalog-sourced recipes, then delete
   the JSON. `resolve.ts` (`requires`), `policy.ts` (smrt-fields-shaped field
   policies, options-form draft/rows, exposure narrowing), `encoding.ts` (options
-  in the URL), `state.svelte.ts` (the store). Never import
+  in the URL), `state.svelte.ts` (the store), `help.ts` (the #3591 help contract and its
+  renderer, one module to swap for the core helper; content in `help/*.md` and
+  `help/descriptions.json`). Never import
   `@happyvertical/smrt-fields` until the live-objects work (#4).
 - `src/lib/planner/`: the package selection (`?p=a,b`; recipes add `?r=` and `?o=`, and `app.svelte.ts` `appHref` composes them; `selection.svelte.ts`
   is the one store the control panel, navigation and a future chat assistant
@@ -35,9 +37,9 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
 - `src/lib/data/`: `DataSource` (async), the seeded in-memory fakes, money and
   value formatting. Views only talk to `DataSource` via context; live
   collections later replace `createMemoryDataSource()` in `+layout.svelte`.
-- `src/lib/components/`: generated list/form (`ModelWorkspace`), the "what you
-  get" panel (`SurfacePanel`), `ChatDockPlaceholder` (the dock slot for #3).
-- `src/routes/`: `/` Planner (recipes), `/recipes/[id]/` options form,
+- `src/lib/components/`: generated list/form (`ModelWorkspace`), the collapsed "Connect other tools"
+  list (`ConnectTools`), the Help view (`HelpView`), `ChatDockPlaceholder` (the dock slot for #3).
+- `src/routes/`: `/` Planner (recipes), `/recipes/[id]/` options form, `/recipes/[id]/help/` Help,
   `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/`.
   All prerendered; `entries()` come from the catalog.
 
