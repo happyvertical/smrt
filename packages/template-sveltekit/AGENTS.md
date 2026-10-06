@@ -104,11 +104,13 @@ It is the ground-up alternative to `smrt-saas-starter`.
   (`createRuntimeDiagnosticsHandler`) requires a direct active tenant membership
   plus the owner role or `runtime_diagnostics.read` before any projection or
   probe; it never calls principal-bound server tools.
-- The opt-in `mcp-apps-template/` overlay is one `mountMcpAppRoute()` route
-  and the protected-resource metadata route, both using
-  `createHostedMcpResourceAuth({ profile, runtime })` (local owner tokens,
-  hosted membership-backed principals); `pnpm typecheck` checks it against
-  the template. `__tests__/localMcpToken.test.ts` proves mint → real
+- The opt-in `mcp-apps-template/` overlay is one
+  `mountMcpAppRoute({ runtime })` route and
+  `mountMcpProtectedResourceMetadataRoute({ runtime })` (#3491): the
+  runtime supplies the request database, `runAsPrincipal` and, per request,
+  the profile's bearer adapter (local owner tokens, hosted membership-backed
+  principals). No `mcp.ts` helper or top-level `await`; `pnpm typecheck`
+  checks it against the template. `__tests__/localMcpToken.test.ts` proves mint → real
   `smrt-mcp-bridge` stdio → route against the real runtime.
   `__tests__/mcpConsumerBundle.test.ts` (why `@happyvertical/smrt-chat` is a
   devDependency) Vite-SSR-builds `fixtures/mcp-chat-consumer/` with chat and
