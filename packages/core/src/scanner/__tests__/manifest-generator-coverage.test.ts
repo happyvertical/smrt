@@ -222,7 +222,10 @@ describe('ManifestGenerator coverage', () => {
       expect(article.methods.publish).toBeDefined();
     });
 
-    it("merges a framework ABSTRACT base's own declared method (SmrtJunction.attach) into its subclass, unlike a universal primitive (SmrtCollection.list)", () => {
+    it.each([
+      ['SmrtJunction', 'attach'],
+      ['SmrtJunctionBase', 'byRight'],
+    ])('merges %s.%s while excluding universal collection methods', (baseName, methodName) => {
       const gen = new ManifestGenerator();
       const manifest = gen.generateManifest([
         scan([
@@ -235,15 +238,15 @@ describe('ManifestGenerator coverage', () => {
             fields: {},
             methods: { list: method('list') },
           }),
-          def('SmrtJunction', {
+          def(baseName, {
             extends: 'SmrtCollection',
             collection: '',
             decoratorConfig: {},
             fields: {},
-            methods: { attach: method('attach') },
+            methods: { [methodName]: method(methodName) },
           }),
           def('ContentAssetCollection', {
-            extends: 'SmrtJunction',
+            extends: baseName,
             fields: { contentId: { type: 'foreignKey', related: 'Content' } },
           }),
         ]),
@@ -256,7 +259,7 @@ describe('ManifestGenerator coverage', () => {
       // so they must merge into every subclass, matching this PR's #2624
       // regression fix (a template-sveltekit snapshot caught this when an
       // earlier revision wrongly excluded all 8 FRAMEWORK_BASE_CLASSES).
-      expect(collection.methods.attach).toBeDefined();
+      expect(collection.methods[methodName]).toBeDefined();
       // SmrtCollection is one of the 3 universal object/collection
       // primitives (FRAMEWORK_METHOD_BASE_NAMES) -- its own methods are
       // never a subclass-specific action.

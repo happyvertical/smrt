@@ -91,8 +91,9 @@ use named `$props()` interfaces to avoid recursive inline intersections.
   casts at their owning boundary, never weaken UUID columns to text.
 - Relationship loads preserve tenant isolation; cross-tenant reads require an
   explicit reviewed `allowCrossTenant` path.
-- Junctions extend `SmrtJunction`, true `parentId` trees `SmrtHierarchical`, and
-  polymorphic links `SmrtPolymorphicAssociation`. System tables use `_smrt_`.
+- Junctions: `SmrtJunction`/`SmrtJunctionBase`; `parentId` trees:
+  `SmrtHierarchical`; polymorphic links: `SmrtPolymorphicAssociation`.
+  System tables: `_smrt_`.
   Asset ownership uses noun-specific joins; generic associations are provenance.
 - Use public registry/database/collection APIs; add an owning-package API rather
   than reaching into private state. JSON fields use guarded string get/set helpers.

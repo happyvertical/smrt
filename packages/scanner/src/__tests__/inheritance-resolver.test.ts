@@ -22,6 +22,25 @@ describe('InheritanceResolver', () => {
   });
 
   describe('resolveInheritanceChain', () => {
+    it('recognizes undecorated composite-owner junction collections', () => {
+      const resolver = new InheritanceResolver();
+      resolver.addClasses([
+        {
+          ...createClass('CompositeLinks', 'SmrtJunctionBase'),
+          hasSmartDecorator: false,
+        },
+      ]);
+      expect(resolver.resolveInheritanceChain('CompositeLinks')).toEqual([
+        'SmrtJunctionBase',
+        'CompositeLinks',
+      ]);
+      expect(
+        resolver
+          .resolveAll()
+          .some((item) => item.className === 'CompositeLinks'),
+      ).toBe(true);
+    });
+
     it('should resolve simple inheritance chain', () => {
       const resolver = new InheritanceResolver();
       resolver.addClasses([

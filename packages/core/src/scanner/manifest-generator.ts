@@ -131,6 +131,7 @@ const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
  */
 const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
   'SmrtJunction',
+  'SmrtJunctionBase',
   'SmrtHierarchical',
   'SmrtPolymorphicAssociation',
   'SmrtReport',
