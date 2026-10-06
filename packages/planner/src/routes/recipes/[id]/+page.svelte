@@ -49,27 +49,19 @@ const label = (id: string) => getRecipe(id)?.label ?? id;
         </p>
       {/if}
       <div class="actions">
-        {#if added}
-          <button
-            type="button"
-            class="secondary"
-            disabled={neededBy.length > 0}
-            aria-label={`Remove ${recipe.label} from my app`}
-            onclick={() => recipeState.remove(recipe.id)}
-          >
-            {neededBy.length
-              ? `In your app (needed by ${neededBy.map(label).join(', ')})`
-              : 'Remove from my app'}
-          </button>
-        {:else}
-          <button
-            type="button"
-            aria-label={`Add ${recipe.label} to my app`}
-            onclick={() => recipeState.add(recipe.id)}
-          >
-            Add to my app
-          </button>
-        {/if}
+        <button
+          type="button"
+          class:secondary={added}
+          disabled={neededBy.length > 0}
+          onclick={() =>
+            added ? recipeState.remove(recipe.id) : recipeState.add(recipe.id)}
+        >
+          {neededBy.length
+            ? `Remove ${recipe.label} (needed by ${neededBy.map(label).join(', ')})`
+            : added
+              ? `Remove ${recipe.label} from my app`
+              : `Add ${recipe.label} to my app`}
+        </button>
       </div>
     </header>
 

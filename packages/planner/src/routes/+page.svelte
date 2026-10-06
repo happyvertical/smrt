@@ -83,29 +83,20 @@ function remove(id: string) {
                 ? `In your app (needed by ${neededBy.map(label).join(', ')})`
                 : 'In your app'}
             </p>
-            <div class="actions">
-              <a class="button" href={appHref(`/recipes/${recipe.id}/`)}>Options</a>
-              <button
-                type="button"
-                class="secondary"
-                disabled={neededBy.length > 0}
-                aria-label={`Remove ${recipe.label} from my app`}
-                onclick={() => remove(recipe.id)}
-              >
-                Remove
-              </button>
-            </div>
-          {:else}
-            <div class="actions">
-              <button
-                type="button"
-                aria-label={`Add ${recipe.label} to my app`}
-                onclick={() => add(recipe.id)}
-              >
-                Add to my app
-              </button>
-            </div>
           {/if}
+          <div class="actions">
+            {#if added}
+              <a class="button" href={appHref(`/recipes/${recipe.id}/`)}>Options</a>
+            {/if}
+            <button
+              type="button"
+              class:secondary={added}
+              disabled={neededBy.length > 0}
+              onclick={() => (added ? remove(recipe.id) : add(recipe.id))}
+            >
+              {added ? `Remove ${recipe.label}` : `Add ${recipe.label} to my app`}
+            </button>
+          </div>
         </li>
       {/each}
     </ul>

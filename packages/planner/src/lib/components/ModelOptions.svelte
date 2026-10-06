@@ -85,8 +85,7 @@ function setOrder(name: string, raw: string) {
           checked={draft.exposure[surface]}
           disabled={exposure[surface].locked}
           onchange={(event) => (draft.exposure[surface] = event.currentTarget.checked)}
-          aria-label={`Expose ${model.name} over ${SURFACE_LABEL[surface]}`}
-          label={`${SURFACE_LABEL[surface]}${exposure[surface].available ? '' : ' (none declared)'}`}
+          label={`Expose ${model.name} over ${SURFACE_LABEL[surface]}${exposure[surface].available ? '' : ' (none declared)'}`}
         />
       {/each}
     </div>
@@ -103,12 +102,7 @@ function setOrder(name: string, raw: string) {
           checked={draft.fields[name].use}
           disabled={lockedOn}
           onchange={(event) => (draft.fields[name].use = event.currentTarget.checked)}
-          aria-label={`Use field ${name}`}
-          label={entry.required
-            ? 'Use this field (required)'
-            : frozen
-              ? 'Use this field (locked)'
-              : 'Use this field'}
+          label={`Use field ${name}${entry.required ? ' (required)' : frozen ? ' (locked)' : ''}`}
         />
         <div class="controls">
           <label>
@@ -127,17 +121,17 @@ function setOrder(name: string, raw: string) {
               aria-label={`Help text for ${name}`}
             />
           </label>
-          <div class="default" class:disabled={frozen}>
+          <fieldset class="default" disabled={frozen}>
             <FieldInput
               field={{ ...entry.field, required: false }}
               label={`Default value for ${name}`}
               idPrefix={`default-${model.name}`}
               value={draft.fields[name].default}
               onchange={(value) => {
-                if (!frozen) draft.fields[name].default = value;
+                draft.fields[name].default = value;
               }}
             />
-          </div>
+          </fieldset>
           <label>
             <span>Order</span>
             <Input
@@ -206,9 +200,13 @@ function setOrder(name: string, raw: string) {
     font-weight: 500;
   }
 
-  .default.disabled {
+  fieldset.default {
+    padding: 0;
+    border: 0;
+  }
+
+  fieldset.default:disabled {
     opacity: 0.6;
-    pointer-events: none;
   }
 
   .actions {
