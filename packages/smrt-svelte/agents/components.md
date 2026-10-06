@@ -15,7 +15,7 @@ the top-of-stack, domain-aware pieces:
 | Category | Components |
 |----------|------------|
 | AI | `Provider`, `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput` |
-| Forms (`/forms`) | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more (AI-wired inputs use the hooks/browser-ai here) |
+| Forms (`/forms`) | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, `RelationInput`, + more (AI-wired inputs use the hooks/browser-ai here) |
 | Module | `ModulePanel` |
 | Settings (`/settings`) | `SettingsCatalog`, `paginateSettingsCatalog` |
 | Audit (root export) | `RecordHistory`, `AuditList` — authorized data props; [contract](../../../docs/content/audit-trail.md) |
@@ -48,6 +48,41 @@ migrate domain re-rolls *onto* them rather than build new primitives:
 - **`ConfirmDialog`** (`./feedback`) — the standard confirm/destructive-action
   flow.
 - **`Card`** (`./ui`) — the standard surface/container; retire local card CSS.
+
+### `RelationInput` (`./forms`, #3600)
+
+Searchable single-select for relation (foreign-key) fields, a thin wrapper over
+the smrt-ui `Combobox`. It is presentation only: the caller supplies the data,
+so the same lookup an assistant uses to turn "Acme" into a record id backs the
+picker. Option shape is `RelationOption` — `{ id, label, detail? }`.
+
+- **Props.** `name`, `label`, `value` (bindable id, `''` = none), `required`,
+  `disabled`, `error`, `placeholder`, `description`, `search(query)`, optional
+  `resolve(id)` and `onCreate(query)`, plus `debounceMs` (250), `interaction`,
+  `onchange` and overridable text (`createLabel`, `clearLabel`, `loadingText`,
+  `emptyText`, `errorText`, `resultsText`).
+- **`search`** runs with `''` when the list opens and then debounced per
+  keystroke; a response for a superseded query is dropped. A rejected search
+  shows `errorText` and the next keystroke retries.
+- **`resolve`** supplies the label of a `value` that has not been searched yet
+  (initial value, parent rebind, form reset). Without it such a value shows an
+  empty field, never the raw id. A `null` result also leaves the field empty.
+- **`onCreate`** adds a "New ..." button; it receives the text most recently
+  searched for and may return the created `RelationOption`, which is selected.
+- **Form integration** is through `Combobox`'s control registration (rich `Form`
+  provides the registry), not a `FieldDefinition`: agents see a `combobox`
+  control whose value is the id. The form posts the id under `name`.
+- **Clear button** shows only when not `required`, not `disabled`, and a value
+  is set; it returns focus to the field.
+- **Accessibility** is the combobox pattern (`role=combobox`, `aria-expanded`,
+  `aria-activedescendant`, listbox/option, Arrow/Enter/Escape) plus a polite
+  `role=status` live region announcing searching / "N results" / no matches,
+  `aria-busy` while fetching, and `aria-invalid` + `aria-describedby` for
+  `error` and `description`.
+- Options render `detail` under the label, so the option's accessible name
+  includes it. The `Combobox` additions that make this possible (`filter`,
+  `onquery`, `status`, `busy`, `invalid`, `describedby`, `optionContent`) are
+  generic and default to the previous behaviour.
 
 ### Import convention (S10 #1415)
 
