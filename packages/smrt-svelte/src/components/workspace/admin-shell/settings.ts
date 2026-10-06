@@ -1,3 +1,4 @@
+import { isShellLayoutEmpty, normalizeShellLayout } from './layout.js';
 import type {
   PanelEdge,
   PanelState,
@@ -234,6 +235,10 @@ export function pruneShellSettingsDelta(
   }
   if (delta.activeFocusToolId !== undefined) {
     pruned.activeFocusToolId = delta.activeFocusToolId;
+  }
+  if (delta.layout !== undefined) {
+    const layout = normalizeShellLayout(delta.layout);
+    if (!isShellLayoutEmpty(layout)) pruned.layout = layout;
   }
   if (delta.keymap && Object.keys(delta.keymap).length > 0) {
     pruned.keymap = delta.keymap;

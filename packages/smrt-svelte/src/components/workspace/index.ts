@@ -39,6 +39,7 @@ export {
   shellActionFromKeyboardEvent,
   shouldIgnoreShellHotkey,
 } from './admin-shell/hotkeys.js';
+export * from './admin-shell/layout.js';
 export {
   type BottomBarMode,
   bottomBarMode,

@@ -44,6 +44,11 @@
       "import": "./dist/components/workspace/index.js",
       "default": "./dist/components/workspace/index.js"
     },
+    "./workspace/layout": {
+      "types": "./dist/components/workspace/admin-shell/layout.d.ts",
+      "import": "./dist/components/workspace/admin-shell/layout.js",
+      "default": "./dist/components/workspace/admin-shell/layout.js"
+    },
     "./workspace/legacy": {
       "types": "./dist/components/workspace/legacy.d.ts",
       "svelte": "./dist/components/workspace/legacy.js",
