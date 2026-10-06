@@ -1,6 +1,5 @@
 <script lang="ts">
 import ModelOptions from '$lib/components/ModelOptions.svelte';
-import SurfacePanel from '$lib/components/SurfacePanel.svelte';
 import { humanize } from '$lib/data/format.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import {
@@ -18,10 +17,6 @@ const recipe = $derived(getRecipe(data.id));
 const added = $derived(recipeState.has(data.id));
 const neededBy = $derived(recipeState.requiredBy(data.id));
 const models = $derived(recipe ? recipeModels(recipe) : []);
-const applied = $derived(models.map(({ model }) => recipeState.apply(model)));
-const fields = $derived(
-  Object.fromEntries(applied.map((a) => [a.model.id, a.fields])),
-);
 const label = (id: string) => getRecipe(id)?.label ?? id;
 </script>
 
@@ -93,9 +88,12 @@ const label = (id: string) => getRecipe(id)?.label ?? id;
         {/each}
       </section>
 
-      <SurfacePanel models={applied.map((a) => a.model)} {fields} />
+      <p>
+        <a href={appHref(`/recipes/${recipe.id}/help/`)}>Read the {recipe.label} help</a>
+        to see how to use what you have set up here.
+      </p>
     {:else}
-      <p class="meta">Add this recipe to set its options and see what you get.</p>
+      <p class="meta">Add this recipe to set its options and read its help.</p>
     {/if}
   </main>
 {/if}

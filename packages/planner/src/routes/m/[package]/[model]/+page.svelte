@@ -1,7 +1,6 @@
 <script lang="ts">
 import { getModel } from '$lib/catalog/index.ts';
 import ModelWorkspace from '$lib/components/ModelWorkspace.svelte';
-import SurfacePanel from '$lib/components/SurfacePanel.svelte';
 import { humanize } from '$lib/data/format.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
@@ -22,6 +21,12 @@ const recipesWithModel = $derived(
     (recipe) => catalogModel && recipe.models.includes(catalogModel.id),
   ),
 );
+// The recipe whose Help covers this model: an added one first.
+const helpRecipe = $derived(
+  recipesWithModel.find(
+    (recipe) => recipe.help && recipeState.has(recipe.id),
+  ) ?? recipesWithModel.find((recipe) => recipe.help),
+);
 const inApp = $derived(
   selection.has(data.packageId) ||
     recipesWithModel.some((recipe) => recipeState.has(recipe.id)),
@@ -41,11 +46,16 @@ const inApp = $derived(
       {#if !inApp}
         <span class="meta">(not in your app yet)</span>
       {/if}
+      {#if helpRecipe}
+        <a
+          class="help-link"
+          href={`${appHref(`/recipes/${helpRecipe.id}/help/`)}#fields-${model.name}`}
+          aria-label={`Help for ${model.name}`}
+          title={`Help for ${model.name}`}>?</a>
+      {/if}
     </nav>
 
     <ModelWorkspace {model} fields={applied.fields} />
-
-    <SurfacePanel models={[model]} fields={{ [model.id]: applied.fields }} />
   </main>
 {/if}
 
@@ -56,6 +66,17 @@ const inApp = $derived(
     width: min(100%, 72rem);
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
+  }
+
+  .help-link {
+    display: inline-grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 1px solid var(--smrt-color-outline);
+    border-radius: 50%;
+    font-size: 0.85rem;
+    text-decoration: none;
   }
 
   .meta {

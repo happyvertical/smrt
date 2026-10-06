@@ -3,8 +3,9 @@
 A static demo of [s-m-r-t](https://github.com/happyvertical/smrt). Add recipes
 (Customers, Sales, Purchases, ...) or whole packages and an app mock-up assembles around them: a
 shell with navigation, a list view and create/edit form per model with sample
-data, and a "What you get" panel listing the REST routes, MCP tools, CLI
-commands and AI-callable methods s-m-r-t generates from each model's decorator.
+data, and a plain-language Help page per recipe that follows the app's options,
+with a collapsed "Connect other tools" section listing the REST routes, MCP
+tools and CLI commands s-m-r-t generates from each model's decorator.
 
 It is a purely static site (SvelteKit + `adapter-static`). Nothing is
 installed or stored on a server; sample data lives in memory and resets on
@@ -44,8 +45,9 @@ Hosting under a sub-path (for example GitHub Pages)? Build with
    now.
 3. The left navigation grows a group per recipe with its entries (Customers,
    Sales Orders, ...). Open one to browse sample rows and create, edit or
-   delete them. The generated views and the "What you get" panel follow the
-   options. Money fields are stored as integer minor units (cents).
+   delete them. The generated views and each recipe's Help page (overview,
+   tasks and a field glossary) follow the options: hide a field and its
+   glossary entry and any task step about it disappear. Money fields are stored as integer minor units (cents).
 4. Recipes and options live in the URL (`?r=commerce.sales,...&o=...`); copy it
    to share the mock-up.
 

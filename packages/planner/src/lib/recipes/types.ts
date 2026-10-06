@@ -6,6 +6,8 @@
  * file goes away and `index.ts` reads the catalog instead.
  */
 
+import type { RecipeHelp } from './help.ts';
+
 /**
  * Curation hints for one field. The vocabulary is the smrt-fields policy
  * vocabulary (default, visibility, label, help, order, locked), so applying a
@@ -53,6 +55,8 @@ export interface Recipe {
   requires: string[];
   /** Curation hints keyed by qualified model name. */
   options?: Record<string, RecipeModelHints>;
+  /** User-facing help (happyvertical/smrt#3591); see `help.ts`. */
+  help?: RecipeHelp;
 }
 
 /** The slice of `smrt-knowledge.json` the planner reads. */

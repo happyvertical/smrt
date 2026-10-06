@@ -49,6 +49,7 @@ const recipeGroups: ShellNavGroup[] = $derived(
             label: entry.label,
           })),
           { href: appHref(`/recipes/${recipe.id}/`), label: 'Options' },
+          { href: appHref(`/recipes/${recipe.id}/help/`), label: 'Help' },
         ],
       },
     ];
@@ -65,7 +66,7 @@ const packageGroups: ShellNavGroup[] = $derived(
         items: [
           {
             href: appHref(`/packages/${pkg.id}/`),
-            label: 'What you get',
+            label: 'Overview',
           },
           ...exposedModels(pkg).map((model) => ({
             href: appHref(`/m/${pkg.id}/${model.name}/`),

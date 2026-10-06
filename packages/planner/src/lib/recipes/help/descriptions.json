@@ -1,0 +1,56 @@
+{
+  "@happyvertical/smrt-commerce:Customer": {
+    "profileId": "Links this customer to their profile record, where their name and contact details are kept.",
+    "creditLimit": "The most this customer may owe you at one time. Leave it empty or at zero if you do not set limits.",
+    "paymentTerms": "How long the customer has to pay, written the way you would say it, for example \"Net 30\".",
+    "taxExempt": "Turn this on if you do not charge this customer sales tax.",
+    "taxId": "The customer's tax or VAT number, kept on file for tax-exempt sales.",
+    "defaultShippingAddress": "Where you usually send this customer's goods, so you do not retype it on every order.",
+    "defaultBillingAddress": "Where you send this customer's invoices.",
+    "status": "Whether this is a current customer, for example active or inactive.",
+    "customerType": "The kind of customer, for example an individual or a business.",
+    "notes": "Anything worth remembering about this customer."
+  },
+  "@happyvertical/smrt-commerce:Vendor": {
+    "profileId": "Links this vendor to their profile record, where their name and contact details are kept.",
+    "leadTimeDays": "How many days the vendor usually takes between your order and delivery.",
+    "minimumOrderAmount": "The smallest order the vendor will accept.",
+    "paymentTerms": "How long you have to pay this vendor, written the way you would say it, for example \"Net 30\".",
+    "currency": "The currency this vendor bills you in.",
+    "defaultContactEmail": "The email address you normally use to reach this vendor.",
+    "defaultContactPhone": "The phone number you normally use to reach this vendor.",
+    "status": "Whether you still buy from this vendor, for example active or inactive.",
+    "notes": "Anything worth remembering about this vendor.",
+    "payoutAddresses": "Where payments to this vendor should be sent."
+  },
+  "@happyvertical/smrt-commerce:Order": {
+    "status": "Where the order stands, for example draft, accepted or completed.",
+    "customerId": "The customer this order is for.",
+    "subtotal": "The order amount before tax.",
+    "taxAmount": "The tax charged on the order.",
+    "totalAmount": "What the customer pays in all, tax included.",
+    "currency": "The currency of the order's amounts.",
+    "issueDate": "The date the order was placed.",
+    "dueDate": "The date payment is expected. An order still open after this date counts as overdue.",
+    "expiryDate": "The last day the order's price or offer is good for.",
+    "reference": "Your own number or note for finding this order later, such as the customer's purchase order number.",
+    "notes": "Anything worth remembering about this order.",
+    "terms": "The conditions agreed with the customer, such as deposits, delivery or payment conditions.",
+    "channelId": "Where the order came from, for example your shop or a marketplace."
+  },
+  "@happyvertical/smrt-commerce:PurchaseOrder": {
+    "status": "Where the purchase stands, for example draft, accepted or completed.",
+    "vendorId": "The vendor you are buying from.",
+    "subtotal": "The order amount before tax.",
+    "taxAmount": "The tax charged on the order.",
+    "totalAmount": "What you pay in all, tax included.",
+    "currency": "The currency of the order's amounts.",
+    "issueDate": "The date you placed the order.",
+    "dueDate": "The date the goods or the payment are due.",
+    "expiryDate": "The last day the vendor's offer is good for.",
+    "reference": "Your own number or note for finding this order later, such as the vendor's quote number.",
+    "notes": "Anything worth remembering about this purchase.",
+    "terms": "The conditions agreed with the vendor, such as payment or delivery conditions.",
+    "channelId": "Where the order was placed, for example a vendor's website or a phone call."
+  }
+}
