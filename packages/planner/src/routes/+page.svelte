@@ -11,13 +11,9 @@ const label = (id: string) =>
   recipes.find((recipe) => recipe.id === id)?.label ?? id;
 
 async function add(id: string) {
-  const before = new Set(recipeState.ids);
   recipeState.add(id);
-  const pulled = recipeState.ids.filter((x) => !before.has(x) && x !== id);
-  notice = pulled.length
-    ? `Added ${label(id)} and what it needs: ${pulled.map(label).join(', ')}.`
-    : `Added ${label(id)}.`;
-  // Open the options form for what was just added.
+  // The page changes, so a message here would never be read out; the recipe
+  // page shows what it needs. Open the options form for what was just added.
   await goto(appHref(`/recipes/${id}/`));
 }
 
