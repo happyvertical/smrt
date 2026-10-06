@@ -462,7 +462,7 @@ export class ManifestAdapter {
     );
     // Selector bindings carry no source path: manifests must stay portable.
     const selectorEntries = Object.entries(options.uiSelectors ?? {}).sort(
-      ([a], [b]) => a.localeCompare(b),
+      ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
     );
     const selectors =
       selectorEntries.length > 0

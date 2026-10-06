@@ -20,7 +20,7 @@ client at all.
 `_meta.ui` channel and is also emitted (sanitized) into web-collection
 definitions. The manifest generator validates it against the field type and
 fails the build otherwise: `textarea`/`email`/`url`/`phone` need a `text` field,
-`currency` an `integer` (minor units) or `decimal` field; an unknown value or a
+`currency` an `integer` (minor-unit) field; an unknown value or a
 relationship field is an error. `ui.widget` is a hint only — it never changes
 the column type or validation.
 
@@ -52,7 +52,9 @@ after inheritance, so every producer (Vite plugin, `ManifestBuilder`,
   target that does not exist fails the build. Hosts call
   `findSelectorFor(manifests, qualifiedName)`; generic forms use the selector
   for any `@foreignKey`/`@crossPackageRef` field targeting that model and fall
-  back to a generic picker labelled by `displayLabelField`.
+  back to a generic picker labelled by `displayLabelField`. `display` is read
+  per class: an STI subclass that declares none uses the default lookup rather
+  than its base's declaration, and a CTI child cannot name a parent's field.
 
 ## Worker registration artifact (#3117)
 

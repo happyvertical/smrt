@@ -18,6 +18,11 @@ import type { ScanError, UiSelectorDeclaration } from './types.js';
 
 const QUALIFIED_NAME = /^@[^/\s:]+\/[^/\s:]+:[A-Za-z_$][\w$]*$/;
 
+/** Locale-independent order: manifests must be byte-stable across machines. */
+function ordinal(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** Result of reading one file for selector slots. */
 export interface UiSelectorFileResult {
   selectors: UiSelectorDeclaration[];
@@ -135,9 +140,7 @@ export function mergeUiSelectors(
   const all = files
     .flatMap((file) => file.selectors)
     .sort(
-      (a, b) =>
-        a.slotId.localeCompare(b.slotId) ||
-        a.filePath.localeCompare(b.filePath),
+      (a, b) => ordinal(a.slotId, b.slotId) || ordinal(a.filePath, b.filePath),
     );
   const selectors: Record<string, UiSelectorDeclaration> = {};
   const byModel = new Map<string, string>();

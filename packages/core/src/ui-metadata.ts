@@ -33,8 +33,8 @@ export const FIELD_UI_WIDGET_TYPES: Readonly<
   email: ['text'],
   url: ['text'],
   phone: ['text'],
-  // Money is integer minor units; rates may be decimal.
-  currency: ['integer', 'decimal'],
+  // Money is integer minor units (repo invariant); a decimal field is a rate.
+  currency: ['integer'],
 };
 
 export function isFieldUIWidget(value: unknown): value is FieldUIWidget {

@@ -774,7 +774,7 @@ export class ManifestGenerator {
           );
         } else if (!FIELD_UI_WIDGET_TYPES[ui.widget].includes(field.type)) {
           failures.push(
-            `${owner}.${fieldName}: ui.widget "${ui.widget}" needs a ${FIELD_UI_WIDGET_TYPES[ui.widget].join(' or ')} field, but this field is ${field.type}.`,
+            `${owner}.${fieldName}: ui.widget "${ui.widget}" needs a field of type ${FIELD_UI_WIDGET_TYPES[ui.widget].join(' or ')}, but this field is ${field.type}.`,
           );
         }
       }

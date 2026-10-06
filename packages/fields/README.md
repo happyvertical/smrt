@@ -44,7 +44,7 @@ least one field is marked basic, unmarked fields start advanced. `group` and
 `order` are code-owned hints; `locked: true` seeds a lock that can prevent a
 personal override. `widget` (`'textarea' | 'currency' | 'email' | 'url' | 'phone'`)
 is a presentation hint for the input, validated against the field type at
-build time (`currency` needs an integer or decimal field; the rest need text).
+build time (`currency` needs an integer (minor units) field; the rest need text).
 
 ## Resolve on the server
 

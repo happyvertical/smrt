@@ -94,14 +94,16 @@ describe('@field ui.widget (#3599)', () => {
         f: { type: 'integer', required: false, _meta: { ui: { widget } } },
       }),
     ).toThrow(
-      new RegExp(`Order\\.f: ui\\.widget "${widget}" needs a text field`),
+      new RegExp(
+        `Order\\.f: ui\\.widget "${widget}" needs a field of type text`,
+      ),
     );
   });
 
-  it('rejects currency on a text field and accepts decimal', () => {
+  it('rejects currency on a text or decimal field (money is integer minor units)', () => {
     expect(() =>
       generate({ f: text({ _meta: { ui: { widget: 'currency' } } }) }),
-    ).toThrow(/needs a integer or decimal field/);
+    ).toThrow(/needs a field of type integer/);
     expect(() =>
       generate({
         f: {
@@ -110,7 +112,7 @@ describe('@field ui.widget (#3599)', () => {
           _meta: { ui: { widget: 'currency' } },
         },
       }),
-    ).not.toThrow();
+    ).toThrow(/this field is decimal/);
   });
 
   it('rejects an unknown widget and names the valid ones', () => {
@@ -129,7 +131,7 @@ describe('@field ui.widget (#3599)', () => {
           _meta: { ui: { widget: 'textarea' } },
         },
       }),
-    ).toThrow(/needs a text field, but this field is foreignKey/);
+    ).toThrow(/needs a field of type text, but this field is foreignKey/);
   });
 });
 
