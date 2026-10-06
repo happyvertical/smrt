@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://s-m-r-t.dev/schemas/smrt-package/v1.json",
+  "title": "s-m-r-t package descriptor (smrt-package.json), version 1",
+  "description": "Proposed in docs/adr/0003-smrt-add-declarative-package-install.md. Authored by a package, published at its root, exported as ./smrt-package.json, and read by `smrt add` without executing package code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["descriptorVersion", "package", "presets", "defaultPreset"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "$comment": { "type": "string" },
+    "descriptorVersion": { "const": 1 },
+    "package": { "$ref": "#/$defs/packageName" },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "smrt": {
+          "type": "string",
+          "description": "Semver range of @happyvertical/smrt-core this descriptor targets."
+        },
+        "packages": {
+          "description": "Other s-m-r-t packages whose models every preset needs in consumer.packages.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/packageName" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "permissions": {
+      "description": "Permissions that are not derived from model operations. Model operation permissions come from the package manifest.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/permission" }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "register": {
+          "description": "Browser subpaths whose import registers ModuleUIRegistry slots (side-effect imports the mount performs).",
+          "type": "array",
+          "items": { "$ref": "#/$defs/subpath" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/page" }
+    },
+    "dock": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dockTool" }
+    },
+    "assistantTools": {
+      "description": "Tools the plan suggests. Never granted by the descriptor; the effect is computed from the catalog.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/toolSuggestion" }
+    },
+    "webmcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intents": {
+          "description": "Declared view intent ids; each must exist in the package knowledge artifact's agentSurface.intents.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key"],
+      "properties": {
+        "key": {
+          "description": "Key under smrt.config `packages` that the package reads with getPackageConfig().",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "defaults": { "type": "object" }
+      }
+    },
+    "extensions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/extension" }
+    },
+    "presets": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/preset" }
+    },
+    "defaultPreset": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+  },
+  "$defs": {
+    "packageName": {
+      "type": "string",
+      "pattern": "^@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$"
+    },
+    "qualifiedObject": {
+      "description": "Provider-qualified manifest key, e.g. @happyvertical/smrt-content:Content.",
+      "type": "string",
+      "pattern": "^@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*:[A-Z][A-Za-z0-9]*$"
+    },
+    "subpath": {
+      "description": "A key of the package.json exports map.",
+      "type": "string",
+      "pattern": "^\\.(/[a-z0-9][a-z0-9._/-]*)?$"
+    },
+    "exportRef": {
+      "description": "<subpath>#<exportName>: a named export of an exports-map subpath.",
+      "type": "string",
+      "pattern": "^\\.(/[a-z0-9][a-z0-9._/-]*)?#[A-Za-z_$][A-Za-z0-9_$]*$"
+    },
+    "id": {
+      "description": "Stable, package-namespaced identifier, e.g. content.workspace.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "permissionSlug": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*\\.[A-Za-z][A-Za-z0-9_-]*$"
+    },
+    "path": {
+      "description": "Absolute mount path; segments may be [param]. No rest or optional segments.",
+      "type": "string",
+      "pattern": "^/([a-z0-9][a-z0-9-]*|\\[[a-z][A-Za-z0-9]*\\])(/([a-z0-9][a-z0-9-]*|\\[[a-z][A-Za-z0-9]*\\]))*$"
+    },
+    "jsonValue": {
+      "description": "Any JSON value; functions and component references are not expressible.",
+      "type": ["string", "number", "boolean", "null", "array", "object"]
+    },
+    "mountValue": {
+      "description": "A value the mount computes: where consumer.routes are hosted, this package's mounted navigation, or the mounted path of a page.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$mount"],
+      "properties": {
+        "$mount": {
+          "type": "string",
+          "pattern": "^(routesBase|navigation|href:[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+)$"
+        }
+      }
+    },
+    "props": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          { "$ref": "#/$defs/mountValue" },
+          { "$ref": "#/$defs/jsonValue" }
+        ]
+      }
+    },
+    "nav": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "icon": { "type": "string" },
+        "order": { "type": "integer" },
+        "group": { "type": "string" }
+      }
+    },
+    "permission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "name", "defaultRoles"],
+      "properties": {
+        "slug": { "$ref": "#/$defs/permissionSlug" },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "defaultRoles": {
+          "description": "System roles seeded with this permission. Empty means no role gets it by default.",
+          "type": "array",
+          "items": { "enum": ["owner", "admin", "member", "viewer"] },
+          "uniqueItems": true
+        }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "path", "component", "permissions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "path": { "$ref": "#/$defs/path" },
+        "component": { "$ref": "#/$defs/exportRef" },
+        "load": {
+          "description": "Server load factory from a server-only subpath; its result is the page's `data` prop.",
+          "$ref": "#/$defs/exportRef"
+        },
+        "actions": {
+          "description": "Form actions map from a server-only subpath.",
+          "$ref": "#/$defs/exportRef"
+        },
+        "permissions": {
+          "description": "All required to render. Required on every page; [] means any signed-in user.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/permissionSlug" },
+          "uniqueItems": true
+        },
+        "routes": {
+          "description": "Objects whose generated REST routes the page calls; the plan adds them to consumer.routes.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/qualifiedObject" },
+          "uniqueItems": true
+        },
+        "packages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/packageName" },
+          "uniqueItems": true
+        },
+        "props": { "$ref": "#/$defs/props" },
+        "nav": {
+          "anyOf": [{ "const": false }, { "$ref": "#/$defs/nav" }]
+        },
+        "render": {
+          "description": "Non-default values cannot be mounted by the catch-all route; such a page is ejected.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ssr": { "type": "boolean" },
+            "csr": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "dockTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "component", "permissions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "label": { "type": "string", "minLength": 1 },
+        "component": { "$ref": "#/$defs/exportRef" },
+        "permissions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/permissionSlug" },
+          "uniqueItems": true
+        },
+        "props": { "$ref": "#/$defs/props" },
+        "order": { "type": "integer" }
+      }
+    },
+    "toolSuggestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool", "reason"],
+      "properties": {
+        "tool": { "$ref": "#/$defs/permissionSlug" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "strategies"],
+      "properties": {
+        "model": { "$ref": "#/$defs/qualifiedObject" },
+        "strategies": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["sti", "reference"] },
+          "uniqueItems": true
+        },
+        "description": { "type": "string" }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "pages"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "pages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "dock": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        },
+        "routes": {
+          "description": "Objects to expose beyond what the preset's pages require.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/qualifiedObject" },
+          "uniqueItems": true
+        },
+        "packages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/packageName" },
+          "uniqueItems": true
+        },
+        "assistantTools": {
+          "description": "Ids of assistantTools entries to list for this preset (still not granted).",
+          "type": "array",
+          "items": { "$ref": "#/$defs/permissionSlug" },
+          "uniqueItems": true
+        },
+        "config": { "type": "object" }
+      }
+    }
+  }
+}
