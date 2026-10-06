@@ -25,6 +25,7 @@ import { SalesRepresentativeCollection } from '../collections/SalesRepresentativ
 import type { Lead } from '../models/Lead.js';
 import type { Opportunity } from '../models/Opportunity.js';
 import type { OpportunityConversion } from '../models/OpportunityConversion.js';
+import type { PipelineStage } from '../models/PipelineStage.js';
 import {
   permitSalesActivityWorkflowCompletion,
   type SalesActivity,
@@ -657,9 +658,10 @@ export class LeadWorkflowService {
           `Opportunity cannot move stages while '${opportunity.status}'`,
         );
       }
-      const stage = await deps.stages.get(
-        { id: input.stageId },
-        { cache: false },
+      const stage = await this.lockPipelineStage(
+        deps,
+        input.stageId,
+        activeTenantId,
       );
       if (
         !stage ||
@@ -1283,6 +1285,34 @@ export class LeadWorkflowService {
       deps.opportunities,
       opportunityId,
       tenantId,
+    );
+  }
+
+  private async lockPipelineStage(
+    deps: LeadWorkflowTransactionDeps,
+    stageId: string,
+    tenantId: string,
+  ): Promise<PipelineStage> {
+    if (deps.supportsRowLocks) {
+      const rows = await deps.stages.query(
+        `SELECT * FROM ${deps.stages.tableName}
+         WHERE id = $1 AND tenant_id = $2
+         FOR UPDATE`,
+        [stageId, tenantId],
+        { allowRawOnTenantScoped: true },
+      );
+      const stage = rows[0];
+      if (stage && stage.tenantId === tenantId) return stage;
+      throw this.refusal(
+        'stage_unavailable',
+        'Opportunity stage is unavailable in the active tenant and pipeline',
+      );
+    }
+    const stage = await deps.stages.get({ id: stageId }, { cache: false });
+    if (stage && stage.tenantId === tenantId) return stage;
+    throw this.refusal(
+      'stage_unavailable',
+      'Opportunity stage is unavailable in the active tenant and pipeline',
     );
   }
 

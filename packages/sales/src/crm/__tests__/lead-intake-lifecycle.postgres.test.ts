@@ -161,6 +161,87 @@ describePostgres('Lead intake and conversion lifecycle on PostgreSQL', () => {
     ).toHaveLength(1);
   });
 
+  it('keeps a nonterminal move open while a concurrent stage edit becomes terminal', async () => {
+    const created = await withTenant({ tenantId }, () =>
+      service.createLead({
+        name: 'Concurrent stage definition',
+        email: 'concurrent-stage-definition@example.test',
+        sourceKind: 'form',
+      }),
+    );
+    const qualified = await withTenant({ tenantId }, () =>
+      service.qualifyLead({
+        leadId: created.lead.id as string,
+        actorProfileId,
+      }),
+    );
+    const pipelineStages = await withTenant({ tenantId }, () =>
+      pipelines.getStages(qualified.opportunity.pipelineId),
+    );
+    const target = pipelineStages.find((stage) => stage.key === 'discovery');
+    if (!target?.id) throw new Error('discovery stage not found');
+
+    let stageRead!: () => void;
+    const firstStageRead = new Promise<void>((resolve) => {
+      stageRead = resolve;
+    });
+    let stageUpdated!: () => void;
+    const updateFinished = new Promise<void>((resolve) => {
+      stageUpdated = resolve;
+    });
+    const stagePrototype = PipelineStageCollection.prototype as unknown as {
+      get: PipelineStageCollection['get'];
+      query: PipelineStageCollection['query'];
+    };
+    const originalGet = stagePrototype.get;
+    const originalQuery = stagePrototype.query;
+    let intercepted = false;
+    stagePrototype.get = async function (...args) {
+      const stage = await originalGet.apply(this, args);
+      if (!intercepted && args[0]?.id === target.id) {
+        intercepted = true;
+        stageRead();
+        await updateFinished;
+      }
+      return stage;
+    };
+    stagePrototype.query = async function (...args) {
+      const rows = await originalQuery.apply(this, args);
+      if (
+        !intercepted &&
+        String(args[0]).includes('FOR UPDATE') &&
+        args[1]?.[0] === target.id
+      ) {
+        intercepted = true;
+        stageRead();
+      }
+      return rows;
+    };
+
+    const move = withTenant({ tenantId }, () =>
+      service.moveOpportunityToStage({
+        opportunityId: qualified.opportunity.id as string,
+        stageId: target.id as string,
+        actorProfileId,
+      }),
+    );
+    await firstStageRead;
+    const update = db
+      .query('UPDATE pipeline_stages SET is_won = TRUE WHERE id = $1', [
+        target.id,
+      ])
+      .then(() => stageUpdated());
+    const [moved] = await Promise.all([move, update]).finally(() => {
+      stagePrototype.get = originalGet;
+      stagePrototype.query = originalQuery;
+    });
+
+    expect(moved.opportunity).toMatchObject({
+      stageId: target.id,
+      status: 'open',
+    });
+  });
+
   it('rolls back a nonterminal stage move when its audit insert fails', async () => {
     const created = await withTenant({ tenantId }, () =>
       service.createLead({
