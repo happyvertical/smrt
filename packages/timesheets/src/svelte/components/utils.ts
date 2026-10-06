@@ -49,6 +49,39 @@ export function formatDate(date: Date | string): string {
 }
 
 /**
+ * ISO 4217 exponents, matching the SDK accounting and commerce tables.
+ * ICU display precision is not a monetary scale (notably IQD, MGA and ALL).
+ */
+const ISO_EXPONENTS: Record<string, number> = {
+  BIF: 0,
+  CLP: 0,
+  DJF: 0,
+  GNF: 0,
+  ISK: 0,
+  JPY: 0,
+  KMF: 0,
+  KRW: 0,
+  PYG: 0,
+  RWF: 0,
+  UGX: 0,
+  UYI: 0,
+  VND: 0,
+  VUV: 0,
+  XAF: 0,
+  XOF: 0,
+  XPF: 0,
+  BHD: 3,
+  IQD: 3,
+  JOD: 3,
+  KWD: 3,
+  LYD: 3,
+  OMR: 3,
+  TND: 3,
+  CLF: 4,
+  UYW: 4,
+};
+
+/**
  * Format a minor-units amount for display.
  *
  * Money in this package is integer minor units (#2401) — `$19.99` is `1999` —
@@ -62,18 +95,14 @@ export function formatCurrency(
   amount: number,
   currency: Currency = 'CAD',
 ): string {
-  // No fraction-digit override: the currency's own exponent is both the scale
-  // to undo and the precision to print. Forcing `minimumFractionDigits: 2`
-  // (as this did before minor units) would pin `maximumFractionDigits` to 2 as
-  // well, so a zero-decimal currency like JPY would report a scale of 2 — and
-  // then render `¥1,999.00` for a currency that has no fractional part at all.
-  // For CAD/USD the resolved default is already 2, so their output is
-  // unchanged.
+  const code = currency.trim().toUpperCase();
+  const digits = ISO_EXPONENTS[code] ?? 2;
   const format = new Intl.NumberFormat('en-CA', {
     style: 'currency',
-    currency,
+    currency: code,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   });
-  const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
   return format.format(amount / 10 ** digits);
 }
 

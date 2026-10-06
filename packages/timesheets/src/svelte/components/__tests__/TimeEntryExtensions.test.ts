@@ -34,6 +34,10 @@ describe('time entry display extensions', () => {
     ['JPY', '1,001'],
     ['CAD', '10.01'],
     ['KWD', '1.001'],
+    ['IQD', '1.001'],
+    ['MGA', '10.01'],
+    ['ALL', '10.01'],
+    ['CLF', '0.1001'],
   ])('formats 1001 minor units with the %s exponent', (currency, amount) => {
     expect(formatCurrency(1001, currency)).toContain(amount);
   });
