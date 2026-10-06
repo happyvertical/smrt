@@ -4,10 +4,11 @@
  * The owner mints a scoped token with the real `smrt app token` command; a
  * real MCP client then talks to the real `smrt-mcp-bridge` binary over stdio
  * (`--mcp-path=/mcp`), which forwards to an in-process HTTP server running the
- * real runtime `handle` and the overlay's route shape: `mountMcpAppRoute` with
- * `createHostedMcpResourceAuth({ profile, runtime })` and
- * `bindPrincipal: runtime.runAsPrincipal`. Storage is the local runtime's own
- * SQLite; nothing on the request path is mocked.
+ * real runtime `handle` and the overlay's route shape: `mountMcpAppRoute`
+ * with `runtime` (#3491), which derives the local owner-token adapter for the
+ * profile it resolves, `runtime.runAsPrincipal` and the request database.
+ * Storage is the local runtime's own SQLite; nothing on the request path is
+ * mocked.
  */
 
 import { createHash } from 'node:crypto';
@@ -18,7 +19,6 @@ import { platform, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createHostedMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
 import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 import {
   createSmrtSvelteKitRuntime,
@@ -207,9 +207,7 @@ beforeAll(async () => {
     models: [],
     requiredScopes: [READ],
     effects: ['read'],
-    smrtOptions: () => ({ db: runtime.databaseConfig() }),
-    auth: createHostedMcpResourceAuth({ profile: 'local', runtime }),
-    bindPrincipal: runtime.runAsPrincipal,
+    runtime,
     workflowTools: [
       {
         name: 'notes_list',

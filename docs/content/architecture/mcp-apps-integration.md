@@ -112,8 +112,12 @@ those live-capped scopes under either isolation mode, task lifecycle calls
 that re-check the originating action against the same allow-list and effects
 and are gated on the effective principal's scopes so live revocation reaches
 existing tasks, and a default-on `Origin` check
-that refuses other browser origins before any principal or dispatch work) and
-the view side with the shipped `McpAppsBridge` component
+that refuses other browser origins before any principal or dispatch work).
+Passing the app's runtime (`mountMcpAppRoute({ runtime, ... })`,
+`mountMcpProtectedResourceMetadataRoute({ runtime })`) derives the request
+database, the bearer adapter for the profile resolved per request, and the
+`runAsPrincipal` binding, failing closed when the runtime cannot supply them.
+Applications wire the view side with the shipped `McpAppsBridge` component
 from `@happyvertical/smrt-svelte/mcp-apps`; neither requires app-owned glue
 modules. These are synthetic-host verified only.
 

@@ -254,8 +254,9 @@ non-object or malformed manifests, credential-shaped JSON fields and credential 
 URL userinfo, non-portable schemas, and non-loopback HTTP server URLs. Diagnostics never
 include malformed manifest content.
 
-The option stages `src/routes/api/mcp/+server.ts`, one `mountMcpAppRoute()`
-call from `@happyvertical/smrt-app-mcp/sveltekit` that publishes `Item` to
+The option stages `src/routes/api/mcp/+server.ts`, one
+`mountMcpAppRoute({ runtime, ... })` call from
+`@happyvertical/smrt-app-mcp/sveltekit` that publishes `Item` to
 principals holding `items.read` (the signed session's permissions locally),
 refuses browser requests from a foreign `Origin`, and serves a bounded static
 resource with a restrictive CSP and the optional OpenAI display metadata. It
@@ -456,7 +457,7 @@ For `self-hosted` and `cloud`, configure HTTPS `SMRT_MCP_RESOURCE`,
 `SMRT_MCP_SCOPES` values. On every request, the runtime maps the verified
 issuer and subject to the user linked through OIDC login. That user must have
 exactly one active tenant membership. Disabled, unmapped, or multi-tenant
-identities are denied. To use a different lookup, pass `resolvePrincipal` to
-`createHostedMcpResourceAuth`. The route never derives tenant authority from
+identities are denied. To use a different lookup, pass the route an explicit
+`auth` built with `createHostedMcpResourceAuth({ ..., resolvePrincipal })`. The route never derives tenant authority from
 JWT claims, request headers, or tool arguments. Missing configuration fails
 closed before MCP dispatch.

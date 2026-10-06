@@ -278,6 +278,7 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
       tenantId: ids.tenantA,
     },
     bind = true,
+    form: 'explicit' | 'runtime' = 'explicit',
   ) {
     const resolved = resolveApplicationRuntime({ profile });
     const runtime: SmrtSvelteKitRuntime = createSmrtSvelteKitRuntime({
@@ -301,16 +302,36 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
     };
     let smrtOptionsDatabase: unknown;
     const executions: string[] = [];
+    // `runtime` form (#3491): `smrtOptions` and `bindPrincipal` come from the
+    // runtime; only the (stub) bearer adapter is an explicit override. The
+    // runtime's own `databaseConfig` is observed so the probe can prove the
+    // derived `smrtOptions` resolved the bound transaction.
+    const bindings =
+      form === 'runtime'
+        ? {
+            runtime: {
+              ...runtime,
+              databaseConfig: () => {
+                smrtOptionsDatabase = runtime.databaseConfig();
+                return smrtOptionsDatabase as ReturnType<
+                  SmrtSvelteKitRuntime['databaseConfig']
+                >;
+              },
+            },
+          }
+        : {
+            smrtOptions: () => {
+              smrtOptionsDatabase = runtime.databaseConfig();
+              return { db: smrtOptionsDatabase };
+            },
+            ...(bind ? { bindPrincipal: runtime.runAsPrincipal } : {}),
+          };
     const POST = mountMcpAppRoute({
       models: [],
       requiredScopes: [READ],
       effects: ['read'],
-      smrtOptions: () => {
-        smrtOptionsDatabase = runtime.databaseConfig();
-        return { db: smrtOptionsDatabase };
-      },
       auth,
-      ...(bind ? { bindPrincipal: runtime.runAsPrincipal } : {}),
+      ...bindings,
       workflowTools: [
         {
           name: 'items_probe',
@@ -418,44 +439,80 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
     return { status: response.status, body: await response.json(), localsUser };
   }
 
-  it('runs a cookie-free bearer call as the bearer principal in its RLS transaction', async () => {
-    const { status, body } = await call(setup('cloud'));
-    expect(status).toBe(200);
-    expect(body.result.structuredContent).toEqual({
-      transactional: true,
-      userId: ids.bearer,
-      tenantId: ids.tenantA,
-      // Live membership permissions capped by the token's granted scopes.
-      permissions: [READ],
-      titles: ['Bearer tenant row'],
-      sameDatabaseAsSmrtOptions: true,
+  for (const form of ['explicit', 'runtime'] as const) {
+    it(`runs a cookie-free bearer call as the bearer principal in its RLS transaction (${form})`, async () => {
+      const { status, body } = await call(setup('cloud', undefined, true, form));
+      expect(status).toBe(200);
+      expect(body.result.structuredContent).toEqual({
+        transactional: true,
+        userId: ids.bearer,
+        tenantId: ids.tenantA,
+        // Live membership permissions capped by the token's granted scopes.
+        permissions: [READ],
+        titles: ['Bearer tenant row'],
+        sameDatabaseAsSmrtOptions: true,
+      });
     });
-  });
 
-  it('still executes as the bearer principal when a cookie for another user is present', async () => {
-    const { status, body, localsUser } = await call(
-      setup('cloud'),
-      ids.cookieSession,
-    );
-    expect(localsUser).toBe(ids.cookieUser);
-    expect(status).toBe(200);
-    expect(body.result.structuredContent).toMatchObject({
-      userId: ids.bearer,
-      tenantId: ids.tenantA,
-      titles: ['Bearer tenant row'],
+    it(`still executes as the bearer principal when a cookie for another user is present (${form})`, async () => {
+      const { status, body, localsUser } = await call(
+        setup('cloud', undefined, true, form),
+        ids.cookieSession,
+      );
+      expect(localsUser).toBe(ids.cookieUser);
+      expect(status).toBe(200);
+      expect(body.result.structuredContent).toMatchObject({
+        userId: ids.bearer,
+        tenantId: ids.tenantA,
+        titles: ['Bearer tenant row'],
+      });
     });
-  });
 
-  it('fails closed with the safe denial for a bearer principal without membership', async () => {
-    const { status, body } = await call(
-      setup('cloud', { id: ids.outsider, tenantId: ids.tenantA }),
-    );
-    expect(status).toBe(403);
-    expect(body.error.data).toEqual({
-      code: 'mcp_tool_access_denied',
-      retryable: false,
+    it(`fails closed with the safe denial for a bearer principal without membership (${form})`, async () => {
+      const { status, body } = await call(
+        setup('cloud', { id: ids.outsider, tenantId: ids.tenantA }, true, form),
+      );
+      expect(status).toBe(403);
+      expect(body.error.data).toEqual({
+        code: 'mcp_tool_access_denied',
+        retryable: false,
+      });
     });
-  });
+
+    it(`keeps application isolation on the base connection (${form})`, async () => {
+      const { status, body } = await call(setup('self-hosted', undefined, true, form));
+      expect(status).toBe(200);
+      expect(body.result.structuredContent).toEqual({ transactional: false });
+    });
+
+    for (const profile of ['cloud', 'self-hosted'] as const) {
+      it(`denies before dispatch when live permissions dropped the token scope (${profile}, ${form})`, async () => {
+        const revoked = setup(
+          profile,
+          { id: ids.revoked, tenantId: ids.tenantA },
+          true,
+          form,
+        );
+        const { status, body } = await call(revoked);
+        // Active membership, token still carries READ, role no longer grants it.
+        expect(status).toBe(200);
+        expect(body.error).toEqual({
+          code: -32600,
+          message: 'MCP tool access is not permitted.',
+          data: { code: 'mcp_tool_access_denied', retryable: false },
+        });
+        expect(revoked.executions).toEqual([]);
+
+        const granted = setup(profile, undefined, true, form);
+        const allowed = await call(granted);
+        expect(allowed.status).toBe(200);
+        expect(allowed.body.result.structuredContent.transactional).toBe(
+          profile === 'cloud',
+        );
+        expect(granted.executions).toEqual(['probe']);
+      });
+    }
+  }
 
   it('without a binder the bearer call runs in the anonymous transaction and sees nothing', async () => {
     const { body } = await call(setup('cloud', undefined, false));
@@ -465,33 +522,4 @@ postgresDescribe('hosted bearer MCP under database-rls', () => {
       titles: [],
     });
   });
-
-  it('keeps application isolation on the base connection', async () => {
-    const { status, body } = await call(setup('self-hosted'));
-    expect(status).toBe(200);
-    expect(body.result.structuredContent).toEqual({ transactional: false });
-  });
-
-  for (const profile of ['cloud', 'self-hosted'] as const) {
-    it(`denies before dispatch when live permissions dropped the token scope (${profile})`, async () => {
-      const revoked = setup(profile, { id: ids.revoked, tenantId: ids.tenantA });
-      const { status, body } = await call(revoked);
-      // Active membership, token still carries READ, role no longer grants it.
-      expect(status).toBe(200);
-      expect(body.error).toEqual({
-        code: -32600,
-        message: 'MCP tool access is not permitted.',
-        data: { code: 'mcp_tool_access_denied', retryable: false },
-      });
-      expect(revoked.executions).toEqual([]);
-
-      const granted = setup(profile);
-      const allowed = await call(granted);
-      expect(allowed.status).toBe(200);
-      expect(allowed.body.result.structuredContent.transactional).toBe(
-        profile === 'cloud',
-      );
-      expect(granted.executions).toEqual(['probe']);
-    });
-  }
 });
