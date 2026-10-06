@@ -19,17 +19,18 @@ const helpMarkdown = import.meta.glob<string>('./help/*.md', {
 const descriptions = descriptionsFile as Record<string, Record<string, string>>;
 
 /**
- * The recipes the planner offers, sorted by id. This is the one seam to swap:
+ * The recipes the planner offers, in declaration order (which is the order of
+ * sub-switches on a card). This is the one seam to swap:
  * once recipes ship in the published packages' `smrt-knowledge.json`, read
  * them from the catalog here (help included) and delete `recipes.json` and
  * `help/`.
  */
-export const recipes: readonly Recipe[] = (raw as unknown as RecipeFile).recipes
-  .map((recipe): Recipe => {
-    const markdown = helpMarkdown[`./help/${recipe.id}.md`];
-    return markdown ? { ...recipe, help: createRecipeHelp(markdown) } : recipe;
-  })
-  .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+export const recipes: readonly Recipe[] = (
+  raw as unknown as RecipeFile
+).recipes.map((recipe): Recipe => {
+  const markdown = helpMarkdown[`./help/${recipe.id}.md`];
+  return markdown ? { ...recipe, help: createRecipeHelp(markdown) } : recipe;
+});
 
 const byId = new Map(recipes.map((recipe) => [recipe.id, recipe]));
 
