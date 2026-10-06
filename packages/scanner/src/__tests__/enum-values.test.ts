@@ -114,6 +114,44 @@ describe('ManifestAdapter enum emission (end to end)', () => {
     return Object.values(manifest.objects)[0].fields;
   }
 
+  it('pins column-type inference for numeric enums, nested-alias unions and computed enums', async () => {
+    write(
+      'src/types.ts',
+      `export enum Priority { Low, High }
+export type Base = 'a' | 'b';
+export enum Computed { A = 'a', B = 'x' + 'y' }
+`,
+    );
+    write(
+      'src/Ticket.ts',
+      `import { SmrtObject, smrt, field } from '@happyvertical/smrt-core';
+import { Priority, Base, Computed } from './types';
+@smrt()
+export class Ticket extends SmrtObject {
+  // Numeric enum: previously json (no alias), now integer + enum (#3598).
+  priority: Priority = Priority.Low;
+  // Union containing an alias: previously json, now text + enum (#3598).
+  kind: Base | 'extra' = 'a';
+  // Not statically resolvable: no partial list is ever emitted; stays json.
+  computed: Computed = Computed.A;
+  // Escape hatch: an explicit type keeps the old column and drops enum.
+  @field({ type: 'json' })
+  legacyPriority: Priority = Priority.Low;
+}
+`,
+    );
+    const fields = await manifestFor();
+    expect(fields.priority).toMatchObject({ type: 'integer', enum: [0, 1] });
+    expect(fields.kind).toMatchObject({
+      type: 'text',
+      enum: ['a', 'b', 'extra'],
+    });
+    expect(fields.computed.type).toBe('json');
+    expect(fields.computed.enum).toBeUndefined();
+    expect(fields.legacyPriority.type).toBe('json');
+    expect(fields.legacyPriority.enum).toBeUndefined();
+  });
+
   it('emits enum for every declaration form, including imported types', async () => {
     write(
       'src/types.ts',
