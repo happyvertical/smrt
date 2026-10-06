@@ -64,6 +64,7 @@ export {
 } from './recipes.js';
 export { OxcScanner } from './scanner.js';
 export * from './types.js';
+export { parseUiSelectorsFile } from './ui-selectors.js';
 export {
   type VerifyManifestCompletenessOptions,
   type VerifyManifestCompletenessResult,

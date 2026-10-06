@@ -38,6 +38,13 @@ export interface FieldUIHints {
    * override it unless an org admin explicitly unlocks it.
    */
   locked?: boolean;
+  /**
+   * Presentation widget for the field's input (#3599): one of
+   * `'textarea' | 'currency' | 'email' | 'url' | 'phone'`. Validated against
+   * the field type at build time (text-like widgets need a `text` field,
+   * `currency` an `integer` or `decimal` one).
+   */
+  widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
 }
 
 /**
@@ -540,6 +547,14 @@ export interface SmartObjectDefinition {
   staticProperties?: Record<string, unknown>;
 
   /**
+   * The own field generic pickers and assistants use to label a record
+   * (#3599): `@smrt({ display: { label } })`, or the first of
+   * `name`/`title`/`label`/`code` when undeclared. Absent when the model has no
+   * usable own field (it should ship a selector instead).
+   */
+  displayLabelField?: string;
+
+  /**
    * Auto-generated agent manifest
    * Only present for classes with `agent` in their decorator config
    * Generated at build time by ManifestGenerator fifth pass
@@ -581,6 +596,19 @@ export const MANIFEST_TIMESTAMP = 0;
  */
 export const DETERMINISTIC_GENERATED_AT = '1970-01-01T00:00:00.000Z';
 
+/**
+ * A package UI component declared as the selector for one model (#3599),
+ * from a `ModuleUISlot` with `selects`.
+ */
+export interface ManifestUISelector {
+  /** The slot id the package registers its component under. */
+  slotId: string;
+  /** Qualified name of the model this component selects. */
+  selects: QualifiedClassName;
+  label?: string;
+  description?: string;
+}
+
 export interface SmartObjectManifest {
   version: string;
   /** Always {@link MANIFEST_TIMESTAMP} for build-output manifests. */
@@ -608,6 +636,11 @@ export interface SmartObjectManifest {
    * Omitted when the package declares none.
    */
   recipes?: RecipeDefinition[];
+  /**
+   * Selector slots keyed by slot id (#3599). Look one up for a model with
+   * `findSelectorFor` from `@happyvertical/smrt-core/ui-metadata`.
+   */
+  uiSelectors?: Record<string, ManifestUISelector>;
 }
 
 export interface ScanResult {

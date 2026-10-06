@@ -39,6 +39,7 @@ export interface ObjectFormFieldDefinition {
     group?: string;
     order?: number;
     locked?: boolean;
+    widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
   };
 }
 

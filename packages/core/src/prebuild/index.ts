@@ -347,6 +347,7 @@ declare module '@smrt/web' {
     group?: string;
     order?: number;
     locked?: boolean;
+    widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
   }
 
   export interface SmrtWebFieldDefinition {

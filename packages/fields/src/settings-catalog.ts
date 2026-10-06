@@ -60,7 +60,13 @@ export interface FieldPolicyCatalogField {
   required?: boolean;
   default?: unknown;
   description?: string;
-  ui?: { basic?: boolean; group?: string; order?: number; locked?: boolean };
+  ui?: {
+    basic?: boolean;
+    group?: string;
+    order?: number;
+    locked?: boolean;
+    widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
+  };
 }
 
 export interface FieldPolicySummaryItem {

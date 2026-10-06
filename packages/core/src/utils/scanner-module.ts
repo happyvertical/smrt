@@ -60,6 +60,17 @@ export interface OxcScannerLike {
       }>;
       agentSurface?: ScannerAgentSurface;
       recipes?: RecipeDefinition[];
+      /** Selector slots keyed by slot id (#3599). */
+      uiSelectors?: Record<
+        string,
+        {
+          slotId: string;
+          selects: `${string}:${string}`;
+          label?: string;
+          description?: string;
+          filePath: string;
+        }
+      >;
     };
     resolved: unknown[];
   }>;
@@ -86,6 +97,16 @@ export interface ManifestAdapterLike {
       packageVersion?: string;
       typeAliases: Record<string, string>;
       recipes?: RecipeDefinition[];
+      uiSelectors?: Record<
+        string,
+        {
+          slotId: string;
+          selects: `${string}:${string}`;
+          label?: string;
+          description?: string;
+          filePath: string;
+        }
+      >;
     },
   ): SmartObjectManifest;
 }

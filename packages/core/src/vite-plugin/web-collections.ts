@@ -45,6 +45,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { isFieldUIWidget } from '../ui-metadata.js';
 import {
   resolveApiActionRouteConfig,
   resolveApiActionSet,
@@ -1006,6 +1007,7 @@ function sanitizeFieldUIHints(value: unknown): FieldUIHints | undefined {
       ? { order: raw.order }
       : {}),
     ...(typeof raw.locked === 'boolean' ? { locked: raw.locked } : {}),
+    ...(isFieldUIWidget(raw.widget) ? { widget: raw.widget } : {}),
   };
   return Object.keys(ui).length > 0 ? ui : undefined;
 }
@@ -1171,6 +1173,9 @@ function buildWebToolDescriptorsForHost(input: {
       ]),
     ),
     idType: owner.decoratorConfig.idType,
+    ...(owner.displayLabelField
+      ? { displayLabelField: owner.displayLabelField }
+      : {}),
   });
 
   return descriptors.map((descriptor) => {

@@ -1116,6 +1116,26 @@ describe('buildWebFieldDefinitions', () => {
     });
   });
 
+  it('emits a valid ui.widget and drops an unknown one (#3599)', () => {
+    const fields = buildWebFieldDefinitions(
+      obj({
+        className: 'Order',
+        collection: 'orders',
+        fields: {
+          notes: field({ type: 'text', _meta: { ui: { widget: 'textarea' } } }),
+          junk: field({
+            type: 'text',
+            _meta: { ui: { widget: 'slider' as never } },
+          }),
+        },
+      }),
+    );
+    expect(fields).toEqual({
+      notes: { type: 'text', ui: { widget: 'textarea' } },
+      junk: { type: 'text' },
+    });
+  });
+
   it('falls back to _meta.description when the top-level key is absent (runtime-registry manifests)', () => {
     // registeredFieldsToManifest (computeRuntimeWebManifestHash) hoists only
     // `default` out of `_meta` — description stays nested. The emission must
