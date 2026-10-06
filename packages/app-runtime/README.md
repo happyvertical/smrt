@@ -75,7 +75,10 @@ checked against its canonical path before descendants or secret bytes are
 written. The runtime then acquires SQLite through `@happyvertical/sql`'s
 explicit `node:sqlite` trusted-parent custody boundary, rooted at the mode-0700
 application data directory. Unsupported runtimes or platforms and unsafe
-ownership, permissions, ACLs, or path components fail closed.
+ownership, permissions, ACLs, or path components fail closed. The local
+`runtime.databaseConfig()` and default `runtime.classOptions()` retain that
+same driver, custody, and root configuration when application collections open
+another connection; an explicit per-class database override still wins.
 
 The application secret is published by atomically linking a fully written,
 synced mode-0600 temporary file into place. Concurrent installers validate and
