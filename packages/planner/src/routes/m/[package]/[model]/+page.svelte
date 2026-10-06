@@ -1,7 +1,9 @@
 <script lang="ts">
 import { getModel } from '$lib/catalog/index.ts';
+import FormWorkspace from '$lib/components/FormWorkspace.svelte';
 import ModelWorkspace from '$lib/components/ModelWorkspace.svelte';
 import { humanize } from '$lib/data/format.ts';
+import { activeForms } from '$lib/forms/active.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
 import { recipes } from '$lib/recipes/index.ts';
@@ -16,6 +18,10 @@ const applied = $derived(
   catalogModel ? recipeState.apply(catalogModel) : undefined,
 );
 const model = $derived(applied?.model);
+// Added recipes' forms (with their extensions) replace the generic form.
+const forms = $derived(
+  catalogModel ? activeForms(recipeState.ids, recipes, catalogModel.id) : [],
+);
 const recipesWithModel = $derived(
   recipes.filter(
     (recipe) => catalogModel && recipe.models.includes(catalogModel.id),
@@ -55,7 +61,11 @@ const inApp = $derived(
       {/if}
     </nav>
 
-    <ModelWorkspace {model} fields={applied.fields} />
+    {#if forms.length}
+      <FormWorkspace {model} {forms} />
+    {:else}
+      <ModelWorkspace {model} fields={applied.fields} />
+    {/if}
   </main>
 {/if}
 
