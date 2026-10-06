@@ -58,12 +58,18 @@ function syncUrl() {
   }
 }
 
-afterNavigate(() => {
-  ready = true;
+afterNavigate((navigation) => {
   if (new URLSearchParams(location.search).has(SELECTION_PARAM)) {
     selection.fromSearch(location.search);
   }
-  syncUrl();
+  // SvelteKit runs the initial 'enter' callbacks before the router counts as
+  // started, and replaceState throws until then, so wait one microtask.
+  const sync = () => {
+    ready = true;
+    syncUrl();
+  };
+  if (navigation.type === 'enter') queueMicrotask(sync);
+  else sync();
 });
 
 // Keep the address bar in step with the selection as it changes.
