@@ -63,6 +63,18 @@ export const M = defineMessages({
   // AssistantDock (#2904)
   'chat.assistant_dock.no_surfaces':
     'Nothing on this page can be changed from the chat. You can still ask questions.',
+  'chat.assistant_dock.loading_conversations': 'Loading conversations…',
+  'chat.assistant_dock.choose_conversation': 'Choose a conversation',
+  'chat.assistant_dock.choose_conversation_hint':
+    'Select a conversation to start chatting with the assistant.',
+  'chat.assistant_dock.view_conversations': 'View conversations',
+  'chat.assistant_dock.start_conversation': 'Start a conversation',
+  'chat.assistant_dock.start_conversation_hint':
+    'Create a conversation to start chatting with the assistant.',
+  'chat.assistant_dock.start_new_conversation': 'Create conversation',
+  'chat.assistant_dock.no_conversations': 'No conversations available',
+  'chat.assistant_dock.no_conversations_hint':
+    'There is not a conversation available for this workspace yet.',
   // Streamed turns and browser tools (#2908)
   'chat.assistant_dock.stop': 'Stop',
   'chat.assistant_dock.tool_request_title': 'The assistant wants to do this:',

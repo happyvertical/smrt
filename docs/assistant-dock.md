@@ -299,6 +299,15 @@ keeps the full dock width. Hosts don't need to widen the edge for the dock
 to be usable. The composer textarea uses `--smrt-font-family`, the same
 font as the rest of the dock.
 
+When no conversation is active, the conversation area explains what is
+needed instead of leaving a disabled composer above a blank body. Once the
+thread list loads, an existing-conversation state opens the list and moves
+focus to its first conversation without selecting it. An empty list offers
+conversation creation only when the transport implements `createThread`;
+otherwise it explains that no conversation is available. Initial loads and
+context swaps show a loading status, and transport failures keep the existing
+error banner without also showing stale or misleading first-use guidance.
+
 jsdom ignores `@container`, so the widths are checked in Chromium by
 `packages/chat/e2e/assistant-dock-narrow.spec.ts` against the
 `/previews/assistant-dock-narrow` fixture. Run it with
@@ -489,6 +498,16 @@ data-surface actions; the content-specific sanitizer stays specific to
 `ContentAgentChat`'s field-update flow.
 
 ## Behavior-to-test matrix
+
+Issue #3567 adds the following risk-based contract:
+
+| Behavior/invariant | Reachable trigger | Positive case | Negative/failure case | Actor/context | Data executor/transaction | Supported runtime/dialect | External contract edge | Test level | Validation command |
+|---|---|---|---|---|---|---|---|---|---|
+| A loaded dock with existing threads and no active thread explains that a choice is required and opens/focuses the thread list | `listThreads()` resolves non-empty before the user selects a thread | “View conversations” opens the disclosure, focuses the first thread, and selecting it enables the composer | No thread is auto-selected; the composer remains disabled until `openThread()` succeeds | Dock user in the current host-authenticated server context | N/A — presentation reads the already-scoped transport; no mutation or transaction | Svelte DOM in the browser; SQL dialect N/A | Thread titles are opaque transport output; creation may be absent | Component DOM + accessibility | `pnpm --filter @happyvertical/smrt-chat exec vitest run src/svelte/components/assistant/__tests__/AssistantDock.test.ts` |
+| Conversation creation is offered only as an advertised transport capability | `listThreads()` resolves empty with or without `createThread` | A full transport shows “Create conversation” and opens the created thread | A reduced transport renders no creation action; a rejected create remains covered by the existing error contract | Dock user in the current host-authenticated context | Host transport owns creation; controller preserves its existing retry/isolation behavior | Svelte DOM in the browser; SQL dialect N/A | Missing optional `createThread` is supported; upstream create failures use the existing alert | Component DOM + controller regression | Same focused component command plus `create-assistant-dock-controller.test.ts` in the package suite |
+| Loading, failure, and context replacement cannot expose stale first-use guidance | Initial `listThreads()` or a live transport/context replacement | Loading is announced; the new context receives neutral guidance after its own list resolves | Errors suppress the empty state; old-context threads disappear and never become active in the replacement | Dock user switching host-provided tenant/workspace context | N/A — context epoch guards transport reads; no persistence change | Svelte DOM in the browser; SQL dialect N/A | Pending and rejecting `listThreads()` calls | Component DOM | `pnpm --filter @happyvertical/smrt-chat exec vitest run src/svelte/components/assistant/__tests__/AssistantDock.test.ts` |
+
+Earlier contracts remain in force:
 
 | Behavior | Test | Kind |
 |---|---|---|

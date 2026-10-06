@@ -352,6 +352,12 @@ function closeThreads() {
   });
 }
 
+async function openThreads() {
+  threadsOpen = true;
+  await tick();
+  threadsEl?.querySelector<HTMLElement>('.assistant-thread-list-item')?.focus();
+}
+
 async function handleSelectThread(threadId: string) {
   closeThreads();
   // openThread() catches internally and records any failure on
@@ -492,6 +498,55 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       <div class="assistant-dock-scroll">
+        {#if !controller.activeThreadId && controller.threadsLoading}
+          <div
+            class="assistant-dock-thread-state assistant-dock-thread-loading"
+            role="status"
+            aria-label={t(M['chat.assistant_dock.loading_conversations'])}
+          >
+            <p>{t(M['chat.assistant_dock.loading_conversations'])}</p>
+          </div>
+        {:else if !controller.activeThreadId && !controller.error}
+          <section
+            class="assistant-dock-thread-state"
+            aria-labelledby={`${threadsId}-empty-title`}
+          >
+            {#if controller.threads.length > 0}
+              <h2 id={`${threadsId}-empty-title`}>
+                {t(M['chat.assistant_dock.choose_conversation'])}
+              </h2>
+              <p>{t(M['chat.assistant_dock.choose_conversation_hint'])}</p>
+              <div class="assistant-dock-thread-state-actions">
+                <Button
+                  type="button"
+                  aria-controls={threadsId}
+                  onclick={openThreads}
+                >
+                  {t(M['chat.assistant_dock.view_conversations'])}
+                </Button>
+                {#if transport.createThread}
+                  <Button type="button" variant="ghost" onclick={handleCreateThread}>
+                    {t(M['chat.assistant_dock.start_new_conversation'])}
+                  </Button>
+                {/if}
+              </div>
+            {:else if transport.createThread}
+              <h2 id={`${threadsId}-empty-title`}>
+                {t(M['chat.assistant_dock.start_conversation'])}
+              </h2>
+              <p>{t(M['chat.assistant_dock.start_conversation_hint'])}</p>
+              <Button type="button" onclick={handleCreateThread}>
+                {t(M['chat.assistant_dock.start_new_conversation'])}
+              </Button>
+            {:else}
+              <h2 id={`${threadsId}-empty-title`}>
+                {t(M['chat.assistant_dock.no_conversations'])}
+              </h2>
+              <p>{t(M['chat.assistant_dock.no_conversations_hint'])}</p>
+            {/if}
+          </section>
+        {/if}
+
         <ul class="assistant-dock-messages">
           {#each controller.messages as message (message.id)}
             <li>
@@ -872,6 +927,45 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-thread-state {
+    flex: 1;
+    min-height: 10rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-5, 20px);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    text-align: center;
+  }
+
+  .assistant-dock-thread-state h2,
+  .assistant-dock-thread-state p {
+    margin: 0;
+  }
+
+  .assistant-dock-thread-state h2 {
+    color: var(--smrt-color-on-surface, #1a1c1e);
+    font: var(--smrt-typography-title-medium-font, 600 1rem/1.4 sans-serif);
+  }
+
+  .assistant-dock-thread-state p {
+    max-width: 28rem;
+    font: var(--smrt-typography-body-medium-font, 0.875rem/1.5 sans-serif);
+  }
+
+  .assistant-dock-thread-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-thread-loading {
+    min-height: 4rem;
   }
 
   .assistant-dock-tool-call {

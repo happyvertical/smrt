@@ -58,7 +58,7 @@ const descriptor: DataSurfaceDescriptor = {
 };
 
 describe('AssistantDock (mounted component)', () => {
-  it('supports a server-context, single-session transport without false controls or guidance', async () => {
+  it('guides a server-context user to an existing conversation without selecting it for them', async () => {
     const registry = createDataSurfaceRegistry();
     const transport: AssistantTransport = {
       async listThreads() {
@@ -94,7 +94,30 @@ describe('AssistantDock (mounted component)', () => {
       props: { transport, registry, contextMode: 'server' },
     });
 
-    await userEvent.click(await screen.findByText('Workspace assistant'));
+    expect(
+      await screen.findByRole('heading', { name: 'Choose a conversation' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toBeDisabled();
+    const chooseButton = screen.getByRole('button', {
+      name: 'View conversations',
+    });
+    expect(chooseButton).toHaveAttribute(
+      'aria-controls',
+      screen
+        .getByRole('button', { name: 'Conversations' })
+        .getAttribute('aria-controls'),
+    );
+    await expectNoA11yViolations(container);
+
+    await userEvent.click(chooseButton);
+    const workspaceThread = screen.getByRole('button', {
+      name: 'Workspace assistant',
+    });
+    expect(document.activeElement).toBe(workspaceThread);
+    await userEvent.click(workspaceThread);
+    expect(
+      screen.queryByRole('heading', { name: 'Choose a conversation' }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /New conversation/i }),
     ).not.toBeInTheDocument();
@@ -109,6 +132,77 @@ describe('AssistantDock (mounted component)', () => {
     await userEvent.type(screen.getByLabelText('Message'), 'hello');
     await userEvent.click(screen.getByRole('button', { name: 'Send' }));
     expect(await screen.findByText('Server reply')).toBeInTheDocument();
+  });
+
+  it('shows loading before first-use guidance and offers creation only when supported', async () => {
+    let resolveThreads!: (threads: []) => void;
+    const transport = createInMemoryAssistantTransport();
+    transport.listThreads = vi.fn(
+      () =>
+        new Promise<[]>((resolve) => {
+          resolveThreads = resolve;
+        }),
+    );
+
+    const { container } = render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+      },
+    });
+
+    expect(
+      screen.getByRole('status', { name: 'Loading conversations…' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Start a conversation' }),
+    ).not.toBeInTheDocument();
+
+    resolveThreads([]);
+    expect(
+      await screen.findByRole('heading', { name: 'Start a conversation' }),
+    ).toBeInTheDocument();
+    await expectNoA11yViolations(container);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Create conversation' }),
+    );
+    expect(screen.getByLabelText('Message')).toBeEnabled();
+    expect(
+      screen.queryByRole('heading', { name: 'Start a conversation' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('explains an empty conversation list without inventing a create capability', async () => {
+    const transport: AssistantTransport = {
+      async listThreads() {
+        return [];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+
+    render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'No conversations available',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Create conversation' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toBeDisabled();
   });
 
   it('server context keeps transport errors visible', async () => {
@@ -135,8 +229,91 @@ describe('AssistantDock (mounted component)', () => {
       await screen.findByText(/Something went wrong: server unavailable/i),
     ).toBeInTheDocument();
     expect(
+      screen.queryByRole('heading', { name: /conversation/i }),
+    ).not.toBeInTheDocument();
+    expect(
       screen.queryByText(/Nothing on this page can be changed from the chat/i),
     ).not.toBeInTheDocument();
+  });
+
+  it('returns to loading and neutral guidance when the transport context changes', async () => {
+    const registry = createDataSurfaceRegistry();
+    const original: AssistantTransport = {
+      async listThreads() {
+        return [
+          {
+            id: 'tenant-a-session',
+            title: 'Tenant A assistant',
+            isResolved: false,
+            messageCount: 0,
+          },
+        ];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+    let resolveReplacement!: (
+      threads: Awaited<ReturnType<AssistantTransport['listThreads']>>,
+    ) => void;
+    const replacement: AssistantTransport = {
+      listThreads: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveReplacement = resolve;
+          }),
+      ),
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+
+    const { rerender } = render(AssistantDock, {
+      props: {
+        transport: original,
+        registry,
+        contextMode: 'server',
+      },
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Tenant A assistant' }),
+    );
+    expect(screen.getByLabelText('Message')).toBeEnabled();
+
+    await rerender({
+      transport: replacement,
+      registry,
+      contextMode: 'server',
+    });
+    expect(
+      screen.getByRole('status', { name: 'Loading conversations…' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Tenant A assistant' }),
+    ).not.toBeInTheDocument();
+
+    resolveReplacement([
+      {
+        id: 'tenant-b-session',
+        title: 'Tenant B assistant',
+        isResolved: false,
+        messageCount: 0,
+      },
+    ]);
+    expect(
+      await screen.findByRole('heading', { name: 'Choose a conversation' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Tenant B assistant' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toBeDisabled();
   });
 
   it('removes full-only controls and staged attachments on a reduced transport swap', async () => {
