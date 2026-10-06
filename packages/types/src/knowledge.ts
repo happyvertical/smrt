@@ -84,6 +84,11 @@ export interface DomainKnowledgeField {
   constraints?: DomainKnowledgeFieldConstraints;
   readonly?: boolean;
   transient?: boolean;
+  /**
+   * The developer-authored `@field({ description })` (#3591): the user-facing
+   * seed for field help. Omitted when the field declares none.
+   */
+  description?: string;
 }
 
 /** Additive structured signature; `methods: string[]` remains the compatibility surface. */

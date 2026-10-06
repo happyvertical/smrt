@@ -85,3 +85,66 @@ field-policy rows. `exposure.<api|mcp|cli>` accepts only `false` or
 non-empty `{ exclude: [...] }` naming a CRUD verb (`list`, `get`, `create`,
 `update`, `delete`) or a public instance method the model declares or inherits: `true` and `include` are
 rejected because they can widen what the model already declares. Custom fields are out of scope.
+
+## User-facing help (#3591)
+
+Help is documentation for the people using the app, not developers. It lives
+beside the recipe as Markdown and is pointed to by `static help`:
+
+```ts
+export class SalesRecipe extends SmrtRecipe {
+  // ...
+  static help = './sales.recipe.md'; // relative to the recipe file, .md only
+}
+```
+
+The file holds an **Overview** and **Tasks** (short how-tos). A step names a
+field as `{field:<fieldName>}` or `{field:<Model>.<fieldName>}`; the Markdown
+block (heading, paragraph, or list item) containing a reference is **tied to
+that field**. Keep prose in the separate file rather than the recipe class.
+Field text itself comes from `@field({ description })`, the user-facing seed
+smrt-fields uses for form help; every field a recipe shows should carry one.
+
+**Emission.** The scanner reads the file (a missing, empty, non-`.md`, absolute
+or `..`-climbing path is a scan error) and emits
+`help: { markdown, fieldRefs }` on the recipe entry in `manifest.json` and
+`smrt-knowledge.json`, so a static host needs no further request.
+`fieldRefs` (distinct references as written, sorted) is **derived**, never
+authored. Knowledge fields also carry `description` (sensitive fields stay
+excluded). `ManifestGenerator.assertRecipeHelp` fails the build on a reference
+to a field the recipe's models do not declare, and on a `fieldRefs` list that
+disagrees with the Markdown. The scanner has its own copy of the reference
+grammar (`deriveHelpFieldRefs`; it cannot import core), so that comparison also
+keeps the two from drifting. A reference to a **sensitive** or universal (`id`,
+`slug`, ...) field also fails the build: neither reaches the knowledge artifact,
+so a host building its field list from it would silently drop the step naming
+one; describe such a field in prose without a reference.
+
+Known limitation: the help file is a generator input, but editing only it does
+not trigger a dev-server rescan (the watch matches source globs) and generation
+snapshots do not digest it, so rebuild (or touch a `.ts` source) after editing.
+
+**Rendering.** `src/recipe-help.ts` is pure and browser-safe (exported from
+both core entries). `renderHelp(help, models, options?)` takes the recipe's
+help plus the app's effective field policies (`HelpModel[]`; label, help,
+visibility, disabled in smrt-fields vocabulary, with `@field` descriptions) and
+returns `{ blocks, glossary, connect? }`:
+
+- `{field:x}` becomes the effective label;
+- a block tied to a hidden, disabled, undeclared, or **advanced** field (unless
+  `showAdvanced`) is dropped; a list item drops alone; a heading whose section
+  had content that was all dropped is pruned (a heading that never had content
+  stays);
+- the glossary lists each shown field with its effective help, else its
+  description. A shown field with neither is **skipped**, not listed blank;
+- `connect` is the collapsed "Connect other tools" section: the recipe's
+  generated REST routes, MCP tools and CLI commands (`options.surfaces`, from
+  the knowledge artifact), minus the recipe's `exposure` narrowing
+  (`options.exposure`). Hosts render it last.
+
+The result is an AST of text nodes (`text`, `code`, `strong`, `em`), never HTML,
+so authored markup stays inert text and nothing needs sanitizing. Only
+`##`-`####` headings, paragraphs, flat lists and bold/italic/code are
+understood. `helpToMarkdown(rendered)` flattens it for hosts with their own
+renderer; render that with raw HTML disabled. `validateHelp(help, models)`
+returns the build-failure problems for hand-built entries.

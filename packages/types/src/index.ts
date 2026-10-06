@@ -128,6 +128,7 @@ export type {
   RecipeExposureNarrowing,
   RecipeFieldOptions,
   RecipeFieldVisibility,
+  RecipeHelp,
   RecipeModelOptions,
   RecipeNavEntry,
 } from './recipe.js';

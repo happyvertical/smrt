@@ -16,6 +16,7 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import {
   defaultConflictColumns,
@@ -108,6 +109,18 @@ const require = createRequire(import.meta.url);
 const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
 
 /**
+ * Fields every `SmrtObject` carries that are not manifest fields (#3590): a
+ * recipe option may still refine them.
+ */
+const UNIVERSAL_OBJECT_FIELDS = [
+  'id',
+  'slug',
+  'context',
+  'created_at',
+  'updated_at',
+];
+
+/**
  * Framework abstract base classes whose declared fields must be merged
  * into every subclass's `fields` map.
  *
@@ -129,18 +142,6 @@ const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
  * broader: it controls scanner-level chain termination and stub
  * resolution, while this one only controls field merging.
  */
-/**
- * Fields every `SmrtObject` carries that are not manifest fields (#3590): a
- * recipe option may still refine them.
- */
-const UNIVERSAL_OBJECT_FIELDS = [
-  'id',
-  'slug',
-  'context',
-  'created_at',
-  'updated_at',
-];
-
 const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
   'SmrtJunction',
   'SmrtJunctionBase',
@@ -427,6 +428,7 @@ export class ManifestGenerator {
 
     // Recipe options may only name fields the merged model declares (#3590).
     this.assertRecipeOptions(manifest);
+    this.assertRecipeHelp(manifest);
 
     // Report models are read-only cache tables. Fill in the generated surface
     // and natural conflict key from report metadata before schema generation.
@@ -562,16 +564,6 @@ export class ManifestGenerator {
   }
 
   /**
-   * Validate every `decoratorConfig.previousQualifiedNames` declaration
-   * (#3338). The declaration rides into the manifest verbatim — it is the
-   * lazy loader's alias index — so a malformed or colliding alias must stop
-   * the build rather than ship a manifest the runtime will refuse:
-   *
-   * - an array of scoped `@scope/package:ClassName` strings, each listed once;
-   * - never the object's own qualified name, nor any object of this manifest;
-   * - never declared by two objects of this manifest.
-   */
-  /**
    * Fail the build when a recipe's `options` name a field its model does not
    * declare (#3590). Runs after inherited fields merge, because only the merged
    * manifest knows STI-merged, injected tenant, and framework-base fields
@@ -613,6 +605,81 @@ export class ManifestGenerator {
     }
   }
 
+  /**
+   * Fail the build when a recipe's help refers to a field its models do not
+   * declare, or its `fieldRefs` disagree with the Markdown (#3591). Runs on the
+   * merged manifest for the same reason as {@link assertRecipeOptions}. The
+   * scanner derives `fieldRefs` with its own copy of the reference grammar
+   * (it cannot import core); re-deriving here with the real parser means the
+   * two can never silently diverge.
+   */
+  assertRecipeHelp(manifest: SmartObjectManifest): void {
+    const problems: string[] = [];
+    for (const recipe of manifest.recipes ?? []) {
+      if (!recipe.help) continue;
+      const models: HelpModel[] = [];
+      const sensitiveByModel = new Map<string, Set<string>>();
+      for (const model of recipe.models) {
+        const object = Object.values(manifest.objects).find(
+          (candidate) =>
+            (candidate.qualifiedName ?? candidate.className) === model,
+        );
+        if (!object) continue;
+        const sensitive = Object.entries(object.fields)
+          .filter(
+            ([, field]) =>
+              field.sensitive === true || field._meta?.sensitive === true,
+          )
+          .map(([name]) => name);
+        models.push({
+          id: model,
+          name: object.className,
+          // Declared fields only: the universal ones (`slug`, `id`, ...) are not
+          // manifest fields, so they never reach the knowledge artifact and a
+          // host building its field list from it would drop the step.
+          fields: Object.keys(object.fields).map((name) => ({
+            name,
+            label: name,
+            visibility: 'basic',
+          })),
+        });
+        sensitiveByModel.set(object.className, new Set(sensitive));
+      }
+      for (const problem of validateHelp(recipe.help, models)) {
+        problems.push(`recipe ${recipe.id}: help: ${problem}`);
+      }
+      // Sensitive fields never reach the knowledge artifact, so a host that
+      // builds its field list from it would silently drop the step that names
+      // one. Keep help prose free of them.
+      for (const ref of recipe.help.fieldRefs) {
+        const found = findField(ref, models);
+        if (
+          found &&
+          sensitiveByModel.get(found.model.name)?.has(found.field.name)
+        ) {
+          problems.push(
+            `recipe ${recipe.id}: help: {field:${ref}} names a sensitive field; sensitive fields are excluded from the knowledge artifact, so describe it without a field reference`,
+          );
+        }
+      }
+    }
+    if (problems.length > 0) {
+      throw new Error(
+        `[manifest-generator] invalid recipe help:\n  ${problems.join('\n  ')}`,
+      );
+    }
+  }
+
+  /**
+   * Validate every `decoratorConfig.previousQualifiedNames` declaration
+   * (#3338). The declaration rides into the manifest verbatim — it is the
+   * lazy loader's alias index — so a malformed or colliding alias must stop
+   * the build rather than ship a manifest the runtime will refuse:
+   *
+   * - an array of scoped `@scope/package:ClassName` strings, each listed once;
+   * - never the object's own qualified name, nor any object of this manifest;
+   * - never declared by two objects of this manifest.
+   */
   assertQualifiedNameAliases(manifest: SmartObjectManifest): void {
     const ownNames = new Set<string>();
     for (const [key, obj] of Object.entries(manifest.objects)) {

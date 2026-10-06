@@ -46,12 +46,19 @@ export class Vendor extends SmrtObject {
    * Reference to smrt-profiles Profile
    * Plain string for cross-package reference
    */
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    description:
+      'Links this vendor to their profile record, where their name and contact details are kept.',
+  })
   profileId: string = '';
 
   /**
    * Typical lead time in days for orders
    */
+  @field({
+    description:
+      'How many days the vendor usually takes between your order and delivery.',
+  })
   leadTimeDays: number = 0;
 
   /**
@@ -59,36 +66,53 @@ export class Vendor extends SmrtObject {
    * satoshis). Compared against `Contract.totalAmount`, which is also minor
    * units (#2401).
    */
+  @field({ description: 'The smallest order the vendor will accept.' })
   minimumOrderAmount: number = 0;
 
   /**
    * Payment terms for this vendor (e.g., "Net 60")
    */
+  @field({
+    description:
+      'How long you have to pay this vendor, written the way you would say it, for example "Net 30".',
+  })
   paymentTerms: string = '';
 
   /**
    * Default currency for transactions with this vendor
    */
+  @field({ description: 'The currency this vendor bills you in.' })
   currency: string = 'USD';
 
   /**
    * Default contact email for orders
    */
+  @field({
+    description: 'The email address you normally use to reach this vendor.',
+  })
   defaultContactEmail: string = '';
 
   /**
    * Default contact phone for orders
    */
+  @field({
+    description: 'The phone number you normally use to reach this vendor.',
+  })
   defaultContactPhone: string = '';
 
   /**
    * Vendor status
    */
+  @field({
+    description:
+      'Whether you still buy from this vendor: active, inactive or suspended.',
+  })
   status: VendorStatus = VendorStatus.ACTIVE;
 
   /**
    * Internal notes about this vendor
    */
+  @field({ description: 'Anything worth remembering about this vendor.' })
   notes: string = '';
 
   /**
@@ -111,7 +135,10 @@ export class Vendor extends SmrtObject {
    * Sensitive (#1540): payout destinations are excluded from generated API/MCP
    * responses and rejected as a `where` filter key.
    */
-  @field({ sensitive: true })
+  @field({
+    sensitive: true,
+    description: 'Where payments to this vendor should be sent.',
+  })
   payoutAddresses: Record<string, string> = {};
 
   constructor(options: VendorOptions = {}) {

@@ -298,6 +298,7 @@ function buildKnowledgeObject(
           field.transient === true || field._meta?.transient === true
             ? true
             : undefined,
+        description: fieldDescription(field),
       };
     });
   const sensitiveIdentifiers = sensitiveFieldIdentifiers(object.fields);
@@ -348,6 +349,17 @@ function buildKnowledgeObject(
     summary: knowledge.summary,
     risks: knowledge.risks ?? [],
   };
+}
+
+/**
+ * The developer-authored `@field({ description })` (#3591). Scanner manifests
+ * expose it top-level; runtime-registry entries under `_meta`.
+ */
+function fieldDescription(
+  field: SmartObjectDefinition['fields'][string],
+): string | undefined {
+  const text = field.description ?? field._meta?.description;
+  return typeof text === 'string' && text.trim() !== '' ? text : undefined;
 }
 
 function isSensitiveField(field: SmartObjectDefinition['fields'][string]) {

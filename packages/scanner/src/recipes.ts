@@ -27,11 +27,13 @@
  * its own package.
  */
 
-import { dirname, resolve as resolvePath } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import type {
   RecipeDefinition,
   RecipeExposureNarrowing,
   RecipeFieldOptions,
+  RecipeHelp,
   RecipeModelOptions,
 } from '@happyvertical/smrt-types';
 import { getLineColumn } from './source-location.js';
@@ -90,6 +92,8 @@ export interface RawRecipe {
   requires: string[];
   /** Options entries in authored order; the key is a model name. */
   options: Array<{ key: string; value: unknown; line?: number }>;
+  /** `static help`: a path to a Markdown file, relative to the recipe's file. */
+  help: { path: string; line?: number } | null;
 }
 
 /** Cheap pre-filter: a file that never names the base cannot declare one. */
@@ -475,6 +479,7 @@ export function extractRecipes(input: {
       nav: [],
       requires: [],
       options: [],
+      help: null,
     };
     const seen = new Set<string>();
 
@@ -559,6 +564,12 @@ export function extractRecipes(input: {
               }),
             );
             break;
+          case 'help':
+            recipe.help = {
+              path: stringValue(value, 'static help'),
+              line: lineOf(input.sourceText, member),
+            };
+            break;
           default:
             continue;
         }
@@ -581,6 +592,64 @@ export function extractRecipes(input: {
   }
 
   return { recipes, errors };
+}
+
+const HELP_EXTENSION = '.md';
+const FIELD_REF_PATTERN =
+  /\{field:([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\}/g;
+
+/**
+ * Distinct `{field:...}` references in help Markdown, as written, sorted.
+ * Mirrors core's `extractFieldRefs` (`recipe-help.ts`): a reference inside an
+ * inline code span is code, not a reference. The scanner cannot import core, so
+ * core re-derives the list from the same Markdown at manifest generation and
+ * fails the build if the two ever disagree.
+ */
+export function deriveHelpFieldRefs(markdown: string): string[] {
+  const refs = new Set<string>();
+  for (const block of markdown.replace(/\r\n?/g, '\n').split(/\n\s*\n/)) {
+    for (const match of block
+      .replace(/`[^`]+`/g, '')
+      .matchAll(FIELD_REF_PATTERN)) {
+      refs.add(match[1] as string);
+    }
+  }
+  return [...refs].sort();
+}
+
+/**
+ * Read a recipe's help file. The path is relative to the recipe's own file and
+ * must stay beside it or below it, so a recipe cannot reach outside its package.
+ */
+function readHelp(
+  help: NonNullable<RawRecipe['help']>,
+  raw: RawRecipe,
+): RecipeHelp {
+  const fail = (message: string): never => {
+    throw new RecipeReadError(`static help ${message}`);
+  };
+  if (
+    help.path.trim() === '' ||
+    isAbsolute(help.path) ||
+    help.path.split(/[\\/]/).includes('..') ||
+    !help.path.toLowerCase().endsWith(HELP_EXTENSION)
+  ) {
+    return fail(
+      `must be a relative path to a ${HELP_EXTENSION} file beside the recipe (got \`${help.path}\`)`,
+    );
+  }
+  const absolute = resolvePath(dirname(raw.filePath), help.path);
+  let markdown: string;
+  try {
+    markdown = readFileSync(absolute, 'utf-8');
+  } catch (error) {
+    return fail(
+      `file \`${help.path}\` cannot be read (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+  markdown = markdown.replace(/\r\n?/g, '\n');
+  if (markdown.trim() === '') return fail(`file \`${help.path}\` is empty`);
+  return { markdown, fieldRefs: deriveHelpFieldRefs(markdown) };
 }
 
 /**
@@ -959,6 +1028,13 @@ export function resolveRecipes(
       }
     }
 
+    const help = raw.help
+      ? attempt(
+          () => readHelp(raw.help as NonNullable<RawRecipe['help']>, raw),
+          raw.help.line,
+        )
+      : undefined;
+
     recipes.push({
       id,
       className: raw.className,
@@ -969,6 +1045,7 @@ export function resolveRecipes(
       nav,
       requires,
       ...(options && Object.keys(options).length > 0 ? { options } : {}),
+      ...(help ? { help } : {}),
     });
   }
 

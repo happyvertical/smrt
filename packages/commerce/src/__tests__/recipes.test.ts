@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { extractFieldRefs } from '@happyvertical/smrt-core';
 import { describe, expect, it } from 'vitest';
 import { Order, PurchaseOrder } from '../models/Contract.js';
 import { Customer } from '../models/Customer.js';
@@ -61,5 +64,37 @@ describe('commerce recipes (#3590)', () => {
       for (const required of recipe.requires)
         expect(ids.has(required)).toBe(true);
     }
+  });
+
+  describe('user-facing help (#3591)', () => {
+    const models = [
+      [CustomersRecipe, { Customer: new Customer() }],
+      [VendorsRecipe, { Vendor: new Vendor() }],
+      [SalesRecipe, { Order: new Order() }],
+      [PurchasesRecipe, { PurchaseOrder: new PurchaseOrder() }],
+    ] as const;
+
+    it.each(models)('%s points at a help file beside recipes.ts', (recipe) => {
+      expect(recipe.help).toMatch(/^\.\/[a-z]+\.recipe\.md$/);
+      const markdown = readFileSync(
+        fileURLToPath(new URL(`../${recipe.help}`, import.meta.url)),
+        'utf-8',
+      );
+      expect(markdown).toContain('## Overview');
+      expect(markdown).toContain('## Tasks');
+    });
+
+    it.each(
+      models,
+    )('%s names only fields its model declares', (recipe, byName) => {
+      const markdown = readFileSync(
+        fileURLToPath(new URL(`../${recipe.help}`, import.meta.url)),
+        'utf-8',
+      );
+      const [instance] = Object.values(byName);
+      for (const ref of extractFieldRefs(markdown)) {
+        expect(ref in (instance as object), ref).toBe(true);
+      }
+    });
   });
 });

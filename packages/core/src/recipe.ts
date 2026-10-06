@@ -26,6 +26,7 @@
  *   static options = {
  *     Order: { fields: { status: { default: 'draft', locked: true } } },
  *   };
+ *   static help = './sales.recipe.md';
  * }
  * ```
  */
@@ -79,4 +80,11 @@ export abstract class SmrtRecipe {
   static requires: readonly string[] = [];
   /** Curation hints keyed by model class name. */
   static options: Readonly<Record<string, SmrtRecipeModelOptions>> = {};
+  /**
+   * Optional user-facing help (#3591): a path to a Markdown file beside the
+   * recipe, such as `./sales.recipe.md`. The scanner reads it at build time and
+   * embeds `{ markdown, fieldRefs }` in the recipe's manifest entry. See
+   * `renderHelp` for how a host follows the app's options.
+   */
+  static help?: string;
 }

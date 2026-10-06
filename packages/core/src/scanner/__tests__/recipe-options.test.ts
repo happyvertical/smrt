@@ -77,3 +77,73 @@ describe('ManifestGenerator.assertRecipeOptions', () => {
     ).not.toThrow();
   });
 });
+
+/**
+ * Recipe help refs are validated against the merged manifest too (#3591).
+ */
+describe('ManifestGenerator.assertRecipeHelp', () => {
+  const generator = new ManifestGenerator();
+
+  function withHelp(help: RecipeDefinition['help']): SmartObjectManifest {
+    const manifest = manifestWith(undefined);
+    const [recipe] = manifest.recipes as RecipeDefinition[];
+    (recipe as RecipeDefinition).help = help;
+    return manifest;
+  }
+
+  it('accepts merged and qualified references', () => {
+    expect(() =>
+      generator.assertRecipeHelp(
+        withHelp({
+          markdown: 'Set {field:title} and {field:Page.parentId}.',
+          fieldRefs: ['Page.parentId', 'title'],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a universal field, which the knowledge artifact lacks', () => {
+    expect(() =>
+      generator.assertRecipeHelp(
+        withHelp({ markdown: 'Set {field:slug}.', fieldRefs: ['slug'] }),
+      ),
+    ).toThrow(/\{field:slug\} names a field the recipe's models lack/);
+  });
+
+  it('fails the build on a reference to an undeclared field', () => {
+    expect(() =>
+      generator.assertRecipeHelp(
+        withHelp({ markdown: 'Set {field:ghost}.', fieldRefs: ['ghost'] }),
+      ),
+    ).toThrow(/recipe shop\.pages: help: \{field:ghost\} names a field/);
+  });
+
+  it('fails the build when fieldRefs disagree with the markdown', () => {
+    expect(() =>
+      generator.assertRecipeHelp(
+        withHelp({ markdown: 'Set {field:title}.', fieldRefs: [] }),
+      ),
+    ).toThrow(/fieldRefs does not match/);
+  });
+
+  it('fails the build on a reference to a sensitive field', () => {
+    const manifest = withHelp({
+      markdown: 'Enter {field:secret}.',
+      fieldRefs: ['secret'],
+    });
+    (
+      manifest.objects['@shop/pkg:Page'] as unknown as {
+        fields: Record<string, unknown>;
+      }
+    ).fields.secret = { type: 'text', sensitive: true };
+    expect(() => generator.assertRecipeHelp(manifest)).toThrow(
+      /\{field:secret\} names a sensitive field/,
+    );
+  });
+
+  it('is a no-op for a recipe without help', () => {
+    expect(() =>
+      generator.assertRecipeHelp(manifestWith(undefined)),
+    ).not.toThrow();
+  });
+});

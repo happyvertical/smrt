@@ -16,6 +16,7 @@ import { Vendor } from './models/Vendor.js';
 /** The people and organisations you sell to. */
 export class CustomersRecipe extends SmrtRecipe {
   static id = 'commerce.customers';
+  static help = './customers.recipe.md';
   static label = 'Customers';
   static summary = 'Keep a list of the customers you sell to.';
   static synonyms = ['clients', 'buyers', 'accounts'];
@@ -26,6 +27,7 @@ export class CustomersRecipe extends SmrtRecipe {
 /** The people and organisations you buy from. */
 export class VendorsRecipe extends SmrtRecipe {
   static id = 'commerce.vendors';
+  static help = './vendors.recipe.md';
   static label = 'Vendors';
   static summary = 'Keep a list of the vendors and suppliers you buy from.';
   static synonyms = ['suppliers', 'sellers'];
@@ -36,6 +38,7 @@ export class VendorsRecipe extends SmrtRecipe {
 /** Customer orders. */
 export class SalesRecipe extends SmrtRecipe {
   static id = 'commerce.sales';
+  static help = './sales.recipe.md';
   static label = 'Sales';
   static summary = 'Take customer orders and track them.';
   static synonyms = ['sales orders', 'orders', 'customer orders'];
@@ -58,6 +61,7 @@ export class SalesRecipe extends SmrtRecipe {
 /** Orders placed with vendors. */
 export class PurchasesRecipe extends SmrtRecipe {
   static id = 'commerce.purchases';
+  static help = './purchases.recipe.md';
   static label = 'Purchases';
   static summary = 'Place orders with vendors and track them.';
   static synonyms = ['purchase orders', 'buying', 'procurement'];
