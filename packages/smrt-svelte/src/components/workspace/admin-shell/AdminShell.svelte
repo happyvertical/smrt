@@ -824,7 +824,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {@render shellBrand()}
           {@render edgeToggle('top')}
         {/if}
-        {#if shell.config.panels.left.initial !== 'hidden' && (!isPhone || shell.phonePresentation('left') !== 'hidden')}
+        {#if shell.config.panels.left.initial !== 'hidden' && shell.layoutPanels.left?.visible !== false && (!isPhone || shell.phonePresentation('left') !== 'hidden')}
           <div class="smrt-admin-shell__tenant-opener" class:restore-hidden={panelState('left') === 'hidden'}>
             <Button variant="ghost" size="sm" aria-label={t(M['ui.admin_shell.menu'])} aria-expanded={edgeExpanded('left')} aria-controls="smrt-admin-shell-left-panel" onclick={() => shell.setPanelState('left', edgeExpanded('left') ? 'collapsed' : 'expanded')}>{t(M['ui.admin_shell.menu'])}</Button>
           </div>

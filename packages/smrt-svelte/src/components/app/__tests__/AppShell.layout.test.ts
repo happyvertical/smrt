@@ -1,0 +1,414 @@
+import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
+import { cleanup, render, screen } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ShellLayout } from '../../workspace/admin-shell/layout.js';
+import type { ShellLayoutController } from '../../workspace/admin-shell/layout-controller.svelte.js';
+import type {
+  ShellNavGroup,
+  ShellNavItem,
+} from '../../workspace/admin-shell/types.js';
+import Harness from './shell-layout-harness.svelte';
+
+const nav: ShellNavItem[] = [{ href: '/', label: 'Home' }];
+const navGroups: ShellNavGroup[] = [
+  {
+    heading: 'Content',
+    items: [
+      { href: '/posts', label: 'Posts' },
+      { href: '/pages', label: 'Pages' },
+    ],
+  },
+  {
+    heading: 'People',
+    items: [
+      { href: '/users', label: 'Users' },
+      { href: '/roles', label: 'Roles' },
+    ],
+  },
+];
+const config = { left: { initial: 'expanded' } } as const;
+
+beforeEach(() => {
+  localStorage.clear();
+  vi.stubGlobal('matchMedia', () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+/** The shell's own navigation (the editor's preview is a separate, inert one). */
+function shellLinks(): string[] {
+  const navElement = document.querySelector(
+    'nav[aria-label="Application navigation"]',
+  );
+  return [...(navElement?.querySelectorAll('a') ?? [])].map(
+    (a) => a.getAttribute('href') ?? '',
+  );
+}
+function previewLinks(): string[] {
+  const frame = document.querySelector('[aria-label="Navigation preview"]');
+  return [...(frame?.querySelectorAll('a') ?? [])].map(
+    (a) => a.getAttribute('href') ?? '',
+  );
+}
+function shellHeadings(): string[] {
+  const navElement = document.querySelector(
+    'nav[aria-label="Application navigation"]',
+  );
+  return [...(navElement?.querySelectorAll('summary') ?? [])].map(
+    (s) => s.textContent?.trim() ?? '',
+  );
+}
+const live = () =>
+  Array.from(document.querySelectorAll('[aria-live]'))
+    .map((e) => e.textContent?.trim())
+    .filter(Boolean)
+    .join(' | ');
+
+function mountShell(props: Record<string, unknown> = {}): {
+  changes: ShellLayout[];
+  api: () => ShellLayoutController;
+} {
+  const changes: ShellLayout[] = [];
+  let api: ShellLayoutController | undefined;
+  render(Harness, {
+    props: {
+      nav,
+      navGroups,
+      config,
+      onChange: (next: ShellLayout) => changes.push(next),
+      onApi: (value: ShellLayoutController) => {
+        api = value;
+      },
+      ...props,
+    },
+  });
+  return { changes, api: () => api as ShellLayoutController };
+}
+
+describe('AppShell layout', () => {
+  it('shows the host navigation by default', async () => {
+    mountShell();
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual([
+        '/',
+        '/posts',
+        '/pages',
+        '/users',
+        '/roles',
+      ]),
+    );
+    expect(shellHeadings()).toEqual(['Content', 'People']);
+  });
+
+  it('applies a host-owned layout over the navigation', async () => {
+    mountShell({
+      initial: {
+        version: 1,
+        sectionOrder: ['People', 'Content'],
+        itemOrder: { Content: ['/pages', '/posts'] },
+        hidden: ['/roles'],
+        moved: { '/home-gone': 'Content', '/users': 'Content' },
+      },
+    });
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual(['/', '/pages', '/posts', '/users']),
+    );
+    // People kept /roles hidden and gave /users away: left with nothing.
+    expect(shellHeadings()).toEqual(['Content']);
+  });
+
+  it('hides an item from the editor, reporting a layout for the host to store', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell();
+    await user.click(
+      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+    );
+    expect(changes.at(-1)).toEqual({ version: 1, hidden: ['/pages'] });
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual(['/', '/posts', '/users', '/roles']),
+    );
+    expect(previewLinks()).toEqual(['/', '/posts', '/users', '/roles']);
+  });
+
+  it('hides and shows a whole section', async () => {
+    const user = userEvent.setup();
+    mountShell();
+    await user.click(
+      screen.getByRole('switch', { name: 'Show People in navigation' }),
+    );
+    await vi.waitFor(() => expect(shellHeadings()).toEqual(['Content']));
+    await user.click(
+      screen.getByRole('switch', { name: 'Show People in navigation' }),
+    );
+    await vi.waitFor(() =>
+      expect(shellHeadings()).toEqual(['Content', 'People']),
+    );
+  });
+
+  it('reorders an item with the keyboard', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell();
+    screen.getByRole('button', { name: 'Move Posts' }).focus();
+    await user.keyboard(' {ArrowDown}');
+    expect(live()).toContain('Posts, position 2 of 2 in Content.');
+    await user.keyboard('{Enter}');
+    expect(changes.at(-1)).toEqual({
+      version: 1,
+      itemOrder: { Content: ['/pages', '/posts'] },
+    });
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual([
+        '/',
+        '/pages',
+        '/posts',
+        '/users',
+        '/roles',
+      ]),
+    );
+  });
+
+  it('moves an item to another section with the keyboard', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell();
+    screen.getByRole('button', { name: 'Move Pages' }).focus();
+    await user.keyboard(' {ArrowDown}{Enter}');
+    expect(changes.at(-1)).toEqual({
+      version: 1,
+      moved: { '/pages': 'People' },
+      itemOrder: { People: ['/pages', '/users', '/roles'] },
+    });
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual([
+        '/',
+        '/posts',
+        '/pages',
+        '/users',
+        '/roles',
+      ]),
+    );
+  });
+
+  it('moves an item into the top level', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell();
+    screen.getByRole('button', { name: 'Move Posts' }).focus();
+    await user.keyboard(' {ArrowUp}{Enter}');
+    expect(changes.at(-1)).toMatchObject({ moved: { '/posts': '@root' } });
+    await vi.waitFor(() =>
+      expect(shellLinks().slice(0, 2)).toEqual(['/', '/posts']),
+    );
+  });
+
+  it('reorders sections with the keyboard', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell();
+    screen.getByRole('button', { name: 'Move People' }).focus();
+    await user.keyboard(' {ArrowUp}{Enter}');
+    expect(changes.at(-1)).toEqual({
+      version: 1,
+      sectionOrder: ['People', 'Content'],
+    });
+    await vi.waitFor(() =>
+      expect(shellHeadings()).toEqual(['People', 'Content']),
+    );
+  });
+
+  it('toggles panel visibility and start state, and hides the panel live', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell({ editor: true });
+    const left = document.querySelector('[data-edge="left"]') as HTMLElement;
+    expect(left).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('#smrt-admin-shell-left-panel'),
+      ).not.toBeNull(),
+    );
+    await user.click(
+      screen.getByRole('switch', { name: 'Start Tenant panel expanded' }),
+    );
+    expect(changes.at(-1)).toEqual({
+      version: 1,
+      panels: { left: { initial: 'collapsed' } },
+    });
+    await user.click(screen.getByRole('switch', { name: 'Show Tenant panel' }));
+    expect(changes.at(-1)).toEqual({
+      version: 1,
+      panels: { left: { initial: 'collapsed', visible: false } },
+    });
+    await vi.waitFor(() => expect(shellLinks()).toEqual([]));
+    expect(
+      screen
+        .getByRole('switch', { name: 'Start Tenant panel expanded' })
+        .hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('resets to defaults', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell({
+      initial: {
+        version: 1,
+        hidden: ['/posts'],
+        sectionOrder: ['People', 'Content'],
+      },
+    });
+    await vi.waitFor(() =>
+      expect(shellHeadings()).toEqual(['People', 'Content']),
+    );
+    await user.click(screen.getByRole('button', { name: 'Reset to defaults' }));
+    expect(changes.at(-1)).toEqual({ version: 1 });
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual([
+        '/',
+        '/posts',
+        '/pages',
+        '/users',
+        '/roles',
+      ]),
+    );
+    expect(
+      screen
+        .getByRole('button', { name: 'Reset to defaults' })
+        .hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('keeps the edit in memory when the host passes only onlayoutchange', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell({ mode: 'callback' });
+    await user.click(
+      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+    );
+    expect(changes).toHaveLength(1);
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual(['/', '/posts', '/users', '/roles']),
+    );
+  });
+
+  it('stores the layout in the user settings when the host passes neither prop', async () => {
+    const user = userEvent.setup();
+    const first = mountShell({ mode: 'default' });
+    await user.click(
+      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+    );
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual(['/', '/posts', '/users', '/roles']),
+    );
+    expect(first.changes).toHaveLength(0);
+    await vi.waitFor(() =>
+      expect(
+        JSON.parse(localStorage.getItem('layout-test') ?? '{}').layout,
+      ).toEqual({
+        version: 1,
+        hidden: ['/pages'],
+      }),
+    );
+    cleanup();
+    // A new session reads it back through the settings adapter.
+    mountShell({ mode: 'default', editor: false });
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual(['/', '/posts', '/users', '/roles']),
+    );
+  });
+
+  it('does not store the layout in settings when the host owns it', async () => {
+    const user = userEvent.setup();
+    mountShell();
+    await user.click(
+      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+    );
+    await vi.waitFor(() => expect(shellLinks()).not.toContain('/pages'));
+    expect(
+      JSON.parse(localStorage.getItem('layout-test') ?? '{}').layout,
+    ).toBeUndefined();
+  });
+
+  it('ignores ids the host no longer has', async () => {
+    mountShell({
+      initial: {
+        version: 1,
+        hidden: ['/gone', 'Vanished'],
+        moved: { '/gone': 'Content', '/posts': 'Nowhere' },
+        sectionOrder: ['Nope'],
+        itemOrder: { Content: ['/gone'] },
+      },
+    });
+    await vi.waitFor(() =>
+      expect(shellLinks()).toEqual([
+        '/',
+        '/posts',
+        '/pages',
+        '/users',
+        '/roles',
+      ]),
+    );
+  });
+
+  it('renders an axe-clean editor', async () => {
+    render(Harness, { props: { nav, navGroups, config } });
+    await vi.waitFor(() => expect(shellLinks().length).toBeGreaterThan(0));
+    const editor = document.querySelector('.smrt-shell-layout-editor');
+    expect(editor).not.toBeNull();
+    await expectNoA11yViolations(editor as HTMLElement);
+  });
+});
+
+describe('layout API', () => {
+  it('makes the same changes the editor makes and reports no-ops', async () => {
+    const { changes, api } = mountShell({ editor: false });
+    await vi.waitFor(() => expect(shellLinks().length).toBeGreaterThan(0));
+    expect(api().moveSection('People', 0)).toBe(true);
+    await vi.waitFor(() =>
+      expect(shellHeadings()).toEqual(['People', 'Content']),
+    );
+    expect(api().moveSection('People', 0)).toBe(false);
+    expect(api().moveItem('/users', 'Content', 0)).toBe(true);
+    expect(api().moveItem('/nope', 'Content')).toBe(false);
+    expect(api().hide('/posts')).toBe(true);
+    expect(api().hide('/posts')).toBe(false);
+    expect(api().isHidden('/posts')).toBe(true);
+    await vi.waitFor(() => expect(shellLinks()).not.toContain('/posts'));
+    expect(api().show('/posts')).toBe(true);
+    expect(api().show('/posts')).toBe(false);
+    expect(api().setPanel('left', { visible: false })).toBe(true);
+    expect(api().panels.find((p) => p.edge === 'left')?.visible).toBe(false);
+    expect(api().setPanel('left', { visible: false })).toBe(false);
+    expect(api().customized).toBe(true);
+    expect(api().reset()).toBe(true);
+    expect(api().reset()).toBe(false);
+    expect(api().customized).toBe(false);
+    expect(changes.length).toBeGreaterThan(5);
+  });
+
+  it('cannot bring back a panel the host removed', async () => {
+    const { api } = mountShell({
+      editor: false,
+      config: { right: false },
+    });
+    await vi.waitFor(() => expect(api()).toBeTruthy());
+    expect(api().panels.find((p) => p.edge === 'right')).toMatchObject({
+      available: false,
+      visible: false,
+    });
+    expect(api().setPanel('right', { visible: true })).toBe(false);
+    expect(api().setPanel('right', { initial: 'expanded' })).toBe(false);
+  });
+
+  it('reads and edits a layout passed as null (no customization yet)', async () => {
+    const { api } = mountShell({ editor: false, initial: null });
+    await vi.waitFor(() => expect(api()).toBeTruthy());
+    expect(api().layout).toEqual({ version: 1 });
+    expect(api().sections.map((s) => s.id)).toEqual([
+      '@root',
+      'Content',
+      'People',
+    ]);
+  });
+});

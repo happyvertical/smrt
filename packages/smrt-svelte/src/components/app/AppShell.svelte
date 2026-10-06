@@ -9,13 +9,21 @@ import '@happyvertical/smrt-ui/themes/styles/base.css';
 import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import type { Snippet } from 'svelte';
+import { type Snippet, untrack } from 'svelte';
 import { M } from '../../i18n/strings.workspace.js';
 import Provider from '../../Provider.svelte';
 import type { User } from '../../state/app-state.js';
 import type { WebMcpProviderConfig } from '../../web/webmcp-provider.js';
 import AdminShell from '../workspace/admin-shell/AdminShell.svelte';
 import AppScopePanel from '../workspace/admin-shell/AppScopePanel.svelte';
+import {
+  applyShellLayout,
+  normalizeShellLayout,
+  type ShellLayout,
+} from '../workspace/admin-shell/layout.js';
+import { setShellLayout } from '../workspace/admin-shell/layout-context.js';
+import { ShellLayoutController } from '../workspace/admin-shell/layout-controller.svelte.js';
+import { createShellState } from '../workspace/admin-shell/state.svelte.js';
 import TenantNav from '../workspace/admin-shell/TenantNav.svelte';
 import type {
   ShellNavGroup,
@@ -56,6 +64,17 @@ interface Props {
   runtimeDiagnostics?: boolean;
   /** Initial panel states and presentation; forwarded to AdminShell. */
   config?: ShellPanelDefaults;
+  /**
+   * The user's layout customization (panel visibility, navigation order and
+   * visibility), applied over `nav`, `navGroups` and `config`. Passing it
+   * makes the host the owner: the shell never stores it, and reports edits
+   * through `onlayoutchange` for the host to pass back. Pass `null` for "no
+   * customization yet". Omit both `layout` and `onlayoutchange` to let the
+   * shell keep the layout in the user's settings (`storageKey`).
+   */
+  layout?: ShellLayout | null;
+  /** Called with the next layout whenever the user (or an assistant) edits it. */
+  onlayoutchange?: (layout: ShellLayout) => void;
   /** Theme preset applied by the ThemeProvider. */
   preset?: ThemePreset;
   /** Light, dark or system color scheme; the user's persisted choice wins. */
@@ -98,6 +117,8 @@ let {
   permissions = [],
   runtimeDiagnostics = false,
   config,
+  layout,
+  onlayoutchange,
   preset = 'smrt',
   colorScheme = 'system',
   appPanelDocs,
@@ -106,7 +127,50 @@ let {
   children,
 }: Props = $props();
 const { t } = useI18n();
-const hasNav = $derived(nav.length > 0 || navGroups.length > 0);
+
+// The shell state lives here (not inside AdminShell) so the layout can reach
+// it: panel overrides apply to it, and the user's layout is stored in it when
+// the host does not own persistence.
+const shell = untrack(() =>
+  createShellState({
+    config,
+    storageKey,
+    layoutPanels: normalizeShellLayout(layout).panels,
+  }),
+);
+// Hosts that pass only `onlayoutchange` own persistence but not the value:
+// keep it in memory so edits show at once.
+let localLayout = $state<ShellLayout | undefined>();
+const controlled = $derived(layout !== undefined);
+const effectiveLayout = $derived(
+  normalizeShellLayout(
+    controlled ? layout : onlayoutchange ? localLayout : shell.settings.layout,
+  ),
+);
+const applied = $derived(
+  applyShellLayout(nav, navGroups, config, effectiveLayout),
+);
+const hasNav = $derived(applied.nav.length > 0 || applied.groups.length > 0);
+
+$effect(() => {
+  shell.setLayoutPanels(effectiveLayout.panels ?? {});
+});
+
+setShellLayout(
+  new ShellLayoutController({
+    nav: () => nav,
+    groups: () => navGroups,
+    panels: () => config,
+    layout: () => effectiveLayout,
+    commit(next) {
+      if (!controlled) {
+        if (onlayoutchange) localLayout = next;
+        else shell.setLayout(next);
+      }
+      onlayoutchange?.(next);
+    },
+  }),
+);
 </script>
 
 {#snippet dockHeader()}
@@ -119,8 +183,7 @@ const hasNav = $derived(nav.length > 0 || navGroups.length > 0);
     <AdminShell
       {title}
       {subtitle}
-      {storageKey}
-      {config}
+      state={shell}
       path={currentHref}
       header={dockToggles.length > 0 ? dockHeader : undefined}
     >
@@ -143,8 +206,8 @@ const hasNav = $derived(nav.length > 0 || navGroups.length > 0);
       {#snippet tenantPanel()}
         {#if hasNav}
           <TenantNav
-            items={nav}
-            groups={navGroups}
+            items={applied.nav}
+            groups={applied.groups}
             {currentHref}
             aria-label={t(M['ui.app_shell.navigation'])}
           />
