@@ -1492,13 +1492,15 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         // Ensure directory exists
         mkdirSync(dirname(manifestPath), { recursive: true });
 
-        // Write manifest file
+        // Write manifest file. The knowledge artifact hashes the manifest it
+        // is given, so it must see the same stamped object the file holds.
+        const published = stampedLibraryManifest(manifest);
         publishAtomicArtifact({
           path: manifestPath,
-          content: JSON.stringify(stampedLibraryManifest(manifest), null, 2),
+          content: JSON.stringify(published, null, 2),
         });
         await writeDomainKnowledgeArtifact(
-          manifest,
+          published,
           projectRoot,
           knowledgePath,
           manifestPath,
