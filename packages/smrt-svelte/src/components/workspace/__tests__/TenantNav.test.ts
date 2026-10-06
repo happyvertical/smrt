@@ -1,6 +1,7 @@
 import { mount, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import TenantNav from '../admin-shell/TenantNav.svelte';
+import NamedIcon from './named-icon.svelte';
 import TestIcon from './test-icon.svelte';
 
 let container: HTMLDivElement;
@@ -237,5 +238,166 @@ describe('TenantNav', () => {
     } finally {
       unmount(component);
     }
+  });
+
+  describe('item action', () => {
+    const groups = [
+      {
+        heading: 'Sales',
+        items: [
+          {
+            href: '/sales',
+            label: 'Sales Orders',
+            action: {
+              href: '/sales/options',
+              label: 'Sales options',
+              visibility: 'active' as const,
+            },
+          },
+          { href: '/sales/reports', label: 'Reports' },
+        ],
+      },
+      { heading: 'Stock', items: [{ href: '/stock', label: 'Stock' }] },
+    ];
+
+    function render(props: Record<string, unknown>) {
+      return mount(TenantNav, { target: container, props });
+    }
+
+    it('renders a separate link with its accessible name and tooltip', () => {
+      const component = render({
+        currentHref: '/sales',
+        items: [
+          {
+            href: '/home',
+            label: 'Home',
+            action: { href: '/home/settings', label: 'Home settings' },
+          },
+        ],
+      });
+      try {
+        const action = container.querySelector('a[aria-label="Home settings"]');
+        expect(action).toHaveAttribute('href', '/home/settings');
+        expect(action).toHaveAttribute('title', 'Home settings');
+        expect(action?.closest('a[href="/home"]')).toBeNull();
+        expect(action?.textContent?.trim()).toBe('\u2699');
+      } finally {
+        unmount(component);
+      }
+    });
+
+    it('uses the icon component with the default or supplied icon name', () => {
+      const component = render({
+        iconComponent: NamedIcon,
+        items: [
+          {
+            href: '/a',
+            label: 'A',
+            action: { href: '/a/x', label: 'A default' },
+          },
+          {
+            href: '/b',
+            label: 'B',
+            action: { href: '/b/x', label: 'B custom', icon: 'wrench' },
+          },
+        ],
+      });
+      try {
+        const html = (label: string) =>
+          container.querySelector(`a[aria-label="${label}"]`)?.innerHTML;
+        expect(html('A default')).toContain('data-icon="settings"');
+        expect(html('B custom')).toContain('data-icon="wrench"');
+      } finally {
+        unmount(component);
+      }
+    });
+
+    it("hides a visibility 'active' action until the group is current", () => {
+      const away = render({ currentHref: '/stock', groups });
+      try {
+        expect(
+          container.querySelector('[aria-label="Sales options"]'),
+        ).toBeNull();
+      } finally {
+        unmount(away);
+      }
+      const sibling = render({ currentHref: '/sales/reports', groups });
+      try {
+        expect(
+          container.querySelector('a[aria-label="Sales options"]'),
+        ).not.toBeNull();
+      } finally {
+        unmount(sibling);
+      }
+    });
+
+    it('marks the action current on its own page', () => {
+      const component = render({ currentHref: '/sales/options', groups });
+      try {
+        expect(
+          container.querySelector('a[aria-label="Sales options"]'),
+        ).toHaveAttribute('aria-current', 'page');
+        expect(
+          container.querySelector('a[href="/sales/reports"]'),
+        ).not.toHaveAttribute('aria-current');
+      } finally {
+        unmount(component);
+      }
+    });
+
+    it('shows a top-level active action when a child is current', () => {
+      const items = [
+        {
+          href: '/orders',
+          label: 'Orders',
+          children: [{ href: '/orders/open', label: 'Open' }],
+          action: {
+            href: '/orders-settings',
+            label: 'Orders settings',
+            visibility: 'active' as const,
+          },
+        },
+      ];
+      const away = render({ currentHref: '/other', items });
+      try {
+        expect(
+          container.querySelector('[aria-label="Orders settings"]'),
+        ).toBeNull();
+      } finally {
+        unmount(away);
+      }
+      const child = render({ currentHref: '/orders/open', items });
+      try {
+        expect(
+          container.querySelector('a[aria-label="Orders settings"]'),
+        ).not.toBeNull();
+      } finally {
+        unmount(child);
+      }
+    });
+
+    it('omits actions from the collapsed nav', () => {
+      const component = render({
+        currentHref: '/sales',
+        collapsed: true,
+        groups,
+        items: [
+          {
+            href: '/home',
+            label: 'Home',
+            action: { href: '/home/settings', label: 'Home settings' },
+          },
+        ],
+      });
+      try {
+        expect(container.querySelector('[aria-label$="options"]')).toBeNull();
+        expect(
+          container.querySelector('[aria-label="Home settings"]'),
+        ).toBeNull();
+        expect(container.querySelector('a[href="/sales/options"]')).toBeNull();
+      } finally {
+        unmount(component);
+      }
+    });
   });
 });

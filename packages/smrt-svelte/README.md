@@ -486,6 +486,15 @@ keys the shell renders exactly as before.
 - **Nav attention**: a `ShellNavItem` with `attention: true` (or a string
   label) shows a dot in `TenantNav`, over the icon when collapsed, and
   announces the label ("Needs attention" by default) inside the link.
+- **Nav action**: a `ShellNavItem` with `action: { href, label, icon?,
+  visibility? }` renders a separate icon-only link after the item's link
+  (`aria-label`/tooltip = `label`, default settings-gear icon,
+  `aria-current="page"` on its own page). `visibility: 'active'` omits the link
+  from the DOM unless the item's section is current: for a `ShellNavGroup`
+  item, any item of the group, their children, or any action href is current;
+  for a top-level item, the item, its children, or its action href. A collapsed
+  nav renders no actions (the action page stays reachable by its route).
+  `AppShell` passes `nav`/`navGroups` through unchanged.
 - **Public region ids** (`ADMIN_SHELL_REGION_IDS`): `smrt-admin-shell-header`,
   `smrt-admin-shell-{top,left,right,bottom}-panel`, and
   `smrt-admin-shell-main`, which is the page scroller.

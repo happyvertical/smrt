@@ -4,6 +4,9 @@ import type { Component } from 'svelte';
 import { M } from '../../../i18n/strings.workspace.js';
 import type { ShellNavGroup, ShellNavItem } from './types.js';
 
+const DEFAULT_ACTION_ICON = 'settings';
+const DEFAULT_ACTION_GLYPH = '\u2699';
+
 interface Props {
   /** Navigation items with href, label, icon, and optional children. */
   items?: ShellNavItem[];
@@ -39,9 +42,27 @@ function isActive(item: ShellNavItem): boolean {
   return item.href === currentHref || currentHref.startsWith(`${item.href}/`);
 }
 
+/** True when the item, any child, or its action link is the current page. */
+function isItemCurrent(item: ShellNavItem): boolean {
+  return (
+    isActive(item) ||
+    !!item.children?.some((child) => isActive(child)) ||
+    (!!item.action && isActive(item.action))
+  );
+}
+
+function isGroupCurrent(group: ShellNavGroup): boolean {
+  return group.items.some(isItemCurrent);
+}
+
+function showAction(item: ShellNavItem, sectionCurrent: boolean): boolean {
+  if (collapsed || !item.action) return false;
+  return item.action.visibility !== 'active' || sectionCurrent;
+}
+
 function isVisibleActive(item: ShellNavItem): boolean {
   if (isActive(item)) return true;
-  return collapsed && !!item.children?.some((child) => isActive(child));
+  return collapsed && isItemCurrent(item);
 }
 
 /** Accessible label of an item's attention dot, or null when it has none. */
@@ -69,9 +90,13 @@ function fallbackIcon(label: string): string {
   {/if}
 {/snippet}
 
-{#snippet navItems(entries: ShellNavItem[])}
+{#snippet navItems(entries: ShellNavItem[], groupCurrent?: boolean)}
   {#each entries as item (item.href)}
+    {@const action = showAction(item, groupCurrent ?? isItemCurrent(item))
+      ? item.action
+      : undefined}
     <div class="smrt-tenant-nav__section">
+      <div class="smrt-tenant-nav__row">
       <a
         href={item.href}
         class:smrt-tenant-nav__link--visible-active={isVisibleActive(item)}
@@ -105,6 +130,25 @@ function fallbackIcon(label: string): string {
         {/if}
         {@render attention(item)}
       </a>
+      {#if action}
+        <a
+          href={action.href}
+          class="smrt-tenant-nav__action"
+          aria-label={action.label}
+          aria-current={isActive(action) ? 'page' : undefined}
+          title={action.label}
+          onclick={onNavigate}
+        >
+          <span class="smrt-tenant-nav__icon" aria-hidden="true">
+            {#if IconComponent}
+              <IconComponent name={action.icon ?? DEFAULT_ACTION_ICON} size={16} />
+            {:else}
+              {action.icon ?? DEFAULT_ACTION_GLYPH}
+            {/if}
+          </span>
+        </a>
+      {/if}
+      </div>
       {#if item.children?.length && !collapsed}
         <div class="smrt-tenant-nav__children">
           {#each item.children as child (child.href)}
@@ -153,7 +197,7 @@ function fallbackIcon(label: string): string {
           <span>{group.heading}</span>
         {/if}
       </summary>
-      <div class="smrt-tenant-nav__group-items">{@render navItems(group.items)}</div>
+      <div class="smrt-tenant-nav__group-items">{@render navItems(group.items, isGroupCurrent(group))}</div>
     </details>
   {/each}
 </nav>
@@ -165,6 +209,27 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav__group-items {
     display: grid;
     gap: var(--smrt-spacing-1);
+  }
+
+  .smrt-tenant-nav__row {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    min-inline-size: 0;
+  }
+  .smrt-tenant-nav__row > a:first-child { flex: 1 1 auto; min-inline-size: 0; }
+  .smrt-tenant-nav a.smrt-tenant-nav__action {
+    flex: 0 0 auto;
+    display: inline-grid;
+    place-items: center;
+    inline-size: max(2rem, var(--smrt-control-target-min, 0px));
+    block-size: max(2rem, var(--smrt-control-target-min, 0px));
+    padding: 0;
+    color: var(--smrt-color-on-surface-variant);
+  }
+  .smrt-tenant-nav a.smrt-tenant-nav__action:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
   }
 
   .smrt-tenant-nav__heading {
