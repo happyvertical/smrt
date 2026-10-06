@@ -66,6 +66,16 @@ export { default as VendorDirectory } from './components/VendorDirectory.svelte'
 export type VendorFormProps = ComponentProps<typeof VendorForm>;
 export { default as VendorForm } from './components/VendorForm.svelte';
 export type {
+  InvoiceMinorAmount,
+  RetainedInvoiceCardView,
+  RetainedInvoiceHeaderView,
+  RetainedInvoiceLineItemsView,
+  RetainedInvoiceLineView,
+  RetainedInvoiceTaxView,
+  RetainedInvoiceTotalsView,
+} from './invoice-display.js';
+export { formatInvoiceMinorUnits } from './invoice-display.js';
+export type {
   CustomerDisplayData,
   CustomerFieldNames,
   CustomerFormValues,

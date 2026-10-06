@@ -7,12 +7,13 @@
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../i18n.js';
+import type { RetainedInvoiceHeaderView } from '../invoice-display.js';
 import type { InvoiceStatus } from '../types.js';
 
 const { t } = useI18n();
 
 /** Props for InvoiceHeader component */
-export interface Props {
+export interface LegacyInvoiceHeaderProps {
   /** Invoice number/reference */
   invoiceNumber: string;
   /** Current status */
@@ -33,17 +34,31 @@ export interface Props {
   onstatuschange?: (status: InvoiceStatus) => void;
 }
 
-const {
-  invoiceNumber,
-  status,
-  issueDate,
-  dueDate,
-  paidDate,
-  customerName,
-  projectName,
-  editable = false,
-  onstatuschange,
-}: Props = $props();
+/** Exact retained metadata branch with an open caller-owned status. */
+export interface RetainedInvoiceHeaderProps {
+  /** Caller-authoritative retained header. */
+  retained: RetainedInvoiceHeaderView;
+}
+
+/** Legacy metadata or an explicit retained view. */
+export type Props = LegacyInvoiceHeaderProps | RetainedInvoiceHeaderProps;
+
+const props: Props = $props();
+const retained = $derived('retained' in props ? props.retained : null);
+const legacy = $derived(retained ? null : (props as LegacyInvoiceHeaderProps));
+const invoiceNumber = $derived(
+  retained ? retained.invoiceNumber : legacy?.invoiceNumber,
+);
+const status = $derived(retained ? retained.status : legacy?.status);
+const issueDate = $derived(retained ? retained.issueDate : legacy?.issueDate);
+const dueDate = $derived(retained ? retained.dueDate : legacy?.dueDate);
+const paidDate = $derived(retained ? retained.paidDate : legacy?.paidDate);
+const customerName = $derived(
+  retained ? retained.customerName : legacy?.customerName,
+);
+const projectName = $derived(
+  retained ? retained.projectName : legacy?.projectName,
+);
 
 // Format date
 function formatDate(date: Date | string | null | undefined): string {
@@ -93,10 +108,15 @@ const statusConfig: Record<
   },
 };
 
-const statusInfo = $derived(statusConfig[status] ?? statusConfig.draft);
+const statusInfo = $derived(
+  retained
+    ? { ...statusConfig.draft, label: retained.statusLabel }
+    : (statusConfig[status as InvoiceStatus] ?? statusConfig.draft),
+);
 
 // Check if overdue
 const isOverdue = $derived.by(() => {
+  if (retained) return false;
   if (status === 'paid' || status === 'cancelled') return false;
   if (!dueDate) return false;
   const due = typeof dueDate === 'string' ? new Date(dueDate) : dueDate;
@@ -154,7 +174,7 @@ const isOverdue = $derived.by(() => {
       </div>
     {/if}
 
-    {#if paidDate && status === 'paid'}
+    {#if paidDate && (retained || status === 'paid')}
       <div class="meta-item paid">
         <span class="meta-label">{t(M['commerce.invoice_header.paid_date'])}</span>
         <span class="meta-value">{formatDate(paidDate)}</span>

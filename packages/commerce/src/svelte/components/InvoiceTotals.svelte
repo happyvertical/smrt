@@ -6,12 +6,17 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
+import {
+  formatInvoiceMinorUnits,
+  type RetainedInvoiceTotalsView,
+} from '../invoice-display.js';
 
 const { t } = useI18n();
 
 /** Props for InvoiceTotals component */
-export interface Props {
+export interface LegacyInvoiceTotalsProps {
   /** Subtotal in decimal dollars */
   subtotal: number;
   /** Tax rate as percentage (e.g., 5 for 5%) */
@@ -34,18 +39,33 @@ export interface Props {
   size?: 'sm' | 'md' | 'lg';
 }
 
-const {
-  subtotal,
-  taxRate = 0,
-  taxAmount,
-  total,
-  amountPaid = 0,
-  currency = 'CAD',
-  showTax = true,
-  showPaid = false,
-  taxLabel = 'GST',
-  size = 'md',
-}: Props = $props();
+/** Exact retained totals branch. */
+export interface RetainedInvoiceTotalsProps {
+  /** Caller-authoritative totals; omitted facts remain omitted. */
+  retained: RetainedInvoiceTotalsView;
+  /** Renders additional retained totals evidence. */
+  details?: Snippet<[RetainedInvoiceTotalsView]>;
+  /** Size variant. */
+  size?: 'sm' | 'md' | 'lg';
+}
+
+/** Legacy decimal-major totals or exact retained totals. */
+export type Props = LegacyInvoiceTotalsProps | RetainedInvoiceTotalsProps;
+
+const props: Props = $props();
+const retained = $derived('retained' in props ? props.retained : null);
+const details = $derived('details' in props ? props.details : undefined);
+const legacy = $derived(retained ? null : (props as LegacyInvoiceTotalsProps));
+const subtotal = $derived(legacy?.subtotal ?? 0);
+const taxRate = $derived(legacy?.taxRate ?? 0);
+const taxAmount = $derived(legacy?.taxAmount);
+const total = $derived(legacy?.total ?? 0);
+const amountPaid = $derived(legacy?.amountPaid ?? 0);
+const currency = $derived(legacy?.currency ?? 'CAD');
+const showTax = $derived(legacy?.showTax ?? true);
+const showPaid = $derived(legacy?.showPaid ?? false);
+const taxLabel = $derived(legacy?.taxLabel ?? 'GST');
+const size = $derived(props.size ?? 'md');
 
 // Calculate tax if not provided. `taxRate` is a percentage (e.g. 5 for 5%), so
 // the `/ 100` converts percent → fraction — it is NOT a cents conversion. The
@@ -67,6 +87,16 @@ function formatMoney(amount: number): string {
 </script>
 
 <div class="invoice-totals" class:sm={size === 'sm'} class:lg={size === 'lg'}>
+  {#if retained}
+    <div class="totals-row"><span class="totals-label">Subtotal</span><span class="totals-value">{formatInvoiceMinorUnits(retained.subtotalMinor, retained.currency)}</span></div>
+    {#if retained.discountMinor !== undefined}<div class="totals-row"><span class="totals-label">Discount</span><span class="totals-value">{formatInvoiceMinorUnits(retained.discountMinor, retained.currency)}</span></div>{/if}
+    {#each retained.taxes ?? [] as tax (tax.id)}<div class="totals-row"><span class="totals-label">{tax.label}</span><span class="totals-value">{formatInvoiceMinorUnits(tax.amountMinor, retained.currency)}</span></div>{/each}
+    {#if retained.holdbackMinor !== undefined}<div class="totals-row"><span class="totals-label">{retained.holdbackLabel ?? 'Holdback'}</span><span class="totals-value">{formatInvoiceMinorUnits(retained.holdbackMinor, retained.currency)}</span></div>{/if}
+    <div class="totals-row total"><span class="totals-label">Total</span><span class="totals-value">{formatInvoiceMinorUnits(retained.totalMinor, retained.currency)}</span></div>
+    {#if retained.paidMinor !== undefined}<div class="totals-row paid"><span class="totals-label">{t(M['commerce.invoice_totals.amount_paid'])}</span><span class="totals-value">{formatInvoiceMinorUnits(retained.paidMinor, retained.currency)}</span></div>{/if}
+    {#if retained.payableMinor !== undefined}<div class="totals-row balance"><span class="totals-label">Payable</span><span class="totals-value">{formatInvoiceMinorUnits(retained.payableMinor, retained.currency)}</span></div>{/if}
+    {@render details?.(retained)}
+  {:else}
   <div class="totals-row">
     <span class="totals-label">Subtotal</span>
     <span class="totals-value">{formatMoney(subtotal)}</span>
@@ -102,6 +132,7 @@ function formatMoney(amount: number): string {
       </span>
       <span class="totals-value">{formatMoney(Math.abs(balanceDue))}</span>
     </div>
+  {/if}
   {/if}
 </div>
 
