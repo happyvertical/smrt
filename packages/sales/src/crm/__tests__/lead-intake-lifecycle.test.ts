@@ -16,6 +16,7 @@ import { SalesRepresentativeCollection } from '../collections/SalesRepresentativ
 import {
   LeadWorkflowService,
   type LeadWorkflowValidationError,
+  type QualifyLeadResult,
 } from '../services/LeadWorkflowService.js';
 
 describe('Lead intake and conversion lifecycle', () => {
@@ -492,12 +493,48 @@ describe('Lead intake and conversion lifecycle on DuckDB', () => {
       expect(replay.created).toBe(false);
       expect(replay.lead.id).toBe(first.lead.id);
 
-      const qualified = await withTenant({ tenantId }, () =>
-        service.qualifyLead({
-          leadId: first.lead.id as string,
-          actorProfileId,
-        }),
-      );
+      const originalQuery = db.query.bind(db);
+      let activeResultReads = 0;
+      let maxConcurrentResultReads = 0;
+      let queryTail = Promise.resolve();
+      db.query = async (sql, ...vars) => {
+        const isQualificationResultRead =
+          /^\s*SELECT\b/i.test(sql) && /\b(?:leads|opportunities)\b/i.test(sql);
+        if (!isQualificationResultRead)
+          return await originalQuery(sql, ...vars);
+
+        activeResultReads += 1;
+        maxConcurrentResultReads = Math.max(
+          maxConcurrentResultReads,
+          activeResultReads,
+        );
+        try {
+          // Keep overlapping service calls logically in flight while issuing
+          // the native statements one at a time, so this assertion detects
+          // unsafe orchestration without crashing DuckDB's shared connection.
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          const query = queryTail.then(() => originalQuery(sql, ...vars));
+          queryTail = query.then(
+            () => undefined,
+            () => undefined,
+          );
+          return await query;
+        } finally {
+          activeResultReads -= 1;
+        }
+      };
+      let qualified: QualifyLeadResult;
+      try {
+        qualified = await withTenant({ tenantId }, () =>
+          service.qualifyLead({
+            leadId: first.lead.id as string,
+            actorProfileId,
+          }),
+        );
+      } finally {
+        db.query = originalQuery;
+      }
+      expect(maxConcurrentResultReads).toBe(1);
       const closed = await withTenant({ tenantId }, () =>
         service.closeOpportunity({
           opportunityId: qualified.opportunity.id as string,

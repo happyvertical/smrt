@@ -583,10 +583,14 @@ export class LeadWorkflowService {
         created: prior.length === 0,
       };
     });
-    const [lead, opportunity] = await Promise.all([
-      this.readLead(this.deps.leads, result.leadId, tenantId),
-      this.readOpportunity(result.opportunityId, tenantId),
-    ]);
+    // SQLite and DuckDB root handles multiplex one native connection. Keep
+    // post-commit result reads sequential so their prepared statements cannot
+    // overlap on that connection.
+    const lead = await this.readLead(this.deps.leads, result.leadId, tenantId);
+    const opportunity = await this.readOpportunity(
+      result.opportunityId,
+      tenantId,
+    );
     return { lead, opportunity, created: result.created };
   }
 
