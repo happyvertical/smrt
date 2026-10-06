@@ -417,6 +417,17 @@ assert that an applied add is still in place.
 - Pages that need their own page options, layouts or types are ejected and
   then owned by the app.
 
+## Implementation issues
+
+In dependency order; each names its invariants and acceptance criteria.
+
+1. [#3559](https://github.com/happyvertical/smrt/issues/3559) descriptor and consumer config contract (types, schema, validator, `consumer.routes` / `consumer.mount` / `assistant.allowedTools`).
+2. [#3560](https://github.com/happyvertical/smrt/issues/3560) `smrt add <pkg>` plan/apply and `smrt app permissions sync`.
+3. [#3561](https://github.com/happyvertical/smrt/issues/3561) registered-page catch-all mount and preset hosting of package routes.
+4. [#3562](https://github.com/happyvertical/smrt/issues/3562) `smrt remove <pkg>`, doctor package drift, the manifest-merge fix.
+5. [#3563](https://github.com/happyvertical/smrt/issues/3563) `--extend` and `--eject` scaffolds.
+6. [#3564](https://github.com/happyvertical/smrt/issues/3564) smrt-content reference descriptor going live and starter adoption.
+
 ## Alternatives rejected
 
 - **Install script per package** — no plan, no safe re-run, no removal or
