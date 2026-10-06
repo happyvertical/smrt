@@ -26,12 +26,20 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   stand-in for the `recipes` the packages' `smrt-knowledge.json` will carry;
   `index.ts` is the one seam to swap for catalog-sourced recipes, then delete
   the JSON. `resolve.ts` (`requires`), `policy.ts` (smrt-fields-shaped field
-  policies, options-form draft/rows, exposure narrowing), `encoding.ts` (options
-  in the URL), `state.svelte.ts` (the store), `help.ts` (the #3591 help contract and its
+  policies, options-form draft/rows, exposure narrowing), `state.svelte.ts` (the store; `snapshot()`/`load()` are its blueprint form), `help.ts` (the #3591 help contract and its
   renderer, one module to swap for the core helper; content in `help/*.md` and
   `help/descriptions.json`). Never import
   `@happyvertical/smrt-fields` until the live-objects work (#4).
-- `src/lib/planner/`: the package selection (`?p=a,b`; recipes add `?r=` and `?o=`, and `app.svelte.ts` `appHref` composes them; `selection.svelte.ts`
+- `src/lib/blueprint/`: the app blueprint (smrt#3604's format, first instance):
+  one `Blueprint` (`{ $schema, version: 1, recipes, policies, exposure?, layout? }`)
+  holding recipes, options and the layout. `store.svelte.ts` is the single
+  source of truth (hydrate, debounced save, import/reset), `storage.ts` the
+  try/catch localStorage wrapper (versioned key), `validate.ts` the strict
+  import check, `legacy.ts` the read-only `?r=`/`?o=` migration. Sample records
+  are NOT part of it. `layout` is typed to the local `upstream/shellLayout.ts`
+  (smrt#3603) and unused until that ships.
+- `src/lib/planner/`: the package selection (`?p=a,b`, the only URL state;
+  `app.svelte.ts` `appHref` carries it; `selection.svelte.ts`
   is the one store the control panel, navigation and a future chat assistant
   all drive).
 - `src/lib/forms/`: LOCAL recipe `forms` / `extends` (not in `SmrtRecipe` yet):
@@ -53,7 +61,7 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   `data/labels.ts` labels related records (Customer/Vendor via their Profile).
 - `src/lib/components/`: generated list/form (`ModelWorkspace`), the collapsed "Connect other tools"
   list (`ConnectTools`), the Help view (`HelpView`), `ChatDockPlaceholder` (the dock slot for #3).
-- `src/routes/`: `/` Planner (recipe cards with switches only), `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
+- `src/routes/`: `/` Planner (recipe cards with switches only), `/blueprint/` Export / Import / Reset, `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
   `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/`.
   All prerendered; `entries()` come from the catalog.
 

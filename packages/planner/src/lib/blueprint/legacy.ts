@@ -1,12 +1,21 @@
-import type { FieldPolicyRow, FieldPolicyVisibility } from './policy.ts';
-import type { ExposureSurface } from './types.ts';
+import { recipesById } from '../recipes/index.ts';
+import type {
+  FieldPolicyRow,
+  FieldPolicyVisibility,
+} from '../recipes/policy.ts';
+import { knownRecipes, withRequirements } from '../recipes/resolve.ts';
+import type { ExposureSurface } from '../recipes/types.ts';
+import {
+  BLUEPRINT_SCHEMA,
+  BLUEPRINT_VERSION,
+  type Blueprint,
+} from './types.ts';
 
-/** What the URL carries about options: saved policy rows and narrowed surfaces. */
-export interface OptionsState {
-  rows: FieldPolicyRow[];
-  /** Surfaces a person switched off, keyed by qualified model name. */
-  narrowed: Record<string, ExposureSurface[]>;
-}
+/**
+ * The URL encoding the planner used before the blueprint (`?r=` recipes and
+ * `?o=` options). Read-only now: it exists so old shared links migrate once
+ * into the blueprint, then the layout cleans the URL.
+ */
 
 /** Compact wire form: short keys, rows grouped under their object. */
 interface Wire {
@@ -30,16 +39,6 @@ interface Wire {
 const VISIBILITIES = new Set(['basic', 'advanced', 'hidden']);
 const SURFACE_IDS = new Set(['api', 'mcp', 'cli']);
 
-function toBase64Url(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
 function fromBase64Url(value: string): string {
   const padded = value.replace(/-/g, '+').replace(/_/g, '/');
   const binary = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
@@ -48,39 +47,17 @@ function fromBase64Url(value: string): string {
   );
 }
 
-/** Encode options for the `o` query parameter; empty options give `''`. */
-export function encodeOptions(state: OptionsState): string {
-  const wire: Wire = {};
-  const sorted = [...state.rows].sort(
-    (a, b) =>
-      a.objectRef.localeCompare(b.objectRef) ||
-      a.fieldName.localeCompare(b.fieldName),
-  );
-  for (const row of sorted) {
-    const entry: NonNullable<Wire['r']>[string][string] = {};
-    if (row.visibility) entry.v = row.visibility;
-    if (row.label) entry.l = row.label;
-    if (row.help !== undefined) entry.h = row.help;
-    if (row.defaultValue !== undefined) entry.d = row.defaultValue;
-    if (typeof row.displayOrder === 'number') entry.o = row.displayOrder;
-    if (typeof row.locked === 'boolean') entry.k = row.locked;
-    wire.r ??= {};
-    wire.r[row.objectRef] ??= {};
-    wire.r[row.objectRef][row.fieldName] = entry;
-  }
-  for (const ref of Object.keys(state.narrowed).sort()) {
-    const surfaces = [...state.narrowed[ref]].sort();
-    if (surfaces.length) {
-      wire.x ??= {};
-      wire.x[ref] = surfaces;
-    }
-  }
-  return wire.r || wire.x ? toBase64Url(JSON.stringify(wire)) : '';
+/** The legacy recipe and options parameters, if the query carries any. */
+export function hasLegacyState(search: string): boolean {
+  const params = new URLSearchParams(search);
+  return params.has('r') || params.has('o');
 }
 
-/** Decode the `o` parameter. Anything malformed decodes to no options. */
-export function decodeOptions(value: string | null | undefined): OptionsState {
-  const empty: OptionsState = { rows: [], narrowed: {} };
+function decodeOptions(value: string): {
+  rows: FieldPolicyRow[];
+  narrowed: Record<string, ExposureSurface[]>;
+} {
+  const empty = { rows: [], narrowed: {} };
   if (!value) return empty;
   let wire: Wire;
   try {
@@ -121,4 +98,30 @@ export function decodeOptions(value: string | null | undefined): OptionsState {
     if (valid.length) narrowed[ref] = valid;
   }
   return { rows, narrowed };
+}
+
+/**
+ * Turn a legacy query into a blueprint. Lenient like the old reader: unknown
+ * recipe ids and malformed options are dropped, since a stale link should
+ * still open what it can.
+ */
+export function blueprintFromLegacySearch(search: string): Blueprint {
+  const params = new URLSearchParams(search);
+  const ids = (params.get('r') ?? '').split(',').filter(Boolean);
+  const recipes = withRequirements(knownRecipes(ids, recipesById), recipesById);
+  const covered = new Set(
+    recipes.flatMap((id) => recipesById.get(id)?.models ?? []),
+  );
+  const { rows, narrowed } = decodeOptions(params.get('o') ?? '');
+  const blueprint: Blueprint = {
+    $schema: BLUEPRINT_SCHEMA,
+    version: BLUEPRINT_VERSION,
+    recipes,
+    policies: rows.filter((row) => covered.has(row.objectRef)),
+  };
+  const exposure = Object.fromEntries(
+    Object.entries(narrowed).filter(([ref]) => covered.has(ref)),
+  );
+  if (Object.keys(exposure).length) blueprint.exposure = exposure;
+  return blueprint;
 }
