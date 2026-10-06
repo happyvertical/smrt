@@ -4,8 +4,11 @@ import descriptionsFile from './help/descriptions.json';
 import { createRecipeHelp, type HelpModel } from './help.ts';
 import { type FieldPolicyRow, resolveFields } from './policy.ts';
 import raw from './recipes.json';
+import { buildSections, type RecipeSection } from './sections.ts';
 import type { Recipe, RecipeFile } from './types.ts';
 
+export type { RecipeSection } from './sections.ts';
+export { sectionId } from './sections.ts';
 export type * from './types.ts';
 
 // Local stand-ins for what happyvertical/smrt#3591 puts in the catalog: the
@@ -39,6 +42,13 @@ export function getRecipe(id: string): Recipe | undefined {
 }
 
 export const recipesById: ReadonlyMap<string, Recipe> = byId;
+
+/** The navigation sections (see `sections.ts`), one Options and Help page each. */
+export const sections: readonly RecipeSection[] = buildSections(recipes);
+
+export function getSection(id: string): RecipeSection | undefined {
+  return sections.find((section) => section.id === id);
+}
 
 /** The package that owns a recipe: the one its first model belongs to. */
 export function recipePackage(recipe: Recipe): CatalogPackage | undefined {
