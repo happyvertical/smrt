@@ -19,6 +19,8 @@
 
 // Built-in signal adapters
 export * from './adapters/index';
+export * from './audit.js';
+export { withAuditContext } from './audit-context.js';
 // App-side referential integrity applied by `SmrtObject.delete()` (#2371)
 export {
   buildCascadePlan,

@@ -18,6 +18,7 @@ the top-of-stack, domain-aware pieces:
 | Forms (`/forms`) | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more (AI-wired inputs use the hooks/browser-ai here) |
 | Module | `ModulePanel` |
 | Settings (`/settings`) | `SettingsCatalog`, `paginateSettingsCatalog` |
+| Audit (root export) | `RecordHistory`, `AuditList` — authorized data props; [contract](../../../docs/content/audit-trail.md) |
 | Workspace (`/workspace`) | `AdminShell`, `ShellState`, `TenantNav`, focus tools, settings, activities, and system/app panels |
 | Legacy workspace (`/workspace/legacy`) | First-generation `ToolsDock` compatibility surface during AdminShell migration |
 

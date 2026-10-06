@@ -23,6 +23,7 @@ export {
   resolveAgentProfile,
   resolveAgentProfileId,
 } from './agent-profile';
+export * from './audit-trail.js';
 // Auth module - Identity resolution
 // Auth module - Nostr crypto
 // Auth module - Magic link service

@@ -863,6 +863,8 @@ export class Profile extends SmrtObject {
     source?: 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';
     metadata?: Record<string, unknown>;
     onBehalfOf?: Profile | null;
+    reason?: string;
+    changes?: import('@happyvertical/smrt-core').AuditEntry['changes'];
   }): Promise<AuditLog> {
     const { AuditLogCollection } = await import(
       '../collections/AuditLogCollection'

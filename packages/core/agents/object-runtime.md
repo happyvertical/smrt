@@ -2,6 +2,14 @@
 
 `constructor(options)` → `initialize()` → ready for `save()`/`delete()`/`loadFromId()`
 
+Models declaring `audit: true` use transactional collection CRUD with trusted
+`SmrtCollectionOptions.auditTrail` identity and writer. `collection.update()` checks
+registered mutable fields; audited creates refuse natural-key overwrites.
+Direct object writes and custom overrides need explicit service recording.
+Cascade reuse of a no-savepoint transaction requires an active framework-owned
+transaction handle; raw caller transactions retain the ordinary delete limitation.
+See [audit contract](../../../docs/content/audit-trail.md).
+
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
 - Persisted `save()` uses loaded `updated_at` in its `UPDATE`; zero rows throws

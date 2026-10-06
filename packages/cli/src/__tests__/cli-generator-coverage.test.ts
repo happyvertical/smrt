@@ -65,7 +65,18 @@ function makeMemoryCollection(seed: Array<Record<string, any>> = []) {
           store.delete(id);
         },
       };
+      await obj.save();
       return obj;
+    },
+    async withAuditMutation(
+      row: any,
+      _action: string,
+      mutate: (row: any) => Promise<unknown>,
+    ) {
+      return await mutate(row);
+    },
+    async delete(id: string) {
+      return store.delete(id);
     },
   };
 }
@@ -879,13 +890,11 @@ describe('CLIGenerator - CRUD options via parseCliArgs (regression #1385)', () =
 
     const created: any[] = [];
     vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
-      create: async (data: any) => ({
-        ...data,
-        id: 'x1',
-        async save() {
-          created.push(this);
-        },
-      }),
+      create: async (data: any) => {
+        const row = { ...data, id: 'x1' };
+        created.push(row);
+        return row;
+      },
     } as any);
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -924,6 +933,11 @@ describe('CLIGenerator - CRUD options via parseCliArgs (regression #1385)', () =
     };
     vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
       get: async () => existing,
+      withAuditMutation: async (
+        row: any,
+        _action: string,
+        mutate: (row: any) => Promise<unknown>,
+      ) => await mutate(row),
     } as any);
     vi.spyOn(console, 'log').mockImplementation(() => {});
 

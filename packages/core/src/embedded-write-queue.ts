@@ -43,6 +43,14 @@ import {
 const urlQueues = new Map<string, Promise<unknown>>();
 const handleQueues = new WeakMap<object, Promise<unknown>>();
 const activeQueueKeys = new AsyncLocalStorage<ReadonlySet<string | object>>();
+const frameworkTransactions = new AsyncLocalStorage<
+  ReadonlySet<DatabaseInterface>
+>();
+
+/** Whether this exact handle belongs to a currently active framework transaction. */
+export function isFrameworkTransactionHandle(db: DatabaseInterface): boolean {
+  return frameworkTransactions.getStore()?.has(db) === true;
+}
 
 interface QueueableDatabase {
   url?: string;
@@ -161,11 +169,16 @@ export async function withEmbeddedWriteTransaction<T>(
     try {
       return await transaction((bound) => {
         entered = true;
-        if (!serialize) return operation(bound);
-        const active = activeQueueKeys.getStore();
-        return activeQueueKeys.run(
-          new Set([...(active ?? []), queueKey(bound)]),
-          () => operation(bound),
+        return frameworkTransactions.run(
+          new Set([...(frameworkTransactions.getStore() ?? []), bound]),
+          () => {
+            if (!serialize) return operation(bound);
+            const active = activeQueueKeys.getStore();
+            return activeQueueKeys.run(
+              new Set([...(active ?? []), queueKey(bound)]),
+              () => operation(bound),
+            );
+          },
         );
       });
     } catch (error) {

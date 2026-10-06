@@ -1395,6 +1395,14 @@ export class CLIGenerator {
     // If not found in utility commands, try lazy-loading object commands
     if (!command && parsed.command) {
       command = await this.findObjectCommand(parsed.command);
+      if (
+        command &&
+        matchLeadingCommand(processedArgv, [command], {}).command
+      ) {
+        const reParsed = parseCliCommandArgs(processedArgv, [command], {});
+        parsed.args = reParsed.args;
+        parsed.options = reParsed.options;
+      }
     }
 
     if (command) {
@@ -2124,7 +2132,6 @@ export class CLIGenerator {
 
       const collection = await this.getCollection(objectName);
       const result = await collection.create(data);
-      await result.save();
 
       spinner.succeed(`Created ${objectName} with ID: ${result.id}`);
 
@@ -2185,8 +2192,10 @@ export class CLIGenerator {
 
       const spinner = this.createSpinner(`Updating ${objectName}...`);
 
-      Object.assign(existing, data);
-      await existing.save();
+      await collection.withAuditMutation(existing, 'updated', async (bound) => {
+        Object.assign(bound, data);
+        await bound.save();
+      });
 
       spinner.succeed(`Updated ${objectName}`);
 
@@ -2234,7 +2243,7 @@ export class CLIGenerator {
 
       const spinner = this.createSpinner(`Deleting ${objectName}...`);
 
-      await existing.delete();
+      await collection.delete(id);
 
       spinner.succeed(`Deleted ${objectName}`);
     } catch (error) {

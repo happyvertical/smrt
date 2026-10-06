@@ -1409,7 +1409,6 @@ export class APIGenerator {
   ): Promise<Response> {
     const data = this.applyWritablePolicy(objectName, await req.json());
     const object = await collection.create({ ...data, _skipLoad: true });
-    await object.save();
     return this.createJsonResponse(this.toPublicData(object), 201);
   }
 
@@ -1430,8 +1429,10 @@ export class APIGenerator {
     }
 
     // Update object properties
-    Object.assign(object, data);
-    await object.save();
+    await collection.withAuditMutation(object, 'updated', async (bound) => {
+      Object.assign(bound, data);
+      await bound.save();
+    });
 
     return this.createJsonResponse(this.toPublicData(object));
   }
@@ -1449,7 +1450,7 @@ export class APIGenerator {
       return this.createErrorResponse(404, 'Object not found');
     }
 
-    await object.delete();
+    await collection.delete(id);
     return new Response(null, { status: 204 });
   }
 
@@ -1516,6 +1517,22 @@ export class APIGenerator {
     return {
       objectName: resolvedName,
       collection: resolvedCollection,
+      mutate: async (row, op, data) => {
+        await resolvedCollection.withAuditMutation(
+          row as SmrtObject,
+          op === 'update' ? 'updated' : 'deleted',
+          async (bound) => {
+            if (op === 'update') {
+              Object.assign(bound, data);
+              await bound.save();
+            } else {
+              await bound.delete({
+                expectedUpdatedAt: bound.updated_at ?? undefined,
+              });
+            }
+          },
+        );
+      },
       isOpAllowed: (op: SyncApplyOp) =>
         this.isApiActionEnabled(resolvedName, op),
       authorize: async (op: SyncApplyOp) => {

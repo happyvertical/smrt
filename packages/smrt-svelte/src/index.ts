@@ -14,6 +14,7 @@
  * moved to `@happyvertical/smrt-agents/svelte`.
  */
 
+export * from './components/audit/index.js';
 // Form components
 export * from './components/forms/index.js';
 // Module components (for dynamic module UI rendering)

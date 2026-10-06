@@ -1180,13 +1180,14 @@ describe('SvelteKit Route Generator', () => {
 
       // Should include PUT handler
       expect(content).toContain('export const PUT: RequestHandler');
-      expect(content).toContain('Object.assign(item, data)');
-      expect(content).toContain('await item.save()');
+      expect(content).toContain("collection.withAuditMutation(item, 'updated'");
+      expect(content).toContain('Object.assign(bound, data)');
+      expect(content).toContain('await bound.save()');
       expect(content).toContain('return smrtRouteErrorResponse(cause);');
 
       // Should include DELETE handler
       expect(content).toContain('export const DELETE: RequestHandler');
-      expect(content).toContain('await item.delete()');
+      expect(content).toContain('await collection.delete(params.id)');
     });
 
     it('should generate custom action routes', async () => {

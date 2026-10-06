@@ -6,6 +6,8 @@
  */
 
 import {
+  type AuditChange,
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -25,14 +27,17 @@ export interface AuditLogOptions extends SmrtObjectOptions {
   metadata?: Record<string, unknown>;
   onBehalfOfId?: string | null;
   tenantId?: string | null;
+  reason?: string;
+  changes?: Record<string, AuditChange>;
 }
 
 @TenantScoped({ mode: 'optional', allowSuperAdminBypass: true })
 @smrt({
   tableName: 'audit_logs',
-  api: { include: ['list', 'get'] },
-  mcp: { include: ['list', 'get'] },
-  cli: { include: ['list'] },
+  sensitive: true,
+  api: false,
+  mcp: false,
+  cli: false,
 })
 export class AuditLog extends SmrtObject {
   @tenantId({ nullable: true })
@@ -49,15 +54,27 @@ export class AuditLog extends SmrtObject {
    */
   action: string = '';
 
+  /** Optional explanation supplied by the caller. */
+  reason: string = '';
+
+  /** Public field changes only; sensitive values must never be supplied. */
+  changes: Record<string, AuditChange> = {};
+
   /**
    * Type of resource affected (e.g., 'Issue', 'Repository')
    */
+  @field({ indexed: true })
   resourceType: string = '';
 
   /**
    * ID of the affected resource
    */
+  @field({ indexed: true })
   resourceId: string = '';
+
+  /** Indexed retention/read timestamp independent of framework revision time. */
+  @field({ indexed: true, default: 'current_timestamp' })
+  occurredAt: Date = new Date();
 
   /**
    * Source of the action
@@ -79,6 +96,8 @@ export class AuditLog extends SmrtObject {
     super(options);
     if (options.profileId) this.profileId = options.profileId;
     if (options.action) this.action = options.action;
+    if (options.reason !== undefined) this.reason = options.reason;
+    if (options.changes !== undefined) this.changes = options.changes;
     if (options.resourceType) this.resourceType = options.resourceType;
     if (options.resourceId) this.resourceId = options.resourceId;
     if (options.source) this.source = options.source;

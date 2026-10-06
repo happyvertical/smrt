@@ -87,6 +87,11 @@ export const ObjectRegistry = {
       async count() { return 0; },
       async get() { return ${item}; },
       async create() { return ${item}; },
+      async delete() { record('delete', name); },
+      async withAuditMutation(item, action, callback) {
+        record('audit-' + action, name);
+        return callback(item);
+      },
     };
   },
   getConfig(name) { record('config', name); return {}; },
@@ -208,6 +213,8 @@ console.log(JSON.stringify({ resolved, results }));
     );
     expect(resolved).toContain(`collection:${PICK_B}`);
     expect(resolved).toContain(`config:${PICK_B}`);
+    expect(resolved).toContain(`audit-updated:${PICK_B}`);
+    expect(resolved).toContain(`delete:${PICK_B}`);
 
     // The emitted tool targets carry the registry identity too.
     const emitted = (
