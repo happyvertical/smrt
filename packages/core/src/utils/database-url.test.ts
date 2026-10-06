@@ -65,21 +65,27 @@ describe('redactDatabaseUrl (#3527)', () => {
   });
 
   it.each([
-    ['postgresql://owner:2024/Xy9@db.internal/app', '2024/Xy9'],
-    ['postgresql://owner:4431#tail@db.internal/app', '4431'],
-    ['postgresql://owner:8080?q=1@db.internal/app', '8080'],
-  ])('never lets a digits-then-delimiter password parse as a port (%s)', (input, secret) => {
+    ['postgresql://owner:2024/Xy9@db.internal/app', ['2024', 'Xy9']],
+    ['postgresql://owner:4431#tail@db.internal/app', ['4431', 'tail']],
+    ['postgresql://owner:8080?q=1@db.internal/app', ['8080', 'q=1']],
+    ['postgresql://owner:pa@rt#secret@db.internal/app', ['rt#', 'secret']],
+    ['postgresql://owner:pa@rt?x@db.internal/app', ['rt?', 'x@']],
+  ])('shows no fragment of an ambiguous password with a stray @ (%s)', (input, fragments) => {
     const shown = redactDatabaseUrl(input);
-    expect(shown).toBe('postgresql://owner:***@db.internal/app');
-    expect(shown).not.toContain(secret);
+    expect(shown).toBe(
+      'postgresql://[redacted: unparseable connection string]',
+    );
+    for (const fragment of fragments) {
+      expect(shown).not.toContain(fragment);
+    }
   });
 
-  it('keeps an @ in a query string from shifting the host', () => {
-    expect(
-      redactDatabaseUrl(
-        `postgres://u:${SECRET}@h:5432/db?application_name=a@b`,
-      ),
-    ).toBe('postgres://u:***@h:5432/db');
+  it('treats an @ in the query string as ambiguous, never as a host', () => {
+    const shown = redactDatabaseUrl(
+      `postgres://u:${SECRET}@h:5432/db?application_name=a@b`,
+    );
+    expect(shown).not.toContain(SECRET);
+    expect(shown).not.toContain('@b');
   });
 
   it('never falls back to the raw string for an unparseable URL', () => {

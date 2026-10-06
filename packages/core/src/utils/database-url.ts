@@ -86,6 +86,11 @@ function renderParsedUrl(url: URL): string {
   return url.href;
 }
 
+/** Whether an `@` survives outside the userinfo of a parsed URL. */
+function hasStrayAt(url: URL): boolean {
+  return `${url.pathname}${url.search}${url.hash}`.includes('@');
+}
+
 function tryParseUrl(value: string): URL | null {
   try {
     return new URL(value);
@@ -137,26 +142,23 @@ export function redactDatabaseUrl(value: string): string {
     return value;
   }
 
-  // Trust a direct parse only when the parser saw the same userinfo a reader
-  // would: the `@` sits inside the authority (before the first `/`, `?` or
-  // `#`), or there is no userinfo-shaped `scheme://user:…@` at all. Otherwise
-  // a password holding an unencoded `/`, `?` or `#` after digits
-  // (`owner:2024/Xy9@host`) parses as host `owner`, port `2024`, and the
-  // password would ride along in the path; strip the userinfo through the
-  // last `@` on the line and parse that instead.
-  const authority = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i.exec(value)?.[1];
-  USERINFO_PATTERN.lastIndex = 0;
-  const hasUserinfoShape = USERINFO_PATTERN.test(value);
-  USERINFO_PATTERN.lastIndex = 0;
-  const direct =
-    hasUserinfoShape && !authority?.includes('@') ? null : tryParseUrl(value);
-  const parsed =
-    direct ?? tryParseUrl(value.replace(USERINFO_PATTERN, `$1${MASK}@`));
-  // Defence in depth: an `@` left in the path is userinfo the parser did not
-  // recognise (an opaque `user:pw@host/db`, or a misread authority) — never
-  // echo it.
-  if (parsed && !parsed.pathname.includes('@')) {
-    return renderParsedUrl(parsed);
+  // Any `@` the parser left outside the userinfo (in the path, query or
+  // fragment) makes the string ambiguous: `owner:2024/Xy9@host` parses as
+  // host `owner`, port `2024`; `owner:pa@rt#secret@host` as host `rt`; a
+  // legitimate `u:pw@h/db?x=a@b` looks the same. No reading is provably
+  // right, so show none of it rather than risk a password fragment.
+  const direct = tryParseUrl(value);
+  if (direct) {
+    return hasStrayAt(direct)
+      ? `${scheme.toLowerCase()}://${UNPARSEABLE}`
+      : renderParsedUrl(direct);
+  }
+  // The parser rejected it (an unencoded `#`, whitespace or `@` in the
+  // password): mask the userinfo through the last `@` on the line and parse
+  // again. Everything before that `@` is masked, so nothing of it is shown.
+  const stripped = tryParseUrl(value.replace(USERINFO_PATTERN, `$1${MASK}@`));
+  if (stripped && !hasStrayAt(stripped)) {
+    return renderParsedUrl(stripped);
   }
   return `${scheme.toLowerCase()}://${UNPARSEABLE}`;
 }
