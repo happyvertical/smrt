@@ -91,15 +91,23 @@ describe('ManifestGenerator.assertRecipeHelp', () => {
     return manifest;
   }
 
-  it('accepts merged, universal and qualified references', () => {
+  it('accepts merged and qualified references', () => {
     expect(() =>
       generator.assertRecipeHelp(
         withHelp({
-          markdown: 'Set {field:title}, {field:Page.parentId}, {field:slug}.',
-          fieldRefs: ['Page.parentId', 'slug', 'title'],
+          markdown: 'Set {field:title} and {field:Page.parentId}.',
+          fieldRefs: ['Page.parentId', 'title'],
         }),
       ),
     ).not.toThrow();
+  });
+
+  it('rejects a universal field, which the knowledge artifact lacks', () => {
+    expect(() =>
+      generator.assertRecipeHelp(
+        withHelp({ markdown: 'Set {field:slug}.', fieldRefs: ['slug'] }),
+      ),
+    ).toThrow(/\{field:slug\} names a field the recipe's models lack/);
   });
 
   it('fails the build on a reference to an undeclared field', () => {

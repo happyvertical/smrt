@@ -634,10 +634,14 @@ export class ManifestGenerator {
         models.push({
           id: model,
           name: object.className,
-          fields: [
-            ...Object.keys(object.fields),
-            ...UNIVERSAL_OBJECT_FIELDS,
-          ].map((name) => ({ name, label: name, visibility: 'basic' })),
+          // Declared fields only: the universal ones (`slug`, `id`, ...) are not
+          // manifest fields, so they never reach the knowledge artifact and a
+          // host building its field list from it would drop the step.
+          fields: Object.keys(object.fields).map((name) => ({
+            name,
+            label: name,
+            visibility: 'basic',
+          })),
         });
         sensitiveByModel.set(object.className, new Set(sensitive));
       }

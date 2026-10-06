@@ -115,10 +115,10 @@ excluded). `ManifestGenerator.assertRecipeHelp` fails the build on a reference
 to a field the recipe's models do not declare, and on a `fieldRefs` list that
 disagrees with the Markdown. The scanner has its own copy of the reference
 grammar (`deriveHelpFieldRefs`; it cannot import core), so that comparison also
-keeps the two from drifting. A reference to a **sensitive** field also fails the
-build: sensitive fields are excluded from the knowledge artifact, so a host
-building its field list from it would silently drop the step naming one; describe
-such a field in prose without a reference.
+keeps the two from drifting. A reference to a **sensitive** or universal (`id`,
+`slug`, ...) field also fails the build: neither reaches the knowledge artifact,
+so a host building its field list from it would silently drop the step naming
+one; describe such a field in prose without a reference.
 
 Known limitation: the help file is a generator input, but editing only it does
 not trigger a dev-server rescan (the watch matches source globs) and generation
