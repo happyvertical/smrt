@@ -82,7 +82,11 @@ function toggle(id: string) {
           </h3>
           <p class="description">{pkg.description}</p>
           <p class="meta">
-            {exposedModels(pkg).length} models · {surfaceCount(pkg)} generated surfaces
+            {#if exposedModels(pkg).length}
+              {exposedModels(pkg).length} models · {surfaceCount(pkg)} generated surfaces
+            {:else}
+              {pkg.models.length} internal models · closed: no generated surfaces
+            {/if}
           </p>
           {#if pkg.dependencies.length}
             <p class="meta">
