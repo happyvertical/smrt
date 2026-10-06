@@ -250,6 +250,44 @@ describe('AppShell layout', () => {
     ).toBe(true);
   });
 
+  const leftState = () =>
+    document
+      .querySelector('.smrt-admin-shell__edge--left')
+      ?.getAttribute('data-state');
+
+  it('applies an edited starting state to the live panel', async () => {
+    const user = userEvent.setup();
+    mountShell();
+    await vi.waitFor(() => expect(leftState()).toBe('expanded'));
+    await user.click(
+      screen.getByRole('switch', { name: 'Start Tenant panel expanded' }),
+    );
+    await vi.waitFor(() => expect(leftState()).toBe('collapsed'));
+  });
+
+  it('leaves the panel alone when a controlling host ignores the edit', async () => {
+    const user = userEvent.setup();
+    const { changes } = mountShell({ mode: 'frozen' });
+    await vi.waitFor(() => expect(leftState()).toBe('expanded'));
+    await user.click(
+      screen.getByRole('switch', { name: 'Start Tenant panel expanded' }),
+    );
+    expect(changes).toHaveLength(1);
+    expect(leftState()).toBe('expanded');
+  });
+
+  it('keeps a stored open/closed toggle when a layout with a start state loads', async () => {
+    localStorage.setItem(
+      'layout-test',
+      JSON.stringify({
+        panels: { left: 'collapsed' },
+        layout: { version: 1, panels: { left: { initial: 'expanded' } } },
+      }),
+    );
+    mountShell({ mode: 'default', editor: false });
+    await vi.waitFor(() => expect(leftState()).toBe('collapsed'));
+  });
+
   it('resets to defaults', async () => {
     const user = userEvent.setup();
     const { changes } = mountShell({

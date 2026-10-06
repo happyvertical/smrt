@@ -48,6 +48,25 @@ describe('ShellState layout panels', () => {
     expect(shell.panels.left).toBe('hidden');
   });
 
+  it('persists the peer collapse when a start state closes an exclusive peer', () => {
+    const writes: unknown[] = [];
+    const shell = createShellState({
+      config: {
+        left: { initial: 'collapsed', exclusiveGroup: 'g' },
+        right: { initial: 'expanded', exclusiveGroup: 'g' },
+      },
+      settingsAdapter: {
+        read: () => null,
+        write: (delta) => {
+          writes.push(structuredClone(delta));
+        },
+      },
+    });
+    shell.setPanelStart('left', 'expanded');
+    expect(shell.panels.right).toBe('collapsed');
+    expect(writes.at(-1)).toMatchObject({ panels: { right: 'collapsed' } });
+  });
+
   it('uses the layout starting state below a stored toggle on later loads', () => {
     const shell = createShellState({
       config: { left: { initial: 'collapsed' } },

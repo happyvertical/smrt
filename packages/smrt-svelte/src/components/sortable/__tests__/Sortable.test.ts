@@ -192,6 +192,19 @@ describe('Sortable', () => {
     });
   });
 
+  it('keeps a pinned source container pinned when the keyboard comes back', async () => {
+    const onmove = vi.fn();
+    const user = userEvent.setup();
+    render(Sortable<SortableItem, SortableContainer>, {
+      props: props({ onmove, allowSameContainerReorder: false }),
+    });
+    handle('Move Posts').focus();
+    await user.keyboard(' {ArrowDown}{ArrowUp}');
+    expect(live()).toContain('Posts, position 1 of 2 in Content.');
+    await user.keyboard('{Enter}');
+    expect(onmove).not.toHaveBeenCalled();
+  });
+
   it('is read-only without onmove', async () => {
     const user = userEvent.setup();
     render(Sortable<SortableItem, SortableContainer>, { props: props() });

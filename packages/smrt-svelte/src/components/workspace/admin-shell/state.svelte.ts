@@ -339,10 +339,10 @@ export class ShellState {
       if (this.settings.panels && edge in this.settings.panels) {
         const { [edge]: _dropped, ...rest } = this.settings.panels;
         this.settings = { ...this.settings, panels: rest };
-        void this.persistSettings();
       }
       if (state === 'expanded') this.closeExclusivePeers(edge);
       this.panels[edge] = state;
+      void this.persistSettings();
     });
   }
 

@@ -25,7 +25,7 @@ let {
   onChange,
   onApi,
 }: {
-  mode?: 'owned' | 'callback' | 'default';
+  mode?: 'owned' | 'callback' | 'default' | 'frozen';
   initial?: ShellLayout | null;
   nav?: ShellNavItem[];
   navGroups?: ShellNavGroup[];
@@ -37,10 +37,10 @@ let {
 } = $props();
 
 let current = $state<ShellLayout | null | undefined>(
-  mode === 'owned' ? (initial ?? null) : undefined,
+  mode === 'owned' || mode === 'frozen' ? (initial ?? null) : undefined,
 );
 function change(next: ShellLayout) {
-  if (mode === 'owned') current = next;
+  if (mode === 'owned') current = next; // 'frozen' hosts ignore every edit
   onChange?.(next);
 }
 </script>

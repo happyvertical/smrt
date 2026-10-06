@@ -268,6 +268,13 @@ export class SortableController {
         this.itemsIn(candidate.id, drag.itemId).length,
       );
     }
+    // Coming back into a pinned source container lands on its own slot.
+    if (
+      !this.options.allowSameContainerReorder() &&
+      target.containerId === drag.source.containerId
+    ) {
+      target.index = drag.source.index;
+    }
     this.drag = { ...drag, target };
     this.announcePosition(this.drag);
   }

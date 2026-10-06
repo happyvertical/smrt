@@ -28,6 +28,7 @@ import { createShellState } from '../workspace/admin-shell/state.svelte.js';
 import TenantNav from '../workspace/admin-shell/TenantNav.svelte';
 import {
   PANEL_EDGES,
+  type PanelEdge,
   type ShellNavGroup,
   type ShellNavItem,
   type ShellPanelDefaults,
@@ -154,8 +155,18 @@ const applied = $derived(
 );
 const hasNav = $derived(applied.nav.length > 0 || applied.groups.length > 0);
 
+// Starting-state edits made through the layout API, applied once the layout
+// carrying them is in force (or dropped if the host answered differently).
+const pendingStart = new Map<PanelEdge, 'collapsed' | 'expanded'>();
 $effect(() => {
-  shell.setLayoutPanels(effectiveLayout.panels ?? {});
+  const panels = effectiveLayout.panels ?? {};
+  shell.setLayoutPanels(panels);
+  for (const [edge, state] of pendingStart) {
+    const initial =
+      panels[edge]?.initial ?? resolveShellConfig(config).panels[edge].initial;
+    if (initial === state) shell.setPanelStart(edge, state);
+  }
+  pendingStart.clear();
 });
 
 setShellLayout(
@@ -165,16 +176,17 @@ setShellLayout(
     panels: () => config,
     layout: () => effectiveLayout,
     commit(next) {
-      // A changed starting state is an explicit edit: show it now. Loading a
-      // stored layout (hydration, a late `layout` prop) never does this, so
-      // it cannot erase the user's own open/closed toggle.
+      // A changed starting state is an explicit edit: show it now. It waits
+      // for the layout to actually change (the host may reject the edit) and
+      // is never done for a loaded layout (hydration, a late `layout` prop),
+      // so loading cannot erase the user's own open/closed toggle.
       for (const edge of PANEL_EDGES) {
         const before = effectiveLayout.panels?.[edge]?.initial;
         const after = next.panels?.[edge]?.initial;
         if (before === after) continue;
         const state = after ?? resolveShellConfig(config).panels[edge].initial;
         if (state === 'collapsed' || state === 'expanded') {
-          shell.setPanelStart(edge, state);
+          pendingStart.set(edge, state);
         }
       }
       if (!controlled) {
