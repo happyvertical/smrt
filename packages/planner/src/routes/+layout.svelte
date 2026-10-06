@@ -12,11 +12,13 @@ import ChatDockPlaceholder from '$lib/components/ChatDockPlaceholder.svelte';
 import { provideDataSource } from '$lib/data/context.ts';
 import { humanize } from '$lib/data/format.ts';
 import { createMemoryDataSource } from '$lib/data/source.ts';
+import { SAVED_BY_FORMS } from '$lib/forms/stock.ts';
 import { appHref, appQuery } from '$lib/planner/app.svelte.ts';
 import { hasAppState } from '$lib/planner/query.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
 import { recipeNav, recipes } from '$lib/recipes/index.ts';
 import { recipeState } from '$lib/recipes/state.svelte.ts';
+import type { Recipe } from '$lib/recipes/types.ts';
 import type { LayoutProps } from './$types';
 
 let { children }: LayoutProps = $props();
@@ -27,6 +29,8 @@ provideDataSource(
     // Fields the views hide still carry their policy default, e.g. the
     // `contractType` that tells an Order from a PurchaseOrder.
     defaults: (model) => recipeState.apply(model).background,
+    // Rows that only make sense under a product a form creates start empty.
+    empty: SAVED_BY_FORMS,
   }),
 );
 
@@ -34,27 +38,55 @@ const nav: ShellNavItem[] = $derived([
   { href: appHref('/'), label: 'Planner' },
 ]);
 
-// Each added recipe is a navigation section with its `nav` entries, so the
-// app shows Customers and Sales Orders, not every model in smrt-commerce.
-const recipeGroups: ShellNavGroup[] = $derived(
-  recipeState.ids.flatMap((id) => {
+// Each added recipe (or group of recipes, such as Products) is a navigation
+// section with its `nav` entries, so the app shows Customers and Sales
+// Orders, not every model in smrt-commerce. Recipes of one group share their
+// entries, so Simple and Clothing give one Products link.
+const recipeGroups: ShellNavGroup[] = $derived.by(() => {
+  const sections = new Map<string, { heading: string; added: Recipe[] }>();
+  for (const id of recipeState.ids) {
     const recipe = recipes.find((r) => r.id === id);
-    if (!recipe) return [];
-    return [
-      {
-        heading: recipe.label,
-        items: [
-          ...recipeNav(recipe).map((entry) => ({
-            href: appHref(`/m/${entry.packageId}/${entry.model.name}/`),
-            label: entry.label,
-          })),
-          { href: appHref(`/recipes/${recipe.id}/`), label: 'Options' },
-          { href: appHref(`/recipes/${recipe.id}/help/`), label: 'Help' },
-        ],
-      },
-    ];
-  }),
-);
+    if (!recipe) continue;
+    const key = recipe.group?.id ?? recipe.id;
+    const section = sections.get(key) ?? {
+      heading: recipe.group?.label ?? recipe.label,
+      added: [],
+    };
+    section.added.push(recipe);
+    sections.set(key, section);
+  }
+  return [...sections.values()].map(({ heading, added }) => {
+    const seen = new Set<string>();
+    const entries = added.flatMap((recipe) =>
+      recipeNav(recipe).filter((entry) => {
+        const key = `${entry.model.id}:${entry.label}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }),
+    );
+    const several = added.length > 1;
+    return {
+      heading,
+      items: [
+        ...entries.map((entry) => ({
+          href: appHref(`/m/${entry.packageId}/${entry.model.name}/`),
+          label: entry.label,
+        })),
+        ...added.flatMap((recipe) => [
+          {
+            href: appHref(`/recipes/${recipe.id}/`),
+            label: several ? `${recipe.label} options` : 'Options',
+          },
+          {
+            href: appHref(`/recipes/${recipe.id}/help/`),
+            label: several ? `${recipe.label} help` : 'Help',
+          },
+        ]),
+      ],
+    };
+  });
+});
 
 const packageGroups: ShellNavGroup[] = $derived(
   selection.ids.flatMap((id) => {

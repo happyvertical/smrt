@@ -4,10 +4,19 @@
       "id": "commerce.customers",
       "label": "Customers",
       "summary": "Keep a list of the people and companies you sell to.",
-      "synonyms": ["clients", "buyers", "accounts"],
-      "models": ["@happyvertical/smrt-commerce:Customer"],
+      "synonyms": [
+        "clients",
+        "buyers",
+        "accounts"
+      ],
+      "models": [
+        "@happyvertical/smrt-commerce:Customer"
+      ],
       "nav": [
-        { "label": "Customers", "model": "@happyvertical/smrt-commerce:Customer" }
+        {
+          "label": "Customers",
+          "model": "@happyvertical/smrt-commerce:Customer"
+        }
       ],
       "requires": []
     },
@@ -15,15 +24,23 @@
       "id": "commerce.purchases",
       "label": "Purchases",
       "summary": "Order from your vendors and track what you have bought.",
-      "synonyms": ["purchase orders", "buying", "procurement"],
-      "models": ["@happyvertical/smrt-commerce:PurchaseOrder"],
+      "synonyms": [
+        "purchase orders",
+        "buying",
+        "procurement"
+      ],
+      "models": [
+        "@happyvertical/smrt-commerce:PurchaseOrder"
+      ],
       "nav": [
         {
           "label": "Purchase Orders",
           "model": "@happyvertical/smrt-commerce:PurchaseOrder"
         }
       ],
-      "requires": ["commerce.vendors"],
+      "requires": [
+        "commerce.vendors"
+      ],
       "options": {
         "@happyvertical/smrt-commerce:PurchaseOrder": {
           "fields": {
@@ -32,8 +49,14 @@
               "visibility": "hidden",
               "locked": true
             },
-            "customerId": { "visibility": "hidden", "locked": true },
-            "vendorId": { "label": "Vendor", "order": 1 }
+            "customerId": {
+              "visibility": "hidden",
+              "locked": true
+            },
+            "vendorId": {
+              "label": "Vendor",
+              "order": 1
+            }
           }
         }
       }
@@ -42,12 +65,23 @@
       "id": "commerce.sales",
       "label": "Sales",
       "summary": "Take customer orders and track them.",
-      "synonyms": ["sales orders", "orders", "customer orders"],
-      "models": ["@happyvertical/smrt-commerce:Order"],
-      "nav": [
-        { "label": "Sales Orders", "model": "@happyvertical/smrt-commerce:Order" }
+      "synonyms": [
+        "sales orders",
+        "orders",
+        "customer orders"
       ],
-      "requires": ["commerce.customers"],
+      "models": [
+        "@happyvertical/smrt-commerce:Order"
+      ],
+      "nav": [
+        {
+          "label": "Sales Orders",
+          "model": "@happyvertical/smrt-commerce:Order"
+        }
+      ],
+      "requires": [
+        "commerce.customers"
+      ],
       "options": {
         "@happyvertical/smrt-commerce:Order": {
           "fields": {
@@ -56,8 +90,14 @@
               "visibility": "hidden",
               "locked": true
             },
-            "vendorId": { "visibility": "hidden", "locked": true },
-            "customerId": { "label": "Customer", "order": 1 }
+            "vendorId": {
+              "visibility": "hidden",
+              "locked": true
+            },
+            "customerId": {
+              "label": "Customer",
+              "order": 1
+            }
           }
         }
       }
@@ -66,12 +106,382 @@
       "id": "commerce.vendors",
       "label": "Vendors",
       "summary": "Keep a list of the suppliers you buy from.",
-      "synonyms": ["suppliers", "sellers"],
-      "models": ["@happyvertical/smrt-commerce:Vendor"],
+      "synonyms": [
+        "suppliers",
+        "sellers"
+      ],
+      "models": [
+        "@happyvertical/smrt-commerce:Vendor"
+      ],
       "nav": [
-        { "label": "Vendors", "model": "@happyvertical/smrt-commerce:Vendor" }
+        {
+          "label": "Vendors",
+          "model": "@happyvertical/smrt-commerce:Vendor"
+        }
       ],
       "requires": []
+    },
+    {
+      "id": "inventory.stock",
+      "label": "Inventory",
+      "summary": "Keep count of how many of each product you have.",
+      "synonyms": [
+        "stock",
+        "quantity",
+        "on hand"
+      ],
+      "models": [
+        "@happyvertical/smrt-inventory:StockLevel",
+        "@happyvertical/smrt-inventory:InventoryLocation"
+      ],
+      "nav": [
+        {
+          "label": "Stock levels",
+          "model": "@happyvertical/smrt-inventory:StockLevel"
+        },
+        {
+          "label": "Locations",
+          "model": "@happyvertical/smrt-inventory:InventoryLocation"
+        }
+      ],
+      "requires": [],
+      "requiresAny": [
+        [
+          "products.simple",
+          "products.clothing"
+        ]
+      ],
+      "extends": [
+        {
+          "form": "product.simple",
+          "records": [
+            {
+              "as": "sku",
+              "model": "@happyvertical/smrt-products:Sku",
+              "match": {
+                "productId": {
+                  "ref": "product"
+                }
+              },
+              "values": {
+                "code": "{product.name|slug}",
+                "name": "{product.name}",
+                "attributes": "{}",
+                "active": true
+              }
+            },
+            {
+              "as": "location",
+              "model": "@happyvertical/smrt-inventory:InventoryLocation",
+              "match": {
+                "code": "MAIN"
+              },
+              "values": {
+                "name": "Main warehouse",
+                "kind": "warehouse"
+              }
+            },
+            {
+              "as": "stock",
+              "model": "@happyvertical/smrt-inventory:StockLevel",
+              "match": {
+                "skuId": {
+                  "ref": "sku"
+                },
+                "locationId": {
+                  "ref": "location"
+                },
+                "state": "available"
+              }
+            }
+          ],
+          "fields": [
+            {
+              "id": "quantity",
+              "label": "Quantity",
+              "to": "stock.qty",
+              "default": 0
+            }
+          ]
+        },
+        {
+          "form": "product.clothing",
+          "records": [
+            {
+              "as": "location",
+              "model": "@happyvertical/smrt-inventory:InventoryLocation",
+              "match": {
+                "code": "MAIN"
+              },
+              "values": {
+                "name": "Main warehouse",
+                "kind": "warehouse"
+              }
+            },
+            {
+              "as": "stock",
+              "model": "@happyvertical/smrt-inventory:StockLevel",
+              "match": {
+                "skuId": {
+                  "ref": "sku"
+                },
+                "locationId": {
+                  "ref": "location"
+                },
+                "state": "available"
+              }
+            }
+          ],
+          "fields": [
+            {
+              "id": "quantity",
+              "label": "Quantity",
+              "to": "stock.qty",
+              "default": 0
+            }
+          ]
+        }
+      ],
+      "options": {
+        "@happyvertical/smrt-inventory:StockLevel": {
+          "fields": {
+            "reorderPoint": {
+              "visibility": "hidden"
+            },
+            "reorderQuantity": {
+              "visibility": "hidden"
+            }
+          }
+        },
+        "@happyvertical/smrt-inventory:InventoryLocation": {
+          "fields": {
+            "placeId": {
+              "visibility": "hidden"
+            },
+            "active": {
+              "visibility": "hidden"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "products.simple",
+      "label": "Simple products",
+      "summary": "Items with a name, a price and a description.",
+      "synonyms": [
+        "items",
+        "goods",
+        "catalog"
+      ],
+      "group": {
+        "id": "products",
+        "label": "Products",
+        "summary": "Sell goods: simple items, or clothing that comes in sizes and colors."
+      },
+      "models": [
+        "@happyvertical/smrt-products:Product"
+      ],
+      "nav": [
+        {
+          "label": "Products",
+          "model": "@happyvertical/smrt-products:Product"
+        }
+      ],
+      "requires": [],
+      "forms": [
+        {
+          "id": "product.simple",
+          "kind": "field-map",
+          "label": "Simple product",
+          "kindLabel": "Simple",
+          "model": "@happyvertical/smrt-products:Product",
+          "records": [
+            {
+              "as": "product",
+              "model": "@happyvertical/smrt-products:Product"
+            }
+          ],
+          "fields": [
+            {
+              "id": "name",
+              "label": "Name",
+              "to": "product.name",
+              "required": true
+            },
+            {
+              "id": "price",
+              "label": "Price",
+              "to": "product.price"
+            },
+            {
+              "id": "description",
+              "label": "Description",
+              "to": "product.description"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "@happyvertical/smrt-products:Product": {
+          "fields": {
+            "productType": {
+              "visibility": "hidden"
+            },
+            "category": {
+              "visibility": "hidden"
+            },
+            "manufacturer": {
+              "visibility": "hidden"
+            },
+            "model": {
+              "visibility": "hidden"
+            },
+            "inStock": {
+              "visibility": "hidden"
+            },
+            "specifications": {
+              "visibility": "hidden"
+            },
+            "tags": {
+              "visibility": "hidden"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "products.clothing",
+      "label": "Clothing",
+      "summary": "Products that come in sizes and colors, with a stock-keeping unit for each combination.",
+      "synonyms": [
+        "apparel",
+        "garments",
+        "sizes",
+        "variants"
+      ],
+      "group": {
+        "id": "products",
+        "label": "Products",
+        "summary": "Sell goods: simple items, or clothing that comes in sizes and colors."
+      },
+      "models": [
+        "@happyvertical/smrt-products:Product",
+        "@happyvertical/smrt-products:ProductVariant",
+        "@happyvertical/smrt-products:Sku"
+      ],
+      "nav": [
+        {
+          "label": "Products",
+          "model": "@happyvertical/smrt-products:Product"
+        }
+      ],
+      "requires": [],
+      "forms": [
+        {
+          "id": "product.clothing",
+          "kind": "variant-grid",
+          "label": "Clothing item",
+          "kindLabel": "Clothing",
+          "model": "@happyvertical/smrt-products:Product",
+          "product": {
+            "as": "product",
+            "model": "@happyvertical/smrt-products:Product"
+          },
+          "fields": [
+            {
+              "id": "name",
+              "label": "Name",
+              "to": "product.name",
+              "required": true
+            },
+            {
+              "id": "price",
+              "label": "Price",
+              "to": "product.price"
+            }
+          ],
+          "axes": [
+            {
+              "name": "size",
+              "label": "Sizes",
+              "values": [
+                "XS",
+                "S",
+                "M",
+                "L",
+                "XL"
+              ]
+            },
+            {
+              "name": "color",
+              "label": "Colors",
+              "values": []
+            }
+          ],
+          "variants": "@happyvertical/smrt-products:ProductVariant",
+          "skus": "@happyvertical/smrt-products:Sku"
+        }
+      ],
+      "options": {
+        "@happyvertical/smrt-products:Product": {
+          "fields": {
+            "productType": {
+              "visibility": "hidden"
+            },
+            "category": {
+              "visibility": "hidden"
+            },
+            "manufacturer": {
+              "visibility": "hidden"
+            },
+            "model": {
+              "visibility": "hidden"
+            },
+            "inStock": {
+              "visibility": "hidden"
+            },
+            "specifications": {
+              "visibility": "hidden"
+            },
+            "tags": {
+              "visibility": "hidden"
+            },
+            "description": {
+              "visibility": "hidden"
+            }
+          }
+        },
+        "@happyvertical/smrt-products:ProductVariant": {
+          "fields": {
+            "label": {
+              "visibility": "hidden"
+            },
+            "sortOrder": {
+              "visibility": "hidden"
+            }
+          }
+        },
+        "@happyvertical/smrt-products:Sku": {
+          "fields": {
+            "barcode": {
+              "visibility": "hidden"
+            },
+            "name": {
+              "visibility": "hidden"
+            },
+            "weightGrams": {
+              "visibility": "hidden"
+            },
+            "parentSkuId": {
+              "visibility": "hidden"
+            },
+            "active": {
+              "visibility": "hidden"
+            }
+          }
+        }
+      }
     }
   ]
 }

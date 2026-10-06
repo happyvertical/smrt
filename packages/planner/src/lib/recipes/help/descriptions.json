@@ -52,5 +52,31 @@
     "notes": "Anything worth remembering about this purchase.",
     "terms": "The conditions agreed with the vendor, such as payment or delivery conditions.",
     "channelId": "Where the order was placed, for example a vendor's website or a phone call."
+  },
+  "@happyvertical/smrt-products:Product": {
+    "name": "What you call the product, as customers will see it.",
+    "price": "What one costs, in dollars and cents.",
+    "description": "A few words on what the product is and who it is for."
+  },
+  "@happyvertical/smrt-products:ProductVariant": {
+    "productId": "The product this choice belongs to. Set for you when you save the product.",
+    "axisName": "What the product varies by, for example size or color.",
+    "allowedValues": "The values on offer for it, for example S, M and L."
+  },
+  "@happyvertical/smrt-products:Sku": {
+    "productId": "The product this item is a version of. Set for you when you save the product.",
+    "code": "The short code that identifies this exact size and color. Made for you from the product name.",
+    "attributes": "Which size and color this item is. Set for you from the grid."
+  },
+  "@happyvertical/smrt-inventory:StockLevel": {
+    "skuId": "The item being counted. Set for you when you save the product.",
+    "locationId": "Where it is kept. New stock goes to the main warehouse.",
+    "state": "Whether the count is available to sell. New stock starts as available.",
+    "qty": "How many you have on hand."
+  },
+  "@happyvertical/smrt-inventory:InventoryLocation": {
+    "code": "A short code for the place stock is kept, for example MAIN.",
+    "name": "What you call the place, for example Main warehouse.",
+    "kind": "What sort of place it is, for example a warehouse or a shop floor."
   }
 }

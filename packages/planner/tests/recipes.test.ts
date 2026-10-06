@@ -76,16 +76,19 @@ const widget: CatalogModel = {
 };
 
 describe('recipes.json', () => {
-  it('has the four commerce recipes, each resolving to catalog models', () => {
+  it('has the seven recipes in declaration order, each resolving to catalog models', () => {
     expect(recipes.map((r) => r.id)).toEqual([
       'commerce.customers',
       'commerce.purchases',
       'commerce.sales',
       'commerce.vendors',
+      'inventory.stock',
+      'products.simple',
+      'products.clothing',
     ]);
     for (const recipe of recipes) {
       expect(recipeModels(recipe)).toHaveLength(recipe.models.length);
-      expect(recipePackage(recipe)?.id).toBe('commerce');
+      expect(recipePackage(recipe)?.id).toBe(recipe.id.split('.')[0]);
       // Every nav model is one of the recipe's models.
       for (const entry of recipe.nav) {
         expect(recipe.models).toContain(entry.model);
