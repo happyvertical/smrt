@@ -7,10 +7,15 @@
  */
 
 import { ripple } from '@happyvertical/smrt-ui';
-import type { InvoiceData, InvoiceStatus } from '../types.js';
+import type { Snippet } from 'svelte';
+import {
+  formatInvoiceMinorUnits,
+  type RetainedInvoiceCardView,
+} from '../invoice-display.js';
+import type { InvoiceData } from '../types.js';
 
 /** Props for InvoiceCard component */
-export interface Props {
+export interface LegacyInvoiceCardProps {
   /** Invoice data */
   invoice: InvoiceData;
   /** Currency code */
@@ -21,7 +26,28 @@ export interface Props {
   onclick?: () => void;
 }
 
-const { invoice, currency = 'CAD', href, onclick }: Props = $props();
+/** Exact retained card branch. */
+export interface RetainedInvoiceCardProps {
+  /** Caller-authoritative retained card. */
+  retained: RetainedInvoiceCardView;
+  /** Navigation href. */
+  href?: string;
+  /** Renders caller-owned retained evidence. */
+  details?: Snippet<[RetainedInvoiceCardView]>;
+}
+
+/** Legacy decimal-major card or exact retained card. */
+export type Props = LegacyInvoiceCardProps | RetainedInvoiceCardProps;
+
+const props: Props = $props();
+const retained = $derived('retained' in props ? props.retained : null);
+const invoice = $derived(retained ?? (props as LegacyInvoiceCardProps).invoice);
+const currency = $derived(
+  retained?.currency ?? (props as LegacyInvoiceCardProps).currency ?? 'CAD',
+);
+const href = $derived(props.href);
+const onclick = $derived('onclick' in props ? props.onclick : undefined);
+const details = $derived('details' in props ? props.details : undefined);
 
 // This legacy InvoiceData display contract uses major-unit amounts.
 // Convert integer minor-unit model values in the caller adapter.
@@ -32,6 +58,12 @@ function formatMoney(amount: number): string {
     minimumFractionDigits: 2,
   }).format(amount);
 }
+
+const amountText = $derived(
+  retained
+    ? formatInvoiceMinorUnits(retained.totalMinor, retained.currency)
+    : formatMoney((invoice as InvoiceData).totalAmount),
+);
 
 // Format date
 function formatDate(date: Date | string | null | undefined): string {
@@ -63,6 +95,7 @@ const statusClass = $derived.by(() => {
 
 // Check if overdue
 const isOverdue = $derived.by(() => {
+  if (retained) return false;
   if (invoice.status === 'paid' || invoice.status === 'cancelled') return false;
   if (!invoice.dueDate) return false;
   const due =
@@ -78,7 +111,7 @@ const isOverdue = $derived.by(() => {
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
       <span class="status-badge {isOverdue ? 'status-error' : statusClass}">
-        {isOverdue ? 'Overdue' : invoice.status}
+        {isOverdue ? 'Overdue' : retained?.statusLabel ?? invoice.status}
       </span>
     </div>
 
@@ -86,7 +119,7 @@ const isOverdue = $derived.by(() => {
       {#if invoice.customerName}
         <span class="customer-name">{invoice.customerName}</span>
       {/if}
-      <span class="invoice-amount">{formatMoney(invoice.totalAmount)}</span>
+      <span class="invoice-amount">{amountText}</span>
     </div>
 
     <div class="card-footer">
@@ -97,7 +130,24 @@ const isOverdue = $derived.by(() => {
         </span>
       {/if}
     </div>
+    {#if retained}{@render details?.(retained)}{/if}
   </a>
+{:else if retained}
+  <article class="invoice-card">
+    <div class="card-header">
+      <span class="invoice-number">{invoice.invoiceNumber}</span>
+      <span class="status-badge {statusClass}">{retained.statusLabel}</span>
+    </div>
+    <div class="card-body">
+      {#if invoice.customerName}<span class="customer-name">{invoice.customerName}</span>{/if}
+      <span class="invoice-amount">{amountText}</span>
+    </div>
+    <div class="card-footer">
+      <span class="issue-date">{formatDate(invoice.issueDate)}</span>
+      {#if invoice.dueDate}<span class="due-date">Due {formatDate(invoice.dueDate)}</span>{/if}
+    </div>
+    {@render details?.(retained)}
+  </article>
 {:else}
   <!-- raw-primitive-allow: large pressable invoice card wrapping rich header/body/footer content with use:ripple, a structural selection control no Button primitive should own (mirrors the href anchor branch) -->
   <button type="button" class="invoice-card" onclick={onclick} use:ripple>
@@ -112,7 +162,7 @@ const isOverdue = $derived.by(() => {
       {#if invoice.customerName}
         <span class="customer-name">{invoice.customerName}</span>
       {/if}
-      <span class="invoice-amount">{formatMoney(invoice.totalAmount)}</span>
+      <span class="invoice-amount">{amountText}</span>
     </div>
 
     <div class="card-footer">
