@@ -44,7 +44,7 @@ export class BlueprintStore {
    */
   private saveBlocked = false;
   /** A migrated legacy link whose data is not safely stored: keep the URL. */
-  keepLegacyUrl = false;
+  keepLegacyUrl = $state(false);
 
   private storage: Storage | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -69,6 +69,7 @@ export class BlueprintStore {
   replace(blueprint: Blueprint): void {
     this.apply(blueprint);
     this.saveBlocked = false;
+    this.keepLegacyUrl = false;
   }
 
   /** Back to an empty blueprint. */
@@ -76,6 +77,7 @@ export class BlueprintStore {
     recipeState.clear();
     this.layout = undefined;
     this.saveBlocked = false;
+    this.keepLegacyUrl = false;
   }
 
   /** Validate and apply JSON text, e.g. a chosen file. Applies nothing on failure. */
@@ -136,6 +138,8 @@ export class BlueprintStore {
     }
     const saved = saveBlueprint(this.storage, this.snapshot());
     this.persist = saved ? 'ok' : 'memory';
+    // Once stored, the legacy parameters are redundant and may be cleaned.
+    if (saved) this.keepLegacyUrl = false;
     return saved;
   }
 

@@ -375,3 +375,23 @@ describe('review fixes', () => {
     expect(store.keepLegacyUrl).toBe(true);
   });
 });
+
+describe('legacy url retention', () => {
+  it('releases the legacy URL once the blueprint is stored or replaced', () => {
+    vi.useFakeTimers();
+    const storage = fakeStorage();
+    const real = storage.setItem.bind(storage);
+    let broken = true;
+    storage.setItem = (k: string, v: string) => {
+      if (broken) throw new Error('quota');
+      real(k, v);
+    };
+    const store = new BlueprintStore();
+    store.hydrate('?r=commerce.vendors', storage);
+    expect(store.keepLegacyUrl).toBe(true);
+    broken = false;
+    store.save();
+    expect(store.keepLegacyUrl).toBe(false);
+    vi.useRealTimers();
+  });
+});

@@ -145,6 +145,7 @@ afterNavigate((navigation) => {
 $effect(() => {
   // appQuery reads every part of the shareable state, so this tracks them all.
   void appQuery();
+  void blueprintStore.keepLegacyUrl;
   if (ready) syncUrl();
 });
 
