@@ -144,12 +144,15 @@ export interface AssistantSendMessageResult {
 
 export interface AssistantTransport {
   listThreads(): Promise<AssistantThreadSummary[]>;
-  createThread(title: string): Promise<AssistantThreadSummary>;
+  /** Creates another conversation when the backend supports multiple threads.
+   * Omit this method for a fixed, single-session assistant. */
+  createThread?(title: string): Promise<AssistantThreadSummary>;
   loadMessages(threadId: string): Promise<AssistantMessage[]>;
   sendMessage(
     input: AssistantSendMessageInput,
   ): Promise<AssistantSendMessageResult>;
-  uploadAttachment(file: File): Promise<AssistantAttachmentRef>;
+  /** Uploads a file for staging in the composer. Omit when unsupported. */
+  uploadAttachment?(file: File): Promise<AssistantAttachmentRef>;
   /** When present, `AssistantDock` renders `ModelPicker` in the composer
    * header and threads the selected id through `sendMessage`'s `model`. A
    * transport that has no model choice (e.g. a single fixed backend model)
@@ -161,6 +164,10 @@ export interface AssistantTransport {
     input: AssistantResumeTurnInput,
   ): Promise<AssistantSendMessageResult>;
 }
+
+/** A transport that exposes every optional conversation capability. */
+export type FullAssistantTransport = AssistantTransport &
+  Required<Pick<AssistantTransport, 'createThread' | 'uploadAttachment'>>;
 
 // ---------------------------------------------------------------------------
 // In-memory transport (tests, demos)
@@ -197,7 +204,7 @@ export interface InMemoryAssistantTransportOptions {
 
 export function createInMemoryAssistantTransport(
   options: InMemoryAssistantTransportOptions = {},
-): AssistantTransport {
+): FullAssistantTransport {
   const now = options.now ?? (() => Date.now());
   let counter = 0;
   const createId = options.createId ?? (() => `im-${++counter}`);
@@ -539,17 +546,17 @@ export interface SmrtAssistantTransportOptions {
    * building block a host's endpoint implementation should call. */
   readEndpoint: string;
   token: string;
-  /** Required for sendMessage/createThread, which have no generated REST route
+  /** Required for sendMessage, which has no generated REST route
    * (ChatThread/ChatMessage only expose `list`/`get` — see file header). Host
-   * apps must supply a `ChatService`-backed endpoint here; omitting it leaves
-   * `createThread`/`sendMessage` throwing a descriptive error rather than
-   * silently no-opping. */
+   * apps must supply a `ChatService`-backed endpoint here. Thread creation and
+   * attachment upload are optional capabilities; omitting either callback
+   * omits its corresponding dock control. */
   writeEndpoint?: {
-    createThread: (title: string) => Promise<AssistantThreadSummary>;
+    createThread?: (title: string) => Promise<AssistantThreadSummary>;
     sendMessage: (
       input: AssistantSendMessageInput,
     ) => Promise<AssistantSendMessageResult>;
-    uploadAttachment: (file: File) => Promise<AssistantAttachmentRef>;
+    uploadAttachment?: (file: File) => Promise<AssistantAttachmentRef>;
     /** Resumes a turn suspended on browser tools (#2908); see
      * `AssistantTransport.resumeTurn`. */
     resumeTurn?: (
@@ -583,7 +590,7 @@ async function getJson<T>(
  * Reads go through a host-supplied, MEMBER-scoped `readEndpoint` (never the
  * generated `ChatThread`/`ChatMessage` list routes directly — see this
  * section's header comment above `SmrtAssistantTransportOptions`). Writes
- * (`createThread`, `sendMessage`, `uploadAttachment`) require an explicit
+ * (`createThread`, `sendMessage`, `uploadAttachment`) use an explicit
  * `writeEndpoint` supplied by the host application, since neither model
  * exposes a generated `create` route (`api: { include: ['list', 'get'] }`,
  * `../../../models/ChatThread.ts:16`, `../../../models/ChatMessage.ts:26`).
@@ -623,9 +630,9 @@ export function createSmrtAssistantTransport(
       ? { listModels: async () => options.models as ModelOption[] }
       : {}),
 
-    async createThread(title: string) {
-      return requireWrite('createThread')(title);
-    },
+    ...(options.writeEndpoint?.createThread
+      ? { createThread: options.writeEndpoint.createThread }
+      : {}),
 
     async loadMessages(threadId: string) {
       const page = await getJson<{ items: AssistantMessageWire[] }>(
@@ -641,9 +648,9 @@ export function createSmrtAssistantTransport(
       return requireWrite('sendMessage')(input);
     },
 
-    async uploadAttachment(file: File) {
-      return requireWrite('uploadAttachment')(file);
-    },
+    ...(options.writeEndpoint?.uploadAttachment
+      ? { uploadAttachment: options.writeEndpoint.uploadAttachment }
+      : {}),
 
     ...(options.writeEndpoint?.resumeTurn
       ? { resumeTurn: options.writeEndpoint.resumeTurn }

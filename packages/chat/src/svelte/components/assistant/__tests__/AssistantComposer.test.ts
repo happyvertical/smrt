@@ -8,6 +8,7 @@
  */
 import {
   expectNoA11yViolations,
+  fireEvent,
   render,
   screen,
   userEvent,
@@ -25,6 +26,29 @@ const png = (name = 'photo.png') =>
   new File(['data'], name, { type: 'image/png' });
 
 describe('AssistantComposer', () => {
+  it('omits attachment controls and drop handling when upload is unsupported', async () => {
+    const onsend = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(AssistantComposer, { props: { onsend } });
+
+    expect(
+      screen.queryByRole('button', { name: /Attach files/i }),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+
+    const root = container.querySelector('.assistant-composer');
+    if (!root) throw new Error('composer root not found');
+    const drop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, 'dataTransfer', {
+      value: { files: [png()] },
+    });
+    await fireEvent(root, drop);
+    expect(drop.defaultPrevented).toBe(false);
+
+    await userEvent.type(screen.getByLabelText('Message'), 'plain text');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onsend).toHaveBeenCalledWith('plain text', []);
+  });
+
   it('keeps the draft and shows an inline error when onsend rejects', async () => {
     const onsend = vi.fn().mockRejectedValue(new Error('network down'));
     const onupload = vi.fn();

@@ -84,6 +84,10 @@ export interface Props {
    * currently-mounted surfaces from this and fails closed when none are
    * registered. */
   registry: DataSurfaceRegistry;
+  /** Where the assistant obtains its working context. `data-surfaces` keeps
+   * the route-surface guidance; `server` is for transports whose authenticated
+   * backend supplies context and tools without browser data surfaces. */
+  contextMode?: 'data-surfaces' | 'server';
   /** Client-side seam to a server-hosted `DataSurfaceActionAdapter`; required
    * to preview/apply proposed actions, optional for plain chat. */
   actionClient?: AssistantActionClient;
@@ -169,6 +173,7 @@ export interface Props {
 const {
   transport,
   registry,
+  contextMode = 'data-surfaces',
   actionClient,
   surfaces,
   visible = true,
@@ -389,9 +394,15 @@ async function handleUpload(
   // empty batch. This handler ALSO records the failure on controller.error
   // so the dock-level banner matches the send path.
   try {
+    const uploadTransport = transport;
+    const upload = uploadTransport.uploadAttachment;
+    if (!upload) {
+      throw new Error('AssistantDock: attachment upload is not supported');
+    }
     const uploaded: AssistantAttachmentRef[] = [];
     for (const file of Array.from(files)) {
-      uploaded.push(await transport.uploadAttachment(file));
+      uploaded.push(await upload.call(uploadTransport, file));
+      if (transport !== uploadTransport) return [];
     }
     controller.setError(null);
     return uploaded;
@@ -437,7 +448,7 @@ async function handleConfirmAction(requestId: string) {
         threads={controller.threads}
         activeThreadId={controller.activeThreadId}
         onselect={handleSelectThread}
-        oncreate={handleCreateThread}
+        oncreate={transport.createThread ? handleCreateThread : undefined}
       />
     </div>
 
@@ -459,7 +470,7 @@ async function handleConfirmAction(requestId: string) {
         </div>
       {/if}
 
-      {#if controller.surfaces.length === 0 && !pageTools}
+      {#if contextMode === 'data-surfaces' && controller.surfaces.length === 0 && !pageTools}
         <p class="assistant-dock-empty">
           {t(M['chat.assistant_dock.no_surfaces'])}
         </p>
@@ -658,17 +669,19 @@ async function handleConfirmAction(requestId: string) {
             />
           </div>
         {/if}
-        <AssistantComposer
-          bind:value={
-            () => controller.draft, (text) => controller.setDraft(text)
-          }
-          onsend={handleSend}
-          onupload={handleUpload}
-          disabled={!controller.activeThreadId}
-          placeholder={composerPlaceholder}
-          {dictation}
-          {transcribe}
-        />
+        {#key transport}
+          <AssistantComposer
+            bind:value={
+              () => controller.draft, (text) => controller.setDraft(text)
+            }
+            onsend={handleSend}
+            onupload={transport.uploadAttachment ? handleUpload : undefined}
+            disabled={!controller.activeThreadId}
+            placeholder={composerPlaceholder}
+            {dictation}
+            {transcribe}
+          />
+        {/key}
       </div>
     </div>
   </div>

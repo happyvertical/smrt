@@ -124,6 +124,7 @@ export {
   type AssistantTurnStreamInput,
   createInMemoryAssistantTransport,
   createSmrtAssistantTransport,
+  type FullAssistantTransport,
   type InMemoryAssistantTransportOptions,
   readAssistantTurnResult,
   type SmrtAssistantTransportOptions,

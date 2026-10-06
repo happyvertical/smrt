@@ -27,6 +27,7 @@ import { describe, expect, it, vi } from 'vitest';
 import AssistantDock from '../AssistantDock.svelte';
 import {
   type AssistantMessage,
+  type AssistantTransport,
   createInMemoryAssistantTransport,
 } from '../assistant-transport.js';
 
@@ -56,6 +57,135 @@ const descriptor: DataSurfaceDescriptor = {
 };
 
 describe('AssistantDock (mounted component)', () => {
+  it('supports a server-context, single-session transport without false controls or guidance', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport: AssistantTransport = {
+      async listThreads() {
+        return [
+          {
+            id: 'session-1',
+            title: 'Workspace assistant',
+            isResolved: false,
+            messageCount: 0,
+          },
+        ];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage(input) {
+        return {
+          inProgress: false,
+          messages: [
+            {
+              id: 'reply-1',
+              threadId: input.threadId,
+              content: 'Server reply',
+              role: 'assistant',
+              createdAt: new Date(),
+            },
+          ],
+        };
+      },
+    };
+
+    const { container } = render(AssistantDock, {
+      props: { transport, registry, contextMode: 'server' },
+    });
+
+    await userEvent.click(await screen.findByText('Workspace assistant'));
+    expect(
+      screen.queryByRole('button', { name: /New conversation/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Attach files/i }),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    expect(
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
+    ).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Message'), 'hello');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByText('Server reply')).toBeInTheDocument();
+  });
+
+  it('server context keeps transport errors visible', async () => {
+    const transport: AssistantTransport = {
+      async listThreads() {
+        throw new Error('server unavailable');
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+    render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+      },
+    });
+
+    expect(
+      await screen.findByText(/Something went wrong: server unavailable/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('removes full-only controls and staged attachments on a reduced transport swap', async () => {
+    const registry = createDataSurfaceRegistry();
+    const full = createInMemoryAssistantTransport();
+    const reduced: AssistantTransport = {
+      async listThreads() {
+        return [
+          {
+            id: 'tenant-b-session',
+            title: 'Tenant B',
+            isResolved: false,
+            messageCount: 0,
+          },
+        ];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+    const { container, rerender } = render(AssistantDock, {
+      props: { transport: full, registry, contextMode: 'server' },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!fileInput) throw new Error('file input not found');
+    await userEvent.upload(
+      fileInput,
+      new File(['data'], 'tenant-a.png', { type: 'image/png' }),
+    );
+    expect(await screen.findByText('tenant-a.png')).toBeInTheDocument();
+
+    await rerender({ transport: reduced, registry, contextMode: 'server' });
+
+    expect(await screen.findByText('Tenant B')).toBeInTheDocument();
+    expect(screen.queryByText('tenant-a.png')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /New conversation/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Attach files/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it('loadThreads/loadModels fire exactly once per mount, and the registry subscription survives a send (F1)', async () => {
     const registry = createDataSurfaceRegistry();
     const transport = createInMemoryAssistantTransport({

@@ -56,6 +56,13 @@ discovery when a host wants to scope the dock manually — it is intersected
 against `registry.list()`, so an identity named in `surfaces` that is not
 genuinely registered is never treated as mounted (Copilot PR #2919 jAwr0).
 
+The default `contextMode="data-surfaces"` keeps the empty-surface guidance for
+route-aware assistants. Use `contextMode="server"` when the authenticated
+transport supplies context and tools without browser data surfaces. Server
+mode omits only that guidance: transport failures still render, the registry
+remains the action mount gate, and no client tool is declared or run merely by
+selecting the mode.
+
 ### Mounting the server side (#3368)
 
 `@happyvertical/smrt-chat/sveltekit` serves everything the dock calls from one
@@ -351,7 +358,8 @@ ships the interface and, since #3368, an HTTP implementation
 
 `AssistantTransport` (`assistant-transport.ts`) is intentionally narrower than
 `ChatClientBackend` (`packages/chat/src/client.ts`): `listThreads`,
-`createThread`, `loadMessages`, `sendMessage`, `uploadAttachment`.
+`loadMessages` and `sendMessage`, plus optional `createThread` and
+`uploadAttachment` capabilities.
 
 - **Reads are host-endpoint scoped, never the raw generated list routes**
   (Copilot PR #2919 review, threads jAwqo/jAwrQ/jAwvV). `ChatThread`/
@@ -395,9 +403,11 @@ ships the interface and, since #3368, an HTTP implementation
 - `createThread`/`sendMessage`/`uploadAttachment` have no generated `create`
   route to call (same `api: { include: ['list', 'get'] }` constraint).
   `createSmrtAssistantTransport` requires an explicit `writeEndpoint` (a
-  `ChatService`-backed implementation the host supplies) for those three and
-  throws a descriptive error if it is missing, rather than silently
-  no-opping.
+  `ChatService`-backed implementation the host supplies) for sending.
+  `writeEndpoint.createThread` and `writeEndpoint.uploadAttachment` are
+  optional: their presence advertises the capability, and the dock omits the
+  corresponding New conversation or attachment control when absent. A direct
+  controller `createThread()` call still rejects clearly when unsupported.
 - `mountAssistantRoutes` (`@happyvertical/smrt-chat/sveltekit`) is the shipped
   server for both reads and writes, and `createAssistantHttpTransport` is
   `createSmrtAssistantTransport` pointed at it with the `writeEndpoint`
@@ -482,6 +492,10 @@ data-surface actions; the content-specific sanitizer stays specific to
 
 | Behavior | Test | Kind |
 |---|---|---|
+| A transport may omit `createThread`; the dock then omits New conversation, while a direct controller call rejects without changing conversation state | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; `create-assistant-dock-controller.test.ts` | component + unit (#3546) |
+| A transport may omit `uploadAttachment`; the composer then has no attach/file/drop behavior, while full transports retain upload and its visible errors | `packages/chat/src/svelte/components/assistant/__tests__/AssistantComposer.test.ts`; `AssistantDock.test.ts` | component (#3546) |
+| `contextMode="server"` omits only the irrelevant empty-data-surface guidance; transport errors remain visible and data-surface actions stay fail-closed | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; `create-assistant-dock-controller.test.ts` | component + unit (#3546) |
+| Replacing a full transport with a reduced transport removes unsupported controls and clears staged attachments; late list/open/send results from the old context cannot land | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; `create-assistant-dock-controller.test.ts` | component + unit (#3546) |
 | Fail-closed with an empty registry | `packages/chat/src/svelte/components/assistant/__tests__/create-assistant-dock-controller.test.ts` | unit |
 | Mounted-surface discovery | same file | unit |
 | Client-side rejection of an action on an unmounted surface | same file | unit |
