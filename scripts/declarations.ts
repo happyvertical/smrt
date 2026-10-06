@@ -6,7 +6,7 @@ import type { Plugin } from 'vite';
 
 const require = createRequire(import.meta.url);
 
-/** Emit source-shaped declarations with the workspace's standard tsc CLI. */
+/** Emit portable source-shaped declarations with the pinned TypeScript compiler. */
 export function declarations(options: {
   packageDir: string;
   tsconfigPath?: string;
@@ -60,7 +60,7 @@ export function declarations(options: {
         );
         const result = spawnSync(
           process.execPath,
-          [require.resolve('typescript/bin/tsc'), '--project', configPath],
+          [require.resolve('./declarations-emitter.ts'), configPath],
           { cwd: options.packageDir, stdio: 'inherit' },
         );
         if (result.error) throw result.error;
@@ -70,10 +70,10 @@ export function declarations(options: {
           );
         }
         for (const [name, source] of Object.entries(options.entries ?? {})) {
-          const sourcePath = relative(absolute('src'), source).replace(
-            /\.[cm]?tsx?$/,
-            '.js',
-          );
+          const sourcePath = relative(absolute('src'), source)
+            .replace(/\.mts$/, '.mjs')
+            .replace(/\.cts$/, '.cjs')
+            .replace(/\.tsx?$/, '.js');
           const entryPath = absolute(
             `${options.outDir ?? 'dist'}/${name}.d.ts`,
           );

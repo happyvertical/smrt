@@ -168,6 +168,10 @@ function withIsolatedCoreFixture<T>(run: (fixtureDir: string) => T): T {
       resolve(workspaceDir, 'scripts/declarations.ts'),
       join(fixtureRoot, 'scripts/declarations.ts'),
     );
+    cpSync(
+      resolve(workspaceDir, 'scripts/declarations-emitter.ts'),
+      join(fixtureRoot, 'scripts/declarations-emitter.ts'),
+    );
     symlinkSync(
       resolve(workspaceDir, 'node_modules'),
       join(fixtureRoot, 'node_modules'),
