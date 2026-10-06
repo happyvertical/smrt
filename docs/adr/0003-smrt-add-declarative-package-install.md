@@ -216,8 +216,10 @@ allowed only for a model and strategy the descriptor lists under `extensions`.
 Both start with generated REST, MCP and CLI exposure off (exposure is opted
 into, like `consumer.routes`). Ids and references follow the dialect rules in
 root `AGENTS.md` (native UUID on PostgreSQL/DuckDB, text on SQLite). The plan
-shows the file, the columns the migration adds, and runs `smrt app migrate`
-and permission sync on apply. Generated files carry the header above; later
+shows the file and the table or columns the migration adds. Apply writes the
+file before it builds, so the build registers the new model and the following
+`smrt app migrate` and permission sync include it (see Apply order under CLI
+contract). Generated files carry the header above; later
 runs never rewrite them, and doctor reports when the source package has moved
 on from the recorded version.
 
@@ -310,10 +312,27 @@ smrt doctor --packages [--json]
   `db:permissions --expected-fingerprint` pattern). Interactive apply prints the
   plan and asks; a non-interactive apply requires `--expected-plan`.
 - **Apply order:** dependency (exact version and integrity from the plan) →
-  config edit → `smrt app build` → `smrt app migrate` (refuses while the local
-  app runs, as today) → `smrt app permissions sync` (additive, never prunes) →
-  extension and eject files → re-plan, which must be empty. Every step is
-  idempotent, so a failed apply is resumed by running it again.
+  config edit → extension and eject files → `smrt app build` →
+  `smrt app migrate` (refuses while the local app runs, as today) →
+  `smrt app permissions sync` (additive, never prunes) → re-plan, which must be
+  empty. Files come before the build because the build is what puts an
+  `--extend` model into `.smrt/manifest.json`; migrating first would leave the
+  new table or STI columns out of that migration and the final plan non-empty.
+- **Resuming.** Each step is detected as done from state, not from a log, so
+  running the same command again after an interruption continues from the
+  first unfinished step:
+
+  | Interrupted after | A re-run sees | and does |
+  | --- | --- | --- |
+  | dependency | the planned version installed with the planned integrity | skips it; edits config |
+  | config edit | every planned config entry present | skips it; writes files |
+  | extension/eject files | each planned file present with its ownership header naming this package, model or part and strategy | skips it (never rewrites, even if edited since); builds. A file at that path without that header blocks (exit 2). |
+  | build | nothing to detect; the build is repeatable | builds again, then migrates |
+  | migrate | `smrt db:migrate --dry-run` reports nothing pending | skips it; syncs permissions |
+  | permissions sync | no catalog slug or default grant missing | skips it; re-plans |
+
+  The final re-plan runs only when every step reports done, and it must come
+  back empty.
 - **Config edits** go through a literal-only editor of `smrt.config.ts`: it
   adds or removes array items and object keys inside `defineConfig({...})`
   literals and preserves the rest. A non-literal config is refused, with the
