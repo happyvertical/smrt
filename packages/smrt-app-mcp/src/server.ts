@@ -334,14 +334,42 @@ function configuredEffects(
   return new Set(effects);
 }
 
+type RegistryEntry =
+  ReturnType<typeof ObjectRegistry.getAllClasses> extends Map<string, infer V>
+    ? V
+    : never;
+
+/** Distinct registrations whose simple name matches, case-insensitively. */
+function sameNamedClasses(simpleName: string): Array<[string, RegistryEntry]> {
+  const wanted = simpleName.toLowerCase();
+  const seen = new Set<RegistryEntry>();
+  const matches: Array<[string, RegistryEntry]> = [];
+  for (const [key, info] of ObjectRegistry.getAllClasses()) {
+    if (seen.has(info) || (info.name || key).toLowerCase() !== wanted) continue;
+    seen.add(info);
+    matches.push([key, info]);
+  }
+  return matches;
+}
+
 function isTenantScopedTool(identity: MCPToolIdentity): boolean {
+  // The generating class itself, never another class sharing its name (#3490).
+  if (identity.qualifiedName) {
+    return (
+      ObjectRegistry.isTenantScoped(identity.qualifiedName) ||
+      isTenantScopedClassResolved(identity.qualifiedName)
+    );
+  }
+  // An identity without its registration: fail closed if any class of that
+  // name is tenant-scoped.
   const objectName = identity.objectName.toLowerCase();
   for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
     const name = classInfo.name || key;
-    if (name.toLowerCase() === objectName) {
-      return (
-        ObjectRegistry.isTenantScoped(name) || isTenantScopedClassResolved(name)
-      );
+    if (
+      name.toLowerCase() === objectName &&
+      (ObjectRegistry.isTenantScoped(key) || isTenantScopedClassResolved(key))
+    ) {
+      return true;
     }
   }
   return false;
@@ -379,6 +407,7 @@ export function createMcpAppServer(
   const allowedClassNames = new Set(
     options.allowedClassNames.map((name) => name.toLowerCase()),
   );
+  const generatorScope = Object.freeze([...allowedClassNames]);
   const getPublicPatterns =
     options.publicToolPatterns ?? ((): readonly string[] => []);
   const toolPolicy = options.toolPolicy;
@@ -397,13 +426,26 @@ export function createMcpAppServer(
   const requestedToolListCacheHint = configuredToolListCacheHint(
     options.toolListCache,
   );
-  const tasksEnabled = options.allowedClassNames.some((className) => {
-    const mcp = ObjectRegistry.getConfig(className).mcp;
-    return (
-      typeof mcp === 'object' &&
-      (mcp.tasks === true || (Array.isArray(mcp.tasks) && mcp.tasks.length > 0))
-    );
-  });
+  // Configuration is read per registration: an allow-list entry names a
+  // registry key / qualified name exactly, or every class of a simple name.
+  const tasksEnabled = [...ObjectRegistry.getAllClasses()].some(
+    ([key, classInfo]) => {
+      const names = [key, classInfo.qualifiedName, classInfo.name];
+      if (
+        !names.some(
+          (name) => !!name && allowedClassNames.has(name.toLowerCase()),
+        )
+      ) {
+        return false;
+      }
+      const mcp = ObjectRegistry.getConfig(key).mcp;
+      return (
+        typeof mcp === 'object' &&
+        (mcp.tasks === true ||
+          (Array.isArray(mcp.tasks) && mcp.tasks.length > 0))
+      );
+    },
+  );
 
   function userForGenerator(
     principal?: McpAppPrincipal | null,
@@ -437,7 +479,13 @@ export function createMcpAppServer(
     taskStore?: McpTaskStore,
   ): MCPGenerator {
     const user = userForGenerator(principal);
-    return new MCPGenerator(options.serverInfo as MCPConfig, {
+    // Generate only the allow-listed classes: a name collision among classes
+    // this server never publishes must not fail its catalog or calls (#3490).
+    const config: MCPConfig = {
+      ...(options.serverInfo as MCPConfig),
+      classNames: generatorScope,
+    };
+    return new MCPGenerator(config, {
       ...options.smrtOptions(),
       user,
       tenantId: principal?.tenantId,
@@ -464,8 +512,11 @@ export function createMcpAppServer(
     const generator = makeGenerator();
     const coreTools = (await generator.generateTools())
       .map((tool) => ({ tool, identity: generator.getToolIdentity(tool) }))
-      .filter(({ identity }) =>
-        allowedClassNames.has(identity.objectName.toLowerCase()),
+      .filter(
+        ({ identity }) =>
+          allowedClassNames.has(identity.objectName.toLowerCase()) ||
+          (!!identity.qualifiedName &&
+            allowedClassNames.has(identity.qualifiedName.toLowerCase())),
       );
     const names = new Set(coreTools.map(({ tool }) => tool.name));
     for (const workflowTool of workflowTools) {
@@ -771,14 +822,25 @@ export function createMcpAppServer(
     if (identity.action.toLowerCase() !== origin.method.toLowerCase()) {
       return false;
     }
-    for (const [key, info] of ObjectRegistry.getAllClasses()) {
-      const name = info.name || key;
-      if (name.toLowerCase() !== identity.objectName.toLowerCase()) continue;
+    if (identity.qualifiedName) {
+      if (origin.objectType === identity.qualifiedName) return true;
+      // A persisted simple name identifies the class only while no other
+      // registered class shares it (#3490).
+      const info = ObjectRegistry.getAllClasses().get(identity.qualifiedName);
       return (
-        origin.objectType === name || origin.objectType === info.qualifiedName
+        !!info?.name &&
+        origin.objectType === info.name &&
+        sameNamedClasses(info.name).length === 1
       );
     }
-    return false;
+    // An identity without its registration resolves only an unambiguous name.
+    const matches = sameNamedClasses(identity.objectName);
+    if (matches.length !== 1) return false;
+    const [[key, info]] = matches;
+    const name = info.name || key;
+    return (
+      origin.objectType === name || origin.objectType === info.qualifiedName
+    );
   }
 
   /**

@@ -781,8 +781,12 @@ describe('MCPGenerator with Custom Actions', () => {
         expect(handlers).toContain(
           'Custom action rebalance is collection-scoped and does not accept an ID',
         );
+        // Emitted lookups name the class's registry key (#3490).
+        const agentKey = [...ObjectRegistry.getAllClasses()].find(
+          ([, info]) => info.constructor === MCPConformanceAgent,
+        )?.[0];
         expect(handlers).toContain(
-          'ObjectRegistry.getClass("MCPConformanceAgent")?.constructor',
+          `ObjectRegistry.getClass(${JSON.stringify(agentKey)})?.constructor`,
         );
         expect(handlers).toContain('args["idempotencyKey"]');
         expect(handlers).toContain('args["actionId"]');

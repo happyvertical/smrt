@@ -184,6 +184,15 @@ export interface CollisionInputs {
    * resolves `contracts`.
    */
   readonly declaresDifferentTable: boolean;
+
+  /**
+   * Decorator-origin only: the existing entry's package stamps every class it
+   * declares with its package name (#3490). The new class is unstamped or
+   * stamped with another package, so it is provably not that package's class:
+   * in bundled output too, where the stack names the bundle's package, it
+   * coexists rather than adopting the entry by name and table.
+   */
+  readonly existingPackageStampsConstructors: boolean;
 }
 
 export interface PolicyDecision {
@@ -242,7 +251,8 @@ const ROWS: readonly Row[] = [
         !i.samePackage &&
         !i.sameSourceFile &&
         ((i.bothSourceFilesKnown && !i.newInBundledContext) ||
-          i.declaresDifferentTable)
+          i.declaresDifferentTable ||
+          i.existingPackageStampsConstructors)
       ),
     policy: 'replace',
     reason: () =>
@@ -386,7 +396,9 @@ const ROWS: readonly Row[] = [
       !i.sameSourceFile &&
       !i.newExtendsExisting &&
       !i.existingExtendsNew &&
-      (!i.newInBundledContext || i.declaresDifferentTable),
+      (!i.newInBundledContext ||
+        i.declaresDifferentTable ||
+        i.existingPackageStampsConstructors),
     policy: 'coexist-qualified',
     reason: () =>
       'Different packages declare the same simple name; both registrations live under their qualified keys (issue #3106).',

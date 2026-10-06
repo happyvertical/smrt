@@ -281,7 +281,11 @@ describe('generated MCP custom-action runtime (#2182)', () => {
       },
     });
 
-    expect(source).toContain('resolveCreateTarget("animal", args, aiConfig)');
+    // The STI table is keyed by the tool prefix; the base resolves through
+    // the target's registry identity (the legacy target's object name here).
+    expect(source).toContain(
+      'resolveCreateTarget("animal", "Animal", args, aiConfig)',
+    );
     expect(source).toContain('const STI_TARGETS');
     expect(source).toContain('"@test/animals:Cat":"@test/animals:Cat"');
     expect(source).toContain('applyWritablePolicy(targetObjectName, args)');

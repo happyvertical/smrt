@@ -6,6 +6,12 @@ export interface McpToolTarget {
   action: string;
   /** Original generated name before protocol canonicalization. */
   originalName?: string;
+  /**
+   * Registry key (qualified identity) of the generating class (#3490).
+   * `objectName` is the wire/display name; every registry lookup — in-process
+   * and in generated runtimes — goes through this key when present.
+   */
+  registryKey?: string;
 }
 
 /**

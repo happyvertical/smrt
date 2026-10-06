@@ -194,6 +194,17 @@ function getManifestGlobals(): ManifestGlobals {
  * `loadExternalManifestSyncWithNode()`, `loadManifestFromPathSyncWithNode()`.
  * Readers: all discovery paths.
  */
+/**
+ * Whether the package's stored manifest declares that its library build
+ * stamps each decorated class with its package (`stampsConstructors`,
+ * #3490). Read from the manifest record itself, so every path that stores a
+ * manifest carries the capability and every path that clears or replaces it
+ * drops it.
+ */
+export function packageStampsConstructors(packageName: string): boolean {
+  return getManifestCache().get(packageName)?.stampsConstructors === true;
+}
+
 export function getManifestCache(): Map<string, SmartObjectManifest> {
   const globals = getManifestGlobals();
   const current = globals.__smrtManifestCache;

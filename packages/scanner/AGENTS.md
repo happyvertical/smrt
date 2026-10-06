@@ -16,7 +16,9 @@ executes the source.
   (`toManifest()`); owns field-type inference (the `0` vs `0.0` integer/decimal
   heuristic, decorator interpretation, union/alias resolution).
 - `parseFile` / `parseSource` — parse a single file or a source string to a
-  `FileScanResult` (classes, errors, type aliases, SMRT imports).
+  `FileScanResult` (classes, errors, type aliases, SMRT imports). Each class
+  carries the parser's `bodyStart` offset; core's library build inserts its
+  package stamp there and never rescans source text (#3490).
 - `extractSmrtImports` — pull SMRT-related imports from a parsed file.
 - `lintNumericPrecision(classes, sourceText?)` — flags persisted `number` fields
   whose declared precision contradicts their name (#2361), returning a `kind`

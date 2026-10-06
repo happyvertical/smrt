@@ -268,6 +268,19 @@ uses it for class allow-lists, tenant checks, and compatible workflow guards;
 those consumers must not reverse protocol aliases. The alias remains the sole
 wire tool name and is still the key for public patterns and generic tool policy.
 
+`MCPConfig.classNames` scopes generation (simple names, case-insensitive, or
+qualified `@scope/pkg:Class`); omitted, every registered class is a candidate.
+A simple name matching more than one registered class throws (scope it by
+qualified name). Each tool keeps its class's registry key, and configuration,
+fields, methods, dispatch, tasks and collections resolve through that key —
+never through the first same-named class. Generated servers (single-file and
+modular) carry it as `registryKey` in their tool targets and task actions and
+use it for every emitted collection, policy, class and STI-base lookup;
+`objectName` stays the wire/display name.
+A host with an allow-list passes it so the duplicate-name check runs over the
+published set only: an unrelated collision among classes it never lists must
+not fail its catalog or calls (#3490). App MCP always scopes its generators.
+
 ## Generated route collection access (#3416)
 
 There is no generated route-access module. Every generated SvelteKit route

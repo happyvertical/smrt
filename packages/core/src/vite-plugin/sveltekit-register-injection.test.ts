@@ -104,12 +104,14 @@ describe('smrtPlugin transform: SvelteKit registration', () => {
     rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  type TransformHook = (
-    code: string,
-    id: string,
-  ) => { code: string; map: null } | null;
+  type TransformHook = {
+    handler: (
+      code: string,
+      id: string,
+    ) => Promise<{ code: string; map: null } | null>;
+  };
 
-  it('injects only when SvelteKit generation is enabled', () => {
+  it('injects only when SvelteKit generation is enabled', async () => {
     const id = join(projectRoot, 'src/lib/server/smrt.ts');
     const enabled = smrtPlugin({
       projectRoot,
@@ -120,10 +122,17 @@ describe('smrtPlugin transform: SvelteKit registration', () => {
       },
     });
     const disabled = smrtPlugin({ projectRoot });
-    expect((enabled.transform as TransformHook)(SOURCE, id)).toEqual({
+    expect(
+      await (enabled.transform as unknown as TransformHook).handler(SOURCE, id),
+    ).toEqual({
       code: `import './smrt-register.js';${SOURCE}`,
       map: null,
     });
-    expect((disabled.transform as TransformHook)(SOURCE, id)).toBeNull();
+    expect(
+      await (disabled.transform as unknown as TransformHook).handler(
+        SOURCE,
+        id,
+      ),
+    ).toBeNull();
   });
 });

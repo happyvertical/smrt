@@ -575,8 +575,13 @@ export function getPackageName(
         // runner (Vitest, Vite SSR) the class-declaring module is the
         // anonymous one; matching only the parenthesized form skipped it and
         // attributed the class to the runner's package (#3098).
+        // The Vite dev server's module runner reports an installed
+        // dependency's file with its URL query (`dist/x.js?v=030af238:1:2`).
+        // Rejecting that frame fell through to the app's own module below it
+        // and attributed every such dependency class to the app (#3490), so
+        // the query is matched and dropped.
         const fileMatch = line.match(
-          /(?:\(|\bat\s+)((?:file:\/\/)?[^()\s]+\.(?:js|ts|mjs|mts|jsx|tsx|cjs|cts))(?::\d+:\d+)?\)?\s*$/,
+          /(?:\(|\bat\s+)((?:file:\/\/)?[^()\s?]+\.(?:js|ts|mjs|mts|jsx|tsx|cjs|cts))(?:\?[^()\s]*?)?(?::\d+:\d+)?\)?\s*$/,
         );
         if (fileMatch) {
           const filePath = fileMatch[1];
