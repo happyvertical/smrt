@@ -20,6 +20,9 @@ interface RecipeOptionsProps {
 
 let { recipe, titled = false }: RecipeOptionsProps = $props();
 
+// Under the page's h1: a titled recipe is an h2 with its parts at h3, an
+// untitled one has its parts at h2.
+const part = $derived(titled ? 'h3' : 'h2');
 const added = $derived(recipeState.has(recipe.id));
 const neededBy = $derived(recipeState.requiredBy(recipe.id));
 const models = $derived(recipeModels(recipe));
@@ -65,7 +68,7 @@ const requiredHref = (id: string) => {
   </header>
 
   <div class="adds">
-    <h3>What it adds</h3>
+    <svelte:element this={part}>What it adds</svelte:element>
     <ul>
       {#each recipeNav(recipe) as entry (entry.model.id)}
         <li>
@@ -82,13 +85,17 @@ const requiredHref = (id: string) => {
 
   {#if added}
     <div class="options">
-      <h3>Options</h3>
+      <svelte:element this={part}>Options</svelte:element>
       <p class="meta">
         Generated from the parameters {recipe.label}'s models declare. Saving
         writes field policies, held in memory for now.
       </p>
       {#each models as { model } (model.id)}
-        <ModelOptions {model} hints={recipe.options?.[model.id]} />
+        <ModelOptions
+          {model}
+          hints={recipe.options?.[model.id]}
+          headingLevel={titled ? 4 : 3}
+        />
       {/each}
     </div>
   {:else}
@@ -112,7 +119,9 @@ const requiredHref = (id: string) => {
 
   h2,
   h3,
-  p {
+  p,
+  .adds > :first-child,
+  .options > :first-child {
     margin: 0;
   }
 

@@ -6,9 +6,19 @@ interface HelpViewProps {
   glossary: GlossaryEntry[];
   /** Prefixed to anchor ids, so one page can hold several recipes' help. */
   idPrefix?: string;
+  /** The level of the help's `##` headings (2 by default); the rest follow. */
+  startLevel?: number;
 }
 
-let { blocks, glossary, idPrefix = '' }: HelpViewProps = $props();
+let {
+  blocks,
+  glossary,
+  idPrefix = '',
+  startLevel = 2,
+}: HelpViewProps = $props();
+
+/** An `h` level `depth` below the help's top one, never past h6. */
+const level = (depth: number) => Math.min(startLevel + depth, 6);
 
 /** Glossary grouped by model, so a model page can link to its own part. */
 const groups = $derived(
@@ -36,13 +46,9 @@ const groups = $derived(
 <article class="help">
   {#each blocks as block}
     {#if block.type === 'heading'}
-      {#if block.level === 2}
-        <h2>{@render inline(block.inlines)}</h2>
-      {:else if block.level === 3}
-        <h3>{@render inline(block.inlines)}</h3>
-      {:else}
-        <h4>{@render inline(block.inlines)}</h4>
-      {/if}
+      <svelte:element this={`h${level(block.level - 2)}`}>
+        {@render inline(block.inlines)}
+      </svelte:element>
     {:else if block.type === 'paragraph'}
       <p>{@render inline(block.inlines)}</p>
     {:else if block.ordered}
@@ -62,10 +68,10 @@ const groups = $derived(
 
   {#if groups.length}
     <section aria-label="Fields">
-      <h2>Fields</h2>
+      <svelte:element this={`h${level(0)}`}>Fields</svelte:element>
       {#each groups as group (group.model)}
         <section id={`${idPrefix}fields-${group.model}`} aria-label={`${group.model} fields`}>
-          {#if groups.length > 1}<h3>{group.model}</h3>{/if}
+          {#if groups.length > 1}<svelte:element this={`h${level(1)}`}>{group.model}</svelte:element>{/if}
           <dl>
             {#each group.entries as entry (entry.name)}
               <dt>{entry.label}</dt>

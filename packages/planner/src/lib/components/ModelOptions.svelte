@@ -20,9 +20,11 @@ interface ModelOptionsProps {
   model: CatalogModel;
   /** The recipe's curation hints for this model. */
   hints?: RecipeModelHints;
+  /** The heading level of the model's title (3 by default). */
+  headingLevel?: number;
 }
 
-let { model, hints }: ModelOptionsProps = $props();
+let { model, hints, headingLevel = 3 }: ModelOptionsProps = $props();
 
 function fresh(): ModelDraft {
   return draftFrom(
@@ -71,7 +73,7 @@ function setOrder(name: string, raw: string) {
 </script>
 
 <form class="options" onsubmit={save} aria-label={`Options for ${model.name}`}>
-  <h3>{model.name} options</h3>
+  <svelte:element this={`h${Math.min(headingLevel, 6)}`}>{model.name} options</svelte:element>
   <p class="hint">
     Stored in the <code>{model.collection}</code> table. Switch fields on or
     off and set their label, help, default and order. Saved as field policies.
@@ -169,6 +171,9 @@ function setOrder(name: string, raw: string) {
   }
 
   h3,
+  h4,
+  h5,
+  h6,
   p {
     margin: 0;
   }

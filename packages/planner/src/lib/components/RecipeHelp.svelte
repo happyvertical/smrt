@@ -30,6 +30,7 @@ const rendered = $derived(
       blocks={rendered.blocks}
       glossary={rendered.glossary}
       idPrefix={`${recipe.id}-`}
+      startLevel={titled ? 3 : 2}
     />
   {:else}
     <p>There is no help for {recipe.label} yet.</p>
