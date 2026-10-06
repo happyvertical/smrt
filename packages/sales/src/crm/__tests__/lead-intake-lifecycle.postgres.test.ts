@@ -31,6 +31,8 @@ describePostgres('Lead intake and conversion lifecycle on PostgreSQL', () => {
   let service: LeadWorkflowService;
   let leads: LeadCollection;
   let opportunities: OpportunityCollection;
+  let pipelines: PipelineDefinitionCollection;
+  let stages: PipelineStageCollection;
   let activities: SalesActivityCollection;
   let tenantId: string;
   let actorProfileId: string;
@@ -52,6 +54,8 @@ describePostgres('Lead intake and conversion lifecycle on PostgreSQL', () => {
     service = await LeadWorkflowService.create({ db });
     leads = await LeadCollection.create({ db });
     opportunities = await OpportunityCollection.create({ db });
+    pipelines = await PipelineDefinitionCollection.create({ db });
+    stages = await PipelineStageCollection.create({ db });
     activities = await SalesActivityCollection.create({ db });
     tenantId = randomUUID();
     actorProfileId = randomUUID();
@@ -64,6 +68,7 @@ describePostgres('Lead intake and conversion lifecycle on PostgreSQL', () => {
   });
 
   it('serializes concurrent exact retries with one persisted lead and audit', async () => {
+    const profileId = randomUUID();
     const create = () =>
       withTenant({ tenantId }, () =>
         service.createLead({
@@ -71,6 +76,7 @@ describePostgres('Lead intake and conversion lifecycle on PostgreSQL', () => {
           email: 'concurrent@example.test',
           sourceKind: 'form',
           idempotencyKey: 'same-submission',
+          profileId,
           actorProfileId,
         }),
       );
@@ -83,6 +89,126 @@ describePostgres('Lead intake and conversion lifecycle on PostgreSQL', () => {
         await activities.findBySubject('lead', first.lead.id as string),
       ).toHaveLength(1);
     });
+    await expect(
+      withTenant({ tenantId }, () =>
+        service.createLead({
+          name: 'Concurrent intake',
+          email: 'concurrent@example.test',
+          sourceKind: 'form',
+          idempotencyKey: 'same-submission',
+          profileId: randomUUID(),
+          actorProfileId,
+        }),
+      ),
+    ).rejects.toMatchObject({ reason: 'idempotency_conflict' });
+  });
+
+  it('serializes concurrent exact nonterminal stage moves into one audit', async () => {
+    const created = await withTenant({ tenantId }, () =>
+      service.createLead({
+        name: 'Concurrent stage',
+        email: 'concurrent-stage@example.test',
+        sourceKind: 'form',
+      }),
+    );
+    const qualified = await withTenant({ tenantId }, () =>
+      service.qualifyLead({
+        leadId: created.lead.id as string,
+        actorProfileId,
+      }),
+    );
+    const pipelineStages = await withTenant({ tenantId }, () =>
+      pipelines.getStages(qualified.opportunity.pipelineId),
+    );
+    const target = pipelineStages.find((stage) => stage.key === 'discovery');
+    await db.query(`
+      CREATE FUNCTION pause_concurrent_stage_move() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.stage_id = '${target?.id}' THEN PERFORM pg_sleep(0.2); END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await db.query(`
+      CREATE TRIGGER pause_concurrent_stage_move_trigger
+      BEFORE UPDATE ON opportunities
+      FOR EACH ROW EXECUTE FUNCTION pause_concurrent_stage_move()
+    `);
+    const move = () =>
+      withTenant({ tenantId }, () =>
+        service.moveOpportunityToStage({
+          opportunityId: qualified.opportunity.id as string,
+          stageId: target?.id as string,
+          actorProfileId,
+        }),
+      );
+    const [first, second] = await Promise.all([move(), move()]);
+    await db.query(
+      'DROP TRIGGER pause_concurrent_stage_move_trigger ON opportunities',
+    );
+    await db.query('DROP FUNCTION pause_concurrent_stage_move()');
+    expect([first.changed, second.changed].sort()).toEqual([false, true]);
+    expect(first.opportunity.stageId).toBe(target?.id);
+    expect(second.opportunity.stageId).toBe(target?.id);
+    const audit = await withTenant({ tenantId }, () =>
+      activities.findBySubject(
+        'opportunity',
+        qualified.opportunity.id as string,
+      ),
+    );
+    expect(
+      audit.filter((row) => row.activityKind === 'stage_change'),
+    ).toHaveLength(1);
+  });
+
+  it('rolls back a nonterminal stage move when its audit insert fails', async () => {
+    const created = await withTenant({ tenantId }, () =>
+      service.createLead({
+        name: 'Stage rollback',
+        email: 'stage-rollback@example.test',
+        sourceKind: 'form',
+      }),
+    );
+    const qualified = await withTenant({ tenantId }, () =>
+      service.qualifyLead({
+        leadId: created.lead.id as string,
+        actorProfileId,
+      }),
+    );
+    const originalStageId = qualified.opportunity.stageId;
+    const pipelineStages = await withTenant({ tenantId }, () =>
+      pipelines.getStages(qualified.opportunity.pipelineId),
+    );
+    const target = pipelineStages.find((stage) => stage.key === 'discovery');
+    await db.query(`
+      CREATE FUNCTION fail_nonterminal_stage_audit() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'injected stage audit failure'; END;
+      $$ LANGUAGE plpgsql
+    `);
+    await db.query(`
+      CREATE TRIGGER fail_nonterminal_stage_audit_trigger
+      BEFORE INSERT ON sales_activities
+      FOR EACH ROW WHEN (NEW.activity_kind = 'stage_change')
+      EXECUTE FUNCTION fail_nonterminal_stage_audit()
+    `);
+    await expect(
+      withTenant({ tenantId }, () =>
+        service.moveOpportunityToStage({
+          opportunityId: qualified.opportunity.id as string,
+          stageId: target?.id as string,
+          actorProfileId,
+        }),
+      ),
+    ).rejects.toThrow('injected stage audit failure');
+    await db.query(
+      'DROP TRIGGER fail_nonterminal_stage_audit_trigger ON sales_activities',
+    );
+    await db.query('DROP FUNCTION fail_nonterminal_stage_audit()');
+    expect(
+      await withTenant({ tenantId }, () =>
+        opportunities.get({ id: qualified.opportunity.id }, { cache: false }),
+      ),
+    ).toMatchObject({ stageId: originalStageId, status: 'open' });
   });
 
   it('serializes concurrent intake across overlapping dedupe identities', async () => {

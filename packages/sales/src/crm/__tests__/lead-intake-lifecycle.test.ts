@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
   disableTenancy,
@@ -79,8 +79,10 @@ describe('Lead intake and conversion lifecycle', () => {
       >({ reason });
     }
 
+    const profileId = randomUUID();
     const result = await intake({
       phone: ' 555-0100 ',
+      profileId,
       acquisitionContext: { campaign: 'fall' },
     });
     expect(result.created).toBe(true);
@@ -88,6 +90,7 @@ describe('Lead intake and conversion lifecycle', () => {
       name: 'Acme Retrofit',
       email: 'sales@acme.test',
       phone: '555-0100',
+      profileId,
       tenantId,
     });
     expect(result.lead.getAcquisitionContext()).toEqual({ campaign: 'fall' });
@@ -102,13 +105,19 @@ describe('Lead intake and conversion lifecycle', () => {
   });
 
   it('persists retry identity, rejects changed intent, and emits one inbound audit per novel active-email intake', async () => {
-    const first = await intake({ idempotencyKey: 'submission-1' });
-    const retry = await intake({ idempotencyKey: 'submission-1' });
+    const profileId = randomUUID();
+    const first = await intake({ idempotencyKey: 'submission-1', profileId });
+    const retry = await intake({ idempotencyKey: 'submission-1', profileId });
     expect(retry).toMatchObject({ created: false });
     expect(retry.lead.id).toBe(first.lead.id);
 
     await expect(
       intake({ idempotencyKey: 'submission-1', name: 'Changed intent' }),
+    ).rejects.toMatchObject<Partial<LeadWorkflowValidationError>>({
+      reason: 'idempotency_conflict',
+    });
+    await expect(
+      intake({ idempotencyKey: 'submission-1', profileId: randomUUID() }),
     ).rejects.toMatchObject<Partial<LeadWorkflowValidationError>>({
       reason: 'idempotency_conflict',
     });
@@ -125,6 +134,21 @@ describe('Lead intake and conversion lifecycle', () => {
       'lead_intake',
       'inbound',
     ]);
+  });
+
+  it('preserves the pre-profile intake fingerprint when profileId is absent', async () => {
+    const result = await intake({ idempotencyKey: 'legacy-profileless-retry' });
+    const [audit] = await run(() =>
+      activities.findBySubject('lead', result.lead.id as string),
+    );
+    const legacyIntent =
+      '{"acquisitionContext":{},"contactName":"","dedupe":"email","email":"sales@acme.test","name":"Acme Retrofit","organizationName":"","ownerRepId":"","phone":"","sourceId":"","sourceKind":"contact_form"}';
+    expect(audit?.getMetadata().intentHash).toBe(
+      createHash('sha256').update(legacyIntent).digest('hex'),
+    );
+    const retry = await intake({ idempotencyKey: 'legacy-profileless-retry' });
+    expect(retry).toMatchObject({ created: false });
+    expect(retry.lead.id).toBe(result.lead.id);
   });
 
   it('reports terminal duplicates without mutation and honors none/email_or_org policies', async () => {
@@ -249,6 +273,133 @@ describe('Lead intake and conversion lifecycle', () => {
     expect(
       leadAudit.filter((row) => row.activityKind === 'qualification'),
     ).toEqual([expect.objectContaining({ actorProfileId })]);
+  });
+
+  it('moves an open Opportunity atomically and treats an exact stage retry as a no-op', async () => {
+    const created = await intake({ email: 'stage@acme.test' });
+    const qualified = await run(() =>
+      service.qualifyLead({
+        leadId: created.lead.id as string,
+        actorProfileId,
+      }),
+    );
+    const pipelineStages = await run(() =>
+      pipelines.getStages(qualified.opportunity.pipelineId),
+    );
+    const target = pipelineStages.find((stage) => stage.key === 'discovery');
+    expect(target?.id).toBeTruthy();
+
+    const moved = await run(() =>
+      service.moveOpportunityToStage({
+        opportunityId: qualified.opportunity.id as string,
+        stageId: target?.id as string,
+        actorProfileId,
+      }),
+    );
+    const replay = await run(() =>
+      service.moveOpportunityToStage({
+        opportunityId: qualified.opportunity.id as string,
+        stageId: target?.id as string,
+        actorProfileId,
+      }),
+    );
+    expect(moved).toMatchObject({ changed: true });
+    expect(moved.opportunity).toMatchObject({
+      stageId: target?.id,
+      probability: target?.probability,
+      status: 'open',
+    });
+    expect(replay).toMatchObject({ changed: false });
+    const audit = await run(() =>
+      activities.findBySubject(
+        'opportunity',
+        qualified.opportunity.id as string,
+      ),
+    );
+    expect(audit.filter((row) => row.activityKind === 'stage_change')).toEqual([
+      expect.objectContaining({ actorProfileId }),
+    ]);
+    await expect(
+      run(() =>
+        service.moveOpportunityToStage({
+          opportunityId: qualified.opportunity.id as string,
+          stageId: target?.id as string,
+          actorProfileId,
+          probabilityOverride: (target?.probability ?? 0) + 0.01,
+        }),
+      ),
+    ).rejects.toMatchObject<Partial<LeadWorkflowValidationError>>({
+      reason: 'opportunity_replay_conflict',
+    });
+  });
+
+  it('rejects unavailable, cross-pipeline, terminal, and closed stage moves', async () => {
+    const created = await intake({ email: 'invalid-stage@acme.test' });
+    const qualified = await run(() =>
+      service.qualifyLead({
+        leadId: created.lead.id as string,
+        actorProfileId,
+      }),
+    );
+    const pipelineStages = await run(() =>
+      pipelines.getStages(qualified.opportunity.pipelineId),
+    );
+    const terminal = pipelineStages.find((stage) => stage.isWon);
+    const otherPipeline = await run(() =>
+      pipelines.create({ key: 'other', name: 'Other' }),
+    );
+    const otherStage = await run(() =>
+      stages.create({
+        pipelineId: otherPipeline.id as string,
+        key: 'other',
+        name: 'Other',
+      }),
+    );
+    for (const [stageId, reason] of [
+      ['not-a-uuid', 'stage_unavailable'],
+      [randomUUID(), 'stage_unavailable'],
+      [otherStage.id as string, 'stage_unavailable'],
+      [terminal?.id as string, 'invalid_transition'],
+    ] as const) {
+      await expect(
+        run(() =>
+          service.moveOpportunityToStage({
+            opportunityId: qualified.opportunity.id as string,
+            stageId,
+            actorProfileId,
+          }),
+        ),
+      ).rejects.toMatchObject<Partial<LeadWorkflowValidationError>>({ reason });
+    }
+    await expect(
+      withTenant({ tenantId: randomUUID() }, () =>
+        service.moveOpportunityToStage({
+          opportunityId: qualified.opportunity.id as string,
+          stageId: pipelineStages[1]?.id as string,
+          actorProfileId,
+        }),
+      ),
+    ).rejects.toMatchObject<Partial<LeadWorkflowValidationError>>({
+      reason: 'opportunity_unavailable',
+    });
+    await run(() =>
+      service.closeOpportunity({
+        opportunityId: qualified.opportunity.id as string,
+        outcome: 'won',
+        actorProfileId,
+      }),
+    );
+    await expect(
+      run(() =>
+        service.moveOpportunityToStage({
+          opportunityId: qualified.opportunity.id as string,
+          stageId: pipelineStages[1]?.id as string,
+          actorProfileId,
+        }),
+      ),
+    ).rejects.toMatchObject<Partial<LeadWorkflowValidationError>>({
+      reason: 'invalid_transition',
+    });
   });
 
   it('closes won/lost at configured terminal stages and idempotently records conversion', async () => {
@@ -418,6 +569,41 @@ describe('Lead intake and conversion lifecycle', () => {
         )
       )?.status,
     ).toBe('open');
+  });
+
+  it('rolls back a nonterminal stage move when its audit write fails', async () => {
+    const created = await intake({ email: 'stage-rollback@acme.test' });
+    const qualified = await run(() =>
+      service.qualifyLead({
+        leadId: created.lead.id as string,
+        actorProfileId,
+      }),
+    );
+    const originalStageId = qualified.opportunity.stageId;
+    const pipelineStages = await run(() =>
+      pipelines.getStages(qualified.opportunity.pipelineId),
+    );
+    const target = pipelineStages.find((stage) => stage.key === 'discovery');
+    await db.query(`
+      CREATE TRIGGER fail_stage_audit BEFORE INSERT ON sales_activities
+      WHEN NEW.activity_kind = 'stage_change'
+      BEGIN SELECT RAISE(FAIL, 'injected stage audit failure'); END
+    `);
+    await expect(
+      run(() =>
+        service.moveOpportunityToStage({
+          opportunityId: qualified.opportunity.id as string,
+          stageId: target?.id as string,
+          actorProfileId,
+        }),
+      ),
+    ).rejects.toThrow('injected stage audit failure');
+    await db.query('DROP TRIGGER fail_stage_audit');
+    expect(
+      await run(() =>
+        opportunities.get({ id: qualified.opportunity.id }, { cache: false }),
+      ),
+    ).toMatchObject({ stageId: originalStageId, status: 'open' });
   });
 
   it('rejects a close when the pipeline lacks the requested terminal stage', async () => {

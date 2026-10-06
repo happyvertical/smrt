@@ -89,7 +89,7 @@ decimals from `0` to `1`; rounding occurs through the exported money helpers.
 ## Lead intake and lifecycle
 
 `LeadWorkflowService` is the tenant-safe, application-facing seam for generic
-intake, follow-up, qualification, and opportunity closure. Construct it with the host database inside an
+intake, follow-up, qualification, stage movement, and opportunity closure. Construct it with the host database inside an
 active `withTenant()` context; the host supplies authorization, actor/profile
 ids, and view-model mapping.
 
@@ -108,10 +108,13 @@ await workflow.scheduleNextAction({
 
 The service atomically records assignment and status audit events, human
 activities, scheduled next actions, and monotonic task completion.
-`createLead()` requires a name and email or phone, normalizes email, and supports
+`createLead()` requires a name and email or phone, normalizes email, supports an
+optional host-authorized `profileId`, and supports
 active-lead deduplication and caller-supplied idempotency keys. A terminal duplicate
 is reported for the host to resolve explicitly. `qualifyLead()` delegates to
-`LeadCollection.qualify()` and returns the linked opportunity; `closeOpportunity()`
+`LeadCollection.qualify()` and returns the linked opportunity.
+`moveOpportunityToStage()` atomically moves an open Opportunity between
+nonterminal same-pipeline stages; exact retries add no audit. `closeOpportunity()`
 selects the pipeline's won/lost stage and optionally records a won conversion
 link. CRM never creates the downstream target. Money remains integer cents via
 `expectedValueCents`; actor attribution uses `actorProfileId`.
