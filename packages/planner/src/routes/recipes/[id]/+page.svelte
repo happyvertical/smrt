@@ -1,100 +1,33 @@
 <script lang="ts">
-import ModelOptions from '$lib/components/ModelOptions.svelte';
-import { humanize } from '$lib/data/format.ts';
+import RecipeOptions from '$lib/components/RecipeOptions.svelte';
+import SectionIcons from '$lib/components/SectionIcons.svelte';
 import { appHref } from '$lib/planner/app.svelte.ts';
-import {
-  getRecipe,
-  recipeModels,
-  recipeNav,
-  recipePackage,
-} from '$lib/recipes/index.ts';
-import { recipeState } from '$lib/recipes/state.svelte.ts';
+import { getSection } from '$lib/recipes/index.ts';
 import type { PageProps } from './$types';
 
+// `id` is the section id: a recipe id, or the group id of several recipes.
 let { data }: PageProps = $props();
 
-const recipe = $derived(getRecipe(data.id));
-const added = $derived(recipeState.has(data.id));
-const neededBy = $derived(recipeState.requiredBy(data.id));
-const models = $derived(recipe ? recipeModels(recipe) : []);
-const label = (id: string) => getRecipe(id)?.label ?? id;
+const section = $derived(getSection(data.id));
 </script>
 
 <svelte:head>
-  <title>{recipe?.label ?? data.id} · recipes · smrt planner</title>
+  <title>{section?.label ?? data.id} options · smrt planner</title>
 </svelte:head>
 
-{#if recipe}
+{#if section}
   <main>
     <header>
-      <p class="meta"><a href={appHref('/')}>Planner</a> / {recipe.label}</p>
-      <h1>{recipe.label}</h1>
-      <p>{recipe.summary}</p>
-      <p class="meta">
-        <code>{recipe.id}</code> · from
-        {recipePackage(recipe) ? humanize(recipePackage(recipe)?.id ?? '') : 'unknown package'}
-      </p>
-      {#if recipe.requires.length}
-        <p class="meta">
-          Needs:
-          {#each recipe.requires as required, i (required)}
-            {#if i > 0},
-            {/if}<a href={appHref(`/recipes/${required}/`)}>{label(required)}</a>
-          {/each}
-        </p>
-      {/if}
-      <div class="actions">
-        <button
-          type="button"
-          class:secondary={added}
-          disabled={neededBy.length > 0}
-          onclick={() =>
-            added ? recipeState.remove(recipe.id) : recipeState.add(recipe.id)}
-        >
-          {neededBy.length
-            ? `Remove ${recipe.label} (needed by ${neededBy.map(label).join(', ')})`
-            : added
-              ? `Remove ${recipe.label} from my app`
-              : `Add ${recipe.label} to my app`}
-        </button>
+      <div class="bar">
+        <p class="meta"><a href={appHref('/')}>Planner</a> / {section.label} options</p>
+        <SectionIcons section={section.id} label={section.label} current="options" />
       </div>
+      <h1>{section.label} options</h1>
     </header>
 
-    <section>
-      <h2>What it adds</h2>
-      <ul>
-        {#each recipeNav(recipe) as entry (entry.model.id)}
-          <li>
-            {#if added}
-              <a href={appHref(`/m/${entry.packageId}/${entry.model.name}/`)}>{entry.label}</a>
-            {:else}
-              {entry.label}
-            {/if}
-            <span class="meta">list, create, edit and delete views for {entry.model.name}</span>
-          </li>
-        {/each}
-      </ul>
-    </section>
-
-    {#if added}
-      <section aria-label="Options">
-        <h2>Options</h2>
-        <p class="meta">
-          Generated from the parameters {recipe.label}'s models declare. Saving
-          writes field policies, held in memory for now.
-        </p>
-        {#each models as { model } (model.id)}
-          <ModelOptions {model} hints={recipe.options?.[model.id]} />
-        {/each}
-      </section>
-
-      <p>
-        <a href={appHref(`/recipes/${recipe.id}/help/`)}>Read the {recipe.label} help</a>
-        to see how to use what you have set up here.
-      </p>
-    {:else}
-      <p class="meta">Add this recipe to set its options and read its help.</p>
-    {/if}
+    {#each section.recipes as recipe (recipe.id)}
+      <RecipeOptions {recipe} titled={section.recipes.length > 1} />
+    {/each}
   </main>
 {/if}
 
@@ -107,52 +40,22 @@ const label = (id: string) => getRecipe(id)?.label ?? id;
     padding: var(--smrt-spacing-6);
   }
 
-  header,
-  section {
+  header {
     display: grid;
     gap: var(--smrt-spacing-3);
-    justify-items: start;
   }
 
-  section[aria-label='Options'] {
-    justify-items: stretch;
+  .bar {
+    display: flex;
+    align-items: center;
   }
 
   h1,
-  h2,
   p {
     margin: 0;
   }
 
   .meta {
     color: var(--smrt-color-on-surface-variant);
-  }
-
-  ul {
-    display: grid;
-    gap: var(--smrt-spacing-1);
-    margin: 0;
-    padding-left: var(--smrt-spacing-5);
-  }
-
-  button {
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border: 0;
-    border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-    font: inherit;
-    cursor: pointer;
-  }
-
-  button.secondary {
-    border: 1px solid var(--smrt-color-outline);
-    background: transparent;
-    color: var(--smrt-color-on-surface);
-  }
-
-  button:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
   }
 </style>

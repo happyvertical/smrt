@@ -16,7 +16,7 @@ import { SAVED_BY_FORMS } from '$lib/forms/stock.ts';
 import { appHref, appQuery } from '$lib/planner/app.svelte.ts';
 import { hasAppState } from '$lib/planner/query.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
-import { recipeNav, recipes } from '$lib/recipes/index.ts';
+import { recipeNav, recipes, sectionId } from '$lib/recipes/index.ts';
 import { recipeState } from '$lib/recipes/state.svelte.ts';
 import type { Recipe } from '$lib/recipes/types.ts';
 import type { LayoutProps } from './$types';
@@ -41,13 +41,14 @@ const nav: ShellNavItem[] = $derived([
 // Each added recipe (or group of recipes, such as Products) is a navigation
 // section with its `nav` entries, so the app shows Customers and Sales
 // Orders, not every model in smrt-commerce. Recipes of one group share their
-// entries, so Simple and Clothing give one Products link.
+// entries, so Simple and Clothing give one Products link. Options and Help
+// are icons in each page's header, not entries here.
 const recipeGroups: ShellNavGroup[] = $derived.by(() => {
   const sections = new Map<string, { heading: string; added: Recipe[] }>();
   for (const id of recipeState.ids) {
     const recipe = recipes.find((r) => r.id === id);
     if (!recipe) continue;
-    const key = recipe.group?.id ?? recipe.id;
+    const key = sectionId(recipe);
     const section = sections.get(key) ?? {
       heading: recipe.group?.label ?? recipe.label,
       added: [],
@@ -65,7 +66,6 @@ const recipeGroups: ShellNavGroup[] = $derived.by(() => {
         return true;
       }),
     );
-    const several = added.length > 1;
     return {
       heading,
       items: [
@@ -73,16 +73,6 @@ const recipeGroups: ShellNavGroup[] = $derived.by(() => {
           href: appHref(`/m/${entry.packageId}/${entry.model.name}/`),
           label: entry.label,
         })),
-        ...added.flatMap((recipe) => [
-          {
-            href: appHref(`/recipes/${recipe.id}/`),
-            label: several ? `${recipe.label} options` : 'Options',
-          },
-          {
-            href: appHref(`/recipes/${recipe.id}/help/`),
-            label: several ? `${recipe.label} help` : 'Help',
-          },
-        ]),
       ],
     };
   });

@@ -4,9 +4,11 @@ import type { GlossaryEntry, HelpBlock, Inline } from '../recipes/help.ts';
 interface HelpViewProps {
   blocks: HelpBlock[];
   glossary: GlossaryEntry[];
+  /** Prefixed to anchor ids, so one page can hold several recipes' help. */
+  idPrefix?: string;
 }
 
-let { blocks, glossary }: HelpViewProps = $props();
+let { blocks, glossary, idPrefix = '' }: HelpViewProps = $props();
 
 /** Glossary grouped by model, so a model page can link to its own part. */
 const groups = $derived(
@@ -62,7 +64,7 @@ const groups = $derived(
     <section aria-label="Fields">
       <h2>Fields</h2>
       {#each groups as group (group.model)}
-        <section id={`fields-${group.model}`} aria-label={`${group.model} fields`}>
+        <section id={`${idPrefix}fields-${group.model}`} aria-label={`${group.model} fields`}>
           {#if groups.length > 1}<h3>{group.model}</h3>{/if}
           <dl>
             {#each group.entries as entry (entry.name)}

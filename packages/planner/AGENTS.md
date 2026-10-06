@@ -44,7 +44,7 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   collections later replace `createMemoryDataSource()` in `+layout.svelte`.
 - `src/lib/components/`: generated list/form (`ModelWorkspace`), the collapsed "Connect other tools"
   list (`ConnectTools`), the Help view (`HelpView`), `ChatDockPlaceholder` (the dock slot for #3).
-- `src/routes/`: `/` Planner (recipe cards with switches only), `/recipes/[id]/` options form, `/recipes/[id]/help/` Help,
+- `src/routes/`: `/` Planner (recipe cards with switches only), `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),
   `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/`.
   All prerendered; `entries()` come from the catalog.
 

@@ -6,7 +6,13 @@ import {
   subLockNote,
   subSwitchChange,
 } from '../src/lib/recipes/cards.ts';
-import { recipes, recipesById } from '../src/lib/recipes/index.ts';
+import {
+  getSection,
+  recipes,
+  recipesById,
+  sectionId,
+  sections,
+} from '../src/lib/recipes/index.ts';
 import { recipeState } from '../src/lib/recipes/state.svelte.ts';
 
 const products = buildCards(recipes).find((c) => c.id === 'products');
@@ -59,6 +65,27 @@ describe('Planner card locks', () => {
     if (!customers) throw new Error('no Customers card');
     expect(mainLockNote(customers, ['Sales Orders'])).toBe(
       'Customers stays on while Sales Orders needs it.',
+    );
+  });
+});
+
+describe('recipe sections', () => {
+  it('group recipes under one section, keyed by group id or recipe id', () => {
+    expect(sections.map((s) => s.id)).toEqual([
+      'commerce.customers',
+      'commerce.purchases',
+      'commerce.sales',
+      'commerce.vendors',
+      'inventory.stock',
+      'products',
+    ]);
+    expect(getSection('products')?.recipes.map((r) => r.id)).toEqual([
+      'products.simple',
+      'products.clothing',
+    ]);
+    expect(getSection('products.simple')).toBeUndefined();
+    expect(sectionId(recipesById.get('products.clothing') ?? recipes[0])).toBe(
+      'products',
     );
   });
 });

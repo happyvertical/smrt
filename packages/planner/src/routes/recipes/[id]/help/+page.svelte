@@ -1,48 +1,50 @@
 <script lang="ts">
 import ConnectTools from '$lib/components/ConnectTools.svelte';
-import HelpView from '$lib/components/HelpView.svelte';
+import RecipeHelp from '$lib/components/RecipeHelp.svelte';
+import SectionIcons from '$lib/components/SectionIcons.svelte';
 import { appHref } from '$lib/planner/app.svelte.ts';
-import { renderHelp } from '$lib/recipes/help.ts';
-import { getRecipe, helpModels, recipeModels } from '$lib/recipes/index.ts';
+import { getSection, recipeModels } from '$lib/recipes/index.ts';
 import { recipeState } from '$lib/recipes/state.svelte.ts';
 import type { PageProps } from './$types';
 
+// `id` is the section id: a recipe id, or the group id of several recipes.
 let { data }: PageProps = $props();
 
-const recipe = $derived(getRecipe(data.id));
-const applied = $derived(recipe ? helpModels(recipe, recipeState.rows) : []);
-// Re-rendered whenever the app's options change.
-const rendered = $derived(
-  recipe?.help ? renderHelp(recipe.help, applied) : undefined,
-);
-// Surfaces the app's options narrowed off are not listed.
-const connect = $derived(
-  recipe
-    ? recipeModels(recipe).map(({ model }) => recipeState.apply(model).model)
-    : [],
-);
+const section = $derived(getSection(data.id));
+// Surfaces the app's options narrowed off are not listed; a model two recipes
+// share (Product) is listed once.
+const connect = $derived.by(() => {
+  const seen = new Set<string>();
+  return (section?.recipes ?? []).flatMap((recipe) =>
+    recipeModels(recipe).flatMap(({ model }) => {
+      if (seen.has(model.id)) return [];
+      seen.add(model.id);
+      return [recipeState.apply(model).model];
+    }),
+  );
+});
 </script>
 
 <svelte:head>
-  <title>{recipe?.label ?? data.id} help · smrt planner</title>
+  <title>{section?.label ?? data.id} help · smrt planner</title>
 </svelte:head>
 
-{#if recipe}
+{#if section}
   <main>
     <header>
-      <p class="meta">
-        <a href={appHref('/')}>Planner</a> /
-        <a href={appHref(`/recipes/${recipe.id}/`)}>{recipe.label}</a> / Help
-      </p>
-      <h1>{recipe.label} help</h1>
-      <p class="meta">{recipe.summary}</p>
+      <div class="bar">
+        <p class="meta">
+          <a href={appHref('/')}>Planner</a> /
+          <a href={appHref(`/recipes/${section.id}/`)}>{section.label}</a> / Help
+        </p>
+        <SectionIcons section={section.id} label={section.label} current="help" />
+      </div>
+      <h1>{section.label} help</h1>
     </header>
 
-    {#if rendered}
-      <HelpView blocks={rendered.blocks} glossary={rendered.glossary} />
-    {:else}
-      <p>There is no help for {recipe.label} yet.</p>
-    {/if}
+    {#each section.recipes as recipe (recipe.id)}
+      <RecipeHelp {recipe} titled={section.recipes.length > 1} />
+    {/each}
 
     <ConnectTools models={connect} />
   </main>
@@ -55,6 +57,16 @@ const connect = $derived(
     width: min(100%, 72rem);
     margin-inline: auto;
     padding: var(--smrt-spacing-6);
+  }
+
+  header {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+  }
+
+  .bar {
+    display: flex;
+    align-items: center;
   }
 
   h1,

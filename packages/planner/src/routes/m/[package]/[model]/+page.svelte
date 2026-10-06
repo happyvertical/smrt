@@ -2,11 +2,12 @@
 import { getModel } from '$lib/catalog/index.ts';
 import FormWorkspace from '$lib/components/FormWorkspace.svelte';
 import ModelWorkspace from '$lib/components/ModelWorkspace.svelte';
+import SectionIcons from '$lib/components/SectionIcons.svelte';
 import { humanize } from '$lib/data/format.ts';
 import { activeForms } from '$lib/forms/active.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
-import { recipes } from '$lib/recipes/index.ts';
+import { recipes, sectionId } from '$lib/recipes/index.ts';
 import { recipeState } from '$lib/recipes/state.svelte.ts';
 import type { PageProps } from './$types';
 
@@ -27,12 +28,30 @@ const recipesWithModel = $derived(
     (recipe) => catalogModel && recipe.models.includes(catalogModel.id),
   ),
 );
-// The recipe whose Help covers this model: an added one first.
-const helpRecipe = $derived(
-  recipesWithModel.find(
-    (recipe) => recipe.help && recipeState.has(recipe.id),
-  ) ?? recipesWithModel.find((recipe) => recipe.help),
+// The recipe the header icons belong to: an added one first. Its section's
+// Help and Options pages are what the icons open.
+const iconRecipe = $derived(
+  recipesWithModel.find((recipe) => recipeState.has(recipe.id)) ??
+    recipesWithModel[0],
 );
+const iconSection = $derived(iconRecipe ? sectionId(iconRecipe) : undefined);
+const iconLabel = $derived(
+  iconRecipe ? (iconRecipe.group?.label ?? iconRecipe.label) : '',
+);
+// Anchored to this model's fields in the recipe whose Help covers it.
+const helpAnchor = $derived.by(() => {
+  const covering =
+    recipesWithModel.find(
+      (recipe) =>
+        recipe.help &&
+        sectionId(recipe) === iconSection &&
+        recipeState.has(recipe.id),
+    ) ??
+    recipesWithModel.find(
+      (recipe) => recipe.help && sectionId(recipe) === iconSection,
+    );
+  return covering ? `${covering.id}-fields-${data.modelName}` : undefined;
+});
 const inApp = $derived(
   selection.has(data.packageId) ||
     recipesWithModel.some((recipe) => recipeState.has(recipe.id)),
@@ -45,6 +64,7 @@ const inApp = $derived(
 
 {#if model && applied}
   <main>
+    <div class="bar">
     <nav aria-label="Breadcrumb">
       <a href={appHref('/')}>Planner</a>
       / <a href={appHref(`/packages/${data.packageId}/`)}>{humanize(data.packageId)}</a>
@@ -52,14 +72,11 @@ const inApp = $derived(
       {#if !inApp}
         <span class="meta">(not in your app yet)</span>
       {/if}
-      {#if helpRecipe}
-        <a
-          class="help-link"
-          href={`${appHref(`/recipes/${helpRecipe.id}/help/`)}#fields-${model.name}`}
-          aria-label={`Help for ${model.name}`}
-          title={`Help for ${model.name}`}>?</a>
-      {/if}
     </nav>
+    {#if iconSection}
+      <SectionIcons section={iconSection} label={iconLabel} {helpAnchor} />
+    {/if}
+    </div>
 
     {#if forms.length}
       <FormWorkspace {model} {forms} />
@@ -78,15 +95,9 @@ const inApp = $derived(
     padding: var(--smrt-spacing-6);
   }
 
-  .help-link {
-    display: inline-grid;
-    place-items: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border: 1px solid var(--smrt-color-outline);
-    border-radius: 50%;
-    font-size: 0.85rem;
-    text-decoration: none;
+  .bar {
+    display: flex;
+    align-items: center;
   }
 
   .meta {
