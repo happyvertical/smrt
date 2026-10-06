@@ -486,6 +486,17 @@ export class ShellState {
       : null;
   }
 
+  /**
+   * Whether the dock (right edge) can be shown: neither removed by the host
+   * nor hidden by the user's layout.
+   */
+  get dockAvailable(): boolean {
+    return (
+      this.config.panels.right.initial !== 'hidden' &&
+      this.layoutPanels.right?.visible !== false
+    );
+  }
+
   /** Close the dock (collapse the right edge). */
   closeFocusTool(): void {
     this.collapsePanel('right');
@@ -494,11 +505,13 @@ export class ShellState {
   /**
    * Open a dock tool and ask for focus to move into it. `returnFocus` is
    * where focus goes back to when the dock closes (default: whatever has
-   * focus now). Returns false when no such tool is registered.
+   * focus now). Returns false when no such tool is registered or the dock is
+   * not available (see `dockAvailable`).
    */
   openDockTool(id: string, options: ShellDockOpenOptions = {}): boolean {
     return untrack(() => {
       if (!this.focusTools.some((tool) => tool.id === id)) return false;
+      if (!this.dockAvailable) return false;
       this.openFocusTool(id);
       if (options.focus === false) return true;
       const active =
@@ -517,6 +530,7 @@ export class ShellState {
   toggleDockTool(id: string, options: ShellDockOpenOptions = {}): boolean {
     return untrack(() => {
       if (!this.focusTools.some((tool) => tool.id === id)) return false;
+      if (!this.dockAvailable) return false;
       if (this.openFocusToolId === id) {
         this.closeFocusTool();
         return true;

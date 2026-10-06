@@ -67,6 +67,20 @@ describe('ShellState layout panels', () => {
     expect(writes.at(-1)).toMatchObject({ panels: { right: 'collapsed' } });
   });
 
+  it('refuses to open the dock while the user hides the right edge', () => {
+    const shell = createShellState({ config: {} });
+    shell.registerFocusTool({ id: 'assistant', label: 'Assistant' });
+    expect(shell.dockAvailable).toBe(true);
+    shell.setLayoutPanels({ right: { visible: false } });
+    expect(shell.dockAvailable).toBe(false);
+    expect(shell.openDockTool('assistant')).toBe(false);
+    expect(shell.toggleDockTool('assistant')).toBe(false);
+    expect(shell.panels.right).toBe('hidden');
+    shell.setLayoutPanels({});
+    expect(shell.openDockTool('assistant')).toBe(true);
+    expect(shell.panels.right).toBe('expanded');
+  });
+
   it('uses the layout starting state below a stored toggle on later loads', () => {
     const shell = createShellState({
       config: { left: { initial: 'collapsed' } },

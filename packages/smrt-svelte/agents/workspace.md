@@ -253,9 +253,11 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   `aria-expanded` follow the dock, `aria-controls` is
   `smrt-admin-shell-right-panel`, the label is the tooltip, and `assistant`
   defaults to a chat-bubble icon (`icon: 'chat'`; other text is a glyph). A
-  toggle whose tool is not registered yet is `aria-disabled`. Hosts, routes and
+  toggle whose tool is not registered yet, or whose dock is not `available`
+  (the right edge removed by the host or hidden by the user's layout), is
+  `aria-disabled` and `open`/`toggle` return false. Hosts, routes and
   assistants drive the same dock with `useShellDock()` from `./workspace`
-  (`{ active, tools, has, isOpen, open, close, toggle }`, throws outside a
+  (`{ active, tools, available, has, isOpen, open, close, toggle }`, throws outside a
   shell). Opening moves focus into the dock (first focusable, else the panel);
   closing by Escape, toggle or code returns it to the opener when focus was left
   in the dock. `open(tool, { focus: false })` skips the focus move. The
