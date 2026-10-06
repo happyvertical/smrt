@@ -1,5 +1,34 @@
 # @happyvertical/smrt-core
 
+## 0.54.3
+
+### Patch Changes
+
+- ### Features
+  
+  - add transactional audit trails and history views (#3530) (audit)
+  - add lead intake, inbox, and conversion workflows (#3542) (sales)
+  - add reorder policies, actor attribution, and stock components (#3529) (inventory)
+  - add cost-object entry and receipt review components (#3522) (expenses)
+  - add timezone-aware calendar week view (#3519) (ui)
+  
+  ### Bug Fixes
+  
+  - one registry identity per class; route-scoped MCP catalog (#3490) (#3534) (core)
+  - patch proxy-addr and source-map-js within their consumers' ranges (#3543) (deps)
+  - publish compatible polymorphic junction types (#3539) (assets)
+  - preserve secure SQLite collection configuration (#3538) (app-runtime)
+  - honor STI subclass conflict keys and collections (#3523) (core)
+  - repair inventory bootstrap and consumer test isolation (#3521)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.102.1 (#3537) (deps)
+  - ci: run publish jobs in the main-only release environment (#3528)
+- @happyvertical/smrt-config@0.54.3
+  - @happyvertical/smrt-scanner@0.54.3
+  - @happyvertical/smrt-types@0.54.3
+
 ## 0.54.2
 
 ### Patch Changes

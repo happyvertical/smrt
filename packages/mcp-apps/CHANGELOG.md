@@ -1,5 +1,9 @@
 # @happyvertical/smrt-mcp-apps
 
+## 0.54.3
+
+No changes in this release.
+
 ## 0.54.2
 
 No changes in this release.
