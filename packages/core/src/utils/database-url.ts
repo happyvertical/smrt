@@ -137,12 +137,25 @@ export function redactDatabaseUrl(value: string): string {
     return value;
   }
 
+  // Trust a direct parse only when the parser saw the same userinfo a reader
+  // would: the `@` sits inside the authority (before the first `/`, `?` or
+  // `#`), or there is no userinfo-shaped `scheme://user:…@` at all. Otherwise
+  // a password holding an unencoded `/`, `?` or `#` after digits
+  // (`owner:2024/Xy9@host`) parses as host `owner`, port `2024`, and the
+  // password would ride along in the path; strip the userinfo through the
+  // last `@` on the line and parse that instead.
+  const authority = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i.exec(value)?.[1];
+  USERINFO_PATTERN.lastIndex = 0;
+  const hasUserinfoShape = USERINFO_PATTERN.test(value);
+  USERINFO_PATTERN.lastIndex = 0;
+  const direct =
+    hasUserinfoShape && !authority?.includes('@') ? null : tryParseUrl(value);
   const parsed =
-    tryParseUrl(value) ??
-    tryParseUrl(value.replace(USERINFO_PATTERN, `$1${MASK}@`));
-  // An opaque URL (no `//` authority) whose path holds an `@` is userinfo the
-  // parser did not recognise (`user:pw@host/db`): never echo it.
-  if (parsed && (parsed.host || !parsed.pathname.includes('@'))) {
+    direct ?? tryParseUrl(value.replace(USERINFO_PATTERN, `$1${MASK}@`));
+  // Defence in depth: an `@` left in the path is userinfo the parser did not
+  // recognise (an opaque `user:pw@host/db`, or a misread authority) — never
+  // echo it.
+  if (parsed && !parsed.pathname.includes('@')) {
     return renderParsedUrl(parsed);
   }
   return `${scheme.toLowerCase()}://${UNPARSEABLE}`;

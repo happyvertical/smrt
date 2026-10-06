@@ -59,6 +59,8 @@ describe('db command utilities', () => {
       'postgresql://owner:SENTINEL 7731@db.internal/app',
       'postgresql://owner:SENTINEL@7731@db.internal/app',
       'postgresql://ow ner:SENTINEL-7731@[db.internal/app',
+      'postgresql://owner:7731/SENTINEL@db.internal/app',
+      'postgresql://owner:7731#SENTINEL@db.internal/app',
     ])('never prints a malformed URL raw: %s', (url) => {
       const shown = formatDatabaseDisplayUrl('postgres', url);
       expect(shown).not.toContain('SENTINEL');

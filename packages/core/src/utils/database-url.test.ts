@@ -64,6 +64,24 @@ describe('redactDatabaseUrl (#3527)', () => {
     expect(shown).toMatch(/^postgres(ql)?:\/\//);
   });
 
+  it.each([
+    ['postgresql://owner:2024/Xy9@db.internal/app', '2024/Xy9'],
+    ['postgresql://owner:4431#tail@db.internal/app', '4431'],
+    ['postgresql://owner:8080?q=1@db.internal/app', '8080'],
+  ])('never lets a digits-then-delimiter password parse as a port (%s)', (input, secret) => {
+    const shown = redactDatabaseUrl(input);
+    expect(shown).toBe('postgresql://owner:***@db.internal/app');
+    expect(shown).not.toContain(secret);
+  });
+
+  it('keeps an @ in a query string from shifting the host', () => {
+    expect(
+      redactDatabaseUrl(
+        `postgres://u:${SECRET}@h:5432/db?application_name=a@b`,
+      ),
+    ).toBe('postgres://u:***@h:5432/db');
+  });
+
   it('never falls back to the raw string for an unparseable URL', () => {
     const input = `postgresql://u ser:${SECRET}@[bad-host/db`;
     const shown = redactDatabaseUrl(input);
