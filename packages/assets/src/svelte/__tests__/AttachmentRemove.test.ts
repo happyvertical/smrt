@@ -161,6 +161,29 @@ describe('attachment remove action', () => {
     document.removeEventListener('submit', submit as EventListener);
   });
 
+  it('releases when a cancelling listener also stops propagation', async () => {
+    const stop = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    document.addEventListener('submit', stop, true);
+    render(AttachmentList, { props: { attachments, removeAction: '/r' } });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Remove Photo.png' }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Remove',
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Remove Quote.pdf' }),
+      ).toBeEnabled(),
+    );
+    document.removeEventListener('submit', stop, true);
+  });
+
   it('stays pending during an accepted native POST until a restored page', async () => {
     const submit = vi.fn(); // observes without cancelling: navigation would follow
     const block = (e: Event) => e.preventDefault();

@@ -55,12 +55,26 @@ async function confirmRemove() {
     // Native POST: stay pending until navigation; a restored (bfcache)
     // page or a submission cancelled by an enhancing listener releases the controls again.
     running = true;
+    let submitted: Event | undefined;
+    window.addEventListener(
+      'submit',
+      (event) => {
+        submitted = event;
+      },
+      { capture: true, once: true },
+    );
     form.requestSubmit();
+    // Dispatch is synchronous: a listener that cancelled it (even with
+    // stopPropagation; the capture listener sees it first) leaves no navigation coming, so release the controls.
+    if (submitted?.defaultPrevented) {
+      running = false;
+      target = undefined;
+    }
   }
 }
 </script>
 
-<svelte:window onsubmit={(event) => { if (event.target === form && event.defaultPrevented) { running = false; target = undefined; } }} onpageshow={(event) => { if (event.persisted) { running = false; target = undefined; } }} />
+<svelte:window onpageshow={(event) => { if (event.persisted) { running = false; target = undefined; } }} />
 
 {#snippet entry(item: AssetAttachmentVersion)}
   <strong>{item.name}</strong>
