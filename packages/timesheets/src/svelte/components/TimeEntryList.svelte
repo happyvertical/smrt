@@ -5,12 +5,14 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
 import {
   type Currency,
   formatCurrency,
   formatDate,
   formatHours,
+  type HoursFormatter,
   statusColors,
   type TimeEntry,
 } from './utils.js';
@@ -33,6 +35,10 @@ export interface Props {
   baseHref?: string;
   /** Currency code for formatting amounts. */
   currency?: Currency;
+  /** Formats decimal hours; defaults to the legacy one-decimal display. */
+  hoursFormatter?: HoursFormatter;
+  /** Renders caller-owned evidence in each entry row. */
+  details?: Snippet<[TimeEntry]>;
   /** Filter function to determine which entries can be selected */
   canSelect?: (entry: TimeEntry) => boolean;
 }
@@ -45,6 +51,8 @@ let {
   emptyMessage = 'No time entries',
   baseHref,
   currency = 'CAD',
+  hoursFormatter = formatHours,
+  details,
   canSelect = () => true,
 }: Props = $props();
 
@@ -161,7 +169,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
   </div>
 
   <div class="hours-cell">
-    {formatHours(entry.hours)}
+    {hoursFormatter(entry.hours)}
   </div>
 
   <div class="status-cell">
@@ -175,6 +183,8 @@ function getEntryHref(entry: TimeEntry): string | undefined {
       {formatCurrency(entry.amount, currency)}
     </div>
   {/if}
+
+  {@render details?.(entry)}
 {/snippet}
 
 <style>

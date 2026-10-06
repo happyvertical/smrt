@@ -64,6 +64,16 @@ describe('TimeEntryApprovalQueue', () => {
     expect(screen.queryByText('180.00')).not.toBeInTheDocument();
   });
 
+  it('uses the ISO exponent when ICU reports different display digits', () => {
+    render(TimeEntryApprovalQueue, {
+      props: {
+        entries: [entryView({ amount: 1001, currency: 'IQD' })],
+      },
+    });
+    expect(screen.getByText('1.001')).toBeInTheDocument();
+    expect(screen.queryByText('1001')).not.toBeInTheDocument();
+  });
+
   it('invokes onapprove with the entry id', async () => {
     const onapprove = vi.fn();
     render(TimeEntryApprovalQueue, {
