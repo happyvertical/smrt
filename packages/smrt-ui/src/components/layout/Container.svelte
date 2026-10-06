@@ -20,6 +20,7 @@ const { maxWidth = 'lg', children, ...rest }: Props = $props();
 
 <style>
   .container {
+    box-sizing: border-box;
     width: 100%;
     margin: 0 auto;
     padding-left: var(--smrt-spacing-4);

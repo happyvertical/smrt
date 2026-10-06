@@ -355,6 +355,8 @@ export interface AssistantDockControllerOptions {
 
 export interface AssistantDockController {
   readonly threads: AssistantThreadSummary[];
+  /** Whether the current context's conversation list is still loading. */
+  readonly threadsLoading: boolean;
   readonly activeThreadId: string | null;
   readonly messages: AssistantMessage[];
   readonly pendingSends: AssistantPendingSend[];
@@ -456,8 +458,8 @@ export interface AssistantDockController {
   /** Re-checks whether the host has reassigned the `registry` prop to a
    * different instance and, if so, re-subscribes, resyncs `surfaces`
    * (#2904 review finding B), and clears/reloads conversation state
-   * (threads, activeThreadId, messages, pendingSends, actions, error,
-   * draftIds — Copilot PR #2919 jAwsd). A no-op when unchanged. Call from a
+   * (threads, threadsLoading, activeThreadId, messages, pendingSends, actions,
+   * error, draftIds — Copilot PR #2919 jAwsd). A no-op when unchanged. Call from a
    * `registry`-scoped effect, never from the mount effect (see
    * AssistantDock.svelte — F1 requires that one to run exactly once). */
   syncRegistry(): void;
@@ -471,7 +473,8 @@ export interface AssistantDockController {
   syncSurfaces(): void;
   /** Re-checks whether the host has reassigned the `transport` prop to a
    * different instance and, if so, clears conversation state (threads,
-   * activeThreadId, messages, pendingSends, actions, error, draftIds) and
+   * threadsLoading, activeThreadId, messages, pendingSends, actions, error,
+   * draftIds) and
    * reloads threads/models from the new transport (Copilot PR #2919 jAwsd —
    * mirrors `syncRegistry()`'s reset for the identical class of stale-context
    * bug). A no-op when unchanged. Call from a `transport`-scoped effect,
@@ -515,6 +518,7 @@ export function createAssistantDockController(
   const isVisible = options.visible ?? (() => true);
 
   let threads = $state<AssistantThreadSummary[]>([]);
+  let threadsLoading = $state(true);
   let activeThreadId = $state<string | null>(null);
   let messages = $state<AssistantMessage[]>([]);
   let pendingSends = $state<AssistantPendingSend[]>([]);
@@ -921,8 +925,9 @@ export function createAssistantDockController(
   // this closure, with the reset/kept rationale for each (also recorded in
   // the commit body):
   //  RESET here — old-context data that must never survive a swap:
-  //   threads, activeThreadId, messages, pendingSends, actions (.clear()),
-  //   error, draftIds (.clear()), models, selectedModel, pollErrorActive.
+  //   threads, threadsLoading, activeThreadId, messages, pendingSends,
+  //   actions (.clear()), error, draftIds (.clear()), models, selectedModel,
+  //   pollErrorActive.
   //  BUMPED here (not reset to a value, but advanced) — these ARE the
   //  swap-detection/invalidation counters themselves:
   //   openThreadRequestId, contextEpoch.
@@ -954,6 +959,7 @@ export function createAssistantDockController(
     runCore = null;
     holds.clear();
     threads = [];
+    threadsLoading = true;
     activeThreadId = null;
     messages = [];
     pendingSends = [];
@@ -1202,6 +1208,7 @@ export function createAssistantDockController(
     // never win the race and overwrite the new context's freshly-reset
     // (empty, then reloading) `threads`.
     const epoch = contextEpoch;
+    threadsLoading = true;
     try {
       const fresh = await options.transport.listThreads();
       // Cycle-3 first final sweep: dispose() can run while this await is in
@@ -1209,9 +1216,11 @@ export function createAssistantDockController(
       // "still current" discipline pollTick/openThread apply.
       if (disposed || epoch !== contextEpoch) return;
       threads = fresh;
+      threadsLoading = false;
       error = null;
     } catch (err) {
       if (disposed || epoch !== contextEpoch) return;
+      threadsLoading = false;
       error = err instanceof Error ? err.message : String(err);
     }
   }
@@ -1294,12 +1303,16 @@ export function createAssistantDockController(
   // rethrow is what AssistantDock's `handleCreateThread` catches to stop the
   // un-awaited onclick from producing an unhandled rejection.
   async function createThread(title: string) {
+    const create = options.transport.createThread;
+    if (!create) {
+      throw new Error('AssistantDock: thread creation is not supported');
+    }
     // Cycle-4 final finding 1: a swap during this await must not let the
     // created thread land in the (now-reset, differently-contexted) threads
     // array — the return value stays load-bearing regardless (see below).
     const epoch = contextEpoch;
     try {
-      const thread = await options.transport.createThread(title);
+      const thread = await create.call(options.transport, title);
       // Cycle-3 first final sweep: dispose() can run while this await is in
       // flight. The return value stays load-bearing for the caller (see the
       // comment above) even on a disposed controller, so this only skips
@@ -2347,6 +2360,9 @@ export function createAssistantDockController(
   return {
     get threads() {
       return threads;
+    },
+    get threadsLoading() {
+      return threadsLoading;
     },
     get activeThreadId() {
       return activeThreadId;

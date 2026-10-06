@@ -14,6 +14,8 @@ pnpm add @happyvertical/smrt-ui
   import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
   import { Button } from '@happyvertical/smrt-ui/ui';
   import { Form, FormGroup, Input, Switch } from '@happyvertical/smrt-ui/forms';
+  import '@happyvertical/smrt-ui/themes/styles/base.css';
+  import '@happyvertical/smrt-ui/themes/styles/material.css';
 </script>
 
 <ThemeProvider preset="material" colorScheme="system">
@@ -38,7 +40,7 @@ pnpm add @happyvertical/smrt-ui
 | Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `PhoneSheet`, `ConfirmDialog` |
 | Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay`, `WorkingStrip` |
 | Collections | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable`, `Pagination` |
-| Layout and navigation | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
+| Layout and navigation | `Container`, `PageLayout`, `Grid`, `ActionGroup`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
 | Calendar | `CalendarView` (deprecated: `Calendar`, `DayView`) |
 
 ### Phone surfaces
@@ -93,11 +95,15 @@ under the phone top bar. Pair it with `useLinkSurface` (smrt-svelte) so
 agents can switch tabs too.
 
 Use the focused subpaths (`/forms`, `/form-retry`, `/ui`, `/feedback`, `/data`,
-`/data-surface`, `/layout`, `/themes`) to keep imports explicit. The
+`/data-surface`, `/currency`, `/layout`, `/themes`) to keep imports explicit. The
 Svelte-free `/data-surface` entry exposes the registry contracts and shared
 protocol limits for server adapters; the Svelte-free `/form-retry` entry
-exposes the form-retry helper. The package root remains a compatibility
-barrel.
+exposes the form-retry helper. The Svelte-free `/currency` entry exposes
+`ISO_4217_MINOR_UNITS`, the shared ISO 4217 registry used for deterministic
+minor-unit scaling. A missing code is unsupported; a `null` value is a valid
+ISO fund, metal, test, or no-currency code without a defined minor unit, so
+callers handling integer minor-unit money must reject both cases rather than
+inventing a decimal precision. The package root remains a compatibility barrel.
 
 ### Calendar dates and shop time
 
@@ -944,6 +950,7 @@ hand-authored, and every text pairing clears WCAG AA.
 ```svelte
 <script>
   import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+  import '@happyvertical/smrt-ui/themes/styles/base.css';
   import '@happyvertical/smrt-ui/themes/styles/all.css';
   import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 </script>
@@ -951,6 +958,33 @@ hand-authored, and every text pairing clears WCAG AA.
 <ThemeProvider preset="smrt" colorScheme="dark">
   {@render children()}
 </ThemeProvider>
+```
+
+The application baseline is intentionally separate from theme tokens. Import
+`base.css` once at the app entry point to remove the browser body margin, use
+border-box sizing, apply the active theme to the document, and make native form
+controls inherit the app typeface. It does not reset lists or content margins.
+
+PageLayout keeps wide tables and tab rows within the available page width,
+including when nested inside a semantic section. Their own scroll containers
+remain scrollable. Place visual sections directly under PageLayout to use its
+vertical gap.
+
+Use `PageLayout` inside an application shell to give each route responsive
+gutters, block padding, vertical rhythm, and the width appropriate to its
+content. It never creates a scroll container or claims viewport height.
+Use `ActionGroup` for adjacent page or card actions; it wraps with token spacing
+and can justify actions at the start or end without form-specific behavior.
+
+```svelte
+<script>
+  import { PageHeader, PageLayout } from '@happyvertical/smrt-ui/layout';
+</script>
+
+<PageLayout maxWidth="xl" gap="md">
+  <PageHeader title="Projects" subtitle="Plan and track active work" />
+  <!-- collection, cards, form, or detail content -->
+</PageLayout>
 ```
 
 Run the shared playground to inspect the full catalog under every preset and

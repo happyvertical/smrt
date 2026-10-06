@@ -1,0 +1,31 @@
+/**
+ * Application baseline for SMRT interfaces.
+ *
+ * Import this once at an application entry point, alongside the selected
+ * theme stylesheet. Components remain independently usable without it.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-block-size: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--smrt-color-background);
+  color: var(--smrt-color-on-background);
+  font-family: var(--smrt-font-family, Inter, system-ui, sans-serif);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}

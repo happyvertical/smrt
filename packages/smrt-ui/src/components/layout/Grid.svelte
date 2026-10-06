@@ -74,7 +74,7 @@ const isResponsive = $derived(
 const _gridColumns = $derived.by(() => {
   if (isResponsive) return undefined;
   if (columns === 'auto') {
-    return 'repeat(auto-fill, minmax(300px, 1fr))';
+    return 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))';
   }
   return `repeat(${columns}, 1fr)`;
 });
@@ -158,6 +158,7 @@ const gridClasses = $derived.by(() => {
 <style>
   .grid {
     display: grid;
+    min-width: 0;
   }
 
   .grid-header {

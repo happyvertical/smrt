@@ -73,6 +73,21 @@ Use the `extension` snippets for application fields such as construction roles a
 
 Directory entries carry caller-owned detail links and pagination links. Detail edit links and form submit buttons appear only when their capability props allow them; the server must still authorize every request.
 
+Directory empty and filter behavior follows this contract:
+
+| State | Empty guidance | Native form behavior |
+| --- | --- | --- |
+| No query, status, or caller filter is active | Explain that no records have been added; when `canCreate` and `addHref` are present, point to creating the first record | Search and status controls retain their normal names |
+| Query or status is active | Suggest changing search or filters | Visible query/status controls remain authoritative over same-named `hiddenFields` |
+| A caller-owned filter is active | Suggest changing search or filters | Render the `filters` snippet inside the directory form and list its names in `filterNames` so same-named hidden fields are omitted |
+| Caller supplies `emptyDescription` | Render the supplied description | Submission behavior is unchanged |
+
+The `filters` snippet is for domain-adjacent GET controls that belong beside
+search and status, such as a trade classification. It does not move filtering
+or authorization into the component. `hasAdditionalFilters` describes whether
+those controls currently narrow the result, while `filterNames` prevents a
+hidden/visible duplicate name from changing native form serialization.
+
 The registry keys are `customer-directory`, `customer-detail`, `customer-form`, `vendor-directory`, `vendor-detail`, `vendor-form`, and `party-contact-fields`. Interactive examples are published by `@happyvertical/smrt-commerce/playground` and ship in the next generated Commerce package release. DomaCraft can replace its local routes incrementally by adapting its existing server DTOs and payload names; no identity or database migration is required.
 
 The form playground previews handle save, add-contact, and remove-contact intents in memory. They deliberately return a simulated validation error on save so retained values and retry behavior can be inspected without a backend.

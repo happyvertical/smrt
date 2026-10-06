@@ -92,6 +92,14 @@ Card/list/summary message keys keep their `projects.*` namespace: tenant
 language overrides are stored by key, and renaming would orphan them. New
 keys use `timesheets.*`.
 
+Display components keep the legacy one-decimal hours format by default. A
+consumer that retains more precise source evidence supplies `hoursFormatter`;
+card/list/queue detail snippets carry domain evidence without widening the base
+view. ApprovalQueue's optional action snippet replaces its callback controls so
+the host can own a native form, request identity, authorization and retry flow.
+Display currency codes are open ISO strings and amounts remain integer minor
+units; never put private rates into a view that should not expose them.
+
 ## Validation
 
 ```sh

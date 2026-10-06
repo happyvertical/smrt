@@ -40,7 +40,7 @@ export interface Props {
   ) => void | Promise<void>;
   /** Called with the picked/dropped files; resolves to the uploaded
    * attachment refs to stage as removable chips above the input. */
-  onupload: (files: FileList) => Promise<AssistantAttachmentRef[]>;
+  onupload?: (files: FileList) => Promise<AssistantAttachmentRef[]>;
   /** Disables the composer (e.g. no active thread yet). */
   disabled?: boolean;
   /** Placeholder text for the empty textarea. */
@@ -91,7 +91,7 @@ let sendError = $state<string | null>(null);
 // unrelated and can occur independently (e.g. staging fails while a
 // previous message is still sending).
 let uploadError = $state<string | null>(null);
-let fileInputEl: HTMLInputElement | undefined;
+let fileInputEl: HTMLInputElement | undefined = $state();
 // Captured from the textarea's input event so auto-resize works without
 // binding to the Textarea primitive's inner DOM node.
 let textareaEl: HTMLTextAreaElement | undefined;
@@ -148,8 +148,14 @@ async function handleFileChange(event: Event) {
   if (!files || files.length === 0) return;
   uploading = true;
   uploadError = null;
+  const upload = onupload;
+  if (!upload) {
+    uploading = false;
+    input.value = '';
+    return;
+  }
   try {
-    const uploaded = await onupload(files);
+    const uploaded = await upload(files);
     stagedAttachments = [...stagedAttachments, ...uploaded];
   } catch (error) {
     // Already-staged chips are left untouched — only this batch failed.
@@ -164,6 +170,8 @@ async function handleFileChange(event: Event) {
 }
 
 async function handleDrop(event: DragEvent) {
+  const upload = onupload;
+  if (!upload) return;
   event.preventDefault();
   if (disabled || uploading) return;
   const files = event.dataTransfer?.files;
@@ -171,7 +179,7 @@ async function handleDrop(event: DragEvent) {
   uploading = true;
   uploadError = null;
   try {
-    const uploaded = await onupload(files);
+    const uploaded = await upload(files);
     stagedAttachments = [...stagedAttachments, ...uploaded];
   } catch (error) {
     // Already-staged chips are left untouched — only this batch failed.
@@ -239,7 +247,11 @@ function removeAttachment(id: string) {
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="assistant-composer" ondrop={handleDrop} ondragover={(e) => e.preventDefault()}>
+<div
+  class="assistant-composer"
+  ondrop={onupload ? handleDrop : undefined}
+  ondragover={onupload ? (event) => event.preventDefault() : undefined}
+>
   {#if sendError}
     <p class="assistant-composer-error" role="alert">
       {t(M['chat.assistant_composer.send_error'], { message: sendError })}
@@ -275,8 +287,9 @@ function removeAttachment(id: string) {
     <DictationStatus {dictation} />
   {/if}
   <div class="assistant-composer-row">
-    <!-- raw-primitive-allow: compact icon-only attach control backed by a hidden native file input; opens the OS picker, matching MessageInput's icon-button send control pattern -->
-    <Button
+    {#if onupload}
+      <!-- raw-primitive-allow: compact icon-only attach control backed by a hidden native file input; opens the OS picker, matching MessageInput's icon-button send control pattern -->
+      <Button
       type="button"
       variant="secondary"
       size="sm"
@@ -296,9 +309,9 @@ function removeAttachment(id: string) {
           stroke-linejoin="round"
         />
       </svg>
-    </Button>
-    <!-- raw-primitive-allow: visually-hidden native file input that backs the attach button's OS picker; the base Input primitive renders a visible bordered control and cannot be this hidden picker (same pattern as ../shared/FileUpload.svelte). Cycle-3 second final F2: the visually-hidden clip-rect styling keeps this element IN the accessibility tree, so unlike FileUpload's own wrapping label element with visible text, this needs an explicit aria-label to avoid an unnamed file control. -->
-    <input
+      </Button>
+      <!-- raw-primitive-allow: visually-hidden native file input that backs the attach button's OS picker; the base Input primitive renders a visible bordered control and cannot be this hidden picker (same pattern as ../shared/FileUpload.svelte). Cycle-3 second final F2: the visually-hidden clip-rect styling keeps this element IN the accessibility tree, so unlike FileUpload's own wrapping label element with visible text, this needs an explicit aria-label to avoid an unnamed file control. -->
+      <input
       bind:this={fileInputEl}
       type="file"
       class="assistant-composer-file-input"
@@ -307,7 +320,8 @@ function removeAttachment(id: string) {
       disabled={disabled || uploading}
       tabindex="-1"
       aria-label={t(M['chat.assistant_composer.attach_files'])}
-    />
+      />
+    {/if}
     <div
       class="assistant-composer-field"
       use:longPress={{

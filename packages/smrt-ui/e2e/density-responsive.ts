@@ -3,6 +3,11 @@ import { mount } from 'svelte';
 const target = document.getElementById('app')!;
 const params = new URLSearchParams(location.search);
 switch (params.get('surface')) {
+  case 'layout': {
+    const { default: Layout } = await import('./page-layout.svelte');
+    mount(Layout, { target });
+    break;
+  }
   case 'table': {
     const { default: Table } = await import(
       '../src/components/data/__tests__/responsive-table.fixture.svelte',
@@ -52,6 +57,16 @@ switch (params.get('surface')) {
   case 'choices': {
     const { default: Choices } = await import('./choice-posting.svelte');
     mount(Choices, { target });
+    break;
+  }
+  case 'permissions': {
+    const { default: PermissionPickerFixture } = await import(
+      './permission-picker.svelte'
+    );
+    mount(PermissionPickerFixture, {
+      target,
+      props: { scheme: params.get('scheme') === 'dark' ? 'dark' : 'light' },
+    });
     break;
   }
   default: {

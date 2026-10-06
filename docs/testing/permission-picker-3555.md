@@ -1,0 +1,14 @@
+# Permission picker behavior contract (#3555)
+
+| Behavior / invariant | Reachable trigger | Positive case | Negative / failure case | Actor / context | Data executor / transaction | Runtime / dialect | External contract edge | Test level | Validation command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Complete catalog posts exact selected slugs under the caller's native field name | Submit a role form | Initial and changed selections appear as repeated named values | Unselected values are absent; unknown selected slugs are not invented | Host-authorized role editor; component grants no authority | Browser `FormData`; host owns transaction | SSR, browser JS on/off; SQL N/A | Arbitrary valid string ids/slugs and optional metadata | SSR + DOM | Focused `PermissionPicker` tests |
+| Server retry selection is authoritative | Re-render after host validation failure | Passed `selected` slugs are checked | Prior client state is not silently retained across new props | Same host form after failed native POST | N/A; presentation state | Svelte SSR/hydration | Empty selection and selected slug omitted from catalog | SSR + DOM rerender | Focused component tests |
+| Catalog is grouped using public metadata | Render explicit/missing categories | Explicit category label is used; fallback derives predictably from slug | Empty labels remain understandable and stable | Any host catalog | N/A | SSR/browser | Long slug, missing name/description/category, duplicate category | SSR | Focused component tests |
+| Search progressively narrows visible choices without changing submitted grants | Type a query or clear it | Name, slug, description and category match; clearing restores all | No result announces an empty state; checked filtered values remain successful controls in `FormData` | Keyboard/touch user | Browser `FormData`; no persistence | Chromium-compatible DOM; no-JS renders full catalog | Whitespace/case normalization, no matches | DOM | Focused component tests |
+| Disabled editor is readable but immutable and submits no permission values | Host lacks write authority | Catalog and selected state remain readable | Inputs cannot toggle and are omitted from `FormData` | Read-only actor selected by host | Host authorization unchanged | SSR/browser | Disabled prop | SSR + DOM | Focused component tests |
+| Component remains usable on narrow screens and with long text | 320–390 px viewport | Labels/slugs wrap within component; 44 px controls and visible focus remain | No page-wide horizontal overflow | Keyboard/touch user, both themes | N/A | Browser CSS | Long unbroken permission slug | Source contract + browser | Focused browser/playground proof |
+
+The picker is a form primitive, not an authorization service. The host remains
+responsible for catalog visibility, permission validation, tenant scope,
+mutation atomicity, and rejection of grants the actor does not hold.

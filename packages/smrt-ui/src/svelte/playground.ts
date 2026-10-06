@@ -7,6 +7,8 @@ const loadFeedback = () => import('./playground/FeedbackPreview.svelte');
 const loadCollections = () => import('./playground/CollectionsPreview.svelte');
 const loadCalendar = () => import('./playground/CalendarPreview.svelte');
 const loadCapture = () => import('./playground/CapturePreview.svelte');
+const loadPermissionPicker = () =>
+  import('./playground/PermissionPickerPreview.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-ui',
@@ -14,6 +16,16 @@ export default {
   description:
     'Provider-free controls and data primitives rendered in the active s-m-r-t theme.',
   entries: [
+    {
+      id: 'permission-picker',
+      title: 'Permission Picker',
+      description:
+        'Grouped, searchable native-form permission grants with retained server retry selections.',
+      loadComponent: loadPermissionPicker,
+      order: 9,
+      tags: ['forms', 'permissions', 'roles', 'search'],
+      modes: { mock: { label: 'Interactive' } },
+    },
     {
       id: 'code-selectors',
       title: 'Currency, Country & Province',
