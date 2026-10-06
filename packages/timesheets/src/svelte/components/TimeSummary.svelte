@@ -6,7 +6,12 @@
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../i18n.js';
-import { type Currency, formatCurrency, formatHours } from './utils.js';
+import {
+  type Currency,
+  formatCurrency,
+  formatHours,
+  type HoursFormatter,
+} from './utils.js';
 
 /** Props for TimeSummary component */
 export interface Props {
@@ -26,6 +31,8 @@ export interface Props {
   entryCount?: number;
   /** Currency code for formatting amounts. */
   currency?: Currency;
+  /** Formats decimal hours; defaults to the legacy one-decimal display. */
+  hoursFormatter?: HoursFormatter;
   /** Shows the pending hours and amount card when there are pending items. */
   showPending?: boolean;
   /** Shows the approved hours and amount card when there are approved items. */
@@ -43,6 +50,7 @@ let {
   approvedAmount = 0,
   entryCount,
   currency = 'CAD',
+  hoursFormatter = formatHours,
   showPending = true,
   showApproved = false,
   layout = 'grid',
@@ -54,7 +62,7 @@ const { t } = useI18n();
 <div class="time-summary" class:horizontal={layout === 'horizontal'}>
   <div class="summary-card">
     <span class="label">{t(M['projects.time_summary.total_hours'])}</span>
-    <span class="value">{formatHours(totalHours)}</span>
+    <span class="value">{hoursFormatter(totalHours)}</span>
     {#if entryCount !== undefined}
       <span class="count">{entryCount} {entryCount === 1 ? 'entry' : 'entries'}</span>
     {/if}
@@ -68,7 +76,7 @@ const { t } = useI18n();
   {#if showPending && (pendingHours > 0 || pendingAmount > 0)}
     <div class="summary-card highlight">
       <span class="label">{t(M['projects.time_summary.pending_approval'])}</span>
-      <span class="value">{formatHours(pendingHours)}</span>
+      <span class="value">{hoursFormatter(pendingHours)}</span>
       <span class="sub-value">{formatCurrency(pendingAmount, currency)}</span>
     </div>
   {/if}
@@ -76,7 +84,7 @@ const { t } = useI18n();
   {#if showApproved && (approvedHours > 0 || approvedAmount > 0)}
     <div class="summary-card success">
       <span class="label">Approved</span>
-      <span class="value">{formatHours(approvedHours)}</span>
+      <span class="value">{hoursFormatter(approvedHours)}</span>
       <span class="sub-value">{formatCurrency(approvedAmount, currency)}</span>
     </div>
   {/if}

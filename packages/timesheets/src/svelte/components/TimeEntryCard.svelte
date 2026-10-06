@@ -12,6 +12,7 @@ import {
   formatCurrency,
   formatDate,
   formatHours,
+  type HoursFormatter,
   statusColors,
   type TimeEntry,
 } from './utils.js';
@@ -32,6 +33,10 @@ export interface Props {
   onselect?: (id: string, selected: boolean) => void;
   /** Currency code for formatting hourly rates and amounts. */
   currency?: Currency;
+  /** Formats decimal hours; defaults to the legacy one-decimal display. */
+  hoursFormatter?: HoursFormatter;
+  /** Renders caller-owned evidence below the standard entry fields. */
+  details?: Snippet<[TimeEntry]>;
   /** Renders action buttons on the right side of the card. */
   actions?: Snippet;
 }
@@ -44,6 +49,8 @@ let {
   selected = false,
   onselect,
   currency = 'CAD',
+  hoursFormatter = formatHours,
+  details,
   actions,
 }: Props = $props();
 
@@ -140,7 +147,7 @@ function handleKeydown(event: KeyboardEvent) {
 
   <div class="entry-footer">
     <div class="hours">
-      <span class="hours-value">{formatHours(entry.hours)}</span>
+      <span class="hours-value">{hoursFormatter(entry.hours)}</span>
       {#if entry.hourlyRate}
         <span class="rate">@ {formatCurrency(entry.hourlyRate, currency)}/hr</span>
       {/if}
@@ -155,6 +162,8 @@ function handleKeydown(event: KeyboardEvent) {
       {t(M['projects.time_entry_card.mileage'], { mileage: entry.mileage })}
     </div>
   {/if}
+
+  {@render details?.(entry)}
 {/snippet}
 
 <style>

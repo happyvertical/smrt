@@ -2,7 +2,11 @@
  * Shared utilities for time tracking components
  */
 
-export type Currency = 'CAD' | 'USD';
+/** ISO 4217 currency code used to display integer minor-unit amounts. */
+export type Currency = string;
+
+/** Caller-controlled decimal-hours presentation. */
+export type HoursFormatter = (hours: number) => string;
 
 export type TimeEntryStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
 

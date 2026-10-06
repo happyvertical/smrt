@@ -41,6 +41,7 @@ export {
   formatDate,
   formatHours,
   formatHoursHHMM,
+  type HoursFormatter,
   statusColors,
   type TimeEntry,
   type TimeEntryStatus,
