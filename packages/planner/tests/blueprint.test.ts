@@ -294,3 +294,84 @@ describe('BlueprintStore', () => {
     expect(JSON.stringify(store.snapshot())).toBe(before);
   });
 });
+
+describe('review fixes', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    recipeState.clear();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('stored blueprints drop unknown recipes; imports reject them', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...valid, recipes: ['commerce.sales', 'gone.recipe'] }),
+    );
+    const outcome = loadBlueprint(storage);
+    expect(outcome.status === 'loaded' && outcome.blueprint.recipes).toEqual([
+      'commerce.customers',
+      'commerce.sales',
+    ]);
+    expect(
+      parseBlueprint({ ...valid, recipes: ['commerce.sales', 'gone.recipe'] })
+        .ok,
+    ).toBe(false);
+  });
+
+  it('drops options for uncovered models and keeps a __proto__ key as data', () => {
+    const text = `{"version":1,"recipes":["commerce.vendors"],"policies":[{"objectRef":"${ORDER}","fieldName":"notes","scopeType":"app"}],"exposure":{"__proto__":["cli"]}}`;
+    const result = parseBlueprintText(text);
+    expect(result.ok && result.blueprint.policies).toEqual([]);
+    expect(result.ok && result.blueprint.exposure).toBeUndefined();
+    expect(({} as Record<string, unknown>).cli).toBeUndefined();
+  });
+
+  it('never overwrites an unreadable value that could not be kept aside', () => {
+    const storage = fakeStorage();
+    storage.setItem(STORAGE_KEY, '{nope');
+    const failAside = storage.setItem.bind(storage);
+    storage.setItem = (k: string, v: string) => {
+      if (k === UNREADABLE_KEY) throw new Error('quota');
+      failAside(k, v);
+    };
+    const store = new BlueprintStore();
+    store.hydrate('', storage);
+    expect(store.loadNotice).toMatch(/without overwriting/);
+    store.scheduleSave();
+    vi.advanceTimersByTime(SAVE_DELAY_MS);
+    expect(storage.data.get(STORAGE_KEY)).toBe('{nope');
+    // An import is the visitor's decision to replace it.
+    const imported = store.importText(JSON.stringify(valid));
+    expect(imported.ok).toBe(true);
+    store.save();
+    expect(storage.data.get(STORAGE_KEY)).toContain('commerce.sales');
+  });
+
+  it('keeps the legacy URL when the migrated blueprint could not be stored', () => {
+    const store = new BlueprintStore();
+    store.hydrate('?r=commerce.vendors', fakeStorage(true));
+    expect(store.keepLegacyUrl).toBe(true);
+    const ok = new BlueprintStore();
+    ok.hydrate('?r=commerce.vendors', fakeStorage());
+    expect(ok.keepLegacyUrl).toBe(false);
+  });
+
+  it('does not replace a saved blueprint when its backup cannot be written', () => {
+    const storage = fakeStorage();
+    const first = new BlueprintStore();
+    first.hydrate('', storage);
+    recipeState.add('commerce.vendors');
+    first.save();
+    const before = storage.data.get(STORAGE_KEY);
+    const real = storage.setItem.bind(storage);
+    storage.setItem = (k: string, v: string) => {
+      if (k === BACKUP_KEY) throw new Error('quota');
+      real(k, v);
+    };
+    const store = new BlueprintStore();
+    store.hydrate('?r=commerce.sales', storage);
+    expect(storage.data.get(STORAGE_KEY)).toBe(before);
+    expect(store.keepLegacyUrl).toBe(true);
+  });
+});

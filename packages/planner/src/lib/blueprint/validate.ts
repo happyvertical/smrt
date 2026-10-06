@@ -85,7 +85,10 @@ function parseLayout(value: unknown): ShellLayout | string {
  * normalised blueprint, or one clear sentence saying why not. Strict on
  * purpose: nothing is silently dropped, so a bad file never half-applies.
  */
-export function parseBlueprint(input: unknown): BlueprintResult {
+export function parseBlueprint(
+  input: unknown,
+  options: { dropUnknownRecipes?: boolean } = {},
+): BlueprintResult {
   if (!isObject(input))
     return fail('This is not a blueprint: expected a JSON object.');
 
@@ -111,9 +114,18 @@ export function parseBlueprint(input: unknown): BlueprintResult {
     return fail('The blueprint "recipes" must be a list of recipe ids.');
   }
   const unknown = input.recipes.filter((id) => !recipesById.has(id));
-  if (unknown.length) {
+  if (unknown.length && !options.dropUnknownRecipes) {
     return fail(`The blueprint names unknown recipes: ${unknown.join(', ')}.`);
   }
+  const recipes = withRequirements(
+    input.recipes.filter((id) => recipesById.has(id)),
+    recipesById,
+  );
+  // Options only mean something for models an added recipe covers, as in the
+  // app itself; dropping the rest keeps export then import an exact round trip.
+  const covered = new Set(
+    recipes.flatMap((id) => recipesById.get(id)?.models ?? []),
+  );
 
   if (!Array.isArray(input.policies)) {
     return fail('The blueprint "policies" must be a list.');
@@ -122,7 +134,7 @@ export function parseBlueprint(input: unknown): BlueprintResult {
   for (const [index, value] of input.policies.entries()) {
     const row = parseRow(value, `policies[${index}]`);
     if (typeof row === 'string') return fail(`Invalid blueprint: ${row}.`);
-    policies.push(row);
+    if (covered.has(row.objectRef)) policies.push(row);
   }
 
   let exposure: Record<string, ExposureSurface[]> | undefined;
@@ -130,15 +142,19 @@ export function parseBlueprint(input: unknown): BlueprintResult {
     if (!isObject(input.exposure)) {
       return fail('The blueprint "exposure" must be an object.');
     }
-    exposure = {};
+    const entries: [string, ExposureSurface[]][] = [];
     for (const [ref, surfaces] of Object.entries(input.exposure)) {
       if (!isStrings(surfaces) || !surfaces.every((s) => SURFACES.has(s))) {
         return fail(
           `Invalid blueprint: exposure for ${ref} must list api, mcp or cli.`,
         );
       }
-      if (surfaces.length) exposure[ref] = [...surfaces] as ExposureSurface[];
+      if (surfaces.length && covered.has(ref)) {
+        entries.push([ref, [...surfaces] as ExposureSurface[]]);
+      }
     }
+    // fromEntries defines own keys, so a "__proto__" ref cannot rewrite the prototype.
+    exposure = Object.fromEntries(entries);
   }
 
   let layout: ShellLayout | undefined;
@@ -152,7 +168,7 @@ export function parseBlueprint(input: unknown): BlueprintResult {
   const blueprint: Blueprint = {
     $schema: BLUEPRINT_SCHEMA,
     version: BLUEPRINT_VERSION,
-    recipes: withRequirements(input.recipes, recipesById),
+    recipes,
     policies,
   };
   if (exposure && Object.keys(exposure).length) blueprint.exposure = exposure;
@@ -161,12 +177,15 @@ export function parseBlueprint(input: unknown): BlueprintResult {
 }
 
 /** Parse JSON text, then `parseBlueprint` it. */
-export function parseBlueprintText(text: string): BlueprintResult {
+export function parseBlueprintText(
+  text: string,
+  options: { dropUnknownRecipes?: boolean } = {},
+): BlueprintResult {
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch {
     return fail('This file is not valid JSON.');
   }
-  return parseBlueprint(value);
+  return parseBlueprint(value, options);
 }

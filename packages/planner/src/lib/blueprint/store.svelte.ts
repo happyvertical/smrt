@@ -36,6 +36,16 @@ export class BlueprintStore {
   /** Why the saved blueprint was not used, if it was not. */
   loadNotice = $state('');
 
+  /**
+   * True when saving would destroy the only copy of something (an unreadable
+   * value that could not be kept aside, or a saved blueprint a legacy link
+   * replaced without a backup). Nothing is written until the visitor imports
+   * or resets.
+   */
+  private saveBlocked = false;
+  /** A migrated legacy link whose data is not safely stored: keep the URL. */
+  keepLegacyUrl = false;
+
   private storage: Storage | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -55,16 +65,23 @@ export class BlueprintStore {
     this.layout = blueprint.layout;
   }
 
+  /** Replace on the visitor's say-so (an import): saving is allowed again. */
+  replace(blueprint: Blueprint): void {
+    this.apply(blueprint);
+    this.saveBlocked = false;
+  }
+
   /** Back to an empty blueprint. */
   reset(): void {
     recipeState.clear();
     this.layout = undefined;
+    this.saveBlocked = false;
   }
 
   /** Validate and apply JSON text, e.g. a chosen file. Applies nothing on failure. */
   importText(text: string): BlueprintResult {
     const result = parseBlueprintText(text);
-    if (result.ok) this.apply(result.blueprint);
+    if (result.ok) this.replace(result.blueprint);
     return result;
   }
 
@@ -78,14 +95,20 @@ export class BlueprintStore {
     const outcome = loadBlueprint(storage);
     if (outcome.status === 'loaded') this.apply(outcome.blueprint);
     else if (outcome.status === 'unreadable') {
-      this.loadNotice = `The saved blueprint could not be read (${outcome.reason}) and was kept aside; starting empty.`;
+      this.saveBlocked = !outcome.keptAside;
+      this.loadNotice = outcome.keptAside
+        ? `The saved blueprint could not be read (${outcome.reason}) and was kept aside; starting empty.`
+        : `The saved blueprint could not be read (${outcome.reason}). Starting empty without overwriting it; import or reset to save again.`;
     }
 
     let migrated = false;
     if (hasLegacyState(search)) {
       // An explicit link wins, but what it replaces is backed up first.
-      if (outcome.status === 'loaded') {
-        writeKey(storage, BACKUP_KEY, JSON.stringify(outcome.blueprint));
+      if (
+        outcome.status === 'loaded' &&
+        !writeKey(storage, BACKUP_KEY, JSON.stringify(outcome.blueprint))
+      ) {
+        this.saveBlocked = true;
       }
       this.apply(blueprintFromLegacySearch(search));
       migrated = true;
@@ -94,18 +117,26 @@ export class BlueprintStore {
     this.persist = outcome.status === 'unavailable' ? 'memory' : 'unknown';
     this.loaded = true;
     // Persist a migration at once: the URL is about to lose its copy.
-    if (migrated) this.save();
+    if (migrated) {
+      const saved = this.save();
+      // The URL held the only copy unless it is now safely stored.
+      this.keepLegacyUrl = !saved;
+    }
     return migrated;
   }
 
   /** Save now. Falls back to memory-only (and says so) if storage refuses. */
-  save(): void {
+  save(): boolean {
     clearTimeout(this.timer);
     this.timer = undefined;
-    if (!this.loaded) return;
-    this.persist = saveBlueprint(this.storage, this.snapshot())
-      ? 'ok'
-      : 'memory';
+    if (!this.loaded) return false;
+    if (this.saveBlocked) {
+      this.persist = 'memory';
+      return false;
+    }
+    const saved = saveBlueprint(this.storage, this.snapshot());
+    this.persist = saved ? 'ok' : 'memory';
+    return saved;
   }
 
   /** Save soon; many quick edits make one write. */

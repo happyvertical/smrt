@@ -38,7 +38,7 @@ async function choose(event: Event & { currentTarget: HTMLInputElement }) {
 
 function confirmImport() {
   if (pending) {
-    blueprintStore.apply(pending);
+    blueprintStore.replace(pending);
     notice = `Imported ${describe(pending)}.`;
   }
   pending = null;

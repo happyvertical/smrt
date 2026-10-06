@@ -16,7 +16,12 @@ export type LoadOutcome =
   | { status: 'unavailable' }
   | { status: 'empty' }
   | { status: 'loaded'; blueprint: Blueprint }
-  | { status: 'unreadable'; reason: string };
+  | {
+      status: 'unreadable';
+      reason: string;
+      /** Whether the raw value was copied to UNREADABLE_KEY. */
+      keptAside: boolean;
+    };
 
 /** The browser's localStorage, or null when reaching for it throws. */
 export function browserStorage(): Storage | null {
@@ -37,15 +42,13 @@ export function loadBlueprint(storage: Storage | null): LoadOutcome {
     return { status: 'unavailable' };
   }
   if (raw === null) return { status: 'empty' };
-  const parsed = parseBlueprintText(raw);
+  // A saved blueprint from an older build may name recipes this one no longer
+  // has: keep the rest rather than discarding the visitor's work.
+  const parsed = parseBlueprintText(raw, { dropUnknownRecipes: true });
   if (parsed.ok) return { status: 'loaded', blueprint: parsed.blueprint };
   // Keep what we could not read; the next save would otherwise destroy it.
-  try {
-    storage.setItem(UNREADABLE_KEY, raw);
-  } catch {
-    // Nothing more to do: it stays under STORAGE_KEY until overwritten.
-  }
-  return { status: 'unreadable', reason: parsed.error };
+  const keptAside = writeKey(storage, UNREADABLE_KEY, raw);
+  return { status: 'unreadable', reason: parsed.error, keptAside };
 }
 
 /** Write a value under a key; false when storage refused. Never throws. */

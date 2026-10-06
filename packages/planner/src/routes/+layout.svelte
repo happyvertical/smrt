@@ -115,6 +115,8 @@ let ready = false;
 let hydrated = false;
 
 function syncUrl() {
+  // A legacy link that could not be saved keeps its URL: it is the only copy.
+  if (blueprintStore.keepLegacyUrl) return;
   const wanted = appQuery();
   if (location.search !== wanted) {
     replaceState(`${location.pathname}${wanted}${location.hash}`, page.state);
@@ -179,8 +181,7 @@ function flushOnHide() {
   {/snippet}
   {#if blueprintStore.persist === 'memory'}
     <p class="storage-notice" role="status">
-      This browser is not saving your blueprint (storage is unavailable), so it
-      is kept in memory only. Export it from Blueprint to keep a copy.
+      This browser is not saving your blueprint, so it is kept in memory only. Export it from Blueprint to keep a copy.
     </p>
   {/if}
   {#if blueprintStore.loadNotice}
