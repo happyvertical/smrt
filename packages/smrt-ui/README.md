@@ -93,11 +93,15 @@ under the phone top bar. Pair it with `useLinkSurface` (smrt-svelte) so
 agents can switch tabs too.
 
 Use the focused subpaths (`/forms`, `/form-retry`, `/ui`, `/feedback`, `/data`,
-`/data-surface`, `/layout`, `/themes`) to keep imports explicit. The
+`/data-surface`, `/currency`, `/layout`, `/themes`) to keep imports explicit. The
 Svelte-free `/data-surface` entry exposes the registry contracts and shared
 protocol limits for server adapters; the Svelte-free `/form-retry` entry
-exposes the form-retry helper. The package root remains a compatibility
-barrel.
+exposes the form-retry helper. The Svelte-free `/currency` entry exposes
+`ISO_4217_MINOR_UNITS`, the shared ISO 4217 registry used for deterministic
+minor-unit scaling. A missing code is unsupported; a `null` value is a valid
+ISO fund, metal, test, or no-currency code without a defined minor unit, so
+callers handling integer minor-unit money must reject both cases rather than
+inventing a decimal precision. The package root remains a compatibility barrel.
 
 ### Calendar dates and shop time
 

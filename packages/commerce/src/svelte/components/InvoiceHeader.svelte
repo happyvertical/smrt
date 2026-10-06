@@ -45,26 +45,19 @@ export type Props = LegacyInvoiceHeaderProps | RetainedInvoiceHeaderProps;
 
 const props: Props = $props();
 const retained = $derived('retained' in props ? props.retained : null);
+const legacy = $derived(retained ? null : (props as LegacyInvoiceHeaderProps));
 const invoiceNumber = $derived(
-  retained?.invoiceNumber ?? (props as LegacyInvoiceHeaderProps).invoiceNumber,
+  retained ? retained.invoiceNumber : legacy?.invoiceNumber,
 );
-const status = $derived(
-  retained?.status ?? (props as LegacyInvoiceHeaderProps).status,
-);
-const issueDate = $derived(
-  retained?.issueDate ?? (props as LegacyInvoiceHeaderProps).issueDate,
-);
-const dueDate = $derived(
-  retained?.dueDate ?? (props as LegacyInvoiceHeaderProps).dueDate,
-);
-const paidDate = $derived(
-  retained?.paidDate ?? (props as LegacyInvoiceHeaderProps).paidDate,
-);
+const status = $derived(retained ? retained.status : legacy?.status);
+const issueDate = $derived(retained ? retained.issueDate : legacy?.issueDate);
+const dueDate = $derived(retained ? retained.dueDate : legacy?.dueDate);
+const paidDate = $derived(retained ? retained.paidDate : legacy?.paidDate);
 const customerName = $derived(
-  retained?.customerName ?? (props as LegacyInvoiceHeaderProps).customerName,
+  retained ? retained.customerName : legacy?.customerName,
 );
 const projectName = $derived(
-  retained?.projectName ?? (props as LegacyInvoiceHeaderProps).projectName,
+  retained ? retained.projectName : legacy?.projectName,
 );
 
 // Format date

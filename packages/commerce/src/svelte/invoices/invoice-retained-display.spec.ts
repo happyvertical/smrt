@@ -26,6 +26,40 @@ describe('retained invoice display', () => {
     expect(() => formatInvoiceMinorUnits(1, 'not-a-currency')).toThrow(
       /three-letter code/u,
     );
+    expect(() => formatInvoiceMinorUnits(1001, 'ZZZ')).toThrow(
+      /unsupported currency/iu,
+    );
+  });
+
+  it.each([
+    ['omitted', {}],
+    ['null', { dueDate: null, paidDate: null }],
+  ])('does not resurrect legacy metadata when retained optional fields are %s', (_label, retainedOptionals) => {
+    const body = render(InvoiceHeader, {
+      props: {
+        invoiceNumber: 'INV-legacy-stale',
+        status: 'paid',
+        issueDate: '1999-01-01T12:00:00Z',
+        dueDate: '1999-02-01T12:00:00Z',
+        paidDate: '1999-03-01T12:00:00Z',
+        customerName: 'Stale customer',
+        projectName: 'Stale project',
+        retained: {
+          invoiceNumber: 'INV-retained-current',
+          status: 'reviewing',
+          statusLabel: 'Reviewing',
+          issueDate: '2026-10-06T12:00:00Z',
+          ...retainedOptionals,
+        },
+      },
+    }).body;
+
+    expect(body).toContain('INV-retained-current');
+    expect(body).toContain('Reviewing');
+    expect(body).not.toContain('INV-legacy-stale');
+    expect(body).not.toContain('Stale customer');
+    expect(body).not.toContain('Stale project');
+    expect(body).not.toContain('1999');
   });
 
   it('renders caller-authoritative retained facts without recalculation or mutations', () => {
