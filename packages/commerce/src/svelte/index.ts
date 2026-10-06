@@ -83,6 +83,7 @@ export type {
   PartyContactData,
   PartyContactLabels,
   PartyDirectoryExtension,
+  PartyDirectoryFilters,
   PartyDirectoryItem,
   PartyExtension,
   PartyFieldNames,

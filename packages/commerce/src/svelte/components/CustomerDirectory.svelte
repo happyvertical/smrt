@@ -9,6 +9,7 @@ import { M } from '../i18n.js';
 import type {
   CustomerDisplayData,
   PartyDirectoryExtension,
+  PartyDirectoryFilters,
   PartyDirectoryItem,
   PartySurfaceLabels,
 } from '../party-types.js';
@@ -35,6 +36,14 @@ export interface Props {
   statusName?: string;
   /** Caller-owned state carried through the native GET form. Query and status names are ignored. */
   hiddenFields?: Record<string, string>;
+  /** Caller-owned GET controls rendered beside search and status. */
+  filters?: PartyDirectoryFilters;
+  /** Names rendered by `filters`; same-named hidden fields are omitted. */
+  filterNames?: string[];
+  /** Whether caller-owned filters currently narrow the result. */
+  hasAdditionalFilters?: boolean;
+  /** Overrides the empty-state guidance for this directory. */
+  emptyDescription?: string;
   /** Caller-owned URL for the previous page. */
   previousHref?: string;
   /** Caller-owned URL for the next page. */
@@ -64,6 +73,10 @@ const {
   queryName = 'q',
   statusName = 'status',
   hiddenFields = {},
+  filters,
+  filterNames = [],
+  hasAdditionalFilters = false,
+  emptyDescription,
   previousHref,
   nextHref,
   addHref,
@@ -87,8 +100,20 @@ const last = $derived(
 );
 const searchHiddenFields = $derived(
   Object.entries(hiddenFields).filter(
-    ([name]) => name !== queryName && name !== statusName,
+    ([name]) =>
+      name !== queryName && name !== statusName && !filterNames.includes(name),
   ),
+);
+const hasActiveFilters = $derived(
+  query.trim().length > 0 || status.length > 0 || hasAdditionalFilters,
+);
+const resolvedEmptyDescription = $derived(
+  emptyDescription ??
+    (hasActiveFilters
+      ? t(M['commerce.party.try_filters'])
+      : canCreate && addHref
+        ? t(M['commerce.party.empty_initial_create'], { singular })
+        : t(M['commerce.party.empty_initial'], { plural })),
 );
 
 function statusLabel(value: string): string {
@@ -131,6 +156,7 @@ function customerTypeLabel(value: string | undefined): string {
         <option value="suspended">{t(M['commerce.party.status_suspended'])}</option>
       </Select>
     </FormGroup>
+    {@render filters?.()}
     <Button type="submit" variant="secondary">{t(M['commerce.party.search'])}</Button>
   </Form>
 
@@ -141,7 +167,7 @@ function customerTypeLabel(value: string | undefined): string {
       <Skeleton height="6rem" /><Skeleton height="6rem" /><Skeleton height="6rem" />
     </div>
   {:else if items.length === 0}
-    <EmptyState title={labels.empty ?? t(M['commerce.customer.no_results'])} description={t(M['commerce.party.try_filters'])} />
+    <EmptyState title={labels.empty ?? t(M['commerce.customer.no_results'])} description={resolvedEmptyDescription} />
   {:else}
     <p class="result-count">
       {pageSize === undefined
