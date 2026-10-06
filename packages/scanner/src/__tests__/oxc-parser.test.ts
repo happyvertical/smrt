@@ -626,7 +626,7 @@ describe('OXC Parser', () => {
       });
     });
 
-    it('should skip numeric enums (not string unions)', () => {
+    it('should convert numeric enums to number-literal unions', () => {
       const source = `
         export enum Direction {
           UP = 0,
@@ -637,8 +637,8 @@ describe('OXC Parser', () => {
       `;
 
       const result = parseSource(source);
-      // Numeric enums are not converted to string unions
-      expect(result.typeAliases.Direction).toBeUndefined();
+      // Numeric enums become number-literal unions (#3598)
+      expect(result.typeAliases.Direction).toBe('0 | 1 | 2 | 3');
     });
 
     it('should resolve inline object type aliases to object', () => {

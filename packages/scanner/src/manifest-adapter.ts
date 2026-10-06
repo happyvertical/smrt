@@ -5,6 +5,7 @@
  * Ensures compatibility with existing manifest consumers.
  */
 
+import { type EnumValue, resolveEnumValues } from './enum-values.js';
 import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import { isSafeObjectKey } from './oxc-parser.js';
 import type {
@@ -45,6 +46,11 @@ interface FieldDefinition {
   max?: number;
   maxLength?: number;
   minLength?: number;
+  /**
+   * Closed set of allowed values for an enum- or literal-union-typed field, in
+   * declaration order, values not member names (#3598).
+   */
+  enum?: EnumValue[];
   related?: string;
   description?: string;
   _meta?: Record<string, unknown>;
@@ -748,6 +754,14 @@ export class ManifestAdapter {
       };
     }
 
+    // Closed literal sets (enum / literal union / aliases of either) carry
+    // their allowed values so forms and generated tool schemas can constrain
+    // the field (#3598).
+    const enumValues = this.resolveFieldEnum(field, definition.type);
+    if (enumValues) {
+      definition.enum = enumValues;
+    }
+
     // Mark function type fields as transient (not persisted to database)
     if (isFunctionType) {
       definition.transient = true;
@@ -1403,6 +1417,28 @@ export class ManifestAdapter {
       }
     }
 
+    // A union that CONTAINS an alias or enum (`Base | 'extra'`) is still a
+    // closed literal set once flattened (#3598); without this it fell to json.
+    const closedSet = type
+      ? resolveEnumValues(type, this.typeAliases)
+      : undefined;
+    if (closedSet?.every((v) => typeof v === 'string')) {
+      return {
+        type: 'text',
+        required: isRequired,
+        defaultValue: this.parseDefaultValue(field.initializer, 'string'),
+        source: 'annotation',
+      };
+    }
+    if (closedSet?.every((v) => typeof v === 'number')) {
+      return {
+        type: closedSet.every(Number.isInteger) ? 'integer' : 'decimal',
+        required: isRequired,
+        defaultValue: field.numericValue ?? undefined,
+        source: 'annotation',
+      };
+    }
+
     // String initializer heuristic: if initializer is a quoted string, infer text
     if (field.initializer?.match(/^(['"]).*\1$/)) {
       return {
@@ -1421,6 +1457,27 @@ export class ManifestAdapter {
       required: isRequired,
       source: 'default',
     };
+  }
+
+  /**
+   * Allowed values of a field whose declared type is a closed literal set.
+   * Only emitted when the final column type agrees with the value kind, so a
+   * `@field({ type })` override can never contradict its own `enum`.
+   */
+  private resolveFieldEnum(
+    field: RawFieldDefinition,
+    fieldType: FieldDefinition['type'],
+  ): EnumValue[] | undefined {
+    if (!field.typeAnnotation) return undefined;
+    const values = resolveEnumValues(field.typeAnnotation, this.typeAliases);
+    if (!values) return undefined;
+    if (fieldType === 'text') {
+      return values.every((v) => typeof v === 'string') ? values : undefined;
+    }
+    if (fieldType === 'integer' || fieldType === 'decimal') {
+      return values.every((v) => typeof v === 'number') ? values : undefined;
+    }
+    return undefined;
   }
 
   /**

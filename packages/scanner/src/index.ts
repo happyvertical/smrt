@@ -37,6 +37,7 @@ export {
   relativeGlobToCwd,
   type SourceDiscoveryOptions,
 } from './discovery.js';
+export { type EnumValue, resolveEnumValues } from './enum-values.js';
 export { InheritanceResolver } from './inheritance-resolver.js';
 export { ManifestAdapter } from './manifest-adapter.js';
 export {
