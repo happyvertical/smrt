@@ -364,6 +364,32 @@ describe('RelationInput value rebinding', () => {
   });
 });
 
+describe('RelationInput pending resolve', () => {
+  it('never shows another record label while the current id is still resolving', async () => {
+    let finish: (r: { id: string; label: string } | null) => void = () => {};
+    const resolve = vi.fn(
+      () =>
+        new Promise<{ id: string; label: string } | null>((res) => {
+          finish = res;
+        }),
+    );
+    const view = render(RelationInput, {
+      props: props({ value: 'zz', resolve }),
+    });
+    await userEvent.click(combo());
+    await userEvent.click(
+      await screen.findByRole('option', { name: /Globex/ }),
+    );
+    expect(combo()).toHaveValue('Globex');
+    await view.rerender({ ...props({ resolve }), value: 'c2' });
+    await view.rerender({ ...props({ resolve }), value: 'zz' });
+    await waitFor(() => expect(combo()).toHaveValue(''));
+    finish(null);
+    await Promise.resolve();
+    expect(combo()).toHaveValue('');
+  });
+});
+
 describe('RelationInput onCreate', () => {
   it('offers a New action that receives the typed text and selects the result', async () => {
     const onCreate = vi.fn(async (q: string) => ({

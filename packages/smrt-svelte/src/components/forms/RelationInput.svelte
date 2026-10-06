@@ -263,11 +263,10 @@ $effect(() => {
       labelledId = id;
       return;
     }
-    if (resolvingId === id) return;
     // A different id than the one labelled: never keep the previous label.
     selectedLabel = '';
     labelledId = '';
-    if (!resolve) return;
+    if (!resolve || resolvingId === id) return;
     resolvingId = id;
     resolve(id)
       .then((record) => {
