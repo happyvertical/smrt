@@ -5,6 +5,7 @@ import ModelWorkspace from '$lib/components/ModelWorkspace.svelte';
 import SectionIcons from '$lib/components/SectionIcons.svelte';
 import { humanize } from '$lib/data/format.ts';
 import { activeForms } from '$lib/forms/active.ts';
+import { PRODUCT } from '$lib/forms/stock.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
 import { recipes, sectionId } from '$lib/recipes/index.ts';
@@ -78,10 +79,10 @@ const inApp = $derived(
     {/if}
     </div>
 
-    {#if forms.length}
+    {#if forms.length && model.id === PRODUCT}
       <FormWorkspace {model} {forms} />
     {:else}
-      <ModelWorkspace {model} fields={applied.fields} />
+      <ModelWorkspace {model} fields={applied.fields} {forms} />
     {/if}
   </main>
 {/if}

@@ -42,6 +42,15 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
 - `src/lib/data/`: `DataSource` (async, `apply` for related multi-model saves), the seeded in-memory fakes, money and
   value formatting. Views only talk to `DataSource` via context; live
   collections later replace `createMemoryDataSource()` in `+layout.svelte`.
+- `src/lib/upstream/`: LOCAL stand-ins for unshipped s-m-r-t work (smrt#3598
+  enum values, #3599 widget hints / display label / `selects`, #3600
+  `RelationInput`, #3602 `CustomerSelect`/`VendorSelect`), each file headed with
+  the issue it replaces. `overlay.ts` applies them to the catalog on load so
+  consumers read `field.enum`, `field.ui.widget`, `field.related` where the
+  manifest will put them. Delete a stand-in when its issue ships.
+- `src/lib/fields/`: `renderer.ts` picks the input per field (pure, tested);
+  `FieldInput.svelte` renders it and `RelationField.svelte` the selectors.
+  `data/labels.ts` labels related records (Customer/Vendor via their Profile).
 - `src/lib/components/`: generated list/form (`ModelWorkspace`), the collapsed "Connect other tools"
   list (`ConnectTools`), the Help view (`HelpView`), `ChatDockPlaceholder` (the dock slot for #3).
 - `src/routes/`: `/` Planner (recipe cards with switches only), `/recipes/[id]/` Options and `/recipes/[id]/help/` Help, where `id` is a section id (`recipes/sections.ts`: the group id, or the recipe id when ungrouped) so recipes of one group share one page each, reached by the `SectionIcons` help and settings icons in page headers (no Options/Help nav items),

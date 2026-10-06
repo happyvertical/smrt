@@ -28,7 +28,21 @@ export interface CatalogFieldUI {
   order?: number;
   /** Seeds the field's policy as locked. */
   locked?: boolean;
+  /**
+   * Which input suits the field (happyvertical/smrt#3599, `@field({ ui:
+   * { widget } })`). Until the manifest carries it, `upstream/widgets.ts`
+   * fills it in when the catalog loads.
+   */
+  widget?: CatalogFieldWidget;
 }
+
+/** The widget hints of happyvertical/smrt#3599. */
+export type CatalogFieldWidget =
+  | 'textarea'
+  | 'currency'
+  | 'email'
+  | 'url'
+  | 'phone';
 
 export interface CatalogField {
   name: string;
@@ -81,6 +95,12 @@ export interface CatalogModel {
   collection: string;
   /** Qualified name of the model this one extends, when it is an STI child. */
   extends?: string;
+  /**
+   * `@smrt({ display: { label } })` (happyvertical/smrt#3599): the own field
+   * that labels a record in pickers. Undeclared means the first of `name`,
+   * `title`, `label`, `code`; see `upstream/display.ts`.
+   */
+  display?: { label: string };
   fields: CatalogField[];
   /** Generated REST routes. */
   rest: CatalogRoute[];

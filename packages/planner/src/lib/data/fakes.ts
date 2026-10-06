@@ -131,12 +131,40 @@ function fakeText(field: CatalogField, random: () => number): string {
   return `${pick(random, WORDS)} ${pick(random, NOUNS)}`;
 }
 
+/**
+ * Sample rows per model where the default count does not fit: every Customer
+ * and Vendor gets its own Profile, so the lists show different names.
+ * Customers use Profiles 0-7 and Vendors 8-12.
+ */
+export const SAMPLE_ROW_COUNTS: Readonly<Record<string, number>> = {
+  '@happyvertical/smrt-profiles:Profile': 13,
+  '@happyvertical/smrt-commerce:Vendor': 5,
+};
+
+/**
+ * Which row of the target a sample relation points at. Rows are seeded with
+ * ids from `(model, index)`, so pointing at index `n` points at a real row.
+ */
+function relatedIndex(
+  field: CatalogField,
+  context: { modelId: string; index: number },
+): number {
+  if (field.name === 'profileId') {
+    return context.modelId.endsWith(':Vendor')
+      ? 8 + (context.index % 5)
+      : context.index;
+  }
+  return context.index % 5;
+}
+
 /** One fake value for a field. Money is an integer number of minor units. */
 export function fakeValue(
   field: CatalogField,
   random: () => number,
   context: { modelId: string; index: number },
 ): unknown {
+  // A declared enumeration: only its values are valid.
+  if (field.enum && field.enum.length > 0) return pick(random, field.enum);
   switch (field.type) {
     case 'boolean':
       return random() < 0.7;
@@ -158,7 +186,9 @@ export function fakeValue(
       return Array.isArray(field.default) ? [] : {};
     case 'foreignKey':
     case 'crossPackageRef':
-      return fakeId(`${field.related ?? field.name}:${context.index % 5}`);
+      return fakeId(
+        `${field.related ?? field.name}:${relatedIndex(field, context)}`,
+      );
     default:
       return fakeText(field, random);
   }

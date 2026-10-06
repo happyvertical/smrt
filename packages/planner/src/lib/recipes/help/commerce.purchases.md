@@ -9,8 +9,9 @@ amounts, the dates and where the order stands.
 ### Place a purchase order
 
 1. Choose the **New** button above the list.
-2. Enter the **{field:vendorId}** you are buying from. Add them under Vendors
-   first so they are on your list.
+2. Pick the **{field:vendorId}** you are buying from: start typing their name
+   and choose from the list. If they are not on your list yet, choose **New
+   vendor** to add them without leaving the order.
 3. Enter the **{field:subtotal}** and **{field:taxAmount}**, then the
    **{field:totalAmount}** you expect to pay.
 4. Set the **{field:issueDate}**, and the **{field:dueDate}** for when the

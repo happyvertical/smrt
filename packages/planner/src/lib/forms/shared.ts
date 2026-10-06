@@ -1,6 +1,11 @@
 import { getModelByQualifiedName } from '../catalog/index.ts';
 import type { CatalogField, CatalogModel } from '../catalog/types.ts';
-import type { DataSource, ModelRecord, WriteValue } from '../data/source.ts';
+import type {
+  DataSource,
+  JsonObject,
+  ModelRecord,
+  WriteValue,
+} from '../data/source.ts';
 import type {
   RecipeFormField,
   RecipeFormRecord,
@@ -46,7 +51,10 @@ export function toWriteValue(
 ): WriteValue {
   if (typeof value === 'string') return fillTemplate(value, context);
   if (value !== null && typeof value === 'object') {
-    return { ref: renameRef(value.ref) };
+    return {
+      ref: renameRef(value.ref),
+      ...(value.field ? { field: value.field } : {}),
+    };
   }
   return value;
 }
@@ -64,12 +72,20 @@ export function toWriteValues(
   );
 }
 
-/** An input's value as a write value: scalars as they are, anything else null. */
+/**
+ * An input's value as a write value: scalars and plain JSON objects (an
+ * Address) as they are, anything else null.
+ */
 export function scalar(value: unknown): WriteValue {
-  return typeof value === 'string' ||
+  if (
+    typeof value === 'string' ||
     typeof value === 'number' ||
     typeof value === 'boolean'
-    ? value
+  ) {
+    return value;
+  }
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonObject)
     : null;
 }
 
@@ -117,6 +133,18 @@ export function targetField(
   return found;
 }
 
+/** The qualified model a form field's record is of. */
+export function targetModelId(
+  field: RecipeFormField,
+  records: readonly RecipeFormRecord[],
+): string {
+  const { alias } = parseTarget(field.to);
+  const record = records.find((r) => r.as === alias);
+  if (!record)
+    throw new Error(`Form field ${field.id} maps to unknown ${alias}`);
+  return record.model;
+}
+
 /** The starting value of a field on a new row. */
 export function startingValue(
   field: RecipeFormField,
@@ -161,7 +189,7 @@ export async function findRows(
       if (value !== null && typeof value === 'object') {
         const target = rows[value.ref];
         if (!target) resolvable = false;
-        wanted[key] = target?.id;
+        wanted[key] = value.field ? target?.[value.field] : target?.id;
       } else {
         wanted[key] = value;
       }

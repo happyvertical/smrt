@@ -1,14 +1,27 @@
 <script lang="ts">
-import { Select, Switch } from '@happyvertical/smrt-ui/forms';
+import {
+  AddressInput,
+  DateTimeInput,
+  MoneyInput,
+  PhoneInput,
+  SelectInput,
+  TextareaInput,
+  TextInput,
+} from '@happyvertical/smrt-svelte/forms';
+import { CurrencySelect, Switch } from '@happyvertical/smrt-ui/forms';
 import type { CatalogField } from '../catalog/types.ts';
-import { isMoneyField } from '../data/fakes.ts';
-import { humanize, parseMoney } from '../data/format.ts';
+import { enumLabel, humanize } from '../data/format.ts';
+import { fromAddressInput, toAddressInput } from '../fields/address.ts';
+import { chooseRenderer } from '../fields/renderer.ts';
+import RelationField from './RelationField.svelte';
 
 interface FieldInputProps {
   field: CatalogField;
   /** The stored value (money is integer minor units). */
   value: unknown;
   onchange: (value: unknown) => void;
+  /** Qualified name of the model that owns the field (for per-model hints). */
+  modelId?: string;
   /** Policy label; defaults to the humanized field name. */
   label?: string;
   /** Policy help text, shown under the control. */
@@ -17,19 +30,23 @@ interface FieldInputProps {
   idPrefix?: string;
   /** Drop the required marker, e.g. for a field's default value control. */
   hideRequired?: boolean;
+  /** Let a relation selector offer "New ..." (off for a default-value control). */
+  creatable?: boolean;
 }
 
 let {
   field,
   value,
   onchange,
+  modelId,
   label: labelOverride,
   help,
   idPrefix = 'field',
   hideRequired = false,
+  creatable = true,
 }: FieldInputProps = $props();
 
-const money = $derived(isMoneyField(field));
+const renderer = $derived(chooseRenderer(field, modelId));
 const label = $derived(labelOverride ?? humanize(field.name));
 const id = $derived(`${idPrefix}-${field.name}`);
 const required = $derived(field.required && !hideRequired);
@@ -40,13 +57,14 @@ const text = $derived(
       ? JSON.stringify(value)
       : String(value),
 );
-
-// Money is typed in major units but stored as integer cents. Keep what the
-// person typed so re-rendering never rewrites the box mid-keystroke.
-// svelte-ignore state_referenced_locally
-let moneyText = $state(
-  typeof value === 'number' ? (value / 100).toFixed(2) : '',
-);
+// An optional enum can be cleared again, as the native select it replaces could.
+const enumOptions = $derived([
+  ...(required ? [] : [{ value: '', label: '(none)' }]),
+  ...(field.enum ?? []).map((option) => ({
+    value: option,
+    label: enumLabel(option),
+  })),
+]);
 
 function numberFrom(raw: string): number | null {
   if (raw.trim() === '') return null;
@@ -61,49 +79,113 @@ function jsonFrom(raw: string): unknown {
     return raw;
   }
 }
+
+/** A stored ISO timestamp as the date the picker shows. */
+const dateOf = (stored: string): string => stored.slice(0, 10);
 </script>
 
 <div class="field">
-  {#if field.type === 'boolean'}
+  {#if renderer === 'boolean'}
     <Switch
       checked={value === true}
       onchange={(event) => onchange(event.currentTarget.checked)}
       {label}
     />
+  {:else if renderer === 'relation'}
+    <RelationField
+      {field}
+      {value}
+      {onchange}
+      {label}
+      name={id}
+      {required}
+      {creatable}
+    />
+  {:else if renderer === 'enum'}
+    <SelectInput
+      name={id}
+      {label}
+      {required}
+      options={enumOptions}
+      value={text}
+      onchange={(next) => onchange(next)}
+    />
+  {:else if renderer === 'textarea'}
+    <TextareaInput
+      name={id}
+      {label}
+      {required}
+      rows={4}
+      value={text}
+      onchange={(next) => onchange(next)}
+    />
+  {:else if renderer === 'email'}
+    <TextInput
+      name={id}
+      {label}
+      {required}
+      type="email"
+      value={text}
+      onchange={(next) => onchange(next)}
+    />
+  {:else if renderer === 'phone'}
+    <PhoneInput
+      name={id}
+      {label}
+      {required}
+      value={text}
+      onchange={(next) => onchange(next)}
+    />
+  {:else if renderer === 'money'}
+    <MoneyInput
+      name={id}
+      {label}
+      {required}
+      currency="USD"
+      min={0}
+      value={typeof value === 'number' ? value : null}
+      onchange={(cents) => onchange(cents)}
+    />
+  {:else if renderer === 'datetime'}
+    <DateTimeInput
+      name={id}
+      {label}
+      {required}
+      includeTime={false}
+      value={dateOf(text)}
+      onchange={(date) =>
+        onchange(date ? new Date(`${date}T00:00:00Z`).toISOString() : '')}
+    />
+  {:else if renderer === 'address'}
+    <AddressInput
+      name={id}
+      {label}
+      {required}
+      value={toAddressInput(value)}
+      onchange={(edited) => onchange(fromAddressInput(edited, value))}
+    />
   {:else}
     <label for={id}>
       {label}
       {#if required}<span aria-hidden="true">*</span>{/if}
-      {#if money}<small>(USD, stored as cents)</small>{/if}
     </label>
-    {#if field.enum}
-      <Select
+    {#if renderer === 'currency'}
+      <!-- ISO 4217 codes; the stored value is the code itself. -->
+      <CurrencySelect
         {id}
-        value={text}
         {required}
+        value={text}
         onchange={(event) => onchange(event.currentTarget.value)}
-      >
-        {#if !required || text === ''}<option value="">(none)</option>{/if}
-        {#each field.enum as option (option)}
-          <option value={option}>{option}</option>
-        {/each}
-      </Select>
-    {:else if money}
+      />
+    {:else if renderer === 'url'}
       <input
         {id}
-        type="number"
-        onfocus={(event) => event.currentTarget.select()}
-        step="0.01"
-        min="0"
+        type="url"
         {required}
-        value={moneyText}
-        oninput={(event) => {
-          // type=number would coerce a bound value to a number; keep the text.
-          moneyText = event.currentTarget.value;
-          onchange(moneyText.trim() === '' ? null : parseMoney(moneyText));
-        }}
+        value={text}
+        oninput={(event) => onchange(event.currentTarget.value)}
       />
-    {:else if field.type === 'integer'}
+    {:else if renderer === 'integer'}
       <input
         {id}
         type="number"
@@ -116,7 +198,7 @@ function jsonFrom(raw: string): unknown {
           onchange(parsed === null ? null : Math.trunc(parsed));
         }}
       />
-    {:else if field.type === 'decimal'}
+    {:else if renderer === 'decimal'}
       <input
         {id}
         type="number"
@@ -126,20 +208,7 @@ function jsonFrom(raw: string): unknown {
         value={text}
         oninput={(event) => onchange(numberFrom(event.currentTarget.value))}
       />
-    {:else if field.type === 'datetime'}
-      <input
-        {id}
-        type="date"
-        {required}
-        value={text.slice(0, 10)}
-        oninput={(event) =>
-          onchange(
-            event.currentTarget.value
-              ? new Date(event.currentTarget.value).toISOString()
-              : '',
-          )}
-      />
-    {:else if field.type === 'json'}
+    {:else if renderer === 'json'}
       <textarea
         {id}
         rows="3"
@@ -158,9 +227,6 @@ function jsonFrom(raw: string): unknown {
   {/if}
   {#if help}
     <small>{help}</small>
-  {/if}
-  {#if field.related}
-    <small>References {field.related.split(':').pop()}</small>
   {/if}
 </div>
 
@@ -181,7 +247,7 @@ function jsonFrom(raw: string): unknown {
 
   input[type='text'],
   input[type='number'],
-  input[type='date'],
+  input[type='url'],
   textarea {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
     border: 1px solid var(--smrt-color-outline);

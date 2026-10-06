@@ -1,11 +1,14 @@
 <script lang="ts">
 import { useDataSource } from '../data/context.ts';
+import type { ModelRecord } from '../data/source.ts';
 import type { ActiveForm } from '../forms/active.ts';
 import {
   blankFieldMap,
   fieldMapInputs,
-  loadFieldMap,
+  fieldMapParts,
+  loadFieldMapState,
   planFieldMapSave,
+  primaryIndex,
 } from '../forms/fieldMap.ts';
 import { catalogModels } from '../forms/shared.ts';
 import type { FieldMapForm } from '../recipes/types.ts';
@@ -15,7 +18,8 @@ interface FieldMapFormProps {
   active: ActiveForm<FieldMapForm>;
   /** The row to edit; omitted when creating. */
   id?: string;
-  onsaved: () => void;
+  /** Called with the saved row of the form's own model. */
+  onsaved: (saved: ModelRecord) => void;
   oncancel: () => void;
 }
 
@@ -31,9 +35,13 @@ let values = $state<Record<string, unknown>>(
 // svelte-ignore state_referenced_locally
 let loaded = $state(id === undefined);
 let error = $state('');
+/** The rows an edited row's records point at; see `planFieldMapSave`. */
+let rows: Record<string, ModelRecord | undefined> = {};
 
 async function load(rowId: string) {
-  values = await loadFieldMap(source, active, catalogModels, rowId);
+  const state = await loadFieldMapState(source, active, catalogModels, rowId);
+  values = state.values;
+  rows = state.rows;
   loaded = true;
 }
 // svelte-ignore state_referenced_locally
@@ -43,8 +51,13 @@ async function save(event: SubmitEvent) {
   event.preventDefault();
   error = '';
   try {
-    await source.apply(planFieldMapSave(active, catalogModels, values, id));
-    onsaved();
+    const written = await source.apply(
+      planFieldMapSave(active, catalogModels, values, id, rows),
+    );
+    const primary = fieldMapParts(active).records[primaryIndex(active)];
+    const saved = primary ? written[primary.as] : undefined;
+    if (!saved) throw new Error('Nothing was saved.');
+    onsaved(saved);
   } catch (cause) {
     error = cause instanceof Error ? cause.message : 'Could not save.';
   }
@@ -56,8 +69,9 @@ async function save(event: SubmitEvent) {
 {:else}
   <form onsubmit={save}>
     <h3>{id === undefined ? `New ${active.form.label.toLowerCase()}` : `Edit ${active.form.label.toLowerCase()}`}</h3>
-    {#each inputs as { field, catalogField } (field.id)}
+    {#each inputs as { field, catalogField, modelId } (field.id)}
       <FieldInput
+        {modelId}
         field={{ ...catalogField, required: field.required ?? catalogField.required }}
         label={field.label}
         help={field.help}

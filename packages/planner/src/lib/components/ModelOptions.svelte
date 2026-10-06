@@ -126,6 +126,8 @@ function setOrder(name: string, raw: string) {
           <fieldset class="default" disabled={frozen}>
             <FieldInput
               field={{ ...entry.field, required: false }}
+              modelId={model.id}
+              creatable={false}
               label={`Default value for ${name}`}
               idPrefix={`default-${model.name}`}
               value={draft.fields[name].default}

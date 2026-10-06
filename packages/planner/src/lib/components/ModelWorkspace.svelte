@@ -3,45 +3,69 @@ import type { CatalogModel } from '../catalog/types.ts';
 import { useDataSource } from '../data/context.ts';
 import { editableFields, type ModelRecord } from '../data/fakes.ts';
 import { formatValue, humanize } from '../data/format.ts';
+import { relationLabels } from '../data/labels.ts';
+import { isRelation } from '../fields/renderer.ts';
+import { type ActiveForm, isFieldMap } from '../forms/active.ts';
 import type { ViewField } from '../recipes/policy.ts';
+import type { FieldMapForm as FieldMapFormShape } from '../recipes/types.ts';
 import FieldInput from './FieldInput.svelte';
+import FieldMapForm from './FieldMapForm.svelte';
 
 interface ModelWorkspaceProps {
   model: CatalogModel;
   /** The fields to show, policy applied; defaults to every editable field. */
   fields?: ViewField[];
+  /**
+   * The forms of the added recipes for this model. A field-map form replaces
+   * the generic one: New offers each, and Edit uses the first, so the related
+   * rows it saves (a Customer's Profile) are edited together.
+   */
+  forms?: ActiveForm[];
 }
 
-let { model, fields: shownFields }: ModelWorkspaceProps = $props();
+let { model, fields: shownFields, forms = [] }: ModelWorkspaceProps = $props();
 
 const source = useDataSource();
 const fields = $derived<ViewField[]>(
   shownFields ??
     editableFields(model).map((f) => ({ ...f, label: humanize(f.name) })),
 );
+const mapForms = $derived(
+  forms.filter((f): f is ActiveForm<FieldMapFormShape> => isFieldMap(f)),
+);
 const columns = $derived.by((): ViewField[] => {
   const shown = fields.filter((f) => f.type !== 'json');
-  // A few leading text fields, then the numeric/boolean/date ones (prices,
-  // quantities, flags) so a row reads like a record, not a wall of text.
+  // A few leading fields, then the numeric/boolean/date ones (prices,
+  // quantities, flags) and the choices (enums, relations) so a row reads like
+  // a record, not a wall of text.
   const lead = shown.slice(0, 3);
   const rest = shown
     .slice(3)
-    .filter((f) =>
-      ['integer', 'decimal', 'boolean', 'datetime'].includes(f.type),
+    .filter(
+      (f) =>
+        ['integer', 'decimal', 'boolean', 'datetime'].includes(f.type) ||
+        (f.enum?.length ?? 0) > 0 ||
+        isRelation(f),
     );
   return [...lead, ...rest].slice(0, 6);
 });
 
 let rows = $state<ModelRecord[]>([]);
+/** Labels of the records the rows point at, so a cell shows a name, not an id. */
+let labels = $state(new Map<string, string>());
 let loaded = $state(false);
 /** `null` closed, `'new'` creating, otherwise the id being edited. */
 let editing = $state<string | 'new' | null>(null);
+/** The field-map form open when `mapForms` replace the generic form. */
+let mapForm = $state<ActiveForm<FieldMapFormShape> | undefined>(undefined);
 let draft = $state<Record<string, unknown>>({});
 /** Bumped each time a form opens, so inputs remount with the new draft. */
 let formKey = $state(0);
 
 async function load() {
-  rows = await source.list(model);
+  const listed = await source.list(model);
+  labels = await relationLabels(source, columns, listed);
+  rows = listed;
   loaded = true;
 }
 
@@ -53,7 +77,19 @@ $effect(() => {
   void load();
 });
 
-function startCreate() {
+async function savedMap() {
+  editing = null;
+  await load();
+}
+
+function startCreate(form?: ActiveForm<FieldMapFormShape>) {
+  if (form) {
+    mapForm = form;
+    editing = 'new';
+    formKey++;
+    return;
+  }
+  mapForm = undefined;
   const blank: Record<string, unknown> = {};
   for (const field of fields) {
     blank[field.name] =
@@ -66,6 +102,13 @@ function startCreate() {
 }
 
 function startEdit(row: ModelRecord) {
+  if (mapForms[0]) {
+    mapForm = mapForms[0];
+    editing = row.id;
+    formKey++;
+    return;
+  }
+  mapForm = undefined;
   draft = { ...row };
   editing = row.id;
   formKey++;
@@ -90,16 +133,33 @@ async function remove(row: ModelRecord) {
 <section>
   <header>
     <h2>{model.name} <small>{rows.length} sample rows</small></h2>
-    <button type="button" onclick={startCreate}>New {model.name}</button>
+    {#if mapForms.length}
+      {#each mapForms as active (active.form.id)}
+        <button type="button" onclick={() => startCreate(active)}>
+          New {active.form.label.toLowerCase()}
+        </button>
+      {/each}
+    {:else}
+      <button type="button" onclick={() => startCreate()}>New {model.name}</button>
+    {/if}
   </header>
 
   {#if editing}
     {#key formKey}
+    {#if mapForm}
+      <FieldMapForm
+        active={mapForm}
+        id={editing === 'new' ? undefined : editing}
+        onsaved={savedMap}
+        oncancel={() => (editing = null)}
+      />
+    {:else}
     <form onsubmit={save}>
       <h3>{editing === 'new' ? `New ${model.name}` : `Edit ${model.name}`}</h3>
       {#each fields as field (field.name)}
         <FieldInput
           {field}
+          modelId={model.id}
           label={field.label}
           help={field.help}
           value={draft[field.name]}
@@ -113,6 +173,7 @@ async function remove(row: ModelRecord) {
         </button>
       </div>
     </form>
+    {/if}
     {/key}
   {/if}
 
@@ -135,7 +196,7 @@ async function remove(row: ModelRecord) {
           {#each rows as row (row.id)}
             <tr>
               {#each columns as column (column.name)}
-                <td>{formatValue(column, row[column.name])}</td>
+                <td>{formatValue(column, row[column.name], labels)}</td>
               {/each}
               <td class="row-actions">
                 <button type="button" class="secondary" onclick={() => startEdit(row)}>

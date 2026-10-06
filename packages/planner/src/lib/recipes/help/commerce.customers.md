@@ -10,15 +10,18 @@ order.
 ### Add a new customer
 
 1. Choose the **New** button above the list.
-2. Describe the customer with **{field:customerType}**, for example an
+2. Type the customer's name and, if you have it, their email. Both are kept on
+   the customer's profile, and the name is what the list and the Customer
+   picker on a sales order show.
+3. Describe the customer with **{field:customerType}**, for example an
    individual or a business, and note in **{field:status}** whether you are
    still dealing with them.
-3. Fill in the **{field:defaultShippingAddress}** and
+4. Fill in the **{field:defaultShippingAddress}** and
    **{field:defaultBillingAddress}** so you do not have to type them again on
    every order.
-4. Add **{field:paymentTerms}**, for example "Net 30", if you give this
+5. Add **{field:paymentTerms}**, for example "Net 30", if you give this
    customer time to pay.
-5. Save. The customer is now on your list and ready to use on a sales order.
+6. Save. The customer is now on your list and ready to use on a sales order.
 
 ### Keep track of what a customer can owe
 

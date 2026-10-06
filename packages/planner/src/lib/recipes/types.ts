@@ -60,14 +60,17 @@ export type RecipeFormValue =
   | number
   | boolean
   | null
-  | { ref: string };
+  | { ref: string; field?: string };
 
 /**
  * LOCAL. One row a form saves. Records are applied in order, so a record can
  * `{ref}` an earlier one. A record with no `match` is created (or, when the
  * form is editing, is the row being edited, for the first record). With a
  * `match` it is found by those values or created from them, so shared rows
- * such as the default location are never duplicated. `values` apply when the
+ * such as the default location are never duplicated. A `{ref, field}` is that
+ * record's value of `field` rather than its id. A `match` that points at a
+ * record LATER in the list (a Profile found by its Customer's `profileId`)
+ * locates the row when editing and is ignored when creating. `values` apply when the
  * row is created; fields mapped with `to` apply on every save. A string value
  * may use `{alias.field}` and `{alias.field|slug}` over values the form holds.
  */

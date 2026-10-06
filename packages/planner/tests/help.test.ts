@@ -334,7 +334,7 @@ describe('every recipe', () => {
     const after = render();
     expect(after.glossary.map((g) => g.name)).not.toContain('expiryDate');
     expect(lines(after.blocks).join('\n')).not.toContain('Expiry date');
-    expect(lines(after.blocks).join('\n')).toContain('Enter the Client');
+    expect(lines(after.blocks).join('\n')).toContain('Pick the Client');
     expect(after.glossary.find((g) => g.name === 'customerId')?.label).toBe(
       'Client',
     );
