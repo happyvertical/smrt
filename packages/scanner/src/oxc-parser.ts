@@ -13,6 +13,11 @@ import {
   extractAgentSurface,
   sourceMayDeclareAgentSurface,
 } from './agent-surface.js';
+import {
+  extractRecipes,
+  type RawRecipe,
+  sourceMayDeclareRecipe,
+} from './recipes.js';
 import { getLineColumn } from './source-location.js';
 import type {
   AgentSurface,
@@ -539,6 +544,7 @@ export function parseFile(filePath: string): FileScanResult {
   let typeAliases: Record<string, string> = {};
   let smrtImports: Map<string, Set<string>> | undefined;
   let agentSurface: AgentSurface | undefined;
+  let recipes: RawRecipe[] | undefined;
 
   try {
     const sourceText = readFileSync(filePath, 'utf-8');
@@ -588,6 +594,15 @@ export function parseFile(filePath: string): FileScanResult {
       }
       reportUnresolvedSpreads(ctx.unresolved, filePath, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filePath);
+      if (sourceMayDeclareRecipe(sourceText)) {
+        const found = extractRecipes({
+          body: program.body,
+          sourceText,
+          filePath: filePath,
+        });
+        errors.push(...found.errors);
+        if (found.recipes.length > 0) recipes = found.recipes;
+      }
     }
   } catch (error) {
     errors.push({
@@ -609,6 +624,9 @@ export function parseFile(filePath: string): FileScanResult {
   }
   if (agentSurface) {
     result2.agentSurface = agentSurface;
+  }
+  if (recipes) {
+    result2.recipes = recipes;
   }
   return result2;
 }
@@ -680,6 +698,47 @@ export function parseAgentSurfaceFile(
 }
 
 /**
+ * Read one file for `SmrtRecipe` declarations ONLY (#3590).
+ *
+ * The class scan's `include` is routinely narrowed to where models live, while
+ * a recipe may sit beside them or elsewhere; binding recipe discovery to that
+ * glob would drop the declaration with no diagnostic. A read or parse failure is
+ * reported as a scan error for the same reason.
+ */
+export function parseRecipeFile(filePath: string): {
+  recipes: RawRecipe[];
+  errors: ScanError[];
+} {
+  let sourceText: string;
+  try {
+    sourceText = readFileSync(filePath, 'utf-8');
+  } catch {
+    return { recipes: [], errors: [] };
+  }
+  if (!sourceMayDeclareRecipe(sourceText)) return { recipes: [], errors: [] };
+  try {
+    const result = parseSync(filePath, sourceText, {
+      lang: getLangFromFilename(filePath),
+      preserveParens: false,
+    });
+    const program = result.program as Program;
+    if (!program?.body) return { recipes: [], errors: [] };
+    return extractRecipes({ body: program.body, sourceText, filePath });
+  } catch (error) {
+    return {
+      recipes: [],
+      errors: [
+        {
+          message: error instanceof Error ? error.message : String(error),
+          filePath,
+          severity: 'error',
+        },
+      ],
+    };
+  }
+}
+
+/**
  * Parse TypeScript source text directly and extract SMRT class definitions.
  *
  * Identical to {@link parseFile} but accepts a source string instead of a
@@ -720,6 +779,7 @@ export function parseSource(
   let typeAliases: Record<string, string> = {};
   let smrtImports: Map<string, Set<string>> | undefined;
   let agentSurface: AgentSurface | undefined;
+  let recipes: RawRecipe[] | undefined;
 
   try {
     const result = parseSync(filename, sourceText, {
@@ -766,6 +826,15 @@ export function parseSource(
       }
       reportUnresolvedSpreads(ctx.unresolved, filename, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filename);
+      if (sourceMayDeclareRecipe(sourceText)) {
+        const found = extractRecipes({
+          body: program.body,
+          sourceText,
+          filePath: filename,
+        });
+        errors.push(...found.errors);
+        if (found.recipes.length > 0) recipes = found.recipes;
+      }
     }
   } catch (error) {
     errors.push({
@@ -787,6 +856,9 @@ export function parseSource(
   }
   if (agentSurface) {
     result2.agentSurface = agentSurface;
+  }
+  if (recipes) {
+    result2.recipes = recipes;
   }
   return result2;
 }

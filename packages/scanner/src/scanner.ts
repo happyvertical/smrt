@@ -15,13 +15,19 @@ import {
 } from './agent-surface.js';
 import { discoverSourceFiles } from './discovery.js';
 import { InheritanceResolver } from './inheritance-resolver.js';
-import { parseAgentSurfaceFile, parseFile } from './oxc-parser.js';
+import {
+  parseAgentSurfaceFile,
+  parseFile,
+  parseRecipeFile,
+} from './oxc-parser.js';
+import { type RawRecipe, resolveRecipes } from './recipes.js';
 import type {
   AgentSurface,
   ExternalManifest,
   FileScanResult,
   OxcScannerOptions,
   ResolvedClassDefinition,
+  ScanError,
   ScanResults,
 } from './types.js';
 
@@ -129,6 +135,8 @@ export class OxcScanner {
   private options: Required<OxcScannerOptions>;
   private resolver: InheritanceResolver;
   private scanResults: ScanResults | null = null;
+  private recipeErrors: ScanError[] = [];
+  private outsideRecipes: RawRecipe[] = [];
 
   /**
    * Create a new `OxcScanner` with the given options.
@@ -202,6 +210,7 @@ export class OxcScanner {
       fileCount: files.length,
       typeAliases: {},
       agentSurface: emptyAgentSurface(),
+      recipes: [],
     };
 
     // Flatten classes, errors, and type aliases
@@ -237,6 +246,15 @@ export class OxcScanner {
       );
     }
 
+    // Recipes outside the class glob are found by their own pass, for the same
+    // reason declarations are: a narrowed model glob must not drop them.
+    this.outsideRecipes = [];
+    if (this.options.agentSurface) {
+      const outside = await this.scanRecipesOutsideClassGlob(new Set(files));
+      this.outsideRecipes = outside.recipes;
+      results.errors.push(...outside.errors);
+    }
+
     // Add classes to resolver
     this.resolver.addClasses(results.classes);
 
@@ -264,7 +282,24 @@ export class OxcScanner {
       throw new Error('Must call scan() before resolve()');
     }
 
-    return this.resolver.resolveAll();
+    const resolved = this.resolver.resolveAll();
+
+    // Recipes name model classes, so they resolve only once the classes do.
+    // Their errors join the scan errors every caller already fails closed on.
+    const raw = [
+      ...this.scanResults.files.flatMap((file) => file.recipes ?? []),
+      ...this.outsideRecipes,
+    ];
+    const { recipes, errors } = resolveRecipes(raw, resolved);
+    this.scanResults.recipes = recipes;
+    // resolve() may run more than once; never report the same error twice.
+    this.scanResults.errors = this.scanResults.errors.filter(
+      (error) => !this.recipeErrors.includes(error),
+    );
+    this.recipeErrors = errors;
+    this.scanResults.errors.push(...errors);
+
+    return resolved;
   }
 
   /**
@@ -463,6 +498,39 @@ export class OxcScanner {
       if (surface) surfaces.push(surface);
     }
     return surfaces;
+  }
+
+  /**
+   * Find `SmrtRecipe` declarations in files the CLASS scan did not cover.
+   *
+   * Same rule as {@link scanDeclarationsOutsideClassGlob}: the model glob is
+   * narrowed to where models live, a recipe need not live there, and a recipe
+   * that vanished with no diagnostic is the failure to prevent.
+   */
+  private async scanRecipesOutsideClassGlob(
+    alreadyScanned: ReadonlySet<string>,
+  ): Promise<{ recipes: RawRecipe[]; errors: ScanError[] }> {
+    const out = { recipes: [] as RawRecipe[], errors: [] as ScanError[] };
+    if (this.options.agentSurfaceInclude.length === 0) return out;
+    let files: string[];
+    try {
+      files = await discoverSourceFiles({
+        cwd: this.options.cwd,
+        include: this.options.agentSurfaceInclude,
+        exclude: [...this.options.exclude, ...AGENT_SURFACE_PRUNE],
+        followSymbolicLinks: this.options.followSymbolicLinks,
+      });
+    } catch {
+      return out;
+    }
+    for (const filePath of files) {
+      if (alreadyScanned.has(filePath)) continue;
+      if (!isAgentSurfaceSourcePath(filePath, this.options.cwd)) continue;
+      const found = parseRecipeFile(filePath);
+      out.recipes.push(...found.recipes);
+      out.errors.push(...found.errors);
+    }
+    return out;
   }
 
   /**

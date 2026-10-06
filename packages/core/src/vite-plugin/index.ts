@@ -1672,6 +1672,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         packageName,
         packageVersion,
         typeAliases: results.typeAliases,
+        recipes: results.recipes,
       });
 
       // Add moduleType identifier

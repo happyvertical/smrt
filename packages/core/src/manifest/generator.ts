@@ -338,6 +338,7 @@ export class ManifestBuilder {
       packageName,
       packageVersion,
       typeAliases: results.typeAliases,
+      recipes: results.recipes,
     });
 
     // Set smrtDependencies BEFORE mergeInheritedFields so external packages can be loaded

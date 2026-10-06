@@ -1,0 +1,82 @@
+/**
+ * `SmrtRecipe` — a declared, user-facing unit of app functionality (#3590).
+ *
+ * A recipe is smaller than a package: "Sales" or "Customers", not all of
+ * smrt-commerce. It names the models that make up the unit, the navigation
+ * entries it contributes, the recipes it needs first, and curation hints for
+ * how its models' forms present. It is declaration only: not persisted and not
+ * `@smrt()`-decorated.
+ *
+ * Declare a recipe as a subclass with static properties, in the package that
+ * owns the models. The scanner reads the statics at build time and emits them
+ * as the top-level `recipes` array of `manifest.json` and
+ * `smrt-knowledge.json`; nothing here runs at that point, so every static must
+ * be spelled literally (model entries are class references).
+ *
+ * @example
+ * ```typescript
+ * export class SalesRecipe extends SmrtRecipe {
+ *   static id = 'commerce.sales';
+ *   static label = 'Sales';
+ *   static summary = 'Take customer orders and track them.';
+ *   static synonyms = ['sales orders', 'orders'];
+ *   static models = [Order];
+ *   static nav = [{ label: 'Sales Orders', model: Order }];
+ *   static requires = ['commerce.customers'];
+ *   static options = {
+ *     Order: { fields: { status: { default: 'draft', locked: true } } },
+ *   };
+ * }
+ * ```
+ */
+
+import type {
+  RecipeExposureNarrowing,
+  RecipeFieldOptions,
+} from '@happyvertical/smrt-types';
+
+/**
+ * A model class as a recipe references it. Any constructor qualifies; the
+ * parameter list is `never[]` so models with required constructor options
+ * remain assignable.
+ */
+export type SmrtRecipeModel = abstract new (...args: never[]) => object;
+
+/** One navigation entry a recipe contributes. */
+export interface SmrtRecipeNavEntry {
+  label: string;
+  model: SmrtRecipeModel;
+}
+
+/**
+ * Curation hints for one model, keyed in `static options` by the model's class
+ * name. Hints only ever refine what the model already declares: they name its
+ * existing fields and can narrow, never widen, its API/MCP/CLI exposure.
+ */
+export interface SmrtRecipeModelOptions {
+  fields?: Record<string, RecipeFieldOptions>;
+  exposure?: {
+    api?: RecipeExposureNarrowing;
+    mcp?: RecipeExposureNarrowing;
+    cli?: RecipeExposureNarrowing;
+  };
+}
+
+export abstract class SmrtRecipe {
+  /** Stable dotted id, e.g. `commerce.sales`. Unique across all recipes. */
+  static id: string;
+  /** Display name, e.g. `Sales`. */
+  static label: string;
+  /** One sentence on what the unit gives the user. */
+  static summary: string;
+  /** Other words someone might use to ask for it. */
+  static synonyms: readonly string[] = [];
+  /** Models the unit brings. They must belong to the declaring package. */
+  static models: readonly SmrtRecipeModel[];
+  /** Navigation entries; each model must also be listed in `models`. */
+  static nav: readonly SmrtRecipeNavEntry[] = [];
+  /** Ids of recipes needed first; they may live in other packages. */
+  static requires: readonly string[] = [];
+  /** Curation hints keyed by model class name. */
+  static options: Readonly<Record<string, SmrtRecipeModelOptions>> = {};
+}

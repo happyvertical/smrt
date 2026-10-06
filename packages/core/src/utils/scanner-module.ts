@@ -1,6 +1,7 @@
 import type {
   CapabilityClassification,
   DomainKnowledgePlaybookStep,
+  RecipeDefinition,
 } from '@happyvertical/smrt-types';
 import type { SmartObjectManifest } from '../scanner/types.js';
 
@@ -58,6 +59,7 @@ export interface OxcScannerLike {
         severity: 'error' | 'warning';
       }>;
       agentSurface?: ScannerAgentSurface;
+      recipes?: RecipeDefinition[];
     };
     resolved: unknown[];
   }>;
@@ -83,6 +85,7 @@ export interface ManifestAdapterLike {
       packageName?: string;
       packageVersion?: string;
       typeAliases: Record<string, string>;
+      recipes?: RecipeDefinition[];
     },
   ): SmartObjectManifest;
 }

@@ -63,6 +63,12 @@ export {
   SmrtPolymorphicAssociation,
   type SmrtPolymorphicAssociationOptions,
 } from './polymorphic-association';
+export {
+  SmrtRecipe,
+  type SmrtRecipeModel,
+  type SmrtRecipeModelOptions,
+  type SmrtRecipeNavEntry,
+} from './recipe';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Universal signaling system

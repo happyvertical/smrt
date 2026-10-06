@@ -2,6 +2,7 @@
  * Type definitions for AST scanning and manifest generation
  */
 
+import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import type { SmartObjectConfig } from '../registry.js';
 
 /**
@@ -601,6 +602,12 @@ export interface SmartObjectManifest {
    * identity wherever a consumer bundles them.
    */
   stampsConstructors?: true;
+  /**
+   * Declared recipes (#3590): user-facing units of app functionality that
+   * group models, navigation, and prerequisites. Model names are qualified.
+   * Omitted when the package declares none.
+   */
+  recipes?: RecipeDefinition[];
 }
 
 export interface ScanResult {
