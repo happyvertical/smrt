@@ -52,10 +52,15 @@ async function confirmRemove() {
       target = undefined;
     }
   } else if (form) {
+    // Native POST: stay pending until navigation; a restored (bfcache)
+    // page releases the controls again.
+    running = true;
     form.requestSubmit();
   }
 }
 </script>
+
+<svelte:window onpageshow={(event) => { if (event.persisted) { running = false; target = undefined; } }} />
 
 {#snippet entry(item: AssetAttachmentVersion)}
   <strong>{item.name}</strong>

@@ -122,7 +122,11 @@ describe('attachment remove action', () => {
   });
 
   it('native mode posts id, hidden fields and intent after confirmation', async () => {
-    const submit = vi.fn((e: SubmitEvent) => e.preventDefault());
+    let posted: FormData | undefined;
+    const submit = vi.fn((e: SubmitEvent) => {
+      e.preventDefault();
+      posted = new FormData(e.target as HTMLFormElement);
+    });
     document.addEventListener('submit', submit as EventListener);
     const { container } = render(AttachmentPanel, {
       props: {
@@ -140,11 +144,29 @@ describe('attachment remove action', () => {
       }),
     );
     expect(submit).toHaveBeenCalledTimes(1);
+    // Pending until navigation: a second confirmation cannot post again.
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Remove',
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Remove Quote.pdf', hidden: true }),
+    ).toBeDisabled();
+    // A restored (bfcache) page releases the controls.
+    const restored = new Event('pageshow') as Event & { persisted: boolean };
+    Object.defineProperty(restored, 'persisted', { value: true });
+    window.dispatchEvent(restored);
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Remove Quote.pdf' }),
+      ).toBeEnabled(),
+    );
     const form = container.querySelector(
       'form[action="/assemblies/1?/remove"]',
     ) as HTMLFormElement;
     expect(form.method).toBe('post');
-    const data = new FormData(form);
+    const data = posted as FormData;
     expect(data.get('attachmentId')).toBe('a3');
     expect(data.get('requestId')).toBe('r-1');
     expect(data.get('intent')).toBe('remove');
