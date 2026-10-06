@@ -499,6 +499,23 @@ describe('variant grid form (clothing)', () => {
     ).toEqual([{ size: 'M' }, { size: 'L' }, { size: 'XL' }]);
   });
 
+  it('keeps Sku codes unique when values slug alike, and defaults untouched cells', async () => {
+    const s = source();
+    const active = grid(['products.clothing', 'inventory.stock']);
+    const state = blankGrid(active, catalogModels);
+    state.values = { name: 'Tee', price: 1 };
+    state.axes = { size: ['S'], color: ['Navy Blue', 'Navy-Blue'] };
+    await s.apply(planGridSave(active, catalogModels, state));
+    const skus = await s.list(sku);
+    expect(skus).toHaveLength(2);
+    expect(new Set(skus.map((r) => r.code)).size).toBe(2);
+    expect(
+      skus.map((r) => JSON.parse(String(r.attributes)).color).sort(),
+    ).toEqual(['Navy Blue', 'Navy-Blue']);
+    // Untouched cells carry the declared default quantity, not null.
+    expect((await s.list(level)).map((l) => l.qty)).toEqual([0, 0]);
+  });
+
   it('names Skus from the product and the values', () => {
     expect(
       skuCode('Rain Jacket', {
@@ -545,7 +562,7 @@ describe('Inventory extends the clothing grid', () => {
     };
     expect(qtyOf('M', 'navy')).toBe(4);
     expect(qtyOf('L', 'red')).toBe(9);
-    expect(qtyOf('S', 'navy')).toBeNull();
+    expect(qtyOf('S', 'navy')).toBe(0);
     expect(stockByProduct(skus, levels).get(saved?.id ?? '')).toBe(13);
 
     // Reload shows the quantities back in the cells.

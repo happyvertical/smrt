@@ -15,6 +15,7 @@ import {
   SKU,
   STOCK_LEVEL,
   stockByProduct,
+  VARIANT,
 } from '../forms/stock.ts';
 import FieldMapForm from './FieldMapForm.svelte';
 import VariantGridForm from './VariantGridForm.svelte';
@@ -43,9 +44,8 @@ let formKey = $state(0);
 
 async function load() {
   rows = await source.list(model);
-  const variants = gridForm
-    ? await source.list(catalogModels(gridForm.form.variants))
-    : [];
+  // Rows with axes are Clothing even when its recipe is off.
+  const variants = await source.list(catalogModels(VARIANT));
   withAxes = new Set(variants.map((v) => String(v.productId)));
   stock = showStock
     ? stockByProduct(

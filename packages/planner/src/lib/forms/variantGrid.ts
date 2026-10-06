@@ -343,11 +343,21 @@ export function planGridSave(
   }
 
   const productName = productContext['product.name'];
+  // Codes stay unique in the plan: values that slug alike get a numeric suffix
+  // instead of being found-and-merged as one Sku.
+  const usedCodes = new Set(
+    (existing?.skus ?? []).map((row) => String(row.code ?? '')),
+  );
   combos.forEach((combo, i) => {
     const current = byKey.get(combo.key);
     const label = combo.values.join(' / ');
     const name = `${String(productName ?? '').trim() || 'Item'} (${label})`;
-    const code = skuCode(productName, combo);
+    const baseCode = skuCode(productName, combo);
+    let code = baseCode;
+    for (let n = 2; !current && usedCodes.has(code); n++) {
+      code = `${baseCode}-${n}`;
+    }
+    usedCodes.add(code);
     const skuAlias = `sku#${i}`;
     const values = {
       name,
@@ -366,7 +376,10 @@ export function planGridSave(
           },
     );
 
-    const cell = state.cells[combo.key] ?? {};
+    const cell = {
+      ...blankCell(active, models),
+      ...(state.cells[combo.key] ?? {}),
+    };
     const rename = (alias: string) =>
       alias === 'product'
         ? alias
