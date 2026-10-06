@@ -1037,7 +1037,12 @@ function relationshipFeatures(
     if (field.type === 'oneToMany') features.add('oneToMany');
     if (field.type === 'manyToMany') features.add('manyToMany');
   }
-  if (object.extends === 'SmrtJunction') features.add('SmrtJunction');
+  if (
+    object.extends === 'SmrtJunction' ||
+    object.extends === 'SmrtJunctionBase'
+  ) {
+    features.add('SmrtJunction');
+  }
   if (object.extends === 'SmrtHierarchical') features.add('SmrtHierarchical');
   if (
     object.extends === 'SmrtPolymorphicAssociation' ||

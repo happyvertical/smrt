@@ -2,7 +2,7 @@
  * Regression test for #2642.
  *
  * `@happyvertical/smrt-core` ships a manifest whose only contents are its
- * six abstract framework base classes (`SmrtObject`, `SmrtClass`,
+ * abstract framework base classes (`SmrtObject`, `SmrtClass`,
  * `SmrtCollection`, `SmrtHierarchical`, `SmrtJunction`,
  * `SmrtPolymorphicAssociation`). They carry no `@smrt()` decorator and have
  * no independent existence as a resource — but a foundation package declares
@@ -65,7 +65,8 @@ function objectDef(
 }
 
 /**
- * The exact six classes core's own shipped `dist/manifest.json` contains —
+ * Framework classes shipped in core's `dist/manifest.json`, including the
+ * shared junction base added for #3178 —
  * see the issue's "already proven" step and this repo's Phase 1
  * verification for #2642.
  */
@@ -78,6 +79,12 @@ const FRAMEWORK_BASE_FIXTURE: Record<string, SmartObjectDefinition> = {
     CORE_PKG,
     { parentId: { type: 'text', required: false } },
     'SmrtObject',
+  ),
+  [`${CORE_PKG}:SmrtJunctionBase`]: objectDef(
+    'SmrtJunctionBase',
+    CORE_PKG,
+    {},
+    'SmrtCollection',
   ),
   [`${CORE_PKG}:SmrtJunction`]: objectDef(
     'SmrtJunction',
@@ -141,7 +148,7 @@ describe('issue #2642: framework base classes produce no table', () => {
     restoreRegistry();
   });
 
-  it('plans no table for any of the six framework base classes', async () => {
+  it('plans no table for any framework base class', async () => {
     const schemas = await ObjectRegistry.getAllSchemasAsDefinitions();
     const tableNames = Object.keys(schemas);
 
@@ -151,6 +158,7 @@ describe('issue #2642: framework base classes produce no table', () => {
       'smrt_hierarchicals',
       'smrt_objects',
       'smrt_junctions',
+      'smrt_junction_bases',
       'smrt_polymorphic_associations',
     ];
     for (const table of frameworkBaseTables) {
