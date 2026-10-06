@@ -57,12 +57,14 @@ const text = $derived(
       ? JSON.stringify(value)
       : String(value),
 );
-const enumOptions = $derived(
-  (field.enum ?? []).map((option) => ({
+// An optional enum can be cleared again, as the native select it replaces could.
+const enumOptions = $derived([
+  ...(required ? [] : [{ value: '', label: '(none)' }]),
+  ...(field.enum ?? []).map((option) => ({
     value: option,
     label: enumLabel(option),
   })),
-);
+]);
 
 function numberFrom(raw: string): number | null {
   if (raw.trim() === '') return null;
