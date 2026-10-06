@@ -10,6 +10,10 @@ describe('db command utilities', () => {
   describe('redactDatabaseUrl', () => {
     it('is the smrt-core helper, so the CLI has one redaction path (#3527)', async () => {
       const core = await import('@happyvertical/smrt-core');
+      const subpath = await import(
+        '@happyvertical/smrt-core/utils/database-url'
+      );
+      expect(core.redactDatabaseUrl).toBe(subpath.redactDatabaseUrl);
       expect(redactDatabaseUrl).toBe(core.redactDatabaseUrl);
       expect(redactDatabaseUrlsInText).toBe(core.redactDatabaseUrlsInText);
     });

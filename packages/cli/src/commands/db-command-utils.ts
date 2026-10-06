@@ -1,10 +1,11 @@
 import {
   redactDatabaseUrl,
   redactDatabaseUrlsInText,
-} from '@happyvertical/smrt-core';
+} from '@happyvertical/smrt-core/utils/database-url';
 
-// The one redaction helper pair lives in smrt-core (#3527); command modules
-// import it from here alongside the other db-command utilities.
+// The one redaction helper pair lives in smrt-core (#3527). The dependency-
+// free subpath keeps it out of the root module that command tests mock;
+// command modules import it from here alongside the other db utilities.
 export { redactDatabaseUrl, redactDatabaseUrlsInText };
 
 type MaybeCloseableDatabase = {
