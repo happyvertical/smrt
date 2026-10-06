@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Switch } from '@happyvertical/smrt-ui/forms';
 import { exposedModels, getPackage } from '$lib/catalog/index.ts';
 import SurfacePanel from '$lib/components/SurfacePanel.svelte';
 import { humanize } from '$lib/data/format.ts';
@@ -31,18 +32,17 @@ const lockedBy = $derived(selection.requiredBy(data.id));
           {/each}
         </p>
       {/if}
-      <label class="toggle">
-        <input
-          type="checkbox"
-          checked={selected}
-          disabled={selected && lockedBy.length > 0}
-          onchange={() => selection.toggle(pkg.id)}
-        />
-        {selected ? 'In your app' : 'Add to my app'}
-        {#if selected && lockedBy.length > 0}
-          (needed by {lockedBy.map(humanize).join(', ')})
-        {/if}
-      </label>
+      <Switch
+        checked={selected}
+        disabled={selected && lockedBy.length > 0}
+        onchange={() => selection.toggle(pkg.id)}
+        aria-label={`Include ${humanize(pkg.id)} in my app`}
+        label={selected && lockedBy.length > 0
+          ? `In your app (needed by ${lockedBy.map(humanize).join(', ')})`
+          : selected
+            ? 'In your app'
+            : 'Add to my app'}
+      />
     </header>
 
     <section>
@@ -94,10 +94,4 @@ const lockedBy = $derived(selection.requiredBy(data.id));
     padding-left: var(--smrt-spacing-5);
   }
 
-  .toggle {
-    display: flex;
-    gap: var(--smrt-spacing-2);
-    align-items: center;
-    font-weight: 500;
-  }
 </style>

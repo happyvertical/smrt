@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Switch } from '@happyvertical/smrt-ui/forms';
 import {
   catalog,
   exposedModels,
@@ -88,21 +89,17 @@ function toggle(id: string) {
               Needs: {pkg.dependencies.map(humanize).join(', ')}
             </p>
           {/if}
-          <label class="toggle">
-            <input
-              type="checkbox"
-              checked={selected}
-              disabled={selected && lockedBy.length > 0}
-              onchange={() => toggle(pkg.id)}
-            />
-            {#if selected && lockedBy.length > 0}
-              In your app (needed by {lockedBy.map(humanize).join(', ')})
-            {:else if selected}
-              In your app
-            {:else}
-              Add to my app
-            {/if}
-          </label>
+          <Switch
+            checked={selected}
+            disabled={selected && lockedBy.length > 0}
+            onchange={() => toggle(pkg.id)}
+            aria-label={`Include ${humanize(pkg.id)} in my app`}
+            label={selected && lockedBy.length > 0
+              ? `In your app (needed by ${lockedBy.map(humanize).join(', ')})`
+              : selected
+                ? 'In your app'
+                : 'Add to my app'}
+          />
         </li>
       {:else}
         <li class="none">No packages match "{query}".</li>
@@ -194,12 +191,6 @@ function toggle(id: string) {
     line-clamp: 3;
   }
 
-  .toggle {
-    display: flex;
-    gap: var(--smrt-spacing-2);
-    align-items: center;
-    font-weight: 500;
-  }
 
   .search input {
     width: min(100%, 28rem);

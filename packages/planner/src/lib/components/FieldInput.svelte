@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Switch } from '@happyvertical/smrt-ui/forms';
 import type { CatalogField } from '../catalog/types.ts';
 import { isMoneyField } from '../data/fakes.ts';
 import { humanize, parseMoney } from '../data/format.ts';
@@ -47,14 +48,11 @@ function jsonFrom(raw: string): unknown {
 
 <div class="field">
   {#if field.type === 'boolean'}
-    <label class="check">
-      <input
-        type="checkbox"
-        checked={value === true}
-        onchange={(event) => onchange(event.currentTarget.checked)}
-      />
+    <Switch
+      checked={value === true}
+      onchange={(event) => onchange(event.currentTarget.checked)}
       {label}
-    </label>
+    />
   {:else}
     <label for={id}>
       {label}
@@ -148,11 +146,6 @@ function jsonFrom(raw: string): unknown {
     color: var(--smrt-color-on-surface-variant);
   }
 
-  .check {
-    display: flex;
-    gap: var(--smrt-spacing-2);
-    align-items: center;
-  }
 
   input[type='text'],
   input[type='number'],

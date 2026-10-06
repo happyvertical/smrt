@@ -19,7 +19,8 @@
     "lint": "biome ci ."
   },
   "dependencies": {
-    "@happyvertical/smrt-svelte": "^0.54.3"
+    "@happyvertical/smrt-svelte": "^0.54.3",
+    "@happyvertical/smrt-ui": "^0.54.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.3",

@@ -11,6 +11,9 @@ importers:
       '@happyvertical/smrt-svelte':
         specifier: ^0.54.3
         version: 0.54.3(svelte@5.57.1)(typescript@6.0.3)(ws@8.22.0)
+      '@happyvertical/smrt-ui':
+        specifier: ^0.54.3
+        version: 0.54.3(svelte@5.57.1)
     devDependencies:
       '@biomejs/biome':
         specifier: 2.5.3
