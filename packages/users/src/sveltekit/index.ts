@@ -217,6 +217,12 @@ export interface OidcSvelteKitOptions
   provider?: OidcProviderResolver;
   /** Callback path used when provider.redirectUri is omitted. */
   callbackPath?: string | ((providerName: string) => string);
+  /**
+   * Path of the route that starts the login (the `createOidcLoginHandler`
+   * route). Defaults to `/auth/<provider>/login`. Only used to derive the
+   * IdP landing URL in {@link getOidcClientRegistration}.
+   */
+  loginPath?: string | ((providerName: string) => string);
   /** Query parameter used to preserve post-login redirects. */
   returnToParam?: string;
   /** Prefix for the temporary OIDC transaction cookie. */
@@ -261,6 +267,19 @@ export interface OidcSvelteKitOptions
   failureRedirect?:
     | string
     | ((error: unknown, event: SvelteKitRequestEvent) => string);
+}
+
+/** URLs to register with the IdP for one SMRT OIDC client. */
+export interface OidcClientRegistration {
+  providerName: string;
+  /** Callback URL: register as the client's allowed redirect URL. */
+  redirectUri: string;
+  /**
+   * Login start URL: register as the client's landing / initiate-login URL
+   * (Kanidm `set-landing-url`). The IdP links its app tile here, so a user
+   * whose pending authorization the IdP discarded can resume sign-in.
+   */
+  landingUrl: string;
 }
 
 export interface BeginOidcLoginResult {
@@ -674,6 +693,17 @@ function resolveCallbackPath(
   return options.callbackPath ?? `/auth/${providerName}/callback`;
 }
 
+function resolveLoginPath(
+  providerName: string,
+  options: OidcSvelteKitOptions,
+): string {
+  if (typeof options.loginPath === 'function') {
+    return options.loginPath(providerName);
+  }
+
+  return options.loginPath ?? `/auth/${providerName}/login`;
+}
+
 function resolveProviderWithRedirectUri(
   event: SvelteKitRequestEvent,
   providerName: string,
@@ -996,6 +1026,49 @@ export async function completeOidcLogin(
 }
 
 /**
+ * Derive the URLs an IdP client registration must carry for this app, from the
+ * same options the login and callback handlers use.
+ *
+ * Register `redirectUri` as the allowed redirect URL and `landingUrl` as the
+ * client's landing URL. Kanidm discards a pending authorization whenever the
+ * user detours through its own login page (for example "Return to Login"
+ * after a mistyped password) and then lands the user in its apps panel; the
+ * landing URL is the only way back, so it must start the app's login rather
+ * than open its signed-out home page.
+ *
+ * @example
+ * ```typescript
+ * const { redirectUri, landingUrl } = getOidcClientRegistration(
+ *   'https://app.example.com',
+ *   { provider: 'kanidm' },
+ * );
+ * // kanidm system oauth2 add-redirect-url <client> <redirectUri>
+ * // kanidm system oauth2 set-landing-url <client> <landingUrl>
+ * ```
+ */
+export function getOidcClientRegistration(
+  origin: string | URL,
+  options: Omit<OidcSvelteKitOptions, 'provider'> & { provider?: string } = {},
+): OidcClientRegistration {
+  const resolved = resolveOidcProviderConfig(options.provider, options);
+  const baseOrigin = new URL(origin).origin;
+
+  return {
+    providerName: resolved.providerName,
+    redirectUri:
+      resolved.provider.redirectUri ??
+      new URL(
+        resolveCallbackPath(resolved.providerName, options),
+        baseOrigin,
+      ).toString(),
+    landingUrl: new URL(
+      resolveLoginPath(resolved.providerName, options),
+      baseOrigin,
+    ).toString(),
+  };
+}
+
+/**
  * Create a SvelteKit GET handler that redirects to an OIDC provider.
  *
  * @example
@@ -1007,6 +1080,9 @@ export async function completeOidcLogin(
  *   db: { type: 'postgres', url: process.env.DATABASE_URL! },
  * });
  * ```
+ *
+ * Register this route as the IdP client's landing URL; see
+ * {@link getOidcClientRegistration}.
  */
 export function createOidcLoginHandler(options: OidcSvelteKitOptions) {
   return async (event: SvelteKitRequestEvent): Promise<Response> => {

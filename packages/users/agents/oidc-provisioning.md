@@ -12,6 +12,12 @@ OIDC handlers, or identity migrations. The canonical scenario matrix is
   `iss` against discovered metadata with exact string comparison before trusting
   a code or error. If metadata advertises issuer-response support, `iss` is
   required.
+- **The login start route is the IdP landing URL (#3569).** Kanidm drops a
+  pending authorization after any detour through its `/ui/login` and strands the
+  user in its apps panel; the client landing URL is the only way back.
+  `getOidcClientRegistration()` derives it from `loginPath` (default
+  `/auth/<provider>/login`) alongside the callback URL; keep the login handler
+  safe to enter with no query string.
 - **Verified-email Profile reuse is fail-closed.** The typed canonical scenarios
   live in
   `packages/profiles/src/testing/oidcProvisioningDecisionMatrix.ts`; both
