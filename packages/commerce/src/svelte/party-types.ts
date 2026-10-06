@@ -209,6 +209,9 @@ export interface PartyDirectoryItem<T> {
 /** Optional consumer content appended to a directory row. */
 export type PartyDirectoryExtension<T> = Snippet<[T]>;
 
+/** Optional caller-owned GET controls rendered with directory search and status. */
+export type PartyDirectoryFilters = Snippet;
+
 /** Optional consumer content appended to a detail or form. */
 export type PartyExtension<T> = Snippet<[T]>;
 
