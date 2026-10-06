@@ -5,8 +5,8 @@
  * Ensures compatibility with existing manifest consumers.
  */
 
-import { type EnumValue, resolveEnumValues } from './enum-values.js';
 import type { RecipeDefinition } from '@happyvertical/smrt-types';
+import { type EnumValue, resolveEnumValues } from './enum-values.js';
 import { isSafeObjectKey } from './oxc-parser.js';
 import type {
   FieldTypeInference,
