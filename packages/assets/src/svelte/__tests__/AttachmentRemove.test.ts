@@ -144,19 +144,7 @@ describe('attachment remove action', () => {
       }),
     );
     expect(submit).toHaveBeenCalledTimes(1);
-    // Pending until navigation: a second confirmation cannot post again.
-    expect(
-      within(screen.getByRole('dialog')).getByRole('button', {
-        name: 'Remove',
-      }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole('button', { name: 'Remove Quote.pdf', hidden: true }),
-    ).toBeDisabled();
-    // A restored (bfcache) page releases the controls.
-    const restored = new Event('pageshow') as Event & { persisted: boolean };
-    Object.defineProperty(restored, 'persisted', { value: true });
-    window.dispatchEvent(restored);
+    // The test listener cancelled the submission: controls are released.
     await vi.waitFor(() =>
       expect(
         screen.getByRole('button', { name: 'Remove Quote.pdf' }),
@@ -171,6 +159,43 @@ describe('attachment remove action', () => {
     expect(data.get('requestId')).toBe('r-1');
     expect(data.get('intent')).toBe('remove');
     document.removeEventListener('submit', submit as EventListener);
+  });
+
+  it('stays pending during an accepted native POST until a restored page', async () => {
+    const submit = vi.fn(); // observes without cancelling: navigation would follow
+    const block = (e: Event) => e.preventDefault();
+    const spy = (e: Event) => {
+      submit();
+      queueMicrotask(() => block(e));
+    };
+    document.addEventListener('submit', spy);
+    render(AttachmentList, { props: { attachments, removeAction: '/r' } });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Remove Photo.png' }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Remove',
+      }),
+    );
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Remove',
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Remove Quote.pdf', hidden: true }),
+    ).toBeDisabled();
+    const restored = new Event('pageshow') as Event & { persisted: boolean };
+    Object.defineProperty(restored, 'persisted', { value: true });
+    window.dispatchEvent(restored);
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Remove Quote.pdf' }),
+      ).toBeEnabled(),
+    );
+    document.removeEventListener('submit', spy);
   });
 
   it('touch density reaches the buttons and the list has no a11y violations', async () => {

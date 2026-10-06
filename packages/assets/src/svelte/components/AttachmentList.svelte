@@ -53,14 +53,14 @@ async function confirmRemove() {
     }
   } else if (form) {
     // Native POST: stay pending until navigation; a restored (bfcache)
-    // page releases the controls again.
+    // page or a submission cancelled by an enhancing listener releases the controls again.
     running = true;
     form.requestSubmit();
   }
 }
 </script>
 
-<svelte:window onpageshow={(event) => { if (event.persisted) { running = false; target = undefined; } }} />
+<svelte:window onsubmit={(event) => { if (event.target === form && event.defaultPrevented) { running = false; target = undefined; } }} onpageshow={(event) => { if (event.persisted) { running = false; target = undefined; } }} />
 
 {#snippet entry(item: AssetAttachmentVersion)}
   <strong>{item.name}</strong>
