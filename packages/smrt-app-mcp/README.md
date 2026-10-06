@@ -23,12 +23,28 @@ import { Item } from '$lib/objects/Item';
 import { runtime } from '$lib/server/smrt';
 
 export const POST = mountMcpAppRoute({
+  runtime,
   models: [Item],
   requiredScopes: ['items.read'],
-  // Per request: under RLS this is the request's transaction-bound database.
-  smrtOptions: () => ({ db: runtime.databaseConfig() }),
+  effects: ['read'],
 });
 ```
+
+- **Runtime** — `runtime` (any `McpAppRouteRuntime`; the SMRT SvelteKit
+  runtime satisfies it) supplies three bindings, each still overridable:
+  `smrtOptions` defaults to `() => ({ db: runtime.databaseConfig() })` (under
+  RLS, the request's transaction-bound database), `bindPrincipal` to
+  `runtime.runAsPrincipal`, and `auth` to
+  `createHostedMcpResourceAuth({ profile, runtime })` for the profile resolved
+  on each request (after the origin check), so the module has no top-level
+  `await`. It fails closed: a runtime missing a binding throws at mount; an
+  unresolvable or unknown profile, or a hosted profile without its
+  `SMRT_MCP_*` configuration, rejects the request (HTTP 500) before any
+  dispatch rather than serving it without the profile's bearer adapter. An
+  explicit
+  `auth` (including `null`), `bindPrincipal` or `smrtOptions` is used as
+  given. Without `runtime`, pass `smrtOptions` (and optionally `auth` and
+  `bindPrincipal`) yourself, as before.
 
 - **Allow-list** — exactly the `models` listed (registered `@smrt()`
   constructors; anything else throws at construction). Other registered
@@ -122,26 +138,38 @@ that fails before dispatch answers HTTP 403 with the safe
 `mcp_tool_access_denied` error; the response is materialized inside the
 binding. `createHostedMcpResourceAuth` from `./auth` builds that source from
 `SMRT_MCP_RESOURCE`, `SMRT_MCP_ISSUER`, `SMRT_MCP_JWKS_URI` and
-`SMRT_MCP_SCOPES`, caching one adapter and retrying a failed construction:
+`SMRT_MCP_SCOPES`, caching one adapter and retrying a failed construction.
+`mountMcpAppRoute({ runtime })` and
+`mountMcpProtectedResourceMetadataRoute({ runtime })` build it for you, one
+shared adapter per runtime and profile:
+
+```ts
+// api/mcp/+server.ts
+export const POST = mountMcpAppRoute({
+  runtime, models: [Item], requiredScopes: ['items.read'], effects: ['read'],
+});
+// .well-known/oauth-protected-resource/api/mcp/+server.ts
+export const GET = mountMcpProtectedResourceMetadataRoute({ runtime });
+```
+
+The hand-wired equivalent, still supported (and the way to pass
+`resolvePrincipal` to override the hosted identity mapping), is:
 
 ```ts
 import { createHostedMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
 const { profile } = await runtime.resolvedRuntime();
-// `runtime` supplies both credential bindings (see below); pass
-// `resolvePrincipal` as well to override the hosted identity mapping.
 const auth = createHostedMcpResourceAuth({ profile, runtime });
-// api/mcp/+server.ts
 export const POST = mountMcpAppRoute({
   models: [Item], requiredScopes: ['items.read'], effects: ['read'],
-  smrtOptions, auth, bindPrincipal: runtime.runAsPrincipal,
+  smrtOptions: () => ({ db: runtime.databaseConfig() }),
+  auth, bindPrincipal: runtime.runAsPrincipal,
 });
-// .well-known/oauth-protected-resource/api/mcp/+server.ts
 export const GET = mountMcpProtectedResourceMetadataRoute(auth);
 ```
 
-The `runtime` option takes any object with the optional
-`verifyLocalMcpToken(token)` and `resolveMcpPrincipal(identity)` methods; the
-s-m-r-t SvelteKit runtime has both.
+`createHostedMcpResourceAuth`'s `runtime` option takes any object with the
+optional `verifyLocalMcpToken(token)` and `resolveMcpPrincipal(identity)`
+methods; the s-m-r-t SvelteKit runtime has both.
 
 - **Local profile.** With `verifyLocalMcpToken`, the source yields the
   `createLocalMcpTokenAuth` adapter for owner-minted tokens

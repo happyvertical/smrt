@@ -39,6 +39,14 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   re-check the originating action against the allow-list and `effects`,
   after a principal-level `taskPrincipalPolicy` (defaults: scope policy);
   `mountMcpProtectedResourceMetadataRoute` serves only the advertised path.
+- `runtime` (structural `McpAppRouteRuntime`; no app-runtime dependency)
+  derives `smrtOptions`, `bindPrincipal` and `auth` on both mounts, the
+  profile resolved per request after the origin check (adapters memoized per
+  runtime × profile). Fail closed: missing bindings throw at mount; an
+  unresolvable profile or missing hosted config rejects (500), never serves
+  without the bearer adapter. Explicit options override; keep both forms
+  byte-identical (`runtime-route.test.ts`). `./auth` loads lazily from
+  `./sveltekit`.
 - `createHostedMcpResourceAuth({ profile, runtime })`: locally, a runtime
   `verifyLocalMcpToken` yields the `sessionFallback` adapter
   (`createLocalMcpTokenAuth`): no `Authorization` header keeps the session

@@ -10,10 +10,12 @@
  * // src/routes/api/mcp/+server.ts — one call with the app defaults
  * import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
  * import { Item } from '$lib/objects/Item';
+ * import { runtime } from '$lib/server/smrt';
  * export const POST = mountMcpAppRoute({
+ *   runtime,
  *   models: [Item],
  *   requiredScopes: ['items.read'],
- *   smrtOptions: () => ({ db: getDatabaseConfig() }),
+ *   effects: ['read'],
  * });
  * ```
  *
@@ -26,12 +28,19 @@
  * ```
  */
 
+import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import {
   classifyInboundRequest,
   createMcpHandler,
   isJsonContentType,
 } from '@modelcontextprotocol/server';
-import type { McpResourceAuth } from './auth.js';
+import type {
+  McpDeploymentProfile,
+  McpLocalTokenPrincipal,
+  McpPrincipalMapping,
+  McpResourceAuth,
+  McpVerifiedIdentity,
+} from './auth.js';
 import {
   type CreateDefaultMcpAppServerOptions,
   createDefaultMcpAppServer,
@@ -46,7 +55,12 @@ import {
   MCP_TASKS_EXTENSION,
   type McpProtocolRequestOptions,
 } from './protocol.js';
-import type { CallToolInput, McpAppPrincipal, McpAppServer } from './server.js';
+import type {
+  CallToolInput,
+  McpAppPrincipal,
+  McpAppServer,
+  McpSmrtOptionsThunk,
+} from './server.js';
 
 /** Minimal subset of a SvelteKit RequestEvent we actually touch. */
 type SvelteKitRequestEvent = {
@@ -138,6 +152,142 @@ function currentResourceAuth(
 ): McpRouteResourceAuth | null {
   const value = typeof source === 'function' ? source() : source;
   return value ?? null;
+}
+
+/**
+ * The runtime calls the protected-resource metadata route (and the bearer
+ * half of {@link mountMcpAppRoute}) use: the deployment profile and the two
+ * credential bindings `createHostedMcpResourceAuth` (`./auth`) takes. The
+ * runtime from `@happyvertical/smrt-app-runtime/sveltekit` satisfies it as is.
+ */
+export interface McpRouteAuthRuntime {
+  /** Resolve the deployment profile (the SMRT runtime memoizes it). */
+  resolvedRuntime(): Promise<{ readonly profile: McpDeploymentProfile }>;
+  /**
+   * Verify an owner-minted local MCP token (`smrt app token`); `null` denies.
+   * Consulted only in the `local` profile.
+   */
+  verifyLocalMcpToken(token: string): Promise<McpLocalTokenPrincipal | null>;
+  /**
+   * Map a verified hosted access-token identity to the current account and
+   * tenant; `null` denies. Consulted only in hosted profiles.
+   */
+  resolveMcpPrincipal(
+    identity: McpVerifiedIdentity,
+  ): Promise<McpPrincipalMapping | null>;
+}
+
+/**
+ * The runtime calls {@link mountMcpAppRoute} uses; the runtime from
+ * `@happyvertical/smrt-app-runtime/sveltekit` satisfies it as is.
+ */
+export interface McpAppRouteRuntime extends McpRouteAuthRuntime {
+  /** The request's database (its RLS transaction inside one). */
+  databaseConfig(): SmrtClassOptions['db'];
+  /**
+   * Run `run` bound to a bearer-authenticated principal (see
+   * {@link McpPrincipalBinder}): under `database-rls` in a fresh transaction
+   * publishing that user, tenant and live permissions capped to its scopes.
+   */
+  runAsPrincipal<T>(
+    principal: McpAppPrincipal & { id: string },
+    run: (bound?: McpBoundPrincipal) => Promise<T>,
+  ): Promise<T>;
+}
+
+const ROUTE_AUTH_RUNTIME_METHODS = [
+  'resolvedRuntime',
+  'verifyLocalMcpToken',
+  'resolveMcpPrincipal',
+] as const;
+const APP_ROUTE_RUNTIME_METHODS = [
+  ...ROUTE_AUTH_RUNTIME_METHODS,
+  'databaseConfig',
+  'runAsPrincipal',
+] as const;
+const DEPLOYMENT_PROFILES: readonly string[] = [
+  'local',
+  'self-hosted',
+  'cloud',
+];
+
+/** Fail closed at mount: a runtime missing any binding is a wiring error. */
+function assertRuntime(
+  runtime: unknown,
+  methods: readonly string[],
+  mount: string,
+): void {
+  const value = runtime as Record<string, unknown> | null;
+  const missing =
+    !value || typeof value !== 'object'
+      ? methods
+      : methods.filter((method) => typeof value[method] !== 'function');
+  if (missing.length > 0) {
+    throw new TypeError(
+      `${mount}: runtime must provide ${missing.join(', ')}.`,
+    );
+  }
+}
+
+/**
+ * One `createHostedMcpResourceAuth` source per runtime and profile, shared by
+ * the app route and the metadata route like the module an app used to keep.
+ * Keyed by profile, so a runtime whose profile changes never reuses another
+ * profile's adapter; each source keeps its own caching and retry rules.
+ */
+const runtimeAuthSources = new WeakMap<
+  object,
+  Map<McpDeploymentProfile, () => McpRouteResourceAuth | null>
+>();
+let authModule: Promise<typeof import('./auth.js')> | undefined;
+
+/** Load `./auth` (the JWT verifier) only when a runtime-derived route needs it. */
+function loadAuthModule(): Promise<typeof import('./auth.js')> {
+  authModule ??= import('./auth.js').catch((error: unknown) => {
+    authModule = undefined;
+    throw error;
+  });
+  return authModule;
+}
+
+/**
+ * The bearer adapter a runtime provides for its profile, resolved once per
+ * request. Rejects (the route answers 500, before any dispatch) when the
+ * profile cannot be resolved or is unknown, when hosted configuration is
+ * missing, or when no adapter results: a runtime route never serves a
+ * request without its profile's bearer adapter (which would ignore a
+ * presented bearer and leave only the session principal).
+ */
+async function runtimeResourceAuth(
+  runtime: McpRouteAuthRuntime,
+): Promise<McpRouteResourceAuth> {
+  const resolved = await runtime.resolvedRuntime();
+  const profile = (resolved as { profile?: unknown } | null | undefined)
+    ?.profile;
+  if (typeof profile !== 'string' || !DEPLOYMENT_PROFILES.includes(profile)) {
+    throw new Error('MCP runtime resolved an unknown deployment profile.');
+  }
+  let sources = runtimeAuthSources.get(runtime);
+  if (!sources) {
+    sources = new Map();
+    runtimeAuthSources.set(runtime, sources);
+  }
+  let source = sources.get(profile as McpDeploymentProfile);
+  if (!source) {
+    const { createHostedMcpResourceAuth } = await loadAuthModule();
+    source =
+      sources.get(profile as McpDeploymentProfile) ??
+      createHostedMcpResourceAuth({
+        profile: profile as McpDeploymentProfile,
+        runtime,
+      });
+    sources.set(profile as McpDeploymentProfile, source);
+  }
+  const adapter = source();
+  if (!adapter) {
+    throw new Error('MCP runtime provided no bearer adapter for its profile.');
+  }
+  return adapter;
 }
 
 /** Parse an origin to its canonical `scheme://host[:port]`, or `undefined`. */
@@ -400,6 +550,25 @@ export function mountMcpRoute(
   server: McpAppServer,
   options: MountMcpRouteOptions = {},
 ): McpSvelteKitHandler {
+  return mountMcpRouteWith(server, options, () =>
+    currentResourceAuth(options.auth),
+  );
+}
+
+/**
+ * {@link mountMcpRoute} with the bearer adapter supplied per request by
+ * `resolveAuth` (sync for an `auth` source, async for a runtime). It runs
+ * after the origin check and before any principal or dispatch work; a throw
+ * or rejection rejects the handler (no dispatch).
+ */
+function mountMcpRouteWith(
+  server: McpAppServer,
+  options: MountMcpRouteOptions,
+  resolveAuth: () =>
+    | McpRouteResourceAuth
+    | null
+    | Promise<McpRouteResourceAuth | null>,
+): McpSvelteKitHandler {
   const trustedOrigins = options.checkOrigin
     ? normalizeTrustedOrigins(options.trustedOrigins ?? [])
     : undefined;
@@ -409,7 +578,7 @@ export function mountMcpRoute(
     if (trustedOrigins && !originPermitted(event, trustedOrigins)) {
       return originDeniedResponse();
     }
-    const auth = currentResourceAuth(options.auth);
+    const auth = await resolveAuth();
     if (!auth) return dispatch(event, resolveRequestPrincipal(event, options));
     // A session-fallback adapter (local owner tokens) leaves requests with no
     // credentials header on the session path; any presented bearer must verify.
@@ -516,6 +685,33 @@ export interface MountMcpAppRouteOptions
    * to {@link principalFromSessionLocals}.
    */
   resolvePrincipal?: McpPrincipalResolver;
+  /**
+   * The application runtime (`runtime` from
+   * `@happyvertical/smrt-app-runtime/sveltekit`). It supplies the three
+   * bindings an app otherwise wires by hand, each still overridable:
+   * `smrtOptions` defaults to `() => ({ db: runtime.databaseConfig() })`,
+   * `bindPrincipal` to `runtime.runAsPrincipal`, and `auth` to
+   * `createHostedMcpResourceAuth({ profile, runtime })` for the profile
+   * resolved per request (`runtime.resolvedRuntime()`, after the origin
+   * check), so the route module needs no top-level `await`. Fails closed: a
+   * runtime missing a binding throws at mount, and a profile that cannot be
+   * resolved, or a hosted profile without its configuration, rejects the
+   * request (HTTP 500) before dispatch instead of serving it without the
+   * profile's bearer adapter. An explicit `auth` (including `null`) is used
+   * as given.
+   */
+  runtime?: McpAppRouteRuntime;
+}
+
+/**
+ * {@link MountMcpAppRouteOptions} with a `runtime`, which makes `smrtOptions`
+ * optional (it defaults to the runtime's request database).
+ */
+export interface MountMcpAppRuntimeRouteOptions
+  extends Omit<MountMcpAppRouteOptions, 'runtime' | 'smrtOptions'> {
+  runtime: McpAppRouteRuntime;
+  /** Default: `() => ({ db: runtime.databaseConfig() })`. */
+  smrtOptions?: McpSmrtOptionsThunk;
 }
 
 /** A mounted app route; `server` is the policy core it serves. */
@@ -532,22 +728,28 @@ export type McpAppSvelteKitHandler = McpSvelteKitHandler & {
  * ambient session cookie; set `trustedOrigins` for extra browser origins or
  * `checkOrigin: false` to opt out.
  *
+ * With `runtime`, the request database, the bearer adapter (local owner
+ * tokens or hosted access tokens, per the resolved profile) and the principal
+ * binding come from the application runtime (see
+ * {@link MountMcpAppRouteOptions.runtime}).
+ *
  * @example
  * ```ts
  * // src/routes/api/mcp/+server.ts
  * import { mountMcpAppRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
  * import { Item } from '$lib/objects/Item';
- * import { getDatabaseConfig } from '$lib/server/db';
+ * import { runtime } from '$lib/server/smrt';
  *
  * export const POST = mountMcpAppRoute({
+ *   runtime,
  *   models: [Item],
  *   requiredScopes: ['items.read'],
- *   smrtOptions: () => ({ db: getDatabaseConfig() }),
+ *   effects: ['read'],
  * });
  * ```
  */
 export function mountMcpAppRoute(
-  options: MountMcpAppRouteOptions,
+  options: MountMcpAppRouteOptions | MountMcpAppRuntimeRouteOptions,
 ): McpAppSvelteKitHandler {
   const {
     auth,
@@ -556,22 +758,50 @@ export function mountMcpAppRoute(
     resolvePrincipal,
     checkOrigin,
     trustedOrigins,
+    runtime,
     ...serverOptions
   } = options;
-  const server = createDefaultMcpAppServer(serverOptions);
-  const handler = mountMcpRoute(server, {
+  if (runtime !== undefined) {
+    assertRuntime(runtime, APP_ROUTE_RUNTIME_METHODS, 'mountMcpAppRoute');
+  }
+  const server = createDefaultMcpAppServer({
+    ...serverOptions,
+    smrtOptions:
+      serverOptions.smrtOptions !== undefined || !runtime
+        ? (serverOptions.smrtOptions as McpSmrtOptionsThunk)
+        : () => ({ db: runtime.databaseConfig() }),
+  });
+  const routeOptions: MountMcpRouteOptions = {
     auth,
-    bindPrincipal,
+    bindPrincipal:
+      bindPrincipal !== undefined || !runtime
+        ? bindPrincipal
+        : (principal, run) => runtime.runAsPrincipal(principal, run),
     extensions,
     // Default on: the default principal is an ambient session cookie.
     checkOrigin: checkOrigin ?? true,
     trustedOrigins,
     resolvePrincipal: resolvePrincipal ?? principalFromSessionLocals,
-  });
+  };
+  const handler = mountMcpRouteWith(
+    server,
+    routeOptions,
+    auth !== undefined || !runtime
+      ? () => currentResourceAuth(auth)
+      : () => runtimeResourceAuth(runtime),
+  );
   return Object.defineProperty(handler, 'server', {
     value: server,
     enumerable: true,
   }) as McpAppSvelteKitHandler;
+}
+
+/** Options form of {@link mountMcpProtectedResourceMetadataRoute}. */
+export interface MountMcpProtectedResourceMetadataRouteOptions {
+  /** The application runtime; derives the adapter per request. */
+  runtime: McpRouteAuthRuntime;
+  /** Explicit adapter source; when set, used as given instead of `runtime`. */
+  auth?: McpRouteResourceAuthSource;
 }
 
 /**
@@ -585,12 +815,56 @@ export function mountMcpAppRoute(
  * advertised metadata path. This handler does
  * not implement an OAuth authorization server; the metadata names the
  * operator-owned issuer.
+ *
+ * Pass `{ runtime }` to derive the adapter the way
+ * {@link mountMcpAppRoute} does (the profile resolved per request, the same
+ * cached adapter as the app route); an unresolvable profile or missing hosted
+ * configuration rejects the request (HTTP 500).
+ *
+ * @example
+ * ```ts
+ * // src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts
+ * import { mountMcpProtectedResourceMetadataRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
+ * import { runtime } from '$lib/server/smrt';
+ * export const GET = mountMcpProtectedResourceMetadataRoute({ runtime });
+ * ```
  */
 export function mountMcpProtectedResourceMetadataRoute(
-  auth: McpRouteResourceAuthSource,
+  source:
+    | McpRouteResourceAuthSource
+    | MountMcpProtectedResourceMetadataRouteOptions,
 ): McpSvelteKitHandler {
+  let resolveAuth: () =>
+    | McpRouteResourceAuth
+    | null
+    | Promise<McpRouteResourceAuth | null>;
+  if (
+    source !== null &&
+    typeof source === 'object' &&
+    Object.hasOwn(source, 'runtime')
+  ) {
+    if (Object.hasOwn(source, 'authenticate')) {
+      throw new TypeError(
+        'mountMcpProtectedResourceMetadataRoute: pass an auth adapter or { runtime }, not both.',
+      );
+    }
+    const { runtime, auth } =
+      source as MountMcpProtectedResourceMetadataRouteOptions;
+    assertRuntime(
+      runtime,
+      ROUTE_AUTH_RUNTIME_METHODS,
+      'mountMcpProtectedResourceMetadataRoute',
+    );
+    resolveAuth =
+      auth !== undefined
+        ? () => currentResourceAuth(auth)
+        : () => runtimeResourceAuth(runtime);
+  } else {
+    const auth = source as McpRouteResourceAuthSource;
+    resolveAuth = () => currentResourceAuth(auth);
+  }
   return async (event) => {
-    const current = currentResourceAuth(auth);
+    const current = await resolveAuth();
     if (
       !current ||
       current.sessionFallback === true ||
