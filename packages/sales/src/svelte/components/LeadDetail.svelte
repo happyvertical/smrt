@@ -15,10 +15,12 @@ import {
   Textarea,
 } from '@happyvertical/smrt-ui/forms';
 import { Badge, Button } from '@happyvertical/smrt-ui/ui';
+import type { Snippet } from 'svelte';
 import { formatDate } from '../format.js';
 import type {
   LeadDetailView,
   LeadHumanActivityDraft,
+  LeadLinkedOpportunityView,
   LeadNextActionDraft,
   SalesActivityView,
   SalesRepOptionView,
@@ -54,6 +56,10 @@ export interface Props {
   onCompleteNextAction?: (leadId: string, taskId: string) => void;
   /** Delegate qualification to the host's existing LeadCollection lifecycle. */
   onQualify?: (leadId: string) => void;
+  /** Linked opportunity supplied by the host for qualified leads. */
+  opportunity?: LeadLinkedOpportunityView;
+  /** Optional host-rendered linked-opportunity summary. */
+  opportunitySummary?: Snippet<[LeadLinkedOpportunityView]>;
 }
 
 let {
@@ -69,6 +75,8 @@ let {
   onScheduleNextAction,
   onCompleteNextAction,
   onQualify,
+  opportunity,
+  opportunitySummary,
 }: Props = $props();
 
 const actions = $derived(leadWorkflowActionsFor(lead.status));
@@ -164,6 +172,23 @@ function isOpenTask(activity: SalesActivityView): boolean {
 
   {#if lead.status === 'merged' && lead.mergedIntoId}
     <p class="merged-note">This lead was merged into <code>{lead.mergedIntoId}</code>.</p>
+  {/if}
+
+  {#if opportunity}
+    <section class="linked-opportunity" aria-label="Linked opportunity">
+      {#if opportunitySummary}
+        {@render opportunitySummary(opportunity)}
+      {:else}
+        <h3>Opportunity</h3>
+        {#if opportunity.href}
+          <a href={opportunity.href}>{opportunity.name}</a>
+        {:else}
+          <span>{opportunity.name}</span>
+        {/if}
+        <Badge variant={opportunity.status === 'won' ? 'success' : opportunity.status === 'lost' ? 'error' : 'default'} size="sm">{opportunity.status}</Badge>
+        {#if opportunity.stageName}<span class="secondary">{opportunity.stageName}</span>{/if}
+      {/if}
+    </section>
   {/if}
 
   {#if actions.canAssign || actions.canStartWorking || actions.canDisqualify || actions.canQualify}
@@ -406,6 +431,9 @@ function isOpenTask(activity: SalesActivityView): boolean {
     margin: var(--smrt-spacing-1, 0.25rem) 0 0;
     overflow-wrap: anywhere;
   }
+
+  .linked-opportunity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); border: 1px solid var(--smrt-color-outline-variant, #d8dde6); border-radius: var(--smrt-radius-md, 0.5rem); }
+  .linked-opportunity h3 { flex-basis: 100%; font-size: var(--smrt-typography-title-small-size, 1rem); }
 
   .controls,
   .sales-lead-detail :global(.composer__form) {

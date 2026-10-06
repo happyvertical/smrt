@@ -23,6 +23,8 @@ export class OpportunityCollection extends SmrtCollection<Opportunity> {
     if (!this.stageCollectionPromise) {
       this.stageCollectionPromise = PipelineStageCollection.create({
         db: this.db,
+        _reuseInitializedDb: true,
+        _deferRuntimeInitialization: true,
       });
     }
     return this.stageCollectionPromise;
@@ -33,6 +35,8 @@ export class OpportunityCollection extends SmrtCollection<Opportunity> {
     if (!this.activityCollectionPromise) {
       this.activityCollectionPromise = SalesActivityCollection.create({
         db: this.db,
+        _reuseInitializedDb: true,
+        _deferRuntimeInitialization: true,
       });
     }
     return this.activityCollectionPromise;

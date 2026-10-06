@@ -1,14 +1,14 @@
 /**
  * Tenant-safe, audited follow-up workflow for CRM Leads.
  *
- * The service is intentionally the narrow mutation seam for the generic
- * pre-qualification loop. It does not create opportunities, conversions, or
- * downstream records; those lifecycles remain owned by their existing CRM
- * collections and by the consuming application respectively.
+ * The service is the narrow mutation seam for generic Lead intake, follow-up,
+ * qualification, and Opportunity closure. It delegates persistence lifecycles
+ * to their owning collections and never creates downstream records.
  *
  * @packageDocumentation
  */
 
+import { createHash } from 'node:crypto';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import {
   requireTenantId,
@@ -16,9 +16,15 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { LeadCollection } from '../collections/LeadCollection.js';
+import { OpportunityCollection } from '../collections/OpportunityCollection.js';
+import { OpportunityConversionCollection } from '../collections/OpportunityConversionCollection.js';
+import { PipelineDefinitionCollection } from '../collections/PipelineDefinitionCollection.js';
+import { PipelineStageCollection } from '../collections/PipelineStageCollection.js';
 import { SalesActivityCollection } from '../collections/SalesActivityCollection.js';
 import { SalesRepresentativeCollection } from '../collections/SalesRepresentativeCollection.js';
 import type { Lead } from '../models/Lead.js';
+import type { Opportunity } from '../models/Opportunity.js';
+import type { OpportunityConversion } from '../models/OpportunityConversion.js';
 import {
   permitSalesActivityWorkflowCompletion,
   type SalesActivity,
@@ -110,7 +116,73 @@ export interface LeadWorkState {
   lead: Lead;
   owner: SalesRepresentative | null;
   earliestOpenTask: SalesActivity | null;
+  /** Canonical opportunity created from this lead, when one is visible. */
+  opportunity: Opportunity | null;
   queue: LeadWorkQueueProjection;
+}
+
+export type LeadDedupePolicy = 'none' | 'email' | 'email_or_org';
+
+export interface CreateLeadInput {
+  name: string;
+  email?: string;
+  contactName?: string;
+  phone?: string;
+  organizationName?: string;
+  sourceKind: string;
+  sourceId?: string;
+  acquisitionContext?: Record<string, unknown>;
+  ownerRepId?: string;
+  actorProfileId?: string;
+  dedupe?: LeadDedupePolicy;
+  idempotencyKey?: string;
+  now?: Date;
+}
+
+export interface CreateLeadResult {
+  lead: Lead;
+  created: boolean;
+  /** A terminal possible duplicate that requires an explicit caller decision. */
+  duplicateOf?: Lead;
+}
+
+export interface QualifyLeadInput {
+  leadId: string;
+  pipelineId?: string;
+  actorProfileId: string;
+  opportunityName?: string;
+  expectedValueCents?: number;
+  currency?: string;
+  expectedCloseAt?: Date | null;
+  now?: Date;
+}
+
+export interface QualifyLeadResult {
+  lead: Lead;
+  opportunity: Opportunity;
+  created: boolean;
+}
+
+export interface OpportunityConversionInput {
+  targetKind: string;
+  targetId: string;
+  note?: string;
+}
+
+export interface CloseOpportunityInput {
+  opportunityId: string;
+  outcome: 'won' | 'lost';
+  actorProfileId: string;
+  reason?: string;
+  conversion?: OpportunityConversionInput;
+  now?: Date;
+}
+
+export interface CloseOpportunityResult {
+  opportunity: Opportunity;
+  conversion?: OpportunityConversion;
+  changed: boolean;
+  conversionCreated?: boolean;
 }
 
 export interface AssignLeadInput {
@@ -194,7 +266,20 @@ export type LeadWorkflowValidationReason =
   | 'invalid_due_at'
   | 'task_unavailable'
   | 'task_not_open'
-  | 'completion_replay_conflict';
+  | 'completion_replay_conflict'
+  | 'name_required'
+  | 'contact_required'
+  | 'invalid_email'
+  | 'source_kind_required'
+  | 'invalid_dedupe_policy'
+  | 'invalid_idempotency_key'
+  | 'idempotency_conflict'
+  | 'pipeline_unavailable'
+  | 'pipeline_has_no_terminal_stage'
+  | 'opportunity_unavailable'
+  | 'invalid_value'
+  | 'invalid_conversion'
+  | 'opportunity_replay_conflict';
 
 /** Workflow validation error that never reveals cross-tenant row existence. */
 export class LeadWorkflowValidationError extends Error {
@@ -213,6 +298,10 @@ interface LeadWorkflowServiceDeps {
   leads: LeadCollection;
   activities: SalesActivityCollection;
   representatives: SalesRepresentativeCollection;
+  opportunities: OpportunityCollection;
+  conversions: OpportunityConversionCollection;
+  pipelines: PipelineDefinitionCollection;
+  stages: PipelineStageCollection;
 }
 
 /** Transaction-scoped collections inherit the outer adapter's lock capability. */
@@ -222,6 +311,23 @@ interface LeadWorkflowTransactionDeps extends LeadWorkflowServiceDeps {
 
 interface TransactionCapableDatabase extends DatabaseInterface {
   transaction?<T>(fn: (tx: DatabaseInterface) => Promise<T>): Promise<T>;
+}
+
+interface NormalizedCreateLeadInput {
+  name: string;
+  email: string;
+  contactName: string;
+  phone: string;
+  organizationName: string;
+  sourceKind: string;
+  sourceId: string;
+  acquisitionContext: Record<string, unknown>;
+  ownerRepId: string;
+  actorProfileId: string;
+  dedupe: LeadDedupePolicy;
+  idempotencyKey: string;
+  now: Date;
+  intent: Record<string, unknown>;
 }
 
 /** Serialize mutations for adapters without independent row-locking sessions. */
@@ -245,7 +351,375 @@ export class LeadWorkflowService {
       leads: await LeadCollection.create(options),
       activities: await SalesActivityCollection.create(options),
       representatives: await SalesRepresentativeCollection.create(options),
+      opportunities: await OpportunityCollection.create(options),
+      conversions: await OpportunityConversionCollection.create(options),
+      pipelines: await PipelineDefinitionCollection.create(options),
+      stages: await PipelineStageCollection.create(options),
     });
+  }
+
+  /** Create or explicitly report a tenant-local duplicate Lead. */
+  async createLead(input: CreateLeadInput): Promise<CreateLeadResult> {
+    const normalized = this.normalizeCreateLeadInput(input);
+    const tenantId = this.requireActiveTenant();
+    const intent = stableStringify(normalized.intent);
+    const intentHash = sha256(intent);
+    const operationId =
+      normalized.idempotencyKey || normalized.dedupe !== 'none'
+        ? uuidFromHash(
+            sha256(
+              `lead-intake:${tenantId}:${
+                normalized.idempotencyKey
+                  ? `key:${normalized.idempotencyKey}`
+                  : `intent:${intentHash}`
+              }`,
+            ),
+          )
+        : undefined;
+
+    const result = await this.runMutation(async (deps, activeTenantId) => {
+      if (operationId) {
+        await this.lockOperationFence(deps, `lead-intake:${operationId}`);
+        const replay = await deps.activities.get(
+          { id: operationId },
+          { cache: false },
+        );
+        if (replay) {
+          const metadata = replay.getMetadata();
+          if (
+            replay.activityKind !== 'lead_intake' &&
+            replay.activityKind !== 'inbound'
+          ) {
+            throw this.refusal(
+              'idempotency_conflict',
+              'Lead intake operation key is already used by another activity',
+            );
+          }
+          if (metadata.intentHash !== intentHash) {
+            throw this.refusal(
+              'idempotency_conflict',
+              'Lead intake idempotency key was already used with different input',
+            );
+          }
+          return {
+            leadId: replay.subjectId,
+            created: false,
+          };
+        }
+      }
+
+      if (normalized.ownerRepId) {
+        const representative = await deps.representatives.get(
+          { id: normalized.ownerRepId },
+          { cache: false },
+        );
+        if (!representative) {
+          throw this.refusal(
+            'representative_unavailable',
+            'Representative is unavailable in the active tenant',
+          );
+        }
+        if (!representative.isActive()) {
+          throw this.refusal(
+            'representative_inactive',
+            'Representative is not active',
+          );
+        }
+      }
+
+      const matches = await this.findDedupeMatches(
+        deps,
+        activeTenantId,
+        normalized,
+      );
+      const active = matches.find(
+        (candidate) =>
+          candidate.status === 'new' || candidate.status === 'working',
+      );
+      if (active) {
+        const leadId = this.requireLeadId(active);
+        await deps.activities.create({
+          ...(operationId ? { id: operationId } : {}),
+          tenantId: activeTenantId,
+          subjectKind: 'lead',
+          subjectId: leadId,
+          activityKind: 'inbound',
+          summary: 'Received duplicate lead intake',
+          actorProfileId: normalized.actorProfileId,
+          metadata: JSON.stringify({
+            intentHash,
+            created: false,
+            dedupe: normalized.dedupe,
+            receivedAt: normalized.now.toISOString(),
+            sourceKind: normalized.sourceKind,
+            sourceId: normalized.sourceId,
+          }),
+        });
+        return { leadId, created: false };
+      }
+
+      const terminal = matches[0];
+      if (terminal) {
+        const duplicateOfId = this.requireLeadId(terminal);
+        return {
+          leadId: duplicateOfId,
+          created: false,
+          duplicateOfId,
+        };
+      }
+
+      const lead = await deps.leads.create({
+        tenantId: activeTenantId,
+        name: normalized.name,
+        email: normalized.email,
+        contactName: normalized.contactName,
+        phone: normalized.phone,
+        organizationName: normalized.organizationName,
+        sourceKind: normalized.sourceKind,
+        sourceId: normalized.sourceId,
+        acquisitionContext: stableStringify(normalized.acquisitionContext),
+        ownerRepId: normalized.ownerRepId,
+        status: 'new',
+      });
+      const leadId = this.requireLeadId(lead);
+      await deps.activities.create({
+        ...(operationId ? { id: operationId } : {}),
+        tenantId: activeTenantId,
+        subjectKind: 'lead',
+        subjectId: leadId,
+        activityKind: 'lead_intake',
+        summary: 'Created lead from intake',
+        actorProfileId: normalized.actorProfileId,
+        metadata: JSON.stringify({
+          intentHash,
+          created: true,
+          dedupe: normalized.dedupe,
+          receivedAt: normalized.now.toISOString(),
+          sourceKind: normalized.sourceKind,
+          sourceId: normalized.sourceId,
+        }),
+      });
+      return { leadId, created: true };
+    });
+
+    const lead = await this.readLead(this.deps.leads, result.leadId, tenantId);
+    return {
+      lead,
+      created: result.created,
+      ...(result.duplicateOfId ? { duplicateOf: lead } : {}),
+    };
+  }
+
+  /** Qualify a Lead through the collection lifecycle in one transaction. */
+  async qualifyLead(input: QualifyLeadInput): Promise<QualifyLeadResult> {
+    const actorProfileId = this.requireIdentifier(
+      input.actorProfileId,
+      'actorProfileId',
+    );
+    if (input.pipelineId && !UUID_RE.test(input.pipelineId)) {
+      throw this.refusal(
+        'pipeline_unavailable',
+        'Pipeline is unavailable in the active tenant',
+      );
+    }
+    if (
+      input.expectedValueCents !== undefined &&
+      (!Number.isSafeInteger(input.expectedValueCents) ||
+        input.expectedValueCents < 0)
+    ) {
+      throw this.refusal(
+        'invalid_value',
+        'Expected value must be a non-negative safe integer number of cents',
+      );
+    }
+    const tenantId = this.requireActiveTenant();
+    const result = await this.runMutation(async (deps, activeTenantId) => {
+      const lead = await this.lockLead(deps, input.leadId, activeTenantId);
+      if (lead.status === 'disqualified' || lead.status === 'merged') {
+        throw this.refusal(
+          'invalid_transition',
+          `Lead cannot be qualified from '${lead.status}'`,
+        );
+      }
+      if (input.pipelineId) {
+        const pipeline = await deps.pipelines.get(
+          { id: input.pipelineId },
+          { cache: false },
+        );
+        if (!pipeline || pipeline.tenantId !== activeTenantId) {
+          throw this.refusal(
+            'pipeline_unavailable',
+            'Pipeline is unavailable in the active tenant',
+          );
+        }
+      }
+      const leadId = this.requireLeadId(lead);
+      const prior = await deps.opportunities.findByLead(leadId);
+      let opportunity: Opportunity;
+      try {
+        opportunity = await deps.leads.qualify({
+          leadId,
+          actorProfileId,
+          pipelineId: input.pipelineId,
+          opportunityName: input.opportunityName,
+          expectedValueCents: input.expectedValueCents,
+          currency: input.currency,
+          expectedCloseAt: input.expectedCloseAt,
+          now: input.now,
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          (error.message.includes('pipeline') ||
+            error.message.includes('stages'))
+        ) {
+          throw this.refusal('pipeline_unavailable', error.message);
+        }
+        throw error;
+      }
+      return {
+        leadId,
+        opportunityId: this.requireOpportunityId(opportunity),
+        created: prior.length === 0,
+      };
+    });
+    // SQLite and DuckDB root handles multiplex one native connection. Keep
+    // post-commit result reads sequential so their prepared statements cannot
+    // overlap on that connection.
+    const lead = await this.readLead(this.deps.leads, result.leadId, tenantId);
+    const opportunity = await this.readOpportunity(
+      result.opportunityId,
+      tenantId,
+    );
+    return { lead, opportunity, created: result.created };
+  }
+
+  /** Close an opportunity at its configured terminal stage and optionally link conversion. */
+  async closeOpportunity(
+    input: CloseOpportunityInput,
+  ): Promise<CloseOpportunityResult> {
+    const actorProfileId = this.requireIdentifier(
+      input.actorProfileId,
+      'actorProfileId',
+    );
+    if (!UUID_RE.test(input.opportunityId)) {
+      throw this.refusal(
+        'opportunity_unavailable',
+        'Opportunity is unavailable in the active tenant',
+      );
+    }
+    if (input.outcome !== 'won' && input.outcome !== 'lost') {
+      throw this.refusal(
+        'invalid_transition',
+        "Opportunity outcome must be 'won' or 'lost'",
+      );
+    }
+    if (input.conversion && input.outcome !== 'won') {
+      throw this.refusal(
+        'invalid_conversion',
+        'A conversion can only be recorded for a won opportunity',
+      );
+    }
+    const conversion = input.conversion
+      ? {
+          targetKind: this.requireOpenIdentifier(
+            input.conversion.targetKind,
+            'conversion targetKind',
+          ),
+          targetId: this.requireOpenIdentifier(
+            input.conversion.targetId,
+            'conversion targetId',
+          ),
+          note: input.conversion.note?.trim() ?? '',
+        }
+      : undefined;
+    const reason = input.reason?.trim();
+    if (reason && reason.length > MAX_LEAD_WORKFLOW_TEXT_LENGTH) {
+      throw this.refusal(
+        'reason_too_long',
+        `Lead workflow reason must be at most ${MAX_LEAD_WORKFLOW_TEXT_LENGTH} characters`,
+      );
+    }
+    const tenantId = this.requireActiveTenant();
+    const result = await this.runMutation(async (deps, activeTenantId) => {
+      const opportunity = await this.lockOpportunity(
+        deps,
+        input.opportunityId,
+        activeTenantId,
+      );
+      let changed = false;
+      if (opportunity.status !== 'open') {
+        if (opportunity.status !== input.outcome) {
+          throw this.refusal(
+            'opportunity_replay_conflict',
+            `Opportunity is already closed as '${opportunity.status}'`,
+          );
+        }
+        if (reason && opportunity.outcomeReason !== reason) {
+          throw this.refusal(
+            'opportunity_replay_conflict',
+            'Opportunity was already closed with a different reason',
+          );
+        }
+      } else {
+        const stages = await deps.stages.list({
+          where: { pipelineId: opportunity.pipelineId },
+          orderBy: 'sort_order ASC',
+        });
+        const terminal = stages.find((stage) =>
+          input.outcome === 'won' ? stage.isWon : stage.isLost,
+        );
+        if (!terminal?.id) {
+          throw this.refusal(
+            'pipeline_has_no_terminal_stage',
+            `Opportunity pipeline has no '${input.outcome}' terminal stage`,
+          );
+        }
+        await deps.opportunities.moveToStage({
+          opportunityId: input.opportunityId,
+          stageId: terminal.id,
+          actorProfileId,
+          outcomeReason: reason,
+          now: input.now,
+        });
+        changed = true;
+      }
+
+      let conversionId: string | undefined;
+      let conversionCreated: boolean | undefined;
+      if (conversion) {
+        const recorded = await deps.conversions.recordConversion({
+          opportunityId: input.opportunityId,
+          ...conversion,
+        });
+        conversionId = this.requireConversionId(recorded.conversion);
+        conversionCreated = recorded.created;
+      }
+      return {
+        opportunityId: input.opportunityId,
+        changed,
+        conversionId,
+        conversionCreated,
+      };
+    });
+    const opportunity = await this.readOpportunity(
+      result.opportunityId,
+      tenantId,
+    );
+    const persistedConversion = result.conversionId
+      ? await this.deps.conversions.get(
+          { id: result.conversionId },
+          { cache: false },
+        )
+      : undefined;
+    return {
+      opportunity,
+      changed: result.changed,
+      ...(persistedConversion ? { conversion: persistedConversion } : {}),
+      ...(result.conversionCreated !== undefined
+        ? { conversionCreated: result.conversionCreated }
+        : {}),
+    };
   }
 
   /** Assign or reassign an active representative, with one audit row per change. */
@@ -495,7 +969,7 @@ export class LeadWorkflowService {
     const tenantId = this.requireActiveTenant();
     const lead = await this.readLead(this.deps.leads, input.leadId, tenantId);
     const leadId = this.requireLeadId(lead);
-    const [owner, openTasks] = await Promise.all([
+    const [owner, openTasks, linkedOpportunities] = await Promise.all([
       lead.ownerRepId
         ? this.deps.representatives.get(
             { id: lead.ownerRepId },
@@ -503,6 +977,7 @@ export class LeadWorkflowService {
           )
         : Promise.resolve(null),
       this.deps.activities.findOpenTasks('lead', leadId),
+      this.deps.opportunities.findByLead(leadId),
     ]);
     const earliestOpenTask = openTasks[0] ?? null;
     return {
@@ -511,6 +986,7 @@ export class LeadWorkflowService {
       // reusable projection depend on nullable field hydration details.
       owner,
       earliestOpenTask,
+      opportunity: linkedOpportunities[0] ?? null,
       queue: projectLeadWorkQueue({
         status: lead.status,
         ownerRepId: lead.ownerRepId,
@@ -554,6 +1030,26 @@ export class LeadWorkflowService {
               _deferRuntimeInitialization: true,
             }),
             representatives: await SalesRepresentativeCollection.create({
+              db: tx,
+              _reuseInitializedDb: true,
+              _deferRuntimeInitialization: true,
+            }),
+            opportunities: await OpportunityCollection.create({
+              db: tx,
+              _reuseInitializedDb: true,
+              _deferRuntimeInitialization: true,
+            }),
+            conversions: await OpportunityConversionCollection.create({
+              db: tx,
+              _reuseInitializedDb: true,
+              _deferRuntimeInitialization: true,
+            }),
+            pipelines: await PipelineDefinitionCollection.create({
+              db: tx,
+              _reuseInitializedDb: true,
+              _deferRuntimeInitialization: true,
+            }),
+            stages: await PipelineStageCollection.create({
               db: tx,
               _reuseInitializedDb: true,
               _deferRuntimeInitialization: true,
@@ -655,6 +1151,81 @@ export class LeadWorkflowService {
     return task;
   }
 
+  private async lockOpportunity(
+    deps: LeadWorkflowTransactionDeps,
+    opportunityId: string,
+    tenantId: string,
+  ): Promise<Opportunity> {
+    if (deps.supportsRowLocks) {
+      const rows = await deps.opportunities.query(
+        `SELECT * FROM ${deps.opportunities.tableName}
+         WHERE id = $1 AND tenant_id = $2
+         FOR UPDATE`,
+        [opportunityId, tenantId],
+        { allowRawOnTenantScoped: true },
+      );
+      const opportunity = rows[0];
+      if (opportunity && opportunity.tenantId === tenantId) return opportunity;
+      throw this.refusal(
+        'opportunity_unavailable',
+        'Opportunity is unavailable in the active tenant',
+      );
+    }
+    return await this.readOpportunityFrom(
+      deps.opportunities,
+      opportunityId,
+      tenantId,
+    );
+  }
+
+  private async lockOperationFence(
+    deps: LeadWorkflowTransactionDeps,
+    key: string,
+  ): Promise<void> {
+    if (!deps.supportsRowLocks) return;
+    await deps.leads.db.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      key,
+    );
+  }
+
+  private async findDedupeMatches(
+    deps: LeadWorkflowTransactionDeps,
+    tenantId: string,
+    input: NormalizedCreateLeadInput,
+  ): Promise<Lead[]> {
+    if (input.dedupe === 'none') return [];
+    const clauses: string[] = [];
+    const identityLocks: string[] = [];
+    const params: string[] = [tenantId];
+    if (input.email) {
+      params.push(input.email);
+      clauses.push(`LOWER(TRIM(email)) = $${params.length}`);
+      identityLocks.push(`lead-dedupe:${tenantId}:email:${input.email}`);
+    }
+    if (input.dedupe === 'email_or_org' && input.organizationName) {
+      const organizationName = input.organizationName.toLowerCase();
+      params.push(organizationName);
+      clauses.push(`LOWER(TRIM(organization_name)) = $${params.length}`);
+      identityLocks.push(
+        `lead-dedupe:${tenantId}:organization:${organizationName}`,
+      );
+    }
+    if (clauses.length === 0) return [];
+    if (deps.supportsRowLocks) {
+      for (const identityLock of identityLocks.sort()) {
+        await this.lockOperationFence(deps, identityLock);
+      }
+    }
+    return await deps.leads.query(
+      `SELECT * FROM ${deps.leads.tableName}
+       WHERE tenant_id = $1 AND (${clauses.join(' OR ')})
+       ORDER BY created_at DESC${deps.supportsRowLocks ? ' FOR UPDATE' : ''}`,
+      params,
+      { allowRawOnTenantScoped: true },
+    );
+  }
+
   private async readLead(
     leads: LeadCollection,
     leadId: string,
@@ -674,6 +1245,125 @@ export class LeadWorkflowService {
       );
     }
     return lead;
+  }
+
+  private async readOpportunity(
+    opportunityId: string,
+    tenantId: string,
+  ): Promise<Opportunity> {
+    return await this.readOpportunityFrom(
+      this.deps.opportunities,
+      opportunityId,
+      tenantId,
+    );
+  }
+
+  private async readOpportunityFrom(
+    opportunities: OpportunityCollection,
+    opportunityId: string,
+    tenantId: string,
+  ): Promise<Opportunity> {
+    const opportunity = await opportunities.get(
+      { id: opportunityId },
+      { cache: false },
+    );
+    if (!opportunity || opportunity.tenantId !== tenantId) {
+      throw this.refusal(
+        'opportunity_unavailable',
+        'Opportunity is unavailable in the active tenant',
+      );
+    }
+    return opportunity;
+  }
+
+  private normalizeCreateLeadInput(
+    input: CreateLeadInput,
+  ): NormalizedCreateLeadInput {
+    const name = typeof input.name === 'string' ? input.name.trim() : '';
+    if (!name) {
+      throw this.refusal('name_required', 'Lead name is required');
+    }
+    const email =
+      typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
+    const phone = typeof input.phone === 'string' ? input.phone.trim() : '';
+    if (!email && !phone) {
+      throw this.refusal(
+        'contact_required',
+        'Lead intake requires at least one of email or phone',
+      );
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+      throw this.refusal('invalid_email', 'Lead email is invalid');
+    }
+    const sourceKind =
+      typeof input.sourceKind === 'string' ? input.sourceKind.trim() : '';
+    if (!sourceKind) {
+      throw this.refusal('source_kind_required', 'Lead sourceKind is required');
+    }
+    const dedupe = input.dedupe ?? 'email';
+    if (!['none', 'email', 'email_or_org'].includes(dedupe)) {
+      throw this.refusal(
+        'invalid_dedupe_policy',
+        'Lead dedupe policy is invalid',
+      );
+    }
+    const idempotencyKey = input.idempotencyKey?.trim() ?? '';
+    if (idempotencyKey.length > 255) {
+      throw this.refusal(
+        'invalid_idempotency_key',
+        'Lead idempotency key must be at most 255 characters',
+      );
+    }
+    const acquisitionContext = input.acquisitionContext ?? {};
+    if (
+      !isPlainJsonObject(acquisitionContext) ||
+      !isJsonValue(acquisitionContext, new Set<object>())
+    ) {
+      throw this.refusal(
+        'invalid_metadata',
+        'Lead acquisitionContext must be a plain JSON object with JSON values',
+      );
+    }
+    const ownerRepId = input.ownerRepId
+      ? this.requireIdentifier(input.ownerRepId, 'ownerRepId')
+      : '';
+    const actorProfileId = input.actorProfileId
+      ? this.requireIdentifier(input.actorProfileId, 'actorProfileId')
+      : '';
+    const now = input.now ?? new Date();
+    if (!Number.isFinite(now.getTime())) {
+      throw this.refusal('invalid_due_at', 'Lead intake now must be valid');
+    }
+    const normalized = {
+      name,
+      email,
+      contactName: input.contactName?.trim() ?? '',
+      phone,
+      organizationName: input.organizationName?.trim() ?? '',
+      sourceKind,
+      sourceId: input.sourceId?.trim() ?? '',
+      acquisitionContext,
+      ownerRepId,
+      actorProfileId,
+      dedupe,
+      idempotencyKey,
+      now,
+    };
+    return {
+      ...normalized,
+      intent: {
+        name: normalized.name,
+        email: normalized.email,
+        contactName: normalized.contactName,
+        phone: normalized.phone,
+        organizationName: normalized.organizationName,
+        sourceKind: normalized.sourceKind,
+        sourceId: normalized.sourceId,
+        acquisitionContext: normalized.acquisitionContext,
+        ownerRepId: normalized.ownerRepId,
+        dedupe: normalized.dedupe,
+      },
+    };
   }
 
   private assertActiveFollowUpLead(lead: Lead): void {
@@ -806,6 +1496,34 @@ export class LeadWorkflowService {
     return activity.id;
   }
 
+  private requireOpportunityId(opportunity: Opportunity): string {
+    if (!opportunity.id) {
+      throw this.refusal(
+        'opportunity_unavailable',
+        'Opportunity is unavailable in the active tenant',
+      );
+    }
+    return opportunity.id;
+  }
+
+  private requireConversionId(conversion: OpportunityConversion): string {
+    if (!conversion.id) {
+      throw this.refusal(
+        'invalid_conversion',
+        'Opportunity conversion could not be persisted',
+      );
+    }
+    return conversion.id;
+  }
+
+  private requireOpenIdentifier(value: string, field: string): string {
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (!normalized) {
+      throw this.refusal('invalid_conversion', `${field} is required`);
+    }
+    return normalized;
+  }
+
   private now(value: Date | undefined): Date {
     return value ?? new Date();
   }
@@ -899,6 +1617,35 @@ function isJsonValue(value: unknown, ancestors: Set<object>): boolean {
     }
   }
   return false;
+}
+
+/** Canonical JSON representation used only for stable intake intent hashes. */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  if (isPlainJsonObject(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+/** Format 128 hash bits as an RFC 4122 version-5-shaped UUID. */
+function uuidFromHash(hash: string): string {
+  const chars = hash.slice(0, 32).split('');
+  chars[12] = '5';
+  chars[16] = ((Number.parseInt(chars[16] ?? '0', 16) & 0x3) | 0x8).toString(
+    16,
+  );
+  const value = chars.join('');
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
 }
 
 export default LeadWorkflowService;

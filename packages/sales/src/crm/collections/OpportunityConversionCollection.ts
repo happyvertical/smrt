@@ -23,6 +23,8 @@ export class OpportunityConversionCollection extends SmrtCollection<OpportunityC
     if (!this.opportunityCollectionPromise) {
       this.opportunityCollectionPromise = OpportunityCollection.create({
         db: this.db,
+        _reuseInitializedDb: true,
+        _deferRuntimeInitialization: true,
       });
     }
     return this.opportunityCollectionPromise;

@@ -29,16 +29,24 @@ export { SalesRepresentative } from './models/SalesRepresentative.js';
 export type {
   AssignLeadInput,
   AssignLeadResult,
+  CloseOpportunityInput,
+  CloseOpportunityResult,
   CompleteLeadNextActionInput,
   CompleteLeadNextActionResult,
+  CreateLeadInput,
+  CreateLeadResult,
   DisqualifyLeadInput,
   GetLeadWorkStateInput,
+  LeadDedupePolicy,
   LeadHumanActivityKind,
   LeadWorkflowValidationReason,
   LeadWorkQueueInput,
   LeadWorkQueueProjection,
   LeadWorkQueueState,
   LeadWorkState,
+  OpportunityConversionInput,
+  QualifyLeadInput,
+  QualifyLeadResult,
   RecordLeadActivityInput,
   ScheduleLeadNextActionInput,
   StartWorkingInput,
@@ -51,5 +59,12 @@ export {
   MAX_LEAD_WORKFLOW_TEXT_LENGTH,
   projectLeadWorkQueue,
 } from './services/LeadWorkflowService.js';
+export type {
+  LeadInboxItem,
+  LeadInboxOptions,
+  LeadInboxResult,
+  LeadInboxSort,
+  LeadInboxStatusCounts,
+} from './services/lead-inbox.js';
 // Types, status unions, and operation contracts
 export * from './types.js';
