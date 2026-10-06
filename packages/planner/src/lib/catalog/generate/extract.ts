@@ -1,0 +1,316 @@
+import type {
+  CatalogField,
+  CatalogMethod,
+  CatalogModel,
+  CatalogOperation,
+  CatalogPackage,
+  CatalogRoute,
+} from '../types.ts';
+import { PACKAGE_PREFIX } from './exclusions.ts';
+
+/** The subset of a s-m-r-t `manifest.json` the catalog reads. */
+export interface RawManifest {
+  packageName: string;
+  smrtDependencies?: string[];
+  objects: Record<string, RawObject>;
+}
+
+interface RawParameter {
+  name: string;
+  type: string;
+  optional?: boolean;
+}
+
+interface RawMethod {
+  name: string;
+  async?: boolean;
+  parameters?: RawParameter[];
+  returnType?: string;
+  isStatic?: boolean;
+  isPublic?: boolean;
+}
+
+interface RawField {
+  type: string;
+  required?: boolean;
+  default?: unknown;
+  related?: string;
+}
+
+interface RawObject {
+  className: string;
+  qualifiedName: string;
+  collection: string;
+  extends?: string;
+  extendsTypeArg?: string;
+  fields: Record<string, RawField>;
+  methods: Record<string, RawMethod>;
+  decoratorConfig: Record<string, unknown>;
+}
+
+/** The subset of a `smrt-knowledge.json` the catalog reads. */
+export interface RawKnowledge {
+  surfaces?: RawSurface[];
+}
+
+interface RawSurface {
+  kind: 'api' | 'mcp' | 'cli' | (string & {});
+  name: string;
+  operation: string;
+  objectName: string;
+  path?: string;
+  method?: string;
+}
+
+export interface RawPackage {
+  packageName: string;
+  version: string;
+  description: string;
+  manifest: RawManifest;
+  knowledge: RawKnowledge | null;
+}
+
+/** Fields the framework manages; shown in the catalog, hidden from forms. */
+const SYSTEM_FIELDS = new Set([
+  'id',
+  'created_at',
+  'updated_at',
+  'createdAt',
+  'updatedAt',
+  'tenantId',
+]);
+
+/** Field types that hold other rows, not a value a form can edit. */
+const NON_VALUE_TYPES = new Set(['oneToMany', 'meta']);
+
+const CRUD_VERBS = ['list', 'get', 'create', 'update', 'delete'] as const;
+
+const byName = (a: { name: string }, b: { name: string }) =>
+  a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+
+/** `@happyvertical/smrt-products` -> `products`. */
+export function packageId(packageName: string): string {
+  return packageName.startsWith(PACKAGE_PREFIX)
+    ? packageName.slice(PACKAGE_PREFIX.length)
+    : packageName;
+}
+
+function primitiveDefault(value: unknown): CatalogField['default'] | undefined {
+  return typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    value === null
+    ? value
+    : undefined;
+}
+
+function extractFields(raw: RawObject): CatalogField[] {
+  const fields: CatalogField[] = [];
+  for (const [name, field] of Object.entries(raw.fields)) {
+    if (NON_VALUE_TYPES.has(field.type)) continue;
+    const entry: CatalogField = {
+      name,
+      type: field.type,
+      required: field.required === true,
+    };
+    const fallback = primitiveDefault(field.default);
+    if (fallback !== undefined) entry.default = fallback;
+    if (field.related) entry.related = field.related;
+    if (SYSTEM_FIELDS.has(name)) entry.system = true;
+    fields.push(entry);
+  }
+  return fields;
+}
+
+/**
+ * The surfaces a model gets when the knowledge artifact is absent: derived
+ * from `decoratorConfig` the way the generators do (an omitted `api`/`mcp`/
+ * `cli` key means full CRUD; `false` means none; `include` narrows it).
+ */
+function derivedVerbs(config: unknown): readonly string[] {
+  if (config === false) return [];
+  if (config && typeof config === 'object') {
+    const { include, exclude } = config as {
+      include?: string[];
+      exclude?: string[];
+    };
+    const base = include ?? [...CRUD_VERBS];
+    return base.filter((verb) => !exclude?.includes(verb));
+  }
+  return [...CRUD_VERBS];
+}
+
+const REST_VERB: Record<string, CatalogRoute | undefined> = {
+  list: { method: 'GET', path: '' },
+  get: { method: 'GET', path: '/[id]' },
+  create: { method: 'POST', path: '' },
+  update: { method: 'PATCH', path: '/[id]' },
+  delete: { method: 'DELETE', path: '/[id]' },
+};
+
+function derivedSurfaces(raw: RawObject): RawSurface[] {
+  const lower = raw.className.toLowerCase();
+  const surfaces: RawSurface[] = [];
+  const add = (kind: string, config: unknown) => {
+    for (const verb of derivedVerbs(config)) {
+      const route = REST_VERB[verb];
+      if (kind === 'api' && !route) continue;
+      surfaces.push({
+        kind,
+        name: kind === 'api' ? `${raw.collection}.${verb}` : `${lower}_${verb}`,
+        operation: verb,
+        objectName: raw.qualifiedName,
+        ...(kind === 'api' && route
+          ? { method: route.method, path: `/${raw.collection}${route.path}` }
+          : {}),
+      });
+    }
+  };
+  add('api', raw.decoratorConfig.api);
+  add('mcp', raw.decoratorConfig.mcp);
+  add('cli', raw.decoratorConfig.cli);
+  return surfaces;
+}
+
+/** Collection classes carry the custom actions; they belong to their model. */
+function ownerName(raw: RawObject): string {
+  return raw.extendsTypeArg ?? raw.className.replace(/Collection$/, '');
+}
+
+function isModel(raw: RawObject): boolean {
+  return Object.values(raw.fields).some((f) => !NON_VALUE_TYPES.has(f.type));
+}
+
+function qualify(
+  related: string,
+  packageName: string,
+  models: Map<string, RawObject>,
+): string {
+  if (related.includes(':')) return related;
+  const local = `${packageName}:${related}`;
+  return models.has(local) ? local : related;
+}
+
+/** Turn one package's raw manifest and knowledge into a catalog entry. */
+export function extractPackage(raw: RawPackage): CatalogPackage {
+  const { manifest, knowledge, packageName } = raw;
+  const objects = Object.values(manifest.objects);
+  const rawModels = objects.filter(isModel);
+  const modelMap = new Map(rawModels.map((m) => [m.qualifiedName, m]));
+  const collections = objects.filter((o) => !isModel(o));
+  const knowledgeSurfaces = knowledge?.surfaces ?? null;
+
+  const models: CatalogModel[] = rawModels.map((model) => {
+    const owned = [
+      model,
+      ...collections.filter((c) => ownerName(c) === model.className),
+    ];
+    const ownedNames = new Set(owned.map((o) => o.qualifiedName));
+    const surfaces = knowledgeSurfaces
+      ? knowledgeSurfaces.filter((s) => ownedNames.has(s.objectName))
+      : derivedSurfaces(model);
+    const seen = new Set<string>();
+    const unique = surfaces.filter((s) => {
+      const key = `${s.kind}:${s.name}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const rest: CatalogRoute[] = unique
+      .filter((s) => s.kind === 'api' && s.path && s.method)
+      .map((s) => ({ method: s.method as string, path: s.path as string }));
+    const operations = (kind: string): CatalogOperation[] =>
+      unique
+        .filter((s) => s.kind === kind)
+        .map((s) => ({ operation: s.operation, name: s.name }))
+        .sort(byName);
+    const mcp = operations('mcp');
+    const cli = operations('cli');
+    const mcpOps = new Set(mcp.map((t) => t.operation));
+
+    const methods: CatalogMethod[] = owned
+      .flatMap((o) => Object.values(o.methods))
+      .filter((m) => m.isPublic !== false && !m.isStatic)
+      .filter((m, i, all) => all.findIndex((x) => x.name === m.name) === i)
+      .map((m) => ({
+        name: m.name,
+        async: m.async === true,
+        parameters: (m.parameters ?? []).map(
+          (p) => `${p.name}${p.optional ? '?' : ''}: ${p.type}`,
+        ),
+        returnType: m.returnType ?? 'unknown',
+        aiCallable: mcpOps.has(m.name),
+      }))
+      .sort(byName);
+
+    const fields = extractFields(model);
+    const references = [
+      ...new Set(
+        fields
+          .filter(
+            (f) =>
+              f.related && ['foreignKey', 'crossPackageRef'].includes(f.type),
+          )
+          .map((f) => qualify(f.related as string, packageName, modelMap)),
+      ),
+    ].sort();
+    for (const field of fields) {
+      if (field.related) {
+        field.related = qualify(field.related, packageName, modelMap);
+      }
+    }
+
+    return {
+      id: model.qualifiedName,
+      name: model.className,
+      collection: model.collection,
+      ...(model.extends && modelMap.has(`${packageName}:${model.extends}`)
+        ? { extends: `${packageName}:${model.extends}` }
+        : {}),
+      fields,
+      rest,
+      mcp,
+      cli,
+      methods,
+      references,
+      exposed: rest.length + mcp.length + cli.length > 0,
+    };
+  });
+  models.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  return {
+    id: packageId(packageName),
+    packageName,
+    version: raw.version,
+    description: raw.description,
+    models,
+    dependencies: (manifest.smrtDependencies ?? []).map(packageId).sort(),
+    surfaceSource: knowledgeSurfaces ? 'knowledge' : 'manifest',
+  };
+}
+
+/**
+ * Resolve each package's dependencies: the other catalog packages named in its
+ * manifest's `smrtDependencies` or pointed at by its models' foreign keys and
+ * cross-package references. Packages outside the catalog (excluded
+ * infrastructure) are not dependencies.
+ */
+export function resolveDependencies(
+  packages: CatalogPackage[],
+): CatalogPackage[] {
+  const ids = new Set(packages.map((p) => p.id));
+  return packages.map((pkg) => {
+    const deps = new Set<string>(pkg.dependencies.filter((id) => ids.has(id)));
+    for (const model of pkg.models) {
+      for (const ref of model.references) {
+        const colon = ref.indexOf(':');
+        if (colon < 0) continue;
+        const id = packageId(ref.slice(0, colon));
+        if (ids.has(id)) deps.add(id);
+      }
+    }
+    deps.delete(pkg.id);
+    return { ...pkg, dependencies: [...deps].sort() };
+  });
+}

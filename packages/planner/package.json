@@ -1,0 +1,37 @@
+{
+  "name": "smrt-planner",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=26.0.0",
+    "pnpm": "11.25.0"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "catalog:generate": "node scripts/generate-catalog.ts",
+    "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "lint": "biome ci ."
+  },
+  "dependencies": {
+    "@happyvertical/smrt-svelte": "^0.54.3",
+    "@happyvertical/smrt-ui": "^0.54.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.3",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@types/node": "^24.13.6",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.0",
+    "vitest": "4.1.10"
+  }
+}
