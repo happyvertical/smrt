@@ -110,6 +110,10 @@ It is the ground-up alternative to `smrt-saas-starter`.
   hosted membership-backed principals); `pnpm typecheck` checks it against
   the template. `__tests__/localMcpToken.test.ts` proves mint → real
   `smrt-mcp-bridge` stdio → route against the real runtime.
+  `__tests__/mcpConsumerBundle.test.ts` (why `@happyvertical/smrt-chat` is a
+  devDependency) Vite-SSR-builds `fixtures/mcp-chat-consumer/` with chat and
+  smrt-agents inlined, runs it in plain Node, and requires one registry entry
+  per inlined class and exactly the allow-listed tools on the route (#3490).
 
 ## Tests
 

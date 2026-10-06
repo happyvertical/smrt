@@ -44,6 +44,7 @@ import {
   generateClientModule,
 } from './generated-client.js';
 import { importBuildAwareModule } from './import-build-aware.js';
+import { injectPackageStamps, packageStampText } from './package-stamp.js';
 import {
   findCliApiCoherenceViolations,
   generateSvelteKitRoutes,
@@ -398,6 +399,71 @@ const REGISTER_SHIM_RE = /[\\/]__smrt-register__\.(?:ts|mts|js|mjs)$/;
 export function isRegisterShimModuleId(id: string): boolean {
   const cleanId = id.split('?')[0];
   return REGISTER_SHIM_RE.test(cleanId) && !cleanId.includes('node_modules');
+}
+
+/** Source modules a library build may stamp (#3490). */
+const STAMPABLE_MODULE_RE = /\.(?:ts|mts|tsx|js|mjs|jsx)$/;
+
+/**
+ * The manifest a library build publishes: it records that the package stamps
+ * its classes (`stampsConstructors`, #3490) when it has a scoped name.
+ */
+export function stampedLibraryManifest(
+  manifest: SmartObjectManifest,
+): SmartObjectManifest {
+  return manifest.packageName?.startsWith('@')
+    ? { ...manifest, stampsConstructors: true }
+    : manifest;
+}
+
+/**
+ * Library builds: stamp each `@smrt()` class a package source module declares
+ * with its package (`injectPackageStamps`, #3490). Returns null when the
+ * module declares none.
+ */
+export async function stampPackageModule(
+  code: string,
+  id: string,
+  manifest: SmartObjectManifest,
+): Promise<{ code: string; map: null } | null> {
+  const packageName = manifest.packageName;
+  const cleanId = id.split('?')[0];
+  if (
+    !packageName?.startsWith('@') ||
+    cleanId.startsWith('\0') ||
+    cleanId.includes('node_modules') ||
+    !STAMPABLE_MODULE_RE.test(cleanId) ||
+    !code.includes('smrt')
+  ) {
+    return null;
+  }
+  const scanner = await importScanner();
+  const decorated = (source: string) =>
+    scanner
+      .parseSource(source, cleanId)
+      .classes.filter((candidate) => candidate.hasSmartDecorator);
+  const targets = decorated(code);
+  const stamped = injectPackageStamps(code, targets, packageName, cleanId);
+  if (stamped === null) return null;
+  // Verify by re-parsing: every decorated class now opens with its stamp
+  // and the module declares exactly as many stamps as decorated classes.
+  const stamp = packageStampText(packageName);
+  const after = decorated(stamped);
+  const stampCount = stamped.split(stamp).length - 1;
+  if (
+    after.length !== targets.length ||
+    stampCount !== targets.length ||
+    after.some(
+      ({ bodyStart }) =>
+        typeof bodyStart !== 'number' ||
+        !stamped.startsWith(stamp, bodyStart + 1),
+    )
+  ) {
+    throw new Error(
+      `[smrt] Package stamping of ${cleanId} did not stamp exactly its ${targets.length} @smrt() class(es) (#3490).`,
+    );
+  }
+  return { code: stamped, map: null };
 }
 
 /**
@@ -1081,37 +1147,45 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       }
     },
 
-    transform(code, id) {
-      // SvelteKit apps: register the generated objects before the server
-      // config module (`src/lib/server/smrt.ts`) runs, so the application
-      // never hand-writes the guarded `smrt-register.js` import (#3416).
-      if (svelteKit.enabled && !config?.build?.lib) {
-        const injected = injectSvelteKitRegistration(code, id, {
-          projectRoot: configuredProjectRoot ?? projectRoot,
-          configPath: svelteKit.configPath,
-          configFileName: svelteKit.configFileName,
-        });
-        return injected === null ? null : { code: injected, map: null };
-      }
-      // Library builds only: inline the scanned manifest into the package's
-      // __smrt-register__ shim so the published dist registers field metadata
-      // as data instead of resolving ./manifest.json at runtime. Runtime URL
-      // resolution silently no-ops when a consumer's bundler (e.g. a
-      // SvelteKit server build) relocates the module into its own chunks
-      // directory, dropping every plain field from the registry (#1506,
-      // #1507). Dev/test flows are untouched: the vitest plugin populates
-      // manifests through its own path, and non-library builds keep the
-      // original shim.
-      if (!config?.build?.lib || !manifest) {
-        return null;
-      }
-      if (!isRegisterShimModuleId(id)) {
-        return null;
-      }
-      return {
-        code: generateInlineRegisterModule(manifest),
-        map: null,
-      };
+    // `pre`: package stamping needs the authored source, before decorators
+    // are lowered. The other two rewrites are order-independent (a prepended
+    // import, a replaced module).
+    transform: {
+      order: 'pre',
+      async handler(code, id) {
+        // SvelteKit apps: register the generated objects before the server
+        // config module (`src/lib/server/smrt.ts`) runs, so the application
+        // never hand-writes the guarded `smrt-register.js` import (#3416).
+        if (svelteKit.enabled && !config?.build?.lib) {
+          const injected = injectSvelteKitRegistration(code, id, {
+            projectRoot: configuredProjectRoot ?? projectRoot,
+            configPath: svelteKit.configPath,
+            configFileName: svelteKit.configFileName,
+          });
+          return injected === null ? null : { code: injected, map: null };
+        }
+        // Library builds only: inline the scanned manifest into the package's
+        // __smrt-register__ shim so the published dist registers field metadata
+        // as data instead of resolving ./manifest.json at runtime. Runtime URL
+        // resolution silently no-ops when a consumer's bundler (e.g. a
+        // SvelteKit server build) relocates the module into its own chunks
+        // directory, dropping every plain field from the registry (#1506,
+        // #1507). Dev/test flows are untouched: the vitest plugin populates
+        // manifests through its own path, and non-library builds keep the
+        // original shim.
+        if (!config?.build?.lib || !manifest) {
+          return null;
+        }
+        if (isRegisterShimModuleId(id)) {
+          return {
+            code: generateInlineRegisterModule(
+              stampedLibraryManifest(manifest),
+            ),
+            map: null,
+          };
+        }
+        return stampPackageModule(code, id, manifest);
+      },
     },
 
     shouldTransformCachedModule({ id }) {
@@ -1418,13 +1492,15 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         // Ensure directory exists
         mkdirSync(dirname(manifestPath), { recursive: true });
 
-        // Write manifest file
+        // Write manifest file. The knowledge artifact hashes the manifest it
+        // is given, so it must see the same stamped object the file holds.
+        const published = stampedLibraryManifest(manifest);
         publishAtomicArtifact({
           path: manifestPath,
-          content: JSON.stringify(manifest, null, 2),
+          content: JSON.stringify(published, null, 2),
         });
         await writeDomainKnowledgeArtifact(
-          manifest,
+          published,
           projectRoot,
           knowledgePath,
           manifestPath,

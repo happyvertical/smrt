@@ -1733,6 +1733,9 @@ function extractClassDeclaration(
     methods,
     startLine: node.loc?.start.line || 1,
     endLine: node.loc?.end.line || 1,
+    ...(typeof node.body?.start === 'number'
+      ? { bodyStart: node.body.start }
+      : {}),
   };
 }
 

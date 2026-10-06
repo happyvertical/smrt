@@ -92,6 +92,8 @@ export interface RuntimeOptions {
     {
       objectName: string;
       objectType: string;
+      /** Registry identity of the task's class (#3490). */
+      registryKey?: string;
     }
   >;
 
@@ -146,7 +148,7 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
 
   // Direct template callers retain their legacy object_action inputs. The
   // owning generator always supplies explicit targets, including valid aliases.
-  const toolTargets =
+  const toolTargets: Record<string, McpToolTarget> =
     explicitToolTargets ??
     Object.fromEntries(
       tools.map((tool) => {
@@ -184,6 +186,10 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
       .map((tool) => {
         const objectName = toolTargets[tool.name].objectName.toLowerCase();
         const action = toolTargets[tool.name].action;
+        // Registry identity for every emitted lookup (#3490).
+        const lookup =
+          toolTargets[tool.name].registryKey ??
+          toolTargets[tool.name].objectName;
 
         switch (action) {
           case 'list':
@@ -198,7 +204,7 @@ ${indent}  const orderBy = args.orderBy ?? ${JSON.stringify(
             )};
 ${indent}  const where = args.where ?? {};
 
-${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -218,7 +224,7 @@ ${indent}  if (!args.id && !args.slug) {
 ${indent}    throw new Error('Either id or slug is required');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -235,7 +241,7 @@ ${indent}}`;
 
           case 'create':
             return `${indent}case '${tool.name}': {
-${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, args, aiConfig);
+${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget(${JSON.stringify(objectName)}, ${JSON.stringify(lookup)}, args, aiConfig);
 
 ${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
 
@@ -249,7 +255,7 @@ ${indent}  if (!id) {
 ${indent}    throw new Error('ID is required for update');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -260,7 +266,7 @@ ${indent}    throw new Error('Object not found');
 ${indent}  }
 
 ${indent}  await collection.withAuditMutation(existing, 'updated', async (bound) => {
-${indent}    Object.assign(bound, applyWritablePolicy(${JSON.stringify(toolTargets[tool.name].objectName)}, updateData));
+${indent}    Object.assign(bound, applyWritablePolicy(${JSON.stringify(lookup)}, updateData));
 ${indent}    await bound.save();
 ${indent}  });
 
@@ -273,7 +279,7 @@ ${indent}  if (!args.id) {
 ${indent}    throw new Error('ID is required for delete');
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -302,7 +308,7 @@ ${indent}  if (actionMeta.scope === 'collection' && id) {
 ${indent}    throw new Error(${JSON.stringify(`Custom action ${action} is collection-scoped and does not accept an ID`)});
 ${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(toolTargets[tool.name].objectName)}, {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
@@ -310,7 +316,7 @@ ${indent}  });
 ${indent}  const target = actionMeta.scope === 'item'
 ${indent}    ? await collection.get(id)
 ${indent}    : actionMeta.isStatic
-${indent}      ? ObjectRegistry.getClass(${JSON.stringify(toolTargets[tool.name].objectName)})?.constructor
+${indent}      ? ObjectRegistry.getClass(${JSON.stringify(lookup)})?.constructor
 ${indent}      : collection;
 ${indent}  if (!target) {
 ${indent}    throw new Error(actionMeta.scope === 'item' ? 'Object not found' : 'Custom action target not found');
@@ -387,7 +393,7 @@ const DEBUG = ${debug};
 // Static tool definitions (generated at build time)
 const TOOLS = ${toolsCode};
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
-const TOOL_TARGETS: Record<string, { objectName: string; action: string }> = ${JSON.stringify(toolTargets)};
+const TOOL_TARGETS: Record<string, { objectName: string; action: string; registryKey?: string }> = ${JSON.stringify(toolTargets)};
 const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
 const TASK_ACTIONS = ${JSON.stringify(taskActions)};
 const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
@@ -463,10 +469,10 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
 }
 
 /** Resolve an advertised STI discriminator to its registered subtype collection. */
-async function resolveCreateTarget(baseObjectName: string, args: Record<string, any>, aiConfig: any) {
+async function resolveCreateTarget(stiKey: string, baseObjectName: string, args: Record<string, any>, aiConfig: any) {
   let objectName = baseObjectName;
   const discriminator = args._meta_type;
-  const targets = STI_TARGETS[baseObjectName];
+  const targets = STI_TARGETS[stiKey];
   if (typeof discriminator === 'string' && targets) {
     const target = targets[discriminator];
     if (!target) throw new Error('Unknown STI discriminator: ' + discriminator);
@@ -606,9 +612,9 @@ function jsonRpcError(id: any, code: number, message: string, data?: any) {
 async function getTaskRuntime() {
   if (!taskRuntime) {
     taskRuntime = (async () => {
-      const firstAction = Object.values(TASK_ACTIONS)[0] as { objectName: string } | undefined;
+      const firstAction = Object.values(TASK_ACTIONS)[0] as { objectName: string; registryKey?: string } | undefined;
       if (!firstAction) throw new Error('No task-enabled MCP action is configured');
-      const collection = await ObjectRegistry.getCollection(firstAction.objectName, {
+      const collection = await ObjectRegistry.getCollection(firstAction.registryKey ?? firstAction.objectName, {
         persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
       });
       const db = collection.db;

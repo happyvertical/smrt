@@ -27,6 +27,7 @@ import {
   getNodeBuiltins,
   getStaticManifestCache,
   getTestManifestCache,
+  packageStampsConstructors,
 } from '../manifest/store.js';
 import { SmrtObject } from '../object';
 import type {
@@ -82,6 +83,7 @@ import {
   getInheritanceCache,
   getLegacyFieldDecorators,
   getSourceFileFromStack,
+  getStampedPackageName,
   getStiSiblingsLoaded,
   verboseLog,
 } from './shared-state';
@@ -388,6 +390,8 @@ function buildDecoratorCollisionInputs(args: {
       !!newDeclaredTableName &&
       !!existingTableName &&
       newDeclaredTableName !== existingTableName,
+    existingPackageStampsConstructors:
+      !!existing.packageName && packageStampsConstructors(existing.packageName),
   };
 }
 
@@ -575,6 +579,7 @@ function buildManifestCollisionInputs(args: {
     registrationKeyDiffersFromExistingKey: registrationKey !== existingKey,
     existingHasNoPackage: !existing.packageName,
     declaresDifferentTable: false,
+    existingPackageStampsConstructors: false,
   };
   // Note: manifest-origin sets hasNewQualifiedKey from the final
   // registrationKey (not packageName) because registerFromManifest accepts
@@ -960,7 +965,9 @@ function registerUntracked(
   config: SmartObjectConfig = {},
 ): void {
   const name = config.name || ctor.name;
-  const explicitPackageName = config.packageName;
+  // A library build stamps each class it declares with its package (#3490):
+  // constructor-bound identity that holds wherever a consumer bundles it.
+  const explicitPackageName = config.packageName ?? getStampedPackageName(ctor);
   let promotedCollectionConstructor: RegisteredClass['collectionConstructor'];
   let promotedRuntimeConfig: SmartObjectConfig | undefined;
   let promotedReplacementAncestry: string[] | undefined;
@@ -1396,6 +1403,11 @@ function registerUntracked(
     const foreignEntry =
       !!entry?.packageName && entry.packageName !== newPackageName;
     if (!foreignEntry) return entry;
+    // A stamping package's classes carry their package from decoration on;
+    // this unstamped class is not one of them, whatever it shares (#3490).
+    if (entry?.packageName && packageStampsConstructors(entry.packageName)) {
+      return undefined;
+    }
     // Another package's entry describes this class only when it describes
     // this class's own file: a class scanned into another package's
     // manifest under that package's key (core's own fixtures with an

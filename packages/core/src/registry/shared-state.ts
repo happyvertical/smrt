@@ -360,6 +360,20 @@ export function getConstructorIndex(): WeakMap<SmrtObjectConstructor, string> {
   return globalThis.__smrtRegistryConstructorIndex;
 }
 
+/**
+ * The package a library build stamped on this exact constructor (#3490).
+ * Own property only: a subclass declared elsewhere inherits the static but is
+ * not that package's class.
+ */
+export function getStampedPackageName(ctor: unknown): string | undefined {
+  if (typeof ctor !== 'function') return undefined;
+  if (!Object.hasOwn(ctor, '__smrtPackage__')) {
+    return undefined;
+  }
+  const value = (ctor as { __smrtPackage__?: unknown }).__smrtPackage__;
+  return typeof value === 'string' && value.startsWith('@') ? value : undefined;
+}
+
 export function getInheritanceCache(): LRUCache<string, string[]> {
   if (!globalThis.__smrtRegistryInheritanceChainCache) {
     const config = getInheritanceConfig();

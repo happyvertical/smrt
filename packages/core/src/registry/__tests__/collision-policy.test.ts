@@ -43,6 +43,7 @@ function baseline(overrides: Partial<CollisionInputs> = {}): CollisionInputs {
     existingHasNoPackage: false,
     existingHasAnyPackage: false,
     declaresDifferentTable: false,
+    existingPackageStampsConstructors: false,
     ...overrides,
   };
 }

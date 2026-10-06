@@ -107,7 +107,7 @@ describe('smrtPlugin __smrt-register__ manifest inlining (#1506/#1507)', () => {
   it('replaces the shim with the inlined manifest during library builds', async () => {
     const plugin = await createLibraryBuildPlugin();
 
-    const result = (plugin as any).transform(
+    const result = await (plugin as any).transform.handler(
       REGISTER_SHIM_SOURCE,
       join(tmpDir, 'src', '__smrt-register__.ts'),
     );
@@ -132,7 +132,7 @@ describe('smrtPlugin __smrt-register__ manifest inlining (#1506/#1507)', () => {
   it('inlined manifest registers fields with no manifest.json on disk (bundled-chunk scenario)', async () => {
     const plugin = await createLibraryBuildPlugin();
 
-    const { code } = (plugin as any).transform(
+    const { code } = await (plugin as any).transform.handler(
       REGISTER_SHIM_SOURCE,
       join(tmpDir, 'src', '__smrt-register__.ts'),
     );
@@ -182,7 +182,7 @@ describe('smrtPlugin __smrt-register__ manifest inlining (#1506/#1507)', () => {
       plugins: [],
     });
 
-    const result = (plugin as any).transform(
+    const result = await (plugin as any).transform.handler(
       REGISTER_SHIM_SOURCE,
       join(tmpDir, 'src', '__smrt-register__.ts'),
     );
@@ -193,7 +193,7 @@ describe('smrtPlugin __smrt-register__ manifest inlining (#1506/#1507)', () => {
   it('does not transform other modules in library builds', async () => {
     const plugin = await createLibraryBuildPlugin();
 
-    const result = (plugin as any).transform(
+    const result = await (plugin as any).transform.handler(
       'export const x = 1;',
       join(tmpDir, 'src', 'UsageMetric.ts'),
     );
