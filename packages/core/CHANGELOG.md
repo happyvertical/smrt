@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.55.1
+
+### Patch Changes
+
+- ### Features
+  
+  - ship application-ready SMRT defaults (#3588)
+- @happyvertical/smrt-config@0.55.1
+  - @happyvertical/smrt-scanner@0.55.1
+  - @happyvertical/smrt-types@0.55.1
+
 ## 0.55.0
 
 ### Patch Changes
