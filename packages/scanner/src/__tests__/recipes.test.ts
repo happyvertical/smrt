@@ -169,6 +169,50 @@ export class NotARecipe extends SmrtRecipe { static id = 'x.y'; }
       expect(result.errors).toEqual([]);
     });
 
+    it('does not match a package that merely starts with the core name', () => {
+      const result = parseSource(
+        `
+import { SmrtRecipe } from '@happyvertical/smrt-core-utils';
+export class NotOurs extends SmrtRecipe { static id = 'x.y'; }
+`,
+        'r.ts',
+      );
+      expect(result.recipes).toBeUndefined();
+      expect(result.errors).toEqual([]);
+    });
+
+    it('reports a recipe extending another recipe instead of dropping it', () => {
+      const result = parseSource(
+        `
+import { SmrtRecipe } from '${CORE}';
+export class Base extends SmrtRecipe {
+  static id = 'a.b'; static label = 'L'; static summary = 'S'; static models = [];
+}
+export class Child extends Base { static id = 'a.c'; }
+`,
+        'r.ts',
+      );
+      expect(result.errors.map((e) => e.message).join('\n')).toMatch(
+        /Recipe Child: extends the recipe Base; a recipe must extend SmrtRecipe directly/,
+      );
+    });
+
+    it('reports a recipe declared as a class expression or in a block', () => {
+      const result = parseSource(
+        `
+import { SmrtRecipe } from '${CORE}';
+export const A = class extends SmrtRecipe { static id = 'a.b'; };
+function make() { class B extends SmrtRecipe { static id = 'a.c'; } return B; }
+`,
+        'r.ts',
+      );
+      expect(
+        result.errors.filter((e) =>
+          /class expression or inside a block/.test(e.message),
+        ),
+      ).toHaveLength(2);
+    });
+
     it('ignores a SmrtRecipe imported from another package', () => {
       const result = parseSource(
         `
@@ -561,6 +605,18 @@ export class A extends SmrtRecipe {
   static options = { Order: { exposure: { api: true, mcp: { include: ['list'] }, cli: 'yes' } } };
 }`);
       expect(text.match(/never widen it/g)).toHaveLength(3);
+    });
+
+    it('rejects exclude entries that name no operation, and an empty exclude', async () => {
+      const text = await errorsFor(`
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Order];
+  static options = { Order: { exposure: { api: { exclude: ['delte'] }, mcp: { exclude: [] } } } };
+}`);
+      expect(text.match(/never widen it/g)).toHaveLength(2);
+      expect(text).toMatch(/exposure\.api may only be/);
+      expect(text).toMatch(/exposure\.mcp may only be/);
     });
 
     it('rejects unknown option keys and bad hint values', async () => {

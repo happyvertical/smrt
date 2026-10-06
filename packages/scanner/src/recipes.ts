@@ -40,7 +40,12 @@ import type { ResolvedClassDefinition, ScanError } from './types.js';
 type AstNode = { type: string } & Record<string, unknown>;
 
 const RECIPE_BASE = 'SmrtRecipe';
-const CORE_SPECIFIER_PREFIX = '@happyvertical/smrt-core';
+const CORE_SPECIFIER = '@happyvertical/smrt-core';
+
+/** The core package itself or one of its subpaths (`/browser`), nothing else. */
+function isCoreSpecifier(source: string): boolean {
+  return source === CORE_SPECIFIER || source.startsWith(`${CORE_SPECIFIER}/`);
+}
 
 /** `commerce.sales`: dotted, lowercase, at least two segments. */
 const RECIPE_ID_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z0-9][a-z0-9_-]*)+$/;
@@ -161,7 +166,7 @@ function isRecipeBase(
     return (
       !!binding &&
       binding.imported === RECIPE_BASE &&
-      binding.source.startsWith(CORE_SPECIFIER_PREFIX)
+      isCoreSpecifier(binding.source)
     );
   }
   if (node.type === 'MemberExpression' && node.computed !== true) {
@@ -174,7 +179,7 @@ function isRecipeBase(
     return (
       !!binding &&
       binding.namespace &&
-      binding.source.startsWith(CORE_SPECIFIER_PREFIX) &&
+      isCoreSpecifier(binding.source) &&
       property.name === RECIPE_BASE
     );
   }
@@ -394,6 +399,52 @@ export function extractRecipes(input: {
     }
   }
 
+  // A recipe must extend `SmrtRecipe` directly. Anything that extends another
+  // recipe, or declares the base through a class expression, would otherwise
+  // vanish from the artifacts with the build still green.
+  const recipeNames = new Set<string>();
+  for (const node of classes) {
+    if (isRecipeBase(node.superClass as AstNode | null, imports)) {
+      recipeNames.add(((node.id as AstNode | undefined)?.name ?? '') as string);
+    }
+  }
+  const reportAt = (message: string, at: AstNode) => {
+    const loc =
+      typeof at.start === 'number'
+        ? getLineColumn(input.sourceText, at.start)
+        : undefined;
+    errors.push({
+      message,
+      filePath: input.filePath,
+      line: loc?.line,
+      column: loc?.column,
+      severity: 'error',
+    });
+  };
+  for (const node of classes) {
+    const base = node.superClass
+      ? unwrap(node.superClass as AstNode)
+      : undefined;
+    if (
+      base?.type === 'Identifier' &&
+      recipeNames.has(base.name as string) &&
+      !isRecipeBase(base, imports)
+    ) {
+      reportAt(
+        `Recipe ${(node.id as AstNode | undefined)?.name ?? 'AnonymousRecipe'}: extends the recipe ${base.name as string}; a recipe must extend SmrtRecipe directly`,
+        node,
+      );
+    }
+  }
+  for (const found of findClassExpressions(body)) {
+    if (isRecipeBase(found.superClass as AstNode | null, imports)) {
+      reportAt(
+        'Recipe declared as a class expression or inside a block; declare it as a top-level `class X extends SmrtRecipe`',
+        found,
+      );
+    }
+  }
+
   for (const node of classes) {
     if (!isRecipeBase(node.superClass as AstNode | null, imports)) continue;
     const className = ((node.id as AstNode | undefined)?.name ??
@@ -532,6 +583,44 @@ export function extractRecipes(input: {
   return { recipes, errors };
 }
 
+/**
+ * Class expressions and non-top-level class declarations anywhere in the
+ * module, so a recipe declared there is reported instead of silently skipped.
+ */
+function findClassExpressions(body: AstNode[]): AstNode[] {
+  const found: AstNode[] = [];
+  const topLevel = new Set<unknown>();
+  for (const statement of body) {
+    const node =
+      (statement.type === 'ExportNamedDeclaration' ||
+        statement.type === 'ExportDefaultDeclaration') &&
+      statement.declaration
+        ? (statement.declaration as AstNode)
+        : statement;
+    if (node.type === 'ClassDeclaration') topLevel.add(node);
+  }
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > 200 || !value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry, depth + 1);
+      return;
+    }
+    const node = value as AstNode;
+    if (
+      (node.type === 'ClassExpression' || node.type === 'ClassDeclaration') &&
+      !topLevel.has(node)
+    ) {
+      found.push(node);
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'loc' || key === 'range') continue;
+      visit(child, depth + 1);
+    }
+  };
+  visit(body, 0);
+  return found;
+}
+
 // ============================================================================
 // Resolution and validation
 // ============================================================================
@@ -594,7 +683,18 @@ function resolveModel(
   return candidates[0];
 }
 
-function isNarrowing(value: unknown): value is RecipeExposureNarrowing {
+/**
+ * The generated CRUD verbs, mirrored from `CRUD_OPERATIONS` in smrt-core
+ * (`generators/custom-action.ts`); this package cannot import core. An
+ * `exclude` entry must be one of these or a method the model declares, so a
+ * typo cannot pass as a narrowing that narrows nothing.
+ */
+const CRUD_VERBS = ['list', 'get', 'create', 'update', 'delete'];
+
+function isNarrowing(
+  value: unknown,
+  operations: ReadonlySet<string>,
+): value is RecipeExposureNarrowing {
   if (value === false) return true;
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const keys = Object.keys(value);
@@ -603,7 +703,8 @@ function isNarrowing(value: unknown): value is RecipeExposureNarrowing {
     keys.length === 1 &&
     keys[0] === 'exclude' &&
     Array.isArray(exclude) &&
-    exclude.every((entry) => typeof entry === 'string')
+    exclude.length > 0 &&
+    exclude.every((entry) => typeof entry === 'string' && operations.has(entry))
   );
 }
 
@@ -634,6 +735,10 @@ function readModelOptions(
   const known = new Set(
     model.allFields.filter((f) => !f.isStatic).map((f) => f.name),
   );
+  const operations = new Set<string>([
+    ...CRUD_VERBS,
+    ...model.methods.map((method) => method.name),
+  ]);
   for (const [key, value] of Object.entries(raw)) {
     if (key === 'fields') {
       if (!isPlainObject(value)) {
@@ -694,9 +799,9 @@ function readModelOptions(
           fail(
             `${where}.exposure.${transport} is not a transport; use api, mcp, or cli`,
           );
-        } else if (!isNarrowing(narrowing)) {
+        } else if (!isNarrowing(narrowing, operations)) {
           fail(
-            `${where}.exposure.${transport} may only be \`false\` or \`{ exclude: string[] }\`: options narrow exposure and never widen it, so \`true\` and \`include\` are rejected`,
+            `${where}.exposure.${transport} may only be \`false\` or a non-empty \`{ exclude: [...] }\` naming ${[...CRUD_VERBS].join('/')} or a method of \`${model.className}\`: options narrow exposure and never widen it, so \`true\` and \`include\` are rejected`,
           );
         } else {
           exposure[transport as (typeof EXPOSURE_TRANSPORTS)[number]] =
