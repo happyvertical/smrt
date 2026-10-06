@@ -81,6 +81,21 @@ describe('ShellState layout panels', () => {
     expect(shell.panels.right).toBe('expanded');
   });
 
+  it('reports the dock unavailable where the host hides the right edge', () => {
+    const shell = createShellState({
+      config: { right: { phone: 'hidden' } },
+      viewport: 'desktop',
+    });
+    shell.registerFocusTool({ id: 'assistant', label: 'Assistant' });
+    expect(shell.dockAvailable).toBe(true);
+    shell.setViewport('phone');
+    expect(shell.dockAvailable).toBe(false);
+    expect(shell.openDockTool('assistant')).toBe(false);
+    const removed = createShellState({ config: { right: false } });
+    removed.registerFocusTool({ id: 'assistant', label: 'Assistant' });
+    expect(removed.dockAvailable).toBe(false);
+  });
+
   it('uses the layout starting state below a stored toggle on later loads', () => {
     const shell = createShellState({
       config: { left: { initial: 'collapsed' } },

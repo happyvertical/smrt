@@ -487,13 +487,18 @@ export class ShellState {
   }
 
   /**
-   * Whether the dock (right edge) can be shown: neither removed by the host
-   * nor hidden by the user's layout.
+   * Whether the dock (right edge) can be shown now: not removed by the host
+   * (including `phone: 'hidden'` on a phone) and not hidden by the user's
+   * layout.
    */
   get dockAvailable(): boolean {
     return (
       this.config.panels.right.initial !== 'hidden' &&
-      this.layoutPanels.right?.visible !== false
+      this.layoutPanels.right?.visible !== false &&
+      !(
+        this.viewport === 'phone' &&
+        this.phonePresentation('right') === 'hidden'
+      )
     );
   }
 
