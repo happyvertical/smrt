@@ -248,6 +248,7 @@ export {
   type JunctionAttachOptions,
   type JunctionFilterOptions,
   SmrtJunction,
+  SmrtJunctionBase,
 } from './junction';
 export * from './knowledge';
 // Lazy / execute-time config resolvers (for agent_config and similar

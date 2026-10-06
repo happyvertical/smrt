@@ -56,6 +56,7 @@ export {
   type JunctionAttachOptions,
   type JunctionFilterOptions,
   SmrtJunction,
+  SmrtJunctionBase,
 } from './junction';
 export * from './object';
 export {

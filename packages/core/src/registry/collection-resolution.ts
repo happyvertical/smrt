@@ -12,7 +12,7 @@ export interface CollectionRegistrationLookup {
 /**
  * Framework base classes that ARE collections (extend `SmrtCollection`).
  *
- * `SmrtJunction` is an abstract collection base — junction collections declare
+ * `SmrtJunction` and `SmrtJunctionBase` are abstract collection bases — junction collections declare
  * `extends SmrtJunction<Item>`, and the manifest records that *direct* parent.
  * `SmrtJunction` is itself never registered in a consumer's registry, so the
  * inheritance-chain walk in `isCollectionRegistration()` cannot reach
@@ -50,6 +50,7 @@ export interface CollectionRegistrationLookup {
 export const SMRT_COLLECTION_BASE_NAMES = [
   'SmrtCollection',
   'SmrtJunction',
+  'SmrtJunctionBase',
   'SmrtReportCollection',
 ] as const;
 
