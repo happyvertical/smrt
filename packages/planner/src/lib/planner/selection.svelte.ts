@@ -1,11 +1,9 @@
-import { base } from '$app/paths';
 import { catalog } from '../catalog/index.ts';
 import {
   normalize,
   parseSelection,
   requiredBy,
   withDependencies,
-  withSelection,
 } from './selection.ts';
 
 const packages = new Map(catalog.packages.map((pkg) => [pkg.id, pkg]));
@@ -60,11 +58,6 @@ class Selection {
   apply(change: { add?: string[]; remove?: string[] }): void {
     this.add(...(change.add ?? []).filter((id) => known.has(id)));
     this.remove(...(change.remove ?? []));
-  }
-
-  /** An in-app path (`/m/products/Product/`) carrying the current selection. */
-  href(path: string): string {
-    return withSelection(`${base}${path}`, this.ids);
   }
 
   clear(): void {

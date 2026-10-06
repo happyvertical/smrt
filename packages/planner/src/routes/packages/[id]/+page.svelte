@@ -3,6 +3,7 @@ import { Switch } from '@happyvertical/smrt-ui/forms';
 import { exposedModels, getPackage } from '$lib/catalog/index.ts';
 import SurfacePanel from '$lib/components/SurfacePanel.svelte';
 import { humanize } from '$lib/data/format.ts';
+import { appHref } from '$lib/planner/app.svelte.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
 import type { PageProps } from './$types';
 
@@ -28,7 +29,7 @@ const lockedBy = $derived(selection.requiredBy(data.id));
           Needs:
           {#each pkg.dependencies as dependency, i (dependency)}
             {#if i > 0},
-            {/if}<a href={selection.href(`/packages/${dependency}/`)}>{humanize(dependency)}</a>
+            {/if}<a href={appHref(`/packages/${dependency}/`)}>{humanize(dependency)}</a>
           {/each}
         </p>
       {/if}
@@ -50,7 +51,7 @@ const lockedBy = $derived(selection.requiredBy(data.id));
       <ul>
         {#each exposedModels(pkg) as model (model.id)}
           <li>
-            <a href={selection.href(`/m/${pkg.id}/${model.name}/`)}>{model.name}</a>
+            <a href={appHref(`/m/${pkg.id}/${model.name}/`)}>{model.name}</a>
             <span class="meta">{model.fields.filter((f) => !f.system).length} fields</span>
           </li>
         {/each}

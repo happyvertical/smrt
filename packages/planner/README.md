@@ -1,7 +1,7 @@
 # smrt-planner
 
-A static demo of [s-m-r-t](https://github.com/happyvertical/smrt). Pick packages
-(products, inventory, sales, ...) and an app mock-up assembles around them: a
+A static demo of [s-m-r-t](https://github.com/happyvertical/smrt). Add recipes
+(Customers, Sales, Purchases, ...) or whole packages and an app mock-up assembles around them: a
 shell with navigation, a list view and create/edit form per model with sample
 data, and a "What you get" panel listing the REST routes, MCP tools, CLI
 commands and AI-callable methods s-m-r-t generates from each model's decorator.
@@ -33,15 +33,21 @@ Hosting under a sub-path (for example GitHub Pages)? Build with
 
 ## Use it
 
-1. On the Planner page, search the catalog and tick packages. Picking a
-   package also adds the packages it depends on.
-2. The left navigation grows a group per package: a "What you get" page and one
-   entry per model.
-3. Open a model to browse its sample rows and create, edit or delete them.
-   Money fields are stored as integer minor units (cents) and shown as
-   currency.
-4. The selection is the `?p=` query (`/?p=inventory,products,sales`); copy the
-   URL to share the mock-up.
+1. On the Planner page, add recipes: small units like Customers, Vendors,
+   Sales (needs Customers) and Purchases (needs Vendors). Adding one also adds
+   what it requires. The whole package catalog is still there under "All
+   packages".
+2. A recipe opens an options form built from its models' own parameters:
+   switch fields on or off (required ones stay on), set label, help text,
+   default value and order, and narrow REST, MCP and CLI exposure. Saving writes
+   field policies in the `@happyvertical/smrt-fields` shape, held in memory for
+   now.
+3. The left navigation grows a group per recipe with its entries (Customers,
+   Sales Orders, ...). Open one to browse sample rows and create, edit or
+   delete them. The generated views and the "What you get" panel follow the
+   options. Money fields are stored as integer minor units (cents).
+4. Recipes and options live in the URL (`?r=commerce.sales,...&o=...`); copy it
+   to share the mock-up.
 
 The Assistant dock tool is a placeholder; the in-browser chat that picks
 packages for you is tracked in #3, and live s-m-r-t objects in #4.

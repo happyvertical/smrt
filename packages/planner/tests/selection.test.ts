@@ -57,9 +57,4 @@ describe('selection store', () => {
     selection.apply({ remove: ['tags'] });
     expect(selection.ids).toEqual([]);
   });
-
-  it('builds hrefs that carry the selection', () => {
-    selection.fromSearch('?p=tags');
-    expect(selection.href('/m/tags/Tag/')).toBe('/m/tags/Tag/?p=tags');
-  });
 });

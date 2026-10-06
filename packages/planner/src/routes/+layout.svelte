@@ -12,20 +12,50 @@ import ChatDockPlaceholder from '$lib/components/ChatDockPlaceholder.svelte';
 import { provideDataSource } from '$lib/data/context.ts';
 import { humanize } from '$lib/data/format.ts';
 import { createMemoryDataSource } from '$lib/data/source.ts';
+import { appHref, appQuery } from '$lib/planner/app.svelte.ts';
+import { hasAppState } from '$lib/planner/query.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
-import { SELECTION_PARAM, selectionQuery } from '$lib/planner/selection.ts';
+import { recipeNav, recipes } from '$lib/recipes/index.ts';
+import { recipeState } from '$lib/recipes/state.svelte.ts';
 import type { LayoutProps } from './$types';
 
 let { children }: LayoutProps = $props();
 
 // The seam for live objects: swap this for a collection-backed DataSource.
-provideDataSource(createMemoryDataSource());
+provideDataSource(
+  createMemoryDataSource({
+    // Fields the views hide still carry their policy default, e.g. the
+    // `contractType` that tells an Order from a PurchaseOrder.
+    defaults: (model) => recipeState.apply(model).background,
+  }),
+);
 
 const nav: ShellNavItem[] = $derived([
-  { href: selection.href('/'), label: 'Planner' },
+  { href: appHref('/'), label: 'Planner' },
 ]);
 
-const navGroups: ShellNavGroup[] = $derived(
+// Each added recipe is a navigation section with its `nav` entries, so the
+// app shows Customers and Sales Orders, not every model in smrt-commerce.
+const recipeGroups: ShellNavGroup[] = $derived(
+  recipeState.ids.flatMap((id) => {
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) return [];
+    return [
+      {
+        heading: recipe.label,
+        items: [
+          ...recipeNav(recipe).map((entry) => ({
+            href: appHref(`/m/${entry.packageId}/${entry.model.name}/`),
+            label: entry.label,
+          })),
+          { href: appHref(`/recipes/${recipe.id}/`), label: 'Options' },
+        ],
+      },
+    ];
+  }),
+);
+
+const packageGroups: ShellNavGroup[] = $derived(
   selection.ids.flatMap((id) => {
     const pkg = getPackage(id);
     if (!pkg) return [];
@@ -34,11 +64,11 @@ const navGroups: ShellNavGroup[] = $derived(
         heading: humanize(pkg.id),
         items: [
           {
-            href: selection.href(`/packages/${pkg.id}/`),
+            href: appHref(`/packages/${pkg.id}/`),
             label: 'What you get',
           },
           ...exposedModels(pkg).map((model) => ({
-            href: selection.href(`/m/${pkg.id}/${model.name}/`),
+            href: appHref(`/m/${pkg.id}/${model.name}/`),
             label: model.name,
           })),
         ],
@@ -47,20 +77,26 @@ const navGroups: ShellNavGroup[] = $derived(
   }),
 );
 
+const navGroups: ShellNavGroup[] = $derived([
+  ...recipeGroups,
+  ...packageGroups,
+]);
+
 // The URL carries the selection so a mock-up can be shared. Pages are
 // prerendered, so the query is only read in the browser, after navigation.
 let ready = false;
 
 function syncUrl() {
-  const wanted = selectionQuery(selection.ids);
+  const wanted = appQuery();
   if (location.search !== wanted) {
     replaceState(`${location.pathname}${wanted}${location.hash}`, page.state);
   }
 }
 
 afterNavigate((navigation) => {
-  if (new URLSearchParams(location.search).has(SELECTION_PARAM)) {
+  if (hasAppState(location.search)) {
     selection.fromSearch(location.search);
+    recipeState.fromSearch(location.search);
   }
   // SvelteKit runs the initial 'enter' callbacks before the router counts as
   // started, and replaceState throws until then, so wait one microtask.
@@ -74,17 +110,18 @@ afterNavigate((navigation) => {
 
 // Keep the address bar in step with the selection as it changes.
 $effect(() => {
-  void selection.ids;
+  // appQuery reads every part of the shareable state, so this tracks them all.
+  void appQuery();
   if (ready) syncUrl();
 });
 </script>
 
 <AppShell
   title="smrt planner"
-  subtitle="Pick packages, watch the app assemble"
+  subtitle="Add recipes, watch the app assemble"
   {nav}
   {navGroups}
-  currentHref={page.url.pathname + selectionQuery(selection.ids)}
+  currentHref={page.url.pathname + appQuery()}
   environment="static demo"
 >
   {#snippet dock()}

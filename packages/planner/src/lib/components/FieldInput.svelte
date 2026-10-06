@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Switch } from '@happyvertical/smrt-ui/forms';
+import { Select, Switch } from '@happyvertical/smrt-ui/forms';
 import type { CatalogField } from '../catalog/types.ts';
 import { isMoneyField } from '../data/fakes.ts';
 import { humanize, parseMoney } from '../data/format.ts';
@@ -9,13 +9,30 @@ interface FieldInputProps {
   /** The stored value (money is integer minor units). */
   value: unknown;
   onchange: (value: unknown) => void;
+  /** Policy label; defaults to the humanized field name. */
+  label?: string;
+  /** Policy help text, shown under the control. */
+  help?: string;
+  /** Keeps element ids unique when several inputs for one field share a page. */
+  idPrefix?: string;
+  /** Drop the required marker, e.g. for a field's default value control. */
+  hideRequired?: boolean;
 }
 
-let { field, value, onchange }: FieldInputProps = $props();
+let {
+  field,
+  value,
+  onchange,
+  label: labelOverride,
+  help,
+  idPrefix = 'field',
+  hideRequired = false,
+}: FieldInputProps = $props();
 
 const money = $derived(isMoneyField(field));
-const label = $derived(humanize(field.name));
-const id = $derived(`field-${field.name}`);
+const label = $derived(labelOverride ?? humanize(field.name));
+const id = $derived(`${idPrefix}-${field.name}`);
+const required = $derived(field.required && !hideRequired);
 const text = $derived(
   value === null || value === undefined
     ? ''
@@ -56,17 +73,29 @@ function jsonFrom(raw: string): unknown {
   {:else}
     <label for={id}>
       {label}
-      {#if field.required}<span aria-hidden="true">*</span>{/if}
+      {#if required}<span aria-hidden="true">*</span>{/if}
       {#if money}<small>(USD, stored as cents)</small>{/if}
     </label>
-    {#if money}
+    {#if field.enum}
+      <Select
+        {id}
+        value={text}
+        {required}
+        onchange={(event) => onchange(event.currentTarget.value)}
+      >
+        {#if !required || text === ''}<option value="">(none)</option>{/if}
+        {#each field.enum as option (option)}
+          <option value={option}>{option}</option>
+        {/each}
+      </Select>
+    {:else if money}
       <input
         {id}
         type="number"
         onfocus={(event) => event.currentTarget.select()}
         step="0.01"
         min="0"
-        required={field.required}
+        {required}
         value={moneyText}
         oninput={(event) => {
           // type=number would coerce a bound value to a number; keep the text.
@@ -80,7 +109,7 @@ function jsonFrom(raw: string): unknown {
         type="number"
         onfocus={(event) => event.currentTarget.select()}
         step="1"
-        required={field.required}
+        {required}
         value={text}
         oninput={(event) => {
           const parsed = numberFrom(event.currentTarget.value);
@@ -93,7 +122,7 @@ function jsonFrom(raw: string): unknown {
         type="number"
         onfocus={(event) => event.currentTarget.select()}
         step="any"
-        required={field.required}
+        {required}
         value={text}
         oninput={(event) => onchange(numberFrom(event.currentTarget.value))}
       />
@@ -101,7 +130,7 @@ function jsonFrom(raw: string): unknown {
       <input
         {id}
         type="date"
-        required={field.required}
+        {required}
         value={text.slice(0, 10)}
         oninput={(event) =>
           onchange(
@@ -121,11 +150,14 @@ function jsonFrom(raw: string): unknown {
       <input
         {id}
         type="text"
-        required={field.required}
+        {required}
         value={text}
         oninput={(event) => onchange(event.currentTarget.value)}
       />
     {/if}
+  {/if}
+  {#if help}
+    <small>{help}</small>
   {/if}
   {#if field.related}
     <small>References {field.related.split(':').pop()}</small>

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selection } from '../planner/selection.svelte.ts';
+import { appHref } from '../planner/app.svelte.ts';
 
 /**
  * Placeholder for the in-browser assistant (follow-up issue #3). It fills the
@@ -14,7 +14,7 @@ import { selection } from '../planner/selection.svelte.ts';
   <p>
     Soon you will describe your business here and an on-device model will pick
     the packages for you. For now, choose packages on the
-    <a href={selection.href('/')}>Planner</a> page.
+    <a href={appHref('/')}>Planner</a> page.
   </p>
 </div>
 

@@ -28,6 +28,12 @@ export interface MemoryDataSourceOptions {
   seed?: number;
   /** Rows generated per model on first read. */
   rowsPerModel?: number;
+  /**
+   * Values every row of a model carries whatever the form shows, e.g. the
+   * `contractType` discriminator of a model in a shared table. Read each time
+   * a row is read or created, so it follows the current recipe options.
+   */
+  defaults?: (model: CatalogModel) => Record<string, unknown>;
 }
 
 /** Deterministic seeded fakes held in memory, lazily per model. */
@@ -48,16 +54,22 @@ export function createMemoryDataSource(
     return existing;
   };
 
+  const present = (model: CatalogModel, record: ModelRecord): ModelRecord => ({
+    ...record,
+    ...(options.defaults?.(model) ?? {}),
+  });
+
   return {
     async list(model) {
-      return table(model).map((r) => ({ ...r }));
+      return table(model).map((r) => present(model, r));
     },
     async get(model, id) {
       const found = table(model).find((r) => r.id === id);
-      return found ? { ...found } : undefined;
+      return found ? present(model, found) : undefined;
     },
     async create(model, values) {
       const record: ModelRecord = {
+        ...(options.defaults?.(model) ?? {}),
         ...values,
         id: fakeId(`${model.id}:new:${seed}:${created++}`),
       };

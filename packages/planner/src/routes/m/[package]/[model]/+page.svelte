@@ -3,54 +3,49 @@ import { getModel } from '$lib/catalog/index.ts';
 import ModelWorkspace from '$lib/components/ModelWorkspace.svelte';
 import SurfacePanel from '$lib/components/SurfacePanel.svelte';
 import { humanize } from '$lib/data/format.ts';
+import { appHref } from '$lib/planner/app.svelte.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
+import { recipes } from '$lib/recipes/index.ts';
+import { recipeState } from '$lib/recipes/state.svelte.ts';
 import type { PageProps } from './$types';
 
 let { data }: PageProps = $props();
 
-const model = $derived(getModel(data.packageId, data.modelName));
+const catalogModel = $derived(getModel(data.packageId, data.modelName));
+// Recipe options (field policies, narrowed exposure) shape what is shown.
+const applied = $derived(
+  catalogModel ? recipeState.apply(catalogModel) : undefined,
+);
+const model = $derived(applied?.model);
+const recipesWithModel = $derived(
+  recipes.filter(
+    (recipe) => catalogModel && recipe.models.includes(catalogModel.id),
+  ),
+);
+const inApp = $derived(
+  selection.has(data.packageId) ||
+    recipesWithModel.some((recipe) => recipeState.has(recipe.id)),
+);
 </script>
 
 <svelte:head>
   <title>{data.modelName} · {humanize(data.packageId)} · smrt planner</title>
 </svelte:head>
 
-{#if model}
+{#if model && applied}
   <main>
     <nav aria-label="Breadcrumb">
-      <a href={selection.href(`/packages/${data.packageId}/`)}>
-        {humanize(data.packageId)}
-      </a>
+      <a href={appHref('/')}>Planner</a>
+      / <a href={appHref(`/packages/${data.packageId}/`)}>{humanize(data.packageId)}</a>
       / {model.name}
-      {#if !selection.has(data.packageId)}
+      {#if !inApp}
         <span class="meta">(not in your app yet)</span>
       {/if}
     </nav>
 
-    <ModelWorkspace {model} />
+    <ModelWorkspace {model} fields={applied.fields} />
 
-    <section>
-      <h2>Fields</h2>
-      <table>
-        <thead>
-          <tr><th>Field</th><th>Type</th><th>Required</th></tr>
-        </thead>
-        <tbody>
-          {#each model.fields as field (field.name)}
-            <tr>
-              <td><code>{field.name}</code></td>
-              <td>
-                {field.type}{#if field.related}
-                  → {field.related.split(':').pop()}{/if}
-              </td>
-              <td>{field.required ? 'yes' : ''}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </section>
-
-    <SurfacePanel models={[model]} />
+    <SurfacePanel models={[model]} fields={{ [model.id]: applied.fields }} />
   </main>
 {/if}
 
@@ -63,21 +58,7 @@ const model = $derived(getModel(data.packageId, data.modelName));
     padding: var(--smrt-spacing-6);
   }
 
-  h2 {
-    margin: 0 0 var(--smrt-spacing-2);
-  }
-
   .meta {
     color: var(--smrt-color-on-surface-variant);
-  }
-
-  table {
-    border-collapse: collapse;
-  }
-
-  th,
-  td {
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-4) var(--smrt-spacing-1) 0;
-    text-align: left;
   }
 </style>
