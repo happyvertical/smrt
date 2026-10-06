@@ -51,6 +51,18 @@ export interface RecipeNavEntry {
   model: string;
 }
 
+/**
+ * User-facing help for a recipe (#3591), embedded so a static host needs no
+ * extra request. `markdown` is the authored prose; a step may name a field as
+ * `{field:name}` or `{field:Model.name}`. `fieldRefs` is derived from the
+ * Markdown at build time (distinct references as written, sorted) and is never
+ * authored by hand.
+ */
+export interface RecipeHelp {
+  markdown: string;
+  fieldRefs: string[];
+}
+
 /** A recipe as emitted into the manifest and the knowledge artifact. */
 export interface RecipeDefinition {
   /** Stable, dotted, lowercase id, e.g. `commerce.sales`. */
@@ -67,4 +79,6 @@ export interface RecipeDefinition {
   requires: string[];
   /** Curation hints keyed by qualified model name; omitted when none. */
   options?: Record<string, RecipeModelOptions>;
+  /** User-facing help read from the recipe's `static help` file; omitted when none. */
+  help?: RecipeHelp;
 }

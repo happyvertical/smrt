@@ -55,6 +55,7 @@ export {
   parseSource,
 } from './oxc-parser.js';
 export {
+  deriveHelpFieldRefs,
   extractRecipes,
   type RawRecipe,
   type RawRecipeModelRef,

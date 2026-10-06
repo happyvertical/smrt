@@ -77,3 +77,50 @@ describe('ManifestGenerator.assertRecipeOptions', () => {
     ).not.toThrow();
   });
 });
+
+/**
+ * Recipe help refs are validated against the merged manifest too (#3591).
+ */
+describe('ManifestGenerator.assertRecipeHelp', () => {
+  const generator = new ManifestGenerator();
+
+  function withHelp(help: RecipeDefinition['help']): SmartObjectManifest {
+    const manifest = manifestWith(undefined);
+    const [recipe] = manifest.recipes as RecipeDefinition[];
+    (recipe as RecipeDefinition).help = help;
+    return manifest;
+  }
+
+  it('accepts merged, universal and qualified references', () => {
+    expect(() =>
+      generator.assertRecipeHelp(
+        withHelp({
+          markdown: 'Set {field:title}, {field:Page.parentId}, {field:slug}.',
+          fieldRefs: ['Page.parentId', 'slug', 'title'],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('fails the build on a reference to an undeclared field', () => {
+    expect(() =>
+      generator.assertRecipeHelp(
+        withHelp({ markdown: 'Set {field:ghost}.', fieldRefs: ['ghost'] }),
+      ),
+    ).toThrow(/recipe shop\.pages: help: \{field:ghost\} names a field/);
+  });
+
+  it('fails the build when fieldRefs disagree with the markdown', () => {
+    expect(() =>
+      generator.assertRecipeHelp(
+        withHelp({ markdown: 'Set {field:title}.', fieldRefs: [] }),
+      ),
+    ).toThrow(/fieldRefs does not match/);
+  });
+
+  it('is a no-op for a recipe without help', () => {
+    expect(() =>
+      generator.assertRecipeHelp(manifestWith(undefined)),
+    ).not.toThrow();
+  });
+});

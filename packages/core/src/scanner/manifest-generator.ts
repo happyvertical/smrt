@@ -16,6 +16,7 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { type HelpModel, validateHelp } from '../recipe-help.js';
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import {
   defaultConflictColumns,
@@ -427,6 +428,7 @@ export class ManifestGenerator {
 
     // Recipe options may only name fields the merged model declares (#3590).
     this.assertRecipeOptions(manifest);
+    this.assertRecipeHelp(manifest);
 
     // Report models are read-only cache tables. Fill in the generated surface
     // and natural conflict key from report metadata before schema generation.
@@ -599,6 +601,45 @@ export class ManifestGenerator {
     if (problems.length > 0) {
       throw new Error(
         `[manifest-generator] invalid recipe options:\n  ${problems.join('\n  ')}`,
+      );
+    }
+  }
+
+  /**
+   * Fail the build when a recipe's help refers to a field its models do not
+   * declare, or its `fieldRefs` disagree with the Markdown (#3591). Runs on the
+   * merged manifest for the same reason as {@link assertRecipeOptions}. The
+   * scanner derives `fieldRefs` with its own copy of the reference grammar
+   * (it cannot import core); re-deriving here with the real parser means the
+   * two can never silently diverge.
+   */
+  assertRecipeHelp(manifest: SmartObjectManifest): void {
+    const problems: string[] = [];
+    for (const recipe of manifest.recipes ?? []) {
+      if (!recipe.help) continue;
+      const models: HelpModel[] = [];
+      for (const model of recipe.models) {
+        const object = Object.values(manifest.objects).find(
+          (candidate) =>
+            (candidate.qualifiedName ?? candidate.className) === model,
+        );
+        if (!object) continue;
+        models.push({
+          id: model,
+          name: object.className,
+          fields: [
+            ...Object.keys(object.fields),
+            ...UNIVERSAL_OBJECT_FIELDS,
+          ].map((name) => ({ name, label: name, visibility: 'basic' })),
+        });
+      }
+      for (const problem of validateHelp(recipe.help, models)) {
+        problems.push(`recipe ${recipe.id}: help: ${problem}`);
+      }
+    }
+    if (problems.length > 0) {
+      throw new Error(
+        `[manifest-generator] invalid recipe help:\n  ${problems.join('\n  ')}`,
       );
     }
   }

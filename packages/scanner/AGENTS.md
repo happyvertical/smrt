@@ -56,7 +56,10 @@ aliases and namespaces included), reads their statics structurally, and
 resolves `models` class references through imports. `resolve()` fills
 `ScanResults.recipes` and appends validation errors to `results.errors`; pass
 `recipes` to `ManifestAdapter.toManifest` to emit the qualified `recipes` array.
-Contract and rules: core's [agents/recipes.md](../core/agents/recipes.md).
+`static help` names a Markdown file beside the recipe; `resolve()` reads it and
+emits `help: { markdown, fieldRefs }` (`deriveHelpFieldRefs`, mirrored by core's
+`extractFieldRefs` and re-checked at manifest generation). Contract and rules:
+core's [agents/recipes.md](../core/agents/recipes.md).
 
 ## The agent-surface matcher (#2591)
 

@@ -783,4 +783,116 @@ export class A extends SmrtRecipe {
       expect(results.errors).toHaveLength(2);
     });
   });
+
+  describe('help (#3591)', () => {
+    const RECIPE = (help: string) => `
+import { SmrtRecipe } from '${CORE}';
+import { Order } from './models/Order.js';
+export class SalesRecipe extends SmrtRecipe {
+  static id = 'shop.sales';
+  static label = 'Sales';
+  static summary = 'Take customer orders.';
+  static models = [Order];
+  static help = ${JSON.stringify(help)};
+}
+`;
+
+    it('reads the help file beside the recipe and derives fieldRefs', async () => {
+      write(
+        'src/sales.recipe.md',
+        '## Overview\n\nSet **{field:status}** and {field:Order.total}.\n',
+      );
+      write('src/recipes.ts', RECIPE('./sales.recipe.md'));
+      const { results } = await scan();
+      expect(results.errors).toEqual([]);
+      expect(results.recipes[0]?.help).toEqual({
+        markdown:
+          '## Overview\n\nSet **{field:status}** and {field:Order.total}.\n',
+        fieldRefs: ['Order.total', 'status'],
+      });
+    });
+
+    it('resolves the path relative to the recipe file, not the package root', async () => {
+      write('src/nested/help/sales.recipe.md', 'Hello {field:notes}.');
+      write(
+        'src/nested/recipes.ts',
+        RECIPE('./help/sales.recipe.md').replace(
+          './models/Order.js',
+          '../models/Order.js',
+        ),
+      );
+      const { results } = await scan();
+      expect(results.errors).toEqual([]);
+      expect(results.recipes[0]?.help?.fieldRefs).toEqual(['notes']);
+    });
+
+    it('normalizes CRLF so the artifact is platform independent', async () => {
+      write('src/sales.recipe.md', 'A\r\n\r\nB {field:notes}\r\n');
+      write('src/recipes.ts', RECIPE('./sales.recipe.md'));
+      const { results } = await scan();
+      expect(results.recipes[0]?.help?.markdown).toBe('A\n\nB {field:notes}\n');
+    });
+
+    it('emits no help key when the recipe declares none', async () => {
+      write(
+        'src/recipes.ts',
+        RECIPE('./x.md').replace(/ {2}static help.*\n/, ''),
+      );
+      const { results } = await scan();
+      expect(results.errors).toEqual([]);
+      expect('help' in (results.recipes[0] as object)).toBe(false);
+    });
+
+    it('fails the build on a missing help file', async () => {
+      write('src/recipes.ts', RECIPE('./missing.recipe.md'));
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toMatch(
+        /Recipe SalesRecipe: static help file `\.\/missing\.recipe\.md` cannot be read/,
+      );
+    });
+
+    it('fails the build on an empty help file', async () => {
+      write('src/sales.recipe.md', '  \n');
+      write('src/recipes.ts', RECIPE('./sales.recipe.md'));
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toMatch(/is empty/);
+    });
+
+    it.each([
+      ['an absolute path', '/etc/hosts.md'],
+      ['a path that climbs out', '../outside.recipe.md'],
+      ['a non-Markdown file', './sales.txt'],
+    ])('rejects %s', async (_label, path) => {
+      write('src/recipes.ts', RECIPE(path));
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toMatch(
+        /static help must be a relative path to a \.md file/,
+      );
+    });
+
+    it('requires static help to be a string literal', async () => {
+      write(
+        'src/recipes.ts',
+        RECIPE('x').replace(/static help = .*;/, 'static help = HELP_PATH;'),
+      );
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toMatch(
+        /static help must be a string literal/,
+      );
+    });
+
+    it('qualifies nothing in help and carries it through the adapter', async () => {
+      write('src/sales.recipe.md', 'Set {field:status}.');
+      write('src/recipes.ts', RECIPE('./sales.recipe.md'));
+      const { results, resolved } = await scan();
+      const manifest = new ManifestAdapter().toManifest(resolved, {
+        packageName: '@shop/pkg',
+        recipes: results.recipes,
+      });
+      expect(manifest.recipes?.[0]?.help).toEqual({
+        markdown: 'Set {field:status}.',
+        fieldRefs: ['status'],
+      });
+    });
+  });
 });

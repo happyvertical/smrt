@@ -340,6 +340,28 @@ export {
   type SmrtRecipeModelOptions,
   type SmrtRecipeNavEntry,
 } from './recipe';
+export {
+  buildConnectSection,
+  buildGlossary,
+  type ConnectSection,
+  type ConnectSurface,
+  createRecipeHelp,
+  extractFieldRefs,
+  findField,
+  type GlossaryEntry,
+  type HelpBlock,
+  type HelpField,
+  type HelpModel,
+  helpToMarkdown,
+  type Inline,
+  parseHelp,
+  type RecipeHelp,
+  type RenderedHelp,
+  type RenderHelpOptions,
+  renderHelp,
+  resolveHelp,
+  validateHelp,
+} from './recipe-help';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
