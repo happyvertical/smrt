@@ -221,6 +221,7 @@ function fallbackIcon(label: string): string {
   .smrt-tenant-nav a.smrt-tenant-nav__action {
     flex: 0 0 auto;
     display: inline-grid;
+    grid-template-columns: minmax(0, 1fr);
     place-items: center;
     inline-size: max(2rem, var(--smrt-control-target-min, 0px));
     block-size: max(2rem, var(--smrt-control-target-min, 0px));
