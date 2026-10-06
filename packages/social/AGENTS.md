@@ -6,7 +6,7 @@ Social media account management with OAuth and post scheduling. Supports YouTube
 
 - **SocialAccount** (STI): `platform`, `accessToken`/`refreshToken`, `tokenExpiresAt`, `status` (connected/expired/error), `linkBehavior` (description/reply/none). `isTokenExpired` checks with 5-min buffer. `isReady` gate checks active + connected + token present + not expired.
 - **SocialPost**: `scheduledAt`, `publishedAt`, `status` (draft/scheduled/publishing/published/failed), `analytics` JSON (views/likes/comments/shares/clicks). `createdByUserId` (nullable `@crossPackageRef` to `smrt-users:User`, uuid on PostgreSQL) records the poster; pass it to `createDraft()` so a failed publish can be reported to that person. Agent/schedule posts leave it null; `recordPublishSuccess`/`Failure` never change it. Adding the column is additive: consumers run `db:migrate`.
-- **OAuthState** (STI): CSRF token + PKCE `codeVerifier` with 10-min TTL.
+- **OAuthState** (STI): CSRF token + PKCE `codeVerifier` with 10-min TTL. `createdByUserId` (nullable `@crossPackageRef` to `smrt-users:User`) binds the flow to its initiator and `returnTo` stores an opaque host path; a host with one fixed callback for every tenant must reject a different user and validate `returnTo` as same-origin. `OAuthStateCollection.consume(state)` is the single-use arbiter (revision-guarded delete; `false` when another caller already consumed it). Both columns are additive: consumers run `db:migrate`.
 
 ## Gotchas
 
