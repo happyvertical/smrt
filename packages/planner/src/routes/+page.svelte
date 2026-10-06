@@ -3,12 +3,14 @@ import { Fieldset, Switch } from '@happyvertical/smrt-ui/forms';
 import {
   buildCards,
   cardIsOn,
+  cardLocks,
+  mainLockNote,
   mainSwitchChange,
   type PlannerCard,
+  subLockNote,
   subSwitchChange,
 } from '$lib/recipes/cards.ts';
 import { recipes, recipesById } from '$lib/recipes/index.ts';
-import { removalBlockers } from '$lib/recipes/resolve.ts';
 import { recipeState } from '$lib/recipes/state.svelte.ts';
 
 const cards = buildCards(recipes);
@@ -17,10 +19,6 @@ let notice = $state('');
 
 const label = (id: string) => recipesById.get(id)?.label ?? id;
 const names = (ids: readonly string[]) => ids.map(label).join(', ');
-
-/** Dependents that keep these recipes on, as their labels. */
-const blockers = (ids: readonly string[]) =>
-  removalBlockers(ids, recipeState.ids, recipesById);
 
 // Switching never navigates: the recipe appears in the menu to explore
 // whenever the visitor likes, and the status line announces what changed.
@@ -58,7 +56,8 @@ const mainOn = (card: PlannerCard) => cardIsOn(card, recipeState.ids);
   <ul class="cards" aria-label="Recipes">
     {#each cards as card (card.id)}
       {@const on = mainOn(card)}
-      {@const needed = on ? blockers(card.recipes.map((r) => r.id)) : []}
+      {@const locks = cardLocks(card, recipeState.ids, recipesById)}
+      {@const needed = locks.main}
       <li class:selected={on}>
         <h2 id={`card-${card.id}`}>{card.label}</h2>
         <p class="description" id={`card-${card.id}-summary`}>{card.summary}</p>
@@ -71,13 +70,13 @@ const mainOn = (card: PlannerCard) => cardIsOn(card, recipeState.ids);
             apply(mainSwitchChange(card, recipeState.ids, event.currentTarget.checked))}
         />
         {#if needed.length}
-          <p class="meta" id={`card-${card.id}-needed`}>Needed by {names(needed)}.</p>
+          <p class="meta" id={`card-${card.id}-needed`}>{mainLockNote(card, needed.map(label))}</p>
         {/if}
         {#if card.hasSubSwitches}
           <Fieldset legend={`${card.label} recipes`} stack class="subs">
             {#each card.recipes as recipe (recipe.id)}
               {@const subOn = recipeState.has(recipe.id)}
-              {@const subNeeded = subOn ? blockers([recipe.id]) : []}
+              {@const subNeeded = locks.subs[recipe.id] ?? []}
               <div class="sub">
                 <Switch
                   label={recipe.label}
@@ -91,7 +90,7 @@ const mainOn = (card: PlannerCard) => cardIsOn(card, recipeState.ids);
                 <p class="meta" id={`sub-${recipe.id}-summary`}>{recipe.summary}</p>
                 {#if subNeeded.length}
                   <p class="meta" id={`sub-${recipe.id}-needed`}>
-                    Needed by {names(subNeeded)}.
+                    {subLockNote(card, recipe.label, subNeeded.map(label))}
                   </p>
                 {/if}
               </div>

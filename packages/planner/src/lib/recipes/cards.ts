@@ -1,3 +1,4 @@
+import { removalBlockers } from './resolve.ts';
 import type { Recipe } from './types.ts';
 
 /**
@@ -72,4 +73,63 @@ export function subSwitchChange(
   on: boolean,
 ): { add: string[]; remove: string[] } {
   return on ? { add: [recipeId], remove: [] } : { add: [], remove: [recipeId] };
+}
+
+/** What keeps a card's switches on: the selected recipes that need them. */
+export interface CardLocks {
+  /** Recipes that keep the card on at all (main switch locked when non-empty). */
+  main: string[];
+  /**
+   * Recipes that keep one sub-recipe on, by sub-recipe id. Only sub-recipes
+   * that are themselves locked have an entry: the others change freely.
+   */
+  subs: Record<string, string[]>;
+}
+
+/**
+ * Which switches on a card are locked. The main switch locks while something
+ * needs any of the card's recipes; a sub-switch locks only when removing that
+ * one recipe would force it back on (it is the last alternative), so the
+ * others stay fully usable.
+ */
+export function cardLocks(
+  card: PlannerCard,
+  selected: readonly string[],
+  recipes: ReadonlyMap<string, Recipe>,
+): CardLocks {
+  const on = card.recipes.filter((r) => selected.includes(r.id));
+  const subs: Record<string, string[]> = {};
+  if (card.hasSubSwitches) {
+    for (const recipe of on) {
+      const blockers = removalBlockers([recipe.id], selected, recipes);
+      if (blockers.length) subs[recipe.id] = blockers;
+    }
+  }
+  return {
+    main: on.length
+      ? removalBlockers(
+          card.recipes.map((r) => r.id),
+          selected,
+          recipes,
+        )
+      : [],
+    subs,
+  };
+}
+
+/** The note under a locked main switch, in words. */
+export function mainLockNote(card: PlannerCard, needers: string[]): string {
+  const by = needers.join(', ');
+  return card.hasSubSwitches
+    ? `${card.label} stays on while ${by} needs at least one ${card.label} recipe.`
+    : `${card.label} stays on while ${by} needs it.`;
+}
+
+/** The note under a locked sub-switch: it is the last one the needers can use. */
+export function subLockNote(
+  card: PlannerCard,
+  recipeLabel: string,
+  needers: string[],
+): string {
+  return `${recipeLabel} is the last ${card.label} recipe on, and ${needers.join(', ')} needs one.`;
 }
