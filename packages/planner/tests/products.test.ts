@@ -516,6 +516,24 @@ describe('variant grid form (clothing)', () => {
     expect((await s.list(level)).map((l) => l.qty)).toEqual([0, 0]);
   });
 
+  it('reuses the code of a Sku the same save removes', async () => {
+    const s = source();
+    const active = grid(['products.clothing']);
+    const state = blankGrid(active, catalogModels);
+    state.values = { name: 'Tee', price: 1 };
+    state.axes = { size: ['m'], color: [] };
+    const { product: saved } = await s.apply(
+      planGridSave(active, catalogModels, state),
+    );
+    const loaded = await loadGrid(s, active, catalogModels, saved?.id ?? '');
+    if (!loaded) throw new Error('not loaded');
+    loaded.state.axes.size = ['M'];
+    await s.apply(
+      planGridSave(active, catalogModels, loaded.state, loaded.existing),
+    );
+    expect((await s.list(sku)).map((r) => r.code)).toEqual(['TEE-M']);
+  });
+
   it('names Skus from the product and the values', () => {
     expect(
       skuCode('Rain Jacket', {

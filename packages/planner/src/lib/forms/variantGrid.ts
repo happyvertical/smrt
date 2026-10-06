@@ -346,7 +346,9 @@ export function planGridSave(
   // Codes stay unique in the plan: values that slug alike get a numeric suffix
   // instead of being found-and-merged as one Sku.
   const usedCodes = new Set(
-    (existing?.skus ?? []).map((row) => String(row.code ?? '')),
+    (existing?.skus ?? [])
+      .filter((row) => wanted.has(skuKey(form, row) ?? ''))
+      .map((row) => String(row.code ?? '')),
   );
   combos.forEach((combo, i) => {
     const current = byKey.get(combo.key);
