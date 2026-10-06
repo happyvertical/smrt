@@ -188,7 +188,22 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   imports `smrt-chat`. It receives the Provider's `DataSurfaceRegistry`
   (`{#snippet dock(registry)}`), the instance mounted routes register on
   when `webmcp` UI is on; pass it to `<AssistantDock {registry} />`. `runtimeDiagnostics` (default false) mounts the
-  read-only `smrt.runtime.diagnostics.read` WebMCP tool. Server code that
+  read-only `smrt.runtime.diagnostics.read` WebMCP tool. `dockToggles`
+  (`{ tool, label, icon? }[]`) renders icon buttons at the right of the shell
+  header (the AdminShell `header` row, shown only when the prop is non-empty),
+  each toggling the `ShellDockTool` with that id: `aria-pressed` and
+  `aria-expanded` follow the dock, `aria-controls` is
+  `smrt-admin-shell-right-panel`, the label is the tooltip, and `assistant`
+  defaults to a chat-bubble icon (`icon: 'chat'`; other text is a glyph). A
+  toggle whose tool is not registered yet is `aria-disabled`. Hosts, routes and
+  assistants drive the same dock with `useShellDock()` from `./workspace`
+  (`{ active, tools, has, isOpen, open, close, toggle }`, throws outside a
+  shell). Opening moves focus into the dock (first focusable, else the panel);
+  closing by Escape, toggle or code returns it to the opener when focus was left
+  in the dock. `open(tool, { focus: false })` skips the focus move. The
+  dock-control state lives on `ShellState` (`openDockTool`, `toggleDockTool`,
+  `closeFocusTool`, `openFocusToolId`). Playground:
+  `playground/src/routes/app-shell-dock-toggles`. Server code that
   lists that tool (the diagnostics route's `toolNames`) imports
   `RUNTIME_DIAGNOSTICS_WEBMCP_TOOL_NAME` from `./app/runtime-diagnostics`,
   which is plain TypeScript; the `./app` barrel loads Svelte components and
