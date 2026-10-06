@@ -47,9 +47,12 @@ const state = new OAuthState({
   codeVerifier: OAuthState.generateCodeVerifier(),
   redirectUri: 'https://app.example.com/oauth/callback',
   scopes: ['youtube.upload', 'youtube.readonly'],
+  createdByUserId: currentUser.id, // reject a different user on callback
+  returnTo: '/settings/social', // host-validated same-origin path
 });
 await state.save();
-// On callback: state.verifyState(callbackState), then exchange code for tokens
+// On callback: state.verifyState(callbackState), check the user, then
+// `await states.consume(state)` (false = already used) before exchanging the code
 ```
 
 ## API
@@ -60,7 +63,7 @@ await state.save();
 |--------|------------|
 | `SocialAccount` | Connected platform account with OAuth credentials and publishing settings |
 | `SocialPost` | Scheduled or published post with analytics tracking; `createdByUserId` records the poster |
-| `OAuthState` | Temporary OAuth flow state with CSRF protection and PKCE support |
+| `OAuthState` | Temporary OAuth flow state with CSRF protection and PKCE support; `createdByUserId` and `returnTo` bind it to its initiator and return page |
 
 ### Types
 
@@ -84,6 +87,7 @@ await state.save();
 - `OAuthState.isValid` -- not expired and state token present
 - `OAuthState.verifyState(callback)` -- CSRF verification for OAuth callbacks
 - `OAuthState.generateCodeChallenge(verifier)` -- PKCE S256 challenge generation
+- `OAuthStateCollection.consume(state)` -- single-use consumption; `false` when another caller consumed it first
 
 ## Dependencies
 

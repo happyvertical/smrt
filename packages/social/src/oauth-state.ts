@@ -6,7 +6,7 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { SocialPlatformType } from './social-account.js';
 
@@ -48,6 +48,16 @@ export interface OAuthStateOptions extends SmrtObjectOptions {
    * Tenant ID for multi-tenant isolation
    */
   tenantId?: string | null;
+
+  /**
+   * User who started the OAuth flow
+   */
+  createdByUserId?: string | null;
+
+  /**
+   * Application-defined path to return to after the callback
+   */
+  returnTo?: string | null;
 }
 
 /**
@@ -57,6 +67,9 @@ export interface OAuthStateOptions extends SmrtObjectOptions {
  * - Verify callback requests match initiated requests (CSRF protection)
  * - Store PKCE code verifier for code exchange
  * - Track redirect URI and scopes for verification
+ * - Bind the flow to the user who started it (`createdByUserId`) and record
+ *   where the host returns afterwards (`returnTo`), so one fixed callback
+ *   can serve every tenant
  *
  * These records should be cleaned up after successful connection
  * or after expiration.
@@ -130,6 +143,25 @@ export class OAuthState extends SmrtObject {
    */
   expiresAt: Date = new Date(Date.now() + 10 * 60 * 1000);
 
+  /**
+   * User who started the OAuth flow.
+   *
+   * A host with one fixed callback for every tenant compares this to the
+   * signed-in user on callback and rejects a mismatch, so a forwarded or
+   * leaked state cannot be completed by someone else. A `@crossPackageRef` to
+   * `@happyvertical/smrt-users:User` (native uuid on PostgreSQL, no DDL FK).
+   * Null for states created before the column existed.
+   */
+  @crossPackageRef('@happyvertical/smrt-users:User')
+  createdByUserId: string | null = null;
+
+  /**
+   * Application-defined path to return to after the callback, for example the
+   * settings page that started the flow. Opaque to the framework: the host
+   * that reads it must validate it as a same-origin path before redirecting.
+   */
+  returnTo: string | null = null;
+
   constructor(options: OAuthStateOptions = {}) {
     super(options);
 
@@ -142,6 +174,9 @@ export class OAuthState extends SmrtObject {
     if (options.scopes !== undefined) this.scopes = options.scopes;
     if (options.expiresAt !== undefined) this.expiresAt = options.expiresAt;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+    if (options.createdByUserId !== undefined)
+      this.createdByUserId = options.createdByUserId;
+    if (options.returnTo !== undefined) this.returnTo = options.returnTo;
   }
 
   /**

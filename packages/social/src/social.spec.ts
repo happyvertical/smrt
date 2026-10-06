@@ -9,6 +9,7 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  OAuthState,
   OAuthStateCollection,
   SocialAccount,
   SocialAccountCollection,
@@ -492,6 +493,44 @@ describe('smrt-social models', () => {
         where: { createdByUserId: posterId, status: 'failed' },
       });
       expect(failedForPoster.map((post) => post.id)).toEqual([mine.id]);
+    });
+  });
+
+  it('records the initiating user and return target on oauth states', async () => {
+    await withSocialTestDb(async (db) => {
+      const states = await OAuthStateCollection.create({ db });
+      const userId = '00000000-0000-4000-8000-000000000001';
+      await states.create({
+        platform: 'youtube',
+        state: 'bound',
+        redirectUri: 'https://app.example.com/oauth/social/youtube/callback',
+        createdByUserId: userId,
+        returnTo: '/sites/example/settings/social',
+      });
+      await states.create({ platform: 'x', state: 'legacy' });
+
+      const bound = await states.findByState('bound');
+      expect(bound?.createdByUserId).toBe(userId);
+      expect(bound?.returnTo).toBe('/sites/example/settings/social');
+      const legacy = await states.findByState('legacy');
+      expect(legacy?.createdByUserId).toBeNull();
+      expect(legacy?.returnTo).toBeNull();
+    });
+  });
+
+  it('consumes an oauth state exactly once', async () => {
+    await withSocialTestDb(async (db) => {
+      const states = await OAuthStateCollection.create({ db });
+      await states.create({ platform: 'x', state: 'once' });
+      const first = await states.findByState('once');
+      const second = await states.findByState('once');
+      expect(first).not.toBeNull();
+      expect(second).not.toBeNull();
+
+      await expect(states.consume(first!)).resolves.toBe(true);
+      await expect(states.consume(second!)).resolves.toBe(false);
+      await expect(states.findByState('once')).resolves.toBeNull();
+      await expect(states.consume(new OAuthState())).resolves.toBe(false);
     });
   });
 
