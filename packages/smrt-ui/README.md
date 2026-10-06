@@ -961,6 +961,11 @@ The application baseline is intentionally separate from theme tokens. Import
 border-box sizing, apply the active theme to the document, and make native form
 controls inherit the app typeface. It does not reset lists or content margins.
 
+PageLayout keeps wide tables and tab rows within the available page width,
+including when nested inside a semantic section. Their own scroll containers
+remain scrollable. Place visual sections directly under PageLayout to use its
+vertical gap.
+
 Use `PageLayout` inside an application shell to give each route responsive
 gutters, block padding, vertical rhythm, and the width appropriate to its
 content. It never creates a scroll container or claims viewport height.

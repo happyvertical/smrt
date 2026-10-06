@@ -35,6 +35,7 @@ const {
 <style>
   .page-layout {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     min-inline-size: 0;
     padding-block: var(--smrt-spacing-5) var(--smrt-spacing-8);
     overflow-wrap: anywhere;

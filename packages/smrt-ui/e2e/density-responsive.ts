@@ -3,6 +3,11 @@ import { mount } from 'svelte';
 const target = document.getElementById('app')!;
 const params = new URLSearchParams(location.search);
 switch (params.get('surface')) {
+  case 'layout': {
+    const { default: Layout } = await import('./page-layout.svelte');
+    mount(Layout, { target });
+    break;
+  }
   case 'table': {
     const { default: Table } = await import(
       '../src/components/data/__tests__/responsive-table.fixture.svelte',
