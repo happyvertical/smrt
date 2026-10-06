@@ -719,6 +719,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function readModelOptions(
   raw: unknown,
   model: ResolvedClassDefinition,
+  classes: ResolvedClassDefinition[],
   where: string,
   bad: (message: string) => void,
 ): RecipeModelOptions | undefined {
@@ -735,10 +736,21 @@ function readModelOptions(
   const known = new Set(
     model.allFields.filter((f) => !f.isStatic).map((f) => f.name),
   );
-  const operations = new Set<string>([
-    ...CRUD_VERBS,
-    ...model.methods.map((method) => method.name),
-  ]);
+  // Public instance methods of the model and every ancestor it inherits from.
+  const operations = new Set<string>(CRUD_VERBS);
+  const chain = new Set([model.className, ...model.inheritanceChain]);
+  for (const candidate of classes) {
+    if (!chain.has(candidate.className)) continue;
+    for (const method of candidate.methods) {
+      if (
+        !method.isStatic &&
+        method.accessibility === 'public' &&
+        method.name !== 'constructor'
+      ) {
+        operations.add(method.name);
+      }
+    }
+  }
   for (const [key, value] of Object.entries(raw)) {
     if (key === 'fields') {
       if (!isPlainObject(value)) {
@@ -936,6 +948,7 @@ export function resolveRecipes(
       const read = readModelOptions(
         entry.value,
         model,
+        classes,
         `options.${entry.key}`,
         (message) => report(message, entry.line),
       );

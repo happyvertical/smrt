@@ -619,6 +619,49 @@ export class A extends SmrtRecipe {
       expect(text).toMatch(/exposure\.mcp may only be/);
     });
 
+    it('accepts excluding an inherited public method, rejects private ones', async () => {
+      write(
+        'src/models/Child.ts',
+        `
+import { SmrtObject, smrt } from '${CORE}';
+@smrt()
+export class Base extends SmrtObject {
+  name: string = '';
+  archive() {}
+}
+@smrt()
+export class Child extends Base {
+  private secret() {}
+  static make() {}
+}
+`,
+      );
+      write(
+        'src/recipes.ts',
+        `
+import { SmrtRecipe } from '${CORE}';
+import { Child } from './models/Child.js';
+export class A extends SmrtRecipe {
+  static id = 'shop.a'; static label = 'A'; static summary = 'a';
+  static models = [Child];
+  static options = { Child: { exposure: { mcp: { exclude: ['archive'] } } } };
+}
+export class B extends SmrtRecipe {
+  static id = 'shop.b'; static label = 'B'; static summary = 'b';
+  static models = [Child];
+  static options = { Child: { exposure: { mcp: { exclude: ['secret'] }, cli: { exclude: ['make'] } } } };
+}
+`,
+      );
+      const { results } = await scan();
+      expect(
+        results.errors.filter((e) => /may only be/.test(e.message)),
+      ).toHaveLength(2);
+      expect(results.recipes.find((r) => r.id === 'shop.a')?.options).toEqual({
+        Child: { exposure: { mcp: { exclude: ['archive'] } } },
+      });
+    });
+
     it('rejects unknown option keys and bad hint values', async () => {
       const text = await errorsFor(`
 export class A extends SmrtRecipe {

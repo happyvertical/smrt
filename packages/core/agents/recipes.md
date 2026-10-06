@@ -39,10 +39,11 @@ whose `extends` resolves to the `SmrtRecipe` import binding from
 `@happyvertical/smrt-core` (named, aliased `SmrtRecipe as R`, or namespace
 `Core.SmrtRecipe`; any core subpath such as `/browser`). A same-named local
 class or an import from another library is not a recipe. A recipe must extend
-`SmrtRecipe` **directly**: extending another recipe, or declaring one as a class
-expression or inside a block, is a scan error rather than a silent drop. A
-recipe extending an intermediate base imported from another module cannot be
-detected and is unsupported.
+`SmrtRecipe` **directly**. Within one file, extending another recipe or declaring
+one as a class expression or inside a block is a scan error rather than a silent
+drop. Across files it is not detected: a module that never names `SmrtRecipe`
+is not read, so a recipe extending a recipe or intermediate base imported from
+another module is unsupported and would be missing from the artifacts.
 
 Class references resolve to qualified names (`@scope/pkg:Class`) through the
 import binding: a relative specifier picks the scanned class by file, then by
@@ -77,5 +78,5 @@ vocabulary: `default`, `label`, `help`, `order`, `visibility`
 (`basic | advanced | hidden`), `locked`; applying a recipe produces
 field-policy rows. `exposure.<api|mcp|cli>` accepts only `false` or
 non-empty `{ exclude: [...] }` naming a CRUD verb (`list`, `get`, `create`,
-`update`, `delete`) or a method the model declares: `true` and `include` are
+`update`, `delete`) or a public instance method the model declares or inherits: `true` and `include` are
 rejected because they can widen what the model already declares. Custom fields are out of scope.
