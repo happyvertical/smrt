@@ -42,7 +42,7 @@ export interface FieldUIHints {
    * Presentation widget for the field's input (#3599): one of
    * `'textarea' | 'currency' | 'email' | 'url' | 'phone'`. Validated against
    * the field type at build time (text-like widgets need a `text` field,
-   * `currency` an `integer` or `decimal` one).
+   * `currency` an `integer` (minor-unit) one).
    */
   widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
 }
