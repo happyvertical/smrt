@@ -1,5 +1,5 @@
 <script lang="ts">
-import { untrack } from 'svelte';
+import { type Snippet, untrack } from 'svelte';
 import {
   emitControlChange,
   highlightControl,
@@ -43,6 +43,31 @@ export interface Props {
    * field stays empty rather than flashing the raw value (an id).
    */
   valueLabel?: string;
+  /**
+   * Whether typing filters `options` by label. Set `false` when the caller
+   * supplies the matching options itself (server-side search via `onquery`),
+   * so a result that matched on something other than its label stays listed.
+   */
+  filter?: boolean;
+  /**
+   * Called with the text to search for when the list opens (empty) and on
+   * every keystroke. Pair with `filter={false}` and fresh `options`.
+   */
+  onquery?: (query: string) => void;
+  /**
+   * Message announced politely to assistive technology while the list is open
+   * ("Searching…", "3 results", "No results"). It is also shown inside the
+   * list while there are no options to list.
+   */
+  status?: string;
+  /** Marks the combobox busy while options are being fetched. */
+  busy?: boolean;
+  /** Marks the field invalid (`aria-invalid`). */
+  invalid?: boolean;
+  /** Ids of elements describing the field (error text, hints). */
+  describedby?: string;
+  /** Custom content for one option row; defaults to the label. */
+  optionContent?: Snippet<[ControlOption]>;
   /** Callback when the selected value changes. */
   onvaluechange?: (value: string) => void;
   /** CSS class to apply to the combobox container. */
@@ -59,6 +84,13 @@ let {
   allowCustom = false,
   interaction,
   valueLabel,
+  filter = true,
+  onquery,
+  status,
+  busy = false,
+  invalid = false,
+  describedby,
+  optionContent,
   onvaluechange,
   class: className = '',
 }: Props = $props();
@@ -83,7 +115,7 @@ let query = $state(untrack(() => labelForValue(value)));
 let typed = $state(false);
 let activeIndex = $state(0);
 const filtered = $derived(
-  typed
+  typed && filter
     ? options.filter((option) =>
         option.label.toLowerCase().includes(query.toLowerCase()),
       )
@@ -136,6 +168,7 @@ function openList() {
     (option) => String(option.value) === value,
   );
   activeIndex = selected >= 0 ? selected : 0;
+  onquery?.('');
 }
 function closeList() {
   open = false;
@@ -147,6 +180,7 @@ function handleInput(event: Event & { currentTarget: HTMLInputElement }) {
   typed = true;
   open = true;
   activeIndex = 0;
+  onquery?.(query);
   if (allowCustom) {
     value = query;
     onvaluechange?.(value);
@@ -179,6 +213,10 @@ function handleKeydown(event: KeyboardEvent) {
     closeList();
   }
 }
+// Options that arrive late can be fewer than the highlighted row.
+$effect(() => {
+  if (activeIndex >= filtered.length) activeIndex = 0;
+});
 $effect(() => {
   const form = inputEl?.form;
   if (!form) return;
@@ -300,15 +338,19 @@ useControlRegistration(() => {
   <!-- The form posts the committed value (an option id), never the label the person sees. -->
   {#if name}<input type="hidden" {name} {value} {disabled} />{/if}
   <input bind:this={inputEl} id={inputId} role="combobox" autocomplete="off" {placeholder} {disabled} required={required && !value} aria-required={required ? 'true' : undefined} value={query}
-    aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
+    aria-expanded={open} aria-controls={listId} aria-busy={busy ? 'true' : undefined} aria-invalid={invalid ? 'true' : undefined} aria-describedby={describedby} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
     onfocus={openList} onclick={openList} oninput={handleInput} onkeydown={handleKeydown} />
   {#if open && filtered.length}<div id={listId} class="options" role="listbox">{#each filtered as option, index (option.value)}<button id={`${listId}-${index}`} type="button" role="option"
-      aria-selected={String(option.value) === value} class:active={index === activeIndex} disabled={option.disabled} onpointerdown={(event) => event.preventDefault()} onclick={() => commit(option, true)}>{option.label}</button>{/each}</div>{/if}
+      aria-selected={String(option.value) === value} class:active={index === activeIndex} disabled={option.disabled} onpointerdown={(event) => event.preventDefault()} onclick={() => commit(option, true)}>{#if optionContent}{@render optionContent(option)}{:else}{option.label}{/if}</button>{/each}</div>
+  {:else if open && status}<div class="options empty" aria-hidden="true">{status}</div>{/if}
+  {#if status !== undefined}<div class="sr-status" role="status" aria-live="polite">{open ? status : ''}</div>{/if}
 </div>
 <style>
   .combobox { position: relative; display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
   label { font: var(--smrt-typography-label-large-font); } input { box-sizing: border-box; width: 100%; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: inherit; }
   input:focus { outline: 2px solid var(--smrt-color-primary); outline-offset: 1px; } .options { position: absolute; z-index: var(--smrt-z-index-dropdown); top: 100%; left: 0; right: 0; display: grid; padding: var(--smrt-spacing-1); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface-container); box-shadow: var(--smrt-elevation-2); }
   .options button { padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 0; border-radius: var(--smrt-radius-extra-small); background: transparent; color: var(--smrt-color-on-surface); text-align: left; } .options button.active { background: var(--smrt-color-secondary-container); }
+  .options.empty { padding: var(--smrt-spacing-2) var(--smrt-spacing-3); color: var(--smrt-color-on-surface-variant); }
+  .sr-status { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   :global(.combobox[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }
 </style>

@@ -11,6 +11,7 @@ import {
 } from '../control-interaction.js';
 import FormFixture from './combobox-form.fixture.svelte';
 import LabelsFixture from './combobox-labels.fixture.svelte';
+import RemoteFixture from './combobox-remote.fixture.svelte';
 
 function data() {
   return new FormData(
@@ -413,5 +414,48 @@ describe('Combobox reset registry currency', () => {
     expect(result.ok).toBe(cancel);
     if (!cancel) expect(result.reason).toBe('staged_value_stale');
     expect(new FormData(target).getAll('sku')).toEqual(cancel ? [''] : ['42']);
+  });
+});
+
+describe('Combobox remote options', () => {
+  it('reports the open and each keystroke through onquery', async () => {
+    const onquery = vi.fn();
+    render(RemoteFixture, { props: { onquery } });
+    const input = screen.getByRole('combobox', { name: 'Customer' });
+    await userEvent.click(input);
+    expect(onquery).toHaveBeenCalledWith('');
+    await userEvent.type(input, 'ac');
+    expect(onquery).toHaveBeenLastCalledWith('ac');
+  });
+
+  it('does not filter options by label when filter is false', async () => {
+    render(RemoteFixture, {
+      props: { options: [{ value: 'c1', label: 'Globex' }] },
+    });
+    await userEvent.type(
+      screen.getByRole('combobox', { name: 'Customer' }),
+      'acme',
+    );
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+  });
+
+  it('renders custom option content and keeps selection working', async () => {
+    render(RemoteFixture, {
+      props: { options: [{ value: 'c1', label: 'Globex' }] },
+    });
+    await userEvent.click(screen.getByRole('combobox', { name: 'Customer' }));
+    expect(screen.getByRole('option')).toHaveTextContent('Globex detail-c1');
+    await userEvent.click(screen.getByRole('option'));
+    expect(screen.getByRole('combobox', { name: 'Customer' })).toHaveValue(
+      'Globex',
+    );
+  });
+
+  it('shows and announces status when there are no options', async () => {
+    render(RemoteFixture, { props: { status: 'No matches' } });
+    expect(screen.getByRole('status')).toHaveTextContent('');
+    await userEvent.click(screen.getByRole('combobox', { name: 'Customer' }));
+    expect(screen.getByRole('status')).toHaveTextContent('No matches');
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 });
