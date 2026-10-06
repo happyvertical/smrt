@@ -1,4 +1,5 @@
 import type { CapabilityClassification } from './capability.js';
+import type { RecipeDefinition } from './recipe.js';
 
 /** Kind of generated surface a knowledge entry describes (REST/CLI/MCP/AI). */
 export type DomainKnowledgeSurfaceKind = 'api' | 'cli' | 'mcp' | 'ai';
@@ -276,6 +277,11 @@ export interface DomainKnowledgeManifest {
    * surface is an agent/developer contract.
    */
   agentSurface?: DomainKnowledgeAgentSurface;
+  /**
+   * Declared recipes (#3590), projected from the runtime manifest. Omitted when
+   * the package declares none, so the field is additive to schema version 1.
+   */
+  recipes?: RecipeDefinition[];
 }
 
 /** Result of a domain-knowledge freshness check (stale references, error/warning counts). */

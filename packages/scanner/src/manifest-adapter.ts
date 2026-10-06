@@ -5,6 +5,7 @@
  * Ensures compatibility with existing manifest consumers.
  */
 
+import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import { isSafeObjectKey } from './oxc-parser.js';
 import type {
   FieldTypeInference,
@@ -198,6 +199,7 @@ interface SmartObjectManifest {
   objects: Record<string, SmartObjectDefinition>;
   moduleType?: string;
   smrtDependencies?: string[];
+  recipes?: RecipeDefinition[];
 }
 
 // ============================================================================
@@ -421,6 +423,11 @@ export class ManifestAdapter {
       packageName?: string;
       packageVersion?: string;
       typeAliases?: Record<string, string>;
+      /**
+       * Recipes from `ScanResults.recipes` (#3590). Model names are class
+       * names; they are qualified here with `packageName`.
+       */
+      recipes?: RecipeDefinition[];
     } = {},
   ): SmartObjectManifest {
     this.typeAliases = options.typeAliases || {};
@@ -436,6 +443,11 @@ export class ManifestAdapter {
       objects[manifestKey] = definition;
     }
 
+    const recipes = this.qualifyRecipes(
+      options.recipes ?? [],
+      options.packageName,
+    );
+
     return {
       version: '1.0.0',
       timestamp: MANIFEST_TIMESTAMP,
@@ -443,7 +455,37 @@ export class ManifestAdapter {
       packageVersion: options.packageVersion,
       objects,
       moduleType: 'smrt',
+      // Additive: a package that declares no recipe emits no key, so its
+      // checked-in manifest stays byte-identical.
+      ...(recipes.length > 0 ? { recipes } : {}),
     };
+  }
+
+  /** Qualify recipe model names (`@scope/pkg:Class`) once the package is known. */
+  private qualifyRecipes(
+    recipes: RecipeDefinition[],
+    packageName: string | undefined,
+  ): RecipeDefinition[] {
+    const qualify = (className: string): string =>
+      packageName ? createQualifiedName(packageName, className) : className;
+    return recipes.map((recipe) => ({
+      ...recipe,
+      models: recipe.models.map(qualify),
+      nav: recipe.nav.map((entry) => ({
+        label: entry.label,
+        model: qualify(entry.model),
+      })),
+      ...(recipe.options
+        ? {
+            options: Object.fromEntries(
+              Object.entries(recipe.options).map(([model, value]) => [
+                qualify(model),
+                value,
+              ]),
+            ),
+          }
+        : {}),
+    }));
   }
 
   /**

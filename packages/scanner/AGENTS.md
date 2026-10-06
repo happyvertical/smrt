@@ -49,6 +49,15 @@ executes the source.
   `FieldTypeInference`, `AgentSurface`, `AgentSurfaceIntent`,
   `AgentSurfacePlaybook`, `AgentSurfaceDiagnostic`.
 
+## The recipe matcher (#3590)
+
+`src/recipes.ts` finds classes extending `SmrtRecipe` (import-binding aware,
+aliases and namespaces included), reads their statics structurally, and
+resolves `models` class references through imports. `resolve()` fills
+`ScanResults.recipes` and appends validation errors to `results.errors`; pass
+`recipes` to `ManifestAdapter.toManifest` to emit the qualified `recipes` array.
+Contract and rules: core's [agents/recipes.md](../core/agents/recipes.md).
+
 ## The agent-surface matcher (#2591)
 
 `@smrt()` classes are found by matching DECORATORS. A view intent (#2588) and a
@@ -232,6 +241,8 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
 - `src/agent-surface.ts` — the `defineIntent` / `definePlaybook` matcher, its
   diagnostics, `mergeAgentSurfaces` (#2591), and `checkAgentSurfaceToolNames`
   (#2725).
+- `src/recipes.ts` — the `SmrtRecipe` matcher, class-reference resolution,
+  and recipe validation (#3590).
 - `src/source-location.ts` — `getLineColumn`, split out so `agent-surface.ts`
   can resolve a diagnostic's position without importing `oxc-parser.ts`, which
   imports it back.

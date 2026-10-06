@@ -231,6 +231,9 @@ export function buildDomainKnowledgeManifest(
         ? readAgentModuleDocs(rootDir, agentDocContent)
         : undefined,
     agentSurface,
+    ...(options.manifest.recipes && options.manifest.recipes.length > 0
+      ? { recipes: options.manifest.recipes }
+      : {}),
   };
 }
 

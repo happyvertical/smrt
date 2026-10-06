@@ -19,6 +19,15 @@ E-commerce with Contract STI hierarchy, invoice lifecycle, payment tracking, pay
 - **Payout**: operator-to-supplier remittance. Distinct from Payment because direction, status machine, and chain semantics differ. Status machine `pending → sent → confirmed → failed` (failed is terminal but resettable via `resetFromFailed()` after fixing the underlying problem). References source `paymentId` (plain string) and destination `vendorId` (foreign key). Amount invariant `supplierNet === grossAmount - operatorFee` enforced exactly on save (integer minor units, no tolerance — #2401). `PayoutCollection.createFromPayment()` is the typical entry point; it pulls native amount / currency from the source Payment.
 - **Fulfillment** / **FulfillmentLineItem**: shipment/delivery tracking.
 
+## Recipes (#3590)
+
+`src/recipes.ts` declares four minimal `SmrtRecipe`s, emitted into the built
+`manifest.json` and `smrt-knowledge.json` `recipes`: `commerce.customers`
+(Customer), `commerce.vendors` (Vendor), `commerce.sales` (Order, requires
+customers), `commerce.purchases` (PurchaseOrder, requires vendors). Headers
+only; line items, fulfilment, invoices, and payments are later recipes. See
+[core recipes](../core/agents/recipes.md).
+
 ## Ledger Integration
 
 `@happyvertical/smrt-ledgers` is a regular dependency, loaded lazily via dynamic `import()` so the coupling stays runtime-only (no hard static import; the package graph stays a DAG — see #1582). Invoice stores `arJournalId` and `revenueJournalId` as string references. `recognizeRevenue()` creates a balanced AR journal entry; `getArJournal()` returns null when no journal has been recognized yet.

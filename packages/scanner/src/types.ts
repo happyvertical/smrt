@@ -7,6 +7,9 @@
  * 3. Re-exports of smrt-core types for compatibility
  */
 
+import type { RecipeDefinition } from '@happyvertical/smrt-types';
+import type { RawRecipe } from './recipes.js';
+
 // ============================================================================
 // Phase 1: Raw Types (Direct OXC output)
 // ============================================================================
@@ -425,6 +428,12 @@ export interface FileScanResult {
    * Omitted when the file declares none.
    */
   agentSurface?: AgentSurface;
+
+  /**
+   * `SmrtRecipe` subclasses read from the file, models not yet resolved
+   * (#3590). Omitted when the file declares none.
+   */
+  recipes?: RawRecipe[];
 }
 
 /**
@@ -477,6 +486,13 @@ export interface ScanResults {
    * deterministic identity so emission never depends on file order (#2591).
    */
   agentSurface: AgentSurface;
+
+  /**
+   * Declared recipes (#3590), sorted by id. Populated by `resolve()` once the
+   * models they reference can be resolved; model names are class names, which
+   * the manifest adapter qualifies. Empty after `scan()` alone.
+   */
+  recipes: RecipeDefinition[];
 }
 
 // ============================================================================

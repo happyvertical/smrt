@@ -124,6 +124,14 @@ export type {
   SmrtModuleMeta,
 } from './module.js';
 export type {
+  RecipeDefinition,
+  RecipeExposureNarrowing,
+  RecipeFieldOptions,
+  RecipeFieldVisibility,
+  RecipeModelOptions,
+  RecipeNavEntry,
+} from './recipe.js';
+export type {
   SmrtRouteDefinition,
   SmrtRouteLoadKind,
   SmrtRouteModule,

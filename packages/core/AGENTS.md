@@ -26,6 +26,7 @@ and repository rules.
 | `src/system/registry-snapshot.ts` | Sanitized plain-JSON projection of the booted `ObjectRegistry` for the smrt-dev-mcp runtime dev-plane (#1831); never constructors, validators, values, or absolute paths | [agents/registry-snapshot.md](agents/registry-snapshot.md) |
 | `src/registry/qualified-name-aliases.ts`, `src/migrations/qualified-name-aliases.ts` | Model moves: `previousQualifiedNames` aliases, deprecation, doctor counts, opt-in backfill (#3338) | [agents/model-moves.md](agents/model-moves.md) |
 | `src/run-once.ts` | Shared idempotency seam: insert-only claim + caller work in one transaction, replay on retry, typed in-flight/unknown-outcome answers (#3080) | [agents/run-once.md](agents/run-once.md) |
+| `src/recipe.ts`, `../scanner/src/recipes.ts` | `SmrtRecipe`: declared user-facing units (models, nav, `requires`, curation `options`) collected into manifest and knowledge `recipes` (#3590) | [agents/recipes.md](agents/recipes.md) |
 
 ## Cross-module invariants
 

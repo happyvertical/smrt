@@ -142,6 +142,12 @@ export {
   WholesaleOrder,
 } from './models/index.js';
 export { assertIntegerMinorUnits } from './money.js';
+export {
+  CustomersRecipe,
+  PurchasesRecipe,
+  SalesRecipe,
+  VendorsRecipe,
+} from './recipes.js';
 
 // Types
 export {

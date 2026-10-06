@@ -334,6 +334,12 @@ export {
   resolveListLimit,
   resolveListOffset,
 } from './query-bounds';
+export {
+  SmrtRecipe,
+  type SmrtRecipeModel,
+  type SmrtRecipeModelOptions,
+  type SmrtRecipeNavEntry,
+} from './recipe';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';

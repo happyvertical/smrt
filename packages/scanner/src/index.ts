@@ -51,8 +51,16 @@ export {
   extractSmrtImports,
   parseAgentSurfaceFile,
   parseFile,
+  parseRecipeFile,
   parseSource,
 } from './oxc-parser.js';
+export {
+  extractRecipes,
+  type RawRecipe,
+  type RawRecipeModelRef,
+  resolveRecipes,
+  sourceMayDeclareRecipe,
+} from './recipes.js';
 export { OxcScanner } from './scanner.js';
 export * from './types.js';
 export {
