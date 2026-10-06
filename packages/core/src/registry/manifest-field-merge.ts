@@ -64,6 +64,20 @@ export function readFieldAttribute(
 
 const readManifestFieldMeta = readFieldAttribute;
 
+/**
+ * Allowed values of an enum- or literal-union-typed field (#3598). Manifest
+ * fields carry them top-level; registry-sourced fields mirror them into
+ * `_meta` (see {@link createFieldFromManifest}). Read both, top level first.
+ */
+export function readFieldEnum(
+  field: ManifestFieldInput | undefined,
+): ReadonlyArray<string | number> | undefined {
+  const value = field?.enum ?? field?._meta?.enum;
+  return Array.isArray(value) && value.length > 0
+    ? (value as ReadonlyArray<string | number>)
+    : undefined;
+}
+
 function assignDefinedMeta(
   target: Record<string, unknown>,
   source: Record<string, unknown> | undefined,
@@ -95,6 +109,10 @@ export function createFieldFromManifest(
     if (value !== undefined) {
       metaRecord[key] = value;
     }
+  }
+
+  if (fieldDef.enum !== undefined) {
+    metaRecord.enum = [...fieldDef.enum];
   }
 
   // Preserve top-level `related` for relationship-graph lookups
@@ -137,6 +155,10 @@ export function mergeManifestField(
     if (existingValue !== undefined && nextMetaRecord[key] === undefined) {
       nextMetaRecord[key] = existingValue;
     }
+  }
+
+  if (fieldDef.enum !== undefined) {
+    nextMetaRecord.enum = [...fieldDef.enum];
   }
 
   return {
