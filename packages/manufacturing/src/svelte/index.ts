@@ -48,6 +48,7 @@ export type RequirementsTreeProps = ComponentProps<typeof RequirementsTree>;
 export {
   type AssemblyFieldPolicy,
   type AssemblyFormDraft,
+  type AssemblyFormErrors,
   type AssemblyFormField,
   type AssemblyFormInitial,
   type AssemblyFormInvalidField,
@@ -82,6 +83,7 @@ export {
   type RequirementLineView,
   type RequirementTotalView,
   splitLabourMinutes,
+  type TargetQtyValidation,
   toAssemblyView,
   toBomEditorLine,
   toBomEditorLines,
@@ -92,6 +94,7 @@ export {
   validateBomLineInput,
   validateCompletionQty,
   validateOperationForm,
+  validateTargetQty,
 } from './types.js';
 
 // Auto-register with ModuleUIRegistry

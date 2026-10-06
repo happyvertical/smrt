@@ -10,17 +10,7 @@ import type {
   ProductionRun,
   ProductionRunStatus,
 } from '../models/ProductionRun.js';
-import type {
-  BillStructure,
-  BillStructureLine,
-  ComponentKind,
-} from '../services/AssemblyService.js';
-import type {
-  ExplodedLine,
-  Explosion,
-  PlannedLine,
-  RequirementsPlan,
-} from '../types.js';
+import type { ComponentKind } from '../views.js';
 import { M } from './i18n.js';
 
 /** One row of `OperationList`; an `Operation` satisfies it. */
@@ -118,7 +108,8 @@ export type AssemblyFormField =
   | 'price'
   | 'estimatedLabourMinutes'
   | 'defaultOperationId'
-  | 'tags';
+  | 'tags'
+  | 'skuCode';
 
 /** Existing values passed to `AssemblyForm` when editing; an `Assembly` satisfies it. */
 export interface AssemblyFormInitial {
@@ -133,6 +124,11 @@ export interface AssemblyFormInitial {
   /** The default `Operation` id, or `null` for none. */
   defaultOperationId: string | null;
   tags: readonly string[];
+  /**
+   * The part number: the code of the assembly's `Sku`. Optional; read only
+   * when the form shows the part-number field.
+   */
+  skuCode?: string;
 }
 
 /**
@@ -152,13 +148,19 @@ export interface AssemblyFormValues {
   /** The chosen `Operation` id, or `null` for none. */
   defaultOperationId: string | null;
   tags: string[];
+  /**
+   * The trimmed part number (SKU code, never empty). Present only when the
+   * form showed the part-number field.
+   */
+  skuCode?: string;
 }
 
 /** A field `validateAssemblyForm` can reject. */
 export type AssemblyFormInvalidField =
   | 'name'
   | 'price'
-  | 'estimatedLabourMinutes';
+  | 'estimatedLabourMinutes'
+  | 'skuCode';
 
 /** The raw text `AssemblyForm` collects, before trimming and checks. */
 export interface AssemblyFormDraft {
@@ -173,6 +175,18 @@ export interface AssemblyFormDraft {
   defaultOperationId: string;
   /** Comma-separated. */
   tags: string;
+  /** The part number as typed; present only when the form shows the field. */
+  skuCode?: string;
+}
+
+/**
+ * Errors the host reports back to `AssemblyForm`, such as a part number
+ * already in use. A field message shows under that field; `form` shows above
+ * the actions.
+ */
+export interface AssemblyFormErrors {
+  form?: string;
+  fields?: Partial<Record<AssemblyFormField, string>>;
 }
 
 /** Result of {@link validateAssemblyForm}. */
@@ -226,6 +240,7 @@ export function assemblyFormDraft(
     estimatedLabourMinutes: String(initial?.estimatedLabourMinutes ?? 0),
     defaultOperationId: initial?.defaultOperationId ?? '',
     tags: (initial?.tags ?? []).join(', '),
+    ...(initial?.skuCode === undefined ? {} : { skuCode: initial.skuCode }),
   };
 }
 
@@ -251,6 +266,11 @@ export function keepProtectedFields(
     tags: [...(initial?.tags ?? [])],
   };
   for (const field of protectedFields) {
+    // The part number is optional: it is kept only when the form carried it.
+    if (field === 'skuCode') {
+      if (kept.skuCode !== undefined) kept.skuCode = initial?.skuCode ?? '';
+      continue;
+    }
     (kept as unknown as Record<string, unknown>)[field] = original[field];
   }
   return kept;
@@ -270,7 +290,8 @@ function parseTags(raw: string): string[] {
  * required, the labour estimate is a whole number of minutes of zero or more
  * (empty counts as zero), and the price is an amount of zero or more with at
  * most `exponent` decimals (empty counts as zero; 2 unless the currency says
- * otherwise). Fields in `skip` (hidden or
+ * otherwise). A part number, when the draft carries one, must not be empty.
+ * Fields in `skip` (hidden or
  * read-only in the form) are not checked.
  */
 export function validateAssemblyForm(
@@ -308,11 +329,15 @@ export function validateAssemblyForm(
     !skip.includes('estimatedLabourMinutes')
   )
     invalid.push('estimatedLabourMinutes');
+  const skuCode =
+    draft.skuCode === undefined ? undefined : textOf(draft.skuCode);
+  if (skuCode === '' && !skip.includes('skuCode')) invalid.push('skuCode');
   if (invalid.length > 0) return { ok: false, invalid };
 
   return {
     ok: true,
     values: {
+      ...(skuCode === undefined ? {} : { skuCode }),
       name,
       description: textOf(draft.description),
       category: textOf(draft.category),
@@ -327,7 +352,18 @@ export function validateAssemblyForm(
   };
 }
 
-export type { ComponentKind };
+export type {
+  BomEditorLine,
+  ComponentKind,
+  RequirementLineView,
+  RequirementTotalView,
+} from '../views.js';
+export {
+  toBomEditorLine,
+  toBomEditorLines,
+  toRequirementTotals,
+  toRequirementTree,
+} from '../views.js';
 
 /** One row of {@link AssemblyList}. */
 export interface AssemblyView {
@@ -370,59 +406,6 @@ export function toAssemblyView(
     estimatedLabourMinutes: Number(assembly.estimatedLabourMinutes ?? 0),
     activeBomVersion: related.activeBomVersion ?? null,
   };
-}
-
-/** One line of {@link BomEditor}. */
-export interface BomEditorLine {
-  /** The bill line id. */
-  id: string;
-  /** The component SKU the line consumes. */
-  componentSkuId: string;
-  /** The component's product name, or its SKU code when that is unknown. */
-  componentName: string;
-  /** The component's SKU code; empty when the SKU is missing. */
-  skuCode: string;
-  /** What the component is. */
-  kind: ComponentKind;
-  /** Quantity per produced unit, before waste. */
-  qtyPerUnit: number;
-  /** Unit of measure. */
-  uom: string;
-  /** Expected waste, in percent. */
-  wastePercent: number;
-  /** Free-form notes. */
-  notes: string;
-  /**
-   * For a sub-assembly, the id of its own active bill; `null` when it has
-   * none, and for every other kind.
-   */
-  subBomId: string | null;
-}
-
-/** Adapt one resolved bill line for {@link BomEditor}. */
-export function toBomEditorLine(entry: BillStructureLine): BomEditorLine {
-  const { line, component } = entry;
-  const skuCode = component.sku?.code ?? '';
-  return {
-    id: line.id ?? '',
-    componentSkuId: line.componentSkuId,
-    componentName: component.product?.name || skuCode || line.componentSkuId,
-    skuCode,
-    kind: component.kind,
-    qtyPerUnit: Number(line.qtyPerUnit ?? 0),
-    uom: line.uom,
-    wastePercent: Number(line.wastePercent ?? 0),
-    notes: line.notes ?? '',
-    subBomId: component.activeBom?.id ?? null,
-  };
-}
-
-/**
- * Adapt a whole bill from `AssemblyService.getBillStructure` for
- * {@link BomEditor}, keeping its line order.
- */
-export function toBomEditorLines(structure: BillStructure): BomEditorLine[] {
-  return structure.lines.map(toBomEditorLine);
 }
 
 /** A component the editor offers when adding a line. */
@@ -620,113 +603,30 @@ export function validateCompletionQty(
   return { ok: true, qty: rounded };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Exploded requirements
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** One line of `RequirementsTree`, with the lines of its bill when opened. */
-export interface RequirementLineView {
-  /** Unique within the tree: the bills above it plus the line id. */
-  key: string;
-  /** 1 for the top bill's lines. */
-  level: number;
-  /** Component name; empty when it cannot be resolved. */
-  name: string;
-  /** Component SKU code; empty when unknown. */
-  skuCode: string;
-  /** What the component is. */
-  kind: ComponentKind;
-  /** Quantity required for the run (net of stock in a plan). */
-  required: number;
-  /** The line's unit. */
-  uom: string;
-  /** Unallocated available stock; `null` for a gross explosion. */
-  available: number | null;
-  /** How much is short; `null` for a gross explosion. */
-  short: number | null;
-  /** A sub-assembly with an active bill. */
-  buildable: boolean;
-  /** The lines of this sub-assembly's bill that were walked. */
-  children: RequirementLineView[];
-}
-
-/** One row of the totals table of `RequirementsTree`. */
-export interface RequirementTotalView {
-  /** The component SKU. */
-  componentSkuId: string;
-  /** Component name; empty when it cannot be resolved. */
-  name: string;
-  /** Component SKU code; empty when unknown. */
-  skuCode: string;
-  /** Total required, summed over the lines not opened. */
-  required: number;
-  /** The first line's unit. */
-  uom: string;
-  /** Total short; `null` for a gross explosion. */
-  short: number | null;
-}
-
-function isPlanned(line: ExplodedLine): line is PlannedLine {
-  return 'short' in line;
-}
+/** Result of {@link validateTargetQty}. */
+export type TargetQtyValidation =
+  | { ok: true; qty: number }
+  | { ok: false; reason: 'invalid' | 'below_done' };
 
 /**
- * Nest the depth-first lines of an {@link Explosion} or a
- * {@link RequirementsPlan} for `RequirementsTree`.
+ * Check a typed target quantity: greater than zero, within the quantity
+ * limits, and not below what the run has already completed (the service
+ * checks again under its lock).
  */
-export function toRequirementTree(
-  source: Pick<Explosion | RequirementsPlan, 'lines'>,
-): RequirementLineView[] {
-  const roots: RequirementLineView[] = [];
-  const open: RequirementLineView[] = [];
-  for (const line of source.lines as ExplodedLine[]) {
-    const view: RequirementLineView = {
-      key: [...line.path.map((entry) => entry.bomId), line.lineId].join('/'),
-      level: line.level,
-      name: line.name,
-      skuCode: line.skuCode,
-      kind: line.kind,
-      required: line.totalQty,
-      uom: line.uom,
-      available: isPlanned(line) ? line.available : null,
-      short: isPlanned(line) ? line.short : null,
-      buildable: line.buildable,
-      children: [],
-    };
-    open.length = Math.min(open.length, line.level - 1);
-    const parent = open[line.level - 2];
-    if (line.level > 1 && parent) parent.children.push(view);
-    else roots.push(view);
-    open[line.level - 1] = view;
-  }
-  return roots;
-}
-
-/**
- * The totals of an {@link Explosion} or a {@link RequirementsPlan}: every line
- * not opened, summed per component SKU (first unit kept).
- */
-export function toRequirementTotals(
-  source: Pick<Explosion | RequirementsPlan, 'lines'>,
-): RequirementTotalView[] {
-  const totals = new Map<string, RequirementTotalView>();
-  for (const line of source.lines as ExplodedLine[]) {
-    if (line.expanded) continue;
-    const short = isPlanned(line) ? line.short : null;
-    const existing = totals.get(line.componentSkuId);
-    if (existing) {
-      existing.required += line.totalQty;
-      if (existing.short !== null && short !== null) existing.short += short;
-    } else {
-      totals.set(line.componentSkuId, {
-        componentSkuId: line.componentSkuId,
-        name: line.name,
-        skuCode: line.skuCode,
-        required: line.totalQty,
-        uom: line.uom,
-        short,
-      });
-    }
-  }
-  return Array.from(totals.values());
+export function validateTargetQty(
+  raw: string,
+  run: Pick<ProductionRunView, 'completedQty'>,
+): TargetQtyValidation {
+  const text = raw.trim();
+  const qty = text === '' ? Number.NaN : Number(text);
+  if (!Number.isFinite(qty) || qty <= 0)
+    return { ok: false, reason: 'invalid' };
+  const millionths = (value: number) =>
+    Number(value.toFixed(6).replace('.', ''));
+  const rounded = Number(qty.toFixed(6));
+  if (rounded <= 0 || rounded > 999_999_999)
+    return { ok: false, reason: 'invalid' };
+  if (millionths(rounded) < millionths(run.completedQty))
+    return { ok: false, reason: 'below_done' };
+  return { ok: true, qty: rounded };
 }

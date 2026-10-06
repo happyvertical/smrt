@@ -61,7 +61,11 @@ export const M = defineMessages({
   'manufacturing.assembly_form.submit_edit': 'Save changes',
   'manufacturing.assembly_form.saving': 'Saving...',
   'manufacturing.assembly_form.cancel': 'Cancel',
+  'manufacturing.assembly_form.sku_code': 'Part number',
+  'manufacturing.assembly_form.sku_code_help':
+    "The code of the assembly's SKU. It must be unique.",
   'manufacturing.assembly_form.error_name': 'Enter a name.',
+  'manufacturing.assembly_form.error_sku_code': 'Enter a part number.',
   'manufacturing.assembly_form.error_price':
     'Enter a price of zero or more, with no more decimals than the currency has.',
   'manufacturing.assembly_form.error_labour':
@@ -140,6 +144,35 @@ export const M = defineMessages({
     'Only {remaining} left to build.',
   'manufacturing.production_run_list.error_failed':
     'The completion could not be recorded.',
+  'manufacturing.production_run_list.manage': 'Manage run',
+  'manufacturing.production_run_list.target_aria':
+    'Target quantity for {label}',
+  'manufacturing.production_run_list.target_submit': 'Set target',
+  'manufacturing.production_run_list.target_submit_aria':
+    'Set the target quantity for {label}',
+  'manufacturing.production_run_list.error_target':
+    'Enter a target greater than zero.',
+  'manufacturing.production_run_list.error_target_low':
+    'The target cannot be below the {completed} already done.',
+  'manufacturing.production_run_list.target_failed':
+    'The target could not be changed.',
+  'manufacturing.production_run_list.finish': 'Finish',
+  'manufacturing.production_run_list.finish_aria': 'Finish {label}',
+  'manufacturing.production_run_list.finish_title': 'Finish this run?',
+  'manufacturing.production_run_list.finish_message':
+    '{label} will be marked done at {completed} of {target}. No more completions can be reported.',
+  'manufacturing.production_run_list.finish_confirm': 'Finish run',
+  'manufacturing.production_run_list.finish_failed':
+    'The run could not be finished.',
+  'manufacturing.production_run_list.cancel': 'Cancel run',
+  'manufacturing.production_run_list.cancel_aria': 'Cancel {label}',
+  'manufacturing.production_run_list.cancel_title': 'Cancel this run?',
+  'manufacturing.production_run_list.cancel_message':
+    '{label} will be cancelled. Completions already reported stay.',
+  'manufacturing.production_run_list.cancel_confirm': 'Cancel run',
+  'manufacturing.production_run_list.cancel_keep': 'Keep run',
+  'manufacturing.production_run_list.cancel_failed':
+    'The run could not be cancelled.',
   'manufacturing.production_run_status.planned': 'Planned',
   'manufacturing.production_run_status.in_progress': 'In progress',
   'manufacturing.production_run_status.done': 'Done',

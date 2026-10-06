@@ -4,8 +4,10 @@
 import { describe, expect, it } from 'vitest';
 import type { BillStructure } from '../../services/AssemblyService.js';
 import {
+  assemblyFormDraft,
   componentKindLabelKey,
   formatPriceInput,
+  keepProtectedFields,
   splitLabourMinutes,
   toAssemblyView,
   toBomEditorLine,
@@ -229,5 +231,74 @@ describe('validateAssemblyForm', () => {
     expect(formatPriceInput(-123)).toBe('-1.23');
     expect(formatPriceInput(1300, 0)).toBe('1300');
     expect(formatPriceInput(1234, 3)).toBe('1.234');
+  });
+});
+
+describe('validateAssemblyForm part number', () => {
+  const base = {
+    name: 'Frame',
+    description: '',
+    category: '',
+    partReference: '',
+    price: '0',
+    estimatedLabourMinutes: '0',
+    defaultOperationId: '',
+    tags: '',
+  };
+
+  it('is absent from the values when the draft has none', () => {
+    const result = validateAssemblyForm(base);
+    expect(result.ok && 'skuCode' in result.values).toBe(false);
+  });
+
+  it('trims it and rejects an empty one unless skipped', () => {
+    expect(validateAssemblyForm({ ...base, skuCode: ' FR-1 ' })).toMatchObject({
+      ok: true,
+      values: { skuCode: 'FR-1' },
+    });
+    expect(validateAssemblyForm({ ...base, skuCode: '  ' })).toEqual({
+      ok: false,
+      invalid: ['skuCode'],
+    });
+    expect(validateAssemblyForm({ ...base, skuCode: '' }, ['skuCode']).ok).toBe(
+      true,
+    );
+  });
+
+  it('starts the draft from the stored code and keeps it when protected', () => {
+    const initial = {
+      name: 'F',
+      description: '',
+      category: '',
+      partReference: '',
+      price: 0,
+      estimatedLabourMinutes: 0,
+      defaultOperationId: null,
+      tags: [],
+      skuCode: ' X ',
+    };
+    expect(assemblyFormDraft(initial).skuCode).toBe(' X ');
+    expect(
+      'skuCode' in assemblyFormDraft({ ...initial, skuCode: undefined }),
+    ).toBe(false);
+    const checked = validateAssemblyForm({
+      ...assemblyFormDraft(initial),
+      skuCode: 'Y',
+    });
+    if (!checked.ok) throw new Error('expected ok');
+    expect(
+      keepProtectedFields(checked.values, initial, ['skuCode']).skuCode,
+    ).toBe(' X ');
+  });
+});
+
+describe('./svelte re-exports the view adapters unchanged', () => {
+  it('is the same functions as ./views', async () => {
+    const views = await import('../../views.js');
+    const svelte = await import('../index.js');
+    expect(svelte.toBomEditorLine).toBe(views.toBomEditorLine);
+    expect(svelte.toBomEditorLines).toBe(views.toBomEditorLines);
+    expect(svelte.toRequirementTree).toBe(views.toRequirementTree);
+    expect(svelte.toRequirementTotals).toBe(views.toRequirementTotals);
   });
 });

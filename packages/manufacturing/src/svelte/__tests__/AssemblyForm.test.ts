@@ -10,6 +10,7 @@ import {
   screen,
   userEvent,
 } from '@happyvertical/smrt-vitest/svelte';
+import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import AssemblyForm from '../components/AssemblyForm.svelte';
 import type { AssemblyFormInitial, OperationView } from '../types.js';
@@ -34,6 +35,11 @@ function operation(
   return { id, code, name, category: '', isActive };
 }
 
+const hostField = createRawSnippet(() => ({
+  render: () =>
+    '<div><label for="host-customer">Customer</label><input id="host-customer" name="customer" /></div>',
+}));
+
 const operations = [
   operation('op-cut', 'CUT', 'Cutting'),
   operation('op-weld', 'WELD', 'Welding'),
@@ -52,10 +58,13 @@ describe('AssemblyForm', () => {
     await userEvent.type(screen.getByLabelText(/Name/), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await vi.waitFor(() =>
-      expect(onsubmit).toHaveBeenCalledExactlyOnceWith({
-        ...odd,
-        name: 'Frame!',
-      }),
+      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(
+        {
+          ...odd,
+          name: 'Frame!',
+        },
+        expect.any(FormData),
+      ),
     );
   });
 
@@ -92,6 +101,7 @@ describe('AssemblyForm', () => {
     await vi.waitFor(() =>
       expect(onsubmit).toHaveBeenCalledWith(
         expect.objectContaining({ price: 1234 }),
+        expect.any(FormData),
       ),
     );
   });
@@ -114,6 +124,7 @@ describe('AssemblyForm', () => {
     await vi.waitFor(() =>
       expect(onsubmit).toHaveBeenCalledWith(
         expect.objectContaining({ price: 1500 }),
+        expect.any(FormData),
       ),
     );
     jpy.unmount();
@@ -130,6 +141,7 @@ describe('AssemblyForm', () => {
     await vi.waitFor(() =>
       expect(kwd).toHaveBeenCalledWith(
         expect.objectContaining({ price: 1234 }),
+        expect.any(FormData),
       ),
     );
   });
@@ -153,7 +165,10 @@ describe('AssemblyForm', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await vi.waitFor(() =>
-      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(odd),
+      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(
+        odd,
+        expect.any(FormData),
+      ),
     );
   });
 
@@ -194,16 +209,19 @@ describe('AssemblyForm', () => {
     await userEvent.type(screen.getByLabelText('Tags'), 'steel, , gate,steel');
     await userEvent.click(screen.getByRole('button', { name: 'Add assembly' }));
     await vi.waitFor(() =>
-      expect(onsubmit).toHaveBeenCalledExactlyOnceWith({
-        name: 'Gate',
-        description: 'Swing gate',
-        category: '',
-        partReference: 'G-7',
-        price: 125050,
-        estimatedLabourMinutes: 120,
-        defaultOperationId: 'op-cut',
-        tags: ['steel', 'gate'],
-      }),
+      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(
+        {
+          name: 'Gate',
+          description: 'Swing gate',
+          category: '',
+          partReference: 'G-7',
+          price: 125050,
+          estimatedLabourMinutes: 120,
+          defaultOperationId: 'op-cut',
+          tags: ['steel', 'gate'],
+        },
+        expect.any(FormData),
+      ),
     );
   });
 
@@ -220,11 +238,14 @@ describe('AssemblyForm', () => {
     await userEvent.type(name, 'Base frame');
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await vi.waitFor(() =>
-      expect(onsubmit).toHaveBeenCalledExactlyOnceWith({
-        ...existing,
-        name: 'Base frame',
-        tags: ['steel', 'frame'],
-      }),
+      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(
+        {
+          ...existing,
+          name: 'Base frame',
+          tags: ['steel', 'frame'],
+        },
+        expect.any(FormData),
+      ),
     );
   });
 
@@ -312,6 +333,7 @@ describe('AssemblyForm', () => {
     await vi.waitFor(() =>
       expect(onsubmit).toHaveBeenCalledWith(
         expect.objectContaining({ defaultOperationId: null }),
+        expect.any(FormData),
       ),
     );
   });
@@ -344,7 +366,10 @@ describe('AssemblyForm', () => {
     expect(screen.queryByLabelText('Tags')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await vi.waitFor(() =>
-      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(existing),
+      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(
+        existing,
+        expect.any(FormData),
+      ),
     );
   });
 
@@ -364,7 +389,10 @@ describe('AssemblyForm', () => {
     expect(screen.getByLabelText(/Name/)).not.toHaveAttribute('readonly');
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await vi.waitFor(() =>
-      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(existing),
+      expect(onsubmit).toHaveBeenCalledExactlyOnceWith(
+        existing,
+        expect.any(FormData),
+      ),
     );
   });
 
@@ -405,5 +433,164 @@ describe('AssemblyForm', () => {
       },
     });
     await expectNoA11yViolations(edit.container);
+  });
+
+  describe('part number and host fields', () => {
+    const withSku: AssemblyFormInitial = { ...existing, skuCode: 'FR-100' };
+
+    it('has no part-number field or skuCode value unless shown', async () => {
+      const onsubmit = vi.fn();
+      render(AssemblyForm, {
+        props: { assembly: withSku, onsubmit, operations },
+      });
+      expect(screen.queryByLabelText(/Part number/)).toBeNull();
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Save changes' }),
+      );
+      await vi.waitFor(() => expect(onsubmit).toHaveBeenCalled());
+      expect(onsubmit.mock.calls[0][0]).not.toHaveProperty('skuCode');
+    });
+
+    it('submits a trimmed part number', async () => {
+      const onsubmit = vi.fn();
+      render(AssemblyForm, {
+        props: { onsubmit, operations, showSkuCode: true },
+      });
+      await userEvent.type(screen.getByLabelText(/^Name/), 'Gate');
+      await userEvent.type(screen.getByLabelText(/Part number/), '  GT-1 ');
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Add assembly' }),
+      );
+      await vi.waitFor(() =>
+        expect(onsubmit).toHaveBeenCalledWith(
+          expect.objectContaining({ name: 'Gate', skuCode: 'GT-1' }),
+          expect.any(FormData),
+        ),
+      );
+    });
+
+    it('refuses an empty or blank part number when shown, on add and on edit', async () => {
+      const onsubmit = vi.fn();
+      const { unmount } = render(AssemblyForm, {
+        props: { onsubmit, operations, showSkuCode: true },
+      });
+      await userEvent.type(screen.getByLabelText(/^Name/), 'Gate');
+      await userEvent.type(screen.getByLabelText(/Part number/), '   ');
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Add assembly' }),
+      );
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Enter a part number.',
+      );
+      expect(screen.getByLabelText(/Part number/)).toHaveAttribute(
+        'aria-invalid',
+        'true',
+      );
+      expect(onsubmit).not.toHaveBeenCalled();
+      unmount();
+      render(AssemblyForm, {
+        props: {
+          assembly: { ...existing, skuCode: '  ' },
+          onsubmit,
+          operations,
+          showSkuCode: true,
+        },
+      });
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Save changes' }),
+      );
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Enter a part number.',
+      );
+      expect(onsubmit).not.toHaveBeenCalled();
+    });
+
+    it('keeps a read-only part number as stored and does not check it', async () => {
+      const onsubmit = vi.fn();
+      render(AssemblyForm, {
+        props: {
+          assembly: { ...existing, skuCode: '' },
+          onsubmit,
+          operations,
+          showSkuCode: true,
+          readonlyFields: ['skuCode'],
+        },
+      });
+      expect(screen.getByLabelText(/Part number/)).toHaveAttribute('readonly');
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Save changes' }),
+      );
+      await vi.waitFor(() =>
+        expect(onsubmit).toHaveBeenCalledWith(
+          expect.objectContaining({ skuCode: '' }),
+          expect.any(FormData),
+        ),
+      );
+    });
+
+    it('surfaces the host-reported uniqueness error on the field', async () => {
+      render(AssemblyForm, {
+        props: {
+          assembly: withSku,
+          onsubmit: vi.fn(),
+          operations,
+          showSkuCode: true,
+          errors: { fields: { skuCode: 'FR-100 is already in use.' } },
+        },
+      });
+      const field = screen.getByLabelText(/Part number/);
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      const message = screen.getByText('FR-100 is already in use.');
+      expect(field.getAttribute('aria-describedby')).toContain(message.id);
+    });
+
+    it('shows a whole-form host error', () => {
+      render(AssemblyForm, {
+        props: {
+          onsubmit: vi.fn(),
+          operations,
+          errors: { form: 'Could not save.' },
+        },
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent('Could not save.');
+    });
+
+    it('renders host fields inside the form and submits them in the FormData', async () => {
+      const onsubmit = vi.fn();
+      render(AssemblyForm, {
+        props: {
+          assembly: existing,
+          onsubmit,
+          operations,
+          extraFields: hostField,
+        },
+      });
+      const field = screen.getByLabelText('Customer');
+      expect(field.closest('form')).toBe(
+        screen.getByRole('button', { name: 'Save changes' }).closest('form'),
+      );
+      await userEvent.type(field, 'Acme');
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Save changes' }),
+      );
+      await vi.waitFor(() => expect(onsubmit).toHaveBeenCalled());
+      const [values, formData] = onsubmit.mock.calls[0];
+      expect(values).toEqual(existing);
+      expect(formData.get('customer')).toBe('Acme');
+      expect(formData.get('name')).toBe('Frame');
+    });
+
+    it('has no accessibility violations with the part number, an error and host fields', async () => {
+      const { container } = render(AssemblyForm, {
+        props: {
+          onsubmit: vi.fn(),
+          operations,
+          showSkuCode: true,
+          errors: { fields: { skuCode: 'In use.' } },
+          extraFields: hostField,
+        },
+      });
+      await expectNoA11yViolations(container);
+    });
   });
 });
