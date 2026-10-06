@@ -52,15 +52,22 @@ const openRuntimes: SmrtSvelteKitRuntime[] = [];
 const openApplicationDatabases = new Set<DatabaseInterface>();
 
 afterEach(async () => {
-  for (const db of openApplicationDatabases) await db.close?.();
-  openApplicationDatabases.clear();
   for (const runtime of openRuntimes.splice(0)) {
+    let local: Awaited<ReturnType<SmrtSvelteKitRuntime['localRuntime']>>;
     try {
-      await (await runtime.localRuntime()).db.close?.();
+      local = await runtime.localRuntime();
     } catch {
       // Runtime never started.
+      continue;
     }
+    // Public collections share the cached application connection with the
+    // runtime's membership, permission and session services.
+    const users = await UserCollection.create(runtime.classOptions('User'));
+    openApplicationDatabases.add(users.db);
+    await local.db.close?.();
   }
+  for (const db of openApplicationDatabases) await db.close?.();
+  openApplicationDatabases.clear();
   await Promise.all(
     temporaryRoots
       .splice(0)
@@ -610,6 +617,12 @@ describe('local MCP tokens', () => {
     );
     openApplicationDatabases.add(appMemberships.db);
     expect(appMemberships.db).not.toBe(local.db);
+    const users = await UserCollection.create(runtime.classOptions('User'));
+    const permissions = await PermissionCollection.create(
+      runtime.classOptions('Permission'),
+    );
+    expect(users.db).toBe(appMemberships.db);
+    expect(permissions.db).toBe(appMemberships.db);
     await expectDatabaseIntegrity(local.db, appMemberships.db);
     const directRow = await withSystemContext(() =>
       appMemberships.get({ id: childMembershipId }),

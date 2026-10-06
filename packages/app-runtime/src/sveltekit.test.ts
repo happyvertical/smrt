@@ -25,6 +25,7 @@ import {
   RoleCollection,
   TenantCollection,
   TenantStatus,
+  UserCollection,
 } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { type Handle, isActionFailure, isRedirect } from '@sveltejs/kit';
@@ -78,16 +79,22 @@ const openRuntimes: SmrtSvelteKitRuntime[] = [];
 const openApplicationDatabases = new Set<DatabaseInterface>();
 
 afterEach(async () => {
-  for (const db of openApplicationDatabases) await db.close?.();
-  openApplicationDatabases.clear();
   for (const runtime of openRuntimes.splice(0)) {
+    let local: Awaited<ReturnType<SmrtSvelteKitRuntime['localRuntime']>>;
     try {
-      const local = await runtime.localRuntime();
-      await local.db.close?.();
+      local = await runtime.localRuntime();
     } catch {
       // Runtime never started.
+      continue;
     }
+    // Public collections share the cached application connection with the
+    // runtime's membership, permission and session services.
+    const users = await UserCollection.create(runtime.classOptions('User'));
+    openApplicationDatabases.add(users.db);
+    await local.db.close?.();
   }
+  for (const db of openApplicationDatabases) await db.close?.();
+  openApplicationDatabases.clear();
   await Promise.all(
     temporaryRoots
       .splice(0)
@@ -506,6 +513,8 @@ describe('local SvelteKit runtime', () => {
     expect(runtime.databaseConfig()).toEqual(expected);
     expect(runtime.classOptions('User').db).toEqual(expected);
     expect(runtime.classOptions('Membership').db).toBe(override);
+    const users = await UserCollection.create(runtime.classOptions('User'));
+    expect(await applicationDb(runtime)).toBe(users.db);
   });
 
   it('keeps owner bootstrap loopback-only, single-use, and HMAC-only end to end', async () => {
