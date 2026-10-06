@@ -5,7 +5,7 @@
     "pnpm-lock.yaml",
     "tsconfig*.json",
     "vite.config.base.ts",
-    "scripts/declarations.ts",
+    "scripts/declarations*.ts",
     "scripts/prune-svelte-package-artifacts.js",
     "scripts/package-test-artifacts.mjs",
     "vitest.workspace.ts",

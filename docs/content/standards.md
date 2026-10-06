@@ -792,8 +792,13 @@ A few of the rules above remove something that's currently in the repo. Justific
 TypeScript 6.0.3 emits source-shaped `.d.ts` and declaration maps. The build
 extends each package's build config (or ordinary tsconfig), disables workspace
 source aliases, and resolves dependency types through public built exports.
-Keep imports portable: declarations retain their original module specifiers,
-and each package must declare dependencies used by its published types. The
+The shared emitter normalizes relative TypeScript module references to explicit
+runtime suffixes (`.js`, `.mjs`, or `.cjs`) and resolves directory imports to
+their index files during declaration emit. TypeScript generates declaration maps
+from that transformed tree, keeping navigation aligned with the original source.
+Explicit runtime suffixes, asset references such as `.svelte` and `.json`, and
+bare package imports retain their specifiers. Each package must declare
+dependencies used by its published types. The
 compiler gets explicit Node types; path mappings use relative `./` targets
 without deprecated `baseUrl`.
 
@@ -805,4 +810,20 @@ global augmentations stay in their original modules with the imports they need.
 
 Validate packaging with `node scripts/verify-package-types-exports.js <package>`
 and real packed-consumer TypeScript checks with `skipLibCheck: false`. The
-emitter regression tests run in `pnpm test:ci-scripts`.
+emitter regression tests run in `pnpm test:ci-scripts`; packed consumers must
+exercise both documented ESNext/Bundler and NodeNext resolution, including
+inherited public methods and assertions that reject accidental `any` types.
+
+After `pnpm build`, run `node scripts/verify-packed-declarations.mjs` to compile
+real core, profiles, inventory, and their workspace dependency tarballs in both
+consumer modes with declaration checking enabled. The fixture installs those
+tarballs without links to producer dependencies or undeclared development types.
+Set `SMRT_PACKED_EVIDENCE_DIR` to retain install metadata and tarball evidence.
+
+SDK declaration portability requires the repair released in SDK v0.102.1
+([SDK #1285](https://github.com/happyvertical/sdk/issues/1285)), which the workspace
+now selects. The isolated consumer preserves the project's public registry
+routing without copying credentials. `SMRT_PACKED_OVERRIDES` may name a JSON file
+of explicit candidate SDK tarball overrides for integration testing; that proof
+does not establish support for the default published dependency graph. Passing
+emitter fixtures alone is also insufficient.
