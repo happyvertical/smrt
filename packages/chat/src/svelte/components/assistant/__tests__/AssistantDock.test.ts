@@ -186,6 +186,61 @@ describe('AssistantDock (mounted component)', () => {
     ).not.toBeInTheDocument();
   });
 
+  it.each([
+    false,
+    true,
+  ])('isolates deferred upload rejection after transport replacement (reuse=%s)', async (reuseOriginal) => {
+    const registry = createDataSurfaceRegistry();
+    const original = createInMemoryAssistantTransport();
+    let rejectUpload!: (error: Error) => void;
+    const pendingUpload = new Promise<never>((_, reject) => {
+      rejectUpload = reject;
+    });
+    original.uploadAttachment = vi.fn(() => pendingUpload);
+    const replacement: AssistantTransport = {
+      async listThreads() {
+        throw new Error('Current context error');
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+    const { container, rerender } = render(AssistantDock, {
+      props: { transport: original, registry, contextMode: 'server' },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('file input not found');
+    await userEvent.upload(
+      input,
+      new File(['a'], 'private-a.png', { type: 'image/png' }),
+    );
+    expect(original.uploadAttachment).toHaveBeenCalledTimes(1);
+    await rerender({ transport: replacement, registry, contextMode: 'server' });
+    if (reuseOriginal) {
+      original.listThreads = replacement.listThreads;
+      await rerender({ transport: original, registry, contextMode: 'server' });
+    }
+    expect(
+      await screen.findByText(/Something went wrong: Current context error/),
+    ).toBeInTheDocument();
+    rejectUpload(new Error('Private previous context error'));
+    await pendingUpload.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      screen.queryByText(/Private previous context error/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Something went wrong: Current context error/),
+    ).toBeInTheDocument();
+  });
+
   it('loadThreads/loadModels fire exactly once per mount, and the registry subscription survives a send (F1)', async () => {
     const registry = createDataSurfaceRegistry();
     const transport = createInMemoryAssistantTransport({

@@ -299,6 +299,8 @@ $effect(() => {
   untrack(() => controller.syncSurfaces());
 });
 
+let transportEpoch = 0;
+
 // Copilot PR #2919 jAwsd: a SEPARATE effect, scoped to only the `transport`
 // prop, mirroring the `registry` effect above — a host swapping the
 // transport instance (e.g. alongside a registry swap, for a full
@@ -310,7 +312,10 @@ $effect(() => {
 // once per mount).
 $effect(() => {
   void transport;
-  untrack(() => controller.syncTransport());
+  untrack(() => {
+    transportEpoch++;
+    controller.syncTransport();
+  });
 });
 
 // #3000: in a narrow container (below the `@container` breakpoint in the
@@ -393,8 +398,11 @@ async function handleUpload(
   // returning [] here would make a failed upload look like a successful
   // empty batch. This handler ALSO records the failure on controller.error
   // so the dock-level banner matches the send path.
+  const uploadTransport = transport;
+  const uploadEpoch = transportEpoch;
+  const isCurrentUpload = () =>
+    transport === uploadTransport && transportEpoch === uploadEpoch;
   try {
-    const uploadTransport = transport;
     const upload = uploadTransport.uploadAttachment;
     if (!upload) {
       throw new Error('AssistantDock: attachment upload is not supported');
@@ -402,12 +410,16 @@ async function handleUpload(
     const uploaded: AssistantAttachmentRef[] = [];
     for (const file of Array.from(files)) {
       uploaded.push(await upload.call(uploadTransport, file));
-      if (transport !== uploadTransport) return [];
+      if (!isCurrentUpload()) return [];
     }
     controller.setError(null);
     return uploaded;
   } catch (error) {
-    controller.setError(error instanceof Error ? error.message : String(error));
+    if (isCurrentUpload()) {
+      controller.setError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
     throw error;
   }
 }
