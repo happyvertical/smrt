@@ -117,6 +117,12 @@ export interface DomainKnowledgeObject {
    * (#3338). Sorted; omitted when none are declared.
    */
   previousQualifiedNames?: string[];
+  /**
+   * The own field that labels a record of this object for people and
+   * assistants (#3599): `@smrt({ display: { label } })`, else the first of
+   * `name`/`title`/`label`/`code`. Omitted when none applies.
+   */
+  displayLabelField?: string;
   collection: string;
   tableName?: string;
   packageName?: string;

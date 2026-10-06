@@ -7,7 +7,7 @@ Shared TypeScript type definitions. Prevents circular dependencies between packa
 | File | Types |
 |------|-------|
 | `signals.ts` | `Signal`, `SignalType`, `SignalAdapter` — universal signaling system |
-| `module.ts` | `SmrtModuleMeta`, `ModuleUISlot`, `ModuleComponentType` — module registration and UI slots |
+| `module.ts` | `SmrtModuleMeta`, `ModuleUISlot`, `ModuleComponentType` — module registration and UI slots; `ModuleUISlot.selects` (qualified name literal) marks a slot as the selector for a model (#3599) |
 | `user.ts` | `UserStatus`, `TenantStatus`, `MembershipStatus`, `SessionStatus`, `OverrideEffect` — status enums |
 | `identity.ts` | `User`, `Tenant`, `Role`, `Membership`, `SmrtEntityFields` — cross-package identity data contracts (runtime classes live in smrt-users, which `implements` these) |
 | `knowledge.ts` | Additive schema-version-1 domain knowledge contracts shared by core generation and development tooling |
