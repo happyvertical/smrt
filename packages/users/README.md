@@ -378,6 +378,43 @@ export const GET = createOidcCallbackHandler({
 });
 ```
 
+#### Register the client: redirect URL and landing URL
+
+Register two URLs with the IdP, not one. `getOidcClientRegistration()` derives
+both from the same `callbackPath`/`loginPath` options the route handlers use
+(defaults `/auth/<provider>/callback` and `/auth/<provider>/login`):
+
+```typescript
+import { getOidcClientRegistration } from '@happyvertical/smrt-users/sveltekit';
+
+const { redirectUri, landingUrl } = getOidcClientRegistration(
+  'https://app.example.com',
+  { provider: 'kanidm' },
+);
+// redirectUri: https://app.example.com/auth/kanidm/callback
+// landingUrl:  https://app.example.com/auth/kanidm/login
+```
+
+For Kanidm:
+
+```sh
+kanidm system oauth2 add-redirect-url <client> https://app.example.com/auth/kanidm/callback
+kanidm system oauth2 set-landing-url  <client> https://app.example.com/auth/kanidm/login
+```
+
+The landing URL must be the login **start** route, not the app's home page.
+Kanidm (verified through 1.11) holds the app's pending authorization in a
+short-lived cookie. It discards that cookie whenever the user passes through its
+own `/ui/login` page, for example by pressing "Return to Login" after a
+mistyped password, and also after 15 minutes. After signing in, the user then
+lands in Kanidm's apps panel instead of returning to the app. The app never
+sees this happen, so the app tile in that panel, which links to the landing URL,
+is the only way back. When the tile points at the login start route, one click
+signs the user in, because their Kanidm session already exists. When it points at
+the home page, the user arrives signed out and has to start sign-in again. Other
+IdPs that offer an "initiate login URI" or app-launcher URL should use the same
+`landingUrl`.
+
 The callback verifies `state`, PKCE, issuer, audience, nonce, and the provider
 JWKS-signed ID token, falling back to the OIDC UserInfo endpoint when the ID
 token omits required profile claims like `email`. Temporary transaction cookies
@@ -1188,6 +1225,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `switchSessionTenant` | Change tenant context for current session |
 | `beginOidcLogin`, `completeOidcLogin` | Low-level SvelteKit helpers for custom OIDC login routes |
 | `createOidcLoginHandler`, `createOidcCallbackHandler` | Ready-to-use SvelteKit route handlers for OIDC login and callback |
+| `getOidcClientRegistration` | Redirect URL and landing (login start) URL to register with the IdP for an OIDC client |
 | `createMobileAuthHandlers` | Mountable `/api/mobile` PKCE, bearer session, bootstrap, logout, and route-guard handlers |
 | `createDeviceCredentialHandlers` | Mountable PIN sign-in, sign-out, and PIN management handlers for enrolled devices |
 | `createPasswordCredentialHandlers` | Mountable password sign-in (sets the session cookie) and password set/change/reset/clear handlers |
