@@ -42,6 +42,17 @@ export class SalesRecipe extends SmrtRecipe {
   static models = [Order];
   static nav = [{ label: 'Sales Orders', model: Order }];
   static requires = ['commerce.customers'];
+  // Literal values (`as const` keeps `visibility` a literal type): the scanner
+  // reads these statically, so `ContractType.ORDER` is its string value.
+  static options = {
+    Order: {
+      fields: {
+        contractType: { default: 'order', visibility: 'hidden', locked: true },
+        vendorId: { visibility: 'hidden', locked: true },
+        customerId: { label: 'Customer', order: 1 },
+      },
+    },
+  } as const;
 }
 
 /** Orders placed with vendors. */
@@ -53,4 +64,17 @@ export class PurchasesRecipe extends SmrtRecipe {
   static models = [PurchaseOrder];
   static nav = [{ label: 'Purchase Orders', model: PurchaseOrder }];
   static requires = ['commerce.vendors'];
+  static options = {
+    PurchaseOrder: {
+      fields: {
+        contractType: {
+          default: 'purchase_order',
+          visibility: 'hidden',
+          locked: true,
+        },
+        customerId: { visibility: 'hidden', locked: true },
+        vendorId: { label: 'Vendor', order: 1 },
+      },
+    },
+  } as const;
 }

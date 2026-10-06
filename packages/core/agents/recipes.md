@@ -27,7 +27,9 @@ export class SalesRecipe extends SmrtRecipe {
 ```
 
 Statics are read **structurally** (nothing is evaluated), so each must be
-spelled literally; `models` and `nav[].model` take identifiers.
+spelled literally; `models` and `nav[].model` take identifiers. Write
+`static options = { ... } as const` so `visibility` stays a literal type.
+The emitted `options` are keyed by qualified model name.
 
 ## How the scanner collects it
 

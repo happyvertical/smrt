@@ -8,6 +8,7 @@ import {
   SalesRecipe,
   VendorsRecipe,
 } from '../recipes.js';
+import { ContractType } from '../types/index.js';
 
 describe('commerce recipes (#3590)', () => {
   const recipes = [
@@ -39,6 +40,19 @@ describe('commerce recipes (#3590)', () => {
     expect(VendorsRecipe.requires).toEqual([]);
     expect(SalesRecipe.requires).toEqual(['commerce.customers']);
     expect(PurchasesRecipe.requires).toEqual(['commerce.vendors']);
+  });
+
+  it('hides and locks the discriminator and the other party', () => {
+    expect(SalesRecipe.options.Order.fields.contractType).toEqual({
+      default: ContractType.ORDER,
+      visibility: 'hidden',
+      locked: true,
+    });
+    expect(PurchasesRecipe.options.PurchaseOrder.fields.contractType).toEqual({
+      default: ContractType.PURCHASE_ORDER,
+      visibility: 'hidden',
+      locked: true,
+    });
   });
 
   it('only requires recipes that exist', () => {
