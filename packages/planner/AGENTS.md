@@ -34,12 +34,17 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
 - `src/lib/planner/`: the package selection (`?p=a,b`; recipes add `?r=` and `?o=`, and `app.svelte.ts` `appHref` composes them; `selection.svelte.ts`
   is the one store the control panel, navigation and a future chat assistant
   all drive).
-- `src/lib/data/`: `DataSource` (async), the seeded in-memory fakes, money and
+- `src/lib/forms/`: LOCAL recipe `forms` / `extends` (not in `SmrtRecipe` yet):
+  field-map and variant-grid forms that save several related models at once.
+  Planners are pure (`planFieldMapSave`, `planGridSave` return `RecordWrite[]`),
+  `DataSource.apply` runs them all or nothing. `cards.ts` in `recipes/` builds
+  the Planner cards from `group` (sub-switches).
+- `src/lib/data/`: `DataSource` (async, `apply` for related multi-model saves), the seeded in-memory fakes, money and
   value formatting. Views only talk to `DataSource` via context; live
   collections later replace `createMemoryDataSource()` in `+layout.svelte`.
 - `src/lib/components/`: generated list/form (`ModelWorkspace`), the collapsed "Connect other tools"
   list (`ConnectTools`), the Help view (`HelpView`), `ChatDockPlaceholder` (the dock slot for #3).
-- `src/routes/`: `/` Planner (recipes), `/recipes/[id]/` options form, `/recipes/[id]/help/` Help,
+- `src/routes/`: `/` Planner (recipe cards with switches only), `/recipes/[id]/` options form, `/recipes/[id]/help/` Help,
   `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/`.
   All prerendered; `entries()` come from the catalog.
 

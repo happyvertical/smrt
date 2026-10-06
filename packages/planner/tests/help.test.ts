@@ -244,7 +244,7 @@ describe('validateHelp', () => {
   });
 });
 
-describe('the four commerce recipes', () => {
+describe('every recipe', () => {
   beforeEach(() => recipeState.clear());
 
   const effective = (id: string) => {
