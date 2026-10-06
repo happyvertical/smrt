@@ -31,6 +31,8 @@ let loaded = $state(false);
 /** `null` closed, `'new'` creating, otherwise the id being edited. */
 let editing = $state<string | 'new' | null>(null);
 let draft = $state<Record<string, unknown>>({});
+/** Bumped each time a form opens, so inputs remount with the new draft. */
+let formKey = $state(0);
 
 async function load() {
   rows = await source.list(model);
@@ -54,11 +56,13 @@ function startCreate() {
   }
   draft = blank;
   editing = 'new';
+  formKey++;
 }
 
 function startEdit(row: ModelRecord) {
   draft = { ...row };
   editing = row.id;
+  formKey++;
 }
 
 async function save(event: SubmitEvent) {
@@ -84,7 +88,7 @@ async function remove(row: ModelRecord) {
   </header>
 
   {#if editing}
-    {#key editing}
+    {#key formKey}
     <form onsubmit={save}>
       <h3>{editing === 'new' ? `New ${model.name}` : `Edit ${model.name}`}</h3>
       {#each fields as field (field.name)}
