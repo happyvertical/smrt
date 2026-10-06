@@ -45,7 +45,8 @@ function portableReferences(
           .replace(/(?:\.d)?\.mts$/, '.mjs')
           .replace(/(?:\.d)?\.cts$/, '.cjs')
           .replace(/(?:\.d)?\.tsx?$/, '.js');
-        if (!target.startsWith('.')) target = `./${target}`;
+        if (!target.startsWith('./') && !target.startsWith('../'))
+          target = `./${target}`;
         if (target === text) return literal;
         return ts.setTextRange(
           ts.setOriginalNode(factory.createStringLiteral(target), literal),

@@ -67,11 +67,16 @@ function compileConsumer(dir, mode) {
 test('packed declarations resolve file and index imports without silently losing inherited types', (t) => {
   const dir = fixture(t, `export * from './models';
 export type { Value } from './value';
+export type { Hidden } from './.generated/model';
+export type { HiddenFile } from './.hidden';
 export type Imported = import('./value').Value;
 export type Self = import('.').Value;
 export { explicit } from './explicit.js';
 `);
   mkdirSync(join(dir, 'src/models'));
+  mkdirSync(join(dir, 'src/.generated'));
+  writeFileSync(join(dir, 'src/.generated/model.ts'), 'export interface Hidden { hidden: true }');
+  writeFileSync(join(dir, 'src/.hidden.ts'), 'export interface HiddenFile { hiddenFile: true }');
   writeFileSync(join(dir, 'src/value.ts'), 'export interface Value { title: string }');
   writeFileSync(join(dir, 'src/models/index.ts'), `import type { Value } from '../value';
 export class Collection { async get(): Promise<Value | null> { return null; } }
@@ -89,17 +94,19 @@ export type ParentValue = import('..').Value;
   const extract = spawnSync('tar', ['-xzf', join(dir, JSON.parse(pack.stdout)[0].filename), '--strip-components=1', '-C', installed], { encoding: 'utf8' });
   assert.equal(extract.status, 0, extract.stderr);
   writeFileSync(join(consumer, 'package.json'), '{"type":"module"}');
-  writeFileSync(join(consumer, 'consumer.ts'), `import { Derived, explicit, type Value, type Imported, type Self, type ParentValue } from 'declaration-fixture';
+  writeFileSync(join(consumer, 'consumer.ts'), `import { Derived, explicit, type Value, type Imported, type Self, type ParentValue, type Hidden, type HiddenFile } from 'declaration-fixture';
 const result = new Derived().get();
 const typed: Promise<Value | null> = result;
 type IsAny<T> = 0 extends (1 & T) ? true : false;
 const inheritedIsAny: IsAny<Awaited<typeof result>> = false;
+const hidden: Hidden = { hidden: true };
+const hiddenFile: HiddenFile = { hiddenFile: true };
 const imported: Imported = { title: 'typed' };
 const self: Self = { title: 'same-directory index' };
 const parent: ParentValue = { title: 'parent-directory index' };
 // @ts-expect-error A string is not a typed inherited collection result.
 const invalid: Awaited<typeof result> = 'untyped';
-void [typed, inheritedIsAny, imported, self, parent, explicit, invalid];
+void [typed, inheritedIsAny, imported, self, parent, explicit, invalid, hidden, hiddenFile];
 `);
   for (const mode of ['Bundler', 'NodeNext']) {
     const result = compileConsumer(consumer, mode);
