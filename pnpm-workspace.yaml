@@ -127,6 +127,13 @@ overrides:
   # map (GHSA-68fv-2mgg-jv7q). Consumers are postcss (via vite and the Svelte
   # plugin), which declare `^1.2.x`; 1.2.2 is the patch within that range.
   'source-map-js@<1.2.2': 1.2.2
+  # @modelcontextprotocol/client >=2.0.0 <2.2.0 can send OAuth credentials to an
+  # authorization server chosen by the MCP server, and @modelcontextprotocol/sdk
+  # >=1.12.0 <1.31.0 has the same flaw. Workspace packages pin client exactly at
+  # 2.0.0; 2.2.0 is the first patched release, and sdk 1.31.0 is the patch for
+  # the transitive 1.x copy (via @happyvertical/ai).
+  '@modelcontextprotocol/client@>=2.0.0 <2.2.0': 2.2.0
+  '@modelcontextprotocol/sdk@>=1.12.0 <1.31.0': 1.31.0
 
 auditConfig:
   # Every entry here suppresses an advisory for the WHOLE tree, including future
