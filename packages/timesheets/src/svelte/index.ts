@@ -37,6 +37,7 @@ export type TimeSummaryProps = ComponentProps<typeof TimeSummary>;
 export {
   type ApprovalStatus,
   type Currency,
+  currencyMinorUnitExponent,
   formatCurrency,
   formatDate,
   formatHours,

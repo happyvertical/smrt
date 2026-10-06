@@ -20,7 +20,11 @@ import {
   type TimeEntryApprovalView,
   timeEntryStatusBadgeKey,
 } from '../types.js';
-import { formatHours, type HoursFormatter } from './utils.js';
+import {
+  currencyMinorUnitExponent,
+  formatHours,
+  type HoursFormatter,
+} from './utils.js';
 
 const { t } = useI18n();
 
@@ -83,11 +87,7 @@ function confirmReject(id: string): void {
  * and the host app supplies the label.
  */
 function formatAmount(amount: number, currency = 'USD'): string {
-  const digits =
-    new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-    }).resolvedOptions().maximumFractionDigits ?? 2;
+  const digits = currencyMinorUnitExponent(currency);
   return (amount / 10 ** digits).toFixed(digits);
 }
 </script>

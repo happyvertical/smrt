@@ -81,6 +81,11 @@ const ISO_EXPONENTS: Record<string, number> = {
   UYW: 4,
 };
 
+/** Return the ISO 4217 minor-unit exponent used by timesheet amounts. */
+export function currencyMinorUnitExponent(currency: Currency): number {
+  return ISO_EXPONENTS[currency.trim().toUpperCase()] ?? 2;
+}
+
 /**
  * Format a minor-units amount for display.
  *
@@ -96,7 +101,7 @@ export function formatCurrency(
   currency: Currency = 'CAD',
 ): string {
   const code = currency.trim().toUpperCase();
-  const digits = ISO_EXPONENTS[code] ?? 2;
+  const digits = currencyMinorUnitExponent(code);
   const format = new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency: code,
