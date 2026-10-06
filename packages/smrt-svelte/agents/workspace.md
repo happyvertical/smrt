@@ -182,7 +182,7 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   unchanged), `ThemeProvider`, the theme CSS (`themes/styles/{all,fonts}.css`
   are imported by the component — forgetting them leaves `--smrt-*` unresolved),
   `AdminShell`, `TenantNav` from the consumer's `nav`/`navGroups`/`currentHref`,
-  and an `AppScopePanel`. Panels start collapsed as in `AdminShell`; pass
+  and an `AppScopePanel`. `ShellNavItem.action` (trailing icon link, optional `visibility: 'active'` = only while the item's section is current; omitted when collapsed) is rendered by `TenantNav` and passed through `AppShell` unchanged. Panels start collapsed as in `AdminShell`; pass
   `config` to change that. `dock` is a snippet rendered inside the shell: a host
   places its assistant there in a `ShellDockTool`, so this package never
   imports `smrt-chat`. It receives the Provider's `DataSurfaceRegistry`

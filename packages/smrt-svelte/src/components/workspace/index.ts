@@ -118,6 +118,7 @@ export type {
   ShellHotkeyBinding,
   ShellNavGroup,
   ShellNavItem,
+  ShellNavItemAction,
   ShellPanelConfig,
   ShellPanelDefaults,
   ShellPanelPersist,

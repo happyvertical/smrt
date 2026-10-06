@@ -48,6 +48,12 @@ const tenantItems: ShellNavItem[] = [
     href: '/admin/operations',
     label: 'Operations',
     icon: 'O',
+    // Trailing gear, rendered only while the Operations section is current.
+    action: {
+      href: '/admin/operations/options',
+      label: 'Operations options',
+      visibility: 'active',
+    },
     children: [
       { href: '/admin/operations/jobs', label: 'Jobs', badge: 3 },
       { href: '/admin/operations/dispatch', label: 'Dispatch' },

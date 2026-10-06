@@ -133,6 +133,25 @@ export interface ShellNavGroup {
   items: ShellNavItem[];
 }
 
+/**
+ * Optional trailing icon-only link on a {@link ShellNavItem}, for example a
+ * settings gear that opens the item's section settings. Not rendered when the
+ * nav is collapsed; the target page stays reachable through its own route.
+ */
+export interface ShellNavItemAction {
+  href: string;
+  /** Accessible name and tooltip, e.g. "Sales options". Required: icon-only. */
+  label: string;
+  /** Icon name from the set `ShellNavItem.icon` uses. Defaults to a settings gear. */
+  icon?: string;
+  /**
+   * `'always'` renders the link whenever the nav is expanded; `'active'`
+   * renders it only while the item's section is current (the link is absent
+   * otherwise, not merely hidden). Default `'always'`.
+   */
+  visibility?: 'always' | 'active';
+}
+
 export interface ShellNavItem {
   href: string;
   label: string;
@@ -147,6 +166,13 @@ export interface ShellNavItem {
    */
   attention?: boolean | string | null;
   children?: ShellNavItem[];
+  /**
+   * Trailing action link. "Section current" means: for an item in a
+   * {@link ShellNavGroup}, any item of the group, their children, or any
+   * action href is the current page; for a top-level item, the item, its
+   * children, or its action href is current.
+   */
+  action?: ShellNavItemAction;
 }
 
 /** Tenant option rendered by {@link WorkspaceAccountMenu}. */
