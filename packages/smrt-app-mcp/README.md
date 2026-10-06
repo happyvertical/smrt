@@ -30,7 +30,7 @@ export const POST = mountMcpAppRoute({
 });
 ```
 
-- **Runtime** — `runtime` (any `McpAppRouteRuntime`; the SMRT SvelteKit
+- **Runtime** — `runtime` (any `McpAppRouteRuntime`; the s-m-r-t SvelteKit
   runtime satisfies it) supplies three bindings, each still overridable:
   `smrtOptions` defaults to `() => ({ db: runtime.databaseConfig() })` (under
   RLS, the request's transaction-bound database), `bindPrincipal` to
