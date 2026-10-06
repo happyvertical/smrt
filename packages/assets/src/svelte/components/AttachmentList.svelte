@@ -1,5 +1,6 @@
 <script lang="ts">
 import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
+import { Form, Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { attachmentLink } from '../attachments/link.js';
@@ -32,7 +33,7 @@ const removable = $derived(Boolean(onremove || removeAction));
 let target = $state<AssetAttachment | undefined>();
 let running = $state(false);
 let failed = $state<string | undefined>();
-let form = $state<HTMLFormElement | undefined>();
+const formId = $derived(`${instanceId}-remove`);
 const busy = $derived(running || removePending);
 function askRemove(item: AssetAttachment) {
   failed = undefined;
@@ -51,7 +52,9 @@ async function confirmRemove() {
       running = false;
       target = undefined;
     }
-  } else if (form) {
+  } else if (removeAction) {
+    const form = document.getElementById(formId) as HTMLFormElement | null;
+    if (!form) return;
     // Native POST: stay pending until navigation; a restored (bfcache)
     // page or a submission cancelled by an enhancing listener releases the controls again.
     running = true;
@@ -113,11 +116,11 @@ async function confirmRemove() {
   {#if failed}<p role="alert">{t(M['assets.attachments.remove_failed'], { name: failed })}</p>{/if}
   {#if removable}
     {#if removeAction && !onremove}
-      <form bind:this={form} id={`${instanceId}-remove`} method="post" action={removeAction}>
-        <input type="hidden" name={removeIdField} value={target?.id ?? ''} />
-        {#each removeHiddenFields as field}<input type="hidden" name={field.name} value={field.value} />{/each}
-        <input type="hidden" name={removeIntentField} value={removeIntent} />
-      </form>
+      <Form id={formId} method="post" action={removeAction} preventDefault={false}>
+        <Input type="hidden" name={removeIdField} value={target?.id ?? ''} interaction={false} />
+        {#each removeHiddenFields as field}<Input type="hidden" name={field.name} value={field.value} interaction={false} />{/each}
+        <Input type="hidden" name={removeIntentField} value={removeIntent} interaction={false} />
+      </Form>
     {/if}
     <ConfirmDialog
       open={target !== undefined}
