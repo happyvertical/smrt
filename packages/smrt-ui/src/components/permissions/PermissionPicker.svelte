@@ -44,9 +44,16 @@ let {
 }: Props = $props();
 
 let query = $state('');
+let localSelection = $state.raw<{
+  source: readonly string[];
+  slugs: Set<string>;
+} | null>(null);
 const instanceId = $props.id();
 const labelId = `permission-picker-label-${instanceId}`;
 const selectedSlugs = $derived(new Set(selected));
+const currentSelectedSlugs = $derived(
+  localSelection?.source === selected ? localSelection.slugs : selectedSlugs,
+);
 const normalizedQuery = $derived(normalize(query));
 const groups = $derived(groupPermissions(permissions));
 const visibleCount = $derived(
@@ -58,6 +65,13 @@ const visibleCount = $derived(
     0,
   ),
 );
+
+function updateSelection(slug: string, checked: boolean): void {
+  const next = new Set(currentSelectedSlugs);
+  if (checked) next.add(slug);
+  else next.delete(slug);
+  localSelection = { source: selected, slugs: next };
+}
 
 function normalize(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
@@ -140,7 +154,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
     <div class="groups">
       {#each groups as group (group.label)}
         {@const groupVisible = group.items.some((permission) => matches(permission, group.label))}
-        {@const selectedCount = group.items.filter((permission) => selectedSlugs.has(permission.slug)).length}
+        {@const selectedCount = group.items.filter((permission) => currentSelectedSlugs.has(permission.slug)).length}
         <details class="group" open={normalizedQuery ? groupVisible : undefined} hidden={!groupVisible}>
           <summary id={group.id}>
             <span>{group.label}</span>
@@ -153,6 +167,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
                   {name}
                   value={permission.slug}
                   checked={selectedSlugs.has(permission.slug)}
+                  onchange={(event) => updateSelection(permission.slug, event.currentTarget.checked)}
                   label={displayName(permission)}
                   {disabled}
                 />

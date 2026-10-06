@@ -128,6 +128,9 @@ describe('PermissionPicker', () => {
 
     await user.click(projects);
     await user.click(manage);
+    expect(screen.getByText('Workspace').closest('details')).toHaveTextContent(
+      '1 selected',
+    );
     await user.type(screen.getByRole('searchbox'), 'project');
     expect(new FormData(form).getAll('permission')).toEqual([
       'tenant.settings.manage',
@@ -141,5 +144,43 @@ describe('PermissionPicker', () => {
       form.querySelector<HTMLInputElement>('[value="tenant.settings.manage"]'),
     ).not.toBeChecked();
     expect(new FormData(form).getAll('permission')).toEqual(['projects.read']);
+    expect(screen.getByText('Workspace').closest('details')).toHaveTextContent(
+      '0 selected',
+    );
+  });
+
+  it('keeps collapsed group counts synchronized with submitted native values', async () => {
+    const user = userEvent.setup();
+    render(PermissionPickerForm, { props: { permissions } });
+    const form = screen.getByRole('form', {
+      name: 'Role grants',
+    }) as HTMLFormElement;
+    const workspace = screen
+      .getByText('Workspace')
+      .closest('details') as HTMLDetailsElement;
+    const workspaceSummary = screen
+      .getByText('Workspace')
+      .closest('summary') as HTMLElement;
+
+    await user.click(workspaceSummary);
+    await user.click(screen.getByRole('checkbox', { name: 'Manage settings' }));
+    expect(workspace).toHaveTextContent('1 selected');
+    expect(new FormData(form).getAll('permission')).toEqual([
+      'tenant.settings.manage',
+    ]);
+
+    await user.type(screen.getByRole('searchbox'), 'project');
+    expect(workspace).toHaveAttribute('hidden');
+    expect(new FormData(form).getAll('permission')).toEqual([
+      'tenant.settings.manage',
+    ]);
+    await user.clear(screen.getByRole('searchbox'));
+    expect(workspace).not.toHaveAttribute('open');
+    expect(workspace).toHaveTextContent('1 selected');
+
+    await user.click(workspaceSummary);
+    await user.click(screen.getByRole('checkbox', { name: 'Manage settings' }));
+    expect(workspace).toHaveTextContent('0 selected');
+    expect(new FormData(form).getAll('permission')).toEqual([]);
   });
 });
