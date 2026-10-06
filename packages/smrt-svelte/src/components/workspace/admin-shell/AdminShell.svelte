@@ -349,6 +349,53 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     });
   });
 
+  // Dock opened from code (`useShellDock`, header dock toggles): focus moves
+  // into the dock once it is shown.
+  let lastDockFocusRequest = 0;
+  $effect(() => {
+    const request = shell.dockFocusRequest;
+    untrack(() => {
+      if (request === lastDockFocusRequest) return;
+      lastDockFocusRequest = request;
+      void tick().then(focusDock);
+    });
+  });
+
+  function focusDock(): void {
+    const aside = sideElements.right;
+    const panel = aside?.querySelector<HTMLElement>(
+      '.smrt-admin-shell__panel--right',
+    );
+    if (!panel || panel.hidden || !edgeExpanded('right')) return;
+    if (panel.contains(document.activeElement)) return;
+    const target =
+      panel.querySelector<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [contenteditable="true"], [tabindex]:not([tabindex="-1"])',
+      ) ?? panel;
+    target.focus({ preventScroll: true });
+  }
+
+  // When the dock closes (Escape, a toggle, or code), focus goes back to
+  // where it was opened from if it was left inside the dock or lost.
+  let dockWasOpen = false;
+  $effect(() => {
+    const open = edgeExpanded('right');
+    untrack(() => {
+      const wasOpen = dockWasOpen;
+      dockWasOpen = open;
+      if (!wasOpen || open) return;
+      const target = shell.dockReturnFocus;
+      shell.dockReturnFocus = null;
+      if (!target?.isConnected || typeof document === 'undefined') return;
+      const active = document.activeElement;
+      const lost =
+        !active ||
+        active === document.body ||
+        Boolean(sideElements.right?.contains(active));
+      if (lost) target.focus({ preventScroll: true });
+    });
+  });
+
   function onEdgeAnimationEnd(event: AnimationEvent, edge: SideEdge): void {
     if (closingEdge === edge && event.target === event.currentTarget) {
       endClosing();
@@ -988,6 +1035,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {#if panelMounted('right')}
         <div
           class="smrt-admin-shell__panel smrt-admin-shell__panel--right"
+          tabindex="-1"
           hidden={!shownOpen('right')}
         >
           {#key shell.activeFocusToolId}

@@ -172,6 +172,17 @@ export interface ShellFocusTool {
   activityKinds?: string[];
 }
 
+/** Options for opening a dock tool from code (see `useShellDock`). */
+export interface ShellDockOpenOptions {
+  /** Move focus into the dock once it is open. Default true. */
+  focus?: boolean;
+  /**
+   * Where focus goes back to when the dock closes. Default: the element
+   * focused when the dock was opened.
+   */
+  returnFocus?: HTMLElement | null;
+}
+
 export interface ShellActivity {
   id: string;
   label: string;

@@ -19,6 +19,7 @@ import type {
   ShellActivityBadge,
   ShellActivityEvent,
   ShellActivityFilter,
+  ShellDockOpenOptions,
   ShellFocusTool,
   ShellPanelDefaults,
   ShellPanelResize,
@@ -80,6 +81,13 @@ export class ShellState {
   viewport = $state<ShellViewport>('desktop');
   focusTools = $state<ShellFocusTool[]>([]);
   activeFocusToolId = $state<string | null>(null);
+  /**
+   * Bumped by `openDockTool` / `toggleDockTool` when the dock should take
+   * focus; `AdminShell` reacts to it once the panel is shown.
+   */
+  dockFocusRequest = $state(0);
+  /** Element focus returns to when a dock opened from code closes. */
+  dockReturnFocus: HTMLElement | null = null;
   activities = $state<ShellActivity[]>([]);
   /**
    * Side edges whose `overlayMedia` currently matches; `AdminShell` keeps
@@ -373,6 +381,55 @@ export class ShellState {
         return;
       }
       this.openFocusTool(id);
+    });
+  }
+
+  /**
+   * The focus tool currently shown in the open right edge (the dock), or
+   * `null` while the edge is collapsed or hidden.
+   */
+  get openFocusToolId(): string | null {
+    return this.panels.right === 'expanded' && this.isEdgeShown('right')
+      ? this.activeFocusToolId
+      : null;
+  }
+
+  /** Close the dock (collapse the right edge). */
+  closeFocusTool(): void {
+    this.collapsePanel('right');
+  }
+
+  /**
+   * Open a dock tool and ask for focus to move into it. `returnFocus` is
+   * where focus goes back to when the dock closes (default: whatever has
+   * focus now). Returns false when no such tool is registered.
+   */
+  openDockTool(id: string, options: ShellDockOpenOptions = {}): boolean {
+    return untrack(() => {
+      if (!this.focusTools.some((tool) => tool.id === id)) return false;
+      this.openFocusTool(id);
+      if (options.focus === false) return true;
+      const active =
+        typeof document === 'undefined' ? null : document.activeElement;
+      this.dockReturnFocus =
+        options.returnFocus ??
+        (active instanceof HTMLElement && active !== document.body
+          ? active
+          : null);
+      this.dockFocusRequest += 1;
+      return true;
+    });
+  }
+
+  /** Toggle a dock tool; opening it follows `openDockTool`. */
+  toggleDockTool(id: string, options: ShellDockOpenOptions = {}): boolean {
+    return untrack(() => {
+      if (!this.focusTools.some((tool) => tool.id === id)) return false;
+      if (this.openFocusToolId === id) {
+        this.closeFocusTool();
+        return true;
+      }
+      return this.openDockTool(id, options);
     });
   }
 

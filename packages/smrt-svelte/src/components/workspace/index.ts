@@ -28,6 +28,7 @@ export {
   tryUseAdminShell,
   useAdminShell,
 } from './admin-shell/context.js';
+export { type ShellDock, useShellDock } from './admin-shell/dock.js';
 export { default as HotkeyInput } from './admin-shell/HotkeyInput.svelte';
 export {
   formatHotkeyBinding,
@@ -113,6 +114,7 @@ export type {
   ShellActivityBadge,
   ShellActivityEvent,
   ShellActivityFilter,
+  ShellDockOpenOptions,
   ShellFocusTool,
   ShellFocusToolSubject,
   ShellHotkeyBinding,

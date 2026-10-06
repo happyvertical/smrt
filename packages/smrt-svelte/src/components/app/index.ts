@@ -6,6 +6,7 @@
  * `@happyvertical/smrt-app-runtime/sveltekit`.
  */
 export { default as AppShell } from './AppShell.svelte';
+export type { DockToggle } from './dock-toggle.js';
 export { default as OwnerSetupForm } from './OwnerSetupForm.svelte';
 export type {
   OwnerSetupData,
