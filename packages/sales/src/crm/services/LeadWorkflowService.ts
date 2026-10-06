@@ -604,6 +604,12 @@ export class LeadWorkflowService {
         'Opportunity is unavailable in the active tenant',
       );
     }
+    if (input.outcome !== 'won' && input.outcome !== 'lost') {
+      throw this.refusal(
+        'invalid_transition',
+        "Opportunity outcome must be 'won' or 'lost'",
+      );
+    }
     if (input.conversion && input.outcome !== 'won') {
       throw this.refusal(
         'invalid_conversion',
@@ -1186,21 +1192,26 @@ export class LeadWorkflowService {
   ): Promise<Lead[]> {
     if (input.dedupe === 'none') return [];
     const clauses: string[] = [];
+    const identityLocks: string[] = [];
     const params: string[] = [tenantId];
     if (input.email) {
       params.push(input.email);
       clauses.push(`LOWER(TRIM(email)) = $${params.length}`);
+      identityLocks.push(`lead-dedupe:${tenantId}:email:${input.email}`);
     }
     if (input.dedupe === 'email_or_org' && input.organizationName) {
-      params.push(input.organizationName.toLowerCase());
+      const organizationName = input.organizationName.toLowerCase();
+      params.push(organizationName);
       clauses.push(`LOWER(TRIM(organization_name)) = $${params.length}`);
+      identityLocks.push(
+        `lead-dedupe:${tenantId}:organization:${organizationName}`,
+      );
     }
     if (clauses.length === 0) return [];
     if (deps.supportsRowLocks) {
-      await this.lockOperationFence(
-        deps,
-        `lead-dedupe:${tenantId}:${params.slice(1).sort().join('|')}`,
-      );
+      for (const identityLock of identityLocks.sort()) {
+        await this.lockOperationFence(deps, identityLock);
+      }
     }
     return await deps.leads.query(
       `SELECT * FROM ${deps.leads.tableName}

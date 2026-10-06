@@ -85,6 +85,82 @@ describePostgres('Lead intake and conversion lifecycle on PostgreSQL', () => {
     });
   });
 
+  it('serializes concurrent intake across overlapping dedupe identities', async () => {
+    await db.query(`
+      CREATE FUNCTION pause_concurrent_lead_insert() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.name LIKE 'Concurrent dedupe%' THEN
+          PERFORM pg_sleep(0.2);
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await db.query(`
+      CREATE TRIGGER pause_concurrent_lead_insert_trigger
+      BEFORE INSERT ON leads
+      FOR EACH ROW EXECUTE FUNCTION pause_concurrent_lead_insert()
+    `);
+
+    const [emailPolicy, emailOrOrgPolicy] = await Promise.all([
+      withTenant({ tenantId }, () =>
+        service.createLead({
+          name: 'Concurrent dedupe email policy',
+          email: 'shared-concurrent@example.test',
+          organizationName: 'First Organization',
+          sourceKind: 'form',
+          dedupe: 'email',
+          idempotencyKey: 'concurrent-email-policy',
+        }),
+      ),
+      withTenant({ tenantId }, () =>
+        service.createLead({
+          name: 'Concurrent dedupe email or org policy',
+          email: ' SHARED-CONCURRENT@example.test ',
+          organizationName: 'Second Organization',
+          sourceKind: 'form',
+          dedupe: 'email_or_org',
+          idempotencyKey: 'concurrent-email-or-org-policy',
+        }),
+      ),
+    ]);
+    expect([emailPolicy.created, emailOrOrgPolicy.created].sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(emailPolicy.lead.id).toBe(emailOrOrgPolicy.lead.id);
+
+    const [firstOrganization, secondOrganization] = await Promise.all([
+      withTenant({ tenantId }, () =>
+        service.createLead({
+          name: 'Concurrent dedupe first organization',
+          email: 'first-organization@example.test',
+          organizationName: 'Shared Organization',
+          sourceKind: 'form',
+          dedupe: 'email_or_org',
+          idempotencyKey: 'concurrent-first-organization',
+        }),
+      ),
+      withTenant({ tenantId }, () =>
+        service.createLead({
+          name: 'Concurrent dedupe second organization',
+          email: 'second-organization@example.test',
+          organizationName: ' SHARED ORGANIZATION ',
+          sourceKind: 'form',
+          dedupe: 'email_or_org',
+          idempotencyKey: 'concurrent-second-organization',
+        }),
+      ),
+    ]);
+    expect(
+      [firstOrganization.created, secondOrganization.created].sort(),
+    ).toEqual([false, true]);
+    expect(firstOrganization.lead.id).toBe(secondOrganization.lead.id);
+    expect(await withTenant({ tenantId }, () => leads.list({}))).toHaveLength(
+      2,
+    );
+  });
+
   it('rolls back the won stage move and audit when conversion persistence fails', async () => {
     await db.query(`
       CREATE FUNCTION fail_crm_intake_audit() RETURNS trigger AS $$

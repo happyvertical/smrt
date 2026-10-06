@@ -335,6 +335,46 @@ describe('Lead intake and conversion lifecycle', () => {
     expect(wonWithoutConversion.conversion).toBeUndefined();
   });
 
+  it('rejects an invalid runtime outcome without mutating or auditing the opportunity', async () => {
+    const created = await intake({ email: 'invalid-outcome@acme.test' });
+    const qualified = await run(() =>
+      service.qualifyLead({
+        leadId: created.lead.id as string,
+        actorProfileId,
+      }),
+    );
+    const opportunityId = qualified.opportunity.id as string;
+    const auditBefore = await run(() =>
+      activities.findBySubject('opportunity', opportunityId),
+    );
+
+    await expect(
+      run(() =>
+        service.closeOpportunity({
+          opportunityId,
+          outcome: 'cancelled' as 'won',
+          actorProfileId,
+        }),
+      ),
+    ).rejects.toMatchObject<Partial<LeadWorkflowValidationError>>({
+      reason: 'invalid_transition',
+    });
+
+    const persisted = await run(() =>
+      opportunities.get({ id: opportunityId }, { cache: false }),
+    );
+    const auditAfter = await run(() =>
+      activities.findBySubject('opportunity', opportunityId),
+    );
+    expect(persisted).toMatchObject({
+      status: 'open',
+      stageId: qualified.opportunity.stageId,
+    });
+    expect(auditAfter.map((row) => row.id)).toEqual(
+      auditBefore.map((row) => row.id),
+    );
+  });
+
   it('rolls back intake and close mutations when an audit/conversion write fails', async () => {
     await db.query(`
       CREATE TRIGGER fail_intake_audit BEFORE INSERT ON sales_activities
