@@ -1,30 +1,19 @@
 <script lang="ts" generics="Card extends BoardCard, Column extends BoardColumn">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { BROWSER } from 'esm-env';
-import { tick, untrack } from 'svelte';
+import { untrack } from 'svelte';
 import { M } from '../../i18n/strings.board.js';
+import {
+  createSortable,
+  type SortableAnnouncement,
+  type SortableMove,
+} from '../sortable/controller.svelte.js';
 import type {
   BoardCard,
   BoardColumn,
   BoardMoveIntent,
-  BoardPosition,
   BoardProps,
 } from './types.js';
-
-interface DragState {
-  cardId: string;
-  source: BoardPosition;
-  target: BoardPosition;
-  mode: 'keyboard' | 'pointer';
-}
-
-interface PointerSession {
-  cardId: string;
-  pointerId: number;
-  startX: number;
-  startY: number;
-  active: boolean;
-}
 
 let {
   columns,
@@ -50,13 +39,7 @@ let root: HTMLElement;
 let localCards = $state<Card[]>(untrack(() => [...defaultCards]));
 let optimisticCards = $state<Card[] | undefined>();
 let lastAuthoritativeCards = untrack(() => cards);
-let drag = $state<DragState | undefined>();
 let collapsed = $state<Set<string>>(new Set());
-let announcement = $state('');
-let focusCardId = $state<string | undefined>();
-let suppressedSelectionCardId = $state<string | undefined>();
-let movePending = $state(false);
-let pointerSession = $state<PointerSession | undefined>();
 
 // A new owner array is an explicit reconciliation point. Do not clear an
 // optimistic move merely because this component has re-rendered.
@@ -80,23 +63,6 @@ const cardsByColumn = $derived.by(() => {
   }
   return next;
 });
-const movable = $derived(
-  (cards === undefined || onmove !== undefined) && !movePending,
-);
-
-$effect(() => {
-  if (!BROWSER) return;
-  if (!focusCardId) return;
-  const cardId = focusCardId;
-  focusCardId = undefined;
-  tick().then(() => {
-    Array.from(
-      root.querySelectorAll<HTMLButtonElement>('[data-smrt-board-card-id]'),
-    )
-      .find((element) => element.dataset.smrtBoardCardId === cardId)
-      ?.focus();
-  });
-});
 
 function laneListId(index: number): string {
   return `${instanceId}-lane-${index}`;
@@ -117,32 +83,17 @@ function findColumn(columnId: string): Column | undefined {
   return columns.find((column) => column.id === columnId);
 }
 
-function positionFor(cardId: string): BoardPosition | undefined {
-  const item = findCard(cardId);
-  if (!item) return undefined;
-  const columnId = getCardColumnId(item);
-  const index = cardsInColumn(columnId).findIndex(
-    (candidate) => candidate.id === cardId,
-  );
-  return index < 0 ? undefined : { columnId, index };
-}
-
-function clamp(index: number, max: number): number {
-  return Math.max(0, Math.min(index, max));
-}
-
-function createIntent(
-  state: DragState,
+function intentFor(
+  move: SortableMove,
 ): BoardMoveIntent<Card, Column> | undefined {
-  const movingCard = findCard(state.cardId);
-  const sourceColumn = findColumn(state.source.columnId);
-  const targetColumn = findColumn(state.target.columnId);
-  if (!movingCard || !sourceColumn || !targetColumn || targetColumn.disabled)
-    return undefined;
+  const movingCard = findCard(move.itemId);
+  const sourceColumn = findColumn(move.source.containerId);
+  const targetColumn = findColumn(move.target.containerId);
+  if (!movingCard || !sourceColumn || !targetColumn) return undefined;
   return {
     card: movingCard,
-    source: state.source,
-    target: state.target,
+    source: { columnId: move.source.containerId, index: move.source.index },
+    target: { columnId: move.target.containerId, index: move.target.index },
     sourceColumn,
     targetColumn,
   };
@@ -176,327 +127,74 @@ function moveCards(intent: BoardMoveIntent<Card, Column>): Card[] {
   ];
 }
 
-function pickup(cardId: string, mode: DragState['mode']): void {
-  if (!movable) return;
-  const source = positionFor(cardId);
-  const movingCard = findCard(cardId);
-  if (!source || !movingCard) return;
-  drag = { cardId, source, target: { ...source }, mode };
-  announcement = t(M['ui.board.pickup'], {
-    card: getCardLabel(movingCard),
-    destinations: columns
-      .filter((column) => !column.disabled)
-      .map((column) => column.label)
-      .join(', '),
-  });
-}
-
-function announcePosition(state: DragState): void {
-  const movingCard = findCard(state.cardId);
-  const column = findColumn(state.target.columnId);
-  if (!movingCard || !column) return;
-  const count = cardsInColumn(column.id, state.cardId).length + 1;
-  announcement = t(M['ui.board.position'], {
-    card: getCardLabel(movingCard),
-    column: column.label,
-    position: state.target.index + 1,
-    count,
-  });
-}
-
-function moveKeyboardTarget(
-  direction: 'horizontal' | 'vertical',
-  delta: number,
-): void {
-  if (drag?.mode !== 'keyboard') return;
-  const target = { ...drag.target };
-  if (direction === 'vertical') {
-    if (!allowSameColumnReorder) return;
-    target.index = clamp(
-      target.index + delta,
-      cardsInColumn(target.columnId, drag.cardId).length,
-    );
-  } else {
-    const currentIndex = columns.findIndex(
-      (column) => column.id === target.columnId,
-    );
-    const candidate = columns[currentIndex + delta];
-    if (!candidate) return;
-    if (candidate.disabled) {
-      announcement = t(M['ui.board.unavailable_column'], {
-        column: candidate.label,
+function message(announcement: SortableAnnouncement): string {
+  switch (announcement.type) {
+    case 'pickup':
+      return t(M['ui.board.pickup'], {
+        card: announcement.item,
+        destinations: announcement.destinations.join(', '),
       });
-      return;
+    case 'position':
+      return t(M['ui.board.position'], {
+        card: announcement.item,
+        column: announcement.container,
+        position: announcement.position,
+        count: announcement.count,
+      });
+    case 'drop':
+      return t(M['ui.board.drop'], {
+        card: announcement.item,
+        column: announcement.container,
+        position: announcement.position,
+        count: announcement.count,
+      });
+    case 'unavailable':
+      return t(M['ui.board.unavailable_column'], {
+        column: announcement.container,
+      });
+    case 'failed':
+      return t(M['ui.board.move_failed'], { card: announcement.item });
+    case 'cancel':
+      return t(M['ui.board.cancel'], { card: announcement.item });
+  }
+}
+
+const sortable = createSortable({
+  root: () => root,
+  selectors: {
+    container: '[data-smrt-board-column-id]',
+    containerKey: 'smrtBoardColumnId',
+    item: '[data-smrt-board-card-id]',
+    itemKey: 'smrtBoardCardId',
+  },
+  containers: () => columns,
+  itemIds: (columnId) => cardsInColumn(columnId).map((item) => item.id),
+  itemLabel: (cardId) => {
+    const found = findCard(cardId);
+    return found ? getCardLabel(found) : undefined;
+  },
+  allowSameContainerReorder: () => allowSameColumnReorder,
+  enabled: () => cards === undefined || onmove !== undefined,
+  announce: message,
+  async commit(move) {
+    const intent = intentFor(move);
+    if (!intent) return;
+    const reordered = moveCards(intent);
+    expandColumn(intent.target.columnId);
+    if (cards !== undefined && optimistic) optimisticCards = reordered;
+    try {
+      await onmove?.(intent);
+    } catch (error) {
+      optimisticCards = undefined;
+      throw error;
     }
-    target.columnId = candidate.id;
-    target.index = clamp(
-      target.index,
-      cardsInColumn(candidate.id, drag.cardId).length,
-    );
-  }
-  drag = { ...drag, target };
-  announcePosition(drag);
-}
-
-async function drop(): Promise<void> {
-  if (!drag) return;
-  const state = drag;
-  const intent = createIntent(state);
-  drag = undefined;
-  suppressSelection(state.cardId);
-  if (!intent) return;
-  const changed =
-    intent.source.columnId !== intent.target.columnId ||
-    intent.source.index !== intent.target.index;
-  if (!changed) {
-    focusCardId = intent.card.id;
-    return;
-  }
-  const reordered = moveCards(intent);
-  expandColumn(intent.target.columnId);
-  if (cards !== undefined && optimistic) optimisticCards = reordered;
-  movePending = true;
-  try {
-    await onmove?.(intent);
-  } catch {
-    optimisticCards = undefined;
-    announcement = t(M['ui.board.move_failed'], {
-      card: getCardLabel(intent.card),
-    });
-    focusCardId = intent.card.id;
-    return;
-  } finally {
-    movePending = false;
-  }
-  if (cards === undefined) localCards = reordered;
-  const count =
-    cardsInColumn(intent.target.columnId, intent.card.id).length + 1;
-  announcement = t(M['ui.board.drop'], {
-    card: getCardLabel(intent.card),
-    column: intent.targetColumn.label,
-    position: intent.target.index + 1,
-    count,
-  });
-  focusCardId = intent.card.id;
-}
-
-function cancel(announce = true): void {
-  if (!drag) return;
-  const movingCard = findCard(drag.cardId);
-  if (movingCard && announce) {
-    announcement = t(M['ui.board.cancel'], { card: getCardLabel(movingCard) });
-  }
-  if (movingCard) {
-    focusCardId = movingCard.id;
-  }
-  suppressSelection(drag.cardId);
-  drag = undefined;
-}
-
-function suppressSelection(cardId: string): void {
-  suppressedSelectionCardId = cardId;
-  window.setTimeout(() => {
-    if (suppressedSelectionCardId === cardId)
-      suppressedSelectionCardId = undefined;
-  }, 0);
-}
+    if (cards === undefined) localCards = reordered;
+  },
+});
 
 function selectCard(item: Card): void {
-  // Keyboard pickup/drop and native drag gestures can both dispatch a click
-  // after their key/pointer sequence. Consume it so a move never doubles as
-  // an application-level selection.
-  if (suppressedSelectionCardId === item.id) {
-    suppressedSelectionCardId = undefined;
-    return;
-  }
-  if (!drag) onselect?.(item);
-}
-
-function handleCardKeydown(event: KeyboardEvent, cardId: string): void {
-  if (!drag) {
-    if (event.key === ' ' || event.key === 'Enter') {
-      if (!movable) return;
-      event.preventDefault();
-      pickup(cardId, 'keyboard');
-    }
-    return;
-  }
-  if (drag.cardId !== cardId || drag.mode !== 'keyboard') return;
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    cancel();
-  } else if (event.key === ' ' || event.key === 'Enter') {
-    event.preventDefault();
-    void drop();
-  } else if (event.key === 'ArrowLeft') {
-    event.preventDefault();
-    moveKeyboardTarget('horizontal', -1);
-  } else if (event.key === 'ArrowRight') {
-    event.preventDefault();
-    moveKeyboardTarget('horizontal', 1);
-  } else if (event.key === 'ArrowUp') {
-    event.preventDefault();
-    moveKeyboardTarget('vertical', -1);
-  } else if (event.key === 'ArrowDown') {
-    event.preventDefault();
-    moveKeyboardTarget('vertical', 1);
-  }
-}
-
-function handleDragStart(event: DragEvent, cardId: string): void {
-  if (!movable) {
-    event.preventDefault();
-    return;
-  }
-  pickup(cardId, 'pointer');
-  event.dataTransfer?.setData('text/plain', cardId);
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-}
-
-function handlePointerDown(event: PointerEvent, cardId: string): void {
-  if (!movable || event.button !== 0) return;
-  pointerSession = {
-    cardId,
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    active: false,
-  };
-  const target = event.currentTarget as HTMLElement;
-  target.setPointerCapture?.(event.pointerId);
-}
-
-function elementAtPointer(event: PointerEvent): Element | null {
-  return (
-    document.elementFromPoint?.(event.clientX, event.clientY) ??
-    (event.target as Element | null)
-  );
-}
-
-function setPointerTargetFromElement(
-  element: Element | null,
-  clientY: number,
-): Column | undefined {
-  // Column ids belong to the consumer's domain and may repeat in another
-  // Board instance. Pointer hit-testing must never escape this Board's root.
-  if (!element || !root.contains(element)) return undefined;
-  const lane = element?.closest<HTMLElement>('[data-smrt-board-column-id]');
-  const columnId = lane?.dataset.smrtBoardColumnId;
-  if (!columnId) return undefined;
-  const column = findColumn(columnId);
-  if (!column || column.disabled) return column;
-  const cardElement = element?.closest<HTMLElement>(
-    '[data-smrt-board-card-id]',
-  );
-  if (!cardElement) {
-    pointerTarget(columnId, cardsInColumn(columnId, drag?.cardId).length);
-    return column;
-  }
-  const rawIndex = cardsInColumn(columnId).findIndex(
-    (item) => item.id === cardElement.dataset.smrtBoardCardId,
-  );
-  if (rawIndex < 0) return column;
-  const rect = cardElement.getBoundingClientRect();
-  const before = clientY < rect.top + rect.height / 2;
-  let targetIndex = rawIndex + (before ? 0 : 1);
-  if (drag?.source.columnId === columnId && targetIndex > drag.source.index) {
-    targetIndex -= 1;
-  }
-  pointerTarget(columnId, targetIndex);
-  return column;
-}
-
-function finishPointerSession(event: PointerEvent, cancelled = false): void {
-  const session = pointerSession;
-  pointerSession = undefined;
-  const target = event.currentTarget as HTMLElement;
-  if (target.hasPointerCapture?.(event.pointerId))
-    target.releasePointerCapture(event.pointerId);
-  if (!session?.active || drag?.cardId !== session.cardId) return;
-  if (cancelled) {
-    cancel();
-    return;
-  }
-  const column = setPointerTargetFromElement(
-    elementAtPointer(event),
-    event.clientY,
-  );
-  if (column?.disabled) {
-    announcement = t(M['ui.board.unavailable_column'], {
-      column: column.label,
-    });
-    cancel(false);
-    return;
-  }
-  if (!column) {
-    cancel();
-    return;
-  }
-  void drop();
-}
-
-function handlePointerMove(event: PointerEvent): void {
-  const session = pointerSession;
-  if (!session || session.pointerId !== event.pointerId) return;
-  if (!session.active) {
-    const distance = Math.hypot(
-      event.clientX - session.startX,
-      event.clientY - session.startY,
-    );
-    if (distance < 6) return;
-    pickup(session.cardId, 'pointer');
-    pointerSession = { ...session, active: true };
-  }
-  event.preventDefault();
-  setPointerTargetFromElement(elementAtPointer(event), event.clientY);
-}
-
-function pointerTarget(columnId: string, index: number): void {
-  if (drag?.mode !== 'pointer') return;
-  if (!allowSameColumnReorder && columnId === drag.source.columnId) {
-    drag = { ...drag, target: { ...drag.source } };
-    return;
-  }
-  const max = cardsInColumn(columnId, drag.cardId).length;
-  drag = { ...drag, target: { columnId, index: clamp(index, max) } };
-}
-
-function handleCardDrop(
-  event: DragEvent,
-  columnId: string,
-  rawIndex: number,
-): void {
-  event.preventDefault();
-  if (drag?.mode !== 'pointer') return;
-  const targetColumn = findColumn(columnId);
-  if (targetColumn?.disabled) {
-    announcement = t(M['ui.board.unavailable_column'], {
-      column: targetColumn.label,
-    });
-    cancel(false);
-    return;
-  }
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  const before = event.clientY < rect.top + rect.height / 2;
-  let targetIndex = rawIndex + (before ? 0 : 1);
-  if (drag.source.columnId === columnId && targetIndex > drag.source.index) {
-    targetIndex -= 1;
-  }
-  pointerTarget(columnId, targetIndex);
-  void drop();
-}
-
-function handleLaneDrop(event: DragEvent, column: Column): void {
-  event.preventDefault();
-  if (column.disabled) {
-    announcement = t(M['ui.board.unavailable_column'], {
-      column: column.label,
-    });
-    cancel(false);
-    return;
-  }
-  pointerTarget(column.id, cardsInColumn(column.id, drag?.cardId).length);
-  void drop();
+  if (sortable.consumeClick(item.id)) return;
+  if (!sortable.drag) onselect?.(item);
 }
 
 function expandColumn(columnId: string): void {
@@ -551,32 +249,32 @@ function toggleColumn(columnId: string): void {
             role="list"
             data-smrt-board-column-id={column.id}
             ondragover={(event) => event.preventDefault()}
-            ondrop={(event) => handleLaneDrop(event, column)}
+            ondrop={(event) => sortable.dropOnContainer(event, column.id)}
           >
             {#each items as item, index (item.id)}
               <div role="listitem">
                 <!-- raw-primitive-allow: native button owns keyboard pickup and HTML drag/drop -->
                 <button
                   type="button"
-                  class:smrt-board__card--dragging={drag?.cardId === item.id}
-                  class:smrt-board__card--touch-drag={movable}
+                  class:smrt-board__card--dragging={sortable.drag?.itemId === item.id}
+                  class:smrt-board__card--touch-drag={sortable.movable}
                   class="smrt-board__card"
                   data-smrt-board-card-id={item.id}
-                  draggable={movable && pointerSession === undefined}
-                  aria-pressed={drag?.cardId === item.id}
-                  aria-describedby={drag?.cardId === item.id ? liveId : undefined}
+                  draggable={sortable.nativeDraggable}
+                  aria-pressed={sortable.drag?.itemId === item.id}
+                  aria-describedby={sortable.drag?.itemId === item.id ? liveId : undefined}
                   onclick={() => selectCard(item)}
-                  onkeydown={(event) => handleCardKeydown(event, item.id)}
-                  onpointerdown={(event) => handlePointerDown(event, item.id)}
-                  onpointermove={handlePointerMove}
-                  onpointerup={(event) => finishPointerSession(event)}
-                  onpointercancel={(event) => finishPointerSession(event, true)}
-                  ondragstart={(event) => handleDragStart(event, item.id)}
-                  ondragend={() => { if (drag?.mode === 'pointer') cancel(); }}
+                  onkeydown={(event) => sortable.keydown(event, item.id)}
+                  onpointerdown={(event) => sortable.pointerDown(event, item.id)}
+                  onpointermove={(event) => sortable.pointerMove(event)}
+                  onpointerup={(event) => sortable.pointerUp(event)}
+                  onpointercancel={(event) => sortable.pointerCancel(event)}
+                  ondragstart={(event) => sortable.dragStart(event, item.id)}
+                  ondragend={() => sortable.dragEnd()}
                   ondragover={(event) => event.preventDefault()}
-                  ondrop={(event) => handleCardDrop(event, column.id, index)}
+                  ondrop={(event) => sortable.dropOnItem(event, column.id, index)}
                 >
-                  {@render card({ card: item, column, index, isDragging: drag?.cardId === item.id })}
+                  {@render card({ card: item, column, index, isDragging: sortable.drag?.itemId === item.id })}
                 </button>
               </div>
             {:else}
@@ -589,7 +287,7 @@ function toggleColumn(columnId: string): void {
       </section>
     {/each}
   </div>
-  <div id={liveId} class="smrt-board__live" aria-live="assertive" aria-atomic="true">{announcement}</div>
+  <div id={liveId} class="smrt-board__live" aria-live="assertive" aria-atomic="true">{sortable.announcement}</div>
 </section>
 
 <style>

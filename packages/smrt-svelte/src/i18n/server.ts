@@ -33,6 +33,7 @@ import {
 import '@happyvertical/smrt-ui/i18n';
 import './strings.forms.js';
 import './strings.board.js';
+import './strings.sortable.js';
 import './strings.audit.js';
 import './strings.workspace.js';
 import '../mcp-apps/strings.js';
