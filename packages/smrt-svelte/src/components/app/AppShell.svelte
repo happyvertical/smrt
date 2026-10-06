@@ -5,6 +5,7 @@ import {
   ThemeProvider,
 } from '@happyvertical/smrt-ui/themes';
 import '@happyvertical/smrt-ui/themes/styles/all.css';
+import '@happyvertical/smrt-ui/themes/styles/base.css';
 import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -136,21 +137,6 @@ const hasNav = $derived(nav.length > 0 || navGroups.length > 0);
 </Provider>
 
 <style>
-  :global(*),
-  :global(*::before),
-  :global(*::after) {
-    box-sizing: border-box;
-  }
-  :global(html),
-  :global(body) {
-    min-height: 100%;
-    margin: 0;
-  }
-  :global(body) {
-    background: var(--smrt-color-background);
-    color: var(--smrt-color-on-background);
-    font-family: var(--smrt-font-family, Inter, system-ui, sans-serif);
-  }
   a {
     color: var(--smrt-color-primary);
   }
