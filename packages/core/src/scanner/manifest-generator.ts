@@ -108,6 +108,18 @@ const require = createRequire(import.meta.url);
 const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
 
 /**
+ * Fields every `SmrtObject` carries that are not manifest fields (#3590): a
+ * recipe option may still refine them.
+ */
+const UNIVERSAL_OBJECT_FIELDS = [
+  'id',
+  'slug',
+  'context',
+  'created_at',
+  'updated_at',
+];
+
+/**
  * Framework abstract base classes whose declared fields must be merged
  * into every subclass's `fields` map.
  *
@@ -129,18 +141,6 @@ const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
  * broader: it controls scanner-level chain termination and stub
  * resolution, while this one only controls field merging.
  */
-/**
- * Fields every `SmrtObject` carries that are not manifest fields (#3590): a
- * recipe option may still refine them.
- */
-const UNIVERSAL_OBJECT_FIELDS = [
-  'id',
-  'slug',
-  'context',
-  'created_at',
-  'updated_at',
-];
-
 const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
   'SmrtJunction',
   'SmrtJunctionBase',
@@ -562,16 +562,6 @@ export class ManifestGenerator {
   }
 
   /**
-   * Validate every `decoratorConfig.previousQualifiedNames` declaration
-   * (#3338). The declaration rides into the manifest verbatim — it is the
-   * lazy loader's alias index — so a malformed or colliding alias must stop
-   * the build rather than ship a manifest the runtime will refuse:
-   *
-   * - an array of scoped `@scope/package:ClassName` strings, each listed once;
-   * - never the object's own qualified name, nor any object of this manifest;
-   * - never declared by two objects of this manifest.
-   */
-  /**
    * Fail the build when a recipe's `options` name a field its model does not
    * declare (#3590). Runs after inherited fields merge, because only the merged
    * manifest knows STI-merged, injected tenant, and framework-base fields
@@ -613,6 +603,16 @@ export class ManifestGenerator {
     }
   }
 
+  /**
+   * Validate every `decoratorConfig.previousQualifiedNames` declaration
+   * (#3338). The declaration rides into the manifest verbatim — it is the
+   * lazy loader's alias index — so a malformed or colliding alias must stop
+   * the build rather than ship a manifest the runtime will refuse:
+   *
+   * - an array of scoped `@scope/package:ClassName` strings, each listed once;
+   * - never the object's own qualified name, nor any object of this manifest;
+   * - never declared by two objects of this manifest.
+   */
   assertQualifiedNameAliases(manifest: SmartObjectManifest): void {
     const ownNames = new Set<string>();
     for (const [key, obj] of Object.entries(manifest.objects)) {
