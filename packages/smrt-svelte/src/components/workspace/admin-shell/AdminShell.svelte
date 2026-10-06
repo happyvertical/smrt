@@ -116,6 +116,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
      * Phone-only context bar over the top of the main region. Hides while
      * scrolling down and returns on the first scroll up (see
      * `phone.hideOnScroll`); pinned while `pinChrome` or a drawer is open.
+     * Mark an actual replacement title with `data-shell-page-title-replacement`
+     * to visually hide the corresponding PageHeader title. Action-only or
+     * workspace-name bars leave the page heading visible. Mark replacement
+     * back navigation with `data-shell-page-navigation-replacement` to hide
+     * PageHeader breadcrumbs; a title alone does not replace navigation.
      */
     phoneTopBar?: Snippet<[{ hidden: boolean }]>;
     /**
@@ -1252,6 +1257,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     justify-content: space-between;
     gap: var(--smrt-spacing-3);
     min-width: 0;
+    min-block-size: 0;
     padding: 0 var(--smrt-spacing-4);
   }
 
@@ -1584,6 +1590,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     align-self: start;
     z-index: 10;
     min-inline-size: 0;
+    background: var(--smrt-color-surface);
     transition: transform var(--smrt-admin-shell-chrome-duration)
       var(--smrt-easing-standard, ease);
   }
@@ -1750,11 +1757,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
      the page title (visually hidden: screen readers and the outline keep
      it); page tabs stick under it and slide away with it; a form's action
      row is fixed to the bottom and replaces the bottom bar. */
-  .smrt-admin-shell[data-viewport='phone'] :global([data-shell-breadcrumbs]) {
+  .smrt-admin-shell[data-phone-top]:has(
+    > .smrt-admin-shell__phone-top :global([data-shell-page-navigation-replacement])
+  ) :global([data-shell-breadcrumbs]) {
     display: none;
   }
 
-  .smrt-admin-shell[data-phone-top] :global([data-shell-page-title]) {
+  .smrt-admin-shell[data-phone-top]:has(
+    > .smrt-admin-shell__phone-top :global([data-shell-page-title-replacement])
+  ) :global([data-shell-page-title]) {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;

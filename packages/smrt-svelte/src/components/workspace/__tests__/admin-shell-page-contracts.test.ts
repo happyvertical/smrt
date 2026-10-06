@@ -16,17 +16,17 @@ function rule(selector: string): string {
 }
 
 describe('AdminShell page-header contracts', () => {
-  it('hides the breadcrumb row on phones', () => {
+  it('hides the breadcrumb row only with replacement phone navigation', () => {
     expect(
       rule(
-        ".smrt-admin-shell[data-viewport='phone'] :global([data-shell-breadcrumbs])",
+        '.smrt-admin-shell[data-phone-top]:has(\n    > .smrt-admin-shell__phone-top :global([data-shell-page-navigation-replacement])\n  ) :global([data-shell-breadcrumbs])',
       ),
     ).toContain('display: none');
   });
 
   it('visually hides the page title while the phone top bar shows it', () => {
     const titleRule = rule(
-      '.smrt-admin-shell[data-phone-top] :global([data-shell-page-title])',
+      '.smrt-admin-shell[data-phone-top]:has(\n    > .smrt-admin-shell__phone-top :global([data-shell-page-title-replacement])\n  ) :global([data-shell-page-title])',
     );
     // Visually hidden, not display:none: screen readers and the document
     // outline keep the heading.
