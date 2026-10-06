@@ -75,29 +75,25 @@ export interface ResolvedRuntimeConnection {
 }
 
 /**
- * Sensitive query-parameter names. Matching normalizes the key (lowercase,
- * `_`/`-` stripped), so camelCase (`authToken`, `accessToken`) and hyphen
- * variants (`api-key`) are masked exactly like their snake_case forms.
+ * Whether a query-parameter or keyword name names a secret. Mirrors
+ * `isSensitiveConnectionParam` in `@happyvertical/smrt-core` (#3527), which
+ * dev-mcp cannot import at runtime (core is a dev dependency only). Names are
+ * normalized (lowercase, `_`/`-` stripped), so camelCase (`authToken`) and
+ * hyphen variants (`api-key`) match like their snake_case forms.
  */
-const SENSITIVE_QUERY_PARAMS = [
-  'access_token',
-  'apikey',
-  'api_key',
-  'auth',
-  'auth_token',
-  'connectionstring',
-  'connection_string',
-  'password',
-  'token',
-];
-
-function normalizeQueryParamName(key: string): string {
-  return key.toLowerCase().replace(/[_-]/g, '');
+function isSensitiveParamName(name: string): boolean {
+  const key = name.toLowerCase().replace(/[_-]/g, '');
+  return (
+    /password|passwd|passphrase|secret|token|credential|connectionstring/.test(
+      key,
+    ) ||
+    key.endsWith('key') ||
+    key === 'pwd' ||
+    key === 'pass' ||
+    key === 'auth' ||
+    key === 'dsn'
+  );
 }
-
-const SENSITIVE_QUERY_PARAM_NAMES = new Set(
-  SENSITIVE_QUERY_PARAMS.map(normalizeQueryParamName),
-);
 
 const DEFAULT_CLI_DATABASE = {
   database: { type: 'sqlite', url: ':memory:' },
@@ -105,8 +101,9 @@ const DEFAULT_CLI_DATABASE = {
 
 /**
  * Redact a connection string so it can be shown to an agent without leaking
- * credentials. Mirrors the CLI's `redactConnectionString` (which is CLI
- * private); patterned identically so dev-mcp never depends on the CLI.
+ * credentials. Mirrors smrt-core's `redactDatabaseUrlsInText` (#3527), which
+ * dev-mcp cannot import at runtime, and additionally reduces local database
+ * paths to their basename.
  *
  * Query-parameter masking normalizes each key (lowercase, `_`/`-` stripped),
  * so camelCase forms such as Turso/libsql's `?authToken=` mask exactly like
@@ -124,21 +121,25 @@ export function redactConnectionString(value: string): string {
       url.password = '***';
     }
     for (const key of [...url.searchParams.keys()]) {
-      if (SENSITIVE_QUERY_PARAM_NAMES.has(normalizeQueryParamName(key))) {
+      if (isSensitiveParamName(key)) {
         url.searchParams.set(key, '***');
       }
     }
     redacted = url.toString();
   } catch {
-    redacted = value.replace(
-      // The password run may itself contain unencoded `@` (invalid but real
-      // in driver errors); each interior `@` is consumed only when another
-      // `@` follows before whitespace, so the mask always reaches the final
-      // userinfo terminator instead of stopping at the first `@`.
-      /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]+:)(?:[^@\s]|@(?=[^@\s]*@))+(@)/gi,
-      '$1***$2',
-    );
+    // Not a standalone URL: free text, handled by the passes below.
   }
+
+  // Always scrub embedded userinfo, even after a successful parse: free text
+  // such as `connect: postgres://u:pw@h` parses as an opaque `connect:` URL
+  // with no password, leaving the embedded credential untouched. Greedy
+  // through the LAST `@` on the line, like smrt-core: a malformed password
+  // (literal `@`, raw whitespace, scheme-like text) has no reliable end short
+  // of that, and over-redaction is the safe failure.
+  redacted = redacted.replace(
+    /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]*:)[^\n]*@/gi,
+    '$1***@',
+  );
 
   // Local database files: a `file:` URL or a driver error quoting the path
   // (POSIX or Windows separators) reveals the filesystem layout. Keep only
@@ -154,9 +155,7 @@ export function redactConnectionString(value: string): string {
   return redacted.replace(
     /((?:^|[?&,(\s])([a-z][a-z0-9_-]{0,30})=)([^&,\s)]+)/gi,
     (match, prefix: string, key: string) =>
-      SENSITIVE_QUERY_PARAM_NAMES.has(normalizeQueryParamName(key))
-        ? `${prefix}***`
-        : match,
+      isSensitiveParamName(key) ? `${prefix}***` : match,
   );
 }
 

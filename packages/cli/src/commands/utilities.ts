@@ -33,7 +33,7 @@ import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
   quoteIdentifier,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbDropFrameworkBaseTablesCommand } from './db-drop-framework-base-tables.js';
@@ -275,7 +275,7 @@ async function settleDeferredCompatibilityAfterMigrate(
     }
   } catch (error) {
     console.warn(
-      `⚠️  Deferred system-table compatibility did not complete: ${redactConnectionStringsInText(
+      `⚠️  Deferred system-table compatibility did not complete: ${redactDatabaseUrlsInText(
         error instanceof Error ? error.message : String(error),
       )}`,
     );
@@ -1307,7 +1307,7 @@ export default testManifest;
               } catch (error) {
                 if (options.verbose) {
                   console.log(
-                    `  ⚠️  Could not drop ${tableName}: ${redactConnectionStringsInText(String(error))}`,
+                    `  ⚠️  Could not drop ${tableName}: ${redactDatabaseUrlsInText(String(error))}`,
                   );
                 }
                 throw new Error(
@@ -1344,10 +1344,10 @@ export default testManifest;
           await schemaManager.ensureTables(schemas);
         } catch (error) {
           console.error(
-            `  ✗ Schema creation failed: ${redactConnectionStringsInText(String(error))}`,
+            `  ✗ Schema creation failed: ${redactDatabaseUrlsInText(String(error))}`,
           );
           if (options.verbose && error instanceof Error && error.stack) {
-            console.error(`\n${redactConnectionStringsInText(error.stack)}\n`);
+            console.error(`\n${redactDatabaseUrlsInText(error.stack)}\n`);
           }
           throw new Error(
             'Refusing to report database setup success after schema creation failed.',
@@ -1410,13 +1410,13 @@ export default testManifest;
           ),
         );
         if (error instanceof Error) {
-          console.error(`   ${redactConnectionStringsInText(error.message)}`);
+          console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
           if (options.verbose && error.stack) {
             console.error('\nStack trace:');
-            console.error(redactConnectionStringsInText(error.stack));
+            console.error(redactDatabaseUrlsInText(error.stack));
           }
         } else {
-          console.error(redactConnectionStringsInText(String(error)));
+          console.error(redactDatabaseUrlsInText(String(error)));
         }
         process.exitCode = 1;
         return;
@@ -1458,7 +1458,7 @@ export default testManifest;
       } catch (error) {
         console.error('❌ Failed to clear cache:');
         if (error instanceof Error) {
-          console.error(`   ${redactConnectionStringsInText(error.message)}`);
+          console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
         }
         process.exit(1);
       }
@@ -1660,7 +1660,7 @@ export default testManifest;
             JSON.stringify(
               {
                 timestamp: new Date().toISOString(),
-                error: redactConnectionStringsInText(
+                error: redactDatabaseUrlsInText(
                   error instanceof Error ? error.message : String(error),
                 ),
                 duration: Date.now() - startTime,
@@ -1672,13 +1672,13 @@ export default testManifest;
         } else {
           console.error('\n❌ Validation failed:');
           if (error instanceof Error) {
-            console.error(`   ${redactConnectionStringsInText(error.message)}`);
+            console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
             if (options.verbose && error.stack) {
               console.error('\nStack trace:');
-              console.error(redactConnectionStringsInText(error.stack));
+              console.error(redactDatabaseUrlsInText(error.stack));
             }
           } else {
-            console.error(redactConnectionStringsInText(String(error)));
+            console.error(redactDatabaseUrlsInText(String(error)));
           }
         }
         process.exit(1);
@@ -2149,7 +2149,7 @@ export default testManifest;
                 beforeCount = await countOrphanRows(db, countSql);
               } catch (error) {
                 console.log(
-                  `   ✗ ${item.tableName}.${item.column}: orphan-count probe failed, withholding this disposition: ${redactConnectionStringsInText(error instanceof Error ? error.message : String(error))}`,
+                  `   ✗ ${item.tableName}.${item.column}: orphan-count probe failed, withholding this disposition: ${redactDatabaseUrlsInText(error instanceof Error ? error.message : String(error))}`,
                 );
                 continue;
               }
@@ -2800,7 +2800,7 @@ export default testManifest;
             ).length;
           } catch (error) {
             errorCount++;
-            const errorMsg = redactConnectionStringsInText(
+            const errorMsg = redactDatabaseUrlsInText(
               error instanceof Error ? error.message : String(error),
             );
             console.error(`  ✗ atomic schema migration failed: ${errorMsg}`);
@@ -2810,13 +2810,11 @@ export default testManifest;
               getErrorContext(error)?.originalError
             ) {
               console.error(
-                `     Cause: ${redactConnectionStringsInText(String(getErrorContext(error)?.originalError))}`,
+                `     Cause: ${redactDatabaseUrlsInText(String(getErrorContext(error)?.originalError))}`,
               );
             }
             if (options.verbose && error instanceof Error && error.stack) {
-              console.error(
-                `\n${redactConnectionStringsInText(error.stack)}\n`,
-              );
+              console.error(`\n${redactDatabaseUrlsInText(error.stack)}\n`);
             }
             console.error(
               deferredIndexMigrations > 0
@@ -2870,7 +2868,7 @@ export default testManifest;
               );
             } catch (error) {
               console.log(
-                `   ✓ ${pending.tableName}.${pending.column}: orphan references nulled and foreign key added (post-apply count unavailable: ${redactConnectionStringsInText(error instanceof Error ? error.message : String(error))})`,
+                `   ✓ ${pending.tableName}.${pending.column}: orphan references nulled and foreign key added (post-apply count unavailable: ${redactDatabaseUrlsInText(error instanceof Error ? error.message : String(error))})`,
               );
             }
           }
@@ -3001,11 +2999,11 @@ export default testManifest;
                   }
                 } catch (error: unknown) {
                   const qualifiedName = resolution.currentQualifiedName;
-                  const errorMsg = redactConnectionStringsInText(
+                  const errorMsg = redactDatabaseUrlsInText(
                     error instanceof Error ? error.message : String(error),
                   );
                   const originalError = getErrorContext(error)?.originalError
-                    ? redactConnectionStringsInText(
+                    ? redactDatabaseUrlsInText(
                         String(getErrorContext(error)?.originalError),
                       )
                     : undefined;
@@ -3120,26 +3118,26 @@ export default testManifest;
           formatSchemaCommandFailureHeader(error, '\n❌ Migration failed:'),
         );
         if (error instanceof Error) {
-          console.error(`   ${redactConnectionStringsInText(error.message)}`);
+          console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
           const ctx = getErrorContext(error);
           if (ctx) {
             if (ctx.originalError) {
               console.error(
-                `   Database error: ${redactConnectionStringsInText(String(ctx.originalError))}`,
+                `   Database error: ${redactDatabaseUrlsInText(String(ctx.originalError))}`,
               );
             }
             if (ctx.sql) {
               console.error(
-                `   Failed SQL: ${redactConnectionStringsInText(String(ctx.sql))}`,
+                `   Failed SQL: ${redactDatabaseUrlsInText(String(ctx.sql))}`,
               );
             }
           }
           if (options.verbose && error.stack) {
             console.error('\nStack trace:');
-            console.error(redactConnectionStringsInText(error.stack));
+            console.error(redactDatabaseUrlsInText(error.stack));
           }
         } else {
-          console.error(redactConnectionStringsInText(String(error)));
+          console.error(redactDatabaseUrlsInText(String(error)));
         }
         process.exitCode = 1;
         return;

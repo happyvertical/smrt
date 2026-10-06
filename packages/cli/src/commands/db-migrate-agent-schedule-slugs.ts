@@ -4,7 +4,7 @@ import type { CLICommand } from '../cli-generator.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 interface DbMigrateAgentScheduleSlugsOptions {
@@ -79,7 +79,7 @@ export const dbMigrateAgentScheduleSlugsCommand: CLICommand = {
       );
     } catch (error) {
       console.error(
-        `\n❌ AgentSchedule slug migration failed: ${redactConnectionStringsInText(
+        `\n❌ AgentSchedule slug migration failed: ${redactDatabaseUrlsInText(
           error instanceof Error ? error.message : String(error),
         )}\n`,
       );

@@ -26,7 +26,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 /** Options accepted by {@link runLiveSchemaParity}. */
@@ -157,7 +157,7 @@ export async function runLiveSchemaParity(
     return {
       report: null,
       database: null,
-      error: redactConnectionStringsInText(
+      error: redactDatabaseUrlsInText(
         error instanceof Error ? error.message : String(error),
       ),
     };

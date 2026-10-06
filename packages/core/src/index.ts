@@ -407,6 +407,13 @@ export * from './tools/index';
 // IN-list chunking contract for loaders that build IN lists from data-sized
 // arrays (#2367); exported so owning packages chunk at the same bound (#3047).
 export { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
+// Display-safe database connection strings (#3527): every banner, log and
+// error that names a database URL renders it through these.
+export {
+  isSensitiveConnectionParam,
+  redactDatabaseUrl,
+  redactDatabaseUrlsInText,
+} from './utils/database-url';
 // JSON utilities with optional SIMD acceleration
 export {
   clone,

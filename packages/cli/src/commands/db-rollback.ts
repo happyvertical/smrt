@@ -17,7 +17,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import {
   closeDatabaseConnection,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 /** Parsed CLI options for the `db:rollback` command. */
@@ -508,7 +508,7 @@ export const dbRollbackCommand: CLICommand = {
           successCount++;
         } catch (error) {
           errorCount++;
-          const errorMsg = redactConnectionStringsInText(
+          const errorMsg = redactDatabaseUrlsInText(
             error instanceof Error ? error.message : String(error),
           );
           if (!options.json) {
@@ -522,7 +522,7 @@ export const dbRollbackCommand: CLICommand = {
           stoppedBy = migration.name;
 
           if (options.verbose && error instanceof Error && error.stack) {
-            console.error(`\n${redactConnectionStringsInText(error.stack)}\n`);
+            console.error(`\n${redactDatabaseUrlsInText(error.stack)}\n`);
           }
         }
       }
@@ -572,7 +572,7 @@ export const dbRollbackCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: redactConnectionStringsInText(
+            error: redactDatabaseUrlsInText(
               error instanceof Error ? error.message : String(error),
             ),
           }),
@@ -580,7 +580,7 @@ export const dbRollbackCommand: CLICommand = {
       } else {
         console.error('\n❌ Rollback failed:');
         if (error instanceof Error) {
-          console.error(`   ${redactConnectionStringsInText(error.message)}`);
+          console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

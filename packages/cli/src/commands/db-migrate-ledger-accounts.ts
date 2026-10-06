@@ -5,7 +5,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 interface DbMigrateLedgerAccountsOptions {
@@ -90,7 +90,7 @@ export const dbMigrateLedgerAccountsCommand: CLICommand = {
       }
     } catch (error) {
       console.error(
-        `\n❌ Ledger accounts table move failed: ${redactConnectionStringsInText(
+        `\n❌ Ledger accounts table move failed: ${redactDatabaseUrlsInText(
           error instanceof Error ? error.message : String(error),
         )}\n`,
       );

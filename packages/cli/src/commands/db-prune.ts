@@ -24,7 +24,7 @@ import type { CLICommand } from '../cli-generator.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 /** Parsed CLI options for the `db:prune` command. */
@@ -158,7 +158,7 @@ export function redactSweepResult(
     ...result,
     tasks: result.tasks.map((task) =>
       task.error
-        ? { ...task, error: redactConnectionStringsInText(task.error) }
+        ? { ...task, error: redactDatabaseUrlsInText(task.error) }
         : task,
     ),
   };
@@ -318,7 +318,7 @@ export const dbPruneCommand: CLICommand = {
         process.exitCode = 1;
       }
     } catch (error) {
-      const message = redactConnectionStringsInText(
+      const message = redactDatabaseUrlsInText(
         error instanceof Error ? error.message : String(error),
       );
       if (options.json) {

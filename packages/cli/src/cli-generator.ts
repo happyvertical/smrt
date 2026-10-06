@@ -2664,7 +2664,12 @@ export class CLIGenerator {
         });
 
         if (config.verbose) {
-          console.log(`[CLI] Using database: ${config.database.url}`);
+          const { formatDatabaseDisplayUrl } = await import(
+            './commands/db-command-utils.js'
+          );
+          console.log(
+            `[CLI] Using database: ${formatDatabaseDisplayUrl(config.database.type ?? 'sqlite', config.database.url ?? '')}`,
+          );
         }
       }
 
