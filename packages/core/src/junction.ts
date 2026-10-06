@@ -16,9 +16,9 @@
  * Each subclass declares `leftField` / `rightField` (camelCase) and optionally
  * overrides `sortField` (defaults to `'sortOrder'`; set `null` to disable ORDER BY).
  *
- * Polymorphic subclasses (where "left" or "right" is a composite key like
- * `metaType + metaId`) may override `byLeft` / `byRight` / `attach` / `detach`
- * with diverging signatures — see `AssetAssociationCollection` for a reference.
+ * Polymorphic collections with a composite left key extend `SmrtJunctionBase`
+ * and declare their own owner methods — see `AssetAssociationCollection`.
+ * `SmrtJunction` retains the single-left-ID method contract.
  *
  * @typeParam TItem - The junction row class (extends `SmrtObject`)
  */
@@ -53,7 +53,16 @@ function camelToSnake(name: string): string {
   return name.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
 }
 
-export abstract class SmrtJunction<
+/**
+ * Shared junction collection identity, ordering, and single-right-ID reads.
+ *
+ * Composite-owner collections extend this base and declare their own owner
+ * methods. Single-owner collections extend `SmrtJunction` instead. This base
+ * intentionally has no left-owner methods with an incompatible call shape.
+ *
+ * @typeParam TItem - The junction row class.
+ */
+export abstract class SmrtJunctionBase<
   TItem extends SmrtObject,
 > extends SmrtCollection<TItem> {
   /**
@@ -63,9 +72,6 @@ export abstract class SmrtJunction<
    * Don't rename or remove without also updating the guard.
    */
   static readonly _isJunctionBase = true as const;
-
-  /** Field name (camelCase) holding the "left" foreign key, e.g. `'contentId'`. */
-  protected abstract leftField: string;
 
   /** Field name (camelCase) holding the "right" foreign key, e.g. `'assetId'`. */
   protected abstract rightField: string;
@@ -96,6 +102,40 @@ export abstract class SmrtJunction<
   protected positionField: string | null = 'sortOrder';
 
   /**
+   * Return junction rows where the right FK matches `rightId`, narrowed by
+   * optional additional WHERE filters. Ordered ASC by `sortField` if set.
+   */
+  async byRight(
+    rightId: string,
+    opts: JunctionFilterOptions = {},
+  ): Promise<TItem[]> {
+    const { limit, offset, ...where } = opts;
+    return (await this.list({
+      where: { ...where, [this.rightField]: rightId },
+      limit,
+      offset,
+      ...(this.sortField
+        ? { orderBy: `${camelToSnake(this.sortField)} ASC` }
+        : {}),
+    })) as TItem[];
+  }
+}
+
+/**
+ * Junction collection with one left ID and one right ID.
+ *
+ * Existing subclasses retain their named method parameters and persistence
+ * behavior. Use `SmrtJunctionBase` for a collection with a composite owner.
+ *
+ * @typeParam TItem - The junction row class.
+ */
+export abstract class SmrtJunction<
+  TItem extends SmrtObject,
+> extends SmrtJunctionBase<TItem> {
+  /** Field name (camelCase) holding the "left" foreign key, e.g. `'contentId'`. */
+  protected abstract leftField: string;
+
+  /**
    * Return junction rows where the left FK matches `leftId`, narrowed by
    * optional additional WHERE filters. Ordered ASC by `sortField` if set.
    */
@@ -109,25 +149,6 @@ export abstract class SmrtJunction<
       // caller-supplied `{ [leftField]: otherId }` from retargeting the
       // query when opts is forwarded from untrusted input.
       where: { ...where, [this.leftField]: leftId },
-      limit,
-      offset,
-      ...(this.sortField
-        ? { orderBy: `${camelToSnake(this.sortField)} ASC` }
-        : {}),
-    })) as TItem[];
-  }
-
-  /**
-   * Return junction rows where the right FK matches `rightId`, narrowed by
-   * optional additional WHERE filters. Ordered ASC by `sortField` if set.
-   */
-  async byRight(
-    rightId: string,
-    opts: JunctionFilterOptions = {},
-  ): Promise<TItem[]> {
-    const { limit, offset, ...where } = opts;
-    return (await this.list({
-      where: { ...where, [this.rightField]: rightId },
       limit,
       offset,
       ...(this.sortField

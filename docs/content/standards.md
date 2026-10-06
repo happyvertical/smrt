@@ -315,7 +315,7 @@ These are already documented in the root `AGENTS.md`. They are reproduced here f
   - Exception: `tenancy/interceptor.ts` calls `instance.toJSON()` directly to handle stub instances. This must be documented in the file with a comment.
 - Same-package foreign keys: use `@foreignKey(Target)`.
 - Cross-package foreign keys: use `@crossPackageRef('@happyvertical/smrt-package:Class')`; this avoids circular DDL constraints while preserving runtime relationship metadata.
-- Junction collections extend `SmrtJunction` and expose `byLeft()` / `byRight()` plus options-object `attach()` / `detach()`.
+- Single-owner junction collections extend `SmrtJunction` and expose `byLeft()` / `byRight()` plus options-object `attach()` / `detach()`.
 - Hierarchical tree models extend `SmrtHierarchical`; chains/DAGs use package-specific fields and methods.
 - Polymorphic generic/provenance links extend `SmrtPolymorphicAssociation`.
 - `@TenantScoped({ mode: 'optional' })` on tenant-aware models. Tenant-aware packages without the decorator (`secrets`, `prompts`, `features`, `images` for some models) must document the tenant strategy in `AGENTS.md`.
@@ -323,6 +323,7 @@ These are already documented in the root `AGENTS.md`. They are reproduced here f
 - `@meta()` for STI child-specific fields (stored in `_meta_data`, not as columns)
 - STI discriminator format: `@happyvertical/smrt-<package>:<ClassName>`
 - Numeric defaults: `count: number = 0` → INTEGER; `price: number = 0.0` → DECIMAL
+- Composite-owner junction collections extend `SmrtJunctionBase`, sharing right-side reads, ordering, positioning, and registration guards without inheriting incompatible single-owner methods. `AssetAssociationCollection` keeps its required `metaType, metaId` arguments. For runtime checks covering both kinds, use `instanceof SmrtJunctionBase`; asset associations no longer satisfy `instanceof SmrtJunction`.
 - `conflictColumns` set on junction/upsert tables
 - System tables prefixed `_smrt_`
 - JSON fields stored as strings with `getX()`/`setX()` helpers wrapped in `try/catch`

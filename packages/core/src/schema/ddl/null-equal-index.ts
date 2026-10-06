@@ -11,17 +11,18 @@ export function renderNullEqualConflictIndex(
   if (
     !index.nullsNotDistinct ||
     !index.unique ||
-    index.where ||
     index.jsonPath ||
     !index.columns.length
   ) {
     throw new Error(
-      `Invalid NULL-equal conflict index ${index.name}: requires a full unique column index.`,
+      `Invalid NULL-equal conflict index ${index.name}: requires a unique column index.`,
     );
   }
   const create = `CREATE UNIQUE INDEX IF NOT EXISTS ${quoteIdentifier(index.name)} ON ${quoteIdentifier(tableName)} (${index.columns.map(quoteIdentifier).join(', ')})`;
+  const predicate = index.where?.trim().replace(/^WHERE\s+/i, '');
+  const where = predicate ? ` WHERE ${predicate}` : '';
   // Dynamic SQL ensures PostgreSQL <15 never parses the unsupported clause.
-  const body = `BEGIN\n  IF current_setting('server_version_num')::integer >= 150000 THEN\n    EXECUTE ${quoteStringLiteral(`${create} NULLS NOT DISTINCT`)};\n  ELSE\n    EXECUTE ${quoteStringLiteral(create)};\n  END IF;\nEND;`;
+  const body = `BEGIN\n  IF current_setting('server_version_num')::integer >= 150000 THEN\n    EXECUTE ${quoteStringLiteral(`${create} NULLS NOT DISTINCT${where}`)};\n  ELSE\n    EXECUTE ${quoteStringLiteral(`${create}${where}`)};\n  END IF;\nEND;`;
   let suffix = 0;
   let delimiter = '$smrt_null_equal$';
   while (body.includes(delimiter)) delimiter = `$smrt_null_equal_${++suffix}$`;

@@ -209,6 +209,7 @@ export default defineConfig({
         '**/*.test.ts',
         '**/*.spec.ts',
         '**/*.config.ts',
+        '**/__test-consumer-*/**',
         // Test generation owns this artifact; templates ship as source text.
         'src/manifest/test-manifest-stub.ts',
         'src/vite-plugin/templates/**',

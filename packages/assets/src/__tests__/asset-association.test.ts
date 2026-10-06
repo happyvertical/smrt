@@ -10,6 +10,7 @@
  *
  * Real in-memory SQLite per SMRT testing conventions (no DB mocking).
  */
+import { SmrtJunction, SmrtJunctionBase } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -34,6 +35,93 @@ describe('AssetAssociation tenant scoping', () => {
 
   afterEach(async () => {
     await db.close?.();
+  });
+
+  it('retains junction identity and inherited right-side reads', async () => {
+    expect(collection).toBeInstanceOf(SmrtJunctionBase);
+    expect(collection).not.toBeInstanceOf(SmrtJunction);
+    expect(AssetAssociationCollection._isJunctionBase).toBe(true);
+    await collection.attach(
+      '@happyvertical/smrt-content:Article',
+      'owner',
+      'asset-1',
+      { tenantId: 'tenant-a', sortOrder: 3 },
+    );
+    await collection.attach(
+      '@happyvertical/smrt-content:Article',
+      'other',
+      'asset-1',
+      { tenantId: 'tenant-b', sortOrder: 1 },
+    );
+    const rows = await collection.byRight('asset-1', {
+      tenantId: 'tenant-a',
+      assetId: 'asset-2',
+    });
+    expect(rows.map((row) => [row.metaId, row.assetId])).toEqual([
+      ['owner', 'asset-1'],
+    ]);
+  });
+
+  it('preserves composite owner keys, scoped replacements, and inherited positioning', async () => {
+    const article = '@happyvertical/smrt-content:Article';
+    const profile = '@happyvertical/smrt-profiles:Profile';
+    await collection.attach(article, 'shared', 'asset-1', {
+      tenantId: 'tenant-a',
+      metaType: profile,
+      metaId: 'wrong',
+      assetId: 'asset-4',
+    });
+    await collection.attach(profile, 'shared', 'asset-2', {
+      tenantId: 'tenant-a',
+    });
+    await collection.attach(article, 'shared', 'asset-3', {
+      tenantId: 'tenant-b',
+    });
+    expect(
+      (
+        await collection.byLeft(article, 'shared', {
+          tenantId: 'tenant-a',
+          metaType: profile,
+          metaId: 'wrong',
+        })
+      ).map((row) => row.assetId),
+    ).toEqual(['asset-1']);
+    await collection.setLinks(article, 'shared', ['asset-4', 'asset-2'], {
+      tenantId: 'tenant-a',
+    });
+    expect(
+      (
+        await collection.byLeft(article, 'shared', { tenantId: 'tenant-a' })
+      ).map((row) => [row.assetId, row.sortOrder]),
+    ).toEqual([
+      ['asset-4', 0],
+      ['asset-2', 1],
+    ]);
+    expect(
+      (
+        await collection.byLeft(profile, 'shared', { tenantId: 'tenant-a' })
+      ).map((row) => row.assetId),
+    ).toEqual(['asset-2']);
+    expect(
+      (
+        await collection.byLeft(article, 'shared', { tenantId: 'tenant-b' })
+      ).map((row) => row.assetId),
+    ).toEqual(['asset-3']);
+    await collection.detach(article, 'shared', 'asset-2', {
+      tenantId: 'tenant-a',
+      metaType: profile,
+      metaId: 'wrong',
+    });
+    expect(
+      (
+        await collection.byLeft(article, 'shared', { tenantId: 'tenant-a' })
+      ).map((row) => row.assetId),
+    ).toEqual(['asset-4']);
+    expect(
+      (
+        await collection.byLeft(profile, 'shared', { tenantId: 'tenant-a' })
+      ).map((row) => row.assetId),
+    ).toEqual(['asset-2']);
   });
 
   it('persists a tenantId and round-trips it on reload', async () => {

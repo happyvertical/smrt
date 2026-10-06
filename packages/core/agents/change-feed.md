@@ -81,18 +81,13 @@ emitted), so no call site needs a special case. A wildcard `If-None-Match: *`
 still 304s; the read paths evaluate it only after the payload is built, so it
 distinguishes nothing an unconditional request would not.
 
-Registration derives the declared name from config and manifest; the writer uses
-`instance.tableName`, which resolves through the STI base's schema and then the
-class's own. Where those two derivations disagree the declaration lands on a
-name nothing writes under, and the real table keeps appending. STI is *not* such
-a case today — `@smrt()` already resolves an STI child to its base's table, so a
-child declaring `sensitive` declares `<base>` (verified) — but the manifest-stub
-and manifest-merge paths derive the name differently again, so registration
-declares every candidate name. The authoritative check is at the write path:
-`isChangeFeedSensitiveWrite()` asks the registry about the instance's own class
-through a resolver hook on the leaf module (so `change-feed.ts` never imports
-the registry), sees the exact name being recorded with no derivation to keep in
-sync, and declares it — closing the read path and signal bus for that table.
+STI sensitivity is table-wide. Manifest generation and registration refuse a
+hierarchy mixing classes declaring `sensitive: true` with classes omitting it or
+declaring false (`CONFIG_STI_MIXED_SENSITIVITY`, #3456). Mark every class sensitive
+or put the sensitive and public models on separate tables. This preserves the
+historical-read and live-signal protections without introducing a discriminator
+into old feed rows. A uniformly sensitive hierarchy declares its shared table;
+the authoritative write-path check still verifies the instance's actual table.
 
 Scope note: the generated `_changes`/`_events` routes — both the SvelteKit
 routes and the runtime REST generator's — authorize on an authenticated

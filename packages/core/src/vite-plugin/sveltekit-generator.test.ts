@@ -393,7 +393,10 @@ describe('SvelteKit Route Generator', () => {
       expect(generatedWidgetRoutes).toEqual([]);
     });
 
-    it('never generates a route directory for a framework base class, but still does for a genuine domain class (#2642)', async () => {
+    it.each([
+      'SmrtObject',
+      'SmrtJunctionBase',
+    ])('never generates routes for framework base %s but retains domain routes', async (baseName) => {
       const manifest: SmartObjectManifest = {
         version: '1',
         timestamp: 0,
@@ -405,13 +408,13 @@ describe('SvelteKit Route Generator', () => {
           // genuine bare `@smrt()`. `ObjectRegistry.loadAllManifests()`
           // registers them like any genuine domain class, so route
           // generation must skip them by class identity, not by config.
-          SmrtObject: {
-            className: 'SmrtObject',
-            name: 'SmrtObject',
+          [baseName]: {
+            className: baseName,
+            name: baseName,
             filePath: '',
-            qualifiedName: '@happyvertical/smrt-core:SmrtObject',
+            qualifiedName: `@happyvertical/smrt-core:${baseName}`,
             packageName: '@happyvertical/smrt-core',
-            collection: 'smrtobjects',
+            collection: `${baseName.toLowerCase()}s`,
             fields: {},
             methods: {},
             decoratorConfig: {},
@@ -439,7 +442,9 @@ describe('SvelteKit Route Generator', () => {
       const generatedFrameworkBaseRoutes = vi
         .mocked(writeFileSync)
         .mock.calls.filter(([filePath]) =>
-          String(filePath).includes('/src/routes/api/smrtobjects/'),
+          String(filePath).includes(
+            `/src/routes/api/${baseName.toLowerCase()}s/`,
+          ),
         );
       expect(generatedFrameworkBaseRoutes).toEqual([]);
 
@@ -2116,6 +2121,75 @@ describe('SvelteKit Route Generator', () => {
 
       // Should NOT include DELETE
       expect(content).not.toContain('export const DELETE: RequestHandler');
+    });
+
+    it('keeps separate STI child route directories and permission prefixes (#3456)', async () => {
+      const manifest: SmartObjectManifest = {
+        version: '1',
+        timestamp: 0,
+        objects: {
+          Calendar3456: {
+            className: 'Calendar3456',
+            name: 'calendar3456',
+            filePath: '',
+            collection: 'calendars3456',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              tableStrategy: 'sti',
+              tableName: 'calendars_3456',
+              api: true,
+            },
+          },
+          Holiday3456: {
+            className: 'Holiday3456',
+            name: 'holiday3456',
+            filePath: '',
+            extends: 'Calendar3456',
+            collection: 'holidays3456',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              collection: 'holidays3456',
+              tableName: 'calendars_3456',
+              api: true,
+            },
+          },
+          TimeOff3456: {
+            className: 'TimeOff3456',
+            name: 'timeoff3456',
+            filePath: '',
+            extends: 'Calendar3456',
+            collection: 'timeoffs3456',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              collection: 'timeoffs3456',
+              tableName: 'calendars_3456',
+              api: true,
+            },
+          },
+        },
+      };
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+      for (const collection of ['holidays3456', 'timeoffs3456']) {
+        const list = vi
+          .mocked(writeFileSync)
+          .mock.calls.find((call) =>
+            call[0].toString().endsWith(`${collection}/+server.ts`),
+          );
+        expect(list).toBeDefined();
+        expect(list?.[1]).toContain(
+          `const PERMISSION_COLLECTION = ${JSON.stringify(collection)};`,
+        );
+      }
+      expect(manifest.objects.Holiday3456.decoratorConfig.tableName).toBe(
+        manifest.objects.TimeOff3456.decoratorConfig.tableName,
+      );
     });
 
     it('should skip route generation when api is disabled', async () => {

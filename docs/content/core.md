@@ -444,7 +444,31 @@ class Conference extends Event {
 - **Discriminator Column**: `_meta_type` identifies the actual class type
 - **Field Storage**:
   - Base class fields → Regular columns
-  - Child-specific fields → JSONB `_meta_data` column
+  - Child-specific fields → Nullable regular columns (the union of the hierarchy)
+  - Fields declared with `meta()` → JSON `_meta_data` column
+
+A subclass can declare `@smrt({ collection: 'holidays', conflictColumns:
+['tenant_id', 'date', 'name'] })` while sharing its root's table. The collection
+sets its generated route directory and permission prefix; without an explicit
+collection it keeps the root's collection. The child conflict key gets a partial
+unique index restricted to its qualified `_meta_type`, and the root's conflict
+index excludes children with their own keys. Distinct child natural keys can
+therefore share a slug. An empty child key inherits the root key. Explicit keys
+must include tenant ownership columns.
+Run normal schema migrations before using the new keys on an existing table;
+the index comparison replaces the old root index and adds the child index.
+Existing duplicate child keys must be repaired before that migration succeeds.
+Stop old writers for the index migration, then load the complete consumer
+manifest on every writer of the shared table before resuming.
+Subclass conflict keys require PostgreSQL or SQLite; DuckDB and the JSON adapter
+cannot enforce partial unique indexes and reject this schema.
+
+Change-feed sensitivity remains a property of the shared table. An STI hierarchy
+must declare `sensitive: true` on every class, or omit it on every class. Mixed
+sensitivity fails with `CONFIG_STI_MIXED_SENSITIVITY` during manifest generation
+or registration. Use separate tables for public and sensitive models. Uniformly
+sensitive hierarchies preserve the existing write, historical-read and signal
+exclusions; `sensitive: false` never reopens an already sensitive table.
 
 ### Polymorphic Queries
 

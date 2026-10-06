@@ -9,6 +9,7 @@
     "src/**/*.spec.ts"
   ],
   "exclude": [
-    "src/vite-plugin/templates/**"
+    "src/vite-plugin/templates/**",
+    "**/__test-consumer-*/**"
   ]
 }

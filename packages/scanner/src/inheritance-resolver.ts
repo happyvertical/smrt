@@ -37,6 +37,7 @@ const FRAMEWORK_BASE_CLASSES = new Set([
   'SmrtClass',
   'SmrtCollection',
   'SmrtJunction',
+  'SmrtJunctionBase',
   'SmrtHierarchical',
   'SmrtPolymorphicAssociation',
   'SmrtReport',

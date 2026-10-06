@@ -327,6 +327,9 @@ export interface SmartObjectConfig {
    */
   tableName?: string;
 
+  /** Route directory and permission prefix; STI children may override their root. */
+  collection?: string;
+
   /**
    * Storage type for the synthetic `id` primary key (defaults to 'uuid').
    *
@@ -364,7 +367,9 @@ export interface SmartObjectConfig {
    *
    * By default, SMRT uses ['slug', 'context'] for CTI tables and
    * ['slug', 'context', '_meta_type'] for STI tables. Override this
-   * for junction tables or models with different natural keys.
+   * for junction tables or models with different natural keys. An STI child's
+   * explicit key is scoped to its qualified discriminator by a partial unique
+   * index (PostgreSQL/SQLite); DuckDB/JSON cannot materialize this schema.
    *
    * @example
    * ```typescript

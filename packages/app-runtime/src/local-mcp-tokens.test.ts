@@ -49,15 +49,25 @@ import {
 const temporaryRoots: string[] = [];
 const initializationLockPaths = new Set<string>();
 const openRuntimes: SmrtSvelteKitRuntime[] = [];
+const openApplicationDatabases = new Set<DatabaseInterface>();
 
 afterEach(async () => {
   for (const runtime of openRuntimes.splice(0)) {
+    let local: Awaited<ReturnType<SmrtSvelteKitRuntime['localRuntime']>>;
     try {
-      await (await runtime.localRuntime()).db.close?.();
+      local = await runtime.localRuntime();
     } catch {
       // Runtime never started.
+      continue;
     }
+    // Public collections share the cached application connection with the
+    // runtime's membership, permission and session services.
+    const users = await UserCollection.create(runtime.classOptions('User'));
+    openApplicationDatabases.add(users.db);
+    await local.db.close?.();
   }
+  for (const db of openApplicationDatabases) await db.close?.();
+  openApplicationDatabases.clear();
   await Promise.all(
     temporaryRoots
       .splice(0)
@@ -145,6 +155,14 @@ async function ownedRuntime(label: string, clock?: { now: Date }) {
 async function tokenRows(db: DatabaseInterface) {
   return (await db.query(`SELECT * FROM ${LOCAL_MCP_TOKEN_TABLE}`))
     .rows as Array<Record<string, unknown>>;
+}
+
+async function expectDatabaseIntegrity(...databases: DatabaseInterface[]) {
+  for (const db of databases) {
+    expect((await db.query('PRAGMA integrity_check')).rows).toEqual([
+      { integrity_check: 'ok' },
+    ]);
+  }
 }
 
 describe('local MCP tokens', () => {
@@ -597,11 +615,36 @@ describe('local MCP tokens', () => {
     const appMemberships = await MembershipCollection.create(
       runtime.classOptions('Membership'),
     );
+    openApplicationDatabases.add(appMemberships.db);
+    expect(appMemberships.db).not.toBe(local.db);
+    const users = await UserCollection.create(runtime.classOptions('User'));
+    const permissions = await PermissionCollection.create(
+      runtime.classOptions('Permission'),
+    );
+    expect(users.db).toBe(appMemberships.db);
+    expect(permissions.db).toBe(appMemberships.db);
+    await expectDatabaseIntegrity(local.db, appMemberships.db);
     const directRow = await withSystemContext(() =>
       appMemberships.get({ id: childMembershipId }),
     );
     if (!directRow) throw new Error('direct membership missing');
+    // A failed write on the separately acquired application handle rolls back
+    // without changing what the original runtime handle authorizes.
+    const transaction = appMemberships.db.transaction?.bind(appMemberships.db);
+    if (!transaction) throw new Error('SQLite transaction support missing');
+    await expect(
+      transaction(async (tx) => {
+        await tx.delete(directRow.tableName, { id: childMembershipId });
+        throw new Error('rollback membership deletion');
+      }),
+    ).rejects.toThrow('rollback membership deletion');
+    await expectDatabaseIntegrity(local.db, appMemberships.db);
+    expect(await runtime.verifyLocalMcpToken(issued.token)).toMatchObject({
+      tenantId: childTenantId,
+      scopes: [READ],
+    });
     await withSystemContext(() => directRow.delete());
+    await expectDatabaseIntegrity(local.db, appMemberships.db);
     expect(await runtime.verifyLocalMcpToken(issued.token)).toBeNull();
     // A principal verified earlier, passed straight to runAsPrincipal, still
     // binds direct-only: the inheriting ancestor cannot replace the row.
@@ -674,6 +717,7 @@ describe('local MCP tokens', () => {
     const memberships = await MembershipCollection.create(
       runtime.classOptions('Membership'),
     );
+    openApplicationDatabases.add(memberships.db);
     const ancestor = await withSystemContext(() =>
       memberships.get({ id: owner.membershipId }),
     );

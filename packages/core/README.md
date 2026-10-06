@@ -774,3 +774,11 @@ restrictions. Manifests should qualify cross-package
 `extends` names. The deepest subtype wins, including parent replay and late
 intermediate manifests. Unrelated classes and sibling subtypes do not choose a
 winner by registration order: sharing their table still raises a collision.
+
+## Consumer integration fixtures
+
+Consumer integration tests create disposable applications in
+`src/consumer-plugin/__test-consumer-*`. These applications have their own
+compiler configuration and aliases. Core's production, test typecheck, and
+declaration builds exclude these directories, including leftovers from an
+interrupted test run; the authored consumer integration tests remain included.

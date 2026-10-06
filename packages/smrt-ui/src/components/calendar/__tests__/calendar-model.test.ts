@@ -4,10 +4,12 @@ import {
   dateKeyInZone,
   defaultWeekStart,
   layoutMonth,
+  layoutWeek,
   monthWeeks,
   shiftMonth,
   toEntries,
   toneFor,
+  weekKeys,
 } from '../calendar-model.js';
 
 describe('calendar model', () => {
@@ -159,5 +161,81 @@ describe('calendar model', () => {
     expect(
       toneFor({ id: '3', title: 'z', start: '2026-01-01', tone: 'error' }),
     ).toBe('error');
+  });
+});
+
+describe('week layout', () => {
+  it('includes exactly seven dates across year/month boundaries and respects week start', () => {
+    expect(weekKeys('2027-01-01', 1)).toEqual([
+      '2026-12-28',
+      '2026-12-29',
+      '2026-12-30',
+      '2026-12-31',
+      '2027-01-01',
+      '2027-01-02',
+      '2027-01-03',
+    ]);
+    expect(weekKeys('2027-01-01', 0)[0]).toBe('2026-12-27');
+    expect(() => weekKeys('bad-date', 1)).toThrow(RangeError);
+  });
+
+  it('clips spanning bands and retains chronological timed items in their zoned day', () => {
+    const entries = toEntries(
+      [
+        {
+          id: 'span',
+          title: 'Closure',
+          start: '2026-03-01',
+          end: '2026-03-20',
+        },
+        { id: 'late', title: 'Late', start: '2026-03-09T04:00:00Z' },
+        { id: 'early', title: 'Early', start: '2026-03-08T09:00:00Z' },
+        { id: 'outside', title: 'Outside', start: '2026-03-16' },
+      ],
+      'America/Edmonton',
+    );
+    const week = layoutWeek('2026-03-08', entries, {
+      weekStartsOn: 1,
+      maxPerDay: 4,
+    });
+    expect(week.days.map((day) => day.key)).toEqual(weekKeys('2026-03-08', 1));
+    expect(week.bands[0]).toMatchObject({
+      column: 0,
+      span: 7,
+      continuesBefore: true,
+      continuesAfter: true,
+    });
+    expect(week.days[6].visible.map((entry) => entry.item.id)).toEqual([
+      'early',
+      'late',
+    ]);
+    expect(
+      week.days
+        .flatMap((day) => day.all)
+        .some((entry) => entry.item.id === 'outside'),
+    ).toBe(false);
+  });
+
+  it('uses the month lane and overflow contract for the same week', () => {
+    const entries = toEntries(
+      Array.from({ length: 5 }, (_, id) => ({
+        id: String(id),
+        title: String(id),
+        start: '2026-09-07',
+        end: '2026-09-09',
+      })),
+      'UTC',
+    );
+    const options = { weekStartsOn: 1, maxPerDay: 3 };
+    const week = layoutWeek('2026-09-08', entries, options);
+    expect(week).toEqual(
+      layoutMonth({ year: 2026, month: 9 }, entries, options)[1],
+    );
+    expect(week.days[0].hiddenCount).toBe(3);
+    expect(
+      layoutWeek('2026-09-08', [], options).days.every(
+        (day) => day.all.length === 0,
+      ),
+    ).toBe(true);
   });
 });

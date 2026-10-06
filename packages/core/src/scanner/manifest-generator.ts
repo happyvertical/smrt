@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLogger } from '@happyvertical/logger';
+import { ConfigurationError } from '../errors.js';
 import {
   createManifestClassNamePredicate,
   resolveApiMethodExposure,
@@ -130,6 +131,7 @@ const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
  */
 const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
   'SmrtJunction',
+  'SmrtJunctionBase',
   'SmrtHierarchical',
   'SmrtPolymorphicAssociation',
   'SmrtReport',
@@ -1890,8 +1892,7 @@ export class ManifestGenerator {
       obj.fields = mergedFields;
       obj.methods = mergedMethods;
 
-      // Inherit tableName and collection from STI base class
-      // STI subclasses share the parent's table, so they should use the same collection name
+      // Share storage while allowing an explicit independent route collection.
       const stiBase = this.findSTIBase(obj, objectsByName, manifest);
       if (stiBase && stiBase !== obj) {
         // Determine the STI base's table name (explicit or derived from className)
@@ -1902,6 +1903,15 @@ export class ManifestGenerator {
           stiBase.decoratorConfig?.tableName ||
           this.classNameToTableName(stiBase.className);
 
+        if (
+          (obj.decoratorConfig?.sensitive === true) !==
+          (stiBase.decoratorConfig?.sensitive === true)
+        ) {
+          throw new ConfigurationError(
+            `STI hierarchy ${stiBase.className} has mixed sensitivity; mark every class sensitive or use separate tables.`,
+            'CONFIG_STI_MIXED_SENSITIVITY',
+          );
+        }
         // Inherit tableName from STI base
         obj.decoratorConfig = obj.decoratorConfig || {};
         obj.decoratorConfig.tableName = baseTableName;
@@ -1918,8 +1928,15 @@ export class ManifestGenerator {
           );
         }
 
-        // Inherit collection name from STI base (all STI classes share one table)
-        if (stiBase.collection !== obj.collection) {
+        // Collection controls routes/permissions independently of shared storage.
+        if (typeof obj.decoratorConfig.collection === 'string') {
+          obj.collection = obj.decoratorConfig.collection;
+        }
+        // Preserve the inherited default when no collection was declared.
+        if (
+          !obj.decoratorConfig.collection &&
+          stiBase.collection !== obj.collection
+        ) {
           logger.debug(
             `[manifest-generator] ${obj.className} inherits collection: '${stiBase.collection}' from ${stiBase.className}`,
           );

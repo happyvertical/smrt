@@ -86,6 +86,8 @@ export interface StockMutationOptions {
   sourceType?: string;
   /** Cross-package id of the row that caused this mutation. */
   sourceId?: string;
+  /** Trusted actor attribution; null for unattended or legacy callers. */
+  actorProfileId?: string | null;
   /** Free-form note shown in audit UIs. */
   note?: string;
   /**
@@ -128,6 +130,7 @@ interface WriteMovementOptions {
   reasonCode: StockMovementReason;
   sourceType?: string;
   sourceId?: string;
+  actorProfileId?: string | null;
   note?: string;
 }
 
@@ -194,11 +197,12 @@ export class StockService {
     // Resolving once means every collection (and the public `db` field
     // exposed for downstream composition) share the same handle.
     const resolved = await resolveDatabase(options.db);
-    const [levels, movements, locations] = await Promise.all([
-      StockLevelCollection.create({ db: resolved }),
-      StockMovementCollection.create({ db: resolved }),
-      InventoryLocationCollection.create({ db: resolved }),
-    ]);
+    // Schema probes share one connection; do not interleave their initialization.
+    const levels = await StockLevelCollection.create({ db: resolved });
+    const movements = await StockMovementCollection.create({ db: resolved });
+    const locations = await InventoryLocationCollection.create({
+      db: resolved,
+    });
     return new StockService(
       resolved as unknown as DatabaseConfig,
       levels,
@@ -242,11 +246,16 @@ export class StockService {
     }
 
     return underlying.transaction(async (txDb) => {
-      const [levels, movements, locations] = await Promise.all([
-        StockLevelCollection.create({ db: txDb as DatabaseConfig }),
-        StockMovementCollection.create({ db: txDb as DatabaseConfig }),
-        InventoryLocationCollection.create({ db: txDb as DatabaseConfig }),
-      ]);
+      // The transaction handle also shares a single connection for schema probes.
+      const levels = await StockLevelCollection.create({
+        db: txDb as DatabaseConfig,
+      });
+      const movements = await StockMovementCollection.create({
+        db: txDb as DatabaseConfig,
+      });
+      const locations = await InventoryLocationCollection.create({
+        db: txDb as DatabaseConfig,
+      });
       // Expose the tx-scoped db (not `this.db`) as the tx instance's
       // public `db` field. Callers compose this through `tx.db` when
       // spinning up adjacent services that should also write in the same
@@ -314,6 +323,7 @@ export class StockService {
         reasonCode: options.reasonCode ?? 'receipt',
         sourceType: options.sourceType,
         sourceId: options.sourceId,
+        actorProfileId: options.actorProfileId,
         note: options.note,
       });
     });
@@ -341,6 +351,7 @@ export class StockService {
         reasonCode: options.reasonCode ?? 'reservation',
         sourceType: options.sourceType,
         sourceId: options.sourceId,
+        actorProfileId: options.actorProfileId,
         note: options.note,
       });
     });
@@ -368,6 +379,7 @@ export class StockService {
         reasonCode: options.reasonCode ?? 'release',
         sourceType: options.sourceType,
         sourceId: options.sourceId,
+        actorProfileId: options.actorProfileId,
         note: options.note,
       });
     });
@@ -405,6 +417,7 @@ export class StockService {
         reasonCode: options.reasonCode ?? 'fulfillment',
         sourceType: options.sourceType,
         sourceId: options.sourceId,
+        actorProfileId: options.actorProfileId,
         note: options.note,
       });
     });
@@ -455,6 +468,7 @@ export class StockService {
         reasonCode: options.reasonCode ?? 'transfer_out',
         sourceType: options.sourceType,
         sourceId: options.sourceId,
+        actorProfileId: options.actorProfileId,
         note: options.note,
       });
 
@@ -474,8 +488,47 @@ export class StockService {
         reasonCode: options.reasonCode ?? 'transfer_in',
         sourceType: options.sourceType,
         sourceId: options.sourceId,
+        actorProfileId: options.actorProfileId,
         note: options.note,
       });
+    });
+  }
+
+  /**
+   * Configure replenishment for the available row at a SKU/location.
+   * Null disables the threshold. Metadata changes never fabricate movements.
+   * The optional quantity is replaced (omitting it clears the suggestion).
+   */
+  async setReorderPolicy(
+    skuId: string,
+    locationId: string,
+    reorderPoint: number | null,
+    reorderQuantity: number | null = null,
+  ): Promise<StockLevel> {
+    for (const [name, value] of Object.entries({
+      reorderPoint,
+      reorderQuantity,
+    })) {
+      if (value !== null && (!Number.isFinite(value) || value < 0)) {
+        throw new Error(`${name} must be null or a non-negative finite number`);
+      }
+    }
+    return this.withTransaction(async (tx) => {
+      const level = await tx.levels.getLevel(skuId, locationId);
+      if (!level) {
+        return tx.levels.create({
+          skuId,
+          locationId,
+          state: 'available',
+          qty: 0,
+          reorderPoint,
+          reorderQuantity,
+        });
+      }
+      level.reorderPoint = reorderPoint;
+      level.reorderQuantity = reorderQuantity;
+      await level.save();
+      return level;
     });
   }
 
@@ -522,6 +575,7 @@ export class StockService {
         reasonCode: options.reasonCode ?? 'adjustment',
         sourceType: options.sourceType,
         sourceId: options.sourceId,
+        actorProfileId: options.actorProfileId,
         note: options.note,
       });
     });
@@ -578,6 +632,7 @@ async function transitionState(
     reasonCode: StockMovementReason;
     sourceType?: string;
     sourceId?: string;
+    actorProfileId?: string | null;
     note?: string;
   },
 ): Promise<void> {
@@ -610,6 +665,7 @@ async function transitionState(
     reasonCode: args.reasonCode,
     sourceType: args.sourceType,
     sourceId: args.sourceId,
+    actorProfileId: args.actorProfileId,
     note: args.note,
   });
 }
@@ -683,6 +739,7 @@ async function writeMovement(
     reasonCode: options.reasonCode,
     sourceType: options.sourceType ?? '',
     sourceId: options.sourceId ?? '',
+    actorProfileId: options.actorProfileId ?? null,
     note: options.note ?? '',
     occurredAt: new Date(),
   });

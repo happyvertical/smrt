@@ -2,6 +2,33 @@ import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
 
 /** Discoverable presentation slots owned by Expenses. */
 export const EXPENSES_UI_SLOTS: Record<string, ModuleUISlot> = {
+  'expense-list': {
+    id: 'expense-list',
+    label: 'Expense List',
+    description: 'Authorized expenses per cost object',
+    icon: 'file-text',
+    category: 'list',
+    order: 3,
+    propsInterface: 'ExpenseListProps',
+  },
+  'expense-receipt-capture': {
+    id: 'expense-receipt-capture',
+    label: 'Receipt Capture',
+    description: 'Camera and native multipart receipt attachment',
+    icon: 'file-text',
+    category: 'form',
+    order: 4,
+    propsInterface: 'ExpenseReceiptCaptureProps',
+  },
+  'expense-review-queue': {
+    id: 'expense-review-queue',
+    label: 'Expense Review Queue',
+    description: 'Native approve and reject with retained reason',
+    icon: 'file-text',
+    category: 'list',
+    order: 5,
+    propsInterface: 'ExpenseReviewQueueProps',
+  },
   'expense-form': {
     id: 'expense-form',
     label: 'Expense Entry',

@@ -12,3 +12,9 @@ export async function reviewPage(message = ''): Promise<string> {
   const { body } = render(ReviewHarness, { props: { message } });
   return `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native review proof</title></head><body>${body}</body></html>`;
 }
+
+export async function lifecyclePage(reason = '', message = ''): Promise<string> {
+  const { default: LifecycleHarness } = await import('./LifecycleHarness.svelte');
+  const { body } = render(LifecycleHarness, { props: { reason, message } });
+  return `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native lifecycle proof</title></head><body>${body}</body></html>`;
+}

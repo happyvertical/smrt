@@ -83,6 +83,13 @@ function objectDef(
 const FIXTURE: Record<string, SmartObjectDefinition> = {
   [`${CORE_PKG}:SmrtObject`]: objectDef('SmrtObject', CORE_PKG, {}),
   [`${CORE_PKG}:SmrtCollection`]: objectDef('SmrtCollection', CORE_PKG, {}),
+  [`${CORE_PKG}:SmrtJunctionBase`]: objectDef(
+    'SmrtJunctionBase',
+    CORE_PKG,
+    {},
+    {},
+    'SmrtCollection',
+  ),
   [`${REPORTS_PKG}:SmrtReport`]: objectDef(
     'SmrtReport',
     REPORTS_PKG,
@@ -115,7 +122,12 @@ const FIXTURE: Record<string, SmartObjectDefinition> = {
   ),
 };
 
-const FRAMEWORK_BASE_NAMES = ['SmrtObject', 'SmrtCollection', 'SmrtReport'];
+const FRAMEWORK_BASE_NAMES = [
+  'SmrtObject',
+  'SmrtCollection',
+  'SmrtJunctionBase',
+  'SmrtReport',
+];
 
 describe('issue #2642: framework base classes are not exposed as resources', () => {
   let restoreRegistry: () => void;
@@ -134,7 +146,12 @@ describe('issue #2642: framework base classes are not exposed as resources', () 
 
   it('schema: plans no table for any framework base class, but does for the domain classes', async () => {
     const schemas = await ObjectRegistry.getAllSchemasAsDefinitions();
-    for (const name of ['smrt_objects', 'smrt_collections', 'smrt_reports']) {
+    for (const name of [
+      'smrt_objects',
+      'smrt_collections',
+      'smrt_junction_bases',
+      'smrt_reports',
+    ]) {
       expect(Object.keys(schemas)).not.toContain(name);
     }
     expect(schemas.widgets).toBeDefined();

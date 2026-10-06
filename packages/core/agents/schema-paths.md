@@ -896,3 +896,17 @@ connection. This mode is not atomic. Unfinished indexes are `failed`, not
 allows reruns to resume index work without replaying committed DDL. Inspect
 `pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`
 alone cannot detect them). Operational commands: `packages/cli/AGENTS.md`.
+
+### Subclass conflict identities (#3456)
+
+An STI child's explicit `conflictColumns` owns a partial unique index restricted
+to its qualified discriminator. The root conflict index excludes these children;
+registry and manifest paths emit the same predicates. Natural-key lookups include
+that scope, PostgreSQL atomic inserts include the index predicate, and adopted
+rows update by id. Bulk writes use per-item guards for these targets. Normal
+migrations replace the root index by name and add the child index; repair any
+existing duplicate child natural keys before migrating. Stop old writers for this
+index migration and load the complete consumer manifest on every shared-table
+writer before resuming: a provider-only manifest lacks the child predicates.
+DuckDB/JSON reject
+these schemas because partial unique conflict identities cannot be enforced.

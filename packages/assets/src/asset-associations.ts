@@ -1,15 +1,10 @@
 /**
  * AssetAssociationCollection - Polymorphic junction collection.
  *
- * Extends `SmrtJunction` with one critical difference: the "left" side of the
- * join is a composite key (`metaType` + `metaId`), not a single column. As a
- * result, `byLeft` / `attach` / `detach` / `setLinks` diverge from the base
- * signatures by taking both halves of the polymorphic owner key.
- *
- * - `leftField` is set to `'metaId'` as a placeholder to satisfy the
- *   `SmrtJunction` contract; the overridden methods never use it.
- * - `byRight(assetId)` is inherited unchanged from the base — the right side
- *   is a single column (`assetId`) and behaves like any other junction.
+ * Extends `SmrtJunctionBase`: the left side is a mandatory composite key
+ * (`metaType` + `metaId`). Owner methods retain both required arguments without
+ * pretending to implement the single-owner `SmrtJunction` contract.
+ * `byRight(assetId)` and junction registration/positioning are inherited.
  *
  * For non-polymorphic links between two domain models, prefer a dedicated
  * noun-table junction (e.g. `content_assets`, `place_assets`) extending
@@ -22,7 +17,7 @@ import {
   type JunctionFilterOptions,
   ObjectRegistry,
   type SmrtCreateInput,
-  SmrtJunction,
+  SmrtJunctionBase,
   smrt,
 } from '@happyvertical/smrt-core';
 import { AssetAssociation } from './asset-association';
@@ -49,13 +44,9 @@ async function metaTypeFilter(metaType: string): Promise<string | string[]> {
 // version is: api/mcp/cli on a collection decorator clobber the item
 // class's own config, so leave them off here.
 @smrt()
-export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
+export class AssetAssociationCollection extends SmrtJunctionBase<AssetAssociation> {
   static readonly _itemClass = AssetAssociation;
 
-  // Composite left = (metaType, metaId); right = assetId.
-  // `leftField` placeholder satisfies the abstract base — the overrides below
-  // always handle the composite key explicitly.
-  protected leftField = 'metaId';
   protected rightField = 'assetId';
 
   /**
@@ -63,7 +54,6 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
    *
    * Composite left key — pass both halves.
    */
-  // @ts-expect-error — diverges from SmrtJunction.byLeft(leftId) by arity; see class docstring.
   async byLeft(
     metaType: string,
     metaId: string,
@@ -79,7 +69,6 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
   /**
    * Create an association. Composite left (metaType, metaId) precedes right (assetId).
    */
-  // @ts-expect-error — diverges from SmrtJunction.attach(leftId, rightId) by arity.
   async attach(
     metaType: string,
     metaId: string,
@@ -98,7 +87,6 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
   /**
    * Delete matching associations. Composite left (metaType, metaId) precedes right (assetId).
    */
-  // @ts-expect-error — diverges from SmrtJunction.detach(leftId, rightId) by arity.
   async detach(
     metaType: string,
     metaId: string,
@@ -122,7 +110,6 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
    * Replace all associations for a polymorphic owner with the given asset IDs.
    * Not transactional — see `SmrtJunction.setLinks` for caveats.
    */
-  // @ts-expect-error — diverges from SmrtJunction.setLinks(leftId, rightIds) by arity.
   async setLinks(
     metaType: string,
     metaId: string,

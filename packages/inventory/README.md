@@ -211,3 +211,61 @@ All catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in [`@h
 ## License
 
 MIT
+
+### Database initialization
+
+`StockService.create()` and transaction-scoped service construction initialize
+their three collections sequentially. Each initialization checks framework
+system tables on the shared connection; parallel probes can interfere on
+DuckDB. This ordering does not change the single-transaction stock/audit contract
+or provision application schema at runtime.
+
+The package test suite covers cold SQLite/DuckDB initialization and repeated
+transaction rollback. Set `SMRT_TEST_POSTGRES_URL` to an isolated PostgreSQL
+database to exercise the same fixture on PostgreSQL.
+
+### Reorder policies and movement actors
+
+`stock.setReorderPolicy(skuId, locationId, reorderPoint, reorderQuantity?)`
+sets nullable decimal metadata on the **available** stock row. It creates a
+zero-balance row if necessary without inventing an audit movement. Values must
+be finite and non-negative; `null` disables monitoring, and omitting the reorder
+quantity clears its suggestion. Stock mutations preserve these settings.
+`stock.levels.findBelowReorderPoint(locationId?)` returns visible available rows
+whose quantity is **strictly less** than their configured point. Equality, unset
+thresholds, and other states do not count. Both methods retain normal tenant
+scoping and the setter participates in `stock.withTransaction()`.
+
+Every mutation accepts `actorProfileId` alongside source attribution. It is a
+nullable qualified reference to `@happyvertical/smrt-profiles:Profile`, copied to
+every ledger row including both transfer legs. Omission records `null` for
+legacy callers and unattended automation. Supply the profile ID from trusted
+server context; this attribution field does not authorize the caller.
+
+Existing deployments must generate and apply their normal s-m-r-t schema migration
+before using these fields: add nullable decimal `reorder_point` and
+`reorder_quantity` to `inventory_stock_levels`, and nullable profile-reference
+`actor_profile_id` to `inventory_stock_movements` (UUID on PostgreSQL/DuckDB,
+text on SQLite). Existing rows remain unset; runtime reads do not migrate tables.
+
+### Svelte components
+
+The optional `@happyvertical/smrt-inventory/svelte` entry exports:
+
+| Component | Data / callback contract |
+| --- | --- |
+| `StockLevels` | `levels`, optional `locationId`; shows balance, reorder settings and low-stock status |
+| `MovementHistory` | `movements`; read-only history with actor, source and note |
+| `AdjustStockForm` | `skuId`, `locationId`, `onsubmit({ skuId, locationId, delta, reasonCode, note })` |
+| `LocationList` | `locations`, optional `onedit(location)`; includes inactive locations |
+| `LocationForm` | optional `location`, `onsubmit({ id?, code, name, kind, placeId, active })` |
+
+The entry also exports structural browser-safe data types. Hosts load authorized
+records and implement callbacks; components do not import database models, fetch
+endpoints, or manage authentication. Route adjustment submissions through
+`StockService.adjust`, attaching the trusted actor on the server. Save location
+forms through `InventoryLocationCollection`; deactivate using `active: false`
+rather than deleting history. Both forms accept `disabled`, prevent duplicate
+submissions while awaiting callbacks, and display callback failures. Reorder
+policy editing uses the service method above; stock quantities and movements
+remain read-only outside the adjustment workflow.
