@@ -733,9 +733,6 @@ function readModelOptions(
     bad(message);
   };
   const out: RecipeModelOptions = {};
-  const known = new Set(
-    model.allFields.filter((f) => !f.isStatic).map((f) => f.name),
-  );
   // Public instance methods of the model and every ancestor it inherits from.
   const operations = new Set<string>(CRUD_VERBS);
   const chain = new Set([model.className, ...model.inheritanceChain]);
@@ -758,13 +755,10 @@ function readModelOptions(
         continue;
       }
       const fields: Record<string, RecipeFieldOptions> = {};
+      // Field NAMES are validated against the final manifest in smrt-core
+      // (`assertRecipeOptions`): only that merged view knows STI-merged,
+      // injected tenant, and framework-base fields such as `parentId`.
       for (const [field, hints] of Object.entries(value)) {
-        if (!known.has(field)) {
-          fail(
-            `${where}.fields.${field}: \`${model.className}\` declares no field \`${field}\`; options only refine fields the model already declares`,
-          );
-          continue;
-        }
         if (!isPlainObject(hints)) {
           fail(`${where}.fields.${field} must be an object`);
           continue;

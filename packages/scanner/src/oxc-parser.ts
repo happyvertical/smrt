@@ -712,8 +712,17 @@ export function parseRecipeFile(filePath: string): {
   let sourceText: string;
   try {
     sourceText = readFileSync(filePath, 'utf-8');
-  } catch {
-    return { recipes: [], errors: [] };
+  } catch (error) {
+    return {
+      recipes: [],
+      errors: [
+        {
+          message: `Cannot read file for recipe discovery: ${error instanceof Error ? error.message : String(error)}`,
+          filePath,
+          severity: 'error',
+        },
+      ],
+    };
   }
   if (!sourceMayDeclareRecipe(sourceText)) return { recipes: [], errors: [] };
   try {

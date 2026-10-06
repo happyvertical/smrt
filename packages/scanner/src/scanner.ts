@@ -248,12 +248,9 @@ export class OxcScanner {
 
     // Recipes outside the class glob are found by their own pass, for the same
     // reason declarations are: a narrowed model glob must not drop them.
-    this.outsideRecipes = [];
-    if (this.options.agentSurface) {
-      const outside = await this.scanRecipesOutsideClassGlob(new Set(files));
-      this.outsideRecipes = outside.recipes;
-      results.errors.push(...outside.errors);
-    }
+    const outside = await this.scanRecipesOutsideClassGlob(new Set(files));
+    this.outsideRecipes = outside.recipes;
+    results.errors.push(...outside.errors);
 
     // Add classes to resolver
     this.resolver.addClasses(results.classes);

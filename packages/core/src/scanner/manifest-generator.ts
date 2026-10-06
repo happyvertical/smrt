@@ -129,6 +129,18 @@ const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
  * broader: it controls scanner-level chain termination and stub
  * resolution, while this one only controls field merging.
  */
+/**
+ * Fields every `SmrtObject` carries that are not manifest fields (#3590): a
+ * recipe option may still refine them.
+ */
+const UNIVERSAL_OBJECT_FIELDS = [
+  'id',
+  'slug',
+  'context',
+  'created_at',
+  'updated_at',
+];
+
 const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
   'SmrtJunction',
   'SmrtJunctionBase',
@@ -413,6 +425,9 @@ export class ManifestGenerator {
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
 
+    // Recipe options may only name fields the merged model declares (#3590).
+    this.assertRecipeOptions(manifest);
+
     // Report models are read-only cache tables. Fill in the generated surface
     // and natural conflict key from report metadata before schema generation.
     this.normalizeReportObjects(manifest);
@@ -556,6 +571,48 @@ export class ManifestGenerator {
    * - never the object's own qualified name, nor any object of this manifest;
    * - never declared by two objects of this manifest.
    */
+  /**
+   * Fail the build when a recipe's `options` name a field its model does not
+   * declare (#3590). Runs after inherited fields merge, because only the merged
+   * manifest knows STI-merged, injected tenant, and framework-base fields
+   * (`SmrtHierarchical.parentId`); the scanner sees class bodies alone. The
+   * universal `SmrtObject` fields exist on every object but are not manifest
+   * fields, so they are accepted by name.
+   */
+  assertRecipeOptions(manifest: SmartObjectManifest): void {
+    const problems: string[] = [];
+    for (const recipe of manifest.recipes ?? []) {
+      for (const [model, options] of Object.entries(recipe.options ?? {})) {
+        const object = Object.values(manifest.objects).find(
+          (candidate) =>
+            (candidate.qualifiedName ?? candidate.className) === model,
+        );
+        if (!object) {
+          problems.push(
+            `recipe ${recipe.id}: options name ${model}, which is not an object in this package`,
+          );
+          continue;
+        }
+        const declared = new Set([
+          ...Object.keys(object.fields),
+          ...UNIVERSAL_OBJECT_FIELDS,
+        ]);
+        for (const field of Object.keys(options.fields ?? {})) {
+          if (!declared.has(field)) {
+            problems.push(
+              `recipe ${recipe.id}: options.${object.className}.fields.${field}: ${object.className} declares no field "${field}"; options only refine fields the model already declares`,
+            );
+          }
+        }
+      }
+    }
+    if (problems.length > 0) {
+      throw new Error(
+        `[manifest-generator] invalid recipe options:\n  ${problems.join('\n  ')}`,
+      );
+    }
+  }
+
   assertQualifiedNameAliases(manifest: SmartObjectManifest): void {
     const ownNames = new Set<string>();
     for (const [key, obj] of Object.entries(manifest.objects)) {

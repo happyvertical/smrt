@@ -264,6 +264,30 @@ export class SalesRecipe extends SmrtRecipe {
       expect(results.recipes.map((r) => r.id)).toEqual(['shop.sales']);
     });
 
+    it('finds an outside-glob recipe even with agentSurface disabled', async () => {
+      write(
+        'src/recipes/sales.ts',
+        `
+import { SmrtRecipe } from '${CORE}';
+import { Order } from '../models/Order.js';
+export class SalesRecipe extends SmrtRecipe {
+  static id = 'shop.sales';
+  static label = 'Sales';
+  static summary = 'Orders.';
+  static models = [Order];
+}
+`,
+      );
+      const scanner = new OxcScanner({
+        cwd: dir,
+        include: ['src/models/**/*.ts'],
+        agentSurface: false,
+      });
+      const { results } = await scanner.scanAndResolve();
+      expect(results.errors).toEqual([]);
+      expect(results.recipes.map((r) => r.id)).toEqual(['shop.sales']);
+    });
+
     it('reports a recipe that cannot be read, never drops it', async () => {
       write(
         'src/recipes.ts',
@@ -573,16 +597,6 @@ export class A extends SmrtRecipe {
           exposure: { api: false, mcp: { exclude: ['delete'] } },
         },
       });
-    });
-
-    it('rejects options naming a field the model does not declare', async () => {
-      const text = await errorsFor(`
-export class A extends SmrtRecipe {
-  static id = 'shop.a'; static label = 'A'; static summary = 'a';
-  static models = [Order];
-  static options = { Order: { fields: { invented: { locked: true } } } };
-}`);
-      expect(text).toMatch(/`Order` declares no field `invented`/);
     });
 
     it('rejects options for a model the recipe does not list', async () => {

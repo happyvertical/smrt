@@ -55,7 +55,8 @@ scanned class, so keep model class names unique within a package. This
 was chosen over qualified-name strings because it type-checks and survives
 renames; strings were not needed.
 
-Recipe discovery is independent of the model `include` glob (like intents), and
+Recipe discovery is independent of the model `include` glob (like intents; it is
+not gated by the `agentSurface` option), and
 `ScanResults.recipes` is populated by `resolve()`. Every error is a scan error,
 so every producer that reads `scanAndResolve()` (`smrtPlugin`, `ManifestBuilder`)
 fails the build. (The legacy `ManifestGenerator.generateManifest()` path takes
@@ -69,7 +70,11 @@ Ids are dotted lowercase and unique; `models` is non-empty, resolvable, and
 duplicate-free; every `nav` model is in `models`; `requires` are well-formed,
 not self-referential or duplicated, and acyclic within the package (ids in other
 packages cannot be checked at scan time); `options` name only listed models and
-fields the model already declares, and only the keys below.
+and only the keys below. Field names are checked in core
+(`ManifestGenerator.assertRecipeOptions`, after inherited fields merge) against
+the merged manifest, so STI-merged, tenant, and framework-base fields such as
+`parentId` are accepted along with the universal `id`, `slug`, `context`,
+`created_at`, `updated_at`; anything else fails the build.
 
 ## options: curation hints, never a second schema
 
