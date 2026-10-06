@@ -12,7 +12,7 @@ import ChatDockPlaceholder from '$lib/components/ChatDockPlaceholder.svelte';
 import { provideDataSource } from '$lib/data/context.ts';
 import { humanize } from '$lib/data/format.ts';
 import { createMemoryDataSource } from '$lib/data/source.ts';
-import { SAVED_BY_FORMS } from '$lib/forms/stock.ts';
+import { PROFILE_TYPE, SAVED_BY_FORMS } from '$lib/forms/stock.ts';
 import { appHref, appQuery } from '$lib/planner/app.svelte.ts';
 import { hasAppState } from '$lib/planner/query.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
@@ -29,8 +29,9 @@ provideDataSource(
     // Fields the views hide still carry their policy default, e.g. the
     // `contractType` that tells an Order from a PurchaseOrder.
     defaults: (model) => recipeState.apply(model).background,
-    // Rows that only make sense under a product a form creates start empty.
-    empty: SAVED_BY_FORMS,
+    // Rows that only make sense under a product a form creates start empty,
+    // as do Profile types: a form adds the one it needs.
+    empty: [...SAVED_BY_FORMS, PROFILE_TYPE],
   }),
 );
 

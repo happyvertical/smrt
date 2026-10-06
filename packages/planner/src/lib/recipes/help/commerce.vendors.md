@@ -9,11 +9,13 @@ quickly and keep track of what you have bought.
 ### Add a vendor
 
 1. Choose the **New** button above the list.
-2. Enter **{field:defaultContactEmail}** and **{field:defaultContactPhone}** for
+2. Type the vendor's name and email; they are kept on the vendor's profile, and
+   the name is what the list and the Vendor picker on a purchase order show.
+3. Enter **{field:defaultContactEmail}** and **{field:defaultContactPhone}** for
    the person you normally deal with.
-3. Set the **{field:currency}** they bill you in and your **{field:paymentTerms}**,
+4. Set the **{field:currency}** they bill you in and your **{field:paymentTerms}**,
    for example "Net 30".
-4. Save. The vendor is now on your list and ready to use on a purchase order.
+5. Save. The vendor is now on your list and ready to use on a purchase order.
 
 ### Note how a vendor likes to work
 

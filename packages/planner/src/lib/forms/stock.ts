@@ -5,6 +5,7 @@ export const PRODUCT = '@happyvertical/smrt-products:Product';
 export const VARIANT = '@happyvertical/smrt-products:ProductVariant';
 export const SKU = '@happyvertical/smrt-products:Sku';
 export const STOCK_LEVEL = '@happyvertical/smrt-inventory:StockLevel';
+export const PROFILE_TYPE = '@happyvertical/smrt-profiles:ProfileType';
 export const LOCATION = '@happyvertical/smrt-inventory:InventoryLocation';
 
 /**

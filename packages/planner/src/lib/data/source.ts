@@ -1,5 +1,10 @@
 import type { CatalogModel } from '../catalog/types.ts';
-import { fakeId, fakeRecords, type ModelRecord } from './fakes.ts';
+import {
+  fakeId,
+  fakeRecords,
+  type ModelRecord,
+  SAMPLE_ROW_COUNTS,
+} from './fakes.ts';
 
 export type { ModelRecord } from './fakes.ts';
 
@@ -8,12 +13,25 @@ export type { ModelRecord } from './fakes.ts';
  * in-memory fakes here can later be swapped for live s-m-r-t collections
  * without touching a view.
  */
-/** The id of an earlier write in the same {@link DataSource.apply}, by alias. */
+/**
+ * The id of an earlier write in the same {@link DataSource.apply}, by alias; or,
+ * with `field`, that row's value of that field (a Customer's `profileId`).
+ */
 export interface RecordRef {
   ref: string;
+  field?: string;
 }
 
-export type WriteValue = string | number | boolean | null | RecordRef;
+/** A plain JSON object, e.g. an Address; never a {@link RecordRef}. */
+export type JsonObject = { readonly [key: string]: unknown };
+
+export type WriteValue =
+  | string
+  | number
+  | boolean
+  | null
+  | RecordRef
+  | JsonObject;
 
 export function isRecordRef(value: unknown): value is RecordRef {
   return (
@@ -101,7 +119,9 @@ export function createMemoryDataSource(
   const table = (model: CatalogModel): ModelRecord[] => {
     let existing = tables.get(model.id);
     if (!existing) {
-      existing = empty.has(model.id) ? [] : fakeRecords(model, rows, seed);
+      existing = empty.has(model.id)
+        ? []
+        : fakeRecords(model, SAMPLE_ROW_COUNTS[model.id] ?? rows, seed);
       tables.set(model.id, existing);
     }
     return existing;
@@ -174,7 +194,7 @@ export function createMemoryDataSource(
             const target = written[value.ref];
             if (!target)
               throw new Error(`Unknown record reference ${value.ref}`);
-            return [key, target.id];
+            return [key, value.field ? target[value.field] : target.id];
           }),
         );
 
