@@ -118,6 +118,15 @@ overrides:
   # 1.12.0 only adds fonts and emoji support. Verified: yargonaut renders with
   # 1.11.4, and textSync with whitespaceBreak at width 2 now returns.
   'figlet@<1.11.3': 1.11.4
+  # proxy-addr <2.0.8 trusts IPv4-mapped IPv6 addresses when matching trust
+  # lists, so a client could spoof a trusted proxy (GHSA-jqcg-44mw-7w3h). Its
+  # consumer here is express (`proxy-addr: ~2.0.7`); 2.0.8 is the patch within
+  # that range.
+  'proxy-addr@<2.0.8': 2.0.8
+  # source-map-js <1.2.2 can be made to spin the event loop on a crafted source
+  # map (GHSA-68fv-2mgg-jv7q). Consumers are postcss (via vite and the Svelte
+  # plugin), which declare `^1.2.x`; 1.2.2 is the patch within that range.
+  'source-map-js@<1.2.2': 1.2.2
 
 auditConfig:
   # Every entry here suppresses an advisory for the WHOLE tree, including future
