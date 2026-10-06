@@ -18,6 +18,18 @@ export type CatalogFieldType =
   | 'crossPackageRef'
   | (string & {});
 
+/** A field's static UI hints, from `@field({ ui })` (`_meta.ui` in the manifest). */
+export interface CatalogFieldUI {
+  /** Seeds the field into the "basic" tier, shown before the advanced ones. */
+  basic?: boolean;
+  /** Grouping key for form sections. */
+  group?: string;
+  /** Relative sort order, ascending. */
+  order?: number;
+  /** Seeds the field's policy as locked. */
+  locked?: boolean;
+}
+
 export interface CatalogField {
   name: string;
   type: CatalogFieldType;
@@ -26,6 +38,10 @@ export interface CatalogField {
   default?: string | number | boolean | null;
   /** Referenced model (a class name in this package, or a qualified name). */
   related?: string;
+  /** Allowed values, when the manifest declares an enumeration. */
+  enum?: string[];
+  /** `@field({ ui })` hints: `basic`, `group`, `order`, `locked`. */
+  ui?: CatalogFieldUI;
   /**
    * Framework-managed (tenant id, timestamps): shown in the catalog but never
    * in generated forms.

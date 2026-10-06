@@ -110,3 +110,37 @@ describe('extractPackage', () => {
     expect(packageId('@happyvertical/smrt-products')).toBe('products');
   });
 });
+
+describe('extractPackage field hints', () => {
+  it('carries ui hints and enum values through, dropping junk', () => {
+    const pkg = extractPackage({
+      ...raw,
+      manifest: {
+        ...raw.manifest,
+        objects: {
+          '@happyvertical/smrt-shop:Item': {
+            ...raw.manifest.objects['@happyvertical/smrt-shop:Item'],
+            fields: {
+              name: {
+                type: 'text',
+                required: true,
+                _meta: {
+                  ui: { basic: true, group: 'Main', order: 2, junk: 1 },
+                },
+              },
+              kind: { type: 'text', enum: ['a', 'b'] },
+              bad: { type: 'text', enum: [1, 2], _meta: { ui: 'x' } },
+            },
+          },
+        },
+      },
+    });
+    const fields = Object.fromEntries(
+      pkg.models[0].fields.map((f) => [f.name, f]),
+    );
+    expect(fields.name.ui).toEqual({ basic: true, group: 'Main', order: 2 });
+    expect(fields.kind.enum).toEqual(['a', 'b']);
+    expect(fields.bad.enum).toBeUndefined();
+    expect(fields.bad.ui).toBeUndefined();
+  });
+});

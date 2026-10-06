@@ -1,14 +1,26 @@
 <script lang="ts">
 import type { CatalogModel } from '../catalog/types.ts';
+import { editableFields } from '../data/fakes.ts';
+import { humanize } from '../data/format.ts';
+import type { ViewField } from '../recipes/policy.ts';
 
 interface SurfacePanelProps {
   /** Models to describe; a single model for a model page, all for a package. */
   models: CatalogModel[];
   /** Heading for the panel. */
   title?: string;
+  /** Fields per model id, policy applied; defaults to every editable field. */
+  fields?: Record<string, ViewField[]>;
 }
 
-let { models, title = 'What you get' }: SurfacePanelProps = $props();
+let { models, title = 'What you get', fields }: SurfacePanelProps = $props();
+
+function fieldsOf(model: CatalogModel): ViewField[] {
+  return (
+    fields?.[model.id] ??
+    editableFields(model).map((f) => ({ ...f, label: humanize(f.name) }))
+  );
+}
 
 const exposed = $derived(models.filter((m) => m.exposed));
 </script>
@@ -24,6 +36,19 @@ const exposed = $derived(models.filter((m) => m.exposed));
     <article>
       <h3>{model.name}</h3>
       <div class="grid">
+        <div>
+          <h4>Fields <span>{fieldsOf(model).length}</span></h4>
+          <ul aria-label={`${model.name} fields`}>
+            {#each fieldsOf(model) as field (field.name)}
+              <li>
+                <code>{field.name}</code>
+                <span class="type">{field.type}{field.required ? ', required' : ''}</span>
+              </li>
+            {:else}
+              <li class="none">None</li>
+            {/each}
+          </ul>
+        </div>
         <div>
           <h4>REST routes <span>{model.rest.length}</span></h4>
           <ul>
@@ -134,6 +159,11 @@ const exposed = $derived(models.filter((m) => m.exposed));
 
   .none {
     color: var(--smrt-color-on-surface-variant);
+  }
+
+  .type {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.8rem;
   }
 
   mark {

@@ -49,3 +49,18 @@ describe('memory data source', () => {
     expect(await source.delete(product, created.id)).toBe(false);
   });
 });
+
+describe('memory data source defaults', () => {
+  it('overlays background defaults on read and create', async () => {
+    const model = product;
+    const source = createMemoryDataSource({
+      defaults: () => ({ name: 'fixed' }),
+    });
+    expect((await source.list(model)).every((r) => r.name === 'fixed')).toBe(
+      true,
+    );
+    const created = await source.create(model, { other: 1 });
+    expect(created.name).toBe('fixed');
+    expect((await source.get(model, created.id))?.name).toBe('fixed');
+  });
+});

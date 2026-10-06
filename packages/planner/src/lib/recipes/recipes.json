@@ -1,0 +1,77 @@
+{
+  "recipes": [
+    {
+      "id": "commerce.customers",
+      "label": "Customers",
+      "summary": "Keep a list of the people and companies you sell to.",
+      "synonyms": ["clients", "buyers", "accounts"],
+      "models": ["@happyvertical/smrt-commerce:Customer"],
+      "nav": [
+        { "label": "Customers", "model": "@happyvertical/smrt-commerce:Customer" }
+      ],
+      "requires": []
+    },
+    {
+      "id": "commerce.purchases",
+      "label": "Purchases",
+      "summary": "Order from your vendors and track what you have bought.",
+      "synonyms": ["purchase orders", "buying", "procurement"],
+      "models": ["@happyvertical/smrt-commerce:PurchaseOrder"],
+      "nav": [
+        {
+          "label": "Purchase Orders",
+          "model": "@happyvertical/smrt-commerce:PurchaseOrder"
+        }
+      ],
+      "requires": ["commerce.vendors"],
+      "options": {
+        "@happyvertical/smrt-commerce:PurchaseOrder": {
+          "fields": {
+            "contractType": {
+              "default": "purchase_order",
+              "visibility": "hidden",
+              "locked": true
+            },
+            "customerId": { "visibility": "hidden", "locked": true },
+            "vendorId": { "label": "Vendor", "order": 1 }
+          }
+        }
+      }
+    },
+    {
+      "id": "commerce.sales",
+      "label": "Sales",
+      "summary": "Take customer orders and track them.",
+      "synonyms": ["sales orders", "orders", "customer orders"],
+      "models": ["@happyvertical/smrt-commerce:Order"],
+      "nav": [
+        { "label": "Sales Orders", "model": "@happyvertical/smrt-commerce:Order" }
+      ],
+      "requires": ["commerce.customers"],
+      "options": {
+        "@happyvertical/smrt-commerce:Order": {
+          "fields": {
+            "contractType": {
+              "default": "order",
+              "visibility": "hidden",
+              "locked": true
+            },
+            "vendorId": { "visibility": "hidden", "locked": true },
+            "customerId": { "label": "Customer", "order": 1 }
+          }
+        }
+      }
+    },
+    {
+      "id": "commerce.vendors",
+      "label": "Vendors",
+      "summary": "Keep a list of the suppliers you buy from.",
+      "synonyms": ["suppliers", "sellers"],
+      "models": ["@happyvertical/smrt-commerce:Vendor"],
+      "nav": [
+        { "label": "Vendors", "model": "@happyvertical/smrt-commerce:Vendor" }
+      ],
+      "requires": []
+    }
+  ]
+}

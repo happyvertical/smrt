@@ -1,112 +1,99 @@
 <script lang="ts">
-import { Switch } from '@happyvertical/smrt-ui/forms';
-import {
-  catalog,
-  exposedModels,
-  searchPackages,
-  surfaceCount,
-} from '$lib/catalog/index.ts';
+import { goto } from '$app/navigation';
 import { humanize } from '$lib/data/format.ts';
-import { selection } from '$lib/planner/selection.svelte.ts';
+import { appHref } from '$lib/planner/app.svelte.ts';
+import { recipePackage, recipes } from '$lib/recipes/index.ts';
+import { recipeState } from '$lib/recipes/state.svelte.ts';
 
-let query = $state('');
 let notice = $state('');
 
-const results = $derived(searchPackages(catalog.packages, query));
+const label = (id: string) =>
+  recipes.find((recipe) => recipe.id === id)?.label ?? id;
 
-function toggle(id: string) {
-  const before = new Set(selection.ids);
-  const wasSelected = before.has(id);
-  selection.toggle(id);
-  const pulled = selection.ids.filter((x) => !before.has(x) && x !== id);
-  notice = wasSelected
-    ? `Removed ${humanize(id)}.`
-    : pulled.length
-      ? `Added ${humanize(id)} and the packages it needs: ${pulled.map(humanize).join(', ')}.`
-      : `Added ${humanize(id)}.`;
+async function add(id: string) {
+  recipeState.add(id);
+  // The page changes, so a message here would never be read out; the recipe
+  // page shows what it needs. Open the options form for what was just added.
+  await goto(appHref(`/recipes/${id}/`));
+}
+
+function remove(id: string) {
+  recipeState.remove(id);
+  notice = `Removed ${label(id)}.`;
 }
 </script>
 
 <svelte:head>
-  <title>smrt planner</title>
+  <title>Planner · smrt planner</title>
 </svelte:head>
 
 <main>
   <header>
     <h1>Plan your app</h1>
     <p>
-      Pick s-m-r-t packages and an app assembles around them: navigation, list
-      views and forms with sample data, and a list of the REST routes, MCP
-      tools and CLI commands s-m-r-t generates for each. Your picks live in the
-      URL, so you can share the mock-up.
+      Add recipes, small units of an app like Customers or Sales, and the app
+      assembles around them: navigation, list and edit views with sample data,
+      and the REST routes, MCP tools and CLI commands s-m-r-t generates. Each
+      recipe has an options form built from its models' own parameters. Your
+      picks live in the URL, so you can share the mock-up.
     </p>
+    <p><a href={appHref('/packages/')}>All packages</a></p>
   </header>
 
-  <section aria-label="Your selection" class="selection">
+  <section aria-label="Your recipes" class="selection">
     <h2>Your app</h2>
-    {#if selection.ids.length === 0}
-      <p>Nothing selected yet. Choose a package below.</p>
+    {#if recipeState.ids.length === 0}
+      <p>Nothing added yet. Choose a recipe below.</p>
     {:else}
       <ul class="chips">
-        {#each selection.ids as id (id)}
-          <li>
-            <a href={selection.href(`/packages/${id}/`)}>{humanize(id)}</a>
-          </li>
+        {#each recipeState.ids as id (id)}
+          <li><a href={appHref(`/recipes/${id}/`)}>{label(id)}</a></li>
         {/each}
       </ul>
-      <button type="button" class="secondary" onclick={() => selection.clear()}>
-        Clear selection
+      <button type="button" class="secondary" onclick={() => recipeState.clear()}>
+        Clear recipes
       </button>
     {/if}
     <p class="notice" role="status" aria-live="polite">{notice}</p>
   </section>
 
-  <section aria-label="Package catalog">
-    <h2>Packages <small>{results.length} of {catalog.packages.length}</small></h2>
-    <label class="search">
-      <span class="visually-hidden">Search packages</span>
-      <input
-        type="search"
-        placeholder="Search packages, models and fields"
-        bind:value={query}
-      />
-    </label>
-
+  <section aria-label="Recipes">
+    <h2>Recipes <small>{recipes.length}</small></h2>
     <ul class="cards">
-      {#each results as pkg (pkg.id)}
-        {@const selected = selection.has(pkg.id)}
-        {@const lockedBy = selection.requiredBy(pkg.id)}
-        <li class:selected>
-          <h3>
-            <a href={selection.href(`/packages/${pkg.id}/`)}>{humanize(pkg.id)}</a>
-          </h3>
-          <p class="description">{pkg.description}</p>
+      {#each recipes as recipe (recipe.id)}
+        {@const added = recipeState.has(recipe.id)}
+        {@const neededBy = recipeState.requiredBy(recipe.id)}
+        {@const pkg = recipePackage(recipe)}
+        <li class:selected={added}>
+          <h3><a href={appHref(`/recipes/${recipe.id}/`)}>{recipe.label}</a></h3>
+          <p class="description">{recipe.summary}</p>
           <p class="meta">
-            {#if exposedModels(pkg).length}
-              {exposedModels(pkg).length} models · {surfaceCount(pkg)} generated surfaces
-            {:else}
-              {pkg.models.length} internal models · closed: no generated surfaces
-            {/if}
+            <code>{recipe.id}</code> · from {pkg ? humanize(pkg.id) : 'unknown package'}
           </p>
-          {#if pkg.dependencies.length}
+          {#if recipe.requires.length}
+            <p class="meta">Needs: {recipe.requires.map(label).join(', ')}</p>
+          {/if}
+          {#if added}
             <p class="meta">
-              Needs: {pkg.dependencies.map(humanize).join(', ')}
+              {neededBy.length
+                ? `In your app (needed by ${neededBy.map(label).join(', ')})`
+                : 'In your app'}
             </p>
           {/if}
-          <Switch
-            checked={selected}
-            disabled={selected && lockedBy.length > 0}
-            onchange={() => toggle(pkg.id)}
-            aria-label={`Include ${humanize(pkg.id)} in my app`}
-            label={selected && lockedBy.length > 0
-              ? `In your app (needed by ${lockedBy.map(humanize).join(', ')})`
-              : selected
-                ? 'In your app'
-                : 'Add to my app'}
-          />
+          <div class="actions">
+            {#if added}
+              <a class="button" href={appHref(`/recipes/${recipe.id}/`)}>Options</a>
+            {/if}
+            <button
+              type="button"
+              class:secondary={added}
+              disabled={neededBy.length > 0}
+              onclick={() => (added ? remove(recipe.id) : add(recipe.id))}
+            >
+              {added ? `Remove ${recipe.label}` : `Add ${recipe.label} to my app`}
+            </button>
+          </div>
         </li>
-      {:else}
-        <li class="none">No packages match "{query}".</li>
       {/each}
     </ul>
   </section>
@@ -183,44 +170,31 @@ function toggle(id: string) {
     border-color: var(--smrt-color-primary);
   }
 
-  .cards li.none {
-    border: 0;
+  .actions {
+    display: flex;
+    gap: var(--smrt-spacing-2);
   }
 
-  .description {
-    display: -webkit-box;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-  }
-
-
-  .search input {
-    width: min(100%, 28rem);
+  button,
+  .button {
     padding: var(--smrt-spacing-2) var(--smrt-spacing-3);
-    border: 1px solid var(--smrt-color-outline);
+    border: 0;
     border-radius: var(--smrt-radius-medium);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
     font: inherit;
-  }
-
-  button.secondary {
-    padding: var(--smrt-spacing-1) var(--smrt-spacing-3);
-    border: 1px solid var(--smrt-color-outline);
-    border-radius: var(--smrt-radius-medium);
-    background: transparent;
-    color: var(--smrt-color-on-surface);
-    font: inherit;
+    text-decoration: none;
     cursor: pointer;
   }
 
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
+  button.secondary {
+    border: 1px solid var(--smrt-color-outline);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 </style>

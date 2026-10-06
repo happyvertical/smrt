@@ -21,7 +21,15 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   tarball reads, `extract.ts` manifest -> catalog, `exclusions.ts` the
   documented infrastructure exclusion list). `scripts/generate-catalog.ts` is
   the entry point; Node runs the TypeScript directly.
-- `src/lib/planner/`: the selection (`?p=a,b` in the URL; `selection.svelte.ts`
+- `src/lib/recipes/`: recipes are the unit people add. `types.ts` is the
+  `SmrtRecipe` shape (happyvertical/smrt#3590) and `recipes.json` the local
+  stand-in for the `recipes` the packages' `smrt-knowledge.json` will carry;
+  `index.ts` is the one seam to swap for catalog-sourced recipes, then delete
+  the JSON. `resolve.ts` (`requires`), `policy.ts` (smrt-fields-shaped field
+  policies, options-form draft/rows, exposure narrowing), `encoding.ts` (options
+  in the URL), `state.svelte.ts` (the store). Never import
+  `@happyvertical/smrt-fields` until the live-objects work (#4).
+- `src/lib/planner/`: the package selection (`?p=a,b`; recipes add `?r=` and `?o=`, and `app.svelte.ts` `appHref` composes them; `selection.svelte.ts`
   is the one store the control panel, navigation and a future chat assistant
   all drive).
 - `src/lib/data/`: `DataSource` (async), the seeded in-memory fakes, money and
@@ -29,7 +37,8 @@ here. Never add a shim or a hand-maintained copy of what a manifest says.
   collections later replace `createMemoryDataSource()` in `+layout.svelte`.
 - `src/lib/components/`: generated list/form (`ModelWorkspace`), the "what you
   get" panel (`SurfacePanel`), `ChatDockPlaceholder` (the dock slot for #3).
-- `src/routes/`: `/` control panel, `/packages/[id]/`, `/m/[package]/[model]/`.
+- `src/routes/`: `/` Planner (recipes), `/recipes/[id]/` options form,
+  `/packages/` and `/packages/[id]/` the package browser, `/m/[package]/[model]/`.
   All prerendered; `entries()` come from the catalog.
 
 ## Invariants

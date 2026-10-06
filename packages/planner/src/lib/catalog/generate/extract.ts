@@ -1,5 +1,6 @@
 import type {
   CatalogField,
+  CatalogFieldUI,
   CatalogMethod,
   CatalogModel,
   CatalogOperation,
@@ -35,6 +36,8 @@ interface RawField {
   required?: boolean;
   default?: unknown;
   related?: string;
+  enum?: unknown;
+  _meta?: { ui?: unknown; [key: string]: unknown };
 }
 
 interface RawObject {
@@ -104,6 +107,31 @@ function primitiveDefault(value: unknown): CatalogField['default'] | undefined {
     : undefined;
 }
 
+/** Keep only the known `ui` keys, with their expected primitive types. */
+function extractUi(value: unknown): CatalogFieldUI | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const ui: CatalogFieldUI = {
+    ...(typeof raw.basic === 'boolean' ? { basic: raw.basic } : {}),
+    ...(typeof raw.group === 'string' ? { group: raw.group } : {}),
+    ...(typeof raw.order === 'number' && Number.isFinite(raw.order)
+      ? { order: raw.order }
+      : {}),
+    ...(typeof raw.locked === 'boolean' ? { locked: raw.locked } : {}),
+  };
+  return Object.keys(ui).length > 0 ? ui : undefined;
+}
+
+function extractEnum(value: unknown): string[] | undefined {
+  return Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((v) => typeof v === 'string')
+    ? (value as string[])
+    : undefined;
+}
+
 function extractFields(raw: RawObject): CatalogField[] {
   const fields: CatalogField[] = [];
   for (const [name, field] of Object.entries(raw.fields)) {
@@ -116,6 +144,10 @@ function extractFields(raw: RawObject): CatalogField[] {
     const fallback = primitiveDefault(field.default);
     if (fallback !== undefined) entry.default = fallback;
     if (field.related) entry.related = field.related;
+    const values = extractEnum(field.enum);
+    if (values) entry.enum = values;
+    const ui = extractUi(field._meta?.ui);
+    if (ui) entry.ui = ui;
     if (SYSTEM_FIELDS.has(name)) entry.system = true;
     fields.push(entry);
   }

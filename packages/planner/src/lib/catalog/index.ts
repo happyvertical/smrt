@@ -19,6 +19,18 @@ export function getModel(
   return byId.get(packageId)?.models.find((m) => m.name === modelName);
 }
 
+/** Look a model up by its `@scope/pkg:Class` qualified name. */
+export function getModelByQualifiedName(
+  qualified: string,
+): { pkg: CatalogPackage; model: CatalogModel } | undefined {
+  const separator = qualified.lastIndexOf(':');
+  if (separator < 0) return undefined;
+  const packageName = qualified.slice(0, separator);
+  const pkg = catalog.packages.find((p) => p.packageName === packageName);
+  const model = pkg?.models.find((m) => m.id === qualified);
+  return pkg && model ? { pkg, model } : undefined;
+}
+
 /** The models of a package that get generated views (and nav entries). */
 export function exposedModels(pkg: CatalogPackage): CatalogModel[] {
   return pkg.models.filter((m) => m.exposed);

@@ -1,19 +1,25 @@
 <script lang="ts">
-import type { CatalogField, CatalogModel } from '../catalog/types.ts';
+import type { CatalogModel } from '../catalog/types.ts';
 import { useDataSource } from '../data/context.ts';
 import { editableFields, type ModelRecord } from '../data/fakes.ts';
 import { formatValue, humanize } from '../data/format.ts';
+import type { ViewField } from '../recipes/policy.ts';
 import FieldInput from './FieldInput.svelte';
 
 interface ModelWorkspaceProps {
   model: CatalogModel;
+  /** The fields to show, policy applied; defaults to every editable field. */
+  fields?: ViewField[];
 }
 
-let { model }: ModelWorkspaceProps = $props();
+let { model, fields: shownFields }: ModelWorkspaceProps = $props();
 
 const source = useDataSource();
-const fields = $derived(editableFields(model));
-const columns = $derived.by((): CatalogField[] => {
+const fields = $derived<ViewField[]>(
+  shownFields ??
+    editableFields(model).map((f) => ({ ...f, label: humanize(f.name) })),
+);
+const columns = $derived.by((): ViewField[] => {
   const shown = fields.filter((f) => f.type !== 'json');
   // A few leading text fields, then the numeric/boolean/date ones (prices,
   // quantities, flags) so a row reads like a record, not a wall of text.
@@ -94,6 +100,8 @@ async function remove(row: ModelRecord) {
       {#each fields as field (field.name)}
         <FieldInput
           {field}
+          label={field.label}
+          help={field.help}
           value={draft[field.name]}
           onchange={(value) => (draft[field.name] = value)}
         />
@@ -118,7 +126,7 @@ async function remove(row: ModelRecord) {
         <thead>
           <tr>
             {#each columns as column (column.name)}
-              <th>{humanize(column.name)}</th>
+              <th>{column.label}</th>
             {/each}
             <th><span class="visually-hidden">Actions</span></th>
           </tr>
