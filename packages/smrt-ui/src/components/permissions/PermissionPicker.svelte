@@ -134,6 +134,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
     </label>
   </div>
 
+  {#key selected}
   <fieldset {disabled}>
     <legend class="visually-hidden">{label}</legend>
     <div class="groups">
@@ -164,6 +165,7 @@ function matches(permission: PermissionPickerItem, category: string): boolean {
       {/each}
     </div>
   </fieldset>
+  {/key}
 
   {#if normalizedQuery && visibleCount === 0}
     <p class="no-results" role="status">No permissions match “{query.trim()}”.</p>

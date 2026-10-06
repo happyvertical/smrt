@@ -114,4 +114,32 @@ describe('PermissionPicker', () => {
     ).not.toBeChecked();
     expect(container.querySelector('[value="removed.permission"]')).toBeNull();
   });
+
+  it('reconciles native values to authoritative selections after a server retry rerender', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(PermissionPickerForm, {
+      props: { permissions, selected: ['projects.read'] },
+    });
+    const form = screen.getByRole('form', {
+      name: 'Role grants',
+    }) as HTMLFormElement;
+    const projects = screen.getByRole('checkbox', { name: 'Projects read' });
+    const manage = screen.getByRole('checkbox', { name: 'Manage settings' });
+
+    await user.click(projects);
+    await user.click(manage);
+    await user.type(screen.getByRole('searchbox'), 'project');
+    expect(new FormData(form).getAll('permission')).toEqual([
+      'tenant.settings.manage',
+    ]);
+
+    await rerender({ permissions, selected: ['projects.read'] });
+    expect(
+      screen.getByRole('checkbox', { name: 'Projects read' }),
+    ).toBeChecked();
+    expect(
+      form.querySelector<HTMLInputElement>('[value="tenant.settings.manage"]'),
+    ).not.toBeChecked();
+    expect(new FormData(form).getAll('permission')).toEqual(['projects.read']);
+  });
 });

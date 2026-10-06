@@ -54,6 +54,16 @@ switch (params.get('surface')) {
     mount(Choices, { target });
     break;
   }
+  case 'permissions': {
+    const { default: PermissionPickerFixture } = await import(
+      './permission-picker.svelte'
+    );
+    mount(PermissionPickerFixture, {
+      target,
+      props: { scheme: params.get('scheme') === 'dark' ? 'dark' : 'light' },
+    });
+    break;
+  }
   default: {
     const { default: Density } = await import(
       '../src/components/forms/__tests__/touch-density.fixture.svelte',
