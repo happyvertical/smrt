@@ -9,8 +9,8 @@ dates, and keeps a status so you always know what is still open.
 ### Take an order
 
 1. Choose the **New** button above the list.
-2. Pick the **{field:customerId}** the order is for. They have to be in
-   Customers first.
+2. Enter the **{field:customerId}** the order is for. Add them under Customers
+   first so they are on your list.
 3. Enter the **{field:subtotal}** and **{field:taxAmount}**, then the
    **{field:totalAmount}** the customer will pay.
 4. Set the **{field:issueDate}**, and the **{field:dueDate}** if you expect

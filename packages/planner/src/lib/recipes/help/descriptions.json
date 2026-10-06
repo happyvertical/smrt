@@ -14,7 +14,7 @@
   "@happyvertical/smrt-commerce:Vendor": {
     "profileId": "Links this vendor to their profile record, where their name and contact details are kept.",
     "leadTimeDays": "How many days the vendor usually takes between your order and delivery.",
-    "minimumOrderAmount": "The smallest order the vendor will accept, in the vendor's currency.",
+    "minimumOrderAmount": "The smallest order the vendor will accept.",
     "paymentTerms": "How long you have to pay this vendor, written the way you would say it, for example \"Net 30\".",
     "currency": "The currency this vendor bills you in.",
     "defaultContactEmail": "The email address you normally use to reach this vendor.",

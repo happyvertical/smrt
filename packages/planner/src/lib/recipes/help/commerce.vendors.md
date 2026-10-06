@@ -13,7 +13,7 @@ quickly and keep track of what you have bought.
    the person you normally deal with.
 3. Set the **{field:currency}** they bill you in and your **{field:paymentTerms}**,
    for example "Net 30".
-4. Save. The vendor now shows up when you create a purchase order.
+4. Save. The vendor is now on your list and ready to use on a purchase order.
 
 ### Note how a vendor likes to work
 

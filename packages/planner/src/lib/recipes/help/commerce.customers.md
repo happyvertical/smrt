@@ -2,22 +2,23 @@
 
 Customers is your address book for the people and businesses you sell to. Keep
 one record for each customer so you can see who they are, how they like to pay
-and what you have agreed with them, then pick them from the list whenever you
-take an order.
+and what you have agreed with them, then refer back to them whenever you take an
+order.
 
 ## Tasks
 
 ### Add a new customer
 
 1. Choose the **New** button above the list.
-2. Set **{field:customerType}** and **{field:status}** so you can tell new,
-   regular and inactive customers apart.
+2. Describe the customer with **{field:customerType}**, for example an
+   individual or a business, and note in **{field:status}** whether you are
+   still dealing with them.
 3. Fill in the **{field:defaultShippingAddress}** and
    **{field:defaultBillingAddress}** so you do not have to type them again on
    every order.
 4. Add **{field:paymentTerms}**, for example "Net 30", if you give this
    customer time to pay.
-5. Save. The customer now shows up when you take a sales order.
+5. Save. The customer is now on your list and ready to use on a sales order.
 
 ### Keep track of what a customer can owe
 
