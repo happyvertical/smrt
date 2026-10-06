@@ -16,7 +16,7 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
-import { type HelpModel, validateHelp } from '../recipe-help.js';
+import { findField, type HelpModel, validateHelp } from '../recipe-help.js';
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import {
   defaultConflictColumns,
@@ -618,12 +618,19 @@ export class ManifestGenerator {
     for (const recipe of manifest.recipes ?? []) {
       if (!recipe.help) continue;
       const models: HelpModel[] = [];
+      const sensitiveByModel = new Map<string, Set<string>>();
       for (const model of recipe.models) {
         const object = Object.values(manifest.objects).find(
           (candidate) =>
             (candidate.qualifiedName ?? candidate.className) === model,
         );
         if (!object) continue;
+        const sensitive = Object.entries(object.fields)
+          .filter(
+            ([, field]) =>
+              field.sensitive === true || field._meta?.sensitive === true,
+          )
+          .map(([name]) => name);
         models.push({
           id: model,
           name: object.className,
@@ -632,9 +639,24 @@ export class ManifestGenerator {
             ...UNIVERSAL_OBJECT_FIELDS,
           ].map((name) => ({ name, label: name, visibility: 'basic' })),
         });
+        sensitiveByModel.set(object.className, new Set(sensitive));
       }
       for (const problem of validateHelp(recipe.help, models)) {
         problems.push(`recipe ${recipe.id}: help: ${problem}`);
+      }
+      // Sensitive fields never reach the knowledge artifact, so a host that
+      // builds its field list from it would silently drop the step that names
+      // one. Keep help prose free of them.
+      for (const ref of recipe.help.fieldRefs) {
+        const found = findField(ref, models);
+        if (
+          found &&
+          sensitiveByModel.get(found.model.name)?.has(found.field.name)
+        ) {
+          problems.push(
+            `recipe ${recipe.id}: help: {field:${ref}} names a sensitive field; sensitive fields are excluded from the knowledge artifact, so describe it without a field reference`,
+          );
+        }
       }
     }
     if (problems.length > 0) {

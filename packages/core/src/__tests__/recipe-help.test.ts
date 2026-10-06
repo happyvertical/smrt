@@ -153,7 +153,11 @@ describe('validateHelp', () => {
       validateHelp({ markdown: 'Enter {field:status}.', fieldRefs: [] }, [
         ORDER,
       ]),
-    ).toEqual(['fieldRefs does not match the references in the markdown']);
+    ).toEqual([
+      expect.stringMatching(
+        /^fieldRefs does not match the references in the markdown \(markdown: \[/,
+      ),
+    ]);
     expect(
       validateHelp(
         {
@@ -162,7 +166,11 @@ describe('validateHelp', () => {
         },
         [ORDER],
       ),
-    ).toEqual(['fieldRefs does not match the references in the markdown']);
+    ).toEqual([
+      expect.stringMatching(
+        /^fieldRefs does not match the references in the markdown \(markdown: \[/,
+      ),
+    ]);
   });
 
   it('fails help with no markdown', () => {

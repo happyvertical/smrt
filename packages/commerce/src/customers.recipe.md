@@ -25,8 +25,8 @@ order.
 1. Open the customer from the list and choose Edit.
 2. Set **{field:creditLimit}** to the most you are comfortable letting them owe
    you at one time.
-3. If you do not charge them sales tax, turn on **{field:taxExempt}** and enter
-   their **{field:taxId}** so the number is on file.
+3. If you do not charge them sales tax, turn on **{field:taxExempt}**, and keep
+   their tax number on file.
 4. Use **{field:notes}** for anything the next person who deals with this
    customer should know.
 

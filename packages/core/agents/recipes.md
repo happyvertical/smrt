@@ -115,7 +115,14 @@ excluded). `ManifestGenerator.assertRecipeHelp` fails the build on a reference
 to a field the recipe's models do not declare, and on a `fieldRefs` list that
 disagrees with the Markdown. The scanner has its own copy of the reference
 grammar (`deriveHelpFieldRefs`; it cannot import core), so that comparison also
-keeps the two from drifting.
+keeps the two from drifting. A reference to a **sensitive** field also fails the
+build: sensitive fields are excluded from the knowledge artifact, so a host
+building its field list from it would silently drop the step naming one; describe
+such a field in prose without a reference.
+
+Known limitation: the help file is a generator input, but editing only it does
+not trigger a dev-server rescan (the watch matches source globs) and generation
+snapshots do not digest it, so rebuild (or touch a `.ts` source) after editing.
 
 **Rendering.** `src/recipe-help.ts` is pure and browser-safe (exported from
 both core entries). `renderHelp(help, models, options?)` takes the recipe's

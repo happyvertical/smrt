@@ -316,7 +316,9 @@ export function validateHelp(
     }
   }
   if (JSON.stringify([...help.fieldRefs].sort()) !== JSON.stringify(actual)) {
-    problems.push('fieldRefs does not match the references in the markdown');
+    problems.push(
+      `fieldRefs does not match the references in the markdown (markdown: [${actual.join(', ')}]; fieldRefs: [${[...help.fieldRefs].sort().join(', ')}]); an unbalanced backtick across lines is a common cause`,
+    );
   }
   return problems;
 }

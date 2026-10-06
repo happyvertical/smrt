@@ -114,14 +114,16 @@ export class Contract extends SmrtObject {
    */
   @field({
     description:
-      'Where the order stands, for example draft, sent, accepted or completed.',
+      'Where the order or agreement stands, for example draft, sent, accepted or completed.',
   })
   status: ContractStatus = ContractStatus.DRAFT;
 
   /**
    * Customer ID (for sales contracts: Estimate, Order, Agreement)
    */
-  @foreignKey(Customer, { description: 'The customer a sales order is for.' })
+  @foreignKey(Customer, {
+    description: 'The customer a sales order or agreement is for.',
+  })
   customerId: string | null = null;
 
   /**
@@ -140,31 +142,31 @@ export class Contract extends SmrtObject {
    * as minor units and never as a float — `$19.99` is `1999`, not `19.99`
    * (#2401).
    */
-  @field({ description: 'The order amount before tax.' })
+  @field({ description: 'The amount before tax.' })
   subtotal: number = 0;
 
   /**
    * Tax amount, in integer minor units (#2401).
    */
-  @field({ description: 'The tax charged on the order.' })
+  @field({ description: 'The tax charged.' })
   taxAmount: number = 0;
 
   /**
    * Total amount including tax, in integer minor units (#2401).
    */
-  @field({ description: 'The full amount of the order, tax included.' })
+  @field({ description: 'The full amount, tax included.' })
   totalAmount: number = 0;
 
   /**
    * Currency code (ISO 4217)
    */
-  @field({ description: 'The currency of the order amounts.' })
+  @field({ description: 'The currency of the amounts.' })
   currency: string = 'USD';
 
   /**
    * Date contract was issued
    */
-  @field({ description: 'The date the order was placed.' })
+  @field({ description: 'The date it was issued or placed.' })
   issueDate: Date = new Date();
 
   /**
@@ -184,14 +186,14 @@ export class Contract extends SmrtObject {
    */
   @field({
     description:
-      'Your own number or note for finding this order later, such as a purchase order or quote number.',
+      'Your own number or note for finding this later, such as a purchase order or quote number.',
   })
   reference: string = '';
 
   /**
    * Internal notes
    */
-  @field({ description: 'Anything worth remembering about this order.' })
+  @field({ description: 'Anything worth remembering about this.' })
   notes: string = '';
 
   /**
@@ -212,7 +214,7 @@ export class Contract extends SmrtObject {
    */
   @field({
     description:
-      'Where the order came from, for example your shop, a marketplace or a phone call.',
+      'Where it came from, for example your shop, a marketplace or a phone call.',
   })
   channelId: string = '';
 

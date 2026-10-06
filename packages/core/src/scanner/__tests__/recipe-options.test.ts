@@ -118,6 +118,21 @@ describe('ManifestGenerator.assertRecipeHelp', () => {
     ).toThrow(/fieldRefs does not match/);
   });
 
+  it('fails the build on a reference to a sensitive field', () => {
+    const manifest = withHelp({
+      markdown: 'Enter {field:secret}.',
+      fieldRefs: ['secret'],
+    });
+    (
+      manifest.objects['@shop/pkg:Page'] as unknown as {
+        fields: Record<string, unknown>;
+      }
+    ).fields.secret = { type: 'text', sensitive: true };
+    expect(() => generator.assertRecipeHelp(manifest)).toThrow(
+      /\{field:secret\} names a sensitive field/,
+    );
+  });
+
   it('is a no-op for a recipe without help', () => {
     expect(() =>
       generator.assertRecipeHelp(manifestWith(undefined)),

@@ -27,7 +27,7 @@ quickly and keep track of what you have bought.
 ### Keep payment details in one place
 
 1. Open the vendor and choose Edit.
-2. Add **{field:payoutAddresses}** so you know where payments to this vendor
-   should be sent.
+2. Record where payments to this vendor should be sent, so it is all in one
+   place.
 3. Set **{field:status}** to show whether you still buy from them: active,
    inactive or suspended.
