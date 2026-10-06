@@ -56,7 +56,7 @@ overrides:
   'devalue@>=5.6.3 <5.8.1': 5.8.1
   'vitest@>=4.0.0 <4.1.0': 4.1.10
   'linkify-it@<=5.0.1': 5.0.2
-  'shell-quote@>=1.1.0 <1.8.5': 1.9.0
+  'shell-quote@>=1.1.0 <1.11.0': 1.12.0
   'hono@>=4.0.0 <4.12.25': 4.12.27
   '@hono/node-server@>=1.0.0 <1.19.10': 1.19.14
   'express-rate-limit@>=8.2.0 <8.2.2': 8.5.2
@@ -93,12 +93,12 @@ overrides:
   # 14.x release carrying the fix.
   'markdown-it@<14.1.2': 14.3.0
   'body-parser@<2.3.0': 2.3.0
-  # sharp <0.35.4 inherits four libvips CVEs. Its consumers here declare older
+  # sharp <0.35.5 inherits four libvips CVEs. Its consumers here declare older
   # ranges (@gutenye/ocr-node ^0.33.3, @huggingface/transformers ^0.34.5,
   # @xenova/transformers ^0.32.0); 0.35.x keeps the decode/resize/metadata API
   # these use, so a single unified pin is preferred over shipping three
   # vulnerable copies.
-  'sharp@<0.35.4': 0.35.4
+  'sharp@<0.35.5': 0.35.5
   # deepmerge-ts <8.0.0 exhausts the stack on recursive object graphs
   # (GHSA-ggr8-5vv4-36mx). It reaches the tree only through
   # packages/messages -> @happyvertical/email -> mailparser -> html-to-text,
@@ -127,6 +127,13 @@ overrides:
   # map (GHSA-68fv-2mgg-jv7q). Consumers are postcss (via vite and the Svelte
   # plugin), which declare `^1.2.x`; 1.2.2 is the patch within that range.
   'source-map-js@<1.2.2': 1.2.2
+  # @modelcontextprotocol/client >=2.0.0 <2.2.0 can send OAuth credentials to an
+  # authorization server chosen by the MCP server, and @modelcontextprotocol/sdk
+  # >=1.12.0 <1.31.0 has the same flaw. Workspace packages pin client exactly at
+  # 2.0.0; 2.2.0 is the first patched release, and sdk 1.31.0 is the patch for
+  # the transitive 1.x copy (via @happyvertical/ai).
+  '@modelcontextprotocol/client@>=2.0.0 <2.2.0': 2.2.0
+  '@modelcontextprotocol/sdk@>=1.12.0 <1.31.0': 1.31.0
 
 auditConfig:
   # Every entry here suppresses an advisory for the WHOLE tree, including future
@@ -204,7 +211,7 @@ catalog:
   bull: ^4.16.5
   bullmq: ^6.3.8
   jimp: ^1.6.1
-  sharp: ^0.35.4
+  sharp: ^0.35.5
 
 allowBuilds:
   esbuild: true
