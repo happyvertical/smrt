@@ -73,7 +73,7 @@ import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
   quoteIdentifier,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 /** Parsed CLI options for the `db:migrate-uuid` command. */
@@ -550,7 +550,7 @@ export const dbMigrateUuidCommand: CLICommand = {
       });
     } catch (error) {
       console.error(
-        `\n❌ uuid migration failed: ${redactConnectionStringsInText(
+        `\n❌ uuid migration failed: ${redactDatabaseUrlsInText(
           error instanceof Error ? error.message : String(error),
         )}\n`,
       );

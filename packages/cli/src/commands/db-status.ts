@@ -23,7 +23,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 import {
   classifyTypeUpgradeSql,
@@ -543,7 +543,7 @@ export const dbStatusCommand: CLICommand = {
           row.error_message
             ? {
                 ...row,
-                error_message: redactConnectionStringsInText(row.error_message),
+                error_message: redactDatabaseUrlsInText(row.error_message),
               }
             : row,
       );
@@ -655,7 +655,7 @@ export const dbStatusCommand: CLICommand = {
               engineHint: dbType,
             });
           } catch (error) {
-            status.parityError = redactConnectionStringsInText(
+            status.parityError = redactDatabaseUrlsInText(
               error instanceof Error ? error.message : String(error),
             );
           }
@@ -695,10 +695,10 @@ export const dbStatusCommand: CLICommand = {
           .filter((skip) => skip.kind === 'probe_failed')
           .map((skip) => ({
             ...skip,
-            reason: redactConnectionStringsInText(skip.reason),
+            reason: redactDatabaseUrlsInText(skip.reason),
           }));
       } catch (error) {
-        status.orphansError = redactConnectionStringsInText(
+        status.orphansError = redactDatabaseUrlsInText(
           error instanceof Error ? error.message : String(error),
         );
       }
@@ -938,7 +938,7 @@ export const dbStatusCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: redactConnectionStringsInText(
+            error: redactDatabaseUrlsInText(
               error instanceof Error ? error.message : String(error),
             ),
           }),
@@ -946,7 +946,7 @@ export const dbStatusCommand: CLICommand = {
       } else {
         console.error('\n❌ Failed to get migration status:');
         if (error instanceof Error) {
-          console.error(`   ${redactConnectionStringsInText(error.message)}`);
+          console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

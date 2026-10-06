@@ -29,7 +29,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 interface DbOrphansOptions {
@@ -59,7 +59,7 @@ export function redactOrphanReport(
     ...report,
     skipped: report.skipped.map((skip) => ({
       ...skip,
-      reason: redactConnectionStringsInText(skip.reason),
+      reason: redactDatabaseUrlsInText(skip.reason),
     })),
   };
 }
@@ -213,7 +213,7 @@ export const dbOrphansCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: redactConnectionStringsInText(
+            error: redactDatabaseUrlsInText(
               error instanceof Error ? error.message : String(error),
             ),
           }),
@@ -221,7 +221,7 @@ export const dbOrphansCommand: CLICommand = {
       } else {
         console.error('\n❌ Failed to collect the orphan report:');
         if (error instanceof Error) {
-          console.error(`   ${redactConnectionStringsInText(error.message)}`);
+          console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

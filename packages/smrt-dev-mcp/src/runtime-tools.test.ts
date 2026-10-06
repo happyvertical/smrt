@@ -477,6 +477,27 @@ describe('runtime diagnostics tools (#1824)', () => {
     ).not.toContain('secretpw');
   });
 
+  it('masks a URL password in text that itself parses as an opaque URL (#3527)', () => {
+    expect(
+      redactConnectionString('connect: postgres://user:hunter2@host/db failed'),
+    ).not.toContain('hunter2');
+  });
+
+  it('masks sslpassword and sslkey query params (#3527)', () => {
+    const shown = redactConnectionString(
+      'postgres://u:pw1@h/db?sslmode=require&sslpassword=hunter2&sslkey=k.pem',
+    );
+    expect(shown).not.toContain('hunter2');
+    expect(shown).not.toContain('pw1');
+    expect(shown).toContain('sslmode=require');
+  });
+
+  it('masks a raw-whitespace password embedded in text (#3527)', () => {
+    expect(
+      redactConnectionString('connect postgres://user:hun ter2@host/db'),
+    ).not.toMatch(/hun|ter2/);
+  });
+
   it('masks an unencoded @ inside a quoted URL password', () => {
     expect(
       redactConnectionString(

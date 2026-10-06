@@ -21,7 +21,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 interface DbMigrateInt8Options {
@@ -162,7 +162,7 @@ export const dbMigrateInt8Command: CLICommand = {
       );
     } catch (error) {
       console.error(
-        `\n❌ int8 migration failed: ${redactConnectionStringsInText(
+        `\n❌ int8 migration failed: ${redactDatabaseUrlsInText(
           error instanceof Error ? error.message : String(error),
         )}\n`,
       );

@@ -10,7 +10,7 @@ import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 import {
   classifyTypeUpgradeSql,
@@ -500,7 +500,7 @@ export const dbDiffCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: redactConnectionStringsInText(
+            error: redactDatabaseUrlsInText(
               error instanceof Error ? error.message : String(error),
             ),
           }),
@@ -508,7 +508,7 @@ export const dbDiffCommand: CLICommand = {
       } else {
         console.error('\n❌ Failed to generate diff:');
         if (error instanceof Error) {
-          console.error(`   ${redactConnectionStringsInText(error.message)}`);
+          console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

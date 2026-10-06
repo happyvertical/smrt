@@ -263,7 +263,18 @@ describe('SMRT Error System', () => {
       );
       expect((sanitized.details as Record<string, unknown>).dbUrl).toContain(
         'postgres://',
-      ); // URL not sanitized in this basic version
+      );
+    });
+
+    it('never carries the database password into the error (#3527)', () => {
+      const error = DatabaseError.connectionFailed(
+        'postgresql://owner:SENTINEL-7731@db.internal:5432/app?sslpassword=SENTINEL-7731',
+      );
+      expect(error.message).toBe(
+        'Failed to connect to database: postgresql://owner:***@db.internal:5432/app',
+      );
+      expect(JSON.stringify(error.details)).not.toContain('SENTINEL');
+      expect(error.message).not.toContain('SENTINEL');
     });
   });
 

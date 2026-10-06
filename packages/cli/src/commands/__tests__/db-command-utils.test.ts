@@ -2,96 +2,78 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionString,
-  redactConnectionStringsInText,
+  redactDatabaseUrl,
+  redactDatabaseUrlsInText,
 } from '../db-command-utils.js';
 
 describe('db command utilities', () => {
-  describe('redactConnectionString', () => {
-    it('redacts credentials in connection strings', () => {
-      expect(
-        redactConnectionString(
-          'postgresql://anytown:super-secret@localhost:5432/anytown?sslmode=require&token=abc',
-        ),
-      ).toBe(
-        'postgresql://anytown:***@localhost:5432/anytown?sslmode=require&token=***',
+  describe('redactDatabaseUrl', () => {
+    it('is the smrt-core helper, so the CLI has one redaction path (#3527)', async () => {
+      const core = await import('@happyvertical/smrt-core');
+      const subpath = await import(
+        '@happyvertical/smrt-core/utils/database-url'
       );
-    });
-
-    it('leaves a connection string with no password unchanged', () => {
-      expect(
-        redactConnectionString('postgresql://anytown@localhost:5432/anytown'),
-      ).toBe('postgresql://anytown@localhost:5432/anytown');
-    });
-
-    it('leaves a connection string with no userinfo at all unchanged', () => {
-      expect(
-        redactConnectionString('postgresql://localhost:5432/anytown'),
-      ).toBe('postgresql://localhost:5432/anytown');
-    });
-
-    it('redacts a percent-encoded special-character password', () => {
-      // 'p@ss:w/ord' percent-encoded.
-      expect(
-        redactConnectionString(
-          'postgresql://anytown:p%40ss%3Aw%2Ford@localhost:5432/anytown',
-        ),
-      ).toBe('postgresql://anytown:***@localhost:5432/anytown');
-    });
-
-    it('redacts a password via the fallback regex when the value does not parse as a URL', () => {
-      // An unencoded '#' truncates the URL parser's view of the string, so
-      // this falls back to the userinfo regex rather than WHATWG URL parsing.
-      expect(
-        redactConnectionString('postgresql://anytown:sup#er@localhost/db'),
-      ).toBe('postgresql://anytown:***@localhost/db');
-    });
-
-    it('redacts a raw-whitespace password via the fallback regex (#2985)', () => {
-      expect(
-        redactConnectionString('postgresql://anytown:sup#er pass@localhost/db'),
-      ).toBe('postgresql://anytown:***@localhost/db');
-    });
-
-    it('redacts sensitive query parameters alongside the password', () => {
-      expect(
-        redactConnectionString(
-          'postgresql://anytown:secret@localhost/db?apikey=xyz&other=keep',
-        ),
-      ).toBe('postgresql://anytown:***@localhost/db?apikey=***&other=keep');
-    });
-
-    it('leaves a plain non-connection-string value unchanged', () => {
-      expect(redactConnectionString('./data/dev.db')).toBe('./data/dev.db');
-    });
-
-    it('redacts a password with an empty username, via the fallback regex', () => {
-      // Forcing the fallback path (WHATWG `URL` already handles this
-      // correctly on its own via url.password): an unencoded '#' inside the
-      // userinfo breaks URL parsing, exercising CONNECTION_STRING_USERINFO_
-      // PATTERN directly. No `+` on the username class — it must still
-      // match (and redact) when the username segment is empty.
-      expect(redactConnectionString('postgres://:sec#ret@host/db')).toBe(
-        'postgres://:***@host/db',
-      );
-    });
-
-    it('redacts the whole password when it contains a literal unescaped "@", via the fallback regex', () => {
-      // Same fallback-forcing trick as above. A password containing a
-      // literal '@' is invalid per RFC 3986 (it must be percent-encoded),
-      // but this is free-form error text, not a URL a client actually
-      // connected with — the regex must not stop redacting at the first '@'
-      // and leave the password's tail exposed.
-      expect(
-        redactConnectionString('postgres://user:pa#rt@secret@host/db'),
-      ).toBe('postgres://user:***@host/db');
+      expect(core.redactDatabaseUrl).toBe(subpath.redactDatabaseUrl);
+      expect(redactDatabaseUrl).toBe(core.redactDatabaseUrl);
+      expect(redactDatabaseUrlsInText).toBe(core.redactDatabaseUrlsInText);
     });
   });
 
-  describe('redactConnectionStringsInText', () => {
+  describe('formatDatabaseDisplayUrl (the connect banner, #3527)', () => {
+    it.each([
+      [
+        'postgres',
+        'postgres://owner:SENTINEL-7731@db.internal:5432/app',
+        'postgres://owner:***@db.internal:5432/app',
+      ],
+      [
+        'postgres',
+        'postgresql://owner:SENTINEL-7731@db.internal:5432/app?sslmode=require&password=SENTINEL-7731&sslpassword=SENTINEL-7731',
+        'postgresql://owner:***@db.internal:5432/app',
+      ],
+      [
+        'postgres',
+        'postgresql://owner:p%40ss%3ASENTINEL-7731@db.internal/app',
+        'postgresql://owner:***@db.internal/app',
+      ],
+      [
+        'postgres',
+        'host=db.internal port=5432 dbname=app user=owner password=SENTINEL-7731',
+        'host=db.internal port=5432 dbname=app user=owner',
+      ],
+      ['sqlite', './data/dev.db', 'sqlite://./data/dev.db'],
+      ['sqlite', ':memory:', 'sqlite://:memory:'],
+      [
+        'duckdb',
+        '/var/lib/app/data.duckdb',
+        'duckdb:///var/lib/app/data.duckdb',
+      ],
+    ])('renders %s %s without secrets', (dbType, url, expected) => {
+      const banner = `✓ Connected to ${formatDatabaseDisplayUrl(dbType, url)}`;
+      expect(banner).toBe(`✓ Connected to ${expected}`);
+      expect(banner).not.toContain('SENTINEL');
+    });
+
+    it.each([
+      'postgresql://owner:SENTINEL#7731@db.internal/app',
+      'postgresql://owner:SENTINEL 7731@db.internal/app',
+      'postgresql://owner:SENTINEL@7731@db.internal/app',
+      'postgresql://ow ner:SENTINEL-7731@[db.internal/app',
+      'postgresql://owner:7731/SENTINEL@db.internal/app',
+      'postgresql://owner:7731#SENTINEL@db.internal/app',
+      'postgresql://owner:7731@SENTINEL#x@db.internal/app',
+    ])('never prints a malformed URL raw: %s', (url) => {
+      const shown = formatDatabaseDisplayUrl('postgres', url);
+      expect(shown).not.toContain('SENTINEL');
+      expect(shown).not.toContain('7731');
+      expect(shown.startsWith('postgresql://')).toBe(true);
+    });
+  });
+
+  describe('redactDatabaseUrlsInText', () => {
     it('redacts a connection string embedded inside a larger error message', () => {
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'connect ECONNREFUSED: could not parse postgres://anytown:super-secret@localhost:5432/anytown as a valid connection string',
         ),
       ).toBe(
@@ -102,13 +84,13 @@ describe('db command utilities', () => {
     it('redacts multiple connection strings and query-param secrets in one message', () => {
       const text =
         'primary postgres://a:one@host1/db1 failed\nfallback postgres://b:two@host2/db2?token=abc also failed';
-      expect(redactConnectionStringsInText(text)).toBe(
+      expect(redactDatabaseUrlsInText(text)).toBe(
         'primary postgres://a:***@host1/db1 failed\nfallback postgres://b:***@host2/db2?token=*** also failed',
       );
     });
 
     it('over-redacts, never leaks, when two connection strings share a line (#2985)', () => {
-      const redacted = redactConnectionStringsInText(
+      const redacted = redactDatabaseUrlsInText(
         'primary postgres://a:one@host1/db1 failed; fallback postgres://b:two@host2/db2?token=abc',
       );
       expect(redacted).toBe('primary postgres://a:***@host2/db2?token=***');
@@ -117,7 +99,7 @@ describe('db command utilities', () => {
 
     it('redacts a password mixing a literal "@" with scheme-like text (#2985)', () => {
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'TypeError: Invalid URL: postgres://user:secret@https://suffix@host/db',
         ),
       ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
@@ -125,28 +107,28 @@ describe('db command utilities', () => {
 
     it('leaves ordinary error text with no embedded connection string unchanged', () => {
       const text = 'relation "widgets" does not exist';
-      expect(redactConnectionStringsInText(text)).toBe(text);
+      expect(redactDatabaseUrlsInText(text)).toBe(text);
     });
 
     it('leaves a stack trace with no embedded connection string unchanged', () => {
       const stack =
         'Error: column "foo" does not exist\n    at Object.query (/app/src/db.js:42:11)';
-      expect(redactConnectionStringsInText(stack)).toBe(stack);
+      expect(redactDatabaseUrlsInText(stack)).toBe(stack);
     });
 
     it('handles an empty string without throwing', () => {
-      expect(redactConnectionStringsInText('')).toBe('');
+      expect(redactDatabaseUrlsInText('')).toBe('');
     });
 
     it('never throws on malformed or unusual input', () => {
       expect(() =>
-        redactConnectionStringsInText('://not a url at all:::'),
+        redactDatabaseUrlsInText('://not a url at all:::'),
       ).not.toThrow();
     });
 
     it('redacts an empty-username connection string embedded in error text', () => {
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'TypeError: Invalid URL: postgres://:secret@host:5432/db',
         ),
       ).toBe('TypeError: Invalid URL: postgres://:***@host:5432/db');
@@ -154,7 +136,7 @@ describe('db command utilities', () => {
 
     it('redacts the whole password, including a literal "@", embedded in error text', () => {
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'TypeError: Invalid URL: postgres://user:part@secret@host/db',
         ),
       ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
@@ -162,7 +144,7 @@ describe('db command utilities', () => {
 
     it('redacts a password containing raw whitespace through the next "@" (#2985)', () => {
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'TypeError: Invalid URL: postgres://user:secret pass@host/db',
         ),
       ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
@@ -170,12 +152,12 @@ describe('db command utilities', () => {
 
     it('redacts a password containing both raw whitespace and a literal "@" (#2985)', () => {
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'TypeError: Invalid URL: postgres://user:sec ret@pa ss@word@host/db',
         ),
       ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'TypeError: Invalid URL: postgres://user:secret pass@word@host/db',
         ),
       ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
@@ -183,12 +165,12 @@ describe('db command utilities', () => {
 
     it('redacts a password containing scheme-like text (#2985)', () => {
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'TypeError: Invalid URL: postgres://user:secret:https://suffix@host/db',
         ),
       ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'TypeError: Invalid URL: postgres://user:se cret:https://suffix@host/db',
         ),
       ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
@@ -196,7 +178,7 @@ describe('db command utilities', () => {
 
     it('never lets a whitespace-bearing password span into the next line (#2985)', () => {
       expect(
-        redactConnectionStringsInText(
+        redactDatabaseUrlsInText(
           'Invalid URL: postgres://host:5432/db\n    at admin@example.com',
         ),
       ).toBe('Invalid URL: postgres://host:5432/db\n    at admin@example.com');

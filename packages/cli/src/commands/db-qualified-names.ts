@@ -18,7 +18,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 /** Result of one CLI-level legacy-name count. */
@@ -66,7 +66,7 @@ export async function runLegacyQualifiedNameReport(
   } catch (error) {
     return {
       report: null,
-      error: redactConnectionStringsInText(
+      error: redactDatabaseUrlsInText(
         error instanceof Error ? error.message : String(error),
       ),
     };
@@ -223,7 +223,7 @@ export const dbMigrateQualifiedNamesCommand: CLICommand = {
       );
     } catch (error) {
       console.error(
-        `\n❌ Qualified-name backfill failed: ${redactConnectionStringsInText(
+        `\n❌ Qualified-name backfill failed: ${redactDatabaseUrlsInText(
           error instanceof Error ? error.message : String(error),
         )}\n`,
       );

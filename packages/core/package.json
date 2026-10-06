@@ -138,6 +138,11 @@
       "import": "./dist/manifest/discover-base-classes.js",
       "default": "./dist/manifest/discover-base-classes.js"
     },
+    "./utils/database-url": {
+      "types": "./dist/utils/database-url.d.ts",
+      "import": "./dist/utils/database-url.js",
+      "default": "./dist/utils/database-url.js"
+    },
     "./utils/import-workspace-module": {
       "types": "./dist/utils/import-workspace-module.d.ts",
       "import": "./dist/utils/import-workspace-module.js",

@@ -18,7 +18,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import {
   closeDatabaseConnection,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 /**
@@ -725,7 +725,7 @@ export const exportCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: redactConnectionStringsInText(
+            error: redactDatabaseUrlsInText(
               error instanceof Error ? error.message : String(error),
             ),
           }),
@@ -733,9 +733,9 @@ export const exportCommand: CLICommand = {
       } else {
         console.error('\n❌ Export failed:');
         if (error instanceof Error) {
-          console.error(`   ${redactConnectionStringsInText(error.message)}`);
+          console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
           if (options.verbose && error.stack) {
-            console.error(redactConnectionStringsInText(error.stack));
+            console.error(redactDatabaseUrlsInText(error.stack));
           }
         }
       }

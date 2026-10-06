@@ -3,7 +3,7 @@ import type { CLICommand } from '../cli-generator.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
-  redactConnectionStringsInText,
+  redactDatabaseUrlsInText,
 } from './db-command-utils.js';
 
 interface DbMaterializeTenantHierarchyOptions {
@@ -107,7 +107,7 @@ export const dbMaterializeTenantHierarchyCommand: CLICommand = {
       );
     } catch (error) {
       console.error(
-        `\n❌ Tenant hierarchy materialization failed: ${redactConnectionStringsInText(
+        `\n❌ Tenant hierarchy materialization failed: ${redactDatabaseUrlsInText(
           error instanceof Error ? error.message : String(error),
         )}\n`,
       );

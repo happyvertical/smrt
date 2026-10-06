@@ -33,6 +33,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import { classifyDatabaseError } from './db-errors';
+import { redactDatabaseUrl } from './utils/database-url.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -185,10 +186,12 @@ export class DatabaseError extends SmrtError {
   }
 
   static connectionFailed(dbUrl: string, cause?: Error): DatabaseError {
+    // Never carry the password into the message or details (#3527).
+    const displayUrl = redactDatabaseUrl(dbUrl);
     return new DatabaseError(
-      `Failed to connect to database: ${dbUrl}`,
+      `Failed to connect to database: ${displayUrl}`,
       'DB_CONNECTION_FAILED',
-      { dbUrl },
+      { dbUrl: displayUrl },
       cause,
     );
   }
