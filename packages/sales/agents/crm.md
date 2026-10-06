@@ -10,7 +10,7 @@ money), and the Gotchas that apply before editing anything live in
 - **PipelineDefinition / PipelineStage**: configurable ordered stages with default `new → qualified → discovery → proposal → negotiation → closed_won | closed_lost` (seeded via `ensureDefaultPipeline()`); stages carry `probability` and `isWon`/`isLost` terminal flags.
 - **Opportunity**: qualified engagement — owner, pipeline + stage, `expectedValueCents`, `probability`, `expectedCloseAt`, outcome. Stage movement validated against the pipeline; terminal stages set `won|lost` status.
 - **SalesActivity**: activity/next-action trail for Leads and Opportunities (`subjectKind`/`subjectId`), also the audit trail for assignment, qualification, merges, and stage movement.
-- **LeadWorkflowService**: the required tenant-safe Lead mutation seam. It transactionally locks the affected Lead/Opportunity (and completion task on PostgreSQL), accepts only active same-tenant representatives, writes actor-attributed audits alongside mutations, and returns merge-aware timeline/work-state reads. It owns validated `createLead()` intake, `new | disqualified → working`, `new | working → disqualified`, human follow-up (`note | call | email | meeting`), task scheduling/completion, delegated qualification, and terminal Opportunity closure/conversion. Merging remains a collection lifecycle.
+- **LeadWorkflowService**: the required tenant-safe Lead mutation seam. It transactionally locks the affected Lead/Opportunity (and completion task on PostgreSQL), accepts only active same-tenant representatives, writes actor-attributed audits alongside mutations, and returns merge-aware timeline/work-state reads. It owns validated `createLead()` intake, `new | disqualified → working`, `new | working → disqualified`, human follow-up (`note | call | email | meeting`), task scheduling/completion, delegated qualification, nonterminal Opportunity stage movement, and terminal Opportunity closure/conversion. Merging remains a collection lifecycle.
 - **OpportunityConversion**: idempotent conversion links (`targetKind`/`targetId` — client, project, contract, subscription, …) with a composite natural key. CRM never creates downstream records itself and never mutates referral or commission state.
 
 Workflow calls require ambient tenant context. Mutations require an actor profile
@@ -30,9 +30,16 @@ Caller idempotency keys are persisted through deterministic immutable activity
 ids, including when intake resolves to an existing active Lead; reusing a key
 with changed intent is rejected. PostgreSQL uses transaction advisory/row locks,
 while single-connection adapters serialize the entire transaction.
+The optional `profileId` is a host-authorized cross-package identity link and is
+part of that immutable retry intent; Sales stores it but does not authorize or
+load the referenced Profile.
 
 `qualifyLead()` delegates to `LeadCollection.qualify()` on the same transaction
-executor and returns whether the Opportunity was newly created. `closeOpportunity()`
+executor and returns whether the Opportunity was newly created.
+`moveOpportunityToStage()` locks an open Opportunity and atomically moves it to
+a nonterminal stage in the same tenant and pipeline. An exact stage/probability
+retry is a no-op; a conflicting same-stage probability is refused. Terminal
+stages remain exclusive to `closeOpportunity()`, which
 resolves the configured won/lost terminal stage, delegates stage movement, and
 optionally records a won conversion in the same transaction. Exact retries add
 no stage activity or conversion. `getLeadWorkState()` includes the canonical
