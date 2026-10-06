@@ -68,6 +68,28 @@ and renders optional history in caller order. `canUpload=false` hides the whole
 upload form; omit the panel's `upload` entirely when no upload surface is wanted.
 Status labels do not grant or remove any authorization.
 
+## Removing attachments
+
+Remove is opt-in: nothing renders unless `onremove` or `removeAction` is given
+to `AttachmentList` or `AttachmentPanel`. Each top-level attachment (not
+history rows) then gets a "Remove <file name>" button that opens a smrt-ui
+`ConfirmDialog`; nothing is removed before confirmation.
+
+- `onremove(attachment)`: host handler, may return a promise. All remove
+  buttons and the dialog stay disabled until it settles; a rejection shows a
+  "Could not remove <name>" alert. Wins over `removeAction`.
+- `removeAction`: native mode for server actions. After confirmation the list
+  POSTs a form to that URL with `removeIdField` (default `attachmentId`, the
+  attachment `id`), `removeIntentField`/`removeIntent` (default `intent=remove`)
+  and verbatim `removeHiddenFields`. Requires JavaScript (the confirmation).
+- `removePending`: caller-owned pending flag that disables the buttons.
+- `AssetAttachment.canRemove=false` hides one item's button (presentation only).
+- `density="touch"` gives the buttons touch-size targets; omit to inherit the
+  ThemeProvider density.
+
+The component never deletes anything: the endpoint or handler must authorize
+and call the owner's `removeAsset()` or association detach.
+
 Focused validation:
 
 ```sh
