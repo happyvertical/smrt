@@ -4,7 +4,6 @@ import type { CatalogField, CatalogModel } from '../src/lib/catalog/types.ts';
 import { appQuery } from '../src/lib/planner/app.svelte.ts';
 import { composeQuery, hasAppState } from '../src/lib/planner/query.ts';
 import { selection } from '../src/lib/planner/selection.svelte.ts';
-import { decodeOptions, encodeOptions } from '../src/lib/recipes/encoding.ts';
 import {
   getRecipe,
   recipeModels,
@@ -376,46 +375,12 @@ describe('options form generation', () => {
   });
 });
 
-describe('options in the url', () => {
-  it('round-trips rows and narrowed surfaces', () => {
-    const state = {
-      rows: [
-        {
-          objectRef: ORDER,
-          fieldName: 'notes',
-          scopeType: 'app' as const,
-          label: 'Memo é',
-          help: null,
-          defaultValue: '"hi"',
-          visibility: 'hidden' as const,
-          displayOrder: 4,
-        },
-      ],
-      narrowed: { [ORDER]: ['cli' as const, 'mcp' as const] },
-    };
-    const encoded = encodeOptions(state);
-    expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(decodeOptions(encoded)).toEqual(state);
-    expect(encodeOptions({ rows: [], narrowed: {} })).toBe('');
-  });
-
-  it('decodes garbage to no options', () => {
-    expect(decodeOptions('%%%')).toEqual({ rows: [], narrowed: {} });
-    expect(decodeOptions(null)).toEqual({ rows: [], narrowed: {} });
-    expect(decodeOptions(btoa('[1,2]'))).toEqual({ rows: [], narrowed: {} });
-  });
-
-  it('composes one query from packages, recipes and options', () => {
-    expect(composeQuery({ packages: [], recipes: [], options: '' })).toBe('');
-    expect(
-      composeQuery({
-        packages: ['b', 'a'],
-        recipes: ['commerce.sales'],
-        options: 'xyz',
-      }),
-    ).toBe('?p=a,b&r=commerce.sales&o=xyz');
-    expect(hasAppState('?r=commerce.sales')).toBe(true);
-    expect(hasAppState('?q=1')).toBe(false);
+describe('url query', () => {
+  it('carries only the package selection', () => {
+    expect(composeQuery({ packages: [] })).toBe('');
+    expect(composeQuery({ packages: ['b', 'a'] })).toBe('?p=a,b');
+    expect(hasAppState('?p=a')).toBe(true);
+    expect(hasAppState('?r=commerce.sales')).toBe(false);
   });
 });
 
@@ -438,7 +403,7 @@ describe('recipe state', () => {
     expect(recipeState.ids).toEqual([]);
   });
 
-  it('applies saved options to the views, and survives a round trip through the url', () => {
+  it('applies saved options to the views, and survives a snapshot and load', () => {
     recipeState.add('commerce.sales');
     const order = modelOf(ORDER);
     const hints = recipeState.hintsFor(ORDER);
@@ -456,11 +421,12 @@ describe('recipe state', () => {
     expect(applied.model.cli).toEqual([]);
     expect(applied.model.rest.length).toBeGreaterThan(0);
 
-    const query = appQuery();
-    expect(query).toMatch(/^\?r=commerce\.customers,commerce\.sales&o=/);
+    // The URL carries only the package selection now; the blueprint keeps the rest.
+    expect(appQuery()).toBe('');
+    const saved = JSON.parse(JSON.stringify(recipeState.snapshot()));
 
     recipeState.clear();
-    recipeState.fromSearch(query);
+    recipeState.load(saved);
     const restored = recipeState.apply(order);
     expect(restored.fields.map((f) => f.name)).not.toContain('notes');
     expect(restored.model.cli).toEqual([]);
@@ -494,10 +460,5 @@ describe('recipe state', () => {
     recipeState.remove('commerce.sales');
     expect(recipeState.rows).toEqual([]);
     expect(recipeState.narrowed).toEqual({});
-  });
-
-  it('ignores unknown recipe ids in the url', () => {
-    recipeState.fromSearch('?r=commerce.vendors,bogus');
-    expect(recipeState.ids).toEqual(['commerce.vendors']);
   });
 });

@@ -7,6 +7,7 @@ import {
 } from '@happyvertical/smrt-svelte/workspace';
 import { afterNavigate, replaceState } from '$app/navigation';
 import { page } from '$app/state';
+import { blueprintStore } from '$lib/blueprint/store.svelte.ts';
 import { exposedModels, getPackage } from '$lib/catalog/index.ts';
 import ChatDockPlaceholder from '$lib/components/ChatDockPlaceholder.svelte';
 import { provideDataSource } from '$lib/data/context.ts';
@@ -37,6 +38,7 @@ provideDataSource(
 
 const nav: ShellNavItem[] = $derived([
   { href: appHref('/'), label: 'Planner' },
+  { href: appHref('/blueprint/'), label: 'Blueprint' },
 ]);
 
 // Each added recipe (or group of recipes, such as Products) is a navigation
@@ -106,9 +108,11 @@ const navGroups: ShellNavGroup[] = $derived([
   ...packageGroups,
 ]);
 
-// The URL carries the selection so a mock-up can be shared. Pages are
-// prerendered, so the query is only read in the browser, after navigation.
+// The URL carries the package selection so a mock-up can be shared; recipes,
+// options and layout are the blueprint, saved in localStorage. Pages are
+// prerendered, so both are only read in the browser, after navigation.
 let ready = false;
+let hydrated = false;
 
 function syncUrl() {
   const wanted = appQuery();
@@ -118,10 +122,13 @@ function syncUrl() {
 }
 
 afterNavigate((navigation) => {
-  if (hasAppState(location.search)) {
-    selection.fromSearch(location.search);
-    recipeState.fromSearch(location.search);
+  // Read the saved blueprint once, and fold a legacy ?r= / ?o= link into it.
+  // syncUrl below then drops those parameters, as appQuery no longer has them.
+  if (!hydrated) {
+    hydrated = true;
+    blueprintStore.hydrate(location.search);
   }
+  if (hasAppState(location.search)) selection.fromSearch(location.search);
   // SvelteKit runs the initial 'enter' callbacks before the router counts as
   // started, and replaceState throws until then, so wait one microtask.
   const sync = () => {
@@ -138,7 +145,22 @@ $effect(() => {
   void appQuery();
   if (ready) syncUrl();
 });
+
+// Save the blueprint soon after any change; the store ignores this until the
+// saved one has been read, so loading never overwrites it with an empty one.
+$effect(() => {
+  // Reading it all (layout is deep) subscribes the effect to every part.
+  void JSON.stringify(blueprintStore.snapshot());
+  blueprintStore.scheduleSave();
+});
+
+function flushOnHide() {
+  if (document.visibilityState === 'hidden') blueprintStore.flush();
+}
 </script>
+
+<svelte:window onpagehide={() => blueprintStore.flush()} />
+<svelte:document onvisibilitychange={flushOnHide} />
 
 <AppShell
   title="smrt planner"
@@ -155,5 +177,23 @@ $effect(() => {
       {/snippet}
     </ShellDockTool>
   {/snippet}
+  {#if blueprintStore.persist === 'memory'}
+    <p class="storage-notice" role="status">
+      This browser is not saving your blueprint (storage is unavailable), so it
+      is kept in memory only. Export it from Blueprint to keep a copy.
+    </p>
+  {/if}
+  {#if blueprintStore.loadNotice}
+    <p class="storage-notice" role="status">{blueprintStore.loadNotice}</p>
+  {/if}
   {@render children()}
 </AppShell>
+
+<style>
+  .storage-notice {
+    margin: 0;
+    padding: var(--smrt-spacing-2) var(--smrt-spacing-6);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
+  }
+</style>

@@ -1,6 +1,5 @@
+import type { Blueprint } from '../blueprint/types.ts';
 import type { CatalogModel } from '../catalog/types.ts';
-import { readOptions, readRecipeIds } from '../planner/query.ts';
-import { decodeOptions, encodeOptions } from './encoding.ts';
 import { recipesById } from './index.ts';
 import {
   backgroundDefaults,
@@ -12,7 +11,7 @@ import {
   type ViewField,
   viewFields,
 } from './policy.ts';
-import { knownRecipes, recipesRequiring, withRequirements } from './resolve.ts';
+import { recipesRequiring, withRequirements } from './resolve.ts';
 import type { ExposureSurface, RecipeModelHints } from './types.ts';
 
 /** A model as the generated views see it once recipe options are applied. */
@@ -30,8 +29,9 @@ export interface AppliedModel {
 /**
  * The visitor's added recipes and their saved options. Like the package
  * selection, it is the one store the planner page, navigation and a future
- * chat assistant drive; the URL (`?r=...&o=...`) is its persisted form. Policy
- * rows live in memory here; smrt-planner#4 makes them real rows.
+ * chat assistant drive. The blueprint (`blueprint/`) is its persisted form:
+ * `snapshot()` and `load()` are the only way in or out. Policy rows live in
+ * memory here; smrt-planner#4 makes them real rows.
  */
 class RecipeState {
   ids = $state<string[]>([]);
@@ -126,23 +126,34 @@ class RecipeState {
     this.save(modelId, [], []);
   }
 
-  /** The `r` and `o` URL parameter values. */
-  encoded(): { recipes: string[]; options: string } {
-    return {
-      recipes: this.ids,
-      options: encodeOptions({ rows: this.rows, narrowed: this.narrowed }),
+  /** The recipes and options as blueprint fields, in a stable order. */
+  snapshot(): Pick<Blueprint, 'recipes' | 'policies' | 'exposure'> {
+    const policies = [...this.rows].sort(
+      (a, b) =>
+        a.objectRef.localeCompare(b.objectRef) ||
+        a.fieldName.localeCompare(b.fieldName),
+    );
+    const exposure = Object.fromEntries(
+      Object.keys(this.narrowed)
+        .sort()
+        .filter((ref) => this.narrowed[ref].length)
+        .map((ref) => [ref, [...this.narrowed[ref]].sort()]),
+    );
+    const out: Pick<Blueprint, 'recipes' | 'policies' | 'exposure'> = {
+      recipes: [...this.ids].sort(),
+      policies: policies.map((row) => ({ ...row })),
     };
+    if (Object.keys(exposure).length) out.exposure = exposure;
+    return out;
   }
 
-  /** Replace everything from a URL query string. */
-  fromSearch(search: string): void {
-    this.ids = withRequirements(
-      knownRecipes(readRecipeIds(search), recipesById),
-      recipesById,
+  /** Replace everything from a validated blueprint. */
+  load(blueprint: Pick<Blueprint, 'recipes' | 'policies' | 'exposure'>): void {
+    this.ids = withRequirements(blueprint.recipes, recipesById);
+    this.rows = blueprint.policies.map((row) => ({ ...row }));
+    this.narrowed = Object.fromEntries(
+      Object.entries(blueprint.exposure ?? {}).map(([ref, s]) => [ref, [...s]]),
     );
-    const options = decodeOptions(readOptions(search));
-    this.rows = options.rows;
-    this.narrowed = options.narrowed;
     this.prune();
   }
 }

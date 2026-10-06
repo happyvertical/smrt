@@ -1,12 +1,10 @@
 import { base } from '$app/paths';
-import { recipeState } from '../recipes/state.svelte.ts';
 import { composeQuery } from './query.ts';
 import { selection } from './selection.svelte.ts';
 
-/** The query string carrying the whole shareable app state. */
+/** The query string carrying the shareable URL state (the package selection). */
 export function appQuery(): string {
-  const { recipes, options } = recipeState.encoded();
-  return composeQuery({ packages: selection.ids, recipes, options });
+  return composeQuery({ packages: selection.ids });
 }
 
 /** An in-app path (`/m/commerce/Order/`) carrying the current app state. */
