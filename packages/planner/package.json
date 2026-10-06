@@ -13,7 +13,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "catalog:generate": "node scripts/generate-catalog.mjs",
+    "catalog:generate": "node scripts/generate-catalog.ts",
     "typecheck": "svelte-kit sync && tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "lint": "biome ci ."

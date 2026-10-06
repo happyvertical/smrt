@@ -23,9 +23,17 @@ const text = $derived(
       : String(value),
 );
 
-function numberFrom(raw: string): number {
+// Money is typed in major units but stored as integer cents. Keep what the
+// person typed so re-rendering never rewrites the box mid-keystroke.
+// svelte-ignore state_referenced_locally
+let moneyText = $state(
+  typeof value === 'number' ? (value / 100).toFixed(2) : '',
+);
+
+function numberFrom(raw: string): number | null {
+  if (raw.trim() === '') return null;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function jsonFrom(raw: string): unknown {
@@ -57,26 +65,35 @@ function jsonFrom(raw: string): unknown {
       <input
         {id}
         type="number"
+        onfocus={(event) => event.currentTarget.select()}
         step="0.01"
         min="0"
         required={field.required}
-        value={typeof value === 'number' ? (value / 100).toFixed(2) : ''}
-        oninput={(event) => onchange(parseMoney(event.currentTarget.value))}
+        value={moneyText}
+        oninput={(event) => {
+          // type=number would coerce a bound value to a number; keep the text.
+          moneyText = event.currentTarget.value;
+          onchange(moneyText.trim() === '' ? null : parseMoney(moneyText));
+        }}
       />
     {:else if field.type === 'integer'}
       <input
         {id}
         type="number"
+        onfocus={(event) => event.currentTarget.select()}
         step="1"
         required={field.required}
         value={text}
-        oninput={(event) =>
-          onchange(Math.trunc(numberFrom(event.currentTarget.value)))}
+        oninput={(event) => {
+          const parsed = numberFrom(event.currentTarget.value);
+          onchange(parsed === null ? null : Math.trunc(parsed));
+        }}
       />
     {:else if field.type === 'decimal'}
       <input
         {id}
         type="number"
+        onfocus={(event) => event.currentTarget.select()}
         step="any"
         required={field.required}
         value={text}

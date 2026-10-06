@@ -84,6 +84,7 @@ async function remove(row: ModelRecord) {
   </header>
 
   {#if editing}
+    {#key editing}
     <form onsubmit={save}>
       <h3>{editing === 'new' ? `New ${model.name}` : `Edit ${model.name}`}</h3>
       {#each fields as field (field.name)}
@@ -100,6 +101,7 @@ async function remove(row: ModelRecord) {
         </button>
       </div>
     </form>
+    {/key}
   {/if}
 
   {#if !loaded}
