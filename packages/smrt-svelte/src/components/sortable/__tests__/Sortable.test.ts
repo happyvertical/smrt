@@ -142,15 +142,54 @@ describe('Sortable', () => {
     expect(onmove).not.toHaveBeenCalled();
   });
 
-  it('can disallow same-container reordering', async () => {
+  it('does not reorder within the source container when that is disallowed', () => {
+    const onmove = vi.fn();
+    render(Sortable<SortableItem, SortableContainer>, {
+      props: props({ onmove, allowSameContainerReorder: false }),
+    });
+    const source = handle('Move Posts');
+    const sibling = handle('Move Pages').closest(
+      '[data-smrt-sortable-item-id]',
+    ) as HTMLElement;
+    Object.defineProperty(sibling, 'getBoundingClientRect', {
+      value: () => ({ top: 10, height: 20 }),
+    });
+    const original = document.elementFromPoint;
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => sibling),
+    });
+    const base = { pointerId: 9, pointerType: 'mouse' };
+    fireEvent.pointerDown(source, {
+      ...base,
+      button: 0,
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerMove(source, { ...base, clientX: 0, clientY: 40 });
+    fireEvent.pointerUp(source, { ...base, clientX: 0, clientY: 40 });
+    expect(onmove).not.toHaveBeenCalled();
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: original,
+    });
+  });
+
+  it('lets the keyboard leave a pinned container when same-container reordering is off', async () => {
     const onmove = vi.fn();
     const user = userEvent.setup();
     render(Sortable<SortableItem, SortableContainer>, {
       props: props({ onmove, allowSameContainerReorder: false }),
     });
     handle('Move Posts').focus();
-    await user.keyboard(' {ArrowDown}{Enter}');
-    expect(onmove).not.toHaveBeenCalled();
+    await user.keyboard(' {ArrowDown}');
+    expect(live()).toContain('Posts, position 1 of 2 in People.');
+    // Reordering inside the new container is free.
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(onmove.mock.calls[0][0]).toMatchObject({
+      source: { containerId: 'content', index: 0 },
+      target: { containerId: 'people', index: 1 },
+    });
   });
 
   it('is read-only without onmove', async () => {

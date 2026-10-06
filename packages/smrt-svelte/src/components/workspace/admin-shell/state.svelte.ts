@@ -289,16 +289,15 @@ export class ShellState {
 
   /**
    * Apply the user's per-edge layout overrides. An edge made hidden closes at
-   * once; one made visible returns to the state its settings, viewport
-   * default, or configured `initial` give it; a changed `initial` becomes
-   * its state now (replacing any stored toggle). Edges the host configured
-   * hidden are untouched.
+   * once; one made visible (or whose `initial` changed) resolves again from
+   * its settings, viewport default, layout `initial`, then configured
+   * `initial`, so a stored toggle is never discarded by loading a layout.
+   * Edges the host configured hidden are untouched.
    */
   setLayoutPanels(next: ShellLayout['panels'] = {}): void {
     untrack(() => {
       const previous = this.layoutPanels;
       this.layoutPanels = { ...next };
-      let touchedSettings = false;
       for (const edge of PANEL_EDGES) {
         const before = previous[edge];
         const after = next[edge];
@@ -310,17 +309,6 @@ export class ShellState {
         }
         const config = this.config.panels[edge];
         if (config.initial === 'hidden') continue;
-        if (
-          before?.initial !== after?.initial &&
-          after?.initial &&
-          !config.viewportDefaults &&
-          this.settings.panels &&
-          edge in this.settings.panels
-        ) {
-          const { [edge]: _dropped, ...rest } = this.settings.panels;
-          this.settings = { ...this.settings, panels: rest };
-          touchedSettings = true;
-        }
         this.panels[edge] = resolveInitialPanelState(
           edge,
           config,
@@ -330,7 +318,31 @@ export class ShellState {
         );
         if (this.panels[edge] === 'expanded') this.closeExclusivePeers(edge);
       }
-      if (touchedSettings) void this.persistSettings();
+    });
+  }
+
+  /**
+   * Make `state` an edge's state now and for later loads: the user chose its
+   * starting state, so a stored open/closed toggle is dropped. Not applied to
+   * hidden edges or edges whose state follows the viewport.
+   */
+  setPanelStart(edge: PanelEdge, state: VisiblePanelState): void {
+    untrack(() => {
+      const config = this.config.panels[edge];
+      if (
+        config.initial === 'hidden' ||
+        config.viewportDefaults ||
+        this.layoutPanels[edge]?.visible === false
+      ) {
+        return;
+      }
+      if (this.settings.panels && edge in this.settings.panels) {
+        const { [edge]: _dropped, ...rest } = this.settings.panels;
+        this.settings = { ...this.settings, panels: rest };
+        void this.persistSettings();
+      }
+      if (state === 'expanded') this.closeExclusivePeers(edge);
+      this.panels[edge] = state;
     });
   }
 

@@ -226,10 +226,15 @@ export class SortableController {
     if (drag?.mode !== 'keyboard') return;
     const vertical = this.options.orientation?.() === 'vertical';
     const target = { ...drag.target };
+    // With same-container reordering off, the source container pins the
+    // position (as it does for pointer moves): a vertical step leaves it.
+    const pinned =
+      !this.options.allowSameContainerReorder() &&
+      target.containerId === drag.source.containerId;
     if (direction === 'vertical') {
-      if (!this.options.allowSameContainerReorder()) return;
+      if (pinned && !vertical) return;
       const max = this.itemsIn(target.containerId, drag.itemId).length;
-      const next = target.index + delta;
+      const next = pinned ? (delta < 0 ? -1 : max + 1) : target.index + delta;
       if (vertical && (next < 0 || next > max)) {
         const currentIndex = this.containers.findIndex(
           (container) => container.id === target.containerId,

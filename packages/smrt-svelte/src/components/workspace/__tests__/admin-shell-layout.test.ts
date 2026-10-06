@@ -94,6 +94,16 @@ describe('applyShellLayout', () => {
     expect(headings(result.groups)).toEqual(['Content']);
   });
 
+  it('drops a hidden section even when the host left it empty', () => {
+    const result = applyShellLayout(
+      [],
+      [{ heading: 'Empty', items: [] }],
+      {},
+      layout({ hidden: ['Empty'] }),
+    );
+    expect(result.groups).toEqual([]);
+  });
+
   it('keeps a section the host itself left empty', () => {
     const result = applyShellLayout(
       [],
@@ -266,6 +276,15 @@ describe('applyShellLayout', () => {
       moved: 'x',
       panels: { left: 4 },
     } as unknown as ShellLayout;
+    const nulls = {
+      version: 1,
+      itemOrder: null,
+      moved: null,
+      panels: null,
+      hidden: null,
+    } as unknown as ShellLayout;
+    expect(isShellLayoutEmpty(nulls)).toBe(true);
+    expect(applyShellLayout(nav, groups, {}, nulls).nav).toBe(nav);
     expect(() => applyShellLayout(nav, groups, {}, bad)).not.toThrow();
     expect(hrefs(applyShellLayout(nav, groups, {}, bad).nav)).toEqual(['/']);
   });

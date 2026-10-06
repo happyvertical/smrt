@@ -23,12 +23,14 @@ import {
 } from '../workspace/admin-shell/layout.js';
 import { setShellLayout } from '../workspace/admin-shell/layout-context.js';
 import { ShellLayoutController } from '../workspace/admin-shell/layout-controller.svelte.js';
+import { resolveShellConfig } from '../workspace/admin-shell/settings.js';
 import { createShellState } from '../workspace/admin-shell/state.svelte.js';
 import TenantNav from '../workspace/admin-shell/TenantNav.svelte';
-import type {
-  ShellNavGroup,
-  ShellNavItem,
-  ShellPanelDefaults,
+import {
+  PANEL_EDGES,
+  type ShellNavGroup,
+  type ShellNavItem,
+  type ShellPanelDefaults,
 } from '../workspace/admin-shell/types.js';
 import DockSlot from './DockSlot.svelte';
 import DockToggles from './DockToggles.svelte';
@@ -163,6 +165,18 @@ setShellLayout(
     panels: () => config,
     layout: () => effectiveLayout,
     commit(next) {
+      // A changed starting state is an explicit edit: show it now. Loading a
+      // stored layout (hydration, a late `layout` prop) never does this, so
+      // it cannot erase the user's own open/closed toggle.
+      for (const edge of PANEL_EDGES) {
+        const before = effectiveLayout.panels?.[edge]?.initial;
+        const after = next.panels?.[edge]?.initial;
+        if (before === after) continue;
+        const state = after ?? resolveShellConfig(config).panels[edge].initial;
+        if (state === 'collapsed' || state === 'expanded') {
+          shell.setPanelStart(edge, state);
+        }
+      }
       if (!controlled) {
         if (onlayoutchange) localLayout = next;
         else shell.setLayout(next);

@@ -100,8 +100,10 @@ export function isShellLayoutEmpty(layout: ShellLayout | null | undefined) {
   );
 }
 
-function hasKeys(value: object | undefined): boolean {
-  return value !== undefined && Object.keys(value).length > 0;
+function hasKeys(value: unknown): boolean {
+  return (
+    typeof value === 'object' && value !== null && Object.keys(value).length > 0
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -353,7 +355,9 @@ export function applyShellLayout(
   for (const section of sections) {
     const items = visible(section);
     const group = section.group as ShellNavGroup;
-    if (items.length === 0 && group.items.length > 0) continue;
+    if (section.hidden || (items.length === 0 && group.items.length > 0)) {
+      continue;
+    }
     nextGroups.push({ ...group, items });
   }
 

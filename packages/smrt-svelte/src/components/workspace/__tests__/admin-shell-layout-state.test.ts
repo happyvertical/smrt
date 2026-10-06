@@ -29,13 +29,23 @@ describe('ShellState layout panels', () => {
     expect(shell.panels.left).toBe('expanded');
   });
 
-  it('applies a changed starting state at once, replacing a stored toggle', () => {
+  it('never discards a stored toggle when a layout is loaded', () => {
     const shell = createShellState({ config });
     shell.setPanel('left', 'collapsed');
-    expect(shell.settings.panels?.left).toBe('collapsed');
     shell.setLayoutPanels({ left: { initial: 'expanded' } });
+    expect(shell.panels.left).toBe('collapsed');
+    expect(shell.settings.panels?.left).toBe('collapsed');
+  });
+
+  it('applies an edited starting state at once, replacing a stored toggle', () => {
+    const shell = createShellState({ config });
+    shell.setPanel('left', 'collapsed');
+    shell.setPanelStart('left', 'expanded');
     expect(shell.panels.left).toBe('expanded');
     expect(shell.settings.panels?.left).toBeUndefined();
+    shell.setLayoutPanels({ left: { visible: false } });
+    shell.setPanelStart('left', 'collapsed');
+    expect(shell.panels.left).toBe('hidden');
   });
 
   it('uses the layout starting state below a stored toggle on later loads', () => {
