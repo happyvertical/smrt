@@ -24,6 +24,8 @@ export interface AssetAttachmentVersion
 export interface AssetAttachment extends AssetAttachmentVersion {
   /** Caller-localized status, including unknown or application-specific states. */
   statusLabel?: string;
+  /** Per-item presentation gate for the remove action; default true. The endpoint must still authorize. */
+  canRemove?: boolean;
   /** Earlier versions already authorized by the caller. No history is fetched. */
   versions?: readonly AssetAttachmentVersion[];
 }
@@ -48,6 +50,27 @@ export interface AttachmentListProps {
   message?: string;
   /** Loading presentation; existing items remain visible. */
   loading?: boolean;
+  /**
+   * Host remove handler. Providing it (or `removeAction`) renders a Remove
+   * button per top-level attachment, behind a confirmation. Wins over
+   * `removeAction` when both are given. A returned promise keeps every remove
+   * button disabled until it settles.
+   */
+  onremove?: (attachment: AssetAttachment) => void | Promise<void>;
+  /** Native mode: URL receiving a POST of the attachment id after confirmation. */
+  removeAction?: string;
+  /** Native field carrying the attachment `id`, default attachmentId. */
+  removeIdField?: string;
+  /** Native submitter field name, default intent. */
+  removeIntentField?: string;
+  /** Native submitter value, default remove. */
+  removeIntent?: string;
+  /** Request/tenant/revision fields sent verbatim with a native removal. */
+  removeHiddenFields?: readonly AttachmentRequestField[];
+  /** Caller-owned pending state (for example a native request in flight); disables remove buttons. */
+  removePending?: boolean;
+  /** Touch-size controls; omit to inherit the ThemeProvider density. */
+  density?: 'comfortable' | 'touch';
 }
 
 /** Native private upload transport, owned and authorized by the consumer. */

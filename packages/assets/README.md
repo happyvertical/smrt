@@ -143,6 +143,10 @@ They preserve request identity and failed-action metadata without deriving
 public storage URLs. See [the attachment contract](agents/attachments.md) for
 public types, native payloads, recovery, and server responsibilities.
 
+Pass `onremove(attachment)` and/or `removeAction` (native POST of the
+attachment id) to add a confirmed per-attachment Remove button; see
+"Removing attachments" in the contract.
+
 ### Polymorphic junction collection types
 
 `AssetAssociationCollection` extends `SmrtJunctionBase`, sharing `byRight`,

@@ -161,3 +161,17 @@ describe('private attachments SSR/native contract', () => {
     expect(upload()).toContain('<textarea');
   });
 });
+
+describe('attachment remove SSR contract', () => {
+  it('is absent by default and present with a handler or action', () => {
+    expect(
+      render(AttachmentList, { props: { attachments: [attachment] } }).body,
+    ).not.toContain('Remove');
+    const body = render(AttachmentList, {
+      props: { attachments: [attachment], removeAction: '/r' },
+    }).body;
+    expect(body).toContain('Remove Private quote.pdf');
+    expect(body).toContain('action="/r"');
+    expect(body.match(/Remove Original quote/g)).toBeNull();
+  });
+});

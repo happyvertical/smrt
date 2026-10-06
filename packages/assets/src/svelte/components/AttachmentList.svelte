@@ -1,9 +1,11 @@
 <script lang="ts">
+import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { attachmentLink } from '../attachments/link.js';
 import { attachmentMessages as M } from '../attachments/messages.js';
 import type {
+  AssetAttachment,
   AssetAttachmentVersion,
   AttachmentListProps,
 } from '../attachments/types.js';
@@ -15,8 +17,44 @@ let {
   showHistory = true,
   message,
   loading = false,
+  onremove,
+  removeAction,
+  removeIdField = 'attachmentId',
+  removeIntentField = 'intent',
+  removeIntent = 'remove',
+  removeHiddenFields = [],
+  removePending = false,
+  density,
 }: Props = $props();
 const { t } = useI18n();
+const instanceId = $props.id();
+const removable = $derived(Boolean(onremove || removeAction));
+let target = $state<AssetAttachment | undefined>();
+let running = $state(false);
+let failed = $state<string | undefined>();
+let form = $state<HTMLFormElement | undefined>();
+const busy = $derived(running || removePending);
+function askRemove(item: AssetAttachment) {
+  failed = undefined;
+  target = item;
+}
+async function confirmRemove() {
+  const item = target;
+  if (!item || busy) return;
+  if (onremove) {
+    running = true;
+    try {
+      await onremove(item);
+    } catch {
+      failed = item.name;
+    } finally {
+      running = false;
+      target = undefined;
+    }
+  } else if (form) {
+    form.requestSubmit();
+  }
+}
 </script>
 
 {#snippet entry(item: AssetAttachmentVersion)}
@@ -42,6 +80,9 @@ const { t } = useI18n();
     {#each attachments as attachment (attachment.id)}
       <li>
         {@render entry(attachment)}
+        {#if removable && attachment.canRemove !== false}
+          <div class="links"><Button type="button" variant="ghost" {density} disabled={busy} onclick={() => askRemove(attachment)}>{t(M['assets.attachments.remove'], { name: attachment.name })}</Button></div>
+        {/if}
         {#if attachment.statusLabel}<p>{attachment.statusLabel}</p>{/if}
         {#if showHistory && attachment.versions?.length}
           <h4>{t(M['assets.attachments.history'])}</h4>
@@ -50,6 +91,27 @@ const { t } = useI18n();
       </li>
     {/each}
   </ul>
+  {#if failed}<p role="alert">{t(M['assets.attachments.remove_failed'], { name: failed })}</p>{/if}
+  {#if removable}
+    {#if removeAction && !onremove}
+      <form bind:this={form} id={`${instanceId}-remove`} method="post" action={removeAction}>
+        <input type="hidden" name={removeIdField} value={target?.id ?? ''} />
+        {#each removeHiddenFields as field}<input type="hidden" name={field.name} value={field.value} />{/each}
+        <input type="hidden" name={removeIntentField} value={removeIntent} />
+      </form>
+    {/if}
+    <ConfirmDialog
+      open={target !== undefined}
+      title={t(M['assets.attachments.remove_title'])}
+      message={t(M['assets.attachments.remove_message'], { name: target?.name ?? '' })}
+      confirmLabel={t(M['assets.attachments.remove_confirm'])}
+      cancelLabel={t(M['assets.attachments.remove_cancel'])}
+      destructive
+      loading={busy}
+      onconfirm={confirmRemove}
+      oncancel={() => { if (!busy) target = undefined; }}
+    />
+  {/if}
 </section>
 
 <style>
