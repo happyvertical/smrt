@@ -56,7 +56,7 @@ overrides:
   'devalue@>=5.6.3 <5.8.1': 5.8.1
   'vitest@>=4.0.0 <4.1.0': 4.1.10
   'linkify-it@<=5.0.1': 5.0.2
-  'shell-quote@>=1.1.0 <1.8.5': 1.9.0
+  'shell-quote@>=1.1.0 <1.11.0': 1.12.0
   'hono@>=4.0.0 <4.12.25': 4.12.27
   '@hono/node-server@>=1.0.0 <1.19.10': 1.19.14
   'express-rate-limit@>=8.2.0 <8.2.2': 8.5.2
@@ -93,12 +93,12 @@ overrides:
   # 14.x release carrying the fix.
   'markdown-it@<14.1.2': 14.3.0
   'body-parser@<2.3.0': 2.3.0
-  # sharp <0.35.4 inherits four libvips CVEs. Its consumers here declare older
+  # sharp <0.35.5 inherits four libvips CVEs. Its consumers here declare older
   # ranges (@gutenye/ocr-node ^0.33.3, @huggingface/transformers ^0.34.5,
   # @xenova/transformers ^0.32.0); 0.35.x keeps the decode/resize/metadata API
   # these use, so a single unified pin is preferred over shipping three
   # vulnerable copies.
-  'sharp@<0.35.4': 0.35.4
+  'sharp@<0.35.5': 0.35.5
   # deepmerge-ts <8.0.0 exhausts the stack on recursive object graphs
   # (GHSA-ggr8-5vv4-36mx). It reaches the tree only through
   # packages/messages -> @happyvertical/email -> mailparser -> html-to-text,
@@ -204,7 +204,7 @@ catalog:
   bull: ^4.16.5
   bullmq: ^6.3.8
   jimp: ^1.6.1
-  sharp: ^0.35.4
+  sharp: ^0.35.5
 
 allowBuilds:
   esbuild: true
