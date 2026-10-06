@@ -280,9 +280,14 @@ $effect(() => {
 // swap; everything inside stays `untrack`-ed so it does NOT also rerun on
 // unrelated $state changes elsewhere (preserving the F1 guarantee that the
 // mount effect above runs exactly once per mount).
+let uploadContextEpoch = $state(0);
+
 $effect(() => {
   void registry;
-  untrack(() => controller.syncRegistry());
+  untrack(() => {
+    uploadContextEpoch++;
+    controller.syncRegistry();
+  });
 });
 
 // Cycle-2 second final finding 1: a SEPARATE effect, scoped to only the
@@ -299,8 +304,6 @@ $effect(() => {
   untrack(() => controller.syncSurfaces());
 });
 
-let transportEpoch = 0;
-
 // Copilot PR #2919 jAwsd: a SEPARATE effect, scoped to only the `transport`
 // prop, mirroring the `registry` effect above — a host swapping the
 // transport instance (e.g. alongside a registry swap, for a full
@@ -313,7 +316,7 @@ let transportEpoch = 0;
 $effect(() => {
   void transport;
   untrack(() => {
-    transportEpoch++;
+    uploadContextEpoch++;
     controller.syncTransport();
   });
 });
@@ -399,9 +402,9 @@ async function handleUpload(
   // empty batch. This handler ALSO records the failure on controller.error
   // so the dock-level banner matches the send path.
   const uploadTransport = transport;
-  const uploadEpoch = transportEpoch;
+  const uploadEpoch = uploadContextEpoch;
   const isCurrentUpload = () =>
-    transport === uploadTransport && transportEpoch === uploadEpoch;
+    transport === uploadTransport && uploadContextEpoch === uploadEpoch;
   try {
     const upload = uploadTransport.uploadAttachment;
     if (!upload) {
@@ -681,7 +684,7 @@ async function handleConfirmAction(requestId: string) {
             />
           </div>
         {/if}
-        {#key transport}
+        {#key uploadContextEpoch}
           <AssistantComposer
             bind:value={
               () => controller.draft, (text) => controller.setDraft(text)

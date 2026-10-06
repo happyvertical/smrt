@@ -26,6 +26,7 @@ import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import AssistantDock from '../AssistantDock.svelte';
 import {
+  type AssistantAttachmentRef,
   type AssistantMessage,
   type AssistantTransport,
   createInMemoryAssistantTransport,
@@ -239,6 +240,94 @@ describe('AssistantDock (mounted component)', () => {
     expect(
       screen.getByText(/Something went wrong: Current context error/),
     ).toBeInTheDocument();
+  });
+
+  it('clears staged attachments after registry-only replacement', async () => {
+    const transport = createInMemoryAssistantTransport();
+    const { container, rerender } = render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+      },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('file input not found');
+    await userEvent.upload(
+      input,
+      new File(['a'], 'private-a.png', { type: 'image/png' }),
+    );
+    expect(await screen.findByText('private-a.png')).toBeInTheDocument();
+
+    await rerender({
+      transport,
+      registry: createDataSurfaceRegistry(),
+      contextMode: 'server',
+    });
+    expect(screen.queryByText('private-a.png')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    'resolve',
+    'reject',
+  ] as const)('isolates deferred upload %s after registry-only replacement', async (outcome) => {
+    const originalRegistry = createDataSurfaceRegistry();
+    const replacementRegistry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    const sendMessage = vi.spyOn(transport, 'sendMessage');
+    let resolveUpload!: (attachments: AssistantAttachmentRef[]) => void;
+    let rejectUpload!: (error: Error) => void;
+    const pendingUpload = new Promise<AssistantAttachmentRef[]>(
+      (resolve, reject) => {
+        resolveUpload = resolve;
+        rejectUpload = reject;
+      },
+    );
+    transport.uploadAttachment = vi.fn(async () => (await pendingUpload)[0]);
+    const { container, rerender } = render(AssistantDock, {
+      props: { transport, registry: originalRegistry, contextMode: 'server' },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('file input not found');
+    await userEvent.upload(
+      input,
+      new File(['a'], 'private-a.png', { type: 'image/png' }),
+    );
+    expect(transport.uploadAttachment).toHaveBeenCalledTimes(1);
+
+    await rerender({
+      transport,
+      registry: replacementRegistry,
+      contextMode: 'server',
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /^\+ New conversation$/i }),
+    );
+    if (outcome === 'resolve')
+      resolveUpload([{ id: 'private', name: 'private-a.png' }]);
+    else rejectUpload(new Error('Private previous context error'));
+    await pendingUpload.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText('private-a.png')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Private previous context error/),
+    ).not.toBeInTheDocument();
+    if (outcome === 'resolve') {
+      await userEvent.type(screen.getByLabelText('Message'), 'new context');
+      await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+      expect(sendMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ attachments: [] }),
+      );
+    }
   });
 
   it('loadThreads/loadModels fire exactly once per mount, and the registry subscription survives a send (F1)', async () => {

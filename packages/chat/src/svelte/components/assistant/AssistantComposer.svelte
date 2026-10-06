@@ -171,8 +171,9 @@ async function handleFileChange(event: Event) {
 
 async function handleDrop(event: DragEvent) {
   const upload = onupload;
-  if (!upload || disabled || uploading) return;
+  if (!upload) return;
   event.preventDefault();
+  if (disabled || uploading) return;
   const files = event.dataTransfer?.files;
   if (!files || files.length === 0) return;
   uploading = true;
