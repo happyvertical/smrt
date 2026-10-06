@@ -50,7 +50,10 @@ export class Customer extends SmrtObject {
    * Reference to smrt-profiles Profile
    * Plain string for cross-package reference
    */
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', {
+    description:
+      'Links this customer to their profile record, where their name and contact details are kept.',
+  })
   profileId: string = '';
 
   /**
@@ -62,16 +65,27 @@ export class Customer extends SmrtObject {
    * amount; a dollars-vs-cents split there would approve every request off by
    * a factor of 100 (#2401).
    */
+  @field({
+    description:
+      'The most this customer may owe you at one time. Leave it at zero if you do not set limits.',
+  })
   creditLimit: number = 0;
 
   /**
    * Payment terms (e.g., "Net 30", "Due on receipt", "2/10 Net 30")
    */
+  @field({
+    description:
+      'How long the customer has to pay, written the way you would say it, for example "Net 30".',
+  })
   paymentTerms: string = '';
 
   /**
    * Whether customer is exempt from tax
    */
+  @field({
+    description: 'Turn this on if you do not charge this customer sales tax.',
+  })
   taxExempt: boolean = false;
 
   /**
@@ -80,22 +94,35 @@ export class Customer extends SmrtObject {
    * Sensitive (#1540): PII excluded from generated API/MCP responses and
    * rejected as a `where` filter key.
    */
-  @field({ sensitive: true })
+  @field({
+    sensitive: true,
+    description:
+      'The tax or VAT number of the customer, kept on file for tax-exempt sales.',
+  })
   taxId: string = '';
 
   /**
    * Default shipping address
    */
+  @field({
+    description:
+      'Where you usually send goods to this customer, so you do not retype it on every order.',
+  })
   defaultShippingAddress: Address = {};
 
   /**
    * Default billing address
    */
+  @field({ description: 'Where you send invoices to this customer.' })
   defaultBillingAddress: Address = {};
 
   /**
    * Customer status
    */
+  @field({
+    description:
+      'Whether you are still dealing with this customer: active, inactive or suspended.',
+  })
   status: CustomerStatus = CustomerStatus.ACTIVE;
 
   /**
@@ -104,11 +131,16 @@ export class Customer extends SmrtObject {
    * Drives channel access (wholesale portal vs. storefront vs. POS), default
    * price tier, and credit terms. Defaults to DTC for backwards compatibility.
    */
+  @field({
+    description:
+      'The kind of customer: a direct shopper, a wholesale buyer or a retail customer.',
+  })
   customerType: CustomerType = CustomerType.DTC;
 
   /**
    * Internal notes about this customer
    */
+  @field({ description: 'Anything worth remembering about this customer.' })
   notes: string = '';
 
   constructor(options: CustomerOptions = {}) {

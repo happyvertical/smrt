@@ -25,7 +25,10 @@ E-commerce with Contract STI hierarchy, invoice lifecycle, payment tracking, pay
 `manifest.json` and `smrt-knowledge.json` `recipes`: `commerce.customers`
 (Customer), `commerce.vendors` (Vendor), `commerce.sales` (Order, requires
 customers), `commerce.purchases` (PurchaseOrder, requires vendors). Headers
-only; line items, fulfilment, invoices, and payments are later recipes. See
+only; line items, fulfilment, invoices, and payments are later recipes. Each
+has user-facing help in `src/<name>.recipe.md` (#3591), and the fields those
+recipes show carry `@field({ description })` text; keep both in plain
+language for end users and update them when a recipe's fields change. See
 [core recipes](../core/agents/recipes.md).
 
 ## Ledger Integration
