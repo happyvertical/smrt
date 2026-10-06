@@ -1,5 +1,13 @@
 # @happyvertical/smrt-properties
 
+## 0.55.0
+
+### Patch Changes
+
+- @happyvertical/smrt-core@0.55.0
+  - @happyvertical/smrt-prompts@0.55.0
+  - @happyvertical/smrt-tenancy@0.55.0
+
 ## 0.54.4
 
 ### Patch Changes

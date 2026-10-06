@@ -1,5 +1,16 @@
 # @happyvertical/smrt-languages
 
+## 0.55.0
+
+### Patch Changes
+
+- @happyvertical/smrt-features@0.55.0
+  - @happyvertical/smrt-config@0.55.0
+  - @happyvertical/smrt-core@0.55.0
+  - @happyvertical/smrt-jobs@0.55.0
+  - @happyvertical/smrt-prompts@0.55.0
+  - @happyvertical/smrt-tenancy@0.55.0
+
 ## 0.54.4
 
 ### Patch Changes

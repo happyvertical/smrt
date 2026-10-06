@@ -1,5 +1,20 @@
 # @happyvertical/smrt-agents
 
+## 0.55.0
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.55.0
+  - @happyvertical/smrt-config@0.55.0
+  - @happyvertical/smrt-core@0.55.0
+  - @happyvertical/smrt-jobs@0.55.0
+  - @happyvertical/smrt-playbooks@0.55.0
+  - @happyvertical/smrt-reports@0.55.0
+  - @happyvertical/smrt-secrets@0.55.0
+  - @happyvertical/smrt-ui@0.55.0
+  - @happyvertical/smrt-tenancy@0.55.0
+  - @happyvertical/smrt-types@0.55.0
+
 ## 0.54.4
 
 ### Patch Changes
