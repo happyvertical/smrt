@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.54.4
+
+### Patch Changes
+
+- ### Features
+  
+  - bind OAuthState to its initiator and return target (#3553) (social)
+  - assembly part number, run controls, component-free views (#3551) (manufacturing)
+  
+  ### Bug Fixes
+  
+  - emit portable declarations for strict NodeNext consumers (#3549) (build)
+- @happyvertical/smrt-config@0.54.4
+  - @happyvertical/smrt-scanner@0.54.4
+  - @happyvertical/smrt-types@0.54.4
+
 ## 0.54.3
 
 ### Patch Changes
