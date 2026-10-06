@@ -2451,6 +2451,36 @@ describe('createAssistantDockController', () => {
   // must never leave an unhandled rejection and must route failures to
   // controller.error.
   describe('unhandled-rejection guarding (cycle-2 second final finding 2)', () => {
+    it('rejects unsupported thread creation without changing controller state', async () => {
+      const transport: AssistantTransport = {
+        async listThreads() {
+          return [];
+        },
+        async loadMessages() {
+          return [];
+        },
+        async sendMessage() {
+          return { inProgress: false };
+        },
+      };
+      const controller = createAssistantDockController({
+        transport,
+        registry: fakeRegistry([]),
+      });
+      controller.setError('existing error');
+
+      await expect(controller.createThread('New conversation')).rejects.toThrow(
+        'thread creation is not supported',
+      );
+
+      expect(controller.threads).toEqual([]);
+      expect(controller.activeThreadId).toBeNull();
+      expect(controller.messages).toEqual([]);
+      expect(controller.pendingSends).toEqual([]);
+      expect(controller.error).toBe('existing error');
+      controller.dispose();
+    });
+
     it('a rejecting createThread() records the error and does not change activeThreadId', async () => {
       const transport = createInMemoryAssistantTransport();
       transport.createThread = async () => {

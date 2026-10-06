@@ -37,6 +37,14 @@ adapting model amounts into those legacy components must explicitly convert unit
 do not pass a model's integer amount directly or silently change a legacy prop's
 meaning. New editor DTOs are separate contracts.
 
+Approved or otherwise retained invoice facts use the explicit `retained` display
+branches and DTOs from `src/svelte/invoice-display.ts`. Their amounts are safe
+integers in currency minor units, formatted through the package ISO exponent
+table without floating-point division. Retained line subtotals, discounts, tax
+rows, holdbacks, totals, paid amounts and payable amounts are caller-authoritative;
+the components never derive one from another, and an omitted fact stays omitted.
+Application-specific evidence belongs in the typed detail snippets.
+
 ## Domain boundaries
 
 Customer and Vendor reference Profiles identity data. A consumer's Client record

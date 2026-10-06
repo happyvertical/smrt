@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-ui",
-  "version": "0.54.4",
+  "version": "0.55.1",
   "smrtJsdoc": "strict",
   "description": "Domain-agnostic Svelte 5 UI runtime for SMRT: primitives, i18n client, theme system, and module UI registry",
   "type": "module",
@@ -69,6 +69,11 @@
       "types": "./dist/components/forms/form-retry/index.d.ts",
       "import": "./dist/components/forms/form-retry/index.js",
       "default": "./dist/components/forms/form-retry/index.js"
+    },
+    "./currency": {
+      "types": "./dist/currency.d.ts",
+      "import": "./dist/currency.js",
+      "default": "./dist/currency.js"
     },
     "./i18n": {
       "types": "./dist/i18n/index.d.ts",

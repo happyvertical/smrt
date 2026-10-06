@@ -33,6 +33,7 @@ export { default as MembershipList } from './components/memberships/MembershipLi
 export * from './components/nav/index.js';
 // Permission components
 export { default as PermissionCheck } from './components/permissions/PermissionCheck.svelte';
+export { default as PermissionPicker } from './components/permissions/PermissionPicker.svelte';
 // Role components (domain-agnostic — typed against smrt-types contracts)
 export { default as RoleBadge } from './components/roles/RoleBadge.svelte';
 export { default as RoleSelector } from './components/roles/RoleSelector.svelte';

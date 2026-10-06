@@ -11,9 +11,9 @@
  *   title (for its phone top bar). smrt-svelte's `shellPageTrailFor()`
  *   computes such a trail from a nav.
  * - The crumb row carries `data-shell-breadcrumbs` and the title
- *   `data-shell-page-title`: on phones AdminShell hides the crumbs and
- *   visually hides the title, because its phone top bar shows the back arrow
- *   and the title instead.
+ *   `data-shell-page-title`: on phones AdminShell hides crumbs only when its
+ *   top bar declares `data-shell-page-navigation-replacement`, and visually
+ *   hides the title only with `data-shell-page-title-replacement`.
  * - No in-page back link: the crumbs (and the phone top bar) are the way
  *   back. `backHref` is kept only for pages outside such a shell.
  * - An editable title (`titleField`, e.g. an article's headline) renders

@@ -450,10 +450,15 @@ keys the shell renders exactly as before.
   sheet, `phone.swipeToClose` closes drawers by swiping. A `path` change on a
   phone closes open drawers. `overlays` is a layer above the edges (and above
   the bottom bar's row) for `PhoneSheet`s and status strips.
-- **Page contracts** on phones: `data-shell-breadcrumbs` is hidden,
-  `data-shell-page-title` is visually hidden while the phone top bar shows
-  (the bar carries the title), `data-shell-tabs` sticks under the top bar and
-  slides away with it. smrt-ui's `PageHeader` renders the first two.
+- **Page contracts** on phones: `data-shell-breadcrumbs` is hidden only when
+  the phone bar contains `data-shell-page-navigation-replacement` (the back
+  link in `PhoneTopBar` detail mode declares it). A title alone leaves
+  breadcrumb navigation available.
+  `data-shell-page-title` is visually hidden only when the phone top bar
+  contains `data-shell-page-title-replacement`. `PhoneTopBar` marks its detail
+  title automatically; a workspace-name or action-only bar leaves the page
+  heading visible. Custom bars should mark only an actual replacement title.
+  `data-shell-tabs` sticks under the top bar and slides away with it. smrt-ui's `PageHeader` renders the first two.
 - **Page trail**: `shellPageTrailFor({ path, homeHref, homeTitle, navItems,
   parents })` is the one source for a page's ancestors: section homes (home
   and top-level nav pages) have none; other pages get the home, the nav items

@@ -26,7 +26,9 @@ import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import AssistantDock from '../AssistantDock.svelte';
 import {
+  type AssistantAttachmentRef,
   type AssistantMessage,
+  type AssistantTransport,
   createInMemoryAssistantTransport,
 } from '../assistant-transport.js';
 
@@ -56,6 +58,455 @@ const descriptor: DataSurfaceDescriptor = {
 };
 
 describe('AssistantDock (mounted component)', () => {
+  it('guides a server-context user to an existing conversation without selecting it for them', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport: AssistantTransport = {
+      async listThreads() {
+        return [
+          {
+            id: 'session-1',
+            title: 'Workspace assistant',
+            isResolved: false,
+            messageCount: 0,
+          },
+        ];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage(input) {
+        return {
+          inProgress: false,
+          messages: [
+            {
+              id: 'reply-1',
+              threadId: input.threadId,
+              content: 'Server reply',
+              role: 'assistant',
+              createdAt: new Date(),
+            },
+          ],
+        };
+      },
+    };
+
+    const { container } = render(AssistantDock, {
+      props: { transport, registry, contextMode: 'server' },
+    });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Choose a conversation' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toBeDisabled();
+    const chooseButton = screen.getByRole('button', {
+      name: 'View conversations',
+    });
+    expect(chooseButton).toHaveAttribute(
+      'aria-controls',
+      screen
+        .getByRole('button', { name: 'Conversations' })
+        .getAttribute('aria-controls'),
+    );
+    await expectNoA11yViolations(container);
+
+    await userEvent.click(chooseButton);
+    const workspaceThread = screen.getByRole('button', {
+      name: 'Workspace assistant',
+    });
+    expect(document.activeElement).toBe(workspaceThread);
+    await userEvent.click(workspaceThread);
+    expect(
+      screen.queryByRole('heading', { name: 'Choose a conversation' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /New conversation/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Attach files/i }),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    expect(
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
+    ).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Message'), 'hello');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByText('Server reply')).toBeInTheDocument();
+  });
+
+  it('shows loading before first-use guidance and offers creation only when supported', async () => {
+    let resolveThreads!: (threads: []) => void;
+    const transport = createInMemoryAssistantTransport();
+    transport.listThreads = vi.fn(
+      () =>
+        new Promise<[]>((resolve) => {
+          resolveThreads = resolve;
+        }),
+    );
+
+    const { container } = render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+      },
+    });
+
+    expect(
+      screen.getByRole('status', { name: 'Loading conversations…' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Start a conversation' }),
+    ).not.toBeInTheDocument();
+
+    resolveThreads([]);
+    expect(
+      await screen.findByRole('heading', { name: 'Start a conversation' }),
+    ).toBeInTheDocument();
+    await expectNoA11yViolations(container);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Create conversation' }),
+    );
+    expect(screen.getByLabelText('Message')).toBeEnabled();
+    expect(
+      screen.queryByRole('heading', { name: 'Start a conversation' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('explains an empty conversation list without inventing a create capability', async () => {
+    const transport: AssistantTransport = {
+      async listThreads() {
+        return [];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+
+    render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+      },
+    });
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'No conversations available',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Create conversation' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toBeDisabled();
+  });
+
+  it('server context keeps transport errors visible', async () => {
+    const transport: AssistantTransport = {
+      async listThreads() {
+        throw new Error('server unavailable');
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+    render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+      },
+    });
+
+    expect(
+      await screen.findByText(/Something went wrong: server unavailable/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /conversation/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Nothing on this page can be changed from the chat/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('returns to loading and neutral guidance when the transport context changes', async () => {
+    const registry = createDataSurfaceRegistry();
+    const original: AssistantTransport = {
+      async listThreads() {
+        return [
+          {
+            id: 'tenant-a-session',
+            title: 'Tenant A assistant',
+            isResolved: false,
+            messageCount: 0,
+          },
+        ];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+    let resolveReplacement!: (
+      threads: Awaited<ReturnType<AssistantTransport['listThreads']>>,
+    ) => void;
+    const replacement: AssistantTransport = {
+      listThreads: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveReplacement = resolve;
+          }),
+      ),
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+
+    const { rerender } = render(AssistantDock, {
+      props: {
+        transport: original,
+        registry,
+        contextMode: 'server',
+      },
+    });
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Tenant A assistant' }),
+    );
+    expect(screen.getByLabelText('Message')).toBeEnabled();
+
+    await rerender({
+      transport: replacement,
+      registry,
+      contextMode: 'server',
+    });
+    expect(
+      screen.getByRole('status', { name: 'Loading conversations…' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Tenant A assistant' }),
+    ).not.toBeInTheDocument();
+
+    resolveReplacement([
+      {
+        id: 'tenant-b-session',
+        title: 'Tenant B assistant',
+        isResolved: false,
+        messageCount: 0,
+      },
+    ]);
+    expect(
+      await screen.findByRole('heading', { name: 'Choose a conversation' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Tenant B assistant' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Message')).toBeDisabled();
+  });
+
+  it('removes full-only controls and staged attachments on a reduced transport swap', async () => {
+    const registry = createDataSurfaceRegistry();
+    const full = createInMemoryAssistantTransport();
+    const reduced: AssistantTransport = {
+      async listThreads() {
+        return [
+          {
+            id: 'tenant-b-session',
+            title: 'Tenant B',
+            isResolved: false,
+            messageCount: 0,
+          },
+        ];
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+    const { container, rerender } = render(AssistantDock, {
+      props: { transport: full, registry, contextMode: 'server' },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!fileInput) throw new Error('file input not found');
+    await userEvent.upload(
+      fileInput,
+      new File(['data'], 'tenant-a.png', { type: 'image/png' }),
+    );
+    expect(await screen.findByText('tenant-a.png')).toBeInTheDocument();
+
+    await rerender({ transport: reduced, registry, contextMode: 'server' });
+
+    expect(await screen.findByText('Tenant B')).toBeInTheDocument();
+    expect(screen.queryByText('tenant-a.png')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /New conversation/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Attach files/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    false,
+    true,
+  ])('isolates deferred upload rejection after transport replacement (reuse=%s)', async (reuseOriginal) => {
+    const registry = createDataSurfaceRegistry();
+    const original = createInMemoryAssistantTransport();
+    let rejectUpload!: (error: Error) => void;
+    const pendingUpload = new Promise<never>((_, reject) => {
+      rejectUpload = reject;
+    });
+    original.uploadAttachment = vi.fn(() => pendingUpload);
+    const replacement: AssistantTransport = {
+      async listThreads() {
+        throw new Error('Current context error');
+      },
+      async loadMessages() {
+        return [];
+      },
+      async sendMessage() {
+        return { inProgress: false };
+      },
+    };
+    const { container, rerender } = render(AssistantDock, {
+      props: { transport: original, registry, contextMode: 'server' },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('file input not found');
+    await userEvent.upload(
+      input,
+      new File(['a'], 'private-a.png', { type: 'image/png' }),
+    );
+    expect(original.uploadAttachment).toHaveBeenCalledTimes(1);
+    await rerender({ transport: replacement, registry, contextMode: 'server' });
+    if (reuseOriginal) {
+      original.listThreads = replacement.listThreads;
+      await rerender({ transport: original, registry, contextMode: 'server' });
+    }
+    expect(
+      await screen.findByText(/Something went wrong: Current context error/),
+    ).toBeInTheDocument();
+    rejectUpload(new Error('Private previous context error'));
+    await pendingUpload.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      screen.queryByText(/Private previous context error/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Something went wrong: Current context error/),
+    ).toBeInTheDocument();
+  });
+
+  it('clears staged attachments after registry-only replacement', async () => {
+    const transport = createInMemoryAssistantTransport();
+    const { container, rerender } = render(AssistantDock, {
+      props: {
+        transport,
+        registry: createDataSurfaceRegistry(),
+        contextMode: 'server',
+      },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('file input not found');
+    await userEvent.upload(
+      input,
+      new File(['a'], 'private-a.png', { type: 'image/png' }),
+    );
+    expect(await screen.findByText('private-a.png')).toBeInTheDocument();
+
+    await rerender({
+      transport,
+      registry: createDataSurfaceRegistry(),
+      contextMode: 'server',
+    });
+    expect(screen.queryByText('private-a.png')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    'resolve',
+    'reject',
+  ] as const)('isolates deferred upload %s after registry-only replacement', async (outcome) => {
+    const originalRegistry = createDataSurfaceRegistry();
+    const replacementRegistry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    const sendMessage = vi.spyOn(transport, 'sendMessage');
+    let resolveUpload!: (attachments: AssistantAttachmentRef[]) => void;
+    let rejectUpload!: (error: Error) => void;
+    const pendingUpload = new Promise<AssistantAttachmentRef[]>(
+      (resolve, reject) => {
+        resolveUpload = resolve;
+        rejectUpload = reject;
+      },
+    );
+    transport.uploadAttachment = vi.fn(async () => (await pendingUpload)[0]);
+    const { container, rerender } = render(AssistantDock, {
+      props: { transport, registry: originalRegistry, contextMode: 'server' },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('file input not found');
+    await userEvent.upload(
+      input,
+      new File(['a'], 'private-a.png', { type: 'image/png' }),
+    );
+    expect(transport.uploadAttachment).toHaveBeenCalledTimes(1);
+
+    await rerender({
+      transport,
+      registry: replacementRegistry,
+      contextMode: 'server',
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /^\+ New conversation$/i }),
+    );
+    if (outcome === 'resolve')
+      resolveUpload([{ id: 'private', name: 'private-a.png' }]);
+    else rejectUpload(new Error('Private previous context error'));
+    await pendingUpload.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText('private-a.png')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Private previous context error/),
+    ).not.toBeInTheDocument();
+    if (outcome === 'resolve') {
+      await userEvent.type(screen.getByLabelText('Message'), 'new context');
+      await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+      expect(sendMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({ attachments: [] }),
+      );
+    }
+  });
+
   it('loadThreads/loadModels fire exactly once per mount, and the registry subscription survives a send (F1)', async () => {
     const registry = createDataSurfaceRegistry();
     const transport = createInMemoryAssistantTransport({

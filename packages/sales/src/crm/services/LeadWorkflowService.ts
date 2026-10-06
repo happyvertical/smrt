@@ -25,6 +25,7 @@ import { SalesRepresentativeCollection } from '../collections/SalesRepresentativ
 import type { Lead } from '../models/Lead.js';
 import type { Opportunity } from '../models/Opportunity.js';
 import type { OpportunityConversion } from '../models/OpportunityConversion.js';
+import type { PipelineStage } from '../models/PipelineStage.js';
 import {
   permitSalesActivityWorkflowCompletion,
   type SalesActivity,
@@ -129,6 +130,8 @@ export interface CreateLeadInput {
   contactName?: string;
   phone?: string;
   organizationName?: string;
+  /** Optional host-authorized Profile identity for the prospect/requester. */
+  profileId?: string;
   sourceKind: string;
   sourceId?: string;
   acquisitionContext?: Record<string, unknown>;
@@ -161,6 +164,20 @@ export interface QualifyLeadResult {
   lead: Lead;
   opportunity: Opportunity;
   created: boolean;
+}
+
+export interface MoveOpportunityToStageInput {
+  opportunityId: string;
+  stageId: string;
+  actorProfileId: string;
+  probabilityOverride?: number;
+  now?: Date;
+}
+
+export interface MoveOpportunityToStageResult {
+  opportunity: Opportunity;
+  /** `false` for an exact retry of the current stage and probability. */
+  changed: boolean;
 }
 
 export interface OpportunityConversionInput {
@@ -276,6 +293,7 @@ export type LeadWorkflowValidationReason =
   | 'idempotency_conflict'
   | 'pipeline_unavailable'
   | 'pipeline_has_no_terminal_stage'
+  | 'stage_unavailable'
   | 'opportunity_unavailable'
   | 'invalid_value'
   | 'invalid_conversion'
@@ -319,6 +337,7 @@ interface NormalizedCreateLeadInput {
   contactName: string;
   phone: string;
   organizationName: string;
+  profileId: string;
   sourceKind: string;
   sourceId: string;
   acquisitionContext: Record<string, unknown>;
@@ -475,6 +494,7 @@ export class LeadWorkflowService {
         contactName: normalized.contactName,
         phone: normalized.phone,
         organizationName: normalized.organizationName,
+        ...(normalized.profileId ? { profileId: normalized.profileId } : {}),
         sourceKind: normalized.sourceKind,
         sourceId: normalized.sourceId,
         acquisitionContext: stableStringify(normalized.acquisitionContext),
@@ -592,6 +612,96 @@ export class LeadWorkflowService {
       tenantId,
     );
     return { lead, opportunity, created: result.created };
+  }
+
+  /** Move an open Opportunity between nonterminal stages in one transaction. */
+  async moveOpportunityToStage(
+    input: MoveOpportunityToStageInput,
+  ): Promise<MoveOpportunityToStageResult> {
+    const actorProfileId = this.requireIdentifier(
+      input.actorProfileId,
+      'actorProfileId',
+    );
+    if (!UUID_RE.test(input.opportunityId)) {
+      throw this.refusal(
+        'opportunity_unavailable',
+        'Opportunity is unavailable in the active tenant',
+      );
+    }
+    if (!UUID_RE.test(input.stageId)) {
+      throw this.refusal(
+        'stage_unavailable',
+        'Opportunity stage is unavailable in the active tenant',
+      );
+    }
+    if (
+      input.probabilityOverride !== undefined &&
+      (!Number.isFinite(input.probabilityOverride) ||
+        input.probabilityOverride < 0 ||
+        input.probabilityOverride > 1)
+    ) {
+      throw this.refusal(
+        'invalid_value',
+        'Opportunity probability must be between 0 and 1',
+      );
+    }
+    const tenantId = this.requireActiveTenant();
+    const result = await this.runMutation(async (deps, activeTenantId) => {
+      const opportunity = await this.lockOpportunity(
+        deps,
+        input.opportunityId,
+        activeTenantId,
+      );
+      if (opportunity.status !== 'open') {
+        throw this.refusal(
+          'invalid_transition',
+          `Opportunity cannot move stages while '${opportunity.status}'`,
+        );
+      }
+      const stage = await this.lockPipelineStage(
+        deps,
+        input.stageId,
+        activeTenantId,
+      );
+      if (
+        !stage ||
+        stage.tenantId !== activeTenantId ||
+        stage.pipelineId !== opportunity.pipelineId
+      ) {
+        throw this.refusal(
+          'stage_unavailable',
+          'Opportunity stage is unavailable in the active tenant and pipeline',
+        );
+      }
+      if (stage.isWon || stage.isLost) {
+        throw this.refusal(
+          'invalid_transition',
+          'Terminal Opportunity stages must use closeOpportunity()',
+        );
+      }
+      const probability = input.probabilityOverride ?? stage.probability;
+      if (opportunity.stageId === input.stageId) {
+        if (opportunity.probability !== probability) {
+          throw this.refusal(
+            'opportunity_replay_conflict',
+            'Opportunity is already at this stage with a different probability',
+          );
+        }
+        return { opportunityId: input.opportunityId, changed: false };
+      }
+      await deps.opportunities.moveToStage({
+        opportunityId: input.opportunityId,
+        stageId: input.stageId,
+        actorProfileId,
+        probabilityOverride: input.probabilityOverride,
+        now: input.now,
+      });
+      return { opportunityId: input.opportunityId, changed: true };
+    });
+    return {
+      opportunity: await this.readOpportunity(result.opportunityId, tenantId),
+      changed: result.changed,
+    };
   }
 
   /** Close an opportunity at its configured terminal stage and optionally link conversion. */
@@ -1178,6 +1288,34 @@ export class LeadWorkflowService {
     );
   }
 
+  private async lockPipelineStage(
+    deps: LeadWorkflowTransactionDeps,
+    stageId: string,
+    tenantId: string,
+  ): Promise<PipelineStage> {
+    if (deps.supportsRowLocks) {
+      const rows = await deps.stages.query(
+        `SELECT * FROM ${deps.stages.tableName}
+         WHERE id = $1 AND tenant_id = $2
+         FOR UPDATE`,
+        [stageId, tenantId],
+        { allowRawOnTenantScoped: true },
+      );
+      const stage = rows[0];
+      if (stage && stage.tenantId === tenantId) return stage;
+      throw this.refusal(
+        'stage_unavailable',
+        'Opportunity stage is unavailable in the active tenant and pipeline',
+      );
+    }
+    const stage = await deps.stages.get({ id: stageId }, { cache: false });
+    if (stage && stage.tenantId === tenantId) return stage;
+    throw this.refusal(
+      'stage_unavailable',
+      'Opportunity stage is unavailable in the active tenant and pipeline',
+    );
+  }
+
   private async lockOperationFence(
     deps: LeadWorkflowTransactionDeps,
     key: string,
@@ -1327,6 +1465,10 @@ export class LeadWorkflowService {
     const ownerRepId = input.ownerRepId
       ? this.requireIdentifier(input.ownerRepId, 'ownerRepId')
       : '';
+    const profileId =
+      input.profileId !== undefined
+        ? this.requireIdentifier(input.profileId, 'profileId')
+        : '';
     const actorProfileId = input.actorProfileId
       ? this.requireIdentifier(input.actorProfileId, 'actorProfileId')
       : '';
@@ -1340,6 +1482,7 @@ export class LeadWorkflowService {
       contactName: input.contactName?.trim() ?? '',
       phone,
       organizationName: input.organizationName?.trim() ?? '',
+      profileId,
       sourceKind,
       sourceId: input.sourceId?.trim() ?? '',
       acquisitionContext,
@@ -1357,6 +1500,7 @@ export class LeadWorkflowService {
         contactName: normalized.contactName,
         phone: normalized.phone,
         organizationName: normalized.organizationName,
+        ...(normalized.profileId ? { profileId: normalized.profileId } : {}),
         sourceKind: normalized.sourceKind,
         sourceId: normalized.sourceId,
         acquisitionContext: normalized.acquisitionContext,

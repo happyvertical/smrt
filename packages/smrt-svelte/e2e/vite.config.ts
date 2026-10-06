@@ -17,6 +17,7 @@ export default defineConfig({
         'mcp-apps-bridge-child',
         'file-upload',
         'activity-ticker',
+        'phone-heading',
       ].map((entry) =>
         fileURLToPath(new URL(`./${entry}.html`, import.meta.url)),
       ),

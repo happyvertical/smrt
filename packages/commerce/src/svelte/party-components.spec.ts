@@ -1,4 +1,5 @@
 import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
+import { createRawSnippet } from 'svelte';
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
 import CustomActionsFormHarness from '../../party-browser/CustomActionsFormHarness.svelte';
@@ -124,6 +125,64 @@ describe('customer and vendor SSR surfaces', () => {
         props: { errorMessage: 'Service unavailable' },
       }).body,
     ).toContain('Service unavailable');
+  });
+
+  it('distinguishes first-use, filtered, overridden, and restricted-creator empty guidance', () => {
+    const creatable = render(CustomerDirectory, {
+      props: {
+        items: [],
+        canCreate: true,
+        addHref: '/clients/new',
+        labels: { singular: 'Client', plural: 'Clients' },
+      },
+    }).body;
+    expect(creatable).toContain('Add the first Client to get started.');
+
+    const restricted = render(VendorDirectory, {
+      props: { items: [], canCreate: false },
+    }).body;
+    expect(restricted).toContain('No Vendors have been added yet.');
+    expect(restricted).not.toContain('Add the first');
+
+    expect(
+      render(CustomerDirectory, { props: { items: [], query: 'missing' } })
+        .body,
+    ).toContain('Try changing the search or filters.');
+    expect(
+      render(VendorDirectory, { props: { items: [], status: 'inactive' } })
+        .body,
+    ).toContain('Try changing the search or filters.');
+    expect(
+      render(VendorDirectory, {
+        props: { items: [], emptyDescription: 'No approved suppliers yet.' },
+      }).body,
+    ).toContain('No approved suppliers yet.');
+  });
+
+  it('renders caller filters inside the native directory form without duplicate hidden names', () => {
+    const filters = createRawSnippet(() => ({
+      render: () =>
+        '<label>Trade<select name="trade"><option value="electrical" selected>Electrical</option></select></label>',
+    }));
+    const html = render(VendorDirectory, {
+      props: {
+        items: [],
+        filters,
+        filterNames: ['trade'],
+        hasAdditionalFilters: true,
+        hiddenFields: { trade: 'ignored', direction: 'asc' },
+      },
+    }).body;
+
+    expect(html).toContain('Try changing the search or filters.');
+    expect(html.match(/name="trade"/g)).toHaveLength(1);
+    expect(html).not.toContain('value="ignored"');
+    expect(html).toMatch(
+      /<form[^>]*>.*name="q".*name="status".*name="trade".*type="submit".*<\/form>/,
+    );
+    expect(html).toMatch(
+      /<input(?=[^>]*name="direction")(?=[^>]*value="asc")[^>]*>/,
+    );
   });
 
   it('carries caller search state without overriding customer or vendor filters', () => {

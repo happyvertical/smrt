@@ -44,6 +44,8 @@ export type {
   LeadWorkQueueProjection,
   LeadWorkQueueState,
   LeadWorkState,
+  MoveOpportunityToStageInput,
+  MoveOpportunityToStageResult,
   OpportunityConversionInput,
   QualifyLeadInput,
   QualifyLeadResult,

@@ -27,6 +27,7 @@ const { t } = useI18n();
   {#if model.kind === 'detail'}
     <a
       class="smrt-phone-top-bar__back"
+      data-shell-page-navigation-replacement
       href={model.backHref}
       aria-label={t(M['ui.phone_top_bar.back'], { label: model.backLabel })}
     >
@@ -44,7 +45,7 @@ const { t } = useI18n();
         <path d="m12 19-7-7 7-7M19 12H5" />
       </svg>
     </a>
-    <span class="smrt-phone-top-bar__title">{model.title}</span>
+    <span class="smrt-phone-top-bar__title" data-shell-page-title-replacement>{model.title}</span>
   {:else}
     <ShellTitle title={model.title} href={homeHref} />
   {/if}

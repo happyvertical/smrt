@@ -55,6 +55,7 @@ export { brandTheme };
 <!-- +layout.svelte -->
 <script>
   import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+  import '@happyvertical/smrt-ui/themes/styles/base.css';
   import '@happyvertical/smrt-ui/themes/styles/all.css';
   import '$lib/themes/brand'; // Import to register
 </script>
@@ -244,6 +245,7 @@ Best for static sites or when you want minimal JavaScript overhead.
 <!-- +layout.svelte -->
 <script>
   // Import only the theme you need
+  import '@happyvertical/smrt-ui/themes/styles/base.css';
   import '@happyvertical/smrt-ui/themes/styles/material.css';
 </script>
 
@@ -276,6 +278,9 @@ For maximum performance, use CSS only with media queries:
 Import the theme styles in your app entry point:
 
 ```ts
+// Recommended application sizing, surface, and typography defaults
+import '@happyvertical/smrt-ui/themes/styles/base.css';
+
 // Import all themes (for runtime switching)
 import '@happyvertical/smrt-ui/themes/styles/all.css';
 

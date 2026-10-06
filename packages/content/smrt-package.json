@@ -1,0 +1,174 @@
+{
+  "$schema": "../../docs/adr/0003-smrt-package.schema.json",
+  "$comment": "PROPOSED, INERT. Reference descriptor drafted for docs/adr/0003-smrt-add-declarative-package-install.md. Nothing reads this file until `smrt add` ships; it is not in package.json `files` or `exports`, so it is not published. `./sveltekit#loadPublishedArticlePage` and the `./sveltekit` subpath do not exist yet: the reference-package follow-up adds them.",
+  "descriptorVersion": 1,
+  "package": "@happyvertical/smrt-content",
+  "requires": {
+    "smrt": ">=0.55.0"
+  },
+  "ui": {
+    "register": ["./svelte"]
+  },
+  "pages": [
+    {
+      "id": "content.workspace",
+      "title": "Contents",
+      "description": "Author, review, and publish content records.",
+      "path": "/content",
+      "component": "./svelte#ContentWorkspaceRoute",
+      "permissions": ["contents.read"],
+      "routes": ["@happyvertical/smrt-content:Content"],
+      "props": {
+        "apiBaseUrl": { "$mount": "routesBase" },
+        "navigation": { "$mount": "navigation" },
+        "embedded": true
+      },
+      "nav": {
+        "label": "Content",
+        "description": "Authoring and publishing workspace",
+        "icon": "file-text",
+        "order": 10,
+        "group": "content"
+      }
+    },
+    {
+      "id": "content.facts",
+      "title": "Fact Catalog",
+      "description": "Browse extracted facts and confirm what content can cite.",
+      "path": "/content/facts",
+      "component": "./svelte#ContentFactsRoute",
+      "permissions": ["contents.browseFacts"],
+      "routes": ["@happyvertical/smrt-content:Content"],
+      "packages": ["@happyvertical/smrt-facts"],
+      "props": {
+        "apiBaseUrl": { "$mount": "routesBase" },
+        "navigation": { "$mount": "navigation" },
+        "embedded": true
+      },
+      "nav": {
+        "label": "Facts",
+        "description": "Indexed facts and confidence",
+        "icon": "sparkles",
+        "order": 15,
+        "group": "content"
+      }
+    },
+    {
+      "id": "content.governance",
+      "title": "Governance Admin",
+      "description": "Review policies, profiles, and publication assignments.",
+      "path": "/content/governance",
+      "component": "./svelte#ContentGovernanceRoute",
+      "permissions": [
+        "contentgovernanceassignments.read",
+        "contentgovernancepolicies.read",
+        "contentgovernanceprofiles.read"
+      ],
+      "routes": [
+        "@happyvertical/smrt-content:ContentGovernanceAssignment",
+        "@happyvertical/smrt-content:ContentGovernancePolicy",
+        "@happyvertical/smrt-content:ContentGovernanceProfile"
+      ],
+      "props": {
+        "apiBaseUrl": { "$mount": "routesBase" },
+        "navigation": { "$mount": "navigation" },
+        "embedded": true
+      },
+      "nav": {
+        "label": "Governance",
+        "description": "Policy, profile, and assignment management",
+        "icon": "shield-check",
+        "order": 20,
+        "group": "content"
+      }
+    },
+    {
+      "id": "content.contributions",
+      "title": "Contribution Intake and Review",
+      "description": "Contributor submissions, moderation, and promotion.",
+      "path": "/content/contributions",
+      "component": "./svelte#ContentContributionsRoute",
+      "permissions": ["contentcontributions.read"],
+      "routes": [
+        "@happyvertical/smrt-content:ContentContribution",
+        "@happyvertical/smrt-content:ContentContributionType",
+        "@happyvertical/smrt-content:ContentContributor"
+      ],
+      "props": {
+        "apiBaseUrl": { "$mount": "routesBase" },
+        "navigation": { "$mount": "navigation" },
+        "embedded": true
+      },
+      "nav": {
+        "label": "Contributions",
+        "description": "Contributor intake, moderation, and promotion",
+        "icon": "inbox",
+        "order": 30,
+        "group": "content"
+      }
+    },
+    {
+      "id": "content.article",
+      "title": "Published article",
+      "description": "A published content record with its transparency report.",
+      "path": "/articles/[slug]",
+      "component": "./svelte#PublishedArticleRoute",
+      "load": "./sveltekit#loadPublishedArticlePage",
+      "permissions": ["contents.read"],
+      "props": {
+        "backHref": { "$mount": "href:content.workspace" }
+      },
+      "nav": false
+    }
+  ],
+  "assistantTools": [
+    {
+      "tool": "contents.read",
+      "reason": "Find and summarise the tenant's content."
+    },
+    {
+      "tool": "contents.create",
+      "reason": "Draft a new content record when asked."
+    },
+    {
+      "tool": "contents.update",
+      "reason": "Edit a draft when asked."
+    }
+  ],
+  "extensions": [
+    {
+      "model": "@happyvertical/smrt-content:Article",
+      "strategies": ["sti"],
+      "description": "A local article type stored in the contents table, e.g. NewsArticle."
+    },
+    {
+      "model": "@happyvertical/smrt-content:Content",
+      "strategies": ["sti", "reference"],
+      "description": "A local content type, or a local model that references content."
+    }
+  ],
+  "presets": {
+    "workspace": {
+      "description": "Authoring workspace and published article pages.",
+      "pages": ["content.workspace", "content.article"],
+      "assistantTools": ["contents.read"]
+    },
+    "governed": {
+      "description": "The workspace plus review governance administration.",
+      "pages": ["content.workspace", "content.article", "content.governance"],
+      "assistantTools": ["contents.read"]
+    },
+    "editorial": {
+      "description": "Governed workspace plus contributor intake and the fact catalog.",
+      "pages": [
+        "content.workspace",
+        "content.article",
+        "content.governance",
+        "content.contributions",
+        "content.facts"
+      ],
+      "assistantTools": ["contents.read", "contents.create", "contents.update"]
+    }
+  },
+  "defaultPreset": "workspace"
+}

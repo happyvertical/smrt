@@ -18,6 +18,8 @@
 // These exports are for TypeScript module resolution
 
 export const themeStyles = {
+  /** Application sizing, surface, typography, and form-control baseline. */
+  base: './base.css',
   material: './material.css',
   glass: './glass.css',
   studio: './studio.css',

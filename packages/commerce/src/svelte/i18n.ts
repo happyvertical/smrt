@@ -30,6 +30,9 @@ export const M = defineMessages({
   'commerce.party.amount_unavailable': 'Amount unavailable',
   'commerce.party.no_contact_details': 'No contact details recorded',
   'commerce.party.try_filters': 'Try changing the search or filters.',
+  'commerce.party.empty_initial': 'No {plural} have been added yet.',
+  'commerce.party.empty_initial_create':
+    'Add the first {singular} to get started.',
   'commerce.party.search': 'Search',
   'commerce.party.cancel': 'Cancel',
   'commerce.party.previous': 'Previous',

@@ -10,12 +10,17 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
+import {
+  formatInvoiceMinorUnits,
+  type RetainedInvoiceLineItemsView,
+  type RetainedInvoiceLineView,
+} from '../invoice-display.js';
 import type { LineItem } from '../types.js';
 
 const { t } = useI18n();
 
 /** Props for InvoiceLineItems component */
-export interface Props {
+export interface LegacyInvoiceLineItemsProps {
   /** Line items to display */
   items: LineItem[];
   /** Enable editing mode */
@@ -34,16 +39,32 @@ export interface Props {
   emptyMessage?: string;
 }
 
-const {
-  items,
-  editable = false,
-  currency = 'CAD',
-  onupdate,
-  ondelete,
-  onadd,
-  showSource = false,
-  emptyMessage = 'No line items',
-}: Props = $props();
+/** Exact retained line-items branch. */
+export interface RetainedInvoiceLineItemsProps {
+  /** Caller-authoritative retained line items and subtotal. */
+  retained: RetainedInvoiceLineItemsView;
+  /** Renders additional retained evidence for each line. */
+  details?: Snippet<[RetainedInvoiceLineView]>;
+  /** Empty state message. */
+  emptyMessage?: string;
+}
+
+/** Legacy decimal-major items or exact retained items. */
+export type Props = LegacyInvoiceLineItemsProps | RetainedInvoiceLineItemsProps;
+
+const props: Props = $props();
+const retained = $derived('retained' in props ? props.retained : null);
+const details = $derived('details' in props ? props.details : undefined);
+const legacy = $derived(
+  retained ? null : (props as LegacyInvoiceLineItemsProps),
+);
+const items = $derived(legacy?.items ?? []);
+const editable = $derived(legacy?.editable ?? false);
+const currency = $derived(legacy?.currency ?? 'CAD');
+const ondelete = $derived(legacy?.ondelete);
+const onadd = $derived(legacy?.onadd);
+const showSource = $derived(legacy?.showSource ?? false);
+const emptyMessage = $derived(props.emptyMessage ?? 'No line items');
 
 // Format decimal-dollar amounts. The commerce models store DECIMAL dollars
 // (AGENTS.md "Currency in decimal fields"), not integer cents.
@@ -67,7 +88,34 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 </script>
 
 <div class="line-items-container">
-  {#if items.length === 0}
+  {#if retained}
+    {#if retained.lines.length === 0}
+      <div class="empty-state"><p>{emptyMessage}</p></div>
+    {:else}
+      <table class="line-items-table">
+        <thead><tr><th class="col-description">Description</th><th class="col-source">Source</th><th class="col-qty">Qty</th><th class="col-price">{t(M['commerce.invoice_line_items.unit_price'])}</th><th class="col-amount">Amount</th></tr></thead>
+        <tbody>
+          {#each retained.lines as line (line.id)}
+            <tr>
+              <td class="col-description">
+                {#if line.category}<span class="item-category">{line.category}</span>{/if}
+                <span class="item-description">{line.description}</span>
+                {#if line.discountLabel}<span>{line.discountLabel}</span>{/if}
+                {#each line.taxLabels ?? [] as tax}<span>{tax}</span>{/each}
+                {#if line.correctionLabel}<span>{line.correctionLabel}</span>{/if}
+                {@render details?.(line)}
+              </td>
+              <td class="col-source">{line.sourceLabel ?? '—'}</td>
+              <td class="col-qty">{line.quantity}</td>
+              <td class="col-price">{line.unitPriceMinor === undefined || line.unitPriceMinor === null ? '—' : formatInvoiceMinorUnits(line.unitPriceMinor, retained.currency)}</td>
+              <td class="col-amount">{formatInvoiceMinorUnits(line.amountMinor, retained.currency)}</td>
+            </tr>
+          {/each}
+        </tbody>
+        <tfoot><tr class="total-row"><td colspan="4" class="total-label">Subtotal</td><td class="col-amount">{formatInvoiceMinorUnits(retained.subtotalMinor, retained.currency)}</td></tr></tfoot>
+      </table>
+    {/if}
+  {:else if items.length === 0}
     <div class="empty-state">
       <p>{emptyMessage}</p>
       {#if editable && onadd}

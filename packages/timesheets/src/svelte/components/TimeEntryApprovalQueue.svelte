@@ -13,12 +13,18 @@
 import { Button, StatusBadge } from '@happyvertical/smrt-ui';
 import { Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
 import {
   humanizeTimeEntryStatus,
   type TimeEntryApprovalView,
   timeEntryStatusBadgeKey,
 } from '../types.js';
+import {
+  currencyMinorUnitExponent,
+  formatHours,
+  type HoursFormatter,
+} from './utils.js';
 
 const { t } = useI18n();
 
@@ -31,6 +37,12 @@ export interface TimeEntryApprovalQueueProps {
   onreject?: (id: string, reason: string) => void;
   /** Message displayed when the approval queue is empty. */
   emptyMessage?: string;
+  /** Formats decimal hours; defaults to the legacy one-decimal display. */
+  hoursFormatter?: HoursFormatter;
+  /** Renders caller-owned evidence for each entry. */
+  details?: Snippet<[TimeEntryApprovalView]>;
+  /** Replaces callback actions with caller-owned controls, including native forms. */
+  actions?: Snippet<[TimeEntryApprovalView]>;
 }
 
 const {
@@ -38,6 +50,9 @@ const {
   onapprove,
   onreject,
   emptyMessage,
+  hoursFormatter = formatHours,
+  details,
+  actions,
 }: TimeEntryApprovalQueueProps = $props();
 
 /** The entry currently collecting a rejection reason (one at a time). */
@@ -61,10 +76,6 @@ function confirmReject(id: string): void {
   cancelReject();
 }
 
-function formatHours(hours: number): string {
-  return `${hours.toFixed(1)}h`;
-}
-
 /**
  * Render a minor-units charge for display.
  *
@@ -76,11 +87,7 @@ function formatHours(hours: number): string {
  * and the host app supplies the label.
  */
 function formatAmount(amount: number, currency = 'USD'): string {
-  const digits =
-    new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-    }).resolvedOptions().maximumFractionDigits ?? 2;
+  const digits = currencyMinorUnitExponent(currency);
   return (amount / 10 ** digits).toFixed(digits);
 }
 </script>
@@ -102,7 +109,7 @@ function formatAmount(amount: number, currency = 'USD'): string {
             {/if}
           </span>
           <span class="time-approval-meta">
-            <span class="time-approval-hours">{formatHours(entry.hours)}</span>
+            <span class="time-approval-hours">{hoursFormatter(entry.hours)}</span>
             <StatusBadge
               status={timeEntryStatusBadgeKey(entry.status)}
               label={humanizeTimeEntryStatus(entry.status)}
@@ -115,9 +122,12 @@ function formatAmount(amount: number, currency = 'USD'): string {
             {/if}
           </span>
         </div>
+        {@render details?.(entry)}
         {#if entry.status === 'submitted'}
           <div class="time-approval-actions">
-            {#if rejectingId === entry.id}
+            {#if actions}
+              {@render actions(entry)}
+            {:else if rejectingId === entry.id}
               <Input
                 bind:value={rejectReason}
                 placeholder={t(M['timesheets.approval_queue.reason_placeholder'])}

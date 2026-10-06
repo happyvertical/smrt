@@ -84,6 +84,10 @@ export interface Props {
    * currently-mounted surfaces from this and fails closed when none are
    * registered. */
   registry: DataSurfaceRegistry;
+  /** Where the assistant obtains its working context. `data-surfaces` keeps
+   * the route-surface guidance; `server` is for transports whose authenticated
+   * backend supplies context and tools without browser data surfaces. */
+  contextMode?: 'data-surfaces' | 'server';
   /** Client-side seam to a server-hosted `DataSurfaceActionAdapter`; required
    * to preview/apply proposed actions, optional for plain chat. */
   actionClient?: AssistantActionClient;
@@ -169,6 +173,7 @@ export interface Props {
 const {
   transport,
   registry,
+  contextMode = 'data-surfaces',
   actionClient,
   surfaces,
   visible = true,
@@ -275,9 +280,14 @@ $effect(() => {
 // swap; everything inside stays `untrack`-ed so it does NOT also rerun on
 // unrelated $state changes elsewhere (preserving the F1 guarantee that the
 // mount effect above runs exactly once per mount).
+let uploadContextEpoch = $state(0);
+
 $effect(() => {
   void registry;
-  untrack(() => controller.syncRegistry());
+  untrack(() => {
+    uploadContextEpoch++;
+    controller.syncRegistry();
+  });
 });
 
 // Cycle-2 second final finding 1: a SEPARATE effect, scoped to only the
@@ -305,7 +315,10 @@ $effect(() => {
 // once per mount).
 $effect(() => {
   void transport;
-  untrack(() => controller.syncTransport());
+  untrack(() => {
+    uploadContextEpoch++;
+    controller.syncTransport();
+  });
 });
 
 // #3000: in a narrow container (below the `@container` breakpoint in the
@@ -337,6 +350,12 @@ function closeThreads() {
       document.getElementById(threadsToggleId)?.focus();
     }
   });
+}
+
+async function openThreads() {
+  threadsOpen = true;
+  await tick();
+  threadsEl?.querySelector<HTMLElement>('.assistant-thread-list-item')?.focus();
 }
 
 async function handleSelectThread(threadId: string) {
@@ -388,15 +407,28 @@ async function handleUpload(
   // returning [] here would make a failed upload look like a successful
   // empty batch. This handler ALSO records the failure on controller.error
   // so the dock-level banner matches the send path.
+  const uploadTransport = transport;
+  const uploadEpoch = uploadContextEpoch;
+  const isCurrentUpload = () =>
+    transport === uploadTransport && uploadContextEpoch === uploadEpoch;
   try {
+    const upload = uploadTransport.uploadAttachment;
+    if (!upload) {
+      throw new Error('AssistantDock: attachment upload is not supported');
+    }
     const uploaded: AssistantAttachmentRef[] = [];
     for (const file of Array.from(files)) {
-      uploaded.push(await transport.uploadAttachment(file));
+      uploaded.push(await upload.call(uploadTransport, file));
+      if (!isCurrentUpload()) return [];
     }
     controller.setError(null);
     return uploaded;
   } catch (error) {
-    controller.setError(error instanceof Error ? error.message : String(error));
+    if (isCurrentUpload()) {
+      controller.setError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
     throw error;
   }
 }
@@ -437,7 +469,7 @@ async function handleConfirmAction(requestId: string) {
         threads={controller.threads}
         activeThreadId={controller.activeThreadId}
         onselect={handleSelectThread}
-        oncreate={handleCreateThread}
+        oncreate={transport.createThread ? handleCreateThread : undefined}
       />
     </div>
 
@@ -459,13 +491,62 @@ async function handleConfirmAction(requestId: string) {
         </div>
       {/if}
 
-      {#if controller.surfaces.length === 0 && !pageTools}
+      {#if contextMode === 'data-surfaces' && controller.surfaces.length === 0 && !pageTools}
         <p class="assistant-dock-empty">
           {t(M['chat.assistant_dock.no_surfaces'])}
         </p>
       {/if}
 
       <div class="assistant-dock-scroll">
+        {#if !controller.activeThreadId && controller.threadsLoading}
+          <div
+            class="assistant-dock-thread-state assistant-dock-thread-loading"
+            role="status"
+            aria-label={t(M['chat.assistant_dock.loading_conversations'])}
+          >
+            <p>{t(M['chat.assistant_dock.loading_conversations'])}</p>
+          </div>
+        {:else if !controller.activeThreadId && !controller.error}
+          <section
+            class="assistant-dock-thread-state"
+            aria-labelledby={`${threadsId}-empty-title`}
+          >
+            {#if controller.threads.length > 0}
+              <h2 id={`${threadsId}-empty-title`}>
+                {t(M['chat.assistant_dock.choose_conversation'])}
+              </h2>
+              <p>{t(M['chat.assistant_dock.choose_conversation_hint'])}</p>
+              <div class="assistant-dock-thread-state-actions">
+                <Button
+                  type="button"
+                  aria-controls={threadsId}
+                  onclick={openThreads}
+                >
+                  {t(M['chat.assistant_dock.view_conversations'])}
+                </Button>
+                {#if transport.createThread}
+                  <Button type="button" variant="ghost" onclick={handleCreateThread}>
+                    {t(M['chat.assistant_dock.start_new_conversation'])}
+                  </Button>
+                {/if}
+              </div>
+            {:else if transport.createThread}
+              <h2 id={`${threadsId}-empty-title`}>
+                {t(M['chat.assistant_dock.start_conversation'])}
+              </h2>
+              <p>{t(M['chat.assistant_dock.start_conversation_hint'])}</p>
+              <Button type="button" onclick={handleCreateThread}>
+                {t(M['chat.assistant_dock.start_new_conversation'])}
+              </Button>
+            {:else}
+              <h2 id={`${threadsId}-empty-title`}>
+                {t(M['chat.assistant_dock.no_conversations'])}
+              </h2>
+              <p>{t(M['chat.assistant_dock.no_conversations_hint'])}</p>
+            {/if}
+          </section>
+        {/if}
+
         <ul class="assistant-dock-messages">
           {#each controller.messages as message (message.id)}
             <li>
@@ -658,17 +739,19 @@ async function handleConfirmAction(requestId: string) {
             />
           </div>
         {/if}
-        <AssistantComposer
-          bind:value={
-            () => controller.draft, (text) => controller.setDraft(text)
-          }
-          onsend={handleSend}
-          onupload={handleUpload}
-          disabled={!controller.activeThreadId}
-          placeholder={composerPlaceholder}
-          {dictation}
-          {transcribe}
-        />
+        {#key uploadContextEpoch}
+          <AssistantComposer
+            bind:value={
+              () => controller.draft, (text) => controller.setDraft(text)
+            }
+            onsend={handleSend}
+            onupload={transport.uploadAttachment ? handleUpload : undefined}
+            disabled={!controller.activeThreadId}
+            placeholder={composerPlaceholder}
+            {dictation}
+            {transcribe}
+          />
+        {/key}
       </div>
     </div>
   </div>
@@ -844,6 +927,45 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-thread-state {
+    flex: 1;
+    min-height: 10rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-5, 20px);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    text-align: center;
+  }
+
+  .assistant-dock-thread-state h2,
+  .assistant-dock-thread-state p {
+    margin: 0;
+  }
+
+  .assistant-dock-thread-state h2 {
+    color: var(--smrt-color-on-surface, #1a1c1e);
+    font: var(--smrt-typography-title-medium-font, 600 1rem/1.4 sans-serif);
+  }
+
+  .assistant-dock-thread-state p {
+    max-width: 28rem;
+    font: var(--smrt-typography-body-medium-font, 0.875rem/1.5 sans-serif);
+  }
+
+  .assistant-dock-thread-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-thread-loading {
+    min-height: 4rem;
   }
 
   .assistant-dock-tool-call {
