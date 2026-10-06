@@ -19,7 +19,13 @@
  * deterministic.
  */
 
+import { randomUUID } from 'node:crypto';
 import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -45,6 +51,7 @@ import {
 import {
   type Lead,
   LeadCollection,
+  LeadWorkflowService,
   type Opportunity,
   OpportunityCollection,
   OpportunityConversionCollection,
@@ -1020,5 +1027,64 @@ describe('epic tracer (#1935): referred Opportunity → explainable payable Comm
     expect(
       await commissions.list({ where: { earnerId: repEarner.id } }),
     ).toHaveLength(0);
+  });
+});
+
+describe('epic tracer (#3540): generic intake → inbox → won conversion', () => {
+  it('takes a web-form-style source through the public CRM workflow', async () => {
+    enableTenancy();
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const tenantId = randomUUID();
+    const actorProfileId = randomUUID();
+    try {
+      const service = await LeadWorkflowService.create({ db });
+      const leads = await LeadCollection.create({ db });
+      const intake = await withTenant({ tenantId }, () =>
+        service.createLead({
+          name: 'Website prospect',
+          contactName: 'Taylor Prospect',
+          email: ' TAYLOR@example.test ',
+          sourceKind: 'web_form',
+          sourceId: 'contact-42',
+          acquisitionContext: { page: '/contact' },
+          idempotencyKey: 'contact-42',
+          actorProfileId,
+        }),
+      );
+      expect(intake.created).toBe(true);
+      expect(intake.lead.email).toBe('taylor@example.test');
+
+      const inbox = await withTenant({ tenantId }, () =>
+        leads.listInbox({ status: 'new', limit: 10, offset: 0 }),
+      );
+      expect(inbox.leads.map((row) => row.id)).toEqual([intake.lead.id]);
+
+      const qualified = await withTenant({ tenantId }, () =>
+        service.qualifyLead({
+          leadId: intake.lead.id as string,
+          actorProfileId,
+          expectedValueCents: 250_000,
+        }),
+      );
+      const closed = await withTenant({ tenantId }, () =>
+        service.closeOpportunity({
+          opportunityId: qualified.opportunity.id as string,
+          outcome: 'won',
+          actorProfileId,
+          conversion: {
+            targetKind: 'client',
+            targetId: 'website-client-42',
+          },
+        }),
+      );
+      expect(closed.opportunity.status).toBe('won');
+      expect(closed.conversion).toMatchObject({
+        targetKind: 'client',
+        targetId: 'website-client-42',
+      });
+    } finally {
+      disableTenancy();
+      await db.close?.();
+    }
   });
 });

@@ -5,11 +5,20 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { getTenantId, TenantContextError } from '@happyvertical/smrt-tenancy';
 import { Lead } from '../models/Lead.js';
 import type { Opportunity } from '../models/Opportunity.js';
 import type { PipelineDefinition } from '../models/PipelineDefinition.js';
 import type { PipelineStage } from '../models/PipelineStage.js';
 import type { SalesActivity } from '../models/SalesActivity.js';
+import type { SalesRepresentative } from '../models/SalesRepresentative.js';
+import {
+  emptyLeadInboxStatusCounts,
+  type LeadInboxOptions,
+  type LeadInboxResult,
+  type NormalizedLeadInboxOptions,
+  normalizeLeadInboxOptions,
+} from '../services/lead-inbox.js';
 import type {
   LeadStatus,
   MergeLeadsParams,
@@ -19,6 +28,7 @@ import type {
 import { OpportunityCollection } from './OpportunityCollection.js';
 import { PipelineDefinitionCollection } from './PipelineDefinitionCollection.js';
 import { SalesActivityCollection } from './SalesActivityCollection.js';
+import { SalesRepresentativeCollection } from './SalesRepresentativeCollection.js';
 
 /**
  * Winner contact fields that {@link LeadCollection.mergeLeads} fills from the
@@ -49,12 +59,16 @@ export class LeadCollection extends SmrtCollection<Lead> {
     null;
   private activityCollectionPromise: Promise<SalesActivityCollection> | null =
     null;
+  private representativeCollectionPromise: Promise<SalesRepresentativeCollection> | null =
+    null;
 
   /** Sibling opportunity collection sharing this collection's DB connection. */
   private async getOpportunityCollection(): Promise<OpportunityCollection> {
     if (!this.opportunityCollectionPromise) {
       this.opportunityCollectionPromise = OpportunityCollection.create({
         db: this.db,
+        _reuseInitializedDb: true,
+        _deferRuntimeInitialization: true,
       });
     }
     return this.opportunityCollectionPromise;
@@ -65,6 +79,8 @@ export class LeadCollection extends SmrtCollection<Lead> {
     if (!this.pipelineCollectionPromise) {
       this.pipelineCollectionPromise = PipelineDefinitionCollection.create({
         db: this.db,
+        _reuseInitializedDb: true,
+        _deferRuntimeInitialization: true,
       });
     }
     return this.pipelineCollectionPromise;
@@ -75,9 +91,24 @@ export class LeadCollection extends SmrtCollection<Lead> {
     if (!this.activityCollectionPromise) {
       this.activityCollectionPromise = SalesActivityCollection.create({
         db: this.db,
+        _reuseInitializedDb: true,
+        _deferRuntimeInitialization: true,
       });
     }
     return this.activityCollectionPromise;
+  }
+
+  /** Sibling representative collection sharing this collection's DB connection. */
+  private async getRepresentativeCollection(): Promise<SalesRepresentativeCollection> {
+    if (!this.representativeCollectionPromise) {
+      this.representativeCollectionPromise =
+        SalesRepresentativeCollection.create({
+          db: this.db,
+          _reuseInitializedDb: true,
+          _deferRuntimeInitialization: true,
+        });
+    }
+    return this.representativeCollectionPromise;
   }
 
   /** Leads in a given lifecycle status, newest first. */
@@ -94,6 +125,142 @@ export class LeadCollection extends SmrtCollection<Lead> {
       where: { ownerRepId },
       orderBy: 'created_at DESC',
     });
+  }
+
+  /**
+   * Return one tenant's Lead inbox with exact pagination and tab counts.
+   *
+   * `total` applies every requested filter. `statusCounts` applies the same
+   * owner and search scope, but deliberately ignores status/unassigned/overdue
+   * so a host can switch tabs without issuing a second request. Search is a
+   * trimmed, case-insensitive literal substring across name, contact name,
+   * email, phone, and organization. `next_action` sorts the earliest open task
+   * first and places Leads without an open task last. Every order has an id
+   * tie-breaker, so offset pages remain stable while the underlying data does.
+   *
+   * The read performs a constant number of queries: page, counts, earliest
+   * open tasks, and owners. It requires ambient tenancy and applies an explicit
+   * tenant predicate to both Lead and activity SQL.
+   */
+  async listInbox(options: LeadInboxOptions): Promise<LeadInboxResult> {
+    const tenantId = getTenantId();
+    if (!tenantId) {
+      throw new TenantContextError(
+        'LeadCollection.listInbox: an ambient tenant context is required',
+      );
+    }
+    const normalized = normalizeLeadInboxOptions(options);
+    const now = normalized.now.toISOString();
+    const readScope = await this.resolveListReadPredicate();
+    const base = buildInboxBasePredicate(normalized, tenantId, readScope);
+    const tab = buildInboxTabPredicate(normalized, now);
+    const nextActionsCte = inboxNextActionsCte();
+    const orderBy = inboxOrderBy(normalized.sort);
+
+    const leads = await this.query(
+      `${nextActionsCte.sql}
+       SELECT l.*
+       FROM ${this.tableName} l
+       LEFT JOIN inbox_next_actions na ON na.subject_id = CAST(l.id AS TEXT)
+       WHERE (${base.sql}) AND (${tab.sql})
+       ORDER BY ${orderBy}
+       LIMIT ? OFFSET ?`,
+      [
+        tenantId,
+        ...base.values,
+        ...tab.values,
+        normalized.limit,
+        normalized.offset,
+      ],
+      { allowRawOnTenantScoped: true },
+    );
+    const visibleLeads = await readScope.finish(leads);
+
+    const countResult = await this.db.query(
+      `${nextActionsCte.sql}
+       SELECT l.status,
+              COUNT(*) AS status_count,
+              SUM(CASE WHEN l.owner_rep_id IS NULL OR CAST(l.owner_rep_id AS TEXT) = '' THEN 1 ELSE 0 END) AS unassigned_count,
+              SUM(CASE WHEN na.due_at < ? THEN 1 ELSE 0 END) AS overdue_count,
+              SUM(CASE WHEN ${tab.sql} THEN 1 ELSE 0 END) AS filtered_count
+       FROM ${this.tableName} l
+       LEFT JOIN inbox_next_actions na ON na.subject_id = CAST(l.id AS TEXT)
+       WHERE ${base.sql}
+       GROUP BY l.status`,
+      tenantId,
+      now,
+      ...tab.values,
+      ...base.values,
+    );
+    const statusCounts = emptyLeadInboxStatusCounts();
+    let total = 0;
+    for (const row of countResult.rows) {
+      const status = String(row.status);
+      if (status in statusCounts && status !== 'all') {
+        statusCounts[status as keyof typeof statusCounts] = toInboxCount(
+          row.status_count,
+        );
+      }
+      statusCounts.all += toInboxCount(row.status_count);
+      statusCounts.unassigned += toInboxCount(row.unassigned_count);
+      statusCounts.overdue += toInboxCount(row.overdue_count);
+      total += toInboxCount(row.filtered_count);
+    }
+
+    if (visibleLeads.length === 0) {
+      return { leads: visibleLeads, items: [], total, statusCounts };
+    }
+
+    const leadIds = visibleLeads.map((lead) =>
+      requireId(lead.id, 'inbox lead'),
+    );
+    const activities = await this.getActivityCollection();
+    const idPlaceholders = leadIds.map(() => '?').join(', ');
+    const nextActions = await activities.query(
+      `SELECT a.*
+       FROM sales_activities a
+       WHERE a.tenant_id = ?
+         AND a.subject_kind = 'lead'
+         AND a.activity_kind = 'task'
+         AND a.completed_at IS NULL
+         AND a.due_at IS NOT NULL
+         AND a.subject_id IN (${idPlaceholders})
+         AND NOT EXISTS (
+           SELECT 1 FROM sales_activities earlier
+           WHERE earlier.tenant_id = a.tenant_id
+             AND earlier.subject_kind = a.subject_kind
+             AND earlier.subject_id = a.subject_id
+             AND earlier.activity_kind = 'task'
+             AND earlier.completed_at IS NULL
+             AND earlier.due_at IS NOT NULL
+             AND (earlier.due_at < a.due_at OR (earlier.due_at = a.due_at AND earlier.id < a.id))
+         )`,
+      [tenantId, ...leadIds],
+      { allowRawOnTenantScoped: true },
+    );
+    const nextActionByLead = new Map<string, SalesActivity>(
+      nextActions.map((activity) => [activity.subjectId, activity]),
+    );
+
+    const ownerIds = [
+      ...new Set(
+        visibleLeads.map((lead) => lead.ownerRepId).filter((id) => id !== ''),
+      ),
+    ];
+    const owners = ownerIds.length
+      ? await (await this.getRepresentativeCollection()).listByIds(ownerIds)
+      : [];
+    const ownerById = new Map<string, SalesRepresentative>(
+      owners.map((owner) => [requireId(owner.id, 'inbox owner'), owner]),
+    );
+    const items = visibleLeads.map((lead) => ({
+      lead,
+      owner: ownerById.get(lead.ownerRepId) ?? null,
+      nextAction:
+        nextActionByLead.get(requireId(lead.id, 'inbox lead')) ?? null,
+    }));
+
+    return { leads: visibleLeads, items, total, statusCounts };
   }
 
   /**
@@ -194,6 +361,7 @@ export class LeadCollection extends SmrtCollection<Lead> {
       subjectId: leadId,
       activityKind: 'qualification',
       summary: `Qualified into opportunity '${opportunity.name}'`,
+      actorProfileId: params.actorProfileId ?? '',
       metadata: JSON.stringify({
         opportunityId,
         pipelineId: pipeline.id ?? '',
@@ -207,6 +375,7 @@ export class LeadCollection extends SmrtCollection<Lead> {
       subjectId: opportunityId,
       activityKind: 'qualification',
       summary: `Created from qualified lead '${lead.name}'`,
+      actorProfileId: params.actorProfileId ?? '',
       metadata: JSON.stringify({
         leadId,
         pipelineId: pipeline.id ?? '',
@@ -384,6 +553,96 @@ export class LeadCollection extends SmrtCollection<Lead> {
       orderBy: ['createdAt ASC', 'id ASC'],
     });
   }
+}
+
+interface InboxSqlPredicate {
+  sql: string;
+  values: unknown[];
+}
+
+function inboxNextActionsCte(): InboxSqlPredicate {
+  return {
+    sql: `WITH inbox_next_actions AS (
+      SELECT subject_id, MIN(due_at) AS due_at
+      FROM sales_activities
+      WHERE tenant_id = ?
+        AND subject_kind = 'lead'
+        AND activity_kind = 'task'
+        AND completed_at IS NULL
+        AND due_at IS NOT NULL
+      GROUP BY subject_id
+    )`,
+    values: [],
+  };
+}
+
+function buildInboxBasePredicate(
+  options: NormalizedLeadInboxOptions,
+  tenantId: string,
+  readScope: { sql: string; values: unknown[] },
+): InboxSqlPredicate {
+  const clauses = ['l.tenant_id = ?', `(${readScope.sql})`];
+  const values: unknown[] = [tenantId, ...readScope.values];
+  if (options.ownerRepId) {
+    clauses.push('l.owner_rep_id = ?');
+    values.push(options.ownerRepId);
+  }
+  if (options.search) {
+    const literal = options.search.toLowerCase().replace(/[!%_]/g, '!$&');
+    const match = `%${literal}%`;
+    clauses.push(`(
+      LOWER(COALESCE(l.name, '')) LIKE ? ESCAPE '!'
+      OR LOWER(COALESCE(l.contact_name, '')) LIKE ? ESCAPE '!'
+      OR LOWER(COALESCE(l.email, '')) LIKE ? ESCAPE '!'
+      OR LOWER(COALESCE(l.phone, '')) LIKE ? ESCAPE '!'
+      OR LOWER(COALESCE(l.organization_name, '')) LIKE ? ESCAPE '!'
+    )`);
+    values.push(match, match, match, match, match);
+  }
+  return { sql: clauses.join(' AND '), values };
+}
+
+function buildInboxTabPredicate(
+  options: NormalizedLeadInboxOptions,
+  now: string,
+): InboxSqlPredicate {
+  const clauses: string[] = [];
+  const values: unknown[] = [];
+  if (options.status) {
+    clauses.push('l.status = ?');
+    values.push(options.status);
+  }
+  if (options.unassigned) {
+    clauses.push(
+      "(l.owner_rep_id IS NULL OR CAST(l.owner_rep_id AS TEXT) = '')",
+    );
+  }
+  if (options.overdue) {
+    clauses.push('na.due_at < ?');
+    values.push(now);
+  }
+  return { sql: clauses.join(' AND ') || '1 = 1', values };
+}
+
+function inboxOrderBy(sort: NormalizedLeadInboxOptions['sort']): string {
+  switch (sort) {
+    case 'name':
+      return 'LOWER(l.name) ASC, l.id ASC';
+    case 'next_action':
+      return 'CASE WHEN na.due_at IS NULL THEN 1 ELSE 0 END ASC, na.due_at ASC, l.id ASC';
+    default:
+      return 'l.created_at DESC, l.id ASC';
+  }
+}
+
+function toInboxCount(value: unknown): number {
+  const count = Number(value ?? 0);
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new Error(
+      `LeadCollection.listInbox: database returned invalid count '${String(value)}'`,
+    );
+  }
+  return count;
 }
 
 export default LeadCollection;

@@ -242,6 +242,8 @@ export interface EnsureDefaultPipelineResult {
 /** Params for `LeadCollection.qualify()`. */
 export interface QualifyLeadParams {
   leadId: string;
+  /** Profile of the actor qualifying the lead, for both audit rows. */
+  actorProfileId?: string;
   /** Opportunity name; defaults to the lead's name. */
   opportunityName?: string;
   /** Target pipeline; defaults to the seeded default pipeline. */

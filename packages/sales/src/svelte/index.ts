@@ -22,6 +22,7 @@ import AttributionConflictQueue from './components/AttributionConflictQueue.svel
 import CommissionBreakdown from './components/CommissionBreakdown.svelte';
 import CommissionExpenseSummary from './components/CommissionExpenseSummary.svelte';
 import ExecutedAgreementsList from './components/ExecutedAgreementsList.svelte';
+import LeadCreateForm from './components/LeadCreateForm.svelte';
 import LeadDetail from './components/LeadDetail.svelte';
 import LeadList from './components/LeadList.svelte';
 import OpportunityBoard from './components/OpportunityBoard.svelte';
@@ -39,6 +40,7 @@ export {
   CommissionBreakdown,
   CommissionExpenseSummary,
   ExecutedAgreementsList,
+  LeadCreateForm,
   LeadDetail,
   LeadList,
   OpportunityBoard,
@@ -65,6 +67,7 @@ export type ExecutedAgreementsListProps = ComponentProps<
   typeof ExecutedAgreementsList
 >;
 export type LeadDetailProps = ComponentProps<typeof LeadDetail>;
+export type LeadCreateFormProps = ComponentProps<typeof LeadCreateForm>;
 export type LeadListProps = ComponentProps<typeof LeadList>;
 export type OpportunityBoardProps = ComponentProps<typeof OpportunityBoard>;
 export type OpportunityDetailProps = ComponentProps<typeof OpportunityDetail>;
@@ -105,10 +108,15 @@ export type {
   CurrencyAmount,
   DateInput,
   EarnerBalance,
+  LeadCreateDraft,
   LeadDetailView,
   LeadHumanActivityDraft,
+  LeadInboxFilter,
+  LeadInboxSort,
+  LeadLinkedOpportunityView,
   LeadListItemView,
   LeadNextActionDraft,
+  LeadSourceOptionView,
   LeadWorkflowActions,
   NextActionView,
   OpportunityCardView,

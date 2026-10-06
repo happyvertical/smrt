@@ -86,10 +86,10 @@ decimals from `0` to `1`; rounding occurs through the exported money helpers.
   agreement execution, and attribution have service-owned invariants that raw
   generated CRUD must not bypass.
 
-## Lead follow-up workflow
+## Lead intake and lifecycle
 
 `LeadWorkflowService` is the tenant-safe, application-facing seam for generic
-pre-qualification follow-up. Construct it with the host database inside an
+intake, follow-up, qualification, and opportunity closure. Construct it with the host database inside an
 active `withTenant()` context; the host supplies authorization, actor/profile
 ids, and view-model mapping.
 
@@ -107,11 +107,25 @@ await workflow.scheduleNextAction({
 ```
 
 The service atomically records assignment and status audit events, human
-activities, scheduled next actions, and monotonic task completion. Qualification
-and duplicate merge ownership remain respectively with `LeadCollection.qualify()`
-and `LeadCollection.mergeLeads()`. `LeadDetail` from the `/svelte` subpath is
-props- and callback-driven; it never fetches data or applies authorization/SLA
-policy.
+activities, scheduled next actions, and monotonic task completion.
+`createLead()` requires a name and email or phone, normalizes email, and supports
+active-lead deduplication and caller-supplied idempotency keys. A terminal duplicate
+is reported for the host to resolve explicitly. `qualifyLead()` delegates to
+`LeadCollection.qualify()` and returns the linked opportunity; `closeOpportunity()`
+selects the pipeline's won/lost stage and optionally records a won conversion
+link. CRM never creates the downstream target. Money remains integer cents via
+`expectedValueCents`; actor attribution uses `actorProfileId`.
+
+`LeadCollection.listInbox()` provides tenant-scoped filtering, sorting, counts,
+and pagination with batched owner/next-action reads. `getLeadWorkState()` includes
+the linked opportunity. Duplicate merging remains owned by
+`LeadCollection.mergeLeads()`.
+
+`LeadCreateForm`, `LeadList`, and `LeadDetail` from `/svelte` receive view data and
+callbacks. The host controls inbox filters and pagination, duplicate decisions,
+routes, authorization, and service invocation. Components never fetch data.
+See [the CRM contract](agents/crm.md) for retry and duplicate semantics and
+[the Svelte contract](agents/svelte.md) for the component surfaces.
 
 ## Agreement boundary
 

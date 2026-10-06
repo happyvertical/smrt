@@ -84,10 +84,50 @@ export interface LeadListItemView {
   ownerRepId?: string;
   ownerName?: string;
   status: LeadStatus;
+  /** Lead creation timestamp, used by inbox sort and received labels. */
+  createdAt?: DateInput;
+  /** Optional host-formatted received label. */
+  receivedLabel?: string;
   /** Set on terminal `merged` leads — id of the surviving lead. */
   mergedIntoId?: string;
   /** Earliest open next action, if any. */
   nextAction?: NextActionView | null;
+}
+
+/** Controlled inbox filter; unassigned and overdue are derived inbox views. */
+export type LeadInboxFilter = LeadStatus | 'all' | 'unassigned' | 'overdue';
+
+/** Controlled inbox ordering. */
+export type LeadInboxSort = 'created' | 'next_action' | 'name';
+
+/** One source choice for a host's lead intake form. */
+export interface LeadSourceOptionView {
+  /** Open-string source kind value. */
+  value: string;
+  /** Human label displayed to the user. */
+  label: string;
+}
+
+/** Draft emitted by {@link LeadCreateForm}. */
+export interface LeadCreateDraft {
+  /** Required display name. */
+  name: string;
+  /** Normalized email, when supplied. */
+  email?: string;
+  /** Optional contact person's name. */
+  contactName?: string;
+  /** Optional phone number. */
+  phone?: string;
+  /** Optional organization name. */
+  organizationName?: string;
+  /** Open-string source kind; defaults to the host's first option or `manual`. */
+  sourceKind: string;
+  /** Optional source record identifier. */
+  sourceId?: string;
+  /** Optional host-defined acquisition metadata. */
+  acquisitionContext?: Record<string, unknown>;
+  /** Initial owner representative id. */
+  ownerRepId?: string;
 }
 
 /** Header/facts view for the follow-up-focused {@link LeadDetail} surface. */
@@ -103,6 +143,20 @@ export interface LeadDetailView {
   ownerName?: string;
   /** Set when the Lead was folded into a surviving Lead. */
   mergedIntoId?: string;
+}
+
+/** Host-mapped linked opportunity displayed from {@link LeadDetail}. */
+export interface LeadLinkedOpportunityView {
+  /** Opportunity identifier. */
+  id: string;
+  /** Opportunity display name. */
+  name: string;
+  /** Current opportunity lifecycle status. */
+  status: OpportunityStatus;
+  /** Current stage label, when available. */
+  stageName?: string;
+  /** Optional host navigation target. */
+  href?: string;
 }
 
 /** Draft passed by {@link LeadDetail}'s human-activity form. */
