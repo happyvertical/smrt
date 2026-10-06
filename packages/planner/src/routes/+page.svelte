@@ -1,5 +1,4 @@
 <script lang="ts">
-import { goto } from '$app/navigation';
 import { humanize } from '$lib/data/format.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import { recipePackage, recipes } from '$lib/recipes/index.ts';
@@ -10,11 +9,13 @@ let notice = $state('');
 const label = (id: string) =>
   recipes.find((recipe) => recipe.id === id)?.label ?? id;
 
-async function add(id: string) {
+// Adding stays on the Planner: the recipe appears in the menu to explore
+// whenever the visitor likes, and the status line announces what was added.
+function add(id: string) {
+  const before = new Set(recipeState.ids);
   recipeState.add(id);
-  // The page changes, so a message here would never be read out; the recipe
-  // page shows what it needs. Open the options form for what was just added.
-  await goto(appHref(`/recipes/${id}/`));
+  const added = recipeState.ids.filter((x) => !before.has(x)).map(label);
+  notice = `Added ${added.join(' and ')} to the menu.`;
 }
 
 function remove(id: string) {
