@@ -84,6 +84,10 @@ export interface Props {
    * currently-mounted surfaces from this and fails closed when none are
    * registered. */
   registry: DataSurfaceRegistry;
+  /** Where the assistant obtains its working context. `data-surfaces` keeps
+   * the route-surface guidance; `server` is for transports whose authenticated
+   * backend supplies context and tools without browser data surfaces. */
+  contextMode?: 'data-surfaces' | 'server';
   /** Client-side seam to a server-hosted `DataSurfaceActionAdapter`; required
    * to preview/apply proposed actions, optional for plain chat. */
   actionClient?: AssistantActionClient;
@@ -169,6 +173,7 @@ export interface Props {
 const {
   transport,
   registry,
+  contextMode = 'data-surfaces',
   actionClient,
   surfaces,
   visible = true,
@@ -275,9 +280,14 @@ $effect(() => {
 // swap; everything inside stays `untrack`-ed so it does NOT also rerun on
 // unrelated $state changes elsewhere (preserving the F1 guarantee that the
 // mount effect above runs exactly once per mount).
+let uploadContextEpoch = $state(0);
+
 $effect(() => {
   void registry;
-  untrack(() => controller.syncRegistry());
+  untrack(() => {
+    uploadContextEpoch++;
+    controller.syncRegistry();
+  });
 });
 
 // Cycle-2 second final finding 1: a SEPARATE effect, scoped to only the
@@ -305,7 +315,10 @@ $effect(() => {
 // once per mount).
 $effect(() => {
   void transport;
-  untrack(() => controller.syncTransport());
+  untrack(() => {
+    uploadContextEpoch++;
+    controller.syncTransport();
+  });
 });
 
 // #3000: in a narrow container (below the `@container` breakpoint in the
@@ -388,15 +401,28 @@ async function handleUpload(
   // returning [] here would make a failed upload look like a successful
   // empty batch. This handler ALSO records the failure on controller.error
   // so the dock-level banner matches the send path.
+  const uploadTransport = transport;
+  const uploadEpoch = uploadContextEpoch;
+  const isCurrentUpload = () =>
+    transport === uploadTransport && uploadContextEpoch === uploadEpoch;
   try {
+    const upload = uploadTransport.uploadAttachment;
+    if (!upload) {
+      throw new Error('AssistantDock: attachment upload is not supported');
+    }
     const uploaded: AssistantAttachmentRef[] = [];
     for (const file of Array.from(files)) {
-      uploaded.push(await transport.uploadAttachment(file));
+      uploaded.push(await upload.call(uploadTransport, file));
+      if (!isCurrentUpload()) return [];
     }
     controller.setError(null);
     return uploaded;
   } catch (error) {
-    controller.setError(error instanceof Error ? error.message : String(error));
+    if (isCurrentUpload()) {
+      controller.setError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
     throw error;
   }
 }
@@ -437,7 +463,7 @@ async function handleConfirmAction(requestId: string) {
         threads={controller.threads}
         activeThreadId={controller.activeThreadId}
         onselect={handleSelectThread}
-        oncreate={handleCreateThread}
+        oncreate={transport.createThread ? handleCreateThread : undefined}
       />
     </div>
 
@@ -459,7 +485,7 @@ async function handleConfirmAction(requestId: string) {
         </div>
       {/if}
 
-      {#if controller.surfaces.length === 0 && !pageTools}
+      {#if contextMode === 'data-surfaces' && controller.surfaces.length === 0 && !pageTools}
         <p class="assistant-dock-empty">
           {t(M['chat.assistant_dock.no_surfaces'])}
         </p>
@@ -658,17 +684,19 @@ async function handleConfirmAction(requestId: string) {
             />
           </div>
         {/if}
-        <AssistantComposer
-          bind:value={
-            () => controller.draft, (text) => controller.setDraft(text)
-          }
-          onsend={handleSend}
-          onupload={handleUpload}
-          disabled={!controller.activeThreadId}
-          placeholder={composerPlaceholder}
-          {dictation}
-          {transcribe}
-        />
+        {#key uploadContextEpoch}
+          <AssistantComposer
+            bind:value={
+              () => controller.draft, (text) => controller.setDraft(text)
+            }
+            onsend={handleSend}
+            onupload={transport.uploadAttachment ? handleUpload : undefined}
+            disabled={!controller.activeThreadId}
+            placeholder={composerPlaceholder}
+            {dictation}
+            {transcribe}
+          />
+        {/key}
       </div>
     </div>
   </div>

@@ -207,6 +207,48 @@ describe('createSmrtAssistantTransport reads', () => {
     return { fetchImpl: fetchImpl as unknown as typeof fetch, calledUrls };
   }
 
+  it('exposes only the write capabilities configured by the host', async () => {
+    const { fetchImpl } = fakeFetch({});
+    const reduced = createSmrtAssistantTransport({
+      readEndpoint: 'https://api.example.com/assistant',
+      token: 'test-token',
+      fetchImpl,
+      writeEndpoint: {
+        async sendMessage() {
+          return { inProgress: false };
+        },
+      },
+    });
+    expect(reduced.createThread).toBeUndefined();
+    expect(reduced.uploadAttachment).toBeUndefined();
+    await expect(
+      reduced.sendMessage({
+        threadId: 'session-1',
+        content: 'hello',
+        clientRequestId: 'request-1',
+      }),
+    ).resolves.toEqual({ inProgress: false });
+
+    const full = createSmrtAssistantTransport({
+      readEndpoint: 'https://api.example.com/assistant',
+      token: 'test-token',
+      fetchImpl,
+      writeEndpoint: {
+        async createThread(title) {
+          return { id: 't1', title, isResolved: false, messageCount: 0 };
+        },
+        async sendMessage() {
+          return { inProgress: false };
+        },
+        async uploadAttachment(file) {
+          return { id: 'a1', name: file.name };
+        },
+      },
+    });
+    expect(full.createThread).toBeTypeOf('function');
+    expect(full.uploadAttachment).toBeTypeOf('function');
+  });
+
   it('listThreads() calls GET {readEndpoint}/threads and normalizes the rows', async () => {
     const { fetchImpl, calledUrls } = fakeFetch({
       'https://api.example.com/assistant/threads': {

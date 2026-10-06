@@ -1294,12 +1294,16 @@ export function createAssistantDockController(
   // rethrow is what AssistantDock's `handleCreateThread` catches to stop the
   // un-awaited onclick from producing an unhandled rejection.
   async function createThread(title: string) {
+    const create = options.transport.createThread;
+    if (!create) {
+      throw new Error('AssistantDock: thread creation is not supported');
+    }
     // Cycle-4 final finding 1: a swap during this await must not let the
     // created thread land in the (now-reset, differently-contexted) threads
     // array — the return value stays load-bearing regardless (see below).
     const epoch = contextEpoch;
     try {
-      const thread = await options.transport.createThread(title);
+      const thread = await create.call(options.transport, title);
       // Cycle-3 first final sweep: dispose() can run while this await is in
       // flight. The return value stays load-bearing for the caller (see the
       // comment above) even on a disposed controller, so this only skips
