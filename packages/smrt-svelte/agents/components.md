@@ -72,6 +72,13 @@ picker. Option shape is `RelationOption` — `{ id, label, detail? }`.
 - **Form integration** is through `Combobox`'s control registration (rich `Form`
   provides the registry), not a `FieldDefinition`: agents see a `combobox`
   control whose value is the id. The form posts the id under `name`.
+- **Known limit.** An agent staging a value through the registered control can
+  only choose among the options last listed (the registry matches against
+  `options`; `allowCustom` is off), so it cannot write an id it has not
+  searched. It fails closed. Writing a resolved id needs an async hook on
+  `Combobox` and is tracked separately.
+- **Stale options.** Typing clears the listed options until the new search
+  answers, so Enter or a click can never pick a record for an older query.
 - **Clear button** shows only when not `required`, not `disabled`, and a value
   is set; it returns focus to the field.
 - **Accessibility** is the combobox pattern (`role=combobox`, `aria-expanded`,

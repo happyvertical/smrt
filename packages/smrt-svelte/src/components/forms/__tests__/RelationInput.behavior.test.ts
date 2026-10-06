@@ -157,6 +157,33 @@ describe('RelationInput search and select', () => {
   });
 });
 
+describe('RelationInput stale options', () => {
+  it('does not let Enter pick a result of an older query while a new search is pending', async () => {
+    const onchange = vi.fn();
+    let release: (r: RelationOption[]) => void = () => {};
+    const search = vi.fn((q: string) =>
+      q === ''
+        ? Promise.resolve(CUSTOMERS)
+        : new Promise<RelationOption[]>((res) => {
+            release = res;
+          }),
+    );
+    render(RelationInput, {
+      props: props({ search, onchange, debounceMs: 1 }),
+    });
+    await userEvent.click(combo());
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(3));
+    await userEvent.type(combo(), 'glo');
+    expect(screen.queryByRole('option')).toBeNull();
+    await userEvent.keyboard('{Enter}');
+    expect(onchange).not.toHaveBeenCalled();
+    await waitFor(() => expect(search).toHaveBeenCalledWith('glo'));
+    release([CUSTOMERS[1]]);
+    await userEvent.keyboard('{Enter}');
+    expect(onchange).toHaveBeenCalledWith('c2');
+  });
+});
+
 describe('RelationInput keyboard', () => {
   it('opens with ArrowDown, moves with arrows, picks with Enter, closes with Escape', async () => {
     const onchange = vi.fn();
@@ -323,6 +350,17 @@ describe('RelationInput resolve', () => {
       }),
     });
     expect(combo()).toHaveValue('');
+  });
+});
+
+describe('RelationInput value rebinding', () => {
+  it('drops the previous label when value changes to an unknown id and there is no resolve', async () => {
+    const view = render(RelationInput, { props: props() });
+    await userEvent.click(combo());
+    await userEvent.click(await screen.findByRole('option', { name: /Acme/ }));
+    expect(combo()).toHaveValue('Acme Corp');
+    await view.rerender({ ...props(), value: 'c9' });
+    await waitFor(() => expect(combo()).toHaveValue(''));
   });
 });
 

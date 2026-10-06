@@ -176,10 +176,13 @@ function handleQuery(query: string) {
     void runSearch('');
     return;
   }
-  // Show "Searching" straight away and drop any in-flight older request.
+  // Show "Searching" straight away and drop any in-flight older request. The
+  // listed options answered an older query, so none stay selectable (Enter or
+  // a click would otherwise pick a record that no longer matches the text).
   searchSeq++;
   loading = true;
   failed = false;
+  results = [];
   timer = setTimeout(() => void runSearch(query), debounceMs);
 }
 
@@ -260,8 +263,11 @@ $effect(() => {
       labelledId = id;
       return;
     }
-    if (!resolve || resolvingId === id) return;
+    if (resolvingId === id) return;
+    // A different id than the one labelled: never keep the previous label.
     selectedLabel = '';
+    labelledId = '';
+    if (!resolve) return;
     resolvingId = id;
     resolve(id)
       .then((record) => {
