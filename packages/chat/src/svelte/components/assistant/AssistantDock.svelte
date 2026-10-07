@@ -292,7 +292,8 @@ $effect(() => {
 // authoritative state: the wrapper neither reconstructs a confirmation nor
 // decides one itself.
 const attentionRequired = $derived(
-  controller.toolRequests.some((request) => request.status === 'waiting') ||
+  controller.run?.waitingFor?.kind === 'choice' ||
+    controller.toolRequests.some((request) => request.status === 'waiting') ||
     [...controller.actions.values()].some(
       (action) => action.status === 'previewed' || action.outcomeUnknown,
     ),

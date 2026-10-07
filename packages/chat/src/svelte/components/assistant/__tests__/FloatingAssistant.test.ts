@@ -140,6 +140,41 @@ describe('FloatingAssistant decision authority', () => {
     expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    false,
+    true,
+  ])('reveals an incoming choice from a collapsed controller (host hidden: %s)', async (hidden) => {
+    const fixture = await mountedFixture();
+    await fixture.rerender({ expanded: false, visible: !hidden });
+    await fixture.controller.send('choices');
+    expect(fixture.controller.run?.waitingFor?.kind).toBe('choice');
+    expect(fixture.evidence.choices).toEqual([]);
+    if (hidden) {
+      expect(
+        screen.queryByRole('button', { name: /Compact layout/ }),
+      ).not.toBeInTheDocument();
+      await fixture.rerender({ visible: true, expanded: false });
+    }
+    const choice = await screen.findByRole('button', {
+      name: /Compact layout/,
+    });
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Collapse assistant' }),
+    );
+    await fixture.rerender({ expanded: false });
+    expect(
+      fixture.container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'false');
+    expect(
+      fixture.container.querySelector('.floating-assistant-panel'),
+    ).not.toHaveAttribute('inert');
+    expect(fixture.evidence.choices).toEqual([]);
+    await userEvent.click(choice);
+    expect(fixture.evidence.choices).toEqual(['compact']);
+    expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves visible choices, waiting status, Stop and errors in controls mode', async () => {
     const fixture = await mountedFixture();
     await fixture.controller.send('choices');

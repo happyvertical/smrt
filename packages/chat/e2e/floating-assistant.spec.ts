@@ -111,3 +111,27 @@ test('host visibility pauses polling and restores the same mounted pending decis
   await expect(page.getByLabel('Decision evidence')).toContainText('"decisions":[false]');
   await expect(page.getByLabel('Controller mounts')).toHaveText('1');
 });
+
+for (const hidden of [false, true]) {
+  test(`incoming choices reveal the existing collapsed controller (host hidden: ${hidden})`, async ({ page }) => {
+    await page.goto('/previews/floating-assistant', { waitUntil: 'networkidle' });
+    if (hidden) await page.getByRole('button', { name: 'Hide assistant', exact: true }).click();
+    await page.getByRole('button', { name: 'Offer choices' }).click();
+    const choice = page.getByRole('button', { name: /Compact layout/ });
+    if (hidden) {
+      await expect(choice).toBeHidden();
+      await page.getByRole('button', { name: 'Show assistant', exact: true }).click();
+    }
+    await expect(choice).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Host closes panel' }).click();
+    await page.getByRole('button', { name: 'Collapse assistant' }).click();
+    await expect(page.locator('.floating-assistant-panel')).toHaveAttribute('aria-hidden', 'false');
+    await page.getByRole('button', { name: 'Inspect decisions' }).click();
+    await expect(page.getByLabel('Decision evidence')).toContainText('"choices":[]');
+    await choice.click();
+    await page.getByRole('button', { name: 'Inspect decisions' }).click();
+    await expect(page.getByLabel('Decision evidence')).toContainText('"choices":["compact"]');
+    await expect(page.getByLabel('Controller mounts')).toHaveText('1');
+  });
+}
