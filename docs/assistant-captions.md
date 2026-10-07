@@ -106,3 +106,22 @@ The dev route follows the existing `workspace-aliases.js` browser-ai mapping:
 smrt-svelte is intentionally not a chat dependency because that would create
 `chat → smrt-svelte → content → chat`. These imports remain route-only, as in
 the existing root workbench; published caption helpers stay provider-agnostic.
+
+## Caption containment and expiry
+
+Both exported components own their text wrapping, including unbroken URLs and
+interim words, in inline and bottom placement. They do not require a wrapping
+rule on a host container. `/previews/captions-standalone` intentionally has no
+wrapper styles and supplies long final/interim text for the browser regression.
+
+When `ttlMs` is set, each completed line expires independently after that
+line's duration. A new final does not postpone an older line, and expiration
+never clears the active interim transcript. Repeated identical finals remain
+separate utterances with separate ids and deadlines. Bounded-retention eviction,
+`clear()`, and `dispose()` cancel their retired deadlines.
+
+| Behavior / trigger | Positive case | Failure regression | Actor / executor / runtime / edge | Level / evidence |
+| --- | --- | --- | --- | --- |
+| Long URL or unbroken interim in either standalone component | Text fragments and component bounds remain inside 320px for inline/bottom | No host wrapping rule may mask overflow | Local viewer; no data executor or transaction; Chromium; plain transcript string, no wire contract | Four standalone cases in `listening-mode.spec.ts` |
+| Staggered completed lines with TTL | Each expires at its own deadline, including duplicate text; newer interim remains | Later final cannot postpone older expiry; timer cannot erase interim | Host caption channel; in-memory timer only, no DB/dialect; JS fake clock; timer callback edge | `caption-state.test.ts` |
+| Eviction, clear, dispose, then late callback | Retired timers are cancelled and their callbacks are harmless | Old callback cannot delete a fresh line or its interim | Same channel context; no external identity/persistence | `caption-state.test.ts` |

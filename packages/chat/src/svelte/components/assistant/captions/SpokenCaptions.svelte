@@ -39,7 +39,7 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 {/if}
 
 <style>
-  .spoken-captions { max-inline-size: min(42rem, calc(100vw - 2rem)); padding: .7rem .9rem; border: 2px solid var(--smrt-color-outline, #533b72); background: var(--smrt-color-inverse-surface, #221c2c); color: var(--smrt-color-inverse-on-surface, #fff7ff); border-radius: 1rem; box-shadow: 0 .35rem 1.2rem rgb(0 0 0 / .28); }
+  .spoken-captions { box-sizing: border-box; min-inline-size: 0; max-inline-size: min(42rem, calc(100vw - 2rem)); overflow-wrap: anywhere; padding: .7rem .9rem; border: 2px solid var(--smrt-color-outline, #533b72); background: var(--smrt-color-inverse-surface, #221c2c); color: var(--smrt-color-inverse-on-surface, #fff7ff); border-radius: 1rem; box-shadow: 0 .35rem 1.2rem rgb(0 0 0 / .28); }
   .bottom { position: fixed; z-index: 21; inset-inline: 1rem; inset-block-end: max(1rem, env(safe-area-inset-bottom)); margin-inline: auto; }
   .speaker { margin: 0 0 .3rem; font-weight: 700; font-size: .8rem; }
   .caption-lines p, .interim { margin: .18rem 0 0; }

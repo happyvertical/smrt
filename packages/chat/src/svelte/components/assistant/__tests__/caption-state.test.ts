@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CaptionTTSAdapter } from '../captions/caption-state.svelte.js';
 import {
   createCaptionChannel,
@@ -60,6 +60,10 @@ function fakeTts() {
 }
 
 describe('caption state', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
   it('replaces interim heard text, retains bounded finals, and normalizes control text', () => {
     const captions = createCaptionChannel('heard', {
       maxLines: 2,
@@ -90,6 +94,73 @@ describe('caption state', () => {
     vi.advanceTimersByTime(100);
     expect(captions.lines).toEqual([]);
     vi.useRealTimers();
+  });
+
+  it('expires repeated final text at independent deadlines without postponing older lines', () => {
+    vi.useFakeTimers();
+    const captions = createCaptionChannel('heard', { ttlMs: 100 });
+    captions.addFinal('Repeat');
+    const firstId = captions.lines[0].id;
+    vi.advanceTimersByTime(40);
+    captions.addFinal('Repeat');
+    const secondId = captions.lines[1].id;
+    expect(secondId).not.toBe(firstId);
+    captions.setInterim('A newer phrase');
+    vi.advanceTimersByTime(60);
+    expect(captions.lines.map((line) => line.id)).toEqual([secondId]);
+    expect(captions.interim).toBe('A newer phrase');
+    vi.advanceTimersByTime(40);
+    expect(captions.lines).toEqual([]);
+    expect(captions.interim).toBe('A newer phrase');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('preserves later interim speech when the only completed caption expires', () => {
+    vi.useFakeTimers();
+    const captions = createCaptionChannel('heard', { ttlMs: 100 });
+    captions.addFinal('Completed');
+    vi.advanceTimersByTime(90);
+    captions.setInterim('Still speaking');
+    vi.advanceTimersByTime(10);
+    expect(captions.lines).toEqual([]);
+    expect(captions.interim).toBe('Still speaking');
+  });
+
+  it('cancels evicted and cleared deadlines and ignores callbacks delivered after cleanup', () => {
+    vi.useFakeTimers();
+    const timers = vi.spyOn(globalThis, 'setTimeout');
+    const captions = createCaptionChannel('spoken', {
+      ttlMs: 100,
+      maxLines: 2,
+    });
+    captions.addFinal('Evicted');
+    const evictedCallback = timers.mock.calls.at(-1)?.[0] as () => void;
+    vi.advanceTimersByTime(20);
+    captions.addFinal('Second');
+    vi.advanceTimersByTime(20);
+    captions.addFinal('Third');
+    const retiredCallback = timers.mock.calls.at(-1)?.[0] as () => void;
+    expect(captions.lines.map((line) => line.text)).toEqual([
+      'Second',
+      'Third',
+    ]);
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(2);
+    evictedCallback();
+    expect(captions.lines).toHaveLength(2);
+    captions.clear();
+    expect(vi.getTimerCount()).toBe(0);
+    captions.addFinal('Fresh');
+    const freshCallback = timers.mock.calls.at(-1)?.[0] as () => void;
+    captions.setInterim('Current');
+    retiredCallback();
+    expect(captions.lines.map((line) => line.text)).toEqual(['Fresh']);
+    expect(captions.interim).toBe('Current');
+    captions.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    freshCallback();
+    vi.runAllTimers();
+    expect(captions.lines).toEqual([]);
+    expect(captions.interim).toBe('');
   });
 
   it('shows only speech confirmed by TTS callbacks and ignores an end before playback starts', async () => {

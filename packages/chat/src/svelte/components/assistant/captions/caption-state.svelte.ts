@@ -71,7 +71,7 @@ class CaptionChannelState implements CaptionChannel {
   lines = $state<CaptionLine[]>([]);
   interim = $state('');
   #lineSequence = 0;
-  #expiry: ReturnType<typeof setTimeout> | null = null;
+  #expiry = new Map<string, ReturnType<typeof setTimeout>>();
   #maxLines: number;
   #now: () => number;
   #speaker: CaptionLine['speaker'];
@@ -91,32 +91,48 @@ class CaptionChannelState implements CaptionChannel {
     const text = captionText(value);
     this.interim = '';
     if (!text) return;
+    const id = `${this.#speaker}-${++this.#lineSequence}`;
     this.lines = [
       ...this.lines,
       {
-        id: `${this.#speaker}-${++this.#lineSequence}`,
+        id,
         text,
         speaker: this.#speaker,
         createdAt: this.#now(),
       },
     ].slice(-this.#maxLines);
-    if (this.#options.ttlMs !== undefined) this.#scheduleExpiry();
+    // Eviction retires the line's deadline too, keeping timers bounded by
+    // the retained history rather than by the lifetime of a conversation.
+    const retained = new Set(this.lines.map((line) => line.id));
+    for (const [expiredId, timer] of this.#expiry) {
+      if (!retained.has(expiredId)) {
+        clearTimeout(timer);
+        this.#expiry.delete(expiredId);
+      }
+    }
+    if (this.#options.ttlMs !== undefined) this.#scheduleExpiry(id);
   }
   clear() {
     this.interim = '';
     this.lines = [];
-    if (this.#expiry) clearTimeout(this.#expiry);
-    this.#expiry = null;
+    for (const timer of this.#expiry.values()) clearTimeout(timer);
+    this.#expiry.clear();
   }
   dispose() {
     this.clear();
   }
-  #scheduleExpiry() {
-    if (this.#expiry) clearTimeout(this.#expiry);
-    this.#expiry = setTimeout(
-      () => this.clear(),
+  #scheduleExpiry(id: string) {
+    const timer = setTimeout(
+      () => {
+        // A cancelled callback may already be queued. It must not affect a
+        // cleared/reused channel or any line created after that cancellation.
+        if (this.#expiry.get(id) !== timer) return;
+        this.#expiry.delete(id);
+        this.lines = this.lines.filter((line) => line.id !== id);
+      },
       Math.max(0, this.#options.ttlMs ?? 0),
     );
+    this.#expiry.set(id, timer);
   }
 }
 

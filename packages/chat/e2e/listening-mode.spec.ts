@@ -138,3 +138,33 @@ test('real-source opt-in loads the public adapters only after a gesture (browser
   await expect(page.getByLabel('Project status', { exact: true })).toHaveValue('pending');
   expect(await counts()).toEqual({ instances: 1, starts: 1 });
 });
+
+for (const speaker of ['heard', 'spoken']) {
+  for (const placement of ['inline', 'bottom']) {
+    test(`standalone ${speaker} ${placement} contains long final and interim text at 320px`, async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 800 });
+      await page.goto(`/previews/captions-standalone?speaker=${speaker}&placement=${placement}`);
+      const caption = page.locator(`.${speaker}-captions`);
+      await expect(caption).toBeVisible();
+      const bounds = await caption.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+      expect(await caption.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      for (const text of await caption.locator('.caption-lines p, .interim').all()) {
+        const textBounds = await text.evaluate((el) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          return [...range.getClientRects()].map((rect) => ({ left: rect.left, right: rect.right }));
+        });
+        expect(textBounds.length).toBeGreaterThan(1);
+        for (const rect of textBounds) {
+          expect(rect.left).toBeGreaterThanOrEqual(bounds!.x);
+          expect(rect.right).toBeLessThanOrEqual(bounds!.x + bounds!.width);
+        }
+      }
+      await page.screenshot({ path: test.info().outputPath(`${speaker}-${placement}.png`), fullPage: true });
+    });
+  }
+}
