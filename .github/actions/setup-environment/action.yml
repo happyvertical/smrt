@@ -270,7 +270,10 @@ runs:
       uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
     # Check if ONNX deps are already installed or supplied by the runner image.
+    # Jobs that skip `pnpm install` never load onnxruntime-node, so they do not
+    # provision (and cannot be ejected by) the apt mirror (#3653).
     - name: Install system dependencies for ONNX Runtime
+      if: inputs.install-deps == 'true'
       shell: bash
       run: |
         if [ "${CI_ONNX_DEPS_READY:-}" = "true" ]; then
@@ -296,11 +299,15 @@ runs:
         node_path="$(command -v node)"
         sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
           --stage 'apt-get update' \
-          --timeout-seconds 300 \
+          --timeout-seconds 120 \
+          --attempts 3 \
+          --backoff-seconds 10 \
           -- apt-get update -o APT::Update::Error-Mode=any && \
         sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
           --stage 'apt-get install' \
-          --timeout-seconds 900 \
+          --timeout-seconds 600 \
+          --attempts 2 \
+          --backoff-seconds 10 \
           -- apt-get install -y \
           libstdc++6 \
           libc6-dev \

@@ -51,7 +51,7 @@ async function runActionSystemDependencies(directory) {
     '#!/bin/sh\nif [ "$1" = update ]; then echo "partial index failure" >&2; exit 42; fi\ntouch "$SMRT_INSTALL_MARKER"\n',
   );
   await Promise.all(['dpkg', 'sudo', 'apt-get'].map((name) => chmod(join(bin, name), 0o755)));
-  const script = run.replace(/^        /gm, '');
+  const script = run.replace(/^        /gm, '').replaceAll('--backoff-seconds 10', '--backoff-seconds 0');
   const wrapper = [
     'bash -e -c "$1"',
     'status=$?',
@@ -189,11 +189,11 @@ test('the setup action bounds update and install without changing ONNX dependenc
   assert.ok(action.includes('node_path="$(command -v node)"'));
   assert.match(
     action,
-    /sudo "\$node_path" "\$GITHUB_WORKSPACE\/scripts\/run-bounded-command\.mjs"\s+\\\n\s+--stage 'apt-get update'\s+\\\n\s+--timeout-seconds 300\s+\\\n\s+-- apt-get update -o APT::Update::Error-Mode=any &&/,
+    /sudo "\$node_path" "\$GITHUB_WORKSPACE\/scripts\/run-bounded-command\.mjs"\s+\\\n\s+--stage 'apt-get update'\s+\\\n\s+--timeout-seconds 120\s+\\\n\s+--attempts 3\s+\\\n\s+--backoff-seconds 10\s+\\\n\s+-- apt-get update -o APT::Update::Error-Mode=any &&/,
   );
   assert.match(
     action,
-    /sudo "\$node_path" "\$GITHUB_WORKSPACE\/scripts\/run-bounded-command\.mjs"\s+\\\n\s+--stage 'apt-get install'\s+\\\n\s+--timeout-seconds 900\s+\\\n\s+-- apt-get install -y/,
+    /sudo "\$node_path" "\$GITHUB_WORKSPACE\/scripts\/run-bounded-command\.mjs"\s+\\\n\s+--stage 'apt-get install'\s+\\\n\s+--timeout-seconds 600\s+\\\n\s+--attempts 2\s+\\\n\s+--backoff-seconds 10\s+\\\n\s+-- apt-get install -y/,
   );
   for (const dependency of [
     'libstdc++6',
@@ -207,4 +207,108 @@ test('the setup action bounds update and install without changing ONNX dependenc
   ]) {
     assert.ok(action.includes(`          ${dependency}`));
   }
+});
+
+async function flakyCommand(directory, failures, mode) {
+  const counter = join(directory, 'count');
+  const scriptPath = join(directory, 'flaky.mjs');
+  await writeFile(
+    scriptPath,
+    [
+      "import { appendFileSync, readFileSync } from 'node:fs';",
+      `const counter = ${JSON.stringify(counter)};`,
+      "appendFileSync(counter, 'x');",
+      'const count = readFileSync(counter, \'utf8\').length;',
+      `if (count <= ${failures}) {`,
+      mode === 'hang' ? '  setInterval(() => {}, 1_000);' : '  process.exit(9);',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  return { counter, command: [process.execPath, scriptPath] };
+}
+
+test('retries a failing command and succeeds when a later attempt passes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'smrt-bounded-retry-'));
+  try {
+    const { counter, command } = await flakyCommand(directory, 2, 'exit');
+    const result = await run(
+      ['--stage', 'apt-get update', '--timeout-seconds', '5', '--attempts', '3', '--backoff-seconds', '0'],
+      command,
+    );
+    assert.equal(result.code, undefined);
+    assert.equal((await readFile(counter, 'utf8')).length, 3);
+    assert.match(result.stderr, /failed with exit code 9 \(attempt 1\/3\)/);
+    assert.match(result.stderr, /will retry/);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('retries a timed-out attempt and succeeds on the next', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'smrt-bounded-retry-timeout-'));
+  try {
+    const { counter, command } = await flakyCommand(directory, 1, 'hang');
+    const result = await run(
+      [
+        '--stage', 'apt-get update', '--timeout-seconds', '1', '--grace-ms', '100',
+        '--attempts', '2', '--backoff-seconds', '0',
+      ],
+      command,
+    );
+    assert.equal(result.code, undefined);
+    assert.equal((await readFile(counter, 'utf8')).length, 2);
+    assert.match(result.stderr, /timed out after 1 seconds \(attempt 1\/2\)/);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('fails closed with the named stage once every attempt is exhausted', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'smrt-bounded-retry-exhausted-'));
+  try {
+    const { counter, command } = await flakyCommand(directory, 99, 'exit');
+    const result = await run(
+      ['--stage', 'apt-get update', '--timeout-seconds', '5', '--attempts', '3', '--backoff-seconds', '0'],
+      command,
+    );
+    assert.equal(result.code, 1);
+    assert.equal((await readFile(counter, 'utf8')).length, 3);
+    assert.match(result.stderr, /ONNX system dependency apt-get update failed with exit code 9 \(attempt 3\/3\)/);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('exits 124 when the final attempt times out', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'smrt-bounded-retry-final-timeout-'));
+  try {
+    const { counter, command } = await flakyCommand(directory, 99, 'hang');
+    const result = await run(
+      [
+        '--stage', 'apt-get update', '--timeout-seconds', '1', '--grace-ms', '100',
+        '--attempts', '2', '--backoff-seconds', '0',
+      ],
+      command,
+    );
+    assert.equal(result.code, 124);
+    assert.equal((await readFile(counter, 'utf8')).length, 2);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test('rejects invalid retry options', async () => {
+  for (const options of [['--attempts', '0'], ['--attempts', '1.5'], ['--backoff-seconds', '-1']]) {
+    const result = await run(['--stage', 'apt-get update', '--timeout-seconds', '1', ...options]);
+    assert.equal(result.code, 2);
+  }
+});
+
+test('the setup action skips ONNX provisioning when project dependencies are not installed', async () => {
+  const action = await readFile(new URL('../.github/actions/setup-environment/action.yml', import.meta.url), 'utf8');
+  assert.match(
+    action,
+    /- name: Install system dependencies for ONNX Runtime\n\s+if: inputs\.install-deps == 'true'\n/,
+  );
 });
