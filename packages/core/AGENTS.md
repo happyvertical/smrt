@@ -170,6 +170,12 @@ and repository rules.
   `src/filesystem-loader.ts`, not a static files-SDK import. Fully bundled apps
   import `@happyvertical/smrt-core/filesystem` at startup. Use
   `importOptionalDependency()` for similarly heavy optional dependencies.
+- `src/browser.ts` is the `browser`-condition entry of the package root: the
+  Node entry (`index.ts`) minus HTTP servers, manifest/knowledge discovery, run-once,
+  the Vite plugin, and the test helper. A new export added to `index.ts` must also
+  go to `browser.ts` unless it is Node-only; `src/__tests__/browser-entry-parity.test.ts`
+  fails otherwise (allowlist: `BROWSER_ENTRY_NODE_ONLY`, each with a reason), and also
+  fails when a workspace package imports a root value the browser entry lacks.
 - Database retries are transient-only, four attempts total for `get`/`upsert`.
   Use `src/db-errors.ts` classifiers through the cause chain, never message
   matching (SDK driver text can live in `context.originalError`). Constraints,
