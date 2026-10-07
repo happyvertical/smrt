@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.55.4
+
+### Patch Changes
+
+- ### Features
+  
+  - support sidebar account footers (#3647) (smrt-svelte)
+  
+  ### Bug Fixes
+  
+  - browser-safe config entry; model roots stop importing the sql root (#3636) (config)
+  - export decorators and runtime helpers from the browser entry (#3632) (core)
+  
+  ### Other Changes
+  
+  - refactor: move RelationInput to smrt-ui/forms, re-export from smrt-svelte (#3638) (smrt-ui)
+  - ci: retry bounded apt provisioning and skip ONNX deps without installs (#3655)
+  - chore: sync sdk packages to v0.102.3 (#3606) (deps)
+- @happyvertical/smrt-config@0.55.4
+  - @happyvertical/smrt-scanner@0.55.4
+  - @happyvertical/smrt-types@0.55.4
+
 ## 0.55.3
 
 ### Patch Changes
