@@ -328,6 +328,12 @@ These are already documented in the root `AGENTS.md`. They are reproduced here f
 - System tables prefixed `_smrt_`
 - JSON fields stored as strings with `getX()`/`setX()` helpers wrapped in `try/catch`
 
+### Browser-safe model package roots
+
+Every publishable package that declares `@smrt()` objects, plus `smrt-core`, must have a root entry that builds for a browser target (Vite browser resolution conditions, over published-style `dist` exports) without reaching Node-only modules: `node:` built-ins, `pg`, `pg-pool`, `express`, `cosmiconfig`, `jiti`, native addons, and the other modules listed in `FORBIDDEN_NODE_ONLY_MODULES` in `packages/bundle-gate/src/browser-gate/boundary.ts`. Node-only code (servers, workers, filesystem, Node-only crypto, config loaders) lives behind a subpath export or a lazy `await import()` that follows the bundle-boundary optional-dependency pattern (#1977). Static imports of server/worker/config code from a root entry are violations, even when guarded at runtime, because bundlers follow them.
+
+The bundle-gate browser fixture (#3621) enforces this in CI. Known violations are ratcheted in `packages/bundle-gate/src/browser-gate/expected-failures.ts`, each tied to a tracking issue. The gate fails on a package that is not listed and on a listed package that now passes; the PR that fixes a package deletes its own entry. The goal is an empty list. Packages that declare `@smrt()` objects but are intentionally not gated (for example `smrt-cli`) are listed with their reason in `MODEL_PACKAGE_EXCLUSIONS`.
+
 ### Logging (S14 / dim 9)
 
 Shipped library code logs through `@happyvertical/logger`, never `console.*`.

@@ -24,6 +24,46 @@ The gate has two fixtures:
 Both fixtures build through package export maps from `dist`, not workspace
 source aliases.
 
+## Browser fixture (#3621)
+
+`src/__tests__/browser-boundary.spec.ts` builds every **model package** root
+for a browser target and fails when Node-only modules are reachable.
+
+- **Model packages** are derived, not hand-listed: every publishable
+  `packages/*` package whose non-test `src` contains a decorated `@smrt(`
+  class, plus `smrt-core`. Exclusions live in `MODEL_PACKAGE_EXCLUSIONS`
+  (`smrt-cli`: its `@smrt(` hits are scaffold template text and a CLI is
+  Node-only). Other publishable packages (`app-cli`, `vitest`, `scanner`,
+  `config`, `smrt-dev-mcp`, `mcp-*`, UI packages, asset providers, templates)
+  declare no `@smrt()` objects, so they are never selected; private packages
+  (this one, fixtures, mobile) are skipped.
+- **Build:** one `vite build` per package root, resolved through its
+  `exports['.']` with browser conditions (`browser`, `module`, `import`,
+  `production`, `svelte`, `default`), so `smrt-core` resolves to
+  `dist/browser.js`. The Svelte plugin is on so `.svelte` re-exports compile.
+- **Forbidden modules:** all `node:` built-ins (and bare aliases such as
+  `fs`), anything ending in `.node`, and `FORBIDDEN_NODE_ONLY_MODULES` in
+  `src/browser-gate/boundary.ts` (pg family, native SQLite/DuckDB drivers,
+  HTTP servers, cosmiconfig, jiti, sharp/resvg/canvas), each justified there.
+  A `resolveId` guard records the specifier and externalizes it, then the
+  module graph is walked to print the importer chain
+  (`entry -> importer -> module`). A bundler error such as a missing export
+  (core's browser entry omitting a decorator) also fails the package.
+- **Ownership:** a defect in `smrt-core` would otherwise fail every dependent.
+  An edge that a dependency's own root also reports is attributed to that
+  dependency; a missing export is attributed to the package whose entry lacks
+  it (except server-only core APIs such as `startRestServer`, which belong to
+  the importing root). An edge through a dependency subpath its root does not
+  reach stays with the importer.
+- **Ratchet:** `src/browser-gate/expected-failures.ts` lists the packages that
+  still fail, each with its tracking issue. The spec fails on an unlisted
+  failing package AND on a listed package that now passes. A fix PR deletes
+  its package's entry (or trims `issue`/`reason` while other causes remain);
+  the goal is an empty object. A new finding that is not yet fixed needs a
+  tracking issue before it may be added.
+- Unit tests for detection, chains, discovery, attribution, and the ratchet are
+  in `browser-boundary-logic.spec.ts`.
+
 ## Run the gate
 
 Build its package dependencies first, then run the test:

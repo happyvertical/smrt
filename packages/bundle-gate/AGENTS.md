@@ -48,6 +48,18 @@ The specs build from **dist** via package export maps (no workspace src
 aliases), so run `pnpm build` for chat/personas/messages/commerce first; in CI turbo's
 `test` task already depends on `^build`.
 
+## Browser fixture (#3621)
+
+`src/__tests__/browser-boundary.spec.ts` builds each model package root (every
+publishable package with `@smrt()` classes, plus core; derived by
+`src/browser-gate/boundary.ts`) with Vite browser conditions over `dist`, and
+fails when `node:` built-ins, `pg`, `express`, `cosmiconfig`, `jiti`, native
+addons, or other `FORBIDDEN_NODE_ONLY_MODULES` are reachable, printing the
+importer chain. Failures are attributed to the package that owns the fix.
+Known violations are in `src/browser-gate/expected-failures.ts` with issue
+numbers; the gate fails on unexpected breakage AND stale entries, so a fix PR
+removes its own entry. Never add an entry without a tracking issue. See README.
+
 ## Ownership and budget updates
 
 The gate belongs to whoever changes chat/personas/messages/core/assets
