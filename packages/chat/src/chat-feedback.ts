@@ -18,10 +18,11 @@
  * @module
  */
 
-import type {
-  LearningMemoryRecord,
-  LearningSemanticSearch,
-  SmrtClassOptions,
+import {
+  type LearningMemoryRecord,
+  type LearningSemanticSearch,
+  resolveDatabase,
+  type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
 import {
   type Feedback,
@@ -32,7 +33,6 @@ import {
   personaMemoryScope,
   reinforceFromFeedback,
 } from '@happyvertical/smrt-personas';
-import { getDatabase } from '@happyvertical/sql';
 
 /** The minimal persona shape chat feedback needs to route the signal. */
 export interface ChatFeedbackPersona {
@@ -130,10 +130,10 @@ export async function captureChatFeedback(
 
   let reinforced: LearningMemoryRecord | null = null;
   if (options.reinforce !== false) {
-    // LearningMemory operates on a resolved DB handle; `getDatabase` accepts a
-    // config or a handle and returns a handle (idempotent for a handle).
+    // LearningMemory operates on a resolved DB handle; core's `resolveDatabase`
+    // accepts a config or a handle and returns a handle (identity for a handle).
     const memory = personaLearningMemory({
-      db: await getDatabase(options.db as Parameters<typeof getDatabase>[0]),
+      db: await resolveDatabase(options.db ?? {}),
       persona: options.persona,
       semanticSearch: options.semanticSearch,
     });

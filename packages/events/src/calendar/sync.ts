@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
 import { ICAL, parseICalendar } from '@happyvertical/icalendar';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  type DatabaseConfig,
+  resolveDatabase,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
-import { getDatabase } from '@happyvertical/sql';
 import { EventCollection } from '../collections/EventCollection';
 import { EventSeriesCollection } from '../collections/EventSeriesCollection';
 import type { Event } from '../models/Event';
@@ -17,7 +20,7 @@ import {
 
 export interface CalendarSourceSyncOptions
   extends Omit<SmrtClassOptions, 'db'> {
-  db: NonNullable<Parameters<typeof getDatabase>[0]>;
+  db: DatabaseConfig;
   source: string;
   ics: string;
   tenantId?: string | null;
@@ -365,7 +368,7 @@ export async function syncICalendarSource(
   ) {
     throw new Error('Recurring calendar sync requires bounded expansion');
   }
-  const db = await getDatabase(options.db);
+  const db = await resolveDatabase(options.db);
   if (db.requiresSchemaCheck)
     throw new Error(
       'Calendar sync requires migrated SQLite/PostgreSQL schemas',
