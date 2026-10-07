@@ -61,10 +61,6 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
     issue: '#3625',
     reason: '@happyvertical/sql root (pg, node:fs)',
   },
-  '@happyvertical/smrt-images': {
-    issue: '#3628, #3624',
-    reason: 'sharp, node:fs/promises, node:crypto, resvg native addon',
-  },
   '@happyvertical/smrt-jobs': {
     issue: '#3615, #3624, #3627',
     reason:
