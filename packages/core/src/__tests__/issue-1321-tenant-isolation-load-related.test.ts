@@ -173,6 +173,19 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
       expect(loaded.id).toBe(customer.id);
     });
 
+    it('returns and caches null when the target row is unavailable', async () => {
+      const missingId = randomUUID();
+      const order = new IsoOrder({
+        tenantId: 'tenant-a',
+        customerId: missingId,
+        db,
+      });
+      await order.initialize();
+
+      await expect(order.loadRelated('customerId')).resolves.toBeNull();
+      await expect(order.loadRelated('customerId')).resolves.toBeNull();
+    });
+
     it('is a no-op when the target has a null tenant (global model)', async () => {
       const customer = await makeCustomer(null);
       const order = await makeOrder('tenant-a', customer.id!);

@@ -5,7 +5,10 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { isSystemContext } from '@happyvertical/smrt-tenancy';
+import {
+  isSystemContext,
+  withTenantGlobalRead,
+} from '@happyvertical/smrt-tenancy';
 import { ProfileType } from '../models/ProfileType';
 
 function isPostgresUrl(url: string | undefined): boolean {
@@ -23,6 +26,25 @@ export class ProfileTypeCollection extends SmrtCollection<ProfileType> {
    */
   async getBySlug(slug: string): Promise<ProfileType | null> {
     return await this.get({ slug });
+  }
+
+  /**
+   * Resolve one profile type available to a tenant.
+   *
+   * Profile types may be tenant-owned or global lookup rows. A normal point
+   * read under an active tenant context intentionally cannot see a global
+   * row, so this uses the bounded tenant-plus-globals list capability. The
+   * capability preserves the active actor and fails closed when the requested
+   * tenant differs from the active tenant context.
+   */
+  async getAvailableById(
+    id: string,
+    tenantId: string,
+  ): Promise<ProfileType | null> {
+    const rows = await withTenantGlobalRead(tenantId, () =>
+      this.list({ where: { id }, limit: 1 }),
+    );
+    return rows[0] ?? null;
   }
 
   /**

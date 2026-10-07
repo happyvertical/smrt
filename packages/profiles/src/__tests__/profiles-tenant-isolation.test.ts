@@ -119,4 +119,55 @@ describe('profiles tenant isolation (#1600)', () => {
     );
     expect(stored.rows[0]?.tenant_id).toBe('tenant-1');
   });
+
+  it('resolves only global and same-tenant profile types for listed profiles', async () => {
+    const types = await ProfileTypeCollection.create({ db });
+    const globalType = await withSystemContext(async () => {
+      const type = await types.create({ name: 'Person' });
+      await type.save();
+      return type;
+    });
+    const tenantType = await withTenant({ tenantId: 'tenant-1' }, async () => {
+      const type = await types.create({ name: 'Tenant Person' });
+      await type.save();
+      return type;
+    });
+    const foreignType = await withTenant({ tenantId: 'tenant-2' }, async () => {
+      const type = await types.create({ name: 'Foreign Person' });
+      await type.save();
+      return type;
+    });
+    const profiles = await ProfileCollection.create({ db });
+    await withTenant({ tenantId: 'tenant-1' }, async () => {
+      for (const [name, typeId] of [
+        ['Global type profile', globalType.id],
+        ['Tenant type profile', tenantType.id],
+        ['Foreign type profile', foreignType.id],
+      ] as const) {
+        const created = await profiles.create({ typeId, name });
+        await created.save();
+      }
+    });
+
+    await withTenant({ tenantId: 'tenant-1' }, async () => {
+      const listed = await profiles.list({ orderBy: ['name ASC'] });
+      const globalProfile = listed.find(
+        (profile) => profile.name === 'Global type profile',
+      );
+      const tenantProfile = listed.find(
+        (profile) => profile.name === 'Tenant type profile',
+      );
+      const foreignProfile = listed.find(
+        (profile) => profile.name === 'Foreign type profile',
+      );
+
+      await expect(globalProfile?.getTypeSlug()).resolves.toBe('person');
+      await expect(globalProfile?.getTypeSlug()).resolves.toBe('person');
+      await expect(tenantProfile?.getTypeSlug()).resolves.toBe('tenant-person');
+      await expect(foreignProfile?.getTypeSlug()).resolves.toBe('');
+      await expect(
+        types.getAvailableById(globalType.id as string, 'tenant-2'),
+      ).rejects.toThrow(/isolation/i);
+    });
+  });
 });
