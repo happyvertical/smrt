@@ -21,10 +21,11 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
-export { demonstrateClient } from './client';
 // Re-export everything from the lib directory
 export * from './lib/index';
 
 // The server bootstrap (`startServer`, `generateMCPServer`, `startAll`) lives in
 // the Node-only `./server` subpath so this entry stays browser-safe (#3616).
-// Node resolution of `.` re-exports it via `index.node.ts`.
+// Node resolution of `.` re-exports it via `index.node.ts`, together with
+// `demonstrateClient`, whose module imports the build-time
+// `@happyvertical/smrt-virt-client` virtual module a browser bundle cannot resolve.

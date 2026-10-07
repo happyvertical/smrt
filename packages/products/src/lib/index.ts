@@ -7,16 +7,11 @@
  * 3. Standalone application: Internal imports for the full app
  */
 
-// Re-export auto-generated virtual modules for convenience
-// These come from the SMRT Vite plugin and provide:
-// - Auto-generated TypeScript client
-// - Auto-generated types
-// - Auto-generated MCP tools
-// - Auto-generated REST routes
-export { default as createClient } from '@smrt/client';
-export { manifest } from '@smrt/manifest';
-export { default as createMCPServer } from '@smrt/mcp';
-export { default as setupRoutes } from '@smrt/routes';
+// Auto-generated types come from the SMRT Vite plugin (type-only, erased at
+// build). The runtime virtual modules (`@smrt/client`, `@smrt/manifest`,
+// `@smrt/mcp`, `@smrt/routes`) are re-exported from `../index.node.ts` only:
+// a bare virtual-module import is unresolvable without the plugin and
+// `@smrt/mcp` / `@smrt/routes` are server code (#3616).
 export type * from '@smrt/types';
 export * from './collections/index';
 // UI Components - Reusable Svelte components
