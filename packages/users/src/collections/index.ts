@@ -35,6 +35,14 @@ export {
 // Membership collections
 export { MembershipCollection } from './MembershipCollection.js';
 export { MembershipOverrideCollection } from './MembershipOverrideCollection.js';
+export {
+  UsersOAuthAccessTokenRevocationCollection,
+  UsersOAuthAuthorizationCodeCollection,
+  UsersOAuthAuthorizationCollection,
+  UsersOAuthClientCollection,
+  UsersOAuthRefreshFamilyCollection,
+  UsersOAuthRefreshGrantCollection,
+} from './OAuthAuthorizationCollection.js';
 // Password credential (#3274)
 export {
   type PasswordCredentialWrite,

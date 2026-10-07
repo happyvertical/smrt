@@ -31,6 +31,15 @@ export {
 // Membership
 export { Membership } from './Membership.js';
 export { MembershipOverride } from './MembershipOverride.js';
+export {
+  type OAuthTokenClaims,
+  UsersOAuthAccessTokenRevocation,
+  UsersOAuthAuthorization,
+  UsersOAuthAuthorizationCode,
+  UsersOAuthClient,
+  UsersOAuthRefreshFamily,
+  UsersOAuthRefreshGrant,
+} from './OAuthAuthorization.js';
 // Password credential (#3274)
 export { UsersPasswordCredential } from './PasswordCredential.js';
 export {

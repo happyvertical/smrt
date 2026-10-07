@@ -502,9 +502,17 @@ export interface MountMcpRouteOptions {
    * `null`, the route resolves its principal from the request as usual. A
    * `sessionFallback` adapter (the local owner-token adapter) challenges only
    * requests that carry an `Authorization` header; others keep the session
-   * principal. Ignored by the deprecated REST-shaped mounts.
+   * principal. Set `allowAnonymous` to permit a headerless request with a
+   * non-fallback adapter. Ignored by the deprecated REST-shaped mounts.
    */
   auth?: McpRouteResourceAuthSource;
+  /**
+   * Permit an anonymous request when an auth adapter is configured but no
+   * Authorization header is present. The server policy still exposes only
+   * explicitly public read-only tools and resources. A presented bearer is
+   * always verified; a bad token never falls back to anonymous access.
+   */
+  allowAnonymous?: boolean;
   /** Optional extension discovery projected from the request-authorized tool catalog. */
   extensions?: McpProtocolRequestOptions['extensions'];
   /**
@@ -583,8 +591,8 @@ function mountMcpRouteWith(
     // A session-fallback adapter (local owner tokens) leaves requests with no
     // credentials header on the session path; any presented bearer must verify.
     if (
-      auth.sessionFallback === true &&
-      !event.request.headers.has('authorization')
+      !event.request.headers.has('authorization') &&
+      (auth.sessionFallback === true || options.allowAnonymous === true)
     ) {
       return dispatch(event, resolveRequestPrincipal(event, options));
     }
@@ -678,7 +686,12 @@ export interface MountMcpAppRouteOptions
   extends CreateDefaultMcpAppServerOptions,
     Pick<
       MountMcpRouteOptions,
-      'auth' | 'bindPrincipal' | 'extensions' | 'checkOrigin' | 'trustedOrigins'
+      | 'auth'
+      | 'bindPrincipal'
+      | 'extensions'
+      | 'checkOrigin'
+      | 'trustedOrigins'
+      | 'allowAnonymous'
     > {
   /**
    * Resolve the request principal when no bearer adapter is active. Defaults
@@ -753,6 +766,7 @@ export function mountMcpAppRoute(
 ): McpAppSvelteKitHandler {
   const {
     auth,
+    allowAnonymous,
     bindPrincipal,
     extensions,
     resolvePrincipal,
@@ -773,6 +787,7 @@ export function mountMcpAppRoute(
   });
   const routeOptions: MountMcpRouteOptions = {
     auth,
+    allowAnonymous,
     bindPrincipal:
       bindPrincipal !== undefined || !runtime
         ? bindPrincipal
