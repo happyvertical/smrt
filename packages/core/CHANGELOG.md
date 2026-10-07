@@ -1,5 +1,34 @@
 # @happyvertical/smrt-core
 
+## 0.55.2
+
+### Patch Changes
+
+- ### Features
+  
+  - browser fixture for model package roots (#3621) (#3631) (bundle-gate)
+  - widget hints, display label and selector slots in the manifest (#3611) (core)
+  - user-customizable shell layout with Sortable and ShellLayoutEditor (#3612) (smrt-svelte)
+  - emit enum values for enum- and literal-union-typed fields (#3609) (scanner)
+  - RelationInput searchable relation picker (#3610) (smrt-svelte)
+  - AppShell header dock toggles and useShellDock control API (#3605) (smrt-svelte)
+  - user-facing help for SmrtRecipe (#3597) (core)
+  - optional trailing action icon on ShellNavItem (#3594) (smrt-svelte)
+  - add SmrtRecipe, declared units of app functionality (#3595) (core)
+  - publish the OIDC client landing-URL registration contract (#3570) (users)
+  
+  ### Bug Fixes
+  
+  - preserve tenant profile relationships and enum values (#3619) (core)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.102.2 (#3589) (deps)
+  - docs: ADR 0003 — smrt add declarative package install (#3378) (#3565) (adr)
+- @happyvertical/smrt-config@0.55.2
+  - @happyvertical/smrt-scanner@0.55.2
+  - @happyvertical/smrt-types@0.55.2
+
 ## 0.55.1
 
 ### Patch Changes
