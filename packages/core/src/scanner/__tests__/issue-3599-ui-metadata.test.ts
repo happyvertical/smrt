@@ -69,22 +69,21 @@ describe('@field ui.widget (#3599)', () => {
   it('carries a valid widget in the manifest under _meta.ui', () => {
     const manifest = generate({
       notes: text({ _meta: { ui: { widget: 'textarea', group: 'extra' } } }),
-      total: {
-        type: 'integer',
-        required: false,
+      currency: text({
+        default: 'USD',
         _meta: { ui: { widget: 'currency' } },
-      },
+      }),
     });
     const fields = manifest.objects[`${PKG}:Order`].fields;
     expect(fields.notes._meta?.ui).toEqual({
       widget: 'textarea',
       group: 'extra',
     });
-    expect(fields.total._meta?.ui).toEqual({ widget: 'currency' });
+    expect(fields.currency._meta?.ui).toEqual({ widget: 'currency' });
   });
 
   it.each(
-    FIELD_UI_WIDGETS.filter((w) => w !== 'currency'),
+    FIELD_UI_WIDGETS,
   )('accepts %s on a text field and rejects it on an integer field', (widget) => {
     expect(() =>
       generate({ f: text({ _meta: { ui: { widget } } }) }),
@@ -100,19 +99,20 @@ describe('@field ui.widget (#3599)', () => {
     );
   });
 
-  it('rejects currency on a text or decimal field (money is integer minor units)', () => {
-    expect(() =>
-      generate({ f: text({ _meta: { ui: { widget: 'currency' } } }) }),
-    ).toThrow(/needs a field of type integer/);
-    expect(() =>
-      generate({
-        f: {
-          type: 'decimal',
-          required: false,
-          _meta: { ui: { widget: 'currency' } },
-        },
-      }),
-    ).toThrow(/this field is decimal/);
+  it('rejects the currency-code widget on an amount (integer or decimal) field', () => {
+    for (const type of ['integer', 'decimal'] as const) {
+      expect(() =>
+        generate({
+          total: {
+            type,
+            required: false,
+            _meta: { ui: { widget: 'currency' } },
+          },
+        }),
+      ).toThrow(
+        new RegExp(`needs a field of type text, but this field is ${type}`),
+      );
+    }
   });
 
   it('rejects an unknown widget and names the valid ones', () => {

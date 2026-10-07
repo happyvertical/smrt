@@ -41,8 +41,8 @@ export interface FieldUIHints {
   /**
    * Presentation widget for the field's input (#3599): one of
    * `'textarea' | 'currency' | 'email' | 'url' | 'phone'`. Validated against
-   * the field type at build time (text-like widgets need a `text` field,
-   * `currency` an `integer` (minor-unit) one).
+   * the field type at build time (every widget needs a `text` field;
+   * `currency` is a currency-CODE picker, also on `text`).
    */
   widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
 }

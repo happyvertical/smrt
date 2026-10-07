@@ -19,9 +19,10 @@ client at all.
 `'textarea' | 'currency' | 'email' | 'url' | 'phone'`. It rides the same
 `_meta.ui` channel and is also emitted (sanitized) into web-collection
 definitions. The manifest generator validates it against the field type and
-fails the build otherwise: `textarea`/`email`/`url`/`phone` need a `text` field,
-`currency` an `integer` (minor-unit) field; an unknown value or a
-relationship field is an error. `ui.widget` is a hint only — it never changes
+fails the build otherwise: every widget needs a `text` field (`currency` is a
+currency-CODE picker for an ISO 4217 string such as `currency = 'USD'`, not a
+money amount; amounts are integer minor units and take no widget); an unknown
+value or a non-text field is an error. `ui.widget` is a hint only — it never changes
 the column type or validation.
 
 ## Presentation metadata (#3599)

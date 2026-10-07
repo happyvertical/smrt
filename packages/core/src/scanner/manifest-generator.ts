@@ -749,8 +749,8 @@ export class ManifestGenerator {
    * a declaration no host could honor:
    *
    * - `@field({ ui: { widget } })` must name a known widget the field's type
-   *   accepts (`textarea`/`email`/`url`/`phone` on text, `currency` on
-   *   integer minor units).
+   *   accepts (every widget is text-only; `currency` is an ISO 4217 code
+   *   picker, not an amount).
    * - `@smrt({ display: { label } })` must name an own, non-sensitive,
    *   non-transient, non-relationship field.
    * - A selector slot's `selects` must resolve when it names this package.
