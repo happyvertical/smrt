@@ -588,13 +588,17 @@ function mountMcpRouteWith(
     }
     const auth = await resolveAuth();
     if (!auth) return dispatch(event, resolveRequestPrincipal(event, options));
-    // A session-fallback adapter (local owner tokens) leaves requests with no
-    // credentials header on the session path; any presented bearer must verify.
-    if (
-      !event.request.headers.has('authorization') &&
-      (auth.sessionFallback === true || options.allowAnonymous === true)
-    ) {
-      return dispatch(event, resolveRequestPrincipal(event, options));
+    if (!event.request.headers.has('authorization')) {
+      // A session-fallback adapter (local owner tokens) keeps its established
+      // session path. Explicit anonymous access is separate: it deliberately
+      // ignores session locals and custom resolvers, so bearer auth cannot be
+      // bypassed through ambient authority.
+      if (auth.sessionFallback === true) {
+        return dispatch(event, resolveRequestPrincipal(event, options));
+      }
+      if (options.allowAnonymous === true) {
+        return dispatch(event, { principal: null });
+      }
     }
     const checked = await auth.authenticate(event.request);
     if (!checked.ok) return checked.response;

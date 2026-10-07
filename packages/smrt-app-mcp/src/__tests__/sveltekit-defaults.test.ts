@@ -678,6 +678,39 @@ describe('bearer authentication source', () => {
     expect((await hiddenResource.json()).error.message).toBe(
       'MCP resource is not available.',
     );
+    // `allowAnonymous` is deliberately not a session fallback: ambient
+    // session locals and a custom resolver must not widen it.
+    expect(await toolNames(handler, ownerLocals)).toEqual([
+      'lanerouteitem_list',
+    ]);
+    const sessionPrivateCall = await call(
+      handler,
+      'lanerouteitem_create',
+      ownerLocals,
+    );
+    expect(sessionPrivateCall.body.error.message).toContain(
+      'Authentication is required',
+    );
+    const sessionResources = await handler(
+      rpc({ method: 'resources/list', locals: ownerLocals }),
+    );
+    expect(
+      (await sessionResources.json()).result.resources.map(
+        (resource: { uri: string }) => resource.uri,
+      ),
+    ).toEqual([publicResource]);
+    const customResolver = route({
+      auth,
+      allowAnonymous: true,
+      publicToolPatterns: () => ['lanerouteitem_list'],
+      resolvePrincipal: () => ({
+        id: 'custom-owner',
+        tenantId: 'tenant-a',
+        kind: 'human',
+        scopes: ['items.read'],
+      }),
+    });
+    expect(await toolNames(customResolver, {})).toEqual(['lanerouteitem_list']);
 
     // Any supplied credentials stay on the bearer path. They cannot turn a
     // protected route into an anonymous one, even with a valid cookie session.

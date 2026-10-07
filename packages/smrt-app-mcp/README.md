@@ -146,7 +146,9 @@ only declared public, read-only tools and `public: true` resources are visible.
 It does not make protected tools or resources public, and any supplied bearer
 is always authenticated first. A malformed, expired, revoked, or otherwise
 invalid bearer returns the adapter's 401 challenge and never falls back to
-anonymous or session access.
+anonymous or session access. `allowAnonymous` also ignores session locals and
+custom principal resolvers for headerless requests; local-token adapters retain
+their separate `sessionFallback` behavior.
 
 `mountMcpAppRoute({ runtime })` and
 `mountMcpProtectedResourceMetadataRoute({ runtime })` build it for you, one
