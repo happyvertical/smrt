@@ -13,13 +13,19 @@
  * listed with a reason in `BROWSER_ENTRY_NODE_ONLY`, and when a value a
  * workspace package imports from the package root is unreachable here.
  *
+ * From `generators/` only the pure helpers are exported (custom-action metadata,
+ * the tenant-gate slot, typed 4xx normalization), as the same named lists
+ * `generators/index.ts` uses, so this entry never publishes a name the Node
+ * entry does not (the parity test checks both directions).
+ *
  * Node-only (not exported here; use the named subpath instead):
  * - Code generators and HTTP servers: `generators/index` (APIGenerator,
  *   MCPGenerator, startRestServer, ...) -> `/generators`, `/generators/rest`,
  *   `/generators/mcp`; `runtime/index` server half -> `/runtime`
  * - Manifest discovery and static manifest loading (`node:fs`/`node:url`):
  *   `manifest/index` -> `/manifest`
- * - Knowledge graph and run-once claims (scanner/knowledge) -> `/knowledge`
+ * - Knowledge graph -> `/knowledge`; run-once claims have no subpath (they
+ *   need node:crypto and the knowledge graph) and are Node-entry only
  * - Vite plugin, prebuild utilities, test-database helper -> `/vite-plugin`,
  *   `/prebuild`, `/testing`
  *
@@ -245,14 +251,60 @@ export {
   type GeneratedCollectionAccess,
   type GeneratedCollectionRuntime,
 } from './generated-collection-access';
-// Pure helpers from `generators/`: custom-action metadata (`decorators/index`
-// already pulls it into the browser graph), the dependency-inversion tenant
-// gate slot (no imports; smrt-tenancy fills it), and typed 4xx normalization.
-// The HTTP route builders in the same directory (`generators/rest`,
-// `generators/mcp`, ...) stay node-only.
-export * from './generators/custom-action';
-export * from './generators/tenant-gate';
-export * from './generators/typed-http-error';
+export {
+  type ApiMethodExposure,
+  type ApiMethodRejectionCode,
+  buildCustomActionInputSchema,
+  buildCustomActionInvocationArgs,
+  CRUD_OPERATIONS,
+  type CustomActionFailure,
+  type CustomActionMetadata,
+  type CustomActionScope,
+  classifyMethodWireability,
+  classifyParameterWireability,
+  coerceCustomActionArgument,
+  createClassNamePredicate,
+  createManifestClassNamePredicate,
+  customActionParameterInputName,
+  declaredTypeAcceptsDate,
+  declaresRuntimeRestRoute,
+  declaresRuntimeRestRouteShape,
+  type EffectiveActionMetadata,
+  type ExposableMethod,
+  isCrudOperation,
+  isCrudToolAction,
+  type MethodDecoratorConfig,
+  normalizeCustomActionFailure,
+  queryStringDecoderFor,
+  type ResolveApiMethodExposureOptions,
+  type ResolveCustomActionMetadataOptions,
+  type ResolvedCustomActionMetadata,
+  readMethodDecoratorConfig,
+  resolveApiMethodExposure,
+  resolveCustomActionMetadata,
+  resolveDeclaredScopeMismatch,
+  resolveEffectiveActionMetadata,
+  SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
+  type ToolEffect,
+  toCustomActionBoolean,
+  toCustomActionDate,
+  toCustomActionNumber,
+  type WireabilityOptions,
+  type WireabilityVerdict,
+  type WireableParameter,
+} from './generators/custom-action';
+// Tenant entry-point gate (dependency-inversion hook filled by smrt-tenancy)
+export {
+  runWithTenantGate,
+  setTenantEntryPointRunner,
+  type TenantEntryPointRunner,
+  type TenantGateOptions,
+} from './generators/tenant-gate';
+// Shared 4xx normalization for generated REST and SvelteKit transports.
+export {
+  normalizeTypedHttpError,
+  type TypedHttpFailure,
+} from './generators/typed-http-error';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';

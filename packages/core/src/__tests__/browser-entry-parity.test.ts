@@ -8,10 +8,11 @@
  * `applyPendingDecoratorRegistrations`, `resolveDatabase`, `bumpChangeFeed`,
  * ...), so `vite build` failed with `[MISSING_EXPORT]` for each of them.
  *
- * Two guards:
+ * Guards:
  * 1. every value exported by the Node entry (`index.ts`) is either exported by
  *    `browser.ts` or listed in {@link BROWSER_ENTRY_NODE_ONLY} with a reason,
- *    and the allowlist carries no stale entries;
+ *    the allowlist carries no stale entries, and the browser entry publishes
+ *    no value the Node entry lacks;
  * 2. every value a workspace package (`packages/<name>/src`, non-test) imports
  *    from the package root resolves from the browser entry or is on that list.
  */
@@ -72,7 +73,8 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
     ],
   },
   {
-    reason: `${HTTP_ROUTE} (server-sent events route)`,
+    reason:
+      'Server-sent-events route surface for generated REST/SvelteKit transports; stays behind the generators subpaths by policy (its imports are portable)',
     names: [
       'DEFAULT_EVENTS_HEARTBEAT_MS',
       'DEFAULT_EVENTS_MAX_SUBSCRIBERS',
@@ -171,6 +173,18 @@ const BROWSER_ENTRY_NODE_ONLY: ReadonlyMap<string, string> = new Map(
   ),
 );
 
+/**
+ * Browser-only names that predate #3614. `export * from './decisions'` leaks
+ * `assertFiniteUnitInterval`, which `index.ts` deliberately does not re-export;
+ * dropping it would narrow the browser surface, so it is recorded, not removed.
+ */
+const BROWSER_ONLY_EXISTING: ReadonlyMap<string, string> = new Map([
+  [
+    'assertFiniteUnitInterval',
+    'leaked by the pre-existing decisions star export',
+  ],
+]);
+
 const nodeNames = new Set(Object.keys(nodeEntry));
 const browserNames = new Set(Object.keys(browserEntry));
 
@@ -192,6 +206,17 @@ describe('browser entry export parity (#3614)', () => {
     for (const reason of BROWSER_ENTRY_NODE_ONLY.values()) {
       expect(reason.length).toBeGreaterThan(20);
     }
+  });
+
+  it('publishes no value the Node entry lacks, apart from documented browser-only names', () => {
+    const extra = [...browserNames].filter(
+      (name) => !nodeNames.has(name) && !BROWSER_ONLY_EXISTING.has(name),
+    );
+    expect(extra).toEqual([]);
+    const stale = [...BROWSER_ONLY_EXISTING.keys()].filter(
+      (name) => !browserNames.has(name) || nodeNames.has(name),
+    );
+    expect(stale).toEqual([]);
   });
 
   it('exports the decorators and helpers model packages need at module scope', () => {

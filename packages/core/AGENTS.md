@@ -174,7 +174,8 @@ and repository rules.
   Node entry (`index.ts`) minus HTTP servers, manifest/knowledge discovery, run-once,
   the Vite plugin, and the test helper. A new export added to `index.ts` must also
   go to `browser.ts` unless it is Node-only; `src/__tests__/browser-entry-parity.test.ts`
-  fails otherwise (allowlist: `BROWSER_ENTRY_NODE_ONLY`, each with a reason), and also
+  fails otherwise (allowlist: `NODE_ONLY_GROUPS` in that test, each with a reason; the browser
+  entry may not publish a name the Node entry lacks), and also
   fails when a workspace package imports a root value the browser entry lacks.
 - Database retries are transient-only, four attempts total for `get`/`upsert`.
   Use `src/db-errors.ts` classifiers through the cause chain, never message
