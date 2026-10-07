@@ -10,6 +10,12 @@ test('floating launcher remains usable at 320px with keyboard controls', async (
   await launcher.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: 'Collapse assistant' })).toBeVisible();
+  const bounds = await page.locator('.floating-assistant-panel').boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(640);
   await page.keyboard.press('Escape');
   await expect(launcher).toBeFocused();
   await expect(page.locator('.floating-assistant-panel')).toHaveAttribute(

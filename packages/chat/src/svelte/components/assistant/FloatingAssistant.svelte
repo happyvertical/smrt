@@ -178,6 +178,7 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   .floating-assistant-panel {
+    box-sizing: border-box;
     display: block;
     inline-size: min(28rem, calc(100vw - 2rem));
     max-block-size: min(42rem, calc(100dvh - 6rem));
