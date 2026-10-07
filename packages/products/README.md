@@ -49,7 +49,7 @@ await products.addAsset(product.id!, hero, 'gallery', 1);
 
 | Export | Description |
 |--------|------------|
-| `demonstrateClient` | Demo of auto-generated TypeScript client (Node condition only; needs the SMRT Vite plugin) |
+| `demonstrateClient` | Demo of auto-generated TypeScript client (Node condition only; needs the s-m-r-t Vite plugin) |
 
 ### Server exports (`@happyvertical/smrt-products/server`, Node only)
 
@@ -101,7 +101,7 @@ The root entry is browser-safe. The server bootstrap (express, `startRestServer`
 
 ### Virtual Modules (Vite plugin, Node condition only)
 
-These re-exports resolve only where the SMRT Vite plugin supplies the virtual modules, and `createMCPServer` / `setupRoutes` are server code, so they are exported from the `node` export condition of the root, not the browser-safe root.
+These re-exports resolve only where the s-m-r-t Vite plugin supplies the virtual modules, and `createMCPServer` / `setupRoutes` are server code, so they are exported from the `node` export condition of the root, not the browser-safe root.
 
 | Export | Description |
 |--------|------------|
