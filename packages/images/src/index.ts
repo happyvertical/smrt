@@ -18,8 +18,9 @@ import './prompts.js';
 
 // Operations. Services that need sharp, node:fs, or the AI SDK graph
 // (ImageEditor, ImageCategorizer, ImageDeriver, ImageMetadataExtractor,
-// applyImageAdjustments) are Node-only and ship from
-// '@happyvertical/smrt-images/node' so this root stays browser-safe (#3628).
+// applyImageAdjustments) are Node-only: they resolve from this package name
+// through the `node` export condition (src/index.node.ts) and from
+// '@happyvertical/smrt-images/node', so this file stays browser-safe (#3628).
 export {
   type AppliedImageAdjustments,
   decodeImageAdjustments,

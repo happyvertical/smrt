@@ -7,10 +7,11 @@
  * persistence logic itself is owned and tested by @happyvertical/smrt-assets.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as images from '../index.js';
+import * as imagesNode from '../index.node.js';
 import { persistImageMediaBundleInspection } from '../media-bundle-persistence.js';
-import * as imagesNode from '../node.js';
 
 describe('package barrel (index.ts)', () => {
   it('exposes the documented runtime exports', () => {
@@ -68,5 +69,28 @@ describe('media-bundle-persistence re-exports', () => {
     expect(persistImageMediaBundleInspection).toBe(
       images.persistImageMediaBundleInspection,
     );
+  });
+});
+
+describe('package export conditions (#3628)', () => {
+  const pkg = JSON.parse(
+    readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+  ) as { exports: Record<string, Record<string, unknown>> };
+
+  it('resolves the root to the Node entry under node, browser-safe otherwise', () => {
+    const root = pkg.exports['.'];
+    // `node` comes first so it wins for Node (runtime and types) while
+    // browser/bundler builds skip it.
+    expect(Object.keys(root)[0]).toBe('node');
+    expect(root.node).toEqual({
+      types: './dist/index.node.d.ts',
+      import: './dist/index.node.js',
+    });
+    expect(root.types).toBe('./dist/index.d.ts');
+    expect(root.import).toBe('./dist/index.js');
+  });
+
+  it('points ./node at the same Node entry', () => {
+    expect(pkg.exports['./node']).toEqual(pkg.exports['.']?.node);
   });
 });

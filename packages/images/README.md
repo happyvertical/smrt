@@ -15,12 +15,13 @@ pnpm add @happyvertical/smrt-images
 import {
   Image, ImageCollection, ImageSearch, UpstreamManager,
 } from '@happyvertical/smrt-images';
-// Node-only processing (sharp, filesystem, AI SDK) lives on the /node subpath,
-// which also re-exports the whole root
+// Node-only processing (sharp, filesystem, AI SDK): available from the root
+// under Node (the `node` export condition) and from the /node subpath; absent
+// from the browser/bundler root
 import {
   ImageCategorizer, ImageEditor, ImageDeriver,
   ImageMetadataExtractor, applyImageAdjustments,
-} from '@happyvertical/smrt-images/node';
+} from '@happyvertical/smrt-images';  // or '@happyvertical/smrt-images/node'
 
 // Create and query images
 const images = await ImageCollection.create({ db });
