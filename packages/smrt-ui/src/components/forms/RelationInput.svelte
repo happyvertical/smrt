@@ -1,14 +1,13 @@
 <script lang="ts">
-import { Button } from '@happyvertical/smrt-ui';
+import { untrack } from 'svelte';
+import Button from '../ui/Button.svelte';
+import Combobox from './Combobox.svelte';
+import { emitControlChange } from './control-dom.js';
+import type { ControlInteractionOptions } from './control-interaction.js';
 import {
-  Combobox,
-  type ControlInteractionOptions,
-  emitControlChange,
   recordControlUserEdit,
   tryGetControlInteractionContext,
-} from '@happyvertical/smrt-ui/forms';
-import { untrack } from 'svelte';
-import { logger } from '../../internal/logger.js';
+} from './control-interaction-context.js';
 import type { RelationOption } from './types.js';
 
 /**
@@ -160,7 +159,7 @@ async function runSearch(query: string) {
     if (seq !== searchSeq) return;
     results = [];
     failed = true;
-    logger.warn('[smrt-svelte] RelationInput search failed', {
+    console.warn('[smrt-ui] RelationInput search failed', {
       error: String(err),
     });
   } finally {
@@ -238,7 +237,7 @@ async function create() {
       if (rootEl) emitControlChange(rootEl);
     }
   } catch (err) {
-    logger.warn('[smrt-svelte] RelationInput onCreate failed', {
+    console.warn('[smrt-ui] RelationInput onCreate failed', {
       error: String(err),
     });
   } finally {
@@ -276,7 +275,7 @@ $effect(() => {
         }
       })
       .catch((err) => {
-        logger.warn('[smrt-svelte] RelationInput resolve failed', {
+        console.warn('[smrt-ui] RelationInput resolve failed', {
           error: String(err),
         });
       })

@@ -2,8 +2,11 @@
 
 The commercial UI release is tracked in [#3423](https://github.com/happyvertical/smrt/issues/3423).
 Components compose the provider-free controls in `@happyvertical/smrt-ui/forms`
-and visual controls in `@happyvertical/smrt-ui`. They do not require SvelteKit,
-a database, or the top-level `smrt-svelte` integration package.
+(including `Combobox` and the searchable `RelationInput`, which takes
+caller-supplied `search`/`resolve`) and visual controls in
+`@happyvertical/smrt-ui`. They do not require SvelteKit, a database, or the
+top-level `smrt-svelte` integration package. Shared form controls live in
+smrt-ui; build on them rather than re-implementing their logic locally.
 
 ## Native forms and recovery
 

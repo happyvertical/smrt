@@ -13,6 +13,7 @@ import MultiSelect from '../../components/forms/MultiSelect.svelte';
 import Radio from '../../components/forms/Radio.svelte';
 import RadioGroup from '../../components/forms/RadioGroup.svelte';
 import RangeSlider from '../../components/forms/RangeSlider.svelte';
+import RelationInput from '../../components/forms/RelationInput.svelte';
 import SegmentedControl from '../../components/forms/SegmentedControl.svelte';
 import Slider from '../../components/forms/Slider.svelte';
 import Switch from '../../components/forms/Switch.svelte';
@@ -27,6 +28,26 @@ const countries = [
   { value: 'us', label: 'United States' },
   { value: 'mx', label: 'Mexico' },
 ];
+// RelationInput demo: a caller-supplied lookup standing in for a REST search.
+const demoCustomers = [
+  { id: 'cus_001', label: 'Acme Corp', detail: 'acme@example.com' },
+  { id: 'cus_002', label: 'Globex', detail: 'billing@globex.example' },
+  { id: 'cus_003', label: 'Initech', detail: 'ap@initech.example' },
+  { id: 'cus_004', label: 'Umbrella Ltd' },
+];
+async function searchCustomers(query: string) {
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const q = query.toLowerCase();
+  return demoCustomers.filter(
+    (c) =>
+      c.label.toLowerCase().includes(q) ||
+      (c.detail ?? '').toLowerCase().includes(q),
+  );
+}
+async function resolveCustomer(id: string) {
+  return demoCustomers.find((c) => c.id === id) ?? null;
+}
+let customerId = $state('');
 let accepted = $state(true);
 let notifications = $state(true);
 let pinned = $state(false);
@@ -83,6 +104,7 @@ const identity = (controlId: string) => ({
 
     <section><h5>Structured input</h5><div class="grid">
       <Combobox name="country" label="Country" options={countries} bind:value={country} />
+      <RelationInput name="customerId" label="Customer" description="Search by name or email" search={searchCustomers} resolve={resolveCustomer} bind:value={customerId} />
       <MultiSelect name="channels" label="Channels" options={[{ value: 'email', label: 'Email' }, { value: 'sms', label: 'SMS' }, { value: 'push', label: 'Push' }]} bind:values={channels} />
       <TagsInput name="topics" label="Topics" bind:values={tags} />
       <DatePicker name="date" label="Publish date" />
