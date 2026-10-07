@@ -47,19 +47,23 @@ const nav: ShellNavItem[] = $derived([
 // entries, so Simple and Clothing give one Products link. Options and Help
 // are icons in each page's header, not entries here.
 const recipeGroups: ShellNavGroup[] = $derived.by(() => {
-  const sections = new Map<string, { heading: string; added: Recipe[] }>();
+  const sections = new Map<
+    string,
+    { key: string; heading: string; added: Recipe[] }
+  >();
   for (const id of recipeState.ids) {
     const recipe = recipes.find((r) => r.id === id);
     if (!recipe) continue;
     const key = sectionId(recipe);
     const section = sections.get(key) ?? {
+      key,
       heading: recipe.group?.label ?? recipe.label,
       added: [],
     };
     section.added.push(recipe);
     sections.set(key, section);
   }
-  return [...sections.values()].map(({ heading, added }) => {
+  return [...sections.values()].map(({ key, heading, added }) => {
     const seen = new Set<string>();
     const entries = added.flatMap((recipe) =>
       recipeNav(recipe).filter((entry) => {
@@ -69,14 +73,26 @@ const recipeGroups: ShellNavGroup[] = $derived.by(() => {
         return true;
       }),
     );
+    // Stable ids keep a saved layout valid when the selection query in the
+    // hrefs changes. The section's options gear sits on its main (first) item
+    // and shows only while that section is current.
     return {
+      id: `section:${key}`,
       heading,
-      items: [
-        ...entries.map((entry) => ({
-          href: appHref(`/m/${entry.packageId}/${entry.model.name}/`),
-          label: entry.label,
-        })),
-      ],
+      items: entries.map((entry, index) => ({
+        id: `section:${key}:${entry.packageId}:${entry.model.name}:${entry.label}`,
+        href: appHref(`/m/${entry.packageId}/${entry.model.name}/`),
+        label: entry.label,
+        ...(index === 0
+          ? {
+              action: {
+                href: appHref(`/recipes/${key}/`),
+                label: `${heading} options`,
+                visibility: 'active' as const,
+              },
+            }
+          : {}),
+      })),
     };
   });
 });
