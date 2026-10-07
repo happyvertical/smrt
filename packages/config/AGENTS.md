@@ -29,7 +29,7 @@ Configuration management with cosmiconfig, secret sanitization, and SSG export.
 
 ## Key Files
 
-- `src/loader.ts` — cosmiconfig integration and file discovery
+- `src/loader.ts` — cosmiconfig integration and file discovery (Node only); `src/loader.browser.ts` is its browser build, selected through `package.json#browser`: `loadConfig()` resolves `{}`, an explicit `configPath` throws, so use `setConfig()` in a page (#2838). Both are build entries so `dist/index.js` imports `./loader.js` instead of inlining it
 - `src/merge.ts` — deep merge logic, runtime config store
 - `src/export.ts` — sanitization and export formatting (JSON/JS)
 - `src/runtime-profile.ts` — application runtime presets, validation, capabilities, and diagnostics
