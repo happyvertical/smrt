@@ -19,6 +19,7 @@ import '@happyvertical/smrt-ui/themes/styles/all.css';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy } from 'svelte';
 import { createInMemoryAssistantTransport } from '../../../svelte/components/assistant/assistant-transport.js';
+import CaptionOverlay from '../../../svelte/components/assistant/captions/CaptionOverlay.svelte';
 import {
   createCaptionChannel,
   createHeardCaptionCallbacks,
@@ -278,10 +279,10 @@ onDestroy(() => {
   </section>
   <p role="status">{notice}</p>
   <p>Sent turns: <output data-testid="sent-turns">{sentTurns}</output></p>
-  <div class="captions">
-    <HeardCaptions enabled={heardEnabled} lines={heard.lines} interim={heard.interim} placement="inline" />
-    <SpokenCaptions enabled={spokenEnabled} lines={spoken.lines} interim={spoken.interim} placement="inline" />
-  </div>
+  <CaptionOverlay>
+    <HeardCaptions enabled={heardEnabled} lines={heard.lines} interim={heard.interim} placement="bottom" />
+    <SpokenCaptions enabled={spokenEnabled} lines={spoken.lines} interim={spoken.interim} placement="bottom" />
+  </CaptionOverlay>
   <FloatingAssistant {transport} {registry} {actionClient} presentation={listeningMode ? 'controls' : 'full'} oncontroller={connect} launcherLabel="Open listening assistant" />
 </main>
 </ThemeProvider>
@@ -290,6 +291,5 @@ onDestroy(() => {
   main { max-inline-size: 60rem; font-family: var(--smrt-font-family, system-ui, sans-serif); color: var(--smrt-color-on-surface, #172033); margin: 2rem auto; padding: 1rem 1rem 6rem; }
   .controls { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin-block: 1rem; }
   .app { display: grid; gap: .75rem; border: 1px solid var(--smrt-color-outline, currentColor); padding: 1rem; border-radius: var(--smrt-radius-medium, .5rem); }
-  .captions { display: grid; gap: .75rem; overflow-wrap: anywhere; }
   h1 { font-size: clamp(1.5rem, 4vw, 2.5rem); }
 </style>

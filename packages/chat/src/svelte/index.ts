@@ -26,6 +26,7 @@ import AgentChat from './components/agent/AgentChat.svelte';
 import AgentSelector from './components/agent/AgentSelector.svelte';
 import AgentSessionPanel from './components/agent/AgentSessionPanel.svelte';
 import ToolCallDisplay from './components/agent/ToolCallDisplay.svelte';
+import CaptionOverlay from './components/assistant/captions/CaptionOverlay.svelte';
 import HeardCaptions from './components/assistant/captions/HeardCaptions.svelte';
 import SpokenCaptions from './components/assistant/captions/SpokenCaptions.svelte';
 // Assistant dock components (#2904)
@@ -128,6 +129,7 @@ export {
   readAssistantTurnResult,
   type SmrtAssistantTransportOptions,
 } from './components/assistant/assistant-transport.js';
+export { default as CaptionOverlay } from './components/assistant/captions/CaptionOverlay.svelte';
 export {
   type CaptionChannel,
   type CaptionChannelOptions,
@@ -345,4 +347,10 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-chat',
   'search-messages',
   SearchMessages,
+);
+
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-chat',
+  'caption-overlay',
+  CaptionOverlay,
 );

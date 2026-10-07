@@ -1,4 +1,6 @@
 <script lang="ts">
+import { getContext } from 'svelte';
+import { CAPTION_OVERLAY } from './caption-overlay-context.js';
 import type { CaptionLine } from './caption-state.svelte.js';
 
 export interface Props {
@@ -27,11 +29,12 @@ let {
   speakerLabel = 'Assistant is speaking',
   announce = false,
 }: Props = $props();
+const inOverlay = getContext<boolean>(CAPTION_OVERLAY) ?? false;
 const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 </script>
 
 {#if enabled && (visibleLines.length > 0 || interim)}
-  <section class:bottom={placement === 'bottom'} class="spoken-captions" aria-label={speakerLabel}>
+  <section class:bottom={placement === 'bottom' && !inOverlay} class="spoken-captions" aria-label={speakerLabel}>
     <p class="speaker"><span aria-hidden="true">◈</span> {speakerLabel}</p>
     <div class="caption-lines" aria-live={announce ? 'polite' : 'off'} aria-atomic="false">
       {#each visibleLines as line (line.id)}

@@ -126,3 +126,43 @@ separate utterances with separate ids and deadlines. Bounded-retention eviction,
 | Long URL or unbroken interim in either standalone component | Text fragments and component bounds remain inside 320px for inline/bottom | No host wrapping rule may mask overflow | Local viewer; no data executor or transaction; Chromium; plain transcript string, no wire contract | Four standalone cases in `listening-mode.spec.ts` |
 | Staggered completed lines with TTL | Each expires at its own deadline, including duplicate text; newer interim remains | Later final cannot postpone older expiry; timer cannot erase interim | Host caption channel; in-memory timer only, no DB/dialect; JS fake clock; timer callback edge | `caption-state.test.ts` |
 | Eviction, clear, dispose, then late callback | Retired timers are cancelled and their callbacks are harmless | Old callback cannot delete a fresh line or its interim | Same channel context; no external identity/persistence | `caption-state.test.ts` |
+
+## Coordinated bottom placement
+
+Use one `CaptionOverlay` for every viewport-bottom caption group. Its children
+remain independent components with their own toggles, speaker labels, and styles:
+
+```svelte
+<CaptionOverlay label={localizedCaptionsLabel}>
+  <HeardCaptions enabled={heardEnabled} lines={heard.lines} interim={heard.interim} placement="bottom" />
+  <SpokenCaptions enabled={spokenEnabled} lines={spoken.lines} interim={spoken.interim} placement="bottom" />
+</CaptionOverlay>
+```
+
+The wrapper owns the bottom anchor. Scoped context lets its descendant bottom
+captions participate in normal grid flow, in source/reading order, so changes in
+text height and additional speaker instances never require measured offsets.
+Keep caption surfaces as direct rendered children of the wrapper. Disabled or
+empty surfaces leave no gap; an empty group is hidden and leaves the tab order.
+Unmounting the group destroys its scoped context without shared registrations.
+
+The group respects safe-area insets and is bounded to half the viewport height.
+When content is taller, focus its labelled region with the keyboard and use the
+arrow, Page Up/Down, Home, or End keys to scroll. It uses the sticky layer, below
+FloatingAssistant's overlay layer, so approvals and other required controls
+remain clickable. It introduces no animation. Hosts must keep the overlay in a
+viewport positioning context (outside transformed or clipped ancestors), and
+must use one root for simultaneous captions in a group; separate roots do not
+coordinate with one another. Supply a localized `label` for the group.
+
+A single standalone `placement="bottom"` caption remains supported. Independent
+`placement="inline"` captions retain normal-flow behavior without requiring the
+wrapper. Do not mount several standalone bottom surfaces at the same viewport
+anchor: compose them in `CaptionOverlay` instead.
+
+Browser acceptance covers both explicit bottom placements at 320px, growing
+interim text, independent toggles, three simultaneous surfaces, unmount/remount,
+empty-group hiding, tall keyboard scrolling, reduced motion, and real approval
+hit testing above both captions. The no-provider listening fixture now uses this
+public composition. Browser TTS initialization cancellation is tracked separately
+in #3651; caption callback invalidation alone cannot cancel pending native audio.
