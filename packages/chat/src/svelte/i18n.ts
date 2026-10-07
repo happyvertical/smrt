@@ -60,6 +60,10 @@ export const M = defineMessages({
   'chat.assistant_thread_list.new_conversation': '+ New conversation',
   'chat.assistant_thread_list.untitled': 'Untitled',
 
+  // FloatingAssistant (#3642)
+  'chat.floating_assistant.collapse': 'Collapse assistant',
+  'chat.floating_assistant.close': 'Close',
+
   // AssistantDock (#2904)
   'chat.assistant_dock.no_surfaces':
     'Nothing on this page can be changed from the chat. You can still ask questions.',

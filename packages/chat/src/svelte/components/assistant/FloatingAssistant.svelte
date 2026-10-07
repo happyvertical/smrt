@@ -7,14 +7,18 @@
  * is an optional Svelte snippet so a host can use a still image, CSS art, or
  * an animation package without making any of them a chat dependency.
  */
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { type Snippet, tick } from 'svelte';
 import type { Attachment } from 'svelte/attachments';
 import type { AssistantStatus } from '../../../assistant-turn-events.js';
+import { M } from '../../i18n.js';
 import AssistantDock, {
   type Props as AssistantDockProps,
 } from './AssistantDock.svelte';
 import type { AssistantRun } from './create-assistant-dock-controller.svelte.js';
+
+const { t } = useI18n();
 
 export interface FloatingAssistantPresentationState {
   expanded: boolean;
@@ -144,10 +148,10 @@ function handleKeydown(event: KeyboardEvent) {
       variant="ghost"
       type="button"
       class="floating-assistant-collapse"
-      aria-label="Collapse assistant"
+      aria-label={t(M['chat.floating_assistant.collapse'])}
       onclick={collapse}
     >
-      Close
+      {t(M['chat.floating_assistant.close'])}
     </Button>
     <AssistantDock
       {...dockProps}
