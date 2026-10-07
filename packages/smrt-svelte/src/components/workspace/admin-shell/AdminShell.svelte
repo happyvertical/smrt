@@ -81,6 +81,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     appPanel?: Snippet;
     /** Content for the left tenant rail. */
     tenantRail?: Snippet;
+    /** Content pinned below the collapsed tenant rail. */
+    tenantRailFooter?: Snippet;
     /** Content for the left tenant panel. */
     tenantPanel?: Snippet;
     /** Content for the tenant panel footer. */
@@ -164,6 +166,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     account,
     appPanel,
     tenantRail,
+    tenantRailFooter,
     tenantPanel,
     tenantFooter,
     focusRail,
@@ -598,7 +601,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     handle.addEventListener('lostpointercapture', onEnd);
   }
 
-  const footerInHeader = $derived(!account && !!tenantFooter && (!shell.isEdgeShown('left') || !edgeExpanded('left')));
+  const footerInHeader = $derived(
+    !account &&
+      !tenantRailFooter &&
+      !!tenantFooter &&
+      (!shell.isEdgeShown('left') || !edgeExpanded('left')),
+  );
 
   const layoutStyle = $derived(buildLayoutStyle(shell));
 
@@ -883,7 +891,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     >
       {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
-        {#if !edgeExpanded('left') && (homeHref || logoSrc || brand)}{@render shellBrand(true)}{/if}
+        {#if (panelState('top') === 'hidden' || !edgeExpanded('left')) && (homeHref || logoSrc || brand)}
+          {@render shellBrand(!edgeExpanded('left'))}
+        {/if}
         {#if showTenantToggle}{@render edgeToggle('left')}{/if}
         {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
           <div
@@ -904,8 +914,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             {/if}
           </div>
         {/if}
-        {#if !shownOpen('left') && tenantRail}
-          {@render tenantRail()}
+        {#if !shownOpen('left') && (tenantRail || tenantRailFooter)}
+          <div class="smrt-admin-shell__tenant-rail-stack">
+            {#if tenantRail}
+              <div class="smrt-admin-shell__tenant-rail-content">
+                {@render tenantRail()}
+              </div>
+            {/if}
+            {#if tenantRailFooter}
+              <div class="smrt-admin-shell__tenant-rail-footer">
+                {@render tenantRailFooter()}
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
     </aside>
@@ -1424,6 +1445,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2);
+    overflow: visible;
   }
 
   /* A collapsed `keepMounted` edge keeps its panel in the DOM but hidden;
@@ -1454,6 +1476,29 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-width: 0;
     padding-block-start: var(--smrt-spacing-3);
     border-block-start: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .smrt-admin-shell__tenant-rail-stack {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .smrt-admin-shell__tenant-rail-content {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .smrt-admin-shell__tenant-rail-footer {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    padding-block-start: var(--smrt-spacing-2);
+    border-block-start: 1px solid var(--smrt-color-outline-variant);
+    overflow: visible;
   }
 
   .smrt-admin-shell__edge--right[data-state='expanded']

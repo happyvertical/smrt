@@ -298,6 +298,38 @@ test('supplied tenant navigation keeps its collapse control and touch rail targe
   ).toBeVisible();
 });
 
+test('sidebar-only chrome keeps brand and account access across rail states', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(
+    '/?top=hidden&left=collapsed&brand=1&account=1&railAccount=1',
+  );
+
+  await expect(page.locator('#smrt-admin-shell-top-panel')).toHaveCount(0);
+  const rail = page.locator('.smrt-admin-shell__edge--left');
+  const account = page.getByRole('button', {
+    name: /Open account menu Dana(?: ·)? Welder/,
+  });
+  await expect(rail.locator('.smrt-admin-shell__brand.compact')).toBeVisible();
+  await expect(account).toHaveCount(1);
+  await account.click();
+  const signOut = page.getByRole('menuitem', { name: 'Sign out' });
+  await expect(signOut).toBeInViewport();
+  const menuBox = await signOut.boundingBox();
+  const railBox = await rail.boundingBox();
+  expect(menuBox!.x + menuBox!.width).toBeGreaterThan(
+    railBox!.x + railBox!.width,
+  );
+  await page.keyboard.press('Escape');
+
+  await rail.getByRole('button', { name: 'Expand Tenant' }).click();
+  await expect(
+    rail.locator('.smrt-admin-shell__brand:not(.compact)'),
+  ).toContainText('Mobile shell fixture');
+  await expect(account).toHaveCount(1);
+});
+
 for (const width of [320, 390, 1280]) {
   test(`account stays reachable with touch targets at ${width}px`, async ({
     page,

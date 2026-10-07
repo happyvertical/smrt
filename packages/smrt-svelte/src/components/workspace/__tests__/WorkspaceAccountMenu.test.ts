@@ -18,6 +18,28 @@ describe('WorkspaceAccountMenu', () => {
       container.querySelector('.smrt-workspace-account-menu'),
     ).toHaveAttribute('data-density', 'touch');
   });
+
+  it('keeps the full account name accessible with a compact rail trigger', () => {
+    const { container } = render(WorkspaceAccountMenu, {
+      props: {
+        userName: 'Ada Lovelace',
+        userLabel: 'ada@example.com',
+        tenantLabel: 'Acme',
+        roleLabel: 'Owner',
+        compact: true,
+        onSignOut: vi.fn(),
+      },
+    });
+
+    expect(
+      container.querySelector('.smrt-workspace-account-menu'),
+    ).toHaveAttribute('data-compact');
+    expect(
+      screen.getByRole('button', {
+        name: 'Open account menu ada@example.com · Acme · Owner',
+      }),
+    ).toBeVisible();
+  });
   it('switches tenant and signs out through app-owned callbacks', async () => {
     const user = userEvent.setup();
     const onTenantSelect = vi.fn();

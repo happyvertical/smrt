@@ -72,6 +72,54 @@ describe('AdminShell', () => {
     }
   });
 
+  it('keeps sidebar-only branding and a rail footer reachable in both left states', async () => {
+    const state = createShellState({
+      config: { top: false, left: { initial: 'collapsed' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        title: 'Workshop',
+        homeHref: '/app',
+        tenantRail: textSnippet('compact navigation'),
+        tenantPanel: textSnippet('full navigation'),
+        tenantFooter: textSnippet('full account'),
+        tenantRailFooter: textSnippet('compact account'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('#smrt-admin-shell-top-panel')).toBeNull();
+      expect(
+        container.querySelector('.smrt-admin-shell__brand.compact'),
+      ).toHaveAttribute('href', '/app');
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer')
+          ?.textContent,
+      ).toContain('compact account');
+      expect(container.textContent?.match(/account/g)).toHaveLength(1);
+
+      state.expandPanel('left');
+      await tick();
+      expect(
+        container.querySelector('.smrt-admin-shell__brand:not(.compact)')
+          ?.textContent,
+      ).toContain('Workshop');
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-footer')
+          ?.textContent,
+      ).toContain('full account');
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer'),
+      ).toBeNull();
+      expect(container.textContent?.match(/account/g)).toHaveLength(1);
+    } finally {
+      await unmount(component);
+    }
+  });
+
   it('keeps an explicit account slot in a custom app bar regardless of left state', async () => {
     const state = createShellState({
       config: { left: { initial: 'expanded' } },
