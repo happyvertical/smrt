@@ -36,6 +36,7 @@ let {
   launcherLabel = 'Open assistant',
   panelLabel = 'Assistant',
   expanded = $bindable(false),
+  visible = true,
   onstatus,
   onrun,
   onattentionchange,
@@ -50,7 +51,7 @@ let panel: HTMLElement | undefined = $state();
 
 const floatingAssistantId = $props.id();
 const panelId = `floating-assistant-${floatingAssistantId}`;
-const panelExpanded = $derived(expanded || attentionRequired);
+const panelExpanded = $derived(visible && (expanded || attentionRequired));
 const presentation = $derived({ expanded: panelExpanded, status, run });
 
 function open() {
@@ -88,7 +89,7 @@ function handleAttentionChange(required: boolean) {
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || !expanded) return;
+  if (event.key !== 'Escape' || !visible || !expanded) return;
   event.preventDefault();
   collapse();
 }
@@ -96,7 +97,13 @@ function handleKeydown(event: KeyboardEvent) {
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="floating-assistant" data-expanded={panelExpanded || undefined}>
+<div
+  class="floating-assistant"
+  data-expanded={panelExpanded || undefined}
+  hidden={!visible}
+  inert={!visible}
+  aria-hidden={!visible}
+>
   <button
     bind:this={launcher}
     type="button"
@@ -148,6 +155,10 @@ function handleKeydown(event: KeyboardEvent) {
     display: grid;
     justify-items: end;
     gap: 0.75rem;
+  }
+
+  .floating-assistant[hidden] {
+    display: none;
   }
 
   .floating-assistant-launcher,

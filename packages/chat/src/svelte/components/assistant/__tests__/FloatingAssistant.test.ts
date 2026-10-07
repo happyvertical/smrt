@@ -280,3 +280,64 @@ describe('FloatingAssistant pending state lifecycle', () => {
     expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('FloatingAssistant host visibility', () => {
+  it('hides the whole mounted assistant and pauses polling independently of expansion', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const fixture = await mountedFixture();
+    try {
+      fixture.controller.setDraft('Keep the hidden draft');
+      const initialLoads = fixture.evidence.loads;
+      await vi.advanceTimersByTimeAsync(15001);
+      expect(fixture.evidence.loads).toBeGreaterThan(initialLoads);
+      await fixture.rerender({ visible: false });
+      expect(
+        screen.queryByRole('button', { name: 'Open assistant' }),
+      ).not.toBeInTheDocument();
+      expect(
+        fixture.container.querySelector('.floating-assistant'),
+      ).toHaveAttribute('hidden');
+      const hiddenLoads = fixture.evidence.loads;
+      await vi.advanceTimersByTimeAsync(30001);
+      expect(fixture.evidence.loads).toBe(hiddenLoads);
+      await fixture.rerender({ visible: true });
+      expect(
+        screen.getByRole('button', { name: 'Open assistant' }),
+      ).toBeVisible();
+      await vi.advanceTimersByTimeAsync(15001);
+      expect(fixture.evidence.loads).toBeGreaterThan(hiddenLoads);
+      expect(fixture.controller.activeThreadId).toBe('preview-thread');
+      expect(fixture.controller.draft).toBe('Keep the hidden draft');
+      expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
+    } finally {
+      fixture.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains hidden pending authority and reveals it when the host becomes visible', async () => {
+    const fixture = await mountedFixture();
+    await fixture.controller.previewAction(fixture.proposal());
+    const key =
+      fixture.controller.actions.get('preview-action')?.idempotencyKey;
+    await fixture.rerender({ visible: false, expanded: false });
+    expect(
+      screen.queryByRole('button', { name: 'Confirm' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Open assistant' }),
+    ).not.toBeInTheDocument();
+    expect(fixture.evidence.keys).toEqual([]);
+    expect(
+      fixture.controller.actions.get('preview-action')?.idempotencyKey,
+    ).toBe(key);
+    await fixture.rerender({ visible: true, expanded: false });
+    await userEvent.keyboard('{Escape}');
+    expect(
+      await screen.findByRole('button', { name: 'Confirm' }),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await vi.waitFor(() => expect(fixture.evidence.keys).toEqual([key]));
+    expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
+  });
+});

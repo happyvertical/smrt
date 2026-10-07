@@ -9,6 +9,7 @@ const fixture = createFloatingFixture();
 let controller: AssistantDockController | undefined = $state();
 let mounts = $state(0);
 let expanded = $state(false);
+let visible = $state(true);
 let evidence = $state('');
 function refreshEvidence() {
   evidence = JSON.stringify(fixture.evidence);
@@ -31,6 +32,9 @@ async function send(content: string) {
       This mock transport uses the same permanently mounted dock as production;
       collapse and reopen it while keeping the conversation state alive.
     </p>
+    <Button onclick={() => void controller?.openThread('preview-thread')}>Open preview conversation</Button>
+    <Button onclick={() => { visible = false; }}>Hide assistant</Button>
+    <Button onclick={() => { visible = true; }}>Show assistant</Button>
     <Button onclick={() => void send('tool')}>Request tool</Button>
     <Button onclick={() => void controller?.previewAction(fixture.proposal())}>Preview action</Button>
     <Button onclick={() => { expanded = false; }}>Host closes panel</Button>
@@ -44,6 +48,7 @@ async function send(content: string) {
   <FloatingAssistant
     {...fixture}
     bind:expanded
+    {visible}
     presentation="controls"
     contextMode="server"
     oncontroller={(owned) => { controller = owned; mounts += 1; }}

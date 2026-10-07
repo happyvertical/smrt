@@ -43,6 +43,7 @@ export function createFloatingFixture() {
   });
   const evidence = {
     executions: 0,
+    loads: 0,
     decisions: [] as boolean[],
     keys: [] as string[],
     choices: [] as string[],
@@ -84,7 +85,10 @@ export function createFloatingFixture() {
         messageCount: 0,
       },
     ],
-    loadMessages: async () => [],
+    loadMessages: async () => {
+      evidence.loads += 1;
+      return [];
+    },
     sendMessage: async (input) => {
       sequence += 1;
       if (input.content === 'error')

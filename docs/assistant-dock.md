@@ -85,6 +85,11 @@ Escape, the collapse button, and a host writing `expanded=false` cannot hide
 those controls. The character snippet and launcher report the effective visible
 state. After the decision, the host's requested collapsed state can take effect.
 
+Host `visible=false` is separate from collapse: it hides the whole wrapper,
+including the launcher, and pauses the dock's polling without unmounting its
+controller or deciding pending actions. Setting `visible=true` restores it;
+any pending attention still overrides `expanded=false` while the host is visible.
+
 The `/previews/floating-assistant` workbench uses in-memory transport, tool,
 choice, and action adapters. Its controls exercise Allow/Don't allow,
 Confirm/Reject, choices, Stop, and failures against the dock's own controller;

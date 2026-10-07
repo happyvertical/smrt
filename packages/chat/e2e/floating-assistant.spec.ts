@@ -75,3 +75,39 @@ test('controls mode exposes choices, Stop, and failures', async ({ page }) => {
   await expect(page.getByLabel('Decision evidence')).toContainText('"choices":["compact"]');
   await expect(page.getByLabel('Controller mounts')).toHaveText('1');
 });
+
+
+test('host visibility pauses polling and restores the same mounted pending decision', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/previews/floating-assistant', { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Open assistant', exact: true }).click();
+  await page.getByRole('button', { name: 'Open preview conversation' }).click();
+  await page.getByRole('button', { name: 'Inspect decisions' }).click();
+  const initial = JSON.parse(await page.getByLabel('Decision evidence').innerText()).loads;
+  await page.clock.fastForward(15001);
+  await page.getByRole('button', { name: 'Inspect decisions' }).click();
+  const polling = JSON.parse(await page.getByLabel('Decision evidence').innerText()).loads;
+  expect(polling).toBeGreaterThan(initial);
+  await page.getByRole('button', { name: 'Hide assistant', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open assistant', exact: true })).toBeHidden();
+  await expect(page.locator('.floating-assistant-panel')).toBeHidden();
+  await page.clock.fastForward(30001);
+  await page.getByRole('button', { name: 'Inspect decisions' }).click();
+  expect(JSON.parse(await page.getByLabel('Decision evidence').innerText()).loads).toBe(polling);
+  await page.getByRole('button', { name: 'Show assistant', exact: true }).click();
+  await page.clock.fastForward(15001);
+  await page.getByRole('button', { name: 'Inspect decisions' }).click();
+  expect(JSON.parse(await page.getByLabel('Decision evidence').innerText()).loads).toBeGreaterThan(polling);
+  await page.getByRole('button', { name: 'Request tool', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Hide assistant', exact: true }).click();
+  await page.getByRole('button', { name: 'Host closes panel' }).click();
+  await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeHidden();
+  await page.getByRole('button', { name: 'Inspect decisions' }).click();
+  expect(JSON.parse(await page.getByLabel('Decision evidence').innerText()).executions).toBe(0);
+  await page.getByRole('button', { name: 'Show assistant', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Allow', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: "Don't allow" }).click();
+  await expect(page.getByLabel('Decision evidence')).toContainText('"decisions":[false]');
+  await expect(page.getByLabel('Controller mounts')).toHaveText('1');
+});
