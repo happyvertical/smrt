@@ -35,9 +35,9 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
       'node:crypto; documents/spider/files/images/ai SDK graph (crawlee, undici, googleapis, native addons); CJS parse error',
   },
   '@happyvertical/smrt-core': {
-    issue: '#3614, #2838',
+    issue: '#2838, #3635',
     reason:
-      'browser entry omits decorators/helpers dependents import; reaches pg, cosmiconfig, jiti, node:fs via sql/config/registry',
+      'reaches pg, cosmiconfig, jiti, node:fs via sql/config/registry; model roots import server-only helpers (manifest loader, route helpers, startRestServer) from the core root',
   },
   '@happyvertical/smrt-events': {
     issue: '#3624, #3625',
