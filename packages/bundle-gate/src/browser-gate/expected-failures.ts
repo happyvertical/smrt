@@ -92,8 +92,8 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
       'server bootstrap (startRestServer, express/cors), core generators/mcp',
   },
   '@happyvertical/smrt-profiles': {
-    issue: '#3617, #3626',
-    reason: 'node:crypto in root; core migrations (node:os)',
+    issue: '#3626',
+    reason: 'core migrations (node:os)',
   },
   '@happyvertical/smrt-projects': {
     issue: '#3624, #3625, #3626, #3627',
