@@ -11,13 +11,18 @@ export interface ShellDock {
   readonly active: string | null;
   /** Ids of the registered dock tools. */
   readonly tools: readonly string[];
+  /**
+   * Whether the dock can be shown at all: false when the host removed the
+   * right edge or the user's layout hides it (opening then does nothing).
+   */
+  readonly available: boolean;
   /** Whether `tool` is registered as a dock tool. */
   has(tool: string): boolean;
   /** Whether the dock is open on `tool`. */
   isOpen(tool: string): boolean;
   /**
    * Open the dock on `tool` and move focus into it. Returns false (and does
-   * nothing) when no such tool is registered.
+   * nothing) when no such tool is registered or the dock is not `available`.
    */
   open(tool: string, options?: ShellDockOpenOptions): boolean;
   /** Close the dock; focus returns to where it was opened from. */
@@ -39,6 +44,9 @@ export function useShellDock(): ShellDock {
     },
     get tools() {
       return shell.focusTools.map((tool) => tool.id);
+    },
+    get available() {
+      return shell.dockAvailable;
     },
     has: (tool) => shell.focusTools.some((t) => t.id === tool),
     isOpen: (tool) => shell.openFocusToolId === tool,

@@ -8,7 +8,7 @@
  */
 
 import type { FieldUIHints } from '@happyvertical/smrt-core';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { isFieldUIWidget, ObjectRegistry } from '@happyvertical/smrt-core';
 import type { FieldPolicyDelta, FieldPolicyVisibility } from './types.js';
 
 /**
@@ -68,6 +68,7 @@ export function sanitizeFieldUIHints(value: unknown): FieldUIHints | undefined {
       ? { order: raw.order }
       : {}),
     ...(typeof raw.locked === 'boolean' ? { locked: raw.locked } : {}),
+    ...(isFieldUIWidget(raw.widget) ? { widget: raw.widget } : {}),
   };
   return Object.keys(ui).length > 0 ? ui : undefined;
 }

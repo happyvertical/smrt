@@ -32,6 +32,24 @@ pipeline (`opportunity.stage`) without importing `@happyvertical/smrt-projects`.
 
 Svelte 5 component library for the s-m-r-t framework. Provides UI components, browser AI integration (STT/TTS/LLM with warm cache), a theme system, permission-aware rendering, and module UI registry for agent admin panels.
 
+## Sortable and shell layout
+
+`@happyvertical/smrt-svelte/sortable` provides `Sortable`, an accessible
+(pointer, touch, keyboard, screen-reader announcements) list of containers and
+items that share Board's drag engine. `AppShell` lets users customize their
+shell: pass `layout` and `onlayoutchange` to own persistence (for example in an
+exported app blueprint), or neither to store it in the user's settings. Mount
+`ShellLayoutEditor` (from `/app` or `/workspace`) on a settings page, and call
+`useShellLayout()` to make the same changes from code or an assistant. See
+`agents/workspace.md`; the pure `ShellLayout` model is published without Svelte
+as `@happyvertical/smrt-svelte/workspace/layout`.
+
+```svelte
+<AppShell {nav} {navGroups} layout={stored} onlayoutchange={(next) => (stored = next)}>
+  <ShellLayoutEditor />
+</AppShell>
+```
+
 ## Installation
 
 ```bash

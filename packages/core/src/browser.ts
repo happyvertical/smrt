@@ -533,3 +533,6 @@ export {
 
 // NOTE: Generators (CLI, REST, MCP) are excluded from browser builds
 // Use the main entry point for Node.js applications that need generators
+
+// Presentation metadata helpers (#3599): widget hints, display label, selector lookup
+export * from './ui-metadata.js';

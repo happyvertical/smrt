@@ -853,7 +853,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       }
     },
     {
-      "description": "Delete a ReferenceWorkItem by ID",
+      "description": "Delete a ReferenceWorkItem by ID. Records are identified by their \`title\` field.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -909,7 +909,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       }
     },
     {
-      "description": "Get a specific ReferenceWorkItem by ID or slug",
+      "description": "Get a specific ReferenceWorkItem by ID or slug. Records are identified by their \`title\` field.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "anyOf": [
@@ -985,7 +985,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       }
     },
     {
-      "description": "List ReferenceWorkItem objects with optional filtering",
+      "description": "List ReferenceWorkItem objects with optional filtering. Records are identified by their \`title\` field.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -1158,7 +1158,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       }
     },
     {
-      "description": "Update an existing ReferenceWorkItem",
+      "description": "Update an existing ReferenceWorkItem. Records are identified by their \`title\` field.",
       "inputSchema": {
         "$defs": {
           "field_0": {
@@ -1404,7 +1404,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       "action": "delete",
       "className": "Item",
       "collection": "items",
-      "description": "Delete a Item by ID",
+      "description": "Delete a Item by ID. Records are identified by their \`title\` field.",
       "effect": "destructive",
       "endpoint": "/items",
       "idField": "id",
@@ -1439,7 +1439,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       "action": "get",
       "className": "Item",
       "collection": "items",
-      "description": "Get a specific Item by ID or slug",
+      "description": "Get a specific Item by ID or slug. Records are identified by their \`title\` field.",
       "effect": "read",
       "endpoint": "/items",
       "idField": "id",
@@ -1487,7 +1487,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       "action": "list",
       "className": "Item",
       "collection": "items",
-      "description": "List Item objects with optional filtering",
+      "description": "List Item objects with optional filtering. Records are identified by their \`title\` field.",
       "effect": "read",
       "endpoint": "/items",
       "idField": "id",
@@ -1536,7 +1536,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       "action": "update",
       "className": "Item",
       "collection": "items",
-      "description": "Update an existing Item",
+      "description": "Update an existing Item. Records are identified by their \`title\` field.",
       "effect": "write",
       "endpoint": "/items",
       "idField": "id",
@@ -1707,7 +1707,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       "action": "delete",
       "className": "ReferenceWorkItem",
       "collection": "referenceworkitems",
-      "description": "Delete a ReferenceWorkItem by ID",
+      "description": "Delete a ReferenceWorkItem by ID. Records are identified by their \`title\` field.",
       "effect": "destructive",
       "endpoint": "/referenceworkitems",
       "idField": "id",
@@ -1742,7 +1742,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       "action": "get",
       "className": "ReferenceWorkItem",
       "collection": "referenceworkitems",
-      "description": "Get a specific ReferenceWorkItem by ID or slug",
+      "description": "Get a specific ReferenceWorkItem by ID or slug. Records are identified by their \`title\` field.",
       "effect": "read",
       "endpoint": "/referenceworkitems",
       "idField": "id",
@@ -1790,7 +1790,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       "action": "list",
       "className": "ReferenceWorkItem",
       "collection": "referenceworkitems",
-      "description": "List ReferenceWorkItem objects with optional filtering",
+      "description": "List ReferenceWorkItem objects with optional filtering. Records are identified by their \`title\` field.",
       "effect": "read",
       "endpoint": "/referenceworkitems",
       "idField": "id",
@@ -1881,7 +1881,7 @@ exports[`runtime-profile generated-surface and policy parity > emits one identic
       "action": "update",
       "className": "ReferenceWorkItem",
       "collection": "referenceworkitems",
-      "description": "Update an existing ReferenceWorkItem",
+      "description": "Update an existing ReferenceWorkItem. Records are identified by their \`title\` field.",
       "effect": "write",
       "endpoint": "/referenceworkitems",
       "idField": "id",

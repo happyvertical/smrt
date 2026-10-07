@@ -23,6 +23,9 @@ class UIHintQuote extends SmrtObject {
   @field({ ui: { locked: true } })
   taxClass: string = '';
 
+  @field({ ui: { widget: 'textarea' } })
+  notes: string = '';
+
   plain: string = '';
 }
 
@@ -43,6 +46,11 @@ describe('@field({ ui }) runtime channel (#2046)', () => {
     );
     expect(fields.get('taxClass')?._meta?.ui).toEqual({ locked: true });
     expect(fields.get('plain')?._meta?.ui).toBeUndefined();
+  });
+
+  it('carries ui.widget at field._meta.ui (#3599)', async () => {
+    const fields = await ObjectRegistry.getAllFields('UIHintQuote');
+    expect(fields.get('notes')?._meta?.ui).toEqual({ widget: 'textarea' });
   });
 
   it('keeps ui out of the top-level field shape (pure _meta carrier)', async () => {

@@ -15,6 +15,7 @@ import type {
   RawFieldDefinition,
   RawMethodDefinition,
   ResolvedClassDefinition,
+  UiSelectorDeclaration,
 } from './types.js';
 
 // ============================================================================
@@ -206,6 +207,16 @@ interface SmartObjectManifest {
   moduleType?: string;
   smrtDependencies?: string[];
   recipes?: RecipeDefinition[];
+  /** Selector slots keyed by slot id (#3599). Mirrors smrt-core's type. */
+  uiSelectors?: Record<
+    string,
+    {
+      slotId: string;
+      selects: `${string}:${string}`;
+      label?: string;
+      description?: string;
+    }
+  >;
 }
 
 // ============================================================================
@@ -434,6 +445,8 @@ export class ManifestAdapter {
        * names; they are qualified here with `packageName`.
        */
       recipes?: RecipeDefinition[];
+      /** Selector slots from {@link ScanResults.uiSelectors} (#3599). */
+      uiSelectors?: Record<string, UiSelectorDeclaration>;
     } = {},
   ): SmartObjectManifest {
     this.typeAliases = options.typeAliases || {};
@@ -453,6 +466,26 @@ export class ManifestAdapter {
       options.recipes ?? [],
       options.packageName,
     );
+    // Selector bindings carry no source path: manifests must stay portable.
+    const selectorEntries = Object.entries(options.uiSelectors ?? {}).sort(
+      ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
+    );
+    const selectors =
+      selectorEntries.length > 0
+        ? Object.fromEntries(
+            selectorEntries.map(([id, decl]) => [
+              id,
+              {
+                slotId: decl.slotId,
+                selects: decl.selects,
+                ...(decl.label !== undefined ? { label: decl.label } : {}),
+                ...(decl.description !== undefined
+                  ? { description: decl.description }
+                  : {}),
+              },
+            ]),
+          )
+        : undefined;
 
     return {
       version: '1.0.0',
@@ -464,6 +497,7 @@ export class ManifestAdapter {
       // Additive: a package that declares no recipe emits no key, so its
       // checked-in manifest stays byte-identical.
       ...(recipes.length > 0 ? { recipes } : {}),
+      ...(selectors ? { uiSelectors: selectors } : {}),
     };
   }
 

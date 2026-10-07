@@ -177,6 +177,13 @@ and repository rules.
   fails otherwise (allowlist: `NODE_ONLY_GROUPS` in that test, each with a reason; the browser
   entry may not publish a name the Node entry lacks), and also
   fails when a workspace package imports a root value the browser entry lacks.
+- `exports['.'].browser` (`dist/browser.js`) is the browser surface. Model
+  package roots are bundled for browsers by the bundle-gate browser fixture
+  (#3621): anything a model root imports from core must be exported by the
+  browser entry and must not reach `node:` built-ins, `pg`, `cosmiconfig`, or
+  `jiti`. Keep Node-only code behind a subpath or a lazy import; when a fix
+  makes a package pass, delete its entry in
+  `packages/bundle-gate/src/browser-gate/expected-failures.ts`.
 - Database retries are transient-only, four attempts total for `get`/`upsert`.
   Use `src/db-errors.ts` classifiers through the cause chain, never message
   matching (SDK driver text can live in `context.originalError`). Constraints,

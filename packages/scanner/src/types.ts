@@ -493,6 +493,22 @@ export interface ScanResults {
    * the manifest adapter qualifies. Empty after `scan()` alone.
    */
   recipes: RecipeDefinition[];
+  /**
+   * UI slots that declare `selects: '<qualified model>'` (#3599), keyed by
+   * slot id, read statically from the package's `ui.ts` declarations.
+   */
+  uiSelectors?: Record<string, UiSelectorDeclaration>;
+}
+
+/** A UI slot marked as the selector component for a model (#3599). */
+export interface UiSelectorDeclaration {
+  slotId: string;
+  /** Qualified name of the model this component selects. */
+  selects: `${string}:${string}`;
+  label?: string;
+  description?: string;
+  /** Source file declaring the slot (project-relative once merged). */
+  filePath: string;
 }
 
 // ============================================================================
@@ -568,6 +584,12 @@ export interface OxcScannerOptions {
    * {@link OxcScannerOptions.agentSurface} is enabled.
    */
   agentSurfaceInclude?: string[];
+
+  /**
+   * Globs searched for selector-slot declarations (#3599), independent of the
+   * class `include`. Defaults to `src/**\/ui.ts`.
+   */
+  uiSelectorInclude?: string[];
 }
 
 /**

@@ -172,6 +172,64 @@ enforce permissions.
 
 `ActivityTicker` accepts optional `statuses` restricted to queued/running; running-only remains the default. Opting into queued work adds an explicit localized Queued label without progress. Terminal outcomes belong in expanded `ActivityList`, with retention controlled by the app-owned data source.
 
+## Shell layout customization
+
+Users can show/hide the edge panels and reorder, hide, and move navigation
+sections and items. Source: `workspace/admin-shell/layout.ts` (pure model),
+`layout-controller.svelte.ts` (the API), `ShellLayoutEditor.svelte` (the
+control panel), wired by `app/AppShell.svelte`.
+
+- **`ShellLayout`** is a versioned (`version: 1`), JSON-serializable sparse
+  delta: `sectionOrder`, `itemOrder` (per section), `hidden` (section and item
+  ids), `moved` (item id to section id), `panels` (per edge `visible` /
+  `initial`). It is what a host stores or exports (smrt-planner bundles it in
+  its app blueprint). `normalizeShellLayout(unknown)` reads untrusted JSON and
+  never throws (unknown version yields an empty layout).
+- **Ids.** Sections: `ShellNavGroup.id ?? heading`; items: `ShellNavItem.id ??
+  href`; one shared namespace (duplicates get `#2`, `#3`). Set explicit ids
+  when headings are translated or hrefs change. The flat `nav` items are the
+  implicit first section, `@root` (`SHELL_NAV_ROOT_SECTION_ID`): items can be
+  moved in and out, the section itself cannot move or hide.
+- **`applyShellLayout(nav, groups, panels, layout)`** is pure and total. Ids the
+  host no longer has are ignored; new host items and sections keep their
+  default slots (listed ids permute among the slots they occupy). A hidden
+  section hides its items; a section the layout empties is dropped from
+  `groups`; an empty layout returns the inputs unchanged. A layout can hide a
+  panel but cannot bring back one the host removed (`false` / `initial:
+  'hidden'`). Published from the browser-safe `./workspace/layout` subpath (no
+  Svelte) as well as `./workspace`.
+- **Persistence is host-owned.** `AppShell` takes `layout` and `onlayoutchange`:
+  with `layout` the host is the single source of truth (pass `null` for none);
+  with only `onlayoutchange` the shell keeps the value in memory and reports
+  edits; with neither, the layout lives in the settings-core user tier
+  (`ShellSettingsDelta.layout`, via `storageKey`). `AppShell` now creates the
+  `ShellState` itself and passes it to `AdminShell`, so panel overrides reach
+  it (`ShellState.setLayoutPanels`); a layout-hidden edge ignores toggles,
+  hotkeys, viewport defaults, and the restore opener.
+- **Layout API** (`useShellLayout()` / `tryUseShellLayout()` under an
+  `AppShell`, also `ShellLayoutController`): `moveSection(id, toIndex)`,
+  `moveItem(id, sectionId, toIndex?)`, `hide(id)`, `show(id)`, `setPanel(edge,
+  { visible?, initial? })`, `reset()`, each returning whether anything changed,
+  plus readers (`layout`, `sections`, `panels`, `applied`, `customized`,
+  `isHidden`). An assistant calls the same methods the editor does. The
+  context is separate from `useAdminShell()` because `AppShell`, not
+  `AdminShell`, owns the navigation.
+- **`ShellLayoutEditor`**: `controller` (default: context), `preview` (default
+  true), `iconComponent`. Mount it on a settings page or in a dock tool.
+
+### Sortable and the Board engine
+
+`components/sortable/controller.svelte.ts` is the headless engine extracted from
+`Board`: keyboard pick-up (Space/Enter, arrows, Escape), pointer and native-drag
+moves with a 6px threshold, one in-flight move at a time (a rejected `commit`
+restores and announces), focus return, and announcements as typed events the
+host localizes. `Board` (own markup and `ui.board.*` strings) and `Sortable`
+(`ui.sortable.*`) both use it. `Sortable` renders stacked containers of items
+with a move handle per item, optional `reorderContainers` (a second engine; `fixed`
+containers lead and stay put), a drop marker, and cancel-on-blur; it is
+controlled and never mutates `items`. Item moves report `target.index` after
+removing the item from `source`.
+
 ## App shell and owner setup (`./app`)
 
 `@happyvertical/smrt-svelte/app` (`src/components/app/`) is browser-only. It
@@ -195,9 +253,11 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   `aria-expanded` follow the dock, `aria-controls` is
   `smrt-admin-shell-right-panel`, the label is the tooltip, and `assistant`
   defaults to a chat-bubble icon (`icon: 'chat'`; other text is a glyph). A
-  toggle whose tool is not registered yet is `aria-disabled`. Hosts, routes and
+  toggle whose tool is not registered yet, or whose dock is not `available`
+  (the right edge removed by the host or hidden by the user's layout), is
+  `aria-disabled` and `open`/`toggle` return false. Hosts, routes and
   assistants drive the same dock with `useShellDock()` from `./workspace`
-  (`{ active, tools, has, isOpen, open, close, toggle }`, throws outside a
+  (`{ active, tools, available, has, isOpen, open, close, toggle }`, throws outside a
   shell). Opening moves focus into the dock (first focusable, else the panel);
   closing by Escape, toggle or code returns it to the opener when focus was left
   in the dock. `open(tool, { focus: false })` skips the focus move. The

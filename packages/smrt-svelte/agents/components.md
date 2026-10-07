@@ -19,6 +19,7 @@ the top-of-stack, domain-aware pieces:
 | Module | `ModulePanel` |
 | Settings (`/settings`) | `SettingsCatalog`, `paginateSettingsCatalog` |
 | Audit (root export) | `RecordHistory`, `AuditList` — authorized data props; [contract](../../../docs/content/audit-trail.md) |
+| Board (`/board`) / Sortable (`/sortable`) | `Board` (kanban) and `Sortable` (nested lists) share one headless drag engine, `SortableController` — [details](workspace.md#sortable-and-the-board-engine) |
 | Workspace (`/workspace`) | `AdminShell`, `ShellState`, `TenantNav`, focus tools, settings, activities, and system/app panels |
 | Legacy workspace (`/workspace/legacy`) | First-generation `ToolsDock` compatibility surface during AdminShell migration |
 

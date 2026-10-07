@@ -1,4 +1,5 @@
 import type { Component, Snippet } from 'svelte';
+import type { ShellLayout } from './layout.js';
 
 export type PanelEdge = 'top' | 'left' | 'right' | 'bottom';
 export type ShellScope = 'app' | 'tenant' | 'focus' | 'system';
@@ -110,6 +111,12 @@ export interface ShellSettingsDelta {
   /** Resized expanded widths in px; `null` resets to the configured size. */
   sizes?: Partial<Record<PanelEdge, number | null>>;
   activeFocusToolId?: string | null;
+  /**
+   * The user's shell layout customization (panel visibility, navigation
+   * order and visibility). Stored here only when the host passes neither
+   * `layout` nor `onlayoutchange` to `AppShell`.
+   */
+  layout?: ShellLayout;
 }
 
 export interface ShellSettingsAdapter {
@@ -129,6 +136,11 @@ export interface ShellFocusToolSubject {
 
 /** Labelled, collapsible group of tenant navigation links. */
 export interface ShellNavGroup {
+  /**
+   * Stable identity for layout customization ({@link ShellLayout}). Defaults
+   * to `heading`; set it when the heading is translated or may be renamed.
+   */
+  id?: string;
   heading: string;
   items: ShellNavItem[];
 }
@@ -153,6 +165,11 @@ export interface ShellNavItemAction {
 }
 
 export interface ShellNavItem {
+  /**
+   * Stable identity for layout customization ({@link ShellLayout}). Defaults
+   * to `href`; set it when the href may change or two items share one.
+   */
+  id?: string;
   href: string;
   label: string;
   icon?: string;

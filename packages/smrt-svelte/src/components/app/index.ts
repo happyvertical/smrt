@@ -5,6 +5,14 @@
  * server or `$app/*` imports. Pair with the server `load`/`actions` from
  * `@happyvertical/smrt-app-runtime/sveltekit`.
  */
+
+export {
+  type ShellLayout,
+  ShellLayoutController,
+  ShellLayoutEditor,
+  tryUseShellLayout,
+  useShellLayout,
+} from '../workspace/index.js';
 export { default as AppShell } from './AppShell.svelte';
 export type { DockToggle } from './dock-toggle.js';
 export { default as OwnerSetupForm } from './OwnerSetupForm.svelte';

@@ -224,6 +224,8 @@ export interface SmrtWebFieldUIHints {
   group?: string;
   order?: number;
   locked?: boolean;
+  /** Presentation widget hint (#3599). */
+  widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
 }
 
 /**

@@ -33,6 +33,12 @@
       "import": "./dist/components/board/index.js",
       "default": "./dist/components/board/index.js"
     },
+    "./sortable": {
+      "types": "./dist/components/sortable/index.d.ts",
+      "svelte": "./dist/components/sortable/index.js",
+      "import": "./dist/components/sortable/index.js",
+      "default": "./dist/components/sortable/index.js"
+    },
     "./i18n/server": {
       "types": "./dist/i18n/server.d.ts",
       "import": "./dist/i18n/server.js",
@@ -43,6 +49,11 @@
       "svelte": "./dist/components/workspace/index.js",
       "import": "./dist/components/workspace/index.js",
       "default": "./dist/components/workspace/index.js"
+    },
+    "./workspace/layout": {
+      "types": "./dist/components/workspace/admin-shell/layout.d.ts",
+      "import": "./dist/components/workspace/admin-shell/layout.js",
+      "default": "./dist/components/workspace/admin-shell/layout.js"
     },
     "./workspace/legacy": {
       "types": "./dist/components/workspace/legacy.d.ts",
