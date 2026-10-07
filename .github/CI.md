@@ -160,16 +160,26 @@ its own. Manual inspection remains `gh cache list --key turbogha_`.
 
 ### ONNX system-dependency provisioning
 
-The shared setup action gives `apt-get update` five minutes and `apt-get
-install` fifteen minutes before failing with the named provisioning stage. The
-helper runs the already-selected absolute Node interpreter under the existing
-`sudo` boundary and terminates the command's owned root process group,
-escalating from `SIGTERM` to `SIGKILL`, so a stalled mirror cannot consume the
-rest of a job's ceiling.
+CI runs on GitHub-hosted `ubuntu-latest` runners, which never set
+`CI_ONNX_DEPS_READY`, so jobs that run `pnpm install` provision ONNX system
+dependencies through apt (#3653). Jobs with `install-deps: 'false'` skip the
+step entirely: without an install they never load `onnxruntime-node`.
+
+Each `apt-get update` attempt is bounded at two minutes and is tried up to
+three times with a 10 s / 20 s backoff; `apt-get install` gets ten minutes per
+attempt and two attempts. A single slow mirror response therefore no longer
+ejects a merge-queue run (#3638 and #3636 were ejected by one 300 s timeout
+each). After the last attempt the stage still fails closed with its named error
+(`ONNX system dependency apt-get update ...`) and exit status (124 for a
+timeout, 1 otherwise), stopping the action before project dependencies run.
+The helper (`scripts/run-bounded-command.mjs`, `--attempts`, `--backoff-seconds`)
+runs the already-selected absolute Node interpreter under the existing `sudo`
+boundary and terminates the command's owned root process group on every
+timeout, escalating from `SIGTERM` to `SIGKILL`.
 The update command sets `APT::Update::Error-Mode=any`, so partial index
-downloads fail closed rather than allowing an install from incomplete metadata.
-An update or install failure stops the action before project dependencies run;
-the verified `CI_ONNX_DEPS_READY=true` runner-image path remains untouched.
+downloads fail closed (and are retried) rather than allowing an install from
+incomplete metadata. The verified `CI_ONNX_DEPS_READY=true` runner-image path
+remains untouched.
 
 Run `pnpm test:ci-scripts` locally to exercise successful, nonzero, and stalled
 helper commands, including a SIGTERM-resistant descendant. This is an offline
