@@ -2,12 +2,17 @@
 import type { CaptionLine } from './caption-state.svelte.js';
 
 export interface Props {
+  /** Shows captions when the host enables this speaker surface. */
   enabled?: boolean;
+  /** Completed caption lines in chronological order. */
   lines?: CaptionLine[];
+  /** Current unfinished transcript displayed without live announcement. */
   interim?: string;
   /** `bottom` overlays an app; `inline` belongs in a panel. */
   placement?: 'bottom' | 'inline';
+  /** Maximum number of completed lines retained on screen. */
   maxLines?: number;
+  /** Visible label identifying the speaker. */
   speakerLabel?: string;
 }
 
@@ -40,9 +45,9 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 {/if}
 
 <style>
-  .heard-captions { box-sizing: border-box; min-inline-size: 0; max-inline-size: min(42rem, calc(100vw - 2rem)); overflow-wrap: anywhere; padding: .6rem .85rem; border-inline-start: .25rem solid var(--smrt-color-primary, #3154a5); background: color-mix(in srgb, var(--smrt-color-surface, white) 92%, #dce6ff); color: var(--smrt-color-on-surface, #172033); border-radius: .35rem; box-shadow: 0 .25rem .9rem rgb(0 0 0 / .16); }
+  .heard-captions { box-sizing: border-box; min-inline-size: 0; max-inline-size: min(42rem, calc(100vw - 2rem)); overflow-wrap: anywhere; padding: .6rem .85rem; border-inline-start: .25rem solid var(--smrt-color-primary, #3154a5); background: color-mix(in srgb, var(--smrt-color-surface, white) 92%, var(--smrt-color-primary-container, #dce6ff)); color: var(--smrt-color-on-surface, #172033); border-radius: .35rem; box-shadow: var(--smrt-elevation-4, 0 .25rem .9rem color-mix(in srgb, var(--smrt-color-shadow, black) 16%, transparent)); }
   .bottom { position: fixed; z-index: 20; inset-inline: 1rem; inset-block-end: max(1rem, env(safe-area-inset-bottom)); margin-inline: auto; }
-  .speaker { margin: 0 0 .25rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; font-size: .75rem; }
+  .speaker { margin: 0 0 .25rem; font-weight: var(--smrt-typography-weight-bold, 700); letter-spacing: .03em; text-transform: uppercase; font-size: var(--smrt-typography-label-medium-size, .75rem); }
   .caption-lines p, .interim { margin: .15rem 0 0; }
   .interim { font-style: italic; opacity: .8; }
   @media (prefers-reduced-motion: reduce) { .heard-captions { scroll-behavior: auto; } }

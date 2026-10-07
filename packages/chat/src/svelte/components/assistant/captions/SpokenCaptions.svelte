@@ -2,11 +2,17 @@
 import type { CaptionLine } from './caption-state.svelte.js';
 
 export interface Props {
+  /** Shows captions when the host enables this speaker surface. */
   enabled?: boolean;
+  /** Completed caption lines in chronological order. */
   lines?: CaptionLine[];
+  /** Current unfinished transcript displayed without live announcement. */
   interim?: string;
+  /** `bottom` overlays an app; `inline` belongs in a panel. */
   placement?: 'bottom' | 'inline';
+  /** Maximum number of completed lines retained on screen. */
   maxLines?: number;
+  /** Visible label identifying the speaker. */
   speakerLabel?: string;
   /** Spoken audio already conveys this text. Opt in only when needed. */
   announce?: boolean;
@@ -39,9 +45,9 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 {/if}
 
 <style>
-  .spoken-captions { box-sizing: border-box; min-inline-size: 0; max-inline-size: min(42rem, calc(100vw - 2rem)); overflow-wrap: anywhere; padding: .7rem .9rem; border: 2px solid var(--smrt-color-outline, #533b72); background: var(--smrt-color-inverse-surface, #221c2c); color: var(--smrt-color-inverse-on-surface, #fff7ff); border-radius: 1rem; box-shadow: 0 .35rem 1.2rem rgb(0 0 0 / .28); }
+  .spoken-captions { box-sizing: border-box; min-inline-size: 0; max-inline-size: min(42rem, calc(100vw - 2rem)); overflow-wrap: anywhere; padding: .7rem .9rem; border: 2px solid var(--smrt-color-outline, #533b72); background: var(--smrt-color-inverse-surface, #221c2c); color: var(--smrt-color-inverse-on-surface, #fff7ff); border-radius: 1rem; box-shadow: var(--smrt-elevation-4, 0 .35rem 1.2rem color-mix(in srgb, var(--smrt-color-shadow, black) 28%, transparent)); }
   .bottom { position: fixed; z-index: 21; inset-inline: 1rem; inset-block-end: max(1rem, env(safe-area-inset-bottom)); margin-inline: auto; }
-  .speaker { margin: 0 0 .3rem; font-weight: 700; font-size: .8rem; }
+  .speaker { margin: 0 0 .3rem; font-weight: var(--smrt-typography-weight-bold, 700); font-size: var(--smrt-typography-label-medium-size, .8rem); }
   .caption-lines p, .interim { margin: .18rem 0 0; }
   .interim { opacity: .8; }
   @media (prefers-reduced-motion: reduce) { .spoken-captions { scroll-behavior: auto; } }
