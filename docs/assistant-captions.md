@@ -7,7 +7,8 @@ that the host has actually started playing. Both are exported from
 
 Each caption component has its own `enabled`, `placement`, `maxLines`, and
 speaker-label properties. Changing either toggle does not start or stop
-dictation, playback, or a conversation.
+dictation, playback, or a conversation. Pass a localized `speakerLabel` to
+set both the visible speaker heading and the accessible region name.
 
 ## Host wiring
 

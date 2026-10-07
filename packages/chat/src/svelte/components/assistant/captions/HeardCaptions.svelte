@@ -12,7 +12,7 @@ export interface Props {
   placement?: 'bottom' | 'inline';
   /** Maximum number of completed lines retained on screen. */
   maxLines?: number;
-  /** Visible label identifying the speaker. */
+  /** Localized visible and accessible label identifying the speaker. */
   speakerLabel?: string;
 }
 
@@ -29,7 +29,7 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 </script>
 
 {#if enabled && (visibleLines.length > 0 || interim)}
-  <section class:bottom={placement === 'bottom'} class="heard-captions" aria-label="What you said">
+  <section class:bottom={placement === 'bottom'} class="heard-captions" aria-label={speakerLabel}>
     <p class="speaker">{speakerLabel}</p>
     <div class="caption-lines" aria-live="polite" aria-atomic="false">
       {#each visibleLines as line (line.id)}

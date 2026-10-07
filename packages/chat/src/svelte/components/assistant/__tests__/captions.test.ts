@@ -15,13 +15,22 @@ const lines = [
 ];
 
 describe('caption components', () => {
+  it.each([
+    [HeardCaptions, 'Vous avez dit'],
+    [SpokenCaptions, 'Assistant parle'],
+  ] as const)('uses the host-localized speaker label for visible and accessible names', (component, speakerLabel) => {
+    render(component, { props: { enabled: true, lines, speakerLabel } });
+    const region = screen.getByRole('region', { name: speakerLabel });
+    expect(region.querySelector('.speaker')).toHaveTextContent(speakerLabel);
+  });
+
   it('keeps heard captions hidden until independently enabled, bounds visible lines, and escapes text', () => {
     const { rerender } = render(HeardCaptions, {
       props: { lines, interim: 'still talking' },
     });
-    expect(screen.queryByLabelText('What you said')).toBeNull();
+    expect(screen.queryByLabelText('You said')).toBeNull();
     rerender({ enabled: true, lines, interim: 'still talking', maxLines: 2 });
-    expect(screen.getByLabelText('What you said')).toBeInTheDocument();
+    expect(screen.getByLabelText('You said')).toBeInTheDocument();
     expect(screen.queryByText('Plain words')).toBeNull();
     expect(screen.getByText('<b>Plain words</b>')).toBeInTheDocument();
     expect(screen.getByText('still talking')).toHaveAttribute(
@@ -37,7 +46,7 @@ describe('caption components', () => {
         lines: [{ ...lines[1], speaker: 'spoken' as const }],
       },
     });
-    const region = screen.getByLabelText('Assistant speech');
+    const region = screen.getByLabelText('Assistant is speaking');
     expect(region.querySelector('.caption-lines')).toHaveAttribute(
       'aria-live',
       'off',

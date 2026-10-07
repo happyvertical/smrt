@@ -12,7 +12,7 @@ export interface Props {
   placement?: 'bottom' | 'inline';
   /** Maximum number of completed lines retained on screen. */
   maxLines?: number;
-  /** Visible label identifying the speaker. */
+  /** Localized visible and accessible label identifying the speaker. */
   speakerLabel?: string;
   /** Spoken audio already conveys this text. Opt in only when needed. */
   announce?: boolean;
@@ -31,7 +31,7 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 </script>
 
 {#if enabled && (visibleLines.length > 0 || interim)}
-  <section class:bottom={placement === 'bottom'} class="spoken-captions" aria-label="Assistant speech">
+  <section class:bottom={placement === 'bottom'} class="spoken-captions" aria-label={speakerLabel}>
     <p class="speaker"><span aria-hidden="true">◈</span> {speakerLabel}</p>
     <div class="caption-lines" aria-live={announce ? 'polite' : 'off'} aria-atomic="false">
       {#each visibleLines as line (line.id)}
