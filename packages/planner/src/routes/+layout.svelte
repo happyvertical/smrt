@@ -37,8 +37,8 @@ provideDataSource(
 );
 
 const nav: ShellNavItem[] = $derived([
-  { href: appHref('/'), label: 'Planner' },
-  { href: appHref('/blueprint/'), label: 'Blueprint' },
+  { id: 'planner', href: appHref('/'), label: 'Planner' },
+  { id: 'blueprint', href: appHref('/blueprint/'), label: 'Blueprint' },
 ]);
 
 // Each added recipe (or group of recipes, such as Products) is a navigation
@@ -103,13 +103,16 @@ const packageGroups: ShellNavGroup[] = $derived(
     if (!pkg) return [];
     return [
       {
+        id: `package:${pkg.id}`,
         heading: humanize(pkg.id),
         items: [
           {
+            id: `package:${pkg.id}:overview`,
             href: appHref(`/packages/${pkg.id}/`),
             label: 'Overview',
           },
           ...exposedModels(pkg).map((model) => ({
+            id: `package:${pkg.id}:${model.name}`,
             href: appHref(`/m/${pkg.id}/${model.name}/`),
             label: model.name,
           })),
@@ -188,6 +191,8 @@ function flushOnHide() {
   {navGroups}
   currentHref={page.url.pathname + appQuery()}
   environment="static demo"
+  layout={blueprintStore.layout ?? null}
+  onlayoutchange={(next) => blueprintStore.setLayout(next)}
 >
   {#snippet dock()}
     <ShellDockTool id="assistant" label="Assistant">

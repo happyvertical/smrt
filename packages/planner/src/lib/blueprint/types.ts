@@ -1,6 +1,6 @@
+import type { ShellLayout } from '@happyvertical/smrt-svelte/workspace/layout';
 import type { FieldPolicyRow } from '../recipes/policy.ts';
 import type { ExposureSurface } from '../recipes/types.ts';
-import type { ShellLayout } from '../upstream/shellLayout.ts';
 
 /**
  * Placeholder until happyvertical/smrt#3604 publishes the real schema URL.
@@ -31,7 +31,7 @@ export interface Blueprint {
    * when nothing is narrowed.
    */
   exposure?: Record<string, ExposureSurface[]>;
-  /** The shell layout (smrt#3603). Carried and validated, not yet applied. */
+  /** The shell layout (smrt-svelte `ShellLayout`), applied by `AppShell`. */
   layout?: ShellLayout;
 }
 
