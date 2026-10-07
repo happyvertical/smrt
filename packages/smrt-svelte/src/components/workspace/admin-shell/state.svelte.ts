@@ -13,6 +13,7 @@ import {
   resolveShellConfig,
   stripUnpersistedSettings,
 } from './settings.js';
+import type { ShellRegion } from './slots.js';
 import type {
   ActivityStatus,
   PanelEdge,
@@ -211,6 +212,24 @@ export class ShellState {
     return !(
       this.viewport === 'phone' && this.phonePresentation(edge) === 'hidden'
     );
+  }
+
+  /**
+   * Whether a region currently shows its slots: the header and footer unless
+   * hidden, a sidebar only while shown and expanded (a collapsed one falls
+   * back, see `slotFallbackChain`).
+   */
+  isRegionVisible(region: ShellRegion): boolean {
+    switch (region) {
+      case 'header':
+        return this.panels.top !== 'hidden';
+      case 'footer':
+        return this.panels.bottom !== 'hidden';
+      case 'leftSidebar':
+        return this.isEdgeShown('left') && this.panels.left === 'expanded';
+      case 'rightSidebar':
+        return this.isEdgeShown('right') && this.panels.right === 'expanded';
+    }
   }
 
   /** Resize limits for an edge, or `null` when it is not resizable. */

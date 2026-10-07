@@ -1,5 +1,6 @@
 import type { Component, Snippet } from 'svelte';
 import type { ShellLayout } from './layout.js';
+import type { ShellRegion, ShellSlot } from './slots.js';
 
 export type PanelEdge = 'top' | 'left' | 'right' | 'bottom';
 export type ShellScope = 'app' | 'tenant' | 'focus' | 'system';
@@ -313,6 +314,40 @@ export interface AdminShellPhoneOptions {
   swipeToClose?: boolean;
   /** Hide the `phoneTopBar` while scrolling down (default true). */
   hideOnScroll?: boolean;
+}
+
+/**
+ * The in-place layout editing surface `AppShell` hands to `AdminShell`. While
+ * `active`, every slot of a visible region renders as a labelled drop zone
+ * (`zone` draws its content) and each region in `hiddenRegions` renders as a
+ * thin strip (`strip`).
+ */
+export interface ShellLayoutEditSurface {
+  active: boolean;
+  /** The slot highlighted as the current drop target, if any. */
+  highlight?: ShellSlot | null;
+  /** Content of one slot's drop zone. */
+  zone: Snippet<[ShellSlot]>;
+  /** Regions the user hid, drawn as strips so they can be shown again. */
+  hiddenRegions?: readonly ShellRegion[];
+  /** Content of one hidden region's strip. */
+  strip?: Snippet<[ShellRegion]>;
+}
+
+/**
+ * What a host's `sectionActions` snippet receives for each navigation section
+ * while the layout is being edited: render icon buttons (e.g. an Options gear
+ * or Help) and they join the section's overlay icons and floating toolbar.
+ */
+export interface ShellSectionActionsContext {
+  /** The section id (`ShellNavGroup.id ?? heading`, or `custom:...`). */
+  sectionId: string;
+  /** The section's current (possibly renamed) label. */
+  label: string;
+  /** A user-created section. */
+  custom: boolean;
+  /** Always `true` today; actions render only while the layout is edited. */
+  editing: boolean;
 }
 
 export interface AdminShellProps {

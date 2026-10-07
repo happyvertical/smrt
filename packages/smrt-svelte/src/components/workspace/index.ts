@@ -85,7 +85,9 @@ export { default as PhoneBottomBar } from './admin-shell/PhoneBottomBar.svelte';
 export { default as PhoneTopBar } from './admin-shell/PhoneTopBar.svelte';
 export { default as ShellCorner } from './admin-shell/ShellCorner.svelte';
 export { default as ShellDockTool } from './admin-shell/ShellDockTool.svelte';
+export { default as ShellIconButton } from './admin-shell/ShellIconButton.svelte';
 export { default as ShellLayoutEditor } from './admin-shell/ShellLayoutEditor.svelte';
+export { default as ShellNavEditor } from './admin-shell/ShellNavEditor.svelte';
 export { default as ShellNavToggle } from './admin-shell/ShellNavToggle.svelte';
 export { default as ShellSettingsPanel } from './admin-shell/ShellSettingsPanel.svelte';
 export { default as ShellTitle } from './admin-shell/ShellTitle.svelte';
@@ -148,6 +150,7 @@ export type {
   ShellFocusTool,
   ShellFocusToolSubject,
   ShellHotkeyBinding,
+  ShellLayoutEditSurface,
   ShellNavGroup,
   ShellNavItem,
   ShellNavItemAction,
@@ -156,6 +159,7 @@ export type {
   ShellPanelPersist,
   ShellPanelResize,
   ShellScope,
+  ShellSectionActionsContext,
   ShellSettingsAdapter,
   ShellSettingsDelta,
   ShellStateSnapshot,

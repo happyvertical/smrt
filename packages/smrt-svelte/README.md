@@ -50,6 +50,14 @@ as `@happyvertical/smrt-svelte/workspace/layout`.
 </AppShell>
 ```
 
+Opt in to editing the real shell in place with `layoutEditing` on `AppShell`: a
+pencil toggle ("Edit layout") joins the header, and while on, every slot is a
+labelled drop zone, shell items and navigation get grips (drag, or Space and
+arrow keys), section headings get icon overlays and a floating toolbar, and
+hidden regions show as strips. Apps add per-section icon buttons (an Options
+gear, Help) with `sectionActions`; `useShellLayout()` exposes `editing` and
+`setEditing`. See `agents/workspace.md`.
+
 ## Installation
 
 ```bash

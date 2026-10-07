@@ -118,11 +118,53 @@ layout, visible)` (placement first, then the hidden-region fallback above).
 `useShellLayout()` adds `placeItem(id, slot)`, `resetItem(id)`, and readers
 `placementItems`, `placements` (per slot) and `isRegionVisible(region)`.
 
-`ShellLayoutEditor` shows a Placement section: a map of the four regions'
-slots (header left/middle/right, sidebars header/footer, footer
-left/middle/right), a `Sortable` with drag or keyboard moves (announced), and a
-per-item "Move <item> to" select plus Reset for moved items. Hidden regions are
-dimmed with a note; their items still render via the fallback.
+### Editing the layout in place
+
+`AppShell` `layoutEditing?: boolean | { slot? }` opts in (off: no toggle,
+`setEditing(true)` refused, existing apps unchanged). It adds the built-in item
+`item:layout-edit` (default slot `header.end`, normal hidden-region fallback):
+a pencil `ShellIconButton` named "Edit layout" with `aria-pressed`; on, it shows
+a check icon, the tooltip "Done editing layout" and an "Editing layout" status
+chip, and a polite live region announces the mode. `useShellLayout()` has
+`editable`, `editing` and `setEditing(boolean)` for hosts and assistants.
+
+While `editing`:
+
+- `AdminShell` `layoutEdit` (`ShellLayoutEditSurface`, set by `AppShell`) renders
+  every slot of a visible region as a dashed drop zone (`data-smrt-edit-zone`)
+  labelled "Header · Left", empty ones included, highlighted
+  (`data-drop-target`) while a drag targets it. Movable items render exactly as
+  on the site (inside an `inert` wrapper) with a grip; the toggle itself is
+  fixed. One headless `createSortable` engine (confined to the shell root,
+  `allowSameContainerReorder: false`) drives pointer, native-drag and keyboard
+  moves (Space, Up/Down across zones in visual order, Enter drops, Escape
+  cancels) with the same announcements as `Sortable`
+  (`sortable/announce.ts`), committing `placeItem(id, slot)`. Items whose region
+  is hidden show in the zone they fall back to.
+- Hidden, available regions render as thin dashed strips ("Right sidebar ·
+  hidden") with an eye "Show <region>" button (`setPanel(edge, { visible })`).
+- `ShellNavEditor` replaces `TenantNav`: the real rows plus grips on every
+  heading and item (existing reorder/move-across-sections), icon-only
+  `ShellIconButton`s (eye `aria-pressed` = shown in navigation, heading
+  `aria-pressed` = title shown, host actions) on each section and an eye per
+  item, and a "New section" button at the end.
+- Clicking a section heading opens its floating toolbar (rename input focused,
+  title, hide, delete for custom sections with a confirm when non-empty, host
+  actions). With `(hover: hover) and (pointer: fine)` hovering also opens it
+  (closes on leave unless a click pinned it); touch or no hover is click/tap
+  only. One toolbar at a time; Escape closes and returns focus to the heading;
+  a pinned toolbar closes on outside pointer or focus leaving.
+
+Host extension point: `AppShell` `sectionActions?: Snippet<[ShellSectionActionsContext]>`
+(`{ sectionId, label, custom, editing }`) renders icon buttons in both the
+section overlay and its toolbar (e.g. the planner's Options gear and Help);
+use `ShellIconButton` (from `./workspace`) for matching looks. It renders only
+while editing.
+
+`ShellLayoutEditor` no longer has a Placement section (superseded by dragging in
+place); it keeps panels, the navigation sort (icon toggles `aria-pressed` for
+"Show <name> in navigation" / "Show title of <name>"), the preview and Reset.
+The layout helpers and `placeItem`/`resetItem` stay.
 
 ### Activity ticker
 
@@ -260,7 +302,8 @@ control panel), wired by `app/AppShell.svelte`.
   `moveItem(id, sectionId, toIndex?)`, `hide(id)`, `show(id)`, `setPanel(edge,
   { visible?, initial? })`, `reset()`, each returning whether anything changed,
   plus readers (`layout`, `sections`, `panels`, `applied`, `customized`,
-  `isHidden`; item placement is in "Moving items between slots"). An assistant calls the same methods the editor does. The
+  `isHidden`; item placement is in "Moving items between slots", edit mode in
+  "Editing the layout in place"). An assistant calls the same methods the editor does. The
   context is separate from `useAdminShell()` because `AppShell`, not
   `AdminShell`, owns the navigation.
 - **Sections belong to the app.** Hosts (and recipes, via the host) suggest
@@ -279,9 +322,9 @@ control panel), wired by `app/AppShell.svelte`.
   Controller: `renameSection`, `setSectionTitleVisible`, `createSection(label)`
   (returns the id), `deleteSection`.
 - **`ShellLayoutEditor`**: `controller` (default: context), `preview` (default
-  true), `iconComponent`. Each section has an inline name input, a Show title
-  switch, and (custom only) Delete, which confirms when non-empty; a New
-  section button creates one. Mount it on a settings page or in a dock tool.
+  true), `iconComponent`. Each section has an inline name input, icon toggles
+  for visibility and title, and (custom only) a trash button, which confirms
+  when non-empty; a New section button creates one. Mount it on a settings page or in a dock tool.
 
 ### Sortable and the Board engine
 

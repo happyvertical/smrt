@@ -11,11 +11,13 @@ interface Props
   extends Omit<HTMLButtonAttributes, 'aria-label' | 'title' | 'children'> {
   /** Accessible name and tooltip. */
   label: string;
+  /** Which filled icon to draw. */
   icon: ShellIconName;
   /** Toggle state; omit for a plain action button. */
   pressed?: boolean;
   /** Tooltip text when it should differ from the label (default: the label). */
   tooltip?: string;
+  /** Icon edge length in pixels (default 18). */
   size?: number;
 }
 

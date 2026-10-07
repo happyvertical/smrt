@@ -66,11 +66,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     resolveSlot,
     type ShellRegion,
     type ShellSlot,
+    slotRegion,
   } from './slots.js';
   import type {
     AdminShellPhoneOptions,
     AdminShellProps,
     PanelEdge,
+    ShellLayoutEditSurface,
     ShellFocusTool,
     ShellViewport,
   } from './types.js';
@@ -95,6 +97,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
      * along its documented fallback chain (see `slotFallbackChain`).
      */
     slots?: Partial<Record<ShellSlot, Snippet>>;
+    /**
+     * In-place layout editing (`AppShell` supplies it): while `active`,
+     * slots render as drop zones and hidden regions as strips.
+     */
+    layoutEdit?: ShellLayoutEditSurface;
+    /** The shell's root element (bindable), e.g. to confine drag hit-testing. */
+    rootElement?: HTMLElement;
     /** Content for the tenant panel footer. */
     tenantFooter?: Snippet;
     /** Content for the right focus rail. */
@@ -179,6 +188,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     tenantPanel,
     tenantFooter,
     slots,
+    layoutEdit,
+    rootElement = $bindable(),
     focusRail,
     focusPanel,
     systemBar,
@@ -614,16 +625,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   const footerInHeader = $derived(!account && !!tenantFooter && (!shell.isEdgeShown('left') || !edgeExpanded('left')));
 
   function regionVisible(region: ShellRegion): boolean {
-    switch (region) {
-      case 'header':
-        return panelState('top') !== 'hidden';
-      case 'footer':
-        return panelState('bottom') !== 'hidden';
-      case 'leftSidebar':
-        return shell.isEdgeShown('left') && edgeExpanded('left');
-      case 'rightSidebar':
-        return shell.isEdgeShown('right') && edgeExpanded('right');
-    }
+    return shell.isRegionVisible(region);
   }
 
   /** Slots whose content lands at `target` (own content plus fallbacks). */
@@ -640,7 +642,24 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     return placed;
   });
 
-  const layoutStyle = $derived(buildLayoutStyle(shell));
+  const STRIP_TRACK = '1.75rem';
+  const REGION_TRACK: Record<ShellRegion, string> = {
+    header: 'top',
+    footer: 'bottom',
+    leftSidebar: 'left',
+    rightSidebar: 'right',
+  };
+  const stripRegions = $derived(
+    layoutEdit?.active && layoutEdit.strip ? (layoutEdit.hiddenRegions ?? []) : [],
+  );
+  const layoutStyle = $derived(
+    [
+      buildLayoutStyle(shell),
+      ...stripRegions.map(
+        (region) => `--smrt-admin-shell-${REGION_TRACK[region]}-track: ${STRIP_TRACK}`,
+      ),
+    ].join('; '),
+  );
 
   // Top/bottom edges reserve grid tracks for corner snippets. When a corner
   // isn't mounted its track must collapse, otherwise the band is squeezed
@@ -819,7 +838,18 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 {/snippet}
 
 {#snippet slotGroup(name: ShellSlot)}
-  {#if slotContent[name]?.length}
+  {#if layoutEdit?.active}
+    {#if regionVisible(slotRegion(name))}
+      <div
+        class="smrt-admin-shell__slot smrt-admin-shell__slot--{name.replace('.', '-')} smrt-admin-shell__slot--editing"
+        data-slot={name}
+        data-smrt-edit-zone={name}
+        data-drop-target={layoutEdit.highlight === name ? '' : undefined}
+      >
+        {@render layoutEdit.zone(name)}
+      </div>
+    {/if}
+  {:else if slotContent[name]?.length}
     <div
       class="smrt-admin-shell__slot smrt-admin-shell__slot--{name.replace('.', '-')}"
       data-slot={name}
@@ -829,7 +859,19 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 {/snippet}
 
+{#snippet regionStrip(region: ShellRegion)}
+  {#if stripRegions.includes(region)}
+    <div
+      class="smrt-admin-shell__strip smrt-admin-shell__strip--{region}"
+      data-region-strip={region}
+    >
+      {@render layoutEdit?.strip?.(region)}
+    </div>
+  {/if}
+{/snippet}
+
 <div
+  bind:this={rootElement}
   class="smrt-admin-shell"
   data-top-state={panelState('top')}
   data-left-state={panelState('left')}
@@ -852,6 +894,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     </div>
   {/if}
 
+  {@render regionStrip('header')}
   {#if panelState('top') !== 'hidden'}
     <header
       id="smrt-admin-shell-top-panel"
@@ -912,6 +955,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     </header>
   {/if}
 
+  {@render regionStrip('leftSidebar')}
   {#if shell.isEdgeShown('left')}
     <!-- tabindex -1 only while overlaid, so the panel can take focus on open -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -1012,6 +1056,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     ></button>
   {/if}
 
+  {@render regionStrip('rightSidebar')}
   {#if shell.isEdgeShown('right')}
     {@const rightPhone = isPhone ? shell.phonePresentation('right') : undefined}
     <!-- tabindex -1 only while overlaid, so the panel can take focus on open -->
@@ -1104,6 +1149,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     </aside>
   {/if}
 
+  {@render regionStrip('footer')}
   {#if panelState('bottom') !== 'hidden'}
     <footer
       id="smrt-admin-shell-bottom-panel"
@@ -1555,6 +1601,48 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     inset-block-end: 0;
     background: var(--smrt-color-surface);
   }
+
+  /* Layout editing: slots as dashed drop zones, hidden regions as strips. */
+  .smrt-admin-shell__slot--editing {
+    flex-wrap: wrap;
+    box-sizing: border-box;
+    min-inline-size: 4rem;
+    min-block-size: 2.25rem;
+    padding: var(--smrt-spacing-1);
+    border: 1px dashed var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    background: color-mix(in srgb, var(--smrt-color-primary) 4%, transparent);
+  }
+  .smrt-admin-shell__slot--editing[data-drop-target] {
+    border-style: solid;
+    border-color: var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+  }
+  .smrt-admin-shell__slot--editing.smrt-admin-shell__slot--header-center,
+  .smrt-admin-shell__slot--editing.smrt-admin-shell__slot--footer-center {
+    justify-content: flex-start;
+  }
+  .smrt-admin-shell__strip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--smrt-spacing-2);
+    box-sizing: border-box;
+    min-inline-size: 0;
+    min-block-size: 0;
+    overflow: hidden;
+    border: 1px dashed var(--smrt-color-outline);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-small-font);
+    z-index: 25;
+  }
+  .smrt-admin-shell__strip--header { grid-column: 1 / -1; grid-row: 2; }
+  .smrt-admin-shell__strip--footer { grid-column: 1 / -1; grid-row: 4; }
+  .smrt-admin-shell__strip--leftSidebar { grid-column: 1; grid-row: 3; writing-mode: vertical-rl; flex-direction: row; }
+  .smrt-admin-shell__strip--rightSidebar { grid-column: 3; grid-row: 3; writing-mode: vertical-rl; flex-direction: row; }
+  .smrt-admin-shell[data-viewport='phone'] .smrt-admin-shell__strip--leftSidebar,
+  .smrt-admin-shell[data-viewport='phone'] .smrt-admin-shell__strip--rightSidebar { display: none; }
 
   .smrt-admin-shell__tenant-footer {
     min-width: 0;

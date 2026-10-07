@@ -9,11 +9,14 @@ import '@happyvertical/smrt-ui/themes/styles/base.css';
 import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { type Snippet, untrack } from 'svelte';
+import { type Snippet, tick, untrack } from 'svelte';
+import { M as SORTABLE_STRINGS } from '../../i18n/strings.sortable.js';
 import { M } from '../../i18n/strings.workspace.js';
 import Provider from '../../Provider.svelte';
 import type { User } from '../../state/app-state.js';
 import type { WebMcpProviderConfig } from '../../web/webmcp-provider.js';
+import { formatSortableAnnouncement } from '../sortable/announce.js';
+import { createSortable } from '../sortable/controller.svelte.js';
 import AdminShell from '../workspace/admin-shell/AdminShell.svelte';
 import AppScopePanel from '../workspace/admin-shell/AppScopePanel.svelte';
 import {
@@ -24,14 +27,23 @@ import {
 } from '../workspace/admin-shell/layout.js';
 import { setShellLayout } from '../workspace/admin-shell/layout-context.js';
 import { ShellLayoutController } from '../workspace/admin-shell/layout-controller.svelte.js';
+import ShellIconButton from '../workspace/admin-shell/ShellIconButton.svelte';
+import ShellNavEditor from '../workspace/admin-shell/ShellNavEditor.svelte';
 import { resolveShellConfig } from '../workspace/admin-shell/settings.js';
-import { SHELL_SLOT_MESSAGES } from '../workspace/admin-shell/slot-labels.js';
 import {
+  SHELL_REGION_MESSAGES,
+  SHELL_SLOT_MESSAGES,
+  SHELL_SLOT_SHORT_MESSAGES,
+} from '../workspace/admin-shell/slot-labels.js';
+import {
+  resolveSlot,
   SHELL_SLOTS,
   type ShellPlacementItem,
+  type ShellRegion,
   type ShellSlot,
   shellDockItemId,
   shellHostSlotItemId,
+  slotRegion,
 } from '../workspace/admin-shell/slots.js';
 import { createShellState } from '../workspace/admin-shell/state.svelte.js';
 import TenantNav from '../workspace/admin-shell/TenantNav.svelte';
@@ -41,6 +53,7 @@ import {
   type ShellNavGroup,
   type ShellNavItem,
   type ShellPanelDefaults,
+  type ShellSectionActionsContext,
 } from '../workspace/admin-shell/types.js';
 import DockSlot from './DockSlot.svelte';
 import DockToggles from './DockToggles.svelte';
@@ -126,6 +139,23 @@ interface Props {
    * after `slots` content and before dock toggles in the same slot.
    */
   slotItems?: ShellSlotItem[];
+  /**
+   * Opt in to editing the layout in place. Adds the built-in shell item
+   * `item:layout-edit` (a pencil toggle, default slot `header.end`, or
+   * `{ slot }`); while on, slots render as labelled drop zones, items and
+   * navigation get grips, section headings get overlay icons and a floating
+   * toolbar, and hidden regions render as strips with a show control. Hosts
+   * and assistants drive it with `useShellLayout()` (`editing`,
+   * `setEditing`). Off (the default) leaves existing apps unchanged.
+   */
+  layoutEditing?: boolean | { slot?: ShellSlot };
+  /**
+   * Host icon buttons for each navigation section while the layout is edited
+   * (e.g. an Options gear or Help), rendered in the section's overlay icons
+   * and its floating toolbar. Receives the section id, label, whether it is
+   * user-created, and `editing`.
+   */
+  sectionActions?: Snippet<[ShellSectionActionsContext]>;
   children: Snippet;
 }
 
@@ -153,8 +183,12 @@ let {
   dockToggles = [],
   slots: hostSlots,
   slotItems = [],
+  layoutEditing = false,
+  sectionActions,
   children,
 }: Props = $props();
+/** Stable id of the built-in edit-layout toggle item. */
+const SHELL_LAYOUT_EDIT_ITEM_ID = 'item:layout-edit';
 const { t } = useI18n();
 // Every movable item, in default order: legacy `slots` snippets, `slotItems`,
 // then dock toggles. Ids are stable (`slot:<slot>`, the host's id,
@@ -162,6 +196,8 @@ const { t } = useI18n();
 interface PlacedEntry extends ShellPlacementItem {
   render?: Snippet;
   toggle?: DockToggle;
+  /** Stays interactive and is not draggable while the layout is edited. */
+  fixed?: boolean;
 }
 const entries = $derived.by(() => {
   const out: PlacedEntry[] = [];
@@ -191,6 +227,18 @@ const entries = $derived.by(() => {
       label: toggle.label,
       slot: toggle.slot ?? 'header.end',
       toggle,
+    });
+  }
+  if (layoutEditing) {
+    add({
+      id: SHELL_LAYOUT_EDIT_ITEM_ID,
+      label: t(M['ui.layout_edit.toggle']),
+      slot:
+        typeof layoutEditing === 'object'
+          ? (layoutEditing.slot ?? 'header.end')
+          : 'header.end',
+      render: layoutToggle,
+      fixed: true,
     });
   }
   return out;
@@ -258,35 +306,162 @@ $effect(() => {
   pendingStart.clear();
 });
 
-setShellLayout(
-  new ShellLayoutController({
-    nav: () => nav,
-    groups: () => navGroups,
-    panels: () => config,
-    layout: () => effectiveLayout,
-    items: () => entries.map(({ id, label, slot }) => ({ id, label, slot })),
-    commit(next) {
-      // A changed starting state is an explicit edit: show it now. It waits
-      // for the layout to actually change (the host may reject the edit) and
-      // is never done for a loaded layout (hydration, a late `layout` prop),
-      // so loading cannot erase the user's own open/closed toggle.
-      for (const edge of PANEL_EDGES) {
-        const before = effectiveLayout.panels?.[edge]?.initial;
-        const after = next.panels?.[edge]?.initial;
-        if (before === after) continue;
-        const state = after ?? resolveShellConfig(config).panels[edge].initial;
-        if (state === 'collapsed' || state === 'expanded') {
-          pendingStart.set(edge, state);
-        }
+const layoutApi = new ShellLayoutController({
+  editable: () => !!layoutEditing,
+  nav: () => nav,
+  groups: () => navGroups,
+  panels: () => config,
+  layout: () => effectiveLayout,
+  items: () => entries.map(({ id, label, slot }) => ({ id, label, slot })),
+  commit(next) {
+    // A changed starting state is an explicit edit: show it now. It waits
+    // for the layout to actually change (the host may reject the edit) and
+    // is never done for a loaded layout (hydration, a late `layout` prop),
+    // so loading cannot erase the user's own open/closed toggle.
+    for (const edge of PANEL_EDGES) {
+      const before = effectiveLayout.panels?.[edge]?.initial;
+      const after = next.panels?.[edge]?.initial;
+      if (before === after) continue;
+      const state = after ?? resolveShellConfig(config).panels[edge].initial;
+      if (state === 'collapsed' || state === 'expanded') {
+        pendingStart.set(edge, state);
       }
-      if (!controlled) {
-        if (onlayoutchange) localLayout = next;
-        else shell.setLayout(next);
-      }
-      onlayoutchange?.(next);
-    },
-  }),
+    }
+    if (!controlled) {
+      if (onlayoutchange) localLayout = next;
+      else shell.setLayout(next);
+    }
+    onlayoutchange?.(next);
+  },
+});
+setShellLayout(layoutApi);
+
+// ---- In-place layout editing -------------------------------------------
+const editing = $derived(layoutApi.editing);
+let shellRoot = $state<HTMLElement | undefined>();
+let modeMessage = $state('');
+let wasEditing = false;
+$effect(() => {
+  const now = editing;
+  if (now === wasEditing) return;
+  wasEditing = now;
+  modeMessage = t(
+    now ? M['ui.layout_edit.announce_on'] : M['ui.layout_edit.announce_off'],
+  );
+});
+
+/** Visual (row-major) order of the drop zones, which is also the keyboard order. */
+const ZONE_ORDER: readonly ShellSlot[] = [
+  'header.start',
+  'header.center',
+  'header.end',
+  'leftSidebar.header',
+  'rightSidebar.header',
+  'leftSidebar.footer',
+  'rightSidebar.footer',
+  'footer.start',
+  'footer.center',
+  'footer.end',
+];
+const regionVisible = (region: ShellRegion): boolean =>
+  shell.isRegionVisible(region);
+const zones = $derived(
+  ZONE_ORDER.filter((slot) => regionVisible(slotRegion(slot))),
 );
+function zoneLabel(slot: ShellSlot): string {
+  return t(M['ui.layout_edit.zone'], {
+    region: t(SHELL_REGION_MESSAGES[slotRegion(slot)]),
+    slot: t(SHELL_SLOT_SHORT_MESSAGES[slot]),
+  });
+}
+// Items shown in a zone: those placed there, then those that fall back to it
+// because their own region is hidden or collapsed.
+function zoneEntries(zone: ShellSlot): PlacedEntry[] {
+  const own = entriesFor(zone);
+  const fallen = SHELL_SLOTS.filter(
+    (name) => name !== zone && resolveSlot(name, regionVisible) === zone,
+  ).flatMap((name) => entriesFor(name));
+  return [...own, ...fallen];
+}
+const movableIn = (zone: string): PlacedEntry[] =>
+  zoneEntries(zone as ShellSlot).filter((entry) => !entry.fixed);
+
+const slotSortable = createSortable({
+  root: () => shellRoot,
+  selectors: {
+    container: '[data-smrt-edit-zone]',
+    containerKey: 'smrtEditZone',
+    item: '[data-smrt-edit-item]',
+    itemKey: 'smrtEditItem',
+  },
+  containers: () => zones.map((slot) => ({ id: slot, label: zoneLabel(slot) })),
+  itemIds: (zone) => movableIn(zone).map((entry) => entry.id),
+  itemLabel: (id) =>
+    entries.find((entry) => entry.id === id && !entry.fixed)?.label,
+  allowSameContainerReorder: () => false,
+  enabled: () => editing,
+  orientation: () => 'vertical',
+  announce: (announcement) => formatSortableAnnouncement(t, announcement),
+  focusTarget: (element) =>
+    element.querySelector<HTMLElement>('[data-smrt-edit-handle]'),
+  commit(move) {
+    layoutApi.placeItem(move.itemId, move.target.containerId as ShellSlot);
+  },
+});
+
+// Native HTML drag has no per-zone listeners (the zones belong to AdminShell):
+// delegate from the shell root.
+$effect(() => {
+  const root = shellRoot;
+  if (!root || !editing) return;
+  const over = (event: DragEvent) => {
+    if (slotSortable.drag) event.preventDefault();
+  };
+  const drop = (event: DragEvent) => {
+    if (!slotSortable.drag || !(event.target instanceof Element)) return;
+    const zone = event.target.closest<HTMLElement>('[data-smrt-edit-zone]');
+    if (zone?.dataset.smrtEditZone) {
+      slotSortable.dropOnContainer(event, zone.dataset.smrtEditZone);
+    }
+  };
+  root.addEventListener('dragover', over);
+  root.addEventListener('drop', drop);
+  return () => {
+    root.removeEventListener('dragover', over);
+    root.removeEventListener('drop', drop);
+  };
+});
+
+const REGION_OF_EDGE: Record<PanelEdge, ShellRegion> = {
+  top: 'header',
+  bottom: 'footer',
+  left: 'leftSidebar',
+  right: 'rightSidebar',
+};
+const hiddenRegions = $derived(
+  layoutApi.panels
+    .filter((panel) => panel.available && !panel.visible)
+    .map((panel) => REGION_OF_EDGE[panel.edge]),
+);
+const editSurface = $derived({
+  active: editing,
+  highlight:
+    (slotSortable.drag?.target.containerId as ShellSlot | undefined) ?? null,
+  zone: editZone,
+  hiddenRegions,
+  strip: editStrip,
+});
+
+async function toggleEditing(): Promise<void> {
+  layoutApi.setEditing(!layoutApi.editing);
+  await tick();
+}
+const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
+  header: 'top',
+  footer: 'bottom',
+  leftSidebar: 'left',
+  rightSidebar: 'right',
+};
 </script>
 
 {#snippet slotBody(name: ShellSlot)}
@@ -329,6 +504,77 @@ setShellLayout(
   {@render slotBody('rightSidebar.footer')}
 {/snippet}
 
+{#snippet layoutToggle()}
+  <span class="smrt-layout-toggle" data-testid="layout-edit-toggle">
+    <ShellIconButton
+      icon={editing ? 'done' : 'edit'}
+      pressed={editing}
+      label={t(M['ui.layout_edit.toggle'])}
+      tooltip={editing ? t(M['ui.layout_edit.toggle_done']) : t(M['ui.layout_edit.toggle'])}
+      onclick={toggleEditing}
+    />
+    {#if editing}
+      <span class="smrt-layout-toggle__status" role="status">{t(M['ui.layout_edit.status_on'])}</span>
+    {/if}
+  </span>
+{/snippet}
+
+{#snippet entryBody(entry: PlacedEntry)}
+  {#if entry.toggle}
+    <DockToggles toggles={[entry.toggle]} />
+  {:else if entry.render}
+    {@render entry.render()}
+  {/if}
+{/snippet}
+
+{#snippet editZone(slot: ShellSlot)}
+  <span class="smrt-edit-zone__label">{zoneLabel(slot)}</span>
+  {#each zoneEntries(slot) as entry (entry.id)}
+    {#if entry.fixed}
+      {@render entryBody(entry)}
+    {:else}
+      {@const dragging = slotSortable.drag?.itemId === entry.id}
+      <span
+        class="smrt-edit-item"
+        class:smrt-edit-item--dragging={dragging}
+        data-smrt-edit-item={entry.id}
+      >
+        <!-- raw-primitive-allow: native button owns keyboard pickup and HTML drag/drop -->
+        <button
+          type="button"
+          class="smrt-edit-item__grip"
+          data-smrt-edit-handle=""
+          draggable={slotSortable.nativeDraggable}
+          aria-label={t(SORTABLE_STRINGS['ui.sortable.move'], { item: entry.label })}
+          title={t(SORTABLE_STRINGS['ui.sortable.move'], { item: entry.label })}
+          aria-pressed={dragging}
+          onclick={() => slotSortable.consumeClick(entry.id)}
+          onkeydown={(event) => slotSortable.keydown(event, entry.id)}
+          onblur={(event) => slotSortable.blur(event, entry.id)}
+          onpointerdown={(event) => slotSortable.pointerDown(event, entry.id)}
+          onpointermove={(event) => slotSortable.pointerMove(event)}
+          onpointerup={(event) => slotSortable.pointerUp(event)}
+          onpointercancel={(event) => slotSortable.pointerCancel(event)}
+          ondragstart={(event) => slotSortable.dragStart(event, entry.id)}
+          ondragend={() => slotSortable.dragEnd()}
+        ><span aria-hidden="true">⠿</span></button>
+        <span class="smrt-edit-item__body" inert>{@render entryBody(entry)}</span>
+      </span>
+    {/if}
+  {/each}
+{/snippet}
+
+{#snippet editStrip(region: ShellRegion)}
+  {@const label = t(SHELL_REGION_MESSAGES[region])}
+  <span>{t(M['ui.layout_edit.region_hidden'], { region: label })}</span>
+  <ShellIconButton
+    icon="eye"
+    size={16}
+    label={t(M['ui.layout_edit.show_region'], { region: label })}
+    onclick={() => layoutApi.setPanel(EDGE_OF_REGION[region], { visible: true })}
+  />
+{/snippet}
+
 <Provider {webmcp} {user} {permissions}>
   <RuntimeDiagnosticsWebMcp enabled={runtimeDiagnostics} />
   <ThemeProvider {preset} {colorScheme} persist={true}>
@@ -338,6 +584,8 @@ setShellLayout(
       state={shell}
       path={currentHref}
       slots={shellSlots}
+      layoutEdit={editSurface}
+      bind:rootElement={shellRoot}
     >
       {#snippet appPanel()}
         <AppScopePanel
@@ -356,7 +604,12 @@ setShellLayout(
       {/snippet}
 
       {#snippet tenantPanel()}
-        {#if hasNav}
+        {#if editing}
+          <ShellNavEditor
+            aria-label={t(M['ui.app_shell.navigation'])}
+            {sectionActions}
+          />
+        {:else if hasNav}
           <TenantNav
             items={applied.nav}
             groups={applied.groups}
@@ -366,6 +619,10 @@ setShellLayout(
         {/if}
       {/snippet}
 
+      {#if editing}
+        <div class="smrt-layout-live" role="status" aria-live="polite">{modeMessage}</div>
+        <div class="smrt-layout-live" aria-live="assertive" aria-atomic="true">{slotSortable.announcement}</div>
+      {/if}
       {#if dock}
         <DockSlot {dock} />
       {/if}
@@ -378,4 +635,15 @@ setShellLayout(
   a {
     color: var(--smrt-color-primary);
   }
+  .smrt-layout-toggle { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
+  .smrt-layout-toggle__status { padding: 0 var(--smrt-spacing-2); border-radius: var(--smrt-radius-full); background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); font: var(--smrt-typography-label-small-font); white-space: nowrap; }
+  .smrt-layout-live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+  .smrt-edit-zone__label { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-small-font); white-space: nowrap; }
+  .smrt-edit-item { display: inline-flex; align-items: center; min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
+  .smrt-edit-item--dragging { opacity: 0.55; }
+  .smrt-edit-item__body { display: inline-flex; align-items: center; min-inline-size: 0; pointer-events: none; }
+  .smrt-edit-item__grip { display: inline-grid; place-items: center; flex: 0 0 auto; inline-size: 1.5rem; block-size: 2rem; padding: 0; border: 0; border-radius: var(--smrt-radius-sm); background: transparent; color: var(--smrt-color-on-surface-variant); cursor: grab; touch-action: none; }
+  .smrt-edit-item__grip:hover { background: var(--smrt-color-surface-container-high); }
+  .smrt-edit-item__grip:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  .smrt-edit-item__grip[aria-pressed='true'] { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
 </style>

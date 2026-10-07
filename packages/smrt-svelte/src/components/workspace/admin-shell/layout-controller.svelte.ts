@@ -48,6 +48,11 @@ export interface ShellLayoutControllerOptions {
    * slots. Omit when the shell has none.
    */
   items?: () => ShellPlacementItem[];
+  /**
+   * Whether in-place layout editing is offered (the host opted in). Omit for
+   * "not offered": `editing` stays false and `setEditing(true)` is refused.
+   */
+  editable?: () => boolean;
   /** Store the next layout (and notify the host). */
   commit: (layout: ShellLayout) => void;
 }
@@ -89,7 +94,30 @@ const REGION_EDGE: Record<ShellRegion, PanelEdge> = {
  * in that state), so a caller can report accurately.
  */
 export class ShellLayoutController {
+  private editingState = $state(false);
+
   constructor(private readonly options: ShellLayoutControllerOptions) {}
+
+  /** Whether in-place layout editing is offered by the host. */
+  get editable(): boolean {
+    return this.options.editable?.() ?? false;
+  }
+
+  /** Whether the shell is in layout edit mode (always false if not `editable`). */
+  get editing(): boolean {
+    return this.editable && this.editingState;
+  }
+
+  /**
+   * Enter or leave layout edit mode. Returns whether the mode changed; entering
+   * is refused (`false`) when the host did not opt in.
+   */
+  setEditing(editing: boolean): boolean {
+    if (editing && !this.editable) return false;
+    if (this.editingState === editing) return false;
+    this.editingState = editing;
+    return true;
+  }
 
   /** The layout in force, normalized. */
   get layout(): ShellLayout {

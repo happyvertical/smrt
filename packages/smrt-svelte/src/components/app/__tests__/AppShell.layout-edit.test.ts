@@ -1,0 +1,405 @@
+import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ShellLayout } from '../../workspace/admin-shell/layout.js';
+import type { ShellLayoutController } from '../../workspace/admin-shell/layout-controller.svelte.js';
+import Harness from './shell-edit-harness.svelte';
+import EditorHarness from './shell-layout-harness.svelte';
+
+let hover = false;
+beforeEach(() => {
+  localStorage.clear();
+  hover = false;
+  vi.stubGlobal('matchMedia', () => ({
+    matches: hover,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+function mount(props: Record<string, unknown> = {}) {
+  const changes: ShellLayout[] = [];
+  let api: ShellLayoutController | undefined;
+  render(Harness, {
+    ...props,
+    onChange: (layout: ShellLayout) => changes.push(layout),
+    onApi: (a: ShellLayoutController) => {
+      api = a;
+    },
+  });
+  return { changes, api: () => api as ShellLayoutController };
+}
+
+const toggle = () => screen.getByRole('button', { name: 'Edit layout' });
+const zone = (name: string) =>
+  document.querySelector<HTMLElement>(`[data-smrt-edit-zone="${name}"]`);
+const shellSlot = (name: string) =>
+  document.querySelector<HTMLElement>(`[data-slot="${name}"]`);
+const live = () =>
+  Array.from(document.querySelectorAll('[aria-live]'))
+    .map((e) => e.textContent?.trim())
+    .filter(Boolean)
+    .join(' | ');
+
+async function edit(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(toggle());
+}
+
+describe('layout edit toggle', () => {
+  it('is a pressed-state pencil button in header.end that toggles edit mode', async () => {
+    const user = userEvent.setup();
+    mount();
+    expect(shellSlot('header.end')?.contains(toggle())).toBe(true);
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    expect(screen.queryByText('Editing layout')).toBeNull();
+    await edit(user);
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('Editing layout')).toBeTruthy();
+    expect(toggle().getAttribute('title')).toBe('Done editing layout');
+    expect(live()).toContain('Layout editing on');
+    await edit(user);
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    expect(screen.queryByText('Editing layout')).toBeNull();
+  });
+
+  it('is absent, and edit mode refused, when the prop is off', () => {
+    const { api } = mount({ layoutEditing: false });
+    expect(screen.queryByRole('button', { name: 'Edit layout' })).toBeNull();
+    expect(api().editable).toBe(false);
+    expect(api().setEditing(true)).toBe(false);
+    expect(api().editing).toBe(false);
+    expect(document.querySelector('[data-smrt-edit-zone]')).toBeNull();
+  });
+
+  it('can be driven from useShellLayout()', async () => {
+    const { api } = mount();
+    expect(api().setEditing(true)).toBe(true);
+    await vi.waitFor(() => expect(zone('header.start')).toBeTruthy());
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(api().setEditing(true)).toBe(false);
+    expect(api().setEditing(false)).toBe(true);
+  });
+
+  it('follows the hidden-region fallback like any shell item', () => {
+    mount({ initial: { version: 1, panels: { top: { visible: false } } } });
+    expect(shellSlot('header.end')).toBeNull();
+    expect(toggle()).toBeTruthy();
+  });
+});
+
+describe('drop zones', () => {
+  it('render only in edit mode, labelled, including empty ones', async () => {
+    const user = userEvent.setup();
+    mount();
+    expect(document.querySelector('[data-smrt-edit-zone]')).toBeNull();
+    await edit(user);
+    for (const name of [
+      'header.start',
+      'header.center',
+      'header.end',
+      'footer.start',
+      'leftSidebar.header',
+      'leftSidebar.footer',
+    ]) {
+      expect(zone(name), name).toBeTruthy();
+    }
+    expect(zone('header.center')?.textContent).toContain('Header · Middle');
+    expect(zone('leftSidebar.footer')?.textContent).toContain(
+      'Left sidebar · Footer',
+    );
+    // Right sidebar is not expanded: no zones for it.
+    expect(zone('rightSidebar.header')).toBeNull();
+    // Items keep the site look (label), plus a grip.
+    expect(
+      within(zone('header.end') as HTMLElement).getByRole('button', {
+        name: 'Move Assistant',
+      }),
+    ).toBeTruthy();
+    expect(
+      zone('header.end')?.querySelector('[data-dock-tool="assistant"]'),
+    ).toBeTruthy();
+    expect(
+      zone('header.start')?.querySelector('[data-testid="clock"]'),
+    ).toBeTruthy();
+  });
+
+  it('moves an item between zones with the keyboard and announces it', async () => {
+    const user = userEvent.setup();
+    const { changes } = mount();
+    await edit(user);
+    screen.getByRole('button', { name: 'Move Clock' }).focus();
+    await user.keyboard(' ');
+    expect(live()).toContain('Picked up Clock');
+    await user.keyboard('{ArrowDown}');
+    expect(zone('header.center')?.hasAttribute('data-drop-target')).toBe(true);
+    await user.keyboard('{Enter}');
+    expect(changes.at(-1)?.placements).toEqual({
+      'host:clock': 'header.center',
+    });
+    await vi.waitFor(() =>
+      expect(
+        zone('header.center')?.querySelector('[data-testid="clock"]'),
+      ).toBeTruthy(),
+    );
+    expect(live()).toContain('Moved Clock to Header · Middle');
+  });
+
+  it('Escape cancels a keyboard move', async () => {
+    const user = userEvent.setup();
+    const { changes } = mount();
+    await edit(user);
+    screen.getByRole('button', { name: 'Move Clock' }).focus();
+    await user.keyboard(' {ArrowDown}{Escape}');
+    expect(changes).toHaveLength(0);
+    expect(document.querySelector('[data-drop-target]')).toBeNull();
+  });
+
+  it('the fixed toggle has no grip; moves persist after leaving edit mode', async () => {
+    const user = userEvent.setup();
+    const { changes } = mount();
+    await edit(user);
+    expect(
+      screen.queryByRole('button', { name: 'Move Edit layout' }),
+    ).toBeNull();
+    screen.getByRole('button', { name: 'Move Assistant' }).focus();
+    await user.keyboard(' {ArrowDown}{Enter}');
+    expect(changes.at(-1)?.placements?.['dock:assistant']).toBeTruthy();
+    await edit(user);
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('[data-dock-tool="assistant"]'),
+      ).toBeTruthy(),
+    );
+    expect(document.querySelector('[data-smrt-edit-zone]')).toBeNull();
+  });
+});
+
+describe('hidden regions', () => {
+  it('render as strips with a Show control', async () => {
+    const user = userEvent.setup();
+    const { changes } = mount({
+      initial: { version: 1, panels: { bottom: { visible: false } } },
+    });
+    expect(document.querySelector('[data-region-strip]')).toBeNull();
+    await edit(user);
+    const strip = document.querySelector<HTMLElement>(
+      '[data-region-strip="footer"]',
+    ) as HTMLElement;
+    expect(strip.textContent).toContain('Footer · hidden');
+    await user.click(
+      within(strip).getByRole('button', { name: 'Show Footer' }),
+    );
+    expect(changes.at(-1)?.panels?.bottom).toBeUndefined();
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-region-strip="footer"]')).toBeNull(),
+    );
+    expect(zone('footer.start')).toBeTruthy();
+  });
+});
+
+describe('section overlay and toolbar', () => {
+  it('hides and shows a section and its title with icon toggles', async () => {
+    const user = userEvent.setup();
+    const { changes } = mount();
+    await edit(user);
+    const people = screen.getByRole('button', {
+      name: 'Show People in navigation',
+    });
+    expect(people.getAttribute('aria-pressed')).toBe('true');
+    await user.click(people);
+    expect(changes.at(-1)?.hidden).toContain('People');
+    await vi.waitFor(() =>
+      expect(
+        screen
+          .getByRole('button', { name: 'Show People in navigation' })
+          .getAttribute('aria-pressed'),
+      ).toBe('false'),
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Show title of Content' }),
+    );
+    expect(changes.at(-1)?.sections?.Content?.showTitle).toBe(false);
+  });
+
+  it('renders host section actions in the overlay', async () => {
+    const user = userEvent.setup();
+    mount({ withActions: true });
+    await edit(user);
+    expect(
+      screen.getByRole('button', { name: 'Options for Content' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Options for People' }),
+    ).toBeTruthy();
+  });
+
+  it('renames through the toolbar, opened by click', async () => {
+    const user = userEvent.setup();
+    const { changes } = mount({ withActions: true });
+    await edit(user);
+    await user.click(
+      screen.getByRole('button', { name: 'Edit section People' }),
+    );
+    const toolbar = screen.getByRole('group', {
+      name: 'Options for section People',
+    });
+    const input = within(toolbar).getByRole('textbox', {
+      name: 'Name of section People',
+    });
+    await vi.waitFor(() => expect(document.activeElement).toBe(input));
+    await user.clear(input);
+    await user.type(input, 'Team{Enter}');
+    expect(changes.at(-1)?.sections?.People?.label).toBe('Team');
+    expect(
+      within(toolbar).getByRole('button', { name: /Options for/ }),
+    ).toBeTruthy();
+    expect(
+      within(toolbar).queryByRole('button', { name: /Delete section/ }),
+    ).toBeNull();
+  });
+
+  it('Escape closes the toolbar and returns focus; only one is open', async () => {
+    const user = userEvent.setup();
+    mount();
+    await edit(user);
+    await user.click(
+      screen.getByRole('button', { name: 'Edit section People' }),
+    );
+    expect(
+      screen.getAllByRole('group', { name: /Options for section/ }),
+    ).toHaveLength(1);
+    await user.click(
+      screen.getByRole('button', { name: 'Edit section Content' }),
+    );
+    const open = screen.getAllByRole('group', { name: /Options for section/ });
+    expect(open).toHaveLength(1);
+    expect(open[0].getAttribute('aria-label')).toContain('Content');
+    await user.keyboard('{Escape}');
+    expect(
+      screen.queryByRole('group', { name: /Options for section/ }),
+    ).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Edit section Content' }),
+    );
+  });
+
+  it('opens on hover with a fine pointer and on click only otherwise', async () => {
+    const user = userEvent.setup();
+    mount();
+    await edit(user);
+    const heading = screen.getByRole('button', { name: 'Edit section People' });
+
+    hover = false; // touch / no hover
+    await fireEvent.pointerEnter(heading);
+    expect(
+      screen.queryByRole('group', { name: /Options for section/ }),
+    ).toBeNull();
+    await user.click(heading);
+    expect(
+      screen.getByRole('group', { name: /Options for section/ }),
+    ).toBeTruthy();
+    await user.keyboard('{Escape}');
+
+    hover = true; // desktop
+    await fireEvent.pointerEnter(heading);
+    expect(
+      screen.getByRole('group', { name: 'Options for section People' }),
+    ).toBeTruthy();
+    await fireEvent.pointerLeave(
+      heading.closest('[data-nav-section]') as Element,
+    );
+    expect(
+      screen.queryByRole('group', { name: /Options for section/ }),
+    ).toBeNull();
+    // A click pins it: leaving does not close it.
+    await user.click(heading);
+    await fireEvent.pointerLeave(
+      heading.closest('[data-nav-section]') as Element,
+    );
+    expect(
+      screen.getByRole('group', { name: 'Options for section People' }),
+    ).toBeTruthy();
+  });
+
+  it('creates a custom section and deletes it from the toolbar', async () => {
+    const user = userEvent.setup();
+    const { changes } = mount();
+    await edit(user);
+    await user.click(screen.getByRole('button', { name: 'New section' }));
+    expect(changes.at(-1)?.customSections).toHaveLength(1);
+    const toolbar = await screen.findByRole('group', {
+      name: 'Options for section New section',
+    });
+    await user.click(
+      within(toolbar).getByRole('button', {
+        name: 'Delete section New section',
+      }),
+    );
+    expect(changes.at(-1)?.customSections ?? []).toHaveLength(0);
+    expect(
+      screen.queryByRole('group', { name: /Options for section/ }),
+    ).toBeNull();
+  });
+});
+
+describe('accessibility', () => {
+  it('edit mode has no axe violations with a toolbar open', async () => {
+    const user = userEvent.setup();
+    render(Harness, { withActions: true });
+    await edit(user);
+    await user.click(
+      screen.getByRole('button', { name: 'Edit section People' }),
+    );
+    // Scoped to the editing chrome: the shell's own left <aside role=navigation>
+    // is a pre-existing axe finding outside this feature.
+    await expectNoA11yViolations(
+      document.querySelector('[data-layout-editing]') as HTMLElement,
+    );
+    await expectNoA11yViolations(
+      document.querySelector('#smrt-admin-shell-top-panel') as HTMLElement,
+    );
+  });
+});
+
+describe('ShellLayoutEditor', () => {
+  it('no longer has a Placement section', () => {
+    render(EditorHarness, { initial: null });
+    expect(screen.queryByText('Placement')).toBeNull();
+    expect(screen.queryByTestId('shell-placement')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Reset to defaults' }),
+    ).toBeTruthy();
+  });
+});
+
+describe('placement API', () => {
+  it('moves and resets items and ignores unknown ones', async () => {
+    const { changes, api } = mount();
+    expect(api().placeItem('dock:assistant', 'leftSidebar.footer')).toBe(true);
+    expect(api().placeItem('dock:assistant', 'leftSidebar.footer')).toBe(false);
+    expect(api().placeItem('dock:nope', 'footer.end')).toBe(false);
+    expect(api().placeItem('dock:assistant', 'nowhere' as never)).toBe(false);
+    expect(changes.at(-1)?.placements).toEqual({
+      'dock:assistant': 'leftSidebar.footer',
+    });
+    await vi.waitFor(() =>
+      expect(
+        api().placementItems.find((i) => i.id === 'dock:assistant')?.slot,
+      ).toBe('leftSidebar.footer'),
+    );
+    expect(api().resetItem('dock:assistant')).toBe(true);
+    expect(api().resetItem('dock:assistant')).toBe(false);
+  });
+});

@@ -1,6 +1,7 @@
 <script lang="ts" generics="Item extends SortableItem, Container extends SortableContainer">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n/strings.sortable.js';
+import { formatSortableAnnouncement } from './announce.js';
 import {
   createSortable,
   type SortableAnnouncement,
@@ -53,35 +54,7 @@ const containersById = $derived(
 );
 
 function itemMessage(announcement: SortableAnnouncement): string {
-  switch (announcement.type) {
-    case 'pickup':
-      return t(M['ui.sortable.pickup'], {
-        item: announcement.item,
-        destinations: announcement.destinations.join(', '),
-      });
-    case 'position':
-      return t(M['ui.sortable.position'], {
-        item: announcement.item,
-        container: announcement.container,
-        position: announcement.position,
-        count: announcement.count,
-      });
-    case 'drop':
-      return t(M['ui.sortable.drop'], {
-        item: announcement.item,
-        container: announcement.container,
-        position: announcement.position,
-        count: announcement.count,
-      });
-    case 'unavailable':
-      return t(M['ui.sortable.unavailable'], {
-        container: announcement.container,
-      });
-    case 'failed':
-      return t(M['ui.sortable.failed'], { item: announcement.item });
-    case 'cancel':
-      return t(M['ui.sortable.cancel'], { item: announcement.item });
-  }
+  return formatSortableAnnouncement(t, announcement);
 }
 
 const itemSortable = createSortable({

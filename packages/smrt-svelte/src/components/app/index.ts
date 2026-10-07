@@ -10,6 +10,7 @@ export {
   type ShellLayout,
   ShellLayoutController,
   ShellLayoutEditor,
+  type ShellSectionActionsContext,
   tryUseShellLayout,
   useShellLayout,
 } from '../workspace/index.js';
