@@ -4,7 +4,7 @@ import './__smrt-register__.js';
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
-import { Worker } from 'node:worker_threads';
+import type { Worker } from 'node:worker_threads';
 import { fromConfig, type RetryDecision } from '@happyvertical/jobs';
 import { createLogger } from '@happyvertical/logger';
 import {
@@ -1343,9 +1343,19 @@ export class TaskRunner extends EventEmitter {
       return false;
     }
 
+    // Look the built-in up at runtime instead of importing it: a static or
+    // dynamic `node:worker_threads` import would put a Node-only edge into the
+    // browser-reachable root graph (#3615). Browsers/edge runtimes have no
+    // `process.getBuiltinModule`, so the caller falls back to main-loop
+    // renewal there.
+    const workerThreads = globalThis.process?.getBuiltinModule?.(
+      'node:worker_threads',
+    ) as typeof import('node:worker_threads') | undefined;
+    if (!workerThreads) return false;
+
     let worker: Worker;
     try {
-      worker = new Worker(new URL(entry), {
+      worker = new workerThreads.Worker(new URL(entry), {
         workerData: {
           url: resolveUrl(this.db),
           type: resolveEngine(this.db),
