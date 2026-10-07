@@ -9,9 +9,9 @@
   published component and delete this file.
 -->
 <script lang="ts">
+import { RelationInput } from '@happyvertical/smrt-svelte/forms';
 import { customerOption } from './partySelect.ts';
 import type { CustomerDisplayData } from './partyTypes.ts';
-import RelationInput from './RelationInput.svelte';
 
 interface CustomerSelectProps {
   value?: string;

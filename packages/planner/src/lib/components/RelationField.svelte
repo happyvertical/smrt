@@ -1,4 +1,5 @@
 <script lang="ts">
+import { RelationInput } from '@happyvertical/smrt-svelte/forms';
 import { getModelByQualifiedName } from '../catalog/index.ts';
 import type { CatalogField } from '../catalog/types.ts';
 import { useDataSource } from '../data/context.ts';
@@ -15,7 +16,6 @@ import { modalInBody } from '../fields/modal.ts';
 import { activeForms, isFieldMap } from '../forms/active.ts';
 import { recipes } from '../recipes/index.ts';
 import { recipeState } from '../recipes/state.svelte.ts';
-import RelationInput from '../upstream/RelationInput.svelte';
 import { selectorFor } from '../upstream/selects.ts';
 import FieldMapForm from './FieldMapForm.svelte';
 
