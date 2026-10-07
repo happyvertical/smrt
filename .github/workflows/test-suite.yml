@@ -63,6 +63,10 @@ jobs:
               - 'packages/smrt-dev-mcp/**'
               - 'scripts/check-knowledge.ts'
             workbench:
+              # Core and config own the browser entry the core browser
+              # evaluation step in this lane loads (#2838).
+              - 'packages/core/**'
+              - 'packages/config/**'
               - 'packages/smrt-svelte/**'
               - 'packages/smrt-workbench/**'
               - 'packages/smrt-playground/**'
