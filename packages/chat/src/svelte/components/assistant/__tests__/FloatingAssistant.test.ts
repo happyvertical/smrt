@@ -47,8 +47,10 @@ describe('FloatingAssistant', () => {
     const panel = container.querySelector<HTMLElement>(
       '.floating-assistant-panel',
     );
-    expect(panel).toHaveAttribute('aria-hidden', 'true');
-    expect(panel).toHaveAttribute('inert');
+    await vi.waitFor(() => {
+      expect(panel).toHaveAttribute('aria-hidden', 'true');
+      expect((panel as HTMLElement & { inert?: boolean })?.inert).toBe(true);
+    });
     expect(launcher).toHaveFocus();
   });
 
