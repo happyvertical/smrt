@@ -170,6 +170,13 @@ and repository rules.
   `src/filesystem-loader.ts`, not a static files-SDK import. Fully bundled apps
   import `@happyvertical/smrt-core/filesystem` at startup. Use
   `importOptionalDependency()` for similarly heavy optional dependencies.
+- `src/browser.ts` is the `browser`-condition entry of the package root: the
+  Node entry (`index.ts`) minus HTTP servers, manifest/knowledge discovery, run-once,
+  the Vite plugin, and the test helper. A new export added to `index.ts` must also
+  go to `browser.ts` unless it is Node-only; `src/__tests__/browser-entry-parity.test.ts`
+  fails otherwise (allowlist: `NODE_ONLY_GROUPS` in that test, each with a reason; the browser
+  entry may not publish a name the Node entry lacks), and also
+  fails when a workspace package imports a root value the browser entry lacks.
 - `exports['.'].browser` (`dist/browser.js`) is the browser surface. Model
   package roots are bundled for browsers by the bundle-gate browser fixture
   (#3621): anything a model root imports from core must be exported by the
