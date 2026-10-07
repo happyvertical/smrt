@@ -21,7 +21,7 @@ This package deliberately ships ONLY the generic primitives. Domain-specific top
 - Automotive: `Model extends Product`, `Trim extends Product`
 - CPG: `Brand extends Product`, `Recipe extends Product`
 
-Each is a small subclass: `@smrt()`, override `productType`, add `@meta()` fields. See `packages/template-apparel-erp` for a worked example.
+Each is a small subclass: `@smrt()`, override `productType`, add `@meta()` fields.
 
 ## Variants — the two concepts
 
