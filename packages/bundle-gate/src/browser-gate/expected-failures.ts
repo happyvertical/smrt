@@ -86,11 +86,6 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
     issue: '#3625',
     reason: 'smrt-config (cosmiconfig, jiti)',
   },
-  '@happyvertical/smrt-products': {
-    issue: '#3616, #3626',
-    reason:
-      'server bootstrap (startRestServer, express/cors), core generators/mcp',
-  },
   '@happyvertical/smrt-profiles': {
     issue: '#3617, #3626',
     reason: 'node:crypto in root; core migrations (node:os)',
