@@ -50,7 +50,8 @@ let panel: HTMLElement | undefined = $state();
 
 const floatingAssistantId = $props.id();
 const panelId = `floating-assistant-${floatingAssistantId}`;
-const presentation = $derived({ expanded, status, run });
+const panelExpanded = $derived(expanded || attentionRequired);
+const presentation = $derived({ expanded: panelExpanded, status, run });
 
 function open() {
   expanded = true;
@@ -95,12 +96,12 @@ function handleKeydown(event: KeyboardEvent) {
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="floating-assistant" data-expanded={expanded || undefined}>
+<div class="floating-assistant" data-expanded={panelExpanded || undefined}>
   <button
     bind:this={launcher}
     type="button"
     class="floating-assistant-launcher"
-    aria-expanded={expanded}
+    aria-expanded={panelExpanded}
     aria-controls={panelId}
     onclick={open}
   >
@@ -117,8 +118,8 @@ function handleKeydown(event: KeyboardEvent) {
     id={panelId}
     class="floating-assistant-panel"
     aria-label={panelLabel}
-    aria-hidden={!expanded}
-    inert={!expanded}
+    aria-hidden={!panelExpanded}
+    inert={!panelExpanded}
   >
     <button
       type="button"
@@ -130,7 +131,7 @@ function handleKeydown(event: KeyboardEvent) {
     </button>
     <AssistantDock
       {...dockProps}
-      visible={expanded}
+      visible={panelExpanded}
       onstatus={handleStatus}
       onrun={handleRun}
       onattentionchange={handleAttentionChange}

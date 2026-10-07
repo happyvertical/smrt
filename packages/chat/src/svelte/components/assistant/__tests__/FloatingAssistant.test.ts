@@ -2,6 +2,7 @@
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import { render, screen, userEvent } from '@happyvertical/smrt-vitest/svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { createFloatingFixture } from '../../../../routes/previews/floating-assistant/fixture.js';
 import { createInMemoryAssistantTransport } from '../assistant-transport.js';
 import type { AssistantDockController } from '../create-assistant-dock-controller.svelte.js';
 import FloatingAssistant from '../FloatingAssistant.svelte';
@@ -63,5 +64,219 @@ describe('FloatingAssistant', () => {
     expect(
       screen.queryByRole('button', { name: 'Conversations' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+async function mountedFixture() {
+  const fixture = createFloatingFixture();
+  const oncontroller = vi.fn<(controller: AssistantDockController) => void>();
+  const view = render(FloatingAssistant, {
+    props: {
+      ...fixture,
+      oncontroller,
+      presentation: 'controls',
+      expanded: true,
+    },
+  });
+  await vi.waitFor(() => expect(oncontroller).toHaveBeenCalledTimes(1));
+  const controller = oncontroller.mock.calls[0][0];
+  await controller.openThread('preview-thread');
+  return { ...fixture, ...view, controller, oncontroller };
+}
+
+describe('FloatingAssistant decision authority', () => {
+  it('keeps a real preview visible against Escape, collapse and host closure, then confirms once with its original key', async () => {
+    const fixture = await mountedFixture();
+    await fixture.controller.previewAction(fixture.proposal());
+    const key =
+      fixture.controller.actions.get('preview-action')?.idempotencyKey;
+    const confirm = await screen.findByRole('button', { name: 'Confirm' });
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Collapse assistant' }),
+    );
+    await fixture.rerender({ expanded: false });
+    expect(
+      fixture.container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'false');
+    expect(fixture.evidence.keys).toEqual([]);
+    expect(
+      fixture.controller.actions.get('preview-action')?.idempotencyKey,
+    ).toBe(key);
+    await userEvent.click(confirm);
+    await vi.waitFor(() => expect(fixture.evidence.keys).toEqual([key]));
+    expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a real preview without applying it', async () => {
+    const fixture = await mountedFixture();
+    await fixture.controller.previewAction(fixture.proposal());
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Reject' }),
+    );
+    expect(fixture.evidence.keys).toEqual([]);
+    expect(fixture.controller.actions.size).toBe(0);
+  });
+
+  it.each([
+    'Allow',
+    "Don't allow",
+  ])('reveals a collapsed tool request and requires the actual %s decision', async (decision) => {
+    const fixture = await mountedFixture();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Collapse assistant' }),
+    );
+    const sending = fixture.controller.send('tool');
+    const decide = await screen.findByRole('button', { name: decision });
+    expect(
+      fixture.container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'false');
+    await userEvent.keyboard('{Escape}');
+    expect(fixture.evidence.executions).toBe(0);
+    await userEvent.click(decide);
+    await sending;
+    expect(fixture.evidence.executions).toBe(decision === 'Allow' ? 1 : 0);
+    expect(fixture.evidence.decisions).toEqual([decision === 'Allow']);
+    expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves visible choices, waiting status, Stop and errors in controls mode', async () => {
+    const fixture = await mountedFixture();
+    await fixture.controller.send('choices');
+    expect(fixture.controller.run?.state).toBe('waiting');
+    expect(fixture.controller.run?.waitingFor?.kind).toBe('choice');
+    expect(
+      fixture.container.querySelector('.assistant-dock-run'),
+    ).toHaveTextContent('Pick a layout');
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Compact layout/ }),
+    );
+    expect(fixture.evidence.choices).toEqual(['compact']);
+    const working = fixture.controller.send('work');
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    await working;
+    expect(fixture.controller.run?.stoppedReason).toBe('user');
+    fixture.controller.setError('Preview failure remains visible');
+    expect(
+      await screen.findByText(/Preview failure remains visible/),
+    ).toBeVisible();
+    expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
+  });
+
+  it('reuses its controller and discards a late preview across registry and transport swaps', async () => {
+    const fixture = await mountedFixture();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const preview = fixture.actionClient.preview;
+    await fixture.rerender({
+      actionClient: {
+        ...fixture.actionClient,
+        preview: async (request) => {
+          await gate;
+          return preview(request);
+        },
+      },
+    });
+    const pending = fixture.controller.previewAction(fixture.proposal());
+    const replacement = createFloatingFixture();
+    await fixture.rerender({
+      registry: replacement.registry,
+      transport: replacement.transport,
+    });
+    release();
+    await pending;
+    expect(fixture.controller.actions.size).toBe(0);
+    expect(
+      screen.queryByRole('button', { name: 'Confirm' }),
+    ).not.toBeInTheDocument();
+    expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FloatingAssistant pending state lifecycle', () => {
+  it('keeps the in-flight action and key across collapse, then applies only once', async () => {
+    const fixture = await mountedFixture();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const apply = fixture.actionClient.apply;
+    await fixture.rerender({
+      actionClient: {
+        ...fixture.actionClient,
+        apply: async (request, key) => {
+          await gate;
+          return apply(request, key);
+        },
+      },
+    });
+    await fixture.controller.previewAction(fixture.proposal());
+    const key =
+      fixture.controller.actions.get('preview-action')?.idempotencyKey;
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Confirm' }),
+    );
+    await vi.waitFor(() =>
+      expect(fixture.controller.actions.get('preview-action')?.status).toBe(
+        'applying',
+      ),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Collapse assistant' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open assistant' }),
+    );
+    expect(
+      fixture.controller.actions.get('preview-action')?.idempotencyKey,
+    ).toBe(key);
+    expect(
+      screen.queryByRole('button', { name: 'Confirm' }),
+    ).not.toBeInTheDocument();
+    release();
+    await vi.waitFor(() => expect(fixture.evidence.keys).toEqual([key]));
+    expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a late old-context message when transport changes without recreating the controller', async () => {
+    const fixture = await mountedFixture();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await fixture.rerender({
+      transport: {
+        ...fixture.transport,
+        sendMessage: async () => {
+          await gate;
+          return {
+            inProgress: false,
+            assistantMessage: {
+              id: 'old-reply',
+              threadId: 'preview-thread',
+              role: 'assistant' as const,
+              content: 'Old private context',
+              createdAt: new Date().toISOString(),
+            },
+          };
+        },
+      },
+    });
+    await fixture.controller.openThread('preview-thread');
+    const sending = fixture.controller.send('old context');
+    const replacement = createFloatingFixture();
+    await fixture.rerender({
+      transport: replacement.transport,
+      registry: replacement.registry,
+    });
+    release();
+    await sending;
+    expect(
+      fixture.controller.messages.some((message) => message.id === 'old-reply'),
+    ).toBe(false);
+    expect(fixture.controller.activeThreadId).toBeNull();
+    expect(fixture.oncontroller).toHaveBeenCalledTimes(1);
   });
 });

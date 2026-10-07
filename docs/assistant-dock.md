@@ -79,7 +79,16 @@ dock omits its thread list, transcript and composer but keeps the supervised
 run status, pending browser-tool confirmations, choice cards, data-action
 review controls and retry controls. `onattentionchange` reports when a pending
 tool or previewed action needs the person; `FloatingAssistant` automatically
-reveals the same dock controls without making a decision itself.
+reveals the same dock controls without making a decision itself. While a tool
+request, previewed action, or unresolved action outcome requires attention,
+Escape, the collapse button, and a host writing `expanded=false` cannot hide
+those controls. The character snippet and launcher report the effective visible
+state. After the decision, the host's requested collapsed state can take effect.
+
+The `/previews/floating-assistant` workbench uses in-memory transport, tool,
+choice, and action adapters. Its controls exercise Allow/Don't allow,
+Confirm/Reject, choices, Stop, and failures against the dock's own controller;
+no provider or microphone is contacted.
 
 ## Shell mounting recipe
 
