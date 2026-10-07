@@ -873,6 +873,24 @@ export interface SmartObjectConfig {
   };
 
   /**
+   * How a record of this model is named for people and assistants (#3599).
+   * Own fields only — no paths into other packages; a model whose label lives
+   * elsewhere ships a selector component (`ModuleUISlot.selects`) instead.
+   *
+   * @example
+   * ```typescript
+   * @smrt({ display: { label: 'orderNumber' } })
+   * ```
+   */
+  display?: {
+    /**
+     * Name of an own, non-sensitive field. When omitted the first of `name`,
+     * `title`, `label`, `code` that exists is used. Validated at build time.
+     */
+    label?: string;
+  };
+
+  /**
    * Optional UI hints consumed by `@happyvertical/smrt-svelte`'s
    * `navTreeFromManifest()` helper (and any other manifest → admin-UI
    * adapters). The framework itself never reads these — they round-trip

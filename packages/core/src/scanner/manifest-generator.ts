@@ -35,6 +35,13 @@ import type {
   SQLDataType,
 } from '../schema/types.js';
 import { generateToolManifest } from '../tools/tool-generator.js';
+import {
+  displayLabelFieldProblem,
+  FIELD_UI_WIDGET_TYPES,
+  FIELD_UI_WIDGETS,
+  isFieldUIWidget,
+  resolveDisplayLabelField,
+} from '../ui-metadata.js';
 import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import {
   assertScopedPackageName,
@@ -431,6 +438,10 @@ export class ManifestGenerator {
     this.assertRecipeOptions(manifest);
     this.assertRecipeHelp(manifest);
 
+    // Presentation metadata (#3599): widget hints, display label, selector
+    // bindings. After inheritance so a label may name an inherited STI column.
+    this.applyUiMetadata(manifest);
+
     // Report models are read-only cache tables. Fill in the generated surface
     // and natural conflict key from report metadata before schema generation.
     this.normalizeReportObjects(manifest);
@@ -731,6 +742,104 @@ export class ManifestGenerator {
         }
         claimedBy.set(alias, owner);
       }
+    }
+  }
+
+  /**
+   * Validate and resolve presentation metadata (#3599), failing the build on
+   * a declaration no host could honor:
+   *
+   * - `@field({ ui: { widget } })` must name a known widget the field's type
+   *   accepts (every widget is text-only; `currency` is an ISO 4217 code
+   *   picker, not an amount).
+   * - `@smrt({ display: { label } })` must name an own, non-sensitive,
+   *   non-transient, non-relationship field.
+   * - A selector slot's `selects` must resolve when it names this package.
+   *
+   * Also stamps each object's resolved `displayLabelField` (the declared field,
+   * else the first of name/title/label/code).
+   */
+  applyUiMetadata(manifest: SmartObjectManifest): void {
+    const failures: string[] = [];
+
+    for (const key of Object.keys(manifest.objects).sort(compareText)) {
+      const obj = manifest.objects[key];
+      const owner = obj.qualifiedName ?? key;
+
+      for (const [fieldName, field] of Object.entries(obj.fields)) {
+        const ui = field._meta?.ui as { widget?: unknown } | undefined;
+        if (!ui || typeof ui !== 'object' || ui.widget === undefined) continue;
+        if (!isFieldUIWidget(ui.widget)) {
+          failures.push(
+            `${owner}.${fieldName}: ui.widget ${JSON.stringify(ui.widget)} is not one of ${FIELD_UI_WIDGETS.join(', ')}.`,
+          );
+        } else if (!FIELD_UI_WIDGET_TYPES[ui.widget].includes(field.type)) {
+          failures.push(
+            `${owner}.${fieldName}: ui.widget "${ui.widget}" needs a field of type ${FIELD_UI_WIDGET_TYPES[ui.widget].join(' or ')}, but this field is ${field.type}.`,
+          );
+        }
+      }
+
+      const display = (obj.decoratorConfig as { display?: unknown } | undefined)
+        ?.display;
+      let declared: string | undefined;
+      if (display !== undefined) {
+        const label =
+          display && typeof display === 'object'
+            ? (display as { label?: unknown }).label
+            : undefined;
+        if (
+          label !== undefined &&
+          (typeof label !== 'string' || label === '')
+        ) {
+          failures.push(
+            `${owner}: display.label must be the name of an own field (a string literal), not ${JSON.stringify(label)}.`,
+          );
+        } else if (typeof label === 'string') {
+          const problem = displayLabelFieldProblem(obj.fields, label);
+          if (problem) {
+            failures.push(
+              `${owner}: display.label "${label}" cannot label a record: ${problem}.`,
+            );
+          } else {
+            declared = label;
+          }
+        } else if (display === null || typeof display !== 'object') {
+          failures.push(`${owner}: display must be an object ({ label }).`);
+        }
+      }
+      const resolved = resolveDisplayLabelField(obj.fields, declared);
+      if (resolved) {
+        obj.displayLabelField = resolved;
+      } else {
+        delete obj.displayLabelField;
+      }
+    }
+
+    const own = new Set<string>();
+    for (const [key, obj] of Object.entries(manifest.objects)) {
+      own.add(obj.qualifiedName ?? key);
+    }
+    for (const [slotId, selector] of Object.entries(
+      manifest.uiSelectors ?? {},
+    )) {
+      const target = selector.selects;
+      const targetPackage = target.slice(0, target.indexOf(':'));
+      if (
+        manifest.packageName &&
+        targetPackage === manifest.packageName &&
+        !own.has(target)
+      ) {
+        failures.push(
+          `UI slot "${slotId}" selects ${target}, which is not an object of ${manifest.packageName}.`,
+        );
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new Error(
+        `UI metadata invalid:\n${failures.map((f) => `  - ${f}`).join('\n')}`,
+      );
     }
   }
 

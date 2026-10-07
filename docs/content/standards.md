@@ -457,6 +457,7 @@ never disable the scan.
 - **Directory layout**: `src/svelte/components/` (not flat `src/svelte/`)
 - **`svelte/index.ts`**: uses `ModuleUIRegistry.register(...)` pattern. Pure re-exports without registry are deprecated.
 - **`./ui` subpath**: exports `MODULE_META` and `UI_SLOTS` constants. The vite config builds a `ui` entry; the package.json must declare the matching export. (`chat` currently has the entry without the export.)
+- **Selector slots (#3599)**: a `UI_SLOTS` entry may declare `selects: '@scope/package:Model'` (string literal) to mark its component as the one selector for that model. The scanner reads it from `src/**/ui.ts` into the manifest's `uiSelectors`; generic forms use it for `@foreignKey`/`@crossPackageRef` fields targeting the model. Presentation-only: the caller supplies the data. A model whose record label lives outside its own fields ships a selector instead of declaring `display.label`.
 - **`./playground` subpath**: exports the package's playground module for use by `smrt-playground`
 - **`./workbench` subpath**: exports package-owned routes and workbench metadata for use by `smrt-workbench`
 - **Svelte peer**: one uniform floor (currently `svelte: ^5.57.0`), not bumped with the devDependency. Drop the `^4.0.0 || ^5.0.0` range.
@@ -657,6 +658,17 @@ artifact (`runtime manifest`, `domain knowledge artifact`, or `generation
 snapshot`) instead of using unqualified `context`. A runtime manifest alone is
 not sufficient proof that its source inputs, generator configuration, or
 companion outputs match.
+
+### UI metadata vocabulary
+
+The manifest carries three additive, presentation-only facts (#3599). None
+changes schema, persistence, or security:
+
+| Term | Meaning |
+|---|---|
+| **Widget hint** | `@field({ ui: { widget } })`, one of `textarea`, `currency`, `email`, `url`, `phone`; emitted under the field's `_meta.ui` and validated against the field type at build time. |
+| **Display label** | `@smrt({ display: { label } })` names the own, non-sensitive field that labels a record (default: first of `name`, `title`, `label`, `code`); emitted as `displayLabelField` and named in generated MCP/WebMCP tool descriptions so assistants can identify records. |
+| **Selector slot** | A `ModuleUISlot` with `selects: '<qualified model>'`; emitted as the manifest's `uiSelectors`. Hosts resolve it with `findSelectorFor` from `@happyvertical/smrt-core/ui-metadata`. |
 
 ### Diagnostics SOP
 

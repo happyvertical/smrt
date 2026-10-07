@@ -1,3 +1,4 @@
+import { describeDisplayLabel } from '../ui-metadata.js';
 import {
   buildCustomActionInputSchema,
   CRUD_OPERATIONS,
@@ -405,18 +406,25 @@ export function buildToolInputSchema(
  * Human-readable description for a tool, matching mcp.ts's phrasing so the Node
  * MCP and WebMCP surfaces read identically.
  */
-function describeAction(action: string, className: string): string {
+export function describeAction(
+  action: string,
+  className: string,
+  displayLabelField?: string,
+): string {
+  // How to name a record (#3599): assistants resolve "Acme" to an id by
+  // matching this field, so every verb that targets an existing record says so.
+  const label = describeDisplayLabel(displayLabelField);
   switch (action) {
     case 'list':
-      return `List ${className} objects with optional filtering`;
+      return `List ${className} objects with optional filtering${label}`;
     case 'get':
-      return `Get a specific ${className} by ID or slug`;
+      return `Get a specific ${className} by ID or slug${label}`;
     case 'create':
       return `Create a new ${className}`;
     case 'update':
-      return `Update an existing ${className}`;
+      return `Update an existing ${className}${label}`;
     case 'delete':
-      return `Delete a ${className} by ID`;
+      return `Delete a ${className} by ID${label}`;
     default:
       return `Execute ${action} action on ${className}`;
   }
@@ -435,6 +443,8 @@ export function buildToolDescriptors(opts: {
   customActions?: Record<string, CustomActionMetadata>;
   toolPrefix?: string;
   idType?: ToolIdType;
+  /** The own field that labels a record (#3599), named in descriptions. */
+  displayLabelField?: string;
 }): ToolDescriptor[] {
   const { className, fields, actions } = opts;
   const prefix = (opts.toolPrefix ?? className).toLowerCase();
@@ -447,7 +457,7 @@ export function buildToolDescriptors(opts: {
       // Custom method names can contain underscores; the runtime splits on the
       // FIRST underscore only (mcp.ts #1378), so a lowercased join is safe here.
       name: `${prefix}_${action}`.toLowerCase(),
-      description: describeAction(action, className),
+      description: describeAction(action, className, opts.displayLabelField),
       inputSchema: buildToolInputSchema(
         action,
         fields,

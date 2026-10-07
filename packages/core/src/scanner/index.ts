@@ -19,6 +19,7 @@ export type {
   AgentPermission,
   AgentUISlotManifest,
   FieldDefinition,
+  ManifestUISelector,
   MethodDefinition,
   ScanOptions,
   ScanResult,

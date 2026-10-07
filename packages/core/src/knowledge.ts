@@ -327,6 +327,9 @@ function buildKnowledgeObject(
     name: object.className,
     qualifiedName: object.qualifiedName,
     ...(previousQualifiedNames.length > 0 ? { previousQualifiedNames } : {}),
+    ...(object.displayLabelField
+      ? { displayLabelField: object.displayLabelField }
+      : {}),
     collection: object.collection,
     tableName: object.schema?.tableName,
     packageName: object.packageName,

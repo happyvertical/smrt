@@ -18,6 +18,7 @@ import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
 import type { RegisteredClass } from '../registry/types.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
+import { resolveDisplayLabelField } from '../ui-metadata.js';
 import { isQualifiedName } from '../utils/qualified-names.js';
 import {
   buildCustomActionInvocationArgs,
@@ -50,6 +51,7 @@ import { canonicalMcpToolNames, type McpToolTarget } from './mcp-tool-name.js';
 import { runWithTenantGate } from './tenant-gate.js';
 import {
   buildToolInputSchema,
+  describeAction,
   fieldTypeToJsonSchema,
   finalizeMcpJsonSchema,
   isCrudAction,
@@ -617,12 +619,18 @@ export class MCPGenerator {
     const fields = ObjectRegistry.getFields(objectName);
     const lowerName = displayName.toLowerCase();
     const classInfo = ObjectRegistry.getClass(objectName);
+    // The own field that names a record (#3599); assistants resolve "Acme" to
+    // an id by matching it, so the descriptions below say what it is.
+    const labelField = resolveDisplayLabelField(
+      Object.fromEntries(fields),
+      ObjectRegistry.getConfig(objectName).display?.label,
+    );
 
     // LIST tool
     if (shouldInclude('list')) {
       tools.push({
         name: `${lowerName}_list`,
-        description: `List ${displayName} objects with optional filtering`,
+        description: describeAction('list', displayName, labelField),
         inputSchema: this.buildInputSchema(objectName, 'list', fields),
         outputSchema: this.buildOutputSchema(objectName, 'list', fields),
         annotations: mcpToolAnnotations('list'),
@@ -633,7 +641,7 @@ export class MCPGenerator {
     if (shouldInclude('get')) {
       tools.push({
         name: `${lowerName}_get`,
-        description: `Get a specific ${displayName} by ID or slug`,
+        description: describeAction('get', displayName, labelField),
         inputSchema: this.buildInputSchema(objectName, 'get', fields),
         outputSchema: this.buildOutputSchema(objectName, 'get', fields),
         annotations: mcpToolAnnotations('get'),
@@ -644,7 +652,7 @@ export class MCPGenerator {
     if (shouldInclude('create')) {
       tools.push({
         name: `${lowerName}_create`,
-        description: `Create a new ${displayName}`,
+        description: describeAction('create', displayName, labelField),
         inputSchema: this.buildInputSchema(objectName, 'create', fields),
         outputSchema: this.buildOutputSchema(objectName, 'create', fields),
         annotations: mcpToolAnnotations('create'),
@@ -655,7 +663,7 @@ export class MCPGenerator {
     if (shouldInclude('update')) {
       tools.push({
         name: `${lowerName}_update`,
-        description: `Update an existing ${displayName}`,
+        description: describeAction('update', displayName, labelField),
         inputSchema: this.buildInputSchema(objectName, 'update', fields),
         outputSchema: this.buildOutputSchema(objectName, 'update', fields),
         annotations: mcpToolAnnotations('update'),
@@ -666,7 +674,7 @@ export class MCPGenerator {
     if (shouldInclude('delete')) {
       tools.push({
         name: `${lowerName}_delete`,
-        description: `Delete a ${displayName} by ID`,
+        description: describeAction('delete', displayName, labelField),
         inputSchema: this.buildInputSchema(objectName, 'delete', fields),
         outputSchema: this.buildOutputSchema(objectName, 'delete', fields),
         annotations: mcpToolAnnotations('delete'),

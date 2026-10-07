@@ -15,6 +15,48 @@ schemas. No schema/persistence/security effect — `sensitive`/`readPermission`
 stay the security rail, and `sensitive`/`transient` fields never emit to the
 client at all.
 
+`ui.widget` (#3599) adds a presentation widget hint:
+`'textarea' | 'currency' | 'email' | 'url' | 'phone'`. It rides the same
+`_meta.ui` channel and is also emitted (sanitized) into web-collection
+definitions. The manifest generator validates it against the field type and
+fails the build otherwise: every widget needs a `text` field (`currency` is a
+currency-CODE picker for an ISO 4217 string such as `currency = 'USD'`, not a
+money amount; amounts are integer minor units and take no widget); an unknown
+value or a non-text field is an error. `ui.widget` is a hint only — it never changes
+the column type or validation.
+
+## Presentation metadata (#3599)
+
+Pure helpers live in `src/ui-metadata.ts`, published browser-safe as
+`@happyvertical/smrt-core/ui-metadata` (also re-exported from the package
+root). `ManifestGenerator.applyUiMetadata()` runs in `applyGenerationPasses`
+after inheritance, so every producer (Vite plugin, `ManifestBuilder`,
+`generateManifest`) validates the same way.
+
+- **Display label.** `@smrt({ display: { label: '<field>' } })` names the own
+  field generic pickers and assistants use to label a record. Own fields only —
+  no paths into other packages; a model whose label lives elsewhere ships a
+  selector. Undeclared, it defaults to the first of `name`, `title`, `label`,
+  `code` that is a usable own field. Build fails when the declared field is
+  missing, `sensitive`, `transient`, or a relationship/json field. The resolved
+  field is emitted as `displayLabelField` on the manifest object and in the
+  knowledge artifact, and generated MCP/WebMCP `list`/`get`/`update`/`delete`
+  descriptions end with ``Records are identified by their `<field>` field.``
+  (`describeAction` in `generators/tool-schema.ts`; nothing is added when the
+  model has no label field).
+- **Selector slots.** `ModuleUISlot.selects: '@scope/pkg:Model'`
+  (`@happyvertical/smrt-types`) marks a package component as THE selector for a
+  model. The scanner reads such slots statically from `src/**/ui.ts`
+  (`parseUiSelectorsFile`, independent of the class glob) and the manifest
+  carries them as `uiSelectors` keyed by slot id. `selects` must be a string
+  literal; a duplicate slot id, two selectors for one model, or an own-package
+  target that does not exist fails the build. Hosts call
+  `findSelectorFor(manifests, qualifiedName)`; generic forms use the selector
+  for any `@foreignKey`/`@crossPackageRef` field targeting that model and fall
+  back to a generic picker labelled by `displayLabelField`. `display` is read
+  per class: an STI subclass that declares none uses the default lookup rather
+  than its base's declaration, and a CTI child cannot name a parent's field.
+
 ## Worker registration artifact (#3117)
 
 With `svelteKit.enabled`, a production `vite build` compiles the generated

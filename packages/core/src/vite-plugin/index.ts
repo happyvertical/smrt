@@ -1673,6 +1673,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         packageVersion,
         typeAliases: results.typeAliases,
         recipes: results.recipes,
+        uiSelectors: results.uiSelectors,
       });
 
       // Add moduleType identifier
@@ -2367,6 +2368,7 @@ declare module '@happyvertical/smrt-virt-web' {
     group?: string;
     order?: number;
     locked?: boolean;
+    widget?: 'textarea' | 'currency' | 'email' | 'url' | 'phone';
   }
 
   export interface SmrtWebFieldDefinition {

@@ -73,6 +73,16 @@ export interface ModuleUISlot {
     | 'navigation';
   /** Required props interface name (for documentation) */
   propsInterface?: string;
+  /**
+   * Marks this component as THE selector for one model (#3599): the
+   * qualified name (`@scope/package:ClassName`) of the model whose records it
+   * lets a user pick. Generic forms use it for any `@foreignKey` or
+   * `@crossPackageRef` field targeting that model. Presentation-only; the
+   * caller supplies the data. Must be a string literal so the scanner can read
+   * it, and a model has at most one selector. Emitted into the manifest's
+   * `uiSelectors`.
+   */
+  selects?: `${string}:${string}`;
 }
 
 /**

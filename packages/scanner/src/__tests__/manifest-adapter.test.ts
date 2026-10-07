@@ -39,6 +39,32 @@ describe('ManifestAdapter', () => {
         expect(result?._meta?.unique).toBe(true);
       });
 
+      it('should carry @field({ ui: { widget } }) hints into _meta.ui (#3599)', () => {
+        const result = adapter.convertField({
+          name: 'notes',
+          accessibility: 'public',
+          typeAnnotation: 'string',
+          initializer: "''",
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [
+            {
+              name: 'field',
+              arguments: ["{ ui: { widget: 'textarea', group: 'details' } }"],
+            },
+          ],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        });
+
+        expect(result?._meta?.ui).toEqual({
+          widget: 'textarea',
+          group: 'details',
+        });
+      });
+
       it('should let nullable override required in @field options', () => {
         const field: RawFieldDefinition = {
           name: 'optionalName',

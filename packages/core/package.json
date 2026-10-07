@@ -138,6 +138,11 @@
       "import": "./dist/manifest/discover-base-classes.js",
       "default": "./dist/manifest/discover-base-classes.js"
     },
+    "./ui-metadata": {
+      "types": "./dist/ui-metadata.d.ts",
+      "import": "./dist/ui-metadata.js",
+      "default": "./dist/ui-metadata.js"
+    },
     "./utils/database-url": {
       "types": "./dist/utils/database-url.d.ts",
       "import": "./dist/utils/database-url.js",

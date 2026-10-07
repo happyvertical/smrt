@@ -30,6 +30,7 @@ import type {
   ScanError,
   ScanResults,
 } from './types.js';
+import { mergeUiSelectors, parseUiSelectorsFile } from './ui-selectors.js';
 
 /**
  * Default glob patterns for scanning
@@ -41,6 +42,9 @@ const DEFAULT_INCLUDE = ['**/*.ts', '**/*.tsx'];
  * (#2591). Nothing is emitted from a `.svelte` file — the scan exists so an
  * intent written inline in a component fails loudly instead of vanishing.
  */
+/** Where package UI slot declarations conventionally live (#3599). */
+const DEFAULT_UI_SELECTOR_INCLUDE = ['src/**/ui.ts'];
+
 const DEFAULT_SVELTE_INCLUDE = ['**/*.svelte'];
 
 /**
@@ -163,6 +167,8 @@ export class OxcScanner {
       svelteInclude: options.svelteInclude || DEFAULT_SVELTE_INCLUDE,
       agentSurfaceInclude:
         options.agentSurfaceInclude || DEFAULT_AGENT_SURFACE_INCLUDE,
+      uiSelectorInclude:
+        options.uiSelectorInclude || DEFAULT_UI_SELECTOR_INCLUDE,
     };
 
     this.resolver = new InheritanceResolver({
@@ -251,6 +257,12 @@ export class OxcScanner {
     const outside = await this.scanRecipesOutsideClassGlob(new Set(files));
     this.outsideRecipes = outside.recipes;
     results.errors.push(...outside.errors);
+
+    const uiSelectors = await this.scanUiSelectors();
+    if (uiSelectors) {
+      results.uiSelectors = uiSelectors.selectors;
+      results.errors.push(...uiSelectors.errors);
+    }
 
     // Add classes to resolver
     this.resolver.addClasses(results.classes);
@@ -528,6 +540,34 @@ export class OxcScanner {
       out.errors.push(...found.errors);
     }
     return out;
+  }
+
+  /**
+   * Read selector-slot declarations (`selects`, #3599) from the package's
+   * `ui.ts` files, independently of the class-scan glob.
+   */
+  private async scanUiSelectors(): Promise<
+    ReturnType<typeof mergeUiSelectors> | undefined
+  > {
+    if (this.options.uiSelectorInclude.length === 0) return undefined;
+    let files: string[];
+    try {
+      files = await discoverSourceFiles({
+        cwd: this.options.cwd,
+        include: this.options.uiSelectorInclude,
+        exclude: [...this.options.exclude, ...AGENT_SURFACE_PRUNE],
+        followSymbolicLinks: this.options.followSymbolicLinks,
+      });
+    } catch {
+      return undefined;
+    }
+    const parsed = files.sort().map((file) => parseUiSelectorsFile(file));
+    const merged = mergeUiSelectors(parsed, (filePath) =>
+      this.relativizeSourcePath(filePath),
+    );
+    return Object.keys(merged.selectors).length > 0 || merged.errors.length > 0
+      ? merged
+      : undefined;
   }
 
   /**
