@@ -9,7 +9,7 @@ import { afterNavigate, replaceState } from '$app/navigation';
 import { page } from '$app/state';
 import { blueprintStore } from '$lib/blueprint/store.svelte.ts';
 import { exposedModels, getPackage } from '$lib/catalog/index.ts';
-import ChatDockPlaceholder from '$lib/components/ChatDockPlaceholder.svelte';
+import BrowserAssistant from '$lib/components/BrowserAssistant.svelte';
 import { provideDataSource } from '$lib/data/context.ts';
 import { humanize } from '$lib/data/format.ts';
 import { createMemoryDataSource } from '$lib/data/source.ts';
@@ -193,11 +193,12 @@ function flushOnHide() {
   environment="static demo"
   layout={blueprintStore.layout ?? null}
   onlayoutchange={(next) => blueprintStore.setLayout(next)}
+  dockToggles={[{ tool: 'assistant', label: 'Assistant' }]}
 >
-  {#snippet dock()}
+  {#snippet dock(registry)}
     <ShellDockTool id="assistant" label="Assistant">
       {#snippet render()}
-        <ChatDockPlaceholder />
+        <BrowserAssistant {registry} />
       {/snippet}
     </ShellDockTool>
   {/snippet}
