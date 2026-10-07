@@ -111,21 +111,35 @@ const percent = $derived(Math.round(session.progress.progress * 100));
 <style>
   .assistant {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     height: 100%;
+    min-width: 0;
     min-height: 0;
   }
 
   .dock {
+    min-width: 0;
     min-height: 0;
     overflow: hidden;
   }
 
   .panel {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--smrt-spacing-3);
     padding: var(--smrt-spacing-4);
     align-content: start;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .panel button,
+  .panel select {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    white-space: normal;
   }
 
   .bar {
@@ -134,6 +148,8 @@ const percent = $derived(Math.round(session.progress.progress * 100));
     justify-content: space-between;
     gap: var(--smrt-spacing-2);
     padding: var(--smrt-spacing-2) var(--smrt-spacing-4);
+    min-width: 0;
+    flex-wrap: wrap;
     color: var(--smrt-color-on-surface-variant);
   }
 
