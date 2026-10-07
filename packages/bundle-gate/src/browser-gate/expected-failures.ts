@@ -27,7 +27,7 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
   '@happyvertical/smrt-commerce': {
     issue: '#3627, #3626',
     reason:
-      '@happyvertical/payments btcpay (node:crypto); core migrations (node:os). The jobs runner edge (#3615) is reported on smrt-jobs',
+      '@happyvertical/payments btcpay (node:crypto); core migrations (node:os).',
   },
   '@happyvertical/smrt-content': {
     issue: '#3624, #3627',
@@ -66,9 +66,9 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
     reason: 'sharp, node:fs/promises, node:crypto, resvg native addon',
   },
   '@happyvertical/smrt-jobs': {
-    issue: '#3615, #3624, #3627',
+    issue: '#3624, #3627',
     reason:
-      'worker_threads runner (the edge commerce inherits), node:events/crypto, bull/bullmq/cloud-tasks SDK graph',
+      'node:events/crypto/async_hooks; @happyvertical/jobs bull/bullmq/cloud-tasks SDK graph',
   },
   '@happyvertical/smrt-languages': {
     issue: '#3624, #3625',
