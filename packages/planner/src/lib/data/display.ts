@@ -1,8 +1,7 @@
 /**
- * STAND-IN for happyvertical/smrt#3599's own-field display label:
- * `@smrt({ display: { label: '<fieldName>' } })`, defaulting to the first of
- * `name`, `title`, `label`, `code`. When #3599 ships, `model.display` comes
- * from the catalog and this default moves into the shared helper.
+ * Which field labels a record in pickers. `model.display` comes from the
+ * manifest's `displayLabelField` (happyvertical/smrt#3611); a model that
+ * declares none falls back to the first of `name`, `title`, `label`, `code`.
  */
 import type { CatalogModel } from '../catalog/types.ts';
 

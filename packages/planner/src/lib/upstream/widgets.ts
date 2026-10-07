@@ -1,11 +1,12 @@
 /**
- * STAND-IN for happyvertical/smrt#3599 (`@field({ ui: { widget } })` in the
- * manifest) and the field hints happyvertical/smrt#3602 puts on commerce.
+ * STAND-IN for `_meta.ui.widget` in the manifest (happyvertical/smrt#3611) and
+ * the field hints happyvertical/smrt#3602 puts on commerce.
  *
- * Until the manifests carry `ui.widget`, this lists the hints for the fields
- * the recipes show; `overlay.ts` writes them onto the catalog's
- * `field.ui.widget` when it loads. When #3599 ships: regenerate the catalog,
- * delete this file and its call in `overlay.ts`.
+ * The published 0.55.3 manifests carry no `ui.widget`, so this lists the hints
+ * for the fields the recipes show; `overlay.ts` writes them onto the catalog's
+ * `field.ui.widget` when it loads (the generator already reads the manifest's
+ * value when present). When a package ships it: regenerate the catalog and
+ * delete that package's entries here.
  */
 import type { CatalogFieldWidget } from '../catalog/types.ts';
 

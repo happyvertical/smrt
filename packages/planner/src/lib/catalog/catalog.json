@@ -5,13 +5,16 @@
     {
       "id": "ads",
       "packageName": "@happyvertical/smrt-ads",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Advertising delivery and tracking models for SMRT framework",
       "models": [
         {
           "id": "@happyvertical/smrt-ads:AdDeliveryTier",
           "name": "AdDeliveryTier",
           "collection": "addeliverytiers",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "name",
@@ -28,7 +31,13 @@
             {
               "name": "pricingModel",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "fixed",
+                "cpm",
+                "cpc",
+                "cpa"
+              ]
             },
             {
               "name": "description",
@@ -287,7 +296,12 @@
             {
               "name": "eventType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "impression",
+                "click",
+                "conversion"
+              ]
             },
             {
               "name": "timestamp",
@@ -633,6 +647,9 @@
           "id": "@happyvertical/smrt-ads:AdFormat",
           "name": "AdFormat",
           "collection": "adformats",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "name",
@@ -655,7 +672,12 @@
             {
               "name": "formatType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "banner",
+                "native",
+                "video"
+              ]
             },
             {
               "name": "description",
@@ -848,6 +870,9 @@
           "id": "@happyvertical/smrt-ads:AdGroup",
           "name": "AdGroup",
           "collection": "adgroups",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -928,7 +953,13 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "active",
+                "paused",
+                "completed"
+              ]
             }
           ],
           "rest": [
@@ -1413,6 +1444,9 @@
           "id": "@happyvertical/smrt-ads:AdVariation",
           "name": "AdVariation",
           "collection": "advariations",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -1477,7 +1511,12 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "active",
+                "paused"
+              ]
             },
             {
               "name": "impressions",
@@ -1876,7 +1915,7 @@
     {
       "id": "analytics",
       "packageName": "@happyvertical/smrt-analytics",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Analytics integration models for SMRT framework",
       "models": [
         {
@@ -1917,7 +1956,12 @@
             {
               "name": "streamType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "WEB_DATA_STREAM",
+                "ANDROID_APP_DATA_STREAM",
+                "IOS_APP_DATA_STREAM"
+              ]
             },
             {
               "name": "externalId",
@@ -1958,7 +2002,11 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "active",
+                "inactive"
+              ]
             },
             {
               "name": "enhancedMeasurement",
@@ -2361,7 +2409,12 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "pending",
+                "sent",
+                "failed"
+              ]
             },
             {
               "name": "sentAt",
@@ -2949,6 +3002,9 @@
           "id": "@happyvertical/smrt-analytics:AnalyticsProperty",
           "name": "AnalyticsProperty",
           "collection": "analyticsproperties",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -2983,7 +3039,12 @@
             {
               "name": "provider",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "ga4",
+                "plausible",
+                "matomo"
+              ]
             },
             {
               "name": "externalId",
@@ -3036,7 +3097,12 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "active",
+                "inactive",
+                "pending"
+              ]
             },
             {
               "name": "lastSyncAt",
@@ -3404,6 +3470,9 @@
           "id": "@happyvertical/smrt-analytics:AnalyticsReport",
           "name": "AnalyticsReport",
           "collection": "analyticsreports",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -3492,12 +3561,25 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "scheduled",
+                "running",
+                "completed",
+                "failed"
+              ]
             },
             {
               "name": "frequency",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "once",
+                "daily",
+                "weekly",
+                "monthly"
+              ]
             },
             {
               "name": "lastRunAt",
@@ -3967,13 +4049,16 @@
     {
       "id": "assets",
       "packageName": "@happyvertical/smrt-assets",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Asset management system with versioning, metadata, and AI-powered operations for SMRT framework",
       "models": [
         {
           "id": "@happyvertical/smrt-assets:Asset",
           "name": "Asset",
           "collection": "assets",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -4943,6 +5028,9 @@
           "id": "@happyvertical/smrt-assets:AssetMetafield",
           "name": "AssetMetafield",
           "collection": "assetmetafields",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -5104,6 +5192,9 @@
           "id": "@happyvertical/smrt-assets:AssetStatus",
           "name": "AssetStatus",
           "collection": "assetstatuses",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -5329,6 +5420,9 @@
           "id": "@happyvertical/smrt-assets:AssetType",
           "name": "AssetType",
           "collection": "assettypes",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -5466,6 +5560,9 @@
           "id": "@happyvertical/smrt-assets:Folder",
           "name": "Folder",
           "collection": "folders",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "parentId",
@@ -5738,7 +5835,7 @@
     {
       "id": "commerce",
       "packageName": "@happyvertical/smrt-commerce",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
       "models": [
         {
@@ -5768,12 +5865,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -6057,6 +6173,9 @@
           "id": "@happyvertical/smrt-commerce:BillingAccount",
           "name": "BillingAccount",
           "collection": "billingaccounts",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "sellerTenantId",
@@ -6122,7 +6241,12 @@
               "name": "standing",
               "type": "text",
               "required": false,
-              "default": "current"
+              "default": "current",
+              "enum": [
+                "current",
+                "past_due",
+                "uncollectible"
+              ]
             },
             {
               "name": "billingAnchorAt",
@@ -6167,7 +6291,14 @@
               "name": "sourceType",
               "type": "text",
               "required": false,
-              "default": "client_charge"
+              "default": "client_charge",
+              "enum": [
+                "client_charge",
+                "billing_adjustment",
+                "retail_charge",
+                "subscription_period",
+                "credit_carry_forward"
+              ]
             },
             {
               "name": "sourceId",
@@ -6265,7 +6396,11 @@
               "name": "purpose",
               "type": "text",
               "required": false,
-              "default": "credit_purchase"
+              "default": "credit_purchase",
+              "enum": [
+                "credit_purchase",
+                "invoice_payment"
+              ]
             },
             {
               "name": "invoiceId",
@@ -6313,7 +6448,18 @@
               "name": "flag",
               "type": "text",
               "required": false,
-              "default": ""
+              "default": "",
+              "enum": [
+                "",
+                "overpaid",
+                "underpaid",
+                "paid_late",
+                "manually_marked",
+                "invalidated_after_settlement",
+                "invoice_already_paid",
+                "amount_mismatch",
+                "out_of_band_without_settlement"
+              ]
             },
             {
               "name": "amount",
@@ -6483,7 +6629,11 @@
               "name": "kind",
               "type": "text",
               "required": false,
-              "default": "provider"
+              "default": "provider",
+              "enum": [
+                "provider",
+                "reseller"
+              ]
             },
             {
               "name": "payerTenantId",
@@ -6517,7 +6667,15 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "collecting"
+              "default": "collecting",
+              "enum": [
+                "collecting",
+                "invoiced",
+                "pushed",
+                "sent",
+                "completed",
+                "carried_forward"
+              ]
             },
             {
               "name": "invoiceId",
@@ -6630,12 +6788,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -6941,12 +7118,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -7736,12 +7932,22 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "active",
+                "inactive",
+                "suspended"
+              ]
             },
             {
               "name": "customerType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "dtc",
+                "wholesale",
+                "retail"
+              ]
             },
             {
               "name": "notes",
@@ -8024,12 +8230,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -8329,12 +8554,26 @@
             {
               "name": "fulfillmentType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "shipment",
+                "delivery",
+                "pickup",
+                "digital",
+                "service"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "pending",
+                "processing",
+                "shipped",
+                "delivered",
+                "cancelled"
+              ]
             },
             {
               "name": "trackingNumber",
@@ -9038,7 +9277,17 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "viewed",
+                "partial",
+                "paid",
+                "overdue",
+                "cancelled",
+                "written_off"
+              ]
             },
             {
               "name": "arJournalId",
@@ -9079,7 +9328,12 @@
               "name": "collectionMethod",
               "type": "text",
               "required": false,
-              "default": ""
+              "default": "",
+              "enum": [
+                "",
+                "send_invoice",
+                "charge_automatically"
+              ]
             },
             {
               "name": "sentAt",
@@ -10259,12 +10513,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -10571,12 +10844,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -10921,12 +11213,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -11244,12 +11555,27 @@
             {
               "name": "method",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "cash",
+                "check",
+                "credit_card",
+                "bank_transfer",
+                "crypto",
+                "other"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "pending",
+                "completed",
+                "failed",
+                "refunded",
+                "cancelled"
+              ]
             },
             {
               "name": "transactionId",
@@ -12165,7 +12491,12 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "active",
+                "expired",
+                "removed"
+              ]
             }
           ],
           "rest": [
@@ -12506,7 +12837,15 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "awaiting_payment",
+                "paid",
+                "issued",
+                "retired",
+                "expired",
+                "cancelled"
+              ]
             },
             {
               "name": "idempotencyKey",
@@ -13081,7 +13420,13 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "pending",
+                "sent",
+                "confirmed",
+                "failed"
+              ]
             },
             {
               "name": "sentAt",
@@ -13481,12 +13826,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -13793,12 +14157,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -14134,7 +14517,12 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "active",
+                "inactive",
+                "suspended"
+              ]
             },
             {
               "name": "notes",
@@ -14465,12 +14853,31 @@
             {
               "name": "contractType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "estimate",
+                "order",
+                "lease",
+                "agreement",
+                "purchase_order",
+                "wholesale_order",
+                "production_order",
+                "cart",
+                "license_sale"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "sent",
+                "accepted",
+                "declined",
+                "completed",
+                "cancelled"
+              ]
             },
             {
               "name": "customerId",
@@ -14763,7 +15170,7 @@
     {
       "id": "content",
       "packageName": "@happyvertical/smrt-content",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Content processing module for SMRT framework - handles documents, web content, and media",
       "models": [
         {
@@ -14771,6 +15178,9 @@
           "name": "Article",
           "collection": "contents",
           "extends": "@happyvertical/smrt-content:Content",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -14834,7 +15244,11 @@
             {
               "name": "bodyFormat",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "markdown",
+                "html"
+              ]
             },
             {
               "name": "publish_date",
@@ -14875,13 +15289,25 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "published",
+                "draft",
+                "review",
+                "archived",
+                "deleted"
+              ]
             },
             {
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "deprecated",
+                "active",
+                "highlighted"
+              ]
             },
             {
               "name": "metadata",
@@ -15490,6 +15916,9 @@
           "id": "@happyvertical/smrt-content:Content",
           "name": "Content",
           "collection": "contents",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -15553,7 +15982,11 @@
             {
               "name": "bodyFormat",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "markdown",
+                "html"
+              ]
             },
             {
               "name": "publish_date",
@@ -15594,13 +16027,25 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "published",
+                "draft",
+                "review",
+                "archived",
+                "deleted"
+              ]
             },
             {
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "deprecated",
+                "active",
+                "highlighted"
+              ]
             },
             {
               "name": "metadata",
@@ -16707,6 +17152,9 @@
           "id": "@happyvertical/smrt-content:ContentContribution",
           "name": "ContentContribution",
           "collection": "contentcontributions",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "contributorId",
@@ -16723,19 +17171,37 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "submitted"
+              "default": "submitted",
+              "enum": [
+                "submitted",
+                "quarantined",
+                "needs_changes",
+                "approved",
+                "promoted",
+                "rejected",
+                "withdrawn"
+              ]
             },
             {
               "name": "intakeDecision",
               "type": "text",
               "required": false,
-              "default": "accepted"
+              "default": "accepted",
+              "enum": [
+                "accepted",
+                "quarantined",
+                "rejected"
+              ]
             },
             {
               "name": "channel",
               "type": "text",
               "required": false,
-              "default": "web"
+              "default": "web",
+              "enum": [
+                "web",
+                "email"
+              ]
             },
             {
               "name": "title",
@@ -17203,7 +17669,11 @@
               "name": "channel",
               "type": "text",
               "required": false,
-              "default": "web"
+              "default": "web",
+              "enum": [
+                "web",
+                "email"
+              ]
             },
             {
               "name": "promotedAssetId",
@@ -17367,6 +17837,9 @@
           "id": "@happyvertical/smrt-content:ContentContributionRevision",
           "name": "ContentContributionRevision",
           "collection": "contentcontributionrevisions",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "contributionId",
@@ -17384,7 +17857,11 @@
               "name": "channel",
               "type": "text",
               "required": false,
-              "default": "web"
+              "default": "web",
+              "enum": [
+                "web",
+                "email"
+              ]
             },
             {
               "name": "title",
@@ -17567,6 +18044,9 @@
           "id": "@happyvertical/smrt-content:ContentContributionType",
           "name": "ContentContributionType",
           "collection": "contentcontributiontypes",
+          "display": {
+            "label": "label"
+          },
           "fields": [
             {
               "name": "key",
@@ -17851,6 +18331,9 @@
           "id": "@happyvertical/smrt-content:ContentContributor",
           "name": "ContentContributor",
           "collection": "contentcontributors",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "profileId",
@@ -17872,7 +18355,12 @@
               "name": "trustLevel",
               "type": "text",
               "required": false,
-              "default": "standard"
+              "default": "standard",
+              "enum": [
+                "standard",
+                "trusted",
+                "blocked"
+              ]
             },
             {
               "name": "metadata",
@@ -18091,13 +18579,24 @@
               "name": "correctionType",
               "type": "text",
               "required": false,
-              "default": "fact"
+              "default": "fact",
+              "enum": [
+                "fact",
+                "safety",
+                "copy",
+                "custom"
+              ]
             },
             {
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "published",
+                "retracted"
+              ]
             },
             {
               "name": "summary",
@@ -18290,6 +18789,9 @@
           "name": "ContentDocument",
           "collection": "contents",
           "extends": "@happyvertical/smrt-content:Content",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -18353,7 +18855,11 @@
             {
               "name": "bodyFormat",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "markdown",
+                "html"
+              ]
             },
             {
               "name": "publish_date",
@@ -18394,13 +18900,25 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "published",
+                "draft",
+                "review",
+                "archived",
+                "deleted"
+              ]
             },
             {
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "deprecated",
+                "active",
+                "highlighted"
+              ]
             },
             {
               "name": "metadata",
@@ -19009,6 +19527,9 @@
           "id": "@happyvertical/smrt-content:ContentFeedSource",
           "name": "ContentFeedSource",
           "collection": "contentfeedsources",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -19034,13 +19555,23 @@
             {
               "name": "format",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "rss",
+                "atom"
+              ]
             },
             {
               "name": "status",
               "type": "text",
               "required": true,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "active",
+                "paused",
+                "error",
+                "archived"
+              ]
             },
             {
               "name": "defaultCategory",
@@ -19306,6 +19837,9 @@
           "id": "@happyvertical/smrt-content:ContentGovernanceAssignment",
           "name": "ContentGovernanceAssignment",
           "collection": "contentgovernanceassignments",
+          "display": {
+            "label": "label"
+          },
           "fields": [
             {
               "name": "key",
@@ -19530,6 +20064,9 @@
           "id": "@happyvertical/smrt-content:ContentGovernancePolicy",
           "name": "ContentGovernancePolicy",
           "collection": "contentgovernancepolicies",
+          "display": {
+            "label": "label"
+          },
           "fields": [
             {
               "name": "key",
@@ -19545,7 +20082,12 @@
               "name": "kind",
               "type": "text",
               "required": false,
-              "default": "custom"
+              "default": "custom",
+              "enum": [
+                "facts",
+                "safety",
+                "custom"
+              ]
             },
             {
               "name": "instructions",
@@ -19707,6 +20249,9 @@
           "id": "@happyvertical/smrt-content:ContentGovernanceProfile",
           "name": "ContentGovernanceProfile",
           "collection": "contentgovernanceprofiles",
+          "display": {
+            "label": "label"
+          },
           "fields": [
             {
               "name": "key",
@@ -20196,7 +20741,12 @@
               "name": "kind",
               "type": "text",
               "required": false,
-              "default": "custom"
+              "default": "custom",
+              "enum": [
+                "facts",
+                "safety",
+                "custom"
+              ]
             },
             {
               "name": "policyKey",
@@ -20207,7 +20757,14 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "pending"
+              "default": "pending",
+              "enum": [
+                "pending",
+                "passed",
+                "flagged",
+                "failed",
+                "waived"
+              ]
             },
             {
               "name": "summary",
@@ -20449,6 +21006,9 @@
           "id": "@happyvertical/smrt-content:ContentVersion",
           "name": "ContentVersion",
           "collection": "contentversions",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "contentId",
@@ -20466,7 +21026,15 @@
               "name": "kind",
               "type": "text",
               "required": false,
-              "default": "manual"
+              "default": "manual",
+              "enum": [
+                "manual",
+                "draft",
+                "review",
+                "publication",
+                "correction",
+                "auto-generated"
+              ]
             },
             {
               "name": "title",
@@ -20939,6 +21507,9 @@
           "name": "Mirror",
           "collection": "contents",
           "extends": "@happyvertical/smrt-content:Content",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -21002,7 +21573,11 @@
             {
               "name": "bodyFormat",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "markdown",
+                "html"
+              ]
             },
             {
               "name": "publish_date",
@@ -21043,13 +21618,25 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "published",
+                "draft",
+                "review",
+                "archived",
+                "deleted"
+              ]
             },
             {
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "deprecated",
+                "active",
+                "highlighted"
+              ]
             },
             {
               "name": "metadata",
@@ -21705,13 +22292,16 @@
     {
       "id": "events",
       "packageName": "@happyvertical/smrt-events",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Hierarchical event management with participant tracking and SMRT framework support",
       "models": [
         {
           "id": "@happyvertical/smrt-events:Event",
           "name": "Event",
           "collection": "events",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -21791,7 +22381,14 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "scheduled"
+              "default": "scheduled",
+              "enum": [
+                "scheduled",
+                "in_progress",
+                "completed",
+                "cancelled",
+                "postponed"
+              ]
             },
             {
               "name": "round",
@@ -23128,6 +23725,9 @@
           "id": "@happyvertical/smrt-events:EventSeries",
           "name": "EventSeries",
           "collection": "eventserieses",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -23572,6 +24172,9 @@
           "id": "@happyvertical/smrt-events:EventType",
           "name": "EventType",
           "collection": "eventtypes",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -23877,7 +24480,7 @@
     {
       "id": "expenses",
       "packageName": "@happyvertical/smrt-expenses",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Expense records for the SMRT framework - reviewed costs against a cost object, deduplicated receipts, and commitment drawdown",
       "models": [
         {
@@ -23940,7 +24543,11 @@
             {
               "name": "paidBy",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "company",
+                "person"
+              ]
             },
             {
               "name": "paidByProfileId",
@@ -23969,7 +24576,12 @@
             {
               "name": "reviewStatus",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "unreviewed",
+                "reviewed",
+                "rejected"
+              ]
             },
             {
               "name": "reviewedByProfileId",
@@ -24285,7 +24897,7 @@
     {
       "id": "facts",
       "packageName": "@happyvertical/smrt-facts",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Distributed memory and knowledge management with provenance tracking for SMRT framework",
       "models": [
         {
@@ -25430,7 +26042,14 @@
               "name": "status",
               "type": "text",
               "required": true,
-              "default": "supports"
+              "default": "supports",
+              "enum": [
+                "supports",
+                "contradicts",
+                "unclear",
+                "irrelevant",
+                "invalid"
+              ]
             },
             {
               "name": "sourceKind",
@@ -26781,7 +27400,7 @@
     {
       "id": "human-resources",
       "packageName": "@happyvertical/smrt-human-resources",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "HR records for the SMRT framework: who works for an organization, as what, and with what standing — employment with dated terms, and qualifications with expiry",
       "models": [
         {
@@ -26831,7 +27450,12 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "active",
+                "on-leave",
+                "ended"
+              ]
             }
           ],
           "rest": [],
@@ -26879,7 +27503,18 @@
             {
               "name": "kind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "hired",
+                "ended",
+                "rehired",
+                "position-changed",
+                "worker-type-changed",
+                "leave-started",
+                "leave-ended",
+                "login-linked",
+                "login-unlinked"
+              ]
             },
             {
               "name": "effectiveOn",
@@ -27037,7 +27672,13 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "valid",
+                "expired",
+                "suspended",
+                "revoked"
+              ]
             },
             {
               "name": "verifiedByProfileId",
@@ -27111,7 +27752,15 @@
             {
               "name": "kind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "granted",
+                "renewed",
+                "suspended",
+                "reinstated",
+                "revoked",
+                "expired"
+              ]
             },
             {
               "name": "effectiveOn",
@@ -27159,6 +27808,9 @@
           "id": "@happyvertical/smrt-human-resources:Qualification",
           "name": "Qualification",
           "collection": "qualifications",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -27179,7 +27831,14 @@
             {
               "name": "kind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "ticket",
+                "certification",
+                "authorization",
+                "training",
+                "restriction"
+              ]
             },
             {
               "name": "issuingBody",
@@ -27200,7 +27859,11 @@
             {
               "name": "scope",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "person",
+                "employment"
+              ]
             },
             {
               "name": "isActive",
@@ -27242,13 +27905,16 @@
     {
       "id": "images",
       "packageName": "@happyvertical/smrt-images",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
       "models": [
         {
           "id": "@happyvertical/smrt-images:Image",
           "name": "Image",
           "collection": "assets",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -27900,13 +28566,16 @@
     {
       "id": "inventory",
       "packageName": "@happyvertical/smrt-inventory",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Multi-location stock tracking for the SMRT framework — Sku, InventoryLocation, StockLevel, StockMovement, and a stock-mutation service",
       "models": [
         {
           "id": "@happyvertical/smrt-inventory:InventoryLocation",
           "name": "InventoryLocation",
           "collection": "inventorylocations",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -28111,7 +28780,14 @@
               "name": "state",
               "type": "text",
               "required": true,
-              "default": "available"
+              "default": "available",
+              "enum": [
+                "available",
+                "allocated",
+                "wip",
+                "qc_hold",
+                "damaged"
+              ]
             },
             {
               "name": "qty",
@@ -28320,12 +28996,26 @@
             {
               "name": "fromState",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "available",
+                "allocated",
+                "wip",
+                "qc_hold",
+                "damaged"
+              ]
             },
             {
               "name": "toState",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "available",
+                "allocated",
+                "wip",
+                "qc_hold",
+                "damaged"
+              ]
             },
             {
               "name": "qty",
@@ -28499,13 +29189,16 @@
     {
       "id": "ledgers",
       "packageName": "@happyvertical/smrt-ledgers",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Double-entry accounting ledger for the SMRT framework",
       "models": [
         {
           "id": "@happyvertical/smrt-ledgers:Account",
           "name": "Account",
           "collection": "accounts",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "parentId",
@@ -28541,7 +29234,14 @@
               "name": "type",
               "type": "text",
               "required": false,
-              "default": "asset"
+              "default": "asset",
+              "enum": [
+                "asset",
+                "liability",
+                "equity",
+                "revenue",
+                "expense"
+              ]
             },
             {
               "name": "active",
@@ -29046,7 +29746,12 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "posted",
+                "voided"
+              ]
             },
             {
               "name": "postedAt",
@@ -29935,13 +30640,16 @@
     {
       "id": "manufacturing",
       "packageName": "@happyvertical/smrt-manufacturing",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Bills of materials, cost rollup, and production-order operations for the SMRT framework — strictly industry-neutral",
       "models": [
         {
           "id": "@happyvertical/smrt-manufacturing:Assembly",
           "name": "Assembly",
           "collection": "products",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -30190,7 +30898,12 @@
               "name": "status",
               "type": "text",
               "required": true,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "active",
+                "superseded"
+              ]
             },
             {
               "name": "notes",
@@ -30481,6 +31194,9 @@
           "id": "@happyvertical/smrt-manufacturing:Operation",
           "name": "Operation",
           "collection": "operations",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -30636,7 +31352,13 @@
               "name": "status",
               "type": "text",
               "required": true,
-              "default": "planned"
+              "default": "planned",
+              "enum": [
+                "planned",
+                "in_progress",
+                "done",
+                "cancelled"
+              ]
             }
           ],
           "rest": [
@@ -30955,13 +31677,16 @@
     {
       "id": "marketing",
       "packageName": "@happyvertical/smrt-marketing",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Cross-channel campaign coordination, immutable performance evidence, budget pacing, and reusable Svelte marketing surfaces for SMRT",
       "models": [
         {
           "id": "@happyvertical/smrt-marketing:Campaign",
           "name": "Campaign",
           "collection": "campaigns",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -31681,13 +32406,16 @@
     {
       "id": "messages",
       "packageName": "@happyvertical/smrt-messages",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Unified multi-channel messaging with STI-based hierarchies",
       "models": [
         {
           "id": "@happyvertical/smrt-messages:Account",
           "name": "Account",
           "collection": "accounts",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -32090,7 +32818,11 @@
               "name": "contentDisposition",
               "type": "text",
               "required": false,
-              "default": "attachment"
+              "default": "attachment",
+              "enum": [
+                "attachment",
+                "inline"
+              ]
             },
             {
               "name": "filePath",
@@ -32599,7 +33331,12 @@
               "name": "type",
               "type": "text",
               "required": false,
-              "default": "email"
+              "default": "email",
+              "enum": [
+                "email",
+                "domain",
+                "regex"
+              ]
             },
             {
               "name": "reason",
@@ -32865,7 +33602,15 @@
               "name": "sendStatus",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "pending",
+                "sending",
+                "sent",
+                "failed",
+                "scheduled"
+              ]
             },
             {
               "name": "sentAt",
@@ -33959,6 +34704,9 @@
           "name": "EmailAccount",
           "collection": "accounts",
           "extends": "@happyvertical/smrt-messages:Account",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -34524,6 +35272,9 @@
           "id": "@happyvertical/smrt-messages:EmailFolder",
           "name": "EmailFolder",
           "collection": "emailfolders",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -35277,7 +36028,15 @@
               "name": "sendStatus",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "pending",
+                "sending",
+                "sent",
+                "failed",
+                "scheduled"
+              ]
             },
             {
               "name": "sentAt",
@@ -35937,6 +36696,9 @@
           "id": "@happyvertical/smrt-messages:MessagingEndpoint",
           "name": "MessagingEndpoint",
           "collection": "messagingendpoints",
+          "display": {
+            "label": "label"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -36174,6 +36936,9 @@
           "name": "SlackAccount",
           "collection": "accounts",
           "extends": "@happyvertical/smrt-messages:Account",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -36482,7 +37247,15 @@
               "name": "sendStatus",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "pending",
+                "sending",
+                "sent",
+                "failed",
+                "scheduled"
+              ]
             },
             {
               "name": "sentAt",
@@ -36875,6 +37648,9 @@
           "name": "TelegramAccount",
           "collection": "accounts",
           "extends": "@happyvertical/smrt-messages:Account",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -37168,7 +37944,15 @@
               "name": "sendStatus",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "pending",
+                "sending",
+                "sent",
+                "failed",
+                "scheduled"
+              ]
             },
             {
               "name": "sentAt",
@@ -37570,6 +38354,9 @@
           "name": "TwitterAccount",
           "collection": "accounts",
           "extends": "@happyvertical/smrt-messages:Account",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -37762,6 +38549,9 @@
           "id": "@happyvertical/smrt-messages:UserNotification",
           "name": "UserNotification",
           "collection": "usernotifications",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -37799,7 +38589,13 @@
               "name": "severity",
               "type": "text",
               "required": false,
-              "default": "info"
+              "default": "info",
+              "enum": [
+                "info",
+                "success",
+                "warning",
+                "error"
+              ]
             },
             {
               "name": "sourceRef",
@@ -37846,7 +38642,12 @@
               "name": "type",
               "type": "text",
               "required": false,
-              "default": "email"
+              "default": "email",
+              "enum": [
+                "email",
+                "domain",
+                "regex"
+              ]
             },
             {
               "name": "category",
@@ -38023,6 +38824,9 @@
           "name": "ZulipAccount",
           "collection": "accounts",
           "extends": "@happyvertical/smrt-messages:Account",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -38212,13 +39016,16 @@
     {
       "id": "places",
       "packageName": "@happyvertical/smrt-places",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Hierarchical place management with geo integration and SMRT framework support",
       "models": [
         {
           "id": "@happyvertical/smrt-places:Place",
           "name": "Place",
           "collection": "places",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -39000,6 +39807,9 @@
           "id": "@happyvertical/smrt-places:PlaceType",
           "name": "PlaceType",
           "collection": "placetypes",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -39175,13 +39985,16 @@
     {
       "id": "products",
       "packageName": "@happyvertical/smrt-products",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
       "models": [
         {
           "id": "@happyvertical/smrt-products:Category",
           "name": "Category",
           "collection": "categories",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -39317,6 +40130,9 @@
           "name": "Material",
           "collection": "products",
           "extends": "@happyvertical/smrt-products:Product",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -39339,7 +40155,12 @@
             {
               "name": "productType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "product",
+                "material",
+                "assembly"
+              ]
             },
             {
               "name": "name",
@@ -39614,6 +40435,9 @@
           "id": "@happyvertical/smrt-products:Product",
           "name": "Product",
           "collection": "products",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -39636,7 +40460,12 @@
             {
               "name": "productType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "product",
+                "material",
+                "assembly"
+              ]
             },
             {
               "name": "name",
@@ -40022,6 +40851,9 @@
           "id": "@happyvertical/smrt-products:ProductVariant",
           "name": "ProductVariant",
           "collection": "productvariants",
+          "display": {
+            "label": "label"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -40186,6 +41018,9 @@
           "id": "@happyvertical/smrt-products:Sku",
           "name": "Sku",
           "collection": "skus",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -40434,13 +41269,16 @@
     {
       "id": "profiles",
       "packageName": "@happyvertical/smrt-profiles",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
       "models": [
         {
           "id": "@happyvertical/smrt-profiles:ApiKey",
           "name": "ApiKey",
           "collection": "apikeys",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "profileId",
@@ -40788,7 +41626,14 @@
               "name": "source",
               "type": "text",
               "required": false,
-              "default": "web"
+              "default": "web",
+              "enum": [
+                "web",
+                "cli",
+                "ci",
+                "webhook",
+                "mcp"
+              ]
             },
             {
               "name": "metadata",
@@ -40913,6 +41758,9 @@
           "name": "Bot",
           "collection": "profiles",
           "extends": "@happyvertical/smrt-profiles:Profile",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -42622,6 +43470,9 @@
           "name": "Organization",
           "collection": "profiles",
           "extends": "@happyvertical/smrt-profiles:Profile",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -43325,6 +44176,9 @@
           "name": "Person",
           "collection": "profiles",
           "extends": "@happyvertical/smrt-profiles:Profile",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -44027,6 +44881,9 @@
           "id": "@happyvertical/smrt-profiles:Profile",
           "name": "Profile",
           "collection": "profiles",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -44927,6 +45784,9 @@
           "id": "@happyvertical/smrt-profiles:ProfileLink",
           "name": "ProfileLink",
           "collection": "profilelinks",
+          "display": {
+            "label": "label"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -45212,6 +46072,9 @@
           "id": "@happyvertical/smrt-profiles:ProfileMetafield",
           "name": "ProfileMetafield",
           "collection": "profilemetafields",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -45823,6 +46686,9 @@
           "id": "@happyvertical/smrt-profiles:ProfileRelationshipType",
           "name": "ProfileRelationshipType",
           "collection": "profilerelationshiptypes",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -46005,6 +46871,9 @@
           "id": "@happyvertical/smrt-profiles:ProfileType",
           "name": "ProfileType",
           "collection": "profiletypes",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -46043,6 +46912,10 @@
             },
             {
               "method": "POST",
+              "path": "/profiletypes/getAvailableById"
+            },
+            {
+              "method": "POST",
               "path": "/profiletypes/getOrCreateBySlug"
             },
             {
@@ -46074,6 +46947,10 @@
             {
               "operation": "list",
               "name": "profiletype_list"
+            },
+            {
+              "operation": "getAvailableById",
+              "name": "profiletypecollection_getavailablebyid"
             },
             {
               "operation": "getBySlug",
@@ -46114,6 +46991,10 @@
               "name": "profiletype_update"
             },
             {
+              "operation": "getAvailableById",
+              "name": "profiletypecollection_getAvailableById"
+            },
+            {
               "operation": "getBySlug",
               "name": "profiletypecollection_getBySlug"
             },
@@ -46127,6 +47008,16 @@
             }
           ],
           "methods": [
+            {
+              "name": "getAvailableById",
+              "async": true,
+              "parameters": [
+                "id: string",
+                "tenantId: string"
+              ],
+              "returnType": "Promise<ProfileType | null>",
+              "aiCallable": true
+            },
             {
               "name": "getBySlug",
               "async": true,
@@ -46169,7 +47060,7 @@
     {
       "id": "projects",
       "packageName": "@happyvertical/smrt-projects",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
       "models": [
         {
@@ -46217,7 +47108,13 @@
             {
               "name": "classification",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "unclassified",
+                "support",
+                "development",
+                "both"
+              ]
             },
             {
               "name": "supportCaseId",
@@ -46270,12 +47167,24 @@
             {
               "name": "priorClassification",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "unclassified",
+                "support",
+                "development",
+                "both"
+              ]
             },
             {
               "name": "resultingClassification",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "unclassified",
+                "support",
+                "development",
+                "both"
+              ]
             },
             {
               "name": "actorRef",
@@ -46497,7 +47406,14 @@
               "name": "visibility",
               "type": "text",
               "required": false,
-              "default": "requester"
+              "default": "requester",
+              "enum": [
+                "requester",
+                "workspace",
+                "public",
+                "project_team",
+                "internal"
+              ]
             },
             {
               "name": "origin",
@@ -46515,7 +47431,15 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "submitted"
+              "default": "submitted",
+              "enum": [
+                "submitted",
+                "triaged",
+                "planned",
+                "in_progress",
+                "completed",
+                "declined"
+              ]
             }
           ],
           "rest": [],
@@ -46618,13 +47542,26 @@
               "name": "toStatus",
               "type": "text",
               "required": false,
-              "default": "submitted"
+              "default": "submitted",
+              "enum": [
+                "submitted",
+                "triaged",
+                "planned",
+                "in_progress",
+                "completed",
+                "declined"
+              ]
             },
             {
               "name": "actorType",
               "type": "text",
               "required": false,
-              "default": "system"
+              "default": "system",
+              "enum": [
+                "integration",
+                "participant",
+                "system"
+              ]
             },
             {
               "name": "actorId",
@@ -46719,6 +47656,9 @@
           "id": "@happyvertical/smrt-projects:Issue",
           "name": "Issue",
           "collection": "issues",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -46772,7 +47712,11 @@
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "open"
+              "default": "open",
+              "enum": [
+                "open",
+                "closed"
+              ]
             },
             {
               "name": "author",
@@ -47262,6 +48206,9 @@
           "id": "@happyvertical/smrt-projects:Label",
           "name": "Label",
           "collection": "labels",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "repositoryId",
@@ -47439,7 +48386,13 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "stale"
+              ]
             },
             {
               "name": "decidedByRef",
@@ -47481,6 +48434,9 @@
           "id": "@happyvertical/smrt-projects:Project",
           "name": "Project",
           "collection": "projects",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -47528,7 +48484,13 @@
               "name": "providerType",
               "type": "text",
               "required": false,
-              "default": "github"
+              "default": "github",
+              "enum": [
+                "github",
+                "jira",
+                "linear",
+                "zenhub"
+              ]
             },
             {
               "name": "tokenConfigKey",
@@ -48000,7 +48962,18 @@
             {
               "name": "type",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "work_linked",
+                "branch",
+                "pull_request",
+                "ci",
+                "preview",
+                "approval",
+                "deployment",
+                "completed",
+                "rejected"
+              ]
             },
             {
               "name": "payload",
@@ -48043,6 +49016,9 @@
           "id": "@happyvertical/smrt-projects:ProjectIntegration",
           "name": "ProjectIntegration",
           "collection": "projectintegrations",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -48077,7 +49053,11 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "active",
+                "revoked"
+              ]
             },
             {
               "name": "revokedAt",
@@ -48287,7 +49267,12 @@
               "name": "action",
               "type": "text",
               "required": false,
-              "default": "created"
+              "default": "created",
+              "enum": [
+                "created",
+                "rotated",
+                "revoked"
+              ]
             },
             {
               "name": "note",
@@ -48320,6 +49305,9 @@
           "name": "PullRequest",
           "collection": "issues",
           "extends": "@happyvertical/smrt-projects:Issue",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -48373,7 +49361,11 @@
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "open"
+              "default": "open",
+              "enum": [
+                "open",
+                "closed"
+              ]
             },
             {
               "name": "author",
@@ -49012,6 +50004,9 @@
           "id": "@happyvertical/smrt-projects:Repository",
           "name": "Repository",
           "collection": "repositories",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -49059,7 +50054,13 @@
               "name": "providerType",
               "type": "text",
               "required": false,
-              "default": "github"
+              "default": "github",
+              "enum": [
+                "github",
+                "gitlab",
+                "bitbucket",
+                "azure"
+              ]
             },
             {
               "name": "baseUrl",
@@ -49407,13 +50408,16 @@
     {
       "id": "properties",
       "packageName": "@happyvertical/smrt-properties",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Digital property and zone management models for SMRT framework",
       "models": [
         {
           "id": "@happyvertical/smrt-properties:Property",
           "name": "Property",
           "collection": "properties",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -49473,7 +50477,12 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "active",
+                "inactive",
+                "pending"
+              ]
             },
             {
               "name": "metadata",
@@ -49813,6 +50822,9 @@
           "id": "@happyvertical/smrt-properties:Zone",
           "name": "Zone",
           "collection": "zones",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "parentId",
@@ -50458,7 +51470,7 @@
     {
       "id": "reports",
       "packageName": "@happyvertical/smrt-reports",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Materialized aggregate report models for SMRT",
       "models": [
         {
@@ -50615,12 +51627,23 @@
             {
               "name": "mode",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "rebuild",
+                "incremental"
+              ]
             },
             {
               "name": "trigger",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "manual",
+                "schedule",
+                "change",
+                "ttl",
+                "job"
+              ]
             },
             {
               "name": "args",
@@ -50684,17 +51707,34 @@
             {
               "name": "mode",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "rebuild",
+                "incremental"
+              ]
             },
             {
               "name": "trigger",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "manual",
+                "schedule",
+                "change",
+                "ttl",
+                "job"
+              ]
             },
             {
               "name": "status",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "running",
+                "success",
+                "failed",
+                "skipped"
+              ]
             },
             {
               "name": "startedAt",
@@ -50782,12 +51822,23 @@
             {
               "name": "trigger",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "manual",
+                "schedule",
+                "change",
+                "ttl",
+                "job"
+              ]
             },
             {
               "name": "mode",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "rebuild",
+                "incremental"
+              ]
             },
             {
               "name": "enabled",
@@ -50797,7 +51848,13 @@
             {
               "name": "status",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "active",
+                "paused",
+                "disabled",
+                "error"
+              ]
             },
             {
               "name": "nextRun",
@@ -50812,7 +51869,11 @@
             {
               "name": "lastStatus",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "success",
+                "failed"
+              ]
             },
             {
               "name": "lastError",
@@ -50941,13 +52002,16 @@
     {
       "id": "sales",
       "packageName": "@happyvertical/smrt-sales",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Modular sales for the SMRT framework: agreement execution, CRM, referral intake, neutral commissions, and reusable Svelte surfaces",
       "models": [
         {
           "id": "@happyvertical/smrt-sales:AgreementExecution",
           "name": "AgreementExecution",
           "collection": "agreementexecutions",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -53255,6 +54319,9 @@
           "id": "@happyvertical/smrt-sales:CommissionPlan",
           "name": "CommissionPlan",
           "collection": "commissionplans",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -54499,6 +55566,9 @@
           "id": "@happyvertical/smrt-sales:Lead",
           "name": "Lead",
           "collection": "leads",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -54873,6 +55943,9 @@
           "id": "@happyvertical/smrt-sales:Opportunity",
           "name": "Opportunity",
           "collection": "opportunities",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -55292,6 +56365,9 @@
           "id": "@happyvertical/smrt-sales:PipelineDefinition",
           "name": "PipelineDefinition",
           "collection": "pipelinedefinitions",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -55506,6 +56582,9 @@
           "id": "@happyvertical/smrt-sales:PipelineStage",
           "name": "PipelineStage",
           "collection": "pipelinestages",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -56449,6 +57528,9 @@
           "id": "@happyvertical/smrt-sales:ReferralLink",
           "name": "ReferralLink",
           "collection": "referrallinks",
+          "display": {
+            "label": "label"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -56697,6 +57779,9 @@
           "id": "@happyvertical/smrt-sales:ReferralProgram",
           "name": "ReferralProgram",
           "collection": "referralprograms",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -57053,6 +58138,9 @@
           "id": "@happyvertical/smrt-sales:ReferralTouch",
           "name": "ReferralTouch",
           "collection": "referraltouches",
+          "display": {
+            "label": "code"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -57627,6 +58715,9 @@
           "id": "@happyvertical/smrt-sales:SalesRepresentative",
           "name": "SalesRepresentative",
           "collection": "salesrepresentatives",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -57809,13 +58900,16 @@
     {
       "id": "sites",
       "packageName": "@happyvertical/smrt-sites",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Site lifecycle management for multi-tenant SMRT networks",
       "models": [
         {
           "id": "@happyvertical/smrt-sites:Site",
           "name": "Site",
           "collection": "sites",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -57839,13 +58933,24 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "active",
+                "suspended",
+                "archived"
+              ]
             },
             {
               "name": "tier",
               "type": "text",
               "required": false,
-              "default": "free"
+              "default": "free",
+              "enum": [
+                "free",
+                "standard",
+                "premium"
+              ]
             },
             {
               "name": "databaseUrl",
@@ -57881,7 +58986,14 @@
               "name": "provisioningStatus",
               "type": "text",
               "required": false,
-              "default": ""
+              "default": "",
+              "enum": [
+                "pending",
+                "provisioning",
+                "ready",
+                "failed",
+                ""
+              ]
             },
             {
               "name": "provisionedAt",
@@ -58327,7 +59439,7 @@
     {
       "id": "social",
       "packageName": "@happyvertical/smrt-social",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Social media account management for multi-platform publishing in the SMRT ecosystem",
       "models": [
         {
@@ -58357,7 +59469,14 @@
               "name": "platform",
               "type": "text",
               "required": false,
-              "default": "youtube"
+              "default": "youtube",
+              "enum": [
+                "youtube",
+                "threads",
+                "x",
+                "bluesky",
+                "facebook"
+              ]
             },
             {
               "name": "state",
@@ -58539,6 +59658,9 @@
           "id": "@happyvertical/smrt-social:SocialAccount",
           "name": "SocialAccount",
           "collection": "socialaccounts",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -58568,7 +59690,14 @@
               "name": "platform",
               "type": "text",
               "required": false,
-              "default": "youtube"
+              "default": "youtube",
+              "enum": [
+                "youtube",
+                "threads",
+                "x",
+                "bluesky",
+                "facebook"
+              ]
             },
             {
               "name": "platformUserId",
@@ -58640,13 +59769,26 @@
               "name": "linkBehavior",
               "type": "text",
               "required": false,
-              "default": "description"
+              "default": "description",
+              "enum": [
+                "description",
+                "inline",
+                "attachment",
+                "reply",
+                "none"
+              ]
             },
             {
               "name": "publishMode",
               "type": "text",
               "required": false,
-              "default": "dry_run"
+              "default": "dry_run",
+              "enum": [
+                "dry_run",
+                "stage_remote",
+                "private_or_scheduled",
+                "public"
+              ]
             },
             {
               "name": "publicPublishingAllowed",
@@ -58658,7 +59800,14 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "connected"
+              "default": "connected",
+              "enum": [
+                "connected",
+                "disconnected",
+                "expired",
+                "missing_permissions",
+                "error"
+              ]
             },
             {
               "name": "errorMessage",
@@ -58822,6 +59971,9 @@
           "id": "@happyvertical/smrt-social:SocialPost",
           "name": "SocialPost",
           "collection": "socialposts",
+          "display": {
+            "label": "title"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -58869,7 +60021,13 @@
               "name": "postType",
               "type": "text",
               "required": false,
-              "default": "text"
+              "default": "text",
+              "enum": [
+                "text",
+                "link",
+                "image",
+                "video"
+              ]
             },
             {
               "name": "mediaUrl",
@@ -58921,7 +60079,19 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "pending_approval",
+                "approved",
+                "scheduled",
+                "publishing",
+                "dry_run",
+                "staged",
+                "published",
+                "failed",
+                "cancelled"
+              ]
             },
             {
               "name": "errorMessage",
@@ -59174,7 +60344,14 @@
             {
               "name": "platform",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "youtube",
+                "threads",
+                "x",
+                "bluesky",
+                "facebook"
+              ]
             },
             {
               "name": "analytics",
@@ -59319,7 +60496,7 @@
     {
       "id": "subscriptions",
       "packageName": "@happyvertical/smrt-subscriptions",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT",
       "models": [
         {
@@ -59523,7 +60700,12 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "approved",
+                "adjusted"
+              ]
             },
             {
               "name": "approvedAt",
@@ -59673,6 +60855,9 @@
           "id": "@happyvertical/smrt-subscriptions:PriceBook",
           "name": "PriceBook",
           "collection": "pricebooks",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -59696,7 +60881,11 @@
               "name": "kind",
               "type": "text",
               "required": false,
-              "default": "retail"
+              "default": "retail",
+              "enum": [
+                "wholesale",
+                "retail"
+              ]
             },
             {
               "name": "active",
@@ -59797,7 +60986,16 @@
               "name": "strategy",
               "type": "text",
               "required": false,
-              "default": "fixed_unit"
+              "default": "fixed_unit",
+              "enum": [
+                "fixed_unit",
+                "cost_plus",
+                "multiplier",
+                "tiered",
+                "included_overage",
+                "flat",
+                "custom"
+              ]
             },
             {
               "name": "currency",
@@ -60070,7 +61268,11 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "approved"
+              ]
             },
             {
               "name": "approvedAt",
@@ -60130,6 +61332,9 @@
           "id": "@happyvertical/smrt-subscriptions:SpendingPolicy",
           "name": "SpendingPolicy",
           "collection": "spendingpolicies",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -60177,7 +61382,15 @@
               "name": "period",
               "type": "text",
               "required": false,
-              "default": "month"
+              "default": "month",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year",
+                "rolling",
+                "balance"
+              ]
             },
             {
               "name": "rollingSeconds",
@@ -60201,7 +61414,13 @@
               "name": "behavior",
               "type": "text",
               "required": false,
-              "default": "observe"
+              "default": "observe",
+              "enum": [
+                "observe",
+                "warn",
+                "block",
+                "approval_required"
+              ]
             },
             {
               "name": "priority",
@@ -60219,7 +61438,12 @@
               "name": "basis",
               "type": "text",
               "required": false,
-              "default": "billed"
+              "default": "billed",
+              "enum": [
+                "billed",
+                "retail",
+                "wholesale"
+              ]
             },
             {
               "name": "setByTenantId",
@@ -60309,6 +61533,9 @@
           "id": "@happyvertical/smrt-subscriptions:SubscriptionPlan",
           "name": "SubscriptionPlan",
           "collection": "subscriptionplans",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -60338,7 +61565,12 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "active",
+                "archived",
+                "draft"
+              ]
             },
             {
               "name": "sortOrder",
@@ -60362,7 +61594,13 @@
               "name": "billingInterval",
               "type": "text",
               "required": false,
-              "default": "month"
+              "default": "month",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year"
+              ]
             },
             {
               "name": "externalProvider",
@@ -60626,7 +61864,11 @@
               "name": "subscriberKind",
               "type": "text",
               "required": false,
-              "default": "tenant"
+              "default": "tenant",
+              "enum": [
+                "tenant",
+                "external"
+              ]
             },
             {
               "name": "subscriberExternalId",
@@ -60644,7 +61886,15 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "incomplete"
+              "default": "incomplete",
+              "enum": [
+                "active",
+                "canceled",
+                "incomplete",
+                "past_due",
+                "trialing",
+                "unpaid"
+              ]
             },
             {
               "name": "startedAt",
@@ -60914,7 +62164,11 @@
               "name": "subscriberKind",
               "type": "text",
               "required": false,
-              "default": "tenant"
+              "default": "tenant",
+              "enum": [
+                "tenant",
+                "external"
+              ]
             },
             {
               "name": "subscriberExternalId",
@@ -61168,7 +62422,7 @@
     {
       "id": "support",
       "packageName": "@happyvertical/smrt-support",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework",
       "models": [
         {
@@ -61505,12 +62759,25 @@
             {
               "name": "phase",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "acknowledge",
+                "classify",
+                "answer",
+                "troubleshoot",
+                "resolve"
+              ]
             },
             {
               "name": "outcome",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "completed",
+                "skipped",
+                "failed",
+                "handed_off"
+              ]
             },
             {
               "name": "confidence",
@@ -61696,7 +62963,12 @@
             {
               "name": "kind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "weekly",
+                "on_call",
+                "time_off"
+              ]
             },
             {
               "name": "weekday",
@@ -61830,7 +63102,17 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "new",
+                "triaged",
+                "assigned",
+                "in_progress",
+                "waiting_on_client",
+                "escalated",
+                "resolved",
+                "closed"
+              ]
             },
             {
               "name": "priority",
@@ -62161,12 +63443,38 @@
             {
               "name": "eventType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "created",
+                "interaction",
+                "transition",
+                "assignment",
+                "ai_run",
+                "handoff",
+                "human_requested",
+                "escalation",
+                "target_scheduled",
+                "target_satisfied",
+                "target_breached",
+                "target_paused",
+                "target_resumed",
+                "work_linked",
+                "reopened",
+                "plan_applied",
+                "time_recorded",
+                "note"
+              ]
             },
             {
               "name": "actorKind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "client",
+                "specialist",
+                "agent",
+                "system"
+              ]
             },
             {
               "name": "actorProfileId",
@@ -62270,6 +63578,9 @@
           "id": "@happyvertical/smrt-support:SupportChannelBinding",
           "name": "SupportChannelBinding",
           "collection": "supportchannelbindings",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -62286,12 +63597,24 @@
             {
               "name": "bindingKind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "chat_room",
+                "email_account"
+              ]
             },
             {
               "name": "channelKind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "chat",
+                "email",
+                "phone",
+                "voice",
+                "web",
+                "api"
+              ]
             },
             {
               "name": "targetType",
@@ -62500,7 +63823,13 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "pending",
+                "final",
+                "corrected",
+                "voided"
+              ]
             },
             {
               "name": "finalizedAt",
@@ -62664,7 +63993,13 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "pending",
+                "final",
+                "corrected",
+                "voided"
+              ]
             },
             {
               "name": "finalizedAt",
@@ -62778,6 +64113,9 @@
           "id": "@happyvertical/smrt-support:SupportCompensationPlan",
           "name": "SupportCompensationPlan",
           "collection": "supportcompensationplans",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -62940,7 +64278,13 @@
             {
               "name": "reason",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "target_breach",
+                "target_risk",
+                "manual",
+                "ai_trigger"
+              ]
             },
             {
               "name": "targetId",
@@ -63082,17 +64426,36 @@
             {
               "name": "direction",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "inbound",
+                "outbound",
+                "internal"
+              ]
             },
             {
               "name": "channelKind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "chat",
+                "email",
+                "phone",
+                "voice",
+                "web",
+                "api"
+              ]
             },
             {
               "name": "actorKind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "client",
+                "specialist",
+                "agent",
+                "system"
+              ]
             },
             {
               "name": "authorProfileId",
@@ -63257,6 +64620,9 @@
           "id": "@happyvertical/smrt-support:SupportPlan",
           "name": "SupportPlan",
           "collection": "supportplans",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -63590,6 +64956,9 @@
           "id": "@happyvertical/smrt-support:SupportPolicy",
           "name": "SupportPolicy",
           "collection": "supportpolicies",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -63853,7 +65222,12 @@
             {
               "name": "level",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "trainee",
+                "qualified",
+                "expert"
+              ]
             },
             {
               "name": "effectiveFrom",
@@ -63998,7 +65372,13 @@
             {
               "name": "targetType",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "acknowledgement",
+                "response",
+                "update",
+                "resolution"
+              ]
             },
             {
               "name": "cycle",
@@ -64030,7 +65410,14 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "pending",
+                "paused",
+                "satisfied",
+                "breached",
+                "cancelled"
+              ]
             },
             {
               "name": "pausedAt",
@@ -64207,7 +65594,11 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "active",
+                "inactive"
+              ]
             },
             {
               "name": "languages",
@@ -64390,7 +65781,11 @@
             {
               "name": "linkKind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "support_work_item",
+                "development_work_item"
+              ]
             },
             {
               "name": "targetType",
@@ -64515,13 +65910,16 @@
     {
       "id": "tags",
       "packageName": "@happyvertical/smrt-tags",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Reusable tagging system with hierarchies, contexts, and multi-language support for SMRT framework",
       "models": [
         {
           "id": "@happyvertical/smrt-tags:Tag",
           "name": "Tag",
           "collection": "tags",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -65357,7 +66755,7 @@
     {
       "id": "timesheets",
       "packageName": "@happyvertical/smrt-timesheets",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Shared time entries for the SMRT framework: who worked how long on what, approval and correction, with immutable charge and compensation snapshots",
       "models": [
         {
@@ -65677,7 +67075,11 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "open",
+                "confirmed"
+              ]
             },
             {
               "name": "confirmedAt",
@@ -65955,7 +67357,11 @@
             {
               "name": "participantKind",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "human",
+                "agent"
+              ]
             },
             {
               "name": "participantProfileId",
@@ -65971,7 +67377,13 @@
             {
               "name": "source",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "timer",
+                "manual",
+                "import",
+                "agent"
+              ]
             },
             {
               "name": "description",
@@ -66001,7 +67413,14 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "draft",
+                "submitted",
+                "approved",
+                "rejected",
+                "corrected"
+              ]
             },
             {
               "name": "submittedAt",
@@ -66290,13 +67709,16 @@
     {
       "id": "users",
       "packageName": "@happyvertical/smrt-users",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
       "models": [
         {
           "id": "@happyvertical/smrt-users:AccessRequest",
           "name": "AccessRequest",
           "collection": "accessrequests",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "email",
@@ -66507,6 +67929,9 @@
           "id": "@happyvertical/smrt-users:Group",
           "name": "Group",
           "collection": "groups",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -67601,6 +69026,9 @@
           "id": "@happyvertical/smrt-users:Permission",
           "name": "Permission",
           "collection": "permissions",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "name",
@@ -67852,7 +69280,11 @@
             {
               "name": "effect",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "grant",
+                "deny"
+              ]
             },
             {
               "name": "canDelegate",
@@ -67968,6 +69400,9 @@
           "id": "@happyvertical/smrt-users:Role",
           "name": "Role",
           "collection": "roles",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "tenantId",
@@ -69055,6 +70490,9 @@
           "id": "@happyvertical/smrt-users:Tenant",
           "name": "Tenant",
           "collection": "tenants",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -69623,7 +71061,14 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "unprovisioned"
+              "default": "unprovisioned",
+              "enum": [
+                "unprovisioned",
+                "provisioning",
+                "active",
+                "drifted",
+                "failed"
+              ]
             },
             {
               "name": "lastCheckedAt",
@@ -70671,7 +72116,13 @@
             {
               "name": "status",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "pending",
+                "approved",
+                "consumed",
+                "expired"
+              ]
             },
             {
               "name": "userId",
@@ -70836,7 +72287,11 @@
             {
               "name": "scope",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "subject",
+                "source"
+              ]
             },
             {
               "name": "attemptCount",
@@ -70930,7 +72385,14 @@
             {
               "name": "outcome",
               "type": "text",
-              "required": true
+              "required": true,
+              "enum": [
+                "denied",
+                "failed",
+                "succeeded",
+                "locked",
+                "managed"
+              ]
             },
             {
               "name": "subjectKeyHash",
@@ -71340,13 +72802,16 @@
     {
       "id": "video",
       "packageName": "@happyvertical/smrt-video",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Video content management for AI-powered video production in the SMRT ecosystem",
       "models": [
         {
           "id": "@happyvertical/smrt-video:Character",
           "name": "Character",
           "collection": "characters",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -71404,7 +72869,11 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "pending"
+              "default": "pending",
+              "enum": [
+                "pending",
+                "ready"
+              ]
             },
             {
               "name": "performerId",
@@ -71634,6 +73103,9 @@
           "id": "@happyvertical/smrt-video:CharacterAsset",
           "name": "CharacterAsset",
           "collection": "assets",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -71755,7 +73227,12 @@
               "name": "role",
               "type": "text",
               "required": false,
-              "default": "seed-image"
+              "default": "seed-image",
+              "enum": [
+                "seed-image",
+                "base-motion",
+                "logo"
+              ]
             }
           ],
           "rest": [
@@ -72030,7 +73507,12 @@
               "name": "role",
               "type": "text",
               "required": true,
-              "default": "seed-image"
+              "default": "seed-image",
+              "enum": [
+                "seed-image",
+                "base-motion",
+                "logo"
+              ]
             },
             {
               "name": "sortOrder",
@@ -72163,7 +73645,15 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "pending"
+              "default": "pending",
+              "enum": [
+                "pending",
+                "removing_bg",
+                "analyzing_light",
+                "compositing",
+                "complete",
+                "failed"
+              ]
             },
             {
               "name": "progress",
@@ -72244,6 +73734,9 @@
           "id": "@happyvertical/smrt-video:Performer",
           "name": "Performer",
           "collection": "performers",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -72300,7 +73793,11 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "pending"
+              "default": "pending",
+              "enum": [
+                "pending",
+                "ready"
+              ]
             },
             {
               "name": "profileId",
@@ -72431,6 +73928,9 @@
           "id": "@happyvertical/smrt-video:PerformerAsset",
           "name": "PerformerAsset",
           "collection": "assets",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -72552,7 +74052,11 @@
               "name": "role",
               "type": "text",
               "required": false,
-              "default": "reference"
+              "default": "reference",
+              "enum": [
+                "reference",
+                "seed"
+              ]
             }
           ],
           "rest": [
@@ -72827,7 +74331,11 @@
               "name": "role",
               "type": "text",
               "required": true,
-              "default": "reference"
+              "default": "reference",
+              "enum": [
+                "reference",
+                "seed"
+              ]
             },
             {
               "name": "sortOrder",
@@ -72904,6 +74412,9 @@
           "id": "@happyvertical/smrt-video:Scene",
           "name": "Scene",
           "collection": "scenes",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -72944,12 +74455,22 @@
               "name": "sourceType",
               "type": "text",
               "required": false,
-              "default": "image"
+              "default": "image",
+              "enum": [
+                "image",
+                "video",
+                "panorama_360",
+                "panorama_180"
+              ]
             },
             {
               "name": "projection",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "equirectangular",
+                "cubemap"
+              ]
             },
             {
               "name": "viewpoints",
@@ -72975,7 +74496,13 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "pending"
+              "default": "pending",
+              "enum": [
+                "pending",
+                "processing",
+                "ready",
+                "failed"
+              ]
             }
           ],
           "rest": [
@@ -73098,6 +74625,9 @@
           "id": "@happyvertical/smrt-video:SceneAsset",
           "name": "SceneAsset",
           "collection": "assets",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -73219,7 +74749,12 @@
               "name": "role",
               "type": "text",
               "required": false,
-              "default": "source"
+              "default": "source",
+              "enum": [
+                "source",
+                "viewpoint-extract",
+                "env-map"
+              ]
             }
           ],
           "rest": [
@@ -73494,7 +75029,12 @@
               "name": "role",
               "type": "text",
               "required": true,
-              "default": "source"
+              "default": "source",
+              "enum": [
+                "source",
+                "viewpoint-extract",
+                "env-map"
+              ]
             },
             {
               "name": "sortOrder",
@@ -73571,6 +75111,9 @@
           "id": "@happyvertical/smrt-video:VideoComposition",
           "name": "VideoComposition",
           "collection": "contents",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -73634,7 +75177,11 @@
             {
               "name": "bodyFormat",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "markdown",
+                "html"
+              ]
             },
             {
               "name": "publish_date",
@@ -73675,13 +75222,25 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "published",
+                "draft",
+                "review",
+                "archived",
+                "deleted"
+              ]
             },
             {
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "deprecated",
+                "active",
+                "highlighted"
+              ]
             },
             {
               "name": "metadata",
@@ -73722,7 +75281,13 @@
               "name": "renderStatus",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "rendering",
+                "ready",
+                "failed"
+              ]
             },
             {
               "name": "renderProgress",
@@ -74697,6 +76262,9 @@
           "id": "@happyvertical/smrt-video:VideoCompositionAsset",
           "name": "VideoCompositionAsset",
           "collection": "assets",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -74818,7 +76386,12 @@
               "name": "role",
               "type": "text",
               "required": false,
-              "default": "video"
+              "default": "video",
+              "enum": [
+                "video",
+                "audio",
+                "thumbnail"
+              ]
             }
           ],
           "rest": [
@@ -75070,6 +76643,9 @@
           "id": "@happyvertical/smrt-video:VideoSequence",
           "name": "VideoSequence",
           "collection": "contents",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -75133,7 +76709,11 @@
             {
               "name": "bodyFormat",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "markdown",
+                "html"
+              ]
             },
             {
               "name": "publish_date",
@@ -75174,13 +76754,25 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "published",
+                "draft",
+                "review",
+                "archived",
+                "deleted"
+              ]
             },
             {
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "deprecated",
+                "active",
+                "highlighted"
+              ]
             },
             {
               "name": "metadata",
@@ -75215,7 +76807,13 @@
               "name": "transitionType",
               "type": "text",
               "required": false,
-              "default": "none"
+              "default": "none",
+              "enum": [
+                "none",
+                "fade",
+                "slide",
+                "wipe"
+              ]
             },
             {
               "name": "transitionDurationFrames",
@@ -76191,6 +77789,9 @@
           "id": "@happyvertical/smrt-video:VideoSequenceAsset",
           "name": "VideoSequenceAsset",
           "collection": "assets",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -76312,7 +77913,12 @@
               "name": "role",
               "type": "text",
               "required": false,
-              "default": "video"
+              "default": "video",
+              "enum": [
+                "video",
+                "audio",
+                "thumbnail"
+              ]
             }
           ],
           "rest": [
@@ -76564,6 +78170,9 @@
           "id": "@happyvertical/smrt-video:VideoShot",
           "name": "VideoShot",
           "collection": "contents",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -76627,7 +78236,11 @@
             {
               "name": "bodyFormat",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "markdown",
+                "html"
+              ]
             },
             {
               "name": "publish_date",
@@ -76668,13 +78281,25 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "published",
+                "draft",
+                "review",
+                "archived",
+                "deleted"
+              ]
             },
             {
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "deprecated",
+                "active",
+                "highlighted"
+              ]
             },
             {
               "name": "metadata",
@@ -76745,7 +78370,15 @@
               "name": "shotStatus",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "draft",
+                "queued",
+                "processing",
+                "ready",
+                "failed",
+                "published"
+              ]
             },
             {
               "name": "progress",
@@ -77771,6 +79404,9 @@
           "id": "@happyvertical/smrt-video:VideoShotAsset",
           "name": "VideoShotAsset",
           "collection": "assets",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -77892,7 +79528,12 @@
               "name": "role",
               "type": "text",
               "required": false,
-              "default": "video"
+              "default": "video",
+              "enum": [
+                "video",
+                "audio",
+                "thumbnail"
+              ]
             }
           ],
           "rest": [
@@ -78179,7 +79820,12 @@
               "name": "role",
               "type": "text",
               "required": false,
-              "default": "primary"
+              "default": "primary",
+              "enum": [
+                "primary",
+                "secondary",
+                "background"
+              ]
             },
             {
               "name": "position",
@@ -78292,6 +79938,9 @@
           "id": "@happyvertical/smrt-video:VideoWorkflow",
           "name": "VideoWorkflow",
           "collection": "videoworkflows",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -78326,7 +79975,14 @@
               "name": "workflowType",
               "type": "text",
               "required": false,
-              "default": "custom"
+              "default": "custom",
+              "enum": [
+                "prebake",
+                "broadcast",
+                "lipsync",
+                "postprod",
+                "custom"
+              ]
             },
             {
               "name": "workflowJson",
@@ -78436,13 +80092,16 @@
     {
       "id": "voice",
       "packageName": "@happyvertical/smrt-voice",
-      "version": "0.54.4",
+      "version": "0.55.3",
       "description": "Voice profile management for AI-powered voice synthesis and cloning in the SMRT ecosystem",
       "models": [
         {
           "id": "@happyvertical/smrt-voice:VoiceOutput",
           "name": "VoiceOutput",
           "collection": "contents",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -78506,7 +80165,11 @@
             {
               "name": "bodyFormat",
               "type": "text",
-              "required": false
+              "required": false,
+              "enum": [
+                "markdown",
+                "html"
+              ]
             },
             {
               "name": "publish_date",
@@ -78547,13 +80210,25 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "draft"
+              "default": "draft",
+              "enum": [
+                "published",
+                "draft",
+                "review",
+                "archived",
+                "deleted"
+              ]
             },
             {
               "name": "state",
               "type": "text",
               "required": false,
-              "default": "active"
+              "default": "active",
+              "enum": [
+                "deprecated",
+                "active",
+                "highlighted"
+              ]
             },
             {
               "name": "metadata",
@@ -79529,6 +81204,9 @@
           "id": "@happyvertical/smrt-voice:VoiceProfile",
           "name": "VoiceProfile",
           "collection": "voiceprofiles",
+          "display": {
+            "label": "name"
+          },
           "fields": [
             {
               "name": "created_at",
@@ -79569,7 +81247,12 @@
               "name": "gender",
               "type": "text",
               "required": false,
-              "default": "neutral"
+              "default": "neutral",
+              "enum": [
+                "male",
+                "female",
+                "neutral"
+              ]
             },
             {
               "name": "designPrompt",
@@ -79603,7 +81286,13 @@
               "name": "status",
               "type": "text",
               "required": false,
-              "default": "pending"
+              "default": "pending",
+              "enum": [
+                "pending",
+                "processing",
+                "ready",
+                "failed"
+              ]
             },
             {
               "name": "provider",
@@ -79739,7 +81428,12 @@
               "name": "quality",
               "type": "text",
               "required": false,
-              "default": "medium"
+              "default": "medium",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
             },
             {
               "name": "sampleRate",

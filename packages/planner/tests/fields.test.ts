@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
 import type { CatalogField, CatalogModel } from '../src/lib/catalog/types.ts';
+import { displayLabel, labelFields } from '../src/lib/data/display.ts';
 import { enumLabel, formatValue, labelKey } from '../src/lib/data/format.ts';
 import {
   CUSTOMER,
@@ -29,7 +30,6 @@ import {
 import { catalogModels } from '../src/lib/forms/shared.ts';
 import { recipes } from '../src/lib/recipes/index.ts';
 import type { FieldMapForm } from '../src/lib/recipes/types.ts';
-import { displayLabel, labelFields } from '../src/lib/upstream/display.ts';
 import { customerOption } from '../src/lib/upstream/partySelect.ts';
 import { selectorFor } from '../src/lib/upstream/selects.ts';
 

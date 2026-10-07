@@ -1,6 +1,7 @@
 import type {
   CatalogField,
   CatalogFieldUI,
+  CatalogFieldWidget,
   CatalogMethod,
   CatalogModel,
   CatalogOperation,
@@ -46,6 +47,8 @@ interface RawObject {
   collection: string;
   extends?: string;
   extendsTypeArg?: string;
+  /** The own field that labels a record in pickers (smrt#3611). */
+  displayLabelField?: string;
   fields: Record<string, RawField>;
   methods: Record<string, RawMethod>;
   decoratorConfig: Record<string, unknown>;
@@ -107,6 +110,14 @@ function primitiveDefault(value: unknown): CatalogField['default'] | undefined {
     : undefined;
 }
 
+const WIDGETS = new Set<string>([
+  'textarea',
+  'currency',
+  'email',
+  'url',
+  'phone',
+]);
+
 /** Keep only the known `ui` keys, with their expected primitive types. */
 function extractUi(value: unknown): CatalogFieldUI | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -120,6 +131,9 @@ function extractUi(value: unknown): CatalogFieldUI | undefined {
       ? { order: raw.order }
       : {}),
     ...(typeof raw.locked === 'boolean' ? { locked: raw.locked } : {}),
+    ...(typeof raw.widget === 'string' && WIDGETS.has(raw.widget)
+      ? { widget: raw.widget as CatalogFieldWidget }
+      : {}),
   };
   return Object.keys(ui).length > 0 ? ui : undefined;
 }
@@ -299,6 +313,10 @@ export function extractPackage(raw: RawPackage): CatalogPackage {
       collection: model.collection,
       ...(model.extends && modelMap.has(`${packageName}:${model.extends}`)
         ? { extends: `${packageName}:${model.extends}` }
+        : {}),
+      ...(model.displayLabelField &&
+      fields.some((f) => f.name === model.displayLabelField)
+        ? { display: { label: model.displayLabelField } }
         : {}),
       fields,
       rest,
