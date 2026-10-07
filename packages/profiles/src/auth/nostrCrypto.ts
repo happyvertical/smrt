@@ -67,12 +67,16 @@ export function generateNostrKeypair(): NostrKeypair {
  * Derive an encryption key from the master secret using HKDF
  * @param masterSecret - Server master secret
  */
-export function deriveEncryptionKey(masterSecret: string): Uint8Array {
+export function deriveEncryptionKey(masterSecret: string): Buffer {
   const salt = utf8ToBytes('nostr-privkey-encryption');
   const info = utf8ToBytes('aes-256-gcm');
   const keyMaterial = utf8ToBytes(masterSecret);
 
-  return hkdfSha256(keyMaterial, salt, info, 32);
+  const key = hkdfSha256(keyMaterial, salt, info, 32);
+  // Node callers keep the `Buffer` this function always returned (`.toString('hex')`,
+  // Buffer-typed consumers). Without a global `Buffer` (browsers) the same bytes
+  // come back as a plain `Uint8Array`; the root entry imports no `node:*` (#3617).
+  return (typeof Buffer !== 'undefined' ? Buffer.from(key) : key) as Buffer;
 }
 
 /**

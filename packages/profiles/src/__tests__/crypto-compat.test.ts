@@ -60,6 +60,14 @@ describe('portable crypto compatibility with node:crypto', () => {
     expect(Buffer.from(deriveEncryptionKey('ünïcode-secret'))).toEqual(nodeKey);
   });
 
+  it('keeps returning a Buffer under Node (public API compatibility)', () => {
+    const key = deriveEncryptionKey(SECRET);
+    expect(Buffer.isBuffer(key)).toBe(true);
+    expect(key.toString('hex')).toBe(
+      '8a7500b7283bf528833c99639be6e86571a70499bd71f976357c125b1b61bf17',
+    );
+  });
+
   it('decrypts a ciphertext produced by node:crypto (fixed vector)', () => {
     expect(
       decryptPrivkey(

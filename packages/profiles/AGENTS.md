@@ -21,7 +21,7 @@ Central identity system with multi-auth, relationships, controlled metadata, and
 | ApiKey | SHA-256 hashed. **Plaintext returned once only** on `generate()`. `keyPrefix` for identification. Scope-based with expiry. |
 | MagicLinkToken | One-time token with expiry for passwordless auth. |
 
-Crypto is portable (#3617): `src/crypto-util.ts` wraps `globalThis.crypto.getRandomValues` and `@noble/{hashes,ciphers}`; the root entry must never import `node:*`. Outputs match the former `node:crypto` byte-for-byte (`crypto-compat.test.ts`). `deriveEncryptionKey()` returns a `Uint8Array`.
+Crypto is portable (#3617): `src/crypto-util.ts` wraps `globalThis.crypto.getRandomValues` and `@noble/{hashes,ciphers}`; the root entry must never import `node:*`. Outputs match the former `node:crypto` byte-for-byte (`crypto-compat.test.ts`). `deriveEncryptionKey()` keeps its `Buffer` return where a global `Buffer` exists (Node) and returns the same bytes as a `Uint8Array` otherwise.
 
 ## Identity Resolution
 
