@@ -7,7 +7,9 @@
  * is an optional Svelte snippet so a host can use a still image, CSS art, or
  * an animation package without making any of them a chat dependency.
  */
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { type Snippet, tick } from 'svelte';
+import type { Attachment } from 'svelte/attachments';
 import type { AssistantStatus } from '../../../assistant-turn-events.js';
 import AssistantDock, {
   type Props as AssistantDockProps,
@@ -48,6 +50,15 @@ let run = $state<AssistantRun | null>(null);
 let attentionRequired = $state(false);
 let launcher: HTMLButtonElement | undefined = $state();
 let panel: HTMLElement | undefined = $state();
+
+// Button forwards Svelte attachments to its native button; retain that DOM
+// reference for collapse focus without introducing a second control.
+const captureLauncher: Attachment<HTMLButtonElement> = (element) => {
+  launcher = element;
+  return () => {
+    launcher = undefined;
+  };
+};
 
 const floatingAssistantId = $props.id();
 const panelId = `floating-assistant-${floatingAssistantId}`;
@@ -104,8 +115,9 @@ function handleKeydown(event: KeyboardEvent) {
   inert={!visible}
   aria-hidden={!visible}
 >
-  <button
-    bind:this={launcher}
+  <Button
+    {@attach captureLauncher}
+    variant="ghost"
     type="button"
     class="floating-assistant-launcher"
     aria-expanded={panelExpanded}
@@ -118,7 +130,7 @@ function handleKeydown(event: KeyboardEvent) {
       </span>
     {/if}
     <span>{launcherLabel}</span>
-  </button>
+  </Button>
 
   <section
     bind:this={panel}
@@ -128,14 +140,15 @@ function handleKeydown(event: KeyboardEvent) {
     aria-hidden={!panelExpanded}
     inert={!panelExpanded}
   >
-    <button
+    <Button
+      variant="ghost"
       type="button"
       class="floating-assistant-collapse"
       aria-label="Collapse assistant"
       onclick={collapse}
     >
       Close
-    </button>
+    </Button>
     <AssistantDock
       {...dockProps}
       visible={panelExpanded}
@@ -149,7 +162,7 @@ function handleKeydown(event: KeyboardEvent) {
 <style>
   .floating-assistant {
     position: fixed;
-    z-index: 50;
+    z-index: var(--smrt-z-index-overlay, 1200);
     right: max(1rem, env(safe-area-inset-right));
     bottom: max(1rem, env(safe-area-inset-bottom));
     display: grid;
@@ -161,22 +174,25 @@ function handleKeydown(event: KeyboardEvent) {
     display: none;
   }
 
-  .floating-assistant-launcher,
-  .floating-assistant-collapse {
-    border: 1px solid var(--smrt-color-border, currentColor);
-    border-radius: 999px;
+  .floating-assistant :global(.floating-assistant-launcher),
+  .floating-assistant :global(.floating-assistant-collapse) {
+    border: 1px solid var(--smrt-color-outline, currentColor);
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface, Canvas);
-    color: var(--smrt-color-text, CanvasText);
+    color: var(--smrt-color-on-surface, CanvasText);
     font: inherit;
   }
 
-  .floating-assistant-launcher {
+  .floating-assistant :global(.floating-assistant-launcher) {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     min-block-size: 2.75rem;
     padding: 0.5rem 0.875rem;
-    box-shadow: 0 0.5rem 1.5rem color-mix(in srgb, CanvasText 18%, transparent);
+    box-shadow: var(
+      --smrt-elevation-4,
+      0 0.5rem 1.5rem color-mix(in srgb, CanvasText 18%, transparent)
+    );
   }
 
   .floating-assistant-character {
@@ -185,7 +201,7 @@ function handleKeydown(event: KeyboardEvent) {
     inline-size: 1.75rem;
     block-size: 1.75rem;
     overflow: hidden;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .floating-assistant-panel {
@@ -195,11 +211,14 @@ function handleKeydown(event: KeyboardEvent) {
     max-block-size: min(42rem, calc(100dvh - 6rem));
     overflow: auto;
     padding: 0.75rem;
-    border: 1px solid var(--smrt-color-border, currentColor);
+    border: 1px solid var(--smrt-color-outline, currentColor);
     border-radius: 1rem;
     background: var(--smrt-color-surface, Canvas);
-    color: var(--smrt-color-text, CanvasText);
-    box-shadow: 0 1rem 2rem color-mix(in srgb, CanvasText 24%, transparent);
+    color: var(--smrt-color-on-surface, CanvasText);
+    box-shadow: var(
+      --smrt-elevation-5,
+      0 1rem 2rem color-mix(in srgb, CanvasText 24%, transparent)
+    );
     transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
   }
 
@@ -210,7 +229,7 @@ function handleKeydown(event: KeyboardEvent) {
     transform: translateY(0.5rem);
   }
 
-  .floating-assistant-collapse {
+  .floating-assistant :global(.floating-assistant-collapse) {
     float: inline-end;
     min-block-size: 2rem;
     padding-inline: 0.625rem;
