@@ -1,8 +1,11 @@
 <script lang="ts">
+import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { createInMemoryAssistantTransport } from '../../../svelte/components/assistant/assistant-transport.js';
 import { createCaptionChannel } from '../../../svelte/components/assistant/captions/caption-state.svelte.js';
 import HeardCaptions from '../../../svelte/components/assistant/captions/HeardCaptions.svelte';
 import SpokenCaptions from '../../../svelte/components/assistant/captions/SpokenCaptions.svelte';
+import FloatingAssistant from '../../../svelte/components/assistant/FloatingAssistant.svelte';
 
 // This workbench fixture deliberately uses no microphone, audio device, or
 // provider. Its buttons stand in for events from the one host-owned
@@ -11,7 +14,10 @@ const heard = createCaptionChannel('heard', { maxLines: 3, ttlMs: 12_000 });
 const spoken = createCaptionChannel('spoken', { maxLines: 2, ttlMs: 12_000 });
 let heardEnabled = $state(true);
 let spokenEnabled = $state(true);
-let actionConfirmed = $state(false);
+// The permanent dock retains the real conversation and confirmation UI;
+// this route never invents an alternate approval protocol.
+const transport = createInMemoryAssistantTransport();
+const registry = createDataSurfaceRegistry();
 
 function hearInterim() {
   heard.setInterim('show the latest project status');
@@ -46,14 +52,11 @@ function playbackEnd() {
   </section>
   <section class="app" aria-label="Observed application">
     <h2>Project status</h2><p>Three approvals are waiting.</p>
-    <section class="approval" aria-label="Authorized assistant action">
-      <h3>Assistant requests approval</h3>
-      <p>Mark the weekly report ready for review.</p>
-      {#if actionConfirmed}<p role="status">Action approved.</p>{:else}<Button onclick={() => actionConfirmed = true}>Allow action</Button><Button onclick={() => actionConfirmed = false}>Decline</Button>{/if}
-    </section>
+    <p>The permanent assistant remains available for authorised actions and confirmations.</p>
   </section>
   <HeardCaptions enabled={heardEnabled} lines={heard.lines} interim={heard.interim} placement="inline" />
   <SpokenCaptions enabled={spokenEnabled} lines={spoken.lines} interim={spoken.interim} placement="inline" />
+  <FloatingAssistant {transport} {registry} contextMode="server" launcherLabel="Open listening assistant" />
 </main>
 
 <style>main{max-inline-size:60rem;margin:2rem auto;padding:1rem}section{display:flex;gap:.75rem;flex-wrap:wrap;margin-block:1rem}.app{display:block;border:1px solid currentColor;padding:1rem}.approval{display:block;border-inline-start:4px solid #754;padding:.75rem}</style>
