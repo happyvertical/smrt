@@ -93,6 +93,7 @@ interface JsonSchemaProperty {
   maximum?: number;
   minLength?: number;
   maxLength?: number;
+  enum?: Array<string | number>;
 }
 
 type SchemaGeneratorLike = {
@@ -3273,6 +3274,15 @@ ${fields}
         properties[name].minLength = field.minLength;
       if (field.maxLength !== undefined)
         properties[name].maxLength = field.maxLength;
+      if (
+        field.enum &&
+        field.enum.length > 0 &&
+        (field.type === 'text' ||
+          field.type === 'integer' ||
+          field.type === 'decimal')
+      ) {
+        properties[name].enum = [...field.enum];
+      }
     }
 
     return properties;

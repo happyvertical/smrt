@@ -302,3 +302,16 @@ and static collection-scoped actions only need registration, so they import
 and `@happyvertical/smrt-app-runtime/sveltekit` resolves from the consumer, the
 generator writes a runtime-shaped default instead of the legacy
 `getCollection` file.
+
+## Enum-constrained fields (#3598)
+
+The scanner emits `enum: [...]` on a manifest field typed as a TS enum or
+string/number literal union. Registry-sourced fields mirror it into
+`_meta.enum` (`createFieldFromManifest` / `mergeManifestField`); read it with
+`readFieldEnum()` (top level first, then `_meta`), never directly. Generated
+tool schemas (`fieldTypeToJsonSchema`, so MCP and WebMCP descriptors), OpenAPI
+(`swagger.ts`) and the legacy `generateSchemaProperties` emit JSON Schema
+`enum` for `text`/`integer`/`decimal` fields only; a nullable field appends
+`null` to the list so `type: [.., 'null']` still validates. The client web
+collection `fields` map does not carry `enum` yet (it feeds the shape digest and
+three hand-mirrored d.ts files); tool inputs read it from the manifest field.

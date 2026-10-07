@@ -5,6 +5,7 @@
  */
 
 import { ObjectRegistry } from '../registry';
+import { readFieldEnum } from '../registry/manifest-field-merge.js';
 import type { FieldDefinition } from '../scanner/types';
 
 export interface OpenAPIConfig {
@@ -206,6 +207,16 @@ function fieldToOpenAPISchema(field: FieldDefinition): OpenAPISchemaObject {
 
   if (field._meta?.default !== undefined) {
     schema.default = field._meta.default;
+  }
+
+  const allowed = readFieldEnum(field);
+  if (
+    allowed &&
+    (field.type === 'text' ||
+      field.type === 'integer' ||
+      field.type === 'decimal')
+  ) {
+    schema.enum = [...allowed];
   }
 
   return schema;

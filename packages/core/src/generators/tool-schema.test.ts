@@ -22,6 +22,36 @@ const PRODUCT_FIELDS: ToolFieldMeta[] = [
 ];
 
 describe('fieldTypeToJsonSchema', () => {
+  it('emits enum for text/integer fields and keeps null valid when nullable (#3598)', () => {
+    expect(
+      fieldTypeToJsonSchema({
+        name: 's',
+        type: 'text',
+        enum: ['draft', 'sent'],
+      }).enum,
+    ).toEqual(['draft', 'sent']);
+    expect(
+      fieldTypeToJsonSchema({ name: 'n', type: 'integer', enum: [1, 2] }).enum,
+    ).toEqual([1, 2]);
+    const nullable = fieldTypeToJsonSchema({
+      name: 's',
+      type: 'text',
+      nullable: true,
+      enum: ['a'],
+    });
+    expect(nullable.type).toEqual(['string', 'null']);
+    expect(nullable.enum).toEqual(['a', null]);
+  });
+
+  it('never attaches enum to non-scalar kinds or an empty list', () => {
+    expect(
+      fieldTypeToJsonSchema({ name: 'j', type: 'json', enum: ['a'] }).enum,
+    ).toBeUndefined();
+    expect(
+      fieldTypeToJsonSchema({ name: 's', type: 'text', enum: [] }).enum,
+    ).toBeUndefined();
+  });
+
   it('maps each SMRT field kind to the right JSON-Schema primitive', () => {
     expect(fieldTypeToJsonSchema({ name: 'n', type: 'text' }).type).toBe(
       'string',
