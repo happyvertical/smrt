@@ -84,6 +84,7 @@ export {
   DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,
   MIGRATION_ADVISORY_LOCK_KEYS,
   type MigrationLock,
+  MigrationLockLostError,
   MigrationLockTimeoutError,
   MigrationLockUnsupportedError,
 } from './migration-lock.js';

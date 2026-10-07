@@ -8,16 +8,30 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   acquireMigrationLock,
   MIGRATION_ADVISORY_LOCK_KEYS,
+  MigrationLockLostError,
   MigrationLockTimeoutError,
   MigrationLockUnsupportedError,
 } from '../migration-lock.js';
 
-function fakePostgres(answers: boolean[]) {
+function fakePostgres(
+  answers: boolean[],
+  { serverVersion = 170000 }: { serverVersion?: number } = {},
+) {
   const queries: string[] = [];
+  const lockQueries: string[] = [];
+  const state = { held: true };
   const release = vi.fn(async () => {});
   const session = {
     query: vi.fn(async (sql: string) => {
       queries.push(sql);
+      if (sql.includes('server_version_num')) {
+        return { rows: [{ version: serverVersion }], rowCount: 1 };
+      }
+      if (sql.startsWith('SET ')) return { rows: [], rowCount: 0 };
+      if (sql.includes('FROM pg_locks')) {
+        return { rows: [{ held: state.held }], rowCount: 1 };
+      }
+      lockQueries.push(sql);
       const acquired = answers.length > 0 ? answers.shift() : false;
       return { rows: [{ acquired }], rowCount: 1 };
     }),
@@ -30,7 +44,7 @@ function fakePostgres(answers: boolean[]) {
     query: vi.fn(),
     acquireSession,
   } as any;
-  return { db, queries, release, acquireSession };
+  return { db, queries, lockQueries, release, acquireSession, session, state };
 }
 
 function fakeClock() {
@@ -63,14 +77,14 @@ describe('acquireMigrationLock', () => {
   });
 
   it('takes the db:migrate advisory lock on a pinned session when uncontended', async () => {
-    const { db, queries, release } = fakePostgres([true]);
+    const { db, lockQueries, release } = fakePostgres([true]);
     const onWait = vi.fn();
     const lock = await acquireMigrationLock(db, { onWait });
 
     expect(lock.held).toBe(true);
     expect(lock.waitedMs).toBe(0);
     expect(onWait).not.toHaveBeenCalled();
-    expect(queries).toEqual([
+    expect(lockQueries).toEqual([
       `SELECT pg_try_advisory_lock(${MIGRATION_ADVISORY_LOCK_KEYS}) AS acquired`,
     ]);
     expect(db.query).not.toHaveBeenCalled();
@@ -82,7 +96,7 @@ describe('acquireMigrationLock', () => {
   });
 
   it('waits for a concurrent holder, notifying once, then takes the lock', async () => {
-    const { db, queries, release } = fakePostgres([false, false, true]);
+    const { db, lockQueries, release } = fakePostgres([false, false, true]);
     const clock = fakeClock();
     const onWait = vi.fn();
 
@@ -95,7 +109,7 @@ describe('acquireMigrationLock', () => {
 
     expect(lock.held).toBe(true);
     expect(lock.waitedMs).toBe(500);
-    expect(queries).toHaveLength(3);
+    expect(lockQueries).toHaveLength(3);
     expect(onWait).toHaveBeenCalledTimes(1);
     expect(clock.sleep).toHaveBeenCalledTimes(2);
     expect(release).not.toHaveBeenCalled();
@@ -137,6 +151,60 @@ describe('acquireMigrationLock', () => {
 
     await expect(acquireMigrationLock(db)).rejects.toThrow('connection reset');
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('exempts the lock session from idle_session_timeout on PostgreSQL 14+', async () => {
+    const modern = fakePostgres([true]);
+    await (await acquireMigrationLock(modern.db)).release();
+    expect(modern.queries).toContain('SET idle_session_timeout = 0');
+
+    const legacy = fakePostgres([true], { serverVersion: 130012 });
+    await (await acquireMigrationLock(legacy.db)).release();
+    expect(legacy.queries).not.toContain('SET idle_session_timeout = 0');
+  });
+
+  it('assertHeld passes while the session still holds the lock', async () => {
+    const { db, queries } = fakePostgres([true]);
+    const lock = await acquireMigrationLock(db);
+    await expect(lock.assertHeld()).resolves.toBeUndefined();
+    expect(queries.at(-1)).toContain('pg_backend_pid()');
+    await lock.release();
+  });
+
+  it('assertHeld throws MigrationLockLostError when the lock is gone', async () => {
+    const { db, state } = fakePostgres([true]);
+    const lock = await acquireMigrationLock(db);
+    state.held = false;
+    await expect(lock.assertHeld()).rejects.toBeInstanceOf(
+      MigrationLockLostError,
+    );
+    await lock.release();
+  });
+
+  it('assertHeld throws MigrationLockLostError when the connection is dead', async () => {
+    const { db, session } = fakePostgres([true]);
+    const lock = await acquireMigrationLock(db);
+    session.query.mockRejectedValueOnce(
+      new Error('Session connection was lost'),
+    );
+    const failure = await lock.assertHeld().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(MigrationLockLostError);
+    expect((failure as Error).cause).toBeInstanceOf(Error);
+    await lock.release();
+  });
+
+  it('assertHeld fails after release and is a no-op without a lock', async () => {
+    const { db } = fakePostgres([true]);
+    const lock = await acquireMigrationLock(db);
+    await lock.release();
+    await expect(lock.assertHeld()).rejects.toBeInstanceOf(
+      MigrationLockLostError,
+    );
+
+    const sqlite = { url: 'sqlite:///tmp/app.db', query: vi.fn() } as any;
+    await expect(
+      (await acquireMigrationLock(sqlite)).assertHeld(),
+    ).resolves.toBeUndefined();
   });
 
   it('refuses a PostgreSQL adapter that cannot pin a session', async () => {

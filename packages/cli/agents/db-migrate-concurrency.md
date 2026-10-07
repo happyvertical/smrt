@@ -26,6 +26,17 @@ are written after the diff, when both runs have already planned.
 - The lock dies with its connection: a crashed or killed migrator never strands
   it. `SessionHandle.release()` runs `pg_advisory_unlock_all()` and destroys the
   connection.
+- The flip side: if the lock's own connection dies mid-run (failover, an
+  idle-connection reaper, a terminated backend) PostgreSQL frees the lock while
+  the run's pool connections carry on. The handler calls `lock.assertHeld()`
+  (a `pg_locks` probe on the pinned session) before applying and again before
+  the post-apply contract check; a lost lock fails the run with
+  `MigrationLockLostError` and exit 1, and the next run converges. The lock
+  session sets `idle_session_timeout = 0` (PostgreSQL 14+), because it idles for
+  the whole run and a role- or database-level setting would reap it first.
+- Session advisory locks need a real session: a transaction-pooling proxy
+  (PgBouncer `pool_mode=transaction`) between `db:migrate` and PostgreSQL
+  defeats them. Migrate through a direct or session-pooled connection.
 - `--dry-run` only reads and never waits. SQLite/DuckDB need no lock (no-op).
   A PostgreSQL adapter without `acquireSession()` is refused
   (`MigrationLockUnsupportedError`) rather than run unserialized.
@@ -36,7 +47,8 @@ are written after the diff, when both runs have already planned.
 
 - `packages/core/src/migrations/__tests__/migration-lock.test.ts` — contract.
 - `…/migration-lock-postgres.optional.test.ts` — real waits, timeout, release
-  on a terminated holder backend.
+  on a terminated holder backend (and the holder's `assertHeld()` failing),
+  survival under a 1s server `idle_session_timeout`.
 - `packages/cli/src/commands/__tests__/db-migrate-concurrent-postgres.test.ts`
   — two concurrent CLI runs apply one batch; a held lock blocks a run before it
   touches schema. Each run gets its own pool (`getDatabase` caches one pool per

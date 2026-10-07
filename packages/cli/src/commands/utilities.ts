@@ -1785,7 +1785,9 @@ export default testManifest;
       console.log('\n🔄 Migrating database schema...\n');
 
       let db: DatabaseInterface | undefined;
-      let migrationLock: { release(): Promise<void> } | undefined;
+      let migrationLock:
+        | { assertHeld(): Promise<void>; release(): Promise<void> }
+        | undefined;
 
       try {
         const forceSelection = resolveForceMigrationSelection(
@@ -2604,6 +2606,10 @@ export default testManifest;
           deferredForeignKeyMigrations.length;
 
         if (applySchemaMigrations && schemaChangeCount > 0) {
+          // The lock's connection can die between comparison and apply
+          // (failover, an idle-connection reaper); PostgreSQL then frees it
+          // and another run may already be applying. Stop instead (#3634).
+          await migrationLock?.assertHeld();
           const migrationDefs: MigrationDefinition[] = [];
           const migrationLogs = new Map<string, SchemaMigrationLogInfo>();
 
@@ -3125,6 +3131,10 @@ export default testManifest;
         }
 
         if (!isDryRun) {
+          // Fail the run if the lock was lost during apply, so the caller
+          // retries against a converged schema instead of reporting success
+          // for a run that was not serialized (#3634).
+          await migrationLock?.assertHeld();
           // `_smrt_jobs` / `_smrt_job_events` are dual-owned: created here from
           // the manifest, then reshaped by the framework compatibility pass.
           // On a fresh install the framework's bootstrap ran before these

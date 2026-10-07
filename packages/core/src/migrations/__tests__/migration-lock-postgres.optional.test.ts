@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   acquireMigrationLock,
   MIGRATION_ADVISORY_LOCK_KEYS,
+  MigrationLockLostError,
   MigrationLockTimeoutError,
 } from '../migration-lock.js';
 import type { DatabaseInterface } from '../types.js';
@@ -104,9 +105,34 @@ describe.skipIf(!pgUrl)('db:migrate advisory lock (real PostgreSQL)', () => {
       timeoutMs: 5000,
     });
     expect(lock.held).toBe(true);
+    // The original holder must notice it no longer has exclusivity.
+    await expect(holder.assertHeld()).rejects.toBeInstanceOf(
+      MigrationLockLostError,
+    );
+    await expect(lock.assertHeld()).resolves.toBeUndefined();
     await lock.release();
     // The holder's release on a dead connection must not throw.
     await holder.release();
+  });
+
+  it('survives a server idle_session_timeout while the run is busy elsewhere', async () => {
+    // Every connection in this pool is reaped after 1s idle, as a role- or
+    // database-level idle_session_timeout would do in production.
+    const url = new URL(pgUrl as string);
+    url.searchParams.set('options', '-c idle_session_timeout=1000');
+    const reaping = (await getDatabase({
+      type: 'postgres',
+      url: url.toString(),
+      dbid: 'migration-lock-idle-timeout',
+    } as any)) as DatabaseInterface;
+    try {
+      const lock = await acquireMigrationLock(reaping);
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await expect(lock.assertHeld()).resolves.toBeUndefined();
+      await lock.release();
+    } finally {
+      await reaping.close?.();
+    }
   });
 
   it('uses the documented lock keys', async () => {

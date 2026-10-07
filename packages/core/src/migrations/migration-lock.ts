@@ -53,6 +53,21 @@ export class MigrationLockTimeoutError extends Error {
 }
 
 /** Thrown when a PostgreSQL adapter cannot pin the connection the lock needs. */
+/**
+ * Thrown when the lock's pinned connection has died mid-run. PostgreSQL frees
+ * a session lock when its backend ends, so another migrator may already be
+ * running; the run must stop rather than keep applying unserialized.
+ */
+export class MigrationLockLostError extends Error {
+  constructor(cause?: unknown) {
+    super(
+      'The db:migrate migration lock was lost: its database connection ended mid-run, so another run may be migrating concurrently. Stopping; rerun db:migrate to converge.',
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = 'MigrationLockLostError';
+  }
+}
+
 export class MigrationLockUnsupportedError extends Error {
   constructor() {
     super(
@@ -86,6 +101,12 @@ export interface MigrationLock {
   /** Milliseconds spent waiting for another run; 0 when uncontended. */
   readonly waitedMs: number;
   /** Release the lock and its pinned connection. Idempotent. */
+  /**
+   * Confirm on the pinned connection that this run still holds the lock, and
+   * throw {@link MigrationLockLostError} if it does not. Call it before each
+   * phase that writes schema. A no-op when the engine needs no lock.
+   */
+  assertHeld(): Promise<void>;
   release(): Promise<void>;
 }
 
@@ -103,7 +124,12 @@ export async function acquireMigrationLock(
 ): Promise<MigrationLock> {
   const engine = resolveEngine(db, options.engineHint);
   if (engine !== 'postgres') {
-    return { held: false, waitedMs: 0, release: async () => {} };
+    return {
+      held: false,
+      waitedMs: 0,
+      assertHeld: async () => {},
+      release: async () => {},
+    };
   }
   if (typeof db.acquireSession !== 'function') {
     throw new MigrationLockUnsupportedError();
@@ -121,6 +147,7 @@ export async function acquireMigrationLock(
   let notifiedWait = false;
 
   try {
+    await exemptFromIdleSessionTimeout(session);
     while (true) {
       const result = await session.query(
         `SELECT pg_try_advisory_lock(${MIGRATION_ADVISORY_LOCK_KEYS}) AS acquired`,
@@ -131,6 +158,17 @@ export async function acquireMigrationLock(
         return {
           held: true,
           waitedMs,
+          assertHeld: async () => {
+            if (released) throw new MigrationLockLostError();
+            let stillHeld: boolean;
+            try {
+              const probe = await session.query(HELD_PROBE_SQL);
+              stillHeld = isTrue(probe.rows?.[0]?.held);
+            } catch (error) {
+              throw new MigrationLockLostError(error);
+            }
+            if (!stillHeld) throw new MigrationLockLostError();
+          },
           release: async () => {
             if (released) return;
             released = true;
@@ -159,6 +197,39 @@ export async function acquireMigrationLock(
   } catch (error) {
     await session.release();
     throw error;
+  }
+}
+
+/**
+ * Whether this backend still holds the db:migrate lock. Two-key advisory
+ * locks appear in `pg_locks` with `objsubid = 2`; `hashtext` returns int4, and
+ * the `::oid` cast maps a negative hash onto the same unsigned value the
+ * catalog stores.
+ */
+const HELD_PROBE_SQL = `SELECT EXISTS (
+  SELECT 1 FROM pg_locks
+   WHERE locktype = 'advisory' AND granted AND objsubid = 2
+     AND pid = pg_backend_pid()
+     AND classid = (hashtext('smrt'))::oid
+     AND objid = (hashtext('db:migrate'))::oid
+) AS held`;
+
+/**
+ * The lock session runs one statement and then sits idle for the whole
+ * migration, so a role- or database-level `idle_session_timeout` (PostgreSQL
+ * 14+) would reap it first and silently free the lock. Exempt this one
+ * session; older servers have no such setting.
+ */
+async function exemptFromIdleSessionTimeout(
+  session: Awaited<
+    ReturnType<NonNullable<DatabaseInterface['acquireSession']>>
+  >,
+): Promise<void> {
+  const version = await session.query(
+    "SELECT current_setting('server_version_num')::int AS version",
+  );
+  if (Number(version.rows?.[0]?.version) >= 140000) {
+    await session.query('SET idle_session_timeout = 0');
   }
 }
 

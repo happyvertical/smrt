@@ -63,8 +63,14 @@ const h = vi.hoisted(() => {
       ): Promise<{
         held: boolean;
         waitedMs: number;
+        assertHeld: () => Promise<void>;
         release: () => Promise<void>;
-      }> => ({ held: false, waitedMs: 0, release: async () => {} }),
+      }> => ({
+        held: false,
+        waitedMs: 0,
+        assertHeld: async () => {},
+        release: async () => {},
+      }),
     ),
     trackerGetEngine: vi.fn(() => 'sqlite'),
     trackerApplyAll: vi.fn(
@@ -734,6 +740,7 @@ describe('utility command handlers', () => {
       return {
         held: true,
         waitedMs: 0,
+        assertHeld: async () => {},
         release: async () => {
           order.push('release');
           await lockRelease();
@@ -767,7 +774,12 @@ describe('utility command handlers', () => {
     acquireMigrationLock.mockImplementationOnce(async (...args: unknown[]) => {
       const options = args[1] as { onWait?: () => void };
       options.onWait?.();
-      return { held: true, waitedMs: 4200, release: lockRelease };
+      return {
+        held: true,
+        waitedMs: 4200,
+        assertHeld: async () => {},
+        release: lockRelease,
+      };
     });
     schemaCompare.mockResolvedValue({ added_tables: [], changes: [] });
 
@@ -814,6 +826,7 @@ describe('utility command handlers', () => {
     acquireMigrationLock.mockResolvedValueOnce({
       held: true,
       waitedMs: 0,
+      assertHeld: async () => {},
       release: lockRelease,
     });
     schemaCompare.mockRejectedValueOnce(new Error('introspection failed'));
@@ -822,6 +835,37 @@ describe('utility command handlers', () => {
 
     expect(process.exitCode).toBe(1);
     expect(lockRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('db:migrate stops before applying when the migration lock was lost (#3634)', async () => {
+    configureMigrate();
+    acquireMigrationLock.mockResolvedValueOnce({
+      held: true,
+      waitedMs: 0,
+      assertHeld: async () => {
+        throw new Error('The db:migrate migration lock was lost');
+      },
+      release: lockRelease,
+    });
+    schemaCompare.mockResolvedValue({
+      added_tables: [],
+      changes: [
+        {
+          type: 'add_column',
+          table: 'contents',
+          name: 'subtitle',
+          column: { type: 'TEXT' },
+          sql: 'ALTER TABLE contents ADD COLUMN subtitle TEXT',
+        },
+      ],
+    });
+
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
+
+    expect(process.exitCode).toBe(1);
+    expect(trackerApplyAll).not.toHaveBeenCalled();
+    expect(lockRelease).toHaveBeenCalledTimes(1);
+    expect(errored()).toContain('migration lock was lost');
   });
 
   it('db:migrate reports a failed migration batch', async () => {

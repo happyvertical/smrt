@@ -211,6 +211,7 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
     acquireMigrationLock: vi.fn(async () => ({
       held: false,
       waitedMs: 0,
+      assertHeld: async () => {},
       release: async () => {},
     })),
     buildConcurrentIndexPlan: actual.buildConcurrentIndexPlan,
