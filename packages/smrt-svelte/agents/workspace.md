@@ -45,6 +45,14 @@ App settings, tenant names and environment badges wrap within narrow drawers.
 system bars never clip wrapped chips. Custom bars must allow this flex child
 to shrink; use safe alignment if aligning its contents to the end.
 
+Sidebar-only shells may set `top: false`. In that mode the configured brand is
+shown at the top of the expanded tenant panel as well as in the compact rail.
+Use `tenantRailFooter` for a control pinned below collapsed navigation; it sits
+outside the rail's scroll clip so menus can open over the workspace. Pair it
+with `WorkspaceAccountMenu compact` for an avatar-only trigger that retains the
+full account identity as its accessible name. Keep the ordinary
+`tenantFooter` for the expanded panel.
+
 ### Responsive chrome, viewport defaults, resizable edges
 
 The root grid has five rows: `header` · top edge · body · bottom edge · phone
