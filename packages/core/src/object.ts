@@ -4945,10 +4945,12 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Create an instance of the correct class and load by ID
-    const relatedInstance = new actualClassInfo.constructor(this.options);
+    const relatedInstance = new actualClassInfo.constructor({
+      ...this.options,
+      id: foreignKeyValue as string,
+      _skipLoad: false,
+    });
     await relatedInstance.initialize();
-    relatedInstance.id = foreignKeyValue as string;
-    await relatedInstance.loadFromId();
 
     // `loadFromId()` deliberately treats a missing row as a no-op. A
     // relationship loader must not return that unpersisted constructor shell:
