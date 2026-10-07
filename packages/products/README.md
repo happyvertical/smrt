@@ -53,7 +53,7 @@ await products.addAsset(product.id!, hero, 'gallery', 1);
 
 ### Server exports (`@happyvertical/smrt-products/server`, Node only)
 
-The root entry is browser-safe. The server bootstrap (express, `startRestServer`, MCP generator) lives in the `./server` subpath; Node resolution of the root also re-exports it, so existing Node imports keep working.
+The root entry is browser-safe. The server bootstrap (express, `startRestServer`, MCP generator) lives in the `./server` subpath; Node resolution of the root also re-exports it at runtime, so existing Node imports keep working; TypeScript `moduleResolution: "bundler"` ignores the `node` condition, so import from `/server` in typed code.
 
 | Export | Description |
 |--------|------------|

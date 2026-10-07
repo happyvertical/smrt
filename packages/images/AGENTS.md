@@ -5,7 +5,7 @@ Image management with AI categorization, editing, and metadata extraction. Exten
 ## Entry points
 
 - Root (`@happyvertical/smrt-images`) is **browser-safe** (bundle-gate enforced, #3628): `Image`, `ImageCollection`, `ImageSearch`, `UpstreamManager`, prompts, media-bundle persistence, and the pure `adjust` helpers. It must not reach sharp, `node:*`, `@happyvertical/images` (resvg), or `@happyvertical/ai`, even through a lazy `import()` (bundlers follow it).
-- Node-only services (`src/index.node.ts`) resolve from the root through the `node` export condition and from `@happyvertical/smrt-images/node`: `ImageEditor`, `ImageCategorizer`, `ImageDeriver`, `ImageMetadataExtractor`, `applyImageAdjustments` (`src/adjust-render.ts`), plus the whole root. Browser/bundler resolution gets the safe root, so those names are absent there. Put new sharp/fs/AI-SDK code behind it.
+- Node-only services (`src/index.node.ts`) resolve from the root through the `node` export condition and from `@happyvertical/smrt-images/node`: `ImageEditor`, `ImageCategorizer`, `ImageDeriver`, `ImageMetadataExtractor`, `applyImageAdjustments` (`src/adjust-render.ts`), plus the whole root. Browser/bundler resolution gets the safe root, so those names are absent there; TS `moduleResolution: "bundler"` also reads the safe root's types, so import them from `/node` in typed code. Put new sharp/fs/AI-SDK code behind it.
 
 ## Models
 
