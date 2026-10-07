@@ -13,12 +13,16 @@
   ],
   "exports": {
     ".": {
+      "node": {
+        "types": "./dist/index.node.d.ts",
+        "import": "./dist/index.node.js"
+      },
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./node": {
-      "types": "./dist/node.d.ts",
-      "import": "./dist/node.js"
+      "types": "./dist/index.node.d.ts",
+      "import": "./dist/index.node.js"
     },
     "./ui": {
       "types": "./dist/ui.d.ts",
