@@ -94,11 +94,11 @@ The form playground previews handle save, add-contact, and remove-contact intent
 
 ## Selectors (#3602)
 
-`CustomerSelect` and `VendorSelect` are field-sized pickers over the smrt-ui
-`Combobox` (ARIA 1.2 combobox, arrow keys, `aria-activedescendant`), sharing one
-internal `PartySelect`. They mirror the props of smrt-svelte's `RelationInput`
-(#3610) without depending on it: commerce stays free of the `smrt-svelte`
-integration package (see [commercial UI](commercial-ui.md)).
+`CustomerSelect` and `VendorSelect` are field-sized pickers built on the shared
+smrt-ui `RelationInput` (`@happyvertical/smrt-ui/forms`, ARIA 1.2 combobox),
+through one internal `PartySelect` adapter that maps party DTOs to relation
+options and localizes the field's text. Search, resolve, debounce, stale-result
+and create handling live in `RelationInput`, not here.
 
 | Prop | Meaning |
 | --- | --- |
