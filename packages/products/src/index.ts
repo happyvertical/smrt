@@ -24,44 +24,7 @@ import './__smrt-register__.js';
 export { demonstrateClient } from './client';
 // Re-export everything from the lib directory
 export * from './lib/index';
-export { generateMCPServer } from './mcp';
-// Legacy exports for backward compatibility
-export { startServer } from './server';
 
-/**
- * Start all services for demonstration (legacy function)
- */
-export async function startAll() {
-  const { startServer } = await import('./server');
-  const { generateMCPServer } = await import('./mcp');
-
-  console.log('🚀 Starting SMRT Template - Full Demo\n');
-
-  // Start REST API server
-  console.log('1️⃣ Starting REST API...');
-  const server = await startServer();
-
-  // Start MCP server
-  console.log('\n2️⃣ Starting MCP Server...');
-  const mcp = await generateMCPServer();
-
-  console.log('\n✨ All services running!');
-  console.log('\n🎯 What was auto-generated:');
-  console.log('   • REST endpoints for Product and Category');
-  console.log('   • TypeScript client with full type safety');
-  console.log('   • MCP tools for AI model integration');
-  console.log('   • OpenAPI/Swagger documentation');
-  console.log('   • Live reloading during development');
-
-  console.log('\n📝 Next steps:');
-  console.log('   • Modify src/lib/models/ to add new fields');
-  console.log('   • Add new @smrt() classes to auto-generate more APIs');
-  console.log('   • Run bun run dev to see live updates');
-
-  return { server, mcp };
-}
-
-// Auto-start if running directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  startAll().catch(console.error);
-}
+// The server bootstrap (`startServer`, `generateMCPServer`, `startAll`) lives in
+// the Node-only `./server` subpath so this entry stays browser-safe (#3616).
+// Node resolution of `.` re-exports it via `index.node.ts`.

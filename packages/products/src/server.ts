@@ -8,6 +8,7 @@
 import { startRestServer } from '@happyvertical/smrt-core';
 import { Category } from './lib/models/Category';
 import { Product } from './lib/models/Product';
+import { generateMCPServer } from './mcp';
 
 /**
  * Reference auth stub (#1540). Generated routes are FAIL-CLOSED: without an
@@ -78,9 +79,39 @@ async function startServer() {
   return { shutdown };
 }
 
+/**
+ * Start all services for demonstration (legacy function)
+ */
+async function startAll() {
+  console.log('🚀 Starting SMRT Template - Full Demo\n');
+
+  // Start REST API server
+  console.log('1️⃣ Starting REST API...');
+  const server = await startServer();
+
+  // Start MCP server
+  console.log('\n2️⃣ Starting MCP Server...');
+  const mcp = await generateMCPServer();
+
+  console.log('\n✨ All services running!');
+  console.log('\n🎯 What was auto-generated:');
+  console.log('   • REST endpoints for Product and Category');
+  console.log('   • TypeScript client with full type safety');
+  console.log('   • MCP tools for AI model integration');
+  console.log('   • OpenAPI/Swagger documentation');
+  console.log('   • Live reloading during development');
+
+  console.log('\n📝 Next steps:');
+  console.log('   • Modify src/lib/models/ to add new fields');
+  console.log('   • Add new @smrt() classes to auto-generate more APIs');
+  console.log('   • Run bun run dev to see live updates');
+
+  return { server, mcp };
+}
+
 // Start if running directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   startServer().catch(console.error);
 }
 
-export { startServer };
+export { generateMCPServer, startAll, startServer };
