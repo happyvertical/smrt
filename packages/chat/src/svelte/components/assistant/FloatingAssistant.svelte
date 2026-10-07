@@ -44,6 +44,7 @@ let {
 
 let status = $state<AssistantStatus>({ state: 'idle', label: null });
 let run = $state<AssistantRun | null>(null);
+let attentionRequired = $state(false);
 let launcher: HTMLButtonElement | undefined = $state();
 let panel: HTMLElement | undefined = $state();
 
@@ -56,7 +57,7 @@ function open() {
 }
 
 function collapse() {
-  if (!expanded) return;
+  if (!expanded || attentionRequired) return;
   const focusWasInPanel =
     typeof document !== 'undefined' &&
     !!panel?.contains(document.activeElement);
@@ -80,6 +81,7 @@ function handleRun(next: AssistantRun | null) {
 function handleAttentionChange(required: boolean) {
   // Previewed data actions and pending browser-tool calls must remain
   // reachable. This changes visibility only; it never confirms an action.
+  attentionRequired = required;
   if (required) open();
   onattentionchange?.(required);
 }
