@@ -30,6 +30,8 @@ executes the source.
   column and drops `enum`); an enum with a computed member now yields `json`
   instead of a partial string alias. The alias map is project-wide by
   bare name, so two same-named types in one package collide (last file wins).
+  String enum values retain their decoded quotes, backslashes, whitespace
+  escapes, and Unicode exactly through alias resolution and manifest emission.
 - `parseFile` / `parseSource` — parse a single file or a source string to a
   `FileScanResult` (classes, errors, type aliases, SMRT imports). Each class
   carries the parser's `bodyStart` offset; core's library build inserts its
