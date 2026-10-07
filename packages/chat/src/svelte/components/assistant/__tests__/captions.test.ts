@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen } from '@happyvertical/smrt-vitest/svelte';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import HeardCaptions from '../captions/HeardCaptions.svelte';
 import SpokenCaptions from '../captions/SpokenCaptions.svelte';
 
@@ -15,6 +15,18 @@ const lines = [
 ];
 
 describe('caption components', () => {
+  // jsdom has no layout observer; real sizing and cleanup are covered in Chrome.
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
   it.each([
     [HeardCaptions, 'Vous avez dit'],
     [SpokenCaptions, 'Assistant parle'],

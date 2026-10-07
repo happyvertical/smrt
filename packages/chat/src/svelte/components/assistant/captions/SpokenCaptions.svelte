@@ -1,5 +1,6 @@
 <script lang="ts">
 import { getContext } from 'svelte';
+import CaptionOverlay from './CaptionOverlay.svelte';
 import { CAPTION_OVERLAY } from './caption-overlay-context.js';
 import type { CaptionLine } from './caption-state.svelte.js';
 
@@ -33,8 +34,8 @@ const inOverlay = getContext<boolean>(CAPTION_OVERLAY) ?? false;
 const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
 </script>
 
-{#if enabled && (visibleLines.length > 0 || interim)}
-  <section class:bottom={placement === 'bottom' && !inOverlay} class="spoken-captions" aria-label={speakerLabel}>
+{#snippet surface()}
+  <section class="spoken-captions" aria-label={speakerLabel}>
     <p class="speaker"><span aria-hidden="true">◈</span> {speakerLabel}</p>
     <div class="caption-lines" aria-live={announce ? 'polite' : 'off'} aria-atomic="false">
       {#each visibleLines as line (line.id)}
@@ -45,11 +46,18 @@ const visibleLines = $derived(lines.slice(-Math.max(1, maxLines)));
       <p class="interim" aria-hidden="true">{interim}</p>
     {/if}
   </section>
+{/snippet}
+
+{#if enabled && (visibleLines.length > 0 || interim)}
+  {#if placement === 'bottom' && !inOverlay}
+    <CaptionOverlay>{@render surface()}</CaptionOverlay>
+  {:else}
+    {@render surface()}
+  {/if}
 {/if}
 
 <style>
   .spoken-captions { box-sizing: border-box; min-inline-size: 0; max-inline-size: min(42rem, calc(100vw - 2rem)); overflow-wrap: anywhere; padding: .7rem .9rem; border: 2px solid var(--smrt-color-outline, #533b72); background: var(--smrt-color-inverse-surface, #221c2c); color: var(--smrt-color-inverse-on-surface, #fff7ff); border-radius: 1rem; box-shadow: var(--smrt-elevation-4, 0 .35rem 1.2rem color-mix(in srgb, var(--smrt-color-shadow, black) 28%, transparent)); }
-  .bottom { position: fixed; z-index: 21; inset-inline: 1rem; inset-block-end: max(1rem, env(safe-area-inset-bottom)); margin-inline: auto; }
   .speaker { margin: 0 0 .3rem; font-weight: var(--smrt-typography-weight-bold, 700); font-size: var(--smrt-typography-label-medium-size, .8rem); }
   .caption-lines p, .interim { margin: .18rem 0 0; }
   .interim { opacity: .8; }

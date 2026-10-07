@@ -158,7 +158,10 @@ viewport positioning context (outside transformed or clipped ancestors), and
 must use one root for simultaneous captions in a group; separate roots do not
 coordinate with one another. Supply a localized `label` for the group.
 
-A single standalone `placement="bottom"` caption remains supported. Independent
+A single standalone `placement="bottom"` caption internally uses the same
+`CaptionOverlay`, including its viewport height bound, keyboard scrolling
+buttons, and observer cleanup. Long interim text or multiple wrapped final lines
+remain reachable without adding a host wrapper. Independent
 `placement="inline"` captions retain normal-flow behavior without requiring the
 wrapper. Do not mount several standalone bottom surfaces at the same viewport
 anchor: compose them in `CaptionOverlay` instead.
