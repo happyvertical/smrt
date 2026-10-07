@@ -64,6 +64,26 @@ class IsoOrder extends SmrtObject {
   }
 }
 
+// Self-referencing fixture for guarding against parent identity/options being
+// mistaken for a missing related row.
+@smrt()
+class IsoNode extends SmrtObject {
+  @field({ type: 'text', nullable: true })
+  tenantId: string | null = null;
+
+  @foreignKey('IsoNode')
+  parentId: string = '';
+
+  name: string = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.parentId) this.parentId = options.parentId;
+    if (options.name) this.name = options.name;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+  }
+}
+
 // manyToMany fixtures — a tenant-scoped "Product" linked to "Tag"s through a
 // plain junction table (consumer-owned, no SmrtObject backing).
 @smrt()
@@ -171,6 +191,38 @@ describe('Issue #1321: tenant isolation on relationship loading', () => {
 
       expect(loaded).not.toBeNull();
       expect(loaded.id).toBe(customer.id);
+    });
+
+    it('returns and caches null when the target row is unavailable', async () => {
+      const missingId = randomUUID();
+      const order = new IsoOrder({
+        tenantId: 'tenant-a',
+        customerId: missingId,
+        db,
+      });
+      await order.initialize();
+
+      await expect(order.loadRelated('customerId')).resolves.toBeNull();
+      await expect(order.loadRelated('customerId')).resolves.toBeNull();
+    });
+
+    it('does not return a persisted self-referencing parent for a missing target', async () => {
+      const missingId = randomUUID();
+      const node = new IsoNode({
+        tenantId: 'tenant-a',
+        name: 'Existing node',
+        db,
+      });
+      await node.initialize();
+      await node.save();
+
+      const loadedNode = new IsoNode({ id: node.id, db });
+      await loadedNode.initialize();
+      expect(loadedNode.isPersisted).toBe(true);
+      loadedNode.parentId = missingId;
+
+      await expect(loadedNode.loadRelated('parentId')).resolves.toBeNull();
+      await expect(loadedNode.loadRelated('parentId')).resolves.toBeNull();
     });
 
     it('is a no-op when the target has a null tenant (global model)', async () => {

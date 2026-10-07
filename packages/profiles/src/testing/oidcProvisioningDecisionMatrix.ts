@@ -853,7 +853,7 @@ export const OIDC_PROVISIONING_DECISION_MATRIX = [
       profiles: expectation({
         outcome: 'rejected',
         publicError: {
-          messageIncludes: 'provisioning result was not found',
+          messageIncludes: 'exact OIDC identity has no linked Profile',
         },
         selectedProfile: null,
       }),
