@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -166,6 +167,7 @@ export class Payment extends SmrtObject {
   /**
    * Currency code (ISO 4217)
    */
+  @field({ ui: { widget: 'currency' } })
   currency: string = 'USD';
 
   /**
@@ -202,6 +204,7 @@ export class Payment extends SmrtObject {
   /**
    * Notes about the payment
    */
+  @field({ ui: { widget: 'textarea' } })
   notes: string = '';
 
   // ============================================================================

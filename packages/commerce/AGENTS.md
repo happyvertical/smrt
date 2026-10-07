@@ -176,6 +176,10 @@ for usage.
 
 ## Commercial UI
 
+`CustomerSelect`/`VendorSelect` are the registered selectors for Customer and
+Vendor (`selects` in `src/ui.ts`); models carry `ui.widget` hints. See
+[customer/vendor UI](agents/customer-vendor-ui.md#selectors-3602).
+
 See [commercial UI composition](agents/commercial-ui.md) for native form recovery, amount compatibility and backend ownership. Package-owned guides under `agents/` ship with the package.
 
 ## Quote and estimate UI

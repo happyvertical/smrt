@@ -531,6 +531,40 @@ native forms, recovery, amount units and consumer adoption, plus the focused
 [customer/vendor](agents/customer-vendor-ui.md) and
 [quotation](agents/quote-ui.md) contracts for selector restrictions.
 
+## Customer and vendor selectors
+
+`CustomerSelect` and `VendorSelect` from `@happyvertical/smrt-commerce/svelte`
+are searchable, field-sized pickers for a customer or vendor relation field.
+They are registered in `COMMERCE_UI_SLOTS` with `selects:
+'@happyvertical/smrt-commerce:Customer'` / `':Vendor'`, so generic forms (via
+`findSelectorFor` over the manifest's `uiSelectors`) use them for any
+`@foreignKey` or `@crossPackageRef` field targeting those models.
+
+They are presentation only. The caller owns the data: `search(query)` returns
+the existing party DTOs (`CustomerDisplayData` / `VendorDisplayData`, whose
+`profile.name` is the label), and `resolve(id)` returns the record behind the
+current value. Each row shows the profile name with status (and customer type).
+The committed id, never the name, posts under `name`. Pass `onCreate` to offer a
+"New customer" / "New vendor" action; it receives the searched text, and a
+returned record is selected.
+
+```svelte
+<CustomerSelect
+  name="customerId"
+  bind:value={customerId}
+  search={(query) => customers.search(query)}
+  resolve={(id) => customers.byId(id)}
+  onCreate={(query) => openCustomerDialog(query)}
+/>
+```
+
+The same models carry `@field({ ui: { widget } })` hints in the manifest:
+`textarea` on `Contract` (and subclass) `terms` and `notes`, `Customer`/`Vendor`
+`notes`, and `Invoice` notes and terms; `currency` (an ISO 4217 code picker) on
+`Contract`, `Vendor`, `Invoice` and `Payment` `currency`; `email`/`phone` on
+`Vendor.defaultContactEmail`/`defaultContactPhone`. See
+[customer and vendor selectors](agents/customer-vendor-ui.md#selectors-3602).
+
 ## Invoice preparation UI
 
 `InvoiceLineEditor` and `InvoiceEditor` from `@happyvertical/smrt-commerce/svelte`

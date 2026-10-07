@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -277,6 +278,7 @@ export class Invoice extends SmrtObject {
   /**
    * Currency code (ISO 4217)
    */
+  @field({ ui: { widget: 'currency' } })
   currency: string = 'CAD';
 
   // ============================================================================
@@ -369,16 +371,19 @@ export class Invoice extends SmrtObject {
   /**
    * Internal notes (not shown to customer)
    */
+  @field({ ui: { widget: 'textarea' } })
   notes: string = '';
 
   /**
    * Notes shown to customer on invoice
    */
+  @field({ ui: { widget: 'textarea' } })
   customerNotes: string = '';
 
   /**
    * Payment terms text
    */
+  @field({ ui: { widget: 'textarea' } })
   terms: string = '';
 
   constructor(options: InvoiceOptions = {}) {
