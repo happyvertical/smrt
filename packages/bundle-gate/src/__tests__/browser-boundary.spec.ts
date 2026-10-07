@@ -18,6 +18,7 @@
  * `attributeFindings`): a defect in smrt-core fails smrt-core, not every
  * package that depends on it.
  */
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -37,9 +38,34 @@ const workspaceRoot = path.resolve(
 );
 
 describe('browser reachability of model package roots', () => {
+  it('declares every model package as a workspace dependency', () => {
+    // Turbo builds `dist` only for declared dependencies (`^build`) and
+    // selects this package for changed-package CI runs through them, so the
+    // discovered list and package.json must not drift apart.
+    const manifest = JSON.parse(
+      readFileSync(
+        path.resolve(workspaceRoot, 'packages/bundle-gate/package.json'),
+        'utf8',
+      ),
+    ) as { devDependencies: Record<string, string> };
+    const missing = discoverModelPackages(workspaceRoot)
+      .map((p) => p.name)
+      .filter((name) => manifest.devDependencies[name] !== 'workspace:*');
+    expect(
+      missing,
+      `add as "workspace:*" devDependencies of @happyvertical/smrt-bundle-gate: ${missing.join(', ')}`,
+    ).toEqual([]);
+  });
+
   it('matches the expected-failures ratchet', async () => {
     const packages = discoverModelPackages(workspaceRoot);
     expect(packages.length).toBeGreaterThan(20);
+
+    const unbuilt = packages.filter((p) => !existsSync(p.entry));
+    expect(
+      unbuilt.map((p) => p.name),
+      'root entries missing; build the packages first (pnpm build)',
+    ).toEqual([]);
 
     const raw = new Map<string, Finding[]>();
     for (const pkg of packages) {

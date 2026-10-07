@@ -550,24 +550,135 @@ importers:
 
   packages/bundle-gate:
     devDependencies:
+      '@happyvertical/smrt-ads':
+        specifier: workspace:*
+        version: link:../ads
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@happyvertical/smrt-analytics':
+        specifier: workspace:*
+        version: link:../analytics
+      '@happyvertical/smrt-assets':
+        specifier: workspace:*
+        version: link:../assets
       '@happyvertical/smrt-chat':
         specifier: workspace:*
         version: link:../chat
       '@happyvertical/smrt-commerce':
         specifier: workspace:*
         version: link:../commerce
+      '@happyvertical/smrt-content':
+        specifier: workspace:*
+        version: link:../content
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-events':
+        specifier: workspace:*
+        version: link:../events
+      '@happyvertical/smrt-expenses':
+        specifier: workspace:*
+        version: link:../expenses
+      '@happyvertical/smrt-facts':
+        specifier: workspace:*
+        version: link:../facts
+      '@happyvertical/smrt-features':
+        specifier: workspace:*
+        version: link:../features
       '@happyvertical/smrt-fields':
         specifier: workspace:*
         version: link:../fields
+      '@happyvertical/smrt-human-resources':
+        specifier: workspace:*
+        version: link:../human-resources
+      '@happyvertical/smrt-images':
+        specifier: workspace:*
+        version: link:../images
+      '@happyvertical/smrt-inventory':
+        specifier: workspace:*
+        version: link:../inventory
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
+      '@happyvertical/smrt-languages':
+        specifier: workspace:*
+        version: link:../languages
+      '@happyvertical/smrt-ledgers':
+        specifier: workspace:*
+        version: link:../ledgers
+      '@happyvertical/smrt-manufacturing':
+        specifier: workspace:*
+        version: link:../manufacturing
+      '@happyvertical/smrt-marketing':
+        specifier: workspace:*
+        version: link:../marketing
       '@happyvertical/smrt-messages':
         specifier: workspace:*
         version: link:../messages
       '@happyvertical/smrt-personas':
         specifier: workspace:*
         version: link:../personas
+      '@happyvertical/smrt-places':
+        specifier: workspace:*
+        version: link:../places
+      '@happyvertical/smrt-playbooks':
+        specifier: workspace:*
+        version: link:../playbooks
+      '@happyvertical/smrt-products':
+        specifier: workspace:*
+        version: link:../products
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
+      '@happyvertical/smrt-projects':
+        specifier: workspace:*
+        version: link:../projects
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
+      '@happyvertical/smrt-properties':
+        specifier: workspace:*
+        version: link:../properties
+      '@happyvertical/smrt-reports':
+        specifier: workspace:*
+        version: link:../reports
+      '@happyvertical/smrt-sales':
+        specifier: workspace:*
+        version: link:../sales
+      '@happyvertical/smrt-secrets':
+        specifier: workspace:*
+        version: link:../secrets
+      '@happyvertical/smrt-sites':
+        specifier: workspace:*
+        version: link:../sites
+      '@happyvertical/smrt-social':
+        specifier: workspace:*
+        version: link:../social
+      '@happyvertical/smrt-subscriptions':
+        specifier: workspace:*
+        version: link:../subscriptions
+      '@happyvertical/smrt-support':
+        specifier: workspace:*
+        version: link:../support
+      '@happyvertical/smrt-tags':
+        specifier: workspace:*
+        version: link:../tags
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/smrt-timesheets':
+        specifier: workspace:*
+        version: link:../timesheets
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../users
+      '@happyvertical/smrt-video':
+        specifier: workspace:*
+        version: link:../video
+      '@happyvertical/smrt-voice':
+        specifier: workspace:*
+        version: link:../voice
       '@libsql/client':
         specifier: 0.18.0
         version: 0.18.0

@@ -37,6 +37,11 @@ for a browser target and fails when Node-only modules are reachable.
   `config`, `smrt-dev-mcp`, `mcp-*`, UI packages, asset providers, templates)
   declare no `@smrt()` objects, so they are never selected; private packages
   (this one, fixtures, mobile) are skipped.
+- **Dependencies:** every model package is a `workspace:*` devDependency of
+  this package so turbo builds its `dist` (`^build`), the changed-package CI
+  filter selects the gate when any of them changes, and the cache hash covers
+  them. A spec fails with the missing names if a new model package is not
+  added (`pnpm install` afterwards).
 - **Build:** one `vite build` per package root, resolved through its
   `exports['.']` with browser conditions (`browser`, `module`, `import`,
   `production`, `svelte`, `default`), so `smrt-core` resolves to
