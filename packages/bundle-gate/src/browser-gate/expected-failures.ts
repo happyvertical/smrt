@@ -15,9 +15,8 @@ import type { ExpectedFailure } from './boundary.js';
  */
 export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
   '@happyvertical/smrt-agents': {
-    issue: '#3624, #3625, #3626',
-    reason:
-      'node:crypto in root; smrt-config (cosmiconfig, jiti); core migrations (node:os)',
+    issue: '#3624, #3626',
+    reason: 'node:crypto in root; core migrations (node:os)',
   },
   '@happyvertical/smrt-chat': {
     issue: '#3624, #3625',
@@ -35,9 +34,8 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
       'node:crypto; documents/spider/files/images/ai SDK graph (crawlee, undici, googleapis, native addons); CJS parse error',
   },
   '@happyvertical/smrt-core': {
-    issue: '#3614, #2838',
-    reason:
-      'browser entry omits decorators/helpers dependents import; reaches pg, cosmiconfig, jiti, node:fs via sql/config/registry',
+    issue: '#3614',
+    reason: 'browser entry omits decorators/helpers dependents import',
   },
   '@happyvertical/smrt-events': {
     issue: '#3624, #3625',
@@ -71,8 +69,8 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
       'worker_threads runner (the edge commerce inherits), node:events/crypto, bull/bullmq/cloud-tasks SDK graph',
   },
   '@happyvertical/smrt-languages': {
-    issue: '#3624, #3625',
-    reason: 'node:crypto; smrt-config (cosmiconfig, jiti)',
+    issue: '#3624',
+    reason: 'node:crypto',
   },
   '@happyvertical/smrt-ledgers': {
     issue: '#3626',
@@ -81,10 +79,6 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
   '@happyvertical/smrt-places': {
     issue: '#3627',
     reason: 'geo -> cache -> redis, node:zlib; url-signature node:crypto',
-  },
-  '@happyvertical/smrt-playbooks': {
-    issue: '#3625',
-    reason: 'smrt-config (cosmiconfig, jiti)',
   },
   '@happyvertical/smrt-products': {
     issue: '#3616, #3626',
@@ -96,13 +90,8 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
     reason: 'node:crypto in root; core migrations (node:os)',
   },
   '@happyvertical/smrt-projects': {
-    issue: '#3624, #3625, #3626, #3627',
-    reason:
-      'node:crypto/async_hooks; smrt-config; core migrations; repos and ai SDKs',
-  },
-  '@happyvertical/smrt-prompts': {
-    issue: '#3625',
-    reason: 'smrt-config (cosmiconfig, jiti)',
+    issue: '#3624, #3626, #3627',
+    reason: 'node:crypto/async_hooks; core migrations; repos and ai SDKs',
   },
   '@happyvertical/smrt-reports': {
     issue: '#3624, #3625',
@@ -137,8 +126,8 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
     reason: 'node:crypto',
   },
   '@happyvertical/smrt-users': {
-    issue: '#3624, #3625, #3626',
-    reason: 'node:crypto/async_hooks; smrt-config; core migrations',
+    issue: '#3624, #3626',
+    reason: 'node:crypto/async_hooks; core migrations',
   },
   '@happyvertical/smrt-video': {
     issue: '#3627',

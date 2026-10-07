@@ -457,6 +457,12 @@ jobs:
       - name: Run workbench browser test
         run: pnpm --dir packages/smrt-workbench/host test:e2e
 
+      # Loads core's built browser entry in Chromium, so a Node-only module
+      # reached from it (pg, Buffer, node: built-ins) fails here, not in a
+      # downstream page (#2838).
+      - name: Run core browser entry evaluation
+        run: pnpm --filter @happyvertical/smrt-core test:browser
+
       - name: Upload mobile shell failure evidence
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

@@ -59,6 +59,9 @@ importer chain. Failures are attributed to the package that owns the fix.
 Known violations are in `src/browser-gate/expected-failures.ts` with issue
 numbers; the gate fails on unexpected breakage AND stale entries, so a fix PR
 removes its own entry. Never add an entry without a tracking issue. See README.
+Core's own graph is additionally held to zero forbidden modules regardless of its
+ratchet entry (#2838); core's `pnpm test:browser` evaluates the same entry in
+Chromium.
 
 ## Ownership and budget updates
 
