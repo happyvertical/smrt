@@ -252,7 +252,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   const showPhoneTop = $derived(
     isPhone && (Boolean(phoneTopBar) || showDefaultPhoneTenantOpener),
   );
-  const showHeader = $derived(Boolean(header) && !showPhoneTop);
+  const showHeader = $derived(
+    Boolean(header) && !(isPhone && Boolean(phoneTopBar)),
+  );
   const bottomBar = $derived<BottomBarMode>(
     isPhone && phoneBottomBar
       ? bottomBarMode({ formActions, keyboardOpen })

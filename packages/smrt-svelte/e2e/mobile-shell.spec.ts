@@ -248,11 +248,14 @@ test('continuous drawer animations do not block phone focus', async ({
     .toBe(true);
 });
 
-test('a headerless default phone shell keeps one supported menu opener', async ({
+test('a top-hidden default phone shell keeps its header and one supported menu opener', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/?top=hidden&left=collapsed');
+  await page.goto('/?top=hidden&left=collapsed&header=1');
+  await expect(page.getByTestId('admin-shell-header')).toHaveText(
+    'Consumer header',
+  );
   const menu = page.getByRole('button', { name: 'Menu', exact: true });
   await expect(menu).toHaveCount(1);
   await expect(menu).toHaveAttribute(

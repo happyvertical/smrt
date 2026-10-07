@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
-  it('keeps a default phone menu opener when the top edge is unavailable', async () => {
+  it('keeps a consumer header and default phone menu opener when the top edge is unavailable', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query.includes('max-width'),
       addEventListener() {},
@@ -52,6 +52,7 @@ describe('AdminShell', () => {
       target: container,
       props: {
         state,
+        header: textSnippet('consumer header'),
         children: textSnippet('main'),
         tenantPanel: textSnippet('tenant navigation'),
       },
@@ -62,6 +63,9 @@ describe('AdminShell', () => {
         'button[aria-label="Menu"]',
       );
       expect(menu).not.toBeNull();
+      expect(
+        container.querySelector('[data-testid="admin-shell-header"]'),
+      ).toHaveTextContent('consumer header');
       expect(menu).toHaveAttribute('aria-expanded', 'false');
       expect(menu).toHaveAttribute(
         'aria-controls',
