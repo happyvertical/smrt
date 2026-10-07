@@ -4,7 +4,7 @@
  * Uses SHA-256 to detect when content has changed and embeddings need regeneration.
  */
 
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../utils/sha256.js';
 
 /**
  * Content hasher for embedding change detection
@@ -17,7 +17,7 @@ export class ContentHasher {
    * @returns Hex-encoded hash string
    */
   static hash(content: string): string {
-    return createHash('sha256').update(content).digest('hex');
+    return sha256Hex(content);
   }
 
   /**

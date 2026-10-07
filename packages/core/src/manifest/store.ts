@@ -139,7 +139,7 @@ export function shouldLoadCoreTestManifest(): boolean {
 // ── Node builtins access ─────────────────────────────────────────────────
 
 /**
- * Resolve Node's built-in `fs`/`path`/`url` modules without a static import.
+ * Resolve Node's built-in `fs`/`path`/`url`/`module` modules without a static import.
  *
  * `process.getBuiltinModule()` is a Node 22+ API that returns the live
  * built-in without going through the module loader. This avoids Vite's
@@ -147,6 +147,11 @@ export function shouldLoadCoreTestManifest(): boolean {
  * "externalized for browser" warnings in bundled browser builds.
  */
 export function getNodeBuiltins() {
+  // A browser bundle has no `process` global at all; reading a property of it
+  // would throw rather than report "no Node host" (#2838).
+  if (typeof process === 'undefined') {
+    return null;
+  }
   const getBuiltinModule = (
     process as typeof process & {
       getBuiltinModule?: (id: string) => unknown;
@@ -165,12 +170,15 @@ export function getNodeBuiltins() {
   const url = getBuiltinModule('node:url') as
     | typeof import('node:url')
     | undefined;
+  const module = getBuiltinModule('node:module') as
+    | typeof import('node:module')
+    | undefined;
 
-  if (!fs || !path || !url) {
+  if (!fs || !path || !url || !module) {
     return null;
   }
 
-  return { fs, path, url };
+  return { fs, path, url, module };
 }
 
 // ── globalThis cache accessors ───────────────────────────────────────────

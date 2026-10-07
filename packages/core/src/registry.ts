@@ -50,6 +50,7 @@ import type {
 } from './embeddings/types';
 import type { ValidationError } from './errors';
 import { ConfigurationError } from './errors';
+import { discoverInstalledSmrtPackages } from './host.js';
 import { getPackageName } from './manifest/manifest-loader.js';
 import { getDefaultCompositeSource } from './manifest/sources/composite.js';
 import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.js';
@@ -238,12 +239,12 @@ export type {
 // The SmartObjectConfig, RelationshipType, and RelationshipMetadata types
 // are re-exported above for backward compatibility.
 
-type ManifestLoaderModule = typeof import('./manifest/index.js');
+type ManifestLoaderModule = typeof import('./manifest/manifest-loader.js');
 
 function getManifestLoaderSpecifier(): string {
   return import.meta.url.endsWith('.ts')
-    ? './manifest/index.ts'
-    : './manifest/index.js';
+    ? './manifest/manifest-loader.ts'
+    : './manifest/manifest-loader.js';
 }
 
 let manifestLoaderModule: Promise<ManifestLoaderModule> | undefined;
@@ -264,7 +265,7 @@ function importManifestLoader(): Promise<ManifestLoaderModule> {
         ? (import(
             getManifestLoaderSpecifier()
           ) as Promise<ManifestLoaderModule>)
-        : import('./manifest/index.js')
+        : import('./manifest/manifest-loader.js')
     ).catch((error: unknown) => {
       manifestLoaderModule = undefined;
       throw error;
@@ -460,15 +461,6 @@ function applyManifestFieldColumnMetadata(
     }
     columns[columnName] = column;
   }
-}
-
-async function discoverInstalledSmrtPackages(): Promise<string[]> {
-  const discoverSpecifier = import.meta.url.endsWith('.ts')
-    ? './manifest/discover-smrt-packages.ts'
-    : './manifest/discover-smrt-packages.js';
-
-  const { discoverSmrtPackages } = await import(discoverSpecifier);
-  return discoverSmrtPackages();
 }
 
 /**

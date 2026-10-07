@@ -96,7 +96,7 @@ export { smrt as smrtRegistry } from './registry';
 // Universal signaling system
 export * from './signals/index';
 // System tables and types (note-taking, migrations, registry, signals)
-export * from './system/index';
+export * from './system/browser';
 export type {
   DiscoveryStrategy,
   ForgetOptions,

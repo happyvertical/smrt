@@ -3,7 +3,6 @@
  * Converts AST field definitions to database schema definitions
  */
 
-import { createHash } from 'node:crypto';
 import type {
   FieldDefinition,
   FieldMeta,
@@ -13,6 +12,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types.js';
 import { classnameToTablename } from '../utils/naming.js';
+import { sha256Hex } from '../utils/sha256.js';
 import { normalizeBackfill } from './backfill.js';
 import {
   type ConflictTableStrategy,
@@ -1006,10 +1006,7 @@ export class SchemaGenerator {
     }
     for (const { className, conflictColumns } of overrides) {
       if (this.conflictColumnsArePrimaryKey(conflictColumns, columns)) continue;
-      const digest = createHash('sha256')
-        .update(className)
-        .digest('hex')
-        .slice(0, 8);
+      const digest = sha256Hex(className).slice(0, 8);
       indexes.push({
         description: 'STI subclass conflict target',
         name: `${tableName}_${digest}_conflict_idx`,
@@ -1075,10 +1072,7 @@ export class SchemaGenerator {
         // packages (`@a:Event`, `@b:Event`); the merged index list dedupes by
         // name, so disambiguate with a short digest of the qualified name.
         if (indexes.some((index) => index.name === name)) {
-          const digest = createHash('sha256')
-            .update(className)
-            .digest('hex')
-            .slice(0, 6);
+          const digest = sha256Hex(className).slice(0, 6);
           name = `${tableName}_${columnName}_${this.toSnakeCase(simpleName)}_${digest}_unique_idx`;
         }
         indexes.push({
@@ -1409,10 +1403,7 @@ export class SchemaGenerator {
       dependencies: this.extractForeignKeys(columns)
         .map((foreignKey) => foreignKey.referencesTable)
         .filter((dependency) => dependency !== tableName),
-      version: createHash('sha256')
-        .update(JSON.stringify(columns))
-        .digest('hex')
-        .substring(0, 8),
+      version: sha256Hex(JSON.stringify(columns)).substring(0, 8),
       packageName: 'runtime',
       baseClass: 'SmrtObject',
     };
@@ -1785,10 +1776,9 @@ export class SchemaGenerator {
       dependencies: this.extractForeignKeys(columns)
         .map((foreignKey) => foreignKey.referencesTable)
         .filter((dependency) => dependency !== tableName),
-      version: createHash('sha256')
-        .update(JSON.stringify({ columns, baseClassName, descendants }))
-        .digest('hex')
-        .substring(0, 8),
+      version: sha256Hex(
+        JSON.stringify({ columns, baseClassName, descendants }),
+      ).substring(0, 8),
       packageName: 'runtime',
       baseClass: 'SmrtObject',
     };
@@ -2070,10 +2060,9 @@ export class SchemaGenerator {
     const ddl = this.generateSQL(schemaDefinition);
 
     // Generate version hash
-    const version = createHash('sha256')
-      .update(JSON.stringify({ columns, baseClassName, descendants }))
-      .digest('hex')
-      .substring(0, 8);
+    const version = sha256Hex(
+      JSON.stringify({ columns, baseClassName, descendants }),
+    ).substring(0, 8);
 
     return {
       tableName,
@@ -2281,10 +2270,10 @@ export class SchemaGenerator {
     const ddl = this.generateSQL(schemaDefinition);
 
     // Generate version hash
-    const version = createHash('sha256')
-      .update(JSON.stringify({ columns, className }))
-      .digest('hex')
-      .substring(0, 8);
+    const version = sha256Hex(JSON.stringify({ columns, className })).substring(
+      0,
+      8,
+    );
 
     return {
       tableName,

@@ -25,8 +25,9 @@ import { getTestDatabase } from '../testing/database.js';
 
 const discovery = vi.hoisted(() => ({ calls: 0 }));
 
-vi.mock('../manifest/index.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../manifest/index.js')>();
+vi.mock('../manifest/manifest-loader.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../manifest/manifest-loader.js')>();
   return {
     ...actual,
     discoverManifestEntry: (

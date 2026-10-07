@@ -1,6 +1,5 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
-import { buildWhere } from '@happyvertical/sql';
 import {
   buildCascadePlan,
   cascadeReferencesTo,
@@ -47,6 +46,7 @@ import {
   TenantIsolationError,
   ValidationError,
 } from './errors';
+import { buildWhere } from './host.js';
 import {
   type BulkMutationEntry,
   createInterceptorContext,

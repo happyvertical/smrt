@@ -38,9 +38,9 @@
  * @packageDocumentation
  */
 
-import { createHash } from 'node:crypto';
 import { isDatabaseInterface } from '../database.js';
 import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
+import { sha256Hex } from '../utils/sha256.js';
 import { getDbInstanceIds, getNextDbId, setNextDbId } from './shared-state.js';
 
 /** Secret-ish values hashed into the key instead of embedded in it. */
@@ -113,10 +113,10 @@ function redactUrlCredentials(url: string): string {
     return url;
   }
   if (!parsed.username && !parsed.password) return url;
-  const fingerprint = createHash('sha256')
-    .update(`${parsed.username}:${parsed.password}`)
-    .digest('hex')
-    .slice(0, 32);
+  const fingerprint = sha256Hex(`${parsed.username}:${parsed.password}`).slice(
+    0,
+    32,
+  );
   parsed.username = `cred-${fingerprint}`;
   parsed.password = '';
   return parsed.toString();
@@ -135,7 +135,7 @@ function digest(value: unknown): string {
       : typeof value === 'bigint'
         ? `${value}n`
         : String(value);
-  return `opaque:${createHash('sha256').update(source).digest('hex')}`;
+  return `opaque:${sha256Hex(source)}`;
 }
 
 /**
@@ -163,7 +163,7 @@ function canonicalizeValue(
   if (value === null || value === undefined) return null;
 
   if (HASHED_DB_KEYS.has(key) && typeof value === 'string' && value !== '') {
-    return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+    return `sha256:${sha256Hex(value)}`;
   }
 
   // String values anywhere in a config can carry URL-embedded credentials

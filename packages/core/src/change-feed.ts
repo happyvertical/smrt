@@ -130,7 +130,6 @@
  * @packageDocumentation
  */
 
-import { randomBytes } from 'node:crypto';
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
@@ -1896,7 +1895,9 @@ export async function getTableVersion(
  * through the same numeric ETag path as a real sequence.
  */
 function randomUnobservableTableVersion(): number {
-  const bytes = randomBytes(6);
+  // Web Crypto is a global in Node and every browser, so this path has no
+  // `node:crypto` dependency (#2838).
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(6));
   return (
     bytes[0] * 2 ** 40 +
     bytes[1] * 2 ** 32 +
