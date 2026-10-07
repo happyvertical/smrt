@@ -36,8 +36,6 @@ Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), 
 
 A rejection from `processJob` can never escape the poll loop: the caller attaches `.catch(e => emit('runner:error', e))` and the error path (`handleJobError`) is itself try/caught, so a failure-path write that rejects is surfaced as a `runner:error` event instead of crashing the worker with an unhandled rejection.
 
-`node:worker_threads` is never imported by the root graph (browser-reachable, #3615): the liveness thread is spawned via `process.getBuiltinModule('node:worker_threads')`, and runtimes without it fall back to main-loop lease renewal.
-
 ## Timeouts & at-least-once
 
 **Execution is at-least-once, never exactly-once. Make job handlers idempotent.**
