@@ -124,7 +124,7 @@ the application decides what it shows.
 |--------|------------|
 | `ProfileCollection` | CRUD and query for profiles |
 | `ProfileAssetCollection` | Direct access to `profile_assets` rows plus asset helper wrappers |
-| `ProfileTypeCollection` | Profile type management |
+| `ProfileTypeCollection` | Profile type management, including tenant-safe `getAvailableById(id, tenantId)` for tenant-owned or global types |
 | `ProfileLinkCollection` | `listForProfile`, `replaceForProfile` (ordered replace in one transaction), `reorder` |
 | `ProfileMetadataCollection` | Metadata value operations |
 | `ProfileMetafieldCollection` | Metafield vocabulary management |

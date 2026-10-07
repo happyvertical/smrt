@@ -13,6 +13,11 @@
 export {
   FormGroup,
   Input,
+  /**
+   * @deprecated `RelationInput` moved to `@happyvertical/smrt-ui/forms`; import it
+   * from there. This re-export is kept so published consumers keep working.
+   */
+  RelationInput,
   Select,
   Textarea,
   Toggle,
@@ -31,7 +36,6 @@ export { default as MeasurementInput } from './MeasurementInput.svelte';
 export { default as MoneyInput } from './MoneyInput.svelte';
 export { default as NumberInput } from './NumberInput.svelte';
 export { default as PhoneInput } from './PhoneInput.svelte';
-export { default as RelationInput } from './RelationInput.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export { default as SelectInput } from './SelectInput.svelte';
 export { default as TextareaInput } from './TextareaInput.svelte';

@@ -4945,10 +4945,21 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Create an instance of the correct class and load by ID
-    const relatedInstance = new actualClassInfo.constructor(this.options);
+    const relatedInstance = new actualClassInfo.constructor({
+      ...this.options,
+      id: foreignKeyValue as string,
+      _skipLoad: false,
+    });
     await relatedInstance.initialize();
-    relatedInstance.id = foreignKeyValue as string;
-    await relatedInstance.loadFromId();
+
+    // `loadFromId()` deliberately treats a missing row as a no-op. A
+    // relationship loader must not return that unpersisted constructor shell:
+    // its defaults/options can look like authoritative related data. Cache the
+    // miss just as we do for an empty foreign key so repeat reads remain null.
+    if (!relatedInstance.isPersisted) {
+      this._loadedRelationships.set(fieldName, null);
+      return null;
+    }
 
     // Enforce tenant isolation before caching/returning so a blocked
     // cross-tenant target is never cached (Issue #1321).

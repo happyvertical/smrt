@@ -19,9 +19,8 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
     reason: 'node:crypto in root; core migrations (node:os)',
   },
   '@happyvertical/smrt-chat': {
-    issue: '#3624, #3625',
-    reason:
-      'node:crypto + node:async_hooks; @happyvertical/sql root (pg, node:fs)',
+    issue: '#3624',
+    reason: 'node:crypto + node:async_hooks',
   },
   '@happyvertical/smrt-commerce': {
     issue: '#3627, #3626',
@@ -34,12 +33,13 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
       'node:crypto; documents/spider/files/images/ai SDK graph (crawlee, undici, googleapis, native addons); CJS parse error',
   },
   '@happyvertical/smrt-core': {
-    issue: '#3614',
-    reason: 'browser entry omits decorators/helpers dependents import',
+    issue: '#3635',
+    reason:
+      "model roots import server-only helpers (manifest loader, route helpers, startRestServer) the browser entry deliberately omits; core's own graph reaches no Node-only module (#2838, held by the browser-boundary core-entry test)",
   },
   '@happyvertical/smrt-events': {
-    issue: '#3624, #3625',
-    reason: 'node:crypto; @happyvertical/sql root',
+    issue: '#3624',
+    reason: 'node:crypto',
   },
   '@happyvertical/smrt-expenses': {
     issue: '#3624',
@@ -54,10 +54,6 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
     issue: '#3618',
     reason:
       'imports core utils/import-workspace-module (node:url, node:fs, node:path)',
-  },
-  '@happyvertical/smrt-human-resources': {
-    issue: '#3625',
-    reason: '@happyvertical/sql root (pg, node:fs)',
   },
   '@happyvertical/smrt-images': {
     issue: '#3628, #3624',
@@ -95,7 +91,8 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
   },
   '@happyvertical/smrt-reports': {
     issue: '#3624, #3625',
-    reason: 'node:crypto/events; @happyvertical/sql root',
+    reason:
+      'node:crypto/events; @happyvertical/sql root: the sync query builders it needs (validateColumnName, buildWhere, buildAggregate, bucketExpr, tableExists) have no browser-safe SDK entry',
   },
   '@happyvertical/smrt-sales': {
     issue: '#3624',

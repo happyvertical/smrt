@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { sha256Hex } from './sha256.js';
+import { sha256Base64Url, sha256Hex } from './sha256.js';
 
 describe('sha256Hex', () => {
   it('matches the published SHA-256 vectors', () => {
@@ -29,6 +29,14 @@ describe('sha256Hex', () => {
     for (const input of inputs) {
       expect(sha256Hex(input)).toBe(
         createHash('sha256').update(input).digest('hex'),
+      );
+    }
+  });
+
+  it('matches Node base64url digests', () => {
+    for (const input of ['', 'abc', 'ünïcödé 日本語 🎉', 'a'.repeat(1000)]) {
+      expect(sha256Base64Url(input)).toBe(
+        createHash('sha256').update(input).digest('base64url'),
       );
     }
   });

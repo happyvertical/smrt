@@ -17,7 +17,7 @@ SMRT has one shared set of UI primitives, split across two packages by concern:
   `Tooltip`, `Skeleton`, `Tree`, `Pagination`, `DataTable`, `ContentList`, … — **plus the
   Provider-free base FORM primitives** under `./forms` (`Form`, `Input`,
   `Select`, `Textarea`, `Checkbox`, `Switch`, `RadioGroup`, `Slider`,
-  `RangeSlider`, `Combobox`, `MultiSelect`, `TagsInput`, `FilePicker`,
+  `RangeSlider`, `Combobox`, `RelationInput`, `MultiSelect`, `TagsInput`, `FilePicker`,
   `FormGroup`), relocated here in #1589's
   deferred-forms phase so domain packages can adopt them without pulling in the
   smrt-svelte Provider or closing a build-graph cycle. These are dependency-free:

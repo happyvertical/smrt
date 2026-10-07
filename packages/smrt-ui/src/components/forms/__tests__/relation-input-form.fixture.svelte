@@ -1,6 +1,6 @@
 <script lang="ts">
 /** RelationInput inside the rich Form, to prove registry + native posting. */
-import type { ControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
+import type { ControlInteractionRegistry } from '../control-interaction.js';
 import Form from '../Form.svelte';
 import RelationInput from '../RelationInput.svelte';
 import type { RelationOption } from '../types.js';

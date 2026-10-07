@@ -6,6 +6,8 @@
  * `host.ts` forwards from the package root (`buildWhere`, `raw`,
  * `NestedTransactionError`) have no browser-safe source yet and throw when
  * used; collection queries need them. Tracked as the SDK follow-up to #2838.
+ * TODO(sdk#1364): swap these stand-ins for `@happyvertical/sql/query` once
+ * sdk PR #1366 is published and the catalog pins it.
  * The AI SDK and installed-package discovery have no browser build either.
  *
  * Every export is typed against `host.ts`, so the two cannot drift.

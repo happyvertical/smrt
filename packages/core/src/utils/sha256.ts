@@ -14,3 +14,17 @@ const encoder = new TextEncoder();
 export function sha256Hex(text: string): string {
   return bytesToHex(sha256(encoder.encode(text)));
 }
+
+/**
+ * SHA-256 of `text` (UTF-8) as unpadded base64url, identical to
+ * `createHash('sha256').update(text).digest('base64url')`.
+ */
+export function sha256Base64Url(text: string): string {
+  const bytes = sha256(encoder.encode(text));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}

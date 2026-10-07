@@ -160,6 +160,7 @@ export { default as ProvinceSelect } from './ProvinceSelect.svelte';
 export { default as Radio } from './Radio.svelte';
 export { default as RadioGroup } from './RadioGroup.svelte';
 export { default as RangeSlider } from './RangeSlider.svelte';
+export { default as RelationInput } from './RelationInput.svelte';
 export {
   playReadyBeep,
   primeReadyBeep,
@@ -189,6 +190,7 @@ export type {
   CaptureResult,
   FormError,
   RangeSliderValue,
+  RelationOption,
   SegmentedControlOption,
   SignaturePadLabels,
   SignaturePadState,

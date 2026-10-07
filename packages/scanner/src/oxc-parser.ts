@@ -1125,7 +1125,11 @@ function enumMembersToUnion(members: TSEnumMember[]): string | null {
   const allNumbers = values.every((v) => typeof v === 'number');
   if (!allStrings && !allNumbers) return null;
   return values
-    .map((v) => (typeof v === 'string' ? `'${v}'` : String(v)))
+    .map((v) => {
+      if (typeof v !== 'string') return String(v);
+      const encoded = JSON.stringify(v);
+      return `'${encoded.slice(1, -1).replaceAll("'", "\\'")}'`;
+    })
     .join(' | ');
 }
 

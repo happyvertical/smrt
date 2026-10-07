@@ -134,6 +134,14 @@ export class Profile extends SmrtObject {
    * @returns The slug of the profile type
    */
   async getTypeSlug(): Promise<string> {
+    const tenantId = this.tenantId || getTenantId();
+    if (this.typeId && tenantId) {
+      const { ProfileTypeCollection } = await import(
+        '../collections/ProfileTypeCollection'
+      );
+      const types = await ProfileTypeCollection.create(this.options);
+      return (await types.getAvailableById(this.typeId, tenantId))?.slug ?? '';
+    }
     const type = await this.loadRelated('typeId');
     return type?.slug || '';
   }

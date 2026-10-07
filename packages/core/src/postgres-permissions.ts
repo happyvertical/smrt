@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION,
@@ -9,6 +8,7 @@ import {
   POSTGRES_CHANGE_FEED_DRAIN_BATCH,
   POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
 } from './system/schema.js';
+import { sha256Hex } from './utils/sha256.js';
 
 /** PostgreSQL ACLs only; this is not application authorization or RLS. */
 export interface PostgresPermissionContract {
@@ -1313,9 +1313,7 @@ async function plan(
     ],
     statements: [...new Set(statements)],
     canApply: !diagnostics.some((entry) => entry.severity === 'unsupported'),
-    fingerprint: createHash('sha256')
-      .update(JSON.stringify({ contract, state }))
-      .digest('hex'),
+    fingerprint: sha256Hex(JSON.stringify({ contract, state })),
   };
 }
 
