@@ -364,7 +364,13 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   :global(.smrt-nav-editor__name) { flex: 1 1 100%; min-inline-size: 0; }
   .smrt-nav-editor__row { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2) var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }
   .smrt-nav-editor__row--muted { opacity: 0.55; }
-  .smrt-nav-editor__row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--smrt-typography-weight-medium, 500); }
+  .smrt-nav-editor__row strong { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--smrt-typography-weight-medium, 500); }
+  /* Keep editor rows inside the sidebar: the implicit grid column would size to
+     the rows' min-content and push the trailing icons past the clipped rail. */
+  .smrt-nav-editor :global(.smrt-sortable) { grid-template-columns: minmax(0, 1fr); }
+  .smrt-nav-editor :global(.smrt-sortable__container),
+  .smrt-nav-editor :global(.smrt-sortable__items),
+  .smrt-nav-editor :global(.smrt-sortable__item) { min-inline-size: 0; max-inline-size: 100%; box-sizing: border-box; }
   .smrt-nav-editor__icon { display: inline-grid; place-items: center; inline-size: 1.25rem; block-size: 1.25rem; min-inline-size: 1.25rem; }
   :global(.smrt-nav-editor__new) { justify-self: start; }
 </style>
