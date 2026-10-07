@@ -18,6 +18,7 @@ let words = $state('A short interim phrase.');
 <Checkbox bind:checked={spoken} label="Spoken enabled" />
 <Checkbox bind:checked={third} label="Third caption" />
 <Checkbox bind:checked={mounted} label="Overlay mounted" />
+<Button onclick={() => words = 'Short captions.'}>Short captions</Button>
 <Button onclick={() => words = 'A growing interim phrase. '.repeat(12)}>Grow captions</Button>
 <Button onclick={() => words = 'A tall caption phrase. '.repeat(150)}>Tall captions</Button>
 {#if mounted}

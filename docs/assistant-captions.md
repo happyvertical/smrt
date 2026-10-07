@@ -147,8 +147,11 @@ empty surfaces leave no gap; an empty group is hidden and leaves the tab order.
 Unmounting the group destroys its scoped context without shared registrations.
 
 The group respects safe-area insets and is bounded to half the viewport height.
-When content is taller, focus its labelled region with the keyboard and use the
-arrow, Page Up/Down, Home, or End keys to scroll. It uses the sticky layer, below
+When content is taller, localized shared buttons appear to scroll up or down by
+one visible page. Tab to a button and press Enter or Space; each direction is
+disabled at its boundary. The region itself stays nonfocusable. Controls disappear
+when the content fits. A group-owned ResizeObserver tracks layout changes and
+disconnects on unmount. It uses the sticky layer, below
 FloatingAssistant's overlay layer, so approvals and other required controls
 remain clickable. It introduces no animation. Hosts must keep the overlay in a
 viewport positioning context (outside transformed or clipped ancestors), and

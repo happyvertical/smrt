@@ -88,7 +88,7 @@ test('320px and reduced motion retain visible, keyboard reachable approval', asy
   expect(await page.locator('.smrt-dictation-dot').evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
   await page.getByRole('button', { name: 'Playback started', exact: true }).press('Enter');
   await page.getByRole('button', { name: 'Playback boundary', exact: true }).press('Enter');
-  await expect(page.locator('.caption-overlay > section')).toHaveCount(2);
+  await expect(page.locator('.caption-overlay-content > section')).toHaveCount(2);
   await confirm.click({ trial: true });
   await confirm.focus();
   await expect(confirm).toBeFocused();
@@ -176,12 +176,26 @@ for (const speaker of ['heard', 'spoken']) {
 test('one overlay stacks bottom captions through growth, toggles and remounts at 320px', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    const NativeResizeObserver = window.ResizeObserver;
+    const owned = new Set<ResizeObserver>();
+    window.ResizeObserver = class extends NativeResizeObserver {
+      observe(target: Element, options?: ResizeObserverOptions) {
+        if (target.classList.contains('caption-overlay')) owned.add(this);
+        super.observe(target, options);
+      }
+      disconnect() { owned.delete(this); super.disconnect(); }
+    };
+    Object.defineProperty(window, 'captionObservers', { value: () => owned.size });
+  });
   await page.goto('/previews/caption-overlay');
+  const observers = () => page.evaluate(() => (window as unknown as { captionObservers(): number }).captionObservers());
+  await expect.poll(observers).toBe(1);
   const group = page.getByRole('region', { name: 'Captions', exact: true });
   const heard = page.getByRole('region', { name: 'You said', exact: true });
   const spoken = page.getByRole('region', { name: 'Assistant is speaking', exact: true });
   const checkLayout = async (count: number) => {
-    const surfaces = group.locator(':scope > section');
+    const surfaces = group.locator('.caption-overlay-content > section');
     await expect(surfaces).toHaveCount(count);
     const boxes = await surfaces.evaluateAll((elements) => elements.map((el) => {
       const b = el.getBoundingClientRect();
@@ -198,6 +212,7 @@ test('one overlay stacks bottom captions through growth, toggles and remounts at
   await expect(heard).toBeVisible();
   await expect(spoken).toBeVisible();
   await checkLayout(2);
+  await expect(group.getByRole('button')).toHaveCount(0);
   const originalHeight = (await heard.boundingBox())!.height;
   await page.getByRole('button', { name: 'Grow captions', exact: true }).click();
   expect((await heard.boundingBox())!.height).toBeGreaterThan(originalHeight);
@@ -213,8 +228,10 @@ test('one overlay stacks bottom captions through growth, toggles and remounts at
   await checkLayout(2);
   await page.getByRole('checkbox', { name: 'Overlay mounted', exact: true }).press('Space');
   await expect(group).toHaveCount(0);
+  await expect.poll(observers).toBe(0);
   await page.getByRole('checkbox', { name: 'Overlay mounted', exact: true }).press('Space');
   await checkLayout(2);
+  await expect.poll(observers).toBe(1);
   await page.getByRole('checkbox', { name: 'Spoken enabled', exact: true }).press('Space');
   await checkLayout(3);
   await page.screenshot({ path: test.info().outputPath('three-bottom-captions.png'), fullPage: true });
@@ -236,11 +253,25 @@ test('tall caption group is viewport bounded and keyboard scrollable', async ({ 
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.y + box.height).toBeLessThanOrEqual(568);
   expect(box.height).toBeLessThanOrEqual(284);
-  expect(await group.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
-  await group.focus();
-  await expect(group).toBeFocused();
-  await group.press('End');
-  await expect.poll(() => group.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  const viewport = group.locator('.caption-overlay-viewport');
+  const up = group.getByRole('button', { name: 'Scroll captions up', exact: true });
+  const down = group.getByRole('button', { name: 'Scroll captions down', exact: true });
+  await expect(up).toBeDisabled();
+  await expect(down).toBeEnabled();
+  expect(await viewport.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await down.focus();
+  await expect(down).toBeFocused();
+  await down.press('Enter');
+  await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expect(up).toBeEnabled();
+  await up.press('Enter');
+  await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(0);
+  await expect(up).toBeDisabled();
+  for (let i = 0; i < 30 && !(await down.isDisabled()); i++) await down.press('Enter');
+  await expect(down).toBeDisabled();
   await expect(page.getByRole('region', { name: 'Assistant is speaking', exact: true })).toBeInViewport();
   await page.screenshot({ path: test.info().outputPath('keyboard-scrolled-captions.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Short captions', exact: true }).press('Enter');
+  await expect(up).toHaveCount(0);
+  await expect(down).toHaveCount(0);
 });
