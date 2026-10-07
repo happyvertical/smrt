@@ -46,6 +46,7 @@ import {
   QueryOrderByError,
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
+import { assertRuntimeTableBindings } from './registry/table-mappings.js';
 import type { SmrtObjectConstructor } from './registry/types';
 import {
   resolveOneToManyInverse,
@@ -4138,6 +4139,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Gets the database table name for this collection
    */
   get tableName() {
+    assertRuntimeTableBindings(
+      this._tableName
+        ? {
+            qualifiedName: this.getResolvedItemQualifiedName(),
+            tableName: this._tableName,
+          }
+        : undefined,
+    );
     if (!this._tableName) {
       // For STI, use the base class's table name from schema (manifest-derived).
       // R5-canon: use the qualified item name as the lookup key so a

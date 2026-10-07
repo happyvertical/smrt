@@ -19,14 +19,20 @@ characters. The application model's `attachments` table retains its original
 schema, rows, and relationship targets; the messaging model uses
 `message_attachments`. Dependencies and generated model registrations remain
 present. Unrelated models mapped to the same table still fail the existing
-ownership guard. Full schema planning rejects unknown model keys.
+ownership guard during both schema planning and runtime reads/writes. Valid
+bindings for unregistered models stay dormant, so partial registries and
+focused database fixtures do not need unrelated models. A later registration
+activates its binding and ownership checks before storage access. Malformed
+bindings fail even when their model is not yet registered.
 
 Load the same `smrt.config` in every process before its first database access.
 The SMRT CLI does this automatically. Programmatic hosts may use `loadConfig()`
 or `setConfig({ smrt: { tableNames: ... } })` from `@happyvertical/smrt-config`.
 Registration may happen before configuration, but bindings must not change
 after objects or collections start using a database: instances cache their
-physical table names. A deployment's workers, web server, and migration process
+physical table names. Changing a configured binding after a table name was
+cached fails closed and requires a restart. Ownership checks also run for
+cached instances when later registrations reveal a conflict. A deployment's workers, web server, and migration process
 must use identical bindings.
 
 `ObjectRegistry.getSchema()`, model and collection storage, native DDL planning,

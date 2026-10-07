@@ -918,6 +918,10 @@ physical tables. `registry/table-mappings.ts` projects schemas for both runtime
 `getSchema()` reads and merged migration planning, including index names and
 relationship targets. Never remap by a raw old table name: two unrelated models
 may own that name in their respective packages. Bind STI roots only; sensitive
-models are refused. Configuration must load before first database use and stay
+models are refused. Well-formed bindings may precede model registration;
+partial registries never need unrelated models merely to satisfy configuration.
+Runtime object/collection getters recheck ownership even for cached table
+names; validation is memoized by registry generation and binding configuration.
+Configuration must load before first database use and stay
 fixed for that process. This is not an implicit data migration; see
 [consumer table bindings](../../../docs/content/table-bindings.md).

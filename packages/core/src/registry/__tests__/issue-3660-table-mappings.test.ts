@@ -1,6 +1,6 @@
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../../collection.js';
 import {
   getPendingSchemaStatements,
@@ -10,6 +10,7 @@ import { SmrtObject } from '../../object.js';
 import { ObjectRegistry } from '../../registry.js';
 import type { SmartObjectDefinition } from '../../scanner/types.js';
 import { getDDLStrategy } from '../../schema/ddl/index.js';
+import { getTestDatabase } from '../../testing/database.js';
 
 const APP = '@fixture/app';
 const MESSAGES = '@fixture/messages';
@@ -19,7 +20,9 @@ function register(
   target?: string,
   config: SmartObjectDefinition['decoratorConfig'] = {},
 ) {
-  const tableName = target ? `${className.toLowerCase()}s` : 'attachments';
+  const tableName =
+    config.tableName ||
+    (target ? `${className.toLowerCase()}s` : 'attachments');
   const definition = {
     name: className.toLowerCase(),
     className,
@@ -200,12 +203,21 @@ describe('#3660 qualified deployment table bindings', () => {
       );
     });
   }
-  it('refuses unknown model identities at full-schema planning', () => {
+  it('keeps valid bindings dormant in a partial registry and applies them on later registration', async () => {
     register(APP);
     bind();
-    expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).toThrow(
-      /unregistered model/,
+    const db = await getTestDatabase({ classes: [`${APP}:Attachment`] });
+    expect(Object.keys(ObjectRegistry.getAllSchemasAsDefinitions())).toEqual([
+      'attachments',
+    ]);
+    register(MESSAGES);
+    expect(ObjectRegistry.getSchema(`${MESSAGES}:Attachment`)?.tableName).toBe(
+      'message_attachments',
     );
+    expect(Object.keys(ObjectRegistry.getAllSchemasAsDefinitions())).toEqual(
+      expect.arrayContaining(['attachments', 'message_attachments']),
+    );
+    await db.close?.();
   });
   it('does not let an explicit mapping bypass the unrelated-table guard', () => {
     register(APP);
@@ -239,11 +251,109 @@ describe('#3660 qualified deployment table bindings', () => {
       /STI root/,
     );
   });
+  it('preserves unrelated STI subtype metadata with a dormant binding', () => {
+    const root = register(APP, 'Attachment', undefined, {
+      tableStrategy: 'sti',
+    });
+    if (!root.schema) throw new Error('Expected root schema');
+    ObjectRegistry.registerFromManifest(`${APP}:ImageAttachment`, {
+      ...root,
+      className: 'ImageAttachment',
+      name: 'imageattachment',
+      extends: 'Attachment',
+      extendsQualified: `${APP}:Attachment`,
+      schema: { ...root.schema, tableName: 'image_attachments' },
+    });
+    const before = ObjectRegistry.getSchema(`${APP}:ImageAttachment`);
+    bind();
+    expect(ObjectRegistry.getSchema(`${APP}:ImageAttachment`)).toEqual(before);
+    expect(Object.keys(ObjectRegistry.getAllSchemasAsDefinitions())).toEqual([
+      'attachments',
+    ]);
+  });
   it('refuses bindings that would change a sensitive table identity', () => {
     register(MESSAGES, 'Attachment', undefined, { sensitive: true });
     bind();
     expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).toThrow(
       /sensitive tables/,
+    );
+  });
+  for (const trigger of [
+    'configured-conflict',
+    'late-registration',
+    'changed-binding',
+  ] as const) {
+    it(`blocks a cached runtime collection read before SQL without schema planning (${trigger})`, async () => {
+      register(MESSAGES, 'Attachment', undefined, {
+        tableName: 'legacy_messages',
+      });
+      bind();
+      const Attachment = class Attachment extends SmrtObject {
+        label = '';
+      };
+      ObjectRegistry.register(Attachment, {
+        packageName: MESSAGES,
+        tableName: 'legacy_messages',
+      });
+      class Attachments extends SmrtCollection<SmrtObject> {
+        static readonly _itemClass = Attachment;
+      }
+      const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+      try {
+        const schema = ObjectRegistry.getSchema(`${MESSAGES}:Attachment`);
+        if (!schema) throw new Error('Expected message schema');
+        await db.query(getDDLStrategy('sqlite').generateCreateTable(schema));
+        const collection = await Attachments.create({ db });
+        await collection.list({}); // Warm the cached table name and storage verification.
+        const item = await collection.create({
+          slug: 'before-conflict',
+          label: 'message row',
+        });
+        expect(item.tableName).toBe('message_attachments');
+        if (trigger === 'configured-conflict') {
+          register(APP, 'Attachment', undefined, {
+            tableName: 'existing_app_attachments',
+          });
+          bind({ [`${MESSAGES}:Attachment`]: 'existing_app_attachments' });
+        } else if (trigger === 'late-registration') {
+          register(APP, 'Attachment', undefined, {
+            tableName: 'message_attachments',
+          });
+        } else {
+          bind({ [`${MESSAGES}:Attachment`]: 'moved_message_attachments' });
+        }
+        const query = vi.spyOn(db, 'query');
+        const list = vi.spyOn(db, 'list');
+        const upsert = vi.spyOn(db, 'upsert');
+        const get = vi.spyOn(db, 'get');
+        await expect(collection.list({})).rejects.toThrow(
+          /claimed by unrelated classes|changed after runtime storage/,
+        );
+        if (trigger !== 'changed-binding') {
+          expect(() =>
+            ObjectRegistry.getSchema(`${MESSAGES}:Attachment`),
+          ).toThrow(/claimed by unrelated classes/);
+        }
+        await expect(item.save()).rejects.toThrow(
+          /claimed by unrelated classes|changed after runtime storage/,
+        );
+        expect(() => item.tableName).toThrow(
+          /claimed by unrelated classes|changed after runtime storage/,
+        );
+        expect(query).not.toHaveBeenCalled();
+        expect(list).not.toHaveBeenCalled();
+        expect(upsert).not.toHaveBeenCalled();
+        expect(get).not.toHaveBeenCalled();
+      } finally {
+        await db.close?.();
+      }
+    });
+  }
+  it('refuses malformed dormant bindings even when their model is absent', () => {
+    register(APP);
+    bind({ '@fixture/absent:Attachment': 'bad;table' });
+    expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).toThrow(
+      /tableNames/,
     );
   });
 });

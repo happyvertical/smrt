@@ -5,7 +5,14 @@ import { getDDLStrategy } from '../schema/ddl/index.js';
 import { schemaForeignKeys } from '../schema/foreign-key-ddl.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
 import type { SchemaDefinition } from '../schema/types.js';
+import {
+  isQualifiedName,
+  parseQualifiedName,
+} from '../utils/qualified-names.js';
 import { toSnakeCase } from '../utils.js';
+import { isCollectionRegistration } from './collection-resolution.js';
+import { isFrameworkBaseClass } from './framework-base-classes.js';
+import { getRegistryGeneration } from './generation.js';
 import type { RegisteredClass } from './types.js';
 
 function bindings(): Record<string, string> {
@@ -39,8 +46,8 @@ function bindings(): Record<string, string> {
 /** Resolve storage by model identity, never by a potentially shared table name. */
 export function mappedTableName(
   registered: RegisteredClass,
+  map = bindings(),
 ): string | undefined {
-  const map = bindings();
   if (!Object.keys(map).length) return registered.schema?.tableName;
   const key = registered.qualifiedName;
   if (!key) return registered.schema?.tableName;
@@ -67,6 +74,7 @@ export function mappedTableName(
 export function mappedSchema(
   registered: RegisteredClass,
 ): SchemaDefinition | undefined {
+  assertRuntimeTableBindings();
   const schema = registered.schema;
   if (!schema) return undefined;
   if (!Object.keys(bindings()).length) return schema;
@@ -123,14 +131,99 @@ export function mappedSchema(
   return projected;
 }
 
-/** Full-schema planning must not silently accept misspelled model identities. */
-export function assertKnownTableMappings(): void {
-  for (const key of Object.keys(bindings())) {
-    if (!ObjectRegistry.getAllClasses().has(key)) {
+/** One ownership rule for native planning and runtime storage access. */
+export function assertTableFamilies(
+  tableName: string,
+  familyKeys: string[],
+): void {
+  const families = [...new Set(familyKeys)].map((key) => ({
+    key,
+    ...(isQualifiedName(key)
+      ? (() => {
+          const parsed = parseQualifiedName(key);
+          return { name: parsed.className, pkg: parsed.packageName };
+        })()
+      : { name: key, pkg: undefined }),
+  }));
+  for (let i = 0; i < families.length; i++) {
+    for (let j = i + 1; j < families.length; j++) {
+      const left = families[i],
+        right = families[j];
+      if (
+        left.name === right.name &&
+        (!left.pkg || !right.pkg || left.pkg === right.pkg)
+      )
+        continue;
       throw new ConfigurationError(
-        `smrt.tableNames names unregistered model '${key}'`,
-        'CONFIG_TABLE_MAPPING',
+        `Table '${tableName}' is claimed by unrelated classes ${left.key} and ${right.key}. ` +
+          'Classes share a table only as one single-table-inheritance family; give one of them its own @smrt({ tableName }).',
+        'CONFIG_TABLE_NAME_COLLISION',
+        { tableName, classes: [left.key, right.key] },
       );
     }
   }
+}
+
+let validatedGeneration = -1;
+let validatedBindings = '';
+
+/**
+ * A valid binding may precede registration (partial registries are supported).
+ * Once models exist, no runtime reader/writer may cross a table's ownership.
+ * Cached object/collection table names call this too; registration and config
+ * changes invalidate the memo before the next database operation.
+ */
+export function assertRuntimeTableBindings(cached?: {
+  qualifiedName: string;
+  tableName: string;
+}): void {
+  const map = bindings(); // Validate malformed dormant declarations too.
+  if (!Object.keys(map).length) return;
+  if (cached) {
+    const registered = ObjectRegistry.getClass(cached.qualifiedName);
+    const root =
+      ObjectRegistry.getSTIBase(cached.qualifiedName) || cached.qualifiedName;
+    if (
+      registered &&
+      map[root] &&
+      mappedTableName(registered, map) !== cached.tableName
+    ) {
+      throw new ConfigurationError(
+        `Table binding for '${cached.qualifiedName}' changed after runtime storage was initialized; restart the process with consistent configuration`,
+        'CONFIG_TABLE_MAPPING_CHANGED',
+      );
+    }
+  }
+  const fingerprint = JSON.stringify(map);
+  const generation = getRegistryGeneration();
+  if (validatedGeneration === generation && validatedBindings === fingerprint)
+    return;
+  const tables = new Map<string, string[]>();
+  const lookup = {
+    findClass: (name: string) => ObjectRegistry.getClass(name),
+    findClassInPackage: (pkg: string, name: string) =>
+      ObjectRegistry.getClassInPackage(pkg, name),
+    getInheritanceChain: (name: string) =>
+      ObjectRegistry.getInheritanceChain(name),
+  };
+  for (const [key, registered] of ObjectRegistry.getAllClasses()) {
+    if (
+      isFrameworkBaseClass(registered.name, registered.packageName) ||
+      isCollectionRegistration(key, registered, lookup)
+    )
+      continue;
+    // Validate each subtype, but compare ownership using its physical root.
+    // Unbound subtype schema/index metadata must remain unchanged.
+    const projectedTable = mappedTableName(registered, map);
+    const family = ObjectRegistry.getSTIBase(key) || key;
+    const owner = ObjectRegistry.getClass(family) || registered;
+    const table = mappedTableName(owner, map) || projectedTable;
+    if (!table) continue;
+    const families = tables.get(table) || [];
+    families.push(family);
+    tables.set(table, families);
+  }
+  for (const [table, families] of tables) assertTableFamilies(table, families);
+  validatedGeneration = getRegistryGeneration();
+  validatedBindings = fingerprint;
 }
