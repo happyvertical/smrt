@@ -77,6 +77,17 @@ export {
   preflightIntegerWidthWidening,
   widenIntegerColumnsToBigInt,
 } from './integer-width.js';
+// Cross-process serialization of db:migrate runs (#3634)
+export {
+  type AcquireMigrationLockOptions,
+  acquireMigrationLock,
+  DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,
+  MIGRATION_ADVISORY_LOCK_KEYS,
+  type MigrationLock,
+  MigrationLockLostError,
+  MigrationLockTimeoutError,
+  MigrationLockUnsupportedError,
+} from './migration-lock.js';
 // Money major-units → integer minor-units rescale (#2401)
 export {
   buildMinorUnitsStatements,
