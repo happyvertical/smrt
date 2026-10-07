@@ -20,7 +20,7 @@ describe('caption components', () => {
       props: { lines, interim: 'still talking' },
     });
     expect(screen.queryByLabelText('What you said')).toBeNull();
-    rerender({ enabled: true, lines, interim: 'still talking', maxLines: 1 });
+    rerender({ enabled: true, lines, interim: 'still talking', maxLines: 2 });
     expect(screen.getByLabelText('What you said')).toBeInTheDocument();
     expect(screen.queryByText('Plain words')).toBeNull();
     expect(screen.getByText('<b>Plain words</b>')).toBeInTheDocument();
