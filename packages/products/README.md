@@ -14,8 +14,8 @@ pnpm add @happyvertical/smrt-products
 
 ```typescript
 import { Product, ProductCollection, Category } from '@happyvertical/smrt-products';
-import { startServer } from '@happyvertical/smrt-products';
-import { generateMCPServer } from '@happyvertical/smrt-products';
+import { startServer } from '@happyvertical/smrt-products/server';
+import { generateMCPServer } from '@happyvertical/smrt-products/server';
 import { AssetCollection } from '@happyvertical/smrt-assets';
 
 // Start standalone REST API server
@@ -49,9 +49,16 @@ await products.addAsset(product.id!, hero, 'gallery', 1);
 
 | Export | Description |
 |--------|------------|
+| `demonstrateClient` | Demo of auto-generated TypeScript client |
+
+### Server exports (`@happyvertical/smrt-products/server`, Node only)
+
+The root entry is browser-safe. The server bootstrap (express, `startRestServer`, MCP generator) lives in the `./server` subpath; Node resolution of the root also re-exports it, so existing Node imports keep working.
+
+| Export | Description |
+|--------|------------|
 | `startServer` | Launch standalone REST API server |
 | `generateMCPServer` | Generate MCP server for AI tool integration |
-| `demonstrateClient` | Demo of auto-generated TypeScript client |
 | `startAll` | Start all services (REST + MCP) |
 
 ### Models (from `lib/models`)

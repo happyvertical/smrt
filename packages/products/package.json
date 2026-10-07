@@ -17,9 +17,17 @@
   ],
   "exports": {
     ".": {
+      "node": {
+        "types": "./dist/lib/index.node.d.ts",
+        "default": "./dist/lib/index.node.js"
+      },
       "types": "./dist/lib/index.d.ts",
       "svelte": "./dist/lib/index.js",
       "default": "./dist/lib/index.js"
+    },
+    "./server": {
+      "types": "./dist/lib/server.d.ts",
+      "default": "./dist/lib/server.js"
     },
     "./models": {
       "types": "./dist/lib/models.d.ts",

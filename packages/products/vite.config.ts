@@ -89,6 +89,11 @@ function isExternalDependency(id: string, importer?: string): boolean {
 
 const libEntries = {
 	index: resolve(packageDir, 'src/index.ts'),
+	// Node-only entries (#3616): the server bootstrap (`startRestServer`,
+	// express) is kept off the browser-safe root; `index.node` is the `node`
+	// export condition for `.` and re-exports both.
+	'index.node': resolve(packageDir, 'src/index.node.ts'),
+	server: resolve(packageDir, 'src/server.ts'),
 	models: resolve(packageDir, 'src/models.ts'),
 	components: resolve(packageDir, 'src/components.ts'),
 	stores: resolve(packageDir, 'src/stores.ts'),

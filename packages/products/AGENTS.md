@@ -52,7 +52,7 @@ Optional. With `withTenant(id, fn)` (from `@happyvertical/smrt-tenancy`), all qu
 Same codebase consumed three ways:
 1. **NPM library**: import classes directly
 2. **Module federation**: runtime component sharing (experimental)
-3. **Standalone API**: `startRestServer([Product, Category])`
+3. **Standalone API**: `startRestServer([Product, Category])`, exposed only via the Node-only `./server` subpath (`startServer`, `generateMCPServer`, `startAll`). The root entry must stay browser-safe (no express/`startRestServer`); the `node` export condition on `.` (`src/index.node.ts`) re-exports the server for Node consumers (#3616).
 
 ## Virtual Modules (Vite)
 
