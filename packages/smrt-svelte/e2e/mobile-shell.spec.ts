@@ -248,6 +248,29 @@ test('continuous drawer animations do not block phone focus', async ({
     .toBe(true);
 });
 
+test('a headerless default phone shell keeps one supported menu opener', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?top=hidden&left=collapsed');
+  const menu = page.getByRole('button', { name: 'Menu', exact: true });
+  await expect(menu).toHaveCount(1);
+  await expect(menu).toHaveAttribute(
+    'aria-controls',
+    'smrt-admin-shell-left-panel',
+  );
+  await expect(menu).toHaveAttribute('aria-expanded', 'false');
+  await menu.click();
+  await expect(menu).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    page
+      .locator('.smrt-admin-shell__edge--left')
+      .getByRole('button', { name: 'Collapse Tenant' }),
+  ).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeFocused();
+});
+
 test('narrow navigation opens, restores focus and excludes closed drawer controls', async ({
   page,
 }) => {

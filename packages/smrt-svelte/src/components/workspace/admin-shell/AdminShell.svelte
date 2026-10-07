@@ -242,7 +242,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     });
     return () => { cancelled = true; queueMicrotask(() => { if (opener?.isConnected) opener.focus(); }); };
   });
-  const showPhoneTop = $derived(isPhone && Boolean(phoneTopBar));
+  const showDefaultPhoneTenantOpener = $derived(
+    isPhone &&
+      !phoneTopBar &&
+      panelState('top') === 'hidden' &&
+      shell.isEdgeShown('left') &&
+      shell.phonePresentation('left') !== 'hidden',
+  );
+  const showPhoneTop = $derived(
+    isPhone && (Boolean(phoneTopBar) || showDefaultPhoneTenantOpener),
+  );
   const showHeader = $derived(Boolean(header) && !showPhoneTop);
   const bottomBar = $derived<BottomBarMode>(
     isPhone && phoneBottomBar
@@ -943,7 +952,24 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   {#if showPhoneTop}
     <div class="smrt-admin-shell__phone-top" data-testid="admin-shell-phone-top">
-      {@render phoneTopBar?.({ hidden: chromeHidden })}
+      {#if phoneTopBar}
+        {@render phoneTopBar({ hidden: chromeHidden })}
+      {:else if showDefaultPhoneTenantOpener}
+        <div class="smrt-admin-shell__phone-default-top">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t(M['ui.admin_shell.menu'])}
+            aria-expanded={edgeExpanded('left')}
+            aria-controls="smrt-admin-shell-left-panel"
+            onclick={() =>
+              shell.setPanelState(
+                'left',
+                edgeExpanded('left') ? 'collapsed' : 'expanded',
+              )}
+          >{t(M['ui.admin_shell.menu'])}</Button>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -1687,6 +1713,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     background: var(--smrt-color-surface);
     transition: transform var(--smrt-admin-shell-chrome-duration)
       var(--smrt-easing-standard, ease);
+  }
+
+  .smrt-admin-shell__phone-default-top {
+    display: flex;
+    align-items: center;
+    min-block-size: var(--smrt-admin-shell-phone-top-size);
+    padding-inline: var(--smrt-spacing-3);
   }
 
   .smrt-admin-shell[data-chrome-hidden] .smrt-admin-shell__phone-top {

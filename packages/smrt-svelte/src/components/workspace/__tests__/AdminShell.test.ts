@@ -35,6 +35,47 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
+  it('keeps a default phone menu opener when the top edge is unavailable', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width'),
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    const state = createShellState({
+      viewport: 'phone',
+      config: {
+        top: { initial: 'hidden' },
+        left: { initial: 'collapsed' },
+      },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        children: textSnippet('main'),
+        tenantPanel: textSnippet('tenant navigation'),
+      },
+    });
+    try {
+      await tick();
+      const menu = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Menu"]',
+      );
+      expect(menu).not.toBeNull();
+      expect(menu).toHaveAttribute('aria-expanded', 'false');
+      expect(menu).toHaveAttribute(
+        'aria-controls',
+        'smrt-admin-shell-left-panel',
+      );
+      menu?.click();
+      await tick();
+      expect(menu).toHaveAttribute('aria-expanded', 'true');
+      expect(state.panels.left).toBe('expanded');
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('keeps a single tenant footer reachable when the left edge collapses or hides', async () => {
     const state = createShellState({
       config: { left: { initial: 'collapsed' } },
