@@ -2,7 +2,6 @@
 // subpath without the main entry. See src/__smrt-register__.ts (issue #1132).
 import './__smrt-register__.js';
 
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import { Worker } from 'node:worker_threads';
 import { fromConfig, type RetryDecision } from '@happyvertical/jobs';
@@ -19,6 +18,10 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { isBackgroundEligibleMethod } from './background-policy.js';
 import { redactErrorForPersistence } from './error-redaction.js';
+import {
+  markRunnerExecutionContext,
+  runWithExecutionContext,
+} from './execution-context.js';
 import {
   JobContextLogger,
   type JobEventInput,
@@ -62,29 +65,12 @@ import {
   unregisterLiveWorker,
 } from './worker-liveness.js';
 
-// Job rows are durable but untrusted transport. This marker is deliberately
-// module-private: a JSON task invocation cannot synthesize the runner-owned
-// execution context that security-sensitive task targets receive.
-const runnerExecutionContextIdentities = new WeakSet<object>();
-const runnerExecutionContexts = new AsyncLocalStorage<JobExecutionContext>();
-
-/** True only for an execution context constructed by this TaskRunner module. */
-export function isRunnerExecutionContext(
-  value: unknown,
-): value is JobExecutionContext {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    runnerExecutionContextIdentities.has(value)
-  );
-}
-
-/** The runner-owned context for the currently executing task, if any. */
-export function getActiveJobExecutionContext():
-  | JobExecutionContext
-  | undefined {
-  return runnerExecutionContexts.getStore();
-}
+// Kept importable from the Node subpath; the implementation lives in a
+// browser-safe-graph module so the package root never loads this file.
+export {
+  getActiveJobExecutionContext,
+  isRunnerExecutionContext,
+} from './execution-context.js';
 
 /**
  * TaskRunner configuration
@@ -905,7 +891,7 @@ export class TaskRunner extends EventEmitter {
       }
 
       const taskMarker = getMcpTaskMarker(job);
-      const result = await runnerExecutionContexts.run(
+      const result = await runWithExecutionContext(
         executionContext,
         async () =>
           taskMarker
@@ -1134,7 +1120,7 @@ export class TaskRunner extends EventEmitter {
           }
         : {}),
     };
-    runnerExecutionContextIdentities.add(context);
+    markRunnerExecutionContext(context);
     return context;
   }
 

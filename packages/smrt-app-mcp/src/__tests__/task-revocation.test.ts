@@ -24,8 +24,8 @@ import {
   backgroundEligible,
   type JobExecutionContext,
   McpTaskStore,
-  TaskRunner,
 } from '@happyvertical/smrt-jobs';
+import { TaskRunner } from '@happyvertical/smrt-jobs/runner';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMcpAppServer, type McpAppPrincipal } from '../server.js';
 import {

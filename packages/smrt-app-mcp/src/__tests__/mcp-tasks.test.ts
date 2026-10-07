@@ -8,8 +8,8 @@ import {
 import {
   backgroundEligible,
   type JobExecutionContext,
-  TaskRunner,
 } from '@happyvertical/smrt-jobs';
+import { TaskRunner } from '@happyvertical/smrt-jobs/runner';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMcpAppServer, type McpAppPrincipal } from '../server.js';
 import { mountMcpRoute } from '../sveltekit.js';

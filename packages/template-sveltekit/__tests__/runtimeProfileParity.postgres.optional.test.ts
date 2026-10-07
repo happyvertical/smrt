@@ -18,12 +18,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
-import {
-  type BackgroundCapable,
-  SmrtJobCollection,
-  type TaskRunner,
-  createTaskRunner,
-} from '@happyvertical/smrt-jobs';
+import { type BackgroundCapable, SmrtJobCollection } from '@happyvertical/smrt-jobs';
+import { type TaskRunner, createTaskRunner } from '@happyvertical/smrt-jobs/runner';
 import { getDatabase, type DatabaseInterface } from '@happyvertical/sql';
 
 import {

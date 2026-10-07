@@ -10,8 +10,8 @@ import {
 import {
   type JobExecutionContext,
   McpTaskStore,
-  TaskRunner,
 } from '@happyvertical/smrt-jobs';
+import { TaskRunner } from '@happyvertical/smrt-jobs/runner';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { expect, it } from 'vitest';
 import { createMcpResourceAuth } from '../auth.js';

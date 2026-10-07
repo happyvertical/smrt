@@ -4,10 +4,8 @@ import {
   ObjectRegistry,
   SmrtObject,
 } from '@happyvertical/smrt-core';
-import {
-  createHmacDurableJobPayloadSigner,
-  createTaskRunner,
-} from '@happyvertical/smrt-jobs';
+import { createHmacDurableJobPayloadSigner } from '@happyvertical/smrt-jobs';
+import { createTaskRunner } from '@happyvertical/smrt-jobs/runner';
 import {
   disableTenancy,
   enableTenancy,

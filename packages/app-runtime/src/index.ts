@@ -31,7 +31,10 @@ import {
   type RuntimeProviderOverrides,
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
-import { TaskRunner, type TaskRunnerConfig } from '@happyvertical/smrt-jobs';
+import {
+  TaskRunner,
+  type TaskRunnerConfig,
+} from '@happyvertical/smrt-jobs/runner';
 import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import {

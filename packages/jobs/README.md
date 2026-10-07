@@ -72,7 +72,8 @@ pnpm add @happyvertical/smrt-jobs
 ### Add background capabilities to a SmrtObject
 
 ```typescript
-import { withBackgroundJobs, TaskRunner } from '@happyvertical/smrt-jobs';
+import { withBackgroundJobs } from '@happyvertical/smrt-jobs';
+import { TaskRunner } from '@happyvertical/smrt-jobs/runner';
 import { Document } from './document.js';
 
 // Mixin adds .bg() and .background() to any SmrtObject class
@@ -98,8 +99,10 @@ const result = await handle2.wait({ timeout: 60000, pollInterval: 100 });
 
 ### Run a TaskRunner to process jobs
 
+`TaskRunner` and `createTaskRunner` are Node-only (worker threads) and live on the `@happyvertical/smrt-jobs/runner` subpath, not the package root, so model and collection imports from the root stay browser-reachable. Import them from `/runner`.
+
 ```typescript
-import { TaskRunner } from '@happyvertical/smrt-jobs';
+import { TaskRunner } from '@happyvertical/smrt-jobs/runner';
 
 const runner = new TaskRunner({
   concurrency: 5,

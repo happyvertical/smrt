@@ -16,7 +16,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { createTaskRunner } from '@happyvertical/smrt-jobs';
+import { createTaskRunner } from '@happyvertical/smrt-jobs/runner';
 import type {
   DataSurfaceDescriptor,
   DataSurfaceIdentity,

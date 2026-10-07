@@ -8,11 +8,11 @@ import { SqlDataSurfaceActionStateStore } from '@happyvertical/smrt-agents/serve
 import { createMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
 import { mountMcpRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import { McpTaskStore } from '@happyvertical/smrt-jobs';
 import {
-  McpTaskStore,
   TaskRunner,
   type TaskRunnerConfig,
-} from '@happyvertical/smrt-jobs';
+} from '@happyvertical/smrt-jobs/runner';
 import { resolveOpenAiNavigationTarget } from '@happyvertical/smrt-mcp-openai';
 import {
   MembershipCollection,
