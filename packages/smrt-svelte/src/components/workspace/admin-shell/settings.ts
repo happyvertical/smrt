@@ -1,3 +1,8 @@
+import {
+  isShellLayoutEmpty,
+  normalizeShellLayout,
+  type ShellLayoutPanel,
+} from './layout.js';
 import type {
   PanelEdge,
   PanelState,
@@ -94,20 +99,24 @@ export function resolveShellConfig(
 }
 
 /**
- * An edge's state: hidden edges stay hidden; otherwise the user's setting,
- * then the edge's default for `viewport` (when it declares
- * `viewportDefaults`), then its configured initial state.
+ * An edge's state: hidden edges (by the host or the user's layout) stay
+ * hidden; otherwise the user's setting, then the edge's default for
+ * `viewport` (when it declares `viewportDefaults`), then the layout's
+ * `initial`, then the configured initial state.
  */
 export function resolveInitialPanelState(
   edge: PanelEdge,
   config: ShellPanelConfig,
   settings: ShellSettingsDelta = {},
   viewport?: ShellViewport,
+  layoutPanel?: ShellLayoutPanel,
 ): PanelState {
   if (config.initial === 'hidden') return 'hidden';
+  if (layoutPanel?.visible === false) return 'hidden';
   return (
     settings.panels?.[edge] ??
     (viewport ? config.viewportDefaults?.[viewport] : undefined) ??
+    layoutPanel?.initial ??
     config.initial
   );
 }
@@ -234,6 +243,10 @@ export function pruneShellSettingsDelta(
   }
   if (delta.activeFocusToolId !== undefined) {
     pruned.activeFocusToolId = delta.activeFocusToolId;
+  }
+  if (delta.layout !== undefined) {
+    const layout = normalizeShellLayout(delta.layout);
+    if (!isShellLayoutEmpty(layout)) pruned.layout = layout;
   }
   if (delta.keymap && Object.keys(delta.keymap).length > 0) {
     pruned.keymap = delta.keymap;

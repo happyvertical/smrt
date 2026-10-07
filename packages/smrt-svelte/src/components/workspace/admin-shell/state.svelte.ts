@@ -1,5 +1,10 @@
 import { untrack } from 'svelte';
 import {
+  isShellLayoutEmpty,
+  type ShellLayout,
+  type ShellLayoutPanel,
+} from './layout.js';
+import {
   clampPanelSize,
   LocalStorageShellSettingsAdapter,
   mergeShellSettingsDelta,
@@ -64,6 +69,8 @@ export interface ShellStateOptions {
   storageKey?: string;
   /** Initial viewport class (default: detected from `window`, else desktop). */
   viewport?: ShellViewport;
+  /** The user's per-edge layout overrides (see `ShellLayout.panels`). */
+  layoutPanels?: ShellLayout['panels'];
 }
 
 export class ShellState {
@@ -94,6 +101,12 @@ export class ShellState {
    * it current. Read it through `presentationFor`.
    */
   overlayMatches = $state<Partial<Record<PanelEdge, boolean>>>({});
+  /**
+   * The user's layout overrides per edge. `visible: false` keeps an edge
+   * hidden (no toggle, hotkey, or restore control reopens it); `initial`
+   * is the state it starts in. Set it through `setLayoutPanels`.
+   */
+  layoutPanels = $state<Partial<Record<PanelEdge, ShellLayoutPanel>>>({});
 
   private activityListeners = new Set<ActivityListener>();
 
@@ -105,6 +118,7 @@ export class ShellState {
         ? new LocalStorageShellSettingsAdapter(options.storageKey)
         : null);
     this.viewport = options.viewport ?? detectShellViewport();
+    this.layoutPanels = { ...(options.layoutPanels ?? {}) };
     this.applySettings(options.settings ?? {}, { persist: false });
   }
 
@@ -133,6 +147,7 @@ export class ShellState {
         const config = this.config.panels[edge];
         const next = config.viewportDefaults?.[viewport];
         if (!next || config.initial === 'hidden') continue;
+        if (this.layoutPanels[edge]?.visible === false) continue;
         delete panels[edge];
         changed = true;
         if (next === 'expanded') this.closeExclusivePeers(edge);
@@ -263,11 +278,85 @@ export class ShellState {
           this.config.panels[edge],
           this.settings,
           this.viewport,
+          this.layoutPanels[edge],
         );
       }
       this.activeFocusToolId =
         this.settings.activeFocusToolId ?? this.activeFocusToolId;
       if (persist !== false) void this.persistSettings();
+    });
+  }
+
+  /**
+   * Apply the user's per-edge layout overrides. An edge made hidden closes at
+   * once; one made visible (or whose `initial` changed) resolves again from
+   * its settings, viewport default, layout `initial`, then configured
+   * `initial`, so a stored toggle is never discarded by loading a layout.
+   * Edges the host configured hidden are untouched.
+   */
+  setLayoutPanels(next: ShellLayout['panels'] = {}): void {
+    untrack(() => {
+      const previous = this.layoutPanels;
+      this.layoutPanels = { ...next };
+      for (const edge of PANEL_EDGES) {
+        const before = previous[edge];
+        const after = next[edge];
+        if (
+          before?.visible === after?.visible &&
+          before?.initial === after?.initial
+        ) {
+          continue;
+        }
+        const config = this.config.panels[edge];
+        if (config.initial === 'hidden') continue;
+        this.panels[edge] = resolveInitialPanelState(
+          edge,
+          config,
+          this.settings,
+          this.viewport,
+          after,
+        );
+        if (this.panels[edge] === 'expanded') this.closeExclusivePeers(edge);
+      }
+    });
+  }
+
+  /**
+   * Make `state` an edge's state now and for later loads: the user chose its
+   * starting state, so a stored open/closed toggle is dropped. Not applied to
+   * hidden edges or edges whose state follows the viewport.
+   */
+  setPanelStart(edge: PanelEdge, state: VisiblePanelState): void {
+    untrack(() => {
+      const config = this.config.panels[edge];
+      if (
+        config.initial === 'hidden' ||
+        config.viewportDefaults ||
+        this.layoutPanels[edge]?.visible === false
+      ) {
+        return;
+      }
+      if (this.settings.panels && edge in this.settings.panels) {
+        const { [edge]: _dropped, ...rest } = this.settings.panels;
+        this.settings = { ...this.settings, panels: rest };
+      }
+      if (state === 'expanded') this.closeExclusivePeers(edge);
+      this.panels[edge] = state;
+      void this.persistSettings();
+    });
+  }
+
+  /**
+   * Store the user's shell layout in the settings core (an empty layout
+   * clears it). `AppShell` does this only when the host passes neither
+   * `layout` nor `onlayoutchange`.
+   */
+  setLayout(layout: ShellLayout | null): void {
+    untrack(() => {
+      const { layout: _previous, ...rest } = this.settings;
+      this.settings =
+        layout && !isShellLayoutEmpty(layout) ? { ...rest, layout } : rest;
+      void this.persistSettings();
     });
   }
 
@@ -297,7 +386,10 @@ export class ShellState {
     )
       return;
     untrack(() => {
-      if (this.config.panels[edge].initial === 'hidden') {
+      if (
+        this.config.panels[edge].initial === 'hidden' ||
+        this.layoutPanels[edge]?.visible === false
+      ) {
         this.panels[edge] = 'hidden';
         return;
       }
@@ -394,6 +486,22 @@ export class ShellState {
       : null;
   }
 
+  /**
+   * Whether the dock (right edge) can be shown now: not removed by the host
+   * (including `phone: 'hidden'` on a phone) and not hidden by the user's
+   * layout.
+   */
+  get dockAvailable(): boolean {
+    return (
+      this.config.panels.right.initial !== 'hidden' &&
+      this.layoutPanels.right?.visible !== false &&
+      !(
+        this.viewport === 'phone' &&
+        this.phonePresentation('right') === 'hidden'
+      )
+    );
+  }
+
   /** Close the dock (collapse the right edge). */
   closeFocusTool(): void {
     this.collapsePanel('right');
@@ -402,11 +510,13 @@ export class ShellState {
   /**
    * Open a dock tool and ask for focus to move into it. `returnFocus` is
    * where focus goes back to when the dock closes (default: whatever has
-   * focus now). Returns false when no such tool is registered.
+   * focus now). Returns false when no such tool is registered or the dock is
+   * not available (see `dockAvailable`).
    */
   openDockTool(id: string, options: ShellDockOpenOptions = {}): boolean {
     return untrack(() => {
       if (!this.focusTools.some((tool) => tool.id === id)) return false;
+      if (!this.dockAvailable) return false;
       this.openFocusTool(id);
       if (options.focus === false) return true;
       const active =
@@ -425,6 +535,7 @@ export class ShellState {
   toggleDockTool(id: string, options: ShellDockOpenOptions = {}): boolean {
     return untrack(() => {
       if (!this.focusTools.some((tool) => tool.id === id)) return false;
+      if (!this.dockAvailable) return false;
       if (this.openFocusToolId === id) {
         this.closeFocusTool();
         return true;

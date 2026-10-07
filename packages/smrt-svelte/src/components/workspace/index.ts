@@ -39,6 +39,18 @@ export {
   shellActionFromKeyboardEvent,
   shouldIgnoreShellHotkey,
 } from './admin-shell/hotkeys.js';
+export * from './admin-shell/layout.js';
+export {
+  SHELL_LAYOUT_CONTEXT,
+  setShellLayout,
+  tryUseShellLayout,
+  useShellLayout,
+} from './admin-shell/layout-context.js';
+export {
+  ShellLayoutController,
+  type ShellLayoutControllerOptions,
+  type ShellLayoutPanelView,
+} from './admin-shell/layout-controller.svelte.js';
 export {
   type BottomBarMode,
   bottomBarMode,
@@ -72,6 +84,7 @@ export { default as PhoneBottomBar } from './admin-shell/PhoneBottomBar.svelte';
 export { default as PhoneTopBar } from './admin-shell/PhoneTopBar.svelte';
 export { default as ShellCorner } from './admin-shell/ShellCorner.svelte';
 export { default as ShellDockTool } from './admin-shell/ShellDockTool.svelte';
+export { default as ShellLayoutEditor } from './admin-shell/ShellLayoutEditor.svelte';
 export { default as ShellNavToggle } from './admin-shell/ShellNavToggle.svelte';
 export { default as ShellSettingsPanel } from './admin-shell/ShellSettingsPanel.svelte';
 export { default as ShellTitle } from './admin-shell/ShellTitle.svelte';

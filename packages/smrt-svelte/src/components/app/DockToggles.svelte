@@ -14,7 +14,7 @@ function iconFor(toggle: DockToggle): string | undefined {
 }
 
 function press(event: MouseEvent, toggle: DockToggle): void {
-  if (!dock.has(toggle.tool)) return;
+  if (!dock.has(toggle.tool) || !dock.available) return;
   dock.toggle(toggle.tool, {
     returnFocus: event.currentTarget as HTMLElement,
   });
@@ -23,7 +23,7 @@ function press(event: MouseEvent, toggle: DockToggle): void {
 
 <div class="smrt-dock-toggles" data-testid="dock-toggles">
   {#each toggles as toggle (toggle.tool)}
-    {@const registered = dock.has(toggle.tool)}
+    {@const registered = dock.has(toggle.tool) && dock.available}
     {@const open = dock.isOpen(toggle.tool)}
     {@const icon = iconFor(toggle)}
     <!-- raw-primitive-allow: shell chrome toggle, not a content button -->
