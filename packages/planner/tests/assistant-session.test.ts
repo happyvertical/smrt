@@ -83,6 +83,29 @@ describe('AssistantSession', () => {
     expect(terminate).toHaveBeenCalled();
   });
 
+  it('aborts a load in progress when unloaded (dock closed)', async () => {
+    const terminate = vi.fn();
+    const store = storage();
+    const session = new AssistantSession({
+      store: recipeState,
+      recipes,
+      storage: store,
+      webgpu: () => true,
+      host: {
+        createWorker: () => ({ terminate }) as unknown as Worker,
+        createEngine: () => new Promise(() => {}),
+      },
+    });
+    const started = session.start();
+    session.unload();
+    await started;
+    expect(terminate).toHaveBeenCalled();
+    expect(session.status).toBe('idle');
+    // The abandoned download is not remembered as accepted.
+    expect(session.consented).toBe(false);
+    expect(store.getItem(PREFS_KEY)).toBeNull();
+  });
+
   it('shows an error when loading fails', async () => {
     const session = new AssistantSession({
       store: recipeState,

@@ -78,11 +78,6 @@ export class AssistantSession {
     if (this.status === 'loading' || this.status === 'unsupported') return;
     const modelId = this.prefs.modelId;
     if (!getModel(modelId)) return;
-    this.prefs = {
-      ...this.prefs,
-      consented: [...new Set([...this.prefs.consented, modelId])],
-    };
-    savePrefs(this.options.storage, this.prefs);
     this.status = 'loading';
     this.error = '';
     this.progress = { progress: 0, text: 'Starting' };
@@ -98,6 +93,13 @@ export class AssistantSession {
         this.options.host ?? browserHost,
       );
       this.loaded = loaded;
+      // Consent is recorded only once the download completed: a cancelled or
+      // failed attempt must show the size and memory warning again.
+      this.prefs = {
+        ...this.prefs,
+        consented: [...new Set([...this.prefs.consented, modelId])],
+      };
+      savePrefs(this.options.storage, this.prefs);
       this.chat = new WebLLMProvider({
         type: 'webllm',
         engine: loaded.engine,
@@ -123,6 +125,8 @@ export class AssistantSession {
 
   /** Free the model, for example to choose another. */
   unload(): void {
+    // A load in progress is aborted too, which terminates its worker.
+    this.abort?.abort();
     this.transport.abort();
     this.loaded?.dispose();
     this.loaded = null;
