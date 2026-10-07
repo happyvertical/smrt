@@ -394,6 +394,10 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id='footer.end']) { grid-row: 4; grid-column: 3; }
   .smrt-shell-layout-editor__placement :global(.smrt-sortable__container:has([data-region-hidden])) { opacity: 0.6; border-style: dashed; }
   .smrt-shell-layout-editor__placement :global(.smrt-sortable__item) { flex-wrap: wrap; }
+  /* Label on its own line (never broken mid-word); the select and Reset share the next line. */
+  .smrt-shell-layout-editor__placement .smrt-shell-layout-editor__label { flex: 1 0 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .smrt-shell-layout-editor__placement :global(.smrt-sortable__item select) { flex: 1 1 8rem; min-width: 0; }
+  .smrt-shell-layout-editor__placement :global(.smrt-sortable__item button) { white-space: nowrap; }
   .smrt-shell-layout-editor__region { font: var(--smrt-typography-body-small-font); }
   .smrt-shell-layout-editor__region-hidden { padding-inline: var(--smrt-spacing-2); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-high); font: var(--smrt-typography-label-small-font); }
   @media (max-width: 48rem) {

@@ -1498,14 +1498,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__tenant-stack {
     flex: 1;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
     gap: var(--smrt-spacing-3);
     min-width: 0;
     min-height: 0;
   }
 
+  /* Only the navigation/content area grows; the sidebar header and footer
+     slots (and the legacy tenant footer) keep their natural height. */
   .smrt-admin-shell__tenant-content {
+    flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
     overflow: auto;
