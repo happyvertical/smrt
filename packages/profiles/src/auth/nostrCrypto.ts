@@ -5,15 +5,21 @@
  * signature verification, and bech32 encoding for Nostr authentication.
  */
 
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  hkdfSync,
-  randomBytes,
-} from 'node:crypto';
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js';
 import { bech32 } from 'bech32';
+import {
+  aesGcmDecrypt,
+  aesGcmEncrypt,
+  base64ToBytes,
+  bytesToBase64,
+  bytesToHex,
+  bytesToUtf8,
+  hexToBytes,
+  hkdfSha256,
+  randomBytes,
+  sha256Hex,
+  utf8ToBytes,
+} from '../crypto-util.js';
 
 export interface NostrKeypair {
   /** Hex-encoded public key (64 characters) */
@@ -47,12 +53,12 @@ export interface NostrEvent {
 export function generateNostrKeypair(): NostrKeypair {
   // Generate 32 random bytes for private key
   const privkeyBytes = randomBytes(32);
-  const privkey = Buffer.from(privkeyBytes).toString('hex');
+  const privkey = bytesToHex(privkeyBytes);
 
   // Derive public key from private key
   const pubkeyBytes = secp256k1.getPublicKey(privkeyBytes, true);
   // Remove the prefix byte (02 or 03) for compressed public key
-  const pubkey = Buffer.from(pubkeyBytes.slice(1)).toString('hex');
+  const pubkey = bytesToHex(pubkeyBytes.slice(1));
 
   return { pubkey, privkey };
 }
@@ -61,12 +67,12 @@ export function generateNostrKeypair(): NostrKeypair {
  * Derive an encryption key from the master secret using HKDF
  * @param masterSecret - Server master secret
  */
-export function deriveEncryptionKey(masterSecret: string): Buffer {
-  const salt = Buffer.from('nostr-privkey-encryption', 'utf8');
-  const info = Buffer.from('aes-256-gcm', 'utf8');
-  const keyMaterial = Buffer.from(masterSecret, 'utf8');
+export function deriveEncryptionKey(masterSecret: string): Uint8Array {
+  const salt = utf8ToBytes('nostr-privkey-encryption');
+  const info = utf8ToBytes('aes-256-gcm');
+  const keyMaterial = utf8ToBytes(masterSecret);
 
-  return Buffer.from(hkdfSync('sha256', keyMaterial, salt, info, 32));
+  return hkdfSha256(keyMaterial, salt, info, 32);
 }
 
 /**
@@ -81,17 +87,12 @@ export function encryptPrivkey(
   const key = deriveEncryptionKey(masterSecret);
   const iv = randomBytes(12); // 96-bit IV for GCM
 
-  const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([
-    cipher.update(privkey, 'utf8'),
-    cipher.final(),
-  ]);
-  const tag = cipher.getAuthTag();
+  const { ciphertext, tag } = aesGcmEncrypt(key, iv, utf8ToBytes(privkey));
 
   return {
-    ciphertext: encrypted.toString('base64'),
-    iv: iv.toString('base64'),
-    tag: tag.toString('base64'),
+    ciphertext: bytesToBase64(ciphertext),
+    iv: bytesToBase64(iv),
+    tag: bytesToBase64(tag),
   };
 }
 
@@ -105,19 +106,11 @@ export function decryptPrivkey(
   masterSecret: string,
 ): string {
   const key = deriveEncryptionKey(masterSecret);
-  const iv = Buffer.from(encrypted.iv, 'base64');
-  const tag = Buffer.from(encrypted.tag, 'base64');
-  const ciphertext = Buffer.from(encrypted.ciphertext, 'base64');
+  const iv = base64ToBytes(encrypted.iv);
+  const tag = base64ToBytes(encrypted.tag);
+  const ciphertext = base64ToBytes(encrypted.ciphertext);
 
-  const decipher = createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
-
-  const decrypted = Buffer.concat([
-    decipher.update(ciphertext),
-    decipher.final(),
-  ]);
-
-  return decrypted.toString('utf8');
+  return bytesToUtf8(aesGcmDecrypt(key, iv, ciphertext, tag));
 }
 
 /**
@@ -133,7 +126,7 @@ export function computeEventId(event: NostrEvent): string {
     event.content,
   ]);
 
-  return createHash('sha256').update(serialized).digest('hex');
+  return sha256Hex(serialized);
 }
 
 /**
@@ -146,12 +139,12 @@ export function signEvent(
   privkey: string,
 ): NostrEvent {
   const id = computeEventId(event as NostrEvent);
-  const privkeyBytes = Buffer.from(privkey, 'hex');
-  const idBytes = Buffer.from(id, 'hex');
+  const privkeyBytes = hexToBytes(privkey);
+  const idBytes = hexToBytes(id);
 
   // Use Schnorr signature (BIP-340) for Nostr
   const sig = schnorr.sign(idBytes, privkeyBytes);
-  const sigHex = Buffer.from(sig).toString('hex');
+  const sigHex = bytesToHex(sig);
 
   return {
     ...event,
@@ -176,10 +169,10 @@ export function verifyNostrSignature(event: NostrEvent): boolean {
   }
 
   try {
-    const sigBytes = Buffer.from(event.sig, 'hex');
-    const idBytes = Buffer.from(event.id, 'hex');
+    const sigBytes = hexToBytes(event.sig);
+    const idBytes = hexToBytes(event.id);
     // Nostr public keys are x-only (32 bytes) - use directly with Schnorr
-    const pubkeyBytes = Buffer.from(event.pubkey, 'hex');
+    const pubkeyBytes = hexToBytes(event.pubkey);
 
     return schnorr.verify(sigBytes, idBytes, pubkeyBytes);
   } catch {
@@ -198,9 +191,9 @@ export function createAuthEvent(
   challenge: string,
   relay?: string,
 ): NostrEvent {
-  const privkeyBytes = Buffer.from(privkey, 'hex');
+  const privkeyBytes = hexToBytes(privkey);
   const pubkeyBytes = secp256k1.getPublicKey(privkeyBytes, true);
-  const pubkey = Buffer.from(pubkeyBytes.slice(1)).toString('hex');
+  const pubkey = bytesToHex(pubkeyBytes.slice(1));
 
   const tags: string[][] = [['challenge', challenge]];
   if (relay) {
@@ -260,7 +253,7 @@ export function verifyAuthEvent(
  * Convert hex public key to npub (bech32)
  */
 export function pubkeyToNpub(pubkey: string): string {
-  const words = bech32.toWords(Buffer.from(pubkey, 'hex'));
+  const words = bech32.toWords(hexToBytes(pubkey));
   return bech32.encode('npub', words, 1000);
 }
 
@@ -272,14 +265,14 @@ export function npubToPubkey(npub: string): string {
   if (prefix !== 'npub') {
     throw new Error('Invalid npub prefix');
   }
-  return Buffer.from(bech32.fromWords(words)).toString('hex');
+  return bytesToHex(Uint8Array.from(bech32.fromWords(words)));
 }
 
 /**
  * Convert hex private key to nsec (bech32)
  */
 export function privkeyToNsec(privkey: string): string {
-  const words = bech32.toWords(Buffer.from(privkey, 'hex'));
+  const words = bech32.toWords(hexToBytes(privkey));
   return bech32.encode('nsec', words, 1000);
 }
 
@@ -291,16 +284,16 @@ export function nsecToPrivkey(nsec: string): string {
   if (prefix !== 'nsec') {
     throw new Error('Invalid nsec prefix');
   }
-  return Buffer.from(bech32.fromWords(words)).toString('hex');
+  return bytesToHex(Uint8Array.from(bech32.fromWords(words)));
 }
 
 /**
  * Get public key from private key
  */
 export function getPublicKey(privkey: string): string {
-  const privkeyBytes = Buffer.from(privkey, 'hex');
+  const privkeyBytes = hexToBytes(privkey);
   const pubkeyBytes = secp256k1.getPublicKey(privkeyBytes, true);
-  return Buffer.from(pubkeyBytes.slice(1)).toString('hex');
+  return bytesToHex(pubkeyBytes.slice(1));
 }
 
 /**
@@ -312,7 +305,7 @@ export function isValidPubkey(pubkey: string): boolean {
   }
   try {
     // Try to use it in a point multiplication
-    const fullPubkey = Buffer.from(`02${pubkey}`, 'hex');
+    const fullPubkey = hexToBytes(`02${pubkey}`);
     secp256k1.Point.fromBytes(fullPubkey);
     return true;
   } catch {
@@ -328,7 +321,7 @@ export function isValidPrivkey(privkey: string): boolean {
     return false;
   }
   try {
-    const privkeyBytes = Buffer.from(privkey, 'hex');
+    const privkeyBytes = hexToBytes(privkey);
     // Check if it's a valid scalar for secp256k1
     secp256k1.getPublicKey(privkeyBytes);
     return true;

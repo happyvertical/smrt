@@ -5,7 +5,6 @@
  * and automatically invalidated after verification or expiration.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
 import {
   field,
   foreignKey,
@@ -13,6 +12,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { bytesToBase64Url, randomBytes, sha256Hex } from '../crypto-util.js';
 import type { NostrIdentity } from './NostrIdentity';
 
 export interface MagicLinkTokenOptions extends SmrtObjectOptions {
@@ -102,7 +102,7 @@ export class MagicLinkToken extends SmrtObject {
    * Hash a token using SHA-256
    */
   static hashToken(token: string): string {
-    return createHash('sha256').update(token).digest('hex');
+    return sha256Hex(token);
   }
 
   /**
@@ -122,7 +122,7 @@ export class MagicLinkToken extends SmrtObject {
   ): Promise<GenerateTokenResult> {
     // Generate 32 bytes of random data (256 bits of entropy)
     const tokenBytes = randomBytes(32);
-    const token = tokenBytes.toString('base64url');
+    const token = bytesToBase64Url(tokenBytes);
     const tokenHash = MagicLinkToken.hashToken(token);
 
     const expiresInMinutes =
