@@ -128,7 +128,7 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     const { changes } = mountShell();
     await user.click(
-      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+      screen.getByRole('button', { name: 'Show Pages in navigation' }),
     );
     expect(changes.at(-1)).toEqual({ version: 1, hidden: ['/pages'] });
     await vi.waitFor(() =>
@@ -141,11 +141,11 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     mountShell();
     await user.click(
-      screen.getByRole('switch', { name: 'Show People in navigation' }),
+      screen.getByRole('button', { name: 'Show People in navigation' }),
     );
     await vi.waitFor(() => expect(shellHeadings()).toEqual(['Content']));
     await user.click(
-      screen.getByRole('switch', { name: 'Show People in navigation' }),
+      screen.getByRole('button', { name: 'Show People in navigation' }),
     );
     await vi.waitFor(() =>
       expect(shellHeadings()).toEqual(['Content', 'People']),
@@ -324,7 +324,7 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     const { changes } = mountShell({ mode: 'callback' });
     await user.click(
-      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+      screen.getByRole('button', { name: 'Show Pages in navigation' }),
     );
     expect(changes).toHaveLength(1);
     await vi.waitFor(() =>
@@ -336,7 +336,7 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     const first = mountShell({ mode: 'default' });
     await user.click(
-      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+      screen.getByRole('button', { name: 'Show Pages in navigation' }),
     );
     await vi.waitFor(() =>
       expect(shellLinks()).toEqual(['/', '/posts', '/users', '/roles']),
@@ -362,7 +362,7 @@ describe('AppShell layout', () => {
     const user = userEvent.setup();
     mountShell();
     await user.click(
-      screen.getByRole('switch', { name: 'Show Pages in navigation' }),
+      screen.getByRole('button', { name: 'Show Pages in navigation' }),
     );
     await vi.waitFor(() => expect(shellLinks()).not.toContain('/pages'));
     expect(
@@ -438,7 +438,7 @@ describe('app-owned sections', () => {
     const user = userEvent.setup();
     mountShell();
     await user.click(
-      screen.getByRole('switch', { name: 'Show title of People' }),
+      screen.getByRole('button', { name: 'Show title of People' }),
     );
     await vi.waitFor(() => expect(shellHeadings()).toEqual(['Content']));
     const navElement = document.querySelector(
