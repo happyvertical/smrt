@@ -163,6 +163,26 @@ describe('OpenAPI spec generation (#1500)', () => {
       expect(list.properties.meta.properties.total.type).toBe('integer');
     });
 
+    it('emits enum for manifest-hydrated enum fields on scalar kinds (#3598)', () => {
+      const widget = ObjectRegistry.getClass('SwaggerFieldWidget');
+      const title = widget?.fields.get('title');
+      const count = widget?.fields.get('count');
+      expect(title && count).toBeTruthy();
+      const savedTitle = title?._meta;
+      const savedCount = count?._meta;
+      try {
+        if (title) title._meta = { ...title._meta, enum: ['a', 'b'] };
+        if (count) count._meta = { ...count._meta, enum: [1, 2] };
+        const props =
+          testOpenAPISpec().components.schemas.SwaggerFieldWidget.properties;
+        expect(props.title.enum).toEqual(['a', 'b']);
+        expect(props.count.enum).toEqual([1, 2]);
+      } finally {
+        if (title) title._meta = savedTitle;
+        if (count) count._meta = savedCount;
+      }
+    });
+
     it('maps every field type to the right OpenAPI schema', () => {
       const spec = testOpenAPISpec();
       const props = spec.components.schemas.SwaggerFieldWidget.properties;

@@ -23,6 +23,8 @@ import type {
   ShellPanelDefaults,
 } from '../workspace/admin-shell/types.js';
 import DockSlot from './DockSlot.svelte';
+import DockToggles from './DockToggles.svelte';
+import type { DockToggle } from './dock-toggle.js';
 import RuntimeDiagnosticsWebMcp from './RuntimeDiagnosticsWebMcp.svelte';
 
 interface Props {
@@ -69,6 +71,15 @@ interface Props {
    * register on it when the `webmcp` UI is enabled (`webmcp: true`).
    */
   dock?: Snippet<[DataSurfaceRegistry]>;
+  /**
+   * Icon buttons rendered at the right of the shell header, each toggling
+   * the `ShellDockTool` with the same id open and closed. `aria-pressed` and
+   * `aria-expanded` follow the dock, focus moves into the dock when it
+   * opens and back to the button when it closes (Escape included). The
+   * `assistant` tool defaults to a chat-bubble icon. Hosts and assistants can
+   * drive the same dock from code with `useShellDock()`.
+   */
+  dockToggles?: DockToggle[];
   children: Snippet;
 }
 
@@ -91,16 +102,28 @@ let {
   colorScheme = 'system',
   appPanelDocs,
   dock,
+  dockToggles = [],
   children,
 }: Props = $props();
 const { t } = useI18n();
 const hasNav = $derived(nav.length > 0 || navGroups.length > 0);
 </script>
 
+{#snippet dockHeader()}
+  <DockToggles toggles={dockToggles} />
+{/snippet}
+
 <Provider {webmcp} {user} {permissions}>
   <RuntimeDiagnosticsWebMcp enabled={runtimeDiagnostics} />
   <ThemeProvider {preset} {colorScheme} persist={true}>
-    <AdminShell {title} {subtitle} {storageKey} {config} path={currentHref}>
+    <AdminShell
+      {title}
+      {subtitle}
+      {storageKey}
+      {config}
+      path={currentHref}
+      header={dockToggles.length > 0 ? dockHeader : undefined}
+    >
       {#snippet appPanel()}
         <AppScopePanel
           appName={title}

@@ -148,6 +148,8 @@ export interface ToolFieldMeta {
   minLength?: number;
   min?: number;
   max?: number;
+  /** Closed set of allowed values (enum / literal-union field, #3598). */
+  enum?: ReadonlyArray<string | number>;
   /** Field values may explicitly be null in the runtime/manifest contract. */
   nullable?: boolean;
   /** For `foreignKey`: the related class name, for the generated description. */
@@ -245,6 +247,17 @@ export function fieldTypeToJsonSchema(field: ToolFieldMeta): ToolJsonSchema {
 
   if (field.default !== undefined) {
     schema.default = field.default;
+  }
+
+  // Only scalar kinds can be constrained by an enum; a value list on a json or
+  // relationship field would describe the wrong thing.
+  const constrained =
+    field.type === 'text' ||
+    field.type === 'integer' ||
+    field.type === 'decimal';
+  if (constrained && field.enum && field.enum.length > 0) {
+    // A nullable field must still accept `null`, which `enum` would reject.
+    schema.enum = field.nullable ? [...field.enum, null] : [...field.enum];
   }
 
   if (field.nullable && typeof schema.type === 'string') {

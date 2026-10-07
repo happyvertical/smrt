@@ -1061,28 +1061,72 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
       // OXC wraps members in a TSEnumBody node: enumDecl.body.members
       const members = enumDecl.body?.members ?? enumDecl.members;
       if (name && isSafeObjectKey(name) && members && members.length > 0) {
-        const values = members
-          .map((m: TSEnumMember): string | null => {
-            if (m.initializer?.type === 'Literal') {
-              const val = m.initializer.value;
-              if (typeof val === 'string') return `'${val}'`;
-              if (typeof val === 'number') return String(val);
-            }
-            return null;
-          })
-          .filter((v): v is string => v !== null);
-
-        if (values.length > 0) {
-          // All string values → string union, all numeric → number union
-          const allStrings = values.every((v) => v.startsWith("'"));
-          if (allStrings) {
-            aliases[name] = values.join(' | ');
-          }
-        }
+        const union = enumMembersToUnion(members);
+        if (union) aliases[name] = union;
       }
     }
   }
   return aliases;
+}
+
+/**
+ * Render an enum's members as the union string the alias map stores
+ * (`'a' | 'b'` or `0 | 1`), in declaration order, using the member VALUES
+ * rather than their names (#3598).
+ *
+ * Handles string, numeric, negative and substitution-free template
+ * initializers, plus TypeScript's auto-increment for members without one
+ * (`enum E { A, B }` is `0 | 1`; `const enum` parses to the same node).
+ * Returns `null` when any member is not statically resolvable or when string
+ * and numeric members are mixed: a partial value list would be wrong, and a
+ * mixed enum has no single column type.
+ */
+function enumMembersToUnion(members: TSEnumMember[]): string | null {
+  const values: Array<string | number> = [];
+  let next = 0;
+  for (const member of members) {
+    const init = member.initializer as
+      | {
+          type?: string;
+          value?: unknown;
+          operator?: string;
+          argument?: { type?: string; value?: unknown };
+          quasis?: Array<{ value?: { cooked?: string | null } }>;
+          expressions?: unknown[];
+        }
+      | undefined;
+    if (!init) {
+      values.push(next);
+      next += 1;
+    } else if (init.type === 'Literal' && typeof init.value === 'string') {
+      values.push(init.value);
+    } else if (init.type === 'Literal' && typeof init.value === 'number') {
+      values.push(init.value);
+      next = init.value + 1;
+    } else if (
+      init.type === 'UnaryExpression' &&
+      init.operator === '-' &&
+      init.argument?.type === 'Literal' &&
+      typeof init.argument.value === 'number'
+    ) {
+      values.push(-init.argument.value);
+      next = -init.argument.value + 1;
+    } else if (
+      init.type === 'TemplateLiteral' &&
+      init.expressions?.length === 0 &&
+      typeof init.quasis?.[0]?.value?.cooked === 'string'
+    ) {
+      values.push(init.quasis[0].value.cooked);
+    } else {
+      return null;
+    }
+  }
+  const allStrings = values.every((v) => typeof v === 'string');
+  const allNumbers = values.every((v) => typeof v === 'number');
+  if (!allStrings && !allNumbers) return null;
+  return values
+    .map((v) => (typeof v === 'string' ? `'${v}'` : String(v)))
+    .join(' | ');
 }
 
 /**

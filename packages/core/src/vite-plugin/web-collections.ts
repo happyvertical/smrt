@@ -39,6 +39,7 @@ import {
   type ToolRouteDescriptor,
 } from '../generators/tool-schema.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
+import { readFieldEnum } from '../registry/manifest-field-merge.js';
 import type {
   FieldDefinition,
   FieldUIHints,
@@ -1154,6 +1155,10 @@ function buildWebToolDescriptorsForHost(input: {
       // fallback), so browser-side WebMCP tools document their arguments.
       ...(def.description !== undefined
         ? { description: def.description }
+        : {}),
+      // #3598: enum / literal-union fields constrain the tool input schema.
+      ...(readFieldEnum(owner.fields?.[name])
+        ? { enum: readFieldEnum(owner.fields?.[name]) }
         : {}),
     }),
   );

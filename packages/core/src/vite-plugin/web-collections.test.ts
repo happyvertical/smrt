@@ -249,6 +249,34 @@ describe('buildWebToolDescriptors', () => {
     expect(definition('price').description).toBeTruthy();
   });
 
+  it('constrains enum-typed fields to their allowed values in tool inputs (#3598)', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'Contract',
+          collection: 'contracts',
+          fields: {
+            status: field({ type: 'text', enum: ['draft', 'sent'] }),
+            tier: field({ type: 'integer', enum: [1, 3] }),
+            title: field({ type: 'text' }),
+          },
+        }),
+      ),
+    )[0];
+    const create = buildWebToolDescriptors(entry).find(
+      (d) => d.action === 'create',
+    );
+    const schema = create?.inputSchema as {
+      properties: Record<string, { $ref: string }>;
+      $defs: Record<string, { enum?: unknown[] }>;
+    };
+    const definition = (name: string) =>
+      schema.$defs[schema.properties[name].$ref.slice('#/$defs/'.length)];
+    expect(definition('status').enum).toEqual(['draft', 'sent']);
+    expect(definition('tier').enum).toEqual([1, 3]);
+    expect(definition('title').enum).toBeUndefined();
+  });
+
   it('preserves nullable manifest fields in generated tool schemas', () => {
     const entry = selectWebCollectionEntries(
       manifest(

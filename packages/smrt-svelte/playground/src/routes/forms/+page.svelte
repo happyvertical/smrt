@@ -10,6 +10,7 @@ import {
   Form,
   NumberInput,
   PhoneInput,
+  RelationInput,
   SearchInput,
   SelectInput,
   TextareaInput,
@@ -23,6 +24,7 @@ let phone = $state('');
 let birthday = $state('');
 let age = $state<number | null>(null);
 let department = $state('');
+let customerId = $state('');
 let notes = $state('');
 let newsletter = $state(false);
 let appendMode = $state(false);
@@ -45,6 +47,26 @@ const departmentOptions: SelectOption[] = [
   { value: 'support', label: 'Customer Support' },
   { value: 'hr', label: 'Human Resources' },
 ];
+
+// RelationInput demo: a caller-supplied lookup standing in for a REST search.
+const demoCustomers = [
+  { id: 'cus_001', label: 'Acme Corp', detail: 'acme@example.com' },
+  { id: 'cus_002', label: 'Globex', detail: 'billing@globex.example' },
+  { id: 'cus_003', label: 'Initech', detail: 'ap@initech.example' },
+  { id: 'cus_004', label: 'Umbrella Ltd' },
+];
+async function searchCustomers(query: string) {
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const q = query.toLowerCase();
+  return demoCustomers.filter(
+    (c) =>
+      c.label.toLowerCase().includes(q) ||
+      (c.detail ?? '').toLowerCase().includes(q),
+  );
+}
+async function resolveCustomer(id: string) {
+  return demoCustomers.find((c) => c.id === id) ?? null;
+}
 
 // Control panel state
 let sttAdapter = $state<STTAdapterType>('whisper-wasm');
@@ -86,6 +108,7 @@ function clearForm() {
   birthday = '';
   age = null;
   department = '';
+  customerId = '';
   notes = '';
   newsletter = false;
   submittedData = null;
@@ -210,6 +233,19 @@ function handleSearch(value: string) {
         description="Work department"
         options={departmentOptions}
         bind:value={department}
+      />
+
+      <RelationInput
+        name="customerId"
+        label="Customer"
+        description="Search by name or email"
+        search={searchCustomers}
+        resolve={resolveCustomer}
+        onCreate={async (query) => ({
+          id: `cus_${Date.now()}`,
+          label: query || 'New customer',
+        })}
+        bind:value={customerId}
       />
 
       <div class="append-toggle">

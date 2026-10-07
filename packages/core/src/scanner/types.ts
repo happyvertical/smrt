@@ -93,6 +93,8 @@ export interface FieldMeta {
   max?: number;
   minLength?: number;
   maxLength?: number;
+  /** Allowed values, mirrored from the manifest field's `enum` (#3598). */
+  enum?: ReadonlyArray<string | number>;
   /**
    * Validation regex. A string source, a `RegExp`, or — when a manifest was
    * JSON-serialized and a `RegExp` collapsed to `{}` — an opaque object. Read
@@ -141,6 +143,13 @@ export interface FieldDefinition {
   max?: number;
   maxLength?: number;
   minLength?: number;
+  /**
+   * Closed set of allowed values for a field typed as a TypeScript `enum` or
+   * a string/number literal union, in declaration order (values, not member
+   * names). Resolved by the scanner (#3598); generated tool and REST schemas
+   * constrain the field to it.
+   */
+  enum?: ReadonlyArray<string | number>;
   related?: string; // For foreignKey, crossPackageRef, oneToMany, manyToMany
   description?: string;
   _meta?: FieldMeta;

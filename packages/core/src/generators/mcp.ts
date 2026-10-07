@@ -15,6 +15,7 @@ import {
 } from '../query-bounds';
 import { ObjectRegistry } from '../registry';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
+import { readFieldEnum } from '../registry/manifest-field-merge.js';
 import type { RegisteredClass } from '../registry/types.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
@@ -986,6 +987,7 @@ export class MCPGenerator {
       minLength: field._meta?.minLength,
       min: field._meta?.min,
       max: field._meta?.max,
+      enum: readFieldEnum(field),
       related: field.related,
     }));
   }

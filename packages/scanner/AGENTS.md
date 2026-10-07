@@ -15,6 +15,21 @@ executes the source.
 - `ManifestAdapter` — converts resolved classes into the SMRT manifest shape
   (`toManifest()`); owns field-type inference (the `0` vs `0.0` integer/decimal
   heuristic, decorator interpretation, union/alias resolution).
+- Enum values (#3598): a field typed as a TS `enum` / `const enum` or a
+  string/number literal union (through aliases, imports within the scanned
+  project, `| null`, and unions that nest an alias) emits `enum: [...]` on its
+  manifest entry — declaration order, values not member names. `enum-values.ts`
+  (`resolveEnumValues`) flattens the alias map; `extractTypeAliases` renders
+  enums with static string/number/negative/template initializers and
+  auto-increment (mixed or computed enums yield no alias, never a partial list).
+  `enum` is emitted only when the final column type is `text`/`integer`/
+  `decimal` and agrees with the value kind. **Column-type effect:** numeric
+  enums and unions that nest an alias (`Base | 'extra'`) previously fell to
+  `json` and now infer `integer`/`text`/`decimal` (a schema change for a
+  consumer that declares such a field; `@field({ type: 'json' })` keeps the old
+  column and drops `enum`); an enum with a computed member now yields `json`
+  instead of a partial string alias. The alias map is project-wide by
+  bare name, so two same-named types in one package collide (last file wins).
 - `parseFile` / `parseSource` — parse a single file or a source string to a
   `FileScanResult` (classes, errors, type aliases, SMRT imports). Each class
   carries the parser's `bodyStart` offset; core's library build inserts its
