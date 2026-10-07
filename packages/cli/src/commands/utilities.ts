@@ -1785,6 +1785,7 @@ export default testManifest;
       console.log('\n🔄 Migrating database schema...\n');
 
       let db: DatabaseInterface | undefined;
+      let migrationLock: { release(): Promise<void> } | undefined;
 
       try {
         const forceSelection = resolveForceMigrationSelection(
@@ -1923,6 +1924,40 @@ export default testManifest;
         console.log(
           `✓ Connected to ${formatDatabaseDisplayUrl(dbType, dbUrl)}\n`,
         );
+
+        // Serialize concurrent runs against this database (#3634). Two
+        // processes migrating at once would both compare the live schema,
+        // plan the same batch, and the second would fail with "already
+        // exists". Hold the lock from before the first schema read (the
+        // system-timestamp step and tracker bootstrap below write framework
+        // tables) until the run ends; a waiting run then compares a current
+        // schema and has nothing to apply. A dry run only reads, so it never
+        // waits behind a real one.
+        if (!isDryRun) {
+          const {
+            acquireMigrationLock,
+            DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,
+            parsePostgresTimeoutMs,
+          } = await import('@happyvertical/smrt-core/migrations');
+          const lock = await acquireMigrationLock(db, {
+            engineHint: dbType,
+            timeoutMs: parsePostgresTimeoutMs(
+              config.migrations?.postgres?.migrationLockTimeout,
+              DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,
+            ),
+            onWait: () => {
+              console.log(
+                '⏳ Another db:migrate run holds the migration lock on this database; waiting for it to finish...\n',
+              );
+            },
+          });
+          migrationLock = lock;
+          if (lock.held && lock.waitedMs > 0) {
+            console.log(
+              `✓ Migration lock acquired after ${Math.round(lock.waitedMs / 1000)}s; re-reading the schema\n`,
+            );
+          }
+        }
 
         // MigrationTracker bootstraps framework-owned tables and deliberately
         // rejects legacy timezone-naive system columns. Apply the same
@@ -3142,7 +3177,11 @@ export default testManifest;
         process.exitCode = 1;
         return;
       } finally {
-        await closeDatabaseConnection(db);
+        try {
+          await migrationLock?.release();
+        } finally {
+          await closeDatabaseConnection(db);
+        }
       }
     },
   },

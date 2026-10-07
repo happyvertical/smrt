@@ -56,6 +56,16 @@ const h = vi.hoisted(() => {
     generateSummary: vi.fn(),
     applyFixes: vi.fn(),
     trackerInitialize: vi.fn(async () => {}),
+    lockRelease: vi.fn(async () => {}),
+    acquireMigrationLock: vi.fn(
+      async (
+        ..._args: unknown[]
+      ): Promise<{
+        held: boolean;
+        waitedMs: number;
+        release: () => Promise<void>;
+      }> => ({ held: false, waitedMs: 0, release: async () => {} }),
+    ),
     trackerGetEngine: vi.fn(() => 'sqlite'),
     trackerApplyAll: vi.fn(
       async (..._args: unknown[]): Promise<MigrationResult[]> => [],
@@ -125,6 +135,8 @@ const {
   migratePostgresSystemTimestamps,
   planPostgresSystemTimestampMigrations,
   trackerInitialize,
+  acquireMigrationLock,
+  lockRelease,
   manifestGenerate,
   discoverBaseClasses,
   rlQuestion,
@@ -203,7 +215,11 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
   >('@happyvertical/smrt-core/migrations');
 
   return {
+    acquireMigrationLock: (...args: unknown[]) =>
+      h.acquireMigrationLock(...args),
     buildConcurrentIndexPlan: actual.buildConcurrentIndexPlan,
+    DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS:
+      actual.DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,
     MigrationTracker: class {
       initialize = h.trackerInitialize;
       getEngine = h.trackerGetEngine;
@@ -708,6 +724,104 @@ describe('utility command handlers', () => {
 
     expect(trackerApplyAll).toHaveBeenCalled();
     expect(logged()).toContain('Successfully applied');
+  });
+
+  it('db:migrate holds the migration lock from before tracker bootstrap until the run ends (#3634)', async () => {
+    configureMigrate();
+    const order: string[] = [];
+    acquireMigrationLock.mockImplementationOnce(async () => {
+      order.push('acquire');
+      return {
+        held: true,
+        waitedMs: 0,
+        release: async () => {
+          order.push('release');
+          await lockRelease();
+        },
+      };
+    });
+    trackerInitialize.mockImplementationOnce(async () => {
+      order.push('initialize');
+    });
+    schemaCompare.mockImplementationOnce(async () => {
+      order.push('compare');
+      return { added_tables: [], changes: [] };
+    });
+
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
+
+    expect(order).toEqual(['acquire', 'initialize', 'compare', 'release']);
+    expect(acquireMigrationLock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ engineHint: 'sqlite', timeoutMs: 15 * 60_000 }),
+    );
+    expect(lockRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('db:migrate reads migrations.postgres.migrationLockTimeout and reports a wait (#3634)', async () => {
+    configureMigrate();
+    getPackageConfig.mockReturnValue({
+      database: { type: 'sqlite', url: './dev.db' },
+      migrations: { postgres: { migrationLockTimeout: '2min' } },
+    });
+    acquireMigrationLock.mockImplementationOnce(async (...args: unknown[]) => {
+      const options = args[1] as { onWait?: () => void };
+      options.onWait?.();
+      return { held: true, waitedMs: 4200, release: lockRelease };
+    });
+    schemaCompare.mockResolvedValue({ added_tables: [], changes: [] });
+
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
+
+    expect(acquireMigrationLock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ timeoutMs: 120_000 }),
+    );
+    expect(logged()).toContain(
+      'Another db:migrate run holds the migration lock',
+    );
+    expect(logged()).toContain('Migration lock acquired after 4s');
+    expect(lockRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('db:migrate fails before touching schema when the migration lock wait times out (#3634)', async () => {
+    configureMigrate();
+    acquireMigrationLock.mockRejectedValueOnce(
+      new Error('Another db:migrate run held the migration lock for 900s'),
+    );
+
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
+
+    expect(process.exitCode).toBe(1);
+    expect(trackerInitialize).not.toHaveBeenCalled();
+    expect(schemaCompare).not.toHaveBeenCalled();
+    expect(lockRelease).not.toHaveBeenCalled();
+  });
+
+  it('db:migrate --dry-run never takes the migration lock (#3634)', async () => {
+    configureMigrate();
+    schemaCompare.mockResolvedValue({ added_tables: [], changes: [] });
+
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      'dry-run': true,
+    });
+
+    expect(acquireMigrationLock).not.toHaveBeenCalled();
+  });
+
+  it('db:migrate releases the migration lock when the run fails (#3634)', async () => {
+    configureMigrate();
+    acquireMigrationLock.mockResolvedValueOnce({
+      held: true,
+      waitedMs: 0,
+      release: lockRelease,
+    });
+    schemaCompare.mockRejectedValueOnce(new Error('introspection failed'));
+
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {});
+
+    expect(process.exitCode).toBe(1);
+    expect(lockRelease).toHaveBeenCalledTimes(1);
   });
 
   it('db:migrate reports a failed migration batch', async () => {
