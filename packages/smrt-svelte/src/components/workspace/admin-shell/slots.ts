@@ -85,3 +85,40 @@ export function resolveSlot(
   }
   return null;
 }
+
+/** Prefix of the stable id of a dock toggle item: `dock:<tool>`. */
+export const SHELL_DOCK_ITEM_PREFIX = 'dock:';
+
+/** Prefix of the stable id of a host `slots` snippet item: `slot:<slot>`. */
+export const SHELL_HOST_SLOT_ITEM_PREFIX = 'slot:';
+
+/** Stable item id of the dock toggle for `tool`. */
+export function shellDockItemId(tool: string): string {
+  return `${SHELL_DOCK_ITEM_PREFIX}${tool}`;
+}
+
+/** Stable item id of the host's `slots[slot]` snippet. */
+export function shellHostSlotItemId(slot: ShellSlot): string {
+  return `${SHELL_HOST_SLOT_ITEM_PREFIX}${slot}`;
+}
+
+/** Whether a value is a known {@link ShellSlot}. */
+export function isShellSlot(value: unknown): value is ShellSlot {
+  return (
+    typeof value === 'string' &&
+    (SHELL_SLOTS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * An item that lives in a slot and can be moved to another one. `slot` is the
+ * default placement; a user's `ShellLayout.placements` overrides it.
+ */
+export interface ShellPlacementItem {
+  /** Stable id, e.g. `dock:assistant`, `slot:header.end`, or a host id. */
+  id: string;
+  /** Accessible, user-facing name. */
+  label: string;
+  /** Where the item lives unless the layout moves it. */
+  slot: ShellSlot;
+}

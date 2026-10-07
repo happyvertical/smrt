@@ -19,13 +19,20 @@ import AppScopePanel from '../workspace/admin-shell/AppScopePanel.svelte';
 import {
   applyShellLayout,
   normalizeShellLayout,
+  resolveShellPlacements,
   type ShellLayout,
 } from '../workspace/admin-shell/layout.js';
 import { setShellLayout } from '../workspace/admin-shell/layout-context.js';
 import { ShellLayoutController } from '../workspace/admin-shell/layout-controller.svelte.js';
 import { resolveShellConfig } from '../workspace/admin-shell/settings.js';
-import type { ShellSlot } from '../workspace/admin-shell/slots.js';
-import { SHELL_SLOTS } from '../workspace/admin-shell/slots.js';
+import { SHELL_SLOT_MESSAGES } from '../workspace/admin-shell/slot-labels.js';
+import {
+  SHELL_SLOTS,
+  type ShellPlacementItem,
+  type ShellSlot,
+  shellDockItemId,
+  shellHostSlotItemId,
+} from '../workspace/admin-shell/slots.js';
 import { createShellState } from '../workspace/admin-shell/state.svelte.js';
 import TenantNav from '../workspace/admin-shell/TenantNav.svelte';
 import {
@@ -39,6 +46,7 @@ import DockSlot from './DockSlot.svelte';
 import DockToggles from './DockToggles.svelte';
 import type { DockToggle } from './dock-toggle.js';
 import RuntimeDiagnosticsWebMcp from './RuntimeDiagnosticsWebMcp.svelte';
+import type { ShellSlotItem } from './slot-item.js';
 
 interface Props {
   /** Application name shown in the shell brand and app panel. */
@@ -108,9 +116,16 @@ interface Props {
    * Host content for any shell slot (`header.start|center|end`,
    * `footer.start|center|end`, `leftSidebar.header|footer`,
    * `rightSidebar.header|footer`). Rendered before dock toggles placed in the
-   * same slot.
+   * same slot. Each snippet is one movable item with id `slot:<slot>`; use
+   * `slotItems` for individually movable content.
    */
   slots?: Partial<Record<ShellSlot, Snippet>>;
+  /**
+   * Host items with stable ids, each in a default slot. Users can move them
+   * between slots in the layout editor (`ShellLayout.placements`). Rendered
+   * after `slots` content and before dock toggles in the same slot.
+   */
+  slotItems?: ShellSlotItem[];
   children: Snippet;
 }
 
@@ -137,33 +152,49 @@ let {
   dock,
   dockToggles = [],
   slots: hostSlots,
+  slotItems = [],
   children,
 }: Props = $props();
 const { t } = useI18n();
-const togglesFor = (name: ShellSlot) =>
-  dockToggles.filter((toggle) => (toggle.slot ?? 'header.end') === name);
-const slotSnippets: Record<ShellSlot, Snippet> = {
-  'header.start': slot_0,
-  'header.center': slot_1,
-  'header.end': slot_2,
-  'footer.start': slot_3,
-  'footer.center': slot_4,
-  'footer.end': slot_5,
-  'leftSidebar.header': slot_6,
-  'leftSidebar.footer': slot_7,
-  'rightSidebar.header': slot_8,
-  'rightSidebar.footer': slot_9,
-};
-const shellSlots = $derived.by(() => {
-  const out: Partial<Record<ShellSlot, Snippet>> = {};
-  for (const name of SHELL_SLOTS) {
-    if (hostSlots?.[name] || togglesFor(name).length > 0) {
-      out[name] = slotSnippets[name];
+// Every movable item, in default order: legacy `slots` snippets, `slotItems`,
+// then dock toggles. Ids are stable (`slot:<slot>`, the host's id,
+// `dock:<tool>`); the first of a duplicated id wins.
+interface PlacedEntry extends ShellPlacementItem {
+  render?: Snippet;
+  toggle?: DockToggle;
+}
+const entries = $derived.by(() => {
+  const out: PlacedEntry[] = [];
+  const seen = new Set<string>();
+  const add = (entry: PlacedEntry) => {
+    if (seen.has(entry.id)) return;
+    seen.add(entry.id);
+    out.push(entry);
+  };
+  for (const slot of SHELL_SLOTS) {
+    const render = hostSlots?.[slot];
+    if (render) {
+      add({
+        id: shellHostSlotItemId(slot),
+        label: t(M['ui.app_shell.slot_content'], {
+          slot: t(SHELL_SLOT_MESSAGES[slot]),
+        }),
+        slot,
+        render,
+      });
     }
+  }
+  for (const item of slotItems) add({ ...item });
+  for (const toggle of dockToggles) {
+    add({
+      id: shellDockItemId(toggle.tool),
+      label: toggle.label,
+      slot: toggle.slot ?? 'header.end',
+      toggle,
+    });
   }
   return out;
 });
-
 // The shell state lives here (not inside AdminShell) so the layout can reach
 // it: panel overrides apply to it, and the user's layout is stored in it when
 // the host does not own persistence.
@@ -188,6 +219,31 @@ const applied = $derived(
 );
 const hasNav = $derived(applied.nav.length > 0 || applied.groups.length > 0);
 
+const slotIds = $derived(resolveShellPlacements(entries, effectiveLayout));
+const entriesFor = (name: ShellSlot): PlacedEntry[] => {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  return slotIds[name].flatMap((id) => byId.get(id) ?? []);
+};
+const slotSnippets: Record<ShellSlot, Snippet> = {
+  'header.start': slot_0,
+  'header.center': slot_1,
+  'header.end': slot_2,
+  'footer.start': slot_3,
+  'footer.center': slot_4,
+  'footer.end': slot_5,
+  'leftSidebar.header': slot_6,
+  'leftSidebar.footer': slot_7,
+  'rightSidebar.header': slot_8,
+  'rightSidebar.footer': slot_9,
+};
+const shellSlots = $derived.by(() => {
+  const out: Partial<Record<ShellSlot, Snippet>> = {};
+  for (const name of SHELL_SLOTS) {
+    if (slotIds[name].length > 0) out[name] = slotSnippets[name];
+  }
+  return out;
+});
+
 // Starting-state edits made through the layout API, applied once the layout
 // carrying them is in force (or dropped if the host answered differently).
 const pendingStart = new Map<PanelEdge, 'collapsed' | 'expanded'>();
@@ -208,6 +264,7 @@ setShellLayout(
     groups: () => navGroups,
     panels: () => config,
     layout: () => effectiveLayout,
+    items: () => entries.map(({ id, label, slot }) => ({ id, label, slot })),
     commit(next) {
       // A changed starting state is an explicit edit: show it now. It waits
       // for the layout to actually change (the host may reject the edit) and
@@ -232,45 +289,44 @@ setShellLayout(
 );
 </script>
 
+{#snippet slotBody(name: ShellSlot)}
+  {#each entriesFor(name) as entry (entry.id)}
+    {#if entry.toggle}
+      <DockToggles toggles={[entry.toggle]} />
+    {:else if entry.render}
+      {@render entry.render()}
+    {/if}
+  {/each}
+{/snippet}
 {#snippet slot_0()}
-  {@render hostSlots?.['header.start']?.()}
-  <DockToggles toggles={togglesFor('header.start')} />
+  {@render slotBody('header.start')}
 {/snippet}
 {#snippet slot_1()}
-  {@render hostSlots?.['header.center']?.()}
-  <DockToggles toggles={togglesFor('header.center')} />
+  {@render slotBody('header.center')}
 {/snippet}
 {#snippet slot_2()}
-  {@render hostSlots?.['header.end']?.()}
-  <DockToggles toggles={togglesFor('header.end')} />
+  {@render slotBody('header.end')}
 {/snippet}
 {#snippet slot_3()}
-  {@render hostSlots?.['footer.start']?.()}
-  <DockToggles toggles={togglesFor('footer.start')} />
+  {@render slotBody('footer.start')}
 {/snippet}
 {#snippet slot_4()}
-  {@render hostSlots?.['footer.center']?.()}
-  <DockToggles toggles={togglesFor('footer.center')} />
+  {@render slotBody('footer.center')}
 {/snippet}
 {#snippet slot_5()}
-  {@render hostSlots?.['footer.end']?.()}
-  <DockToggles toggles={togglesFor('footer.end')} />
+  {@render slotBody('footer.end')}
 {/snippet}
 {#snippet slot_6()}
-  {@render hostSlots?.['leftSidebar.header']?.()}
-  <DockToggles toggles={togglesFor('leftSidebar.header')} />
+  {@render slotBody('leftSidebar.header')}
 {/snippet}
 {#snippet slot_7()}
-  {@render hostSlots?.['leftSidebar.footer']?.()}
-  <DockToggles toggles={togglesFor('leftSidebar.footer')} />
+  {@render slotBody('leftSidebar.footer')}
 {/snippet}
 {#snippet slot_8()}
-  {@render hostSlots?.['rightSidebar.header']?.()}
-  <DockToggles toggles={togglesFor('rightSidebar.header')} />
+  {@render slotBody('rightSidebar.header')}
 {/snippet}
 {#snippet slot_9()}
-  {@render hostSlots?.['rightSidebar.footer']?.()}
-  <DockToggles toggles={togglesFor('rightSidebar.footer')} />
+  {@render slotBody('rightSidebar.footer')}
 {/snippet}
 
 <Provider {webmcp} {user} {permissions}>

@@ -7,7 +7,9 @@
  * document) and feeds it back through `layout`. Try hiding a panel, dragging
  * items between sections, rename a section, hide its title, create your own
  * section and drag items into it, or focusing a move handle and pressing Space then
- * the arrow keys. "Import" shows an untrusted JSON layout being normalized.
+ * the arrow keys. The Placement map moves shell items (the dock toggles and
+ * the clock) between header, sidebar and footer slots by drag, keyboard, or
+ * the "Move to" select; hide a panel to see its items fall back. "Import" shows an untrusted JSON layout being normalized.
  */
 import { AppShell, ShellLayoutEditor } from '@happyvertical/smrt-svelte/app';
 import {
@@ -50,8 +52,15 @@ function importDraft(): void {
 }
 </script>
 
+{#snippet clock()}<span>12:00</span>{/snippet}
+
 <AppShell
   title="Layout demo"
+  dockToggles={[
+    { tool: 'assistant', label: 'Assistant' },
+    { tool: 'notes', label: 'Notes', icon: 'N' },
+  ]}
+  slotItems={[{ id: 'demo:clock', label: 'Clock', slot: 'footer.end', render: clock }]}
   {nav}
   {navGroups}
   currentHref="/shell-layout"

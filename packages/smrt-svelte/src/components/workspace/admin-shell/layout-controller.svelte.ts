@@ -7,8 +7,11 @@ import {
   moveShellItem,
   moveShellSection,
   normalizeShellLayout,
+  placeShellItem,
   renameShellSection,
+  resetShellItemPlacement,
   resolveShellNavModel,
+  resolveShellPlacements,
   SHELL_LAYOUT_VERSION,
   type ShellLayout,
   type ShellNavModelSection,
@@ -17,6 +20,12 @@ import {
   showShellEntry,
 } from './layout.js';
 import { resolveShellConfig } from './settings.js';
+import {
+  isShellSlot,
+  type ShellPlacementItem,
+  type ShellRegion,
+  type ShellSlot,
+} from './slots.js';
 import type {
   PanelEdge,
   ShellNavGroup,
@@ -34,6 +43,11 @@ export interface ShellLayoutControllerOptions {
   panels: () => ShellPanelDefaults | undefined;
   /** The layout currently in force (host-owned, or stored by the shell). */
   layout: () => ShellLayout | null | undefined;
+  /**
+   * The movable shell items (dock toggles, host items) with their default
+   * slots. Omit when the shell has none.
+   */
+  items?: () => ShellPlacementItem[];
   /** Store the next layout (and notify the host). */
   commit: (layout: ShellLayout) => void;
 }
@@ -47,6 +61,25 @@ export interface ShellLayoutPanelView {
   visible: boolean;
   initial: 'collapsed' | 'expanded';
 }
+
+/** One movable shell item as an editor presents it. */
+export interface ShellPlacementView {
+  id: string;
+  label: string;
+  /** The slot the item lives in unless the user moved it. */
+  defaultSlot: ShellSlot;
+  /** The slot the layout puts it in (before any hidden-region fallback). */
+  slot: ShellSlot;
+  /** The user moved it away from its default slot. */
+  moved: boolean;
+}
+
+const REGION_EDGE: Record<ShellRegion, PanelEdge> = {
+  header: 'top',
+  footer: 'bottom',
+  leftSidebar: 'left',
+  rightSidebar: 'right',
+};
 
 /**
  * The layout API: the same changes the `ShellLayoutEditor` makes, as plain
@@ -102,6 +135,52 @@ export class ShellLayoutController {
           (config.initial === 'expanded' ? 'expanded' : 'collapsed'),
       };
     });
+  }
+
+  /** The movable shell items with their default and current slots. */
+  get placementItems(): ShellPlacementView[] {
+    const items = this.options.items?.() ?? [];
+    const placed = resolveShellPlacements(items, this.layout);
+    const slotOf = new Map<string, ShellSlot>();
+    for (const [slot, ids] of Object.entries(placed)) {
+      for (const id of ids) slotOf.set(id, slot as ShellSlot);
+    }
+    const seen = new Set<string>();
+    const out: ShellPlacementView[] = [];
+    for (const item of items) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      const slot = slotOf.get(item.id) ?? item.slot;
+      out.push({
+        id: item.id,
+        label: item.label,
+        defaultSlot: item.slot,
+        slot,
+        moved: slot !== item.slot,
+      });
+    }
+    return out;
+  }
+
+  /** Items per slot in display order (every slot present, possibly empty). */
+  get placements(): Record<ShellSlot, ShellPlacementView[]> {
+    const views = new Map(this.placementItems.map((view) => [view.id, view]));
+    const placed = resolveShellPlacements(
+      this.options.items?.() ?? [],
+      this.layout,
+    );
+    return Object.fromEntries(
+      Object.entries(placed).map(([slot, ids]) => [
+        slot,
+        ids.flatMap((id) => views.get(id) ?? []),
+      ]),
+    ) as Record<ShellSlot, ShellPlacementView[]>;
+  }
+
+  /** Whether a region is shown (its edge is available and not hidden). */
+  isRegionVisible(region: ShellRegion): boolean {
+    const edge = REGION_EDGE[region];
+    return this.panels.find((panel) => panel.edge === edge)?.visible ?? false;
   }
 
   /** Whether a customization is in force. */
@@ -228,6 +307,27 @@ export class ShellLayoutController {
   /** Delete a custom section; its items return to their default sections. */
   deleteSection(sectionId: string): boolean {
     return this.apply(deleteShellSection(this.layout, sectionId));
+  }
+
+  /**
+   * Move a shell item (`dock:<tool>`, `slot:<slot>`, or a host item id) to
+   * `slot`. Unknown ids and slots are no-ops. If the slot's region is hidden
+   * the item still renders, via the slot's fallback chain.
+   */
+  placeItem(itemId: string, slot: ShellSlot): boolean {
+    if (!isShellSlot(slot)) return false;
+    const item = this.placementItems.find((view) => view.id === itemId);
+    if (!item) return false;
+    // Placing an item where it already is must not reorder it.
+    if (item.slot === slot) return false;
+    return this.apply(
+      placeShellItem(this.layout, itemId, slot, item.defaultSlot),
+    );
+  }
+
+  /** Return a shell item to its default slot. */
+  resetItem(itemId: string): boolean {
+    return this.apply(resetShellItemPlacement(this.layout, itemId));
   }
 
   /** Drop every customization. */

@@ -50,6 +50,7 @@ export {
   ShellLayoutController,
   type ShellLayoutControllerOptions,
   type ShellLayoutPanelView,
+  type ShellPlacementView,
 } from './admin-shell/layout-controller.svelte.js';
 export {
   type BottomBarMode,
@@ -105,11 +106,21 @@ export {
   resolveShellConfig,
   stripUnpersistedSettings,
 } from './admin-shell/settings.js';
-export type { ShellRegion, ShellSlot } from './admin-shell/slots.js';
+export type {
+  ShellPlacementItem,
+  ShellRegion,
+  ShellSlot,
+} from './admin-shell/slots.js';
 export {
+  isShellSlot,
   resolveSlot,
+  SHELL_DOCK_ITEM_PREFIX,
+  SHELL_HOST_SLOT_ITEM_PREFIX,
   SHELL_SLOTS,
+  shellDockItemId,
+  shellHostSlotItemId,
   slotFallbackChain,
+  slotRegion,
 } from './admin-shell/slots.js';
 export {
   ADMIN_SHELL_DESKTOP_QUERY,

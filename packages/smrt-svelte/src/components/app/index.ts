@@ -30,3 +30,4 @@ export {
   registerRuntimeDiagnosticsWebMcp,
 } from './runtime-diagnostics-webmcp.js';
 export { default as ShellSettingsPage } from './ShellSettingsPage.svelte';
+export type { ShellSlotItem } from './slot-item.js';

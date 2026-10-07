@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Input, Switch } from '@happyvertical/smrt-ui/forms';
+import { Input, Select, Switch } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { type Component, tick, untrack } from 'svelte';
@@ -13,6 +13,12 @@ import type {
 } from '../../sortable/types.js';
 import { useShellLayout } from './layout-context.js';
 import type { ShellLayoutController } from './layout-controller.svelte.js';
+import {
+  SHELL_REGION_MESSAGES,
+  SHELL_SLOT_MESSAGES,
+  SHELL_SLOT_SHORT_MESSAGES,
+} from './slot-labels.js';
+import { isShellSlot, type ShellSlot, slotRegion } from './slots.js';
 import TenantNav from './TenantNav.svelte';
 
 interface Props {
@@ -104,6 +110,60 @@ function deleteSection(id: string, label: string, count: number): void {
   layout.deleteSection(id);
 }
 
+/** Visual (row-major) order of the placement map, which is also the order a keyboard move walks. */
+const PLACEMENT_ORDER: readonly ShellSlot[] = [
+  'header.start',
+  'header.center',
+  'header.end',
+  'leftSidebar.header',
+  'rightSidebar.header',
+  'leftSidebar.footer',
+  'rightSidebar.footer',
+  'footer.start',
+  'footer.center',
+  'footer.end',
+];
+
+interface SlotContainer extends SortableContainer {
+  slot: ShellSlot;
+  short: string;
+  regionHidden: boolean;
+  regionLabel: string;
+}
+
+const slotContainers = $derived<SlotContainer[]>(
+  PLACEMENT_ORDER.map((slot) => {
+    const region = slotRegion(slot);
+    return {
+      id: slot,
+      slot,
+      label: t(SHELL_SLOT_MESSAGES[slot]),
+      short: t(SHELL_SLOT_SHORT_MESSAGES[slot]),
+      regionLabel: t(SHELL_REGION_MESSAGES[region]),
+      regionHidden: !layout.isRegionVisible(region),
+    };
+  }),
+);
+const placementViews = $derived(layout.placementItems);
+const placementItems = $derived<SortableItem[]>(
+  PLACEMENT_ORDER.flatMap((slot) =>
+    (layout.placements[slot] ?? []).map((view) => ({
+      id: view.id,
+      containerId: slot,
+      label: view.label,
+    })),
+  ),
+);
+
+function onplace(move: SortableItemMove<SortableItem, SlotContainer>): void {
+  layout.placeItem(move.item.id, move.targetContainer.slot);
+}
+
+function onselect(id: string, event: Event): void {
+  const select = event.currentTarget as HTMLSelectElement;
+  if (isShellSlot(select.value)) layout.placeItem(id, select.value);
+}
+
 function onmove(move: SortableItemMove<SortableItem, NavContainer>): void {
   layout.moveItem(move.item.id, move.target.containerId, move.target.index);
 }
@@ -159,6 +219,62 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
       </div>
     {/each}
   </fieldset>
+
+  {#if placementViews.length > 0}
+    <div class="smrt-shell-layout-editor__placement" data-testid="shell-placement">
+      <h3>{t(M['ui.shell_layout_editor.placement'])}</h3>
+      <p>{t(M['ui.shell_layout_editor.placement_description'])}</p>
+      <Sortable
+        containers={slotContainers}
+        items={placementItems}
+        label={t(M['ui.shell_layout_editor.placement_label'])}
+        allowSameContainerReorder={false}
+        onmove={onplace}
+      >
+        {#snippet containerHeader({ container })}
+          {@const entry = slotContainers.find((candidate) => candidate.id === container.id)}
+          <strong>{entry?.short}</strong>
+          <span class="smrt-shell-layout-editor__muted smrt-shell-layout-editor__region">{entry?.regionLabel}</span>
+          {#if entry?.regionHidden}
+            <span
+              class="smrt-shell-layout-editor__region-hidden"
+              data-region-hidden=""
+              title={t(M['ui.shell_layout_editor.region_hidden'], { region: entry.regionLabel })}
+            >{t(M['ui.shell_layout_editor.region_hidden_short'])}</span>
+          {/if}
+        {/snippet}
+        {#snippet item({ item: entry })}
+          {@const view = placementViews.find((candidate) => candidate.id === entry.id)}
+          <span class="smrt-shell-layout-editor__label">{entry.label}</span>
+          <Select
+            interaction={false}
+            value={view?.slot ?? ''}
+            aria-label={t(M['ui.shell_layout_editor.move_to'], { label: entry.label })}
+            onchange={(event) => onselect(entry.id, event)}
+          >
+            {#each slotContainers as option (option.id)}
+              <option value={option.slot}>{option.label}</option>
+            {/each}
+          </Select>
+          {#if view?.moved}
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label={t(M['ui.shell_layout_editor.reset_item'], { label: entry.label })}
+              onclick={() => layout.resetItem(entry.id)}
+            >
+              {t(M['ui.shell_layout_editor.reset_item_short'])}
+            </Button>
+          {/if}
+        {/snippet}
+      </Sortable>
+      {#each slotContainers.filter((candidate) => candidate.regionHidden && placementItems.some((entry) => entry.containerId === candidate.slot)) as hidden (hidden.id)}
+        <p class="smrt-shell-layout-editor__muted" data-region-note={hidden.slot}>
+          {t(M['ui.shell_layout_editor.region_hidden'], { region: hidden.regionLabel })}
+        </p>
+      {/each}
+    </div>
+  {/if}
 
   <div class="smrt-shell-layout-editor__body">
     <div class="smrt-shell-layout-editor__nav">
@@ -264,6 +380,26 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   :global(.smrt-shell-layout-editor__name) { flex: 1 1 8rem; min-inline-size: 0; }
   .smrt-shell-layout-editor__label { flex: 1 1 auto; min-inline-size: 0; }
   .smrt-shell-layout-editor__preview-frame { padding: var(--smrt-spacing-3); border: 1px dashed var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container-low, var(--smrt-color-surface)); }
+  .smrt-shell-layout-editor__placement { display: grid; gap: var(--smrt-spacing-2); }
+  .smrt-shell-layout-editor__placement :global(.smrt-sortable) { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+  .smrt-shell-layout-editor__placement :global(.smrt-sortable__container) { grid-column: span 1; }
+  .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id^='leftSidebar']) { grid-column: 1; }
+  .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id^='rightSidebar']) { grid-column: 3; }
+  .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id='leftSidebar.header']) { grid-row: 2; }
+  .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id='leftSidebar.footer']) { grid-row: 3; }
+  .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id='rightSidebar.header']) { grid-row: 2; }
+  .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id='rightSidebar.footer']) { grid-row: 3; }
+  .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id='footer.start']) { grid-row: 4; grid-column: 1; }
+  .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id='footer.center']) { grid-row: 4; grid-column: 2; }
+  .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id='footer.end']) { grid-row: 4; grid-column: 3; }
+  .smrt-shell-layout-editor__placement :global(.smrt-sortable__container:has([data-region-hidden])) { opacity: 0.6; border-style: dashed; }
+  .smrt-shell-layout-editor__placement :global(.smrt-sortable__item) { flex-wrap: wrap; }
+  .smrt-shell-layout-editor__region { font: var(--smrt-typography-body-small-font); }
+  .smrt-shell-layout-editor__region-hidden { padding-inline: var(--smrt-spacing-2); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-high); font: var(--smrt-typography-label-small-font); }
+  @media (max-width: 48rem) {
+    .smrt-shell-layout-editor__placement :global(.smrt-sortable) { grid-template-columns: minmax(0, 1fr); }
+    .smrt-shell-layout-editor__placement :global([data-smrt-sortable-container-id]) { grid-column: 1 !important; grid-row: auto !important; }
+  }
   @media (max-width: 48rem) {
     .smrt-shell-layout-editor header { flex-direction: column; }
     .smrt-shell-layout-editor__body { grid-template-columns: minmax(0, 1fr); }

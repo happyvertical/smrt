@@ -13,6 +13,14 @@
  * section, {@link SHELL_NAV_ROOT_SECTION_ID}, which always renders first and
  * cannot be reordered or hidden as a whole.
  */
+import {
+  isShellSlot,
+  resolveSlot,
+  SHELL_SLOTS,
+  type ShellPlacementItem,
+  type ShellRegion,
+  type ShellSlot,
+} from './slots.js';
 import type {
   PanelEdge,
   ShellNavGroup,
@@ -79,6 +87,13 @@ export interface ShellLayout {
   customSections?: ShellLayoutCustomSection[];
   /** Per edge panel overrides. */
   panels?: Partial<Record<PanelEdge, ShellLayoutPanel>>;
+  /**
+   * Shell item id (`dock:<tool>`, `slot:<slot>`, or a host `slotItems` id) to
+   * the slot the user moved it to. Applied before the hidden-region fallback;
+   * unknown ids and slots are ignored. Items placed into a slot follow the
+   * slot's own items, in the order of this record.
+   */
+  placements?: Record<string, ShellSlot>;
 }
 
 /** An item as the layout sees it. */
@@ -132,7 +147,8 @@ export function isShellLayoutEmpty(layout: ShellLayout | null | undefined) {
     !hasKeys(layout.moved) &&
     !hasKeys(layout.sections) &&
     !layout.customSections?.length &&
-    !hasKeys(layout.panels)
+    !hasKeys(layout.panels) &&
+    !hasKeys(layout.placements)
   );
 }
 
@@ -243,6 +259,9 @@ export function normalizeShellLayout(input: unknown): ShellLayout {
     }
     if (hasKeys(panels)) layout.panels = panels;
   }
+
+  const placements = readPlacements(input.placements);
+  if (placements) layout.placements = placements;
   return layout;
 }
 
@@ -499,6 +518,7 @@ function compact(layout: ShellLayout): ShellLayout {
     next.customSections = layout.customSections;
   }
   if (hasKeys(layout.panels)) next.panels = layout.panels;
+  if (hasKeys(layout.placements)) next.placements = layout.placements;
   return next;
 }
 
@@ -833,4 +853,95 @@ export function deleteShellSection(
     sections: without(current.sections),
     moved,
   });
+}
+
+// Slot placement of shell items (dock toggles, host items).
+
+function readPlacements(value: unknown): Record<string, ShellSlot> | undefined {
+  if (!isRecord(value)) return undefined;
+  const placements: Record<string, ShellSlot> = {};
+  for (const [id, slot] of Object.entries(value)) {
+    if (id !== '' && isShellSlot(slot)) placements[id] = slot;
+  }
+  return hasKeys(placements) ? placements : undefined;
+}
+
+/**
+ * Where each item lives once the layout's `placements` are applied, before any
+ * hidden-region fallback. Items stay in the order given within their default
+ * slot; items placed into a slot follow, in placement order. Placements for
+ * ids not in `items` are ignored. Every slot is present, possibly empty.
+ */
+export function resolveShellPlacements(
+  items: readonly ShellPlacementItem[],
+  layout?: ShellLayout | null,
+): Record<ShellSlot, string[]> {
+  const out = Object.fromEntries(
+    SHELL_SLOTS.map((slot) => [slot, [] as string[]]),
+  ) as Record<ShellSlot, string[]>;
+  const placements = readPlacements(layout?.placements) ?? {};
+  const known = new Set<string>();
+  for (const item of items) {
+    if (known.has(item.id)) continue;
+    known.add(item.id);
+    if (placements[item.id] === undefined) out[item.slot]?.push(item.id);
+  }
+  for (const [id, slot] of Object.entries(placements)) {
+    if (known.has(id)) out[slot].push(id);
+  }
+  return out;
+}
+
+/**
+ * {@link resolveShellPlacements} followed by the hidden-region fallback: an
+ * item whose slot's region is not `visible` moves along the slot's fallback
+ * chain to the first visible slot (and is dropped only if none is visible).
+ */
+export function resolveShellVisiblePlacements(
+  items: readonly ShellPlacementItem[],
+  layout: ShellLayout | null | undefined,
+  visible: (region: ShellRegion) => boolean,
+): Record<ShellSlot, string[]> {
+  const nominal = resolveShellPlacements(items, layout);
+  const out = Object.fromEntries(
+    SHELL_SLOTS.map((slot) => [slot, [] as string[]]),
+  ) as Record<ShellSlot, string[]>;
+  for (const slot of SHELL_SLOTS) {
+    for (const id of nominal[slot]) {
+      const target = resolveSlot(slot, visible);
+      if (target) out[target].push(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * Place an item in `slot`. Unknown slots are ignored. When `defaultSlot` (the
+ * item's own default) is given and equals `slot`, the override is removed so
+ * the layout stays sparse. Re-placing an item puts it last in its slot.
+ */
+export function placeShellItem(
+  layout: ShellLayout | null | undefined,
+  itemId: string,
+  slot: ShellSlot,
+  defaultSlot?: ShellSlot,
+): ShellLayout {
+  const current = normalizeShellLayout(layout ?? createShellLayout());
+  if (itemId === '' || !isShellSlot(slot)) return current;
+  const placements = { ...(current.placements ?? {}) };
+  delete placements[itemId];
+  if (slot !== defaultSlot) placements[itemId] = slot;
+  return compact({ ...current, placements });
+}
+
+/** Remove an item's placement override; it returns to its default slot. */
+export function resetShellItemPlacement(
+  layout: ShellLayout | null | undefined,
+  itemId: string,
+): ShellLayout {
+  const current = normalizeShellLayout(layout ?? createShellLayout());
+  if (!current.placements || !(itemId in current.placements)) return current;
+  const placements = { ...current.placements };
+  delete placements[itemId];
+  return compact({ ...current, placements });
 }

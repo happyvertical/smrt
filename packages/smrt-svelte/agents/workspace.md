@@ -100,6 +100,30 @@ leftSidebar.header -> footer.end; rightSidebar.footer -> footer.end ->
 header.end -> leftSidebar.footer. The legacy `tenantFooter` prop keeps its own
 `footerInHeader` fallback.
 
+### Moving items between slots
+
+Movable items have stable ids: dock toggles `dock:<tool>`, each host `slots`
+snippet `slot:<slot>`, and host `slotItems` (`AppShell`, `{ id, label, slot,
+render }[]`, exported type `ShellSlotItem`; keep ids stable, they are stored in
+layouts). AdminShell's own chrome (brand, menu opener, account, edge toggles)
+is not an item yet (#3656 step 3).
+
+`ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
+1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
+`placeShellItem(layout, id, slot, defaultSlot?)` (passing the default drops a
+no-op override; re-placing puts the item last), `resetShellItemPlacement`,
+`resolveShellPlacements(items, layout)` (default order first, then placement
+order; unknown ids and slots ignored) and `resolveShellVisiblePlacements(items,
+layout, visible)` (placement first, then the hidden-region fallback above).
+`useShellLayout()` adds `placeItem(id, slot)`, `resetItem(id)`, and readers
+`placementItems`, `placements` (per slot) and `isRegionVisible(region)`.
+
+`ShellLayoutEditor` shows a Placement section: a map of the four regions'
+slots (header left/middle/right, sidebars header/footer, footer
+left/middle/right), a `Sortable` with drag or keyboard moves (announced), and a
+per-item "Move <item> to" select plus Reset for moved items. Hidden regions are
+dimmed with a note; their items still render via the fallback.
+
 ### Activity ticker
 
 `ActivityTicker` accepts app-owned `activities: ReadonlyArray<ShellActivity>` plus
@@ -236,7 +260,7 @@ control panel), wired by `app/AppShell.svelte`.
   `moveItem(id, sectionId, toIndex?)`, `hide(id)`, `show(id)`, `setPanel(edge,
   { visible?, initial? })`, `reset()`, each returning whether anything changed,
   plus readers (`layout`, `sections`, `panels`, `applied`, `customized`,
-  `isHidden`). An assistant calls the same methods the editor does. The
+  `isHidden`; item placement is in "Moving items between slots"). An assistant calls the same methods the editor does. The
   context is separate from `useAdminShell()` because `AppShell`, not
   `AdminShell`, owns the navigation.
 - **Sections belong to the app.** Hosts (and recipes, via the host) suggest
