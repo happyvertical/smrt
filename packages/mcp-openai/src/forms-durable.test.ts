@@ -11,11 +11,8 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import {
-  type McpTaskAuthority,
-  McpTaskStore,
-  TaskRunner,
-} from '@happyvertical/smrt-jobs';
+import { type McpTaskAuthority, McpTaskStore } from '@happyvertical/smrt-jobs';
+import { TaskRunner } from '@happyvertical/smrt-jobs/runner';
 import {
   Client,
   StreamableHTTPClientTransport,

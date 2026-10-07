@@ -1,4 +1,4 @@
-import { TaskRunner } from '@happyvertical/smrt-jobs';
+import { TaskRunner } from '@happyvertical/smrt-jobs/runner';
 import { SessionService, UserCollection } from '@happyvertical/smrt-users';
 import {
   createIsolatedTestDbFromManifest,

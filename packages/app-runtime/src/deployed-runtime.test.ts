@@ -2,9 +2,11 @@ import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import {
   ScheduleRunner,
   type ScheduleRunnerConfig,
+} from '@happyvertical/smrt-jobs';
+import {
   TaskRunner,
   type TaskRunnerConfig,
-} from '@happyvertical/smrt-jobs';
+} from '@happyvertical/smrt-jobs/runner';
 import { SessionService } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';

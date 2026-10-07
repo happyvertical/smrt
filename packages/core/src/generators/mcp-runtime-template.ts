@@ -382,7 +382,7 @@ import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { loadConfig } from '@happyvertical/smrt-config';
-${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}
+${hasTaskActions ? "import { McpTaskStore } from '@happyvertical/smrt-jobs';\nimport { TaskRunner } from '@happyvertical/smrt-jobs/runner';\n" : ''}
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
 // Server configuration
 const SERVER_NAME = ${JSON.stringify(name)};

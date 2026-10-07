@@ -387,6 +387,13 @@ export function getWorkspaceViteAliases(
       `${packageName}/ui`,
       join(packageRoot, 'src/ui.ts'),
     );
+    // smrt-jobs keeps its Node-only TaskRunner on `/runner` (#3615); alias it
+    // to source so it shares module state (execution context) with the root.
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/runner`,
+      join(packageRoot, 'src/runner.ts'),
+    );
     addAliasIfPresent(
       aliases,
       `${packageName}/routes`,

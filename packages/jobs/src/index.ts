@@ -6,7 +6,8 @@
  *
  * @example
  * ```typescript
- * import { withBackgroundJobs, TaskRunner } from '@happyvertical/smrt-jobs';
+ * import { withBackgroundJobs } from '@happyvertical/smrt-jobs';
+ * import { TaskRunner } from '@happyvertical/smrt-jobs/runner';
  *
  * // Add background capabilities to your class
  * const BackgroundDocument = withBackgroundJobs(Document);
@@ -69,6 +70,13 @@ export {
   redactErrorForPersistence,
   redactErrorMessage,
 } from './error-redaction.js';
+// Execution-context helpers stay on the root: model packages use them to
+// authorize task targets. The Node-only TaskRunner lives at
+// `@happyvertical/smrt-jobs/runner` (#3615).
+export {
+  getActiveJobExecutionContext,
+  isRunnerExecutionContext,
+} from './execution-context.js';
 // Durable provider-neutral forge delivery inbox and projection runtime.
 export {
   type AcceptedForgeDelivery,
@@ -93,7 +101,6 @@ export {
   parseDelay,
   priorityToNumber,
 } from './job-builder.js';
-
 // Job handle for tracking
 export {
   JobHandle,
@@ -146,16 +153,6 @@ export {
   startRetentionSweeper,
   unregisterJobRetentionTasks,
 } from './retention.js';
-// Task runner
-export {
-  createTaskRunner,
-  getActiveJobExecutionContext,
-  isRunnerExecutionContext,
-  JobTimeoutError,
-  TaskRunner,
-  type TaskRunnerConfig,
-  type TaskRunnerEvents,
-} from './runner.js';
 
 // Schedule runner (for cron-based agent scheduling)
 export {

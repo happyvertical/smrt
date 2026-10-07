@@ -21,7 +21,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { MIGRATION_FAILED_MESSAGE } from '@happyvertical/smrt-app-runtime';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
-import type { TaskRunner } from '@happyvertical/smrt-jobs';
+import type { TaskRunner } from '@happyvertical/smrt-jobs/runner';
 import { SmrtJobCollection } from '@happyvertical/smrt-jobs';
 
 import {

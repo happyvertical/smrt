@@ -19,9 +19,11 @@ import {
 import {
   ScheduleRunner,
   type ScheduleRunnerConfig,
+} from '@happyvertical/smrt-jobs';
+import {
   TaskRunner,
   type TaskRunnerConfig,
-} from '@happyvertical/smrt-jobs';
+} from '@happyvertical/smrt-jobs/runner';
 import { SessionService } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 

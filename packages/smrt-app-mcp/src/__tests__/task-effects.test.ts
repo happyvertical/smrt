@@ -17,8 +17,8 @@ import {
 import {
   backgroundEligible,
   type JobExecutionContext,
-  TaskRunner,
 } from '@happyvertical/smrt-jobs';
+import { TaskRunner } from '@happyvertical/smrt-jobs/runner';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   type CreateMcpAppServerOptions,
