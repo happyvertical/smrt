@@ -6,7 +6,6 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import {
-  applyImageAdjustments,
   decodeImageAdjustments,
   describeImageAdjustments,
   encodeImageAdjustments,
@@ -18,6 +17,7 @@ import {
   regionForFocus,
   regionToPixels,
 } from '../adjust';
+import { applyImageAdjustments } from '../adjust-render';
 
 async function greyJpeg(width: number, height: number, level = 100) {
   return sharp({

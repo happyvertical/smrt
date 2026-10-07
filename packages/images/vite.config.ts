@@ -31,7 +31,7 @@ export default defineConfig(async ({ mode }) => {
     // Delegate to the shared package config which handles entry points,
     // externals, dts generation, and svelte-package exclusion.
     const config = createPackageConfig('images', {
-      entries: ['playground', 'ui', 'workbench'],
+      entries: ['node', 'playground', 'ui', 'workbench'],
       svelte: 'svelte',
       dtsExclude: ['src/lib/server/**/*', 'src/routes/**/*'],
     });
