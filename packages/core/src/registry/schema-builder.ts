@@ -47,6 +47,7 @@ import { isFrameworkBaseClass } from './framework-base-classes';
 import { readFieldAttribute } from './manifest-field-merge';
 import { findClass } from './name-resolver';
 import { getClasses, getCollectionTableNames } from './shared-state';
+import { assertKnownTableMappings, mappedSchema } from './table-mappings.js';
 import type { RegisteredClass } from './types';
 
 type ForeignKeyAction = NonNullable<
@@ -237,7 +238,7 @@ function createBaseColumns(
 export function getSchema(name: string): SchemaDefinition | undefined {
   // Issue #951: Use findClass for multi-strategy lookup
   const registered = findClass(name);
-  return registered?.schema;
+  return registered ? mappedSchema(registered) : undefined;
 }
 
 /**
@@ -531,6 +532,10 @@ function resolveContributorTable(
   registered: RegisteredClass,
   fallbackName: string,
 ): { tableName: string; contributor: TableContributor } | undefined {
+  const boundSchema = mappedSchema(registered);
+  if (boundSchema !== registered.schema) {
+    registered = { ...registered, schema: boundSchema };
+  }
   const simpleName = registered.name || fallbackName;
   const qualifiedName = registered.qualifiedName ?? simpleName;
 
@@ -542,7 +547,10 @@ function resolveContributorTable(
     if (ObjectRegistry.getTableStrategy(qualifiedName) === 'sti') {
       const stiBaseName = ObjectRegistry.getSTIBase(qualifiedName);
       if (stiBaseName && stiBaseName !== qualifiedName) {
-        const stiBaseClass = findClass(stiBaseName);
+        const baseRegistration = findClass(stiBaseName);
+        const stiBaseClass = baseRegistration
+          ? { ...baseRegistration, schema: mappedSchema(baseRegistration) }
+          : undefined;
         if (stiBaseClass?.schema?.tableName) {
           if (!registered.schema) {
             registered.schema = {
@@ -580,7 +588,10 @@ function resolveContributorTable(
         isSTIBase = false;
         // STI subclasses serialize to the base class's table even when they
         // carry a tableName of their own (issue #693).
-        const stiBaseClass = findClass(stiBaseName);
+        const baseRegistration = findClass(stiBaseName);
+        const stiBaseClass = baseRegistration
+          ? { ...baseRegistration, schema: mappedSchema(baseRegistration) }
+          : undefined;
         if (stiBaseClass?.schema?.tableName) {
           tableName = stiBaseClass.schema.tableName;
         }
@@ -683,6 +694,7 @@ function sortTableContributors(contributors: TableContributor[]) {
  * registered, never on the order it was registered in.
  */
 function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
+  assertKnownTableMappings();
   // Pass 1: group contributing classes by physical table.
   const contributorsByTable = new Map<string, TableContributor[]>();
 

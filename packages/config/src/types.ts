@@ -42,6 +42,13 @@ export interface PostgresPermissionsConfig {
  * @see {@link getPackageConfig}
  */
 export interface SmrtGlobalConfig {
+  /**
+   * Physical storage bindings keyed by exact qualified model identity.
+   * Configure before the first database access. This does not rename or move
+   * existing data; changing a deployed binding requires an explicit migration.
+   * Map the root of an STI family, never an individual subtype.
+   */
+  tableNames?: Record<string, string>;
   postgresPermissions?: PostgresPermissionsConfig;
   cacheDir?: string;
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
