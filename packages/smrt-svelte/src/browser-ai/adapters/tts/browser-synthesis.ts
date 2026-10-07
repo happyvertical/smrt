@@ -25,8 +25,12 @@ export class BrowserSynthesisTTSAdapter implements TTSAdapter {
   private synthesis: SpeechSynthesis | null = null;
   private options: BrowserSynthesisTTSOptions;
   private voices: SpeechSynthesisVoice[] = [];
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: Used in speak/stop/pause
   private currentUtterance: SpeechSynthesisUtterance | null = null;
+  private operationGeneration = 0;
+  private initializationGeneration = 0;
+  private initialization: Promise<void> | null = null;
+  private cancelVoiceLoad: (() => void) | null = null;
+  private settleCurrentSpeech: (() => void) | null = null;
 
   // Event listeners
   private startListeners = new Set<() => void>();
@@ -52,70 +56,61 @@ export class BrowserSynthesisTTSAdapter implements TTSAdapter {
 
   async ensureInitialized(_onProgress?: OnProgress): Promise<void> {
     if (this._initState === 'ready') return;
-    if (this._initState === 'initializing') {
-      // Wait for existing initialization
-      return new Promise((resolve, reject) => {
-        const check = () => {
-          if (this._initState === 'ready') resolve();
-          else if (this._initState === 'error')
-            reject(new Error('Initialization failed'));
-          else setTimeout(check, 50);
-        };
-        check();
-      });
-    }
+    if (this.initialization) return this.initialization;
 
+    const generation = this.initializationGeneration;
     this._initState = 'initializing';
+    const initialization = (async () => {
+      try {
+        if (typeof window === 'undefined' || !window.speechSynthesis) {
+          throw new CapabilityNotAvailableError(
+            'Web Speech Synthesis API',
+            'browser-synthesis',
+          );
+        }
 
-    try {
-      if (typeof window === 'undefined' || !window.speechSynthesis) {
-        throw new CapabilityNotAvailableError(
-          'Web Speech Synthesis API',
-          'browser-synthesis',
-        );
+        this.synthesis = window.speechSynthesis;
+        await this.loadVoices(this.synthesis);
+        if (generation === this.initializationGeneration) {
+          this._initState = 'ready';
+        }
+      } catch (error) {
+        if (generation === this.initializationGeneration) {
+          this._initState = 'error';
+        }
+        throw error;
       }
-
-      this.synthesis = window.speechSynthesis;
-
-      // Load voices - they may load asynchronously
-      await this.loadVoices();
-
-      this._initState = 'ready';
-    } catch (error) {
-      this._initState = 'error';
-      throw error;
+    })();
+    this.initialization = initialization;
+    try {
+      await initialization;
+    } finally {
+      if (this.initialization === initialization) this.initialization = null;
     }
   }
 
-  private async loadVoices(): Promise<void> {
-    if (!this.synthesis) return;
+  private async loadVoices(synthesis: SpeechSynthesis): Promise<void> {
+    this.voices = synthesis.getVoices();
+    if (this.voices.length > 0) return;
 
-    // Get voices - may be empty initially in some browsers
-    this.voices = this.synthesis.getVoices();
-
-    if (this.voices.length === 0) {
-      // Wait for voices to load
-      await new Promise<void>((resolve) => {
-        const handleVoicesChanged = () => {
-          this.voices = this.synthesis?.getVoices() ?? [];
-          if (this.voices.length > 0) {
-            this.synthesis?.removeEventListener(
-              'voiceschanged',
-              handleVoicesChanged,
-            );
-            resolve();
-          }
-        };
-
-        this.synthesis?.addEventListener('voiceschanged', handleVoicesChanged);
-
-        // Timeout after 2 seconds - some browsers may not fire the event
-        setTimeout(() => {
-          this.voices = this.synthesis?.getVoices() ?? [];
-          resolve();
-        }, 2000);
-      });
-    }
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timeout);
+        synthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+        this.cancelVoiceLoad = null;
+        resolve();
+      };
+      const handleVoicesChanged = () => {
+        this.voices = synthesis.getVoices();
+        if (this.voices.length > 0) finish();
+      };
+      const timeout = setTimeout(() => {
+        this.voices = synthesis.getVoices();
+        finish();
+      }, 2000);
+      this.cancelVoiceLoad = finish;
+      synthesis.addEventListener('voiceschanged', handleVoicesChanged);
+    });
   }
 
   getCapabilities(): TTSCapabilities {
@@ -173,14 +168,15 @@ export class BrowserSynthesisTTSAdapter implements TTSAdapter {
   }
 
   async speak(text: string, options: TTSOptions = {}): Promise<void> {
+    // Invalidate previous requests before the asynchronous voices wait.
+    this.stop();
+    const generation = this.operationGeneration;
     await this.ensureInitialized();
+    if (generation !== this.operationGeneration) return;
 
     if (!this.synthesis) {
       throw new Error('Synthesis not initialized');
     }
-
-    // Cancel any current speech
-    this.stop();
 
     return new Promise((resolve, reject) => {
       const utterance = new SpeechSynthesisUtterance(text);
@@ -202,23 +198,35 @@ export class BrowserSynthesisTTSAdapter implements TTSAdapter {
       utterance.pitch = options.pitch ?? this.options.defaultPitch ?? 1;
       utterance.volume = options.volume ?? this.options.defaultVolume ?? 1;
 
+      const isCurrent = () =>
+        generation === this.operationGeneration &&
+        this.currentUtterance === utterance;
+      const settle = () => {
+        this.currentUtterance = null;
+        this.settleCurrentSpeech = null;
+        resolve();
+      };
+
       // Set up event handlers
       utterance.onstart = () => {
+        if (!isCurrent()) return;
         for (const cb of this.startListeners) {
           cb();
         }
       };
 
       utterance.onend = () => {
-        this.currentUtterance = null;
+        if (!isCurrent()) return;
+        settle();
         for (const cb of this.endListeners) {
           cb();
         }
-        resolve();
       };
 
       utterance.onerror = (event) => {
+        if (!isCurrent()) return;
         this.currentUtterance = null;
+        this.settleCurrentSpeech = null;
         const error = new Error(`Speech synthesis error: ${event.error}`);
         for (const cb of this.errorListeners) {
           cb(error);
@@ -227,21 +235,23 @@ export class BrowserSynthesisTTSAdapter implements TTSAdapter {
       };
 
       utterance.onboundary = (event) => {
+        if (!isCurrent()) return;
         for (const cb of this.boundaryListeners) {
           cb(event.charIndex, event.charLength || 1);
         }
       };
 
       this.currentUtterance = utterance;
+      this.settleCurrentSpeech = settle;
       this.synthesis?.speak(utterance);
     });
   }
 
   stop(): void {
-    if (this.synthesis) {
-      this.synthesis.cancel();
-      this.currentUtterance = null;
-    }
+    ++this.operationGeneration;
+    // Settle before native cancel: it may emit synchronous callbacks or none.
+    this.settleCurrentSpeech?.();
+    this.synthesis?.cancel();
   }
 
   pause(): void {
@@ -288,6 +298,9 @@ export class BrowserSynthesisTTSAdapter implements TTSAdapter {
 
   async dispose(): Promise<void> {
     this.stop();
+    ++this.initializationGeneration;
+    this.cancelVoiceLoad?.();
+    this.initialization = null;
     this.synthesis = null;
     this.voices = [];
     this.startListeners.clear();
