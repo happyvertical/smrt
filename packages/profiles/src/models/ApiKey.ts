@@ -5,7 +5,6 @@
  * Keys are stored as hashes - the plaintext is only returned on creation.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
 import {
   field,
   foreignKey,
@@ -13,6 +12,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { bytesToHex, randomBytes, sha256Hex } from '../crypto-util.js';
 import type { Profile } from './Profile';
 
 export interface ApiKeyOptions extends SmrtObjectOptions {
@@ -152,7 +152,7 @@ export class ApiKey extends SmrtObject {
    * Hash an API key
    */
   static hashKey(key: string): string {
-    return createHash('sha256').update(key).digest('hex');
+    return sha256Hex(key);
   }
 
   /**
@@ -168,7 +168,7 @@ export class ApiKey extends SmrtObject {
     },
   ): Promise<GenerateKeyResult> {
     // Generate a random key: sk_live_<32 random bytes as hex>
-    const randomPart = randomBytes(32).toString('hex');
+    const randomPart = bytesToHex(randomBytes(32));
     const key = `sk_live_${randomPart}`;
     const keyPrefix = key.substring(0, 16);
     const keyHash = ApiKey.hashKey(key);

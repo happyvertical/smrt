@@ -2323,7 +2323,13 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.102.3
         version: 0.102.3
+      '@noble/ciphers':
+        specifier: ^2.1.1
+        version: 2.1.1
       '@noble/curves':
+        specifier: ^2.4.0
+        version: 2.4.0
+      '@noble/hashes':
         specifier: ^2.4.0
         version: 2.4.0
       bech32:
