@@ -239,8 +239,25 @@ control panel), wired by `app/AppShell.svelte`.
   `isHidden`). An assistant calls the same methods the editor does. The
   context is separate from `useAdminShell()` because `AppShell`, not
   `AdminShell`, owns the navigation.
+- **Sections belong to the app.** Hosts (and recipes, via the host) suggest
+  sections as `ShellNavGroup`s; the user overrides them in the same additive
+  version-1 layout: `sections[id] = { label?, showTitle? }` (rename; hide the
+  title) and `customSections: { id: 'custom:...', label }[]` (user-created).
+  Custom sections join `sectionOrder`, receive items through `moved`, show in
+  the editor when empty but not in the nav, and get a unique `custom:` id.
+  `showTitle: false` (also settable by a host on `ShellNavGroup.showTitle`)
+  renders the items flat in a `role="group"` named by the heading, no
+  `<details>`/`<summary>`. `applyShellLayout` keeps the section's original id
+  on renamed output groups. Helpers: `renameShellSection`,
+  `setShellSectionTitleVisible`, `createShellSection`, `deleteShellSection`
+  (custom only; items return to their default sections). Old stored layouts
+  need no migration; new host sections and items land in their suggested slot.
+  Controller: `renameSection`, `setSectionTitleVisible`, `createSection(label)`
+  (returns the id), `deleteSection`.
 - **`ShellLayoutEditor`**: `controller` (default: context), `preview` (default
-  true), `iconComponent`. Mount it on a settings page or in a dock tool.
+  true), `iconComponent`. Each section has an inline name input, a Show title
+  switch, and (custom only) Delete, which confirms when non-empty; a New
+  section button creates one. Mount it on a settings page or in a dock tool.
 
 ### Sortable and the Board engine
 

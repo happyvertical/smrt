@@ -142,6 +142,11 @@ export interface ShellNavGroup {
    */
   id?: string;
   heading: string;
+  /**
+   * `false` renders the items flat, without a visible heading; the group keeps
+   * an accessible name. Hosts suggest it; a user's layout can override it.
+   */
+  showTitle?: boolean;
   items: ShellNavItem[];
 }
 

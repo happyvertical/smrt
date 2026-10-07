@@ -5,7 +5,8 @@
  * The host owns persistence: it keeps the `ShellLayout` in its own state (here
  * a plain variable, in a real app a database row or an exportable blueprint
  * document) and feeds it back through `layout`. Try hiding a panel, dragging
- * items between sections, or focusing a move handle and pressing Space then
+ * items between sections, rename a section, hide its title, create your own
+ * section and drag items into it, or focusing a move handle and pressing Space then
  * the arrow keys. "Import" shows an untrusted JSON layout being normalized.
  */
 import { AppShell, ShellLayoutEditor } from '@happyvertical/smrt-svelte/app';

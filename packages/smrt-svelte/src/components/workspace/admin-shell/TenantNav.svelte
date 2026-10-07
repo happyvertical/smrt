@@ -188,6 +188,11 @@ function fallbackIcon(label: string): string {
 
   {@render navItems(items)}
   {#each groups as group}
+    {#if group.showTitle === false}
+      <div class="smrt-tenant-nav__group smrt-tenant-nav__group--flat" role="group" aria-label={group.heading}>
+        <div class="smrt-tenant-nav__group-items">{@render navItems(group.items, isGroupCurrent(group))}</div>
+      </div>
+    {:else}
     <details class="smrt-tenant-nav__group" aria-label={group.heading} open>
       <summary class="smrt-tenant-nav__heading">
         {#if collapsed}
@@ -199,6 +204,7 @@ function fallbackIcon(label: string): string {
       </summary>
       <div class="smrt-tenant-nav__group-items">{@render navItems(group.items, isGroupCurrent(group))}</div>
     </details>
+    {/if}
   {/each}
 </nav>
 

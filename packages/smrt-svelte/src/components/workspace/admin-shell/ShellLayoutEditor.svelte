@@ -1,8 +1,8 @@
 <script lang="ts">
-import { Switch } from '@happyvertical/smrt-ui/forms';
+import { Input, Switch } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { type Component, untrack } from 'svelte';
+import { type Component, tick, untrack } from 'svelte';
 import { M } from '../../../i18n/strings.workspace.js';
 import Sortable from '../../sortable/Sortable.svelte';
 import type {
@@ -38,6 +38,9 @@ const applied = $derived(layout.applied);
 interface NavContainer extends SortableContainer {
   hidden: boolean;
   root: boolean;
+  custom: boolean;
+  titleVisible: boolean;
+  count: number;
 }
 
 const containers = $derived<NavContainer[]>(
@@ -47,6 +50,9 @@ const containers = $derived<NavContainer[]>(
     fixed: section.group === null,
     root: section.group === null,
     hidden: section.hidden,
+    custom: section.custom,
+    titleVisible: section.titleVisible,
+    count: section.items.length,
   })),
 );
 const items = $derived<SortableItem[]>(
@@ -64,6 +70,40 @@ function setShown(id: string, shown: boolean): void {
   else layout.hide(id);
 }
 
+let rootEl: HTMLElement | undefined = $state();
+
+function rename(id: string, event: Event): void {
+  const input = event.currentTarget as HTMLInputElement;
+  layout.renameSection(id, input.value);
+  // Blank or rejected input snaps back to the section's real name.
+  input.value = containers.find((entry) => entry.id === id)?.label ?? '';
+}
+
+async function createSection(): Promise<void> {
+  const id = layout.createSection(
+    t(M['ui.shell_layout_editor.new_section_label']),
+  );
+  if (!id) return;
+  await tick();
+  const input = rootEl?.querySelector<HTMLInputElement>(
+    `input[data-section-name="${CSS.escape(id)}"]`,
+  );
+  input?.focus();
+  input?.select();
+}
+
+function deleteSection(id: string, label: string, count: number): void {
+  if (
+    count > 0 &&
+    !globalThis.confirm?.(
+      t(M['ui.shell_layout_editor.delete_confirm'], { label }),
+    )
+  ) {
+    return;
+  }
+  layout.deleteSection(id);
+}
+
 function onmove(move: SortableItemMove<SortableItem, NavContainer>): void {
   layout.moveItem(move.item.id, move.target.containerId, move.target.index);
 }
@@ -73,7 +113,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 }
 </script>
 
-<section class="smrt-shell-layout-editor" aria-labelledby={headingId}>
+<section class="smrt-shell-layout-editor" aria-labelledby={headingId} bind:this={rootEl}>
   <header>
     <div>
       <h2 id={headingId}>{t(M['ui.shell_layout_editor.heading'])}</h2>
@@ -122,7 +162,12 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
 
   <div class="smrt-shell-layout-editor__body">
     <div class="smrt-shell-layout-editor__nav">
-      <h3>{t(M['ui.shell_layout_editor.navigation'])}</h3>
+      <div class="smrt-shell-layout-editor__nav-head">
+        <h3>{t(M['ui.shell_layout_editor.navigation'])}</h3>
+        <Button variant="secondary" size="sm" onclick={createSection}>
+          {t(M['ui.shell_layout_editor.new_section'])}
+        </Button>
+      </div>
       <Sortable
         {containers}
         {items}
@@ -133,8 +178,34 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
       >
         {#snippet containerHeader({ container })}
           {@const entry = containers.find((candidate) => candidate.id === container.id)}
-          <strong class:smrt-shell-layout-editor__muted={entry?.hidden}>{container.label}</strong>
-          {#if !entry?.root}
+          {#if entry?.root}
+            <strong>{container.label}</strong>
+          {:else}
+            <Input
+              class="smrt-shell-layout-editor__name"
+              interaction={false}
+              data-section-name={container.id}
+              aria-label={t(M['ui.shell_layout_editor.section_name'], { label: container.label })}
+              value={container.label}
+              onchange={(event) => rename(container.id, event)}
+            />
+            <Switch
+              interaction={false}
+              checked={entry?.titleVisible ?? true}
+              label={t(M['ui.shell_layout_editor.show_title'])}
+              aria-label={t(M['ui.shell_layout_editor.show_title_for'], { label: container.label })}
+              onchange={(event) => layout.setSectionTitleVisible(container.id, event.currentTarget.checked)}
+            />
+            {#if entry?.custom}
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label={t(M['ui.shell_layout_editor.delete_section'], { label: container.label })}
+                onclick={() => deleteSection(container.id, container.label, entry.count)}
+              >
+                {t(M['ui.shell_layout_editor.delete'])}
+              </Button>
+            {/if}
             <Switch
               interaction={false}
               checked={!entry?.hidden}
@@ -187,6 +258,9 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-shell-layout-editor__panels legend { padding-inline: var(--smrt-spacing-1); font: var(--smrt-typography-title-small-font); }
   .smrt-shell-layout-editor__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-4); }
   .smrt-shell-layout-editor__body { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--smrt-spacing-4); align-items: start; }
+  .smrt-shell-layout-editor__nav-head { display: flex; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-3); }
+  .smrt-shell-layout-editor__nav-head h3 { margin-block-end: 0; }
+  :global(.smrt-shell-layout-editor__name) { flex: 1 1 8rem; min-inline-size: 0; }
   .smrt-shell-layout-editor__label { flex: 1 1 auto; min-inline-size: 0; }
   .smrt-shell-layout-editor__preview-frame { padding: var(--smrt-spacing-3); border: 1px dashed var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-md); background: var(--smrt-color-surface-container-low, var(--smrt-color-surface)); }
   @media (max-width: 48rem) {

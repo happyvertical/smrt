@@ -1,15 +1,19 @@
 import {
   applyShellLayout,
+  createShellSection,
+  deleteShellSection,
   hideShellEntry,
   isShellLayoutEmpty,
   moveShellItem,
   moveShellSection,
   normalizeShellLayout,
+  renameShellSection,
   resolveShellNavModel,
   SHELL_LAYOUT_VERSION,
   type ShellLayout,
   type ShellNavModelSection,
   setShellLayoutPanel,
+  setShellSectionTitleVisible,
   showShellEntry,
 } from './layout.js';
 import { resolveShellConfig } from './settings.js';
@@ -174,6 +178,56 @@ export class ShellLayoutController {
     return this.apply(
       setShellLayoutPanel(this.layout, edge, patch, this.options.panels()),
     );
+  }
+
+  /**
+   * Rename a section (host or custom). A blank label restores the host's
+   * suggested heading (custom sections ignore blank labels).
+   */
+  renameSection(sectionId: string, label: string): boolean {
+    return this.apply(
+      renameShellSection(
+        this.options.nav(),
+        this.options.groups(),
+        this.layout,
+        sectionId,
+        label,
+      ),
+    );
+  }
+
+  /** Show or hide a section's title; hidden titles render its items flat. */
+  setSectionTitleVisible(sectionId: string, visible: boolean): boolean {
+    return this.apply(
+      setShellSectionTitleVisible(
+        this.options.nav(),
+        this.options.groups(),
+        this.layout,
+        sectionId,
+        visible,
+      ),
+    );
+  }
+
+  /** Create an empty custom section; returns its id, or `null` when blank. */
+  createSection(label: string): string | null {
+    const before = this.layout.customSections?.length ?? 0;
+    const changed = this.apply(
+      createShellSection(
+        this.options.nav(),
+        this.options.groups(),
+        this.layout,
+        label,
+      ),
+    );
+    if (!changed) return null;
+    const list = this.layout.customSections ?? [];
+    return list.length > before ? (list[list.length - 1]?.id ?? null) : null;
+  }
+
+  /** Delete a custom section; its items return to their default sections. */
+  deleteSection(sectionId: string): boolean {
+    return this.apply(deleteShellSection(this.layout, sectionId));
   }
 
   /** Drop every customization. */

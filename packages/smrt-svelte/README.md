@@ -40,7 +40,7 @@ items that share Board's drag engine. `AppShell` lets users customize their
 shell: pass `layout` and `onlayoutchange` to own persistence (for example in an
 exported app blueprint), or neither to store it in the user's settings. Mount
 `ShellLayoutEditor` (from `/app` or `/workspace`) on a settings page, and call
-`useShellLayout()` to make the same changes from code or an assistant. See
+`useShellLayout()` to make the same changes from code or an assistant. Users can rename sections, hide their titles, and create or delete their own. See
 `agents/workspace.md`; the pure `ShellLayout` model is published without Svelte
 as `@happyvertical/smrt-svelte/workspace/layout`.
 
