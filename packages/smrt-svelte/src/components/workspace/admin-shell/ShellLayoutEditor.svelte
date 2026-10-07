@@ -191,6 +191,13 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
             />
             <Switch
               interaction={false}
+              label={t(M['ui.shell_layout_editor.visible'])}
+              checked={!entry?.hidden}
+              aria-label={t(M['ui.shell_layout_editor.show_entry'], { label: container.label })}
+              onchange={(event) => setShown(container.id, event.currentTarget.checked)}
+            />
+            <Switch
+              interaction={false}
               checked={entry?.titleVisible ?? true}
               label={t(M['ui.shell_layout_editor.show_title'])}
               aria-label={t(M['ui.shell_layout_editor.show_title_for'], { label: container.label })}
@@ -206,12 +213,6 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
                 {t(M['ui.shell_layout_editor.delete'])}
               </Button>
             {/if}
-            <Switch
-              interaction={false}
-              checked={!entry?.hidden}
-              aria-label={t(M['ui.shell_layout_editor.show_entry'], { label: container.label })}
-              onchange={(event) => setShown(container.id, event.currentTarget.checked)}
-            />
           {/if}
         {/snippet}
         {#snippet item({ item: entry, container })}
