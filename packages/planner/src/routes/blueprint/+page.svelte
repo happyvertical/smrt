@@ -1,4 +1,5 @@
 <script lang="ts">
+import { ShellLayoutEditor } from '@happyvertical/smrt-svelte/workspace';
 import { Button } from '@happyvertical/smrt-ui';
 import { Alert, ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { downloadBlueprint } from '$lib/blueprint/file.ts';
@@ -59,7 +60,7 @@ function confirmReset() {
   <header>
     <h1>Blueprint</h1>
     <p class="meta">
-      Your recipes and their options, kept together in this browser. Export them
+      Your recipes, their options and the layout, kept together in this browser. Export them
       as a file, or import one to replace what is here. Sample records are not
       part of it.
     </p>
@@ -90,6 +91,15 @@ function confirmReset() {
       onchange={choose}
     />
   </div>
+
+  <section aria-labelledby="layout-heading">
+    <h2 id="layout-heading">Layout</h2>
+    <p class="meta">
+      Reorder, move or hide navigation entries and choose which panels show. The
+      layout is saved with the blueprint.
+    </p>
+    <ShellLayoutEditor />
+  </section>
 
   {#if error}
     <Alert variant="error" title="Import failed">{error}</Alert>

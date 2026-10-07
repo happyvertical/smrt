@@ -277,6 +277,17 @@ describe('BlueprintStore', () => {
     expect(storage.data.get(UNREADABLE_KEY)).toBe('{nope');
   });
 
+  it('layout edits from the shell are stored, and an empty one clears it', () => {
+    store.hydrate('', fakeStorage());
+    store.setLayout({ version: 1, hidden: ['planner'] });
+    expect(store.snapshot().layout).toEqual({
+      version: 1,
+      hidden: ['planner'],
+    });
+    store.setLayout({ version: 1 });
+    expect(store.snapshot().layout).toBeUndefined();
+  });
+
   it('export then import reproduces the same blueprint; bad import changes nothing', () => {
     store.hydrate('', fakeStorage());
     recipeState.add('commerce.sales');

@@ -2,8 +2,9 @@
  * Shared by the `CustomerSelect` / `VendorSelect` stand-ins (see those files):
  * a party DTO as a picker option, "profile name plus status and type".
  */
+
+import type { RelationOption } from '@happyvertical/smrt-svelte/forms';
 import type { CustomerDisplayData, VendorDisplayData } from './partyTypes.ts';
-import type { RelationOption } from './relationTypes.ts';
 
 export function customerOption(customer: CustomerDisplayData): RelationOption {
   const detail = [customer.status, customer.customerType]

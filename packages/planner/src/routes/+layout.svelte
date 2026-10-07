@@ -9,7 +9,7 @@ import { afterNavigate, replaceState } from '$app/navigation';
 import { page } from '$app/state';
 import { blueprintStore } from '$lib/blueprint/store.svelte.ts';
 import { exposedModels, getPackage } from '$lib/catalog/index.ts';
-import ChatDockPlaceholder from '$lib/components/ChatDockPlaceholder.svelte';
+import BrowserAssistant from '$lib/components/BrowserAssistant.svelte';
 import { provideDataSource } from '$lib/data/context.ts';
 import { humanize } from '$lib/data/format.ts';
 import { createMemoryDataSource } from '$lib/data/source.ts';
@@ -37,8 +37,8 @@ provideDataSource(
 );
 
 const nav: ShellNavItem[] = $derived([
-  { href: appHref('/'), label: 'Planner' },
-  { href: appHref('/blueprint/'), label: 'Blueprint' },
+  { id: 'planner', href: appHref('/'), label: 'Planner' },
+  { id: 'blueprint', href: appHref('/blueprint/'), label: 'Blueprint' },
 ]);
 
 // Each added recipe (or group of recipes, such as Products) is a navigation
@@ -47,19 +47,23 @@ const nav: ShellNavItem[] = $derived([
 // entries, so Simple and Clothing give one Products link. Options and Help
 // are icons in each page's header, not entries here.
 const recipeGroups: ShellNavGroup[] = $derived.by(() => {
-  const sections = new Map<string, { heading: string; added: Recipe[] }>();
+  const sections = new Map<
+    string,
+    { key: string; heading: string; added: Recipe[] }
+  >();
   for (const id of recipeState.ids) {
     const recipe = recipes.find((r) => r.id === id);
     if (!recipe) continue;
     const key = sectionId(recipe);
     const section = sections.get(key) ?? {
+      key,
       heading: recipe.group?.label ?? recipe.label,
       added: [],
     };
     section.added.push(recipe);
     sections.set(key, section);
   }
-  return [...sections.values()].map(({ heading, added }) => {
+  return [...sections.values()].map(({ key, heading, added }) => {
     const seen = new Set<string>();
     const entries = added.flatMap((recipe) =>
       recipeNav(recipe).filter((entry) => {
@@ -69,14 +73,26 @@ const recipeGroups: ShellNavGroup[] = $derived.by(() => {
         return true;
       }),
     );
+    // Stable ids keep a saved layout valid when the selection query in the
+    // hrefs changes. The section's options gear sits on its main (first) item
+    // and shows only while that section is current.
     return {
+      id: `section:${key}`,
       heading,
-      items: [
-        ...entries.map((entry) => ({
-          href: appHref(`/m/${entry.packageId}/${entry.model.name}/`),
-          label: entry.label,
-        })),
-      ],
+      items: entries.map((entry, index) => ({
+        id: `section:${key}:${entry.packageId}:${entry.model.name}:${entry.label}`,
+        href: appHref(`/m/${entry.packageId}/${entry.model.name}/`),
+        label: entry.label,
+        ...(index === 0
+          ? {
+              action: {
+                href: appHref(`/recipes/${key}/`),
+                label: `${heading} options`,
+                visibility: 'active' as const,
+              },
+            }
+          : {}),
+      })),
     };
   });
 });
@@ -87,13 +103,16 @@ const packageGroups: ShellNavGroup[] = $derived(
     if (!pkg) return [];
     return [
       {
+        id: `package:${pkg.id}`,
         heading: humanize(pkg.id),
         items: [
           {
+            id: `package:${pkg.id}:overview`,
             href: appHref(`/packages/${pkg.id}/`),
             label: 'Overview',
           },
           ...exposedModels(pkg).map((model) => ({
+            id: `package:${pkg.id}:${model.name}`,
             href: appHref(`/m/${pkg.id}/${model.name}/`),
             label: model.name,
           })),
@@ -172,11 +191,14 @@ function flushOnHide() {
   {navGroups}
   currentHref={page.url.pathname + appQuery()}
   environment="static demo"
+  layout={blueprintStore.layout ?? null}
+  onlayoutchange={(next) => blueprintStore.setLayout(next)}
+  dockToggles={[{ tool: 'assistant', label: 'Assistant' }]}
 >
-  {#snippet dock()}
+  {#snippet dock(registry)}
     <ShellDockTool id="assistant" label="Assistant">
       {#snippet render()}
-        <ChatDockPlaceholder />
+        <BrowserAssistant {registry} />
       {/snippet}
     </ShellDockTool>
   {/snippet}

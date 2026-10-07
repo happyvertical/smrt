@@ -4,18 +4,19 @@
  * fakes without touching a view.
  *
  * A record is labelled by its own `display.label` field (the first of `name`,
- * `title`, `label`, `code` when undeclared; see `upstream/display.ts`). A
+ * `title`, `label`, `code` when undeclared; see `display.ts`). A
  * Customer or Vendor has none: its name lives on its Profile, so it is joined
  * to one (the "ship a selector instead" case of happyvertical/smrt#3599).
  */
+
+import type { RelationOption } from '@happyvertical/smrt-svelte/forms';
 import { getModelByQualifiedName } from '../catalog/index.ts';
 import type { CatalogField, CatalogModel } from '../catalog/types.ts';
-import { displayLabel } from '../upstream/display.ts';
 import type {
   CustomerDisplayData,
   VendorDisplayData,
 } from '../upstream/partyTypes.ts';
-import type { RelationOption } from '../upstream/relationTypes.ts';
+import { displayLabel } from './display.ts';
 import { labelKey } from './format.ts';
 import type { DataSource, ModelRecord } from './source.ts';
 

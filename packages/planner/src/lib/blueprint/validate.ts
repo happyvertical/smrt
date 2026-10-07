@@ -1,8 +1,8 @@
+import type { ShellLayout } from '@happyvertical/smrt-svelte/workspace/layout';
 import { recipesById } from '../recipes/index.ts';
 import type { FieldPolicyRow } from '../recipes/policy.ts';
 import { withRequirements } from '../recipes/resolve.ts';
 import type { ExposureSurface } from '../recipes/types.ts';
-import type { ShellLayout } from '../upstream/shellLayout.ts';
 import {
   BLUEPRINT_SCHEMA,
   BLUEPRINT_VERSION,
@@ -62,7 +62,7 @@ function parseRow(value: unknown, at: string): FieldPolicyRow | string {
   return row;
 }
 
-/** `layout` only needs to be the right kind of object until smrt#3603 ships. */
+/** Strictly checked here; the shell's `normalizeShellLayout` is lenient. */
 function parseLayout(value: unknown): ShellLayout | string {
   if (!isObject(value) || value.version !== 1) {
     return 'layout must be an object with version 1';

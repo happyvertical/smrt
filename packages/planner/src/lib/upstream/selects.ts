@@ -1,5 +1,5 @@
 /**
- * STAND-IN for `ModuleUISlot.selects` (happyvertical/smrt#3599): a package UI
+ * STAND-IN for `ModuleUISlot.selects` / `uiSelectors` (happyvertical/smrt#3611; not in the published 0.55.3 manifests): a package UI
  * component marked as THE selector for model X, and the host helper "selector
  * for model X". Generic forms use it for any `foreignKey` / `crossPackageRef`
  * field whose target is X.

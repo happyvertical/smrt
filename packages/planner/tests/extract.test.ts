@@ -143,4 +143,47 @@ describe('extractPackage field hints', () => {
     expect(fields.bad.enum).toBeUndefined();
     expect(fields.bad.ui).toBeUndefined();
   });
+
+  it('reads widget hints and the display label field, ignoring unknown ones', () => {
+    const item = raw.manifest.objects['@happyvertical/smrt-shop:Item'];
+    const pkg = extractPackage({
+      ...raw,
+      manifest: {
+        ...raw.manifest,
+        objects: {
+          '@happyvertical/smrt-shop:Item': {
+            ...item,
+            displayLabelField: 'name',
+            fields: {
+              name: { type: 'text', _meta: { ui: { widget: 'textarea' } } },
+              other: { type: 'text', _meta: { ui: { widget: 'sparkles' } } },
+            },
+          },
+        },
+      },
+    });
+    const fields = Object.fromEntries(
+      pkg.models[0].fields.map((f) => [f.name, f]),
+    );
+    expect(fields.name.ui).toEqual({ widget: 'textarea' });
+    expect(fields.other.ui).toBeUndefined();
+    expect(pkg.models[0].display).toEqual({ label: 'name' });
+  });
+
+  it('drops a display label field the model does not have', () => {
+    const item = raw.manifest.objects['@happyvertical/smrt-shop:Item'];
+    const pkg = extractPackage({
+      ...raw,
+      manifest: {
+        ...raw.manifest,
+        objects: {
+          '@happyvertical/smrt-shop:Item': {
+            ...item,
+            displayLabelField: 'zzz',
+          },
+        },
+      },
+    });
+    expect(pkg.models[0].display).toBeUndefined();
+  });
 });

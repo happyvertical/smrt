@@ -1,6 +1,6 @@
 /**
- * Applies the local stand-ins (`enums.ts`, `widgets.ts`, `relations.ts`) to the
- * generated catalog when it loads, so every consumer reads `field.enum`,
+ * Applies the local stand-ins (`widgets.ts`, `relations.ts`) to the
+ * generated catalog when it loads, so every consumer reads
  * `field.ui.widget` and `field.related` exactly where the manifest will put
  * them. Nothing already in the catalog is overwritten: once a package's
  * manifest carries a value, it wins.
@@ -11,7 +11,6 @@ import type {
   CatalogModel,
   CatalogPackage,
 } from '../catalog/types.ts';
-import { ENUM_VALUES } from './enums.ts';
 import { UNDECLARED_RELATIONS } from './relations.ts';
 import { FIELD_WIDGETS } from './widgets.ts';
 
@@ -46,10 +45,6 @@ function overlayField(
   chain: readonly string[],
 ): CatalogField {
   let next = field;
-  const values = field.enum
-    ? undefined
-    : lookup(ENUM_VALUES, chain, field.name);
-  if (values) next = { ...next, enum: [...values] };
   const widget = field.ui?.widget
     ? undefined
     : lookup(FIELD_WIDGETS, chain, field.name);

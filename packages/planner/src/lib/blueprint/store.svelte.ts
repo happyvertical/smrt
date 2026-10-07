@@ -1,5 +1,8 @@
+import {
+  isShellLayoutEmpty,
+  type ShellLayout,
+} from '@happyvertical/smrt-svelte/workspace/layout';
 import { recipeState } from '../recipes/state.svelte.ts';
-import type { ShellLayout } from '../upstream/shellLayout.ts';
 import { blueprintFromLegacySearch, hasLegacyState } from './legacy.ts';
 import {
   BACKUP_KEY,
@@ -28,7 +31,7 @@ export type PersistState = 'unknown' | 'ok' | 'memory';
  * Blueprint, whether it is saved, exported or compared.
  */
 export class BlueprintStore {
-  /** The shell layout (smrt#3603). Carried through, not yet applied. */
+  /** The shell layout, owned here and passed to `AppShell`. */
   layout = $state<ShellLayout | undefined>();
   persist = $state<PersistState>('unknown');
   /** False until the saved blueprint has been read; nothing saves before. */
@@ -57,6 +60,11 @@ export class BlueprintStore {
     };
     if (this.layout) blueprint.layout = this.layout;
     return blueprint;
+  }
+
+  /** An edit from the shell or its layout editor; an empty one clears it. */
+  setLayout(next: ShellLayout): void {
+    this.layout = isShellLayoutEmpty(next) ? undefined : next;
   }
 
   /** Replace everything from a validated blueprint. */
