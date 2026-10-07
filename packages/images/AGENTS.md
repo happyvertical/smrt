@@ -2,6 +2,11 @@
 
 Image management with AI categorization, editing, and metadata extraction. Extends Asset via cross-package STI.
 
+## Entry points
+
+- Root (`@happyvertical/smrt-images`) is **browser-safe** (bundle-gate enforced, #3628): `Image`, `ImageCollection`, `ImageSearch`, `UpstreamManager`, prompts, media-bundle persistence, and the pure `adjust` helpers. It must not reach sharp, `node:*`, `@happyvertical/images` (resvg), or `@happyvertical/ai`, even through a lazy `import()` (bundlers follow it).
+- `@happyvertical/smrt-images/node` is Node-only: `ImageEditor`, `ImageCategorizer`, `ImageDeriver`, `ImageMetadataExtractor`, `applyImageAdjustments` (`src/adjust-render.ts`), plus a re-export of the whole root. Put new sharp/fs/AI-SDK code behind it.
+
 ## Models
 
 - **Image**: STI subclass of Asset (from smrt-assets) — stored in same `assets` table with `_meta_type='Image'`. Adds `width`, `height`, `alt` text.

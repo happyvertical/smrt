@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import * as images from '../index.js';
 import { persistImageMediaBundleInspection } from '../media-bundle-persistence.js';
+import * as imagesNode from '../node.js';
 
 describe('package barrel (index.ts)', () => {
   it('exposes the documented runtime exports', () => {
@@ -20,10 +21,6 @@ describe('package barrel (index.ts)', () => {
     expect(typeof images.ImageCollection).toBe('function');
 
     // Operations
-    expect(typeof images.ImageCategorizer).toBe('function');
-    expect(typeof images.ImageDeriver).toBe('function');
-    expect(typeof images.ImageEditor).toBe('function');
-    expect(typeof images.ImageMetadataExtractor).toBe('function');
     expect(typeof images.ImageSearch).toBe('function');
     expect(typeof images.UpstreamManager).toBe('function');
 
@@ -32,6 +29,28 @@ describe('package barrel (index.ts)', () => {
 
     // Media-bundle persistence re-export
     expect(typeof images.persistImageMediaBundleInspection).toBe('function');
+  });
+
+  it('keeps Node-only services off the browser-safe root (#3628)', () => {
+    for (const name of [
+      'ImageCategorizer',
+      'ImageDeriver',
+      'ImageEditor',
+      'ImageMetadataExtractor',
+      'applyImageAdjustments',
+    ]) {
+      expect(name in images, `${name} must not be on the root`).toBe(false);
+    }
+  });
+
+  it('exposes the Node-only services plus the root from /node', () => {
+    expect(typeof imagesNode.ImageCategorizer).toBe('function');
+    expect(typeof imagesNode.ImageDeriver).toBe('function');
+    expect(typeof imagesNode.ImageEditor).toBe('function');
+    expect(typeof imagesNode.ImageMetadataExtractor).toBe('function');
+    expect(typeof imagesNode.applyImageAdjustments).toBe('function');
+    expect(imagesNode.Image).toBe(images.Image);
+    expect(imagesNode.ImageCollection).toBe(images.ImageCollection);
   });
 
   it('exports ImageCollection and Image as a public, instantiable pair', () => {

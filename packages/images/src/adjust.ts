@@ -1,16 +1,19 @@
 /**
  * Local picture adjustments: brightness, contrast, colour, black-and-white,
- * rotate, flip, region crop and resize, applied with sharp on the server.
+ * rotate, flip, region crop and resize. Rendering uses sharp on the server and
+ * lives in `./adjust-render` (exported from the Node-only
+ * `@happyvertical/smrt-images/node` subpath), so this module stays
+ * browser-safe.
  *
  * These are the cheap, instant edits (no GPU, no model): an app offers a few
  * versions of one picture ("brighter by 10, 20 or 30%") and saves the one the
  * person picks. {@link imageAdjustVariants} builds those versions for one
  * {@link ImageAdjustOperation}; {@link encodeImageAdjustments} turns an
  * adjustment into a short, URL-safe string (`b1.2,g,r90`) so a preview route
- * can render it; {@link applyImageAdjustments} renders it.
+ * can render it; `applyImageAdjustments` renders it.
  *
- * Everything but {@link applyImageAdjustments} is pure, so an app can build
- * and check adjustments without loading sharp.
+ * Everything in this module is pure, so an app can build and check
+ * adjustments in a browser without loading sharp.
  */
 
 /** Ways to change a picture locally. */
@@ -137,7 +140,7 @@ const MIN_SIDE = 16;
 const MAX_SIDE = 8192;
 const MIN_REGION = 0.05;
 
-function clamp(value: number, min: number, max: number): number {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
@@ -467,7 +470,7 @@ export function describeImageAdjustments(input: ImageAdjustments): string {
   return parts.join(', ') || 'unchanged';
 }
 
-/** Output of {@link applyImageAdjustments}. */
+/** Output of `applyImageAdjustments` (Node-only, `@happyvertical/smrt-images/node`). */
 export interface AppliedImageAdjustments {
   data: Buffer;
   mimeType: string;
@@ -490,90 +493,5 @@ export function regionToPixels(
     top,
     width: clamp(Math.round(region.width * width), 1, width - left),
     height: clamp(Math.round(region.height * height), 1, height - top),
-  };
-}
-
-/**
- * Render adjustments with sharp. The EXIF orientation is applied first, so
- * "turn right" means right as the person sees the picture. `format` defaults
- * to the source's (JPEG, PNG or WebP; anything else becomes JPEG).
- */
-export async function applyImageAdjustments(
-  data: Buffer,
-  input: ImageAdjustments,
-  options: {
-    format?: ImageAdjustOutputFormat;
-    quality?: number;
-    /** A final fit (for previews), after `maxWidth`/`maxHeight`. */
-    fit?: { width: number; height: number; fit?: 'cover' | 'inside' };
-  } = {},
-): Promise<AppliedImageAdjustments> {
-  const a = normalizeImageAdjustments(input);
-  const { default: sharp } = await import('sharp');
-
-  // Bake orientation and quarter turns first so later steps see the picture
-  // the way the person does.
-  let pipeline = sharp(data, { failOn: 'error' }).rotate();
-  if (a.rotate) pipeline = pipeline.rotate(a.rotate);
-  if (a.flipHorizontal) pipeline = pipeline.flop();
-  if (a.flipVertical) pipeline = pipeline.flip();
-
-  if (a.region) {
-    const turned = await pipeline.clone().toBuffer({ resolveWithObject: true });
-    pipeline = sharp(turned.data).extract(
-      regionToPixels(a.region, turned.info.width, turned.info.height),
-    );
-  }
-
-  if (a.brightness != null || a.saturation != null) {
-    pipeline = pipeline.modulate({
-      ...(a.brightness != null ? { brightness: a.brightness } : {}),
-      ...(a.saturation != null ? { saturation: a.saturation } : {}),
-    });
-  }
-  if (a.contrast != null) {
-    // Stretch around mid-grey: out = c * in + 128 * (1 - c).
-    pipeline = pipeline.linear(a.contrast, 128 * (1 - a.contrast));
-  }
-  if (a.grayscale) pipeline = pipeline.grayscale();
-
-  if (a.maxWidth != null || a.maxHeight != null) {
-    pipeline = pipeline.resize({
-      width: a.maxWidth,
-      height: a.maxHeight,
-      fit: 'inside',
-      withoutEnlargement: true,
-    });
-  }
-  if (options.fit) {
-    // A second resize in one sharp pipeline replaces the first, so render
-    // the adjusted picture before fitting it.
-    const adjusted = await pipeline.toBuffer();
-    pipeline = sharp(adjusted).resize({
-      width: options.fit.width,
-      height: options.fit.height,
-      fit: options.fit.fit ?? 'inside',
-      withoutEnlargement: options.fit.fit !== 'cover',
-    });
-  }
-
-  const sourceFormat = (await sharp(data).metadata()).format;
-  const format: ImageAdjustOutputFormat =
-    options.format ??
-    (sourceFormat === 'png' || sourceFormat === 'webp' ? sourceFormat : 'jpeg');
-  const quality = clamp(Math.round(options.quality ?? 88), 30, 100);
-  pipeline =
-    format === 'png'
-      ? pipeline.png()
-      : format === 'webp'
-        ? pipeline.webp({ quality })
-        : pipeline.jpeg({ quality, mozjpeg: true });
-
-  const out = await pipeline.toBuffer({ resolveWithObject: true });
-  return {
-    data: out.data,
-    mimeType: `image/${format}`,
-    width: out.info.width,
-    height: out.info.height,
   };
 }

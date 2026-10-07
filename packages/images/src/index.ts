@@ -16,10 +16,12 @@ import './__smrt-register__.js';
 // overrides resolve correctly via @happyvertical/smrt-prompts.
 import './prompts.js';
 
-// Operations
+// Operations. Services that need sharp, node:fs, or the AI SDK graph
+// (ImageEditor, ImageCategorizer, ImageDeriver, ImageMetadataExtractor,
+// applyImageAdjustments) are Node-only and ship from
+// '@happyvertical/smrt-images/node' so this root stays browser-safe (#3628).
 export {
   type AppliedImageAdjustments,
-  applyImageAdjustments,
   decodeImageAdjustments,
   describeImageAdjustments,
   encodeImageAdjustments,
@@ -38,9 +40,6 @@ export {
   regionForFocus,
   regionToPixels,
 } from './adjust';
-export { ImageCategorizer } from './categorizer';
-export { ImageDeriver } from './deriver';
-export { ImageEditor } from './editor';
 // Model (moved from smrt-assets)
 export { Image } from './image';
 export { ImageCollection } from './images';
@@ -60,7 +59,6 @@ export {
   persistImageMediaBundleInspection,
   type SmrtImageMediaBundlePersistenceAdapter,
 } from './media-bundle-persistence';
-export { ImageMetadataExtractor } from './metadata';
 export { smrtImagesGenerateAltTextPrompt } from './prompts';
 export { ImageSearch } from './search';
 // Types

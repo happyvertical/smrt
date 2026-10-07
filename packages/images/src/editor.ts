@@ -17,11 +17,11 @@ import type { AIClientOptions } from '@happyvertical/ai';
 import type { ImageFormat } from '@happyvertical/images';
 import type { AssetStore } from '@happyvertical/smrt-assets';
 import {
-  applyImageAdjustments,
   describeImageAdjustments,
   type ImageAdjustments,
   normalizeImageAdjustments,
 } from './adjust';
+import { applyImageAdjustments } from './adjust-render';
 import type { Image } from './image';
 import type { ImageCollection } from './images';
 

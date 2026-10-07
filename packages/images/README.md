@@ -11,11 +11,16 @@ pnpm add @happyvertical/smrt-images
 ## Usage
 
 ```typescript
+// Browser-safe root: models, collections, search, upstream imports
 import {
-  Image, ImageCollection,
-  ImageCategorizer, ImageEditor, ImageDeriver,
-  ImageMetadataExtractor, ImageSearch, UpstreamManager,
+  Image, ImageCollection, ImageSearch, UpstreamManager,
 } from '@happyvertical/smrt-images';
+// Node-only processing (sharp, filesystem, AI SDK) lives on the /node subpath,
+// which also re-exports the whole root
+import {
+  ImageCategorizer, ImageEditor, ImageDeriver,
+  ImageMetadataExtractor, applyImageAdjustments,
+} from '@happyvertical/smrt-images/node';
 
 // Create and query images
 const images = await ImageCollection.create({ db });
