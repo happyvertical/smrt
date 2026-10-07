@@ -465,6 +465,9 @@ const profileCollection = await ProfileCollection.create();
 const typeCollection = await ProfileTypeCollection.create();
 const metafieldCollection = await ProfileMetafieldCollection.create();
 
+// Resolve a tenant-owned or global type without widening the active tenant.
+const availableType = await typeCollection.getAvailableById(typeId, tenantId);
+
 // Bulk create profile types
 const types = await typeCollection.createMany([
   { name: 'Human', description: 'Individual person' },

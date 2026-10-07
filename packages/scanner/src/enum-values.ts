@@ -24,10 +24,17 @@ function splitUnion(type: string): string[] {
   const parts: string[] = [];
   let current = '';
   let quote: string | null = null;
+  let escaped = false;
   for (const ch of type) {
     if (quote) {
       current += ch;
-      if (ch === quote) quote = null;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === quote) {
+        quote = null;
+      }
       continue;
     }
     if (ch === "'" || ch === '"') {
@@ -52,8 +59,29 @@ function resolveMember(
 ): boolean {
   const quoted = member.match(/^(['"])(.*)\1$/s);
   if (quoted) {
-    out.push(quoted[2]);
-    return true;
+    try {
+      let encoded = member;
+      if (quoted[1] === "'") {
+        encoded = '"';
+        for (let index = 0; index < quoted[2].length; index += 1) {
+          const char = quoted[2][index];
+          if (char === '\\' && quoted[2][index + 1]) {
+            const escapedChar = quoted[2][index + 1];
+            encoded += escapedChar === "'" ? "'" : `\\${escapedChar}`;
+            index += 1;
+          } else {
+            encoded += char === '"' ? '\\"' : char;
+          }
+        }
+        encoded += '"';
+      }
+      const value: unknown = JSON.parse(encoded);
+      if (typeof value !== 'string') return false;
+      out.push(value);
+      return true;
+    } catch {
+      return false;
+    }
   }
   if (/^-?\d+(\.\d+)?$/.test(member)) {
     out.push(Number(member));

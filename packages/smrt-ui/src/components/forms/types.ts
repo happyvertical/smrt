@@ -70,3 +70,13 @@ export interface SignaturePadLabels {
   useSignature: string;
   committed: string;
 }
+
+/** A searchable relation target for the RelationInput component */
+export interface RelationOption {
+  /** Record id; this is the value the form posts. */
+  id: string;
+  /** Human-readable name shown in the field and the list. */
+  label: string;
+  /** Secondary text shown under the label in the list. */
+  detail?: string;
+}

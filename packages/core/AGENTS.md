@@ -170,6 +170,13 @@ and repository rules.
   `src/filesystem-loader.ts`, not a static files-SDK import. Fully bundled apps
   import `@happyvertical/smrt-core/filesystem` at startup. Use
   `importOptionalDependency()` for similarly heavy optional dependencies.
+- `exports['.'].browser` (`dist/browser.js`) is the browser surface. Model
+  package roots are bundled for browsers by the bundle-gate browser fixture
+  (#3621): anything a model root imports from core must be exported by the
+  browser entry and must not reach `node:` built-ins, `pg`, `cosmiconfig`, or
+  `jiti`. Keep Node-only code behind a subpath or a lazy import; when a fix
+  makes a package pass, delete its entry in
+  `packages/bundle-gate/src/browser-gate/expected-failures.ts`.
 - Database retries are transient-only, four attempts total for `get`/`upsert`.
   Use `src/db-errors.ts` classifiers through the cause chain, never message
   matching (SDK driver text can live in `context.originalError`). Constraints,

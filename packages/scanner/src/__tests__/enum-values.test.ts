@@ -78,6 +78,32 @@ describe('enum declarations -> aliases', () => {
     );
   });
 
+  it('preserves quotes and backslashes in string enum values', async () => {
+    const aliases = await aliasesOf(String.raw`
+      enum Escaped {
+        Apostrophe = "can't",
+        Backslash = "c:\\temp",
+        Quote = 'say "hello"',
+        Pipe = "a' | 'b",
+        Newline = "line\nfeed",
+        Tab = "col\tvalue",
+        Unicode = "café 雪",
+        UnicodeEscape = "\u2603",
+      }
+    `);
+
+    expect(resolveEnumValues('Escaped', aliases)).toEqual([
+      "can't",
+      'c:\\temp',
+      'say "hello"',
+      "a' | 'b",
+      'line\nfeed',
+      'col\tvalue',
+      'café 雪',
+      '☃',
+    ]);
+  });
+
   it('refuses mixed and computed enums rather than emitting a partial set', async () => {
     const a = await aliasesOf(
       "enum M { A = 'a', B = 1 }\nenum C { A = 'a', B = compute() }",
@@ -207,5 +233,46 @@ export class Contract extends SmrtObject {
     expect(fields.free.enum).toBeUndefined();
     expect(fields.openUnion.enum).toBeUndefined();
     expect(fields.count.enum).toBeUndefined();
+  });
+
+  it('emits exact escaped string enum values end to end', async () => {
+    write(
+      'src/types.ts',
+      String.raw`export enum Escaped {
+  Apostrophe = "can't",
+  Backslash = "c:\\temp",
+  Quote = 'say "hello"',
+  Pipe = "a' | 'b",
+  Newline = "line\nfeed",
+  Tab = "col\tvalue",
+  Unicode = "café 雪",
+  UnicodeEscape = "\u2603",
+}`,
+    );
+    write(
+      'src/Example.ts',
+      `import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { Escaped } from './types';
+@smrt()
+export class Example extends SmrtObject {
+  value: Escaped = Escaped.Apostrophe;
+}
+`,
+    );
+
+    const fields = await manifestFor();
+    expect(fields.value).toMatchObject({
+      type: 'text',
+      enum: [
+        "can't",
+        'c:\\temp',
+        'say "hello"',
+        "a' | 'b",
+        'line\nfeed',
+        'col\tvalue',
+        'café 雪',
+        '☃',
+      ],
+    });
   });
 });
