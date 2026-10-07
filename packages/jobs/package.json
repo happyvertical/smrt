@@ -15,6 +15,10 @@
   ],
   "exports": {
     ".": {
+      "node": {
+        "types": "./dist/index.node.d.ts",
+        "import": "./dist/index.node.js"
+      },
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },

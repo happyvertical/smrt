@@ -99,7 +99,7 @@ const result = await handle2.wait({ timeout: 60000, pollInterval: 100 });
 
 ### Run a TaskRunner to process jobs
 
-`TaskRunner` and `createTaskRunner` are Node-only (worker threads) and live on the `@happyvertical/smrt-jobs/runner` subpath, not the package root, so model and collection imports from the root stay browser-reachable. Import them from `/runner`.
+`TaskRunner` and `createTaskRunner` are Node-only (worker threads). Under Node they are still available from the package root (the `node` export condition resolves to `index.node`); browser/bundler resolution gets a root without them, so model and collection imports stay browser-reachable. Prefer the explicit `@happyvertical/smrt-jobs/runner` subpath.
 
 ```typescript
 import { TaskRunner } from '@happyvertical/smrt-jobs/runner';

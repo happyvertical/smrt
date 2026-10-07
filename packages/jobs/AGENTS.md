@@ -18,7 +18,7 @@ Status: `pending → running → completed/failed/cancelled`.
 
 ## TaskRunner
 
-Node-only: import `TaskRunner`, `createTaskRunner`, `TaskRunnerConfig`, `TaskRunnerEvents`, `JobTimeoutError` from `@happyvertical/smrt-jobs/runner`; the root never reaches `runner.ts` / `node:worker_threads` (#3615, browser bundle gate). `getActiveJobExecutionContext` / `isRunnerExecutionContext` live in `execution-context.ts` and stay on the root (also re-exported from `/runner`). Never import `runner.js` from another root-graph module.
+Node-only: `TaskRunner`, `createTaskRunner`, `TaskRunnerConfig`, `TaskRunnerEvents`, `JobTimeoutError` live in `@happyvertical/smrt-jobs/runner`, and the `node` export condition on `.` resolves to `src/index.node.ts` (root + those names) so Node root imports keep working; the browser-safe root (`src/index.ts`) never reaches `runner.ts` / `node:worker_threads` (#3615, browser bundle gate). `getActiveJobExecutionContext` / `isRunnerExecutionContext` live in `execution-context.ts` and stay on the root (also re-exported from `/runner`). Never import `runner.js` from another root-graph module.
 
 Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), `idlePollInterval` (defaults to 20× `pollInterval`), `heartbeatInterval` (30s, telemetry only), `leaseTtlMs` (30s), `leaseTickMs` (10s), `shutdownTimeout` (30s). Empty claims back off exponentially to `idlePollInterval`; any claimed work, capacity pressure, or poll error resets to `pollInterval`. Every delay is capped at the effective worker lease TTL, including an oversized base interval; recovery sweep spacing stays TTL-bounded (plus query/event-loop time). Polling intervals must be finite positive milliseconds within the Node timer range.
 
