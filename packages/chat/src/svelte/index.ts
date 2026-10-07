@@ -26,10 +26,10 @@ import AgentChat from './components/agent/AgentChat.svelte';
 import AgentSelector from './components/agent/AgentSelector.svelte';
 import AgentSessionPanel from './components/agent/AgentSessionPanel.svelte';
 import ToolCallDisplay from './components/agent/ToolCallDisplay.svelte';
-// Assistant dock components (#2904)
-import FloatingAssistant from './components/assistant/FloatingAssistant.svelte';
 import HeardCaptions from './components/assistant/captions/HeardCaptions.svelte';
 import SpokenCaptions from './components/assistant/captions/SpokenCaptions.svelte';
+// Assistant dock components (#2904)
+import FloatingAssistant from './components/assistant/FloatingAssistant.svelte';
 // Dialog components
 import RoomCreateDialog from './components/dialogs/RoomCreateDialog.svelte';
 import SearchMessages from './components/dialogs/SearchMessages.svelte';
@@ -135,15 +135,13 @@ export {
   type CaptionTTSAdapter,
   createCaptionChannel,
   createHeardCaptionCallbacks,
+  createSpokenCaptionCallbacks,
   createSpokenCaptionSession,
+  type SpokenCaptionCallbacks,
   type SpokenCaptionSession,
 } from './components/assistant/captions/caption-state.svelte.js';
 export { default as HeardCaptions } from './components/assistant/captions/HeardCaptions.svelte';
 export { default as SpokenCaptions } from './components/assistant/captions/SpokenCaptions.svelte';
-export {
-  default as FloatingAssistant,
-  type FloatingAssistantPresentationState,
-} from './components/assistant/FloatingAssistant.svelte';
 export {
   ASSISTANT_PROPOSE_ACTION_TOOL,
   type AssistantClientTool,
@@ -170,6 +168,10 @@ export {
   type AssistantUserHold,
   createAssistantDockController,
 } from './components/assistant/create-assistant-dock-controller.svelte.js';
+export {
+  default as FloatingAssistant,
+  type FloatingAssistantPresentationState,
+} from './components/assistant/FloatingAssistant.svelte';
 export { default as RoomCreateDialog } from './components/dialogs/RoomCreateDialog.svelte';
 export { default as SearchMessages } from './components/dialogs/SearchMessages.svelte';
 // Export components

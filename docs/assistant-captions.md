@@ -40,3 +40,69 @@ are not a possible caption source or rendering path.
 There is no persistence, tenancy, SQL dialect, retryable mutation, or external
 wire contract in this presentation-only feature; those test-design fields are
 N/A.
+
+## Listening integration acceptance matrix
+
+All rows run as a local demo user in headless Chromium with synthetic speech,
+no microphone/provider/network identity. Persistence, SQL dialects, and server
+transactions are N/A: the mock application is local memory. The action boundary
+uses the dock's existing preview/confirm/apply contract; it is not server auth.
+
+| Invariant | Reachable trigger | Positive case | Failure case | Level / command |
+| --- | --- | --- | --- | --- |
+| One Dictation feeds heard captions and final turns | Explicit DictationButton gesture then synthetic source result | Interim only updates captions; final sends via the mounted dock controller | Before start/after stop results ignored; pending approval cannot send or replace draft | Browser: listening-mode spec |
+| Hidden history preserves action authority/context | Final asks to mark project ready | Real preview opens existing Confirm/Reject controls; Confirm updates visible app exactly once | Reject and voice while pending do not mutate app; hiding history never applies | Browser: listening-mode spec |
+| Toggles are presentation only | Keyboard toggle each checkbox | Either caption channel can remain visible independently | Mic state, controller/thread, and action count unchanged | Browser: listening-mode spec |
+| Spoken content uses actual playback events | Synthetic adapter start/boundary/end | Only playback prefix then completed utterance appears | Stop/error/dispose and superseded callbacks cannot publish another utterance | Unit: caption-state.test.ts; browser fixture |
+| App remains readable and controls reachable | 320px viewport / reduced motion / keyboard | No horizontal overflow, focusable controls, no motion | Stored history/composer absent in listening mode; approval still visible | Browser: listening-mode spec |
+
+This is a new integration rather than a bug fix; base-failure comparison is
+N/A. Existing caption component and controller tests cover their own contracts.
+
+## Workbench and realtime hosts
+
+Open `/previews/listening-mode`. It defaults to synthetic speech and playback;
+press **Start listening**, **Synthetic interim**, then **Synthetic final**.
+The source callbacks pass through one `Dictation`, update HeardCaptions, and
+send only the final turn through the mounted dock's public controller. The
+project form remains pending until the dock's real **Confirm** button is used;
+**Reject** leaves it unchanged. Final speech during a pending approval or an
+existing draft only updates heard captions and cannot confirm or replace it.
+Toggle **Hide conversation history** to inspect the same retained conversation.
+The mock client/registry affect only this local fixture, not a server resource.
+
+For a manual real-voice trial, choose **Real microphone and browser speech**
+before the first Start listening gesture. This lazily loads the public
+`createSttDictationSource` and `BrowserSynthesisTTSAdapter`, preserving the same
+Dictation instance and caption callbacks. Browser speech support/service is
+required; no application provider key is required. Reload to change sources.
+Automated checks leave this option off and never acquire a real microphone.
+Synthetic playback buttons emit playback events; they do not produce audio.
+
+Realtime hosts can use `createSpokenCaptionCallbacks(channel)` directly:
+`onStart(playbackId, transcript)` when audio begins, `onBoundary(id, index,
+length)` when the transport reports a boundary, then `onEnd(id)` or
+`onCancel(id)`. Use a fresh id per playback. Superseded ids are ignored. Feed
+only speech transcripts; model tokens and tool traces are not playback events.
+Hosts without character boundaries can use start/end without claiming exact
+word synchronization. Heard speech uses the same `onInterim`/`onText` callbacks
+as Dictation, so no specific recognition backend is required.
+
+`createSpokenCaptionSession` exclusively owns playback on its supplied adapter.
+It cancels the previous invocation and waits for its completion promise before
+subscribing the next one, since TTS callbacks do not carry utterance ids.
+Adapters must settle completion after cancellation; a stalled adapter prevents
+replacement playback rather than allowing ambiguous callbacks to caption it.
+
+Run caption tests with `pnpm --filter @happyvertical/smrt-chat exec vitest run
+src/svelte/components/assistant/__tests__/caption-state.test.ts
+src/svelte/components/assistant/__tests__/captions.test.ts`; run the browser
+matrix with `pnpm --filter @happyvertical/smrt-chat test:e2e listening-mode.spec.ts`.
+The browser matrix also exercises the real-source opt-in through mocked native
+recognition/synthesis APIs, proving lazy construction and one recognizer without
+requesting a microphone or contacting a speech service.
+
+The dev route follows the existing `workspace-aliases.js` browser-ai mapping:
+smrt-svelte is intentionally not a chat dependency because that would create
+`chat → smrt-svelte → content → chat`. These imports remain route-only, as in
+the existing root workbench; published caption helpers stay provider-agnostic.

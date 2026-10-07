@@ -120,50 +120,6 @@ class CaptionChannelState implements CaptionChannel {
   }
 }
 
-/*
-  const maxLines = Math.max(1, Math.floor(options.maxLines ?? 3));
-  const now = options.now ?? Date.now;
-  let lineSequence = 0;
-  let expiry: ReturnType<typeof setTimeout> | null = null;
-
-  const channel = {
-    lines: $state<CaptionLine[]>([]),
-    interim: $state(''),
-    setInterim(value: string) {
-      channel.interim = captionText(value);
-    },
-    addFinal(value: string) {
-      const text = captionText(value);
-      channel.interim = '';
-      if (!text) return;
-      channel.lines = [
-        ...channel.lines,
-        { id: `${speaker}-${++lineSequence}`, text, speaker, createdAt: now() },
-      ].slice(-maxLines);
-      if (options.ttlMs !== undefined) scheduleExpiry();
-    },
-    clear() {
-      channel.interim = '';
-      channel.lines = [];
-      if (expiry) clearTimeout(expiry);
-      expiry = null;
-    },
-    dispose() {
-      channel.clear();
-    },
-  } satisfies CaptionChannel;
-
-  function scheduleExpiry() {
-    if (expiry) clearTimeout(expiry);
-    const ttl = Math.max(0, options.ttlMs ?? 0);
-    expiry = setTimeout(() => {
-      channel.clear();
-    }, ttl);
-  }
-
-  return channel;
-}*/
-
 /**
  * Pass these callbacks to the single host-owned Dictation instance. Doing so
  * observes the same recogniser the composer uses; it never starts or stops a
@@ -175,6 +131,61 @@ export function createHeardCaptionCallbacks(
   return {
     onText: (text) => captions.addFinal(text),
     onInterim: (text) => captions.setInterim(text),
+  };
+}
+
+/** Host-driven playback events, including SDK realtime audio transports. */
+export interface SpokenCaptionCallbacks {
+  /** Call only when audio starts playing, with its user-facing transcript. */
+  onStart(playbackId: string, text: string): void;
+  /** Character offsets refer to the original transcript supplied at start. */
+  onBoundary(playbackId: string, charIndex: number, charLength: number): void;
+  /** Call on completed playback, never merely on completed generation. */
+  onEnd(playbackId: string): void;
+  /** Cancel/error for this playback; late events are ignored. */
+  onCancel(playbackId: string): void;
+  dispose(): void;
+}
+
+/** Bridges existing playback signals without requiring a TTS adapter. */
+export function createSpokenCaptionCallbacks(
+  captions: CaptionChannel,
+): SpokenCaptionCallbacks {
+  let current: { id: string; text: string } | null = null;
+  let disposed = false;
+  return {
+    onStart(id, text) {
+      if (disposed) return;
+      current = { id, text };
+      captions.setInterim('');
+    },
+    onBoundary(id, index, length) {
+      if (
+        disposed ||
+        current?.id !== id ||
+        !Number.isFinite(index) ||
+        !Number.isFinite(length) ||
+        index < 0 ||
+        length < 0
+      )
+        return;
+      captions.setInterim(current.text.slice(0, index + length));
+    },
+    onEnd(id) {
+      if (disposed || current?.id !== id) return;
+      captions.addFinal(current.text);
+      current = null;
+    },
+    onCancel(id) {
+      if (disposed || current?.id !== id) return;
+      captions.setInterim('');
+      current = null;
+    },
+    dispose() {
+      disposed = true;
+      current = null;
+      captions.setInterim('');
+    },
   };
 }
 
@@ -193,59 +204,85 @@ export function createSpokenCaptionSession(
   captions: CaptionChannel,
 ): SpokenCaptionSession {
   let generation = 0;
-  let current: { generation: number; text: string; started: boolean } | null =
-    null;
+  let disposed = false;
+  let pending: Promise<void> | null = null;
+  let remove: (() => void)[] = [];
 
-  const remove = [
-    adapter.onStart(() => {
-      if (!current) return;
-      current.started = true;
-    }),
-    adapter.onBoundary((charIndex, charLength) => {
-      if (!current?.started) return;
-      captions.setInterim(current.text.slice(0, charIndex + charLength));
-    }),
-    adapter.onEnd(() => {
-      // An adapter has no utterance id. Requiring a start prevents the end
-      // callback from a cancelled predecessor becoming a caption for the next
-      // pending utterance.
-      if (!current?.started) return;
-      captions.addFinal(current.text);
-      current = null;
-    }),
-    adapter.onError(() => {
-      captions.setInterim('');
-      current = null;
-    }),
-  ];
+  function detach() {
+    for (const unsubscribe of remove) unsubscribe();
+    remove = [];
+  }
+
+  function stop() {
+    generation++;
+    detach();
+    captions.setInterim('');
+    adapter.stop();
+  }
 
   return {
     async speak(text: string, options?: unknown) {
-      const normalized = captionText(text);
-      if (!normalized) return;
-      const next = ++generation;
-      current = { generation: next, text: normalized, started: false };
-      try {
-        await adapter.speak(normalized, options);
-      } catch (error) {
-        if (current?.generation === next) {
+      if (disposed || !captionText(text)) return;
+      // TTS events have no utterance id. Invalidate old listener closures,
+      // cancel playback, and wait for its completion promise before attaching
+      // the next utterance. A host must dedicate this adapter to this session.
+      const previous = pending;
+      stop();
+      const current = generation;
+      if (previous) await previous.catch(() => undefined);
+      if (disposed || current !== generation) return;
+      let started = false;
+      const active = () => !disposed && current === generation;
+      remove = [
+        adapter.onStart(() => {
+          if (active()) started = true;
+        }),
+        adapter.onBoundary((charIndex, charLength) => {
+          if (!active() || !started) return;
+          if (
+            !Number.isFinite(charIndex) ||
+            !Number.isFinite(charLength) ||
+            charIndex < 0 ||
+            charLength < 0
+          )
+            return;
+          captions.setInterim(text.slice(0, charIndex + charLength));
+        }),
+        adapter.onEnd(() => {
+          if (!active() || !started) return;
+          captions.addFinal(text);
+          generation++;
+          detach();
+        }),
+        adapter.onError(() => {
+          if (!active()) return;
           captions.setInterim('');
-          current = null;
+          generation++;
+          detach();
+        }),
+      ];
+      let playback: Promise<void> | null = null;
+      try {
+        // Preserve the exact playback string so boundary indices still refer
+        // to what the adapter is speaking. Normalize only displayed text.
+        playback = adapter.speak(text, options);
+        pending = playback;
+        await playback;
+      } finally {
+        if (pending === playback) pending = null;
+        if (active()) {
+          captions.setInterim('');
+          generation++;
+          detach();
         }
-        throw error;
       }
     },
-    stop() {
-      generation++;
-      current = null;
-      captions.setInterim('');
-      adapter.stop();
-    },
+    stop,
     dispose() {
-      generation++;
-      current = null;
+      if (disposed) return;
+      disposed = true;
+      stop();
       captions.dispose();
-      for (const unsubscribe of remove) unsubscribe();
     },
   };
 }

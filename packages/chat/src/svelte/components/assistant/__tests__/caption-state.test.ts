@@ -3,6 +3,7 @@ import type { CaptionTTSAdapter } from '../captions/caption-state.svelte.js';
 import {
   createCaptionChannel,
   createHeardCaptionCallbacks,
+  createSpokenCaptionCallbacks,
   createSpokenCaptionSession,
 } from '../captions/caption-state.svelte.js';
 
@@ -33,6 +34,12 @@ function fakeTts() {
   };
   return {
     adapter,
+    capture: () => ({
+      starts: [...starts],
+      ends: [...ends],
+      errors: [...errors],
+      boundaries: [...boundaries],
+    }),
     start: () =>
       starts.forEach((callback) => {
         callback();
@@ -119,5 +126,93 @@ describe('caption state', () => {
     tts.start();
     tts.end();
     expect(captions.lines).toEqual([]);
+  });
+
+  it('waits for cancelled playback and binds replacement callbacks to their utterance', async () => {
+    const tts = fakeTts();
+    let completeFirst!: () => void;
+    let completeSecond!: () => void;
+    vi.mocked(tts.adapter.speak)
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            completeFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            completeSecond = resolve;
+          }),
+      );
+    const captions = createCaptionChannel('spoken');
+    const session = createSpokenCaptionSession(tts.adapter, captions);
+    const first = session.speak('Old speech');
+    tts.start();
+    const stale = tts.capture();
+    const second = session.speak('New speech');
+    expect(tts.adapter.speak).toHaveBeenCalledTimes(1);
+    for (const callback of stale.boundaries) callback(0, 10);
+    for (const callback of stale.ends) callback();
+    expect(captions.lines).toEqual([]);
+    completeFirst();
+    await first;
+    await Promise.resolve();
+    tts.start();
+    for (const callback of stale.starts) callback();
+    for (const callback of stale.boundaries) callback(0, 10);
+    for (const callback of stale.errors) callback(new Error('old failure'));
+    for (const callback of stale.ends) callback();
+    expect(captions.interim).toBe('');
+    tts.boundary(0, 3);
+    expect(captions.interim).toBe('New');
+    tts.end();
+    completeSecond();
+    await second;
+    expect(captions.lines.map((line) => line.text)).toEqual(['New speech']);
+  });
+
+  it('preserves playback indices, ignores malformed boundaries, and refuses speech after disposal', async () => {
+    const tts = fakeTts();
+    const captions = createCaptionChannel('spoken');
+    const session = createSpokenCaptionSession(tts.adapter, captions);
+    const speaking = session.speak('  A\n  reply');
+    expect(tts.adapter.speak).toHaveBeenCalledWith('  A\n  reply', undefined);
+    tts.start();
+    tts.boundary(-1, 100);
+    tts.boundary(Number.NaN, 10);
+    expect(captions.interim).toBe('');
+    tts.boundary(0, 3);
+    expect(captions.interim).toBe('A');
+    tts.error();
+    await speaking;
+    expect(captions.interim).toBe('');
+    expect(captions.lines).toEqual([]);
+    session.dispose();
+    await session.speak('Never played');
+    expect(tts.adapter.speak).toHaveBeenCalledTimes(1);
+  });
+  it('accepts host realtime playback signals and ignores superseded ids', () => {
+    const captions = createCaptionChannel('spoken');
+    const events = createSpokenCaptionCallbacks(captions);
+    events.onEnd('not-started');
+    expect(captions.lines).toEqual([]);
+    events.onStart('one', 'Old speech');
+    events.onStart('two', 'New speech');
+    events.onBoundary('one', 0, 10);
+    events.onEnd('one');
+    events.onCancel('one');
+    expect(captions.interim).toBe('');
+    events.onBoundary('two', 0, 3);
+    expect(captions.interim).toBe('New');
+    events.onEnd('two');
+    expect(captions.lines.map((line) => line.text)).toEqual(['New speech']);
+    events.onStart('three', 'Cancelled');
+    events.onCancel('three');
+    events.onEnd('three');
+    events.dispose();
+    events.onStart('four', 'Disposed');
+    events.onEnd('four');
+    expect(captions.lines).toHaveLength(1);
   });
 });
