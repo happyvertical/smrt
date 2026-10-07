@@ -282,6 +282,8 @@ describe('#3660 qualified deployment table bindings', () => {
     'configured-conflict',
     'late-registration',
     'changed-binding',
+    'removed-binding-empty',
+    'removed-binding-unrelated',
   ] as const) {
     it(`blocks a cached runtime collection read before SQL without schema planning (${trigger})`, async () => {
       register(MESSAGES, 'Attachment', undefined, {
@@ -319,6 +321,11 @@ describe('#3660 qualified deployment table bindings', () => {
           register(APP, 'Attachment', undefined, {
             tableName: 'message_attachments',
           });
+        } else if (trigger.startsWith('removed-binding')) {
+          clearCache();
+          if (trigger === 'removed-binding-unrelated') {
+            bind({ '@fixture/absent:Other': 'other_storage' });
+          }
         } else {
           bind({ [`${MESSAGES}:Attachment`]: 'moved_message_attachments' });
         }
@@ -329,7 +336,10 @@ describe('#3660 qualified deployment table bindings', () => {
         await expect(collection.list({})).rejects.toThrow(
           /claimed by unrelated classes|changed after runtime storage/,
         );
-        if (trigger !== 'changed-binding') {
+        if (
+          trigger === 'configured-conflict' ||
+          trigger === 'late-registration'
+        ) {
           expect(() =>
             ObjectRegistry.getSchema(`${MESSAGES}:Attachment`),
           ).toThrow(/claimed by unrelated classes/);
@@ -349,6 +359,24 @@ describe('#3660 qualified deployment table bindings', () => {
       }
     });
   }
+  it('preserves custom unbound cached table names when unrelated bindings disappear', () => {
+    register(MESSAGES);
+    const Attachment = class Attachment extends SmrtObject {};
+    ObjectRegistry.register(Attachment, { packageName: MESSAGES });
+    class Attachments extends SmrtCollection<SmrtObject> {
+      static readonly _itemClass = Attachment;
+    }
+    const item = new Attachment();
+    const collection = new Attachments();
+    item._tableName = 'custom_storage';
+    collection._tableName = 'custom_storage';
+    bind({ '@fixture/absent:Other': 'other_storage' });
+    expect(item.tableName).toBe('custom_storage');
+    expect(collection.tableName).toBe('custom_storage');
+    clearCache();
+    expect(item.tableName).toBe('custom_storage');
+    expect(collection.tableName).toBe('custom_storage');
+  });
   it('refuses malformed dormant bindings even when their model is absent', () => {
     register(APP);
     bind({ '@fixture/absent:Attachment': 'bad;table' });

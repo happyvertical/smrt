@@ -30,7 +30,7 @@ The SMRT CLI does this automatically. Programmatic hosts may use `loadConfig()`
 or `setConfig({ smrt: { tableNames: ... } })` from `@happyvertical/smrt-config`.
 Registration may happen before configuration, but bindings must not change
 after objects or collections start using a database: instances cache their
-physical table names. Changing a configured binding after a table name was
+physical table names. Changing or removing a configured binding after a table name was
 cached fails closed and requires a restart. Ownership checks also run for
 cached instances when later registrations reveal a conflict. A deployment's workers, web server, and migration process
 must use identical bindings.

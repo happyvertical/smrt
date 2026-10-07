@@ -1399,14 +1399,11 @@ export class SmrtObject extends SmrtClass {
    * Gets the database table name for this object
    */
   get tableName() {
-    assertRuntimeTableBindings(
-      this._tableName
-        ? {
-            qualifiedName: this.getResolvedQualifiedName(),
-            tableName: this._tableName,
-          }
-        : undefined,
-    );
+    assertRuntimeTableBindings({
+      qualifiedName: this.getResolvedQualifiedName(),
+      tableName: this._tableName,
+      instance: this,
+    });
     if (!this._tableName) {
       // For STI, use the base class's table name from schema (manifest-derived).
       // R5-canon: use the qualified name as the lookup key so a colliding

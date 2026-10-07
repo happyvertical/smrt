@@ -166,6 +166,9 @@ export function assertTableFamilies(
 
 let validatedGeneration = -1;
 let validatedBindings = '';
+// Only instances that have used a deployment binding need removal checks.
+// Weak references preserve custom unbound table names without retaining objects.
+const boundInstances = new WeakSet<object>();
 
 /**
  * A valid binding may precede registration (partial registries are supported).
@@ -175,25 +178,29 @@ let validatedBindings = '';
  */
 export function assertRuntimeTableBindings(cached?: {
   qualifiedName: string;
-  tableName: string;
+  tableName: string | undefined;
+  instance: object;
 }): void {
   const map = bindings(); // Validate malformed dormant declarations too.
-  if (!Object.keys(map).length) return;
   if (cached) {
     const registered = ObjectRegistry.getClass(cached.qualifiedName);
     const root =
       ObjectRegistry.getSTIBase(cached.qualifiedName) || cached.qualifiedName;
     if (
       registered &&
-      map[root] &&
-      mappedTableName(registered, map) !== cached.tableName
+      cached.tableName &&
+      (map[root] || boundInstances.has(cached.instance)) &&
+      mappedTableName(ObjectRegistry.getClass(root) || registered, map) !==
+        cached.tableName
     ) {
       throw new ConfigurationError(
         `Table binding for '${cached.qualifiedName}' changed after runtime storage was initialized; restart the process with consistent configuration`,
         'CONFIG_TABLE_MAPPING_CHANGED',
       );
     }
+    if (map[root]) boundInstances.add(cached.instance);
   }
+  if (!Object.keys(map).length) return;
   const fingerprint = JSON.stringify(map);
   const generation = getRegistryGeneration();
   if (validatedGeneration === generation && validatedBindings === fingerprint)
