@@ -24,16 +24,16 @@ import type {
   PrincipalBinding,
   PrincipalTool,
 } from '@happyvertical/smrt-agents';
-import type {
-  LearningMemoryRecord,
-  LearningSemanticSearch,
-  SmrtClassOptions,
+import {
+  type LearningMemoryRecord,
+  type LearningSemanticSearch,
+  resolveDatabase,
+  type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
 import {
   personaLearningMemory,
   resolvePersonaInstructions,
 } from '@happyvertical/smrt-personas';
-import { getDatabase } from '@happyvertical/sql';
 import type { AgentSession } from './models/AgentSession.js';
 import type { ChatMessage } from './models/ChatMessage.js';
 import {
@@ -160,10 +160,10 @@ export async function recallPersonaMemory(
   if (!persona.memoryScope && !persona.id) {
     return [];
   }
-  // LearningMemory operates on a resolved DB handle; `getDatabase` accepts a
-  // config or a handle and returns a handle (idempotent for a handle).
+  // LearningMemory operates on a resolved DB handle; core's `resolveDatabase`
+  // accepts a config or a handle and returns a handle (identity for a handle).
   const memory = personaLearningMemory({
-    db: await getDatabase(db as Parameters<typeof getDatabase>[0]),
+    db: await resolveDatabase(db ?? {}),
     persona,
     semanticSearch: options.semanticSearch,
   });
