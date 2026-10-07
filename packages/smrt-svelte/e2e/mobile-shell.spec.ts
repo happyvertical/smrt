@@ -330,6 +330,29 @@ test('sidebar-only chrome keeps brand and account access across rail states', as
   await expect(account).toHaveCount(1);
 });
 
+test('a footer-only collapsed rail pins its account control at the bottom', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/?top=hidden&left=collapsed&railAccount=1&railFooterOnly=1');
+
+  const left = page.locator('.smrt-admin-shell__edge--left');
+  const rail = left.locator('.smrt-admin-shell__rail');
+  const footer = rail.locator('.smrt-admin-shell__tenant-rail-footer');
+  await expect(
+    footer.getByRole('button', { name: /Open account menu Dana/ }),
+  ).toBeVisible();
+  await expect(footer).toHaveCSS('grid-row-start', '2');
+  const railBox = await rail.boundingBox();
+  const footerBox = await footer.boundingBox();
+  expect(railBox).not.toBeNull();
+  expect(footerBox).not.toBeNull();
+  expect(footerBox!.y).toBeGreaterThan(railBox!.y + railBox!.height / 2);
+  expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(
+    railBox!.y + railBox!.height,
+  );
+});
+
 for (const width of [320, 390, 1280]) {
   test(`account stays reachable with touch targets at ${width}px`, async ({
     page,

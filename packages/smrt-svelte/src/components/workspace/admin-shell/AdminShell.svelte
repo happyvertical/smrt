@@ -603,9 +603,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   const footerInHeader = $derived(
     !account &&
-      !tenantRailFooter &&
       !!tenantFooter &&
-      (!shell.isEdgeShown('left') || !edgeExpanded('left')),
+      (!shell.isEdgeShown('left') ||
+        (!edgeExpanded('left') && !tenantRailFooter)),
   );
 
   const layoutStyle = $derived(buildLayoutStyle(shell));
@@ -1495,6 +1495,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__tenant-rail-footer {
     position: relative;
     z-index: 1;
+    grid-row: 2;
     min-width: 0;
     padding-block-start: var(--smrt-spacing-2);
     border-block-start: 1px solid var(--smrt-color-outline-variant);

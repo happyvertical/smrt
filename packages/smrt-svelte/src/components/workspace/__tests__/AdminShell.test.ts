@@ -120,6 +120,58 @@ describe('AdminShell', () => {
     }
   });
 
+  it('restores the ordinary footer to the header when the rail becomes unreachable', async () => {
+    const state = createShellState({
+      config: { left: { initial: 'collapsed' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        tenantFooter: textSnippet('full account'),
+        tenantRailFooter: textSnippet('compact account'),
+        children: textSnippet('main'),
+      },
+    });
+    try {
+      await tick();
+      expect(container.querySelector('header')?.textContent).not.toContain(
+        'full account',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer')
+          ?.textContent,
+      ).toContain('compact account');
+
+      state.setPanelState('left', 'hidden');
+      flushSync();
+      expect(container.querySelector('header')?.textContent).toContain(
+        'full account',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer'),
+      ).toBeNull();
+
+      state.setPanelState('left', 'collapsed');
+      flushSync();
+      expect(container.querySelector('header')?.textContent).not.toContain(
+        'full account',
+      );
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-rail-footer')
+          ?.textContent,
+      ).toContain('compact account');
+    } finally {
+      await unmount(component);
+    }
+  });
+
+  it('assigns a footer-only collapsed rail to the bottom grid row', () => {
+    expect(adminShellSource).toMatch(
+      /\.smrt-admin-shell__tenant-rail-footer\s*\{[^}]*grid-row:\s*2;/s,
+    );
+  });
+
   it('keeps an explicit account slot in a custom app bar regardless of left state', async () => {
     const state = createShellState({
       config: { left: { initial: 'expanded' } },
