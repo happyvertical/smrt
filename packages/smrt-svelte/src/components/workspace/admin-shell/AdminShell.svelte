@@ -62,6 +62,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   } from './mobile-shell-dom.js';
   import { clampPanelSize, resolveHotkey } from './settings.js';
   import { createShellState, type ShellState } from './state.svelte.js';
+  import {
+    resolveSlot,
+    type ShellRegion,
+    type ShellSlot,
+  } from './slots.js';
   import type {
     AdminShellPhoneOptions,
     AdminShellProps,
@@ -83,6 +88,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     tenantRail?: Snippet;
     /** Content for the left tenant panel. */
     tenantPanel?: Snippet;
+    /**
+     * Host content for the region slots (`header.start|center|end`,
+     * `footer.start|center|end`, `leftSidebar.header|footer`,
+     * `rightSidebar.header|footer`). A slot whose region is not visible moves
+     * along its documented fallback chain (see `slotFallbackChain`).
+     */
+    slots?: Partial<Record<ShellSlot, Snippet>>;
     /** Content for the tenant panel footer. */
     tenantFooter?: Snippet;
     /** Content for the right focus rail. */
@@ -166,6 +178,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     tenantRail,
     tenantPanel,
     tenantFooter,
+    slots,
     focusRail,
     focusPanel,
     systemBar,
@@ -600,6 +613,33 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   const footerInHeader = $derived(!account && !!tenantFooter && (!shell.isEdgeShown('left') || !edgeExpanded('left')));
 
+  function regionVisible(region: ShellRegion): boolean {
+    switch (region) {
+      case 'header':
+        return panelState('top') !== 'hidden';
+      case 'footer':
+        return panelState('bottom') !== 'hidden';
+      case 'leftSidebar':
+        return shell.isEdgeShown('left') && edgeExpanded('left');
+      case 'rightSidebar':
+        return shell.isEdgeShown('right') && edgeExpanded('right');
+    }
+  }
+
+  /** Slots whose content lands at `target` (own content plus fallbacks). */
+  const slotContent = $derived.by(() => {
+    const placed: Partial<Record<ShellSlot, Snippet[]>> = {};
+    for (const [name, snippet] of Object.entries(slots ?? {}) as [
+      ShellSlot,
+      Snippet | undefined,
+    ][]) {
+      if (!snippet) continue;
+      const target = resolveSlot(name, regionVisible);
+      if (target) (placed[target] ??= []).push(snippet);
+    }
+    return placed;
+  });
+
   const layoutStyle = $derived(buildLayoutStyle(shell));
 
   // Top/bottom edges reserve grid tracks for corner snippets. When a corner
@@ -778,6 +818,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 {/snippet}
 
+{#snippet slotGroup(name: ShellSlot)}
+  {#if slotContent[name]?.length}
+    <div
+      class="smrt-admin-shell__slot smrt-admin-shell__slot--{name.replace('.', '-')}"
+      data-slot={name}
+    >
+      {#each slotContent[name] ?? [] as content}{@render content()}{/each}
+    </div>
+  {/if}
+{/snippet}
+
 <div
   class="smrt-admin-shell"
   data-top-state={panelState('top')}
@@ -829,11 +880,14 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             <Button variant="ghost" size="sm" aria-label={t(M['ui.admin_shell.menu'])} aria-expanded={edgeExpanded('left')} aria-controls="smrt-admin-shell-left-panel" onclick={() => shell.setPanelState('left', edgeExpanded('left') ? 'collapsed' : 'expanded')}>{t(M['ui.admin_shell.menu'])}</Button>
           </div>
         {/if}
+        {@render slotGroup('header.start')}
+        {@render slotGroup('header.center')}
         {#if account || footerInHeader}
           <div class="smrt-admin-shell__account">
             {#if account}{@render account()}{:else if tenantFooter}{@render tenantFooter()}{/if}
           </div>
         {/if}
+        {@render slotGroup('header.end')}
       </div>
       {#if topRightCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-right">
@@ -890,6 +944,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             class="smrt-admin-shell__tenant-stack"
             hidden={!shownOpen('left')}
           >
+            {@render slotGroup('leftSidebar.header')}
             <div class="smrt-admin-shell__tenant-content">
               {#if tenantPanel}
                 {@render tenantPanel()}
@@ -902,6 +957,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
                 {@render tenantFooter()}
               </div>
             {/if}
+            {@render slotGroup('leftSidebar.footer')}
           </div>
         {/if}
         {#if !shownOpen('left') && tenantRail}
@@ -1038,9 +1094,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           tabindex="-1"
           hidden={!shownOpen('right')}
         >
+          {@render slotGroup('rightSidebar.header')}
           {#key shell.activeFocusToolId}
             {@render focusContent(resolveActiveFocusTool())}
           {/key}
+          {@render slotGroup('rightSidebar.footer')}
         </div>
       {/if}
     </aside>
@@ -1063,7 +1121,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         class="smrt-admin-shell__band smrt-admin-shell__band--bottom"
         style:--band-column={2}
       >
+        {@render slotGroup('footer.start')}
+        {@render slotGroup('footer.center')}
         {#if systemBar}{@render systemBar()}{/if}
+        {@render slotGroup('footer.end')}
         {#if systemPanel || !systemBar}{@render edgeToggle('bottom')}{/if}
       </div>
       {#if bottomRightCorner}
@@ -1448,6 +1509,48 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-width: 0;
     min-height: 0;
     overflow: auto;
+  }
+
+  .smrt-admin-shell__slot {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    min-width: 0;
+  }
+
+  .smrt-admin-shell__slot--header-center,
+  .smrt-admin-shell__slot--footer-center {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .smrt-admin-shell__slot--header-end,
+  .smrt-admin-shell__slot--footer-end {
+    margin-inline-start: auto;
+  }
+
+  .smrt-admin-shell__slot--leftSidebar-header,
+  .smrt-admin-shell__slot--rightSidebar-header {
+    padding-block-end: var(--smrt-spacing-3);
+    border-block-end: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .smrt-admin-shell__slot--leftSidebar-footer,
+  .smrt-admin-shell__slot--rightSidebar-footer {
+    padding-block-start: var(--smrt-spacing-3);
+    border-block-start: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .smrt-admin-shell__slot--rightSidebar-header {
+    position: sticky;
+    inset-block-start: 0;
+    background: var(--smrt-color-surface);
+  }
+
+  .smrt-admin-shell__slot--rightSidebar-footer {
+    position: sticky;
+    inset-block-end: 0;
+    background: var(--smrt-color-surface);
   }
 
   .smrt-admin-shell__tenant-footer {

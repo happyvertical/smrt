@@ -24,6 +24,8 @@ import {
 import { setShellLayout } from '../workspace/admin-shell/layout-context.js';
 import { ShellLayoutController } from '../workspace/admin-shell/layout-controller.svelte.js';
 import { resolveShellConfig } from '../workspace/admin-shell/settings.js';
+import type { ShellSlot } from '../workspace/admin-shell/slots.js';
+import { SHELL_SLOTS } from '../workspace/admin-shell/slots.js';
 import { createShellState } from '../workspace/admin-shell/state.svelte.js';
 import TenantNav from '../workspace/admin-shell/TenantNav.svelte';
 import {
@@ -94,7 +96,7 @@ interface Props {
    */
   dock?: Snippet<[DataSurfaceRegistry]>;
   /**
-   * Icon buttons rendered at the right of the shell header, each toggling
+   * Icon buttons, each placed in a shell `slot` (default `header.end`), each toggling
    * the `ShellDockTool` with the same id open and closed. `aria-pressed` and
    * `aria-expanded` follow the dock, focus moves into the dock when it
    * opens and back to the button when it closes (Escape included). The
@@ -102,6 +104,13 @@ interface Props {
    * drive the same dock from code with `useShellDock()`.
    */
   dockToggles?: DockToggle[];
+  /**
+   * Host content for any shell slot (`header.start|center|end`,
+   * `footer.start|center|end`, `leftSidebar.header|footer`,
+   * `rightSidebar.header|footer`). Rendered before dock toggles placed in the
+   * same slot.
+   */
+  slots?: Partial<Record<ShellSlot, Snippet>>;
   children: Snippet;
 }
 
@@ -127,9 +136,33 @@ let {
   appPanelDocs,
   dock,
   dockToggles = [],
+  slots: hostSlots,
   children,
 }: Props = $props();
 const { t } = useI18n();
+const togglesFor = (name: ShellSlot) =>
+  dockToggles.filter((toggle) => (toggle.slot ?? 'header.end') === name);
+const slotSnippets: Record<ShellSlot, Snippet> = {
+  'header.start': slot_0,
+  'header.center': slot_1,
+  'header.end': slot_2,
+  'footer.start': slot_3,
+  'footer.center': slot_4,
+  'footer.end': slot_5,
+  'leftSidebar.header': slot_6,
+  'leftSidebar.footer': slot_7,
+  'rightSidebar.header': slot_8,
+  'rightSidebar.footer': slot_9,
+};
+const shellSlots = $derived.by(() => {
+  const out: Partial<Record<ShellSlot, Snippet>> = {};
+  for (const name of SHELL_SLOTS) {
+    if (hostSlots?.[name] || togglesFor(name).length > 0) {
+      out[name] = slotSnippets[name];
+    }
+  }
+  return out;
+});
 
 // The shell state lives here (not inside AdminShell) so the layout can reach
 // it: panel overrides apply to it, and the user's layout is stored in it when
@@ -199,8 +232,45 @@ setShellLayout(
 );
 </script>
 
-{#snippet dockHeader()}
-  <DockToggles toggles={dockToggles} />
+{#snippet slot_0()}
+  {@render hostSlots?.['header.start']?.()}
+  <DockToggles toggles={togglesFor('header.start')} />
+{/snippet}
+{#snippet slot_1()}
+  {@render hostSlots?.['header.center']?.()}
+  <DockToggles toggles={togglesFor('header.center')} />
+{/snippet}
+{#snippet slot_2()}
+  {@render hostSlots?.['header.end']?.()}
+  <DockToggles toggles={togglesFor('header.end')} />
+{/snippet}
+{#snippet slot_3()}
+  {@render hostSlots?.['footer.start']?.()}
+  <DockToggles toggles={togglesFor('footer.start')} />
+{/snippet}
+{#snippet slot_4()}
+  {@render hostSlots?.['footer.center']?.()}
+  <DockToggles toggles={togglesFor('footer.center')} />
+{/snippet}
+{#snippet slot_5()}
+  {@render hostSlots?.['footer.end']?.()}
+  <DockToggles toggles={togglesFor('footer.end')} />
+{/snippet}
+{#snippet slot_6()}
+  {@render hostSlots?.['leftSidebar.header']?.()}
+  <DockToggles toggles={togglesFor('leftSidebar.header')} />
+{/snippet}
+{#snippet slot_7()}
+  {@render hostSlots?.['leftSidebar.footer']?.()}
+  <DockToggles toggles={togglesFor('leftSidebar.footer')} />
+{/snippet}
+{#snippet slot_8()}
+  {@render hostSlots?.['rightSidebar.header']?.()}
+  <DockToggles toggles={togglesFor('rightSidebar.header')} />
+{/snippet}
+{#snippet slot_9()}
+  {@render hostSlots?.['rightSidebar.footer']?.()}
+  <DockToggles toggles={togglesFor('rightSidebar.footer')} />
 {/snippet}
 
 <Provider {webmcp} {user} {permissions}>
@@ -211,7 +281,7 @@ setShellLayout(
       {subtitle}
       state={shell}
       path={currentHref}
-      header={dockToggles.length > 0 ? dockHeader : undefined}
+      slots={shellSlots}
     >
       {#snippet appPanel()}
         <AppScopePanel

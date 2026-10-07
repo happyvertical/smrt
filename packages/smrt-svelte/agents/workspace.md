@@ -75,6 +75,31 @@ and touch input across mobile widths and desktop panel-state combinations.
 
 See `src/components/workspace/MIGRATION.md` for the old-to-new concept map.
 
+### Regions and slots
+
+Four regions map to the existing edges (ids and `ShellLayout.panels` keys are
+unchanged): Header (`top`), Left sidebar (`left`), Right sidebar (`right`),
+Footer (`bottom`). Default labels are those names; override via `config`.
+`AdminShell`/`AppShell` take `slots?: Partial<Record<ShellSlot, Snippet>>`
+(`ShellSlot` from `./workspace`): `header.start|center|end`,
+`footer.start|center|end`, `leftSidebar.header|footer`,
+`rightSidebar.header|footer`. Header/footer slots sit in the bar (start after
+the brand/menu opener, end after the account), sidebar header sits above and
+footer below the sidebar's main area. Defaults: brand/title/menu opener/account
+stay where they were (`header.start`/`header.end` areas), `tenantFooter` stays
+the left sidebar footer, `dockToggles` default to `header.end`. There is no
+separate header row.
+
+Fallback when a slot's region is hidden (or a sidebar is collapsed), first
+visible wins (`slotFallbackChain`): header.X -> leftSidebar.header ->
+rightSidebar.header -> footer.X; footer.X -> leftSidebar.footer ->
+rightSidebar.footer -> header.X; leftSidebar.header -> header.start ->
+rightSidebar.header -> footer.start; leftSidebar.footer -> footer.start ->
+header.start -> rightSidebar.footer; rightSidebar.header -> header.end ->
+leftSidebar.header -> footer.end; rightSidebar.footer -> footer.end ->
+header.end -> leftSidebar.footer. The legacy `tenantFooter` prop keeps its own
+`footerInHeader` fallback.
+
 ### Activity ticker
 
 `ActivityTicker` accepts app-owned `activities: ReadonlyArray<ShellActivity>` plus
@@ -247,9 +272,8 @@ lives beside, not inside, `./workspace` so the AdminShell barrel stays free of
   (`{#snippet dock(registry)}`), the instance mounted routes register on
   when `webmcp` UI is on; pass it to `<AssistantDock {registry} />`. `runtimeDiagnostics` (default false) mounts the
   read-only `smrt.runtime.diagnostics.read` WebMCP tool. `dockToggles`
-  (`{ tool, label, icon? }[]`) renders icon buttons at the right of the shell
-  header (the AdminShell `header` row, shown only when the prop is non-empty),
-  each toggling the `ShellDockTool` with that id: `aria-pressed` and
+  (`{ tool, label, icon?, slot? }[]`) renders icon buttons in the shell slot
+  named by `slot` (default `header.end`; see "Regions and slots"), each toggling the `ShellDockTool` with that id: `aria-pressed` and
   `aria-expanded` follow the dock, `aria-controls` is
   `smrt-admin-shell-right-panel`, the label is the tooltip, and `assistant`
   defaults to a chat-bubble icon (`icon: 'chat'`; other text is a glyph). A

@@ -105,6 +105,12 @@ export {
   resolveShellConfig,
   stripUnpersistedSettings,
 } from './admin-shell/settings.js';
+export type { ShellRegion, ShellSlot } from './admin-shell/slots.js';
+export {
+  resolveSlot,
+  SHELL_SLOTS,
+  slotFallbackChain,
+} from './admin-shell/slots.js';
 export {
   ADMIN_SHELL_DESKTOP_QUERY,
   ADMIN_SHELL_PHONE_QUERY,

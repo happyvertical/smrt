@@ -231,13 +231,15 @@ describe('AppShell layout', () => {
       ).not.toBeNull(),
     );
     await user.click(
-      screen.getByRole('switch', { name: 'Start Tenant panel expanded' }),
+      screen.getByRole('switch', { name: 'Start Left sidebar panel expanded' }),
     );
     expect(changes.at(-1)).toEqual({
       version: 1,
       panels: { left: { initial: 'collapsed' } },
     });
-    await user.click(screen.getByRole('switch', { name: 'Show Tenant panel' }));
+    await user.click(
+      screen.getByRole('switch', { name: 'Show Left sidebar panel' }),
+    );
     expect(changes.at(-1)).toEqual({
       version: 1,
       panels: { left: { initial: 'collapsed', visible: false } },
@@ -245,7 +247,7 @@ describe('AppShell layout', () => {
     await vi.waitFor(() => expect(shellLinks()).toEqual([]));
     expect(
       screen
-        .getByRole('switch', { name: 'Start Tenant panel expanded' })
+        .getByRole('switch', { name: 'Start Left sidebar panel expanded' })
         .hasAttribute('disabled'),
     ).toBe(true);
   });
@@ -260,7 +262,7 @@ describe('AppShell layout', () => {
     mountShell();
     await vi.waitFor(() => expect(leftState()).toBe('expanded'));
     await user.click(
-      screen.getByRole('switch', { name: 'Start Tenant panel expanded' }),
+      screen.getByRole('switch', { name: 'Start Left sidebar panel expanded' }),
     );
     await vi.waitFor(() => expect(leftState()).toBe('collapsed'));
   });
@@ -270,7 +272,7 @@ describe('AppShell layout', () => {
     const { changes } = mountShell({ mode: 'frozen' });
     await vi.waitFor(() => expect(leftState()).toBe('expanded'));
     await user.click(
-      screen.getByRole('switch', { name: 'Start Tenant panel expanded' }),
+      screen.getByRole('switch', { name: 'Start Left sidebar panel expanded' }),
     );
     expect(changes).toHaveLength(1);
     expect(leftState()).toBe('expanded');
