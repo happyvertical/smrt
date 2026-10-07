@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.55.3
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - serialize concurrent db:migrate runs with a PostgreSQL advisory lock (#3640) (cli)
+  - resolve inherited tenant fields in the registration audit (#3630) (tenancy)
+- @happyvertical/smrt-config@0.55.3
+  - @happyvertical/smrt-scanner@0.55.3
+  - @happyvertical/smrt-types@0.55.3
+
 ## 0.55.2
 
 ### Patch Changes

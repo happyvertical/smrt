@@ -1,5 +1,13 @@
 # @happyvertical/smrt-app-mcp
 
+## 0.55.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.55.3
+  - @happyvertical/smrt-jobs@0.55.3
+
 ## 0.55.2
 
 ### Patch Changes
