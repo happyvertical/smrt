@@ -138,3 +138,33 @@ describe('redo during speech', () => {
     expect(mocks.mouth).toHaveBeenLastCalledWith(0);
   });
 });
+
+describe('photo picker', () => {
+  it('keeps the accepted photo when an unsupported replacement is selected', async () => {
+    component = mount(PhotoCutoutSetup, { target: document.body });
+    await tick();
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('Photo picker is missing');
+    expect(input.getAttribute('aria-label')).toBe('Choose character photo');
+    expect(button('Isolate head')?.disabled).toBe(true);
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File(['synthetic'], 'source.png', { type: 'image/png' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+    expect(button('Isolate head')?.disabled).toBe(false);
+    Object.defineProperty(input, 'files', {
+      value: [new File(['not an image'], 'source.txt', { type: 'text/plain' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+    expect(document.body.textContent).toContain(
+      'Your previous photo is still selected.',
+    );
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    await click('Isolate head');
+    await vi.waitFor(() => expect(mocks.isolate).toHaveBeenCalledTimes(1));
+  });
+});
