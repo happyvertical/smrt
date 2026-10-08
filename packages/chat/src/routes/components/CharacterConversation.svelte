@@ -20,9 +20,11 @@ import type {
   AssistantDockController,
 } from '../../svelte/components/assistant/create-assistant-dock-controller.svelte.js';
 import FloatingAssistant from '../../svelte/components/assistant/FloatingAssistant.svelte';
+import { DEV_CHARACTER_MAX_DRAFT_LENGTH } from '../api/dev-character-conversation/protocol.js';
 import CharacterConversationVoice from './CharacterConversationVoice.svelte';
 
 export interface Props {
+  active?: boolean;
   workbenchAction?: {
     navigate?: (section: string) => void;
     stageDraft?: (value: string) => void;
@@ -30,7 +32,7 @@ export interface Props {
     section?: () => string;
   };
 }
-let { workbenchAction }: Props = $props();
+let { workbenchAction, active = true }: Props = $props();
 
 let target: HTMLDivElement;
 let mounted: PhotoCutoutHandle | null = null;
@@ -124,7 +126,11 @@ registry.register({
     }
     if (command.controlId === 'data-surface.action.stage-draft') {
       const value = payload.value;
-      if (typeof value !== 'string' || !value.trim() || value.length > 200)
+      if (
+        typeof value !== 'string' ||
+        !value.trim() ||
+        value.length > DEV_CHARACTER_MAX_DRAFT_LENGTH
+      )
         return { ok: false };
       workbenchAction?.stageDraft?.(value);
     }
@@ -238,11 +244,18 @@ function isAllowedPayload(request: DataSurfaceActionRequest) {
     Object.keys(payload).length === 1 &&
     typeof payload.value === 'string' &&
     Boolean(payload.value.trim()) &&
-    payload.value.length <= 200
+    payload.value.length <= DEV_CHARACTER_MAX_DRAFT_LENGTH
   );
 }
 const spoken = createCaptionChannel('spoken', { ttlMs: 12000 });
+let playingText = '';
 let playback = createSpeechPlayback({
+  onStart: () => {
+    if (active) spoken.setInterim(playingText);
+  },
+  onEnd: () => {
+    if (active && playingText) spoken.addFinal(playingText);
+  },
   onLevel: (level) => {
     const gain = Math.min(1, Math.sqrt(Math.max(0, level)) * 1.25);
     mounted?.setExpression({
@@ -292,10 +305,11 @@ async function speak(reply: string) {
   speechAbort?.abort();
   const controller = new AbortController();
   speechAbort = controller;
+  playingText = '';
   playback.stop();
+  spoken.setInterim('');
   try {
-    if (!audioEnabled) return;
-    spoken.setInterim(text);
+    if (!audioEnabled || !active) return;
     const response = await fetch('/api/dev-character-speech', {
       method: 'POST',
       signal: controller.signal,
@@ -303,15 +317,24 @@ async function speak(reply: string) {
       body: JSON.stringify({ text }),
     });
     if (!response.ok || generation !== playbackGeneration) return;
+    const audio = await response.arrayBuffer();
+    if (
+      generation !== playbackGeneration ||
+      controller.signal.aborted ||
+      !active
+    )
+      return;
+    playingText = text;
     await playback.play({
-      audio: await response.arrayBuffer(),
+      audio,
       contentType: response.headers.get('content-type') ?? 'audio/wav',
     });
-    if (generation === playbackGeneration) spoken.addFinal(text);
   } catch {
     if (generation === playbackGeneration) spoken.setInterim('');
   } finally {
     if (generation === playbackGeneration) {
+      playingText = '';
+      spoken.setInterim('');
       mounted?.setMouthOpen(0);
       mounted?.setExpression({ headTiltDegrees: 0, jawTiltDegrees: 0 });
     }
@@ -323,46 +346,68 @@ function enableSpeech() {
   void playback.prepare();
 }
 
-onMount(() => {
-  let active = true;
-  void createDevCharacterPersistenceClient()
-    .load()
-    .then((saved) => {
-      if (!active) return;
-      if (!saved) {
-        unavailable =
-          'Save a character in Character setup to bring it into this conversation.';
-        return;
-      }
-      const match = /^data:image\/png;base64,(.+)$/.exec(saved.pngDataUrl);
-      if (!match) {
-        unavailable = 'The saved character image is unavailable.';
-        return;
-      }
-      const binary = atob(match[1]);
-      const bytes = Uint8Array.from(binary, (value) => value.charCodeAt(0));
-      const asset = new File([bytes], 'saved-character.png', {
-        type: 'image/png',
-      });
-      mounted = mountPhotoCutout(saved.rig, {
-        target,
-        resolveAsset: async () => asset,
-        onError: (error) => {
-          unavailable = error.message;
-        },
-      });
-    })
-    .catch((error: unknown) => {
-      if (active)
-        unavailable =
-          error instanceof Error
-            ? error.message
-            : 'Saved character could not load.';
+let ready = $state(false);
+let loadGeneration = 0;
+async function refreshCharacter() {
+  const generation = ++loadGeneration;
+  try {
+    const saved = await createDevCharacterPersistenceClient().load();
+    if (generation !== loadGeneration || !active || !ready) return;
+    mounted?.destroy();
+    mounted = null;
+    unavailable = null;
+    if (!saved) {
+      unavailable =
+        'Save a character in Character setup to bring it into this conversation.';
+      return;
+    }
+    const match = /^data:image\/png;base64,(.+)$/.exec(saved.pngDataUrl);
+    if (!match) {
+      unavailable = 'The saved character image is unavailable.';
+      return;
+    }
+    const binary = atob(match[1]);
+    const bytes = Uint8Array.from(binary, (value) => value.charCodeAt(0));
+    const asset = new File([bytes], 'saved-character.png', {
+      type: 'image/png',
     });
+    mounted = mountPhotoCutout(saved.rig, {
+      target,
+      resolveAsset: async () => asset,
+      onError: (error) => {
+        if (generation === loadGeneration) unavailable = error.message;
+      },
+    });
+  } catch (error) {
+    if (generation === loadGeneration && active && ready)
+      unavailable =
+        error instanceof Error
+          ? error.message
+          : 'Saved character could not load.';
+  }
+}
+function stopSpeech() {
+  ++playbackGeneration;
+  speechAbort?.abort();
+  playingText = '';
+  playback.stop();
+  spoken.setInterim('');
+  mounted?.setMouthOpen(0);
+  mounted?.setExpression({ headTiltDegrees: 0, jawTiltDegrees: 0 });
+}
+$effect(() => {
+  if (ready && active) void refreshCharacter();
+  else {
+    ++loadGeneration;
+    listening = false;
+    stopSpeech();
+  }
+});
+onMount(() => {
+  ready = true;
   return () => {
-    active = false;
-    speechAbort?.abort();
-    playback.stop();
+    ++loadGeneration;
+    stopSpeech();
     playback.destroy();
     spoken.dispose();
     mounted?.destroy();
@@ -382,7 +427,7 @@ onMount(() => {
     </Button>
     {#if listening}<p role="status">Listening mode keeps the conversation and confirmations active while hiding message history.</p>{/if}
   </div>
-  {#if listening}
+  {#if listening && active}
     <CharacterConversationVoice onfinal={sendSpokenTurn} disabled={!conversationReady || attentionRequired} />
   {/if}
   <FloatingAssistant {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />

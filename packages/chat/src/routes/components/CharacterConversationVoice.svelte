@@ -45,7 +45,7 @@ async function source() {
 
 async function deliver(text: string) {
   const final = text.trim();
-  if (!final) return;
+  if (!final || disabled || sending) return;
   deliveryError = null;
   sending = true;
   try {
@@ -86,7 +86,7 @@ onDestroy(() => {
   <div class="voice-actions">
     <DictationButton
       {dictation}
-      disabled={disabled || sending}
+      disabled={(sending || disabled) && dictation.state !== 'listening'}
       label="Speak to your assistant"
       stopLabel="Stop listening"
       title="Speak to your assistant"

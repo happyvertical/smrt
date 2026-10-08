@@ -961,7 +961,7 @@ onMount(() => {
   />
   </div>
   <div hidden={workbenchTab !== 'conversation'}>
-    <CharacterConversation workbenchAction={{
+    <CharacterConversation active={workbenchTab === 'conversation'} workbenchAction={{
       navigate: (section) => (workbenchTab = section),
       stageDraft: (value) => (draftSubject = value),
       draftSubject: () => draftSubject,

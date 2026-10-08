@@ -1,3 +1,7 @@
+export const DEV_CHARACTER_MAX_DRAFT_LENGTH = 200;
+export const DEV_CHARACTER_MAX_REQUEST_BYTES = 16 * 1024;
+export const DEV_CHARACTER_MAX_MESSAGES = 24;
+
 /**
  * Browser-safe protocol for the local character conversation workbench.
  *

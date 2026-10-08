@@ -14,15 +14,18 @@ import { resolveDevAIConfig } from '../dev-ai.js';
 import { isLocalDevCharacterRequest } from '../dev-character-persistence/config.js';
 import {
   DEV_CHARACTER_CONVERSATION_SECTIONS,
+  DEV_CHARACTER_MAX_DRAFT_LENGTH,
+  DEV_CHARACTER_MAX_MESSAGES,
+  DEV_CHARACTER_MAX_REQUEST_BYTES,
   type DevCharacterConversationProposal,
   type DevCharacterConversationResponse,
   type DevCharacterConversationSection,
 } from './protocol.js';
 
-const MAX_REQUEST_BYTES = 16 * 1024;
-const MAX_MESSAGES = 24;
+const MAX_REQUEST_BYTES = DEV_CHARACTER_MAX_REQUEST_BYTES;
+const MAX_MESSAGES = DEV_CHARACTER_MAX_MESSAGES;
 const MAX_CONTENT_LENGTH = 4_000;
-const MAX_DRAFT_LENGTH = 500;
+const MAX_DRAFT_LENGTH = DEV_CHARACTER_MAX_DRAFT_LENGTH;
 
 const tools: AITool[] = [
   {

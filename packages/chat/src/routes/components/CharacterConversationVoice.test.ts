@@ -121,6 +121,52 @@ describe('CharacterConversationVoice', () => {
     release();
   });
 
+  it('suppresses late finals while sending and leaves Stop reachable', async () => {
+    const speech = speechSource();
+    let release!: () => void;
+    const onfinal = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    mocks.createSttDictationSource.mockReturnValue(async () => speech.source);
+    render(CharacterConversationVoice, { props: { onfinal } });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Speak to your assistant' }),
+    );
+    await vi.waitFor(() => expect(speech.source.start).toHaveBeenCalled());
+    speech.emit('first', true);
+    speech.emit('late', true);
+    expect(onfinal).toHaveBeenCalledTimes(1);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Stop listening' }),
+    );
+    expect(speech.source.stop).toHaveBeenCalled();
+    release();
+  });
+
+  it('suppresses recognition finals during confirmation and after unmount', async () => {
+    const speech = speechSource();
+    const onfinal = vi.fn();
+    mocks.createSttDictationSource.mockReturnValue(async () => speech.source);
+    const view = render(CharacterConversationVoice, { props: { onfinal } });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Speak to your assistant' }),
+    );
+    await vi.waitFor(() => expect(speech.source.start).toHaveBeenCalled());
+    await view.rerender({ onfinal, disabled: true });
+    speech.emit('late confirmation', true);
+    expect(onfinal).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'Stop listening' }),
+    ).toBeEnabled();
+    view.unmount();
+    speech.emit('hidden', true);
+    expect(onfinal).not.toHaveBeenCalled();
+    expect(speech.source.stop).toHaveBeenCalled();
+  });
+
   it('keeps the typed fallback visible when speech recognition is unsupported', async () => {
     mocks.createSttDictationSource.mockReturnValue(async () => {
       throw new Error('Speech recognition is unsupported');

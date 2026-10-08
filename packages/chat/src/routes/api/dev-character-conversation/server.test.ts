@@ -47,6 +47,27 @@ describe('dev character conversation', () => {
     });
   });
 
+  it.each([
+    200, 201,
+  ])('validates the shared draft boundary at %i characters', async (length) => {
+    mocks.chat.mockResolvedValue({
+      content: 'Draft',
+      toolCalls: [
+        {
+          id: 'boundary',
+          type: 'function',
+          function: {
+            name: 'stageDraft',
+            arguments: JSON.stringify({ value: 'x'.repeat(length) }),
+          },
+        },
+      ],
+    });
+    const outcome = POST(event(request(conversation)));
+    if (length === 200) expect((await outcome).status).toBe(200);
+    else await expect(outcome).rejects.toMatchObject({ status: 422 });
+  });
+
   it('offers only fixed tools and returns a navigation proposal without applying it', async () => {
     mocks.chat.mockResolvedValue({
       content: 'I can open setup for you.',

@@ -1,4 +1,8 @@
 import type { DevCharacterConversationProposal } from './routes/api/dev-character-conversation/protocol.js';
+import {
+  DEV_CHARACTER_MAX_MESSAGES,
+  DEV_CHARACTER_MAX_REQUEST_BYTES,
+} from './routes/api/dev-character-conversation/protocol.js';
 import type {
   AssistantMessage,
   AssistantSendMessageInput,
@@ -38,15 +42,30 @@ export function createDevAssistantTransport(
       input: AssistantSendMessageInput,
     ): Promise<AssistantSendMessageResult> => {
       const user = message('user', input.content, input.clientRequestId);
-      messages.push(user);
+      const context = [
+        ...messages.filter((entry) => entry.id !== user.id),
+        user,
+      ]
+        .map(({ role, content }) => ({ role, content }))
+        .slice(-DEV_CHARACTER_MAX_MESSAGES);
+      const serialize = () =>
+        JSON.stringify({ messages: context, model: input.model });
+      while (
+        new TextEncoder().encode(serialize()).byteLength >
+          DEV_CHARACTER_MAX_REQUEST_BYTES &&
+        context.length > 1
+      )
+        context.shift();
+      if (
+        new TextEncoder().encode(serialize()).byteLength >
+        DEV_CHARACTER_MAX_REQUEST_BYTES
+      )
+        throw new Error('Your message is too long. Please shorten it.');
       const response = await request('/api/dev-character-conversation', {
         method: 'POST',
         signal: input.signal,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          messages: messages.map(({ role, content }) => ({ role, content })),
-          model: input.model,
-        }),
+        body: serialize(),
       });
       const body = (await response.json().catch(() => ({}))) as {
         content?: unknown;
@@ -64,7 +83,9 @@ export function createDevAssistantTransport(
         body.content,
         `${input.clientRequestId}:reply`,
       );
-      messages.push(assistant);
+      const previous = messages.findIndex((entry) => entry.id === user.id);
+      if (previous >= 0) messages.splice(previous, 1);
+      messages.push(user, assistant);
       onReply?.(assistant.content);
       if (body.proposal) onProposal?.(body.proposal);
       return {

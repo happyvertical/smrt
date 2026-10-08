@@ -69,3 +69,16 @@ are non-obvious and cost time to find:
   programmatic `element.click()` (`event.isTrusted === false`) for `apply`, which
   is the stage→apply consent split doing its job. Verification must use a real
   input event, not `evaluate(() => button.click())`.
+
+### Character conversation lifecycle
+
+The Character conversation tab refreshes the persisted rig each time it becomes
+active, retaining its AssistantDock controller and history. Leaving the tab stops
+microphone input and reply playback; listening mode requires an explicit restart.
+Late persistence loads and cancelled speech responses cannot replace the current
+rig or audio. Spoken captions begin only when SDK playback actually starts.
+
+The development transport sends at most 24 context messages within a 16 KiB UTF-8
+JSON body, dropping oldest context first. Failed turns are not committed to its
+history, so retrying does not duplicate them. Draft proposals use one shared
+200-character limit in the model tool, route, preview, and execution boundary.
