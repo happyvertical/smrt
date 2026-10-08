@@ -373,8 +373,8 @@ async function playSpeech() {
 <section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title">
   <h2 id="cutout-title">{t(M['images.photo_cutout_setup.title'])}</h2>
   <ol class="steps" aria-label="Character setup steps">
-    <li class:current={!source} class:complete={source !== null} aria-current={!source ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_choose'])}</li>
-    <li class:current={source !== null && !head} class:complete={head !== null} aria-current={source !== null && !head ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_isolate'])}</li>
+    <li class:current={!source && !ready} class:complete={source !== null || ready} aria-current={!source && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_choose'])}</li>
+    <li class:current={source !== null && !head && !ready} class:complete={head !== null || ready} aria-current={source !== null && !head && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_isolate'])}</li>
     <li class:current={head !== null && !ready} class:complete={ready} aria-current={head !== null && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_mouth'])}</li>
     <li class:current={ready} aria-current={ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_save'])}</li>
   </ol>
@@ -382,10 +382,11 @@ async function playSpeech() {
   <FilePicker accept="image/png,image/jpeg,image/webp" label={t(M['images.photo_cutout_setup.choose_photo'])} description={t(M['images.photo_cutout_setup.photo_formats'])} aria-label={t(M['images.photo_cutout_setup.choose_photo'])} onchangefiles={select} disabled={persisting !== null} />
   <div class="workflow-actions">
     <div class="primary-action">
-      {#if !head}<Button onclick={() => run('outline')} disabled={!source || busy !== null}>{failed === 'outline' ? 'Retry head isolation' : 'Isolate head'}</Button>
+      {#if ready && saveSetup}<Button onclick={saveCharacter} disabled={persisting !== null}>{persisting === 'save' ? 'Saving…' : 'Save character'}</Button>
+      {:else if ready}<Button onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>
+      {:else if !head}<Button onclick={() => run('outline')} disabled={!source || busy !== null}>{failed === 'outline' ? 'Retry head isolation' : 'Isolate head'}</Button>
       {:else if !ready}<Button onclick={() => run('mouth-landmarks')} disabled={busy !== null}>{failed === 'mouth-landmarks' ? 'Retry mouth segmentation' : 'Continue: segment mouth'}</Button>
-      {:else if saveSetup}<Button onclick={saveCharacter} disabled={persisting !== null}>{persisting === 'save' ? 'Saving…' : 'Save character'}</Button>
-      {:else}<Button onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>{/if}
+      {/if}
       {#if busy}<span class="spinner" aria-label={busy === 'outline' ? 'Isolating head' : 'Segmenting mouth'}></span><Button variant="secondary" onclick={cancel}>Cancel</Button>{/if}
     </div>
     {#if ready && saveSetup}<p class="save-hint">{t(M['images.photo_cutout_setup.save_hint'])}</p>{/if}

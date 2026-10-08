@@ -194,6 +194,30 @@ describe('setup workflow', () => {
       'Saving adds this character to your gallery.',
     );
   });
+
+  it('keeps save as the next action after loading a saved character', async () => {
+    component = mount(PhotoCutoutSetup, {
+      target: document.body,
+      props: {
+        saveSetup: vi.fn(),
+        loadSetup: vi.fn().mockResolvedValue({
+          pngDataUrl: 'data:image/png;base64,c3ludGhldGlj',
+          rig: {},
+          savedAt: '2026-10-08T15:00:00.000Z',
+        }),
+      },
+    });
+    await tick();
+    await click('Load saved character');
+    await vi.waitFor(() => expect(button('Save character')).toBeTruthy());
+    expect(
+      document.querySelector('.primary-action button')?.textContent?.trim(),
+    ).toBe('Save character');
+    expect(document.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
+    expect(
+      document.querySelector('[aria-current="step"]')?.textContent,
+    ).toContain('Save to gallery');
+  });
 });
 
 describe('photo picker', () => {
