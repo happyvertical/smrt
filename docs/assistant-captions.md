@@ -62,6 +62,29 @@ N/A. Existing caption component and controller tests cover their own contracts.
 
 ## Workbench and realtime hosts
 
+## Character conversation dev host
+
+`packages/chat` also provides a development-only Character conversation tab for
+the saved local photo-cutout profile. It keeps the public dock controller
+mounted while listening mode hides message history, uses one opt-in browser STT
+source for Heard captions, and speaks only the bounded text sent to the local
+speech route. The fixed-tool model route can propose only a workbench section
+or draft subject. The host DataSurface registry supplies the real current value
+as the confirmation's before value; Confirm runs the registered control once,
+while Reject changes nothing. These endpoints require a development build,
+same origin, and a trusted loopback peer address.
+
+| Behavior | Evidence |
+| --- | --- |
+| Typed Send and Enter submit once; busy and pending confirmation suppress new turns | `CharacterConversationVoice.test.ts` |
+| STT is user-gesture-only; interim is heard-only and final sends one turn | `CharacterConversationVoice.test.ts` |
+| Malformed, remote, cancelled, and upstream conversation calls fail without a proposal | `dev-character-conversation/server.test.ts` |
+| Expanded fixed dock cannot cover the listening Send control | `character-setup.spec.ts` pointer-reachable scenario |
+
+Run the focused matrix with `pnpm --filter @happyvertical/smrt-chat typecheck`,
+`pnpm --dir packages/chat exec vitest run src/routes/api/dev-character-conversation/server.test.ts src/routes/components/CharacterConversationVoice.test.ts`, and
+`pnpm --dir packages/chat exec playwright test -c playwright.config.ts e2e/character-setup.spec.ts`.
+
 Open `/previews/listening-mode`. It defaults to synthetic speech and playback;
 press **Start listening**, **Synthetic interim**, then **Synthetic final**.
 The source callbacks pass through one `Dictation`, update HeardCaptions, and

@@ -105,6 +105,22 @@ describe('CharacterConversationVoice', () => {
     expect(onfinal).toHaveBeenCalledWith('Typed turn');
   });
 
+  it('submits a typed turn with Enter and suppresses a second click while sending', async () => {
+    let release!: () => void;
+    const onfinal = vi.fn(
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    render(CharacterConversationVoice, { props: { onfinal } });
+    const field = screen.getByLabelText('Type your message');
+    await userEvent.type(field, 'first turn');
+    await userEvent.keyboard('{Enter}');
+    expect(onfinal).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    expect(onfinal).toHaveBeenCalledTimes(1);
+    release();
+  });
+
   it('keeps the typed fallback visible when speech recognition is unsupported', async () => {
     mocks.createSttDictationSource.mockReturnValue(async () => {
       throw new Error('Speech recognition is unsupported');

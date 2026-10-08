@@ -22,6 +22,16 @@ import type {
 import FloatingAssistant from '../../svelte/components/assistant/FloatingAssistant.svelte';
 import CharacterConversationVoice from './CharacterConversationVoice.svelte';
 
+export interface Props {
+  workbenchAction?: {
+    navigate?: (section: string) => void;
+    stageDraft?: (value: string) => void;
+    draftSubject?: () => string;
+    section?: () => string;
+  };
+}
+let { workbenchAction }: Props = $props();
+
 let target: HTMLDivElement;
 let mounted: PhotoCutoutHandle | null = null;
 let unavailable = $state<string | null>(null);
@@ -29,7 +39,9 @@ let listening = $state(false);
 let audioEnabled = $state(false);
 let controller: AssistantDockController | null = null;
 let conversationReady = $state(false);
+let attentionRequired = $state(false);
 let revision = $state(1);
+let stateSignature = '';
 const previews = new Map<string, { fingerprint: string; revision: number }>();
 const applied = new Map<string, DataSurfaceActionResult>();
 const registry = createDataSurfaceRegistry();
@@ -70,13 +82,30 @@ registry.register({
         requiresConfirmation: true,
       },
     ],
-    controls: [],
+    controls: [
+      {
+        id: 'data-surface.action.navigate',
+        label: 'Apply navigation proposal',
+      },
+      { id: 'data-surface.action.stage-draft', label: 'Apply draft proposal' },
+    ],
     limits: { maxQueryRows: 1, maxQueryBytes: 1024, maxSelectionSize: 1 },
   },
-  getSnapshot: () => ({
-    revision,
-    state: { rows: [{ id: 'character-conversation' }] },
-  }),
+  getSnapshot: () => {
+    const state = {
+      rows: [
+        {
+          id: 'character-conversation',
+          draftSubject: workbenchAction?.draftSubject?.() ?? '',
+          section: workbenchAction?.section?.() ?? 'conversation',
+        },
+      ],
+    };
+    const nextSignature = JSON.stringify(state);
+    if (stateSignature && stateSignature !== nextSignature) revision += 1;
+    stateSignature = nextSignature;
+    return { revision, state };
+  },
   execute: async (command) => {
     const payload =
       command.payload &&
@@ -84,18 +113,41 @@ registry.register({
       !Array.isArray(command.payload)
         ? command.payload
         : {};
-    if (command.controlId === 'data-surface.action.navigate')
-      workbenchAction?.navigate?.(String(payload.section ?? 'conversation'));
-    if (command.controlId === 'data-surface.action.stage-draft')
-      workbenchAction?.stageDraft?.(String(payload.value ?? ''));
-    revision += 1;
+    if (command.controlId === 'data-surface.action.navigate') {
+      const section = payload.section;
+      if (
+        typeof section !== 'string' ||
+        !['character', 'conversation', 'chat'].includes(section)
+      )
+        return { ok: false };
+      workbenchAction?.navigate?.(section);
+    }
+    if (command.controlId === 'data-surface.action.stage-draft') {
+      const value = payload.value;
+      if (typeof value !== 'string' || !value.trim() || value.length > 200)
+        return { ok: false };
+      workbenchAction?.stageDraft?.(value);
+    }
     return undefined;
   },
 });
 const actionClient: AssistantActionClient = {
   preview: async (request) => {
+    const validation = registry.validateAction(request);
+    if (!validation.ok || !isAllowedPayload(request))
+      return {
+        ...actionResult(request, 'preview'),
+        ok: false,
+        reason: validation.ok ? 'invalid_request' : validation.reason,
+      };
     const fingerprint = JSON.stringify({ ...request, phase: 'preview' });
-    previews.set(request.requestId, { fingerprint, revision });
+    // Bind confirmation to the registry's exposed snapshot, rather than a
+    // component-local counter that can lag a reactive host update.
+    const snapshot = registry.inspect(identity);
+    previews.set(request.requestId, {
+      fingerprint,
+      revision: snapshot?.revision ?? revision,
+    });
     const payload =
       request.payload &&
       typeof request.payload === 'object' &&
@@ -109,12 +161,12 @@ const actionClient: AssistantActionClient = {
         request.actionId === 'stage-draft'
           ? {
               target: 'Draft subject',
-              before: 'Unchanged',
+              before: workbenchAction?.draftSubject?.() ?? '',
               after: String(payload.value ?? ''),
             }
           : {
               target: 'Workbench section',
-              before: 'Current section',
+              before: workbenchAction?.section?.() ?? 'conversation',
               after: String(payload.section ?? ''),
             },
     };
@@ -133,6 +185,13 @@ const actionClient: AssistantActionClient = {
         ...actionResult(request, 'apply'),
         ok: false,
         reason: 'missing_preview',
+      };
+    const validation = registry.validateAction(request);
+    if (!validation.ok || !isAllowedPayload(request))
+      return {
+        ...actionResult(request, 'apply'),
+        ok: false,
+        reason: validation.ok ? 'invalid_request' : validation.reason,
       };
     const outcome = await registry.execute({
       version: 1,
@@ -164,13 +223,24 @@ function actionResult(
     ok: true,
   };
 }
-export interface Props {
-  workbenchAction?: {
-    navigate?: (section: string) => void;
-    stageDraft?: (value: string) => void;
-  };
+function isAllowedPayload(request: DataSurfaceActionRequest) {
+  const payload = request.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+    return false;
+  if (request.actionId === 'navigate')
+    return (
+      Object.keys(payload).length === 1 &&
+      typeof payload.section === 'string' &&
+      ['character', 'conversation', 'chat'].includes(payload.section)
+    );
+  return (
+    request.actionId === 'stage-draft' &&
+    Object.keys(payload).length === 1 &&
+    typeof payload.value === 'string' &&
+    Boolean(payload.value.trim()) &&
+    payload.value.length <= 200
+  );
 }
-let { workbenchAction }: Props = $props();
 const spoken = createCaptionChannel('spoken', { ttlMs: 12000 });
 let playback = createSpeechPlayback({
   onLevel: (level) => {
@@ -313,15 +383,28 @@ onMount(() => {
     {#if listening}<p role="status">Listening mode keeps the conversation and confirmations active while hiding message history.</p>{/if}
   </div>
   {#if listening}
-    <CharacterConversationVoice onfinal={sendSpokenTurn} disabled={!conversationReady} />
+    <CharacterConversationVoice onfinal={sendSpokenTurn} disabled={!conversationReady || attentionRequired} />
   {/if}
-  <FloatingAssistant {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} />
+  <FloatingAssistant {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
   <SpokenCaptions enabled={true} lines={spoken.lines} interim={spoken.interim} />
 </section>
 
 <style>
-  .character-conversation { position: relative; min-block-size: 18rem; }
+  /* The dock is a fixed bottom-corner surface. Keep the listening composer
+     above its launcher/closed bar so a pointer can reach Submit. */
+  .character-conversation { position: relative; min-block-size: 18rem; padding-block-end: 10rem; }
   .character-stage { min-block-size: 16rem; inline-size: min(18rem, 48vw); margin: 0 auto; }
   .conversation-controls { display: grid; justify-items: center; gap: .5rem; }
   .character-stage :global(canvas), .character-stage :global(svg) { inline-size: 100%; block-size: 100%; }
+  @media (min-width: 48rem) {
+    .character-conversation { padding-inline-end: 30rem; }
+    .character-conversation :global(.character-conversation-voice) {
+      inline-size: min(100%, calc(100vw - 32rem));
+    }
+  }
+  @media (max-width: 47.99rem) {
+    /* An expanded dock can fill the lower phone viewport; preserve a scroll
+       lane above it for the voice composer rather than letting it be covered. */
+    .character-conversation { padding-block-end: min(42rem, calc(100dvh - 4rem)); }
+  }
 </style>

@@ -23,8 +23,8 @@ vi.mock('../dev-ai.js', () => ({
 import { POST } from './+server.js';
 
 const url = new URL('http://127.0.0.1:4187/api/dev-character-conversation');
-const event = (request: Request, eventUrl = url) =>
-  ({ request, url: eventUrl }) as Parameters<typeof POST>[0];
+const event = (request: Request, getClientAddress = () => '127.0.0.1') =>
+  ({ request, getClientAddress }) as Parameters<typeof POST>[0];
 const request = (body: unknown, options: RequestInit = {}) =>
   new Request(url, {
     method: 'POST',
@@ -80,7 +80,7 @@ describe('dev character conversation', () => {
       '500 characters or fewer',
     );
     expect(mocks.chat.mock.calls[0][0][0].content).toContain(
-      'never respond with silence',
+      'Ignore silence, background noise, and nonmeaningful turns',
     );
     expect(options.tools).toEqual([
       expect.objectContaining({
@@ -165,14 +165,9 @@ describe('dev character conversation', () => {
           }),
         ),
       ),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 404 });
     await expect(
-      POST(
-        event(
-          request(conversation),
-          new URL('https://happyvertical.com/api/dev-character-conversation'),
-        ),
-      ),
+      POST(event(request(conversation), () => '203.0.113.10')),
     ).rejects.toMatchObject({ status: 404 });
     expect(mocks.chat).not.toHaveBeenCalled();
   });

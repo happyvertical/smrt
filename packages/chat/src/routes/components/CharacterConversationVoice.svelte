@@ -108,7 +108,7 @@ onDestroy(() => {
       Type your message
       <input bind:value={typed} disabled={disabled || sending} maxlength="4000" />
     </label>
-    <Button type="submit" disabled={disabled || sending || !typed.trim()}>Send message</Button>
+    <Button type="submit" disabled={disabled || sending || !typed.trim()} onclick={submitTyped}>Send message</Button>
   </form>
 
   <HeardCaptions
@@ -122,7 +122,7 @@ onDestroy(() => {
 <style>
   .character-conversation-voice { display: grid; gap: .5rem; }
   .voice-actions { display: flex; align-items: center; gap: .5rem; }
-  form { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+  form { display: flex; inline-size: 100%; flex-wrap: wrap; align-items: end; gap: .5rem; }
   label { display: grid; gap: .25rem; flex: 1 1 16rem; }
   input { min-block-size: 2.5rem; padding-inline: .65rem; }
   .typed-fallback { margin: 0; }

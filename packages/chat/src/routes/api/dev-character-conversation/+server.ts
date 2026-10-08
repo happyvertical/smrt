@@ -11,6 +11,7 @@ import type { AIMessage, AITool, AIToolCall } from '@happyvertical/ai';
 import { error, isHttpError, json, type RequestHandler } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { resolveDevAIConfig } from '../dev-ai.js';
+import { isLocalDevCharacterRequest } from '../dev-character-persistence/config.js';
 import {
   DEV_CHARACTER_CONVERSATION_SECTIONS,
   type DevCharacterConversationProposal,
@@ -61,19 +62,6 @@ const tools: AITool[] = [
 
 interface ConversationRequest {
   messages?: Array<{ role?: unknown; content?: unknown }>;
-}
-
-function isLoopback(url: URL): boolean {
-  return (
-    url.hostname === '127.0.0.1' ||
-    url.hostname === 'localhost' ||
-    url.hostname === '::1'
-  );
-}
-
-function hasSameOrigin(request: Request): boolean {
-  const origin = request.headers.get('origin');
-  return !origin || origin === new URL(request.url).origin;
 }
 
 async function readBoundedJson(request: Request): Promise<unknown> {
@@ -189,9 +177,9 @@ function proposalFromCall(call: AIToolCall): DevCharacterConversationProposal {
   error(422, 'The assistant proposed an unsupported tool.');
 }
 
-export const POST: RequestHandler = async ({ request, url }) => {
-  if (!dev || !isLoopback(url)) error(404, 'Not found.');
-  if (!hasSameOrigin(request)) error(403, 'Forbidden.');
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+  if (!isLocalDevCharacterRequest({ dev, request, getClientAddress }))
+    error(404, 'Not found.');
   if (request.signal.aborted) error(499, 'Conversation cancelled.');
   const length = Number(request.headers.get('content-length'));
   if (Number.isFinite(length) && length > MAX_REQUEST_BYTES)

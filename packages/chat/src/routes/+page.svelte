@@ -964,6 +964,8 @@ onMount(() => {
     <CharacterConversation workbenchAction={{
       navigate: (section) => (workbenchTab = section),
       stageDraft: (value) => (draftSubject = value),
+      draftSubject: () => draftSubject,
+      section: () => workbenchTab,
     }} />
   </div>
   <div hidden={workbenchTab !== 'chat'}>
