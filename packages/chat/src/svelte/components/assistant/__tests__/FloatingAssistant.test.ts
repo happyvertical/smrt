@@ -89,6 +89,23 @@ describe('FloatingAssistant', () => {
     ).toHaveAttribute('aria-hidden', 'false');
   });
 
+  it('returns controls-only chrome to idle after a completed run', async () => {
+    const fixture = await mountedFixture();
+    await fixture.rerender({ hideIdleControls: true });
+    const waiting = fixture.controller.send('choices');
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Compact layout/ }),
+    );
+    await waiting;
+    await vi.waitFor(() => expect(fixture.controller.run?.state).toBe('done'));
+    expect(
+      screen.queryByRole('button', { name: 'Open assistant' }),
+    ).not.toBeInTheDocument();
+    expect(
+      fixture.container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('uses the requested left placement while keeping the default right placement', () => {
     const { container, rerender } = render(FloatingAssistant, {
       props: props(),

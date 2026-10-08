@@ -24,6 +24,9 @@ export const M = defineMessages({
     'Speech input is unavailable. Type your message below.',
   'chat.character_conversation.message': 'Type your message',
   'chat.character_conversation.send': 'Send message',
+  'chat.character_conversation.assistant_reply': 'Assistant reply',
+  'chat.character_conversation.speech_failed':
+    'Could not play the spoken reply. The reply is shown below.',
   // CaptionOverlay
   'chat.caption_overlay.scroll_up': 'Scroll captions up',
   'chat.caption_overlay.scroll_down': 'Scroll captions down',

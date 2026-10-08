@@ -73,21 +73,29 @@ const captureLauncher: Attachment<HTMLButtonElement> = (element) => {
 
 const floatingAssistantId = $props.id();
 const panelId = `floating-assistant-${floatingAssistantId}`;
+const hasActionableRun = $derived(
+  run?.state === 'running' ||
+    run?.state === 'paused' ||
+    run?.state === 'waiting',
+);
+const hasActionableStatus = $derived(
+  status.state === 'working' || status.state === 'error',
+);
 const panelExpanded = $derived(
   visible &&
     (expanded || attentionRequired) &&
     (!hideIdleControls ||
       presentation === 'full' ||
       attentionRequired ||
-      run !== null ||
-      status.state !== 'idle'),
+      hasActionableRun ||
+      hasActionableStatus),
 );
 const launcherVisible = $derived(
   !hideIdleControls ||
     presentation === 'full' ||
     attentionRequired ||
-    run !== null ||
-    status.state !== 'idle',
+    hasActionableRun ||
+    hasActionableStatus,
 );
 const presentationState = $derived({ expanded: panelExpanded, status, run });
 
