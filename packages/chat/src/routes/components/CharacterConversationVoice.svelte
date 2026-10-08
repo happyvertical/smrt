@@ -26,6 +26,7 @@ export interface Props {
 
 let { onfinal, disabled = false }: Props = $props();
 let typed = $state('');
+let sending = $state(false);
 let deliveryError = $state<string | null>(null);
 const heard = createCaptionChannel('heard', { ttlMs: 12_000 });
 let sourceProvider: DictationSourceProvider | null = null;
@@ -46,10 +47,13 @@ async function deliver(text: string) {
   const final = text.trim();
   if (!final) return;
   deliveryError = null;
+  sending = true;
   try {
     await onfinal(final);
   } catch {
     deliveryError = 'Your message could not be sent. Try typing it again.';
+  } finally {
+    sending = false;
   }
 }
 
@@ -66,9 +70,10 @@ const dictation = new Dictation({
 
 function submitTyped() {
   const final = typed.trim();
-  if (!final || disabled) return;
-  typed = '';
-  void deliver(final);
+  if (!final || disabled || sending) return;
+  void deliver(final).then(() => {
+    if (!deliveryError) typed = '';
+  });
 }
 
 onDestroy(() => {
@@ -81,7 +86,7 @@ onDestroy(() => {
   <div class="voice-actions">
     <DictationButton
       {dictation}
-      {disabled}
+      disabled={disabled || sending}
       label="Speak to your assistant"
       stopLabel="Stop listening"
       title="Speak to your assistant"
@@ -101,9 +106,9 @@ onDestroy(() => {
   <form onsubmit={(event) => { event.preventDefault(); submitTyped(); }}>
     <label>
       Type your message
-      <input bind:value={typed} disabled={disabled} maxlength="4000" />
+      <input bind:value={typed} disabled={disabled || sending} maxlength="4000" />
     </label>
-    <Button type="submit" disabled={disabled || !typed.trim()}>Send message</Button>
+    <Button type="submit" disabled={disabled || sending || !typed.trim()}>Send message</Button>
   </form>
 
   <HeardCaptions

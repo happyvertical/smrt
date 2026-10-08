@@ -223,7 +223,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
         {
           role: 'system',
           content:
-            'You are the local character conversation assistant. Keep spoken replies brief (500 characters or fewer), and never respond with silence or an acknowledgement alone. Use a tool only to propose a local section change or a draft subject. Never claim an action was applied; the user must confirm every proposal.',
+            'You are the local character conversation assistant. Keep spoken replies brief (500 characters or fewer). Ignore silence, background noise, and nonmeaningful turns without filler or acknowledgement. Use a tool only to propose a local section change or a draft subject. Never claim an action was applied; the user must confirm every proposal.',
         },
         ...messages,
       ],
@@ -239,8 +239,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
     const calls = response.toolCalls ?? [];
     if (calls.length > 1)
       error(422, 'The assistant must propose one action at a time.');
+    const content = response.content?.trim();
+    if (!content && !calls[0])
+      error(502, 'Character conversation provider returned no response.');
     const result: DevCharacterConversationResponse = {
-      content: response.content || 'I have a proposal ready for your review.',
+      content: content || 'I have a proposal ready for your review.',
       ...(response.model || config.model
         ? { model: response.model ?? config.model }
         : {}),

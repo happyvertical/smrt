@@ -28,6 +28,10 @@ let unavailable = $state<string | null>(null);
 let listening = $state(false);
 let audioEnabled = $state(false);
 let controller: AssistantDockController | null = null;
+let conversationReady = $state(false);
+let revision = $state(1);
+const previews = new Map<string, { fingerprint: string; revision: number }>();
+const applied = new Map<string, DataSurfaceActionResult>();
 const registry = createDataSurfaceRegistry();
 const identity = {
   surfaceId: 'character-conversation-controls',
@@ -50,26 +54,101 @@ registry.register({
       filterableColumnIds: [],
       sortableColumnIds: [],
     },
-    actions: [],
+    actions: [
+      {
+        id: 'navigate',
+        label: 'Navigate workbench',
+        description: 'Open a known local workbench section.',
+        selectionScopes: ['current-page'],
+        requiresConfirmation: true,
+      },
+      {
+        id: 'stage-draft',
+        label: 'Stage draft subject',
+        description: 'Stage a draft subject for review.',
+        selectionScopes: ['current-page'],
+        requiresConfirmation: true,
+      },
+    ],
     controls: [],
     limits: { maxQueryRows: 1, maxQueryBytes: 1024, maxSelectionSize: 1 },
   },
-  getSnapshot: () => ({ revision: 1, state: {} }),
+  getSnapshot: () => ({
+    revision,
+    state: { rows: [{ id: 'character-conversation' }] },
+  }),
+  execute: async (command) => {
+    const payload =
+      command.payload &&
+      typeof command.payload === 'object' &&
+      !Array.isArray(command.payload)
+        ? command.payload
+        : {};
+    if (command.controlId === 'data-surface.action.navigate')
+      workbenchAction?.navigate?.(String(payload.section ?? 'conversation'));
+    if (command.controlId === 'data-surface.action.stage-draft')
+      workbenchAction?.stageDraft?.(String(payload.value ?? ''));
+    revision += 1;
+    return undefined;
+  },
 });
 const actionClient: AssistantActionClient = {
-  preview: async (request) => actionResult(request, 'preview'),
-  apply: async (request) => {
+  preview: async (request) => {
+    const fingerprint = JSON.stringify({ ...request, phase: 'preview' });
+    previews.set(request.requestId, { fingerprint, revision });
     const payload =
       request.payload &&
       typeof request.payload === 'object' &&
       !Array.isArray(request.payload)
         ? request.payload
         : {};
-    if (request.actionId === 'navigate')
-      workbenchAction?.navigate?.(String(payload.section ?? 'conversation'));
-    if (request.actionId === 'stage-draft')
-      workbenchAction?.stageDraft?.(String(payload.value ?? ''));
-    return actionResult(request, 'apply');
+    return {
+      ...actionResult(request, 'preview'),
+      confirmationToken: request.requestId,
+      details:
+        request.actionId === 'stage-draft'
+          ? {
+              target: 'Draft subject',
+              before: 'Unchanged',
+              after: String(payload.value ?? ''),
+            }
+          : {
+              target: 'Workbench section',
+              before: 'Current section',
+              after: String(payload.section ?? ''),
+            },
+    };
+  },
+  apply: async (request, key) => {
+    const cached = applied.get(key);
+    if (cached) return cached;
+    const preview = previews.get(request.requestId);
+    const { confirmationToken, ...proposal } = request;
+    if (
+      !preview ||
+      confirmationToken !== request.requestId ||
+      preview.fingerprint !== JSON.stringify({ ...proposal, phase: 'preview' })
+    )
+      return {
+        ...actionResult(request, 'apply'),
+        ok: false,
+        reason: 'missing_preview',
+      };
+    const outcome = await registry.execute({
+      version: 1,
+      commandId: request.requestId,
+      identity,
+      expectedRevision: preview.revision,
+      controlId: `data-surface.action.${request.actionId}`,
+      payload: request.payload,
+    });
+    const result = {
+      ...actionResult(request, 'apply'),
+      ok: outcome.ok,
+      ...(outcome.ok ? {} : { reason: outcome.reason }),
+    };
+    applied.set(key, result);
+    return result;
   },
 };
 function actionResult(
@@ -128,7 +207,9 @@ const transport = createDevAssistantTransport(
 );
 function connect(owned: AssistantDockController) {
   controller = owned;
-  void owned.openThread('dev-character-conversation');
+  void owned
+    .openThread('dev-character-conversation')
+    .then(() => (conversationReady = true));
 }
 async function sendSpokenTurn(text: string) {
   if (!controller) throw new Error('Open the assistant before speaking.');
@@ -232,7 +313,7 @@ onMount(() => {
     {#if listening}<p role="status">Listening mode keeps the conversation and confirmations active while hiding message history.</p>{/if}
   </div>
   {#if listening}
-    <CharacterConversationVoice onfinal={sendSpokenTurn} />
+    <CharacterConversationVoice onfinal={sendSpokenTurn} disabled={!conversationReady} />
   {/if}
   <FloatingAssistant {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} />
   <SpokenCaptions enabled={true} lines={spoken.lines} interim={spoken.interim} />
