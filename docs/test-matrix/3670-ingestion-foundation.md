@@ -49,6 +49,10 @@ Assets evidence: complete model and maintained UI suite (`pnpm --filter
 and typecheck. New AssetStore cases verify immutable adoption, changed-byte and
 changed-resolver rejection, and failure-closed non-missing storage errors.
 
+The ingestion package is registered in the consumer bundle gate. Its complete
+`pnpm --filter @happyvertical/smrt-bundle-gate test` and `typecheck` commands
+validate browser reachability and the existing consumer boundaries together.
+
 Repository lint, format-check, instruction chain, audit policy and regenerated
 strict knowledge validation apply and are captured. The coordinator runs the
 broader monorepo build/typecheck/test before independent review. There is no

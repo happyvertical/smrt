@@ -595,6 +595,9 @@ importers:
       '@happyvertical/smrt-images':
         specifier: workspace:*
         version: link:../images
+      '@happyvertical/smrt-ingestion':
+        specifier: workspace:*
+        version: link:../ingestion
       '@happyvertical/smrt-inventory':
         specifier: workspace:*
         version: link:../inventory
