@@ -9,7 +9,9 @@ import {
   photoCutoutSetupPrompt,
 } from '@happyvertical/smrt-images';
 import { error, json, type RequestHandler } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import { resolveDevAIConfig } from '../dev-ai.js';
+import { isLocalDevCharacterRequest } from '../dev-character-persistence/config.js';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_BYTES = Math.ceil(MAX_IMAGE_BYTES * 1.4);
@@ -97,7 +99,9 @@ async function boundedJson(request: Request): Promise<unknown> {
   }
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+  if (!isLocalDevCharacterRequest({ dev, request, getClientAddress }))
+    error(404, 'Not found.');
   const config = resolveDevAIConfig();
   if (!config)
     error(

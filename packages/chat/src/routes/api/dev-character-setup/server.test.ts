@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const chat = vi.fn();
+vi.mock('$app/environment', () => ({ dev: true }));
 vi.mock('@happyvertical/ai', () => ({ getAI: vi.fn(async () => ({ chat })) }));
 vi.mock('@happyvertical/smrt-images', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@happyvertical/smrt-images')>()),
@@ -58,7 +59,8 @@ const rig = {
   jaw: { layerId: 'jaw', pivot: { x: 50, y: 65 } },
 };
 const body = { dataUrl: 'data:image/png;base64,AAAA', width: 100, height: 120 };
-const event = (request: Request) => ({ request }) as Parameters<typeof POST>[0];
+const event = (request: Request, getClientAddress = () => '127.0.0.1') =>
+  ({ request, getClientAddress }) as Parameters<typeof POST>[0];
 const outline = {
   points: [
     { x: 120, y: 100 },

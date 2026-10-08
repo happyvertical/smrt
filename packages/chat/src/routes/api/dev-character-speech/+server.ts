@@ -2,14 +2,11 @@ import { getSpeechSynthesizer } from '@happyvertical/speech';
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { resolveDevAIConfig } from '../dev-ai.js';
+import { isLocalDevCharacterRequest } from '../dev-character-persistence/config.js';
 
 const MAX_TEXT_LENGTH = 500;
 const MAX_REQUEST_BYTES = 2048;
 const OPENAI_AUDIO_URL = 'https://api.openai.com/v1';
-
-function localRequest(url: URL): boolean {
-  return url.hostname === '127.0.0.1' || url.hostname === 'localhost';
-}
 
 async function readJsonBody(request: Request): Promise<unknown> {
   const reader = request.body?.getReader();
@@ -44,10 +41,9 @@ async function readJsonBody(request: Request): Promise<unknown> {
   }
 }
 
-export const POST: RequestHandler = async ({ request, url }) => {
-  if (!dev || !localRequest(url)) error(404, 'Not found.');
-  const origin = request.headers.get('origin');
-  if (origin && origin !== url.origin) error(403, 'Forbidden.');
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+  if (!isLocalDevCharacterRequest({ dev, request, getClientAddress }))
+    error(404, 'Not found.');
   if (request.signal.aborted) error(499, 'Speech cancelled.');
   const length = Number(request.headers.get('content-length'));
   if (Number.isFinite(length) && length > MAX_REQUEST_BYTES)
