@@ -41,8 +41,7 @@ function mount(props: Record<string, unknown> = {}) {
   return { changes, api: () => api as ShellLayoutController };
 }
 
-const toggle = () =>
-  screen.getByRole('button', { name: /^(Edit layout|Done editing layout)$/ });
+const toggle = () => screen.getByRole('button', { name: 'Edit layout' });
 const zone = (name: string) =>
   document.querySelector<HTMLElement>(`[data-smrt-edit-zone="${name}"]`);
 const shellSlot = (name: string) =>
@@ -58,16 +57,15 @@ async function edit(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('layout edit toggle', () => {
-  it('is a pressed-state pencil button in header.end that toggles edit mode', async () => {
+  it('is the same pencil button in header.end, pressed while editing', async () => {
     const user = userEvent.setup();
     mount();
     expect(shellSlot('header.end')?.contains(toggle())).toBe(true);
     expect(toggle().getAttribute('aria-pressed')).toBe('false');
-    expect(screen.queryByText('Done')).toBeNull();
     await edit(user);
     expect(toggle().getAttribute('aria-pressed')).toBe('true');
-    expect(toggle().getAttribute('aria-label')).toBe('Done editing layout');
-    expect(screen.getByText('Done')).toBeTruthy();
+    expect(toggle().getAttribute('aria-label')).toBe('Edit layout');
+    expect(screen.queryByText('Done')).toBeNull();
     expect(screen.queryByText('Editing layout')).toBeNull();
     expect(live()).toContain('Layout editing on');
     await edit(user);

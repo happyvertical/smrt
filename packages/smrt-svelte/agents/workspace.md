@@ -142,8 +142,8 @@ layout, visible)` (placement first, then the hidden-region fallback above).
 `AppShell` `layoutEditing?: boolean | { slot? }` opts in (off: no toggle,
 `setEditing(true)` refused, existing apps unchanged). It adds the built-in item
 `item:layout-edit` (default slot `header.end`, normal hidden-region fallback):
-a pencil `ShellIconButton` named "Edit layout" with `aria-pressed`; on, it shows
-a check icon, a visible "Done" label and the name "Done editing layout"; Escape
+a pencil `ShellIconButton` named "Edit layout" with `aria-pressed`; the same
+button turns edit mode off (it stays a pencil, highlighted while on). Escape
 also exits when no section toolbar is open (an open toolbar, or a keyboard move,
 consumes Escape first). A polite live region announces the mode. `useShellLayout()` has
 `editable`, `editing` and `setEditing(boolean)` for hosts and assistants.

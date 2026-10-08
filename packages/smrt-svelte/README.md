@@ -51,7 +51,7 @@ as `@happyvertical/smrt-svelte/workspace/layout`.
 ```
 
 Opt in to editing the real shell in place with `layoutEditing` on `AppShell`: a
-pencil toggle ("Edit layout", "Done" while editing; Escape also exits) joins the header (as does the app title, a movable
+pencil toggle ("Edit layout", highlighted while editing; press again or Escape to exit) joins the header (as does the app title, a movable
 `item:brand` in `header.start`), and while on, every slot is a
 labelled drop zone, shell items and navigation get grips (drag, or Space and
 arrow keys), section headings get icon overlays and a floating toolbar, and

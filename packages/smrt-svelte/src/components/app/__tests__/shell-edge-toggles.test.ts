@@ -172,9 +172,7 @@ describe('hiding a visible region from edit mode', () => {
     await user.click(hideButton('Header'));
     await screen.findByRole('button', { name: 'Show Header' });
     expect(slot('header.end')).toBeNull();
-    expect(
-      screen.getByRole('button', { name: /^(Edit|Done editing) layout$/ }),
-    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Edit layout' })).toBeTruthy();
   });
 
   it('disables hiding the last visible region, with an explanation', async () => {

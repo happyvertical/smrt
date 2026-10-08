@@ -571,15 +571,12 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {#snippet layoutToggle()}
   <span class="smrt-layout-toggle" data-testid="layout-edit-toggle">
     <ShellIconButton
-      icon={editing ? 'done' : 'edit'}
+      icon="edit"
       pressed={editing}
-      label={editing ? t(M['ui.layout_edit.toggle_done']) : t(M['ui.layout_edit.toggle'])}
-      tooltip={editing ? t(M['ui.layout_edit.toggle_done']) : t(M['ui.layout_edit.toggle'])}
+      label={t(M['ui.layout_edit.toggle'])}
+      tooltip={t(M['ui.layout_edit.toggle'])}
       onclick={toggleEditing}
     />
-    {#if editing}
-      <span class="smrt-layout-toggle__status" aria-hidden="true">{t(M['ui.layout_edit.done'])}</span>
-    {/if}
   </span>
 {/snippet}
 
@@ -722,7 +719,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
     color: var(--smrt-color-primary);
   }
   .smrt-layout-toggle { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
-  .smrt-layout-toggle__status { padding: 0 var(--smrt-spacing-2); border-radius: var(--smrt-radius-full); background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); font: var(--smrt-typography-label-small-font); white-space: nowrap; }
+  .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
   .smrt-layout-live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
   .smrt-edit-zone__label { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-small-font); white-space: nowrap; }
   .smrt-edit-item { display: inline-flex; align-items: center; min-inline-size: 0; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); }
