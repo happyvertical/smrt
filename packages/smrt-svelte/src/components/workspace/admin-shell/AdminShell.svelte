@@ -1313,6 +1313,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
 <style>
   .smrt-admin-shell {
+    --smrt-shell-floating-reserve-inline: 0px;
+    --smrt-shell-floating-reserve-block: 0px;
     --smrt-admin-shell-left-track: 0rem;
     --smrt-admin-shell-right-track: 0rem;
     --smrt-admin-shell-top-track: 0rem;
@@ -1397,7 +1399,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     box-sizing: border-box;
     min-inline-size: 0;
     min-block-size: 0;
-    padding: 0 var(--smrt-spacing-3) 0 var(--smrt-spacing-2);
+    padding: 0 calc(var(--smrt-spacing-3) + var(--smrt-shell-floating-reserve-inline)) 0 var(--smrt-spacing-2);
     /* Clip long titles sideways only: menus and popovers opened from the
        header's actions (a notifications bell, an account menu) must be able
        to drop below it. `clip` (unlike `hidden`) allows a visible block axis. */
@@ -1720,6 +1722,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__panel--right {
     grid-column: 1;
     grid-row: 1;
+    padding-block-start: var(--smrt-shell-floating-reserve-block);
   }
 
   .smrt-admin-shell__edge-toggle-kbd {

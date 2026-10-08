@@ -21,7 +21,7 @@ let {
   onApi,
 }: {
   initial?: ShellLayout | null;
-  layoutEditing?: boolean | { slot?: never };
+  layoutEditing?: boolean | { slot?: never; floating?: boolean };
   toggles?: DockToggle[];
   config?: ShellPanelDefaults;
   withActions?: boolean;

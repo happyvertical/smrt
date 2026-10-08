@@ -149,8 +149,13 @@ interface Props {
    * toolbar, and hidden regions render as strips with a show control. Hosts
    * and assistants drive it with `useShellLayout()` (`editing`,
    * `setEditing`). Off (the default) leaves existing apps unchanged.
+   *
+   * `{ floating: true }` instead renders the toggle as a fixed round button
+   * in the top-right corner of the shell: not a placeable item (no slot, no
+   * grip), so hidden regions never displace it. The header and right sidebar
+   * reserve room for it so it covers none of their controls.
    */
-  layoutEditing?: boolean | { slot?: ShellSlot };
+  layoutEditing?: boolean | { slot?: ShellSlot; floating?: boolean };
   /**
    * Host icon buttons for each navigation section while the layout is edited
    * (e.g. an Options gear or Help), rendered in the section's overlay icons
@@ -202,6 +207,9 @@ let {
 /** Stable id of the built-in brand item (title, subtitle). */
 const SHELL_BRAND_ITEM_ID = 'item:brand';
 /** Stable id of the built-in edit-layout toggle item. */
+const layoutFloating = $derived(
+  typeof layoutEditing === 'object' && layoutEditing.floating === true,
+);
 const SHELL_LAYOUT_EDIT_ITEM_ID = 'item:layout-edit';
 const { t } = useI18n();
 // Every movable item, in default order: legacy `slots` snippets, `slotItems`,
@@ -249,7 +257,7 @@ const entries = $derived.by(() => {
       toggle,
     });
   }
-  if (layoutEditing) {
+  if (layoutEditing && !layoutFloating) {
     add({
       id: SHELL_LAYOUT_EDIT_ITEM_ID,
       label: t(M['ui.layout_edit.toggle']),
@@ -359,6 +367,28 @@ setShellLayout(layoutApi);
 // ---- In-place layout editing -------------------------------------------
 const editing = $derived(layoutApi.editing);
 let shellRoot = $state<HTMLElement | undefined>();
+// The floating toggle sits over the header's end (header visible) or the top
+// of the right sidebar (header hidden); reserve that room so it covers no
+// control. AdminShell reads these two custom properties.
+$effect(() => {
+  const root = shellRoot;
+  if (!root) return;
+  const size = 'calc(2.75rem + var(--smrt-spacing-3))';
+  const headerShown = shell.isRegionVisible('header');
+  const on = layoutFloating;
+  root.style.setProperty(
+    '--smrt-shell-floating-reserve-inline',
+    on && headerShown ? size : '0px',
+  );
+  root.style.setProperty(
+    '--smrt-shell-floating-reserve-block',
+    on && !headerShown ? size : '0px',
+  );
+  return () => {
+    root.style.removeProperty('--smrt-shell-floating-reserve-inline');
+    root.style.removeProperty('--smrt-shell-floating-reserve-block');
+  };
+});
 let modeMessage = $state('');
 let wasEditing = false;
 $effect(() => {
@@ -569,7 +599,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
 {/snippet}
 
 {#snippet layoutToggle()}
-  <span class="smrt-layout-toggle" data-testid="layout-edit-toggle">
+  <span class="smrt-layout-toggle" class:smrt-layout-toggle--floating={layoutFloating} data-testid="layout-edit-toggle">
     <ShellIconButton
       icon="edit"
       pressed={editing}
@@ -706,6 +736,9 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
         <div class="smrt-layout-live" role="status" aria-live="polite">{modeMessage}</div>
         <div class="smrt-layout-live" aria-live="assertive" aria-atomic="true">{slotSortable.announcement}</div>
       {/if}
+      {#if layoutFloating}
+        {@render layoutToggle()}
+      {/if}
       {#if dock}
         <DockSlot {dock} />
       {/if}
@@ -719,6 +752,8 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
     color: var(--smrt-color-primary);
   }
   .smrt-layout-toggle { display: inline-flex; align-items: center; gap: var(--smrt-spacing-1); }
+  .smrt-layout-toggle--floating { position: fixed; z-index: 45; inset-block-start: max(var(--smrt-spacing-3), env(safe-area-inset-top)); inset-inline-end: max(var(--smrt-spacing-3), env(safe-area-inset-right)); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface-container-high); box-shadow: var(--smrt-elevation-2); }
+  .smrt-layout-toggle--floating :global(.smrt-shell-icon-button) { border-radius: var(--smrt-radius-full); }
   .smrt-layout-toggle :global(.smrt-shell-icon-button[aria-pressed='true']) { background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
   .smrt-layout-live { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
   .smrt-edit-zone__label { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-label-small-font); white-space: nowrap; }

@@ -139,13 +139,19 @@ layout, visible)` (placement first, then the hidden-region fallback above).
 
 ### Editing the layout in place
 
-`AppShell` `layoutEditing?: boolean | { slot? }` opts in (off: no toggle,
+`AppShell` `layoutEditing?: boolean | { slot?; floating? }` opts in (off: no toggle,
 `setEditing(true)` refused, existing apps unchanged). It adds the built-in item
 `item:layout-edit` (default slot `header.end`, normal hidden-region fallback):
 a pencil `ShellIconButton` named "Edit layout" with `aria-pressed`; the same
 button turns edit mode off (it stays a pencil, highlighted while on). Escape
 also exits when no section toolbar is open (an open toolbar, or a keyboard move,
-consumes Escape first). A polite live region announces the mode. `useShellLayout()` has
+consumes Escape first).
+`{ floating: true }` instead renders the same button fixed in the top-right
+corner (round, elevated, safe-area aware, z-index 45): not a slot item, not
+movable, never displaced by hidden regions. The header reserves end padding for
+it, or, when the header is hidden, the right sidebar reserves top padding
+(`--smrt-shell-floating-reserve-inline|block`, set by `AppShell`).
+A polite live region announces the mode. `useShellLayout()` has
 `editable`, `editing` and `setEditing(boolean)` for hosts and assistants.
 
 While `editing`:

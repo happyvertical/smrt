@@ -492,3 +492,58 @@ describe('placement API', () => {
     expect(api().resetItem('dock:assistant')).toBe(false);
   });
 });
+
+describe('floating layout edit toggle', () => {
+  const floating = { layoutEditing: { floating: true } };
+  const fixedToggle = () =>
+    document.querySelector<HTMLElement>('.smrt-layout-toggle--floating');
+
+  it('renders a fixed round button that is not a placeable item', () => {
+    const { api } = mount(floating);
+    expect(fixedToggle()).toBeTruthy();
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    expect(
+      document.querySelector('[data-slot] .smrt-layout-toggle'),
+    ).toBeNull();
+    expect(api().placementItems.some((i) => i.id === 'item:layout-edit')).toBe(
+      false,
+    );
+  });
+
+  it('toggles editing and shows the pressed state, with no grip', async () => {
+    const user = userEvent.setup();
+    const { api } = mount(floating);
+    await edit(user);
+    expect(api().editing).toBe(true);
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(fixedToggle()?.querySelector('.smrt-edit-item__grip')).toBeNull();
+    expect(
+      document.querySelector('[data-smrt-edit-zone] .smrt-layout-toggle'),
+    ).toBeNull();
+    await edit(user);
+    expect(api().editing).toBe(false);
+  });
+
+  it('stays put when the header is hidden and reserves room instead', async () => {
+    mount({
+      ...floating,
+      initial: { version: 1, panels: { top: { visible: false } } },
+    });
+    expect(fixedToggle()).toBeTruthy();
+    expect(toggle()).toBeTruthy();
+    const root = document.querySelector<HTMLElement>('.smrt-admin-shell');
+    await vi.waitFor(() =>
+      expect(
+        root?.style.getPropertyValue('--smrt-shell-floating-reserve-block'),
+      ).not.toBe('0px'),
+    );
+    expect(
+      root?.style.getPropertyValue('--smrt-shell-floating-reserve-inline'),
+    ).toBe('0px');
+  });
+
+  it('has no axe violations', async () => {
+    const { container } = render(Harness, floating);
+    await expectNoA11yViolations(container);
+  });
+});

@@ -56,7 +56,8 @@ pencil toggle ("Edit layout", highlighted while editing; press again or Escape t
 labelled drop zone, shell items and navigation get grips (drag, or Space and
 arrow keys), section headings get icon overlays and a floating toolbar, and
 hidden regions show as strips. Apps add per-section icon buttons (an Options
-gear, Help) with `sectionActions`; `useShellLayout()` exposes `editing` and
+gear, Help) with `sectionActions`; pass `layoutEditing={{ floating: true }}` to pin the
+toggle in the top-right corner instead of the header; `useShellLayout()` exposes `editing` and
 `setEditing`. See `agents/workspace.md`.
 
 ## Installation
