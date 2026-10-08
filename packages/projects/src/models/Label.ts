@@ -13,6 +13,7 @@ import {
 
 export interface LabelOptions extends SmrtObjectOptions {
   repositoryId?: string;
+  projectId?: string;
   name?: string;
   color?: string;
   description?: string;
@@ -25,10 +26,17 @@ export interface LabelOptions extends SmrtObjectOptions {
 })
 export class Label extends SmrtObject {
   /**
-   * Repository this label belongs to
+   * Repository this label belongs to (optional; unset for project-scoped labels)
    */
   @foreignKey('Repository')
   repositoryId?: string;
+
+  /**
+   * Project this label is scoped to (optional; a label may be scoped to a
+   * repository, a project, or neither)
+   */
+  @foreignKey('Project')
+  projectId?: string;
 
   /**
    * Label name
@@ -49,6 +57,7 @@ export class Label extends SmrtObject {
     super(options);
     if (options.repositoryId !== undefined)
       this.repositoryId = options.repositoryId;
+    if (options.projectId !== undefined) this.projectId = options.projectId;
     if (options.name !== undefined) this.name = options.name;
     if (options.color !== undefined) this.color = options.color;
     if (options.description !== undefined)

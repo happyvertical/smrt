@@ -87,6 +87,15 @@ export class IssueCollection extends SmrtCollection<Issue> {
   }
 
   /**
+   * Find issues belonging to a project (repository-backed or project-native)
+   *
+   * @param projectId - Project ID
+   */
+  async findByProject(projectId: string): Promise<Issue[]> {
+    return await this.list({ where: { projectId } });
+  }
+
+  /**
    * Find issues by repository
    *
    * @param repositoryId - Repository ID

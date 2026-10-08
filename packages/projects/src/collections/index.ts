@@ -2,6 +2,7 @@
  * @happyvertical/smrt-projects - Collection exports
  */
 
+export { CommentCollection } from './Comments';
 export { DevelopmentRequestHistoryCollection } from './DevelopmentRequestHistories';
 export { DevelopmentRequestCollection } from './DevelopmentRequests';
 export { IssueCollection } from './Issues';
