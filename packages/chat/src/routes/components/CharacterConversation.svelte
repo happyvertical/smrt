@@ -94,8 +94,14 @@ export interface Props {
 let { workbenchAction }: Props = $props();
 const spoken = createCaptionChannel('spoken', { ttlMs: 12000 });
 let playback = createSpeechPlayback({
-  onLevel: (level) =>
-    mounted?.setMouthOpen(Math.min(1, Math.sqrt(Math.max(0, level)) * 1.25)),
+  onLevel: (level) => {
+    const gain = Math.min(1, Math.sqrt(Math.max(0, level)) * 1.25);
+    mounted?.setExpression({
+      headTiltDegrees: gain * 5,
+      jawTiltDegrees: gain * 7,
+    });
+    mounted?.setMouthOpen(gain);
+  },
 });
 let playbackGeneration = 0;
 let speechAbort: AbortController | null = null;
@@ -154,7 +160,10 @@ async function speak(reply: string) {
   } catch {
     if (generation === playbackGeneration) spoken.setInterim('');
   } finally {
-    if (generation === playbackGeneration) mounted?.setMouthOpen(0);
+    if (generation === playbackGeneration) {
+      mounted?.setMouthOpen(0);
+      mounted?.setExpression({ headTiltDegrees: 0, jawTiltDegrees: 0 });
+    }
   }
 }
 function enableSpeech() {

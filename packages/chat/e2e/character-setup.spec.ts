@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
 
+test('character conversation hydrates and exposes listening input', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.getByRole('tab', { name: 'Character conversation' }).click();
+  await expect(page.getByRole('button', { name: 'Listening mode' })).toBeVisible();
+  await page.getByRole('button', { name: 'Listening mode' }).click();
+  await expect(page.getByLabel('Voice input')).toBeVisible();
+  await expect(page.getByLabel('Type your message')).toBeEnabled();
+});
+
 async function chooseSyntheticPhoto(page: import('@playwright/test').Page) {
   const buffer = Buffer.from(await page.evaluate(() => {
     const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 120;
