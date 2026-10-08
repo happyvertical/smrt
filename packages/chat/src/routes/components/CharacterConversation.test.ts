@@ -521,6 +521,29 @@ describe('conversation lifecycle', () => {
     await vi.waitFor(() => expect(mocks.play).toHaveBeenCalledOnce());
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+  it('keeps a readable listening reply when browser playback rejects', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('audio')));
+    mocks.play.mockRejectedValueOnce(new Error('Playback unavailable'));
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Enable spoken replies' }),
+    );
+    mocks.reply('Read this even when playback fails');
+    expect(
+      await screen.findByText(
+        'Could not play the spoken reply. The reply is shown below.',
+      ),
+    ).toBeVisible();
+    const reply = screen.getByLabelText('Assistant reply');
+    expect(reply).toHaveTextContent('Read this even when playback fails');
+    expect(reply).toHaveAttribute('aria-live', 'polite');
+    expect(
+      screen.queryByLabelText('Assistant is speaking'),
+    ).not.toBeInTheDocument();
+  });
   it('cancels an in-flight speech request when spoken replies are disabled', async () => {
     const body = deferred<ArrayBuffer>();
     vi.stubGlobal(
