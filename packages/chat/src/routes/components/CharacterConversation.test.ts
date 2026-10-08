@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   destroy: vi.fn(),
   play: vi.fn(),
   stop: vi.fn(),
+  sendMessage: vi.fn(),
   events: {} as { onStart?: () => void; onEnd?: () => void },
   reply: (_text: string) => {},
   proposal: (_proposal: { kind: string; value: string }) => {},
@@ -39,7 +40,7 @@ vi.mock('../../dev-assistant-transport.js', () => ({
     return {
       listThreads: async () => [],
       loadMessages: async () => [],
-      sendMessage: vi.fn(),
+      sendMessage: mocks.sendMessage,
     };
   },
 }));
@@ -91,6 +92,58 @@ describe('conversation lifecycle', () => {
     await userEvent.click(confirm);
     await vi.waitFor(() => expect(stageDraft).toHaveBeenCalledWith(value));
   });
+  it('keeps an in-flight turn locked across tab and listening-mode remounts', async () => {
+    const pending = deferred<unknown>();
+    mocks.sendMessage.mockReturnValue(pending.promise);
+    const view = render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    await userEvent.type(
+      screen.getByLabelText('Type your message'),
+      'First pending turn',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Send message', exact: true }),
+    );
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    await view.rerender({ active: false });
+    await view.rerender({ active: true });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    expect(screen.getByLabelText('Type your message')).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Speak to your assistant' }),
+    ).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Send message', exact: true }),
+    );
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    const userMessage = {
+      id: 'first',
+      threadId: 'dev-character-conversation',
+      role: 'user',
+      content: 'First pending turn',
+      createdAt: new Date().toISOString(),
+    };
+    const assistantMessage = {
+      ...userMessage,
+      id: 'reply',
+      role: 'assistant',
+      content: 'First reply',
+    };
+    pending.resolve({
+      inProgress: false,
+      userMessage,
+      assistantMessage,
+      messages: [userMessage, assistantMessage],
+    });
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText('Type your message')).toBeEnabled(),
+    );
+  });
+
   it('refreshes an initially missing and then replaced saved rig on activation', async () => {
     const view = render(CharacterConversation);
     await screen.findByText(/Save a character in Character setup/);

@@ -11,11 +11,17 @@ import {
   DictationButton,
   type DictationSourceProvider,
   DictationStatus,
+  Form,
+  Input,
 } from '@happyvertical/smrt-ui/forms';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy } from 'svelte';
 import { createCaptionChannel } from '../../svelte/components/assistant/captions/caption-state.svelte.js';
 import HeardCaptions from '../../svelte/components/assistant/captions/HeardCaptions.svelte';
+import { M } from '../../svelte/i18n.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Receives a completed spoken or typed turn. */
@@ -26,6 +32,7 @@ export interface Props {
 
 let { onfinal, disabled = false }: Props = $props();
 let typed = $state('');
+const messageInputId = $props.id();
 let sending = $state(false);
 let deliveryError = $state<string | null>(null);
 const heard = createCaptionChannel('heard', { ttlMs: 12_000 });
@@ -82,34 +89,34 @@ onDestroy(() => {
 });
 </script>
 
-<section class="character-conversation-voice" aria-label="Voice input">
+<section class="character-conversation-voice" aria-label={t(M['chat.character_conversation.voice_input'])}>
   <div class="voice-actions">
     <DictationButton
       {dictation}
       disabled={(sending || disabled) && dictation.state !== 'listening'}
-      label="Speak to your assistant"
+      label={t(M['chat.character_conversation.speak'])}
       stopLabel="Stop listening"
-      title="Speak to your assistant"
+      title={t(M['chat.character_conversation.speak'])}
     />
     <DictationStatus {dictation} />
   </div>
 
   {#if dictation.state === 'error'}
     <p class="typed-fallback" role="status">
-      Speech input is unavailable. Type your message below.
+      {t(M['chat.character_conversation.unavailable'])}
     </p>
   {/if}
   {#if deliveryError}
     <p role="alert">{deliveryError}</p>
   {/if}
 
-  <form onsubmit={(event) => { event.preventDefault(); submitTyped(); }}>
-    <label>
-      Type your message
-      <input bind:value={typed} disabled={disabled || sending} maxlength="4000" />
+  <Form class="typed-form" onsubmit={submitTyped}>
+    <label for={messageInputId}>
+      {t(M['chat.character_conversation.message'])}
+      <Input id={messageInputId} class="typed-input" value={typed} oninput={(event) => (typed = event.currentTarget.value)} disabled={disabled || sending} maxlength={4000} />
     </label>
-    <Button type="submit" disabled={disabled || sending || !typed.trim()} onclick={submitTyped}>Send message</Button>
-  </form>
+    <Button type="submit" disabled={disabled || sending || !typed.trim()} onclick={submitTyped}>{t(M['chat.character_conversation.send'])}</Button>
+  </Form>
 
   <HeardCaptions
     enabled={true}
@@ -122,8 +129,8 @@ onDestroy(() => {
 <style>
   .character-conversation-voice { display: grid; gap: .5rem; }
   .voice-actions { display: flex; align-items: center; gap: .5rem; }
-  form { display: flex; inline-size: 100%; flex-wrap: wrap; align-items: end; gap: .5rem; }
+  .character-conversation-voice :global(.typed-form) { display: flex; inline-size: 100%; flex-wrap: wrap; align-items: end; gap: .5rem; }
   label { display: grid; gap: .25rem; flex: 1 1 16rem; }
-  input { min-block-size: 2.5rem; padding-inline: .65rem; }
+  .character-conversation-voice :global(.typed-input) { min-block-size: 2.5rem; padding-inline: .65rem; }
   .typed-fallback { margin: 0; }
 </style>

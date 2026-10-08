@@ -12,6 +12,18 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  // Character conversation workbench
+  'chat.character_conversation.saved_conversation':
+    'Saved character conversation',
+  'chat.character_conversation.saved_character': 'Saved photographic character',
+  'chat.character_conversation.listening_notice':
+    'Listening mode keeps the conversation and confirmations active while hiding message history.',
+  'chat.character_conversation.voice_input': 'Voice input',
+  'chat.character_conversation.speak': 'Speak to your assistant',
+  'chat.character_conversation.unavailable':
+    'Speech input is unavailable. Type your message below.',
+  'chat.character_conversation.message': 'Type your message',
+  'chat.character_conversation.send': 'Send message',
   // CaptionOverlay
   'chat.caption_overlay.scroll_up': 'Scroll captions up',
   'chat.caption_overlay.scroll_down': 'Scroll captions down',

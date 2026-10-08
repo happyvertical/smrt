@@ -8,6 +8,7 @@ import {
   type DataSurfaceActionRequest,
   type DataSurfaceActionResult,
 } from '@happyvertical/smrt-ui/data-surface';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { createSpeechPlayback } from '@happyvertical/speech/browser';
 import { onMount } from 'svelte';
@@ -20,8 +21,11 @@ import type {
   AssistantDockController,
 } from '../../svelte/components/assistant/create-assistant-dock-controller.svelte.js';
 import FloatingAssistant from '../../svelte/components/assistant/FloatingAssistant.svelte';
+import { M } from '../../svelte/i18n.js';
 import { DEV_CHARACTER_MAX_DRAFT_LENGTH } from '../api/dev-character-conversation/protocol.js';
 import CharacterConversationVoice from './CharacterConversationVoice.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   active?: boolean;
@@ -41,6 +45,7 @@ let listening = $state(false);
 let audioEnabled = $state(false);
 let controller: AssistantDockController | null = null;
 let conversationReady = $state(false);
+let voiceTurnPending = $state(false);
 let attentionRequired = $state(false);
 let revision = $state(1);
 let stateSignature = '';
@@ -296,7 +301,13 @@ function connect(owned: AssistantDockController) {
 }
 async function sendSpokenTurn(text: string) {
   if (!controller) throw new Error('Open the assistant before speaking.');
-  await controller.send(text);
+  if (voiceTurnPending || !active || attentionRequired) return;
+  voiceTurnPending = true;
+  try {
+    await controller.send(text);
+  } finally {
+    voiceTurnPending = false;
+  }
 }
 
 async function speak(reply: string) {
@@ -415,8 +426,8 @@ onMount(() => {
 });
 </script>
 
-<section class="character-conversation" aria-label="Saved character conversation">
-  <div class="character-stage" bind:this={target} aria-label="Saved photographic character"></div>
+<section class="character-conversation" aria-label={t(M['chat.character_conversation.saved_conversation'])}>
+  <div class="character-stage" bind:this={target} aria-label={t(M['chat.character_conversation.saved_character'])}></div>
   {#if unavailable}<p role="status">{unavailable}</p>{/if}
   <div class="conversation-controls">
     <Button type="button" variant="secondary" aria-pressed={listening} onclick={() => (listening = !listening)}>
@@ -425,10 +436,10 @@ onMount(() => {
     <Button type="button" variant="secondary" aria-pressed={audioEnabled} onclick={enableSpeech}>
       {audioEnabled ? 'Speech enabled' : 'Enable spoken replies'}
     </Button>
-    {#if listening}<p role="status">Listening mode keeps the conversation and confirmations active while hiding message history.</p>{/if}
+    {#if listening}<p role="status">{t(M['chat.character_conversation.listening_notice'])}</p>{/if}
   </div>
   {#if listening && active}
-    <CharacterConversationVoice onfinal={sendSpokenTurn} disabled={!conversationReady || attentionRequired} />
+    <CharacterConversationVoice onfinal={sendSpokenTurn} disabled={!conversationReady || attentionRequired || voiceTurnPending} />
   {/if}
   <FloatingAssistant {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
   <SpokenCaptions enabled={true} lines={spoken.lines} interim={spoken.interim} />

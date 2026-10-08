@@ -75,6 +75,7 @@ are non-obvious and cost time to find:
 The Character conversation tab refreshes the persisted rig each time it becomes
 active, retaining its AssistantDock controller and history. Leaving the tab stops
 microphone input and reply playback; listening mode requires an explicit restart.
+An outstanding voice turn remains busy across those restarts until it settles.
 Late persistence loads and cancelled speech responses cannot replace the current
 rig or audio. Spoken captions begin only when SDK playback actually starts.
 
