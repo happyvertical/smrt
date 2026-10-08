@@ -509,6 +509,8 @@ export interface SmartObjectDefinition {
   name: string;
 
   collection: string; // Pluralized name for endpoints
+  /** User-facing model description (`@smrt({ description })`, else class JSDoc summary). */
+  description?: string;
   filePath: string;
   packageVersion?: string; // Package version for external manifest loading
   importPath?: string; // Import path for dynamic loading (e.g., "@pkg/objects")

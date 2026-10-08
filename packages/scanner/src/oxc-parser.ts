@@ -1736,8 +1736,11 @@ function extractClassFromNode(
   sourceText: string,
   importAliases: Map<string, string>,
   ctx?: DecoratorConfigContext,
+  outerStart?: number,
 ): RawClassDefinition | null {
-  // Handle export declarations
+  // Handle export declarations. `outerStart` carries the `export` keyword's
+  // offset so the class JSDoc is found above it (decorators and `export` can
+  // both sit between the comment and the `class` keyword).
   if (node.type === 'ExportNamedDeclaration' && node.declaration) {
     return extractClassFromNode(
       node.declaration,
@@ -1745,6 +1748,7 @@ function extractClassFromNode(
       sourceText,
       importAliases,
       ctx,
+      node.start ?? outerStart,
     );
   }
   if (node.type === 'ExportDefaultDeclaration' && node.declaration) {
@@ -1754,6 +1758,7 @@ function extractClassFromNode(
       sourceText,
       importAliases,
       ctx,
+      node.start ?? outerStart,
     );
   }
 
@@ -1765,6 +1770,7 @@ function extractClassFromNode(
       sourceText,
       importAliases,
       ctx,
+      outerStart,
     );
   }
 
@@ -1780,6 +1786,7 @@ function extractClassDeclaration(
   sourceText: string,
   importAliases: Map<string, string>,
   ctx?: DecoratorConfigContext,
+  outerStart?: number,
 ): RawClassDefinition {
   const className = node.id?.name || 'AnonymousClass';
 
@@ -1851,6 +1858,20 @@ function extractClassDeclaration(
     }
   }
 
+  const explicitDescription =
+    typeof smrtConfig?.description === 'string'
+      ? normalizeModelDescription(smrtConfig.description)
+      : undefined;
+  const description =
+    explicitDescription ??
+    extractClassJsDocDescription(
+      sourceText,
+      className,
+      [node.start, outerStart, ...decorators.map((d) => d.start)].filter(
+        (n): n is number => typeof n === 'number',
+      ),
+    );
+
   return {
     className,
     filePath,
@@ -1858,6 +1879,7 @@ function extractClassDeclaration(
     extendsTypeArg,
     decoratorConfig,
     hasSmartDecorator,
+    ...(description ? { description } : {}),
     fields,
     methods,
     startLine: node.loc?.start.line || 1,
@@ -1866,6 +1888,99 @@ function extractClassDeclaration(
       ? { bodyStart: node.body.start }
       : {}),
   };
+}
+
+const MODEL_DESCRIPTION_MAX = 200;
+
+/** Collapse whitespace and cap at {@link MODEL_DESCRIPTION_MAX}, cutting at a sentence boundary. */
+function normalizeModelDescription(raw: string): string | undefined {
+  const text = raw.replace(/\s+/g, ' ').trim();
+  if (!text) return undefined;
+  if (text.length <= MODEL_DESCRIPTION_MAX) return text;
+  const head = text.slice(0, MODEL_DESCRIPTION_MAX);
+  const sentenceEnd = Math.max(
+    head.lastIndexOf('. '),
+    head.lastIndexOf('! '),
+    head.lastIndexOf('? '),
+  );
+  if (sentenceEnd > 0) return head.slice(0, sentenceEnd + 1);
+  const wordEnd = head.lastIndexOf(' ');
+  return `${(wordEnd > 0 ? head.slice(0, wordEnd) : head).replace(/[,;:\s]+$/, '')}…`;
+}
+
+/**
+ * Summarize the JSDoc block directly above a class (before any `export` or
+ * decorators) as a one-line model description: the first paragraph, minus a
+ * leading `ClassName - ` / `ClassName: ` prefix, tags and inline markup.
+ * `@internal` classes yield nothing. Pure text work on the already-parsed
+ * source; nothing is executed.
+ */
+export function extractClassJsDocDescription(
+  sourceText: string,
+  className: string,
+  anchors: number[],
+): string | undefined {
+  if (anchors.length === 0) return undefined;
+  const before = sourceText.slice(0, Math.min(...anchors)).trimEnd();
+  if (!before.endsWith('*/')) return undefined;
+  const open = before.lastIndexOf('/**');
+  if (open < 0 || before.indexOf('*/', open) !== before.length - 2) {
+    return undefined;
+  }
+  return summarizeJsDoc(before.slice(open, before.length), className);
+}
+
+/** @internal Exported for testing. */
+export function summarizeJsDoc(
+  block: string,
+  className: string,
+): string | undefined {
+  const lines = block
+    .replace(/^\/\*\*/, '')
+    .replace(/\*\/$/, '')
+    .split('\n')
+    .map((line) => line.replace(/^\s*\*\s?/, '').trimEnd());
+  const summary: string[] = [];
+  let internal = false;
+  let inFence = false;
+  for (const line of lines) {
+    if (/^\s*@internal\b/.test(line)) internal = true;
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (/^\s*@\w+/.test(line)) {
+      summary.push('\u0000');
+      continue;
+    }
+    summary.push(line);
+  }
+  if (internal) return undefined;
+  const paragraph: string[] = [];
+  for (const line of summary) {
+    if (line === '\u0000') break;
+    if (line.trim() === '') {
+      if (paragraph.length > 0) break;
+      continue;
+    }
+    paragraph.push(line.trim());
+  }
+  let text = paragraph.join(' ');
+  const escaped = className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  text = text
+    .replace(new RegExp(`^${escaped}\\s*(?:[-\u2013\u2014:]+)\\s*`), '')
+    .replace(
+      /\{@(?:link|linkcode|linkplain)\s+([^}|\s]+)(?:[|\s]+([^}]*))?\}/g,
+      (_m, target, label) => (label?.trim() ? label.trim() : target),
+    )
+    .replace(/\{@\w+\s*([^}]*)\}/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/<\/?[a-zA-Z][^>]*>/g, '')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2');
+  if (text.length > 0) text = text[0].toUpperCase() + text.slice(1);
+  return normalizeModelDescription(text);
 }
 
 /**

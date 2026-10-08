@@ -112,6 +112,11 @@ export interface DomainKnowledgeObject {
   name: string;
   qualifiedName?: string;
   /**
+   * User-facing model description: `@smrt({ description })`, else the class
+   * JSDoc summary (<= 200 chars). Omitted when the model has neither.
+   */
+  description?: string;
+  /**
    * Deprecated qualified names this object still resolves from, declared via
    * `@smrt({ previousQualifiedNames })` after a package move or rename
    * (#3338). Sorted; omitted when none are declared.

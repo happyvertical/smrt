@@ -216,3 +216,16 @@ checks the generated imports with `svelte-check`.
 Core's `generate:test` task depends on its own `build`: both publish the local
 `.smrt` manifest/knowledge pair, so Turbo must serialize production before test
 generation instead of caching an interleaved pair.
+
+## Model descriptions
+
+Each manifest object and knowledge `objects[]` entry may carry a user-facing
+`description` (for the planner Features tab and similar). The scanner
+(`extractClassJsDocDescription` in `packages/scanner/src/oxc-parser.ts`) reads it
+from the parsed source, in priority order: explicit `@smrt({ description })`,
+else the first paragraph of the class JSDoc (the JSDoc may sit above `export`
+and decorators), minus a leading `ClassName - ` / `ClassName: `, tags
+(`{@link}`, backticks, HTML) and later paragraphs, capped at 200 chars on a
+sentence boundary. `@internal` classes and classes without docs emit no key. It
+is not inherited from a parent class. Generated MCP tool descriptions are
+unchanged (they stay generic).

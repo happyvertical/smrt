@@ -163,6 +163,8 @@ interface SmartObjectDefinition {
   className: string;
   qualifiedName?: QualifiedClassName; // NEW: @package/name:ClassName for namespace isolation (Issue #713)
   collection: string;
+  /** User-facing model description (explicit option, else class JSDoc summary). */
+  description?: string;
   filePath: string;
   packageName?: string;
   packageVersion?: string;
@@ -639,6 +641,7 @@ export class ManifestAdapter {
       className: classDef.className,
       qualifiedName,
       collection,
+      ...(classDef.description ? { description: classDef.description } : {}),
       filePath: classDef.filePath,
       packageName: packageName || undefined,
       fields,

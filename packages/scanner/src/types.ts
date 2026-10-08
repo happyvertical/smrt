@@ -37,6 +37,12 @@ export interface RawClassDefinition {
   /** Has @smrt() decorator */
   hasSmartDecorator: boolean;
 
+  /**
+   * User-facing model description: explicit `@smrt({ description })`, else the
+   * class JSDoc summary. Absent when neither exists or the class is `@internal`.
+   */
+  description?: string;
+
   /** Class properties/fields */
   fields: RawFieldDefinition[];
 
@@ -99,6 +105,9 @@ export interface RawDecoratorConfig {
     include?: string[];
     exclude?: string[];
   };
+
+  /** User-facing model description (wins over the class JSDoc summary) */
+  description?: string;
 
   /** Raw config object for unknown properties */
   [key: string]: unknown;
