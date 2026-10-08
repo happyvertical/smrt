@@ -256,9 +256,8 @@ function main() {
   process.exit(0);
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+// Node resolves module URLs through symlinks, while argv preserves the invoked
+// path. Use the entry-point flag so aliased paths cannot bypass enforcement.
+if (import.meta.main) {
   main();
 }
