@@ -168,3 +168,70 @@ describe('photo picker', () => {
     await vi.waitFor(() => expect(mocks.isolate).toHaveBeenCalledTimes(1));
   });
 });
+
+function dropPhoto(file: File) {
+  const picker = document.querySelector('label.file-picker');
+  if (!picker) throw new Error('File picker drop target is missing');
+  const event = new Event('drop', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'dataTransfer', { value: { files: [file] } });
+  picker.dispatchEvent(event);
+}
+
+describe('photo picker drop', () => {
+  it('accepts a first dropped photo for isolation', async () => {
+    component = mount(PhotoCutoutSetup, { target: document.body });
+    await tick();
+    const photo = new File(['first'], 'first.png', { type: 'image/png' });
+    dropPhoto(photo);
+    await tick();
+    expect(URL.createObjectURL).toHaveBeenCalledWith(photo);
+    expect(button('Isolate head')?.disabled).toBe(false);
+    await click('Isolate head');
+    await vi.waitFor(() => expect(mocks.isolate).toHaveBeenCalledTimes(1));
+  });
+
+  it('cancels pending work and clears the old rig when a replacement is dropped', async () => {
+    component = mount(PhotoCutoutSetup, { target: document.body });
+    await tick();
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('Photo picker is missing');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['first'], 'first.png', { type: 'image/png' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+    await click('Isolate head');
+    await click('Continue: segment mouth');
+    await vi.waitFor(() => expect(button('Open mouth')).toBeTruthy());
+    const previousHead = await mocks.isolate.mock.results[0].value;
+    let complete: (head: typeof previousHead) => void = () => {};
+    mocks.isolate.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    await click('Redo head isolation');
+    await vi.waitFor(() => expect(mocks.isolate).toHaveBeenCalledTimes(2));
+    const pendingSignal = mocks.isolate.mock.calls[1][1].signal;
+    expect(pendingSignal.aborted).toBe(false);
+    const replacement = new File(['replacement'], 'replacement.png', {
+      type: 'image/png',
+    });
+    dropPhoto(replacement);
+    await tick();
+    expect(pendingSignal.aborted).toBe(true);
+    expect(URL.createObjectURL).toHaveBeenLastCalledWith(replacement);
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
+    expect(button('Open mouth')).toBeUndefined();
+    expect(button('Continue: segment mouth')).toBeUndefined();
+    expect(button('Isolate head')?.disabled).toBe(false);
+    complete(previousHead);
+    await tick();
+    expect(button('Continue: segment mouth')).toBeUndefined();
+    expect(
+      document.querySelector('img[alt="Selected character source"]'),
+    ).toBeTruthy();
+  });
+});

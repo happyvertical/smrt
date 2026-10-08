@@ -118,8 +118,8 @@ onMount(() => () => {
   if (source) URL.revokeObjectURL(source.url);
   if (head) URL.revokeObjectURL(head.url);
 });
-function select(event: Event) {
-  const file = (event.currentTarget as HTMLInputElement).files?.[0];
+function select(files: File[]) {
+  const file = files[0];
   if (!file) return;
   if (
     !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
@@ -387,7 +387,7 @@ async function playSpeech() {
 <section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title">
   <h2 id="cutout-title">{t(M['images.photo_cutout_setup.title'])}</h2>
   <p class:error={failed !== null} class:success={ready} aria-live="polite">{message}{#if busy} ({elapsed}s){/if}</p>
-  <FilePicker accept="image/png,image/jpeg,image/webp" label={t(M['images.photo_cutout_setup.choose_photo'])} description={t(M['images.photo_cutout_setup.photo_formats'])} aria-label={t(M['images.photo_cutout_setup.choose_photo'])} onchange={select} disabled={persisting !== null} />
+  <FilePicker accept="image/png,image/jpeg,image/webp" label={t(M['images.photo_cutout_setup.choose_photo'])} description={t(M['images.photo_cutout_setup.photo_formats'])} aria-label={t(M['images.photo_cutout_setup.choose_photo'])} onchangefiles={select} disabled={persisting !== null} />
   <div class="actions">
     <Button onclick={() => run('outline')} disabled={!source || busy !== null}>{failed === 'outline' ? 'Retry head isolation' : head ? 'Redo head isolation' : 'Isolate head'}</Button>
     {#if head}<Button onclick={() => run('mouth-landmarks')} disabled={busy !== null}>{failed === 'mouth-landmarks' ? 'Retry mouth segmentation' : ready ? 'Redo mouth segmentation' : 'Continue: segment mouth'}</Button>{/if}
