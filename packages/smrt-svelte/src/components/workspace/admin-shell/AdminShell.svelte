@@ -465,6 +465,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           event.preventDefault();
           return;
         }
+        // While editing the layout, Escape belongs to the editor (cancel a
+        // move, close a toolbar, then leave edit mode), not to the panels.
+        if (layoutEdit?.active) return;
         if (shell.closeTopmostExpanded()) event.preventDefault();
         return;
       }
@@ -633,6 +636,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   function regionVisible(region: ShellRegion): boolean {
     return shell.isRegionVisible(region);
+  }
+
+  /**
+   * Whether a region shows its hide control in edit mode: a sidebar has one as
+   * soon as its rail is rendered, even while collapsed (its slots then fall
+   * back, but the region itself is still there to hide).
+   */
+  function regionControllable(region: ShellRegion): boolean {
+    if (region === 'leftSidebar') return shell.isEdgeShown('left');
+    if (region === 'rightSidebar') return shell.isEdgeShown('right');
+    return regionVisible(region);
   }
 
   /** Slots whose content lands at `target` (own content plus fallbacks). */
@@ -896,7 +910,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 {/snippet}
 
 {#snippet regionEdit(region: ShellRegion)}
-  {#if layoutEdit?.active && layoutEdit.regionControl && regionVisible(region)}
+  {#if layoutEdit?.active && layoutEdit.regionControl && regionControllable(region)}
     <div class="smrt-admin-shell__region-edit" data-region-edit={region}>
       {@render layoutEdit.regionControl(region)}
     </div>

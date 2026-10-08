@@ -143,14 +143,17 @@ layout, visible)` (placement first, then the hidden-region fallback above).
 `setEditing(true)` refused, existing apps unchanged). It adds the built-in item
 `item:layout-edit` (default slot `header.end`, normal hidden-region fallback):
 a pencil `ShellIconButton` named "Edit layout" with `aria-pressed`; on, it shows
-a check icon, the tooltip "Done editing layout" and an "Editing layout" status
-chip, and a polite live region announces the mode. `useShellLayout()` has
+a check icon, a visible "Done" label and the name "Done editing layout"; Escape
+also exits when no section toolbar is open (an open toolbar, or a keyboard move,
+consumes Escape first). A polite live region announces the mode. `useShellLayout()` has
 `editable`, `editing` and `setEditing(boolean)` for hosts and assistants.
 
 While `editing`:
 
 - `AdminShell` `layoutEdit` (`ShellLayoutEditSurface`, set by `AppShell`) renders
-  every slot of a visible region as a dashed drop zone (`data-smrt-edit-zone`)
+  every slot of a visible region as a dashed drop zone (entering edit mode
+  expands a collapsed left/right sidebar so its header/footer zones exist, and
+  leaving restores it) (`data-smrt-edit-zone`)
   labelled "Header · Left", empty ones included, highlighted
   (`data-drop-target`) while a drag targets it. Movable items render exactly as
   on the site (inside an `inert` wrapper) with a grip; the toggle itself is
@@ -162,12 +165,14 @@ While `editing`:
   is hidden show in the zone they fall back to.
 - Nothing in the header band renders outside the drop zones except each
   region's edit control: the brand is an item in `header.start`, and the Menu
-  opener is hidden off phones. Every visible region gets an icon-only eye-off
+  opener is hidden off phones. Every region, a collapsed sidebar rail included, gets an icon-only eye-off
   "Hide <region>" button (`ShellLayoutEditSurface.regionControl`, end of the
   header/footer band, top of a sidebar) that writes
   `setPanel(edge, { visible: false })`; the strip's "Show" restores it. The
   last visible region's button is disabled with an explanatory tooltip. Items
   of a hidden region (the edit toggle included) follow the fallback chain.
+  Hiding the right sidebar (the dock) makes `useShellDock().available` false:
+  dock toggles render unregistered and `open` is refused until it is shown.
 - Hidden, available regions render as thin dashed strips ("Right sidebar ·
   hidden") with an eye "Show <region>" button (`setPanel(edge, { visible })`).
 - `ShellNavEditor` replaces `TenantNav`: the real rows plus grips on every

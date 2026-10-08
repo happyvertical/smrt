@@ -476,6 +476,46 @@ const visibleRegionCount = $derived(
   layoutApi.panels.filter((panel) => panel.available && panel.visible).length,
 );
 
+// Editing reveals every shown sidebar so its header/footer drop zones exist
+// (a collapsed one only has a rail); leaving restores what was collapsed.
+let revealedByEdit: ('left' | 'right')[] = [];
+$effect(() => {
+  if (editing) {
+    untrack(() => {
+      if (shell.viewport === 'phone') return;
+      for (const edge of ['left', 'right'] as const) {
+        if (shell.isEdgeShown(edge) && shell.panels[edge] === 'collapsed') {
+          shell.setPanelState(edge, 'expanded');
+          revealedByEdit.push(edge);
+        }
+      }
+    });
+    return;
+  }
+  untrack(() => {
+    for (const edge of revealedByEdit) {
+      if (shell.panels[edge] === 'expanded')
+        shell.setPanelState(edge, 'collapsed');
+    }
+    revealedByEdit = [];
+  });
+});
+
+// Escape leaves edit mode, unless it is cancelling something first: a section
+// toolbar (closed by ShellNavEditor, which marks the event handled) or a
+// keyboard move in progress.
+$effect(() => {
+  if (!editing) return;
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    if (slotSortable.drag) return;
+    if (shellRoot?.querySelector('[data-toolbar-open]')) return;
+    layoutApi.setEditing(false);
+  };
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+});
+
 async function toggleEditing(): Promise<void> {
   layoutApi.setEditing(!layoutApi.editing);
   await tick();
@@ -533,12 +573,12 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
     <ShellIconButton
       icon={editing ? 'done' : 'edit'}
       pressed={editing}
-      label={t(M['ui.layout_edit.toggle'])}
+      label={editing ? t(M['ui.layout_edit.toggle_done']) : t(M['ui.layout_edit.toggle'])}
       tooltip={editing ? t(M['ui.layout_edit.toggle_done']) : t(M['ui.layout_edit.toggle'])}
       onclick={toggleEditing}
     />
     {#if editing}
-      <span class="smrt-layout-toggle__status" role="status">{t(M['ui.layout_edit.status_on'])}</span>
+      <span class="smrt-layout-toggle__status" aria-hidden="true">{t(M['ui.layout_edit.done'])}</span>
     {/if}
   </span>
 {/snippet}

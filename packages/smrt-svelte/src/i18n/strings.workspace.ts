@@ -138,7 +138,7 @@ export const M = defineMessages({
   'ui.shell_layout_editor.sortable_label': 'Navigation sections and items',
   'ui.layout_edit.toggle': 'Edit layout',
   'ui.layout_edit.toggle_done': 'Done editing layout',
-  'ui.layout_edit.status_on': 'Editing layout',
+  'ui.layout_edit.done': 'Done',
   'ui.layout_edit.announce_on':
     'Layout editing on. Drag items between zones, or focus a grip, press Space, and use the arrow keys.',
   'ui.layout_edit.announce_off': 'Layout editing off.',

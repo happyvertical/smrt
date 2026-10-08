@@ -41,7 +41,8 @@ function mount(props: Record<string, unknown> = {}) {
   return { changes, api: () => api as ShellLayoutController };
 }
 
-const toggle = () => screen.getByRole('button', { name: 'Edit layout' });
+const toggle = () =>
+  screen.getByRole('button', { name: /^(Edit layout|Done editing layout)$/ });
 const zone = (name: string) =>
   document.querySelector<HTMLElement>(`[data-smrt-edit-zone="${name}"]`);
 const shellSlot = (name: string) =>
@@ -62,15 +63,43 @@ describe('layout edit toggle', () => {
     mount();
     expect(shellSlot('header.end')?.contains(toggle())).toBe(true);
     expect(toggle().getAttribute('aria-pressed')).toBe('false');
-    expect(screen.queryByText('Editing layout')).toBeNull();
+    expect(screen.queryByText('Done')).toBeNull();
     await edit(user);
     expect(toggle().getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText('Editing layout')).toBeTruthy();
-    expect(toggle().getAttribute('title')).toBe('Done editing layout');
+    expect(toggle().getAttribute('aria-label')).toBe('Done editing layout');
+    expect(screen.getByText('Done')).toBeTruthy();
+    expect(screen.queryByText('Editing layout')).toBeNull();
     expect(live()).toContain('Layout editing on');
     await edit(user);
     expect(toggle().getAttribute('aria-pressed')).toBe('false');
-    expect(screen.queryByText('Editing layout')).toBeNull();
+    expect(toggle().getAttribute('aria-label')).toBe('Edit layout');
+    expect(screen.queryByText('Done')).toBeNull();
+  });
+
+  it('Escape exits edit mode when no toolbar is open', async () => {
+    const user = userEvent.setup();
+    mount();
+    await edit(user);
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    await user.keyboard('{Escape}');
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    expect(document.querySelector('[data-smrt-edit-zone]')).toBeNull();
+  });
+
+  it('Escape closes an open section toolbar first, then exits', async () => {
+    const user = userEvent.setup();
+    mount();
+    await edit(user);
+    await user.click(
+      screen.getByRole('button', { name: 'Edit section People' }),
+    );
+    await user.keyboard('{Escape}');
+    expect(
+      screen.queryByRole('group', { name: /Options for section/ }),
+    ).toBeNull();
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    await user.keyboard('{Escape}');
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
   });
 
   it('is absent, and edit mode refused, when the prop is off', () => {
@@ -118,8 +147,9 @@ describe('drop zones', () => {
     expect(zone('leftSidebar.footer')?.textContent).toContain(
       'Left sidebar · Footer',
     );
-    // Right sidebar is not expanded: no zones for it.
-    expect(zone('rightSidebar.header')).toBeNull();
+    // The collapsed right sidebar is revealed while editing.
+    expect(zone('rightSidebar.header')).toBeTruthy();
+    expect(zone('rightSidebar.footer')).toBeTruthy();
     // Items keep the site look (label), plus a grip.
     expect(
       within(zone('header.end') as HTMLElement).getByRole('button', {
@@ -182,6 +212,70 @@ describe('drop zones', () => {
       ).toBeTruthy(),
     );
     expect(document.querySelector('[data-smrt-edit-zone]')).toBeNull();
+  });
+});
+
+describe('right sidebar (dock)', () => {
+  const regionButton = (name: string) =>
+    within(
+      document.querySelector(
+        '[data-region-edit="rightSidebar"]',
+      ) as HTMLElement,
+    ).getByRole('button', { name });
+
+  it('has a hide control, hides to a strip, and shows again', async () => {
+    const user = userEvent.setup();
+    const { changes } = mount();
+    await edit(user);
+    await user.click(regionButton('Hide Right sidebar'));
+    expect(changes.at(-1)?.panels?.right?.visible).toBe(false);
+    const strip = document.querySelector<HTMLElement>(
+      '[data-region-strip="rightSidebar"]',
+    ) as HTMLElement;
+    expect(strip.textContent).toContain('Right sidebar · hidden');
+    expect(zone('rightSidebar.header')).toBeNull();
+    await user.click(
+      within(strip).getByRole('button', { name: 'Show Right sidebar' }),
+    );
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('[data-region-strip="rightSidebar"]'),
+      ).toBeNull(),
+    );
+    expect(regionButton('Hide Right sidebar')).toBeTruthy();
+  });
+
+  it('hiding it leaves the dock unavailable, so dock toggles are inert', async () => {
+    const user = userEvent.setup();
+    const { api } = mount();
+    await edit(user);
+    await user.click(regionButton('Hide Right sidebar'));
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector('[data-region-strip="rightSidebar"]'),
+      ).toBeTruthy(),
+    );
+    const tool = document.querySelector<HTMLElement>(
+      '[data-dock-tool="assistant"]',
+    ) as HTMLElement;
+    expect(tool.getAttribute('aria-disabled')).toBe('true');
+    await user.click(tool);
+    expect(tool.getAttribute('aria-pressed')).toBe('false');
+    expect(api().panels.find((p) => p.edge === 'right')?.visible).toBe(false);
+  });
+
+  it('restores the collapsed sidebar when edit mode ends', async () => {
+    const user = userEvent.setup();
+    mount();
+    await edit(user);
+    expect(zone('rightSidebar.header')).toBeTruthy();
+    await edit(user);
+    expect(zone('rightSidebar.header')).toBeNull();
+    expect(
+      document
+        .querySelector('#smrt-admin-shell-right-panel')
+        ?.getAttribute('data-state'),
+    ).toBe('collapsed');
   });
 });
 
