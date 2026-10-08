@@ -31,6 +31,33 @@ test('listening submit remains pointer-reachable with idle controls hidden', asy
   expect(hit).toBe(true);
 });
 
+test('listening mode shows completed replies without speech or hidden-history controls', async ({ page }) => {
+  let speechRequests = 0;
+  page.on('request', request => {
+    if (request.url().includes('/api/dev-character-speech')) speechRequests++;
+  });
+  let turn = 0;
+  await page.route('**/api/dev-character-conversation', route => route.fulfill({
+    json: { content: ++turn === 1 ? 'Four is the first answer.' : 'Eight is the next answer.' },
+  }));
+  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.getByRole('tab', { name: 'Character conversation' }).click();
+  await page.getByRole('button', { name: 'Listening mode', exact: true }).click();
+  const input = page.getByLabel('Type your message', { exact: true });
+  await expect(input).toBeEnabled();
+  await input.fill('What is two plus two?');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByText('Four is the first answer.', { exact: true })).toBeVisible();
+  await expect(input).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Talk to your assistant', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Conversations', exact: true })).toHaveCount(0);
+  await input.fill('What is four plus four?');
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(page.getByText('Eight is the next answer.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Four is the first answer.', { exact: true })).not.toBeVisible();
+  expect(speechRequests).toBe(0);
+});
+
 async function chooseSyntheticPhoto(page: import('@playwright/test').Page) {
   const buffer = Buffer.from(await page.evaluate(() => {
     const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 120;
