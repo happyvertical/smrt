@@ -1477,7 +1477,18 @@ export class IngestionService {
       "visibility='active' AND expires_at<=?",
       [this.now().toISOString()],
     );
-    for (const item of expired) await this.scheduleExpiry(String(item.id));
+    try {
+      for (const item of expired) await this.scheduleExpiry(String(item.id));
+    } catch (error) {
+      // A later denial must not strand already committed deletion intents.
+      // Preserve the scheduling failure even if cleanup also needs a retry.
+      try {
+        await this.repairDeletions();
+      } catch {
+        // Durable intents remain available to the next authorized repair.
+      }
+      throw error;
+    }
     await this.repairDeletions();
     return expired.length;
   }

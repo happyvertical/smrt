@@ -280,6 +280,72 @@ export function foundationSuite(
       expect(await service.sweepRetention()).toBe(0);
       expect(removals).toBe(3);
     });
+    it('review third regression: denied expiry still cleans earlier scheduled receipts', async () => {
+      for (const key of ['first', 'second']) {
+        const input = receive(key);
+        input.capturedCeiling = { key };
+        expect((await service.receive(input)).kind).toBe('accepted');
+      }
+      const items = (await db.query('SELECT id,data FROM intake_items')).rows;
+      const permitted = items[0];
+      const denied = items[1];
+      const deniedData =
+        typeof denied.data === 'string' ? JSON.parse(denied.data) : denied.data;
+      const deniedKey = deniedData.capturedCeiling.key;
+      const evidence = (
+        await db.query('SELECT item_id,source_uri FROM intake_evidence')
+      ).rows;
+      const filenames = new Map(
+        evidence.map((row) => [
+          String(row.item_id),
+          fileURLToPath(String(row.source_uri)),
+        ]),
+      );
+      const failure = new Error('delete grant revoked');
+      const sweeping = new IngestionService({
+        ...options,
+        authorize: async ({ operation, capturedCeiling }) => {
+          if (operation === 'delete' && capturedCeiling.key === deniedKey)
+            throw failure;
+          return true;
+        },
+      });
+      clock = new Date(clock.getTime() + 100001);
+      await expect(sweeping.sweepRetention()).rejects.toBe(failure);
+      await expect(
+        readFile(filenames.get(String(permitted.id))!),
+      ).rejects.toThrow();
+      expect(await readFile(filenames.get(String(denied.id))!, 'utf8')).toBe(
+        'retained original',
+      );
+      expect(purges).toBe(1);
+      expect(
+        (
+          await db.query(
+            'SELECT visibility FROM intake_items WHERE id=?',
+            denied.id,
+          )
+        ).rows[0].visibility,
+      ).toBe('active');
+      expect(
+        (
+          await db.query(
+            'SELECT state FROM intake_deletions WHERE item_id=?',
+            permitted.id,
+          )
+        ).rows[0].state,
+      ).toBe('completed');
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_deletions WHERE item_id=?',
+            denied.id,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      await expect(sweeping.sweepRetention()).rejects.toBe(failure);
+      expect(purges).toBe(1);
+    });
     it('review regression: reauthorizes receipt reservation on its owning transaction', async () => {
       let granted = true;
       const receiveExecutors: DatabaseInterface[] = [];

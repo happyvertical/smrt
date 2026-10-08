@@ -2,7 +2,7 @@
 
 Refs #3670; frozen contract: [ADR 0004](../adr/0004-application-aware-ingestion.md).
 High risk: persistent tenant/confidential authority, concurrent leases and cross-system recovery.
-Executed evidence is captured outside the worktree in `/home/will/Work/tmp/s3670/evidence`; the review packet records command status, file digest and reviewed revision. The foundation suite executes the same 34 cases on each real database.
+Executed evidence is captured outside the worktree in `/home/will/Work/tmp/s3670/evidence`; the review packet records command status, file digest and reviewed revision. The foundation suite executes the same 35 cases on each real database.
 
 Commands: U = `pnpm --filter @happyvertical/smrt-ingestion test`; P = `pnpm --filter @happyvertical/smrt-ingestion test:postgres`; T = `pnpm --filter @happyvertical/smrt-ingestion typecheck`; K = `pnpm --filter @happyvertical/smrt-ingestion build`.
 Both means actual Node 26 SQLite and PostgreSQL. Every service boundary uses a server-created authenticated scope, and denies both another tenant and a missing confidential grant identically.
@@ -94,3 +94,15 @@ under `/home/will/Work/tmp/s3670/r2-fixes`.
 Only server code, shared database tests and this matrix change. The unchanged-source
 carry-forward rationale above still applies; full ingestion U/P/build/typecheck and
 affected root lint/format/regenerated strict knowledge checks are rerun.
+
+
+## Accepted incremental review correction (round 4)
+
+The mixed-authority `review third regression:` fails on both databases at
+`1301636946a68d8c54b05e15163b07699868ebee`: an earlier authorized receipt retains
+its bytes after a later expiry authorization fails. The corrected sweep attempts
+one repair before rethrowing the original scheduling failure. The test verifies
+earlier bytes and derived data are purged, its tombstone completes, and the denied
+receipt keeps its bytes, active visibility and no deletion intent. Repeated sweeps
+preserve the same denial. Evidence: `/home/will/Work/tmp/s3670/r3-fixes`.
+The same three-file scope and unchanged-source carry-forward rationale apply.
