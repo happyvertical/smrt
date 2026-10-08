@@ -1315,6 +1315,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell {
     --smrt-shell-floating-reserve-inline: 0px;
     --smrt-shell-floating-reserve-block: 0px;
+    --smrt-shell-floating-reserve-main: 0px;
     --smrt-admin-shell-left-track: 0rem;
     --smrt-admin-shell-right-track: 0rem;
     --smrt-admin-shell-top-track: 0rem;
@@ -1466,6 +1467,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-width: 0;
     min-height: 0;
     overflow: auto;
+    padding-block-start: var(--smrt-shell-floating-reserve-main);
     background: var(--smrt-color-surface);
   }
 

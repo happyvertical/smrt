@@ -542,6 +542,28 @@ describe('floating layout edit toggle', () => {
     ).toBe('0px');
   });
 
+  it('reserves room at the top of main when header and right sidebar are hidden', async () => {
+    mount({
+      ...floating,
+      initial: {
+        version: 1,
+        panels: { top: { visible: false }, right: { visible: false } },
+      },
+    });
+    const root = document.querySelector<HTMLElement>('.smrt-admin-shell');
+    await vi.waitFor(() =>
+      expect(
+        root?.style.getPropertyValue('--smrt-shell-floating-reserve-main'),
+      ).not.toBe('0px'),
+    );
+    expect(
+      root?.style.getPropertyValue('--smrt-shell-floating-reserve-block'),
+    ).toBe('0px');
+    expect(
+      root?.style.getPropertyValue('--smrt-shell-floating-reserve-inline'),
+    ).toBe('0px');
+  });
+
   it('has no axe violations', async () => {
     const { container } = render(Harness, floating);
     await expectNoA11yViolations(container);

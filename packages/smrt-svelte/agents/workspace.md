@@ -149,8 +149,9 @@ consumes Escape first).
 `{ floating: true }` instead renders the same button fixed in the top-right
 corner (round, elevated, safe-area aware, z-index 45): not a slot item, not
 movable, never displaced by hidden regions. The header reserves end padding for
-it, or, when the header is hidden, the right sidebar reserves top padding
-(`--smrt-shell-floating-reserve-inline|block`, set by `AppShell`).
+it, or, when the header is hidden, the right sidebar reserves top padding, or main
+does when no right sidebar is shown
+(`--smrt-shell-floating-reserve-inline|block|main`, set by `AppShell`).
 A polite live region announces the mode. `useShellLayout()` has
 `editable`, `editing` and `setEditing(boolean)` for hosts and assistants.
 

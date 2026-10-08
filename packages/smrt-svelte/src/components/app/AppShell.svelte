@@ -367,26 +367,34 @@ setShellLayout(layoutApi);
 // ---- In-place layout editing -------------------------------------------
 const editing = $derived(layoutApi.editing);
 let shellRoot = $state<HTMLElement | undefined>();
-// The floating toggle sits over the header's end (header visible) or the top
-// of the right sidebar (header hidden); reserve that room so it covers no
-// control. AdminShell reads these two custom properties.
+// The floating toggle sits over the header's end (header visible), the top of
+// the right sidebar (header hidden) or the top of main (neither); reserve that room so it covers no
+// control. AdminShell reads these custom properties.
 $effect(() => {
   const root = shellRoot;
   if (!root) return;
   const size = 'calc(2.75rem + var(--smrt-spacing-3))';
   const headerShown = shell.isRegionVisible('header');
   const on = layoutFloating;
+  // Header hidden: the button sits over whichever region is topmost at the
+  // right edge: the right sidebar when shown, otherwise the main content.
+  const sidebarShown = shell.isEdgeShown('right');
   root.style.setProperty(
     '--smrt-shell-floating-reserve-inline',
     on && headerShown ? size : '0px',
   );
   root.style.setProperty(
     '--smrt-shell-floating-reserve-block',
-    on && !headerShown ? size : '0px',
+    on && !headerShown && sidebarShown ? size : '0px',
+  );
+  root.style.setProperty(
+    '--smrt-shell-floating-reserve-main',
+    on && !headerShown && !sidebarShown ? size : '0px',
   );
   return () => {
     root.style.removeProperty('--smrt-shell-floating-reserve-inline');
     root.style.removeProperty('--smrt-shell-floating-reserve-block');
+    root.style.removeProperty('--smrt-shell-floating-reserve-main');
   };
 });
 let modeMessage = $state('');
