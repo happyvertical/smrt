@@ -10,18 +10,18 @@ import {
 import { ProfileCollection } from '@happyvertical/smrt-profiles';
 import { getDatabase } from '@happyvertical/sql';
 import { error, json, type RequestHandler } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import {
-  hasSameOrigin,
-  isLoopbackRequest,
+  isLocalDevCharacterRequest,
   resolveDevCharacterPersistenceConfig,
 } from './config.js';
 
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 
-function requireDevAccess(request: Request) {
+function requireDevAccess(request: Request, getClientAddress: () => string) {
   const config = resolveDevCharacterPersistenceConfig();
   if (!config) error(404, 'Character persistence is not enabled.');
-  if (!isLoopbackRequest(request) || !hasSameOrigin(request)) {
+  if (!isLocalDevCharacterRequest({ dev, request, getClientAddress })) {
     error(
       403,
       'Character persistence is available only from the local workbench.',
@@ -107,9 +107,10 @@ function asPhotoCutoutProfileOwner(
 
 async function withStore<T>(
   request: Request,
+  getClientAddress: () => string,
   operation: (store: PhotoCutoutProfileStore) => Promise<T>,
 ): Promise<T> {
-  const config = requireDevAccess(request);
+  const config = requireDevAccess(request, getClientAddress);
   const db = await getDatabase({ type: 'sqlite', url: config.databaseUrl });
   try {
     const profiles = await ProfileCollection.create({ db });
@@ -134,9 +135,9 @@ async function withStore<T>(
   }
 }
 
-export const GET: RequestHandler = async ({ request }) => {
-  const config = requireDevAccess(request);
-  const saved = await withStore(request, (store) =>
+export const GET: RequestHandler = async ({ request, getClientAddress }) => {
+  const config = requireDevAccess(request, getClientAddress);
+  const saved = await withStore(request, getClientAddress, (store) =>
     store.load({
       actorProfileId: config.profileId,
       profileId: config.profileId,
@@ -153,10 +154,10 @@ export const GET: RequestHandler = async ({ request }) => {
   });
 };
 
-export const POST: RequestHandler = async ({ request }) => {
-  const config = requireDevAccess(request);
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+  const config = requireDevAccess(request, getClientAddress);
   const body = await readBoundedJson(request);
-  const saved = await withStore(request, (store) =>
+  const saved = await withStore(request, getClientAddress, (store) =>
     store.save({
       actorProfileId: config.profileId,
       profileId: config.profileId,

@@ -53,16 +53,36 @@ export function resolveDevCharacterPersistenceConfig(): DevCharacterPersistenceC
   };
 }
 
-export function isLoopbackRequest(request: Request): boolean {
-  const url = new URL(request.url);
+export function isLoopbackAddress(address: string): boolean {
   return (
-    url.hostname === '127.0.0.1' ||
-    url.hostname === '::1' ||
-    url.hostname === 'localhost'
+    address === '127.0.0.1' ||
+    address === '::1' ||
+    address === '::ffff:127.0.0.1'
   );
 }
 
 export function hasSameOrigin(request: Request): boolean {
   const origin = request.headers.get('origin');
   return !origin || origin === new URL(request.url).origin;
+}
+
+/**
+ * The URL and Host header identify the server name, not the caller. Use
+ * SvelteKit's trusted connection address and fail closed when it is absent.
+ */
+export function isLocalDevCharacterRequest({
+  dev,
+  request,
+  getClientAddress,
+}: {
+  dev: boolean;
+  request: Request;
+  getClientAddress: () => string;
+}): boolean {
+  if (!dev || !hasSameOrigin(request)) return false;
+  try {
+    return isLoopbackAddress(getClientAddress());
+  } catch {
+    return false;
+  }
 }

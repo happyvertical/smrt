@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   hasSameOrigin,
-  isLoopbackRequest,
+  isLocalDevCharacterRequest,
   resolveDevCharacterPersistenceConfig,
 } from './config.js';
 
@@ -50,14 +50,20 @@ describe('dev character persistence boundary', () => {
     expect(resolveDevCharacterPersistenceConfig).toThrow('ASSET_DIR');
   });
 
-  it('allows only loopback same-origin requests', () => {
+  it('allows only a trusted loopback peer with a same-origin request', () => {
     const local = new Request(
       'http://127.0.0.1:4187/api/dev-character-persistence',
       {
         headers: { origin: 'http://127.0.0.1:4187' },
       },
     );
-    expect(isLoopbackRequest(local)).toBe(true);
+    expect(
+      isLocalDevCharacterRequest({
+        dev: true,
+        request: local,
+        getClientAddress: () => '127.0.0.1',
+      }),
+    ).toBe(true);
     expect(hasSameOrigin(local)).toBe(true);
     const remote = new Request(
       'https://example.test/api/dev-character-persistence',
@@ -65,7 +71,22 @@ describe('dev character persistence boundary', () => {
         headers: { origin: 'https://attacker.test' },
       },
     );
-    expect(isLoopbackRequest(remote)).toBe(false);
+    expect(
+      isLocalDevCharacterRequest({
+        dev: true,
+        request: local,
+        getClientAddress: () => '203.0.113.1',
+      }),
+    ).toBe(false);
+    expect(
+      isLocalDevCharacterRequest({
+        dev: true,
+        request: local,
+        getClientAddress: () => {
+          throw new Error('unavailable');
+        },
+      }),
+    ).toBe(false);
     expect(hasSameOrigin(remote)).toBe(false);
   });
 });

@@ -25,8 +25,8 @@ vi.mock('../dev-ai.js', () => ({
 import { POST } from './+server.js';
 
 const url = new URL('http://127.0.0.1:4187/api/dev-character-speech');
-const event = (request: Request, eventUrl = url) =>
-  ({ request, url: eventUrl }) as Parameters<typeof POST>[0];
+const event = (request: Request, getClientAddress = () => '127.0.0.1') =>
+  ({ request, url, getClientAddress }) as Parameters<typeof POST>[0];
 const request = (body: unknown, options: RequestInit = {}) =>
   new Request(url, {
     method: 'POST',
@@ -87,7 +87,7 @@ describe('dev character speech', () => {
     ],
   ])('denies %s requests before configuration or provider use', async (_name, eventUrl) => {
     await expect(
-      POST(event(request({ text: 'Hello' }), eventUrl)),
+      POST(event(request({ text: 'Hello' }), () => '203.0.113.1')),
     ).rejects.toMatchObject({ status: 404 });
     expect(mocks.getSpeechSynthesizer).not.toHaveBeenCalled();
   });
@@ -110,7 +110,7 @@ describe('dev character speech', () => {
           ),
         ),
       ),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 404 });
     expect(mocks.getSpeechSynthesizer).not.toHaveBeenCalled();
   });
 

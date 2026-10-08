@@ -198,6 +198,7 @@ async function run(stage: Stage) {
   const selected = source;
   const isolated = head;
   if (!selected || (stage === 'mouth-landmarks' && !isolated)) return;
+  stopSpeech(false);
   invalidate();
   const token = generation;
   const controller = new AbortController();
