@@ -39,6 +39,7 @@ function setup(
 ) {
   const asset = {
     id: 'cutout-asset',
+    name: 'character-cutout.png',
     tenantId: null,
     ownerProfileId: null,
     typeSlug: 'photo-cutout',
@@ -67,10 +68,11 @@ function setup(
       readById: vi.fn(async () => ({ data: Buffer.from('png'), asset })),
     },
   } as unknown as AssetRuntimeLike;
+  const authorize = vi.fn(async () => options.authorize ?? true);
   const store = new PhotoCutoutProfileStore({
     runtime,
     getProfile: vi.fn(async () => profile),
-    authorize: vi.fn(async () => options.authorize ?? true),
+    authorize,
     now: () => new Date('2026-10-07T12:00:00.000Z'),
   });
   const input = {
@@ -78,7 +80,7 @@ function setup(
     profileId: 'profile-owner',
     tenantId: 'tenant-a',
   };
-  return { asset, input, linked, profile, remove, runtime, store };
+  return { asset, authorize, input, linked, profile, remove, runtime, store };
 }
 
 async function png() {
@@ -94,11 +96,42 @@ async function png() {
     .toBuffer();
 }
 
+function persistedRig() {
+  const persisted = structuredClone(rig);
+  for (const layer of persisted.layers) {
+    if ('assetId' in layer) layer.assetId = 'character_cutout';
+  }
+  return persisted;
+}
+
+function savedAsset(
+  id: string,
+  savedAt: string,
+  overrides: Partial<Asset> = {},
+): Asset {
+  return {
+    id,
+    name: `${id}.png`,
+    ownerProfileId: 'profile-owner',
+    tenantId: 'tenant-a',
+    typeSlug: 'photo-cutout',
+    metadata: JSON.stringify({
+      photoCutout: { version: 1, savedAt, rig: persistedRig() },
+    }),
+    ...overrides,
+  } as Asset;
+}
+
 describe('PhotoCutoutProfileStore', () => {
   it('persists durable owner-bound bytes and reloads a versioned asset-id rig', async () => {
-    const { asset, input, store } = setup();
+    const { asset, input, runtime, store } = setup();
+    const bytes = await png();
+    vi.mocked(runtime.store.readById).mockResolvedValue({
+      data: bytes,
+      asset,
+    });
 
-    const saved = await store.save({ ...input, png: await png(), rig });
+    const saved = await store.save({ ...input, png: bytes, rig });
     const loaded = await store.load(input);
 
     expect(saved.assetId).toBe('cutout-asset');
@@ -116,7 +149,98 @@ describe('PhotoCutoutProfileStore', () => {
       assetId: 'cutout-asset',
       savedAt: saved.savedAt,
     });
-    expect(loaded?.png).toEqual(Buffer.from('png'));
+    expect(loaded?.png).toEqual(bytes);
+  });
+
+  it('lists profile-linked saved setups and selects either one while preserving latest load compatibility', async () => {
+    const { asset, input, linked, runtime, store } = setup();
+    const older = savedAsset('cutout-older', '2026-10-06T12:00:00.000Z', {
+      name: 'Older portrait',
+    });
+    const newer = savedAsset('cutout-newer', '2026-10-07T12:00:00.000Z', {
+      name: 'Newer portrait',
+    });
+    linked.push(older, newer);
+    const bytes = await png();
+    vi.mocked(runtime.store.readById).mockResolvedValue({ data: bytes, asset });
+
+    await expect(store.list(input)).resolves.toEqual([
+      {
+        assetId: 'cutout-newer',
+        savedAt: '2026-10-07T12:00:00.000Z',
+        name: 'Newer portrait',
+      },
+      {
+        assetId: 'cutout-older',
+        savedAt: '2026-10-06T12:00:00.000Z',
+        name: 'Older portrait',
+      },
+    ]);
+    await expect(store.load(input)).resolves.toMatchObject({
+      assetId: 'cutout-newer',
+    });
+    await expect(
+      store.load({ ...input, assetId: 'cutout-older' }),
+    ).resolves.toMatchObject({ assetId: 'cutout-older' });
+  });
+
+  it('does not expose unlinked, cross-owner, cross-tenant, or unknown assets', async () => {
+    const { input, linked, runtime, store } = setup();
+    const linkedAsset = savedAsset('linked', '2026-10-07T12:00:00.000Z');
+    const unlinkedAsset = savedAsset('unlinked', '2026-10-08T12:00:00.000Z');
+    linked.push(
+      linkedAsset,
+      savedAsset('other-owner', '2026-10-08T12:00:00.000Z', {
+        ownerProfileId: 'other-profile',
+      }),
+      savedAsset('other-tenant', '2026-10-08T12:00:00.000Z', {
+        tenantId: 'tenant-b',
+      }),
+    );
+
+    await expect(store.list(input)).resolves.toEqual([
+      {
+        assetId: 'linked',
+        savedAt: '2026-10-07T12:00:00.000Z',
+        name: 'linked.png',
+      },
+    ]);
+    await expect(
+      store.load({ ...input, assetId: 'unknown-asset' }),
+    ).resolves.toBeNull();
+    await expect(
+      store.load({ ...input, assetId: unlinkedAsset.id as string }),
+    ).resolves.toBeNull();
+    expect(runtime.store.readById).not.toHaveBeenCalled();
+  });
+
+  it('uses load authorization for listing and fails closed for corrupt manifests or unavailable bytes', async () => {
+    const { authorize, input, linked, runtime, store } = setup();
+    linked.push(savedAsset('valid', '2026-10-07T12:00:00.000Z'));
+    await expect(store.list(input)).resolves.toHaveLength(1);
+    expect(authorize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ operation: 'load' }),
+    );
+    expect(runtime.store.readById).not.toHaveBeenCalled();
+
+    linked[0].metadata = '{bad json';
+    await expect(store.list(input)).rejects.toThrow('manifest is malformed');
+
+    linked[0] = savedAsset('valid', '2026-10-07T12:00:00.000Z');
+    vi.mocked(runtime.store.readById).mockResolvedValue(null);
+    await expect(store.load(input)).rejects.toThrow('bytes are unavailable');
+
+    vi.mocked(runtime.store.readById).mockResolvedValue({
+      data: Buffer.from('not a png'),
+      asset: linked[0],
+    });
+    await expect(store.load(input)).rejects.toThrow('must be a PNG');
+  });
+
+  it('denies listing when the host declines read authorization', async () => {
+    const { input, runtime, store } = setup({ authorize: false });
+    await expect(store.list(input)).rejects.toThrow('authorization denied');
+    expect(runtime.store.readById).not.toHaveBeenCalled();
   });
 
   it('denies an unauthorized different actor before storing bytes', async () => {

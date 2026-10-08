@@ -52,6 +52,11 @@ export interface LoadPhotoCutoutProfileSetupInput {
   actorProfileId: string;
   profileId: string;
   tenantId: string | null;
+  /**
+   * A photo-cutout asset already linked to this profile. Omitting this keeps
+   * the original behavior of loading the most recently saved setup.
+   */
+  assetId?: string;
 }
 
 export interface PersistedPhotoCutoutSetup {
@@ -59,6 +64,13 @@ export interface PersistedPhotoCutoutSetup {
   rig: PhotoCutoutRig;
   png: Buffer;
   savedAt: string;
+}
+
+/** Metadata for an authorized saved setup, without reading its PNG bytes. */
+export interface SavedPhotoCutoutProfileSetup {
+  assetId: string;
+  savedAt: string;
+  name?: string;
 }
 
 interface PhotoCutoutManifest {
@@ -143,8 +155,46 @@ export class PhotoCutoutProfileStore {
     input: LoadPhotoCutoutProfileSetupInput,
   ): Promise<PersistedPhotoCutoutSetup | null> {
     const profile = await this.requireAuthorizedProfile(input, 'load');
+    const saved = await this.readSaved(profile, input);
+    const selected = input.assetId
+      ? saved.find((candidate) => candidate.assetId === input.assetId)
+      : saved[0];
+    if (!selected) return null;
+    const read = await this.options.runtime.store.readById(selected.assetId);
+    if (!read) throw new Error('Saved photo cutout bytes are unavailable');
+    await assertPngMatchesRig(read.data, selected.manifest.rig);
+    return {
+      assetId: selected.assetId,
+      rig: selected.manifest.rig,
+      png: read.data,
+      savedAt: selected.manifest.savedAt,
+    };
+  }
+
+  /**
+   * Lists valid, profile-linked saved setups without fetching their image
+   * bytes. Authorization deliberately follows `load`: gallery visibility is
+   * the same protected read as selecting a setup.
+   */
+  async list(
+    input: LoadPhotoCutoutProfileSetupInput,
+  ): Promise<SavedPhotoCutoutProfileSetup[]> {
+    const profile = await this.requireAuthorizedProfile(input, 'load');
+    return (await this.readSaved(profile, input)).map(
+      ({ asset, assetId, manifest }) => ({
+        assetId,
+        savedAt: manifest.savedAt,
+        ...(asset.name ? { name: asset.name } : {}),
+      }),
+    );
+  }
+
+  private async readSaved(
+    profile: PhotoCutoutProfileOwner,
+    input: Pick<LoadPhotoCutoutProfileSetupInput, 'profileId' | 'tenantId'>,
+  ) {
     const candidates = await profile.getAssets(RELATIONSHIP);
-    const saved = candidates
+    return candidates
       .filter(
         (asset) =>
           asset.id &&
@@ -162,16 +212,6 @@ export class PhotoCutoutProfileStore {
           b.manifest.savedAt.localeCompare(a.manifest.savedAt) ||
           b.assetId.localeCompare(a.assetId),
       );
-    const latest = saved[0];
-    if (!latest) return null;
-    const read = await this.options.runtime.store.readById(latest.assetId);
-    if (!read) throw new Error('Saved photo cutout bytes are unavailable');
-    return {
-      assetId: latest.assetId,
-      rig: latest.manifest.rig,
-      png: read.data,
-      savedAt: latest.manifest.savedAt,
-    };
   }
 
   private async requireAuthorizedProfile(

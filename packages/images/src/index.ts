@@ -70,6 +70,7 @@ export {
   PhotoCutoutProfileStore,
   type PhotoCutoutProfileStoreAuthorization,
   type PhotoCutoutProfileStoreOptions,
+  type SavedPhotoCutoutProfileSetup,
   type SavePhotoCutoutProfileSetupInput,
 } from './photo-cutout-profile-store.js';
 export {
