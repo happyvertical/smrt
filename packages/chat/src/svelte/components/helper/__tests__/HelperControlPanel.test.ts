@@ -122,22 +122,36 @@ describe('HelperControlPanel', () => {
     expect(screen.getByLabelText('Display name')).toHaveValue('Happy');
   });
 
-  it('keeps reset reachable when an unavailable stored selection has no effective preferences', async () => {
+  it('uses a server recovery draft to save an allowed replacement without applying it early', async () => {
     const unavailable: HelperSnapshot = {
       ...snapshot(),
       preferences: null,
       offering: null,
       source: 'unavailable',
       hasOverride: true,
+      recoveryDraft: {
+        version: 1,
+        offeringId: 'removed-photo',
+        name: 'Happy',
+        voiceId: 'calm',
+        placement: 'bottom-right',
+        heardSubtitles: true,
+        spokenSubtitles: false,
+      },
       recovery: {
         code: 'unavailable-offering',
-        message: 'Saved helper is unavailable.',
+        message: 'The old helper is unavailable.',
       },
     };
-    const recovered = snapshot();
+    const recovered: HelperSnapshot = {
+      ...snapshot(),
+      preferences: { ...snapshot().preferences!, offeringId: 'photo:1' },
+      offering: snapshot().offerings[1],
+      source: 'personal',
+    };
     const client: HelperClient = {
       load: vi.fn(async () => unavailable),
-      save: vi.fn(),
+      save: vi.fn(async () => recovered),
       reset: vi.fn(async () => recovered),
     };
     const changed = vi.fn();
@@ -150,26 +164,27 @@ describe('HelperControlPanel', () => {
       },
     });
     expect(
-      screen.getByText('Saved helper is unavailable.'),
+      screen.getByText('The old helper is unavailable.'),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Reset to application defaults' }),
-    ).toBeEnabled();
-    expect(
-      screen.queryByRole('button', { name: 'Save settings' }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Saved photo' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('radio', { name: 'Saved photo' }));
     await userEvent.click(
-      screen.getByRole('button', { name: 'Reset to application defaults' }),
+      screen.getByRole('button', { name: 'Save settings' }),
     );
-    expect(client.reset).toHaveBeenCalledOnce();
+    expect(client.save).toHaveBeenCalledWith(
+      expect.objectContaining({ offeringId: 'photo:1' }),
+    );
     expect(changed).toHaveBeenCalledWith(recovered);
   });
 
-  it('locks an owner-assigned helper without a save action', () => {
+  it('keeps an unavailable owner assignment locked without inventing recovery fields', () => {
     const assigned: HelperSnapshot = {
       ...snapshot(),
+      preferences: null,
+      offering: null,
+      recoveryDraft: null,
       selection: 'owner-assigned',
-      source: 'assigned',
+      source: 'unavailable',
       permissions: { editableFields: [], canReset: false, customStyleIds: [] },
     };
     const client: HelperClient = {
@@ -190,7 +205,6 @@ describe('HelperControlPanel', () => {
     expect(
       screen.queryByRole('button', { name: 'Reset to application defaults' }),
     ).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Display name')).toBeDisabled();
     expect(screen.getByRole('radio', { name: 'Happy' })).toBeDisabled();
   });
 

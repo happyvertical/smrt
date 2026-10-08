@@ -393,6 +393,79 @@ describe('conversation lifecycle', () => {
     await new Promise((done) => setTimeout(done, 0));
     expect(mocks.mount).toHaveBeenCalledTimes(1);
   });
+
+  it('does not fall back to the legacy photo when an authoritative helper snapshot is unavailable', async () => {
+    mocks.load.mockResolvedValue(saved('legacy'));
+    render(CharacterConversation, {
+      props: {
+        helperSnapshot: {
+          preferences: null,
+          offering: null,
+          selection: 'owner-assigned',
+          source: 'unavailable',
+          offerings: [],
+          voices: [],
+          permissions: {
+            editableFields: [],
+            canReset: false,
+            customStyleIds: [],
+          },
+          hasOverride: false,
+          recovery: { code: 'unavailable-offering', message: 'Unavailable' },
+        },
+      },
+    });
+    await screen.findByText('Open Helper settings to choose a saved helper.');
+    expect(mocks.load).not.toHaveBeenCalled();
+    expect(mocks.mount).not.toHaveBeenCalled();
+  });
+
+  it('destroys a delayed helper renderer that resolves after its tab becomes inactive', async () => {
+    const pending = deferred<any>();
+    const destroy = vi.fn();
+    const mount = vi.fn(() => pending.promise);
+    const registry = { get: () => ({ mount }) };
+    const snapshot = {
+      preferences: {
+        version: 1,
+        offeringId: 'happy',
+        name: 'Happy',
+        voiceId: 'marin',
+        placement: 'bottom-right',
+        heardSubtitles: true,
+        spokenSubtitles: true,
+      },
+      offering: {
+        id: 'happy',
+        label: 'Happy',
+        styleId: 'happy',
+        source: 'ready-made',
+      },
+      selection: 'personal',
+      source: 'personal',
+      offerings: [],
+      voices: [],
+      permissions: { editableFields: [], canReset: false, customStyleIds: [] },
+      hasOverride: true,
+      recovery: null,
+    } as any;
+    const view = render(CharacterConversation, {
+      props: {
+        helperSnapshot: snapshot,
+        helperRegistry: registry as any,
+        loadHelperPayload: async () => null,
+      },
+    });
+    await vi.waitFor(() => expect(mount).toHaveBeenCalledOnce());
+    await view.rerender({
+      active: false,
+      helperSnapshot: snapshot,
+      helperRegistry: registry as any,
+      loadHelperPayload: async () => null,
+    });
+    pending.resolve({ destroy, setMouthOpen: vi.fn() });
+    await vi.waitFor(() => expect(destroy).toHaveBeenCalledOnce());
+  });
   it('publishes captions only on actual playback and clears failure', async () => {
     const request = vi
       .fn()

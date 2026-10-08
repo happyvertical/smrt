@@ -19,3 +19,8 @@ and reset. Invalid old values produce a recoverable snapshot without silently
 overwriting metadata. Owner-assigned policies ignore personal state and deny
 save/reset. An offering validator must re-check saved asset ownership, tenant,
 relationship, and payload before it can become effective.
+
+When an editable policy has no valid effective helper but can preserve its
+locked baseline fields while selecting an offered replacement, the snapshot
+contains `recoveryDraft`. It is an edit candidate only: UI must submit it to
+`save()` and wait for the returned snapshot before applying it.

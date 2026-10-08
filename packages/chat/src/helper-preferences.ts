@@ -56,6 +56,11 @@ export interface HelperRecovery {
 }
 export interface HelperSnapshot {
   preferences: HelperPreferences | null;
+  /**
+   * A server-derived edit candidate after an unavailable non-owner selection.
+   * It is never effective or applied until `HelperClient.save()` succeeds.
+   */
+  recoveryDraft?: HelperPreferences | null;
   offering: HelperOffering | null;
   selection: HelperSelectionPolicy;
   source: 'default' | 'assigned' | 'personal' | 'unavailable';

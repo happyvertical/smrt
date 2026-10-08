@@ -387,6 +387,10 @@ async function refreshCharacter() {
     const preferences = helperSnapshot?.preferences;
     const offering = helperSnapshot?.offering;
     if (!preferences || !offering || !helperRegistry || !loadHelperPayload) {
+      if (helperSnapshot) {
+        unavailable = t(helperMessages['chat.helper.open_settings_to_choose']);
+        return;
+      }
       // Retain the original workbench lifecycle for hosts that have not yet
       // enabled helper preferences.
       const saved = await createDevCharacterPersistenceClient().load();
@@ -419,11 +423,16 @@ async function refreshCharacter() {
     }
     const payload = await loadHelperPayload(offering);
     if (generation !== loadGeneration || !active || !ready) return;
-    mounted = await style.mount({
+    const next = await style.mount({
       target,
       offering,
       payload,
     });
+    if (generation !== loadGeneration || !active || !ready) {
+      next.destroy();
+      return;
+    }
+    mounted = next;
   } catch (error) {
     if (generation === loadGeneration && active && ready)
       unavailable =

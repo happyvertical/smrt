@@ -41,14 +41,26 @@ let loading = $state(!snapshot);
 let saving = $state(false);
 let message = $state<string | null>(null);
 let draft = $state<HelperPreferences | null>(
-  snapshot?.preferences ? { ...snapshot.preferences } : null,
+  snapshot?.preferences
+    ? { ...snapshot.preferences }
+    : snapshot?.recoveryDraft
+      ? { ...snapshot.recoveryDraft }
+      : null,
 );
 let setupStyleId = $state<string | null>(null);
 let previewTarget = $state<HTMLElement>();
 let previewError = $state<string | null>(null);
 
 $effect(() => {
-  if (snapshot?.preferences) draft = { ...snapshot.preferences };
+  if (!snapshot) return;
+  // `recoveryDraft` is a server-issued candidate only. Keeping it separate
+  // from `preferences` prevents an unavailable helper from being rendered as
+  // applied while still allowing permitted replacement fields to be saved.
+  draft = snapshot.preferences
+    ? { ...snapshot.preferences }
+    : snapshot.recoveryDraft
+      ? { ...snapshot.recoveryDraft }
+      : null;
 });
 $effect(() => {
   if (snapshot) {
@@ -61,7 +73,11 @@ $effect(() => {
     .then((next) => {
       if (!active) return;
       snapshot = next;
-      draft = next.preferences ? { ...next.preferences } : null;
+      draft = next.preferences
+        ? { ...next.preferences }
+        : next.recoveryDraft
+          ? { ...next.recoveryDraft }
+          : null;
     })
     .catch((error: unknown) => {
       if (active)
@@ -169,7 +185,11 @@ async function reset() {
 }
 function apply(next: HelperSnapshot) {
   snapshot = next;
-  draft = next.preferences ? { ...next.preferences } : null;
+  draft = next.preferences
+    ? { ...next.preferences }
+    : next.recoveryDraft
+      ? { ...next.recoveryDraft }
+      : null;
   onchanged?.(next);
 }
 async function customSaved(offering: HelperOffering) {

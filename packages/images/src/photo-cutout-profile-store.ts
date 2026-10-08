@@ -79,6 +79,8 @@ interface PhotoCutoutManifest {
   rig: PhotoCutoutRig;
 }
 
+class PhotoCutoutManifestError extends Error {}
+
 /**
  * Persists one profile-owned photographic character setup using the canonical
  * AssetRuntime bytes and ProfileAsset link. Authentication stays with the host;
@@ -155,19 +157,30 @@ export class PhotoCutoutProfileStore {
     input: LoadPhotoCutoutProfileSetupInput,
   ): Promise<PersistedPhotoCutoutSetup | null> {
     const profile = await this.requireAuthorizedProfile(input, 'load');
-    const saved = await this.readSaved(profile, input);
-    const selected = input.assetId
-      ? saved.find((candidate) => candidate.assetId === input.assetId)
-      : saved[0];
+    if (input.assetId) {
+      const selected = (await this.readLinkedCandidates(profile, input)).find(
+        (candidate) => candidate.assetId === input.assetId,
+      );
+      if (!selected) return null;
+      return this.loadSelected(selected.assetId, readManifest(selected.asset));
+    }
+    const selected = (await this.readSaved(profile, input))[0];
     if (!selected) return null;
-    const read = await this.options.runtime.store.readById(selected.assetId);
+    return this.loadSelected(selected.assetId, selected.manifest);
+  }
+
+  private async loadSelected(
+    assetId: string,
+    manifest: PhotoCutoutManifest,
+  ): Promise<PersistedPhotoCutoutSetup> {
+    const read = await this.options.runtime.store.readById(assetId);
     if (!read) throw new Error('Saved photo cutout bytes are unavailable');
-    await assertPngMatchesRig(read.data, selected.manifest.rig);
+    await assertPngMatchesRig(read.data, manifest.rig);
     return {
-      assetId: selected.assetId,
-      rig: selected.manifest.rig,
+      assetId,
+      rig: manifest.rig,
       png: read.data,
-      savedAt: selected.manifest.savedAt,
+      savedAt: manifest.savedAt,
     };
   }
 
@@ -180,38 +193,58 @@ export class PhotoCutoutProfileStore {
     input: LoadPhotoCutoutProfileSetupInput,
   ): Promise<SavedPhotoCutoutProfileSetup[]> {
     const profile = await this.requireAuthorizedProfile(input, 'load');
-    return (await this.readSaved(profile, input)).map(
-      ({ asset, assetId, manifest }) => ({
-        assetId,
-        savedAt: manifest.savedAt,
-        ...(asset.name ? { name: asset.name } : {}),
-      }),
-    );
+    return (
+      await this.readSaved(profile, input, { omitInvalidManifests: true })
+    ).map(({ asset, assetId, manifest }) => ({
+      assetId,
+      savedAt: manifest.savedAt,
+      ...(asset.name ? { name: asset.name } : {}),
+    }));
   }
 
   private async readSaved(
     profile: PhotoCutoutProfileOwner,
     input: Pick<LoadPhotoCutoutProfileSetupInput, 'profileId' | 'tenantId'>,
+    options: { omitInvalidManifests?: boolean } = {},
   ) {
-    const candidates = await profile.getAssets(RELATIONSHIP);
-    return candidates
-      .filter(
-        (asset) =>
-          asset.id &&
-          asset.ownerProfileId === input.profileId &&
-          asset.tenantId === input.tenantId &&
-          asset.typeSlug === 'photo-cutout',
-      )
-      .flatMap((asset) => {
-        const assetId = asset.id;
-        if (!assetId) return [];
-        return [{ asset, assetId, manifest: readManifest(asset) }];
+    return (await this.readLinkedCandidates(profile, input))
+      .flatMap(({ asset, assetId }) => {
+        try {
+          return [{ asset, assetId, manifest: readManifest(asset) }];
+        } catch (cause) {
+          if (
+            options.omitInvalidManifests &&
+            cause instanceof PhotoCutoutManifestError
+          ) {
+            return [];
+          }
+          throw cause;
+        }
       })
       .sort(
         (a, b) =>
           b.manifest.savedAt.localeCompare(a.manifest.savedAt) ||
           b.assetId.localeCompare(a.assetId),
       );
+  }
+
+  private readLinkedCandidates(
+    profile: PhotoCutoutProfileOwner,
+    input: Pick<LoadPhotoCutoutProfileSetupInput, 'profileId' | 'tenantId'>,
+  ) {
+    return profile.getAssets(RELATIONSHIP).then((candidates) =>
+      candidates.flatMap((asset) => {
+        if (
+          !asset.id ||
+          asset.ownerProfileId !== input.profileId ||
+          asset.tenantId !== input.tenantId ||
+          asset.typeSlug !== 'photo-cutout'
+        ) {
+          return [];
+        }
+        return [{ asset, assetId: asset.id }];
+      }),
+    );
   }
 
   private async requireAuthorizedProfile(
@@ -251,14 +284,20 @@ function readManifest(asset: Asset): PhotoCutoutManifest {
   try {
     parsed = JSON.parse(asset.metadata);
   } catch {
-    throw new Error('Saved photo cutout manifest is malformed');
+    throw new PhotoCutoutManifestError(
+      'Saved photo cutout manifest is malformed',
+    );
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('Saved photo cutout manifest is malformed');
+    throw new PhotoCutoutManifestError(
+      'Saved photo cutout manifest is malformed',
+    );
   }
   const manifest = (parsed as { photoCutout?: unknown }).photoCutout;
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
-    throw new Error('Saved photo cutout manifest is malformed');
+    throw new PhotoCutoutManifestError(
+      'Saved photo cutout manifest is malformed',
+    );
   }
   const value = manifest as Partial<PhotoCutoutManifest>;
   if (
@@ -267,9 +306,17 @@ function readManifest(asset: Asset): PhotoCutoutManifest {
     Number.isNaN(Date.parse(value.savedAt)) ||
     !value.rig
   ) {
-    throw new Error('Saved photo cutout manifest has an unsupported version');
+    throw new PhotoCutoutManifestError(
+      'Saved photo cutout manifest has an unsupported version',
+    );
   }
-  validatePhotoCutoutRig(value.rig);
+  try {
+    validatePhotoCutoutRig(value.rig);
+  } catch {
+    throw new PhotoCutoutManifestError(
+      'Saved photo cutout manifest rig is invalid',
+    );
+  }
   if (
     !asset.id ||
     value.rig.layers.some(
@@ -278,7 +325,9 @@ function readManifest(asset: Asset): PhotoCutoutManifest {
         layer.assetId !== PHOTO_CUTOUT_PERSISTED_ASSET_REF,
     )
   ) {
-    throw new Error('Saved photo cutout manifest does not match its asset');
+    throw new PhotoCutoutManifestError(
+      'Saved photo cutout manifest does not match its asset',
+    );
   }
   return { version: MANIFEST_VERSION, savedAt: value.savedAt, rig: value.rig };
 }

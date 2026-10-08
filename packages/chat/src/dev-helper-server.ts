@@ -27,6 +27,29 @@ const DEFAULT_PREFERENCES = {
   heardSubtitles: true,
   spokenSubtitles: true,
 };
+// The opt-in workbench is one local process. Profile metadata offers
+// whole-value last-successful-write-wins, so serialize its first-write window
+// here; this is intentionally not a distributed locking claim.
+const localWrites = new Map<string, Promise<void>>();
+
+export async function serializeDevHelperWrite<T>(
+  config: DevCharacterPersistenceConfig,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const key = `${config.databaseUrl}\u0000${config.profileId}\u0000${DEV_HELPER_APPLICATION_ID}`;
+  const previous = localWrites.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => (release = resolve));
+  const tail = previous.then(() => current);
+  localWrites.set(key, tail);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (localWrites.get(key) === tail) localWrites.delete(key);
+  }
+}
 
 function asOwner(
   profile: {

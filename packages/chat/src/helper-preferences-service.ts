@@ -232,6 +232,10 @@ export class HelperPreferencesService {
   ): HelperSnapshot {
     return {
       preferences: prefs,
+      recoveryDraft:
+        prefs === null && p.selection !== 'owner-assigned'
+          ? this.#recoveryDraft(p, permissions)
+          : null,
       offering: prefs
         ? (p.offerings.find((x) => x.id === prefs.offeringId) ?? null)
         : null,
@@ -243,6 +247,26 @@ export class HelperPreferencesService {
       hasOverride,
       recovery,
     };
+  }
+  #recoveryDraft(
+    p: HelperPolicy,
+    permissions: HelperSnapshot['permissions'],
+  ): HelperPreferences | null {
+    const candidate = { ...p.defaultPreferences };
+    const offering = p.offerings.find(
+      (item) => item.id === candidate.offeringId,
+    );
+    if (!offering) {
+      if (!permissions.editableFields.includes('offeringId') || !p.offerings[0])
+        return null;
+      candidate.offeringId = p.offerings[0].id;
+    }
+    if (!p.voices.some((voice) => voice.id === candidate.voiceId)) {
+      if (!permissions.editableFields.includes('voiceId') || !p.voices[0])
+        return null;
+      candidate.voiceId = p.voices[0].id;
+    }
+    return parseHelperPreferences(candidate);
   }
   #fields(): readonly HelperPreferenceField[] {
     return [

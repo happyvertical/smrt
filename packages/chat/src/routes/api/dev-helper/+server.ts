@@ -1,6 +1,9 @@
 import { error, json, type RequestHandler } from '@sveltejs/kit';
 import { dev } from '$app/environment';
-import { openDevHelperService } from '../../../dev-helper-server.js';
+import {
+  openDevHelperService,
+  serializeDevHelperWrite,
+} from '../../../dev-helper-server.js';
 import {
   HelperPreferencesAuthorizationError,
   HelperPreferencesValidationError,
@@ -60,22 +63,28 @@ async function serve(
   getClientAddress: () => string,
   operation: 'load' | 'save' | 'reset',
 ) {
-  const host = await openDevHelperService(config(request, getClientAddress));
-  try {
-    if (operation === 'load')
-      return json(await host.service.load(host.context));
-    if (operation === 'reset')
-      return json(await host.service.reset(host.context));
-    return json(await host.service.save(host.context, await body(request)));
-  } catch (cause) {
-    if (cause instanceof HelperPreferencesAuthorizationError)
-      error(403, 'Helper preferences are not authorized.');
-    if (cause instanceof HelperPreferencesValidationError)
-      error(400, cause.message);
-    throw cause;
-  } finally {
-    await host.close();
-  }
+  const local = config(request, getClientAddress);
+  const execute = async () => {
+    const host = await openDevHelperService(local);
+    try {
+      if (operation === 'load')
+        return json(await host.service.load(host.context));
+      if (operation === 'reset')
+        return json(await host.service.reset(host.context));
+      return json(await host.service.save(host.context, await body(request)));
+    } catch (cause) {
+      if (cause instanceof HelperPreferencesAuthorizationError)
+        error(403, 'Helper preferences are not authorized.');
+      if (cause instanceof HelperPreferencesValidationError)
+        error(400, cause.message);
+      throw cause;
+    } finally {
+      await host.close();
+    }
+  };
+  return operation === 'load'
+    ? execute()
+    : serializeDevHelperWrite(local, execute);
 }
 
 export const GET: RequestHandler = ({ request, getClientAddress }) =>

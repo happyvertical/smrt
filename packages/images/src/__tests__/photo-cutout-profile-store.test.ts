@@ -214,7 +214,7 @@ describe('PhotoCutoutProfileStore', () => {
     expect(runtime.store.readById).not.toHaveBeenCalled();
   });
 
-  it('uses load authorization for listing and fails closed for corrupt manifests or unavailable bytes', async () => {
+  it('uses load authorization, omits corrupt gallery manifests, and fails closed for selected corrupt manifests or unavailable bytes', async () => {
     const { authorize, input, linked, runtime, store } = setup();
     linked.push(savedAsset('valid', '2026-10-07T12:00:00.000Z'));
     await expect(store.list(input)).resolves.toHaveLength(1);
@@ -224,7 +224,19 @@ describe('PhotoCutoutProfileStore', () => {
     expect(runtime.store.readById).not.toHaveBeenCalled();
 
     linked[0].metadata = '{bad json';
-    await expect(store.list(input)).rejects.toThrow('manifest is malformed');
+    await expect(store.list(input)).resolves.toEqual([]);
+    await expect(store.load({ ...input, assetId: 'valid' })).rejects.toThrow(
+      'manifest is malformed',
+    );
+
+    linked.push(savedAsset('other-valid', '2026-10-08T12:00:00.000Z'));
+    await expect(store.list(input)).resolves.toEqual([
+      {
+        assetId: 'other-valid',
+        savedAt: '2026-10-08T12:00:00.000Z',
+        name: 'other-valid.png',
+      },
+    ]);
 
     linked[0] = savedAsset('valid', '2026-10-07T12:00:00.000Z');
     vi.mocked(runtime.store.readById).mockResolvedValue(null);

@@ -30,10 +30,12 @@ asset, links it to the profile as `character_cutout`, and stores a versioned
 rig manifest that refers to the stable `character_cutout` asset key. The host
 maps that key to returned durable bytes; UUIDs and expiring URLs are never
 baked into the rig. It rejects another tenant, declined authorization, malformed
-or unsupported manifests, invalid PNG dimensions, and missing saved bytes. The
-store compensates only the just-created owned asset if an unlinked profile write
-fails. Authorized readers can list stable saved-setup summaries without loading
-PNG bytes, then select only an existing owner- and tenant-bound
+or unsupported selected manifests, invalid PNG dimensions, and missing saved
+bytes. The store compensates only the just-created owned asset if an unlinked
+profile write fails. Authorized readers can list stable saved-setup summaries
+without loading PNG bytes; malformed linked manifests are omitted from that
+gallery so valid offerings remain recoverable. Readers can then select only an
+existing owner- and tenant-bound
 `character_cutout` asset; an omitted asset id still loads the latest setup.
 `PhotoCutoutSetup` accepts host-provided save/load callbacks and never
 uses browser storage as an asset catalog. The chat workbench's local callback
@@ -43,8 +45,8 @@ is not a production authorization mechanism.
 
 Persistence test design: focused unit coverage exercises authorized and denied
 actor cases, tenant mismatch, PNG/frame rejection, malformed/versioned manifest
-rejection, selected/latest gallery loads, failed-link compensation, and an
-adapter that links before throwing.
+omission from galleries and rejection on selection, selected/latest gallery
+loads, failed-link compensation, and an adapter that links before throwing.
 The SQLite integration test creates the `AssetRuntime`, Profile, and
 `ProfileAsset` link inside one transaction executor, then reloads after commit.
 The service is adapter-neutral; PostgreSQL execution belongs to the consuming

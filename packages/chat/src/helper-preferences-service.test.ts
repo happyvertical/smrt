@@ -269,4 +269,31 @@ describe('HelperPreferencesService', () => {
       HelperPreferencesAuthorizationError,
     );
   });
+
+  it('provides a complete editable recovery draft without changing locked values', async () => {
+    const persistence = store({ ...defaults, offeringId: 'removed' });
+    const unavailableDefault = policy('app-default-with-personal-override');
+    unavailableDefault.defaultPreferences = {
+      ...defaults,
+      offeringId: 'removed',
+    };
+    unavailableDefault.customizable = ['offeringId'];
+    const service = new HelperPreferencesService({
+      store: persistence,
+      resolvePolicy: () => unavailableDefault,
+      authorize: () => true,
+      styleIds: ['happy'],
+      validateOffering: () => {},
+    });
+    const snapshot = await service.load(context);
+    expect(snapshot).toMatchObject({
+      preferences: null,
+      recoveryDraft: { offeringId: 'happy', name: 'Happy', voiceId: 'marin' },
+    });
+    await expect(
+      service.save(context, snapshot.recoveryDraft),
+    ).resolves.toMatchObject({
+      preferences: { offeringId: 'happy', name: 'Happy', voiceId: 'marin' },
+    });
+  });
 });

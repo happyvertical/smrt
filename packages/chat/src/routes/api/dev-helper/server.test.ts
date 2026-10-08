@@ -19,6 +19,8 @@ vi.mock('$app/environment', () => ({
 }));
 vi.mock('../../../dev-helper-server.js', () => ({
   openDevHelperService: mocks.open,
+  serializeDevHelperWrite: async (_config: unknown, operation: () => unknown) =>
+    operation(),
 }));
 vi.mock('../dev-character-persistence/config.js', () => ({
   resolveDevCharacterPersistenceConfig: mocks.config,
