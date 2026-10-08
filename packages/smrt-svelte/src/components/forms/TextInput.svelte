@@ -1,5 +1,6 @@
 <script lang="ts">
 import { Icon, ripple } from '@happyvertical/smrt-ui';
+import { FieldLabel } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import {
   formatEmail,
@@ -267,7 +268,7 @@ function handleInput(e: Event) {
   class:listening={isHolding}
 >
   {#if label}
-    <label id={labelId} for={name} class="smrt-field-label">{label}{#if required}*{/if}</label>
+    <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
   <div class="container">
     <div class="content">
@@ -370,19 +371,6 @@ function handleInput(e: Event) {
     justify-content: center;
     height: 100%;
       }
-
-  /* Plain label above the control: one label treatment across generated forms. */
-  .smrt-field-label {
-    display: block;
-    margin-bottom: var(--smrt-spacing-1, 4px);
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    line-height: var(--smrt-typography-label-large-line-height, 1.4);
-    letter-spacing: normal;
-    text-transform: none;
-    font-family: inherit;
-    color: var(--smrt-color-on-surface, #374151);
-  }
 
 
   .input {

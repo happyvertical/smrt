@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 import type { ControlInteractionOptions } from './control-interaction.js';
+import FieldLabel from './FieldLabel.svelte';
 import {
   type FormGroupContextValue,
   nextFieldId,
@@ -62,12 +63,7 @@ setFormGroupContext(
 </script>
 
 <div class="form-group">
-	<label for={fieldId} class="form-label">
-		{label}
-		{#if required}
-			<span class="required" aria-hidden="true">*</span>
-		{/if}
-	</label>
+	<FieldLabel for={fieldId} {label} {required} />
 	{@render children()}
 	{#if hintId}
 		<p id={hintId} class="form-hint">{hint}</p>
@@ -82,18 +78,7 @@ setFormGroupContext(
 		margin-bottom: 1rem;
 	}
 
-	.form-label {
-		display: block;
-		font-size: var(--smrt-typography-label-large-size, 0.875rem);
-		font-weight: var(--smrt-typography-weight-medium, 500);
-		color: var(--smrt-color-on-surface, #374151);
-		margin-bottom: 0.375rem;
-	}
 
-	.required {
-		color: var(--smrt-color-error, #ba1a1a);
-		margin-left: 0.125rem;
-	}
 
 	.form-hint {
 		margin: 0.25rem 0 0;

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { FieldLabel } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -309,10 +310,7 @@ function handleBlur() {
 
 <div class="smrt-money">
   {#if label}
-    <label id={labelId} for={name} class="smrt-field-label">
-      {label}
-      {#if required}<span class="required">*</span>{/if}
-    </label>
+    <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
   <div class="input-wrapper">
@@ -359,17 +357,6 @@ function handleBlur() {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-1, 4px);
-  }
-
-  .smrt-field-label {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-body-medium-weight, 500);
-    color: var(--smrt-color-on-surface, #374151);
-  }
-
-  .smrt-field-label .required {
-    color: var(--smrt-color-error, #ba1a1a);
-    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .input-wrapper {

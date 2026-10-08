@@ -125,6 +125,7 @@ export {
   type HttpTranscriberOptions,
 } from './dictation-transcribe.js';
 export { default as ErrorSummary } from './ErrorSummary.svelte';
+export { default as FieldLabel } from './FieldLabel.svelte';
 export { default as Fieldset } from './Fieldset.svelte';
 export { default as FilePicker } from './FilePicker.svelte';
 export { default as Form } from './Form.svelte';

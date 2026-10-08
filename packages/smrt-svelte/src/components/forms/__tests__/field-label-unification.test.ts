@@ -145,3 +145,20 @@ describe('unified fields are axe-clean', () => {
     }
   });
 });
+
+describe('no component defines its own field label style', () => {
+  it('every label comes from the shared FieldLabel', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const dir = `${process.cwd()}/src/components/forms/`;
+    const offenders = readdirSync(dir)
+      .filter((f) => f.endsWith('.svelte'))
+      .filter((f) => {
+        const src = readFileSync(`${dir}${f}`, 'utf8');
+        return (
+          /\.smrt-field-label\s*\{/.test(src) ||
+          /<label[^>]*smrt-field-label/.test(src)
+        );
+      });
+    expect(offenders).toEqual([]);
+  });
+});
