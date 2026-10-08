@@ -103,6 +103,16 @@ export interface Props {
   surfaces?: DataSurfaceIdentity[];
   /** Whether the dock is currently visible; polling pauses while false. */
   visible?: boolean;
+  /** How the dock presents conversations. `multiple` (default) shows the
+   * conversation list and lets the person start new ones. `single` is for
+   * hosts where the person never needs to know about separate conversations:
+   * no list, no toggle, no choose/empty screens. On mount the dock reuses the
+   * transport's most recent thread, or creates one silently when there is
+   * none, and opens straight into the composer (focused while `visible`). A
+   * failure shows inline with a retry; a small icon-only "Clear
+   * conversation" action starts fresh when the transport can create
+   * threads. */
+  conversations?: 'multiple' | 'single';
   /** Renders a message's own `toolCallData` (#2988), inside that message's
    * bubble below its text. Called only for messages whose `toolCallData` is
    * set. Without it the dock renders no tool-call region at all: the payload
@@ -177,6 +187,7 @@ const {
   actionClient,
   surfaces,
   visible = true,
+  conversations = 'multiple',
   toolCall,
   oncontroller,
   onactionapplied,
@@ -358,6 +369,95 @@ async function openThreads() {
   threadsEl?.querySelector<HTMLElement>('.assistant-thread-list-item')?.focus();
 }
 
+// Single-conversation mode: open straight into one conversation. Runs once
+// per context (transport) after its thread list settles: reuse the most
+// recent thread, else create one silently. Any failure is recorded on
+// `controller.error`, shown inline in the conversation area with a retry.
+let composerRef: { focus(): void } | undefined = $state();
+let bootstrapTransport: AssistantTransport | null = null;
+const SINGLE_THREAD_TITLE = 'Conversation';
+
+function threadRecency(thread: {
+  lastMessageAt?: string | Date | null;
+  messageCount: number;
+}) {
+  // A thread nobody has written to yet (just created, e.g. by "Clear
+  // conversation") is the newest; an undated thread with messages is oldest.
+  if (!thread.lastMessageAt) {
+    return thread.messageCount === 0
+      ? Number.POSITIVE_INFINITY
+      : Number.NEGATIVE_INFINITY;
+  }
+  const time = new Date(thread.lastMessageAt).getTime();
+  return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+}
+
+function mostRecentThreadId(): string | undefined {
+  let best: { id: string; at: number } | undefined;
+  for (const thread of controller.threads) {
+    const at = threadRecency(thread);
+    // `>=` so that, among equals, the later-listed thread wins (transports
+    // list oldest first).
+    if (!best || at >= best.at) best = { id: thread.id, at };
+  }
+  return best?.id;
+}
+
+async function startConversation(fresh = false) {
+  const current = transport;
+  bootstrapTransport = current;
+  try {
+    let threadId = fresh ? undefined : mostRecentThreadId();
+    if (!threadId) {
+      if (!current.createThread) {
+        controller.setError(t(M['chat.assistant_dock.no_conversations']));
+        return;
+      }
+      threadId = (await controller.createThread(SINGLE_THREAD_TITLE)).id;
+    }
+    if (transport !== current) return;
+    await controller.openThread(threadId);
+  } catch {
+    // createThread already recorded the failure on controller.error.
+  } finally {
+    if (bootstrapTransport === current) bootstrapTransport = null;
+  }
+}
+
+async function retryConversation() {
+  controller.setError(null);
+  // Reload first: a failed list must not be mistaken for "no thread yet".
+  await controller.loadThreads();
+  // A successful load re-arms the effect below.
+}
+
+$effect(() => {
+  if (conversations !== 'single') return;
+  if (
+    controller.threadsLoading ||
+    controller.activeThreadId ||
+    controller.error
+  ) {
+    return;
+  }
+  if (bootstrapTransport === transport) return;
+  void untrack(() => startConversation());
+});
+
+// Focus the composer once the conversation is open and the dock is shown.
+$effect(() => {
+  if (conversations !== 'single' || !visible || !controller.activeThreadId) {
+    return;
+  }
+  void tick().then(() => composerRef?.focus());
+});
+
+async function handleClearConversation() {
+  closeThreads();
+  controller.setError(null);
+  await startConversation(true);
+}
+
 async function handleSelectThread(threadId: string) {
   closeThreads();
   // openThread() catches internally and records any failure on
@@ -448,6 +548,7 @@ async function handleConfirmAction(requestId: string) {
     class="assistant-dock-layout"
     data-threads-open={threadsOpen || undefined}
   >
+    {#if conversations !== 'single'}
     <Button
       type="button"
       variant="ghost"
@@ -472,12 +573,48 @@ async function handleConfirmAction(requestId: string) {
         oncreate={transport.createThread ? handleCreateThread : undefined}
       />
     </div>
+    {/if}
 
     <div class="assistant-dock-main">
       {#if controller.error}
         <p class="assistant-dock-error" role="alert">
           {t(M['chat.assistant_dock.error'], { message: controller.error })}
+          {#if conversations === 'single' && !controller.activeThreadId}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onclick={retryConversation}
+            >
+              {t(M['chat.assistant_dock.retry_conversation'])}
+            </Button>
+          {/if}
         </p>
+      {/if}
+
+      {#if conversations === 'single' && controller.activeThreadId && transport.createThread && controller.messages.length > 0}
+        <div class="assistant-dock-single-actions">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            class="assistant-dock-clear"
+            onclick={handleClearConversation}
+            aria-label={t(M['chat.assistant_dock.clear_conversation'])}
+            title={t(M['chat.assistant_dock.clear_conversation'])}
+          >
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+              <path
+                d="M4 6h12M8 6V4.5h4V6m-6.5 0l.7 9.5h7.6L15 6M8.5 9v4m3-4v4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </Button>
+        </div>
       {/if}
 
       {#if controller.status.state === 'working'}
@@ -498,7 +635,17 @@ async function handleConfirmAction(requestId: string) {
       {/if}
 
       <div class="assistant-dock-scroll">
-        {#if !controller.activeThreadId && controller.threadsLoading}
+        {#if conversations === 'single'}
+          {#if !controller.activeThreadId && !controller.error}
+            <div
+              class="assistant-dock-thread-state assistant-dock-thread-loading"
+              role="status"
+              aria-label={t(M['chat.assistant_dock.opening_conversation'])}
+            >
+              <p>{t(M['chat.assistant_dock.opening_conversation'])}</p>
+            </div>
+          {/if}
+        {:else if !controller.activeThreadId && controller.threadsLoading}
           <div
             class="assistant-dock-thread-state assistant-dock-thread-loading"
             role="status"
@@ -741,6 +888,7 @@ async function handleConfirmAction(requestId: string) {
         {/if}
         {#key uploadContextEpoch}
           <AssistantComposer
+            bind:this={composerRef}
             bind:value={
               () => controller.draft, (text) => controller.setDraft(text)
             }
@@ -1063,6 +1211,12 @@ async function handleConfirmAction(requestId: string) {
     color: var(--smrt-color-on-error-container, #410002);
     background: var(--smrt-color-error-container, #ffdad6);
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+  }
+
+  .assistant-dock-single-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px) 0;
   }
 
   .assistant-dock-composer-header {

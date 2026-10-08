@@ -260,6 +260,8 @@ waiting | done | failed | cancelled`), with `pauseRun` / `continueRun`,
 `matchesToolAllowList` is exported browser-safe. Full guide:
 [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
 
+Pass `conversations="single"` to `AssistantDock` for an app where people should not see separate conversations: it reuses the newest thread (or creates one), opens the focused composer, and offers an icon-only clear action.
+
 The server side mounts in one route file. The principal comes from
 `event.locals` (`@happyvertical/smrt-users/sveltekit`); threads are scoped to
 the caller's own assistant session in the active tenant; tools are

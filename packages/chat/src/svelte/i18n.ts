@@ -101,6 +101,10 @@ export const M = defineMessages({
     'A message failed to send. You can retry it below.',
   'chat.assistant_dock.attachments': 'Attachments',
   'chat.assistant_dock.conversations_toggle': 'Conversations',
+  // Single-conversation mode
+  'chat.assistant_dock.opening_conversation': 'Opening the assistant…',
+  'chat.assistant_dock.retry_conversation': 'Try again',
+  'chat.assistant_dock.clear_conversation': 'Clear conversation',
   'chat.assistant_dock.action_outcome_unknown':
     "We couldn't confirm whether this change was applied. Checking again is safe: it resends the same request, so the change can't be applied twice.",
   'chat.assistant_dock.action_check_again': 'Check again',

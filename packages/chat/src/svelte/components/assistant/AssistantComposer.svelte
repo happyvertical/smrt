@@ -105,6 +105,13 @@ function messageField(): HTMLTextAreaElement | null {
   return textareaEl ?? null;
 }
 
+/** Moves focus to the message field (a host that opens the composer
+ * directly, e.g. AssistantDock `conversations="single"`). A no-op while the
+ * composer is disabled. */
+export function focus(): void {
+  messageField()?.focus();
+}
+
 // One dictation per composer; the source is read when listening starts.
 const dictation = new Dictation({
   source: () => {
