@@ -29,6 +29,7 @@
       "@happyvertical/smrt-fields",
       "@happyvertical/smrt-gnode",
       "@happyvertical/smrt-images",
+      "@happyvertical/smrt-ingestion",
       "@happyvertical/smrt-inventory",
       "@happyvertical/smrt-ios",
       "@happyvertical/smrt-jobs",
