@@ -106,7 +106,9 @@ active, retaining its AssistantDock controller and history. Leaving the tab stop
 microphone input and reply playback; listening mode requires an explicit restart.
 An outstanding turn keeps both the listening input and full dock composer busy
 across mode changes and restarts until it settles. Both inputs share the retained
-controller’s pending-send state; microphone Stop remains reachable.
+controller’s pending-send state; microphone Stop remains reachable. Polling
+retains active sends until their transport completes, even when older history
+contains the same message text.
 Late persistence loads and cancelled speech responses cannot replace the current
 rig or audio. Spoken captions begin only when SDK playback actually starts.
 

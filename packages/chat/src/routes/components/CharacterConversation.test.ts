@@ -5,6 +5,7 @@ import CharacterConversation from './CharacterConversation.svelte';
 
 const mocks = vi.hoisted(() => ({
   load: vi.fn(),
+  loadMessages: vi.fn(),
   mount: vi.fn(),
   destroy: vi.fn(),
   play: vi.fn(),
@@ -39,7 +40,7 @@ vi.mock('../../dev-assistant-transport.js', () => ({
     mocks.proposal = proposal;
     return {
       listThreads: async () => [],
-      loadMessages: async () => [],
+      loadMessages: mocks.loadMessages,
       sendMessage: mocks.sendMessage,
     };
   },
@@ -67,6 +68,7 @@ describe('conversation lifecycle', () => {
       },
     );
     mocks.load.mockResolvedValue(null);
+    mocks.loadMessages.mockResolvedValue([]);
     mocks.mount.mockImplementation(() => ({
       destroy: mocks.destroy,
       setMouthOpen: vi.fn(),
@@ -252,6 +254,89 @@ describe('conversation lifecycle', () => {
       expect(screen.getByLabelText('Type your message')).toBeEnabled(),
     );
   });
+
+  it('keeps a repeated full-composer turn locked through polling of old history', async () => {
+    const userMessage = {
+      id: 'old-user',
+      threadId: 'dev-character-conversation',
+      role: 'user',
+      content: 'Repeat this',
+      createdAt: new Date().toISOString(),
+    };
+    const oldReply = {
+      ...userMessage,
+      id: 'old-reply',
+      role: 'assistant',
+      content: 'Previous reply',
+    };
+    const history = [userMessage, oldReply];
+    mocks.sendMessage.mockResolvedValueOnce({
+      inProgress: false,
+      userMessage,
+      assistantMessage: oldReply,
+      messages: history,
+    });
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Talk to your assistant' }),
+    );
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Message' }),
+      'Repeat this',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Send', exact: true }),
+    );
+    await screen.findByText('Previous reply');
+    mocks.loadMessages.mockResolvedValue(history);
+    const pending = deferred<unknown>();
+    mocks.sendMessage.mockReturnValueOnce(pending.promise);
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Message' }),
+      'Repeat this',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Send', exact: true }),
+    );
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    const beforePoll = mocks.loadMessages.mock.calls.length;
+    await vi.waitFor(
+      () =>
+        expect(mocks.loadMessages.mock.calls.length).toBeGreaterThan(
+          beforePoll,
+        ),
+      { timeout: 20_000, interval: 100 },
+    );
+    expect(screen.getByLabelText('Type your message')).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Speak to your assistant' }),
+    ).toBeDisabled();
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
+    const currentUser = { ...userMessage, id: 'new-user' };
+    const currentReply = {
+      ...oldReply,
+      id: 'new-reply',
+      content: 'Current reply retained',
+    };
+    pending.resolve({
+      inProgress: false,
+      userMessage: currentUser,
+      assistantMessage: currentReply,
+      messages: [...history, currentUser, currentReply],
+    });
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText('Type your message')).toBeEnabled(),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Leave listening mode', exact: true }),
+    );
+    expect(
+      await screen.findByText('Current reply retained'),
+    ).toBeInTheDocument();
+  }, 30_000);
 
   it('refreshes an initially missing and then replaced saved rig on activation', async () => {
     const view = render(CharacterConversation);
