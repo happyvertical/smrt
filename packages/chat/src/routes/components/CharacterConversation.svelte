@@ -43,9 +43,15 @@ let mounted: PhotoCutoutHandle | null = null;
 let unavailable = $state<string | null>(null);
 let listening = $state(false);
 let audioEnabled = $state(false);
-let controller: AssistantDockController | null = null;
+let controller = $state.raw<AssistantDockController | null>(null);
 let conversationReady = $state(false);
 let voiceTurnPending = $state(false);
+const turnPending = $derived(
+  voiceTurnPending ||
+    !!controller?.pendingSends.some(
+      (send) => send.status === 'sending' || send.status === 'processing',
+    ),
+);
 let attentionRequired = $state(false);
 let revision = $state(1);
 let stateSignature = '';
@@ -301,7 +307,7 @@ function connect(owned: AssistantDockController) {
 }
 async function sendSpokenTurn(text: string) {
   if (!controller) throw new Error('Open the assistant before speaking.');
-  if (voiceTurnPending || !active || attentionRequired) return;
+  if (turnPending || !active || attentionRequired) return;
   voiceTurnPending = true;
   try {
     await controller.send(text);
@@ -439,9 +445,9 @@ onMount(() => {
     {#if listening}<p role="status">{t(M['chat.character_conversation.listening_notice'])}</p>{/if}
   </div>
   {#if listening && active}
-    <CharacterConversationVoice onfinal={sendSpokenTurn} disabled={!conversationReady || attentionRequired || voiceTurnPending} />
+    <CharacterConversationVoice onfinal={sendSpokenTurn} disabled={!conversationReady || attentionRequired || turnPending} />
   {/if}
-  <FloatingAssistant {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
+  <FloatingAssistant composerDisabled={turnPending} {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
   <SpokenCaptions enabled={true} lines={spoken.lines} interim={spoken.interim} />
 </section>
 

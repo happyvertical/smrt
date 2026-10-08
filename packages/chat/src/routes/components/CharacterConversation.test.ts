@@ -144,6 +144,115 @@ describe('conversation lifecycle', () => {
     );
   });
 
+  it.each([
+    'click',
+    'Enter',
+  ])('keeps a pending spoken turn when switching to the full composer (%s)', async (submission) => {
+    const pending = deferred<unknown>();
+    mocks.sendMessage.mockReturnValue(pending.promise);
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    await userEvent.type(
+      screen.getByLabelText('Type your message'),
+      'Original spoken turn',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Send message', exact: true }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Leave listening mode', exact: true }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Talk to your assistant' }),
+    );
+    const field = screen.getByRole('textbox', { name: 'Message' });
+    await userEvent.type(field, 'Replacement');
+    if (submission === 'click')
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Send', exact: true }),
+      );
+    else await userEvent.keyboard('{Enter}');
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    expect(field).toBeDisabled();
+    const userMessage = {
+      id: 'original',
+      threadId: 'dev-character-conversation',
+      role: 'user',
+      content: 'Original spoken turn',
+      createdAt: new Date().toISOString(),
+    };
+    const assistantMessage = {
+      ...userMessage,
+      id: 'reply',
+      role: 'assistant',
+      content: 'Original reply retained',
+    };
+    pending.resolve({
+      inProgress: false,
+      userMessage,
+      assistantMessage,
+      messages: [userMessage, assistantMessage],
+    });
+    await vi.waitFor(() => expect(field).toBeEnabled());
+    expect(
+      await screen.findByText('Original reply retained'),
+    ).toBeInTheDocument();
+    await userEvent.type(field, 'Next turn');
+    await userEvent.keyboard('{Enter}');
+    await vi.waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps a pending full-composer turn locked after switching to listening mode', async () => {
+    const pending = deferred<unknown>();
+    mocks.sendMessage.mockReturnValue(pending.promise);
+    render(CharacterConversation);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Talk to your assistant' }),
+    );
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Message' }),
+      'Original typed turn',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Send', exact: true }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Listening mode', exact: true }),
+    );
+    expect(screen.getByLabelText('Type your message')).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Speak to your assistant' }),
+    ).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Send message', exact: true }),
+    );
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    const userMessage = {
+      id: 'original',
+      threadId: 'dev-character-conversation',
+      role: 'user',
+      content: 'Original typed turn',
+      createdAt: new Date().toISOString(),
+    };
+    const assistantMessage = {
+      ...userMessage,
+      id: 'reply',
+      role: 'assistant',
+      content: 'Original typed reply',
+    };
+    pending.resolve({
+      inProgress: false,
+      userMessage,
+      assistantMessage,
+      messages: [userMessage, assistantMessage],
+    });
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText('Type your message')).toBeEnabled(),
+    );
+  });
+
   it('refreshes an initially missing and then replaced saved rig on activation', async () => {
     const view = render(CharacterConversation);
     await screen.findByText(/Save a character in Character setup/);

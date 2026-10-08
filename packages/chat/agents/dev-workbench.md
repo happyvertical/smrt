@@ -104,7 +104,9 @@ authenticated principal, tenant, and authorization policy to
 The Character conversation tab refreshes the persisted rig each time it becomes
 active, retaining its AssistantDock controller and history. Leaving the tab stops
 microphone input and reply playback; listening mode requires an explicit restart.
-An outstanding voice turn remains busy across those restarts until it settles.
+An outstanding turn keeps both the listening input and full dock composer busy
+across mode changes and restarts until it settles. Both inputs share the retained
+controller’s pending-send state; microphone Stop remains reachable.
 Late persistence loads and cancelled speech responses cannot replace the current
 rig or audio. Spoken captions begin only when SDK playback actually starts.
 

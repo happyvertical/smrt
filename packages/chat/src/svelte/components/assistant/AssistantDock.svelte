@@ -143,6 +143,8 @@ export interface Props {
   /** Placeholder for the composer's empty textarea (#2991). Defaults to the
    * composer's own placeholder. */
   composerPlaceholder?: string;
+  /** Disables text submission while a host-owned input has a pending turn. */
+  composerDisabled?: boolean;
   /** The page's browser tools (#2908) — typically
    * `installWebMcpPageToolRegistry()` from
    * `@happyvertical/smrt-web/webmcp-page-tools`. Offered to the model each
@@ -198,6 +200,7 @@ const {
   onactionsettled,
   initialDraft,
   composerPlaceholder,
+  composerDisabled = false,
   pageTools,
   clientToolPolicy,
   onstatus,
@@ -801,7 +804,7 @@ async function handleConfirmAction(requestId: string) {
             }
             onsend={handleSend}
             onupload={transport.uploadAttachment ? handleUpload : undefined}
-            disabled={!controller.activeThreadId}
+            disabled={!controller.activeThreadId || composerDisabled}
             placeholder={composerPlaceholder}
             {dictation}
             {transcribe}
