@@ -106,3 +106,18 @@ earlier bytes and derived data are purged, its tombstone completes, and the deni
 receipt keeps its bytes, active visibility and no deletion intent. Repeated sweeps
 preserve the same denial. Evidence: `/home/will/Work/tmp/s3670/r3-fixes`.
 The same three-file scope and unchanged-source carry-forward rationale apply.
+
+
+## Merge-queue registry integration correction (round 5)
+
+Full core `test:integration` reproduces the queue failure at
+`841aa743a98a3de69b79ffc6b3e0fe71e75c54d8`: the cycle allowlist assumed chat
+contained the only mutual foreign keys. It now permits exactly the approved
+`IntakeAnalysis.currentAttemptId` / `IntakeAnalysisAttempt.analysisId` pair too.
+Strict ordering for acyclic edges, complete unique node retention and rejection
+of any other cyclic edge are unchanged. The existing ingestion U/P migration
+parity tests already exercise this schema; no schema/runtime code changes.
+Evidence: `/home/will/Work/tmp/s3670/r4-fixes`. Full core test/integration/build/
+typecheck and affected repository gates run. Ingestion U/P, core PostgreSQL and
+full root runtime evidence carry forward because only test expectations and
+this matrix change; no numeric, UUID, conflict, timestamp or migration path changes.
