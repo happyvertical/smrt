@@ -5,7 +5,9 @@ Chat rooms, threads, and agent sessions with app-controlled tool whitelisting.
 ## Dev Server
 
 `pnpm --dir packages/chat dev` runs a package-local SvelteKit workbench. The root
-route is an interactive chat surface with a dev-only `/api/dev-chat` endpoint:
+route separates **Character setup** and **Chat dev** into tabs; switching tabs
+retains the current character rig and chat state. The chat tab is an interactive
+surface with a dev-only `/api/dev-chat` endpoint:
 it uses `@happyvertical/ai` when local provider credentials are present and
 falls back to a deterministic local assistant otherwise. `/api/dev-chat-stream`
 is its SSE companion (#1936) — the same provider/local-fallback resolution wired
@@ -27,6 +29,26 @@ audio to `WS /ws/voice` as PCM16 mono, appends gateway transcripts/responses to
 the chat, and plays returned TTS audio. Exposing
 `SMRT_CHAT_DEV_VOICE_GATEWAY_TOKEN` to the browser requires
 `SMRT_CHAT_DEV_VOICE_GATEWAY_EXPOSE_TOKEN=true`; keep that local-only.
+
+### Local character persistence
+
+`/api/dev-character-persistence` is an opt-in loopback-only demo bridge for
+the photographic character workbench. It is disabled unless
+`SMRT_CHAT_DEV_CHARACTER_PERSISTENCE=true`; it accepts neither actor, tenant,
+nor profile ids from the browser. Its server configuration names one
+pre-provisioned profile and tenant plus a temporary SQLite database and asset
+directory, all under the operating system temporary directory. First run
+`DATABASE_URL=<the same SQLite path> pnpm smrt db:migrate`, then run
+`pnpm exec tsx src/scripts/provision-dev-character-persistence.ts` with the
+`SMRT_CHAT_DEV_CHARACTER_*` variables set. The route never creates schema.
+Use fresh UUIDs for `SMRT_CHAT_DEV_CHARACTER_PROFILE_ID` and
+`SMRT_CHAT_DEV_CHARACTER_TENANT_ID`; keep the database and asset directory in
+the OS temporary directory, for example `/tmp/smrt-character-setup/` on Linux
+or the path reported by `node -p "require('node:os').tmpdir()"` on macOS.
+
+This is not production authentication. A production host must provide its
+authenticated principal, tenant, and authorization policy to
+`PhotoCutoutProfileStore`; it must not copy this fixed local identity pattern.
 
 ## Models
 

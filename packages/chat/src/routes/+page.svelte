@@ -5,6 +5,7 @@ import {
   createWebLlmInferenceBackend,
 } from '@happyvertical/smrt-svelte/browser-ai';
 import { ModelStatusControl } from '@happyvertical/smrt-svelte/browser-ai/svelte';
+import { Tabs } from '@happyvertical/smrt-ui';
 import {
   createControlInteractionRegistry,
   Form,
@@ -24,6 +25,7 @@ import {
 // `smrt-workbench/host`, which is the pattern for a host that can switch presets.
 import '@happyvertical/smrt-ui/themes/styles/all.css';
 import '@happyvertical/smrt-ui/themes/styles/fonts.css';
+import { PhotoCutoutSetup } from '@happyvertical/smrt-images/svelte';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import {
   createInferencePath,
@@ -31,7 +33,9 @@ import {
   type InferenceBackend,
   InferencePathError,
 } from '@happyvertical/smrt-web/ai';
+import { createSpeechPlayback } from '@happyvertical/speech/browser';
 import { onMount } from 'svelte';
+import { createDevCharacterPersistenceClient } from '../dev-character-persistence-client.js';
 import ChatLayout from '../svelte/components/layout/ChatLayout.svelte';
 import RoomHeader from '../svelte/components/layout/RoomHeader.svelte';
 import MessageInput from '../svelte/components/messages/MessageInput.svelte';
@@ -201,6 +205,11 @@ let backendDetail = $state('No AI response yet');
 let inferencePreference = $state<InferencePreference>('auto');
 let warning = $state<string | null>(null);
 let workbenchMode = $state<WorkbenchMode>('text');
+let workbenchTab = $state('character');
+const workbenchTabs = [
+  { id: 'character', label: 'Character setup' },
+  { id: 'chat', label: 'Chat dev' },
+];
 let voiceConfig = $state<DevVoiceConfig | null>(null);
 let voiceConfigLoaded = $state(false);
 let voiceTarget = $state('echo');
@@ -218,6 +227,57 @@ let voiceSource: MediaStreamAudioSourceNode | null = null;
 let voiceProcessor: AudioWorkletNode | null = null;
 let activeVoiceAudio: HTMLAudioElement | null = null;
 let activeVoiceAudioUrl: string | null = null;
+let characterSpeech = createSpeechPlayback();
+let characterSpeechGeneration = 0;
+async function previewCharacterSpeech(
+  text: string,
+  options: {
+    onLevel: (level: number) => void;
+    onStart?: () => void;
+    signal: AbortSignal;
+  },
+) {
+  const token = ++characterSpeechGeneration;
+  characterSpeech.stop();
+  const playback = createSpeechPlayback({
+    onLevel: (level) => {
+      if (token === characterSpeechGeneration && !options.signal.aborted)
+        options.onLevel(
+          matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : level,
+        );
+    },
+    onStart: () => {
+      if (token === characterSpeechGeneration && !options.signal.aborted)
+        options.onStart?.();
+    },
+  });
+  characterSpeech = playback;
+  const stale = () =>
+    token !== characterSpeechGeneration || options.signal.aborted;
+  const stop = () => playback.stop();
+  options.signal.addEventListener('abort', stop, { once: true });
+  try {
+    await playback.prepare();
+    if (stale()) return;
+    const response = await fetch('/api/dev-character-speech', {
+      method: 'POST',
+      signal: options.signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (stale()) return;
+    if (!response.ok) throw new Error('Character speech is unavailable.');
+    const audio = await response.arrayBuffer();
+    if (stale()) return;
+    await playback.play({
+      audio,
+      contentType: response.headers.get('content-type') ?? 'audio/wav',
+    });
+  } finally {
+    options.signal.removeEventListener('abort', stop);
+    playback.destroy();
+  }
+}
 
 // --- Agent-addressable draft form (#2588) ------------------------------------
 //
@@ -885,6 +945,20 @@ onMount(() => {
 </svelte:head>
 
 <ThemeProvider colorScheme="system" persist={true}>
+  <Tabs
+    tabs={workbenchTabs}
+    active={workbenchTab}
+    onchange={(id) => (workbenchTab = id)}
+    aria-label="Development workbenches"
+  >
+  <div hidden={workbenchTab !== 'character'}>
+  <PhotoCutoutSetup
+    speechPreview={previewCharacterSpeech}
+    saveSetup={createDevCharacterPersistenceClient().save}
+    loadSetup={createDevCharacterPersistenceClient().load}
+  />
+  </div>
+  <div hidden={workbenchTab !== 'chat'}>
   <div class="chat-dev">
     <header class="topbar">
       <div class="title-block">
@@ -1065,6 +1139,8 @@ onMount(() => {
       </aside>
     </main>
   </div>
+  </div>
+  </Tabs>
 </ThemeProvider>
 
 <style>

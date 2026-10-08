@@ -1,0 +1,412 @@
+<script lang="ts">
+import {
+  mountPhotoCutout,
+  type PhotoCutoutHandle,
+  type PhotoCutoutRig,
+} from '@happyvertical/animation';
+import { Textarea } from '@happyvertical/smrt-ui/forms';
+import { Button } from '@happyvertical/smrt-ui/ui';
+import { onMount } from 'svelte';
+import {
+  assembleCanadianSplitRig,
+  type FaceOutline,
+  parseMouthLandmarks,
+} from '../../photo-cutout-setup.js';
+
+import { isolatePhotoHead } from '../head-isolation.js';
+
+interface PersistedSetup {
+  pngDataUrl: string;
+  rig: PhotoCutoutRig;
+  savedAt: string;
+}
+interface Props {
+  endpoint?: string;
+  segmentationAssets?: string;
+  speechPreview?: (
+    text: string,
+    options: {
+      onLevel: (level: number) => void;
+      onStart?: () => void;
+      signal: AbortSignal;
+    },
+  ) => Promise<void>;
+  saveSetup?: (
+    setup: Pick<PersistedSetup, 'pngDataUrl' | 'rig'>,
+  ) => Promise<{ savedAt: string }>;
+  loadSetup?: () => Promise<PersistedSetup | null>;
+}
+interface Head {
+  file: File;
+  url: string;
+  width: number;
+  height: number;
+  outline: FaceOutline;
+}
+type Stage = 'outline' | 'mouth-landmarks';
+let {
+  endpoint = '/api/dev-character-setup',
+  segmentationAssets = '/api/dev-image-segmentation',
+  speechPreview,
+  saveSetup,
+  loadSetup,
+}: Props = $props();
+let target: HTMLDivElement;
+let source = $state<{ file: File; url: string } | null>(null);
+let head = $state<Head | null>(null);
+let busy = $state<Stage | null>(null);
+let failed = $state<Stage | null>(null);
+let ready = $state(false);
+let open = $state(false);
+let elapsed = $state(0);
+let message = $state(
+  'Choose a photo, then isolate its head on a transparent background.',
+);
+let request: AbortController | null = null;
+let generation = 0;
+let mounted: PhotoCutoutHandle | null = null;
+let activeAsset = $state<File | null>(null);
+let currentRig = $state<PhotoCutoutRig | null>(null);
+let persisting = $state<'save' | 'load' | null>(null);
+let timer: ReturnType<typeof setInterval> | null = null;
+let speechText = $state('Hello, I am your HappyVertical assistant.');
+let speaking = $state(false);
+let speechStarted = $state(false);
+let speechRequest: AbortController | null = null;
+
+function stopTimer() {
+  if (timer) clearInterval(timer);
+  timer = null;
+}
+function invalidate() {
+  generation++;
+  request?.abort();
+  request = null;
+  stopTimer();
+  busy = null;
+}
+function neutralExpression() {
+  mounted?.setExpression({ headTiltDegrees: 0, jawTiltDegrees: 0 });
+}
+function stopSpeech(announce = true) {
+  const active = speechRequest;
+  active?.abort();
+  speechRequest = null;
+  speaking = false;
+  speechStarted = false;
+  open = false;
+  mounted?.setMouthOpen(0);
+  neutralExpression();
+  if (announce && active) message = 'Speech stopped.';
+}
+function destroyPreview() {
+  stopSpeech(false);
+  mounted?.destroy();
+  mounted = null;
+  activeAsset = null;
+  currentRig = null;
+  ready = false;
+  open = false;
+}
+onMount(() => () => {
+  invalidate();
+  destroyPreview();
+  if (source) URL.revokeObjectURL(source.url);
+  if (head) URL.revokeObjectURL(head.url);
+});
+function select(event: Event) {
+  const file = (event.currentTarget as HTMLInputElement).files?.[0];
+  if (!file) return;
+  if (
+    !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
+    file.size > 8 * 1024 * 1024
+  ) {
+    message =
+      'Choose a PNG, JPEG, or WebP below 8 MB. Your previous photo is still selected.';
+    return;
+  }
+  invalidate();
+  destroyPreview();
+  if (source) URL.revokeObjectURL(source.url);
+  if (head) URL.revokeObjectURL(head.url);
+  source = { file, url: URL.createObjectURL(file) };
+  head = null;
+  failed = null;
+  message =
+    'Photo is local. Isolate head to remove its background on this device.';
+}
+const read = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error('Could not read photo.'));
+    reader.readAsDataURL(file);
+  });
+async function imageAt(url: string) {
+  const image = new Image();
+  image.src = url;
+  await image.decode();
+  return image;
+}
+function dataUrlFile(dataUrl: string, name: string) {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) throw new Error('Saved character cutout is not a PNG.');
+  const binary = atob(match[1]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++)
+    bytes[index] = binary.charCodeAt(index);
+  return new File([bytes], name, { type: 'image/png' });
+}
+function mountPreview(rig: PhotoCutoutRig, asset: File, token: number) {
+  destroyPreview();
+  activeAsset = asset;
+  currentRig = rig;
+  mounted = mountPhotoCutout(rig, {
+    target,
+    resolveAsset: async () => asset,
+    onError: (error) => {
+      if (generation !== token) return;
+      ready = false;
+      failed = 'mouth-landmarks';
+      message = `Character preview failed. ${error.message}`;
+    },
+  });
+  ready = true;
+}
+async function post(
+  stage: Stage,
+  file: File,
+  width: number,
+  height: number,
+  signal: AbortSignal,
+) {
+  const dataUrl = await read(file);
+  signal.throwIfAborted();
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    signal,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stage, dataUrl, width, height }),
+  });
+  const result = await response.json();
+  if (!response.ok)
+    throw new Error(result.message ?? 'Photo processing failed.');
+  return result;
+}
+async function run(stage: Stage) {
+  const selected = source;
+  const isolated = head;
+  if (!selected || (stage === 'mouth-landmarks' && !isolated)) return;
+  invalidate();
+  const token = generation;
+  const controller = new AbortController();
+  request = controller;
+  busy = stage;
+  failed = null;
+  elapsed = 0;
+  const started = Date.now();
+  timer = setInterval(() => {
+    elapsed = Math.floor((Date.now() - started) / 1000);
+  }, 1000);
+  message =
+    stage === 'outline'
+      ? 'Isolating head on a transparent background…'
+      : 'Locating mouth and chin on the transparent head…';
+  try {
+    if (stage === 'outline') {
+      const image = await imageAt(selected.url);
+      controller.signal.throwIfAborted();
+      const next = await isolatePhotoHead(image, {
+        assetBaseUrl: segmentationAssets,
+        signal: controller.signal,
+        onProgress: (stage) => {
+          if (generation === token)
+            message =
+              stage === 'loading'
+                ? 'Loading local head isolation…'
+                : 'Isolating original photo pixels on this device…';
+        },
+      });
+      if (generation !== token) return;
+      if (head) URL.revokeObjectURL(head.url);
+      destroyPreview();
+      head = { ...next, url: URL.createObjectURL(next.file) };
+      message =
+        'Review the transparent head. Continue when the silhouette looks right.';
+    } else if (isolated) {
+      const result = await post(
+        stage,
+        isolated.file,
+        isolated.width,
+        isolated.height,
+        controller.signal,
+      );
+      if (generation !== token) return;
+      const rig = assembleCanadianSplitRig({
+        outline: isolated.outline,
+        landmarks: parseMouthLandmarks(result.landmarks),
+        width: isolated.width,
+        height: isolated.height,
+        assetId: 'source',
+      });
+      mountPreview(rig, isolated.file, token);
+      message =
+        'Character ready. Open the mouth to inspect the horizontal split and vertical gap.';
+    }
+  } catch (error) {
+    if (generation !== token) return;
+    failed = stage;
+    message = `${stage === 'outline' ? 'Head isolation' : 'Mouth segmentation'} failed. ${error instanceof Error ? error.message : 'Please retry.'}`;
+  } finally {
+    if (generation === token) {
+      stopTimer();
+      busy = null;
+      request = null;
+    }
+  }
+}
+function cancel() {
+  const stage = busy;
+  invalidate();
+  failed = null;
+  message =
+    stage === 'mouth-landmarks'
+      ? 'Mouth segmentation cancelled. Your transparent head is preserved.'
+      : 'Head isolation cancelled. Your photo is still selected.';
+}
+function toggleMouth() {
+  open = !open;
+  mounted?.setMouthOpen(open ? 1 : 0);
+  mounted?.setExpression({
+    headTiltDegrees: open ? 4 : 0,
+    jawTiltDegrees: open ? 7 : 0,
+  });
+}
+async function saveCharacter() {
+  if (!saveSetup || !activeAsset || !currentRig || persisting) return;
+  const token = generation;
+  const asset = activeAsset;
+  const rig = currentRig;
+  persisting = 'save';
+  try {
+    const result = await saveSetup({ pngDataUrl: await read(asset), rig });
+    if (generation === token)
+      message = `Character saved locally at ${new Date(result.savedAt).toLocaleTimeString()}.`;
+  } catch (cause) {
+    if (generation === token)
+      message = `Character save failed. ${cause instanceof Error ? cause.message : 'Please retry.'}`;
+  } finally {
+    persisting = null;
+  }
+}
+async function loadCharacter() {
+  if (!loadSetup || persisting) return;
+  const token = generation;
+  persisting = 'load';
+  try {
+    const saved = await loadSetup();
+    if (generation !== token) return;
+    if (!saved) {
+      message = 'No saved character setup is available yet.';
+      return;
+    }
+    invalidate();
+    const mountToken = generation;
+    const asset = dataUrlFile(saved.pngDataUrl, 'saved-character-cutout.png');
+    mountPreview(saved.rig, asset, mountToken);
+    message = `Saved character loaded from ${new Date(saved.savedAt).toLocaleTimeString()}.`;
+  } catch (cause) {
+    if (generation === token)
+      message = `Character load failed. ${cause instanceof Error ? cause.message : 'Please retry.'}`;
+  } finally {
+    persisting = null;
+  }
+}
+async function playSpeech() {
+  if (!speechPreview || !ready || speaking || !speechText.trim()) return;
+  const controller = new AbortController();
+  const token = generation;
+  speechRequest = controller;
+  speaking = true;
+  speechStarted = false;
+  open = false;
+  message = 'Preparing speech…';
+  const current = () =>
+    speechRequest === controller &&
+    !controller.signal.aborted &&
+    generation === token;
+  try {
+    await speechPreview(speechText, {
+      signal: controller.signal,
+      onStart: () => {
+        if (current()) {
+          speechStarted = true;
+          message = 'Speaking…';
+        }
+      },
+      onLevel: (level) => {
+        if (current()) {
+          const reduced = matchMedia(
+            '(prefers-reduced-motion: reduce)',
+          ).matches;
+          const gain = reduced
+            ? 0
+            : Math.min(1, Math.sqrt(Math.max(0, level)) * 1.25);
+          mounted?.setMouthOpen(gain);
+          mounted?.setExpression({
+            headTiltDegrees: Math.sin(Date.now() / 220) * 5 * gain,
+            jawTiltDegrees: gain * 7,
+          });
+        }
+      },
+    });
+    if (current()) message = 'Speech complete.';
+  } catch (cause) {
+    if (current())
+      message =
+        cause instanceof Error ? cause.message : 'Speech preview failed.';
+  } finally {
+    if (speechRequest === controller) {
+      speechRequest = null;
+      speaking = false;
+      speechStarted = false;
+      open = false;
+      mounted?.setMouthOpen(0);
+      neutralExpression();
+    }
+  }
+}
+</script>
+
+<section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title">
+  <h2 id="cutout-title">Photographic character setup</h2>
+  <p class:error={failed !== null} class:success={ready} aria-live="polite">{message}{#if busy} ({elapsed}s){/if}</p>
+  <input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose character photo" onchange={select} disabled={persisting !== null} />
+  <div class="actions">
+    <Button onclick={() => run('outline')} disabled={!source || busy !== null}>{failed === 'outline' ? 'Retry head isolation' : head ? 'Redo head isolation' : 'Isolate head'}</Button>
+    {#if head}<Button onclick={() => run('mouth-landmarks')} disabled={busy !== null}>{failed === 'mouth-landmarks' ? 'Retry mouth segmentation' : ready ? 'Redo mouth segmentation' : 'Continue: segment mouth'}</Button>{/if}
+    {#if busy}<span class="spinner" aria-label={busy === 'outline' ? 'Isolating head' : 'Segmenting mouth'}></span><Button onclick={cancel}>Cancel</Button>{/if}
+    {#if ready}<Button onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>{/if}
+    {#if ready && saveSetup}<Button onclick={saveCharacter} disabled={persisting !== null}>{persisting === 'save' ? 'Saving…' : 'Save character'}</Button>{/if}
+    {#if loadSetup}<Button onclick={loadCharacter} disabled={busy !== null || persisting !== null}>{persisting === 'load' ? 'Loading…' : 'Load saved character'}</Button>{/if}
+    {#if ready && speechPreview}<label>Preview speech <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={stopSpeech}>Stop speech</Button>{/if}{/if}
+  </div>
+  {#if head}<figure><figcaption>Step 1: transparent head</figcaption><img class="checkerboard" src={head.url} alt="Isolated head on transparent background" /></figure>
+  {:else if source}<img src={source.url} alt="Selected character source" />{/if}
+  <div bind:this={target} class="preview checkerboard" aria-label="Animated character preview"></div>
+</section>
+
+<style>
+.setup { max-width: 42rem; margin: 1.5rem auto; padding: 1.25rem; border: 1px solid var(--smrt-color-border, #64748b); border-radius: .75rem; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 1rem 0; }
+figure { margin: 1rem 0; }
+.setup img, .preview :global(svg) { display: block; width: min(100%, 28rem); height: auto; max-height: 28rem; object-fit: contain; }
+.preview { width: fit-content; margin-top: 1rem; }
+.checkerboard { background-color: #fff; background-image: linear-gradient(45deg, #ddd 25%, transparent 25%), linear-gradient(-45deg, #ddd 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ddd 75%), linear-gradient(-45deg, transparent 75%, #ddd 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
+.error { color: var(--smrt-color-error, #b91c1c); font-weight: 600; }
+.success { color: var(--smrt-color-success, #166534); }
+.spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-right-color: currentColor; } }
+</style>
