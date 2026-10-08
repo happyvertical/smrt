@@ -370,31 +370,17 @@ let shellRoot = $state<HTMLElement | undefined>();
 // The floating toggle sits over the header's end (header visible), the top of
 // the right sidebar (header hidden) or the top of main (neither); reserve that room so it covers no
 // control. AdminShell reads these custom properties.
-$effect(() => {
-  const root = shellRoot;
-  if (!root) return;
+const floatingReserve = $derived.by(() => {
+  if (!layoutFloating) return undefined;
   const size = 'calc(2.75rem + var(--smrt-spacing-3))';
   const headerShown = shell.isRegionVisible('header');
-  const on = layoutFloating;
   // Header hidden: the button sits over whichever region is topmost at the
   // right edge: the right sidebar when shown, otherwise the main content.
   const sidebarShown = shell.isEdgeShown('right');
-  root.style.setProperty(
-    '--smrt-shell-floating-reserve-inline',
-    on && headerShown ? size : '0px',
-  );
-  root.style.setProperty(
-    '--smrt-shell-floating-reserve-block',
-    on && !headerShown && sidebarShown ? size : '0px',
-  );
-  root.style.setProperty(
-    '--smrt-shell-floating-reserve-main',
-    on && !headerShown && !sidebarShown ? size : '0px',
-  );
-  return () => {
-    root.style.removeProperty('--smrt-shell-floating-reserve-inline');
-    root.style.removeProperty('--smrt-shell-floating-reserve-block');
-    root.style.removeProperty('--smrt-shell-floating-reserve-main');
+  return {
+    inline: headerShown ? size : '0px',
+    block: !headerShown && sidebarShown ? size : '0px',
+    main: !headerShown && !sidebarShown ? size : '0px',
   };
 });
 let modeMessage = $state('');
@@ -707,6 +693,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {hotkeys}
       brandInSlot
       bind:rootElement={shellRoot}
+      {floatingReserve}
     >
       {#snippet appPanel()}
         <AppScopePanel

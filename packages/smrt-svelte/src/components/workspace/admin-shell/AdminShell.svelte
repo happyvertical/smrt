@@ -105,6 +105,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     layoutEdit?: ShellLayoutEditSurface;
     /** The shell's root element (bindable), e.g. to confine drag hit-testing. */
     rootElement?: HTMLElement;
+    /**
+     * Room kept clear for a floating control (AppShell's floating layout
+     * toggle): CSS lengths for the header's end, the right sidebar's top and
+     * main's top. Part of the root's style so re-renders never drop it.
+     */
+    floatingReserve?: { inline?: string; block?: string; main?: string };
     /** Content for the tenant panel footer. */
     tenantFooter?: Snippet;
     /** Content for the right focus rail. */
@@ -194,6 +200,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     slots,
     layoutEdit,
     rootElement = $bindable(),
+    floatingReserve,
     focusRail,
     focusPanel,
     systemBar,
@@ -279,6 +286,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       SIDE_EDGES.some(
         (edge) => panelState(edge) === 'expanded' && shell.isEdgeShown(edge),
       ),
+  );
+  const reserveStyle = $derived(
+    [
+      `--smrt-shell-floating-reserve-inline: ${floatingReserve?.inline ?? '0px'}`,
+      `--smrt-shell-floating-reserve-block: ${floatingReserve?.block ?? '0px'}`,
+      `--smrt-shell-floating-reserve-main: ${floatingReserve?.main ?? '0px'}`,
+    ].join('; '),
   );
   const chromeStyle = $derived(
     [
@@ -940,7 +954,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   data-phone-top={showPhoneTop ? '' : undefined}
   data-chrome-hidden={chromeHidden ? '' : undefined}
   data-resizing={resizing ?? undefined}
-  style={`${layoutStyle}; ${chromeStyle}`}
+  style={`${layoutStyle}; ${chromeStyle}; ${reserveStyle}`}
 >
   {#if showHeader}
     <div

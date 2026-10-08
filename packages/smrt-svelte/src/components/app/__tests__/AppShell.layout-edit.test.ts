@@ -564,6 +564,25 @@ describe('floating layout edit toggle', () => {
     ).toBe('0px');
   });
 
+  it('keeps the reserve when the shell re-renders its own style', async () => {
+    const user = userEvent.setup();
+    mount({
+      ...floating,
+      initial: {
+        version: 1,
+        panels: { top: { visible: false }, right: { visible: false } },
+      },
+    });
+    const root = document.querySelector<HTMLElement>('.smrt-admin-shell');
+    const reserve = () =>
+      root?.style.getPropertyValue('--smrt-shell-floating-reserve-main');
+    await vi.waitFor(() => expect(reserve()).not.toBe('0px'));
+    // Edit mode changes the shell's layout tracks (a root style re-render).
+    await edit(user);
+    await edit(user);
+    expect(reserve()).not.toBe('0px');
+  });
+
   it('has no axe violations', async () => {
     const { container } = render(Harness, floating);
     await expectNoA11yViolations(container);
