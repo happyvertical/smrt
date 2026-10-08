@@ -4,14 +4,15 @@ Image asset management with AI-powered categorization, editing, and metadata ext
 
 ## Photographic character setup
 
-The staged setup surface keeps the uploaded pixels local until an explicit stage
-action. The first authorized vision request receives the original and a
-server-transient coordinate-grid copy, then proposes a normalized head outline;
-the browser clips and tightly crops the original pixels into a transparent PNG.
-The second request receives that crop and returns only mouth corners and chin.
-SMRT derives the Canadian horizontal split rig deterministically, while the
-animation package owns contour validation and motion. This is approximate
-silhouette masking, not fine-hair matting; future motion styles are separate.
+The staged setup surface keeps uploaded pixels local during head isolation.
+The optional SDK browser segmenter runs its pinned CPU model on the device,
+selects hair and face-skin confidence masks, and exports a tightly cropped
+transparent PNG while preserving the original RGB bytes. After the user reviews
+the head and explicitly continues, the vision request receives only that crop
+and returns mouth corners and chin. The s-m-r-t package derives the Canadian
+horizontal split rig deterministically, while the animation package owns
+contour validation and motion. This is semantic segmentation, not fine-hair
+matting; future motion styles are separate.
 The split has no artificial mouth-interior fill: opening it reveals the host's
 transparent background through the actual photograph seam.
 
@@ -45,13 +46,12 @@ The SQLite integration test creates the `AssetRuntime`, Profile, and
 The service is adapter-neutral; PostgreSQL execution belongs to the consuming
 application's database suite because this package owns no deployment database.
 
-For vision setup, configure an explicit current vision-capable model through
-the server-only AI configuration (for example `SMRT_CHAT_DEV_MODEL`). The SDK's
-legacy OpenAI default is `gpt-4o`; it can return validator-safe geometry that is
-visually unsuitable for tight silhouettes. The UI never exposes provider
-credentials or model selection.
+For mouth landmark analysis, configure a vision-capable model through the
+server-only AI configuration (for example `SMRT_CHAT_DEV_MODEL`). Review the
+result against the actual crop: valid geometry does not guarantee accurate
+mouth placement. The UI never exposes provider credentials or model selection.
 
-During coordinated development for SMRT #3643 and SDK #1368, the workspace may
+During coordinated development for s-m-r-t #3643 and SDK #1368, the workspace may
 temporarily resolve `@happyvertical/ai` from its sibling SDK worktree. This is a
 development-only integration override; releases restore the SDK family's exact,
 atomic published pins.
@@ -175,6 +175,6 @@ and contributor guidance.
 
 ### Local photographic head isolation
 
-`PhotoCutoutSetup` isolates hair and facial skin on the user's device through the optional SDK `@happyvertical/images/segmentation` entry point. Original RGB values are preserved in the transparent PNG; alpha derives from a semantic pixel mask rather than a model-authored polygon. The component accepts `segmentationAssets` for a same-origin prepared asset directory (default `/api/dev-image-segmentation`). Prepare pinned runtime/model assets with SDK images `prepare:segmentation`; the chat workbench has a dev-only allowlisted asset route. Hair/face policy and review/retry live in SMRT, generic inference and PNG encoding in SDK. Photographs are not uploaded during isolation. Mouth analysis remains the separately requested next stage.
+`PhotoCutoutSetup` isolates hair and facial skin on the user's device through the optional SDK `@happyvertical/images/segmentation` entry point. Original RGB values are preserved in the transparent PNG; alpha derives from a semantic pixel mask rather than a model-authored polygon. The component accepts `segmentationAssets` for a same-origin prepared asset directory (default `/api/dev-image-segmentation`). Prepare pinned runtime/model assets with SDK images `prepare:segmentation`; the chat workbench has a dev-only allowlisted asset route. Hair/face policy and review/retry live in s-m-r-t, generic inference and PNG encoding in SDK. Photographs are not uploaded during isolation. Mouth analysis remains the separately requested next stage.
 
 The 256×256 model can soften fine strands and low-confidence boundaries. Users review the head before continuing; loading errors and cancellation retain the selected photo. Local development uses the explicitly authorized SDK #1370 sibling link, to be replaced by released family pins at coordinated delivery.

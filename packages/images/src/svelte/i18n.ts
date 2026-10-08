@@ -1,6 +1,18 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  // PhotoCutoutSetup
+  'images.photo_cutout_setup.title': 'Photographic character setup',
+  'images.photo_cutout_setup.choose_photo': 'Choose character photo',
+  'images.photo_cutout_setup.photo_formats': 'PNG, JPEG, or WebP below 8 MB',
+  'images.photo_cutout_setup.preview_speech': 'Preview speech',
+  'images.photo_cutout_setup.stop_speech': 'Stop speech',
+  'images.photo_cutout_setup.transparent_head': 'Step 1: transparent head',
+  'images.photo_cutout_setup.isolated_head_alt':
+    'Isolated head on transparent background',
+  'images.photo_cutout_setup.source_alt': 'Selected character source',
+  'images.photo_cutout_setup.preview_label': 'Animated character preview',
+
   // AssetsGallery
   'images.assets_gallery.title': 'Pictures',
   'images.assets_gallery.search_placeholder': 'Search pictures',

@@ -4,7 +4,8 @@ import {
   type PhotoCutoutHandle,
   type PhotoCutoutRig,
 } from '@happyvertical/animation';
-import { Textarea } from '@happyvertical/smrt-ui/forms';
+import { FilePicker, Textarea } from '@happyvertical/smrt-ui/forms';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
 import {
@@ -14,6 +15,9 @@ import {
 } from '../../photo-cutout-setup.js';
 
 import { isolatePhotoHead } from '../head-isolation.js';
+import { M } from '../i18n.js';
+
+const { t } = useI18n();
 
 interface PersistedSetup {
   pngDataUrl: string;
@@ -381,9 +385,9 @@ async function playSpeech() {
 </script>
 
 <section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title">
-  <h2 id="cutout-title">Photographic character setup</h2>
+  <h2 id="cutout-title">{t(M['images.photo_cutout_setup.title'])}</h2>
   <p class:error={failed !== null} class:success={ready} aria-live="polite">{message}{#if busy} ({elapsed}s){/if}</p>
-  <input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose character photo" onchange={select} disabled={persisting !== null} />
+  <FilePicker accept="image/png,image/jpeg,image/webp" label={t(M['images.photo_cutout_setup.choose_photo'])} description={t(M['images.photo_cutout_setup.photo_formats'])} aria-label={t(M['images.photo_cutout_setup.choose_photo'])} onchange={select} disabled={persisting !== null} />
   <div class="actions">
     <Button onclick={() => run('outline')} disabled={!source || busy !== null}>{failed === 'outline' ? 'Retry head isolation' : head ? 'Redo head isolation' : 'Isolate head'}</Button>
     {#if head}<Button onclick={() => run('mouth-landmarks')} disabled={busy !== null}>{failed === 'mouth-landmarks' ? 'Retry mouth segmentation' : ready ? 'Redo mouth segmentation' : 'Continue: segment mouth'}</Button>{/if}
@@ -391,23 +395,23 @@ async function playSpeech() {
     {#if ready}<Button onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>{/if}
     {#if ready && saveSetup}<Button onclick={saveCharacter} disabled={persisting !== null}>{persisting === 'save' ? 'Saving…' : 'Save character'}</Button>{/if}
     {#if loadSetup}<Button onclick={loadCharacter} disabled={busy !== null || persisting !== null}>{persisting === 'load' ? 'Loading…' : 'Load saved character'}</Button>{/if}
-    {#if ready && speechPreview}<label>Preview speech <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={() => stopSpeech()}>Stop speech</Button>{/if}{/if}
+    {#if ready && speechPreview}<label>{t(M['images.photo_cutout_setup.preview_speech'])} <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={() => stopSpeech()}>{t(M['images.photo_cutout_setup.stop_speech'])}</Button>{/if}{/if}
   </div>
-  {#if head}<figure><figcaption>Step 1: transparent head</figcaption><img class="checkerboard" src={head.url} alt="Isolated head on transparent background" /></figure>
-  {:else if source}<img src={source.url} alt="Selected character source" />{/if}
-  <div bind:this={target} class="preview checkerboard" aria-label="Animated character preview"></div>
+  {#if head}<figure><figcaption>{t(M['images.photo_cutout_setup.transparent_head'])}</figcaption><img class="checkerboard" src={head.url} alt={t(M['images.photo_cutout_setup.isolated_head_alt'])} /></figure>
+  {:else if source}<img src={source.url} alt={t(M['images.photo_cutout_setup.source_alt'])} />{/if}
+  <div bind:this={target} class="preview checkerboard" aria-label={t(M['images.photo_cutout_setup.preview_label'])}></div>
 </section>
 
 <style>
-.setup { max-width: 42rem; margin: 1.5rem auto; padding: 1.25rem; border: 1px solid var(--smrt-color-border, #64748b); border-radius: .75rem; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 1rem 0; }
-figure { margin: 1rem 0; }
+.setup { max-width: 42rem; margin: var(--smrt-spacing-6, 1.5rem) auto; padding: var(--smrt-spacing-5, 1.25rem); border: 1px solid var(--smrt-color-outline-variant, #64748b); border-radius: var(--smrt-radius-xl, 12px); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-3, .75rem); margin: var(--smrt-spacing-4, 1rem) 0; }
+figure { margin: var(--smrt-spacing-4, 1rem) 0; }
 .setup img, .preview :global(svg) { display: block; width: min(100%, 28rem); height: auto; max-height: 28rem; object-fit: contain; }
-.preview { width: fit-content; margin-top: 1rem; }
-.checkerboard { background-color: #fff; background-image: linear-gradient(45deg, #ddd 25%, transparent 25%), linear-gradient(-45deg, #ddd 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ddd 75%), linear-gradient(-45deg, transparent 75%, #ddd 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
-.error { color: var(--smrt-color-error, #b91c1c); font-weight: 600; }
+.preview { width: fit-content; margin-top: var(--smrt-spacing-4, 1rem); }
+.checkerboard { background-color: var(--smrt-color-surface, #fff); background-image: linear-gradient(45deg, var(--smrt-color-surface-container-highest, #ddd) 25%, transparent 25%), linear-gradient(-45deg, var(--smrt-color-surface-container-highest, #ddd) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--smrt-color-surface-container-highest, #ddd) 75%), linear-gradient(-45deg, transparent 75%, var(--smrt-color-surface-container-highest, #ddd) 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
+.error { color: var(--smrt-color-error, #b91c1c); font-weight: var(--smrt-typography-weight-semibold, 600); }
 .success { color: var(--smrt-color-success, #166534); }
-.spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+.spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--smrt-radius-full, 9999px); animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-right-color: currentColor; } }
 </style>
