@@ -26,10 +26,10 @@ import AgentChat from './components/agent/AgentChat.svelte';
 import AgentSelector from './components/agent/AgentSelector.svelte';
 import AgentSessionPanel from './components/agent/AgentSessionPanel.svelte';
 import ToolCallDisplay from './components/agent/ToolCallDisplay.svelte';
+import CaptionOverlay from './components/assistant/captions/CaptionOverlay.svelte';
+import HeardCaptions from './components/assistant/captions/HeardCaptions.svelte';
+import SpokenCaptions from './components/assistant/captions/SpokenCaptions.svelte';
 // Assistant dock components (#2904)
-import AssistantComposer from './components/assistant/AssistantComposer.svelte';
-import AssistantDock from './components/assistant/AssistantDock.svelte';
-import AssistantThreadList from './components/assistant/AssistantThreadList.svelte';
 import FloatingAssistant from './components/assistant/FloatingAssistant.svelte';
 // Dialog components
 import RoomCreateDialog from './components/dialogs/RoomCreateDialog.svelte';
@@ -50,7 +50,6 @@ import FileUpload from './components/shared/FileUpload.svelte';
 import LinkPreview from './components/shared/LinkPreview.svelte';
 import MentionAutocomplete from './components/shared/MentionAutocomplete.svelte';
 // Shared model picker
-import ModelPicker from './components/shared/ModelPicker.svelte';
 import ReactionPicker from './components/shared/ReactionPicker.svelte';
 import ReadReceipts from './components/shared/ReadReceipts.svelte';
 import UserPresence from './components/shared/UserPresence.svelte';
@@ -130,6 +129,21 @@ export {
   readAssistantTurnResult,
   type SmrtAssistantTransportOptions,
 } from './components/assistant/assistant-transport.js';
+export { default as CaptionOverlay } from './components/assistant/captions/CaptionOverlay.svelte';
+export {
+  type CaptionChannel,
+  type CaptionChannelOptions,
+  type CaptionLine,
+  type CaptionTTSAdapter,
+  createCaptionChannel,
+  createHeardCaptionCallbacks,
+  createSpokenCaptionCallbacks,
+  createSpokenCaptionSession,
+  type SpokenCaptionCallbacks,
+  type SpokenCaptionSession,
+} from './components/assistant/captions/caption-state.svelte.js';
+export { default as HeardCaptions } from './components/assistant/captions/HeardCaptions.svelte';
+export { default as SpokenCaptions } from './components/assistant/captions/SpokenCaptions.svelte';
 export {
   ASSISTANT_PROPOSE_ACTION_TOOL,
   type AssistantClientTool,
@@ -269,6 +283,16 @@ ModuleUIRegistry.register(
   'tool-call-display',
   ToolCallDisplay,
 );
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-chat',
+  'heard-captions',
+  HeardCaptions,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-chat',
+  'spoken-captions',
+  SpokenCaptions,
+);
 
 // Shared
 ModuleUIRegistry.register('@happyvertical/smrt-chat', 'avatar', Avatar);
@@ -323,4 +347,10 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-chat',
   'search-messages',
   SearchMessages,
+);
+
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-chat',
+  'caption-overlay',
+  CaptionOverlay,
 );

@@ -12,6 +12,9 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  // CaptionOverlay
+  'chat.caption_overlay.scroll_up': 'Scroll captions up',
+  'chat.caption_overlay.scroll_down': 'Scroll captions down',
   // AgentChat
   'chat.agent_chat.conversation': 'Agent conversation',
   'chat.agent_chat.inactive_notice': 'Session {status}. Cannot send messages.',
