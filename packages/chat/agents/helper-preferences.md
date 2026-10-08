@@ -43,3 +43,7 @@ hosts pass the effective saved placement to keep the dock with its selected
 helper. Opening listening mode may reveal the existing assistant surface, but
 must never start microphone capture or audio playback; those remain explicit
 user actions.
+
+`FloatingAssistant.hideIdleControls` is opt-in and defaults to false for existing hosts.
+The character listening workbench enables it to hide idle controls chrome while
+keeping active runs, errors and confirmation surfaces reachable.

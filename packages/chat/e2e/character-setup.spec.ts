@@ -9,12 +9,12 @@ test('character conversation hydrates and exposes listening input', async ({ pag
   await expect(page.getByLabel('Type your message')).toBeEnabled();
 });
 
-test('listening submit remains pointer-reachable beside an expanded dock', async ({ page }) => {
+test('listening submit remains pointer-reachable with idle controls hidden', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.getByRole('tab', { name: 'Character conversation' }).click();
   await page.getByRole('button', { name: 'Listening mode' }).click();
-  await page.getByRole('button', { name: 'Talk to your assistant' }).click();
+  await expect(page.getByRole('button', { name: 'Talk to your assistant' })).toHaveCount(0);
   const input = page.getByLabel('Type your message');
   await input.fill('A typed turn');
   const submit = page.getByRole('button', { name: 'Send message' });

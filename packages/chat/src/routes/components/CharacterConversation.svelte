@@ -508,7 +508,7 @@ onMount(() => {
   {#if listening && active}
     <CharacterConversationVoice onfinal={sendSpokenTurn} heardSubtitles={helperPreferences?.heardSubtitles ?? true} disabled={!conversationReady || attentionRequired || turnPending} />
   {/if}
-  <FloatingAssistant bind:expanded={assistantExpanded} placement={helperPreferences?.placement ?? 'bottom-right'} composerDisabled={turnPending} {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
+  <FloatingAssistant bind:expanded={assistantExpanded} hideIdleControls={listening} placement={helperPreferences?.placement ?? 'bottom-right'} composerDisabled={turnPending} {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
   <SpokenCaptions placement="inline" enabled={helperPreferences?.spokenSubtitles ?? true} lines={spoken.lines} interim={spoken.interim} />
 </section>
 

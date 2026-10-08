@@ -372,7 +372,7 @@ async function playSpeech() {
 
 <section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title">
   <h2 id="cutout-title">{t(M['images.photo_cutout_setup.title'])}</h2>
-  <ol class="steps" aria-label="Character setup steps">
+  <ol class="steps" aria-label={t(M['images.photo_cutout_setup.steps_label'])}>
     <li class:current={!source && !ready} class:complete={source !== null || ready} aria-current={!source && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_choose'])}</li>
     <li class:current={source !== null && !head && !ready} class:complete={head !== null || ready} aria-current={source !== null && !head && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_isolate'])}</li>
     <li class:current={head !== null && !ready} class:complete={ready} aria-current={head !== null && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_mouth'])}</li>
@@ -390,9 +390,9 @@ async function playSpeech() {
       {#if busy}<span class="spinner" aria-label={busy === 'outline' ? 'Isolating head' : 'Segmenting mouth'}></span><Button variant="secondary" onclick={cancel}>Cancel</Button>{/if}
     </div>
     {#if ready && saveSetup}<p class="save-hint">{t(M['images.photo_cutout_setup.save_hint'])}</p>{/if}
-    <div class="secondary-actions" aria-label="Character setup options">
-      {#if head}<Button variant="secondary" onclick={() => run('outline')} disabled={busy !== null || persisting !== null}>Redo head isolation</Button>{/if}
-      {#if head && ready}<Button variant="secondary" onclick={() => run('mouth-landmarks')} disabled={busy !== null || persisting !== null}>Redo mouth segmentation</Button>{/if}
+    <div class="secondary-actions" aria-label={t(M['images.photo_cutout_setup.options_label'])}>
+      {#if head}<Button variant="secondary" onclick={() => run('outline')} disabled={busy !== null || persisting !== null}>{t(M['images.photo_cutout_setup.redo_head'])}</Button>{/if}
+      {#if head && ready}<Button variant="secondary" onclick={() => run('mouth-landmarks')} disabled={busy !== null || persisting !== null}>{t(M['images.photo_cutout_setup.redo_mouth'])}</Button>{/if}
       {#if ready && saveSetup}<Button variant="secondary" onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>{/if}
       {#if loadSetup}<Button variant="secondary" onclick={loadCharacter} disabled={busy !== null || persisting !== null}>{persisting === 'load' ? 'Loading…' : 'Load saved character'}</Button>{/if}
     </div>
@@ -407,18 +407,18 @@ async function playSpeech() {
 
 <style>
 .setup { max-width: 42rem; margin: var(--smrt-spacing-6, 1.5rem) auto; padding: var(--smrt-spacing-5, 1.25rem); border: 1px solid var(--smrt-color-outline-variant, #64748b); border-radius: var(--smrt-radius-xl, 12px); }
-.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--smrt-spacing-2, .5rem); padding: 0; margin: var(--smrt-spacing-4, 1rem) 0; list-style: none; color: var(--smrt-color-on-surface-variant, #475569); font-size: var(--smrt-typography-size-sm, .875rem); }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--smrt-spacing-2, .5rem); padding: 0; margin: var(--smrt-spacing-4, 1rem) 0; list-style: none; color: var(--smrt-color-on-surface-variant, #475569); font-size: var(--smrt-typography-body-small-size, .875rem); }
 .steps li { padding-bottom: var(--smrt-spacing-1, .25rem); border-bottom: 2px solid var(--smrt-color-outline-variant, #64748b); }
 .steps .current { color: var(--smrt-color-primary, #1d4ed8); border-color: var(--smrt-color-primary, #1d4ed8); font-weight: var(--smrt-typography-weight-semibold, 600); }
 .steps .complete { color: var(--smrt-color-success, #166534); }
 .workflow-actions { margin: var(--smrt-spacing-4, 1rem) 0; }
 .primary-action, .secondary-actions, .speech { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-3, .75rem); }
 .secondary-actions { margin-top: var(--smrt-spacing-3, .75rem); }
-.save-hint { margin: var(--smrt-spacing-2, .5rem) 0 0; color: var(--smrt-color-on-surface-variant, #475569); font-size: var(--smrt-typography-size-sm, .875rem); }
+.save-hint { margin: var(--smrt-spacing-2, .5rem) 0 0; color: var(--smrt-color-on-surface-variant, #475569); font-size: var(--smrt-typography-body-small-size, .875rem); }
 .speech { margin-top: var(--smrt-spacing-4, 1rem); }
 .previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-4, 1rem); align-items: start; }
 figure { margin: 0; }
-figure figcaption { margin-bottom: var(--smrt-spacing-2, .5rem); font-size: var(--smrt-typography-size-sm, .875rem); }
+figure figcaption { margin-bottom: var(--smrt-spacing-2, .5rem); font-size: var(--smrt-typography-body-small-size, .875rem); }
 .setup img, .preview :global(svg) { display: block; width: 100%; height: auto; max-height: 18rem; object-fit: contain; }
 .preview, .preview-target { min-width: 0; }
 .preview-target:not(.preview) { display: none; }

@@ -37,6 +37,8 @@ export interface Props extends AssistantDockProps {
   expanded?: boolean;
   /** Fixed viewport corner used by the launcher and its conversation panel. */
   placement?: 'bottom-left' | 'bottom-right';
+  /** Hides empty controls-only chrome while preserving active runs and decisions. */
+  hideIdleControls?: boolean;
 }
 
 let {
@@ -45,6 +47,7 @@ let {
   panelLabel = 'Assistant',
   expanded = $bindable(false),
   placement = 'bottom-right',
+  hideIdleControls = false,
   visible = true,
   presentation = 'full',
   onstatus,
@@ -73,13 +76,15 @@ const panelId = `floating-assistant-${floatingAssistantId}`;
 const panelExpanded = $derived(
   visible &&
     (expanded || attentionRequired) &&
-    (presentation === 'full' ||
+    (!hideIdleControls ||
+      presentation === 'full' ||
       attentionRequired ||
       run !== null ||
       status.state !== 'idle'),
 );
 const launcherVisible = $derived(
-  presentation === 'full' ||
+  !hideIdleControls ||
+    presentation === 'full' ||
     attentionRequired ||
     run !== null ||
     status.state !== 'idle',

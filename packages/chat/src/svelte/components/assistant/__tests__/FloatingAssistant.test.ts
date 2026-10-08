@@ -57,7 +57,12 @@ describe('FloatingAssistant', () => {
 
   it('offers a controls-only presentation without conversational history or input', async () => {
     const { container } = render(FloatingAssistant, {
-      props: { ...props(), presentation: 'controls', expanded: true },
+      props: {
+        ...props(),
+        presentation: 'controls',
+        expanded: true,
+        hideIdleControls: true,
+      },
     });
 
     expect(screen.queryByLabelText('Message')).not.toBeInTheDocument();
@@ -70,6 +75,18 @@ describe('FloatingAssistant', () => {
     expect(
       container.querySelector('.floating-assistant-panel'),
     ).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('preserves idle controls chrome by default for existing hosts', () => {
+    const { container } = render(FloatingAssistant, {
+      props: { ...props(), presentation: 'controls', expanded: true },
+    });
+    expect(
+      screen.getByRole('button', { name: 'Open assistant' }),
+    ).toBeVisible();
+    expect(
+      container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'false');
   });
 
   it('uses the requested left placement while keeping the default right placement', () => {
@@ -94,6 +111,7 @@ async function mountedFixture() {
       ...fixture,
       oncontroller,
       presentation: 'controls',
+      hideIdleControls: true,
       expanded: true,
     },
   });
