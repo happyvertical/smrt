@@ -30,6 +30,7 @@ import ToolCallDisplay from './components/agent/ToolCallDisplay.svelte';
 import AssistantComposer from './components/assistant/AssistantComposer.svelte';
 import AssistantDock from './components/assistant/AssistantDock.svelte';
 import AssistantThreadList from './components/assistant/AssistantThreadList.svelte';
+import FloatingAssistant from './components/assistant/FloatingAssistant.svelte';
 // Dialog components
 import RoomCreateDialog from './components/dialogs/RoomCreateDialog.svelte';
 import SearchMessages from './components/dialogs/SearchMessages.svelte';
@@ -155,6 +156,10 @@ export {
   type AssistantUserHold,
   createAssistantDockController,
 } from './components/assistant/create-assistant-dock-controller.svelte.js';
+export {
+  default as FloatingAssistant,
+  type FloatingAssistantPresentationState,
+} from './components/assistant/FloatingAssistant.svelte';
 export { default as RoomCreateDialog } from './components/dialogs/RoomCreateDialog.svelte';
 export { default as SearchMessages } from './components/dialogs/SearchMessages.svelte';
 // Export components
