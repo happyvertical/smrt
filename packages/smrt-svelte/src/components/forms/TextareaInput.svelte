@@ -50,6 +50,10 @@ let {
   onchange,
 }: Props = $props();
 
+// Unique per instance: the control stays labelled even if `name` repeats on a page.
+const uid = $props.id();
+const labelId = `${uid}-label`;
+
 const app = useAppState();
 const stt = useSTT();
 const formContext = tryGetFormContext();
@@ -225,14 +229,15 @@ function handleInput(e: Event) {
   class:has-value={!!value}
   class:listening={isHolding}
 >
+  {#if label}
+    <label id={labelId} for={name} class="smrt-field-label">{label}{#if required}*{/if}</label>
+  {/if}
   <div class="container">
     <div class="content">
-      {#if label}
-        <label for={name} class="label">{label}{#if required}*{/if}</label>
-      {/if}
       <textarea
         bind:this={textareaEl}
         id={name}
+        aria-labelledby={label ? labelId : undefined}
         {name}
         placeholder={isFocused ? placeholder : ''}
         {value}
@@ -306,10 +311,11 @@ function handleInput(e: Event) {
     position: relative;
     display: flex;
     align-items: flex-start;
-    background-color: var(--field-bg);
-    border-radius: var(--smrt-radius-sm, 4px) var(--smrt-radius-sm, 4px) 0 0;
-    min-height: 56px;
-    padding: 0 var(--smrt-spacing-4, 16px);
+    background-color: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+    border-radius: var(--smrt-radius-small, 6px);
+    min-height: 40px;
+    padding: 0 var(--smrt-spacing-3, 12px);
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
@@ -325,21 +331,19 @@ function handleInput(e: Event) {
     padding-bottom: var(--smrt-spacing-2, 8px);
   }
 
-  .label {
-    font-size: var(--smrt-typography-body-large-size, 1rem);
-    line-height: var(--smrt-typography-body-large-line-height, 1.5);
-    letter-spacing: var(--smrt-typography-body-large-tracking, 0.5px);
-    color: var(--field-color);
-    pointer-events: none;
-    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
-    transform-origin: top left;
+  /* Plain label above the control: one label treatment across generated forms. */
+  .smrt-field-label {
+    display: block;
     margin-bottom: var(--smrt-spacing-1, 4px);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    line-height: var(--smrt-typography-label-large-line-height, 1.4);
+    letter-spacing: normal;
+    text-transform: none;
+    font-family: inherit;
+    color: var(--smrt-color-on-surface, #374151);
   }
 
-  .focused .label, .has-value .label, .listening .label {
-    transform: translateY(-4px) scale(0.75);
-    color: var(--field-active);
-  }
 
   .input {
     border: none;
@@ -359,19 +363,11 @@ function handleInput(e: Event) {
     outline: none;
   }
 
-  .active-indicator {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background-color: var(--field-color);
-    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
-  }
+  .active-indicator { display: none; }
 
-  .focused .active-indicator {
-    height: 2px;
-    background-color: var(--field-active);
+  .focused .container {
+    border-color: var(--field-active);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--field-active) 10%, transparent);
   }
 
   .mic-btn {
@@ -396,7 +392,7 @@ function handleInput(e: Event) {
   }
 
   .supporting-text {
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-4, 16px) 0;
+    padding: var(--smrt-spacing-1, 4px) 0 0;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     min-height: 16px;
   }

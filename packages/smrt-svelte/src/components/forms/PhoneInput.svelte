@@ -45,6 +45,10 @@ let {
   onchange,
 }: Props = $props();
 
+// Unique per instance: the control stays labelled even if `name` repeats on a page.
+const uid = $props.id();
+const labelId = `${uid}-label`;
+
 const app = useAppState();
 const stt = useSTT();
 const formContext = tryGetFormContext();
@@ -295,7 +299,7 @@ function handleInput(e: Event) {
 
 <div class="smrt-phone" class:listening={isHolding}>
   {#if label}
-    <label for={name} class="smrt-label">
+    <label id={labelId} for={name} class="smrt-field-label">
       {label}
       {#if required}<span class="required">*</span>{/if}
     </label>
@@ -305,6 +309,7 @@ function handleInput(e: Event) {
     <input
       bind:this={inputEl}
       id={name}
+      aria-labelledby={label ? labelId : undefined}
       {name}
       type="tel"
       {placeholder}
@@ -395,13 +400,13 @@ function handleInput(e: Event) {
     position: relative;
   }
 
-  .smrt-label {
+  .smrt-field-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     color: var(--smrt-color-on-surface, #374151);
   }
 
-  .smrt-label .required {
+  .smrt-field-label .required {
     color: var(--smrt-color-error, #ba1a1a);
     margin-left: var(--smrt-spacing-1, 4px);
   }

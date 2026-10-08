@@ -60,23 +60,19 @@ describe('MoneyInput — behavior', () => {
     expect(input).toHaveValue('5.00'); // reformatted on blur
   });
 
-  it('shows CA$ symbol and CAD code by default', () => {
+  it('shows the CAD code once by default', () => {
     const { container } = render(MoneyInput, {
       props: { name: 'price', label: 'Price' },
     });
-    expect(container.querySelector('.currency-symbol')?.textContent).toBe(
-      'CA$',
-    );
+    expect(container.querySelector('.currency-symbol')).toBeNull(); // shown once
     expect(container.querySelector('.currency-code')?.textContent).toBe('CAD');
   });
 
-  it('shows US$ symbol and USD code when currency=USD', () => {
+  it('shows the USD code once when currency=USD', () => {
     const { container } = render(MoneyInput, {
       props: { name: 'price', label: 'Price', currency: 'USD' },
     });
-    expect(container.querySelector('.currency-symbol')?.textContent).toBe(
-      'US$',
-    );
+    expect(container.querySelector('.currency-symbol')).toBeNull(); // shown once
     expect(container.querySelector('.currency-code')?.textContent).toBe('USD');
   });
 

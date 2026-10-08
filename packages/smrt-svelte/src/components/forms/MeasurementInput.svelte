@@ -442,7 +442,7 @@ function handleUnitChange(e: Event) {
 
 <div class="smrt-measurement" data-smrt-field-owner={fieldOwnerToken}>
   {#if label}
-    <label for={name} class="smrt-label">
+    <label for={name} class="smrt-field-label">
       {label}
       {#if required}<span class="required">*</span>{/if}
     </label>
@@ -505,13 +505,13 @@ function handleUnitChange(e: Event) {
     gap: var(--smrt-spacing-1, 4px);
   }
 
-  .smrt-label {
+  .smrt-field-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     color: var(--smrt-color-on-surface, #374151);
   }
 
-  .smrt-label .required {
+  .smrt-field-label .required {
     color: var(--smrt-color-error, #ba1a1a);
     margin-left: var(--smrt-spacing-1, 4px);
   }

@@ -452,7 +452,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   data-smrt-field-owner={fieldOwnerToken}
 >
   {#if label}
-    <label class="smrt-label" for={primaryControlId}>
+    <label class="smrt-field-label" for={primaryControlId}>
       {label}
       {#if required}<span class="required">*</span>{/if}
     </label>
@@ -575,13 +575,13 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
     gap: var(--smrt-spacing-2, 8px);
   }
 
-  .smrt-label {
+  .smrt-field-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     color: var(--smrt-color-on-surface, #374151);
   }
 
-  .smrt-label .required {
+  .smrt-field-label .required {
     color: var(--smrt-color-error, #ba1a1a);
     margin-left: var(--smrt-spacing-1, 4px);
   }

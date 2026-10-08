@@ -396,7 +396,7 @@ function handleCountryChange(e: Event) {
 
   <div class="smrt-address" data-smrt-field-owner={fieldOwnerToken}>
   {#if label}
-    <label class="smrt-label" for={primaryFieldId}>
+    <label class="smrt-field-label" for={primaryFieldId}>
       {label}
       {#if required}<span class="required">*</span>{/if}
     </label>
@@ -525,13 +525,13 @@ function handleCountryChange(e: Event) {
     gap: var(--smrt-spacing-2, 8px);
   }
 
-  .smrt-label {
+  .smrt-field-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     color: var(--smrt-color-on-surface, #374151);
   }
 
-  .smrt-label .required {
+  .smrt-field-label .required {
     color: var(--smrt-color-error, #ba1a1a);
     margin-left: var(--smrt-spacing-1, 4px);
   }

@@ -42,10 +42,16 @@ let {
   onchange,
 }: Props = $props();
 
+// Unique per instance: the control stays labelled even if `name` repeats on a page.
+const uid = $props.id();
+const labelId = `${uid}-label`;
+
 const app = useAppState();
 const formContext = tryGetFormContext();
 
 let isFocused = $state(false);
+/** A caller-supplied empty choice replaces the placeholder: one empty option only. */
+const hasEmptyOption = $derived(options.some((o) => o.value === ''));
 const isSmrt = $derived(app.state.mode === 'smrt');
 
 // Helper to update value
@@ -123,15 +129,14 @@ function handleChange(e: Event) {
   class:disabled
   class:has-value={!!value}
 >
+  {#if label}
+    <label id={labelId} for={name} class="smrt-field-label">{label}{#if required}*{/if}</label>
+  {/if}
   <div class="container">
     <div class="content">
-      {#if label}
-        <label for={name} class="label">
-          {label}{#if required}*{/if}
-        </label>
-      {/if}
       <select
         id={name}
+        aria-labelledby={label ? labelId : undefined}
         {name}
         {value}
         {disabled}
@@ -142,7 +147,9 @@ function handleChange(e: Event) {
         onfocus={() => isFocused = true}
         onblur={() => isFocused = false}
       >
-        <option value="" disabled selected={!value}>{placeholder}</option>
+        {#if !hasEmptyOption}
+          <option value="" disabled selected={!value}>{placeholder}</option>
+        {/if}
         {#each options as option (option.value)}
           <option value={option.value}>{option.label}</option>
         {/each}
@@ -179,10 +186,11 @@ function handleChange(e: Event) {
     position: relative;
     display: flex;
     align-items: center;
-    background-color: var(--field-bg);
-    border-radius: var(--smrt-radius-sm, 4px) var(--smrt-radius-sm, 4px) 0 0;
-    min-height: 56px;
-    padding: 0 var(--smrt-spacing-4, 16px);
+    background-color: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+    border-radius: var(--smrt-radius-small, 6px);
+    min-height: 40px;
+    padding: 0 var(--smrt-spacing-3, 12px);
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
@@ -196,23 +204,21 @@ function handleChange(e: Event) {
     flex-direction: column;
     justify-content: center;
     height: 100%;
-    padding-top: var(--smrt-spacing-2, 8px);
+      }
+
+  /* Plain label above the control: one label treatment across generated forms. */
+  .smrt-field-label {
+    display: block;
+    margin-bottom: var(--smrt-spacing-1, 4px);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    line-height: var(--smrt-typography-label-large-line-height, 1.4);
+    letter-spacing: normal;
+    text-transform: none;
+    font-family: inherit;
+    color: var(--smrt-color-on-surface, #374151);
   }
 
-  .label {
-    font-size: var(--smrt-typography-body-large-size, 1rem);
-    line-height: var(--smrt-typography-body-large-line-height, 1.5);
-    letter-spacing: var(--smrt-typography-body-large-tracking, 0.5px);
-    color: var(--field-color);
-    pointer-events: none;
-    transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
-    transform-origin: top left;
-  }
-
-  .focused .label, .has-value .label {
-    transform: translateY(-8px) scale(0.75);
-    color: var(--field-active);
-  }
 
   .input {
     border: none;
@@ -242,23 +248,15 @@ function handleChange(e: Event) {
     margin-right: -4px;
   }
 
-  .active-indicator {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background-color: var(--field-color);
-    transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
-  }
+  .active-indicator { display: none; }
 
-  .focused .active-indicator {
-    height: 2px;
-    background-color: var(--field-active);
+  .focused .container {
+    border-color: var(--field-active);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--field-active) 10%, transparent);
   }
 
   .supporting-text {
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-4, 16px) 0;
+    padding: var(--smrt-spacing-1, 4px) 0 0;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
   }
 
