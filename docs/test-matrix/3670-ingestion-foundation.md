@@ -2,7 +2,7 @@
 
 Refs #3670; frozen contract: [ADR 0004](../adr/0004-application-aware-ingestion.md).
 High risk: persistent tenant/confidential authority, concurrent leases and cross-system recovery.
-Executed evidence is captured outside the worktree in `/home/will/Work/tmp/s3670/evidence`; the review packet records command status, file digest and reviewed revision. The foundation suite executes the same 26 cases on each real database.
+Executed evidence is captured outside the worktree in `/home/will/Work/tmp/s3670/evidence`; the review packet records command status, file digest and reviewed revision. The foundation suite executes the same 30 cases on each real database.
 
 Commands: U = `pnpm --filter @happyvertical/smrt-ingestion test`; P = `pnpm --filter @happyvertical/smrt-ingestion test:postgres`; T = `pnpm --filter @happyvertical/smrt-ingestion typecheck`; K = `pnpm --filter @happyvertical/smrt-ingestion build`.
 Both means actual Node 26 SQLite and PostgreSQL. Every service boundary uses a server-created authenticated scope, and denies both another tenant and a missing confidential grant identically.
@@ -19,7 +19,7 @@ Both means actual Node 26 SQLite and PostgreSQL. Every service boundary uses a s
 | Migrations and types | deployment before runtime | manifest/registry parity, UUID/decimal/index types | missing schema, unsupported dialect fail | deployer | migration-only DDL | Node/both | public migration API | integration U,P,K |
 | Browser boundary | bundle built root and DTO | no node/provider imports | server cannot leak into root | browser consumer | N/A pure imports | browser bundle | exports | build K; type T |
 
-Provider/component/e2e/evaluation lanes are frozen but have no implementation in this foundation child: they must fail clearly until their owning children install real suites, never pass an empty lane. No regression comparison: additive feature. Assets changes require its full model/UI/browser suite, build and typecheck. Root lint/format/instruction/knowledge/audit checks apply. No new UI or extraction behavior is claimed.
+Provider/component/e2e/evaluation lanes are frozen but have no implementation in this foundation child: they must fail clearly until their owning children install real suites, never pass an empty lane. The initial feature was additive; accepted review fixes include baseline-failing regression comparisons on both databases. Assets changes require its full model/UI/browser suite, build and typecheck. Root lint/format/instruction/knowledge/audit checks apply. No new UI or extraction behavior is claimed.
 
 ## Executed coverage mapping
 
@@ -58,3 +58,22 @@ strict knowledge validation apply and are captured. The coordinator runs the
 broader monorepo build/typecheck/test before independent review. There is no
 provider/UI/evaluation capability in this child, so the frozen future lanes are
 not applicable and remain explicitly unavailable, never empty passing suites.
+
+## Accepted review corrections (round 1)
+
+The four `review regression:` cases run under both U and P. All four fail against
+reviewed revision `552ddebb1b49080bc67f0971769010061b3fe384` and pass after correction;
+full logs and hashes are in `/home/will/Work/tmp/s3670/r1-fixes`.
+
+| Existing invariant | Deterministic regression trigger | Required observation |
+|---|---|---|
+| Host authority / receipt identity | Host revokes receive permission after the first check, before reservation | Transaction-bound authorization denies; no item or evidence row is committed |
+| Dispatch repair / current state | Analysis completes after repair snapshots its intent, before allocation | Completed intent is skipped; public item remains completed; no new job |
+| Revision isolation | Reanalysis supersedes an unfinished revision; repair also encounters a pre-fix obsolete intent | Supersession retires old dispatches atomically; repair retires stale work without changing current success or enqueueing |
+| Visible attempt budgets | Last permitted worker lease expires before another claim | Item, analysis and attempt project needs-attention together; dispatch retires; late completion is rejected |
+
+Only ingestion server behavior, its shared database tests and this matrix change
+for these corrections. Previously recorded assets, package/dependency registration,
+consumer bundle-gate and root full-suite evidence remains applicable; no source or
+dependency in those packages changes. Full ingestion build/typecheck/U/P and root
+lint/format/regenerated strict knowledge checks are rerun for the corrected tree.

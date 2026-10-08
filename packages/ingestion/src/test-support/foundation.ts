@@ -209,6 +209,175 @@ export function foundationSuite(
       }
       if (root) await rm(root, { recursive: true, force: true });
     });
+    it('review regression: reauthorizes receipt reservation on its owning transaction', async () => {
+      let granted = true;
+      const receiveExecutors: DatabaseInterface[] = [];
+      const receiving = new IngestionService({
+        ...options,
+        authorize: async ({ operation, db: executor }) => {
+          if (operation !== 'receive') return granted;
+          receiveExecutors.push(executor);
+          const result = granted;
+          granted = false; // Revoked after the initial check, before reservation.
+          return result;
+        },
+      });
+      let failure: unknown;
+      try {
+        await receiving.receive(receive('revoked-at-reservation'));
+      } catch (error) {
+        failure = error;
+      }
+      expect(
+        Number(
+          (await db.query('SELECT COUNT(*) AS n FROM intake_items')).rows[0].n,
+        ),
+      ).toBe(0);
+      expect(
+        Number(
+          (await db.query('SELECT COUNT(*) AS n FROM intake_evidence')).rows[0]
+            .n,
+        ),
+      ).toBe(0);
+      expect(failure).toBeInstanceOf(Error);
+      expect(receiveExecutors).toHaveLength(2);
+      expect(receiveExecutors[0]).toBe(db);
+      expect(receiveExecutors[1]).not.toBe(db);
+    });
+
+    it('review regression: repair cannot replace completion from a stale dispatch snapshot', async () => {
+      const id = await accepted('repair-completion-race');
+      const lease = await analysis(id);
+      await db.query('DELETE FROM _smrt_jobs');
+      let completed = false;
+      const repairing = new IngestionService({
+        ...options,
+        authorize: async ({ operation, db: executor }) => {
+          // repair has loaded its dispatch snapshot and is reading the item,
+          // but has not acquired its allocation transaction yet.
+          if (operation === 'process' && executor === db && !completed) {
+            completed = true;
+            expect(await service.completeAnalysis(lease, output)).toBe(true);
+          }
+          return true;
+        },
+      });
+      expect(await repairing.repairDispatches()).toBe(0);
+      expect(completed).toBe(true);
+      expect((await service.getItem(id)).processingState).toBe('completed');
+      expect(
+        (
+          await db.query(
+            'SELECT state FROM intake_dispatches WHERE item_id=?',
+            id,
+          )
+        ).rows[0].state,
+      ).toBe('completed');
+      expect(
+        Number(
+          (await db.query('SELECT COUNT(*) AS n FROM _smrt_jobs')).rows[0].n,
+        ),
+      ).toBe(0);
+    });
+
+    it('review regression: reanalysis retires obsolete dispatches and repair ignores old revisions', async () => {
+      const id = await accepted('repair-supersession');
+      const first = await analysis(id);
+      const second = await service.analyze(
+        id,
+        { provider: 'replacement' },
+        'replacement',
+      );
+      const lease = await service.claimAnalysis(
+        id,
+        second.revision,
+        'replacement-worker',
+      );
+      expect(lease).toBeTruthy();
+      expect(await service.completeAnalysis(lease!, output)).toBe(true);
+      expect(
+        (
+          await db.query(
+            'SELECT state FROM intake_dispatches WHERE item_id=? AND revision=?',
+            id,
+            first.revision,
+          )
+        ).rows[0].state,
+      ).toBe('completed');
+      // A pre-fix obsolete intent may still be active; repair must retire it
+      // without enqueueing or projecting its exhausted budget onto revision 2.
+      await db.query(
+        "UPDATE intake_dispatches SET state='pending',deliveries=2,job_id='' WHERE item_id=? AND revision=?",
+        id,
+        first.revision,
+      );
+      await db.query('DELETE FROM _smrt_jobs');
+      expect(await service.repairDispatches()).toBe(0);
+      expect(await service.getItem(id)).toMatchObject({
+        analysisRevision: 2,
+        processingState: 'completed',
+      });
+      expect(
+        Number(
+          (await db.query('SELECT COUNT(*) AS n FROM _smrt_jobs')).rows[0].n,
+        ),
+      ).toBe(0);
+      expect(
+        (
+          await db.query(
+            'SELECT state FROM intake_dispatches WHERE item_id=? AND revision=?',
+            id,
+            first.revision,
+          )
+        ).rows[0].state,
+      ).toBe('completed');
+    });
+
+    it('review regression: final expired analysis lease projects needs-attention atomically', async () => {
+      const id = await accepted('exhausted-lease');
+      const first = await analysis(id);
+      clock = new Date(clock.getTime() + 101);
+      const last = await service.claimAnalysis(
+        id,
+        first.revision,
+        'last-worker',
+      );
+      expect(last).toBeTruthy();
+      clock = new Date(clock.getTime() + 101);
+      expect(
+        await service.claimAnalysis(id, first.revision, 'exhausted-worker'),
+      ).toBeNull();
+      expect((await service.getItem(id)).processingState).toBe(
+        'needs_attention',
+      );
+      expect(
+        (
+          await db.query(
+            'SELECT state FROM intake_analyses WHERE id=?',
+            first.analysisId,
+          )
+        ).rows[0].state,
+      ).toBe('needs_attention');
+      expect(
+        (
+          await db.query(
+            'SELECT state,safe_error FROM intake_analysis_attempts WHERE id=?',
+            last!.attemptId,
+          )
+        ).rows[0],
+      ).toMatchObject({ state: 'needs_attention', safe_error: 'limit' });
+      expect(
+        (
+          await db.query(
+            'SELECT state FROM intake_dispatches WHERE item_id=? AND revision=?',
+            id,
+            first.revision,
+          )
+        ).rows[0].state,
+      ).toBe('completed');
+      expect(await service.completeAnalysis(last!, output)).toBe(false);
+    });
+
     it('preserves originals, relationships, idempotent replay and separate equal-byte arrivals', async () => {
       const input = receive();
       input.parts.push({

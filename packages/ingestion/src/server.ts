@@ -366,6 +366,11 @@ export class IngestionService {
       sourceVersion: input.sourceVersion,
     });
     const reservation = await this.tx(async (db) => {
+      await this.authorize(
+        'receive',
+        { capturedCeiling: input.capturedCeiling },
+        db,
+      );
       const inserted = await this.insert(
         db,
         'intake_items',
@@ -636,26 +641,43 @@ export class IngestionService {
         persistedDate(item.expires_at) <= this.now()
       )
         continue;
-      if (intent.job_id) {
+      if (
+        intent.job_id &&
+        Number(intent.revision) === Math.max(1, Number(item.analysis_revision))
+      ) {
         const job = await withTenant({ tenantId: this.scope.tenantId }, () =>
           jobs.get({ id: String(intent.job_id) }),
         );
         if (job && ['pending', 'running'].includes(job.status)) continue;
       }
-      const limits = object(
-        object(item.data).limits,
-      ) as unknown as IntakeLimits;
       const allocation = await this.tx(async (db) => {
         await this.lock(db, String(item.id));
-        await this.item(String(item.id), 'process', db);
-        const result = await db.query(
-          "UPDATE intake_dispatches SET deliveries=deliveries+1 WHERE tenant_id=? AND confidential_scope_id=? AND id=? AND state<>'completed' AND deliveries<? RETURNING id",
-          this.scope.tenantId,
-          this.scope.confidentialScopeId,
-          intent.id,
-          limits.maxAttempts,
+        const currentItem = await this.item(String(item.id), 'process', db);
+        const [currentIntent] = await this.rows(
+          db,
+          'intake_dispatches',
+          'id=? AND item_id=?',
+          [intent.id, item.id],
         );
-        if (!result.rows.length) {
+        if (!currentIntent || currentIntent.state === 'completed') return false;
+        // Revision 1 is queued at receipt, before the first analysis exists.
+        if (
+          currentItem.cancelled ||
+          Number(currentIntent.revision) !==
+            Math.max(1, Number(currentItem.analysis_revision))
+        ) {
+          await db.query(
+            "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+            this.scope.tenantId,
+            this.scope.confidentialScopeId,
+            currentIntent.id,
+          );
+          return false;
+        }
+        const limits = object(
+          object(currentItem.data).limits,
+        ) as unknown as IntakeLimits;
+        if (Number(currentIntent.deliveries) >= limits.maxAttempts) {
           await db.query(
             "UPDATE intake_items SET processing_state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
             this.scope.tenantId,
@@ -670,7 +692,14 @@ export class IngestionService {
           );
           return false;
         }
-        return true;
+        const result = await db.query(
+          "UPDATE intake_dispatches SET deliveries=deliveries+1 WHERE tenant_id=? AND confidential_scope_id=? AND id=? AND state<>'completed' AND deliveries<? RETURNING id",
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          currentIntent.id,
+          limits.maxAttempts,
+        );
+        return result.rows.length === 1;
       });
       if (!allocation) continue;
       const job = await withTenant({ tenantId: this.scope.tenantId }, () =>
@@ -823,6 +852,13 @@ export class IngestionService {
         itemId,
       );
       const revision = Number(item.analysis_revision) + 1;
+      await db.query(
+        "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND revision<? AND state<>'completed'",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        itemId,
+        revision,
+      );
       const inputs = evidence
         .map((e) => ({ id: e.id, hash: e.content_hash }))
         .sort((a, b) => String(a.id).localeCompare(String(b.id)));
@@ -916,6 +952,13 @@ export class IngestionService {
           this.scope.tenantId,
           this.scope.confidentialScopeId,
           analysis.id,
+        );
+        await db.query(
+          "UPDATE intake_items SET processing_state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=? AND analysis_revision=?",
+          this.scope.tenantId,
+          this.scope.confidentialScopeId,
+          itemId,
+          revision,
         );
         await db.query(
           "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND revision=?",
