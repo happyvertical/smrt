@@ -13,6 +13,8 @@ export interface Props {
   userName: string;
   /** Target density; omit to inherit the theme density. */
   density?: 'comfortable' | 'touch';
+  /** Show only the avatar while preserving the full accessible account name. */
+  compact?: boolean;
   /** Custom display name for the user, falls back to userName. */
   userLabel?: string;
   /** URL for the user's avatar image. */
@@ -38,6 +40,7 @@ export interface Props {
 let {
   userName,
   density,
+  compact = false,
   userLabel = '',
   avatarUrl,
   tenantLabel = '',
@@ -103,10 +106,11 @@ function handleSelect(id: string): void {
 }
 </script>
 
-<div data-density={density} class="smrt-workspace-account-menu" title={summaryTitle}>
+<div data-density={density} data-compact={compact ? '' : undefined} class="smrt-workspace-account-menu" title={summaryTitle}>
   <Dropdown
     {items}
     {placement}
+    triggerLabel={compact ? `${t(M['ui.workspace_account_menu.open'])} ${summaryTitle}` : undefined}
     onselect={handleSelect}
     disabled={disabled || items.length === 0}
   >
@@ -159,6 +163,19 @@ function handleSelect(id: string): void {
     padding: var(--smrt-spacing-2);
     border-radius: var(--smrt-radius-large);
     text-align: start;
+  }
+
+  .smrt-workspace-account-menu[data-compact] :global(.dropdown__trigger) {
+    display: grid;
+    place-items: center;
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--smrt-spacing-1);
+  }
+
+  .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__identity,
+  .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__indicator,
+  .smrt-workspace-account-menu[data-compact] .smrt-workspace-account-menu__open {
+    display: none;
   }
 
   .smrt-workspace-account-menu :global(.dropdown__menu) {
