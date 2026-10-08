@@ -2,10 +2,10 @@
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Component } from 'svelte';
 import { M } from '../../../i18n/strings.workspace.js';
+import { SHELL_ICON_PATHS } from './shell-icons.js';
 import type { ShellNavGroup, ShellNavItem } from './types.js';
 
 const DEFAULT_ACTION_ICON = 'settings';
-const DEFAULT_ACTION_GLYPH = '\u2699';
 
 interface Props {
   /** Navigation items with href, label, icon, and optional children. */
@@ -142,8 +142,10 @@ function fallbackIcon(label: string): string {
           <span class="smrt-tenant-nav__icon" aria-hidden="true">
             {#if IconComponent}
               <IconComponent name={action.icon ?? DEFAULT_ACTION_ICON} size={16} />
+            {:else if action.icon}
+              {action.icon}
             {:else}
-              {action.icon ?? DEFAULT_ACTION_GLYPH}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d={SHELL_ICON_PATHS.settings} /></svg>
             {/if}
           </span>
         </a>
