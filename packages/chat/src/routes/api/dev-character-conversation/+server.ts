@@ -114,11 +114,19 @@ async function readBoundedJson(request: Request): Promise<unknown> {
 function normalizeMessages(body: ConversationRequest): AIMessage[] {
   if (!Array.isArray(body.messages)) return [];
   return body.messages.slice(-MAX_MESSAGES).flatMap((message): AIMessage[] => {
+    if (!message || typeof message !== 'object' || Array.isArray(message))
+      return [];
     if (message.role !== 'user' && message.role !== 'assistant') return [];
     if (typeof message.content !== 'string') return [];
     const content = message.content.trim().slice(0, MAX_CONTENT_LENGTH);
     return content ? [{ role: message.role, content }] : [];
   });
+}
+
+function conversationBody(value: unknown): ConversationRequest {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    error(400, 'Conversation request must be an object.');
+  return value as ConversationRequest;
 }
 
 function objectArguments(call: AIToolCall): Record<string, unknown> {
@@ -189,7 +197,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
   if (Number.isFinite(length) && length > MAX_REQUEST_BYTES)
     error(413, 'Conversation request is too large.');
 
-  const body = (await readBoundedJson(request)) as ConversationRequest;
+  const body = conversationBody(await readBoundedJson(request));
   const messages = normalizeMessages(body);
   if (!messages.some((message) => message.role === 'user'))
     error(400, 'Conversation requires a user message.');
@@ -215,7 +223,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
         {
           role: 'system',
           content:
-            'You are the local character conversation assistant. Use a tool only to propose a local section change or a draft subject. Never claim an action was applied; the user must confirm every proposal.',
+            'You are the local character conversation assistant. Keep spoken replies brief (500 characters or fewer), and never respond with silence or an acknowledgement alone. Use a tool only to propose a local section change or a draft subject. Never claim an action was applied; the user must confirm every proposal.',
         },
         ...messages,
       ],

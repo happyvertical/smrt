@@ -76,6 +76,12 @@ describe('dev character conversation', () => {
     });
     expect(mocks.chat).toHaveBeenCalledTimes(1);
     const [, options] = mocks.chat.mock.calls[0];
+    expect(mocks.chat.mock.calls[0][0][0].content).toContain(
+      '500 characters or fewer',
+    );
+    expect(mocks.chat.mock.calls[0][0][0].content).toContain(
+      'never respond with silence',
+    );
     expect(options.tools).toEqual([
       expect.objectContaining({
         function: expect.objectContaining({ name: 'navigate' }),
@@ -190,6 +196,18 @@ describe('dev character conversation', () => {
         ),
       ),
     ).rejects.toMatchObject({ status: 413 });
+    expect(mocks.chat).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['malformed JSON', '{'],
+    ['a null request body', null],
+    ['an array request body', []],
+    ['a null message entry', { messages: [null] }],
+  ])('returns a controlled 400 for %s', async (_label, body) => {
+    await expect(POST(event(request(body)))).rejects.toMatchObject({
+      status: 400,
+    });
     expect(mocks.chat).not.toHaveBeenCalled();
   });
 
