@@ -178,6 +178,11 @@ export interface ShellNavItem {
   id?: string;
   href: string;
   label: string;
+  /**
+   * Set by `applyShellLayout` on an item the user renamed: the host's original
+   * label (`label` then holds the user's). Hosts do not set it.
+   */
+  defaultLabel?: string;
   icon?: string;
   description?: string;
   badge?: number | string | null;

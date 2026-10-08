@@ -521,6 +521,19 @@ describe('app-owned sections', () => {
       expect(shellHeadings()).toEqual(['Stuff', 'People']),
     );
     expect(api().renameSection('Content', 'Stuff')).toBe(false);
+    expect(api().renameItem('/users', 'Members')).toBe(true);
+    await vi.waitFor(() =>
+      expect(
+        [
+          ...document.querySelectorAll(
+            'nav[aria-label="Application navigation"] a',
+          ),
+        ].map((link) => link.textContent?.trim()),
+      ).toContain('Members'),
+    );
+    expect(api().renameItem('/users', 'Members')).toBe(false);
+    expect(api().renameItem('/nope', 'X')).toBe(false);
+    expect(api().renameItem('/users', null)).toBe(true);
     expect(api().setSectionTitleVisible('custom:pinned', false)).toBe(true);
     await vi.waitFor(() =>
       expect(api().sections.at(-1)?.titleVisible).toBe(false),

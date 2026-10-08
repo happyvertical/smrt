@@ -61,7 +61,7 @@ const items = $derived<SortableItem[]>(
     section.items.map((entry) => ({
       id: entry.id,
       containerId: section.id,
-      label: entry.item.label,
+      label: entry.label,
     })),
   ),
 );

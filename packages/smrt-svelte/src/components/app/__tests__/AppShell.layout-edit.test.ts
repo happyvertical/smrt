@@ -445,6 +445,51 @@ describe('section overlay and toolbar', () => {
   });
 });
 
+describe('renaming a navigation item in place', () => {
+  const rename = () => screen.getByRole('button', { name: 'Rename Users' });
+
+  it('Enter saves, Escape cancels, reset restores the original', async () => {
+    const user = userEvent.setup();
+    const { changes } = mount();
+    await edit(user);
+    await user.click(rename());
+    const input = screen.getByRole('textbox', { name: 'Name of item Users' });
+    await vi.waitFor(() => expect(document.activeElement).toBe(input));
+    await user.clear(input);
+    await user.type(input, 'Members{Enter}');
+    expect(changes.at(-1)?.items).toEqual({ '/users': { label: 'Members' } });
+    expect(screen.queryByRole('textbox', { name: /Name of item/ })).toBeNull();
+    // Edit mode stays on; the original is the tooltip.
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('Members').getAttribute('title')).toBe('Users');
+
+    await user.click(screen.getByRole('button', { name: 'Rename Members' }));
+    const again = screen.getByRole('textbox', { name: 'Name of item Members' });
+    await user.clear(again);
+    await user.type(again, 'Nope{Escape}');
+    expect(changes.at(-1)?.items).toEqual({ '/users': { label: 'Members' } });
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Reset Members to Users' }),
+    );
+    expect(changes.at(-1)).toEqual({ version: 1 });
+    expect(screen.getByText('Users')).toBeTruthy();
+  });
+
+  it('has no axe violations while renaming', async () => {
+    const user = userEvent.setup();
+    render(Harness, {
+      initial: { version: 1, items: { '/posts': { label: 'Articles' } } },
+    });
+    await edit(user);
+    await user.click(rename());
+    await expectNoA11yViolations(
+      document.querySelector('.smrt-admin-shell') as HTMLElement,
+    );
+  });
+});
+
 describe('accessibility', () => {
   it('edit mode has no axe violations with a toolbar open', async () => {
     const user = userEvent.setup();

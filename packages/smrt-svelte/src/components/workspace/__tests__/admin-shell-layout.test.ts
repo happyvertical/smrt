@@ -9,6 +9,7 @@ import {
   moveShellItem,
   moveShellSection,
   normalizeShellLayout,
+  renameShellItem,
   renameShellSection,
   resolveShellNavModel,
   SHELL_NAV_ROOT_SECTION_ID,
@@ -693,6 +694,67 @@ describe('app-owned sections', () => {
     expect(
       headings(applyShellLayout(nav, groups, undefined, l).groups),
     ).toEqual(['Content', 'People', 'Operations']);
+  });
+
+  it('renames an item by id, keeping the original label available', () => {
+    const next = renameShellItem(
+      nav,
+      groups,
+      undefined,
+      '/posts',
+      '  Articles ',
+    );
+    expect(next).toEqual(
+      layout({ items: { '/posts': { label: 'Articles' } } }),
+    );
+    const applied = applyShellLayout(nav, groups, undefined, next);
+    const posts = applied.groups[0].items[0];
+    expect(posts.label).toBe('Articles');
+    expect(posts.defaultLabel).toBe('Posts');
+    expect(posts.href).toBe('/posts');
+    // Untouched items are the host's own objects.
+    expect(applied.groups[0].items[1]).toBe(groups[0].items[1]);
+    // Survives moving into another section, and the root list.
+    const moved = moveShellItem(nav, groups, next, '/posts', 'ops');
+    const after = applyShellLayout(nav, groups, undefined, moved);
+    expect(after.groups[2].items.map((i) => i.label)).toContain('Articles');
+    const root = renameShellItem(nav, groups, undefined, '/inbox', 'Mail');
+    expect(
+      applyShellLayout(nav, groups, undefined, root).nav.map((i) => i.label),
+    ).toEqual(['Home', 'Mail']);
+  });
+
+  it('drops an item override for null, blank, the host label, or unknown ids', () => {
+    const renamed = renameShellItem(nav, groups, undefined, '/posts', 'X');
+    expect(renameShellItem(nav, groups, renamed, '/posts', null)).toEqual(
+      layout({}),
+    );
+    expect(renameShellItem(nav, groups, renamed, '/posts', '  ')).toEqual(
+      layout({}),
+    );
+    expect(renameShellItem(nav, groups, renamed, '/posts', 'Posts')).toEqual(
+      layout({}),
+    );
+    expect(renameShellItem(nav, groups, undefined, '/nope', 'X')).toEqual(
+      layout({}),
+    );
+    expect(isShellLayoutEmpty(renamed)).toBe(false);
+  });
+
+  it('normalizes item overrides like section labels', () => {
+    expect(
+      normalizeShellLayout({
+        version: 1,
+        items: {
+          '/a': { label: ' A ' },
+          '/b': { label: '   ' },
+          '/c': { label: 5 },
+          '/d': 'x',
+          '': { label: 'E' },
+        },
+      }),
+    ).toEqual(layout({ items: { '/a': { label: 'A' } } }));
+    expect(normalizeShellLayout({ version: 1, items: [] })).toEqual(layout({}));
   });
 
   it('keeps a stored version 1 layout without the new fields working', () => {

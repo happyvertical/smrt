@@ -71,8 +71,15 @@ const items = $derived<SortableItem[]>(
     section.items.map((entry) => ({
       id: entry.id,
       containerId: section.id,
-      label: entry.item.label,
+      label: entry.label,
     })),
+  ),
+);
+const itemDefaults = $derived(
+  new Map(
+    sections.flatMap((section) =>
+      section.items.map((entry) => [entry.id, entry.defaultLabel] as const),
+    ),
   ),
 );
 const itemIcons = $derived(
@@ -159,6 +166,33 @@ $effect(() => {
   document.addEventListener('pointerdown', dismiss, true);
   return () => document.removeEventListener('pointerdown', dismiss, true);
 });
+
+// The item whose name is being edited in place (one at a time).
+let renamingItem = $state<string | null>(null);
+
+async function startRenameItem(id: string): Promise<void> {
+  renamingItem = id;
+  await tick();
+  const input = rootEl?.querySelector<HTMLInputElement>(
+    `input[data-item-name="${CSS.escape(id)}"]`,
+  );
+  input?.focus();
+  input?.select();
+}
+
+function commitRenameItem(id: string, value: string): void {
+  // Blur after Escape or a save lands here too; only the open editor commits.
+  if (renamingItem !== id) return;
+  renamingItem = null;
+  layout.renameItem(id, value);
+}
+
+function cancelRenameItem(id: string): void {
+  renamingItem = null;
+  rootEl
+    ?.querySelector<HTMLElement>(`button[data-item-rename="${CSS.escape(id)}"]`)
+    ?.focus();
+}
 
 function setShown(id: string, shown: boolean): void {
   if (shown) layout.show(id);
@@ -311,6 +345,7 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
     {#snippet item({ item: entry, container })}
       {@const hidden = layout.isHidden(entry.id)}
       {@const icon = itemIcons.get(entry.id)}
+      {@const original = itemDefaults.get(entry.id)}
       <span
         class="smrt-nav-editor__row"
         class:smrt-nav-editor__row--muted={hidden || layout.isHidden(container.id)}
@@ -324,8 +359,45 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
             {/if}
           </span>
         {/if}
-        <strong>{entry.label}</strong>
+        {#if renamingItem === entry.id}
+          <Input
+            class="smrt-nav-editor__item-name"
+            interaction={false}
+            data-item-name={entry.id}
+            aria-label={t(M['ui.shell_layout_editor.item_name'], { label: entry.label })}
+            value={entry.label}
+            onblur={(event) => commitRenameItem(entry.id, event.currentTarget.value)}
+            onkeydown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.stopPropagation();
+                const value = event.currentTarget.value;
+                commitRenameItem(entry.id, value);
+                cancelRenameItem(entry.id);
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                cancelRenameItem(entry.id);
+              }
+            }}
+          />
+        {:else}
+          <strong title={original !== entry.label ? original : undefined}>{entry.label}</strong>
+        {/if}
       </span>
+      <ShellIconButton
+        icon="edit"
+        data-item-rename={entry.id}
+        label={t(M['ui.shell_layout_editor.rename_item'], { label: entry.label })}
+        onclick={() => startRenameItem(entry.id)}
+      />
+      {#if original !== undefined && original !== entry.label}
+        <ShellIconButton
+          icon="undo"
+          label={t(M['ui.shell_layout_editor.reset_item'], { label: entry.label, original })}
+          onclick={() => layout.renameItem(entry.id, null)}
+        />
+      {/if}
       <ShellIconButton
         icon={hidden ? 'eyeOff' : 'eye'}
         pressed={!hidden}
@@ -372,5 +444,6 @@ function oncontainermove(move: SortableContainerMove<NavContainer>): void {
   .smrt-nav-editor :global(.smrt-sortable__items),
   .smrt-nav-editor :global(.smrt-sortable__item) { min-inline-size: 0; max-inline-size: 100%; box-sizing: border-box; }
   .smrt-nav-editor__icon { display: inline-grid; place-items: center; inline-size: 1.25rem; block-size: 1.25rem; min-inline-size: 1.25rem; }
+  :global(.smrt-nav-editor__item-name) { flex: 1 1 auto; min-inline-size: 0; }
   :global(.smrt-nav-editor__new) { justify-self: start; }
 </style>

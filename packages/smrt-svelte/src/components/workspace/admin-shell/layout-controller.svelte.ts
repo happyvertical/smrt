@@ -8,6 +8,7 @@ import {
   moveShellSection,
   normalizeShellLayout,
   placeShellItem,
+  renameShellItem,
   renameShellSection,
   resetShellItemPlacement,
   resolveShellNavModel,
@@ -298,6 +299,22 @@ export class ShellLayoutController {
         this.options.groups(),
         this.layout,
         sectionId,
+        label,
+      ),
+    );
+  }
+
+  /**
+   * Rename a navigation item (by its id). `null` or a blank label restores
+   * the host's label. Returns whether the layout changed.
+   */
+  renameItem(itemId: string, label: string | null): boolean {
+    return this.apply(
+      renameShellItem(
+        this.options.nav(),
+        this.options.groups(),
+        this.layout,
+        itemId,
         label,
       ),
     );

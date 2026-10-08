@@ -360,6 +360,17 @@ control panel), wired by `app/AppShell.svelte`.
   need no migration; new host sections and items land in their suggested slot.
   Controller: `renameSection`, `setSectionTitleVisible`, `createSection(label)`
   (returns the id), `deleteSection`.
+- **Item labels.** The same layout renames single navigation entries:
+  `items[itemId] = { label? }` (additive; trimmed, blank removed; ids as above,
+  top-level items of `nav` and groups). `resolveShellNavModel` items carry
+  `label` / `defaultLabel`; `applyShellLayout` emits the renamed item with
+  `label` = the user's and `defaultLabel` = the host's (so nav, breadcrumbs and
+  titles that read `nav` follow the rename). Helper `renameShellItem(nav, groups,
+  layout, itemId, label | null)`; controller `renameItem(itemId, label | null)`
+  (null or blank resets). Edit mode: each `ShellNavEditor` row has an icon-only
+  "Rename <label>" button opening an inline field (Enter saves, Escape cancels,
+  blur saves) and, once renamed, "Reset <label> to <original>"; the original shows
+  as the row tooltip. Presets ("cookbooks") ship it in the stored layout.
 - **`ShellLayoutEditor`**: `controller` (default: context), `preview` (default
   true), `iconComponent`. Each section has an inline name input, icon toggles
   for visibility and title, and (custom only) a trash button, which confirms

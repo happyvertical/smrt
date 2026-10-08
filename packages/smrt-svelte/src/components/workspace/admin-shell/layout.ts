@@ -47,6 +47,12 @@ export interface ShellLayoutSection {
   showTitle?: boolean;
 }
 
+/** A user's override of one navigation item's presentation. */
+export interface ShellLayoutItem {
+  /** Replaces the item's label wherever the shell shows it. */
+  label?: string;
+}
+
 /** A section the user created (its id starts with `custom:`). */
 export interface ShellLayoutCustomSection {
   id: string;
@@ -81,6 +87,12 @@ export interface ShellLayout {
    */
   sections?: Record<string, ShellLayoutSection>;
   /**
+   * Per navigation item id presentation overrides: a new label (e.g. "Sales
+   * orders" becomes "Work orders"). The host's original label stays on the
+   * applied item as `defaultLabel`. Additive; layouts without it load unchanged.
+   */
+  items?: Record<string, ShellLayoutItem>;
+  /**
    * Sections the user created. They join `sectionOrder` like host sections;
    * items move in through `moved`. Empty ones show in an editor, not the nav.
    */
@@ -106,6 +118,10 @@ export interface ShellNavModelItem {
   sectionId: string;
   /** Hidden by its own id. */
   hidden: boolean;
+  /** The displayed label (the user's rename, else the host's). */
+  label: string;
+  /** The host's label (`item.label`). */
+  defaultLabel: string;
 }
 
 /** A section as the layout sees it. */
@@ -146,6 +162,7 @@ export function isShellLayoutEmpty(layout: ShellLayout | null | undefined) {
     !layout.hidden?.length &&
     !hasKeys(layout.moved) &&
     !hasKeys(layout.sections) &&
+    !hasKeys(layout.items) &&
     !layout.customSections?.length &&
     !hasKeys(layout.panels) &&
     !hasKeys(layout.placements)
@@ -184,6 +201,26 @@ function readSection(raw: unknown): ShellLayoutSection | undefined {
   if (label) section.label = label;
   if (typeof raw.showTitle === 'boolean') section.showTitle = raw.showTitle;
   return hasKeys(section) ? section : undefined;
+}
+
+function readItem(raw: unknown): ShellLayoutItem | undefined {
+  if (!isRecord(raw)) return undefined;
+  const item: ShellLayoutItem = {};
+  const label = cleanLabel(raw.label);
+  if (label) item.label = label;
+  return hasKeys(item) ? item : undefined;
+}
+
+function readItems(
+  value: unknown,
+): Record<string, ShellLayoutItem> | undefined {
+  if (!isRecord(value)) return undefined;
+  const items: Record<string, ShellLayoutItem> = {};
+  for (const [id, raw] of Object.entries(value)) {
+    const item = id === '' ? undefined : readItem(raw);
+    if (item) items[id] = item;
+  }
+  return hasKeys(items) ? items : undefined;
 }
 
 function readCustomSections(value: unknown): ShellLayoutCustomSection[] {
@@ -241,6 +278,9 @@ export function normalizeShellLayout(input: unknown): ShellLayout {
     }
     if (hasKeys(sections)) layout.sections = sections;
   }
+
+  const itemOverrides = readItems(input.items);
+  if (itemOverrides) layout.items = itemOverrides;
 
   const customSections = readCustomSections(input.customSections);
   if (customSections.length > 0) layout.customSections = customSections;
@@ -352,6 +392,7 @@ export function resolveShellNavModel(
     });
   }
   const overrides = isRecord(layout?.sections) ? layout.sections : {};
+  const itemOverrides = readItems(layout?.items) ?? {};
 
   const hidden = new Set(stringList(layout?.hidden) ?? []);
   const moved = isRecord(layout?.moved)
@@ -396,6 +437,8 @@ export function resolveShellNavModel(
           nativeSectionId: native.id,
           sectionId: section.id,
           hidden: hidden.has(entry.id),
+          label: itemOverrides[entry.id]?.label ?? entry.item.label,
+          defaultLabel: entry.item.label,
         });
       }
     }
@@ -470,7 +513,13 @@ export function applyShellLayout(
   const visible = (section: ShellNavModelSection): ShellNavItem[] =>
     section.hidden
       ? []
-      : section.items.filter((entry) => !entry.hidden).map((e) => e.item);
+      : section.items
+          .filter((entry) => !entry.hidden)
+          .map((e) =>
+            e.label === e.defaultLabel
+              ? e.item
+              : { ...e.item, label: e.label, defaultLabel: e.defaultLabel },
+          );
 
   const [root, ...sections] = model;
   const nextGroups: ShellNavGroup[] = [];
@@ -514,6 +563,7 @@ function compact(layout: ShellLayout): ShellLayout {
   if (layout.hidden?.length) next.hidden = layout.hidden;
   if (hasKeys(layout.moved)) next.moved = layout.moved;
   if (hasKeys(layout.sections)) next.sections = layout.sections;
+  if (hasKeys(layout.items)) next.items = layout.items;
   if (layout.customSections?.length) {
     next.customSections = layout.customSections;
   }
@@ -759,6 +809,30 @@ export function renameShellSection(
   return setSectionOverride(current, sectionId, {
     label: reset ? undefined : clean,
   });
+}
+
+/**
+ * Rename a navigation item. A blank label (or `null`), or the host's own
+ * label, removes the override. Unknown ids are ignored. Items keep their id,
+ * so a rename survives reordering and moving between sections.
+ */
+export function renameShellItem(
+  nav: readonly ShellNavItem[],
+  groups: readonly ShellNavGroup[],
+  layout: ShellLayout | null | undefined,
+  itemId: string,
+  label: string | null,
+): ShellLayout {
+  const current = normalizeShellLayout(layout ?? createShellLayout());
+  const entry = resolveShellNavModel(nav, groups, current)
+    .flatMap((section) => section.items)
+    .find((candidate) => candidate.id === itemId);
+  if (!entry) return current;
+  const clean = cleanLabel(label);
+  const items = { ...(current.items ?? {}) };
+  if (!clean || clean === entry.defaultLabel) delete items[itemId];
+  else items[itemId] = { label: clean };
+  return compact({ ...current, items });
 }
 
 /**
