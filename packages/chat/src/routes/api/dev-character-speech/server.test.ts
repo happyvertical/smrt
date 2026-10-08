@@ -7,6 +7,10 @@ const mocks = vi.hoisted(() => {
     synthesize,
     getSpeechSynthesizer: vi.fn(async () => ({ synthesize })),
     resolveDevAIConfig: vi.fn(),
+    resolvePersistence: vi.fn(() => null),
+    loadPreferences: vi.fn(),
+    closeHelper: vi.fn(),
+    openHelper: vi.fn(),
   };
 });
 
@@ -20,6 +24,17 @@ vi.mock('@happyvertical/speech', () => ({
 }));
 vi.mock('../dev-ai.js', () => ({
   resolveDevAIConfig: mocks.resolveDevAIConfig,
+}));
+vi.mock('../../../dev-helper-server.js', () => ({
+  openDevHelperService: mocks.openHelper,
+}));
+vi.mock('../dev-character-persistence/config.js', () => ({
+  resolveDevCharacterPersistenceConfig: mocks.resolvePersistence,
+  isLocalDevCharacterRequest: ({ dev, request, getClientAddress }: any) =>
+    dev &&
+    getClientAddress() === '127.0.0.1' &&
+    (!request.headers.get('origin') ||
+      request.headers.get('origin') === new URL(request.url).origin),
 }));
 
 import { POST } from './+server.js';
@@ -41,6 +56,11 @@ describe('dev character speech', () => {
     mocks.synthesize.mockReset();
     mocks.getSpeechSynthesizer.mockClear();
     mocks.resolveDevAIConfig.mockReset();
+    mocks.resolvePersistence.mockReset();
+    mocks.resolvePersistence.mockReturnValue(null);
+    mocks.loadPreferences.mockReset();
+    mocks.closeHelper.mockReset();
+    mocks.openHelper.mockReset();
     mocks.resolveDevAIConfig.mockReturnValue({
       provider: 'openai',
       apiKey: 'test-key',
@@ -49,6 +69,49 @@ describe('dev character speech', () => {
       audio: new Uint8Array([1, 2, 3]),
       contentType: 'audio/wav',
     });
+  });
+
+  it('resolves the current saved Cedar voice server-side and ignores a forged body voice', async () => {
+    mocks.resolvePersistence.mockReturnValue({ databaseUrl: '/tmp/helper.db' });
+    mocks.loadPreferences.mockResolvedValue({
+      preferences: { voiceId: 'cedar' },
+    });
+    mocks.openHelper.mockResolvedValue({
+      context: { applicationId: 'server-owned' },
+      service: { load: mocks.loadPreferences },
+      close: mocks.closeHelper,
+    });
+    await POST(
+      event(
+        request({
+          text: 'Hello',
+          voice: 'attacker',
+          baseUrl: 'https://evil.test',
+          apiKey: 'stolen',
+        }),
+      ),
+    );
+    expect(mocks.synthesize).toHaveBeenCalledWith(
+      expect.objectContaining({ voice: 'cedar' }),
+    );
+    expect(mocks.getSpeechSynthesizer).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultVoice: 'cedar' }),
+    );
+    expect(mocks.closeHelper).toHaveBeenCalledOnce();
+  });
+
+  it('fails before provider use when the effective saved voice is unavailable', async () => {
+    mocks.resolvePersistence.mockReturnValue({ databaseUrl: '/tmp/helper.db' });
+    mocks.loadPreferences.mockResolvedValue({ preferences: null });
+    mocks.openHelper.mockResolvedValue({
+      context: {},
+      service: { load: mocks.loadPreferences },
+      close: mocks.closeHelper,
+    });
+    await expect(
+      POST(event(request({ text: 'Hello', voice: 'cedar' }))),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(mocks.getSpeechSynthesizer).not.toHaveBeenCalled();
   });
 
   it('synthesizes an explicitly fixed local OpenAI voice and returns no-store audio', async () => {

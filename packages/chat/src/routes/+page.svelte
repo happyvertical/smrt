@@ -36,6 +36,14 @@ import {
 import { createSpeechPlayback } from '@happyvertical/speech/browser';
 import { onMount } from 'svelte';
 import { createDevCharacterPersistenceClient } from '../dev-character-persistence-client.js';
+import { createDevHelperClient } from '../dev-helper-client.js';
+import type { HelperSnapshot } from '../helper-preferences.js';
+import HelperControlPanel from '../svelte/components/helper/HelperControlPanel.svelte';
+import {
+  createHappyHelperStyle,
+  createHelperStyleRegistry,
+  createPhotoCutoutHelperStyle,
+} from '../svelte/components/helper/registry.js';
 import ChatLayout from '../svelte/components/layout/ChatLayout.svelte';
 import RoomHeader from '../svelte/components/layout/RoomHeader.svelte';
 import MessageInput from '../svelte/components/messages/MessageInput.svelte';
@@ -43,6 +51,7 @@ import MessageList from '../svelte/components/messages/MessageList.svelte';
 import type { ChatMessageData, ChatRoomData } from '../svelte/types.js';
 import { stageDraftSubjectIntent } from './chat-dev.intents.js';
 import CharacterConversation from './components/CharacterConversation.svelte';
+import DevPhotoHelperSetup from './components/DevPhotoHelperSetup.svelte';
 
 type DevChatMode = 'ai' | 'local';
 type WorkbenchMode = 'text' | 'voice';
@@ -209,9 +218,25 @@ let workbenchMode = $state<WorkbenchMode>('text');
 let workbenchTab = $state('character');
 const workbenchTabs = [
   { id: 'character', label: 'Character setup' },
+  { id: 'helper', label: 'Helper settings' },
   { id: 'conversation', label: 'Character conversation' },
   { id: 'chat', label: 'Chat dev' },
 ];
+const helperClient = createDevHelperClient();
+const helperRegistry = createHelperStyleRegistry([
+  createHappyHelperStyle({
+    loadRuntime: async () => {
+      const [{ default: gsap }, { MorphSVGPlugin }] = await Promise.all([
+        import('gsap'),
+        import('gsap/MorphSVGPlugin'),
+      ]);
+      gsap.registerPlugin(MorphSVGPlugin);
+      return { gsap, morphSVG: MorphSVGPlugin };
+    },
+  }),
+  createPhotoCutoutHelperStyle({ Setup: DevPhotoHelperSetup }),
+]);
+let helperSnapshot = $state<HelperSnapshot | undefined>(undefined);
 let voiceConfig = $state<DevVoiceConfig | null>(null);
 let voiceConfigLoaded = $state(false);
 let voiceTarget = $state('echo');
@@ -936,6 +961,12 @@ function sendVoiceTextTurn(content: string) {
 
 onMount(() => {
   void loadVoiceConfig();
+  void helperClient
+    .load()
+    .then((snapshot) => (helperSnapshot = snapshot))
+    .catch(() => {
+      // The panel reports the opt-in local persistence boundary when opened.
+    });
   return () => {
     void stopVoiceConversation();
   };
@@ -960,13 +991,43 @@ onMount(() => {
     loadSetup={createDevCharacterPersistenceClient().load}
   />
   </div>
+  <div hidden={workbenchTab !== 'helper'}>
+    <HelperControlPanel
+      client={helperClient}
+      registry={helperRegistry}
+      loadPayload={async (offering) => {
+        if (offering.styleId === 'happy') return null;
+        if (!offering.assetId) throw new Error('Saved helper is unavailable.');
+        const setup = await createDevCharacterPersistenceClient().load(offering.assetId);
+        if (!setup) throw new Error('Saved helper is unavailable.');
+        const source = await fetch(setup.pngDataUrl);
+        return { rig: setup.rig, image: await source.blob() };
+      }}
+      snapshot={helperSnapshot}
+      onchanged={(snapshot) => (helperSnapshot = snapshot)}
+      oncustomsaved={() => undefined}
+    />
+  </div>
   <div hidden={workbenchTab !== 'conversation'}>
-    <CharacterConversation active={workbenchTab === 'conversation'} workbenchAction={{
+    <CharacterConversation
+      active={workbenchTab === 'conversation'}
+      helperSnapshot={helperSnapshot}
+      helperRegistry={helperRegistry}
+      loadHelperPayload={async (offering) => {
+        if (offering.styleId === 'happy') return null;
+        if (!offering.assetId) throw new Error('Saved helper is unavailable.');
+        const setup = await createDevCharacterPersistenceClient().load(offering.assetId);
+        if (!setup) throw new Error('Saved helper is unavailable.');
+        const source = await fetch(setup.pngDataUrl);
+        return { rig: setup.rig, image: await source.blob() };
+      }}
+      workbenchAction={{
       navigate: (section) => (workbenchTab = section),
       stageDraft: (value) => (draftSubject = value),
       draftSubject: () => draftSubject,
       section: () => workbenchTab,
-    }} />
+      }}
+    />
   </div>
   <div hidden={workbenchTab !== 'chat'}>
   <div class="chat-dev">

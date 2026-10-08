@@ -99,6 +99,18 @@ This is not production authentication. A production host must provide its
 authenticated principal, tenant, and authorization policy to
 `PhotoCutoutProfileStore`; it must not copy this fixed local identity pattern.
 
+### Local helper control panel
+
+`/api/dev-helper` uses the same loopback-only identity and durable Profile
+metadata store. Provisioning also creates its application-scoped metafield;
+the route never creates schema or accepts actor, tenant, policy, provider, or
+asset URL fields from the browser. It resolves the current gallery, allowed
+voice, and helper policy on every load/save/reset. Its whole-value persistence
+semantic is last-successful-write-wins, so a production host with concurrent
+editors must serialize writes per profile/application or supply a stronger
+adapter. The speech route resolves the saved offered voice server-side; clients
+submit only text. Helper preference loading never starts audio or a microphone.
+
 ### Character conversation lifecycle
 
 The Character conversation tab refreshes the persisted rig each time it becomes

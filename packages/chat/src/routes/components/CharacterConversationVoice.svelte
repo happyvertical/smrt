@@ -28,9 +28,11 @@ export interface Props {
   onfinal: (text: string) => void | Promise<void>;
   /** Prevents starting speech or submitting text while the host is busy. */
   disabled?: boolean;
+  /** Presentation preference; disabling captions never stops dictation. */
+  heardSubtitles?: boolean;
 }
 
-let { onfinal, disabled = false }: Props = $props();
+let { onfinal, disabled = false, heardSubtitles = true }: Props = $props();
 let typed = $state('');
 const messageInputId = $props.id();
 let sending = $state(false);
@@ -119,7 +121,7 @@ onDestroy(() => {
   </Form>
 
   <HeardCaptions
-    enabled={true}
+    enabled={heardSubtitles}
     lines={heard.lines}
     interim={heard.interim}
     placement="inline"

@@ -137,16 +137,32 @@ async function withStore<T>(
 
 export const GET: RequestHandler = async ({ request, getClientAddress }) => {
   const config = requireDevAccess(request, getClientAddress);
+  const url = new URL(request.url);
+  if (url.searchParams.get('list') === '1') {
+    const setups = await withStore(request, getClientAddress, (store) =>
+      store.list({
+        actorProfileId: config.profileId,
+        profileId: config.profileId,
+        tenantId: config.tenantId,
+      }),
+    );
+    return json({ setups });
+  }
+  const assetId = url.searchParams.get('assetId') ?? undefined;
+  if (assetId !== undefined && !assetId.trim())
+    error(400, 'Character asset id is invalid.');
   const saved = await withStore(request, getClientAddress, (store) =>
     store.load({
       actorProfileId: config.profileId,
       profileId: config.profileId,
       tenantId: config.tenantId,
+      ...(assetId ? { assetId } : {}),
     }),
   );
   if (!saved) return json({ setup: null });
   return json({
     setup: {
+      assetId: saved.assetId,
       rig: saved.rig,
       savedAt: saved.savedAt,
       pngDataUrl: `data:image/png;base64,${saved.png.toString('base64')}`,
@@ -166,5 +182,5 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
       rig: rig(body.rig),
     }),
   );
-  return json({ savedAt: saved.savedAt });
+  return json({ savedAt: saved.savedAt, assetId: saved.assetId });
 };

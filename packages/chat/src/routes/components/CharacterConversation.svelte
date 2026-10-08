@@ -1,9 +1,5 @@
 <script lang="ts">
 import {
-  mountPhotoCutout,
-  type PhotoCutoutHandle,
-} from '@happyvertical/animation';
-import {
   createDataSurfaceRegistry,
   type DataSurfaceActionRequest,
   type DataSurfaceActionResult,
@@ -14,6 +10,10 @@ import { createSpeechPlayback } from '@happyvertical/speech/browser';
 import { onMount } from 'svelte';
 import { createDevAssistantTransport } from '../../dev-assistant-transport.js';
 import { createDevCharacterPersistenceClient } from '../../dev-character-persistence-client.js';
+import type {
+  HelperOffering,
+  HelperSnapshot,
+} from '../../helper-preferences.js';
 import { createCaptionChannel } from '../../svelte/components/assistant/captions/caption-state.svelte.js';
 import SpokenCaptions from '../../svelte/components/assistant/captions/SpokenCaptions.svelte';
 import type {
@@ -21,7 +21,12 @@ import type {
   AssistantDockController,
 } from '../../svelte/components/assistant/create-assistant-dock-controller.svelte.js';
 import FloatingAssistant from '../../svelte/components/assistant/FloatingAssistant.svelte';
+import type {
+  HelperRendererHandle,
+  HelperStyleRegistry,
+} from '../../svelte/components/helper/registry.js';
 import { M } from '../../svelte/i18n.js';
+import { M as helperMessages } from '../../svelte/i18n.messages.js';
 import { DEV_CHARACTER_MAX_DRAFT_LENGTH } from '../api/dev-character-conversation/protocol.js';
 import CharacterConversationVoice from './CharacterConversationVoice.svelte';
 
@@ -35,11 +40,21 @@ export interface Props {
     draftSubject?: () => string;
     section?: () => string;
   };
+  helperSnapshot?: HelperSnapshot;
+  helperRegistry?: HelperStyleRegistry;
+  loadHelperPayload?: (offering: HelperOffering) => Promise<unknown>;
 }
-let { workbenchAction, active = true }: Props = $props();
+let {
+  workbenchAction,
+  active = true,
+  helperSnapshot,
+  helperRegistry,
+  loadHelperPayload,
+}: Props = $props();
+const helperPreferences = $derived(helperSnapshot?.preferences);
 
 let target: HTMLDivElement;
-let mounted: PhotoCutoutHandle | null = null;
+let mounted: HelperRendererHandle | null = null;
 let unavailable = $state<string | null>(null);
 let listening = $state(false);
 let audioEnabled = $state(false);
@@ -269,11 +284,8 @@ let playback = createSpeechPlayback({
   },
   onLevel: (level) => {
     const gain = Math.min(1, Math.sqrt(Math.max(0, level)) * 1.25);
-    mounted?.setExpression({
-      headTiltDegrees: gain * 5,
-      jawTiltDegrees: gain * 7,
-    });
     mounted?.setMouthOpen(gain);
+    mounted?.setSpeaking?.(gain > 0.05);
   },
 });
 let playbackGeneration = 0;
@@ -353,7 +365,7 @@ async function speak(reply: string) {
       playingText = '';
       spoken.setInterim('');
       mounted?.setMouthOpen(0);
-      mounted?.setExpression({ headTiltDegrees: 0, jawTiltDegrees: 0 });
+      mounted?.setSpeaking?.(false);
     }
   }
 }
@@ -368,39 +380,56 @@ let loadGeneration = 0;
 async function refreshCharacter() {
   const generation = ++loadGeneration;
   try {
-    const saved = await createDevCharacterPersistenceClient().load();
     if (generation !== loadGeneration || !active || !ready) return;
     mounted?.destroy();
     mounted = null;
     unavailable = null;
-    if (!saved) {
-      unavailable =
-        'Save a character in Character setup to bring it into this conversation.';
+    const preferences = helperSnapshot?.preferences;
+    const offering = helperSnapshot?.offering;
+    if (!preferences || !offering || !helperRegistry || !loadHelperPayload) {
+      // Retain the original workbench lifecycle for hosts that have not yet
+      // enabled helper preferences.
+      const saved = await createDevCharacterPersistenceClient().load();
+      if (!saved) {
+        unavailable =
+          'Save a character in Character setup to bring it into this conversation.';
+        return;
+      }
+      const match = /^data:image\/png;base64,(.+)$/.exec(saved.pngDataUrl);
+      if (!match) {
+        unavailable = t(helperMessages['chat.helper.load_renderer_failed']);
+        return;
+      }
+      const bytes = Uint8Array.from(atob(match[1]), (value) =>
+        value.charCodeAt(0),
+      );
+      const { mountPhotoCutout } = await import('@happyvertical/animation');
+      if (generation !== loadGeneration || !active || !ready) return;
+      mounted = mountPhotoCutout(saved.rig, {
+        target,
+        resolveAsset: async () =>
+          new File([bytes], 'saved-character.png', { type: 'image/png' }),
+      });
       return;
     }
-    const match = /^data:image\/png;base64,(.+)$/.exec(saved.pngDataUrl);
-    if (!match) {
-      unavailable = 'The saved character image is unavailable.';
+    const style = helperRegistry.get(offering.styleId);
+    if (!style) {
+      unavailable = t(helperMessages['chat.helper.selected_style_unavailable']);
       return;
     }
-    const binary = atob(match[1]);
-    const bytes = Uint8Array.from(binary, (value) => value.charCodeAt(0));
-    const asset = new File([bytes], 'saved-character.png', {
-      type: 'image/png',
-    });
-    mounted = mountPhotoCutout(saved.rig, {
+    const payload = await loadHelperPayload(offering);
+    if (generation !== loadGeneration || !active || !ready) return;
+    mounted = await style.mount({
       target,
-      resolveAsset: async () => asset,
-      onError: (error) => {
-        if (generation === loadGeneration) unavailable = error.message;
-      },
+      offering,
+      payload,
     });
   } catch (error) {
     if (generation === loadGeneration && active && ready)
       unavailable =
         error instanceof Error
           ? error.message
-          : 'Saved character could not load.';
+          : t(helperMessages['chat.helper.load_renderer_failed']);
   }
 }
 function stopSpeech() {
@@ -410,9 +439,12 @@ function stopSpeech() {
   playback.stop();
   spoken.setInterim('');
   mounted?.setMouthOpen(0);
-  mounted?.setExpression({ headTiltDegrees: 0, jawTiltDegrees: 0 });
+  mounted?.setSpeaking?.(false);
 }
 $effect(() => {
+  helperSnapshot?.preferences?.offeringId;
+  helperRegistry;
+  loadHelperPayload;
   if (ready && active) void refreshCharacter();
   else {
     ++loadGeneration;
@@ -433,7 +465,8 @@ onMount(() => {
 </script>
 
 <section class="character-conversation" aria-label={t(M['chat.character_conversation.saved_conversation'])}>
-  <div class="character-stage" bind:this={target} aria-label={t(M['chat.character_conversation.saved_character'])}></div>
+  <div class:bottom-left={helperPreferences?.placement === 'bottom-left'} class:bottom-right={helperPreferences?.placement !== 'bottom-left'} class="character-stage" bind:this={target} aria-label={helperPreferences?.name || t(M['chat.character_conversation.saved_character'])}></div>
+  {#if helperPreferences}<p class="helper-name">{helperPreferences.name}</p>{/if}
   {#if unavailable}<p role="status">{unavailable}</p>{/if}
   <div class="conversation-controls">
     <Button type="button" variant="secondary" aria-pressed={listening} onclick={() => (listening = !listening)}>
@@ -445,10 +478,10 @@ onMount(() => {
     {#if listening}<p role="status">{t(M['chat.character_conversation.listening_notice'])}</p>{/if}
   </div>
   {#if listening && active}
-    <CharacterConversationVoice onfinal={sendSpokenTurn} disabled={!conversationReady || attentionRequired || turnPending} />
+    <CharacterConversationVoice onfinal={sendSpokenTurn} heardSubtitles={helperPreferences?.heardSubtitles ?? true} disabled={!conversationReady || attentionRequired || turnPending} />
   {/if}
   <FloatingAssistant composerDisabled={turnPending} {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
-  <SpokenCaptions enabled={true} lines={spoken.lines} interim={spoken.interim} />
+  <SpokenCaptions enabled={helperPreferences?.spokenSubtitles ?? true} lines={spoken.lines} interim={spoken.interim} />
 </section>
 
 <style>
@@ -456,6 +489,9 @@ onMount(() => {
      above its launcher/closed bar so a pointer can reach Submit. */
   .character-conversation { position: relative; min-block-size: 18rem; padding-block-end: 10rem; }
   .character-stage { min-block-size: 16rem; inline-size: min(18rem, 48vw); margin: 0 auto; }
+  .character-stage.bottom-left { margin-inline: 0 auto; }
+  .character-stage.bottom-right { margin-inline: auto 0; }
+  .helper-name { margin: 0; text-align: center; font-weight: var(--smrt-typography-weight-semibold, 600); }
   .conversation-controls { display: grid; justify-items: center; gap: .5rem; }
   .character-stage :global(canvas), .character-stage :global(svg) { inline-size: 100%; block-size: 100%; }
   @media (min-width: 48rem) {

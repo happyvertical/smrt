@@ -106,7 +106,8 @@
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@happyvertical/images": "catalog:"
+    "@happyvertical/images": "catalog:",
+    "gsap": "^3.13.0"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"

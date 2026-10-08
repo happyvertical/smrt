@@ -34,6 +34,7 @@ import FloatingAssistant from './components/assistant/FloatingAssistant.svelte';
 // Dialog components
 import RoomCreateDialog from './components/dialogs/RoomCreateDialog.svelte';
 import SearchMessages from './components/dialogs/SearchMessages.svelte';
+import HelperControlPanel from './components/helper/HelperControlPanel.svelte';
 // Layout components
 import ChatLayout from './components/layout/ChatLayout.svelte';
 import MemberList from './components/layout/MemberList.svelte';
@@ -176,6 +177,21 @@ export {
 } from './components/assistant/FloatingAssistant.svelte';
 export { default as RoomCreateDialog } from './components/dialogs/RoomCreateDialog.svelte';
 export { default as SearchMessages } from './components/dialogs/SearchMessages.svelte';
+export { default as HelperControlPanel } from './components/helper/HelperControlPanel.svelte';
+export {
+  createHappyHelperStyle,
+  createHelperStyleRegistry,
+  createPhotoCutoutHelperStyle,
+  HAPPY_HELPER_OFFERING,
+  type HappyHelperStyleOptions,
+  type HappyRuntime,
+  type HelperRendererHandle,
+  type HelperStyleDefinition,
+  type HelperStyleMountInput,
+  type HelperStyleRegistry,
+  type HelperStyleSetupProps,
+  type PhotoCutoutPayload,
+} from './components/helper/registry.js';
 // Export components
 export { default as ChatLayout } from './components/layout/ChatLayout.svelte';
 export { default as MemberList } from './components/layout/MemberList.svelte';
@@ -353,4 +369,9 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-chat',
   'caption-overlay',
   CaptionOverlay,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-chat',
+  'helper-control-panel',
+  HelperControlPanel,
 );

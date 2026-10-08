@@ -1,8 +1,12 @@
 import { getSpeechSynthesizer } from '@happyvertical/speech';
 import { error, type RequestHandler } from '@sveltejs/kit';
 import { dev } from '$app/environment';
+import { openDevHelperService } from '../../../dev-helper-server.js';
 import { resolveDevAIConfig } from '../dev-ai.js';
-import { isLocalDevCharacterRequest } from '../dev-character-persistence/config.js';
+import {
+  isLocalDevCharacterRequest,
+  resolveDevCharacterPersistenceConfig,
+} from '../dev-character-persistence/config.js';
 
 const MAX_TEXT_LENGTH = 500;
 const MAX_REQUEST_BYTES = 2048;
@@ -52,6 +56,21 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   const text = typeof body?.text === 'string' ? body.text.trim() : '';
   if (!text || text.length > MAX_TEXT_LENGTH)
     error(400, `Speech text must be 1-${MAX_TEXT_LENGTH} characters.`);
+  // The browser submits only text. When helper persistence is configured, the
+  // current effective voice is resolved afresh from its server-side policy.
+  // A client cannot select a provider, URL, credential, or arbitrary voice.
+  let voice = 'marin';
+  const helperConfig = resolveDevCharacterPersistenceConfig();
+  if (helperConfig) {
+    const helper = await openDevHelperService(helperConfig);
+    try {
+      const snapshot = await helper.service.load(helper.context);
+      if (!snapshot.preferences) error(503, 'Helper voice is unavailable.');
+      voice = snapshot.preferences.voiceId;
+    } finally {
+      await helper.close();
+    }
+  }
   const config = resolveDevAIConfig();
   if (!config?.apiKey || config.provider !== 'openai')
     error(503, 'Local character speech needs a configured OpenAI provider.');
@@ -61,12 +80,12 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
       baseUrl: OPENAI_AUDIO_URL,
       apiKey: config.apiKey,
       defaultModel: 'gpt-4o-mini-tts',
-      defaultVoice: 'marin',
+      defaultVoice: voice,
     });
     const spoken = await synthesizer.synthesize({
       text,
       model: 'gpt-4o-mini-tts',
-      voice: 'marin',
+      voice,
       outputFormat: 'wav',
       signal: request.signal,
     });

@@ -6,10 +6,15 @@
  */
 import {
   ProfileCollection,
+  ProfileMetafieldCollection,
   ProfileTypeCollection,
 } from '@happyvertical/smrt-profiles';
 import { getDatabase } from '@happyvertical/sql';
 import { resolveDevCharacterPersistenceConfig } from '../routes/api/dev-character-persistence/config.js';
+
+/** Pre-provisioned application-scoped key consumed by the dev helper route. */
+export const DEV_HELPER_PREFERENCES_METAFIELD =
+  'smrt-chat-dev-helper-preferences';
 
 const config = resolveDevCharacterPersistenceConfig();
 if (!config) {
@@ -45,6 +50,25 @@ try {
     process.stdout.write(
       `Dev character profile provisioned: ${config.profileId}\n`,
     );
+  }
+  const metafields = await ProfileMetafieldCollection.create({ db });
+  const candidates = await metafields.list({
+    where: { slug: DEV_HELPER_PREFERENCES_METAFIELD },
+  });
+  const own = candidates.filter(
+    (field) => (field.tenantId ?? null) === config.tenantId,
+  );
+  if (own.length > 1) {
+    throw new Error('Dev helper preference metafield is ambiguous.');
+  }
+  if (!own[0]) {
+    const metafield = await metafields.create({
+      slug: DEV_HELPER_PREFERENCES_METAFIELD,
+      name: 'SMRT chat dev helper preferences',
+      tenantId: config.tenantId,
+      description: 'Opt-in local helper presentation preferences.',
+    });
+    await metafield.save();
   }
 } finally {
   await db.close?.();
