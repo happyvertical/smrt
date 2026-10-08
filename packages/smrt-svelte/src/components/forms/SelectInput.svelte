@@ -53,6 +53,14 @@ const formContext = tryGetFormContext();
 let isFocused = $state(false);
 /** A caller-supplied empty choice replaces the placeholder: one empty option only. */
 const hasEmptyOption = $derived(options.some((o) => o.value === ''));
+// Options are keyed by value: a repeated value (e.g. two empty choices) would
+// throw each_key_duplicate and take the whole form down, so keep the first.
+const uniqueOptions = $derived(
+  options.filter(
+    (option, index) =>
+      options.findIndex((o) => o.value === option.value) === index,
+  ),
+);
 const isSmrt = $derived(app.state.mode === 'smrt');
 
 // Helper to update value
@@ -151,7 +159,7 @@ function handleChange(e: Event) {
         {#if !hasEmptyOption}
           <option value="" disabled selected={!value}>{placeholder}</option>
         {/if}
-        {#each options as option (option.value)}
+        {#each uniqueOptions as option (option.value)}
           <option value={option.value}>{option.label}</option>
         {/each}
       </select>

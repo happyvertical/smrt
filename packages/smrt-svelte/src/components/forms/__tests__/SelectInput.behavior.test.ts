@@ -102,6 +102,27 @@ describe('SelectInput — options & placeholder', () => {
   });
 });
 
+describe('SelectInput — repeated option values', () => {
+  it('renders a repeated value once instead of crashing', () => {
+    render(SelectInput, {
+      props: {
+        name: 'method',
+        label: 'Collection method',
+        options: [
+          { value: '', label: '(none)' },
+          { value: '', label: '' },
+          { value: 'send_invoice', label: 'Send invoice' },
+        ],
+      },
+    });
+    const values = Array.from(
+      screen.getByRole('combobox').querySelectorAll('option'),
+      (option) => option.value,
+    );
+    expect(values).toEqual(['', 'send_invoice']);
+  });
+});
+
 describe('SelectInput — states & attributes', () => {
   it('reflects required onto the select', () => {
     // NOTE: with required, the "*" lives inside the <label>, so the select's
