@@ -134,6 +134,19 @@ const availableOfferings = $derived(
     registry.get(offering.styleId),
   ),
 );
+// A recovery draft may name an offering that no longer appears in the
+// gallery. In that case retain a single keyboard entry point on the first
+// editable offering instead of leaving every radio outside the tab order.
+const galleryTabStopIndex = $derived(
+  !editable('offeringId')
+    ? -1
+    : Math.max(
+        0,
+        availableOfferings.findIndex(
+          (offering) => offering.id === draft?.offeringId,
+        ),
+      ),
+);
 const availableSetups = $derived(
   registry
     .list()
@@ -335,7 +348,7 @@ async function customSaved(offering: HelperOffering) {
       <legend>{t(M['chat.helper.gallery'])}</legend>
       <div class="gallery" role="radiogroup" tabindex="-1" aria-label={t(M['chat.helper.gallery'])} onkeydown={moveGallerySelection}>
         {#each availableOfferings as offering, index (offering.id)}
-          <Button id={`${panelInstanceId}-offering-${index}`} tabindex={draft?.offeringId === offering.id ? 0 : -1} type="button" variant="secondary" class={draft?.offeringId === offering.id ? 'selected' : ''} role="radio" aria-checked={draft?.offeringId === offering.id}
+          <Button id={`${panelInstanceId}-offering-${index}`} tabindex={galleryTabStopIndex === index ? 0 : -1} type="button" variant="secondary" class={draft?.offeringId === offering.id ? 'selected' : ''} role="radio" aria-checked={draft?.offeringId === offering.id}
             disabled={!draft || !editable('offeringId')} onclick={() => update('offeringId', offering.id)}>{offering.label}</Button>
         {/each}
       </div>

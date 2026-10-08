@@ -250,7 +250,7 @@ describe('HelperControlPanel', () => {
     expect(trigger).toHaveFocus();
   });
 
-  it('uses a server recovery draft to save an allowed replacement without applying it early', async () => {
+  it('lets keyboard users replace a removed recovery offering without applying it early', async () => {
     const unavailable: HelperSnapshot = {
       ...snapshot(),
       preferences: null,
@@ -294,8 +294,17 @@ describe('HelperControlPanel', () => {
     expect(
       screen.getByText('The old helper is unavailable.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Saved photo' })).toBeEnabled();
-    await userEvent.click(screen.getByRole('radio', { name: 'Saved photo' }));
+    const happy = screen.getByRole('radio', { name: 'Happy' });
+    const photo = screen.getByRole('radio', { name: 'Saved photo' });
+    expect(happy).toHaveAttribute('tabindex', '0');
+    expect(photo).toHaveAttribute('tabindex', '-1');
+    document.body.focus();
+    await userEvent.tab();
+    expect(happy).toHaveFocus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(photo).toHaveFocus();
+    expect(photo).toHaveAttribute('aria-checked', 'true');
+    expect(client.save).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(client.save).toHaveBeenCalledWith(
       expect.objectContaining({ offeringId: 'photo:1' }),
