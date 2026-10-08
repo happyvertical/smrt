@@ -370,7 +370,9 @@ function removeAttachment(id: string) {
     background: var(--smrt-color-surface, #ffffff);
     padding: var(--smrt-spacing-2, 8px);
     flex-shrink: 0;
+    container-type: inline-size;
   }
+
 
   .assistant-composer-row {
     display: flex;
@@ -426,13 +428,7 @@ function removeAttachment(id: string) {
   /* Phones: 16px text so iOS Safari doesn't zoom the page when the
      message field gets focus. */
   @media (max-width: 48rem) {
-    .assistant-composer-field {
-    flex: 1;
-    display: flex;
-    min-inline-size: 0;
-  }
-
-  :global(.assistant-composer-textarea) {
+    :global(.assistant-composer-textarea) {
       font-size: max(1rem, 16px);
     }
   }
@@ -497,5 +493,23 @@ function removeAttachment(id: string) {
     background: var(--smrt-color-error-container, #ffdad6);
     color: var(--smrt-color-on-error-container, #410002);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+
+  /* A narrow dock (a sidebar a couple of hundred pixels wide): the message
+     field takes the whole row and the attach, dictate and send controls sit
+     under it, so the placeholder never wraps a syllable per line. */
+  @container (max-width: 22rem) {
+    .assistant-composer-row {
+      flex-wrap: wrap;
+    }
+
+    .assistant-composer-field {
+      flex: 1 1 100%;
+      order: -1;
+    }
+
+    :global(.assistant-composer-send) {
+      margin-inline-start: auto;
+    }
   }
 </style>
