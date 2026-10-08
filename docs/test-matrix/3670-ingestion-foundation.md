@@ -2,7 +2,7 @@
 
 Refs #3670; frozen contract: [ADR 0004](../adr/0004-application-aware-ingestion.md).
 High risk: persistent tenant/confidential authority, concurrent leases and cross-system recovery.
-Executed evidence is captured outside the worktree in `/home/will/Work/tmp/s3670/evidence`; the review packet records command status, file digest and reviewed revision. The foundation suite executes the same 30 cases on each real database.
+Executed evidence is captured outside the worktree in `/home/will/Work/tmp/s3670/evidence`; the review packet records command status, file digest and reviewed revision. The foundation suite executes the same 34 cases on each real database.
 
 Commands: U = `pnpm --filter @happyvertical/smrt-ingestion test`; P = `pnpm --filter @happyvertical/smrt-ingestion test:postgres`; T = `pnpm --filter @happyvertical/smrt-ingestion typecheck`; K = `pnpm --filter @happyvertical/smrt-ingestion build`.
 Both means actual Node 26 SQLite and PostgreSQL. Every service boundary uses a server-created authenticated scope, and denies both another tenant and a missing confidential grant identically.
@@ -77,3 +77,20 @@ for these corrections. Previously recorded assets, package/dependency registrati
 consumer bundle-gate and root full-suite evidence remains applicable; no source or
 dependency in those packages changes. Full ingestion build/typecheck/U/P and root
 lint/format/regenerated strict knowledge checks are rerun for the corrected tree.
+
+
+## Accepted automated review corrections (round 3)
+
+Four `review second regression:` cases fail against
+`c4eaab8ced9260411e4b8c151b0c88beef33a2a1` on both databases. Evidence is captured
+under `/home/will/Work/tmp/s3670/r2-fixes`.
+
+| Existing invariant | Regression observation |
+|---|---|
+| Deterministic receipt retry | A ready duplicate whose dispatch repair throws returns retry/unavailable, preserves evidence and remains recoverable |
+| Terminal cancellation/expiry | Both queued and running parent analyses become superseded together with attempts; late completion is rejected |
+| Retention recovery | Expiring two items with one existing tombstone performs one repair traversal; subsequent sweeps still revisit all three cleanup locators for late writes |
+
+Only server code, shared database tests and this matrix change. The unchanged-source
+carry-forward rationale above still applies; full ingestion U/P/build/typecheck and
+affected root lint/format/regenerated strict knowledge checks are rerun.

@@ -209,6 +209,77 @@ export function foundationSuite(
       }
       if (root) await rm(root, { recursive: true, force: true });
     });
+    it('review second regression: ready receipt returns retry when dispatch repair fails', async () => {
+      const id = await accepted();
+      const retrying = new IngestionService(options);
+      retrying.repairDispatches = async () => {
+        throw new Error('queue unavailable');
+      };
+      expect(await retrying.receive(receive())).toEqual({
+        kind: 'retry',
+        category: 'unavailable',
+      });
+      expect((await service.getItem(id)).receiptState).toBe('ready');
+      expect(await service.getEvidence(id)).toHaveLength(1);
+      expect((await service.receive(receive())).kind).toBe('duplicate');
+    });
+    for (const operation of ['cancel', 'expire'] as const)
+      it(`review second regression: ${operation} terminates queued and running parent analyses`, async () => {
+        for (const running of [false, true]) {
+          const id = await accepted(String(running));
+          const revision = await service.analyze(id, {}, 'analysis');
+          const lease = running
+            ? await service.claimAnalysis(id, revision.revision, 'worker')
+            : null;
+          await service[operation](id);
+          expect(
+            (
+              await db.query(
+                'SELECT state FROM intake_analyses WHERE item_id=?',
+                id,
+              )
+            ).rows,
+          ).toEqual([expect.objectContaining({ state: 'superseded' })]);
+          expect(
+            (
+              await db.query(
+                "SELECT state FROM intake_analysis_attempts WHERE item_id=? AND state IN ('queued','running')",
+                id,
+              )
+            ).rows,
+          ).toHaveLength(0);
+          if (lease) {
+            if (operation === 'expire')
+              await expect(
+                service.completeAnalysis(lease, output),
+              ).rejects.toThrow('unavailable');
+            else
+              expect(await service.completeAnalysis(lease, output)).toBe(false);
+          }
+        }
+      });
+    it('review second regression: retention sweep repairs each tombstone once', async () => {
+      const old = await accepted('old');
+      await service.expire(old);
+      await accepted('new1');
+      await accepted('new2');
+      clock = new Date(clock.getTime() + 100001);
+      const original = options.assets.store.removeFile.bind(
+        options.assets.store,
+      );
+      let removals = 0;
+      options.assets.store.removeFile = async (asset) => {
+        removals++;
+        return original(asset);
+      };
+      expect(await service.sweepRetention()).toBe(2);
+      // Two live owners plus the three retained cleanup locators.
+      expect(removals).toBe(5);
+      expect(purges).toBe(3);
+      removals = 0;
+      expect(await service.sweepRetention()).toBe(0);
+      expect(removals).toBe(3);
+    });
     it('review regression: reauthorizes receipt reservation on its owning transaction', async () => {
       let granted = true;
       const receiveExecutors: DatabaseInterface[] = [];

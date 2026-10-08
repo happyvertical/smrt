@@ -453,7 +453,11 @@ export class IngestionService {
     const itemId = String(item.id);
     await this.point('reserved');
     if (item.receipt_state === 'ready') {
-      await this.repairDispatches();
+      try {
+        await this.repairDispatches();
+      } catch {
+        return { kind: 'retry', category: 'unavailable' };
+      }
       return {
         kind: 'duplicate',
         itemId,
@@ -1139,6 +1143,12 @@ export class IngestionService {
         itemId,
       );
       await db.query(
+        "UPDATE intake_analyses SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        itemId,
+      );
+      await db.query(
         "UPDATE intake_analysis_attempts SET state='superseded',safe_error='cancelled' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')",
         this.scope.tenantId,
         this.scope.confidentialScopeId,
@@ -1325,6 +1335,10 @@ export class IngestionService {
   }
   /** Revoke immediately and durably schedule deletion before external I/O. */
   async expire(itemId: string): Promise<void> {
+    await this.scheduleExpiry(itemId);
+    await this.repairDeletions();
+  }
+  private async scheduleExpiry(itemId: string): Promise<void> {
     await this.tx(async (db) => {
       await this.lock(db, itemId);
       await this.item(itemId, 'delete', db, true);
@@ -1348,6 +1362,12 @@ export class IngestionService {
         itemId,
       );
       await db.query(
+        "UPDATE intake_analyses SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        itemId,
+      );
+      await db.query(
         "UPDATE intake_analysis_attempts SET state='superseded' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND state IN ('queued','running')",
         this.scope.tenantId,
         this.scope.confidentialScopeId,
@@ -1366,7 +1386,6 @@ export class IngestionService {
         'tenant_id,item_id',
       );
     });
-    await this.repairDeletions();
   }
   /** Retry privacy propagation. Minimal receipt/action identities remain replay-safe. */
   async repairDeletions(): Promise<number> {
@@ -1458,7 +1477,7 @@ export class IngestionService {
       "visibility='active' AND expires_at<=?",
       [this.now().toISOString()],
     );
-    for (const item of expired) await this.expire(String(item.id));
+    for (const item of expired) await this.scheduleExpiry(String(item.id));
     await this.repairDeletions();
     return expired.length;
   }
