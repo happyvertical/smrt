@@ -361,13 +361,10 @@ describe('accessibility', () => {
     await user.click(
       screen.getByRole('button', { name: 'Edit section People' }),
     );
-    // Scoped to the editing chrome: the shell's own left <aside role=navigation>
-    // is a pre-existing axe finding outside this feature.
+    // Whole shell, including the left sidebar region (its former invalid
+    // role="navigation" on <aside> is fixed).
     await expectNoA11yViolations(
-      document.querySelector('[data-layout-editing]') as HTMLElement,
-    );
-    await expectNoA11yViolations(
-      document.querySelector('#smrt-admin-shell-top-panel') as HTMLElement,
+      document.querySelector('.smrt-admin-shell') as HTMLElement,
     );
   });
 });

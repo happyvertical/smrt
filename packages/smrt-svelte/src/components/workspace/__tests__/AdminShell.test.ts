@@ -280,7 +280,12 @@ describe('AdminShell', () => {
       expect(container.querySelector('main')?.textContent).toContain(
         'main work',
       );
-      expect(container.querySelector('[role="navigation"]')).not.toBeNull();
+      // The left sidebar is a labelled complementary region; it only contains a
+      // navigation landmark when it actually renders navigation (aria-allowed-role).
+      const left = container.querySelector('#smrt-admin-shell-left-panel');
+      expect(left?.tagName).toBe('ASIDE');
+      expect(left?.getAttribute('role')).toBeNull();
+      expect(left?.getAttribute('aria-label')).toBeTruthy();
     } finally {
       unmount(component);
     }

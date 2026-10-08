@@ -965,7 +965,6 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       data-state={closingEdge === 'left' ? 'expanded' : panelState('left')}
       data-closing={closingEdge === 'left' ? '' : undefined}
       data-presentation={shell.presentationFor('left')}
-      role="navigation"
       aria-label={labelFor('left')}
       tabindex={overlayEdge === 'left' ? -1 : undefined}
       inert={(isPhone && !edgeExpanded('left')) ||
