@@ -1362,7 +1362,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
        ancestor (a tinted page behind cards, for instance). */
     background: var(--smrt-admin-shell-background, var(--smrt-color-surface));
     color: var(--smrt-color-on-surface);
+    /* `clip`, not `hidden`: a hidden box is still programmatically scrollable
+       (focus / scrollIntoView on a grid-track child shifts the whole shell
+       and its sidebars); a clipped box can never scroll. Only main and the
+       sidebars scroll. */
     overflow: hidden;
+    overflow: clip;
     /* Themed, thin scrollbars for every scroller inside the shell. Override
        --smrt-admin-shell-scrollbar-track / -thumb / -thumb-hover to retint. */
     scrollbar-color: var(--smrt-admin-shell-scrollbar-thumb, color-mix(in srgb, var(--smrt-color-on-surface) 26%, transparent))
