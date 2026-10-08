@@ -161,6 +161,41 @@ describe('local mouth landmarks', () => {
   });
 });
 
+describe('setup workflow', () => {
+  it('shows one next step and explains that saving adds a gallery character', async () => {
+    component = mount(PhotoCutoutSetup, {
+      target: document.body,
+      props: { saveSetup: vi.fn() },
+    });
+    await tick();
+    expect(
+      document.querySelector('.primary-action button')?.textContent?.trim(),
+    ).toBe('Isolate head');
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('Photo picker is missing');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['synthetic'], 'source.png', { type: 'image/png' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await click('Isolate head');
+    await vi.waitFor(() =>
+      expect(button('Continue: segment mouth')).toBeTruthy(),
+    );
+    expect(
+      document.querySelector('.primary-action button')?.textContent?.trim(),
+    ).toBe('Continue: segment mouth');
+    await click('Continue: segment mouth');
+    await vi.waitFor(() => expect(button('Save character')).toBeTruthy());
+    expect(
+      document.querySelector('.primary-action button')?.textContent?.trim(),
+    ).toBe('Save character');
+    expect(document.body.textContent).toContain(
+      'Saving adds this character to your gallery.',
+    );
+  });
+});
+
 describe('photo picker', () => {
   it('keeps the accepted photo when an unsupported replacement is selected', async () => {
     component = mount(PhotoCutoutSetup, { target: document.body });

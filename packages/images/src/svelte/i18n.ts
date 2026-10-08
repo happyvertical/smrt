@@ -12,6 +12,12 @@ export const M = defineMessages({
     'Isolated head on transparent background',
   'images.photo_cutout_setup.source_alt': 'Selected character source',
   'images.photo_cutout_setup.preview_label': 'Animated character preview',
+  'images.photo_cutout_setup.step_choose': 'Choose photo',
+  'images.photo_cutout_setup.step_isolate': 'Isolate head',
+  'images.photo_cutout_setup.step_mouth': 'Set mouth',
+  'images.photo_cutout_setup.step_save': 'Save to gallery',
+  'images.photo_cutout_setup.save_hint':
+    'Saving adds this character to your gallery. It does not change your active helper.',
 
   // AssetsGallery
   'images.assets_gallery.title': 'Pictures',
