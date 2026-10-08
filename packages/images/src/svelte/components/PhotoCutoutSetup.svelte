@@ -390,7 +390,7 @@ async function playSpeech() {
     {#if ready}<Button onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>{/if}
     {#if ready && saveSetup}<Button onclick={saveCharacter} disabled={persisting !== null}>{persisting === 'save' ? 'Saving…' : 'Save character'}</Button>{/if}
     {#if loadSetup}<Button onclick={loadCharacter} disabled={busy !== null || persisting !== null}>{persisting === 'load' ? 'Loading…' : 'Load saved character'}</Button>{/if}
-    {#if ready && speechPreview}<label>Preview speech <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={stopSpeech}>Stop speech</Button>{/if}{/if}
+    {#if ready && speechPreview}<label>Preview speech <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={() => stopSpeech()}>Stop speech</Button>{/if}{/if}
   </div>
   {#if head}<figure><figcaption>Step 1: transparent head</figcaption><img class="checkerboard" src={head.url} alt="Isolated head on transparent background" /></figure>
   {:else if source}<img src={source.url} alt="Selected character source" />{/if}
