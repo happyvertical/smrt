@@ -23,6 +23,12 @@ and reduced-motion all restore the neutral pose. The Canadian split's vertical
 travel is derived from the measured mouth-to-chin span and the canvas receives
 matching transparent bottom padding, so a larger opening never clips the PNG.
 
+The mouth split is derived locally from MediaPipe FaceLandmarker lip-corner and
+chin landmarks on the isolated browser image. The pinned model is integrity
+checked before CPU inference; one clear face is required, cancellation is
+honored between loading and detection, and no image bytes are sent to a vision
+provider for this stage.
+
 `PhotoCutoutProfileStore` is the persistence seam. A consuming server supplies
 its authenticated profile, tenant, `AssetRuntime`, profile resolver, and
 authorization callback; the store saves PNG bytes as an owner-bound canonical

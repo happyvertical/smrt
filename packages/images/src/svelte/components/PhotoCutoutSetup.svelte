@@ -4,6 +4,7 @@ import {
   type PhotoCutoutHandle,
   type PhotoCutoutRig,
 } from '@happyvertical/animation';
+import { detectFaceLandmarks } from '@happyvertical/images/segmentation';
 import { FilePicker, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
@@ -11,7 +12,6 @@ import { onMount } from 'svelte';
 import {
   assembleCanadianSplitRig,
   type FaceOutline,
-  parseMouthLandmarks,
 } from '../../photo-cutout-setup.js';
 
 import { isolatePhotoHead } from '../head-isolation.js';
@@ -25,6 +25,7 @@ interface PersistedSetup {
   savedAt: string;
 }
 interface Props {
+  /** @deprecated Mouth landmarks now run locally; retained for caller compatibility. */
   endpoint?: string;
   segmentationAssets?: string;
   speechPreview?: (
@@ -49,7 +50,6 @@ interface Head {
 }
 type Stage = 'outline' | 'mouth-landmarks';
 let {
-  endpoint = '/api/dev-character-setup',
   segmentationAssets = '/api/dev-image-segmentation',
   speechPreview,
   saveSetup,
@@ -178,26 +178,6 @@ function mountPreview(rig: PhotoCutoutRig, asset: File, token: number) {
   });
   ready = true;
 }
-async function post(
-  stage: Stage,
-  file: File,
-  width: number,
-  height: number,
-  signal: AbortSignal,
-) {
-  const dataUrl = await read(file);
-  signal.throwIfAborted();
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    signal,
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ stage, dataUrl, width, height }),
-  });
-  const result = await response.json();
-  if (!response.ok)
-    throw new Error(result.message ?? 'Photo processing failed.');
-  return result;
-}
 async function run(stage: Stage) {
   const selected = source;
   const isolated = head;
@@ -240,17 +220,23 @@ async function run(stage: Stage) {
       message =
         'Review the transparent head. Continue when the silhouette looks right.';
     } else if (isolated) {
-      const result = await post(
-        stage,
-        isolated.file,
-        isolated.width,
-        isolated.height,
-        controller.signal,
-      );
+      const image = await imageAt(isolated.url);
+      controller.signal.throwIfAborted();
+      const landmarks = await detectFaceLandmarks(image, {
+        assetBaseUrl: segmentationAssets,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (generation === token)
+            message =
+              progress === 'loading'
+                ? 'Loading local face landmarks…'
+                : 'Locating lips and chin on this device…';
+        },
+      });
       if (generation !== token) return;
       const rig = assembleCanadianSplitRig({
         outline: isolated.outline,
-        landmarks: parseMouthLandmarks(result.landmarks),
+        landmarks,
         width: isolated.width,
         height: isolated.height,
         assetId: 'source',
