@@ -101,7 +101,7 @@ describe('AppShell dock toggles', () => {
   });
 
   it('falls through to the footer when header and sidebars are not visible', async () => {
-    await render({ config: { top: false } });
+    await render({ config: { top: false }, edgeToggles: true });
     expect(
       container.querySelector('[data-slot="footer.end"]')?.contains(toggle()),
     ).toBe(true);

@@ -108,6 +108,14 @@ export class ShellState {
    * is the state it starts in. Set it through `setLayoutPanels`.
    */
   layoutPanels = $state<Partial<Record<PanelEdge, ShellLayoutPanel>>>({});
+  /**
+   * Edges laid out inline rather than as a toggled drop-down (`AdminShell`
+   * `edgeToggles` off for the edge). An inline left edge is always docked
+   * open off phones while visible (the right edge, the dock, never is); an inline top/bottom edge is its band
+   * only. Everything is a drop-down (`false` here) unless set through
+   * `setInlineEdges`, so a bare `ShellState` keeps its historic behaviour.
+   */
+  inlineEdges = $state<Partial<Record<PanelEdge, boolean>>>({});
 
   private activityListeners = new Set<ActivityListener>();
 
@@ -155,6 +163,13 @@ export class ShellState {
         this.panels[edge] = next;
       }
       if (changed) this.settings = { ...this.settings, panels };
+      // Docked inline side edges become closed drawers on a phone.
+      if (viewport === 'phone') {
+        if (this.inlineEdges.left && this.panels.left === 'expanded') {
+          this.panels.left = 'collapsed';
+        }
+      }
+      this.applyInline();
     });
   }
 
@@ -169,6 +184,7 @@ export class ShellState {
    */
   presentationFor(edge: PanelEdge): PanelPresentation {
     const config = this.config.panels[edge];
+    if (this.isInline(edge)) return config.presentation;
     if (
       (edge === 'left' || edge === 'right') &&
       this.viewport !== 'phone' &&
@@ -196,6 +212,41 @@ export class ShellState {
         }
       }
     });
+  }
+
+  /** Whether an edge is laid out inline (no drop-down) at this viewport. */
+  isInline(edge: PanelEdge): boolean {
+    // The right edge is the dock: dock toggles and focus tools open it, so it
+    // never docks open by itself (it only loses its toggle button and hotkey).
+    if (edge === 'right' || !this.inlineEdges[edge]) return false;
+    return edge !== 'left' || this.viewport !== 'phone';
+  }
+
+  /**
+   * Choose which edges are laid out inline. A visible inline side edge is
+   * docked open (not persisted); top/bottom keep their band only.
+   */
+  setInlineEdges(next: Partial<Record<PanelEdge, boolean>>): void {
+    untrack(() => {
+      const same = PANEL_EDGES.every(
+        (edge) => Boolean(this.inlineEdges[edge]) === Boolean(next[edge]),
+      );
+      if (same) return;
+      this.inlineEdges = { ...next };
+      this.applyInline();
+    });
+  }
+
+  private applyInline(): void {
+    if (this.isInline('left') && this.panels.left === 'collapsed') {
+      this.panels.left = 'expanded';
+    }
+    // An inline top/bottom edge is its band only: it has no drop-down to open.
+    for (const edge of ['top', 'bottom'] as const) {
+      if (this.isInline(edge) && this.panels[edge] === 'expanded') {
+        this.panels[edge] = 'collapsed';
+      }
+    }
   }
 
   /** Record whether a side edge's `overlayMedia` matches. */
@@ -300,6 +351,7 @@ export class ShellState {
           this.layoutPanels[edge],
         );
       }
+      this.applyInline();
       this.activeFocusToolId =
         this.settings.activeFocusToolId ?? this.activeFocusToolId;
       if (persist !== false) void this.persistSettings();
@@ -337,6 +389,7 @@ export class ShellState {
         );
         if (this.panels[edge] === 'expanded') this.closeExclusivePeers(edge);
       }
+      this.applyInline();
     });
   }
 
@@ -361,6 +414,7 @@ export class ShellState {
       }
       if (state === 'expanded') this.closeExclusivePeers(edge);
       this.panels[edge] = state;
+      this.applyInline();
       void this.persistSettings();
     });
   }
@@ -412,6 +466,12 @@ export class ShellState {
         this.panels[edge] = 'hidden';
         return;
       }
+      // An inline side edge is always docked open; closing it is a no-op.
+      if (this.isInline(edge)) {
+        const side = edge === 'left';
+        if (side && state === 'collapsed') state = 'expanded';
+        if (!side && state === 'expanded') state = 'collapsed';
+      }
       if (state === 'expanded') this.closeExclusivePeers(edge);
       this.panels[edge] = state;
       this.settings = mergeShellSettingsDelta(this.settings, {
@@ -442,6 +502,7 @@ export class ShellState {
   closeTopmostExpanded(): boolean {
     return untrack(() => {
       for (const edge of [...PANEL_EDGES].reverse()) {
+        if (this.isInline(edge)) continue;
         if (this.panels[edge] === 'expanded' && this.isEdgeShown(edge)) {
           this.collapsePanel(edge);
           return true;

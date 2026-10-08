@@ -10,15 +10,17 @@ let {
   onDock = () => {},
   config,
   slots,
+  edgeToggles = false,
 }: {
   toggles?: DockToggle[];
   onDock?: (dock: ShellDock) => void;
   config?: Record<string, unknown>;
   slots?: Record<string, import('svelte').Snippet>;
+  edgeToggles?: boolean;
 } = $props();
 </script>
 
-<AppShell dockToggles={toggles} {config} {slots}>
+<AppShell dockToggles={toggles} {config} {slots} {edgeToggles}>
   {#snippet dock()}
     <ShellDockTool id="assistant" label="Assistant" render={assistantBody} />
   {/snippet}

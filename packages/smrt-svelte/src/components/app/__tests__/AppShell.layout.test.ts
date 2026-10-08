@@ -259,7 +259,7 @@ describe('AppShell layout', () => {
 
   it('applies an edited starting state to the live panel', async () => {
     const user = userEvent.setup();
-    mountShell();
+    mountShell({ edgeToggles: true });
     await vi.waitFor(() => expect(leftState()).toBe('expanded'));
     await user.click(
       screen.getByRole('switch', { name: 'Start Left sidebar panel expanded' }),
@@ -286,7 +286,7 @@ describe('AppShell layout', () => {
         layout: { version: 1, panels: { left: { initial: 'expanded' } } },
       }),
     );
-    mountShell({ mode: 'default', editor: false });
+    mountShell({ mode: 'default', editor: false, edgeToggles: true });
     await vi.waitFor(() => expect(leftState()).toBe('collapsed'));
   });
 

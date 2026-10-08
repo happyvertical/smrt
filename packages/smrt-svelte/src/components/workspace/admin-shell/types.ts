@@ -332,6 +332,8 @@ export interface ShellLayoutEditSurface {
   hiddenRegions?: readonly ShellRegion[];
   /** Content of one hidden region's strip. */
   strip?: Snippet<[ShellRegion]>;
+  /** Edit controls on a visible region (e.g. a hide button). */
+  regionControl?: Snippet<[ShellRegion]>;
 }
 
 /**
@@ -354,7 +356,31 @@ export interface AdminShellProps {
   title?: string;
   /** Optional destination for the default brand and compact rail mark. */
   homeHref?: string;
-  /** Show the built-in tenant edge collapse/expand control. */
+  /**
+   * Show the edge toggle buttons (and their hotkey hints) that open and close
+   * the drop-down edge panels: `true` for all four edges, or a per-edge map.
+   * Default `false`: no toggles, no hotkeys, and each region is laid out
+   * inline (its slots and content visible) instead of a collapsed bar that
+   * expands as a drop-down. Visibility then comes from the layout
+   * (`ShellLayout.panels`). Existing apps keep the old behaviour with `true`.
+   * A phone still gets the Menu opener and drawer for the left sidebar.
+   */
+  edgeToggles?: boolean | Partial<Record<PanelEdge, boolean>>;
+  /**
+   * Keyboard shortcuts (WASD, `?`). Default: active only for edges that have
+   * toggles. `true` enables them for every edge (the panels then behave as
+   * drop-downs without a button); `false` disables them.
+   */
+  hotkeys?: boolean;
+  /**
+   * The brand is rendered by the host as a slot item (`AppShell` supplies
+   * `item:brand` in `header.start`), so the top band does not draw its own.
+   */
+  brandInSlot?: boolean;
+  /**
+   * @deprecated Alias for `edgeToggles.left`: `true` shows the left edge's
+   * toggle, `false` hides it even when `edgeToggles` is on.
+   */
   showTenantToggle?: boolean;
   /** Optional brand logo URL. */
   logoSrc?: string;

@@ -27,6 +27,7 @@ import {
 } from '../workspace/admin-shell/layout.js';
 import { setShellLayout } from '../workspace/admin-shell/layout-context.js';
 import { ShellLayoutController } from '../workspace/admin-shell/layout-controller.svelte.js';
+import ShellBrand from '../workspace/admin-shell/ShellBrand.svelte';
 import ShellIconButton from '../workspace/admin-shell/ShellIconButton.svelte';
 import ShellNavEditor from '../workspace/admin-shell/ShellNavEditor.svelte';
 import { resolveShellConfig } from '../workspace/admin-shell/settings.js';
@@ -48,6 +49,7 @@ import {
 import { createShellState } from '../workspace/admin-shell/state.svelte.js';
 import TenantNav from '../workspace/admin-shell/TenantNav.svelte';
 import {
+  type AdminShellProps,
   PANEL_EDGES,
   type PanelEdge,
   type ShellNavGroup,
@@ -156,6 +158,14 @@ interface Props {
    * user-created, and `editing`.
    */
   sectionActions?: Snippet<[ShellSectionActionsContext]>;
+  /**
+   * Edge toggle buttons and WASD drop-down panels (see `AdminShell`).
+   * Default `false`: regions are laid out inline and no toggles or hotkeys
+   * exist. Pass `true` (or a per-edge map) for the previous behaviour.
+   */
+  edgeToggles?: AdminShellProps['edgeToggles'];
+  /** Keyboard shortcuts; default follows `edgeToggles` (see `AdminShell`). */
+  hotkeys?: boolean;
   children: Snippet;
 }
 
@@ -185,8 +195,12 @@ let {
   slotItems = [],
   layoutEditing = false,
   sectionActions,
+  edgeToggles = false,
+  hotkeys,
   children,
 }: Props = $props();
+/** Stable id of the built-in brand item (title, subtitle). */
+const SHELL_BRAND_ITEM_ID = 'item:brand';
 /** Stable id of the built-in edit-layout toggle item. */
 const SHELL_LAYOUT_EDIT_ITEM_ID = 'item:layout-edit';
 const { t } = useI18n();
@@ -207,6 +221,12 @@ const entries = $derived.by(() => {
     seen.add(entry.id);
     out.push(entry);
   };
+  add({
+    id: SHELL_BRAND_ITEM_ID,
+    label: t(M['ui.app_shell.brand_item']),
+    slot: 'header.start',
+    render: brandItem,
+  });
   for (const slot of SHELL_SLOTS) {
     const render = hostSlots?.[slot];
     if (render) {
@@ -450,7 +470,11 @@ const editSurface = $derived({
   zone: editZone,
   hiddenRegions,
   strip: editStrip,
+  regionControl: editRegionControl,
 });
+const visibleRegionCount = $derived(
+  layoutApi.panels.filter((panel) => panel.available && panel.visible).length,
+);
 
 async function toggleEditing(): Promise<void> {
   layoutApi.setEditing(!layoutApi.editing);
@@ -564,6 +588,25 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
   {/each}
 {/snippet}
 
+{#snippet brandItem()}
+  <ShellBrand {title} {subtitle} />
+{/snippet}
+
+{#snippet editRegionControl(region: ShellRegion)}
+  {@const label = t(SHELL_REGION_MESSAGES[region])}
+  {@const last = visibleRegionCount <= 1}
+  <ShellIconButton
+    icon="eyeOff"
+    size={16}
+    disabled={last}
+    label={t(M['ui.layout_edit.hide_region'], { region: label })}
+    tooltip={last
+      ? t(M['ui.layout_edit.hide_last_region'], { region: label })
+      : t(M['ui.layout_edit.hide_region'], { region: label })}
+    onclick={() => layoutApi.setPanel(EDGE_OF_REGION[region], { visible: false })}
+  />
+{/snippet}
+
 {#snippet editStrip(region: ShellRegion)}
   {@const label = t(SHELL_REGION_MESSAGES[region])}
   <span>{t(M['ui.layout_edit.region_hidden'], { region: label })}</span>
@@ -585,6 +628,9 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       path={currentHref}
       slots={shellSlots}
       layoutEdit={editSurface}
+      {edgeToggles}
+      {hotkeys}
+      brandInSlot
       bind:rootElement={shellRoot}
     >
       {#snippet appPanel()}

@@ -15,6 +15,8 @@ let {
   toggles = [{ tool: 'assistant', label: 'Assistant' }],
   config = { left: { initial: 'expanded' } },
   withActions = false,
+  edgeToggles = false,
+  title = 'SMRT',
   onChange,
   onApi,
 }: {
@@ -23,6 +25,10 @@ let {
   toggles?: DockToggle[];
   config?: ShellPanelDefaults;
   withActions?: boolean;
+  edgeToggles?:
+    | boolean
+    | Partial<Record<'top' | 'left' | 'right' | 'bottom', boolean>>;
+  title?: string;
   onChange?: (layout: ShellLayout) => void;
   onApi?: (api: ShellLayoutController) => void;
 } = $props();
@@ -46,6 +52,8 @@ function change(next: ShellLayout) {
 {/snippet}
 
 <AppShell
+  {title}
+  {edgeToggles}
   {navGroups}
   dockToggles={toggles}
   slots={{ 'footer.center': legacy }}

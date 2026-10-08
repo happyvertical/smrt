@@ -145,6 +145,10 @@ export const M = defineMessages({
   'ui.layout_edit.zone': '{region} · {slot}',
   'ui.layout_edit.region_hidden': '{region} · hidden',
   'ui.layout_edit.show_region': 'Show {region}',
+  'ui.layout_edit.hide_region': 'Hide {region}',
+  'ui.layout_edit.hide_last_region':
+    'Cannot hide {region}: at least one region must stay visible',
+  'ui.app_shell.brand_item': 'App title',
   'ui.layout_edit.section_options': 'Options for section {label}',
   'ui.layout_edit.edit_section': 'Edit section {label}',
   'ui.shell_region.header': 'Header',

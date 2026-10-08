@@ -100,13 +100,32 @@ leftSidebar.header -> footer.end; rightSidebar.footer -> footer.end ->
 header.end -> leftSidebar.footer. The legacy `tenantFooter` prop keeps its own
 `footerInHeader` fallback.
 
+### Edge toggles and hotkeys are opt-in (#3661)
+
+`AdminShell`/`AppShell` `edgeToggles?: boolean | Partial<Record<PanelEdge,
+boolean>>` defaults to `false`: no edge toggle buttons, no hotkey hints, and
+WASD/`?` are inert. Regions are laid out inline: the left sidebar is docked
+open off phones (`ShellState.setInlineEdges`/`isInline`; viewport defaults and
+`overlayMedia` do not apply), and the header/footer are plain bands without a
+drop-down drawer (so `appPanel`/`systemPanel` are not reachable). Visibility
+comes from `ShellLayout.panels.visible` and edit mode. The right edge is the
+dock: dock toggles and focus tools still open it, it just loses its button.
+`hotkeys` (default: follows the toggles) forces shortcuts on (`true`, panels
+behave as drop-downs without buttons) or off. Phones keep the Menu opener and
+the left drawer's close toggle. `showTenantToggle` is a deprecated alias for
+`edgeToggles.left`. Migration: pass `edgeToggles` (true) to keep the previous
+behaviour.
+
 ### Moving items between slots
 
 Movable items have stable ids: dock toggles `dock:<tool>`, each host `slots`
 snippet `slot:<slot>`, and host `slotItems` (`AppShell`, `{ id, label, slot,
 render }[]`, exported type `ShellSlotItem`; keep ids stable, they are stored in
-layouts). AdminShell's own chrome (brand, menu opener, account, edge toggles)
-is not an item yet (#3656 step 3).
+layouts). `AppShell` also supplies the built-in item `item:brand` (the shell
+title and subtitle, default slot `header.start`, movable, same fallback chain
+when the header is hidden); it sets `AdminShell` `brandInSlot` so the top band
+draws no brand of its own (standalone `AdminShell` still does). The menu
+opener and account content are not items yet (#3656 step 3).
 
 `ShellLayout.placements?: Record<itemId, ShellSlot>` (additive, still version
 1) overrides default slots. Pure helpers in `layout.ts` (also `./workspace/layout`):
@@ -141,6 +160,14 @@ While `editing`:
   cancels) with the same announcements as `Sortable`
   (`sortable/announce.ts`), committing `placeItem(id, slot)`. Items whose region
   is hidden show in the zone they fall back to.
+- Nothing in the header band renders outside the drop zones except each
+  region's edit control: the brand is an item in `header.start`, and the Menu
+  opener is hidden off phones. Every visible region gets an icon-only eye-off
+  "Hide <region>" button (`ShellLayoutEditSurface.regionControl`, end of the
+  header/footer band, top of a sidebar) that writes
+  `setPanel(edge, { visible: false })`; the strip's "Show" restores it. The
+  last visible region's button is disabled with an explanatory tooltip. Items
+  of a hidden region (the edit toggle included) follow the fallback chain.
 - Hidden, available regions render as thin dashed strips ("Right sidebar ·
   hidden") with an eye "Show <region>" button (`setPanel(edge, { visible })`).
 - `ShellNavEditor` replaces `TenantNav`: the real rows plus grips on every

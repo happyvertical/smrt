@@ -22,6 +22,7 @@ let {
   config,
   storageKey = 'layout-test',
   editor = true,
+  edgeToggles = false,
   onChange,
   onApi,
 }: {
@@ -32,6 +33,7 @@ let {
   config?: ShellPanelDefaults;
   storageKey?: string;
   editor?: boolean;
+  edgeToggles?: boolean;
   onChange?: (layout: ShellLayout) => void;
   onApi?: (api: ShellLayoutController) => void;
 } = $props();
@@ -46,12 +48,12 @@ function change(next: ShellLayout) {
 </script>
 
 {#if mode === 'default'}
-  <AppShell {nav} {navGroups} {config} {storageKey}>
+  <AppShell {nav} {navGroups} {config} {storageKey} {edgeToggles}>
     {#if onApi}<Probe {onApi} />{/if}
     {#if editor}<ShellLayoutEditor />{/if}
   </AppShell>
 {:else}
-  <AppShell {nav} {navGroups} {config} {storageKey} layout={current} onlayoutchange={change}>
+  <AppShell {nav} {navGroups} {config} {storageKey} {edgeToggles} layout={current} onlayoutchange={change}>
     {#if onApi}<Probe {onApi} />{/if}
     {#if editor}<ShellLayoutEditor />{/if}
   </AppShell>

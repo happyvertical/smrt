@@ -51,7 +51,8 @@ as `@happyvertical/smrt-svelte/workspace/layout`.
 ```
 
 Opt in to editing the real shell in place with `layoutEditing` on `AppShell`: a
-pencil toggle ("Edit layout") joins the header, and while on, every slot is a
+pencil toggle ("Edit layout") joins the header (as does the app title, a movable
+`item:brand` in `header.start`), and while on, every slot is a
 labelled drop zone, shell items and navigation get grips (drag, or Space and
 arrow keys), section headings get icon overlays and a floating toolbar, and
 hidden regions show as strips. Apps add per-section icon buttons (an Options
@@ -679,8 +680,10 @@ updates retain their existing behavior.
 
 Use `shell.setPanelState(edge, 'hidden' | 'collapsed' | 'expanded')` to persist
 runtime panel preferences; app-configured hidden edges remain unavailable.
-AdminShell keeps a discoverable tenant collapse control with supplied navigation
-(`showTenantToggle={false}` opts out), a Menu opener in narrow layouts, and the
+AdminShell's edge toggle buttons and WASD hotkeys are opt-in via `edgeToggles`
+(default `false`: regions lay out inline; pass `true`, or a per-edge map, to
+keep the drop-down behaviour; `showTenantToggle` is a deprecated alias for
+`edgeToggles.left`), a Menu opener in narrow layouts, and the
 system toggle alongside a custom `systemBar` that has a `systemPanel` to open
 (a `systemBar` with no `systemPanel` owns the bottom band and draws no toggle). Closed narrow drawers are inert;
 opening focuses the first control, and closing or Escape restores the opener.

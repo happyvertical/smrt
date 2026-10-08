@@ -166,6 +166,7 @@ function clearFinished() {
 </script>
 
 <AdminShell
+  edgeToggles
   title="SMRT AdminShell"
   subtitle={t(M['ui.activity_feed.title'])}
   state={shell}

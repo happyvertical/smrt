@@ -123,6 +123,7 @@ describe('AppShell', () => {
   it('shows the settings link only when settingsHref is given', async () => {
     await render({
       settingsHref: '/settings',
+      edgeToggles: true,
       config: { top: { initial: 'expanded' } },
     });
     const link = [...container.querySelectorAll('a')].find(
