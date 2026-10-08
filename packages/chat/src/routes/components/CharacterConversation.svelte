@@ -20,6 +20,7 @@ import type {
   AssistantDockController,
 } from '../../svelte/components/assistant/create-assistant-dock-controller.svelte.js';
 import FloatingAssistant from '../../svelte/components/assistant/FloatingAssistant.svelte';
+import CharacterConversationVoice from './CharacterConversationVoice.svelte';
 
 let target: HTMLDivElement;
 let mounted: PhotoCutoutHandle | null = null;
@@ -39,10 +40,12 @@ registry.register({
     schemaVersion: 1,
     label: 'Character conversation controls',
     rowKey: 'id',
-    columns: [],
+    columns: [
+      { id: 'id', label: 'ID', capabilities: ['read'], role: 'row-key' },
+    ],
     query: {
       modes: ['rows'],
-      projectableColumnIds: [],
+      projectableColumnIds: ['id'],
       searchableColumnIds: [],
       filterableColumnIds: [],
       sortableColumnIds: [],
@@ -120,6 +123,10 @@ const transport = createDevAssistantTransport(
 function connect(owned: AssistantDockController) {
   controller = owned;
   void owned.openThread('dev-character-conversation');
+}
+async function sendSpokenTurn(text: string) {
+  if (!controller) throw new Error('Open the assistant before speaking.');
+  await controller.send(text);
 }
 
 async function speak(reply: string) {
@@ -215,6 +222,9 @@ onMount(() => {
     </Button>
     {#if listening}<p role="status">Listening mode keeps the conversation and confirmations active while hiding message history.</p>{/if}
   </div>
+  {#if listening}
+    <CharacterConversationVoice onfinal={sendSpokenTurn} />
+  {/if}
   <FloatingAssistant {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} />
   <SpokenCaptions enabled={true} lines={spoken.lines} interim={spoken.interim} />
 </section>
