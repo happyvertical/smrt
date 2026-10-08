@@ -292,4 +292,7 @@ onDestroy(() => {
   .controls { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin-block: 1rem; }
   .app { display: grid; gap: .75rem; border: 1px solid var(--smrt-color-outline, currentColor); padding: 1rem; border-radius: var(--smrt-radius-medium, .5rem); }
   h1 { font-size: clamp(1.5rem, 4vw, 2.5rem); }
+  @media (min-width: 48rem) {
+    main { padding-inline-end: 30rem; }
+  }
 </style>
