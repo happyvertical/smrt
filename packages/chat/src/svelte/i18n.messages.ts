@@ -23,7 +23,12 @@ export const M = defineMessages({
   'chat.helper.heard_subtitles': 'Show heard subtitles',
   'chat.helper.spoken_subtitles': 'Show spoken subtitles',
   'chat.helper.save': 'Save settings',
+  'chat.helper.save_changes': 'Save changes',
   'chat.helper.saving': 'Saving…',
+  'chat.helper.unsaved_changes': 'You have unsaved changes.',
+  'chat.helper.photo_saved_apply': 'Photo saved. Save settings to use it.',
+  'chat.helper.custom_setup': 'Create a photographic helper',
+  'chat.helper.back_to_settings': 'Back to helper settings',
   'chat.helper.reset_button': 'Reset to application defaults',
   'chat.helper.saved': 'Helper settings saved.',
   'chat.helper.reset': 'Helper settings reset.',
@@ -37,6 +42,10 @@ export const M = defineMessages({
   'chat.helper.load_renderer_failed': 'Could not load the selected helper.',
   'chat.helper.preview': 'Selected helper preview',
   'chat.helper.preview_failed': 'Could not preview the selected helper.',
+  'chat.helper.opening_assistant':
+    'Opening the assistant. Start listening when it is ready.',
+  'chat.helper.conversation_unavailable':
+    'The assistant could not be opened. Try again before starting listening mode.',
   // ChatLayout
   'chat.chat_layout.rooms_label': 'Chat rooms',
   'chat.chat_layout.resize_sidebar': 'Resize sidebar',

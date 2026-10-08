@@ -35,6 +35,8 @@ export interface Props extends AssistantDockProps {
   panelLabel?: string;
   /** Starts expanded; the bindable value can also be controlled by the host. */
   expanded?: boolean;
+  /** Fixed viewport corner used by the launcher and its conversation panel. */
+  placement?: 'bottom-left' | 'bottom-right';
 }
 
 let {
@@ -42,7 +44,9 @@ let {
   launcherLabel = 'Open assistant',
   panelLabel = 'Assistant',
   expanded = $bindable(false),
+  placement = 'bottom-right',
   visible = true,
+  presentation = 'full',
   onstatus,
   onrun,
   onattentionchange,
@@ -66,8 +70,21 @@ const captureLauncher: Attachment<HTMLButtonElement> = (element) => {
 
 const floatingAssistantId = $props.id();
 const panelId = `floating-assistant-${floatingAssistantId}`;
-const panelExpanded = $derived(visible && (expanded || attentionRequired));
-const presentation = $derived({ expanded: panelExpanded, status, run });
+const panelExpanded = $derived(
+  visible &&
+    (expanded || attentionRequired) &&
+    (presentation === 'full' ||
+      attentionRequired ||
+      run !== null ||
+      status.state !== 'idle'),
+);
+const launcherVisible = $derived(
+  presentation === 'full' ||
+    attentionRequired ||
+    run !== null ||
+    status.state !== 'idle',
+);
+const presentationState = $derived({ expanded: panelExpanded, status, run });
 
 function open() {
   expanded = true;
@@ -114,27 +131,30 @@ function handleKeydown(event: KeyboardEvent) {
 
 <div
   class="floating-assistant"
+  class:bottom-left={placement === 'bottom-left'}
   data-expanded={panelExpanded || undefined}
   hidden={!visible}
   inert={!visible}
   aria-hidden={!visible}
 >
-  <Button
-    {@attach captureLauncher}
-    variant="ghost"
-    type="button"
-    class="floating-assistant-launcher"
-    aria-expanded={panelExpanded}
-    aria-controls={panelId}
-    onclick={open}
-  >
-    {#if character}
-      <span class="floating-assistant-character" aria-hidden="true">
-        {@render character(presentation)}
-      </span>
-    {/if}
-    <span>{launcherLabel}</span>
-  </Button>
+  {#if launcherVisible}
+    <Button
+      {@attach captureLauncher}
+      variant="ghost"
+      type="button"
+      class="floating-assistant-launcher"
+      aria-expanded={panelExpanded}
+      aria-controls={panelId}
+      onclick={open}
+    >
+      {#if character}
+        <span class="floating-assistant-character" aria-hidden="true">
+          {@render character(presentationState)}
+        </span>
+      {/if}
+      <span>{launcherLabel}</span>
+    </Button>
+  {/if}
 
   <section
     bind:this={panel}
@@ -155,6 +175,7 @@ function handleKeydown(event: KeyboardEvent) {
     </Button>
     <AssistantDock
       {...dockProps}
+      {presentation}
       visible={panelExpanded}
       onstatus={handleStatus}
       onrun={handleRun}
@@ -173,6 +194,7 @@ function handleKeydown(event: KeyboardEvent) {
     justify-items: end;
     gap: 0.75rem;
   }
+  .floating-assistant.bottom-left { right: auto; left: max(1rem, env(safe-area-inset-left)); justify-items: start; }
 
   .floating-assistant[hidden] {
     display: none;
@@ -244,6 +266,7 @@ function handleKeydown(event: KeyboardEvent) {
       right: max(0.5rem, env(safe-area-inset-right));
       bottom: max(0.5rem, env(safe-area-inset-bottom));
     }
+    .floating-assistant.bottom-left { right: auto; left: max(0.5rem, env(safe-area-inset-left)); }
 
     .floating-assistant-panel {
       inline-size: calc(100vw - 1rem);

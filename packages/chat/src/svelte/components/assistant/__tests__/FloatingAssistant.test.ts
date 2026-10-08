@@ -56,7 +56,7 @@ describe('FloatingAssistant', () => {
   });
 
   it('offers a controls-only presentation without conversational history or input', async () => {
-    render(FloatingAssistant, {
+    const { container } = render(FloatingAssistant, {
       props: { ...props(), presentation: 'controls', expanded: true },
     });
 
@@ -64,6 +64,25 @@ describe('FloatingAssistant', () => {
     expect(
       screen.queryByRole('button', { name: 'Conversations' }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Open assistant' }),
+    ).not.toBeInTheDocument();
+    expect(
+      container.querySelector('.floating-assistant-panel'),
+    ).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('uses the requested left placement while keeping the default right placement', () => {
+    const { container, rerender } = render(FloatingAssistant, {
+      props: props(),
+    });
+    expect(container.querySelector('.floating-assistant')).not.toHaveClass(
+      'bottom-left',
+    );
+    rerender({ placement: 'bottom-left' });
+    expect(container.querySelector('.floating-assistant')).toHaveClass(
+      'bottom-left',
+    );
   });
 });
 
@@ -123,9 +142,6 @@ describe('FloatingAssistant decision authority', () => {
     "Don't allow",
   ])('reveals a collapsed tool request and requires the actual %s decision', async (decision) => {
     const fixture = await mountedFixture();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Collapse assistant' }),
-    );
     const sending = fixture.controller.send('tool');
     const decide = await screen.findByRole('button', { name: decision });
     expect(
@@ -321,6 +337,7 @@ describe('FloatingAssistant host visibility', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const fixture = await mountedFixture();
     try {
+      await fixture.rerender({ presentation: 'full' });
       fixture.controller.setDraft('Keep the hidden draft');
       const initialLoads = fixture.evidence.loads;
       await vi.advanceTimersByTimeAsync(15001);

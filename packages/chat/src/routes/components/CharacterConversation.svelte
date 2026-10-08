@@ -58,8 +58,10 @@ let mounted: HelperRendererHandle | null = null;
 let unavailable = $state<string | null>(null);
 let listening = $state(false);
 let audioEnabled = $state(false);
+let assistantExpanded = $state(false);
 let controller = $state.raw<AssistantDockController | null>(null);
 let conversationReady = $state(false);
+let conversationError = $state<string | null>(null);
 let voiceTurnPending = $state(false);
 const turnPending = $derived(
   voiceTurnPending ||
@@ -313,9 +315,26 @@ const transport = createDevAssistantTransport(
 );
 function connect(owned: AssistantDockController) {
   controller = owned;
+  conversationError = null;
   void owned
     .openThread('dev-character-conversation')
-    .then(() => (conversationReady = true));
+    .then(() => (conversationReady = true))
+    .catch(() => {
+      conversationReady = false;
+      conversationError = t(
+        helperMessages['chat.helper.conversation_unavailable'],
+      );
+    });
+}
+function toggleListening() {
+  if (listening) {
+    listening = false;
+    return;
+  }
+  // This only opens the existing assistant surface. It never requests a mic
+  // permission or enables audio; those still require their own user actions.
+  assistantExpanded = true;
+  listening = true;
 }
 async function sendSpokenTurn(text: string) {
   if (!controller) throw new Error('Open the assistant before speaking.');
@@ -473,24 +492,24 @@ onMount(() => {
 });
 </script>
 
-<section class="character-conversation" aria-label={t(M['chat.character_conversation.saved_conversation'])}>
+<section class="character-conversation" class:bottom-left={helperPreferences?.placement === 'bottom-left'} aria-label={t(M['chat.character_conversation.saved_conversation'])}>
   <div class:bottom-left={helperPreferences?.placement === 'bottom-left'} class:bottom-right={helperPreferences?.placement !== 'bottom-left'} class="character-stage" bind:this={target} aria-label={helperPreferences?.name || t(M['chat.character_conversation.saved_character'])}></div>
   {#if helperPreferences}<p class="helper-name">{helperPreferences.name}</p>{/if}
   {#if unavailable}<p role="status">{unavailable}</p>{/if}
   <div class="conversation-controls">
-    <Button type="button" variant="secondary" aria-pressed={listening} onclick={() => (listening = !listening)}>
+    <Button type="button" variant="secondary" aria-pressed={listening} onclick={toggleListening}>
       {listening ? 'Leave listening mode' : 'Listening mode'}
     </Button>
     <Button type="button" variant="secondary" aria-pressed={audioEnabled} onclick={enableSpeech}>
       {audioEnabled ? 'Speech enabled' : 'Enable spoken replies'}
     </Button>
-    {#if listening}<p role="status">{t(M['chat.character_conversation.listening_notice'])}</p>{/if}
+    {#if listening}<p role="status">{conversationError ?? (conversationReady ? t(M['chat.character_conversation.listening_notice']) : t(helperMessages['chat.helper.opening_assistant']))}</p>{/if}
   </div>
   {#if listening && active}
     <CharacterConversationVoice onfinal={sendSpokenTurn} heardSubtitles={helperPreferences?.heardSubtitles ?? true} disabled={!conversationReady || attentionRequired || turnPending} />
   {/if}
-  <FloatingAssistant composerDisabled={turnPending} {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
-  <SpokenCaptions enabled={helperPreferences?.spokenSubtitles ?? true} lines={spoken.lines} interim={spoken.interim} />
+  <FloatingAssistant bind:expanded={assistantExpanded} placement={helperPreferences?.placement ?? 'bottom-right'} composerDisabled={turnPending} {registry} {transport} {actionClient} presentation={listening ? 'controls' : 'full'} contextMode="server" launcherLabel="Talk to your assistant" panelLabel="Character assistant" oncontroller={connect} onattentionchange={(required) => (attentionRequired = required)} />
+  <SpokenCaptions placement="inline" enabled={helperPreferences?.spokenSubtitles ?? true} lines={spoken.lines} interim={spoken.interim} />
 </section>
 
 <style>
@@ -502,6 +521,7 @@ onMount(() => {
   .character-stage.bottom-right { margin-inline: auto 0; }
   .helper-name { margin: 0; text-align: center; font-weight: var(--smrt-typography-weight-semibold, 600); }
   .conversation-controls { display: grid; justify-items: center; gap: .5rem; }
+  .character-conversation.bottom-left .conversation-controls { justify-items: start; }
   .character-stage :global(canvas), .character-stage :global(svg) { inline-size: 100%; block-size: 100%; }
   @media (min-width: 48rem) {
     .character-conversation { padding-inline-end: 30rem; }

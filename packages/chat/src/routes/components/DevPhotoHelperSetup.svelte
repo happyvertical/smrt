@@ -1,7 +1,6 @@
 <script lang="ts">
 import { PhotoCutoutSetup } from '@happyvertical/smrt-images/svelte';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { Button } from '@happyvertical/smrt-ui/ui';
 import { createDevCharacterPersistenceClient } from '../../dev-character-persistence-client.js';
 import type { HelperOffering } from '../../helper-preferences.js';
 import { M } from '../../svelte/i18n.messages.js';
@@ -11,7 +10,7 @@ interface Props {
   onsaved: (offering: HelperOffering) => void;
   oncancel: () => void;
 }
-let { onsaved, oncancel }: Props = $props();
+let { onsaved }: Props = $props();
 const { t } = useI18n();
 const persistence = createDevCharacterPersistenceClient();
 
@@ -33,6 +32,5 @@ async function saveSetup(setup: Parameters<typeof persistence.save>[0]) {
 </script>
 
 <section aria-label={t(M['chat.helper.add_style'], { style: 'photo' })}>
-  <Button type="button" variant="secondary" onclick={oncancel}>{t(M['chat.helper.title'])}</Button>
   <PhotoCutoutSetup {saveSetup} />
 </section>
