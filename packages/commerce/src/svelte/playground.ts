@@ -105,6 +105,8 @@ const sampleVendor = {
 const loadCustomerDirectory = () =>
   import('./components/CustomerDirectory.svelte');
 const loadCustomerDetail = () => import('./components/CustomerDetail.svelte');
+const loadPartySelectPreview = () =>
+  import('./playground/PartySelectPreview.svelte');
 const loadPartyFormPreview = () =>
   import('./playground/PartyFormPreview.svelte');
 const loadInvoiceActions = () => import('./components/InvoiceActions.svelte');
@@ -252,6 +254,26 @@ export default {
         'Native create/edit submission with retained currency text and contacts.',
       loadComponent: loadPartyFormPreview,
       order: 6,
+      props: { kind: 'vendor' },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
+      id: 'customer-select',
+      title: 'Customer Select',
+      description:
+        'Searchable customer picker with status and type, resolving the current value and offering a new-customer action.',
+      loadComponent: loadPartySelectPreview,
+      order: 10,
+      props: { kind: 'customer' },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
+      id: 'vendor-select',
+      title: 'Vendor Select',
+      description:
+        'Searchable vendor picker with status; the caller supplies the lookup.',
+      loadComponent: loadPartySelectPreview,
+      order: 11,
       props: { kind: 'vendor' },
       modes: { mock: { label: 'Mock' } },
     },
