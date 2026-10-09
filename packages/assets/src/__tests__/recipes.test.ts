@@ -30,14 +30,50 @@ describe('assets feature recipes (#3725)', () => {
       AssetMetafield,
     ]);
     expect(AssetLibraryRecipe.nav).toEqual([
-      { label: 'Assets', model: Asset },
-      { label: 'Folders', model: Folder },
+      {
+        label: 'Assets',
+        model: Asset,
+        icon: 'archive',
+        description: 'Files and media you can organize, reuse and share.',
+        noun: 'asset',
+      },
+      {
+        label: 'Folders',
+        model: Folder,
+        icon: 'folder',
+        description: 'Organize assets into clear, reusable groups.',
+        noun: 'folder',
+      },
     ]);
     expect(AssetAttachmentsRecipe.models).toEqual([Asset, AssetAssociation]);
     expect(AssetAttachmentsRecipe.nav).toEqual([
-      { label: 'Attachments', model: Asset },
+      {
+        label: 'Attachments',
+        model: Asset,
+        icon: 'fileText',
+        description:
+          'Supporting files connected to the record you are viewing.',
+        noun: 'attachment',
+      },
     ]);
     expect(AssetAttachmentsRecipe.requires).toEqual(['assets.library']);
+  });
+
+  it('shares the Files and media card and Assets navigation section', () => {
+    expect(AssetLibraryRecipe.group).toEqual({
+      id: 'assets',
+      label: 'Files and media',
+      summary:
+        'Organize files and media, then attach them to the records that need them.',
+    });
+    expect(AssetAttachmentsRecipe.group).toEqual(AssetLibraryRecipe.group);
+    expect(AssetLibraryRecipe.section).toEqual({
+      id: 'assets',
+      label: 'Assets',
+      icon: 'folder',
+      description: 'Files, media and attachments for your work.',
+    });
+    expect(AssetAttachmentsRecipe.section).toEqual(AssetLibraryRecipe.section);
   });
 
   it('only requires a recipe declared in this package', () => {

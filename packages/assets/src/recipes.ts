@@ -22,10 +22,34 @@ export class AssetLibraryRecipe extends SmrtRecipe {
   static summary =
     'Organize files and media with folders, types, and statuses.';
   static synonyms = ['media library', 'file library', 'digital assets'];
+  static group = {
+    id: 'assets',
+    label: 'Files and media',
+    summary:
+      'Organize files and media, then attach them to the records that need them.',
+  };
+  static section = {
+    id: 'assets',
+    label: 'Assets',
+    icon: 'folder',
+    description: 'Files, media and attachments for your work.',
+  };
   static models = [Asset, Folder, AssetType, AssetStatus, AssetMetafield];
   static nav = [
-    { label: 'Assets', model: Asset },
-    { label: 'Folders', model: Folder },
+    {
+      label: 'Assets',
+      model: Asset,
+      icon: 'archive',
+      description: 'Files and media you can organize, reuse and share.',
+      noun: 'asset',
+    },
+    {
+      label: 'Folders',
+      model: Folder,
+      icon: 'folder',
+      description: 'Organize assets into clear, reusable groups.',
+      noun: 'folder',
+    },
   ];
   static options = {
     Asset: {
@@ -59,8 +83,28 @@ export class AssetAttachmentsRecipe extends SmrtRecipe {
     'record files',
     'supporting documents',
   ];
+  static group = {
+    id: 'assets',
+    label: 'Files and media',
+    summary:
+      'Organize files and media, then attach them to the records that need them.',
+  };
+  static section = {
+    id: 'assets',
+    label: 'Assets',
+    icon: 'folder',
+    description: 'Files, media and attachments for your work.',
+  };
   static models = [Asset, AssetAssociation];
-  static nav = [{ label: 'Attachments', model: Asset }];
+  static nav = [
+    {
+      label: 'Attachments',
+      model: Asset,
+      icon: 'fileText',
+      description: 'Supporting files connected to the record you are viewing.',
+      noun: 'attachment',
+    },
+  ];
   static requires = ['assets.library'];
   static options = {
     Asset: {

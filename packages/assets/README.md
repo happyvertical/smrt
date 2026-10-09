@@ -12,7 +12,8 @@ relationships should use dedicated joins such as `content_assets`,
 `assets.library` provides the model-backed file and media library: assets,
 folders, classifications, statuses, and metadata definitions.
 `assets.attachments` adds record attachment provenance and requires the library.
-Both recipes embed user-facing help in the generated manifest.
+They share the **Files and media** catalog card and the **Assets** navigation
+section, and both embed user-facing help in the generated manifest.
 
 The package playground is a Mock preview. Its asset grid uses in-memory props
 and data-URI thumbnails, and its attachment panel demonstrates supplied native
