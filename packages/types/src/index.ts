@@ -141,6 +141,13 @@ export type {
   RecipeSurface,
 } from './recipe.js';
 export type {
+  RecipeWidgetData,
+  RecipeWidgetOption,
+  RecipeWidgetOptionChoice,
+  RecipeWidgetOptionType,
+  RecipeWidgetSurface,
+} from './recipe-widget.js';
+export type {
   SmrtRouteDefinition,
   SmrtRouteLoadKind,
   SmrtRouteModule,

@@ -30,7 +30,37 @@ class SalesRecipe extends SmrtRecipe {
   static requires = ['shop.customers'];
 }
 
+class WidgetRecipe extends SmrtRecipe {
+  static id = 'shop.widgets';
+  static label = 'Widgets';
+  static summary = 'Overview widgets.';
+  static models = [Order];
+  // Authored with `as const`: readonly option and placement lists must fit.
+  static surfaces = [
+    {
+      kind: 'widget',
+      type: 'sales-total',
+      export: '@shop/pkg/svelte#SalesTotal',
+      label: 'Sales total',
+      options: [
+        {
+          key: 'style',
+          type: 'enum',
+          label: 'Style',
+          choices: [{ value: 'bar', label: 'Bar' }],
+        },
+      ],
+      data: { models: ['@shop/pkg:Order'] },
+      allowedIn: ['shop.home'],
+    },
+  ] as const;
+}
+
 describe('SmrtRecipe', () => {
+  it('accepts a widget surface authored with `as const` (#3727)', () => {
+    expect(WidgetRecipe.surfaces?.[0]?.kind).toBe('widget');
+  });
+
   it('is one class from both entries', () => {
     expect(BrowserSmrtRecipe).toBe(SmrtRecipe);
   });
@@ -143,6 +173,36 @@ describe('recipes in the domain-knowledge artifact', () => {
       demoSeed: { data: { orders: [] } },
     };
     expect(build([surfaced]).recipes).toEqual([surfaced]);
+  });
+
+  it('carries a widget surface with options, data needs and placements through (#3727)', () => {
+    const widgeted: RecipeDefinition = {
+      ...recipe,
+      surfaces: [
+        {
+          kind: 'widget',
+          type: 'sales-total',
+          export: '@shop/pkg/svelte#SalesTotal',
+          label: 'Sales total',
+          options: [
+            { key: 'title', type: 'text', label: 'Title', default: 'Sales' },
+            {
+              key: 'style',
+              type: 'enum',
+              label: 'Style',
+              choices: [{ value: 'bar', label: 'Bar' }],
+            },
+          ],
+          data: {
+            load: '@shop/pkg/server#loadSalesTotal',
+            models: ['@shop/pkg:Order'],
+          },
+          allowedIn: ['shop.home'],
+          maxSpan: 2,
+        },
+      ],
+    };
+    expect(build([widgeted]).recipes).toEqual([widgeted]);
   });
 
   it('changes the manifest hash when a recipe changes', () => {

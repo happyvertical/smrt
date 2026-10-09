@@ -7,6 +7,8 @@
  * `smrt-knowledge.json`; `SmrtRecipe` in smrt-core is the authoring base class.
  */
 
+import type { RecipeWidgetSurface } from './recipe-widget.js';
+
 /** Same visibility vocabulary as the smrt-fields policy rail. */
 export type RecipeFieldVisibility = 'basic' | 'advanced' | 'hidden';
 
@@ -148,7 +150,8 @@ export type RecipeSurface =
     }
   | { kind: 'route'; path: string; export: RecipeExportRef; label: string }
   | { kind: 'settings-panel'; export: RecipeExportRef; label: string }
-  | { kind: 'playground'; export: RecipeExportRef; label?: string };
+  | { kind: 'playground'; export: RecipeExportRef; label?: string }
+  | RecipeWidgetSurface;
 
 /** A provider the recipe needs or can use (email, oauth, storage, llm...). */
 export interface RecipeProvider {
