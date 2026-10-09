@@ -1125,6 +1125,21 @@ ${statics}
         'path must start with `/`',
       ],
       [
+        'protocol-relative route',
+        `static surfaces = [{ kind: 'route', path: '//evil.example', export: 'a/b#C', label: 'X' }];`,
+        'path must start with `/`',
+      ],
+      [
+        'encoded traversal route',
+        `static surfaces = [{ kind: 'route', path: '/%2e%2e/admin', export: 'a/b#C', label: 'X' }];`,
+        'encoded separators',
+      ],
+      [
+        'dot segment export',
+        `static surfaces = [{ kind: 'settings-panel', export: 'a/./b#C', label: 'X' }];`,
+        'not a relative path',
+      ],
+      [
         'duplicate route path',
         `static surfaces = [{ kind: 'route', path: '/x', export: 'a/b#C', label: 'X' }, { kind: 'route', path: '/x', export: 'a/b#D', label: 'Y' }];`,
         'repeats an earlier surface',

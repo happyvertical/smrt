@@ -1098,7 +1098,7 @@ function readLabelled(
 /** `pkg#Name` / `@scope/pkg/sub#Name`: a bare package specifier and an export. */
 const EXPORT_REF_PATTERN =
   /^((?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:\/[A-Za-z0-9._-]+)*)#([A-Za-z_$][A-Za-z0-9_$]*)$/;
-const ROUTE_PATH_PATTERN = /^\/[^\s?#]*$/;
+const ROUTE_PATH_PATTERN = /^\/(?![/\\])[^\s?#\\]*$/;
 const PROVIDER_SLUG_PATTERN = /^[a-z][a-z0-9_-]*$/;
 const SECRET_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 const DEMO_SEED_MAX_BYTES = 8192;
@@ -1116,7 +1116,12 @@ function readExportRef(
     return undefined;
   }
   const match = EXPORT_REF_PATTERN.exec(value);
-  if (!match || match[1].split('/').includes('..')) {
+  if (
+    !match ||
+    match[1]
+      .split('/')
+      .some((part) => part === '.' || part === '..' || part.endsWith('.'))
+  ) {
     report(
       `${at}.export \`${value}\` must be \`<package specifier>#<ExportName>\` (a package specifier, not a relative path)`,
       line,
@@ -1231,15 +1236,30 @@ function readSurfaces(
         fail(
           `${at}.path must start with \`/\` and contain no whitespace, \`?\` or \`#\``,
         );
-      } else if (path.split('/').includes('..')) {
-        fail(`${at}.path cannot contain \`..\``);
+      } else if (
+        /%2e|%2f|%5c/i.test(path) ||
+        path
+          .slice(1)
+          .split('/')
+          .some(
+            (part, i, parts) =>
+              part === '.' ||
+              part === '..' ||
+              (part === '' && i < parts.length - 1),
+          )
+      ) {
+        fail(
+          `${at}.path cannot contain \`.\`/\`..\` or empty segments, or encoded separators`,
+        );
       } else {
         surface.path = path;
         identity = `route-path:${path}`;
       }
     }
-    if (seen.has(identity)) fail(`${at} repeats an earlier surface`);
-    seen.add(identity);
+    if (ref !== undefined) {
+      if (seen.has(identity)) fail(`${at} repeats an earlier surface`);
+      seen.add(identity);
+    }
     if (ok === before && ref !== undefined) {
       surface.export = ref;
       if (label !== undefined) surface.label = label;
@@ -1600,6 +1620,8 @@ export function resolveRecipes(
       ...(demoSeed ? { demoSeed } : {}),
     });
   }
+
+  recipes.sort((a, b) => a.id.localeCompare(b.id));
 
   // Cross-recipe consistency within the package: a nav key names one layout id
   // (`item:<pkg>:<Model>:<key>`), and a shared group or section id means one

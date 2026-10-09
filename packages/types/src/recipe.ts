@@ -166,10 +166,10 @@ export interface RecipeProvider {
   /** Open slug: `email`, `oauth`, `storage`, `llm`... */
   kind: string;
   /** Supported implementations (`imap`, `smtp`; `google`, `github`). */
-  options: string[];
+  options: readonly string[];
   required: boolean;
   /** Names (never values) of the secrets the provider needs, `UPPER_SNAKE`. */
-  secrets?: string[];
+  secrets?: readonly string[];
 }
 
 /** Where a recipe's runtime pieces can run. Omitted means `both`. */
