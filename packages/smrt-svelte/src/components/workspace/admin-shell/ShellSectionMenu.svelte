@@ -257,6 +257,9 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   .smrt-section-menu__chevron { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); }
   /* Fixed icon column so labels align whatever the glyph (or a missing one). */
   .smrt-section-menu :global(.smrt-shell-section-icon) { inline-size: 20px; block-size: 20px; }
+  /* Cards draw a 32px icon: its box must match, or the glyph spills out of
+     the centred circle. */
+  .smrt-section-menu__card-icon :global(.smrt-shell-section-icon) { inline-size: 32px; block-size: 32px; }
   /* Cards: a responsive grid; the whole card is one stretched link. */
   .smrt-section-menu__cards, .smrt-section-menu--cards :global(.smrt-sortable__items) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
   .smrt-section-menu__card { position: relative; display: flex; flex-direction: column; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); transition: background-color 120ms, border-color 120ms, transform 120ms; }
