@@ -30,6 +30,38 @@ async function fixture() {
 }
 
 describe('atomic terminal job outcomes', () => {
+  it('lists terminal outcomes on DuckDB with its timestamp argument order', async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    const db = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      omitForeignKeyConstraints: true,
+    });
+    const jobs = await SmrtJobCollection.create({ db });
+    const events = await SmrtJobEventCollection.create({ db });
+    const job = await jobs.create({
+      tenantId,
+      queue: 'reports',
+      objectType: 'SmrtDataSurfaceActionTask',
+      method: 'run',
+    });
+    const snapshot = terminalSnapshot(job);
+    if (!snapshot) throw new Error('Expected persisted DuckDB job');
+
+    await transitionTerminalJob(db, {
+      job: snapshot,
+      status: 'completed',
+      completedAt: new Date('2026-10-09T05:00:00.000Z'),
+      expectedStatuses: ['pending'],
+    });
+
+    await expect(
+      events.listTerminalOutcomes({ tenantId }),
+    ).resolves.toMatchObject({
+      outcomes: [{ jobId: job.id, status: 'completed' }],
+    });
+  });
+
   it('commits the owned job state and one safe terminal projection together', async () => {
     const { db, jobs, events, job, snapshot } = await fixture();
     const completedAt = new Date('2026-10-09T04:00:00.000Z');

@@ -3,6 +3,7 @@
 import './__smrt-register__.js';
 
 import {
+  detectEngine,
   ensureJobEventsSystemTableCompatibility,
   field,
   foreignKey,
@@ -15,6 +16,7 @@ import {
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
 
 export type SmrtJobEventType = 'status' | 'progress' | 'log' | 'error' | string;
 
@@ -199,10 +201,16 @@ function normalizeCursorDate(value: string | Date): string {
   return value;
 }
 
-function usesSqliteDateFunctions(dbUrl: string): boolean {
-  const normalized = dbUrl.toLowerCase();
-  return !(
-    normalized.startsWith('postgres:') || normalized.startsWith('postgresql:')
+function databaseEngine(
+  db: DatabaseInterface,
+): ReturnType<typeof detectEngine> {
+  const configured = db as DatabaseInterface & {
+    config?: { type?: string; url?: string };
+    type?: string;
+  };
+  return detectEngine(
+    db.url || configured.config?.url || '',
+    configured.type || configured.config?.type,
   );
 }
 
@@ -482,8 +490,12 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
   }
 
   private createdAtComparableExpression(): string {
-    if (usesSqliteDateFunctions(this.db.url)) {
+    const engine = databaseEngine(this.db);
+    if (engine === 'sqlite') {
       return "strftime('%Y-%m-%dT%H:%M:%fZ', created_at)";
+    }
+    if (engine === 'duckdb') {
+      return "strftime(created_at, '%Y-%m-%dT%H:%M:%fZ')";
     }
 
     return 'created_at';

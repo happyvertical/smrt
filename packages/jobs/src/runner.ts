@@ -1186,8 +1186,30 @@ export class TaskRunner extends EventEmitter {
   }
 
   private emitPersistedJobEvent(job: SmrtJob, event: SmrtJobEvent): void {
-    this.emit('job:event', job, event);
-    if (event.type === 'progress') this.emit('job:progress', job, event);
+    try {
+      this.emit('job:event', job, event);
+    } catch (error) {
+      this.emitTelemetryError(error);
+    }
+    if (event.type === 'progress') {
+      try {
+        this.emit('job:progress', job, event);
+      } catch (error) {
+        this.emitTelemetryError(error);
+      }
+    }
+  }
+
+  private emitTelemetryError(error: unknown): void {
+    const telemetryError =
+      error instanceof Error
+        ? error
+        : new Error(`Job telemetry listener failed: ${String(error)}`);
+    try {
+      this.emit('runner:error', telemetryError);
+    } catch {
+      // Telemetry is best-effort and must not change job outcomes.
+    }
   }
 
   /**
