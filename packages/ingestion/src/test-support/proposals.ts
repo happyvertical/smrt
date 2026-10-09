@@ -111,6 +111,39 @@ export function proposalSuite(
     let policyVersion: string;
     let policyMaxBytes: number;
     let calls: ReturnType<typeof vi.fn<ProposalGenerator['generate']>>;
+    async function rejectDuplicateIndexes(itemId: string, attemptId: string) {
+      await expect(
+        service.previewGeneratedProposals({
+          itemId,
+          attemptId,
+          selections: [
+            {
+              index: 0,
+              intentionKey: 'duplicate-first',
+              expectedRevision: 0,
+              requestId: 'duplicate-first-preview',
+            },
+            {
+              index: 0,
+              intentionKey: 'duplicate-second',
+              expectedRevision: 0,
+              requestId: 'duplicate-second-preview',
+            },
+          ],
+        }),
+      ).rejects.toThrow('Invalid proposal selection');
+      for (const table of [
+        'intake_actions',
+        'intake_plans',
+        'intake_proposals',
+        'intake_review_decisions',
+        'intake_executions',
+        'contents',
+      ])
+        expect((await db.query(`SELECT id FROM ${table}`)).rows).toHaveLength(
+          0,
+        );
+    }
     beforeEach(async () => {
       root = await mkdtemp(join(tmpdir(), 'proposal-'));
       clock = new Date('2026-10-09T00:00:00Z');
@@ -1354,6 +1387,7 @@ export function proposalSuite(
           },
         ],
       };
+      await rejectDuplicateIndexes(input.itemId, input.lease.attemptId);
       const reviews = await service.previewGeneratedProposals(selection);
       expect(reviews).toHaveLength(2);
       expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
@@ -1608,6 +1642,7 @@ export function proposalSuite(
         mode === 'upload' ? await uploadedPDFSource() : undefined;
       const input = await generate(uploaded);
       expect(input.output.outcome).toBe('proposals');
+      await rejectDuplicateIndexes(input.itemId, input.lease.attemptId);
       const [preview] = await service.previewGeneratedProposals({
         itemId: input.itemId,
         attemptId: input.lease.attemptId,

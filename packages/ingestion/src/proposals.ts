@@ -896,6 +896,8 @@ export class IngestionProposalService {
     if (
       !input.selections.length ||
       input.selections.length > this.config.limits.maxSuggestions ||
+      new Set(input.selections.map((selection) => selection.index)).size !==
+        input.selections.length ||
       new Set(input.selections.map((selection) => selection.intentionKey))
         .size !== input.selections.length
     )

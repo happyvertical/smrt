@@ -147,6 +147,8 @@ await service.previewGeneratedProposals({
 `intentionKey` is the host's stable business-intention identity across generation
 revisions. Never derive a fresh key from model output, suggestion order or a retry.
 Selections must reference current persisted validated `ready_for_review` output.
+Each batch requires distinct suggestion indexes and intention keys; duplicate
+indexes are rejected before any operation or plan preview is written.
 The service rechecks current catalog/schema/target/source provenance, then calls
 the existing operation or plan preview. Each result still requires the ordinary
 human review and execution APIs. Reprocessing creates no new business identity;
