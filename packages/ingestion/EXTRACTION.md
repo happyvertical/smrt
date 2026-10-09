@@ -41,8 +41,9 @@ never placed in persisted configuration or provider identity.
 
 Results retain the original evidence ID/hash/part/parent references. Ordered
 segments form whole-document context; extraction does not split originals into
-business records. UTF-8 text and HTML remain literal source text (render HTML
-only through an application sanitizer). PDF text is extracted one page at a
+business records. Valid UTF-8 JSON, text and HTML remain literal source text (render HTML
+only through an application sanitizer). JSON syntax is validated without rewriting
+its source text; malformed JSON or UTF-8 fails extraction. PDF text is extracted one page at a
 time, falling back to actual rendered-page OCR for empty pages. Embedded text
 is not evidence that every visual element was understood. TIFF is actually
 decoded page-by-page with sharp to PNG; each result cites its original TIFF page.

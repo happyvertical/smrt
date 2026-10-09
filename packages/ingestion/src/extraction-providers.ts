@@ -349,10 +349,11 @@ export async function extractWithProviders(
     validateExtractionRequest(request);
     check();
     const mime = request.evidence.mediaType.split(';')[0].trim().toLowerCase();
-    if (mime === 'text/plain' || mime === 'text/html') {
+    if (['text/plain', 'text/html', 'application/json'].includes(mime)) {
       const value = new TextDecoder('utf-8', { fatal: true }).decode(
         request.bytes,
       );
+      if (mime === 'application/json') JSON.parse(value);
       const identity = { provider: 'utf8', model: 'none', version: '1' };
       capability(identity, false, false, 'source', 'reported', 'reported');
       add(segment(value, source, identity));
