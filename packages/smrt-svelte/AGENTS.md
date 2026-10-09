@@ -205,7 +205,16 @@ for a data-surface one — for exactly the component's lifetime.
 
 - **Preload strategies**: `none`, `eager`, `idle` (recommended), `on-visible`
 - **Warm client cache**: module-level Map survives navigation/remounts -- avoids re-downloading WASM/models
-- **Adapters**: STT (browser-speech, whisper-cpp, whisper-wasm), TTS (browser-synthesis), LLM (webllm, transformers-llm)
+- **Adapters**: STT (browser-speech, whisper-cpp, whisper-local = alias whisper-wasm), TTS (browser-synthesis), LLM (webllm, transformers-llm)
+- **Local Whisper** (`whisper-local`; `whisper-wasm` is the old name, same adapter): push-to-talk
+  (record on `start()`, transcribe on `stop()`, one final result) on `@huggingface/transformers`,
+  default `onnx-community/whisper-tiny.en` q8 (~45 MB, Cache Storage), WebGPU else single-thread WASM
+  (no COOP/COEP needed). The package never imports the peer: a host passes `createWorker` (build it
+  from `@happyvertical/smrt-svelte/browser-ai/whisper-worker?worker`, the one module that imports the
+  peer statically) or `loadModule`. `createWhisperLocalModel()` / `adapter.model` is the consent API
+  (`estimateSize`, `isCached`, `load({ onProgress, signal })`); share it via `modelHandle`.
+  `probeBrowserSpeech()` -> `works | missing | unreliable` (no network, no mic prompt) decides whether to offer it.
+  Sources set `stopTimeoutMs` so `Dictation` waits for the transcription.
 - Cache API: `getCachedSTT()`, `getCachedTTS()`, `getCachedLLM()`, `getCacheStats()`, `clearAllCaches()`
 - **Inference backends (browser-ai)**: two `@happyvertical/smrt-web/ai` `InferenceBackend`s, both
   `kind: 'local'`, both refusing `tool`/`function` messages, non-string content, `tool_calls` and
@@ -258,4 +267,4 @@ for a data-surface one — for exactly the component's lifetime.
 - `@happyvertical/smrt-ui` (UI runtime: primitives, theme system, i18n client, module registry) is a hard `dependency`. The agent-admin shells that used to type against `@happyvertical/smrt-agents/ui` moved to `@happyvertical/smrt-agents/svelte` (#1589), so `smrt-agents` is no longer a dependency here — this drops smrt-svelte below smrt-agents in the package DAG.
 - `@happyvertical/smrt-languages` is a hard `dependency` (not an optional peer): the Node-only `/i18n/server` subpath imports its resolver. The browser bundle still excludes it — the client `/i18n` layer never imports the languages root, so it tree-shakes out.
 - `@happyvertical/logger` (SDK) is a `dependency` — the console logger used for voice/AI error reporting in the form components. Consume it **only** through `src/internal/logger.ts`, never `createLogger()` at module scope: `createLogger()` reads `HAVE_LOGGER_LEVEL` from `process.env`, so a top-level call throws `ReferenceError: process is not defined` in the browser and kills client-side hydration under `vite dev` (prod builds tree-shake/define it away, so this only bites in dev). The `internal/logger` wrapper constructs the logger lazily and falls back to a bare `ConsoleLogger` when `process.env` is absent, keeping this browser-reachable module (imported by `Provider` + the form primitives) safe.
-- Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`, `@xenova/transformers`) and `chrono-node`.
+- Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`) and `chrono-node`.

@@ -298,6 +298,39 @@ bind legacy name-based cleanup to registrations made by that caller, so
 overlapping same-name fields can unmount in either order without retaining a
 detached control.
 
+### Voice typing where the browser cannot (local Whisper)
+
+Browsers differ on speech recognition: Chrome and Safari have it, Firefox does
+not, and Brave has the API without a speech service behind it. `probeBrowserSpeech()`
+says which you have (`'works' | 'missing' | 'unreliable'`) without a network
+call or a microphone prompt. For the last two, offer a one-time model download
+and dictate with Whisper running in the browser (WebGPU where available,
+single-thread WASM otherwise; no cross-origin isolation needed).
+
+```ts
+import {
+  createSttDictationSource,
+  createWhisperLocalModel,
+  probeBrowserSpeech,
+} from '@happyvertical/smrt-svelte/browser-ai';
+// The worker is the only module that imports the optional peer
+// `@huggingface/transformers`, so only apps that build it bundle it.
+import WhisperWorker from '@happyvertical/smrt-svelte/browser-ai/whisper-worker?worker';
+
+if ((await probeBrowserSpeech()) !== 'works') {
+  const model = createWhisperLocalModel({ createWorker: () => new WhisperWorker() });
+  model.estimateSize();            // ~45 MB, for the consent text
+  await model.isCached();          // already downloaded on this device?
+  await model.load({ onProgress, signal }); // bytes; abort() cancels
+  const dictation = createSttDictationSource({ type: 'whisper-local', modelHandle: model });
+}
+```
+
+Push-to-talk: the microphone records until stopped, then one final result is
+emitted. The default model is `onnx-community/whisper-tiny.en` (8-bit, English
+only); pass `modelId: 'onnx-community/whisper-tiny'` for other languages.
+`'whisper-wasm'` is the former name of the same adapter and still works.
+
 ### Form Components
 
 ```svelte

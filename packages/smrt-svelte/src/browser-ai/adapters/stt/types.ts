@@ -71,7 +71,11 @@ export interface STTEventHandlers {
  */
 export interface STTAdapter {
   /** Adapter type identifier */
-  readonly type: 'browser-speech' | 'whisper-wasm' | 'whisper-cpp';
+  readonly type:
+    | 'browser-speech'
+    | 'whisper-wasm'
+    | 'whisper-local'
+    | 'whisper-cpp';
 
   /** Current initialization state */
   readonly initState: InitState;
@@ -149,17 +153,46 @@ export interface BrowserSpeechSTTOptions extends BaseBrowserAIOptions {
 }
 
 /**
- * Whisper WASM adapter options
+ * Local Whisper (transformers.js) adapter options: speech recognition that
+ * runs in the browser after a one-time model download, for browsers whose
+ * own speech recognition is missing or unreliable (Firefox, Brave).
+ *
+ * `'whisper-wasm'` is the older name for the same adapter and is accepted
+ * as an alias; `modelSize` maps to the English-only model of that size.
  */
-export interface WhisperWasmSTTOptions extends BaseBrowserAIOptions {
-  type: 'whisper-wasm';
-  /** Model size: 'tiny', 'base', 'small' */
+export interface WhisperLocalSTTOptions extends BaseBrowserAIOptions {
+  type: 'whisper-local' | 'whisper-wasm';
+  /** Hugging Face model id. Default `onnx-community/whisper-tiny.en`. */
+  modelId?: string;
+  /** Legacy size selector (`whisper-wasm`): picks `whisper-<size>.en`. */
   modelSize?: 'tiny' | 'base' | 'small';
-  /** Custom model URL (overrides modelSize) */
-  modelUrl?: string;
-  /** Language code for transcription */
+  /** `'auto'` (default): WebGPU when available, else single-thread WASM. */
+  device?: 'auto' | 'webgpu' | 'wasm';
+  /** Weight quantisation. Default `'q8'`. */
+  dtype?: string;
+  /** Language code for transcription (`en`, `fr-CA`, ...). */
   defaultLanguage?: string;
+  /**
+   * Make the Web Worker that runs the model. Pass one from the host app, where
+   * the optional `@huggingface/transformers` peer is installed (see
+   * `whisper-local.worker.ts`). Without it the model runs on the page's own
+   * thread.
+   */
+  createWorker?: () => Worker;
+  /**
+   * Load `@huggingface/transformers` for the in-page fallback, e.g.
+   * `() => import('@huggingface/transformers')`. Needed in a browser when
+   * there is no `createWorker`.
+   */
+  loadModule?: () => Promise<unknown>;
+  /** Share one downloaded model between adapters and a consent UI. */
+  modelHandle?: import('./whisper-local-model.js').WhisperLocalModel;
+  /** Longest recording in ms (default 2 minutes). */
+  maxDurationMs?: number;
 }
+
+/** @deprecated Use {@link WhisperLocalSTTOptions}. */
+export type WhisperWasmSTTOptions = WhisperLocalSTTOptions;
 
 /**
  * Whisper.cpp WASM adapter options (using @remotion/whisper-web)
@@ -175,5 +208,5 @@ export interface WhisperCppSTTOptions extends BaseBrowserAIOptions {
  */
 export type GetSTTOptions =
   | BrowserSpeechSTTOptions
-  | WhisperWasmSTTOptions
+  | WhisperLocalSTTOptions
   | WhisperCppSTTOptions;

@@ -14,7 +14,7 @@ import type {
   GetSTTOptions,
   STTAdapter,
   WhisperCppSTTOptions,
-  WhisperWasmSTTOptions,
+  WhisperLocalSTTOptions,
 } from './types.js';
 
 /**
@@ -27,12 +27,13 @@ function isBrowserSpeechOptions(
 }
 
 /**
- * Type guard for Whisper WASM options (transformers.js)
+ * Type guard for local Whisper options (transformers.js); `whisper-wasm` is
+ * the older name for the same adapter.
  */
-function isWhisperWasmOptions(
+function isWhisperLocalOptions(
   options: GetSTTOptions,
-): options is WhisperWasmSTTOptions {
-  return options.type === 'whisper-wasm';
+): options is WhisperLocalSTTOptions {
+  return options.type === 'whisper-local' || options.type === 'whisper-wasm';
 }
 
 /**
@@ -60,8 +61,8 @@ function isWhisperCppOptions(
  * // Whisper.cpp (recommended for accuracy)
  * const stt = await getSTT({ type: 'whisper-cpp', model: 'tiny.en' });
  *
- * // Whisper WASM (transformers.js - has known issues)
- * const stt = await getSTT({ type: 'whisper-wasm', modelSize: 'tiny' });
+ * // Local Whisper (transformers.js; WebGPU or WASM, one-time ~45 MB download)
+ * const stt = await getSTT({ type: 'whisper-local' });
  * ```
  */
 export async function getSTT(options: GetSTTOptions = {}): Promise<STTAdapter> {
@@ -75,14 +76,15 @@ export async function getSTT(options: GetSTTOptions = {}): Promise<STTAdapter> {
     return new WhisperCppSTTAdapter(options);
   }
 
-  if (isWhisperWasmOptions(options)) {
-    const { WhisperWasmSTTAdapter } = await import('./whisper-wasm.js');
-    return new WhisperWasmSTTAdapter(options);
+  if (isWhisperLocalOptions(options)) {
+    const { WhisperLocalSTTAdapter } = await import('./whisper-local.js');
+    return new WhisperLocalSTTAdapter(options);
   }
 
   throw new UnsupportedAdapterError(String((options as GetSTTOptions).type), [
     'browser-speech',
     'whisper-cpp',
+    'whisper-local',
     'whisper-wasm',
   ]);
 }
@@ -117,7 +119,7 @@ export async function getSTTAuto(
     return getSTT({
       type: 'whisper-wasm',
       ...options,
-    } as WhisperWasmSTTOptions);
+    } as WhisperLocalSTTOptions);
   }
 
   return getSTT({
@@ -130,7 +132,7 @@ export async function getSTTAuto(
  * Check if a specific STT backend is available
  */
 export function isSTTAvailable(
-  type: 'browser-speech' | 'whisper-wasm',
+  type: 'browser-speech' | 'whisper-wasm' | 'whisper-local',
 ): boolean {
   const caps = detectCapabilities();
 
@@ -138,7 +140,7 @@ export function isSTTAvailable(
     return caps.stt.browserSpeechAPI;
   }
 
-  if (type === 'whisper-wasm') {
+  if (type === 'whisper-wasm' || type === 'whisper-local') {
     return caps.stt.whisperWasm;
   }
 

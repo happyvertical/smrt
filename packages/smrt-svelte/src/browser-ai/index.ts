@@ -13,5 +13,6 @@ export * from './adapters/stt/index.js';
 export * from './adapters/tts/index.js';
 // Capability detection
 export * from './capabilities/detector.js';
+export * from './capabilities/speech-probe.js';
 // Core types and errors
 export * from './core/index.js';
