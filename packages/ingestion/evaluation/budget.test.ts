@@ -96,16 +96,16 @@ test('invalid, zero, fractional and overflowing cost bounds fail closed', () => 
     tokenChargeBound({
       inputTokens: 1000,
       outputTokens: 100,
-      inputNanoUSD: 750,
-      outputNanoUSD: 4500,
+      inputNanoUSD: 125,
+      outputNanoUSD: 500,
     }),
-  ).toBe(1_200_000);
+  ).toBe(175_000);
   expect(() =>
     tokenChargeBound({
       inputTokens: Number.MAX_SAFE_INTEGER,
       outputTokens: 1,
-      inputNanoUSD: 750,
-      outputNanoUSD: 4500,
+      inputNanoUSD: 125,
+      outputNanoUSD: 500,
     }),
   ).toThrow();
   ledger.close();

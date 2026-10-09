@@ -9,7 +9,7 @@ import {
 import { findPackageJSON } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { PROPOSAL_BOUND } from './bounded-chat.mjs';
+import { PROPOSAL_BOUND, VISION_BOUND } from './bounded-chat.mjs';
 import { tokenChargeBound } from './budget.mjs';
 import { sha256 } from './corpus.mjs';
 export const LIVE_LEDGER =
@@ -124,7 +124,7 @@ export function workspaceBuildReceipt(root) {
   }
   return fileTreeReceipt(root, paths);
 }
-export function scheduleBound(manifest, feedbackManifest) {
+export function calculateScheduleBound(manifest, feedbackManifest) {
   const heldout = manifest.cases.filter((row) => row.partition === 'heldout');
   const eligible = heldout.filter((row) => row.lane === 'provider-quality');
   const sources = eligible.flatMap((row) => row.sources);
@@ -150,10 +150,10 @@ export function scheduleBound(manifest, feedbackManifest) {
     outputNanoUSD: PROPOSAL_BOUND.outputNanoUSD,
   });
   const vision = tokenChargeBound({
-    inputTokens: 4096 + 512 + 1230,
-    outputTokens: 4096,
-    inputNanoUSD: 750,
-    outputNanoUSD: 4500,
+    inputTokens: VISION_BOUND.maximumInputTokens,
+    outputTokens: VISION_BOUND.maxOutputTokens,
+    inputNanoUSD: VISION_BOUND.inputNanoUSD,
+    outputNanoUSD: VISION_BOUND.outputNanoUSD,
   });
   const speech = 30000000;
   const imageCalls = sources.filter(
@@ -168,11 +168,6 @@ export function scheduleBound(manifest, feedbackManifest) {
     eligible.length * proposal + imageCalls * vision + speechCalls * speech;
   const feedbackMaximum = feedbackManifest.cases.length * proposal;
   const feedbackReserve = 400000000;
-  if (
-    feedbackMaximum > feedbackReserve ||
-    heldoutMaximum + feedbackReserve > AGGREGATE_CAP
-  )
-    throw Error('Aggregate schedule exceeds approved cap');
   return {
     heldoutCases: heldout.length,
     proposalCalls: eligible.length,
@@ -184,6 +179,16 @@ export function scheduleBound(manifest, feedbackManifest) {
     feedbackReserve,
     maximumWithReserve: heldoutMaximum + feedbackReserve,
   };
+}
+/** Diagnostic arithmetic never raises the existing authorized cap. */
+export function scheduleBound(manifest, feedbackManifest) {
+  const bound = calculateScheduleBound(manifest, feedbackManifest);
+  if (
+    bound.feedbackMaximum > bound.feedbackReserve ||
+    bound.maximumWithReserve > AGGREGATE_CAP
+  )
+    throw Error('Aggregate schedule exceeds approved cap');
+  return bound;
 }
 /** Root supplies this external release only after frozen evidence inspection.
  * A draft profile, differing code/build/corpus, or larger cap fails before SDK setup.

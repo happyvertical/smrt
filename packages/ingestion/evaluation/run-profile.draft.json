@@ -5,7 +5,7 @@
   "ledgerPath": "/home/will/Work/tmp/smrt-epic-3668/evaluation-budget.sqlite",
   "aggregateCapNanoUSD": 5000000000,
   "endpointClass": "OpenAI standard global api.openai.com/v1; no regional surcharge route",
-  "proposalAndVisionModel": "gpt-5.4-mini-2026-03-17",
+  "proposalAndVisionModel": "gpt-6-luna",
   "speechModel": "gpt-4o-mini-transcribe-2025-12-15",
   "speechMetadataAccess": {
     "date": "2026-10-09",
@@ -13,22 +13,28 @@
     "inference": false
   },
   "selectedPackages": {
-    "@happyvertical/ai": "0.102.4",
-    "@happyvertical/speech": "0.102.4",
+    "@happyvertical/ai": "0.102.7",
+    "@happyvertical/speech": "0.102.7",
     "@happyvertical/ocr": "0.61.6",
     "@happyvertical/pdf": "0.65.9",
     "sharp": "0.35.5",
-    "@happyvertical/email": "0.102.4",
-    "@happyvertical/smrt-messages": "0.55.6"
+    "@happyvertical/email": "0.102.7",
+    "@happyvertical/smrt-messages": "0.55.7"
   },
   "prices": {
     "checkedDate": "2026-10-09",
     "currency": "USD",
     "uncachedNanoUSDPerToken": {
-      "proposalInput": 750,
-      "proposalOutput": 4500,
+      "proposalInput": 100,
+      "proposalOutput": 500,
       "speechInput": 1250,
       "speechOutput": 5000
+    },
+    "conservativeNanoUSDPerToken": {
+      "proposalInputIncludingCacheWrites": 125,
+      "proposalOutput": 500,
+      "visionLongContextInputIncludingCacheWrites": 250,
+      "visionLongContextOutput": 750
     }
   },
   "speechBoundCandidate": {
@@ -57,23 +63,20 @@
     }
   },
   "pendingBeforeSpending": [
-    "Frozen materialized source index, scorer, protocol and exact semantic adjudication record",
-    "Authenticated application catalog/policy/prompt versions and actual merged UI/feedback contracts",
-    "Measured full serialized proposal request bounds including provider framing; explicit output ceiling",
-    "Installed OCR transitive AI resolution and actual request-count/size/output contract proof",
-    "Single short audio file duration and no internal chunk expansion beyond published context/output ceiling",
-    "Host-enforced native memory limits and extraction process configuration",
-    "Conservative aggregate call schedule covering development/calibration/heldout/retry/probes/reruns",
-    "Root inspection of canonical empty ledger and explicit paid-run release"
+    "Reverify actual SDK token-limit, reasoning and zero-retry wire behavior at any future execution freeze",
+    "Future explicit budget authorization: prospective schedule exceeds original immutable USD5 cap",
+    "Fresh corpus/protocol/profile/runtime freeze and model-specific evaluation; historical results do not evaluate GPT-6 Luna",
+    "Preserve original spent canonical ledger; no reset, retry or inference authorized by this draft"
   ],
   "sources": [
-    "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
+    "https://developers.openai.com/api/docs/models/gpt-6-luna",
     "https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe",
     "https://developers.openai.com/api/docs/pricing",
-    "https://developers.openai.com/api/docs/guides/images-vision"
+    "https://developers.openai.com/api/docs/guides/images-vision",
+    "https://developers.openai.com/api/docs/guides/latest-model"
   ],
   "scheduleCandidate": {
-    "status": "pre-run bound, awaiting complete wire and host proofs",
+    "status": "prospective USD9.124016 bound exceeds original USD5; fail closed, no inference authorization",
     "paidCalibrationCalls": 0,
     "paidRetries": 0,
     "paidReruns": 0,
@@ -82,35 +85,35 @@
     "deterministicFaultCases": 20,
     "proposal": {
       "calls": 280,
-      "maximumChargeNanoUSD": 11136000,
-      "totalNanoUSD": 3118080000,
+      "maximumChargeNanoUSD": 1600000,
+      "totalNanoUSD": 448000000,
       "completeSerializedRequestBytes": 8192,
       "framingTokenReserve": 512,
       "maximumOutputTokens": 1024
     },
     "vision": {
       "calls": 28,
-      "maximumChargeNanoUSD": 22810500,
-      "totalNanoUSD": 638694000,
+      "maximumChargeNanoUSD": 265572000,
+      "totalNanoUSD": 7436016000,
       "maximumImageDimensions": [1000, 1000],
-      "patchSize": 32,
-      "patchMultiplier": 1.2,
-      "imageTokenReserve": 1230,
       "maximumTextEnvelopeBytes": 4096,
       "framingTokenReserve": 512,
-      "maximumOutputTokens": 4096
+      "maximumOutputTokens": 4096,
+      "maximumInputTokens": 1050000,
+      "boundMethod": "entire model context at long-context cache-write pricing; no published GPT-6 Luna image multiplier assumed"
     },
     "speech": {
       "calls": 28,
       "maximumChargeNanoUSD": 30000000,
       "totalNanoUSD": 840000000
     },
-    "heldoutMaximumNanoUSD": 4596774000,
+    "heldoutMaximumNanoUSD": 8724016000,
     "feedbackDemonstrationReservedNanoUSD": 400000000,
-    "unallocatedNanoUSD": 3226000,
+    "unallocatedNanoUSD": -4124016000,
     "faultScoring": "Retained failures unless preregistered authoritative structural disposition is actually proven; not model abstention.",
     "feedbackPlannedCalls": 11,
-    "feedbackPlannedMaximumNanoUSD": 122496000
+    "feedbackPlannedMaximumNanoUSD": 17600000,
+    "maximumWithReserveNanoUSD": 9124016000
   },
   "nativeIsolation": {
     "scope": "whole evaluation host and inherited provider children",
@@ -121,6 +124,9 @@
     "ledgerLifetime": "canonical persistent external path, survives process/scope termination"
   },
   "feedbackProtocolSha256": "5e3a904e1acbd2986ea8f338c6b6904b2cc04eb8c873f58c8b8295dcb0328f75",
-  "smrtVersion": "0.55.6",
-  "captureIdentity": "opaque SHA256 with evaluation-capture-v1 domain separation; internal provenance only"
+  "smrtVersion": "0.55.7",
+  "captureIdentity": "opaque SHA256 with evaluation-capture-v1 domain separation; internal provenance only",
+  "migrationStatus": "GPT-6 Luna prospective profile with published aligned SDK0.102.7; no paid evaluation authorized",
+  "proposalReasoningEffort": "none",
+  "visionReasoningEffort": "medium (provider default; owning OCR has no explicit reasoning option)"
 }

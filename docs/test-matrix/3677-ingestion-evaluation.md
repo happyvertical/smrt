@@ -106,3 +106,49 @@ The actual built checkout is separately inspected; this does not certify histori
 paid-run dependency bytes. The original measured archive and summary remain unchanged.
 README status now describes the completed run and distinguishes its historical frozen
 protocol from a reusable, nonauthorizing draft profile.
+
+### Round 4: owner-requested active model migration
+
+The owner explicitly requested removal of the prior model from active configuration
+and tests after round 3; this is a scope update within claim/cycle 6076312903, not a
+new paid evaluation or a reset of the review cycle. Historical measured report,
+archive and summary remain byte-identical. Active proposal/vision model is
+`gpt-6-luna`: proposal uses explicit reasoning `none`; owning OCR uses supported
+default `medium`, with a total completion ceiling and no unsupported temperature.
+
+The released SDK 0.102.4 baseline local HTTP reproduction emits `max_tokens` and
+loses proposal reasoning effort. Published aligned SDK 0.102.7 fixes both: fresh
+public SDK loopback, provider and actual child tests pass. No raw transport
+workaround is used.
+Full request bytes include explicit reasoning. Alternate reasoning, extra tier
+options and unpriced regional endpoints are denied before reservation/provider I/O.
+The conservative prospective schedule is $9.124016 and is rejected by the unchanged
+$5 cap. No image patch multiplier is assumed: the complete 1,050,000-token context
+uses long-context cache-write pricing. No second measured evaluation, budget
+reset, rescoring or claim of new-model quality accompanies this migration. The
+evaluator checks are credential-free/local; a separate disclosed SDK validation
+incident has unknown possible cost outside the historical evaluation ledger.
+
+Aligned SDK 0.102.7 is consumed through automation sync 5c8925677 and its normal
+merge into the evaluator branch. Existing paid/review commits remain ancestors.
+Current application package metadata is 0.55.7; earlier 0.55.6 validation statements
+above describe historical checkpoints. Normal install additionally aligns the
+evaluator-added email importer. The current root build refreshes all declared
+workspace outputs and knowledge artifacts before integration validation.
+
+Fresh migration validation: 310 ingestion SQLite cases, 32 Svelte components,
+68 evaluator contracts, six actual child/native cases, 22 provider contracts,
+seven PostgreSQL reference cases, one PostgreSQL actual SDK correction flow and
+five maintained Chromium scenarios pass. Package TypeScript/test/Svelte checks
+pass. Every process uses a credential-free environment; PostgreSQL lanes add
+only local database credentials and provider lanes use loopback fixture keys.
+The browser uses the documented installed Chromium option; failed cached-browser
+startup diagnostics are retained separately.
+
+The SDK source equivalence evidence identifies unchanged SQL drivers, transactions
+and schema algorithms; moved public query helpers have identical source hashes.
+Fresh public root/query imports and the PostgreSQL cases cover packaging effects,
+while prior full PostgreSQL and feedback authorization evidence carries for those
+unchanged boundaries. OpenAI-compatible speech adapter sources are unchanged and
+the current factory/child path is exercised; changed local/browser PCM/VAD paths
+are outside that carry claim. Prior model quality never carries to GPT-6 Luna.

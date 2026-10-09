@@ -2,13 +2,38 @@ import { runReservedCall, tokenChargeBound } from './budget.mjs';
 import { sha256 } from './corpus.mjs';
 
 export const PROPOSAL_BOUND = Object.freeze({
-  model: 'gpt-5.4-mini-2026-03-17',
+  model: 'gpt-6-luna',
   maxSerializedBytes: 8192,
   framingTokens: 512,
   maxOutputTokens: 1024,
-  inputNanoUSD: 750,
-  outputNanoUSD: 4500,
+  // Cache-write price is the highest applicable input rate; no cache discount.
+  inputNanoUSD: 125,
+  outputNanoUSD: 500,
 });
+// No published GPT-6 Luna image multiplier: reserve the entire context at
+// long-context cache-write pricing, plus the enforced output ceiling.
+export const VISION_BOUND = Object.freeze({
+  maximumInputTokens: 1050000,
+  maxOutputTokens: 4096,
+  inputNanoUSD: 250,
+  outputNanoUSD: 750,
+});
+/** Only the priced standard global endpoint or local nonbillable transport tests. */
+export function assertProviderEndpoint(baseUrl) {
+  const url = new URL(baseUrl);
+  if (
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    url.pathname !== '/v1'
+  )
+    throw Error('Unpriced provider endpoint');
+  if (url.href === 'https://api.openai.com/v1') return;
+  if (url.protocol === 'http:' && url.hostname === '127.0.0.1' && url.port)
+    return;
+  throw Error('Unpriced provider endpoint');
+}
 /** Complete text-only chat envelope guard. No decision/vision/tools/continuation route. */
 export function proposalRequestBound(messages, options) {
   if (
@@ -25,6 +50,8 @@ export function proposalRequestBound(messages, options) {
     throw new Error('Unsupported bounded proposal messages');
   if (
     options.model !== PROPOSAL_BOUND.model ||
+    (options.reasoning !== undefined &&
+      JSON.stringify(options.reasoning) !== '{"effort":"none"}') ||
     !Number.isSafeInteger(options.maxTokens) ||
     options.maxTokens < 1 ||
     options.maxTokens > PROPOSAL_BOUND.maxOutputTokens ||
@@ -35,6 +62,7 @@ export function proposalRequestBound(messages, options) {
       (key) =>
         ![
           'model',
+          'reasoning',
           'maxTokens',
           'toolChoice',
           'continueOnLength',
@@ -50,6 +78,7 @@ export function proposalRequestBound(messages, options) {
   const envelope = JSON.stringify({
     messages,
     model: options.model,
+    ...JSON.parse('{"reasoning_effort":"none"}'),
     ...JSON.parse(
       '{"tool_choice":"none","response_format":{"type":"json_object"}}',
     ),
@@ -85,6 +114,7 @@ export function createBudgetedProposalChat(ledger, identity, client) {
       }));
       const capturedOptions = {
         ...options,
+        reasoning: { effort: 'none' },
         responseFormat: { ...options.responseFormat },
       };
       const result = await runReservedCall(

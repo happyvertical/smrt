@@ -38,7 +38,7 @@ test('real built OCR child cannot send before authority/reservation or repeat a 
     response.end(
       JSON.stringify({
         id: 'child-fixture',
-        model: 'gpt-5.4-mini-2026-03-17',
+        model: 'gpt-6-luna',
         choices: [
           JSON.parse(
             '{"index":0,"message":{"role":"assistant","content":"actual local child OCR transport"},"finish_reason":"stop"}',
@@ -58,13 +58,13 @@ test('real built OCR child cannot send before authority/reservation or repeat a 
       ocr: {
         identity: {
           provider: 'litellm',
-          model: 'gpt-5.4-mini-2026-03-17',
+          model: 'gpt-6-luna',
           version: '0.61.6',
         },
         options: {
           baseUrl: `http://127.0.0.1:${address.port}/v1`,
           apiKey: 'local-non-secret-fixture',
-          model: 'gpt-5.4-mini-2026-03-17',
+          model: 'gpt-6-luna',
           outputMode: 'simple',
           timeout: 5000,
         },
@@ -110,7 +110,7 @@ test('real built OCR child cannot send before authority/reservation or repeat a 
     expect(result.segments[0].text).toBe('actual local child OCR transport');
     expect(calls).toBe(1);
     expect(ledger.snapshot().unknownChargeCalls).toBe(1);
-    expect(observations).toEqual([{ authorized: true, charged: 22810500 }]);
+    expect(observations).toEqual([{ authorized: true, charged: 265572000 }]);
     const repeated = await budgetExtractionAdapter(
       adapter,
       ledger,
@@ -118,7 +118,7 @@ test('real built OCR child cannot send before authority/reservation or repeat a 
     ).extract(request);
     expect(repeated.status).toBe('failed');
     expect(calls).toBe(1);
-    expect(ledger.snapshot().charged).toBe(22810500);
+    expect(ledger.snapshot().charged).toBe(265572000);
     status = 502;
     const failureIdentity = { ...frozen, callId: 'case:actual-child-error' };
     const failed = await budgetExtractionAdapter(
@@ -128,7 +128,7 @@ test('real built OCR child cannot send before authority/reservation or repeat a 
     ).extract(request);
     expect(failed.status).toBe('failed');
     expect(calls).toBe(2);
-    expect(ledger.snapshot().charged).toBe(45621000);
+    expect(ledger.snapshot().charged).toBe(531144000);
     const failureReplay = await budgetExtractionAdapter(
       adapter,
       ledger,
@@ -136,7 +136,7 @@ test('real built OCR child cannot send before authority/reservation or repeat a 
     ).extract(request);
     expect(failureReplay.status).toBe('failed');
     expect(calls).toBe(2);
-    expect(ledger.snapshot().charged).toBe(45621000);
+    expect(ledger.snapshot().charged).toBe(531144000);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -182,7 +182,7 @@ test('real speech child reserves before its single HTTP call and retains failure
       nativeMemoryIsolation: 'host-enforced',
       maxConcurrentProcesses: 1,
       speech: {
-        identity: { provider: 'openai-compatible', model, version: '0.102.4' },
+        identity: { provider: 'openai-compatible', model, version: '0.102.7' },
         options: {
           type: 'openai-compatible',
           baseUrl: `http://127.0.0.1:${address.port}/v1`,
@@ -309,7 +309,7 @@ test('maintained image upload uses the frozen provider factory through OCR then 
     response.end(
       JSON.stringify({
         id: 'composed-native',
-        model: 'gpt-5.4-mini-2026-03-17',
+        model: 'gpt-6-luna',
         choices: [
           {
             index: 0,
@@ -372,8 +372,8 @@ test('maintained image upload uses the frozen provider factory through OCR then 
     expect(result.view.evidence).toHaveLength(2);
     expect(result.view.generation?.automaticActionEligible).toBe(false);
     expect(wire.map((row) => [row.vision, row.charged])).toEqual([
-      [true, 22810500],
-      [false, 33946500],
+      [true, 265572000],
+      [false, 267172000],
     ]);
     expect(wire[1].bytes).toBeLessThanOrEqual(8192);
     expect(wire[1].body).not.toContain('credential-exfiltration');
@@ -494,7 +494,7 @@ test('scripted correction reaches a later owning SDK request and changes a deter
       }),
     );
   });
-  const ProposalBoundModel = 'gpt-5.4-mini-2026-03-17';
+  const ProposalBoundModel = 'gpt-6-luna';
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw Error('No port');
@@ -660,7 +660,7 @@ test('scripted correction reaches a later owning SDK request and changes a deter
         },
       ],
     });
-    expect(ledger.snapshot().charged).toBe(33408000);
+    expect(ledger.snapshot().charged).toBe(4800000);
   } finally {
     ReferenceReviewWorker.host = undefined;
     await initial?.db.close?.();
@@ -730,7 +730,7 @@ test('maintained WAV upload composes actual speech child, SDK proposal, authenti
     response.end(
       JSON.stringify({
         id: 'audio-composition',
-        model: 'gpt-5.4-mini-2026-03-17',
+        model: 'gpt-6-luna',
         choices: [
           {
             index: 0,
@@ -820,7 +820,7 @@ test('maintained WAV upload composes actual speech child, SDK proposal, authenti
     expect(result.automaticActionEligible).toBe(false);
     expect(calls.map(({ route, charged }) => ({ route, charged }))).toEqual([
       { route: 'speech', charged: 30000000 },
-      { route: 'proposal', charged: 41136000 },
+      { route: 'proposal', charged: 31600000 },
     ]);
     expect(calls[1].bytes).toBeLessThanOrEqual(8192);
     expect(ledger.snapshot().unknownChargeCalls).toBe(2);

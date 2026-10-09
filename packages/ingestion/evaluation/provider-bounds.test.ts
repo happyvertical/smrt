@@ -81,7 +81,7 @@ test('installed speech snapshot makes one JSON request: explicit retry false and
   }
 });
 
-test('installed OCR factory pins one GPT5 request with4096 output ceiling and no fallback retry', async () => {
+test('installed OCR factory pins one GPT-6 Luna request with 4096 output ceiling and no fallback retry', async () => {
   const { getOCR } = await import('@happyvertical/ocr');
   const sharp = (await import('sharp')).default;
   let calls = 0;
@@ -98,7 +98,7 @@ test('installed OCR factory pins one GPT5 request with4096 output ceiling and no
         ? JSON.stringify({
             id: 'local-ocr',
             object: 'chat.completion',
-            model: 'gpt-5.4-mini-2026-03-17',
+            model: 'gpt-6-luna',
             choices: [
               JSON.parse(
                 '{"index":0,"message":{"role":"assistant","content":"local transport fixture"},"finish_reason":"stop"}',
@@ -122,7 +122,7 @@ test('installed OCR factory pins one GPT5 request with4096 output ceiling and no
       litellm: {
         baseUrl: `http://127.0.0.1:${address.port}/v1`,
         apiKey: 'local-non-secret-fixture',
-        model: 'gpt-5.4-mini-2026-03-17',
+        model: 'gpt-6-luna',
         outputMode: 'simple',
         timeout: 5000,
       },
@@ -142,9 +142,11 @@ test('installed OCR factory pins one GPT5 request with4096 output ceiling and no
   await expect(factory.performOCR(input)).rejects.toThrow();
   expect(calls).toBe(2);
   for (const body of wire) {
-    expect(body.model).toBe('gpt-5.4-mini-2026-03-17');
+    expect(body.model).toBe('gpt-6-luna');
     expect(body.max_completion_tokens).toBe(4096);
     expect(body.max_tokens).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+    expect(body.reasoning_effort).toBeUndefined();
     const withoutImage = JSON.stringify(body).replace(
       /data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,
       'bounded-image',
@@ -234,12 +236,15 @@ test('budgeted proposal uses the owning SDK wire once within the complete envelo
     );
     expect(JSON.parse(received)).toMatchObject({
       model: PROPOSAL_BOUND.model,
+      ...JSON.parse('{"reasoning_effort":"none"}'),
       messages,
       ...JSON.parse(
         '{"max_completion_tokens":1024,"response_format":{"type":"json_object"}}',
       ),
     });
-    expect(ledger.snapshot().charged).toBe(11136000);
+    expect(JSON.parse(received).max_tokens).toBeUndefined();
+    expect(JSON.parse(received).temperature).toBeUndefined();
+    expect(ledger.snapshot().charged).toBe(1600000);
     status = 500;
     const failing = createBudgetedProposalChat(
       ledger,
@@ -248,7 +253,7 @@ test('budgeted proposal uses the owning SDK wire once within the complete envelo
     );
     await expect(failing.chat(messages, options)).rejects.toThrow();
     expect(calls).toBe(2);
-    expect(ledger.snapshot().charged).toBe(22272000);
+    expect(ledger.snapshot().charged).toBe(3200000);
   } finally {
     ledger.close();
     rmSync(root, { recursive: true, force: true });

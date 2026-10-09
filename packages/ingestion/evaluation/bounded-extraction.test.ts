@@ -52,7 +52,7 @@ test('authority precedes durable reservation; provider sees reserve and repeat/r
   const adapter: ExtractionAdapter = {
     extract: async (input) => {
       await input.beforeProviderCall!();
-      expect(ledger.snapshot().charged).toBe(22810500);
+      expect(ledger.snapshot().charged).toBe(265572000);
       await input.beforeProviderCall!();
       calls++;
       await expect(input.beforeProviderCall!()).rejects.toThrow('Repeated');
@@ -70,7 +70,7 @@ test('authority precedes durable reservation; provider sees reserve and repeat/r
       request,
     );
     expect(calls).toBe(1);
-    expect(authorityBalances).toEqual([0, 0, 22810500]);
+    expect(authorityBalances).toEqual([0, 0, 265572000]);
     expect(ledger.snapshot().unknownChargeCalls).toBe(1);
     ledger.close();
     ledger = new BudgetLedger(path);
@@ -153,7 +153,7 @@ test('failure after paid handshake retains full unknown charge; local PDF permit
     await expect(
       budgetExtractionAdapter(fail, ledger, configuration).extract(request),
     ).rejects.toThrow('Timeout');
-    expect(ledger.snapshot().charged).toBe(22810500);
+    expect(ledger.snapshot().charged).toBe(265572000);
     expect(ledger.snapshot().unknownChargeCalls).toBe(1);
     const pdf: ExtractionRequest = extractionRequest(
       Buffer.from('local-fault-pdf'),
@@ -185,7 +185,7 @@ test('failure after paid handshake retains full unknown charge; local PDF permit
       ledger,
       local,
     ).extract(pdf);
-    expect(ledger.snapshot().charged).toBe(22810500);
+    expect(ledger.snapshot().charged).toBe(265572000);
   } finally {
     ledger.close();
     rmSync(root, { recursive: true, force: true });
@@ -277,7 +277,7 @@ test('revocation between capability and OCR denies send; late authority cannot r
     ).rejects.toThrow('Revoked');
     expect(gates).toBe(2);
     expect(calls).toBe(0);
-    expect(ledger.snapshot().charged).toBe(22810500);
+    expect(ledger.snapshot().charged).toBe(265572000);
     expect(ledger.snapshot().unknownChargeCalls).toBe(1);
     let release!: () => void;
     const latch = new Promise<void>((resolve) => {
@@ -300,7 +300,7 @@ test('revocation between capability and OCR denies send; late authority cannot r
     const denied = expect(pending).rejects.toThrow('already ended');
     release();
     await denied;
-    expect(ledger.snapshot().charged).toBe(22810500);
+    expect(ledger.snapshot().charged).toBe(265572000);
   } finally {
     ledger.close();
     rmSync(root, { recursive: true, force: true });

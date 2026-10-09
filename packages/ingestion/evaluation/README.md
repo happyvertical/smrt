@@ -91,10 +91,11 @@ ledger: only call/stage identifiers, immutable request/run hashes and integer ch
 The runner is a trusted-host tool, not an authorization boundary against malicious
 host code. Application grants/tenancy remain owning service responsibilities.
 
-The selected profile is OpenAI `gpt-5.4-mini-2026-03-17` for vision/proposals and
+The active model migration selects OpenAI `gpt-6-luna` for vision/proposals and
 `gpt-4o-mini-transcribe-2025-12-15` for audio (authenticated nonbillable
-model-metadata GET returned the matching ID on 2026-10-09). Paid provider inference is **not authorized**. Before
-root authorizes paid calls, verify current published prices, exact installed SDK
+model-metadata GET returned the matching ID on 2026-10-09). The completed historical run is preserved in the measured report; this model change
+has not been evaluated with paid inference. Further paid calls are **not authorized**.
+Any future independently authorized execution must verify current published prices, exact installed SDK
 versions/options, complete serialized request/media token upper bounds, output
 ceilings, zero hidden retries, host memory/resource isolation and the aggregate
 conservative run bound. Duration-based speech pricing is an estimate and is not
@@ -110,13 +111,14 @@ provider-quality gate.
 Contract tests exercise hashes, grouping, scoring, persistent reservation and real
 concurrent SQLite writers without provider inference. They cannot measure quality.
 
-Final #3677 acceptance still requires actual merged UI/feedback contracts; real
-upload/watch/email/camera/audio → extraction → proposal → authenticated review →
-reference effect → correction → later suggestion composition; both application
-SQLite/PostgreSQL; real browser/reload/retry/tenant/confidential/deletion coverage;
-and the measured held-out run under the one USD5 ledger. Failed/missing gates must
-be reported with exact denominators and observed limits. No reference quality or
-automation claim follows merely from a valid corpus or a passing tooling suite.
+The recorded implementation evidence covers merged UI/feedback contracts and
+upload/watch/email/camera-labelled-file/audio composition through extraction,
+proposal, authenticated review, reference effects and later scoped feedback, on
+SQLite/PostgreSQL with browser/reload/retry/tenant/confidential/deletion coverage.
+The historical held-out run used the one USD5 ledger, but its failed quality gates
+and unknown safety observations withhold supported-reference acceptance. The
+active model has not been measured. No reference quality or automation claim
+follows merely from a valid corpus or a passing tooling suite.
 
 System abstention may count only with the exact authoritative structural proof
 preregistered in `protocol.json`: the frozen expected unreadable/unsupported reason,
@@ -266,3 +268,42 @@ closed. Workspace runtime modules load only after release and ledger validation.
 Keep the trusted host's artifacts unchanged during execution; this receipt is not
 protection against concurrent hostile host mutation. The completed run predates
 this dependency-build binding; see the report's original build receipt limitation.
+
+## Active GPT-6 Luna migration (not a measured result)
+
+The owner requested this model change after the historical run. Explicit proposal reasoning
+`none` preserves the prior intended effort. The owning OCR contract has no explicit
+reasoning setting, so vision uses Luna’s supported default `medium`; its completion
+ceiling includes reasoning tokens and unsupported sampling parameters are omitted. Proposal requests reserve input at
+$0.125/M tokens (the cache-write upper rate) and output at $0.50/M: the complete
+8,192-byte envelope plus 512 framing tokens and 1,024 output tokens reserve
+$0.001600 per call. No cache discount is assumed.
+
+The official image guide does not establish a GPT-6 Luna image multiplier. Vision
+therefore reserves the entire 1,050,000-token context at the long-context
+cache-write rate $0.25/M, plus 4,096 output tokens at $0.75/M: $0.265572 per call.
+This deliberately overestimates the accepted fixed-size image; it does not reuse
+another model's patch calculation. Only the standard global endpoint is priced;
+regional/alternate endpoints and additional service-tier options are rejected.
+Loopback HTTP is reserved for nonbillable transport tests.
+
+The prospective 280 proposal, 28 vision and 28 speech calls total $8.724016. Adding
+the existing $0.40 feedback reserve gives **$9.124016**, above the unchanged $5
+cap, so preparation refuses that schedule. Eleven prospective feedback calls would
+reserve $0.017600 within that reserve. This is neither a new budget nor permission
+to reset the spent ledger. A future run needs its own explicit authorization and
+fresh evaluation. The historical report, archive and summary remain unchanged and
+provide no measured quality evidence for GPT-6 Luna. The original preregistered
+feedback protocol retains its historical (larger) bound; the active draft's
+prospective arithmetic is separate.
+
+Pricing and compatibility sources, checked 2026-10-09:
+[GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna),
+[pricing](https://developers.openai.com/api/docs/pricing), and
+[migration guide](https://developers.openai.com/api/docs/guides/latest-model).
+
+No second measured evaluation was run for this migration. Evaluator validation
+uses a credential-free environment and local transports. A separate disclosed
+SDK validation incident inherited provider credentials; its possible provider cost
+is unknown and is not included in the historical 347-call ledger or $4.71927
+exposure. That ledger is not a complete account of the separate incident.

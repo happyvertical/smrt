@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 import {
   AGGREGATE_CAP,
   assertPaidRelease,
+  calculateScheduleBound,
   LIVE_LEDGER,
   scheduleBound,
 } from './release.mjs';
@@ -81,11 +82,14 @@ test('aggregate frozen schedule includes all media and the feedback reserve with
       source: { mediaType: 'text/plain' },
     })),
   };
-  expect(scheduleBound({ cases }, feedback)).toMatchObject({
-    heldoutMaximum: 4596774000,
-    feedbackMaximum: 122496000,
-    maximumWithReserve: 4996774000,
+  expect(calculateScheduleBound({ cases }, feedback)).toMatchObject({
+    heldoutMaximum: 8724016000,
+    feedbackMaximum: 17600000,
+    maximumWithReserve: 9124016000,
   });
+  expect(() => scheduleBound({ cases }, feedback)).toThrow(
+    'exceeds approved cap',
+  );
   expect(() =>
     scheduleBound({ cases: [...cases, cases[0]] }, feedback),
   ).toThrow();

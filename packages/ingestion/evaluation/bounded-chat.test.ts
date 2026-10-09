@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import {
+  assertProviderEndpoint,
   createBudgetedProposalChat,
   PROPOSAL_BOUND,
   proposalRequestBound,
@@ -51,7 +52,7 @@ test('whole UTF8 envelope exact ceiling passes, one byte over fails before any i
       content: 'fixture',
     });
     expect(calls).toBe(1);
-    expect(ledger.snapshot().charged).toBe(11_136_000);
+    expect(ledger.snapshot().charged).toBe(1_600_000);
     expect(ledger.snapshot().unknownChargeCalls).toBe(1);
     await expect(client.chat(exact, options)).rejects.toThrow(
       'already reserved',
@@ -66,10 +67,14 @@ test('unbudgeted tools, alternate models, outputs, continuation and extra contex
   for (const overrides of [
     { maxTokens: 1025 },
     { model: 'other' },
+    { reasoning: { effort: 'medium' } },
+    { reasoning: { effort: 'none', maxTokens: 100 } },
     { tools: [{}] },
     { continueOnLength: true },
     { toolChoice: 'auto' },
     { systemPrompt: 'extra' },
+    { serviceTier: 'priority' },
+    JSON.parse('{"service_tier":"fast"}'),
   ])
     expect(() =>
       proposalRequestBound(messages, { ...options, ...overrides }),
@@ -108,7 +113,10 @@ test('caller mutation after reservation cannot enlarge the captured SDK request'
         ) => {
           await latch;
           expect(captured).toEqual(messages);
-          expect(capturedOptions).toEqual(options);
+          expect(capturedOptions).toEqual({
+            ...options,
+            reasoning: { effort: 'none' },
+          });
           return { content: 'captured' };
         },
       },
@@ -123,4 +131,23 @@ test('caller mutation after reservation cannot enlarge the captured SDK request'
     ledger.close();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('standard global pricing rejects regional, alternate and credential-bearing endpoints', () => {
+  expect(() =>
+    assertProviderEndpoint('https://api.openai.com/v1'),
+  ).not.toThrow();
+  expect(() =>
+    assertProviderEndpoint('http://127.0.0.1:12345/v1'),
+  ).not.toThrow();
+  for (const endpoint of [
+    'https://eu.api.openai.com/v1',
+    'https://api.openai.com/v1?service_tier=priority',
+    'https://user:password@api.openai.com/v1',
+    'https://other.example/v1',
+    'http://api.openai.com/v1',
+  ])
+    expect(() => assertProviderEndpoint(endpoint)).toThrow(
+      'Unpriced provider endpoint',
+    );
 });

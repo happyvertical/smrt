@@ -6,7 +6,11 @@ import {
   extractAnalysis,
 } from '../src/extraction.js';
 import { createSDKProposalGenerator } from '../src/proposal-sdk.js';
-import { createBudgetedProposalChat, PROPOSAL_BOUND } from './bounded-chat.mjs';
+import {
+  assertProviderEndpoint,
+  createBudgetedProposalChat,
+  PROPOSAL_BOUND,
+} from './bounded-chat.mjs';
 import { budgetExtractionAdapter } from './bounded-extraction.js';
 import type { BudgetLedger } from './budget.mjs';
 import { assertNativeScope } from './native-scope.mjs';
@@ -31,6 +35,7 @@ export function referenceExtractionConfiguration(input: {
   apiKey: string;
   baseUrl: string;
 }): ExtractionSDKConfiguration {
+  assertProviderEndpoint(input.baseUrl);
   const local = {
     nativeMemoryIsolation: 'host-enforced' as const,
     maxConcurrentProcesses: 1,
@@ -69,7 +74,7 @@ export function referenceExtractionConfiguration(input: {
           identity: {
             provider: 'openai-compatible',
             model: 'gpt-4o-mini-transcribe-2025-12-15',
-            version: '0.102.4',
+            version: '0.102.7',
           },
           options: {
             type: 'openai-compatible',
@@ -96,6 +101,7 @@ export async function createReferenceProviderOptions(input: {
   baseUrl: string;
   cohort?: 'heldout' | 'feedback';
 }) {
+  assertProviderEndpoint(input.baseUrl);
   const nativeScope = assertNativeScope();
   if (
     !input.apiKey ||
@@ -127,7 +133,7 @@ export async function createReferenceProviderOptions(input: {
   );
   const generator = createSDKProposalGenerator(
     chat,
-    { provider: 'openai', model: PROPOSAL_BOUND.model, version: '0.102.4' },
+    { provider: 'openai', model: PROPOSAL_BOUND.model, version: '0.102.7' },
     { maxTokens: 1024, timeoutMs: 30000 },
   );
   const adapter = createSDKExtractionAdapter(

@@ -239,14 +239,14 @@ test('real maintained-host generation envelope fits the pinned budgeted SDK requ
     configured.proposals!.limits.maxInputBytes = 8192;
     configured.proposals!.generator = createSDKProposalGenerator(
       client,
-      { provider: 'openai', model: PROPOSAL_BOUND.model, version: '0.102.4' },
+      { provider: 'openai', model: PROPOSAL_BOUND.model, version: '0.102.7' },
       { maxTokens: 1024, timeoutMs: 5000 },
     );
     const app = await provision(configured);
     const receipt = await app.upload(scope, request());
     expect(httpCalls).toBe(1);
     expect(wireBytes).toBeLessThanOrEqual(8192);
-    expect(ledger.snapshot().charged).toBe(11136000);
+    expect(ledger.snapshot().charged).toBe(1600000);
     const completed = await (
       await app.service(scope)
     ).service.getCompletedAnalysis(receipt.itemId);

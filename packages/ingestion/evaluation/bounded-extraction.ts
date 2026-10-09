@@ -4,14 +4,15 @@ import type {
   ExtractionLimits,
   ExtractionRequest,
 } from '../src/extraction-types.js';
+import { VISION_BOUND } from './bounded-chat.mjs';
 import { type BudgetLedger, tokenChargeBound } from './budget.mjs';
 
 export const EXTRACTION_CHARGE_BOUNDS = Object.freeze({
   ocr: tokenChargeBound({
-    inputTokens: 4096 + 512 + 1230,
-    outputTokens: 4096,
-    inputNanoUSD: 750,
-    outputNanoUSD: 4500,
+    inputTokens: VISION_BOUND.maximumInputTokens,
+    outputTokens: VISION_BOUND.maxOutputTokens,
+    inputNanoUSD: VISION_BOUND.inputNanoUSD,
+    outputNanoUSD: VISION_BOUND.outputNanoUSD,
   }),
   speech: tokenChargeBound({
     inputTokens: 16000,
