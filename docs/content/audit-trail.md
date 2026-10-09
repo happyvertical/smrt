@@ -148,3 +148,14 @@ receives person/record IDs and date-only strings, and the consumer reloads an
 authorized page. Translate date-only inputs into the consumer's explicit
 timezone and end-of-day bounds before calling `readAuditTrail`.
 Both views support loading, errors, empty results and unknown action names.
+
+Both components also accept optional `resourceLabel`, `actionLabel`,
+`fieldLabel`, and `formatValue` callbacks for consumer-friendly text.
+`resourceHref` can link the resolved resource label, but it is presentation
+only: return a local path or explicit HTTP(S) URL only after the server has
+authorized that destination for the current viewer. Unsafe schemes,
+protocol-relative URLs, callback errors, and malformed callback results fall
+back to plain default text. Label and value callback results are always rendered
+as text, never HTML. `AuditList` forwards these callbacks to `RecordHistory`.
+Set `showFilters={false}` when the consumer owns a separate authorized filter
+form; the built-in filters remain visible by default.
