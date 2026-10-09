@@ -41,12 +41,8 @@ import type {
   RecipeProvider,
   RecipeRuntime,
   RecipeSection,
+  RecipeShellSlot,
   RecipeSurface,
-} from '@happyvertical/smrt-types';
-import {
-  RECIPE_RUNTIMES,
-  RECIPE_SHELL_SLOTS,
-  RECIPE_SURFACE_KINDS,
 } from '@happyvertical/smrt-types';
 import { getLineColumn } from './source-location.js';
 import type { ResolvedClassDefinition, ScanError } from './types.js';
@@ -54,6 +50,35 @@ import type { ResolvedClassDefinition, ScanError } from './types.js';
 type AstNode = { type: string } & Record<string, unknown>;
 
 const RECIPE_BASE = 'SmrtRecipe';
+
+/**
+ * Runtime lists behind the `@happyvertical/smrt-types` unions (types carries no
+ * runtime code). `RECIPE_SHELL_SLOTS` copies smrt-svelte's `SHELL_SLOTS`; tests
+ * check it against that source and smrt-svelte checks the type union.
+ */
+export const RECIPE_SHELL_SLOTS = [
+  'header.start',
+  'header.center',
+  'header.end',
+  'footer.start',
+  'footer.center',
+  'footer.end',
+  'leftSidebar.header',
+  'leftSidebar.footer',
+  'rightSidebar.header',
+  'rightSidebar.footer',
+] as const satisfies readonly RecipeShellSlot[];
+const RECIPE_SURFACE_KINDS = [
+  'shell-widget',
+  'route',
+  'settings-panel',
+  'playground',
+] as const satisfies readonly RecipeSurface['kind'][];
+const RECIPE_RUNTIMES = [
+  'browser',
+  'server',
+  'both',
+] as const satisfies readonly RecipeRuntime[];
 const CORE_SPECIFIER = '@happyvertical/smrt-core';
 
 /** The core package itself or one of its subpaths (`/browser`), nothing else. */
@@ -1390,6 +1415,18 @@ function readDemoSeed(
   if (keys[0] === 'export') {
     const ref = readExportRef(value.export, 'demoSeed', report, line);
     return ref ? { export: ref as RecipeExportRef } : undefined;
+  }
+  const finite = (node: unknown): boolean =>
+    typeof node === 'number'
+      ? Number.isFinite(node)
+      : Array.isArray(node)
+        ? node.every(finite)
+        : isPlainObject(node)
+          ? Object.values(node).every(finite)
+          : true;
+  if (!finite(value.data)) {
+    report('demoSeed.data cannot contain non-finite numbers', line);
+    return undefined;
   }
   const size = Buffer.byteLength(JSON.stringify(value.data ?? null));
   if (value.data === undefined || value.data === null) {

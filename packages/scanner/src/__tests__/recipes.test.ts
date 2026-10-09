@@ -1,9 +1,16 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ManifestAdapter } from '../manifest-adapter.js';
 import { parseSource } from '../oxc-parser.js';
+import { RECIPE_SHELL_SLOTS } from '../recipes.js';
 import { OxcScanner } from '../scanner.js';
 
 const CORE = '@happyvertical/smrt-core';
@@ -1177,6 +1184,11 @@ ${statics}
         'exactly one of',
       ],
       [
+        'non-finite demoSeed number',
+        `static demoSeed = { data: { n: 1e999 } };`,
+        'non-finite numbers',
+      ],
+      [
         'oversized inline demoSeed',
         `static demoSeed = { data: { text: '${'x'.repeat(9000)}' } };`,
         'inline seeds are limited',
@@ -1257,5 +1269,21 @@ ${b}
       );
       expect((await scan()).results.errors).toEqual([]);
     });
+  });
+
+  it('RECIPE_SHELL_SLOTS matches smrt-svelte SHELL_SLOTS (#3708)', () => {
+    const source = readFileSync(
+      join(
+        __dirname,
+        '../../../smrt-svelte/src/components/workspace/admin-shell/slots.ts',
+      ),
+      'utf8',
+    );
+    const body = /SHELL_SLOTS: readonly ShellSlot\[\] = \[([^\]]*)\]/.exec(
+      source,
+    )?.[1];
+    const slots = [...(body ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    expect(slots.length).toBeGreaterThan(0);
+    expect([...RECIPE_SHELL_SLOTS]).toEqual(slots);
   });
 });

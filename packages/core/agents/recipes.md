@@ -86,9 +86,10 @@ at scan time; a host resolves them. Relative or absolute specifiers are rejected
 | `demoSeed` | `{ export } \| { data }` | A fixture export reference, or inline JSON of at most 8 KB, for demo hosts. Exactly one key. |
 
 Write `surfaces` with `as const` (like `options`) so `kind` and `slot` stay
-literal types. The slot list is `RECIPE_SHELL_SLOTS` in smrt-types, a literal
-copy of smrt-svelte's `SHELL_SLOTS` (a smrt-svelte test keeps them equal), so
-the scanner has no runtime dependency on smrt-svelte. Every violation (unknown
+literal types. The slot union is `RecipeShellSlot` in smrt-types (types only) and the
+scanner's `RECIPE_SHELL_SLOTS` list copies smrt-svelte's `SHELL_SLOTS`; a
+type-level test in smrt-svelte and a scanner test keep them equal, so there is
+no runtime dependency on smrt-svelte. Inline `demoSeed.data` must be finite JSON. Every violation (unknown
 kind or slot, extra key, duplicate route path or provider id, malformed
 reference) is a scan error. Example: `events.calendar` in
 `packages/events/src/recipes.ts`.

@@ -140,11 +140,6 @@ export type {
   RecipeShellSlot,
   RecipeSurface,
 } from './recipe.js';
-export {
-  RECIPE_RUNTIMES,
-  RECIPE_SHELL_SLOTS,
-  RECIPE_SURFACE_KINDS,
-} from './recipe.js';
 export type {
   SmrtRouteDefinition,
   SmrtRouteLoadKind,

@@ -114,23 +114,21 @@ export interface RecipeHelp {
 
 /**
  * Shell slots a `shell-widget` surface may name. A literal copy of smrt-svelte's
- * `SHELL_SLOTS` (types cannot depend on it); a smrt-svelte test asserts the two
- * lists stay equal.
+ * `ShellSlot` (types cannot depend on it); smrt-svelte asserts the two unions
+ * are identical at type level, and the scanner owns the runtime list and checks
+ * it against the smrt-svelte source.
  */
-export const RECIPE_SHELL_SLOTS = [
-  'header.start',
-  'header.center',
-  'header.end',
-  'footer.start',
-  'footer.center',
-  'footer.end',
-  'leftSidebar.header',
-  'leftSidebar.footer',
-  'rightSidebar.header',
-  'rightSidebar.footer',
-] as const;
-
-export type RecipeShellSlot = (typeof RECIPE_SHELL_SLOTS)[number];
+export type RecipeShellSlot =
+  | 'header.start'
+  | 'header.center'
+  | 'header.end'
+  | 'footer.start'
+  | 'footer.center'
+  | 'footer.end'
+  | 'leftSidebar.header'
+  | 'leftSidebar.footer'
+  | 'rightSidebar.header'
+  | 'rightSidebar.footer';
 
 /**
  * A component or fixture export as `'<module specifier>#<ExportName>'`, e.g.
@@ -152,13 +150,6 @@ export type RecipeSurface =
   | { kind: 'settings-panel'; export: RecipeExportRef; label: string }
   | { kind: 'playground'; export: RecipeExportRef; label?: string };
 
-export const RECIPE_SURFACE_KINDS = [
-  'shell-widget',
-  'route',
-  'settings-panel',
-  'playground',
-] as const;
-
 /** A provider the recipe needs or can use (email, oauth, storage, llm...). */
 export interface RecipeProvider {
   /** Slug, unique within the recipe. */
@@ -174,8 +165,6 @@ export interface RecipeProvider {
 
 /** Where a recipe's runtime pieces can run. Omitted means `both`. */
 export type RecipeRuntime = 'browser' | 'server' | 'both';
-
-export const RECIPE_RUNTIMES = ['browser', 'server', 'both'] as const;
 
 /** Demo fixture data: a fixture export, or small inline JSON. */
 export type RecipeDemoSeed = { export: RecipeExportRef } | { data: unknown };

@@ -1,9 +1,17 @@
-import { RECIPE_SHELL_SLOTS } from '@happyvertical/smrt-types';
+import type { RecipeShellSlot } from '@happyvertical/smrt-types';
 import { describe, expect, it } from 'vitest';
-import { SHELL_SLOTS } from './components/workspace/admin-shell/slots.js';
+import type { ShellSlot } from './components/workspace/admin-shell/slots.js';
+
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+    ? true
+    : false;
+
+// Fails typecheck when the recipe slot union and the shell union diverge.
+const same: Equal<RecipeShellSlot, ShellSlot> = true;
 
 describe('recipe surface slots (#3708)', () => {
-  it('RECIPE_SHELL_SLOTS in smrt-types matches the shell SHELL_SLOTS', () => {
-    expect([...RECIPE_SHELL_SLOTS]).toEqual([...SHELL_SLOTS]);
+  it('RecipeShellSlot in smrt-types equals the shell ShellSlot', () => {
+    expect(same).toBe(true);
   });
 });
