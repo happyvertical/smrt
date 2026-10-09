@@ -11,16 +11,19 @@ function expandedSize(shell: ModuleShellState, edge: ModulePanelEdge): string {
 
 function trackFor(shell: ModuleShellState, edge: ModulePanelEdge): string {
   const state = shell.panels[edge];
-  const config = shell.config.panels[edge];
   if (state === 'hidden') return '0rem';
-  if (state === 'collapsed') return config.collapsedSize;
-  if (shell.presentationFor(edge) === 'overlay') return config.collapsedSize;
+  if (state === 'collapsed') return collapsedSize(shell, edge);
+  if (shell.presentationFor(edge) === 'overlay')
+    return collapsedSize(shell, edge);
   return expandedSize(shell, edge);
 }
 
 function collapsedSize(shell: ModuleShellState, edge: ModulePanelEdge): string {
   if (shell.panels[edge] === 'hidden') return '0rem';
-  return shell.config.panels[edge].collapsedSize;
+  const config = shell.config.panels[edge];
+  // A railless edge has nothing to show while closed.
+  if (config.rail === false) return '0rem';
+  return config.collapsedSize;
 }
 
 function buildLayoutStyle(shell: ModuleShellState): string {
@@ -1173,7 +1176,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {/if}
       <div class="smrt-admin-shell__rail">
         {@render regionEdit('rightSidebar')}
-        {#if focusRail}
+        {#if shell.config.panels.right.rail === false && !edgeExpanded('right')}
+          <!-- Railless and closed: nothing to show or tab to. -->
+        {:else if focusRail}
           {@render focusRail()}
         {:else if shell.focusTools.length > 0}
           <nav class="smrt-admin-shell__focus-rail" aria-label={t(M['ui.admin_shell.focus_tools'])}>

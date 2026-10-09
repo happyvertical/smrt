@@ -81,6 +81,13 @@ export interface ShellPanelConfig {
    * as usual. A hidden edge unmounts everything.
    */
   keepMounted?: boolean;
+  /**
+   * `false`: a side edge has no rail. Closed, it takes no space and renders
+   * nothing (no focus-tool buttons, no edge toggle, nothing to tab to); a
+   * host opens it from elsewhere, e.g. a dock toggle in the header. Edit
+   * mode still shows its region controls. Default `true`.
+   */
+  rail?: boolean;
 }
 
 /** Limits for a resizable side edge, in CSS pixels. */

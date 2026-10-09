@@ -41,6 +41,22 @@ const panel = () =>
   container.querySelector<HTMLElement>('.smrt-admin-shell__panel--right');
 
 describe('AppShell dock toggles', () => {
+  it('a railless right edge leaves nothing behind while closed', async () => {
+    await render({ config: { right: { rail: false } } });
+    const shell = container.querySelector<HTMLElement>('.smrt-admin-shell')!;
+    expect(
+      shell.style.getPropertyValue('--smrt-admin-shell-right-track').trim(),
+    ).toBe('0rem');
+    expect(container.querySelector('.smrt-admin-shell__focus-tool')).toBeNull();
+    toggle().click();
+    await settle();
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(panel()?.hidden).toBe(false);
+    toggle().click();
+    await settle();
+    expect(container.querySelector('.smrt-admin-shell__focus-tool')).toBeNull();
+  });
+
   it('renders no header toggles without the prop', async () => {
     await render({ toggles: [] });
     expect(container.querySelector('[data-testid="dock-toggles"]')).toBeNull();
