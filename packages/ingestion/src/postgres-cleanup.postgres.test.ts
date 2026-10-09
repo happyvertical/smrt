@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
   type DatabaseInterface,
   getDatabase,
@@ -25,7 +26,9 @@ describe('PostgreSQL fixture cleanup with real sessions', () => {
   let name: string;
   beforeEach(async () => {
     if (!process.env.DATABASE_URL) throw new Error('PostgreSQL required');
-    admin = await getDatabase({
+    admin = await getTestDatabase({
+      classes: [],
+      includeSystemTables: false,
       type: 'postgres',
       url: process.env.DATABASE_URL,
     });

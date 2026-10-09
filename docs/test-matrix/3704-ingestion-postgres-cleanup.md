@@ -24,3 +24,10 @@ suites are unchanged and N/A to this test-only cleanup patch. SQLite business
 behavior is unchanged: the affected cleanup branches run only for PostgreSQL.
 No transaction atomicity claim applies: PostgreSQL DROP DATABASE runs outside a
 transaction on the supplied admin connection. No public API/export/schema changes.
+
+Maintenance database boundary: the admin connection uses `getTestDatabase` with
+`classes: []` and `includeSystemTables: false`, matching existing fixture admins.
+The five real cleanup tests must also pass when an ordinary CREATEDB role uses
+the non-owned `postgres` maintenance database without public-schema CREATE.
+Baseline: all five fail before cleanup with schema permission denial; the fixed
+setup performs no application/system schema initialization on that database.
