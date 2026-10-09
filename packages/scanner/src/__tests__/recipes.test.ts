@@ -779,7 +779,7 @@ export class A extends SmrtRecipe {
     Order: {
       type: 'x',
       fields: {
-        status: { visibility: 'secret', locked: 'yes', order: 'first', colour: 'red', label: 3 },
+        status: { visibility: 'secret', locked: 'yes', required: 1, order: 'first', colour: 'red', label: 3 },
       },
     },
   };
@@ -787,6 +787,7 @@ export class A extends SmrtRecipe {
       expect(text).toMatch(/options.Order.type is not a model option/);
       expect(text).toMatch(/visibility must be one of basic, advanced, hidden/);
       expect(text).toMatch(/locked must be a boolean/);
+      expect(text).toMatch(/required must be a boolean/);
       expect(text).toMatch(/order must be a finite number/);
       expect(text).toMatch(/colour is not a field option/);
       expect(text).toMatch(/label must be a string/);

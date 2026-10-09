@@ -890,7 +890,7 @@ function readModelOptions(
           const at = `${where}.fields.${field}.${hint}`;
           if (!FIELD_OPTION_KEYS.has(hint)) {
             fail(
-              `${at} is not a field option; use default, label, help, order, visibility, or locked`,
+              `${at} is not a field option; use default, label, help, order, visibility, locked, or required`,
             );
           } else if (
             (hint === 'label' || hint === 'help') &&
@@ -902,7 +902,10 @@ function readModelOptions(
             (typeof hintValue !== 'number' || !Number.isFinite(hintValue))
           ) {
             fail(`${at} must be a finite number`);
-          } else if (hint === 'locked' && typeof hintValue !== 'boolean') {
+          } else if (
+            (hint === 'locked' || hint === 'required') &&
+            typeof hintValue !== 'boolean'
+          ) {
             fail(`${at} must be a boolean`);
           } else if (
             hint === 'visibility' &&
