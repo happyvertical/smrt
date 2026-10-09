@@ -68,7 +68,7 @@ function isSqlAdapterType(value: unknown): value is SqlAdapterType {
   );
 }
 
-function adapterTypeFromDb(
+export function adapterTypeFromDb(
   db: DatabaseInterface,
   fallback?: SqlAdapterType,
 ): SqlAdapterType {
@@ -184,7 +184,7 @@ async function fieldColumn(
   return null;
 }
 
-async function tenantColumn(className: string): Promise<string | null> {
+export async function tenantColumn(className: string): Promise<string | null> {
   const registered = ObjectRegistry.getClass(className);
   const configuredField = registered?.tenantScopedConfig?.field;
   if (configuredField) {
