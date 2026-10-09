@@ -12,6 +12,7 @@ import {
 } from '@happyvertical/smrt-assets';
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtHierarchical,
   smrt,
@@ -30,7 +31,9 @@ export class Event extends SmrtHierarchical {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'What the event is called.' })
   name: string = '';
+  @field({ description: 'The series this event is part of, if any.' })
   @foreignKey('EventSeries', {
     constraint: { engines: ['postgres', 'sqlite'] },
   })
@@ -43,20 +46,26 @@ export class Event extends SmrtHierarchical {
     constraint: { engines: ['postgres', 'sqlite'] },
   })
   override parentId: string | null = null;
+  @field({ description: 'The kind of event.' })
   @foreignKey('EventType', {
     constraint: { engines: ['postgres', 'sqlite'] },
   })
   typeId = ''; // FK to EventType
+  @field({ description: 'Where it takes place.' })
   @crossPackageRef('@happyvertical/smrt-places:Place')
   placeId = ''; // FK to Place (from @happyvertical/smrt-places)
+  @field({ description: 'What the event is about.' })
   description = '';
+  @field({ description: 'When it starts.' })
   startDate: Date | null = null;
+  @field({ description: 'When it ends.' })
   endDate: Date | null = null;
   /**
    * True when the event occupies whole calendar days rather than a time
    * range. `startDate` is the first day (local midnight in `timeZone`) and
    * `endDate`, when set, is the exclusive end (midnight after the last day).
    */
+  @field({ description: 'Whether the event lasts all day.' })
   allDay: boolean = false;
   /**
    * IANA time zone the event is scheduled in (for example
@@ -64,6 +73,9 @@ export class Event extends SmrtHierarchical {
    * site. Calendars and recurrence expansion compute wall-clock days in it.
    */
   timeZone = '';
+  @field({
+    description: 'scheduled, in progress, completed, cancelled or postponed.',
+  })
   status: EventStatus = 'scheduled';
   round: number | null = null; // Sequence/round number in series
   metadata = ''; // JSON metadata (stored as text)

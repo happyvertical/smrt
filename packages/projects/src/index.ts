@@ -99,12 +99,12 @@ export { Repository, type RepositoryOptions } from './models/Repository';
 export * from './models/service-evidence.js';
 export type { ProjectBoardMoveIntent } from './project-board-types.js';
 export { issueIncorporateFeedbackPrompt } from './prompts';
+export { ProjectTrackerRecipe } from './recipes';
 export {
   type RepositoryClientScope,
   withRepositoryClient,
 } from './repository-client-scope';
 export * from './services/index.js';
-
 // Export types
 export type {
   AssistanceClassification,
@@ -157,6 +157,5 @@ export type {
   UpdateIssueInput,
   User,
 } from './types';
-
 // Export UI metadata
 export { PROJECTS_MODULE_META, PROJECTS_UI_SLOTS } from './ui';

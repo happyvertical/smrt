@@ -6,6 +6,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -55,6 +56,7 @@ export class Comment extends SmrtObject {
   /**
    * Issue this comment belongs to
    */
+  @field({ description: 'The issue this comment is on.' })
   @foreignKey('Issue')
   issueId?: string;
 
@@ -66,11 +68,13 @@ export class Comment extends SmrtObject {
   /**
    * Comment body text
    */
+  @field({ description: 'The comment text.' })
   body: string = '';
 
   /**
    * Comment author's login
    */
+  @field({ description: 'Who wrote it.' })
   author: string = '';
 
   /**

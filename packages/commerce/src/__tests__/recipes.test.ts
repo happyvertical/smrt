@@ -3,13 +3,21 @@ import { fileURLToPath } from 'node:url';
 import { extractFieldRefs } from '@happyvertical/smrt-core';
 import { describe, expect, it } from 'vitest';
 import { Order, PurchaseOrder } from '../models/Contract.js';
+import { ContractLineItem } from '../models/ContractLineItem.js';
 import { Customer } from '../models/Customer.js';
 import { Vendor } from '../models/Vendor.js';
 import {
+  AgreementsRecipe,
   CustomersRecipe,
+  EstimatesRecipe,
+  FulfillmentRecipe,
+  InvoicingRecipe,
+  LeasesRecipe,
+  LicensesRecipe,
   PurchasesRecipe,
   SalesRecipe,
   VendorsRecipe,
+  WholesaleRecipe,
 } from '../recipes.js';
 import { ContractType } from '../types/index.js';
 
@@ -19,26 +27,55 @@ describe('commerce recipes (#3590)', () => {
     VendorsRecipe,
     SalesRecipe,
     PurchasesRecipe,
+    EstimatesRecipe,
+    WholesaleRecipe,
+    InvoicingRecipe,
+    FulfillmentRecipe,
+    AgreementsRecipe,
+    LeasesRecipe,
+    LicensesRecipe,
   ];
 
-  it('declares the four minimal recipes with unique ids', () => {
-    expect(recipes.map((recipe) => recipe.id)).toEqual([
+  it('declares every recipe with a unique id', () => {
+    const ids = recipes.map((recipe) => recipe.id);
+    expect(ids).toEqual([
       'commerce.customers',
       'commerce.vendors',
       'commerce.sales',
       'commerce.purchases',
+      'commerce.estimates',
+      'commerce.wholesale',
+      'commerce.invoicing',
+      'commerce.fulfillment',
+      'commerce.agreements',
+      'commerce.leases',
+      'commerce.licenses',
     ]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('carries host metadata: section, group and alternatives', () => {
+    expect(SalesRecipe.section?.id).toBe('sales');
+    expect(InvoicingRecipe.group?.id).toBe('billing');
+    expect(FulfillmentRecipe.group?.id).toBe('billing');
+    expect(FulfillmentRecipe.requiresAny).toEqual([
+      ['commerce.sales', 'commerce.wholesale'],
+    ]);
+    expect(SalesRecipe.nav[0].icon).toBeTruthy();
   });
 
   it('maps each recipe to its model, nav entry, and prerequisite', () => {
     expect(CustomersRecipe.models).toEqual([Customer]);
     expect(VendorsRecipe.models).toEqual([Vendor]);
-    expect(SalesRecipe.models).toEqual([Order]);
-    expect(PurchasesRecipe.models).toEqual([PurchaseOrder]);
-    expect(SalesRecipe.nav).toEqual([{ label: 'Sales Orders', model: Order }]);
-    expect(PurchasesRecipe.nav).toEqual([
-      { label: 'Purchase Orders', model: PurchaseOrder },
+    // Line items come along as a child model with no nav entry of their own.
+    expect(SalesRecipe.models).toEqual([Order, ContractLineItem]);
+    expect(PurchasesRecipe.models).toEqual([PurchaseOrder, ContractLineItem]);
+    expect(SalesRecipe.nav.map((entry) => [entry.label, entry.model])).toEqual([
+      ['Sales orders', Order],
     ]);
+    expect(
+      PurchasesRecipe.nav.map((entry) => [entry.label, entry.model]),
+    ).toEqual([['Purchase orders', PurchaseOrder]]);
     expect(CustomersRecipe.requires).toEqual([]);
     expect(VendorsRecipe.requires).toEqual([]);
     expect(SalesRecipe.requires).toEqual(['commerce.customers']);

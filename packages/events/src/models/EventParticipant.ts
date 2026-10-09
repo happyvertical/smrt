@@ -6,6 +6,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -28,10 +29,15 @@ export class EventParticipant extends SmrtObject {
 
   // id inherited from SmrtObject
 
+  @field({ description: 'The event the person takes part in.' })
   @foreignKey('Event')
   eventId = ''; // FK to Event
+  @field({ description: 'The person taking part.' })
   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId = ''; // FK to Profile (from @happyvertical/smrt-profiles)
+  @field({
+    description: 'What they do there, for example speaker or attendee.',
+  })
   role: string = ''; // Participant role (ParticipantRole or custom)
   placement: number | null = null; // Numeric position/placement
   groupId = ''; // Optional grouping (e.g., team ID for individual players)
