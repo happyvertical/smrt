@@ -12,6 +12,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
   AnalysisOutput,
   IntakeEvidenceDTO,
+  IntakeFailure,
   IntakeItemDTO,
   IntakeLimits,
   ReceiptResult,
@@ -1027,6 +1028,90 @@ export class IngestionService {
       };
     });
   }
+  /** Reload immutable inputs only through the current live processing lease. */
+  async getAnalysisInput(lease: AnalysisLease): Promise<{
+    revision: number;
+    attemptId: string;
+    fence: number;
+    inputDigest: string;
+    maxOutputBytes: number;
+    configuration: Record<string, unknown>;
+    evidence: IntakeEvidenceDTO[];
+  }> {
+    return this.tx(async (db) => {
+      await this.lock(db, lease.itemId);
+      const item = await this.item(lease.itemId, 'process', db);
+      if (item.cancelled || Number(item.analysis_revision) !== lease.revision)
+        throw new Error('Analysis lease unavailable');
+      const [analysis] = await this.rows(
+        db,
+        'intake_analyses',
+        'id=? AND item_id=?',
+        [lease.analysisId, lease.itemId],
+      );
+      const [attempt] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND analysis_id=? AND item_id=?',
+        [lease.attemptId, lease.analysisId, lease.itemId],
+      );
+      if (
+        !analysis ||
+        !attempt ||
+        Number(analysis.revision) !== lease.revision ||
+        analysis.current_attempt_id !== lease.attemptId ||
+        Number(analysis.fence) !== lease.fence ||
+        Number(attempt.fence) !== lease.fence ||
+        attempt.state !== 'running' ||
+        attempt.lease_token !== lease.token ||
+        persistedDate(attempt.lease_until) <= this.now()
+      )
+        throw new Error('Analysis lease unavailable');
+      const data = object(analysis.data);
+      const configuration = object(data.configuration);
+      if (
+        !Array.isArray(data.inputs) ||
+        !data.inputs.length ||
+        digest({ inputs: data.inputs, configuration }) !==
+          analysis.input_digest ||
+        digest(configuration) !== data.configDigest
+      )
+        throw new Error('Analysis input integrity');
+      const evidence: IntakeEvidenceDTO[] = [];
+      for (const input of data.inputs) {
+        const frozen = object(input);
+        const [row] = await this.rows(
+          db,
+          'intake_evidence',
+          "item_id=? AND id=? AND state='durable'",
+          [lease.itemId, frozen.id],
+        );
+        if (!row || row.content_hash !== frozen.hash)
+          throw new Error('Analysis input integrity');
+        evidence.push({
+          id: String(row.id),
+          partId: String(row.part_id),
+          parentEvidenceId: row.parent_evidence_id
+            ? String(row.parent_evidence_id)
+            : null,
+          mediaType: String(row.media_type),
+          contentHash: String(row.content_hash),
+          byteLength: Number(row.byte_length),
+        });
+      }
+      if (new Set(evidence.map((entry) => entry.id)).size !== evidence.length)
+        throw new Error('Analysis input integrity');
+      return {
+        revision: lease.revision,
+        attemptId: lease.attemptId,
+        fence: lease.fence,
+        inputDigest: String(analysis.input_digest),
+        maxOutputBytes: Number(object(object(item.data).limits).maxOutputBytes),
+        configuration,
+        evidence,
+      };
+    });
+  }
   /** Publish once, only through the current unexpired fence and captured scope. */
   async completeAnalysis(
     lease: AnalysisLease,
@@ -1127,6 +1212,75 @@ export class IngestionService {
           lease.itemId,
           lease.revision,
         );
+      return true;
+    });
+  }
+  /** Terminal failure accounting without a provider payload. The fixed safe error
+   * and lifecycle metadata are not charged to the provider-output byte ceiling. */
+  async failAnalysis(
+    lease: AnalysisLease,
+    category: IntakeFailure,
+  ): Promise<boolean> {
+    if (!failures.has(category)) throw new Error('Invalid analysis failure');
+    return this.tx(async (db) => {
+      await this.lock(db, lease.itemId);
+      const item = await this.item(lease.itemId, 'process', db);
+      if (item.cancelled || Number(item.analysis_revision) !== lease.revision)
+        return false;
+      const [analysis] = await this.rows(
+        db,
+        'intake_analyses',
+        'id=? AND item_id=?',
+        [lease.analysisId, lease.itemId],
+      );
+      const [attempt] = await this.rows(
+        db,
+        'intake_analysis_attempts',
+        'id=? AND analysis_id=? AND item_id=?',
+        [lease.attemptId, lease.analysisId, lease.itemId],
+      );
+      if (
+        !analysis ||
+        !attempt ||
+        Number(analysis.revision) !== lease.revision ||
+        analysis.current_attempt_id !== lease.attemptId ||
+        Number(analysis.fence) !== lease.fence ||
+        Number(attempt.fence) !== lease.fence ||
+        attempt.state !== 'running' ||
+        attempt.lease_token !== lease.token ||
+        persistedDate(attempt.lease_until) <= this.now()
+      )
+        return false;
+      await db.query(
+        "UPDATE intake_analysis_attempts SET state='needs_attention',safe_error=?,data=? WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+        category,
+        canonical({
+          ...object(attempt.data),
+          completedAt: this.now().toISOString(),
+        }),
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        lease.attemptId,
+      );
+      await db.query(
+        "UPDATE intake_analyses SET state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        lease.analysisId,
+      );
+      await db.query(
+        "UPDATE intake_items SET processing_state='needs_attention' WHERE tenant_id=? AND confidential_scope_id=? AND id=?",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        lease.itemId,
+      );
+      await db.query(
+        "UPDATE intake_dispatches SET state='completed' WHERE tenant_id=? AND confidential_scope_id=? AND item_id=? AND revision=?",
+        this.scope.tenantId,
+        this.scope.confidentialScopeId,
+        lease.itemId,
+        lease.revision,
+      );
       return true;
     });
   }
@@ -1493,3 +1647,5 @@ export class IngestionService {
     return expired.length;
   }
 }
+
+export * from './extraction.js';
