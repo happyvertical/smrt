@@ -65,3 +65,32 @@ at the unchanged initial upload visibility wait: traces show pending upload I/O
 and a busy inbox, without a server error. Concurrent filesystem-bound UI database
 validation was active. This is preserved diagnostic evidence, not a browser pass;
 the identical browser command must rerun after that workload completes.
+
+## SDK transport correction and browser synchronization
+
+The first integration checkpoint exposed an SDK adapter omission: injected
+generators received authorized examples, while the SDK serializer dropped them.
+The local HTTP provider regression reproduces the omission before the conditional
+serialization fix. Existing full `GenerativeProposalInput` byte-limit checks
+include examples immediately before provider I/O; this does not claim a separate
+HTTP envelope byte limit. Evaluation #3677 owns its additional paid-wire bound.
+
+The browser upload timing diagnostic completed real PDF uploads successfully in
+6,053 ms and 5,649 ms, beyond the fixture's initial five-second visibility wait.
+The adjacent test-only synchronization now awaits the intended POST upload
+response and verifies success before the unchanged visibility assertion. The
+overall 60-second test budget is unchanged. This is a separately committed
+drive-by fixture repair, not a relaxed product/runtime deadline.
+
+The SDK correction passes the complete local provider lane (22 tests), including
+exact example serialization and unchanged absent-feedback requests. A new
+SQLite/PostgreSQL case measures the complete generator input: the configured
+ceiling admits the same request without examples and refuses the request with
+examples before any generator call. Both focused runs pass; other cases remain
+carried until the final complete runs. Owning TS/test-TS/Svelte checks pass.
+
+The split fixture has the same asynchronous boundary: a diagnostic returns 200
+with a new completed, reviewable attempt, while the prior browser trace still
+had the split request pending at its display assertion. The canonical UI parent
+owns a second adjacent response wait; neither correction changes runtime limits
+or browser timeout settings.

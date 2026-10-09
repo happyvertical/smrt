@@ -42,7 +42,9 @@ model/prompt/configuration compatibility and retention. Superseded, revoked,
 deleted or incompatible sources are excluded. Current explicit human corrections
 take precedence: a generation carrying one does not retrieve learned examples.
 
-Full examples exist only in the authorized provider request. Saved generation
+Full examples exist only in the authorized provider request. The SDK proposal
+adapter includes that typed selection in its serialized user message when
+present; disabled feedback leaves the original request shape unchanged. Saved generation
 provenance contains the receiving query, selection configuration digest and
 immutable feedback IDs/digests, not copied source example content. Selected
 references are rechecked before generation, capability probing, decision calls,

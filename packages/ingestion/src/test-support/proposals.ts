@@ -1165,6 +1165,29 @@ export function proposalSuite(
       await service.generateProposals(input.lease);
       expect(calls).not.toHaveBeenCalled();
     });
+    it('feedback examples count toward the complete configured input budget before generation', async () => {
+      enableFeedback();
+      const training = await feedbackCase();
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'full-input-training',
+      });
+      calls.mockClear();
+      await generate();
+      const request = calls.mock.calls[0][0];
+      expect(request.examples?.examples).toHaveLength(1);
+      const { examples: _examples, ...withoutExamples } = request;
+      const withoutBytes = Buffer.byteLength(JSON.stringify(withoutExamples));
+      expect(Buffer.byteLength(JSON.stringify(request))).toBeGreaterThan(
+        withoutBytes,
+      );
+      configuration.limits.maxInputBytes = withoutBytes;
+      const receiver = await generation();
+      calls.mockClear();
+      await service.generateProposals(receiver.lease);
+      expect(calls).not.toHaveBeenCalled();
+    });
     it('feedback capture authorization suppresses memory facts without turning an authorized action decision into a correctness label', async () => {
       enableFeedback();
       const fixture = await feedbackCase();
