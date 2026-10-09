@@ -21,6 +21,63 @@ export class MailboxRecipe extends SmrtRecipe {
     description: 'Read email and keep up with updates addressed to you.',
   };
   static models = [Email, EmailAccount];
+  static runtime = 'both' as const;
+  static surfaces = [
+    {
+      kind: 'route',
+      path: '/messages/mailbox',
+      export: '@happyvertical/smrt-messages/svelte#MessageList',
+      label: 'Mailbox',
+    },
+    {
+      kind: 'playground',
+      export: '@happyvertical/smrt-messages/svelte#MailboxDemo',
+      label: 'Mailbox with mocked sending',
+    },
+  ] as const;
+  static providers = [
+    {
+      id: 'email-inbox',
+      kind: 'email',
+      options: ['imap', 'pop3', 'gmail'],
+      required: true,
+    },
+    {
+      id: 'email-send',
+      kind: 'email',
+      options: ['smtp', 'gmail'],
+      required: false,
+    },
+  ];
+  static demoSeed = {
+    data: {
+      accounts: [
+        {
+          id: 'demo-account',
+          name: 'Demo Inbox',
+          providerType: 'email',
+          email: 'you@example.com',
+          isActive: true,
+        },
+      ],
+      messages: [
+        {
+          id: 'demo-welcome',
+          type: 'email',
+          accountId: 'demo-account',
+          subject: 'Welcome to your mailbox',
+          body: 'Fictional mail. Sending is mocked; nothing leaves this browser.',
+          senderName: 'Demo colleague',
+          senderAddress: 'colleague@example.com',
+          recipientAddresses: [{ address: 'you@example.com' }],
+          date: '2026-01-01T12:00:00Z',
+          isRead: false,
+          isFlagged: false,
+          hasAttachments: false,
+        },
+      ],
+    },
+  };
   static nav = [
     {
       label: 'Mailbox',
@@ -61,6 +118,37 @@ export class NotificationsRecipe extends SmrtRecipe {
     description: 'Read email and keep up with updates addressed to you.',
   };
   static models = [UserNotification];
+  static runtime = 'both' as const;
+  static surfaces = [
+    {
+      kind: 'shell-widget',
+      slot: 'header.end',
+      export: '@happyvertical/smrt-svelte/notifications#NotificationBell',
+      label: 'Notifications',
+    },
+  ] as const;
+  static providers = [
+    {
+      id: 'notifications',
+      kind: 'notifications',
+      options: ['user-notification-service'],
+      required: true,
+    },
+  ];
+  static demoSeed = {
+    data: {
+      items: [
+        {
+          id: 'demo-notification',
+          title: 'You were mentioned',
+          body: 'A fictional update for the demo user.',
+          occurredAt: '2026-01-01T12:00:00Z',
+          severity: 'info',
+          readAt: null,
+        },
+      ],
+    },
+  };
   // Recipient-scoped reads use the bell provider, never generated model routes.
   static nav = [];
   static help = './help/notifications.md';

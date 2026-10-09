@@ -277,3 +277,10 @@ infers access rights or exposes before/after payloads. Invalid dates are omitted
 The Activity feature card can be enabled independently of Messaging. Its recipe
 suggests an Activity section without generating a model route; the authorized
 activity binding remains the only UI data source.
+
+The `/activity` surface resolves the public `@happyvertical/smrt-svelte#ActivityList`
+wrapper inside AdminShell. Its required `audit-log` provider means host-authorized
+`readAuditTrail` followed by `auditActivityEntries`; it does not enable generic
+AuditLog routes. The JSON seed supplies fictional `entries` directly to the
+wrapper. `runtime: both` reflects browser rendering plus server-only audit reads;
+seed data is never inserted into an audit database or treated as authorized history.

@@ -208,3 +208,21 @@ The Messaging feature card offers mailbox and notification controls independentl
 Mailbox navigation includes a stable Failed sends entry filtered by `sendStatus = failed`.
 Notifications deliberately declare no generic model navigation: recipient-scoped
 provider access remains required.
+
+The mailbox route surface resolves `MessageList`; the host supplies authorized
+`messages`, account DTOs, and callbacks. Its `email-inbox` provider lists the
+implemented IMAP, POP3, and Gmail readers; the optional `email-send` provider
+lists SMTP and Gmail sending. Import `@happyvertical/smrt-messages/providers/email`
+on the server and keep credentials in the existing secret-backed account setup.
+Provider metadata names implementations, not automatic connections or credentials.
+The `MailboxDemo` playground remains self-contained and every send is mocked.
+Its JSON demo seed is a fictional `MessageList` props payload, never a live account.
+
+The notification surface places `NotificationBell` at `header.end`. The required
+`user-notification-service` implementation maps to `createUserNotificationBellProvider`
+and still needs a host-authorized signed-in user and tenant set. Browser hosts
+bridge that service through authenticated endpoints. The JSON `items` seed is
+presentation data: a demo host wraps it in an in-memory `NotificationProvider`;
+it must never route demo mutations to the production notification service.
+All these recipes use `runtime: both` because the UI is browser-safe while live
+mail and notification persistence remain server operations.
