@@ -10,7 +10,6 @@
  * adapters supply the schema and perform those responsibilities separately.
  */
 
-import { createHash } from 'node:crypto';
 import type {
   DataQueryCondition,
   DataQueryConsistency,
@@ -30,6 +29,7 @@ import type {
   DataQueryTotal,
 } from '@happyvertical/smrt-types';
 import { ValidationError } from './errors';
+import { sha256Base64Url } from './utils/sha256.js';
 
 /** Default and hard ceilings for normalized data-query input and output. */
 export const DEFAULT_DATA_QUERY_PAGE_LIMIT = 50;
@@ -1014,7 +1014,7 @@ export function createDataQueryFingerprint(
   value: unknown,
   schema: unknown,
 ): string {
-  return `dq1_${createHash('sha256').update(canonicalizeDataQuery(value, schema)).digest('base64url')}`;
+  return `dq1_${sha256Base64Url(canonicalizeDataQuery(value, schema))}`;
 }
 
 function normalizeResultFieldValue(

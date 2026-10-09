@@ -5,7 +5,6 @@
  * Supports both JSON-based and native vector storage strategies.
  */
 
-import { randomUUID } from 'node:crypto';
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface, VectorCapabilities } from '@happyvertical/sql';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from '../utils/chunk';
@@ -44,7 +43,7 @@ export class EmbeddingStorage {
     vector?: VectorCapabilities,
   ): Promise<void> {
     const now = new Date().toISOString();
-    const id = randomUUID();
+    const id = globalThis.crypto.randomUUID();
 
     await db.upsert(
       '_smrt_embeddings',

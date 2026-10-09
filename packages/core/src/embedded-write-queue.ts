@@ -1,8 +1,6 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
-import {
-  type DatabaseInterface,
-  NestedTransactionError,
-} from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { NestedTransactionError } from './host.js';
+import { createAsyncContext } from './utils/async-context.js';
 
 /**
  * In-process write serialization for embedded database engines (#2360).
@@ -42,10 +40,9 @@ import {
 /** Queue tail per database identity (URL string, or the handle itself). */
 const urlQueues = new Map<string, Promise<unknown>>();
 const handleQueues = new WeakMap<object, Promise<unknown>>();
-const activeQueueKeys = new AsyncLocalStorage<ReadonlySet<string | object>>();
-const frameworkTransactions = new AsyncLocalStorage<
-  ReadonlySet<DatabaseInterface>
->();
+const activeQueueKeys = createAsyncContext<ReadonlySet<string | object>>();
+const frameworkTransactions =
+  createAsyncContext<ReadonlySet<DatabaseInterface>>();
 
 /** Whether this exact handle belongs to a currently active framework transaction. */
 export function isFrameworkTransactionHandle(db: DatabaseInterface): boolean {
@@ -123,7 +120,12 @@ export async function withEmbeddedWriteQueue<T>(
   serialize: boolean,
   operation: () => Promise<T>,
 ): Promise<T> {
-  if (!serialize) return operation();
+  // Re-entry into a held queue is recognized through async-local state. A host
+  // without it (a browser) cannot tell a nested write from an independent one,
+  // and queueing the nested write behind its own parent would deadlock, so it
+  // runs unqueued there; its only database is PGlite, which serializes
+  // statements itself.
+  if (!serialize || !activeQueueKeys.propagatesAcrossAwait) return operation();
 
   const key = queueKey(db);
   const active = activeQueueKeys.getStore();
