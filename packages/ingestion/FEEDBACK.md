@@ -38,8 +38,11 @@ exhaustive history search. Both positive and negative explicit examples are kept
 
 Every selected source must still be readable in the same tenant and confidential
 scope, with its current action/analysis binding, target grants, handler version,
-model/prompt/configuration compatibility and retention. Superseded, revoked,
-deleted or incompatible sources are excluded. Current explicit human corrections
+model/prompt/configuration compatibility and retention. Each source's current
+provider policy must allow the generation recipient and any configured decision
+recipient; the source owner rechecks that policy on both initial and final live
+contexts. A receiving item's provider grant cannot substitute for a source grant.
+Superseded, revoked, deleted or incompatible sources are excluded. Current explicit human corrections
 take precedence: a generation carrying one does not retrieve learned examples.
 
 Full examples exist only in the authorized provider request. The SDK proposal
@@ -50,8 +53,16 @@ immutable feedback IDs/digests, not copied source example content. Selected
 references are rechecked before generation, capability probing, decision calls,
 publication and completed-result reads. A newly added example does not invalidate
 an older selection; a revoked or superseded selected example does. Feedback
-lineage is bounded and fails closed. Examples never expand the offered catalog,
-candidate IDs, operation permissions or automation eligibility.
+lineage is bounded and fails closed. Saved-action reads and pending decisions,
+automatic authorization and execution also revalidate selected lineage under the
+owning transaction. Revoking, deleting or superseding a selected example blocks
+pending actions; regenerate their proposals and obtain fresh approval to recover.
+For already successful actions, current-authorized durable outcomes remain
+readable/replayable, but invalid learned lineage suppresses saved proposal
+display, arguments and plan payload. An empty selection carries no learned source
+and does not turn optional feedback-capture denial into action denial. Examples
+never expand the offered catalog, candidate IDs, operation permissions or
+automation eligibility.
 
 All durable feedback belongs to the source item's existing retention/redaction
 lifecycle. There is no separate memory store or delayed indexing writer to clean

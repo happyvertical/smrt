@@ -288,6 +288,10 @@ export class IngestionProposalService {
       promptVersion: this.config.promptVersion,
       configurationVersion: this.config.version,
       model: this.identity,
+      providers: [
+        this.identity.provider,
+        ...(this.decisionIdentity ? [this.decisionIdentity.provider] : []),
+      ],
     });
   }
   async findCandidates(input: {
@@ -492,6 +496,10 @@ export class IngestionProposalService {
         promptVersion: this.config.promptVersion,
         configurationVersion: this.config.version,
         model: this.identity,
+        providers: [
+          this.identity.provider,
+          ...(this.decisionIdentity ? [this.decisionIdentity.provider] : []),
+        ],
       },
       feedback.selection,
       db,
@@ -621,6 +629,10 @@ export class IngestionProposalService {
           promptVersion: this.config.promptVersion,
           configurationVersion: this.config.version,
           model: this.identity,
+          providers: [
+            this.identity.provider,
+            ...(this.decisionIdentity ? [this.decisionIdentity.provider] : []),
+          ],
         });
         output.provenance.feedback = {
           query: feedbackQuery,

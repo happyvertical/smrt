@@ -593,15 +593,21 @@ export function proposalSuite(
           },
         ],
       });
-      if (preview.kind !== 'operation') throw new Error('Operation required');
+      const review =
+        preview.kind === 'plan' ? preview.review.steps[0] : preview.review;
       const binding = {
         itemId: generated.itemId,
-        actionId: preview.review.actionId,
-        expectedRevision: preview.review.revision,
-        expectedReviewVersion: preview.review.reviewVersion,
-        bindingHash: preview.review.bindingHash,
+        actionId: review.actionId,
+        expectedRevision: review.revision,
+        expectedReviewVersion: review.reviewVersion,
+        bindingHash: review.bindingHash,
       };
-      return { generated, binding, review: preview.review };
+      return {
+        generated,
+        binding,
+        review,
+        planId: preview.kind === 'plan' ? preview.review.id : undefined,
+      };
     }
     it('feedback captures revision-bound explicit judgments, supersedes immutably and never equates approval or outcome with correctness', async () => {
       enableFeedback();
@@ -734,6 +740,243 @@ export function proposalSuite(
       expect(clean.output.provenance.feedback?.selection.examples).toHaveLength(
         0,
       );
+    });
+    it.each([
+      'revoked',
+      'deleted',
+      'superseded',
+      'plan-revoked',
+    ] as const)('feedback saved actions deny invalid %s learning lineage before disclosure, review and effects', async (mode) => {
+      enableFeedback();
+      const training = await feedbackCase();
+      const receipt = await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'training',
+      });
+      if (mode === 'plan-revoked') {
+        const operation = handlers.find(
+          (handler) => handler.id === CREATE,
+        ) as OperationHandler;
+        const key = `feedback-lineage-${randomUUID()}`;
+        definePlaybook({
+          key,
+          title: 'Draft plan',
+          description: 'One explicit step',
+          steps: [{ kind: 'operation', model: CONTENT, action: 'create' }],
+        });
+        const resolved = await resolvePlaybook(key, {
+          db,
+          tenantId: tenant,
+          plane: 'server',
+          classifier: () => operation.capability,
+        });
+        if (!resolved.ok) throw new Error('Plan unavailable');
+        const plan: PlanHandler = {
+          id: '@test/feedback:lineage-plan',
+          version: '1',
+          description: 'Draft plan',
+          operation: {
+            playbookKey: key,
+            definitionHash: intakeBindingDigest(resolved.plan),
+          },
+          discovery: operation.discovery,
+          argsSchema: operation.argsSchema,
+          resultSchema: operation.resultSchema,
+          resultModels: operation.resultModels,
+          validate: operation.validate,
+          preview: operation.preview,
+          expand: async (args) => [
+            {
+              stepIndex: 0,
+              handlerId: CREATE,
+              handlerVersion: '1',
+              args,
+              resultBindings: {},
+            },
+          ],
+        };
+        handlers.push(plan);
+        const original = calls.getMockImplementation()!;
+        calls.mockImplementation(async (...args) => {
+          const result = await original(...args);
+          for (const suggestion of (result.output as GenerationOutput)
+            .suggestions)
+            suggestion.handlerId = plan.id;
+          return result;
+        });
+      }
+      const waiting = await feedbackCase();
+      const approved = await feedbackCase();
+      const decision = (fixture: typeof waiting) => ({
+        actionId: fixture.review.actionId,
+        expectedRevision: fixture.review.revision,
+        expectedReviewVersion: fixture.review.reviewVersion,
+        bindingHash: fixture.review.bindingHash,
+        decision: 'approve' as const,
+        requestId: 'approve',
+      });
+      await service.submitDecision(decision(approved));
+      expect(
+        waiting.generated.output.provenance.feedback?.selection.examples,
+      ).toHaveLength(1);
+      if (mode === 'revoked' || mode === 'plan-revoked')
+        options.feedback!.authorize = async ({ itemId }) =>
+          itemId !== training.generated.itemId;
+      else if (mode === 'deleted')
+        await service.expire(training.generated.itemId);
+      else
+        await service.recordFeedback({
+          ...training.binding,
+          judgment: 'incorrect',
+          supersedesId: receipt.id,
+          requestId: 'replacement',
+        });
+      const denied: boolean[] = [];
+      for (const operation of [
+        () => service.getAction(waiting.review.actionId),
+        () => service.listReviews(waiting.generated.itemId),
+        () => service.submitDecision(decision(waiting)),
+        () => service.applyAction(approved.review.actionId),
+      ]) {
+        denied.push(
+          await operation().then(
+            () => false,
+            () => true,
+          ),
+        );
+      }
+      expect(denied).toEqual([true, true, true, true]);
+      if (approved.planId)
+        expect(await service.applyPlan(approved.planId)).toEqual([
+          { state: 'failed', actionId: approved.review.actionId },
+        ]);
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_review_decisions WHERE action_id=?',
+            waiting.review.actionId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+    });
+    it('feedback invalid learned lineage hides terminal proposal payload but preserves current-authorized durable outcome', async () => {
+      enableFeedback();
+      const training = await feedbackCase();
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'training',
+      });
+      const completed = await feedbackCase();
+      await service.submitDecision({
+        actionId: completed.review.actionId,
+        expectedRevision: completed.review.revision,
+        expectedReviewVersion: completed.review.reviewVersion,
+        bindingHash: completed.review.bindingHash,
+        decision: 'approve',
+        requestId: 'approve',
+      });
+      const outcome = await service.applyAction(completed.review.actionId);
+      options.feedback!.authorize = async ({ itemId }) =>
+        itemId !== training.generated.itemId;
+      expect(
+        (await service.getAction(completed.review.actionId)).display,
+      ).toEqual({});
+      const page = await service.listReviews(completed.generated.itemId);
+      expect(page.actions[0].review.display).toEqual({});
+      expect(page.actions[0].args).toBeUndefined();
+      expect(page.actions[0].result).toEqual(outcome);
+      expect(await service.applyAction(completed.review.actionId)).toEqual(
+        outcome,
+      );
+      allowed = false;
+      await expect(
+        service.listReviews(completed.generated.itemId),
+      ).rejects.toThrow();
+      await expect(
+        service.applyAction(completed.review.actionId),
+      ).rejects.toThrow();
+    });
+    it('feedback final pre-send lineage revocation denies external dispatch after mutable callbacks', async () => {
+      enableFeedback();
+      const training = await feedbackCase();
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'training',
+      });
+      const handler = handlers.find(
+        (entry) => entry.id === CREATE,
+      ) as OperationHandler;
+      const submit = vi.fn(async () => ({ contentId: randomUUID() }));
+      handler.execution = {
+        kind: 'external',
+        submit,
+        reconcile: async () => ({ kind: 'unknown' }),
+      };
+      const learned = await feedbackCase();
+      await service.submitDecision({
+        actionId: learned.review.actionId,
+        expectedRevision: learned.review.revision,
+        expectedReviewVersion: learned.review.reviewVersion,
+        bindingHash: learned.review.bindingHash,
+        decision: 'approve',
+        requestId: 'approve',
+      });
+      let revoked = false;
+      let previews = 0;
+      options.feedback!.authorize = async ({ itemId }) =>
+        !(revoked && itemId === training.generated.itemId);
+      const preview = handler.preview;
+      handler.preview = async (...args) => {
+        const result = await preview(...args);
+        if (++previews === 2) revoked = true;
+        return result;
+      };
+      await service.applyAction(learned.review.actionId);
+      expect(previews).toBe(2);
+      expect(submit.mock.calls.length).toBe(0);
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
+    });
+    it('feedback source-only provider revocation excludes examples and invalidates prior disclosure', async () => {
+      enableFeedback();
+      const training = await feedbackCase();
+      await service.recordFeedback({
+        ...training.binding,
+        judgment: 'correct',
+        requestId: 'training',
+      });
+      const later = await feedbackCase();
+      const authorize = options.execution!.authorize;
+      options.execution!.authorize = async (input) => {
+        const access = await authorize(input);
+        return input.itemId === training.generated.itemId
+          ? {
+              ...access,
+              policy: [
+                ...access.policy,
+                { version: 'source-provider-revoked', providers: [] },
+              ],
+            }
+          : access;
+      };
+      const receiver = await source();
+      expect(
+        (
+          await service.retrieveFeedback({
+            itemId: receiver.itemId,
+            query: 'Please draft meeting minutes with retained evidence',
+          })
+        ).examples,
+      ).toHaveLength(0);
+      await expect(
+        service.getCompletedAnalysis(later.generated.itemId),
+      ).rejects.toThrow();
+      await expect(service.getAction(later.review.actionId)).rejects.toThrow();
+      await generate(receiver);
+      expect(calls.mock.calls.at(-1)![0].examples?.examples).toHaveLength(0);
     });
     it('feedback capture is scoped and rolls back denial after the insert; authoritative approval capture rolls back with its event', async () => {
       enableFeedback();
@@ -1274,11 +1517,17 @@ export function proposalSuite(
         expect(JSON.stringify(action.data)).not.toContain('Body');
       }
     });
-    it.each([
-      'generation',
-      'probe',
-      'decision',
-    ] as const)('feedback revocation at %s prevents later provider I/O and publication', async (stage) => {
+    it.each(
+      ['generation', 'probe', 'decision'].flatMap((stage) =>
+        ['grant', 'source-provider', 'decision-provider'].map((kind) => ({
+          stage,
+          kind,
+        })),
+      ),
+    )('feedback revocation $kind at $stage prevents later provider I/O and publication', async ({
+      stage,
+      kind,
+    }) => {
       enableFeedback();
       const training = await feedbackCase();
       await service.recordFeedback({
@@ -1288,7 +1537,33 @@ export function proposalSuite(
       });
       let revoked = false;
       options.feedback!.authorize = async ({ itemId }) =>
-        !(revoked && itemId === training.generated.itemId);
+        !(kind === 'grant' && revoked && itemId === training.generated.itemId);
+      const authorize = options.execution!.authorize;
+      options.execution!.authorize = async (input) => {
+        const access = await authorize(input);
+        const policy: typeof access.policy =
+          kind === 'decision-provider'
+            ? (access.policy.map((layer) =>
+                layer.providers
+                  ? { ...layer, providers: [...layer.providers, 'decision'] }
+                  : layer,
+              ) as typeof access.policy)
+            : access.policy;
+        return kind !== 'grant' &&
+          revoked &&
+          input.itemId === training.generated.itemId
+          ? {
+              ...access,
+              policy: [
+                ...policy,
+                {
+                  version: 'source-provider-revoked',
+                  providers: kind === 'decision-provider' ? ['fixture'] : [],
+                },
+              ],
+            }
+          : { ...access, policy };
+      };
       const generateOriginal = calls.getMockImplementation()!;
       calls.mockImplementation(async (...args) => {
         const result = await generateOriginal(...args);
@@ -1304,7 +1579,10 @@ export function proposalSuite(
         throw new Error('Revoked during provider');
       });
       configuration.decision = {
-        identity,
+        identity:
+          kind === 'decision-provider'
+            ? { ...identity, provider: 'decision' }
+            : identity,
         client: { getCapabilities: capabilities, decide },
       };
       // Use the already-compatible generating model/prompt/config; decision configuration is independent.

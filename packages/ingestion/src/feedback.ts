@@ -73,6 +73,7 @@ export interface RetrieveFeedbackInput {
   promptVersion: string;
   configurationVersion: string;
   model: { provider: string; model: string; version: string };
+  providers?: string[];
 }
 /** Owning ingestion ledger. Generic LearningMemory's success/ancestor fallback semantics are deliberately not used. */
 export class IntakeFeedbackService {
@@ -224,6 +225,12 @@ export class IntakeFeedbackService {
             promptVersion: String(provenance.promptVersion),
             configurationVersion: String(provenance.configurationVersion),
             model: provenance.generative as RetrieveFeedbackInput['model'],
+            providers: [
+              String(object(provenance.generative).provider),
+              ...(object(provenance.decision).configured
+                ? [String(object(provenance.decision).provider)]
+                : []),
+            ],
           },
           inherited.selection as unknown as FeedbackReferences,
           ctx.db,
@@ -276,6 +283,20 @@ export class IntakeFeedbackService {
       evidence: object(ctx.analysis).inputs,
       source: pin,
     };
+  }
+  /** Internal saved-action gate; the execution owner supplies its transaction. */
+  async assertActionLineage(
+    actionId: string,
+    db: DatabaseInterface,
+  ): Promise<void> {
+    await this.execution[feedbackActionTransaction](
+      actionId,
+      false,
+      async (ctx) => {
+        await this.provenance(ctx);
+      },
+      db,
+    );
   }
   async record(input: RecordFeedbackInput): Promise<FeedbackReceipt> {
     digest(input);
@@ -495,6 +516,7 @@ export class IntakeFeedbackService {
           };
         },
         executor,
+        input.providers ?? [input.model.provider],
       );
     } catch {
       return undefined;

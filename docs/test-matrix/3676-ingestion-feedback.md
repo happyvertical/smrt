@@ -136,3 +136,36 @@ not reported as fresh tests. The jobs base change is explicitly excluded from
 byte-equivalence claims and has its own current runner/event and PostgreSQL
 proof. Packed-consumer/freshness checks and normal checkpoint hooks are recorded
 in the external evidence manifest; final dependency reconciliation remains required.
+
+## Round 1 accepted-blocker correction
+
+Two independent reviews found missing downstream lineage enforcement and missing
+source-side provider-policy enforcement. Baseline shared regressions failed on
+both SQLite and PostgreSQL: revoked/deleted/superseded learned actions still
+allowed all four saved read/review/apply operations, terminal proposal display
+remained visible, and source-only provider revocation still returned an example.
+The baseline failures are retained separately from corrected results.
+
+| Affected contract | Positive / negative coverage | Boundary and runtime |
+|---|---|---|
+| Saved learned actions | Current selection permits existing behavior; revoke/delete/supersede blocks `getAction`, `listReviews`, `submitDecision` and `applyAction` before effects; plan steps also deny and `applyPlan` reports failure without effects | Existing same-executor owner bridge, SQLite and PostgreSQL |
+| Durable completed outcomes | Current-authorized succeeded result/replay survives source-example revocation, while copied proposal display/args/plan payload disappears; current owner denial still rejects results | Public action/page/result methods, both databases |
+| Source provider eligibility | Source-only generating-provider denial excludes selection and invalidates prior reads; revocation during generation/probe/decision blocks subsequent I/O/publication, including a distinct configured decision recipient | Initial and final live source contexts; actual generator/decision callbacks, both databases |
+| Empty selection | Optional capture denial and small memory budgets do not change ordinary action authority when no learned source was selected | Existing capture/atomicity regression cases, both databases |
+
+Corrected affected feedback suites pass 34 cases per database (86 unrelated
+filtered cases are not new passes). A final pre-send callback regression also
+reproduced one forbidden submit on both databases, then passed with zero submits
+after the same-executor check immediately before dispatch. The final affected
+selection runs seven saved-lineage/no-send cases and seven ordinary execution
+cases per database; the unchanged cases from the 34-case run carry with exact
+hunk proof (35 distinct feedback cases across these runs). The existing public
+create/list/preview regression additionally caught an unprepared-action page
+regression on both databases; state-only entries without a saved proposal remain
+reloadable, while saved proposals still pass the lineage gate. The final recovery
+selection passes eight cases per database, including this regression and the
+seven lineage boundaries. Fresh owning
+types/Svelte and provider/browser/build/package/static checks are captured in
+the round-2 evidence. Complete pre-review SQLite/PostgreSQL results carry only
+for unchanged behavior outside these affected paths; they are not claimed as
+fresh complete suites. No public DTO, schema, dependency, grant or timeout changed.
