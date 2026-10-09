@@ -158,6 +158,37 @@ long-running work when possible; make external effects idempotent because a
 process crash after an effect but before its terminal write still permits a
 later retry.
 
+### Read safe terminal outcomes
+
+Completion, permanent failure, timeout, stale-worker recovery, and cancellation
+persist the job's terminal state and a versioned `_smrt_job_events` outcome in
+one database transaction. A retry remains nonterminal and is not projected.
+Ordinary progress and log events remain best-effort telemetry.
+The event uses the row returned by the conditional update, so a concurrent
+claim cannot leave a stale attempt count in history. Public cancellation
+retains the normal ambient-tenant check; explicit system context remains the
+operator bypass.
+
+```typescript
+const events = await SmrtJobEventCollection.create({ db });
+const page = await events.listTerminalOutcomes({
+  tenantId,
+  queues: ['reports'],
+  objectTypes: ['SmrtDataSurfaceActionTask'],
+  methods: ['run'],
+  limit: 100,
+});
+```
+
+The explicit tenant boundary is required; pass `tenantId: null` only for global
+jobs. Results are newest-first and expose job ID, terminal status, queue,
+object type, method, attempt count, completion time, cursor, and the bounded
+failure class `execution`, `timeout`, or `stale-recovery`. They never expose
+arguments, object IDs, results, raw errors, or stacks. Reads inspect at most
+1,000 candidates per page and follow job-event retention (30 days by default).
+Applications must still authorize each job ID against their own durable
+ownership record before displaying it.
+
 ### Schedule recurring jobs with ScheduleRunner
 
 The `ScheduleRunner` polls the `_smrt_agent_schedules` table for due cron entries and creates `SmrtJob` records for the `TaskRunner` to execute. Wire them together via events:
@@ -195,6 +226,7 @@ taskRunner.on('job:failed', (job, error) => {
 |--------|------------|
 | `SmrtJob` | Persistent job record stored in `_smrt_jobs` |
 | `SmrtJobCollection` | Collection with `claimReady()`, `listReady()`, `listByStatus()`, `stats()`, `cleanup()` |
+| `SmrtJobEventCollection` | Durable telemetry plus explicit-tenant `listTerminalOutcomes()` safe projection |
 | `JobBuilder` | Fluent API: `.delay()`, `.priority()`, `.retries()`, `.queue()`, `.timeout()`, `.enqueue()` |
 | `JobHandle` | Track, wait, cancel, or retry an enqueued job |
 | `JobContextLogger` | Logger that auto-injects job context (jobId, attempt, queue) |
