@@ -154,6 +154,13 @@ export class IntakeExecutionService {
         ),
       );
     } catch (error) {
+      // Early expired apply has already authorized/locked the item, but has
+      // not entered policy access. Its redaction must survive rollback too.
+      if (error instanceof RetentionExpired)
+        intents.set(
+          error.itemId,
+          Math.min(intents.get(error.itemId) ?? Infinity, error.deadline),
+        );
       if (intents.size)
         await withEmbeddedWriteTransaction(
           this.db,

@@ -147,3 +147,12 @@ successful paths do not add a post-result authorization callback.
 Paused proposal preview and automatic evaluator callbacks also cross the deadline.
 Publication rejects after those callbacks, creates no new proposal/decision, and
 preserves expiry/redaction through rollback; ordinary retention sweep removes assets.
+
+## Round 6 direct expired apply
+
+Call apply directly after the persisted deadline, before any accessor or sweep.
+An initially denied actor leaves payloads unchanged; an authorized expired apply
+is blocked and durably erases proposal/decision payloads despite transaction rollback.
+Both database suites inspect those tables immediately and confirm no execution or
+domain effect. Early internally authorized expiry errors retain scoped privacy
+recovery even before policy access has recorded a transaction intent.

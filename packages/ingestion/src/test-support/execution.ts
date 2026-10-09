@@ -1040,6 +1040,48 @@ export function executionSuite(
         expect(purge).toHaveBeenCalledWith({ tenantId: tenant, itemId });
         expect((await db.query('SELECT id FROM assets')).rows).toHaveLength(0);
       });
+    it('durably redacts direct expired apply before any accessor or sweep', async () => {
+      const { actionId, itemId, review } = await proposal();
+      await approve(review);
+      const deadline = (
+        await db.query('SELECT expires_at FROM intake_items WHERE id=?', itemId)
+      ).rows[0].expires_at;
+      clock = new Date(new Date(String(deadline)).getTime() + 1);
+      const payloads = async () => {
+        const result: unknown[] = [];
+        for (const table of ['intake_proposals', 'intake_review_decisions'])
+          for (const row of (
+            await db.query(`SELECT data FROM ${table} WHERE item_id=?`, itemId)
+          ).rows)
+            result.push(
+              typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+            );
+        return result;
+      };
+      const before = await payloads();
+      expect(before).toHaveLength(2);
+      for (const payload of before) expect(payload).not.toEqual({});
+      allowed = false;
+      await expect(service.applyAction(actionId)).rejects.toThrow(
+        'Intake unavailable',
+      );
+      expect(await payloads()).toEqual(before);
+      allowed = true;
+      await expect(service.applyAction(actionId)).rejects.toThrow(
+        'retention expired',
+      );
+      // Inspect persisted state directly: no getAction/getEvidence/sweep may mask rollback.
+      expect(await payloads()).toEqual([{}, {}]);
+      expect(
+        (
+          await db.query(
+            'SELECT id FROM intake_executions WHERE item_id=?',
+            itemId,
+          )
+        ).rows,
+      ).toHaveLength(0);
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
+    });
     for (const failure of ['malformed', 'cas', 'policy', 'revoked'])
       it(`preserves authorized future retention after ${failure} rollback`, async () => {
         const input = await proposal();
