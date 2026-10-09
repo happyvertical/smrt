@@ -288,6 +288,7 @@ export class IntakeFeedbackService {
   async assertActionLineage(
     actionId: string,
     db: DatabaseInterface,
+    proposalId: string,
   ): Promise<void> {
     await this.execution[feedbackActionTransaction](
       actionId,
@@ -296,6 +297,8 @@ export class IntakeFeedbackService {
         await this.provenance(ctx);
       },
       db,
+      undefined,
+      proposalId,
     );
   }
   async record(input: RecordFeedbackInput): Promise<FeedbackReceipt> {

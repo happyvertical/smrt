@@ -645,6 +645,7 @@ export class IntakeExecutionService {
     actionId: string,
     lock = false,
     expired = false,
+    proposalId?: string,
   ): Promise<Bound> {
     const [found] = await this.rows(db, 'intake_actions', 'id=?', [actionId]);
     if (!found) throw new Error('Intake unavailable');
@@ -653,8 +654,8 @@ export class IntakeExecutionService {
     const [proposal] = await this.rows(
       db,
       'intake_proposals',
-      'action_id=? AND revision=?',
-      [actionId, action.proposal_revision],
+      proposalId ? 'action_id=? AND id=?' : 'action_id=? AND revision=?',
+      [actionId, proposalId ?? action.proposal_revision],
     );
     if (!proposal) throw new Error('Proposal unavailable');
     const binding = object(object(proposal.data).binding) as unknown as Binding;
@@ -698,10 +699,11 @@ export class IntakeExecutionService {
     work: (value: FeedbackActionContext) => Promise<T>,
     executor?: DatabaseInterface,
     requiredProviders?: string[],
+    proposalId?: string,
   ): Promise<T> {
     const operation = async (db: DatabaseInterface) => {
       const load = async () => {
-        const bound = await this.bound(db, actionId, true);
+        const bound = await this.bound(db, actionId, true, false, proposalId);
         const { context, permissions } = await this.access(
           db,
           bound.item,
@@ -874,6 +876,7 @@ export class IntakeExecutionService {
     await new IntakeFeedbackService(this.options, this).assertActionLineage(
       String(bound.action.id),
       db,
+      String(bound.proposal.id),
     );
   }
   async getAction(actionId: string): Promise<ProposalReview> {
@@ -1349,6 +1352,10 @@ export class IntakeExecutionService {
     if (replay) {
       if (object(replay.data).requestHash !== requestHash)
         throw new Error('Proposal request conflict');
+      await this.feedbackLineage(
+        db,
+        await this.bound(db, input.actionId, false, false, String(replay.id)),
+      );
       return {
         actionId: input.actionId,
         proposalId: String(replay.id),
@@ -1405,6 +1412,10 @@ export class IntakeExecutionService {
       action.id,
       this.scope.tenantId,
       this.scope.confidentialScopeId,
+    );
+    await this.feedbackLineage(
+      db,
+      await this.bound(db, input.actionId, false, false, String(proposal.id)),
     );
     return {
       actionId: String(action.id),
@@ -2578,9 +2589,11 @@ export class IntakeExecutionService {
           revision: Number(replay.revision),
           digest: String(replay.digest),
           steps: await Promise.all(
-            steps.map(async (step) =>
-              this.review(await this.bound(db, step.actionId)),
-            ),
+            steps.map(async (step) => {
+              const bound = await this.bound(db, step.actionId);
+              await this.feedbackLineage(db, bound);
+              return this.review(bound);
+            }),
           ),
         };
       }
@@ -2759,6 +2772,17 @@ export class IntakeExecutionService {
           })),
         }),
       });
+      for (const review of reviews)
+        await this.feedbackLineage(
+          db,
+          await this.bound(
+            db,
+            review.actionId,
+            false,
+            false,
+            review.proposalId,
+          ),
+        );
       return {
         id: String(plan.id),
         key: frozen.planKey,

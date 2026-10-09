@@ -169,3 +169,27 @@ types/Svelte and provider/browser/build/package/static checks are captured in
 the round-2 evidence. Complete pre-review SQLite/PostgreSQL results carry only
 for unchanged behavior outside these affected paths; they are not claimed as
 fresh complete suites. No public DTO, schema, dependency, grant or timeout changed.
+
+## Round 2 saved-preview replay correction
+
+The affected reviewer found that direct `previewProposal` replay still returned
+saved display after a selected example was revoked, deleted or superseded.
+The same direct plan replay path also required the gate. Four baseline cases per
+database reproduced disclosure while the other saved readers already denied.
+The positive half repeats the identical public request while its source is valid.
+
+Publication and replay now bind the feedback check to the exact returned proposal
+ID and analysis attempt under the owning executor. New publication and final
+sealed plan steps are checked too; the internal loader does not recurse through
+public readers. Existing unprepared state-only pages and non-learned proposals
+retain their behavior; durable terminal result reads are unchanged.
+
+Fresh affected SQLite/PostgreSQL selections cover eight cases each, including
+all four replay negatives, source policy, terminal-result redaction, final external
+pre-send denial and unprepared create/list/preview. Four ordinary execution cases
+per database cover no-feedback replay, correction, dependent plans and automatic
+authorization. Owning types/build, local provider transport and maintained browser
+checks, static gates, normal hooks and packed consumers are recorded in the
+round-3 evidence. Earlier full feedback/source-policy and broad suites carry only
+where the exact unchanged source/hunk proof applies; they are not fresh passes.
+No public contract, schema, dependency, timeout or grant changed.

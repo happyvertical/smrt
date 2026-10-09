@@ -54,9 +54,13 @@ references are rechecked before generation, capability probing, decision calls,
 publication and completed-result reads. A newly added example does not invalidate
 an older selection; a revoked or superseded selected example does. Feedback
 lineage is bounded and fails closed. Saved-action reads and pending decisions,
-automatic authorization and execution also revalidate selected lineage under the
+automatic authorization, preview publication/replay and execution also revalidate
+selected lineage under the
 owning transaction. Revoking, deleting or superseding a selected example blocks
 pending actions; regenerate their proposals and obtain fresh approval to recover.
+A preview replay checks the exact persisted proposal it returns, including its
+analysis attempt; a newer action revision cannot supply replacement lineage.
+Plan replay and final sealed plan-step publication use the same gate.
 For already successful actions, current-authorized durable outcomes remain
 readable/replayable, but invalid learned lineage suppresses saved proposal
 display, arguments and plan payload. An empty selection carries no learned source

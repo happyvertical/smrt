@@ -581,6 +581,7 @@ export function proposalSuite(
       sourceText = 'Please draft meeting minutes with retained evidence',
     ) {
       const generated = await generate(await source(100000, false, sourceText));
+      const requestId = randomUUID();
       const [preview] = await service.previewGeneratedProposals({
         itemId: generated.itemId,
         attemptId: generated.lease.attemptId,
@@ -589,7 +590,7 @@ export function proposalSuite(
             index: 0,
             intentionKey: 'feedback-intention',
             expectedRevision: 0,
-            requestId: randomUUID(),
+            requestId,
           },
         ],
       });
@@ -603,6 +604,21 @@ export function proposalSuite(
         bindingHash: review.bindingHash,
       };
       return {
+        replay: () => {
+          const suggestion = generated.output.suggestions[0];
+          const input = {
+            itemId: generated.itemId,
+            attemptId: generated.lease.attemptId,
+            expectedRevision: 0,
+            requestId,
+            handlerId: suggestion.handlerId,
+            handlerVersion: suggestion.handlerVersion,
+            args: structuredClone(suggestion.args),
+          };
+          return preview.kind === 'plan'
+            ? service.previewPlan({ ...input, planKey: 'feedback-intention' })
+            : service.previewProposal({ ...input, actionId: review.actionId });
+        },
         generated,
         binding,
         review,
@@ -817,6 +833,7 @@ export function proposalSuite(
         requestId: 'approve',
       });
       await service.submitDecision(decision(approved));
+      await waiting.replay();
       expect(
         waiting.generated.output.provenance.feedback?.selection.examples,
       ).toHaveLength(1);
@@ -838,6 +855,7 @@ export function proposalSuite(
         () => service.listReviews(waiting.generated.itemId),
         () => service.submitDecision(decision(waiting)),
         () => service.applyAction(approved.review.actionId),
+        () => waiting.replay(),
       ]) {
         denied.push(
           await operation().then(
@@ -846,7 +864,7 @@ export function proposalSuite(
           ),
         );
       }
-      expect(denied).toEqual([true, true, true, true]);
+      expect(denied).toEqual([true, true, true, true, true]);
       if (approved.planId)
         expect(await service.applyPlan(approved.planId)).toEqual([
           { state: 'failed', actionId: approved.review.actionId },
