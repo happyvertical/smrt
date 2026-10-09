@@ -42,7 +42,7 @@ artifact instead of importing runtime code. All are optional and additive:
 | `group` | `{ id, label, summary? }` | Recipes with the same `group.id` share one card; the first declaration of an id supplies `label` and `summary`. Declaration order is the sub-switch order. |
 | `section` | `{ id, label, icon?, description? }` | Navigation section the recipe suggests for its `nav` entries. The host owns sections and the user may rename them, so keep `id` stable; the same `id` shares a section. |
 | `requiresAny` | `string[][]` | At least one id of each inner list must be on (`[['products.simple', 'products.clothing']]`); adding the recipe with none on adds the first. |
-| `nav[].icon` / `description` | string | Shell icon name and one friendly line for a business owner. |
+| `nav[].icon` / `description` | string | Shell icon name and one friendly line for a business owner. The icon must be a key of `SHELL_ICON_PATHS` (smrt-svelte `admin-shell/shell-icons.ts`, camelCase such as `fileText` or `shoppingBag`); the same holds for `section.icon`. `packages/scanner/src/__tests__/workspace-recipes.test.ts` fails on any other name. |
 | `nav[].noun` | string | What "New" creates when the label is not countable ("Stock levels" -> `stock entry`). |
 | `nav[].key` | slug | Fixed key for the layout id `item:<pkg>:<Model>:<key>`. Required for a second entry over the same model and for a `filter`. |
 | `nav[].filter` | `{ field, value }` | Narrows the entry to rows where `field` equals `value` (Ingredients over Products: `productType` = `material`). Needs a `key`. |

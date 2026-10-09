@@ -34,7 +34,7 @@ export class AnalyticsReportsRecipe extends SmrtRecipe {
   static section = {
     id: 'analytics',
     label: 'Analytics',
-    icon: 'bar-chart-3',
+    icon: 'layers',
     description: 'How your websites and apps are doing.',
   };
   static models = [AnalyticsProperty, AnalyticsReport];
@@ -53,17 +53,19 @@ export class AnalyticsReportsRecipe extends SmrtRecipe {
       label: 'Traffic summary',
     },
   ] as const;
+  // Icons are shell icon names (`SHELL_ICON_PATHS` in smrt-svelte), which have
+  // no chart or globe glyph; the section and entries use the closest ones.
   static nav = [
     {
       label: 'Analytics properties',
       model: AnalyticsProperty,
-      icon: 'globe',
+      icon: 'home',
       description: 'The websites and apps you track, and who tracks them.',
     },
     {
       label: 'Analytics reports',
       model: AnalyticsReport,
-      icon: 'bar-chart-3',
+      icon: 'fileText',
       description: 'Saved reports, how often they run and what they found.',
     },
   ];

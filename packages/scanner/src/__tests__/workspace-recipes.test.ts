@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RecipeDefinition } from '@happyvertical/smrt-types';
@@ -82,6 +82,41 @@ describe('every workspace recipe (#3708 review gaps)', {
           problems.push(`${key} labelled "${seen}" and "${value.label}"`);
         }
         labels.set(key, value.label);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('names only shell icons for section and nav icons', () => {
+    // The shell draws `section.icon` and `nav[].icon` from its own icon set;
+    // anything else renders as a fallback. Read the set from source so the
+    // scanner keeps no dependency on smrt-svelte.
+    const source = readFileSync(
+      join(
+        root,
+        'packages/smrt-svelte/src/components/workspace/admin-shell/shell-icons.ts',
+      ),
+      'utf8',
+    );
+    const block = source.slice(
+      source.indexOf('SHELL_ICON_PATHS = {'),
+      source.indexOf('} as const;'),
+    );
+    const shellIcons = new Set(
+      [...block.matchAll(/^ {2}(\w+):/gm)].map((match) => match[1]),
+    );
+    expect(shellIcons.size).toBeGreaterThan(20);
+    const problems: string[] = [];
+    for (const { recipe } of all) {
+      if (recipe.section?.icon && !shellIcons.has(recipe.section.icon)) {
+        problems.push(`${recipe.id} section icon "${recipe.section.icon}"`);
+      }
+      for (const entry of recipe.nav ?? []) {
+        if (entry.icon && !shellIcons.has(entry.icon)) {
+          problems.push(
+            `${recipe.id} nav "${entry.label}" icon "${entry.icon}"`,
+          );
+        }
       }
     }
     expect(problems).toEqual([]);
