@@ -108,8 +108,10 @@ export interface Props {
    * conversation: the message thread and the composer fill the full width, in
    * wide and narrow containers alike. Nothing else changes — the dock does
    * not open or create a conversation for you, so a host that hides the list
-   * opens one itself through `oncontroller` (`loadThreads()`, then
-   * `openThread()` or `createThread()`). Until a conversation is active the
+   * opens one itself through `oncontroller`: load threads, then call
+   * `openThread(id)`. For a new conversation, await `createThread(title)` and then
+   * `openThread(thread.id)` with its result; creation alone does not activate
+   * the conversation. Until a conversation is active the
    * composer stays disabled and the empty state offers "Create
    * conversation" (when the transport supports `createThread`); it never
    * points at the omitted list. */

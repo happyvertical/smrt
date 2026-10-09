@@ -115,9 +115,17 @@ messages and composer take the full width at every container size.
 
 Only the list goes. The dock still does not open or create a conversation for
 you, and the composer stays disabled until one is active, so a host that hides
-the list opens one itself from `oncontroller` (`await loadThreads()`, then
-`openThread(id)` of the latest thread or `createThread()` for the first). Until
-then the empty state offers "Create conversation" when the transport
+the list opens one itself from `oncontroller`. After `await controller.loadThreads()`,
+open an existing thread with `await controller.openThread(id)`. For the first
+conversation, create **and then open** the returned thread:
+
+```ts
+const thread = await controller.createThread('New conversation');
+await controller.openThread(thread.id);
+```
+
+`createThread()` alone does not activate the conversation. Until a thread is
+open, the empty state offers "Create conversation" when the transport
 supports `createThread`, and never points at the omitted list.
 
 | Route | Body | Answer |
