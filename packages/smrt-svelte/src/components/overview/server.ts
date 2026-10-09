@@ -26,6 +26,16 @@ export {
   sanitizeOverview,
 } from './model.js';
 export {
+  parseRecipeExportRef,
+  type RecipeExportResolver,
+  type RecipeWidgetRegistration,
+  type RecipeWidgetSkip,
+  type RecipeWidgetSkipReason,
+  type RecipeWidgetSource,
+  type RegisterRecipeWidgetsOptions,
+  registerRecipeWidgets,
+} from './recipe-widgets.js';
+export {
   createWidgetRegistry,
   defaultWidgetRegistry,
   registerWidget,
