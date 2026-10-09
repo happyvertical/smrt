@@ -27,6 +27,12 @@
       "import": "./dist/components/settings/index.js",
       "default": "./dist/components/settings/index.js"
     },
+    "./screens": {
+      "types": "./dist/components/screens/index.d.ts",
+      "svelte": "./dist/components/screens/index.js",
+      "import": "./dist/components/screens/index.js",
+      "default": "./dist/components/screens/index.js"
+    },
     "./board": {
       "types": "./dist/components/board/index.d.ts",
       "svelte": "./dist/components/board/index.js",

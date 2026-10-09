@@ -37,6 +37,7 @@ import './strings.sortable.js';
 import './strings.audit.js';
 import './strings.import-export.js';
 import './strings.workspace.js';
+import './strings.screens.js';
 import '../mcp-apps/strings.js';
 
 export interface BuildI18nSnapshotOptions {

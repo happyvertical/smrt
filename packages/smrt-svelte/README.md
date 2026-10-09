@@ -651,6 +651,7 @@ importable, even if it appears in `dist/`.
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, DateTimeInput, Toggle, etc.) |
 | `@happyvertical/smrt-svelte/import-export` | `ImportExport` (CSV/TSV import with column mapping, validation preview and error report; export with column selection), `createCollectionImportExport`, `fieldsFromCollectionDefinition`, and the pure CSV layer |
 | `@happyvertical/smrt-svelte/settings` | Server-paged settings search, selection, and list/detail layout (`SettingsCatalog`, `paginateSettingsCatalog`) |
+| `@happyvertical/smrt-svelte/screens` | List, view, create and edit screens derived from a generated web definition and resolved field policy (`RecipeScreens`, `ListScreen`, `DetailScreen`, `EditForm`) |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
 | `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` buttons and host `slots` for the header/footer/sidebar regions), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
 | `@happyvertical/smrt-svelte/app/runtime-diagnostics` | Svelte-free diagnostics WebMCP registration and its tool name/endpoint constants, importable from server routes |
