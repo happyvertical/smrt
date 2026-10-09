@@ -2,6 +2,9 @@
 
 Durable foundation for ADR 0004. `src/models.ts` owns all ingestion tables;
 `src/server.ts` owns authenticated service boundaries and lifecycle primitives.
+`src/execution.ts` owns authoritative review/apply and imports server-only principals.
+See [execution integration](agents/execution.md) for host transaction guarantees,
+catalog contracts, deployment dependencies and continuation bindings.
 Root, `/models`, and `/dto` remain browser-safe; provider/network/filesystem code
 belongs under `/server`. Generated REST/CLI/MCP model mutation is disabled.
 

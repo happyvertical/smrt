@@ -39,6 +39,13 @@ const classes = [
   'SmrtJob',
   'SmrtJobEvent',
   'SmrtWorker',
+  // smrtVitestPlugin registers dev-dependency manifests package-wide. The
+  // execution reference deliberately imports these noun-owned asset joins.
+  'Content',
+  'ContentDocument',
+  'ContentAsset',
+  'ContentContributionAttachment',
+  'ProfileAsset',
 ];
 const output = {
   status: 'completed' as const,

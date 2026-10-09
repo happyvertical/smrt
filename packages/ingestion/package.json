@@ -29,7 +29,11 @@
       "import": "./dist/server.js"
     },
     "./manifest": "./dist/manifest.json",
-    "./manifest.json": "./dist/manifest.json"
+    "./manifest.json": "./dist/manifest.json",
+    "./execution": {
+      "types": "./dist/execution.d.ts",
+      "import": "./dist/execution.js"
+    }
   },
   "scripts": {
     "build": "vite build --mode library && node scripts/check-browser.mjs",
@@ -53,14 +57,19 @@
     "@happyvertical/ocr": "catalog:",
     "@happyvertical/speech": "catalog:",
     "@happyvertical/ai": "catalog:",
-    "sharp": "catalog:"
+    "sharp": "catalog:",
+    "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-playbooks": "workspace:*",
+    "ajv": "8.20.0"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",
     "vite": "8.1.4",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "@happyvertical/smrt-content": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

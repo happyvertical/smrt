@@ -1,3 +1,15 @@
+export type {
+  ActionResult,
+  ExecutionCeiling,
+  IntakeValues,
+  PlanReview,
+  PreviewPlanInput,
+  PreviewProposalInput,
+  ProposalReview,
+  ResultReference,
+  ReviewInput,
+} from './execution-dto.js';
+
 /** Safe receipt outcome; storage locations and worker errors are never returned. */
 export type ReceiptResult =
   | { kind: 'accepted' | 'duplicate'; itemId: string; receiptVersion: number }

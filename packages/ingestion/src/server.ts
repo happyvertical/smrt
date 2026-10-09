@@ -18,6 +18,12 @@ import type {
   ReceiptResult,
 } from './dto.js';
 import './models.js';
+import type {
+  IntakeExecutionOptions,
+  PreviewPlanInput,
+  PreviewProposalInput,
+  ReviewInput,
+} from './execution-contracts.js';
 
 /** Authenticated host context. Never construct this from transport JSON. */
 export interface IngestionScope {
@@ -62,6 +68,8 @@ export interface AnalysisLease {
 }
 /** Trusted integration points; no provider or application-policy implementation. */
 export interface IngestionOptions {
+  /** Optional application-owned review/execution catalog and live authority. */
+  execution?: IntakeExecutionOptions;
   db: DatabaseInterface;
   assets: AssetRuntimeLike;
   scope: IngestionScope;
@@ -183,6 +191,36 @@ export class IngestionService {
       throw new Error('Ingestion requires transactional SQLite or PostgreSQL');
     nonempty(options.jobTarget.objectType);
     nonempty(options.jobTarget.method);
+  }
+  private async execution() {
+    if (!this.options.execution)
+      throw new Error('Intake execution is not configured');
+    const { IntakeExecutionService } = await import('./execution.js');
+    return new IntakeExecutionService(this.options, this.options.execution);
+  }
+  async previewProposal(input: PreviewProposalInput) {
+    return (await this.execution()).previewProposal(input);
+  }
+  async submitDecision(input: ReviewInput) {
+    return (await this.execution()).submitDecision(input);
+  }
+  async applyAction(actionId: string) {
+    return (await this.execution()).applyAction(actionId);
+  }
+  async reconcileAction(actionId: string) {
+    return (await this.execution()).reconcileAction(actionId);
+  }
+  async getAction(actionId: string) {
+    return (await this.execution()).getAction(actionId);
+  }
+  async authorizeAutomatic(actionId: string) {
+    return (await this.execution()).authorizeAutomatic(actionId);
+  }
+  async previewPlan(input: PreviewPlanInput) {
+    return (await this.execution()).previewPlan(input);
+  }
+  async applyPlan(planId: string) {
+    return (await this.execution()).applyPlan(planId);
   }
   private now(): Date {
     return this.options.now?.() ?? new Date();
