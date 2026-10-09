@@ -63,7 +63,15 @@ export const M = defineMessages({
   'ui.dictation.start': 'Speak instead of typing',
   'ui.dictation.start_hint':
     'Speak instead of typing. You can also press and hold the text box.',
+  'ui.dictation.start_hands_free':
+    'Speak instead of typing, hands-free. It writes each sentence down when you pause.',
   'ui.dictation.stop': 'Stop listening',
+  'ui.dictation.listening_hands_free':
+    'Listening. Just talk; I write it down when you pause. Tap the microphone when you are done.',
+  'ui.dictation.listening_short': 'Listening',
+  'ui.dictation.hearing': 'Hearing you…',
+  'ui.dictation.sending': 'Sending…',
+  'ui.dictation.paused_speaking': 'Paused while the assistant speaks',
   'ui.dictation.starting': 'Getting the microphone ready…',
   'ui.dictation.listening': 'Listening. Tap the microphone when you are done.',
   'ui.dictation.unsupported':
@@ -83,6 +91,8 @@ export const M = defineMessages({
     "Couldn't write that down. Tap the microphone to try again, or type instead.",
   'ui.dictation.unavailable':
     "Speaking isn't set up here yet. Please type instead.",
+  'ui.dictation.model_missing':
+    "The speech model isn't downloaded yet. Download it first, or type instead.",
   'ui.dictation.forbidden': "You can't use speaking here. Please type instead.",
 
   // feedback/ProgressBar.svelte

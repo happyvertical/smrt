@@ -11,16 +11,19 @@ function expandedSize(shell: ModuleShellState, edge: ModulePanelEdge): string {
 
 function trackFor(shell: ModuleShellState, edge: ModulePanelEdge): string {
   const state = shell.panels[edge];
-  const config = shell.config.panels[edge];
   if (state === 'hidden') return '0rem';
-  if (state === 'collapsed') return config.collapsedSize;
-  if (shell.presentationFor(edge) === 'overlay') return config.collapsedSize;
+  if (state === 'collapsed') return collapsedSize(shell, edge);
+  if (shell.presentationFor(edge) === 'overlay')
+    return collapsedSize(shell, edge);
   return expandedSize(shell, edge);
 }
 
 function collapsedSize(shell: ModuleShellState, edge: ModulePanelEdge): string {
   if (shell.panels[edge] === 'hidden') return '0rem';
-  return shell.config.panels[edge].collapsedSize;
+  const config = shell.config.panels[edge];
+  // A railless edge has nothing to show while closed.
+  if (config.rail === false) return '0rem';
+  return config.collapsedSize;
 }
 
 function buildLayoutStyle(shell: ModuleShellState): string {
@@ -47,6 +50,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   import type { Snippet } from 'svelte';
   import { M } from '../../../i18n/strings.workspace.js';
   import ActivityBadge from './ActivityBadge.svelte';
+  import ShellBrand from './ShellBrand.svelte';
   import { setAdminShell } from './context.js';
   import {
     formatHotkeyBinding,
@@ -62,10 +66,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   } from './mobile-shell-dom.js';
   import { clampPanelSize, resolveHotkey } from './settings.js';
   import { createShellState, type ShellState } from './state.svelte.js';
+  import {
+    resolveSlot,
+    type ShellRegion,
+    type ShellSlot,
+    slotRegion,
+  } from './slots.js';
   import type {
     AdminShellPhoneOptions,
     AdminShellProps,
     PanelEdge,
+    ShellLayoutEditSurface,
     ShellFocusTool,
     ShellViewport,
   } from './types.js';
@@ -85,6 +96,26 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     tenantRailFooter?: Snippet;
     /** Content for the left tenant panel. */
     tenantPanel?: Snippet;
+    /**
+     * Host content for the region slots (`header.start|center|end`,
+     * `footer.start|center|end`, `leftSidebar.header|footer`,
+     * `rightSidebar.header|footer`). A slot whose region is not visible moves
+     * along its documented fallback chain (see `slotFallbackChain`).
+     */
+    slots?: Partial<Record<ShellSlot, Snippet>>;
+    /**
+     * In-place layout editing (`AppShell` supplies it): while `active`,
+     * slots render as drop zones and hidden regions as strips.
+     */
+    layoutEdit?: ShellLayoutEditSurface;
+    /** The shell's root element (bindable), e.g. to confine drag hit-testing. */
+    rootElement?: HTMLElement;
+    /**
+     * Room kept clear for a floating control (AppShell's floating layout
+     * toggle): CSS lengths for the header's end, the right sidebar's top and
+     * main's top. Part of the root's style so re-renders never drop it.
+     */
+    floatingReserve?: { inline?: string; block?: string; main?: string };
     /** Content for the tenant panel footer. */
     tenantFooter?: Snippet;
     /** Content for the right focus rail. */
@@ -152,7 +183,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   let {
     title = 'SMRT',
     homeHref,
-    showTenantToggle = true,
+    showTenantToggle,
+    edgeToggles = false,
+    hotkeys,
+    brandInSlot = false,
     logoSrc,
     logoAlt = '',
     brand,
@@ -169,6 +203,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     tenantRailFooter,
     tenantPanel,
     tenantFooter,
+    slots,
+    layoutEdit,
+    rootElement = $bindable(),
+    floatingReserve,
     focusRail,
     focusPanel,
     systemBar,
@@ -265,6 +303,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       SIDE_EDGES.some(
         (edge) => panelState(edge) === 'expanded' && shell.isEdgeShown(edge),
       ),
+  );
+  const reserveStyle = $derived(
+    [
+      `--smrt-shell-floating-reserve-inline: ${floatingReserve?.inline ?? '0px'}`,
+      `--smrt-shell-floating-reserve-block: ${floatingReserve?.block ?? '0px'}`,
+      `--smrt-shell-floating-reserve-main: ${floatingReserve?.main ?? '0px'}`,
+    ].join('; '),
   );
   const chromeStyle = $derived(
     [
@@ -451,6 +496,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           event.preventDefault();
           return;
         }
+        // While editing the layout, Escape belongs to the editor (cancel a
+        // move, close a toolbar, then leave edit mode), not to the panels.
+        if (layoutEdit?.active) return;
         if (shell.closeTopmostExpanded()) event.preventDefault();
         return;
       }
@@ -461,10 +509,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         shell.settings,
       );
       if (!action) return;
-      event.preventDefault();
       if (action.type === 'show-shortcuts') {
+        if (!shortcutEdges.some(hotkeyActive)) return;
+        event.preventDefault();
         shortcutsOpen = true;
       } else {
+        if (!hotkeyActive(action.edge)) return;
+        event.preventDefault();
         shell.togglePanel(action.edge);
       }
     }
@@ -619,7 +670,53 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         (!edgeExpanded('left') && !tenantRailFooter)),
   );
 
-  const layoutStyle = $derived(buildLayoutStyle(shell));
+  function regionVisible(region: ShellRegion): boolean {
+    return shell.isRegionVisible(region);
+  }
+
+  /**
+   * Whether a region shows its hide control in edit mode: a sidebar has one as
+   * soon as its rail is rendered, even while collapsed (its slots then fall
+   * back, but the region itself is still there to hide).
+   */
+  function regionControllable(region: ShellRegion): boolean {
+    if (region === 'leftSidebar') return shell.isEdgeShown('left');
+    if (region === 'rightSidebar') return shell.isEdgeShown('right');
+    return regionVisible(region);
+  }
+
+  /** Slots whose content lands at `target` (own content plus fallbacks). */
+  const slotContent = $derived.by(() => {
+    const placed: Partial<Record<ShellSlot, Snippet[]>> = {};
+    for (const [name, snippet] of Object.entries(slots ?? {}) as [
+      ShellSlot,
+      Snippet | undefined,
+    ][]) {
+      if (!snippet) continue;
+      const target = resolveSlot(name, regionVisible);
+      if (target) (placed[target] ??= []).push(snippet);
+    }
+    return placed;
+  });
+
+  const STRIP_TRACK = '1.75rem';
+  const REGION_TRACK: Record<ShellRegion, string> = {
+    header: 'top',
+    footer: 'bottom',
+    leftSidebar: 'left',
+    rightSidebar: 'right',
+  };
+  const stripRegions = $derived(
+    layoutEdit?.active && layoutEdit.strip ? (layoutEdit.hiddenRegions ?? []) : [],
+  );
+  const layoutStyle = $derived(
+    [
+      buildLayoutStyle(shell),
+      ...stripRegions.map(
+        (region) => `--smrt-admin-shell-${REGION_TRACK[region]}-track: ${STRIP_TRACK}`,
+      ),
+    ].join('; '),
+  );
 
   // Top/bottom edges reserve grid tracks for corner snippets. When a corner
   // isn't mounted its track must collapse, otherwise the band is squeezed
@@ -647,9 +744,41 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   function keepsContent(edge: PanelEdge): boolean {
     return (
       panelState(edge) === 'collapsed' &&
-      shell.config.panels[edge].keepMounted === true
+      shell.config.panels[edge].keepMounted === true &&
+      !((edge === 'top' || edge === 'bottom') && shell.isInline(edge))
     );
   }
+
+  // While editing, a closed railless right edge that has focus tools gets a
+  // slim indicator tab so its content stays reachable; the host's header
+  // toggle covers normal use.
+  const editIndicator = $derived(
+    !!layoutEdit?.active &&
+      !isPhone &&
+      shell.config.panels.right.rail === false &&
+      shell.isEdgeShown('right') &&
+      panelState('right') === 'collapsed' &&
+      shell.focusTools.length > 0
+      ? shell.focusTools
+      : null,
+  );
+  let openedByIndicator = false;
+  function openFromIndicator(): void {
+    const tools = shell.focusTools;
+    if (tools.length === 0) return;
+    const tool = tools.find((candidate) => candidate.id === shell.activeFocusToolId) ?? tools[0];
+    shell.openFocusTool(tool.id);
+    openedByIndicator = true;
+  }
+  $effect(() => {
+    if (layoutEdit?.active) return;
+    untrack(() => {
+      if (openedByIndicator && shell.panels.right === 'expanded') {
+        shell.collapsePanel('right');
+      }
+      openedByIndicator = false;
+    });
+  });
 
   function panelMounted(edge: PanelEdge): boolean {
     return shownOpen(edge) || keepsContent(edge);
@@ -665,8 +794,55 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     );
   }
 
+  function toggleOn(edge: PanelEdge): boolean {
+    return typeof edgeToggles === 'boolean'
+      ? edgeToggles
+      : edgeToggles[edge] === true;
+  }
+
+  /** The edge draws its toggle button (phones always get one in the left drawer). */
+  function showToggle(edge: PanelEdge): boolean {
+    let on = toggleOn(edge);
+    if (edge === 'left') {
+      if (showTenantToggle === false) on = false;
+      else if (showTenantToggle === true) on = true;
+    }
+    return on;
+  }
+
+  const dropdownEdges = $derived({
+    top: showToggle('top') || toggleOn('top') || hotkeys === true,
+    left: showToggle('left') || toggleOn('left') || hotkeys === true,
+    right: showToggle('right') || toggleOn('right') || hotkeys === true,
+    bottom: showToggle('bottom') || toggleOn('bottom') || hotkeys === true,
+  });
+  // Edges without a drop-down are laid out inline (see `ShellState.isInline`).
+  shell.setInlineEdges(
+    untrack(() => ({
+      top: !dropdownEdges.top,
+      left: !dropdownEdges.left,
+      right: !dropdownEdges.right,
+      bottom: !dropdownEdges.bottom,
+    })),
+  );
+  $effect(() => {
+    const next = dropdownEdges;
+    shell.setInlineEdges({
+      top: !next.top,
+      left: !next.left,
+      right: !next.right,
+      bottom: !next.bottom,
+    });
+  });
+
+  function hotkeyActive(edge: PanelEdge): boolean {
+    if (hotkeys !== undefined) return hotkeys;
+    return toggleOn(edge) || showToggle(edge);
+  }
+
   function showsHotkeyFor(edge: PanelEdge): boolean {
     return (
+      hotkeyActive(edge) &&
       shell.settings.hotkeysEnabled !== false &&
       resolveHotkey(edge, shell.config.panels[edge], shell.settings) !== null
     );
@@ -774,30 +950,53 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 {/snippet}
 
-{#snippet brandContent(compact: boolean)}
-  {#if brand}
-    {@render brand({ compact })}
-  {:else}
-    {#if logoSrc}<img class="smrt-admin-shell__logo" src={logoSrc} alt={logoAlt} />{/if}
-    {#if compact}
-      {#if !logoSrc}<span aria-hidden="true">{title.charAt(0)}</span>{/if}
-    {:else}
-      <div class="smrt-admin-shell__brand-text"><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
+{#snippet shellBrand(compact = false)}
+  <ShellBrand {title} {subtitle} {homeHref} {logoSrc} {logoAlt} {brand} {compact} />
+{/snippet}
+
+{#snippet slotGroup(name: ShellSlot)}
+  {#if layoutEdit?.active}
+    {#if regionVisible(slotRegion(name))}
+      <div
+        class="smrt-admin-shell__slot smrt-admin-shell__slot--{name.replace('.', '-')} smrt-admin-shell__slot--editing"
+        data-slot={name}
+        data-smrt-edit-zone={name}
+        data-drop-target={layoutEdit.highlight === name ? '' : undefined}
+      >
+        {@render layoutEdit.zone(name)}
+      </div>
     {/if}
+  {:else if slotContent[name]?.length}
+    <div
+      class="smrt-admin-shell__slot smrt-admin-shell__slot--{name.replace('.', '-')}"
+      data-slot={name}
+    >
+      {#each slotContent[name] ?? [] as content}{@render content()}{/each}
+    </div>
   {/if}
 {/snippet}
 
-{#snippet shellBrand(compact = false)}
-  {#if homeHref}
-    <a class="smrt-admin-shell__brand smrt-admin-shell__brand-link" class:compact href={homeHref} aria-label={title || t(M['ui.admin_shell.home'])}>
-      {@render brandContent(compact)}
-    </a>
-  {:else}
-    <div class="smrt-admin-shell__brand" class:compact>{@render brandContent(compact)}</div>
+{#snippet regionEdit(region: ShellRegion)}
+  {#if layoutEdit?.active && layoutEdit.regionControl && regionControllable(region)}
+    <div class="smrt-admin-shell__region-edit" data-region-edit={region}>
+      {@render layoutEdit.regionControl(region)}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet regionStrip(region: ShellRegion)}
+  {#if stripRegions.includes(region)}
+    <div
+      class="smrt-admin-shell__strip smrt-admin-shell__strip--{region}"
+      data-region-strip={region}
+    >
+      {@render layoutEdit?.strip?.(region)}
+    </div>
   {/if}
 {/snippet}
 
 <div
+  bind:this={rootElement}
   class="smrt-admin-shell"
   data-top-state={panelState('top')}
   data-left-state={panelState('left')}
@@ -808,7 +1007,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   data-phone-top={showPhoneTop ? '' : undefined}
   data-chrome-hidden={chromeHidden ? '' : undefined}
   data-resizing={resizing ?? undefined}
-  style={`${layoutStyle}; ${chromeStyle}`}
+  style={`${layoutStyle}; ${chromeStyle}; ${reserveStyle}`}
 >
   {#if showHeader}
     <div
@@ -820,6 +1019,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     </div>
   {/if}
 
+  {@render regionStrip('header')}
   {#if panelState('top') !== 'hidden'}
     <header
       id="smrt-admin-shell-top-panel"
@@ -840,19 +1040,23 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {#if appBar}
           {@render appBar()}
         {:else}
-          {@render shellBrand()}
-          {@render edgeToggle('top')}
+          {#if !brandInSlot}{@render shellBrand()}{/if}
+          {#if showToggle('top')}{@render edgeToggle('top')}{/if}
         {/if}
-        {#if shell.config.panels.left.initial !== 'hidden' && shell.layoutPanels.left?.visible !== false && (!isPhone || shell.phonePresentation('left') !== 'hidden')}
+        {#if !(layoutEdit?.active && !isPhone) && shell.config.panels.left.initial !== 'hidden' && shell.layoutPanels.left?.visible !== false && (!isPhone || shell.phonePresentation('left') !== 'hidden')}
           <div class="smrt-admin-shell__tenant-opener" class:restore-hidden={panelState('left') === 'hidden'}>
             <Button variant="ghost" size="sm" aria-label={t(M['ui.admin_shell.menu'])} aria-expanded={edgeExpanded('left')} aria-controls="smrt-admin-shell-left-panel" onclick={() => shell.setPanelState('left', edgeExpanded('left') ? 'collapsed' : 'expanded')}>{t(M['ui.admin_shell.menu'])}</Button>
           </div>
         {/if}
+        {@render slotGroup('header.start')}
+        {@render slotGroup('header.center')}
         {#if account || footerInHeader}
           <div class="smrt-admin-shell__account">
             {#if account}{@render account()}{:else if tenantFooter}{@render tenantFooter()}{/if}
           </div>
         {/if}
+        {@render slotGroup('header.end')}
+        {@render regionEdit('header')}
       </div>
       {#if topRightCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-right">
@@ -877,6 +1081,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     </header>
   {/if}
 
+  {@render regionStrip('leftSidebar')}
   {#if shell.isEdgeShown('left')}
     <!-- tabindex -1 only while overlaid, so the panel can take focus on open -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -886,7 +1091,6 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       data-state={closingEdge === 'left' ? 'expanded' : panelState('left')}
       data-closing={closingEdge === 'left' ? '' : undefined}
       data-presentation={shell.presentationFor('left')}
-      role="navigation"
       aria-label={labelFor('left')}
       tabindex={overlayEdge === 'left' ? -1 : undefined}
       inert={(isPhone && !edgeExpanded('left')) ||
@@ -902,15 +1106,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     >
       {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
-        {#if (panelState('top') === 'hidden' || !edgeExpanded('left')) && (homeHref || logoSrc || brand)}
-          {@render shellBrand(!edgeExpanded('left'))}
-        {/if}
-        {#if showTenantToggle}{@render edgeToggle('left')}{/if}
+        {@render regionEdit('leftSidebar')}
+        {#if (panelState('top') === 'hidden' || !edgeExpanded('left')) && (homeHref || logoSrc || brand)}{@render shellBrand(!edgeExpanded('left'))}{/if}
+        {#if showToggle('left') || isPhone}{@render edgeToggle('left')}{/if}
         {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
           <div
             class="smrt-admin-shell__tenant-stack"
             hidden={!shownOpen('left')}
           >
+            {@render slotGroup('leftSidebar.header')}
             <div class="smrt-admin-shell__tenant-content">
               {#if tenantPanel}
                 {@render tenantPanel()}
@@ -923,6 +1127,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
                 {@render tenantFooter()}
               </div>
             {/if}
+            {@render slotGroup('leftSidebar.footer')}
           </div>
         {/if}
         {#if !shownOpen('left') && (tenantRail || tenantRailFooter)}
@@ -1005,6 +1210,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     ></button>
   {/if}
 
+  {@render regionStrip('rightSidebar')}
   {#if shell.isEdgeShown('right')}
     {@const rightPhone = isPhone ? shell.phonePresentation('right') : undefined}
     <!-- tabindex -1 only while overlaid, so the panel can take focus on open -->
@@ -1047,7 +1253,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         </div>
       {/if}
       <div class="smrt-admin-shell__rail">
-        {#if focusRail}
+        {@render regionEdit('rightSidebar')}
+        {#if shell.config.panels.right.rail === false}
+          <!-- Railless: no tool buttons; the host's toggle opens and closes it. -->
+        {:else if focusRail}
           {@render focusRail()}
         {:else if shell.focusTools.length > 0}
           <nav class="smrt-admin-shell__focus-rail" aria-label={t(M['ui.admin_shell.focus_tools'])}>
@@ -1077,7 +1286,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
               </button>
             {/each}
           </nav>
-        {:else}
+        {:else if showToggle('right')}
           {@render edgeToggle('right')}
         {/if}
       </div>
@@ -1087,14 +1296,40 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           tabindex="-1"
           hidden={!shownOpen('right')}
         >
+          {@render slotGroup('rightSidebar.header')}
           {#key shell.activeFocusToolId}
             {@render focusContent(resolveActiveFocusTool())}
           {/key}
+          {@render slotGroup('rightSidebar.footer')}
         </div>
       {/if}
     </aside>
   {/if}
 
+  {#if editIndicator}
+    <!-- raw-primitive-allow: shell chrome toggle, not a content button -->
+    <button
+      type="button"
+      class="smrt-admin-shell__edit-indicator"
+      data-edit-indicator="right"
+      aria-expanded="false"
+      aria-controls="smrt-admin-shell-right-panel"
+      aria-label={t(M['ui.admin_shell.open_panel'], {
+        label: editIndicator.map((tool) => tool.label).join(', '),
+      })}
+      onclick={openFromIndicator}
+    >
+      {#if editIndicator[0].icon}
+        {@const Icon = editIndicator[0].icon}
+        <Icon />
+      {/if}
+      <span class="smrt-admin-shell__edit-indicator-label">
+        {editIndicator.map((tool) => tool.label).join(', ')}
+      </span>
+    </button>
+  {/if}
+
+  {@render regionStrip('footer')}
   {#if panelState('bottom') !== 'hidden'}
     <footer
       id="smrt-admin-shell-bottom-panel"
@@ -1112,8 +1347,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         class="smrt-admin-shell__band smrt-admin-shell__band--bottom"
         style:--band-column={2}
       >
+        {@render slotGroup('footer.start')}
+        {@render slotGroup('footer.center')}
         {#if systemBar}{@render systemBar()}{/if}
-        {#if systemPanel || !systemBar}{@render edgeToggle('bottom')}{/if}
+        {@render slotGroup('footer.end')}
+        {@render regionEdit('footer')}
+        {#if showToggle('bottom') && (systemPanel || !systemBar)}{@render edgeToggle('bottom')}{/if}
       </div>
       {#if bottomRightCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-right">
@@ -1194,6 +1433,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
 <style>
   .smrt-admin-shell {
+    --smrt-shell-floating-reserve-inline: 0px;
+    --smrt-shell-floating-reserve-block: 0px;
+    --smrt-shell-floating-reserve-main: 0px;
     --smrt-admin-shell-left-track: 0rem;
     --smrt-admin-shell-right-track: 0rem;
     --smrt-admin-shell-top-track: 0rem;
@@ -1226,7 +1468,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
        ancestor (a tinted page behind cards, for instance). */
     background: var(--smrt-admin-shell-background, var(--smrt-color-surface));
     color: var(--smrt-color-on-surface);
+    /* `clip`, not `hidden`: a hidden box is still programmatically scrollable
+       (focus / scrollIntoView on a grid-track child shifts the whole shell
+       and its sidebars); a clipped box can never scroll. Only main and the
+       sidebars scroll. */
     overflow: hidden;
+    overflow: clip;
     /* Themed, thin scrollbars for every scroller inside the shell. Override
        --smrt-admin-shell-scrollbar-track / -thumb / -thumb-hover to retint. */
     scrollbar-color: var(--smrt-admin-shell-scrollbar-thumb, color-mix(in srgb, var(--smrt-color-on-surface) 26%, transparent))
@@ -1278,7 +1525,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     box-sizing: border-box;
     min-inline-size: 0;
     min-block-size: 0;
-    padding: 0 var(--smrt-spacing-3) 0 var(--smrt-spacing-2);
+    padding: 0 calc(var(--smrt-spacing-3) + var(--smrt-shell-floating-reserve-inline)) 0 var(--smrt-spacing-2);
     /* Clip long titles sideways only: menus and popovers opened from the
        header's actions (a notifications bell, an account menu) must be able
        to drop below it. `clip` (unlike `hidden`) allows a visible block axis. */
@@ -1345,6 +1592,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-width: 0;
     min-height: 0;
     overflow: auto;
+    padding-block-start: var(--smrt-shell-floating-reserve-main);
     background: var(--smrt-color-surface);
   }
 
@@ -1363,27 +1611,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-column: var(--band-column, 2);
   }
 
-  .smrt-admin-shell__brand {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2);
-    min-width: 0;
-    color: inherit;
-    text-decoration: none;
-  }
-  .smrt-admin-shell__brand-text { display: grid; min-width: 0; }
-  .smrt-admin-shell__brand.compact { justify-content: center; margin-block-end: var(--smrt-spacing-2); }
-  .smrt-admin-shell__brand-link:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
-  .smrt-admin-shell__logo { inline-size: 2rem; block-size: 2rem; object-fit: contain; flex-shrink: 0; }
-
-  .smrt-admin-shell__brand strong,
-  .smrt-admin-shell__brand span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* The header's slots can render in the top band too: keep the floating
+     layout toggle's corner clear there as well. */
+  .smrt-admin-shell__band--top {
+    padding-inline-end: calc(var(--smrt-spacing-4) + var(--smrt-shell-floating-reserve-inline));
   }
 
-  .smrt-admin-shell__brand span,
   .smrt-admin-shell__empty {
     color: var(--smrt-color-on-surface-variant);
   }
@@ -1434,6 +1667,39 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     color: var(--smrt-color-primary);
     border-color: var(--smrt-color-primary);
     background: var(--smrt-color-surface-container-high);
+  }
+
+  /* Edit-mode tab for a closed railless right edge: pinned to the shell's
+     right edge, vertically centred, over the page without taking space. */
+  .smrt-admin-shell__edit-indicator {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: end;
+    align-self: center;
+    z-index: 21;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1, 0.25rem);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-2, 0.5rem);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-inline-end: 0;
+    border-start-start-radius: var(--smrt-radius-md, 8px);
+    border-end-start-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface-variant);
+    font: inherit;
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+    cursor: pointer;
+  }
+
+  .smrt-admin-shell__edit-indicator:hover {
+    color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+  }
+
+  .smrt-admin-shell__edit-indicator :global(svg) {
+    inline-size: 1rem;
+    block-size: 1rem;
   }
 
   .smrt-admin-shell__focus-tool-badge {
@@ -1487,18 +1753,117 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__tenant-stack {
     flex: 1;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
     gap: var(--smrt-spacing-3);
     min-width: 0;
     min-height: 0;
   }
 
+  /* Only the navigation/content area grows; the sidebar header and footer
+     slots (and the legacy tenant footer) keep their natural height. */
   .smrt-admin-shell__tenant-content {
+    flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
     overflow: auto;
   }
+
+  .smrt-admin-shell__region-edit {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .smrt-admin-shell__edge--top .smrt-admin-shell__region-edit,
+  .smrt-admin-shell__edge--bottom .smrt-admin-shell__region-edit {
+    margin-inline-start: auto;
+  }
+
+  .smrt-admin-shell__slot {
+    display: flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
+    min-width: 0;
+  }
+
+  .smrt-admin-shell__slot--header-center,
+  .smrt-admin-shell__slot--footer-center {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .smrt-admin-shell__slot--header-end,
+  .smrt-admin-shell__slot--footer-end {
+    margin-inline-start: auto;
+  }
+
+  .smrt-admin-shell__slot--leftSidebar-header,
+  .smrt-admin-shell__slot--rightSidebar-header {
+    padding-block-end: var(--smrt-spacing-3);
+    border-block-end: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .smrt-admin-shell__slot--leftSidebar-footer,
+  .smrt-admin-shell__slot--rightSidebar-footer {
+    padding-block-start: var(--smrt-spacing-3);
+    border-block-start: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .smrt-admin-shell__slot--rightSidebar-header {
+    position: sticky;
+    inset-block-start: 0;
+    background: var(--smrt-color-surface);
+  }
+
+  .smrt-admin-shell__slot--rightSidebar-footer {
+    position: sticky;
+    inset-block-end: 0;
+    background: var(--smrt-color-surface);
+  }
+
+  /* Layout editing: slots as dashed drop zones, hidden regions as strips. */
+  .smrt-admin-shell__slot--editing {
+    flex-wrap: wrap;
+    box-sizing: border-box;
+    min-inline-size: 4rem;
+    min-block-size: 2.25rem;
+    padding: var(--smrt-spacing-1);
+    border: 1px dashed var(--smrt-color-outline);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    background: color-mix(in srgb, var(--smrt-color-primary) 4%, transparent);
+  }
+  .smrt-admin-shell__slot--editing[data-drop-target] {
+    border-style: solid;
+    border-color: var(--smrt-color-primary);
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+  }
+  .smrt-admin-shell__slot--editing.smrt-admin-shell__slot--header-center,
+  .smrt-admin-shell__slot--editing.smrt-admin-shell__slot--footer-center {
+    justify-content: flex-start;
+  }
+  .smrt-admin-shell__strip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--smrt-spacing-2);
+    box-sizing: border-box;
+    min-inline-size: 0;
+    min-block-size: 0;
+    overflow: hidden;
+    border: 1px dashed var(--smrt-color-outline);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-label-small-font);
+    z-index: 25;
+  }
+  .smrt-admin-shell__strip--header { grid-column: 1 / -1; grid-row: 2; }
+  .smrt-admin-shell__strip--footer { grid-column: 1 / -1; grid-row: 4; }
+  .smrt-admin-shell__strip--leftSidebar { grid-column: 1; grid-row: 3; writing-mode: vertical-rl; flex-direction: row; }
+  .smrt-admin-shell__strip--rightSidebar { grid-column: 3; grid-row: 3; writing-mode: vertical-rl; flex-direction: row; }
+  .smrt-admin-shell[data-viewport='phone'] .smrt-admin-shell__strip--leftSidebar,
+  .smrt-admin-shell[data-viewport='phone'] .smrt-admin-shell__strip--rightSidebar { display: none; }
 
   .smrt-admin-shell__tenant-footer {
     min-width: 0;
@@ -1548,6 +1913,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__panel--right {
     grid-column: 1;
     grid-row: 1;
+    padding-block-start: var(--smrt-shell-floating-reserve-block);
   }
 
   .smrt-admin-shell__edge-toggle-kbd {

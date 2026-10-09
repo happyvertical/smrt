@@ -1,4 +1,5 @@
 <script lang="ts">
+import { FieldLabel } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -51,6 +52,10 @@ let {
   error,
   onchange,
 }: Props = $props();
+
+// Unique per instance: the control stays labelled even if `name` repeats on a page.
+const uid = $props.id();
+const labelId = `${uid}-label`;
 
 const app = useAppState();
 const formContext = tryGetFormContext();
@@ -305,16 +310,13 @@ function handleBlur() {
 
 <div class="smrt-money">
   {#if label}
-    <label for={name} class="smrt-label">
-      {label}
-      {#if required}<span class="required">*</span>{/if}
-    </label>
+    <FieldLabel id={labelId} for={name} {label} {required} />
   {/if}
 
   <div class="input-wrapper">
-    <span class="currency-symbol">{currencySymbol}</span>
     <input
       id={name}
+        aria-labelledby={label ? labelId : undefined}
       {name}
       type="text"
       inputmode="decimal"
@@ -357,29 +359,10 @@ function handleBlur() {
     gap: var(--smrt-spacing-1, 4px);
   }
 
-  .smrt-label {
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-body-medium-weight, 500);
-    color: var(--smrt-color-on-surface, #374151);
-  }
-
-  .smrt-label .required {
-    color: var(--smrt-color-error, #ba1a1a);
-    margin-left: var(--smrt-spacing-1, 4px);
-  }
-
   .input-wrapper {
     display: flex;
     position: relative;
     align-items: center;
-  }
-
-  .currency-symbol {
-    position: absolute;
-    left: 12px;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-    font-size: var(--smrt-typography-body-large-size, 1rem);
-    pointer-events: none;
   }
 
   .currency-code {
@@ -393,7 +376,7 @@ function handleBlur() {
 
   .smrt-input {
     flex: 1;
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-12, 48px) var(--smrt-spacing-2, 8px) var(--smrt-spacing-7, 28px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-12, 48px) var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     font-size: var(--smrt-typography-body-large-size, 1rem);
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     border-radius: var(--smrt-radius-small, 6px);

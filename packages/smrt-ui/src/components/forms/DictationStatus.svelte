@@ -2,7 +2,13 @@
 /**
  * DictationStatus — what dictation is doing, in words (see `Dictation`).
  *
- * "Listening…" (with the words heard so far) while the microphone is on,
+ * "Listening…" (with the words heard so far) while the microphone is on.
+ * Hands-free is announced, not shown: the line is visually hidden and says
+ * "Listening", "Hearing you…" while someone is speaking and "Writing it down…"
+ * while sentences are being written down (the long help text is the
+ * microphone's tooltip) and "Paused while the assistant speaks" while
+ * listening is suspended. "Sending…" (`sending`) is the one short hands-free
+ * hint that stays visible, since a message is about to leave.
  * "Writing it down…" while a recording is turned into text, and
  * a plain explanation when it cannot listen: the browser cannot turn speech
  * into text, the microphone is blocked, or nothing was heard. Nothing while
@@ -15,18 +21,26 @@ import type { Dictation, DictationErrorKind } from './dictation.svelte.js';
 export interface Props {
   /** The dictation session whose listening state and messages this shows. */
   dictation: Dictation;
+  /** A message is about to be sent (hands-free send on pause): shows "Sending…". */
+  sending?: boolean;
   /** Extra class names. */
   class?: string;
 }
 
-let { dictation, class: className = '' }: Props = $props();
+let { dictation, sending = false, class: className = '' }: Props = $props();
 
 const { t } = useI18n();
 const showLine = $derived(
-  dictation.state === 'starting' ||
+  sending ||
+    dictation.state === 'starting' ||
     dictation.state === 'listening' ||
     dictation.state === 'stopping' ||
     dictation.state === 'transcribing',
+);
+
+// Hands-free states are announced to screen readers only.
+const announceOnly = $derived(
+  !sending && dictation.handsFree && dictation.state === 'listening',
 );
 
 function errorText(kind: DictationErrorKind | null): string {
@@ -47,6 +61,8 @@ function errorText(kind: DictationErrorKind | null): string {
       return t(M['ui.dictation.not_transcribed']);
     case 'unavailable':
       return t(M['ui.dictation.unavailable']);
+    case 'model-missing':
+      return t(M['ui.dictation.model_missing']);
     case 'forbidden':
       return t(M['ui.dictation.forbidden']);
     default:
@@ -58,12 +74,24 @@ function errorText(kind: DictationErrorKind | null): string {
 <div class={`smrt-dictation-status ${className}`.trim()}>
   <p
     class="smrt-dictation-status-line"
-    class:smrt-dictation-status--empty={!showLine}
+    class:smrt-dictation-status--empty={!showLine || announceOnly}
     role="status"
     aria-live="polite"
   >
-    {#if dictation.state === 'starting'}
+    {#if sending}
+      {t(M['ui.dictation.sending'])}
+    {:else if dictation.state === 'starting'}
       {t(M['ui.dictation.starting'])}
+    {:else if dictation.handsFree && dictation.state === 'listening'}
+      {#if dictation.suspended}
+        {t(M['ui.dictation.paused_speaking'])}
+      {:else if dictation.queued > 0}
+        {t(M['ui.dictation.transcribing'])}
+      {:else if dictation.speaking}
+        {t(M['ui.dictation.hearing'])}
+      {:else}
+        {t(M['ui.dictation.listening_short'])}
+      {/if}
     {:else if dictation.state === 'listening' || dictation.state === 'stopping'}
       <span class="smrt-dictation-status-dot" aria-hidden="true"></span>
       {t(M['ui.dictation.listening'])}

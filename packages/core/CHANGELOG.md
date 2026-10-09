@@ -1,5 +1,22 @@
 # @happyvertical/smrt-core
 
+## 0.55.7
+
+### Patch Changes
+
+- ### Features
+  
+  - planner batch — shell layout editing, section menus, browser speech (#3701)
+  - add scoped correctness feedback and routing suggestions (#3706) (ingestion)
+  - add authenticated inbox and review surfaces (#3703) (ingestion)
+  
+  ### Bug Fixes
+  
+  - use bounded ordinary-role fixture cleanup (#3705) (ingestion)
+- @happyvertical/smrt-config@0.55.7
+  - @happyvertical/smrt-scanner@0.55.7
+  - @happyvertical/smrt-types@0.55.7
+
 ## 0.55.6
 
 ### Patch Changes

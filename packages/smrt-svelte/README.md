@@ -40,7 +40,7 @@ items that share Board's drag engine. `AppShell` lets users customize their
 shell: pass `layout` and `onlayoutchange` to own persistence (for example in an
 exported app blueprint), or neither to store it in the user's settings. Mount
 `ShellLayoutEditor` (from `/app` or `/workspace`) on a settings page, and call
-`useShellLayout()` to make the same changes from code or an assistant. See
+`useShellLayout()` to make the same changes from code or an assistant. Users can rename sections and individual navigation entries (`items`, `renameItem`), hide section titles, and create or delete their own sections. See
 `agents/workspace.md`; the pure `ShellLayout` model is published without Svelte
 as `@happyvertical/smrt-svelte/workspace/layout`.
 
@@ -49,6 +49,16 @@ as `@happyvertical/smrt-svelte/workspace/layout`.
   <ShellLayoutEditor />
 </AppShell>
 ```
+
+Opt in to editing the real shell in place with `layoutEditing` on `AppShell`: a
+pencil toggle ("Edit layout", highlighted while editing; press again or Escape to exit) joins the header (as does the app title, a movable
+`item:brand` in `header.start`), and while on, every slot is a
+labelled drop zone, shell items and navigation get grips (drag, or Space and
+arrow keys), section headings get icon overlays and a floating toolbar, and
+hidden regions show as strips. Apps add per-section icon buttons (an Options
+gear, Help) with `sectionActions`; pass `layoutEditing={{ floating: true }}` to pin the
+toggle in the top-right corner instead of the header; `useShellLayout()` exposes `editing` and
+`setEditing`. See `agents/workspace.md`.
 
 ## Installation
 
@@ -288,6 +298,60 @@ bind legacy name-based cleanup to registrations made by that caller, so
 overlapping same-name fields can unmount in either order without retaining a
 detached control.
 
+### Voice typing where the browser cannot (on-device Whisper and Moonshine)
+
+Browsers differ on speech recognition: Chrome and Safari have it, Firefox does
+not, and Brave has the API without a speech service behind it. `probeBrowserSpeech()`
+says which you have (`'works' | 'missing' | 'unreliable'`) without a network
+call or a microphone prompt. For the last two, offer a one-time model download
+and dictate with a speech model running in the browser (WebGPU where available,
+single-thread WASM otherwise; no cross-origin isolation needed). The engine is
+`@happyvertical/speech/local` (an optional peer, `>=0.102.5`, as is
+`@huggingface/transformers`).
+
+| `model` | Size | Notes |
+| --- | --- | --- |
+| `moonshine-tiny` (`onnx-community/moonshine-tiny-ONNX`) | ~32 MB | English, fastest: best for live dictation |
+| `moonshine-base` (`onnx-community/moonshine-base-ONNX`) | ~67 MB | English, more accurate |
+| `whisper-tiny.en` (default) | ~45 MB | English |
+| `whisper-base.en` / `whisper-small.en` | ~85 / ~260 MB | English |
+| any Hugging Face id, e.g. `onnx-community/whisper-base` | varies | multilingual Whisper |
+
+```ts
+import {
+  createLocalSpeechModel,
+  createSttDictationSource,
+  probeBrowserSpeech,
+} from '@happyvertical/smrt-svelte/browser-ai';
+// The worker is the one module that imports the optional peers statically,
+// so only apps that build it bundle them.
+import SpeechWorker from '@happyvertical/smrt-svelte/browser-ai/whisper-worker?worker';
+
+if ((await probeBrowserSpeech()) !== 'works') {
+  const model = createLocalSpeechModel({
+    model: 'moonshine-tiny',
+    createWorker: () => new SpeechWorker(),
+    loadSpeech: () => import('@happyvertical/speech/local'),
+  });
+  model.estimateSize();            // ~32 MB, for the consent text
+  await model.isCached();          // already downloaded on this device?
+  await model.load({ onProgress, signal }); // downloading -> extracting ("Getting ready") -> complete; abort() cancels
+  const dictation = createSttDictationSource({ type: 'moonshine', modelHandle: model });
+}
+```
+
+`createWhisperLocalModel`, `{ type: 'whisper-local' }` and the `whisper-wasm`
+alias keep working. Without `createWorker` the model runs on the page's thread
+and `loadModule: () => import('@huggingface/transformers')` supplies the
+runtime. With a worker, `device` and `dtype` are the worker entry's (`auto`
+and `q8`).
+
+Push-to-talk: the microphone records until stopped, then one final result is
+emitted. For hands-free dictation (each sentence written down when the speaker
+pauses) give smrt-ui's `Dictation` `mode: 'hands-free'` and
+`createHandsFreeCapture`; these adapters' `transcribePcm()` writes down each
+utterance. English-only models (`*.en`, Moonshine) ignore a requested language.
+
 ### Form Components
 
 ```svelte
@@ -496,6 +560,12 @@ keys the shell renders exactly as before.
   focus (unless something inside already has it) and returns it on close;
   Escape or a scrim click closes it, sliding it back out as the scrim fades
   (no motion under `prefers-reduced-motion`). Resizing applies only while docked.
+- **Railless edges**: `rail: false` gives a side edge no rail (no tool buttons, open or closed); closed, it takes
+  no space and renders nothing to see or tab to, and opens from elsewhere (a
+  header dock toggle, `useShellDock()`). Pair it with `presentation: 'overlay'`
+  for a chat that slides over the page. Layout edit mode leaves a railless edge
+  as it is (closed stays closed) and, while editing, shows a small "Open
+  <tool>" tab on the shell's right edge when it has content.
 - **Kept panels**: `keepMounted: true` keeps a collapsed edge's panel content
   (`appPanel`, `tenantPanel`, the focus panel, `systemPanel`) mounted with the
   `hidden` attribute instead of unmounting it, so component state (a chat
@@ -537,7 +607,7 @@ importable, even if it appears in `dist/`.
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, DateTimeInput, Toggle, etc.) |
 | `@happyvertical/smrt-svelte/settings` | Server-paged settings search, selection, and list/detail layout (`SettingsCatalog`, `paginateSettingsCatalog`) |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
-| `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` header buttons), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
+| `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` buttons and host `slots` for the header/footer/sidebar regions), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |
 | `@happyvertical/smrt-svelte/app/runtime-diagnostics` | Svelte-free diagnostics WebMCP registration and its tool name/endpoint constants, importable from server routes |
 | `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
 | `@happyvertical/smrt-svelte/workspace/server` | Server-side workspace helpers (Node only) |
@@ -671,8 +741,10 @@ updates retain their existing behavior.
 
 Use `shell.setPanelState(edge, 'hidden' | 'collapsed' | 'expanded')` to persist
 runtime panel preferences; app-configured hidden edges remain unavailable.
-AdminShell keeps a discoverable tenant collapse control with supplied navigation
-(`showTenantToggle={false}` opts out), a Menu opener in narrow layouts, and the
+AdminShell's edge toggle buttons and WASD hotkeys are opt-in via `edgeToggles`
+(default `false`: regions lay out inline; pass `true`, or a per-edge map, to
+keep the drop-down behaviour; `showTenantToggle` is a deprecated alias for
+`edgeToggles.left`), a Menu opener in narrow layouts, and the
 system toggle alongside a custom `systemBar` that has a `systemPanel` to open
 (a `systemBar` with no `systemPanel` owns the bottom band and draws no toggle). Closed narrow drawers are inert;
 opening focuses the first control, and closing or Escape restores the opener.
@@ -687,6 +759,13 @@ an account permanently in the app bar (including with a custom `appBar`).
 canonical 48px target; omit density to inherit the theme, or choose
 `"comfortable"`. Account menus in the shell app bar open below the bar so the
 existing footer's default placement stays reachable on narrow screens.
+
+Sections-only navigation: pass `navMode="sections"` to `AppShell` and give
+each `ShellNavGroup` an `icon` and `href`; the sidebar then lists only the
+sections, and the section's page renders its entries with `ShellSectionMenu`
+(`meta`/`actions` snippets for counts and "New ..." links). In layout edit mode
+the menu rows get grip, rename and hide controls, and the sidebar's section
+toolbar gets an icon picker (`useShellLayout().setSectionIcon`).
 
 `TenantNav` accepts optional `groups: ShellNavGroup[]` (`{ heading, items }`)
 next to its existing flat `items`. Each group has a labelled `role="group"` and

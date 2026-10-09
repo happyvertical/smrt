@@ -26,6 +26,10 @@ export interface CodeSelectProps
   interaction?: ControlInteractionOptions | false;
   /** Custom choices replace defaults; an empty list is an intentional override. */
   options?: readonly CodeSelectOption[];
+  /** Visible label rendered above the control with the shared field label; becomes its accessible name. */
+  label?: string;
+  /** Shows the required marker on `label`. */
+  required?: boolean;
   /** Locale used for built-in currency/country display names; invalid locales use English. */
   locale?: string;
   /** Empty choice label. Defaults to an em dash and never auto-selects a code. */

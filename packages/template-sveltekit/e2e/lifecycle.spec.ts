@@ -21,9 +21,11 @@ test('mount, navigation, and unmount leave no duplicate live registrations', asy
       (entry) => entry.name,
     );
 
-  // The shell's tenant rail starts collapsed, so its links are not rendered
-  // until the panel is expanded. Expand it once, then navigate within it.
-  await ownerPage.getByRole('button', { name: /Tenant/ }).click();
+  // A shell with a tenant toggle starts collapsed, so its links are not
+  // rendered until the panel is expanded; a shell without one docks the panel
+  // open. Expand it only when there is a toggle, then navigate within it.
+  const tenantToggle = ownerPage.getByRole('button', { name: /Left sidebar|Tenant/ });
+  if (await tenantToggle.count()) await tenantToggle.click();
   await expect(ownerPage.getByRole('link', { name: 'Settings' })).toBeVisible();
 
   const initial = await liveNames();

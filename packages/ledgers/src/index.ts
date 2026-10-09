@@ -95,7 +95,7 @@ export {
   promptMessageOptions,
   smrtLedgersJournalSummarizePrompt,
 } from './prompts';
-
+export { BookkeepingRecipe } from './recipes';
 // Export types
 export type {
   AccountOptions,

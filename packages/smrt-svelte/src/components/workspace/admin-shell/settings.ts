@@ -28,7 +28,7 @@ const DEFAULT_PANEL_CONFIG: Record<PanelEdge, ShellPanelConfig> = {
   top: {
     edge: 'top',
     scope: 'app',
-    label: 'App',
+    label: 'Header',
     initial: 'collapsed',
     presentation: 'overlay',
     hotkey: DEFAULT_SHELL_KEYMAP.top,
@@ -38,7 +38,7 @@ const DEFAULT_PANEL_CONFIG: Record<PanelEdge, ShellPanelConfig> = {
   left: {
     edge: 'left',
     scope: 'tenant',
-    label: 'Tenant',
+    label: 'Left sidebar',
     initial: 'collapsed',
     presentation: 'push',
     hotkey: DEFAULT_SHELL_KEYMAP.left,
@@ -48,7 +48,7 @@ const DEFAULT_PANEL_CONFIG: Record<PanelEdge, ShellPanelConfig> = {
   right: {
     edge: 'right',
     scope: 'focus',
-    label: 'Focus',
+    label: 'Right sidebar',
     initial: 'collapsed',
     presentation: 'push',
     hotkey: DEFAULT_SHELL_KEYMAP.right,
@@ -58,7 +58,7 @@ const DEFAULT_PANEL_CONFIG: Record<PanelEdge, ShellPanelConfig> = {
   bottom: {
     edge: 'bottom',
     scope: 'system',
-    label: 'System',
+    label: 'Footer',
     initial: 'collapsed',
     presentation: 'overlay',
     hotkey: DEFAULT_SHELL_KEYMAP.bottom,

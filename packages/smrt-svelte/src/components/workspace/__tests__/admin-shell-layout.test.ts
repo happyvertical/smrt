@@ -2,15 +2,20 @@ import { describe, expect, it } from 'vitest';
 import {
   applyShellLayout,
   createShellLayout,
+  createShellSection,
+  deleteShellSection,
   hideShellEntry,
   isShellLayoutEmpty,
   moveShellItem,
   moveShellSection,
   normalizeShellLayout,
+  renameShellItem,
+  renameShellSection,
   resolveShellNavModel,
   SHELL_NAV_ROOT_SECTION_ID,
   type ShellLayout,
   setShellLayoutPanel,
+  setShellSectionTitleVisible,
   showShellEntry,
 } from '../admin-shell/layout.js';
 import { pruneShellSettingsDelta } from '../admin-shell/settings.js';
@@ -443,5 +448,330 @@ describe('settings core', () => {
     expect(
       pruneShellSettingsDelta({ layout: { version: 9 } as never }),
     ).toEqual({});
+  });
+});
+
+describe('app-owned sections', () => {
+  const custom = (items: Partial<ShellLayout> = {}): ShellLayout =>
+    layout({
+      customSections: [{ id: 'custom:fav', label: 'Favorites' }],
+      ...items,
+    });
+
+  it('renames a section and keeps its id stable', () => {
+    const next = renameShellSection(
+      nav,
+      groups,
+      undefined,
+      'Content',
+      ' Stuff ',
+    );
+    expect(next).toEqual(layout({ sections: { Content: { label: 'Stuff' } } }));
+    const applied = applyShellLayout(nav, groups, undefined, next);
+    expect(headings(applied.groups)).toEqual(['Stuff', 'People', 'Operations']);
+    expect(applied.groups[0].id).toBe('Content');
+    // Rename survives reordering by the original id.
+    const moved = moveShellSection(nav, groups, next, 'Content', 2);
+    expect(
+      headings(applyShellLayout(nav, groups, undefined, moved).groups),
+    ).toEqual(['People', 'Operations', 'Stuff']);
+  });
+
+  it('drops the override for a blank label or the host heading', () => {
+    const renamed = renameShellSection(nav, groups, undefined, 'Content', 'X');
+    expect(renameShellSection(nav, groups, renamed, 'Content', '  ')).toEqual(
+      layout({}),
+    );
+    expect(
+      renameShellSection(nav, groups, renamed, 'Content', 'Content'),
+    ).toEqual(layout({}));
+    expect(renameShellSection(nav, groups, undefined, 'nope', 'X')).toEqual(
+      layout({}),
+    );
+    expect(
+      renameShellSection(
+        nav,
+        groups,
+        undefined,
+        SHELL_NAV_ROOT_SECTION_ID,
+        'X',
+      ),
+    ).toEqual(layout({}));
+  });
+
+  it('hides and restores a title, rendering the group flat', () => {
+    const off = setShellSectionTitleVisible(
+      nav,
+      groups,
+      undefined,
+      'People',
+      false,
+    );
+    expect(off).toEqual(layout({ sections: { People: { showTitle: false } } }));
+    const applied = applyShellLayout(nav, groups, undefined, off);
+    expect(applied.groups[1].showTitle).toBe(false);
+    expect(applied.groups[1].items).toHaveLength(2);
+    expect(applied.groups[0].showTitle).toBeUndefined();
+    expect(
+      setShellSectionTitleVisible(nav, groups, off, 'People', true),
+    ).toEqual(layout({}));
+  });
+
+  it('lets a user show a title the host suggested hidden', () => {
+    const suggested: ShellNavGroup[] = [{ ...groups[0], showTitle: false }];
+    expect(
+      applyShellLayout([], suggested, undefined, layout({})).groups[0]
+        .showTitle,
+    ).toBe(false);
+    const on = setShellSectionTitleVisible(
+      [],
+      suggested,
+      undefined,
+      'Content',
+      true,
+    );
+    expect(on.sections).toEqual({ Content: { showTitle: true } });
+    expect(
+      applyShellLayout([], suggested, undefined, on).groups[0].showTitle,
+    ).toBeUndefined();
+    expect(
+      setShellSectionTitleVisible([], suggested, on, 'Content', false),
+    ).toEqual(layout({}));
+  });
+
+  it('creates a custom section with a unique id', () => {
+    const one = createShellSection(nav, groups, undefined, 'Favorites');
+    expect(one.customSections).toEqual([
+      { id: 'custom:favorites', label: 'Favorites' },
+    ]);
+    const two = createShellSection(nav, groups, one, 'Favorites');
+    expect(two.customSections?.map((c) => c.id)).toEqual([
+      'custom:favorites',
+      'custom:favorites-2',
+    ]);
+    expect(createShellSection(nav, groups, one, '   ')).toEqual(one);
+  });
+
+  it('shows an empty custom section in the model but not in the nav', () => {
+    const l = custom();
+    const model = resolveShellNavModel(nav, groups, l);
+    const section = model.at(-1);
+    expect(section).toMatchObject({
+      id: 'custom:fav',
+      heading: 'Favorites',
+      custom: true,
+      defaultHeading: null,
+      titleVisible: true,
+    });
+    expect(section?.items).toEqual([]);
+    expect(
+      headings(applyShellLayout(nav, groups, undefined, l).groups),
+    ).toEqual(['Content', 'People', 'Operations']);
+  });
+
+  it('moves items into a custom section and orders it', () => {
+    let l = custom();
+    l = moveShellItem(nav, groups, l, '/posts', 'custom:fav');
+    expect(l.moved).toEqual({ '/posts': 'custom:fav' });
+    l = moveShellSection(nav, groups, l, 'custom:fav', 0);
+    expect(l.sectionOrder).toEqual(['custom:fav', 'Content', 'People', 'ops']);
+    const applied = applyShellLayout(nav, groups, undefined, l);
+    expect(headings(applied.groups)).toEqual([
+      'Favorites',
+      'Content',
+      'People',
+      'Operations',
+    ]);
+    expect(hrefs(applied.groups[0].items)).toEqual(['/posts']);
+    expect(applied.groups[0].id).toBe('custom:fav');
+    // Moving back to the default section and the default order stays sparse.
+    expect(
+      moveShellSection(nav, groups, custom(), 'custom:fav', 99).sectionOrder,
+    ).toBeUndefined();
+  });
+
+  it('renames a custom section and hides its title', () => {
+    let l = renameShellSection(nav, groups, custom(), 'custom:fav', 'Pinned');
+    expect(l.customSections).toEqual([{ id: 'custom:fav', label: 'Pinned' }]);
+    expect(renameShellSection(nav, groups, l, 'custom:fav', ' ')).toEqual(l);
+    l = setShellSectionTitleVisible(nav, groups, l, 'custom:fav', false);
+    l = moveShellItem(nav, groups, l, '/jobs', 'custom:fav');
+    const group = applyShellLayout(nav, groups, undefined, l).groups.find(
+      (g) => g.id === 'custom:fav',
+    );
+    expect(group).toMatchObject({ heading: 'Pinned', showTitle: false });
+  });
+
+  it('hides a custom section by id', () => {
+    const l = hideShellEntry(
+      nav,
+      groups,
+      custom({ moved: { '/posts': 'custom:fav' } }),
+      'custom:fav',
+    );
+    expect(l.hidden).toEqual(['custom:fav']);
+    expect(
+      headings(applyShellLayout(nav, groups, undefined, l).groups),
+    ).not.toContain('Favorites');
+  });
+
+  it('deletes a custom section and returns its items to their defaults', () => {
+    let l = custom();
+    l = moveShellItem(nav, groups, l, '/posts', 'custom:fav');
+    l = moveShellSection(nav, groups, l, 'custom:fav', 0);
+    l = hideShellEntry(nav, groups, l, 'custom:fav');
+    l = setShellSectionTitleVisible(nav, groups, l, 'custom:fav', false);
+    const next = deleteShellSection(l, 'custom:fav');
+    expect(next.customSections).toBeUndefined();
+    expect(next.moved).toBeUndefined();
+    expect(next.hidden).toBeUndefined();
+    expect(next.sections).toBeUndefined();
+    expect(next.sectionOrder).toEqual(['Content', 'People', 'ops']);
+    const applied = applyShellLayout(nav, groups, undefined, next);
+    expect(applied.groups[0].items.map((i) => i.href)).toEqual([
+      '/posts',
+      '/pages',
+      '/media',
+    ]);
+  });
+
+  it('refuses to delete host sections or unknown ids', () => {
+    const l = layout({ hidden: ['People'] });
+    expect(deleteShellSection(l, 'People')).toEqual(l);
+    expect(deleteShellSection(l, 'custom:nope')).toEqual(l);
+  });
+
+  it('keeps new host sections and items in their suggested place', () => {
+    const stored = custom({
+      sections: { Content: { label: 'Stuff' } },
+      moved: { '/posts': 'custom:fav' },
+    });
+    const evolved: ShellNavGroup[] = [
+      {
+        ...groups[0],
+        items: [...groups[0].items, { href: '/new', label: 'New' }],
+      },
+      ...groups.slice(1),
+      { heading: 'Billing', items: [{ href: '/bill', label: 'Bill' }] },
+    ];
+    const applied = applyShellLayout(nav, evolved, undefined, stored);
+    expect(headings(applied.groups)).toEqual([
+      'Stuff',
+      'People',
+      'Operations',
+      'Billing',
+      'Favorites',
+    ]);
+    expect(hrefs(applied.groups[0].items)).toEqual([
+      '/pages',
+      '/media',
+      '/new',
+    ]);
+    expect(hrefs(applied.groups[4].items)).toEqual(['/posts']);
+  });
+
+  it('ignores unknown ids and normalizes malformed input', () => {
+    const l = normalizeShellLayout({
+      version: 1,
+      sections: {
+        ghost: { label: 'Boo' },
+        People: { label: 5, showTitle: 'no' },
+        bad: 3,
+      },
+      customSections: [
+        { id: 'custom:ok', label: ' Ok ' },
+        { id: 'plain', label: 'No prefix' },
+        { id: 'custom:blank', label: ' ' },
+        { id: 'custom:ok', label: 'Dup' },
+        'x',
+      ],
+    });
+    expect(l).toEqual({
+      version: 1,
+      sections: { ghost: { label: 'Boo' } },
+      customSections: [{ id: 'custom:ok', label: 'Ok' }],
+    });
+    expect(
+      headings(applyShellLayout(nav, groups, undefined, l).groups),
+    ).toEqual(['Content', 'People', 'Operations']);
+  });
+
+  it('renames an item by id, keeping the original label available', () => {
+    const next = renameShellItem(
+      nav,
+      groups,
+      undefined,
+      '/posts',
+      '  Articles ',
+    );
+    expect(next).toEqual(
+      layout({ items: { '/posts': { label: 'Articles' } } }),
+    );
+    const applied = applyShellLayout(nav, groups, undefined, next);
+    const posts = applied.groups[0].items[0];
+    expect(posts.label).toBe('Articles');
+    expect(posts.defaultLabel).toBe('Posts');
+    expect(posts.href).toBe('/posts');
+    // Untouched items are the host's own objects.
+    expect(applied.groups[0].items[1]).toBe(groups[0].items[1]);
+    // Survives moving into another section, and the root list.
+    const moved = moveShellItem(nav, groups, next, '/posts', 'ops');
+    const after = applyShellLayout(nav, groups, undefined, moved);
+    expect(after.groups[2].items.map((i) => i.label)).toContain('Articles');
+    const root = renameShellItem(nav, groups, undefined, '/inbox', 'Mail');
+    expect(
+      applyShellLayout(nav, groups, undefined, root).nav.map((i) => i.label),
+    ).toEqual(['Home', 'Mail']);
+  });
+
+  it('drops an item override for null, blank, the host label, or unknown ids', () => {
+    const renamed = renameShellItem(nav, groups, undefined, '/posts', 'X');
+    expect(renameShellItem(nav, groups, renamed, '/posts', null)).toEqual(
+      layout({}),
+    );
+    expect(renameShellItem(nav, groups, renamed, '/posts', '  ')).toEqual(
+      layout({}),
+    );
+    expect(renameShellItem(nav, groups, renamed, '/posts', 'Posts')).toEqual(
+      layout({}),
+    );
+    expect(renameShellItem(nav, groups, undefined, '/nope', 'X')).toEqual(
+      layout({}),
+    );
+    expect(isShellLayoutEmpty(renamed)).toBe(false);
+  });
+
+  it('normalizes item overrides like section labels', () => {
+    expect(
+      normalizeShellLayout({
+        version: 1,
+        items: {
+          '/a': { label: ' A ' },
+          '/b': { label: '   ' },
+          '/c': { label: 5 },
+          '/d': 'x',
+          '': { label: 'E' },
+        },
+      }),
+    ).toEqual(layout({ items: { '/a': { label: 'A' } } }));
+    expect(normalizeShellLayout({ version: 1, items: [] })).toEqual(layout({}));
+  });
+
+  it('keeps a stored version 1 layout without the new fields working', () => {
+    const old = {
+      version: 1,
+      sectionOrder: ['People', 'Content'],
+      hidden: ['/roles'],
+      moved: { '/jobs': 'People' },
+    };
+    const l = normalizeShellLayout(old);
+    expect(l).toEqual(old);
+    expect(
+      isShellLayoutEmpty(layout({ sections: { A: { showTitle: false } } })),
+    ).toBe(false);
+    expect(isShellLayoutEmpty(custom())).toBe(false);
+    const applied = applyShellLayout(nav, groups, undefined, l);
+    expect(headings(applied.groups)).toEqual(['People', 'Content']);
+    expect(applied.groups[0].showTitle).toBeUndefined();
   });
 });

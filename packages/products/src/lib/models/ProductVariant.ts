@@ -60,14 +60,20 @@ export class ProductVariant extends SmrtObject {
    * (or any Product STI subtype — `Material`, or vertical subtypes
    * defined in templates such as the apparel `Style` / `Makeup`).
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'The product this choice belongs to.',
+  })
   productId: string = '';
 
   /**
    * The name of the axis (`'size'`, `'color'`, `'finish'`, `'voltage'`,
    * `'packSize'`, …). Free-form — the framework treats this as opaque.
    */
-  @field({ required: true })
+  @field({
+    required: true,
+    description: 'What the product varies by, for example size or color.',
+  })
   axisName: string = '';
 
   /** Optional human-friendly label for forms / UIs (defaults to `axisName`). */
@@ -79,6 +85,10 @@ export class ProductVariant extends SmrtObject {
    * collides with the SQL `VALUES` keyword on several engines. Use
    * {@link getValues} / {@link setValues} to round-trip the array form.
    */
+  @field({
+    description:
+      'The values on offer, for example S, M and L, stored as a JSON list.',
+  })
   allowedValues: string = '[]';
 
   /** Sort order for displaying multiple axes in a consistent column order. */

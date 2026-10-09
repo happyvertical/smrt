@@ -5,6 +5,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -61,12 +62,14 @@ export class InvoiceLineItem extends SmrtObject {
   /**
    * Parent invoice
    */
+  @field({ description: 'The invoice this line belongs to.' })
   @foreignKey('Invoice')
   invoiceId: string = '';
 
   /**
    * Item description
    */
+  @field({ description: 'What is being billed on this line.' })
   description: string = '';
 
   /**
@@ -75,6 +78,7 @@ export class InvoiceLineItem extends SmrtObject {
   sku: string = '';
 
   /** Nonnegative decimal quantity (hours, weight, units), up to six fractional digits. */
+  @field({ description: 'How many.' })
   quantity: number = 1.0;
 
   /** Raw editor modes retained only while they resolve to the authoritative model fields. */
@@ -113,6 +117,7 @@ export class InvoiceLineItem extends SmrtObject {
    * `$19.99` is `1999`. An integer literal is what maps this to an INTEGER
    * column (#2361).
    */
+  @field({ description: 'The price of one, before tax.' })
   unitPrice: number = 0;
 
   /**
@@ -127,11 +132,15 @@ export class InvoiceLineItem extends SmrtObject {
    * initializer is load-bearing and maps it to a DECIMAL column. INTEGER would
    * truncate every rate to 0 (#2361).
    */
+  @field({
+    description: 'The tax rate for this line, as a percentage (5 means 5%).',
+  })
   taxRate: number = 0.0;
 
   /**
    * Calculated line amount, in integer minor units (#2361).
    */
+  @field({ description: 'The line total.' })
   amount: number = 0;
 
   // ============================================================================

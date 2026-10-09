@@ -41,15 +41,34 @@ const panel = () =>
   container.querySelector<HTMLElement>('.smrt-admin-shell__panel--right');
 
 describe('AppShell dock toggles', () => {
+  it('a railless right edge leaves nothing behind while closed', async () => {
+    await render({ config: { right: { rail: false } } });
+    const shell = container.querySelector<HTMLElement>('.smrt-admin-shell')!;
+    expect(
+      shell.style.getPropertyValue('--smrt-admin-shell-right-track').trim(),
+    ).toBe('0rem');
+    expect(container.querySelector('.smrt-admin-shell__focus-tool')).toBeNull();
+    toggle().click();
+    await settle();
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(panel()?.hidden).toBe(false);
+    expect(container.querySelector('.smrt-admin-shell__focus-tool')).toBeNull();
+    toggle().click();
+    await settle();
+    expect(container.querySelector('.smrt-admin-shell__focus-tool')).toBeNull();
+  });
+
   it('renders no header toggles without the prop', async () => {
     await render({ toggles: [] });
     expect(container.querySelector('[data-testid="dock-toggles"]')).toBeNull();
   });
 
-  it('renders the toggle in the header with a tooltip and chat icon', async () => {
+  it('renders the default toggle in header.end inside the one top bar, with no separate header row', async () => {
     await render();
-    const header = container.querySelector('#smrt-admin-shell-header')!;
-    expect(header.contains(toggle())).toBe(true);
+    expect(container.querySelector('#smrt-admin-shell-header')).toBeNull();
+    const top = container.querySelector('#smrt-admin-shell-top-panel')!;
+    const slot = top.querySelector('[data-slot="header.end"]')!;
+    expect(slot.contains(toggle())).toBe(true);
     expect(toggle().getAttribute('aria-label')).toBe('Assistant');
     expect(toggle().getAttribute('title')).toBe('Assistant');
     expect(toggle().querySelector('svg')).not.toBeNull();
@@ -59,6 +78,50 @@ describe('AppShell dock toggles', () => {
     expect(
       container.querySelector('#smrt-admin-shell-right-panel'),
     ).not.toBeNull();
+  });
+
+  it('renders a leftSidebar.footer toggle at the bottom of the left sidebar, not the header', async () => {
+    await render({
+      config: { left: { initial: 'expanded' } },
+      toggles: [
+        { tool: 'assistant', label: 'Assistant', slot: 'leftSidebar.footer' },
+      ],
+    });
+    const left = container.querySelector('#smrt-admin-shell-left-panel')!;
+    expect(
+      left
+        .querySelector('[data-slot="leftSidebar.footer"]')!
+        .contains(toggle()),
+    ).toBe(true);
+    expect(
+      container
+        .querySelector('#smrt-admin-shell-top-panel')!
+        .contains(toggle()),
+    ).toBe(false);
+    toggle().click();
+    await settle();
+    expect(dock.active).toBe('assistant');
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    toggle().click();
+    await settle();
+    expect(dock.active).toBeNull();
+  });
+
+  it('moves a slot along the fallback chain when its region is hidden', async () => {
+    await render({
+      config: { top: false, left: { initial: 'expanded' } },
+    });
+    expect(container.querySelector('#smrt-admin-shell-top-panel')).toBeNull();
+    expect(container.querySelector('#smrt-admin-shell-header')).toBeNull();
+    const slot = container.querySelector('[data-slot="leftSidebar.header"]')!;
+    expect(slot.contains(toggle())).toBe(true);
+  });
+
+  it('falls through to the footer when header and sidebars are not visible', async () => {
+    await render({ config: { top: false }, edgeToggles: true });
+    expect(
+      container.querySelector('[data-slot="footer.end"]')?.contains(toggle()),
+    ).toBe(true);
   });
 
   it('toggles the dock open and closed and mirrors state in aria', async () => {

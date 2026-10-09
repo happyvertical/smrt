@@ -6,6 +6,7 @@
 
 import {
   crossPackageRef,
+  field,
   foreignKey,
   SmrtObject,
   smrt,
@@ -25,14 +26,21 @@ export class EventSeries extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ description: 'What the series is called.' })
   name: string = '';
+  @field({ description: 'The kind of event in this series.' })
   @foreignKey('EventType')
   typeId = ''; // FK to EventType
+  @field({ description: 'Who runs the series.' })
   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   organizerId = ''; // FK to Profile (from @happyvertical/smrt-profiles)
+  @field({ description: 'What the series is about.' })
   description = '';
+  @field({ description: 'When the series begins.' })
   startDate: Date | null = null;
+  @field({ description: 'When the series ends.' })
   endDate: Date | null = null;
+  @field({ description: 'How often it repeats.' })
   recurrence = ''; // JSON recurrence pattern (stored as text)
   metadata = ''; // JSON metadata (stored as text)
   externalId = ''; // External system identifier

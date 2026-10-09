@@ -5,7 +5,7 @@
  * Each entry belongs to a Journal and references an Account.
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { JournalEntryOptions } from '../types';
 import { Account } from './Account';
@@ -26,6 +26,7 @@ export class JournalEntry extends SmrtObject {
   /**
    * Parent journal ID (required)
    */
+  @field({ description: 'The journal this entry belongs to.' })
   @foreignKey('Journal')
   journalId: string = '';
 
@@ -34,22 +35,26 @@ export class JournalEntry extends SmrtObject {
    */
   // Constructor reference, not the simple name `Account` (also declared by
   // smrt-messages, #3098).
+  @field({ description: 'The account this entry changes.' })
   @foreignKey(Account)
   accountId: string = '';
 
   /**
    * Debit amount (left side)
    */
+  @field({ description: 'The amount debited. Zero on a credit entry.' })
   debit: number = 0.0;
 
   /**
    * Credit amount (right side)
    */
+  @field({ description: 'The amount credited. Zero on a debit entry.' })
   credit: number = 0.0;
 
   /**
    * Currency code (e.g., "USD", "CAD", "EUR")
    */
+  @field({ description: 'The currency of the amounts.' })
   currency: string = 'USD';
 
   /**
@@ -60,6 +65,7 @@ export class JournalEntry extends SmrtObject {
   /**
    * Line memo/description
    */
+  @field({ description: 'A note on this entry.' })
   memo: string = '';
 
   /**
