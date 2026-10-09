@@ -39,15 +39,16 @@ export type JobStatus =
 export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
 
 /**
- * Full job projection with a portable string identity.
+ * Full job projection with portable string job and tenant identities.
  *
  * Native DuckDB currently exposes UUID result values as internal objects.
- * Worker claim/recovery state is keyed by string IDs, so both paths must use
- * this same projection instead of hydrating a raw UUID from `SELECT *`.
+ * Worker claim/recovery state and restored tenant context use string IDs.
+ * Both paths use this projection instead of hydrating raw UUIDs from `SELECT *`.
  */
 export const SMRT_JOB_PORTABLE_SELECT_COLUMNS = `
   CAST(id AS VARCHAR) AS id,
-  slug, context, created_at, updated_at, tenant_id, queue,
+  slug, context, created_at, updated_at,
+  CAST(tenant_id AS VARCHAR) AS tenant_id, queue,
   object_type, object_id, method, args, run_at,
   priority, status, attempts, max_attempts, timeout,
   timeout_behavior, started_at, completed_at, last_error,
