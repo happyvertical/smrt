@@ -170,7 +170,10 @@ export class Payment extends SmrtObject {
   /**
    * Currency code (ISO 4217)
    */
-  @field({ description: 'The currency of the payment.' })
+  @field({
+    description: 'The currency of the payment.',
+    ui: { widget: 'currency' },
+  })
   currency: string = 'USD';
 
   /**
@@ -216,7 +219,10 @@ export class Payment extends SmrtObject {
   /**
    * Notes about the payment
    */
-  @field({ description: 'Anything worth remembering about this payment.' })
+  @field({
+    description: 'Anything worth remembering about this payment.',
+    ui: { widget: 'textarea' },
+  })
   notes: string = '';
 
   // ============================================================================

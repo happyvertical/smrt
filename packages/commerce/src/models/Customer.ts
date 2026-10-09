@@ -140,7 +140,10 @@ export class Customer extends SmrtObject {
   /**
    * Internal notes about this customer
    */
-  @field({ description: 'Anything worth remembering about this customer.' })
+  @field({
+    description: 'Anything worth remembering about this customer.',
+    ui: { widget: 'textarea' },
+  })
   notes: string = '';
 
   constructor(options: CustomerOptions = {}) {
