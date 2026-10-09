@@ -125,6 +125,26 @@ describe('recipes in the domain-knowledge artifact', () => {
     expect(build([rich]).recipes).toEqual([rich]);
   });
 
+  it('carries surfaces, providers, runtime and demoSeed through (#3708)', () => {
+    const surfaced: RecipeDefinition = {
+      ...recipe,
+      runtime: 'browser',
+      surfaces: [
+        {
+          kind: 'shell-widget',
+          slot: 'header.end',
+          export: '@shop/pkg/svelte#Bell',
+          label: 'Bell',
+        },
+      ],
+      providers: [
+        { id: 'mail', kind: 'email', options: ['smtp'], required: true },
+      ],
+      demoSeed: { data: { orders: [] } },
+    };
+    expect(build([surfaced]).recipes).toEqual([surfaced]);
+  });
+
   it('changes the manifest hash when a recipe changes', () => {
     const before = build([recipe]).sourceHashes.manifest;
     const after = build([{ ...recipe, label: 'Selling' }]).sourceHashes

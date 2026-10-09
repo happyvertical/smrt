@@ -112,6 +112,63 @@ export interface RecipeHelp {
   fieldRefs: string[];
 }
 
+/**
+ * Shell slots a `shell-widget` surface may name. A literal copy of smrt-svelte's
+ * `ShellSlot` (types cannot depend on it); smrt-svelte asserts the two unions
+ * are identical at type level, and the scanner owns the runtime list and checks
+ * it against the smrt-svelte source.
+ */
+export type RecipeShellSlot =
+  | 'header.start'
+  | 'header.center'
+  | 'header.end'
+  | 'footer.start'
+  | 'footer.center'
+  | 'footer.end'
+  | 'leftSidebar.header'
+  | 'leftSidebar.footer'
+  | 'rightSidebar.header'
+  | 'rightSidebar.footer';
+
+/**
+ * A component or fixture export as `'<module specifier>#<ExportName>'`, e.g.
+ * `@happyvertical/smrt-chat/svelte#AssistantDockToggle`. Never imported at
+ * scan time; the host resolves it.
+ */
+export type RecipeExportRef = `${string}#${string}`;
+
+/** A non-model piece of UI a recipe contributes (#3708). */
+export type RecipeSurface =
+  | {
+      kind: 'shell-widget';
+      slot: RecipeShellSlot;
+      export: RecipeExportRef;
+      label: string;
+      icon?: string;
+    }
+  | { kind: 'route'; path: string; export: RecipeExportRef; label: string }
+  | { kind: 'settings-panel'; export: RecipeExportRef; label: string }
+  | { kind: 'playground'; export: RecipeExportRef; label?: string };
+
+/** A provider the recipe needs or can use (email, oauth, storage, llm...). */
+export interface RecipeProvider {
+  /** Slug, unique within the recipe. */
+  id: string;
+  /** Open slug: `email`, `oauth`, `storage`, `llm`... */
+  kind: string;
+  /** Supported implementations (`imap`, `smtp`; `google`, `github`). */
+  options: readonly string[];
+  required: boolean;
+  /** Names (never values) of the secrets the provider needs, `UPPER_SNAKE`. */
+  secrets?: readonly string[];
+}
+
+/** Where a recipe's runtime pieces can run. Omitted means `both`. */
+export type RecipeRuntime = 'browser' | 'server' | 'both';
+
+/** Demo fixture data: a fixture export, or small inline JSON. */
+export type RecipeDemoSeed = { export: RecipeExportRef } | { data: unknown };
+
 /** A recipe as emitted into the manifest and the knowledge artifact. */
 export interface RecipeDefinition {
   /** Stable, dotted, lowercase id, e.g. `commerce.sales`. */
@@ -139,4 +196,12 @@ export interface RecipeDefinition {
   options?: Record<string, RecipeModelOptions>;
   /** User-facing help read from the recipe's `static help` file; omitted when none. */
   help?: RecipeHelp;
+  /** Non-model surfaces (#3708); omitted when none. */
+  surfaces?: RecipeSurface[];
+  /** Providers and secrets (#3708); omitted when none. */
+  providers?: RecipeProvider[];
+  /** Omitted means `both`. */
+  runtime?: RecipeRuntime;
+  /** Demo fixture reference or inline data; omitted when none. */
+  demoSeed?: RecipeDemoSeed;
 }
