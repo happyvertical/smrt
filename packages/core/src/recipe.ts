@@ -33,8 +33,12 @@
  */
 
 import type {
+  RecipeDemoSeed,
   RecipeExposureNarrowing,
   RecipeFieldOptions,
+  RecipeProvider,
+  RecipeRuntime,
+  RecipeSurface,
 } from '@happyvertical/smrt-types';
 
 /**
@@ -135,4 +139,16 @@ export abstract class SmrtRecipe {
    * `renderHelp` for how a host follows the app's options.
    */
   static help?: string;
+  /**
+   * Non-model surfaces (#3708): shell widgets, routes, settings panels and
+   * playground entries. Components are referenced by
+   * `'<module specifier>#<ExportName>'`, never imported by the manifest.
+   */
+  static surfaces?: readonly RecipeSurface[];
+  /** Providers and secrets the recipe needs or can use (#3708). */
+  static providers?: readonly RecipeProvider[];
+  /** Where the recipe's runtime pieces can run; omitted means `both`. */
+  static runtime?: RecipeRuntime;
+  /** Demo fixture data: a fixture export or small inline JSON (#3708). */
+  static demoSeed?: RecipeDemoSeed;
 }

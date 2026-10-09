@@ -31,12 +31,18 @@ import { readFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import type {
   RecipeDefinition,
+  RecipeDemoSeed,
+  RecipeExportRef,
   RecipeExposureNarrowing,
   RecipeFieldOptions,
   RecipeGroup,
   RecipeHelp,
   RecipeModelOptions,
+  RecipeProvider,
+  RecipeRuntime,
   RecipeSection,
+  RecipeShellSlot,
+  RecipeSurface,
 } from '@happyvertical/smrt-types';
 import { getLineColumn } from './source-location.js';
 import type { ResolvedClassDefinition, ScanError } from './types.js';
@@ -44,6 +50,35 @@ import type { ResolvedClassDefinition, ScanError } from './types.js';
 type AstNode = { type: string } & Record<string, unknown>;
 
 const RECIPE_BASE = 'SmrtRecipe';
+
+/**
+ * Runtime lists behind the `@happyvertical/smrt-types` unions (types carries no
+ * runtime code). `RECIPE_SHELL_SLOTS` copies smrt-svelte's `SHELL_SLOTS`; tests
+ * check it against that source and smrt-svelte checks the type union.
+ */
+export const RECIPE_SHELL_SLOTS = [
+  'header.start',
+  'header.center',
+  'header.end',
+  'footer.start',
+  'footer.center',
+  'footer.end',
+  'leftSidebar.header',
+  'leftSidebar.footer',
+  'rightSidebar.header',
+  'rightSidebar.footer',
+] as const satisfies readonly RecipeShellSlot[];
+const RECIPE_SURFACE_KINDS = [
+  'shell-widget',
+  'route',
+  'settings-panel',
+  'playground',
+] as const satisfies readonly RecipeSurface['kind'][];
+const RECIPE_RUNTIMES = [
+  'browser',
+  'server',
+  'both',
+] as const satisfies readonly RecipeRuntime[];
 const CORE_SPECIFIER = '@happyvertical/smrt-core';
 
 /** The core package itself or one of its subpaths (`/browser`), nothing else. */
@@ -118,6 +153,11 @@ export interface RawRecipe {
   options: Array<{ key: string; value: unknown; line?: number }>;
   /** `static help`: a path to a Markdown file, relative to the recipe's file. */
   help: { path: string; line?: number } | null;
+  /** `static surfaces` / `providers` / `runtime` / `demoSeed`, as authored (#3708). */
+  surfaces: { value: unknown; line?: number } | null;
+  providers: { value: unknown; line?: number } | null;
+  runtime: { value: unknown; line?: number } | null;
+  demoSeed: { value: unknown; line?: number } | null;
 }
 
 /** Cheap pre-filter: a file that never names the base cannot declare one. */
@@ -507,6 +547,10 @@ export function extractRecipes(input: {
       section: null,
       options: [],
       help: null,
+      surfaces: null,
+      providers: null,
+      runtime: null,
+      demoSeed: null,
     };
     const seen = new Set<string>();
 
@@ -603,6 +647,10 @@ export function extractRecipes(input: {
           case 'requiresAny':
           case 'group':
           case 'section':
+          case 'surfaces':
+          case 'providers':
+          case 'runtime':
+          case 'demoSeed':
             recipe[name] = {
               value: literalValue(value, `static ${name}`),
               line: lineOf(input.sourceText, member),
@@ -1072,6 +1120,329 @@ function readLabelled(
   return ok ? out : undefined;
 }
 
+/** `pkg#Name` / `@scope/pkg/sub#Name`: a bare package specifier and an export. */
+const EXPORT_REF_PATTERN =
+  /^((?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:\/[A-Za-z0-9._-]+)*)#([A-Za-z_$][A-Za-z0-9_$]*)$/;
+const ROUTE_PATH_PATTERN = /^\/(?![/\\])[^\s?#\\]*$/;
+const PROVIDER_SLUG_PATTERN = /^[a-z][a-z0-9_-]*$/;
+const SECRET_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+const DEMO_SEED_MAX_BYTES = 8192;
+
+type Report = (message: string, line?: number) => void;
+
+function readExportRef(
+  value: unknown,
+  at: string,
+  report: Report,
+  line?: number,
+): string | undefined {
+  if (typeof value !== 'string') {
+    report(`${at}.export must be a string like \`pkg/svelte#Component\``, line);
+    return undefined;
+  }
+  const match = EXPORT_REF_PATTERN.exec(value);
+  if (
+    !match ||
+    match[1]
+      .split('/')
+      .some((part) => part === '.' || part === '..' || part.endsWith('.'))
+  ) {
+    report(
+      `${at}.export \`${value}\` must be \`<package specifier>#<ExportName>\` (a package specifier, not a relative path)`,
+      line,
+    );
+    return undefined;
+  }
+  return value;
+}
+
+function readNonEmpty(
+  value: unknown,
+  at: string,
+  report: Report,
+  line?: number,
+): string | undefined {
+  if (typeof value !== 'string' || value.trim() === '') {
+    report(`${at} must be a non-empty string`, line);
+    return undefined;
+  }
+  return value;
+}
+
+/** Validate `static surfaces` (#3708). */
+function readSurfaces(
+  raw: RawRecipe['surfaces'],
+  report: Report,
+): RecipeSurface[] | undefined {
+  if (!raw) return undefined;
+  const { value, line } = raw;
+  if (!Array.isArray(value) || value.length === 0) {
+    report('surfaces must be a non-empty array of surface objects', line);
+    return undefined;
+  }
+  const out: RecipeSurface[] = [];
+  const seen = new Set<string>();
+  let ok = true;
+  value.forEach((entry, index) => {
+    const at = `surfaces[${index}]`;
+    if (!isPlainObject(entry)) {
+      report(`${at} must be an object literal`, line);
+      ok = false;
+      return;
+    }
+    const kind = entry.kind;
+    if (
+      typeof kind !== 'string' ||
+      !(RECIPE_SURFACE_KINDS as readonly string[]).includes(kind)
+    ) {
+      report(
+        `${at}.kind must be one of ${RECIPE_SURFACE_KINDS.join(', ')} (got \`${String(kind)}\`)`,
+        line,
+      );
+      ok = false;
+      return;
+    }
+    const allowed: Record<string, string[]> = {
+      'shell-widget': ['kind', 'slot', 'export', 'label', 'icon'],
+      route: ['kind', 'path', 'export', 'label'],
+      'settings-panel': ['kind', 'export', 'label'],
+      playground: ['kind', 'export', 'label'],
+    };
+    for (const key of Object.keys(entry)) {
+      if (!allowed[kind].includes(key)) {
+        report(`${at} (${kind}) does not accept \`${key}\``, line);
+        ok = false;
+      }
+    }
+    const before = ok;
+    const ref = readExportRef(
+      entry.export,
+      at,
+      (m, l) => {
+        report(m, l);
+        ok = false;
+      },
+      line,
+    );
+    const fail = (message: string) => {
+      report(message, line);
+      ok = false;
+    };
+    let label: string | undefined;
+    if (kind === 'playground' && entry.label === undefined) {
+      label = undefined;
+    } else {
+      label = readNonEmpty(entry.label, `${at}.label`, fail, line);
+    }
+    let identity = `${kind}:${ref}`;
+    const surface: Record<string, unknown> = { kind };
+    if (kind === 'shell-widget') {
+      const slot = entry.slot;
+      if (
+        typeof slot !== 'string' ||
+        !(RECIPE_SHELL_SLOTS as readonly string[]).includes(slot)
+      ) {
+        fail(
+          `${at}.slot \`${String(slot)}\` is not a shell slot (${RECIPE_SHELL_SLOTS.join(', ')})`,
+        );
+      }
+      surface.slot = slot;
+      if (entry.icon !== undefined) {
+        if (typeof entry.icon !== 'string' || !ICON_PATTERN.test(entry.icon)) {
+          fail(`${at}.icon must be an icon name`);
+        } else {
+          surface.icon = entry.icon;
+        }
+      }
+      identity = `${identity}@${String(slot)}`;
+    } else if (kind === 'route') {
+      const path = entry.path;
+      if (typeof path !== 'string' || !ROUTE_PATH_PATTERN.test(path)) {
+        fail(
+          `${at}.path must start with \`/\` and contain no whitespace, \`?\` or \`#\``,
+        );
+      } else if (
+        /%2e|%2f|%5c/i.test(path) ||
+        path
+          .slice(1)
+          .split('/')
+          .some(
+            (part, i, parts) =>
+              part === '.' ||
+              part === '..' ||
+              (part === '' && i < parts.length - 1),
+          )
+      ) {
+        fail(
+          `${at}.path cannot contain \`.\`/\`..\` or empty segments, or encoded separators`,
+        );
+      } else {
+        surface.path = path;
+        identity = `route-path:${path}`;
+      }
+    }
+    if (ref !== undefined) {
+      if (seen.has(identity)) fail(`${at} repeats an earlier surface`);
+      seen.add(identity);
+    }
+    if (ok === before && ref !== undefined) {
+      surface.export = ref;
+      if (label !== undefined) surface.label = label;
+      // Stable key order for deterministic artifacts.
+      const ordered: Record<string, unknown> = { kind };
+      for (const key of ['slot', 'path', 'export', 'label', 'icon']) {
+        if (surface[key] !== undefined) ordered[key] = surface[key];
+      }
+      out.push(ordered as unknown as RecipeSurface);
+    }
+  });
+  return ok ? out : undefined;
+}
+
+/** Validate `static providers` (#3708). */
+function readProviders(
+  raw: RawRecipe['providers'],
+  report: Report,
+): RecipeProvider[] | undefined {
+  if (!raw) return undefined;
+  const { value, line } = raw;
+  if (!Array.isArray(value) || value.length === 0) {
+    report('providers must be a non-empty array of provider objects', line);
+    return undefined;
+  }
+  const out: RecipeProvider[] = [];
+  const ids = new Set<string>();
+  let ok = true;
+  const fail = (message: string) => {
+    report(message, line);
+    ok = false;
+  };
+  value.forEach((entry, index) => {
+    const at = `providers[${index}]`;
+    if (!isPlainObject(entry)) {
+      fail(`${at} must be an object literal`);
+      return;
+    }
+    for (const key of Object.keys(entry)) {
+      if (!['id', 'kind', 'options', 'required', 'secrets'].includes(key)) {
+        fail(`${at} does not accept \`${key}\``);
+      }
+    }
+    const { id, kind, options, required, secrets } = entry;
+    if (typeof id !== 'string' || !PROVIDER_SLUG_PATTERN.test(id)) {
+      fail(`${at}.id must be a lowercase slug`);
+    } else if (ids.has(id)) {
+      fail(`${at}.id \`${id}\` is declared more than once`);
+    } else {
+      ids.add(id);
+    }
+    if (typeof kind !== 'string' || !PROVIDER_SLUG_PATTERN.test(kind)) {
+      fail(`${at}.kind must be a lowercase slug such as email, oauth, storage`);
+    }
+    if (
+      !Array.isArray(options) ||
+      options.length === 0 ||
+      !options.every(
+        (o) => typeof o === 'string' && PROVIDER_SLUG_PATTERN.test(o),
+      ) ||
+      new Set(options).size !== options.length
+    ) {
+      fail(
+        `${at}.options must be a non-empty list of distinct lowercase slugs`,
+      );
+    }
+    if (typeof required !== 'boolean') {
+      fail(`${at}.required must be written as true or false`);
+    }
+    if (
+      secrets !== undefined &&
+      (!Array.isArray(secrets) ||
+        !secrets.every(
+          (n) => typeof n === 'string' && SECRET_NAME_PATTERN.test(n),
+        ) ||
+        new Set(secrets).size !== secrets.length)
+    ) {
+      fail(
+        `${at}.secrets must be distinct UPPER_SNAKE names (names, not values)`,
+      );
+    }
+    if (ok) {
+      out.push({
+        id: id as string,
+        kind: kind as string,
+        options: options as string[],
+        required: required as boolean,
+        ...(secrets ? { secrets: secrets as string[] } : {}),
+      });
+    }
+  });
+  return ok ? out : undefined;
+}
+
+/** Validate `static runtime` (#3708). Returns `undefined` for the default. */
+function readRuntime(
+  raw: RawRecipe['runtime'],
+  report: Report,
+): RecipeRuntime | undefined {
+  if (!raw) return undefined;
+  const { value, line } = raw;
+  if (
+    typeof value !== 'string' ||
+    !(RECIPE_RUNTIMES as readonly string[]).includes(value)
+  ) {
+    report(`runtime must be one of ${RECIPE_RUNTIMES.join(', ')}`, line);
+    return undefined;
+  }
+  return value as RecipeRuntime;
+}
+
+/** Validate `static demoSeed` (#3708): a fixture export or small inline JSON. */
+function readDemoSeed(
+  raw: RawRecipe['demoSeed'],
+  report: Report,
+): RecipeDemoSeed | undefined {
+  if (!raw) return undefined;
+  const { value, line } = raw;
+  if (!isPlainObject(value)) {
+    report('demoSeed must be { export } or { data }', line);
+    return undefined;
+  }
+  const keys = Object.keys(value);
+  if (keys.length !== 1 || (keys[0] !== 'export' && keys[0] !== 'data')) {
+    report('demoSeed must have exactly one of `export` or `data`', line);
+    return undefined;
+  }
+  if (keys[0] === 'export') {
+    const ref = readExportRef(value.export, 'demoSeed', report, line);
+    return ref ? { export: ref as RecipeExportRef } : undefined;
+  }
+  const finite = (node: unknown): boolean =>
+    typeof node === 'number'
+      ? Number.isFinite(node)
+      : Array.isArray(node)
+        ? node.every(finite)
+        : isPlainObject(node)
+          ? Object.values(node).every(finite)
+          : true;
+  if (!finite(value.data)) {
+    report('demoSeed.data cannot contain non-finite numbers', line);
+    return undefined;
+  }
+  const size = Buffer.byteLength(JSON.stringify(value.data ?? null));
+  if (value.data === undefined || value.data === null) {
+    report('demoSeed.data must be JSON data', line);
+    return undefined;
+  }
+  if (size > DEMO_SEED_MAX_BYTES) {
+    report(
+      `demoSeed.data is ${size} bytes; inline seeds are limited to ${DEMO_SEED_MAX_BYTES}, reference a fixture export instead`,
+      line,
+    );
+    return undefined;
+  }
+  return { data: value.data };
+}
+
 export function resolveRecipes(
   raws: RawRecipe[],
   classes: ResolvedClassDefinition[],
@@ -1254,6 +1625,11 @@ export function resolveRecipes(
       }
     }
 
+    const surfaces = readSurfaces(raw.surfaces, report);
+    const providers = readProviders(raw.providers, report);
+    const runtime = readRuntime(raw.runtime, report);
+    const demoSeed = readDemoSeed(raw.demoSeed, report);
+
     const help = raw.help
       ? attempt(
           () => readHelp(raw.help as NonNullable<RawRecipe['help']>, raw),
@@ -1275,7 +1651,55 @@ export function resolveRecipes(
       ...(section ? { section: section as unknown as RecipeSection } : {}),
       ...(options && Object.keys(options).length > 0 ? { options } : {}),
       ...(help ? { help } : {}),
+      ...(surfaces ? { surfaces } : {}),
+      ...(providers ? { providers } : {}),
+      ...(runtime ? { runtime } : {}),
+      ...(demoSeed ? { demoSeed } : {}),
     });
+  }
+
+  recipes.sort((a, b) => a.id.localeCompare(b.id));
+
+  // Cross-recipe consistency within the package: a nav key names one layout id
+  // (`item:<pkg>:<Model>:<key>`), and a shared group or section id means one
+  // card or section, so its labels must agree.
+  const navKeys = new Map<string, string>();
+  const labelled = new Map<string, { label: string; recipe: string }>();
+  for (const recipe of recipes) {
+    const raw = ids.get(recipe.id);
+    const note = (message: string) =>
+      errors.push({
+        message: `Recipe ${recipe.className}: ${message}`,
+        filePath: raw?.filePath ?? '',
+        line: raw?.line,
+        severity: 'error',
+      });
+    for (const entry of recipe.nav) {
+      if (!entry.key) continue;
+      const slot = `${entry.model}:${entry.key}`;
+      const owner = navKeys.get(slot);
+      if (owner && owner !== recipe.id) {
+        note(
+          `nav key \`${entry.key}\` over ${entry.model} is already used by recipe ${owner}; layout ids must be unique`,
+        );
+      }
+      navKeys.set(slot, owner ?? recipe.id);
+    }
+    for (const [kind, value] of [
+      ['group', recipe.group],
+      ['section', recipe.section],
+    ] as const) {
+      if (!value) continue;
+      const slot = `${kind}:${value.id}`;
+      const first = labelled.get(slot);
+      if (first && first.label !== value.label) {
+        note(
+          `${kind} \`${value.id}\` is labelled "${value.label}" here but "${first.label}" in recipe ${first.recipe}`,
+        );
+      } else if (!first) {
+        labelled.set(slot, { label: value.label, recipe: recipe.id });
+      }
+    }
   }
 
   // `requires` cycles among this package's own recipes.
