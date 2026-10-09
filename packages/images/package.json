@@ -50,8 +50,9 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
+    "@happyvertical/animation": "link:../../../animation-photo-cutout/packages/animation",
     "@happyvertical/ai": "catalog:",
-    "@happyvertical/images": "catalog:",
+    "@happyvertical/images": "link:../../../sdk-helper-release/packages/images",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",
@@ -67,6 +68,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/kit": "2.69.1",

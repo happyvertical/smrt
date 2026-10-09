@@ -91,8 +91,12 @@
     "access": "public"
   },
   "dependencies": {
-    "@happyvertical/ai": "catalog:",
+    "@happyvertical/animation": "link:../../../animation-photo-cutout/packages/animation",
+    "@happyvertical/ai": "link:../../../sdk-helper-release/packages/ai",
+    "@happyvertical/speech": "link:../../../sdk-helper-release/packages/speech",
+    "@happyvertical/smrt-images": "workspace:*",
     "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
@@ -101,7 +105,9 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
-    "@happyvertical/sql": "catalog:"
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/images": "link:../../../sdk-helper-release/packages/images",
+    "gsap": "^3.13.0"
   },
   "peerDependencies": {
     "svelte": "^5.57.0"

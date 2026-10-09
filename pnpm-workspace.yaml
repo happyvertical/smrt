@@ -9,14 +9,18 @@ overrides:
   '@happyvertical/smrt-config': 'workspace:*'
   '@happyvertical/smrt-core': 'workspace:*'
   '@happyvertical/accounting': ^0.102.7
-  '@happyvertical/ai': ^0.102.7
+  # Temporary local development integration for SMRT #3643 / SDK #1368. The
+  # sibling SDK worktree supplies the gpt-6 completion-token normalization;
+  # coordinated shipping restores the SDK family's exact published pins.
+  '@happyvertical/ai': link:../sdk-helper-release/packages/ai
   '@happyvertical/cache': ^0.102.7
   '@happyvertical/documents': ^0.102.7
   '@happyvertical/email': ^0.102.7
   '@happyvertical/encryption': ^0.102.7
   '@happyvertical/files': ^0.102.7
   '@happyvertical/geo': ^0.102.7
-  '@happyvertical/images': ^0.102.7
+  # Owner-authorized sibling development for SDK #1370; restore published family pins at release.
+  '@happyvertical/images': link:../sdk-helper-release/packages/images
   '@happyvertical/jobs': ^0.102.7
   '@happyvertical/payments': ^0.102.7
   '@happyvertical/json': ^0.102.7
@@ -28,7 +32,8 @@ overrides:
   '@happyvertical/repos': ^0.102.7
   '@happyvertical/secrets': ^0.102.7
   '@happyvertical/signatures': ^0.102.7
-  '@happyvertical/speech': ^0.102.7
+  # Temporary local development integration for SDK #1371; coordinated shipping restores the published family pin.
+  '@happyvertical/speech': link:../sdk-helper-release/packages/speech
   '@happyvertical/spider': ^1.1.13
   '@happyvertical/sql': ^0.102.7
   '@happyvertical/utils': ^0.102.7
