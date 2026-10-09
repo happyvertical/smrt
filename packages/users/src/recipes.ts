@@ -25,7 +25,6 @@ export class UsersSignInRecipe extends SmrtRecipe {
     'Access an account through an application-authorized sign-in flow.';
   static synonyms = ['log in', 'authentication', 'single sign-on'];
   static models = [User, Session];
-  static runtime = 'browser' as const;
   static providers = [
     {
       id: 'oidc',
@@ -75,7 +74,6 @@ export class UsersRolesAndPermissionsRecipe extends SmrtRecipe {
     'Manage tenant roles, memberships, permissions, and controlled sharing.';
   static synonyms = ['access control', 'rbac', 'sharing'];
   static models = [Role, Permission, Membership, ResourceGrant];
-  static runtime = 'browser' as const;
   static nav = [
     {
       label: 'Roles',
