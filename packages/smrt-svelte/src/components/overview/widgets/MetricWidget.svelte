@@ -83,6 +83,4 @@ const href = $derived(
   a.smrt-metric__value:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; border-radius: var(--smrt-radius-small, 0.25rem); }
   .smrt-metric__label { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
   .smrt-metric__change { margin: 0; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-label-large-size, 0.875rem); }
-  .smrt-metric__change[data-direction='up'] { color: var(--smrt-color-success, var(--smrt-color-on-surface-variant)); }
-  .smrt-metric__change[data-direction='down'] { color: var(--smrt-color-error, var(--smrt-color-on-surface-variant)); }
 </style>
