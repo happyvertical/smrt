@@ -1,7 +1,7 @@
 import { DEFAULT_MODEL_ID, getModel } from './models.ts';
 
 /**
- * A UI preference, not part of the blueprint: which model to use and which the
+ * A UI preference, not part of the cookbook: which model to use and which the
  * visitor has agreed to download. Kept in localStorage; every access is
  * guarded because it can throw or be empty (private windows, blocked storage).
  */

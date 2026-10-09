@@ -1,6 +1,10 @@
 <script lang="ts">
+import { tick } from 'svelte';
+import { errorSummary, missingRequired } from '../data/columns.ts';
 import { useDataSource } from '../data/context.ts';
+import { createNoun } from '../data/format.ts';
 import type { ModelRecord } from '../data/source.ts';
+import { focusFirstInvalid } from '../fields/invalid.ts';
 import type { ActiveForm } from '../forms/active.ts';
 import {
   blankFieldMap,
@@ -11,6 +15,7 @@ import {
   primaryIndex,
 } from '../forms/fieldMap.ts';
 import { catalogModels } from '../forms/shared.ts';
+import { recipeState } from '../recipes/state.svelte.ts';
 import type { FieldMapForm } from '../recipes/types.ts';
 import FieldInput from './FieldInput.svelte';
 
@@ -21,12 +26,29 @@ interface FieldMapFormProps {
   /** Called with the saved row of the form's own model. */
   onsaved: (saved: ModelRecord) => void;
   oncancel: () => void;
+  /** Values a NEW row carries, e.g. the filter of the page it was added on. */
+  preset?: Record<string, unknown>;
+  /** What the page calls one record ("member"); wins over the form's label. */
+  noun?: string;
 }
 
-let { active, id, onsaved, oncancel }: FieldMapFormProps = $props();
+let { active, id, onsaved, oncancel, preset, noun }: FieldMapFormProps =
+  $props();
 
 const source = useDataSource();
-const inputs = $derived(fieldMapInputs(active, catalogModels));
+// An option row that hides a field (a cookbook's, or the visitor's) takes it
+// out of the form too.
+const inputs = $derived(
+  fieldMapInputs(active, catalogModels).filter(
+    ({ catalogField, modelId }) =>
+      !recipeState.rows.some(
+        (row) =>
+          row.objectRef === modelId &&
+          row.fieldName === catalogField.name &&
+          row.visibility === 'hidden',
+      ),
+  ),
+);
 
 // svelte-ignore state_referenced_locally
 let values = $state<Record<string, unknown>>(
@@ -35,6 +57,16 @@ let values = $state<Record<string, unknown>>(
 // svelte-ignore state_referenced_locally
 let loaded = $state(id === undefined);
 let error = $state('');
+let errors = $state<Record<string, string>>({});
+const requiredFields = $derived(
+  inputs.map(({ field, catalogField }) => ({
+    ...catalogField,
+    name: field.id,
+    label: field.label,
+    required: field.required ?? catalogField.required,
+  })),
+);
+const summary = $derived(errorSummary(requiredFields, errors));
 /** The rows an edited row's records point at; see `planFieldMapSave`. */
 let rows: Record<string, ModelRecord | undefined> = {};
 
@@ -49,10 +81,17 @@ if (id !== undefined) void load(id);
 
 async function save(event: SubmitEvent) {
   event.preventDefault();
+  const form = event.currentTarget;
   error = '';
+  errors = missingRequired(requiredFields, values);
+  if (Object.keys(errors).length > 0) {
+    await tick();
+    focusFirstInvalid(form);
+    return;
+  }
   try {
     const written = await source.apply(
-      planFieldMapSave(active, catalogModels, values, id, rows),
+      planFieldMapSave(active, catalogModels, values, id, rows, preset),
     );
     const primary = fieldMapParts(active).records[primaryIndex(active)];
     const saved = primary ? written[primary.as] : undefined;
@@ -67,8 +106,8 @@ async function save(event: SubmitEvent) {
 {#if !loaded}
   <p>Loading...</p>
 {:else}
-  <form onsubmit={save}>
-    <h3>{id === undefined ? `New ${active.form.label.toLowerCase()}` : `Edit ${active.form.label.toLowerCase()}`}</h3>
+  <form onsubmit={save} novalidate>
+    <h3>{id === undefined ? 'New' : 'Edit'} {createNoun(active.form.label, noun, noun !== undefined)}</h3>
     {#each inputs as { field, catalogField, modelId } (field.id)}
       <FieldInput
         {modelId}
@@ -76,10 +115,15 @@ async function save(event: SubmitEvent) {
         label={field.label}
         help={field.help}
         idPrefix={active.form.id}
+        error={errors[field.id]}
         value={values[field.id]}
-        onchange={(value) => (values[field.id] = value)}
+        onchange={(value) => {
+          values[field.id] = value;
+          delete errors[field.id];
+        }}
       />
     {/each}
+    {#if summary}<p class="error" role="alert" data-error-summary>{summary}</p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <div class="actions">
       <button type="submit">Save</button>

@@ -15,12 +15,14 @@ import {
 } from '../src/lib/forms/fieldMap.ts';
 import { catalogModels, fillTemplate, slug } from '../src/lib/forms/shared.ts';
 import {
+  LOCATION,
   PRODUCT,
   planProductDelete,
   SAVED_BY_FORMS,
   SKU,
   STOCK_LEVEL,
   stockByProduct,
+  stockSamples,
   VARIANT,
 } from '../src/lib/forms/stock.ts';
 import {
@@ -84,6 +86,7 @@ describe('Planner cards and sub-switches', () => {
     expect(products?.recipes.map((r) => r.id)).toEqual([
       'products.simple',
       'products.clothing',
+      'products.ingredients',
     ]);
     expect(products?.hasSubSwitches).toBe(true);
     expect(inventory?.hasSubSwitches).toBe(false);
@@ -634,5 +637,31 @@ describe('forms offered for the Product model', () => {
     expect(
       activeForms(['products.simple'], recipes, PRODUCT)[0]?.extensions,
     ).toEqual([]);
+  });
+});
+
+describe('sample stock', () => {
+  it('seeds locations, one SKU per product and stock levels', async () => {
+    const data = createMemoryDataSource({
+      empty: [VARIANT],
+      samples: stockSamples(catalogModels),
+    });
+    const products = await data.list(product);
+    const skus = await data.list(sku);
+    const levels = await data.list(level);
+    const locations = await data.list(catalogModels(LOCATION));
+    expect(skus).toHaveLength(products.length);
+    expect(locations.length).toBeGreaterThan(0);
+    expect(levels.length).toBeGreaterThanOrEqual(skus.length);
+    const skuIds = new Set(skus.map((s) => s.id));
+    const locationIds = new Set(locations.map((l) => l.id));
+    for (const row of levels) {
+      expect(skuIds.has(String(row.skuId))).toBe(true);
+      expect(locationIds.has(String(row.locationId))).toBe(true);
+      expect(Number(row.qty)).toBeGreaterThanOrEqual(0);
+      expect(Number(row.reorderPoint)).toBeGreaterThan(0);
+    }
+    expect(await data.list(catalogModels(VARIANT))).toEqual([]);
+    expect(stockByProduct(skus, levels).size).toBe(products.length);
   });
 });

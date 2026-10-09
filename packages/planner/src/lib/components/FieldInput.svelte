@@ -3,15 +3,21 @@ import {
   AddressInput,
   DateTimeInput,
   MoneyInput,
+  NumberInput,
   PhoneInput,
   SelectInput,
   TextareaInput,
   TextInput,
 } from '@happyvertical/smrt-svelte/forms';
-import { CurrencySelect, Switch } from '@happyvertical/smrt-ui/forms';
+import {
+  CurrencySelect,
+  FieldLabel,
+  Switch,
+} from '@happyvertical/smrt-ui/forms';
 import type { CatalogField } from '../catalog/types.ts';
 import { enumLabel, humanize } from '../data/format.ts';
 import { fromAddressInput, toAddressInput } from '../fields/address.ts';
+import { fractionToPercent, percentToFraction } from '../fields/percent.ts';
 import { chooseRenderer } from '../fields/renderer.ts';
 import RelationField from './RelationField.svelte';
 
@@ -32,6 +38,8 @@ interface FieldInputProps {
   hideRequired?: boolean;
   /** Let a relation selector offer "New ..." (off for a default-value control). */
   creatable?: boolean;
+  /** Why the value is not acceptable; shown beside the field until it changes. */
+  error?: string;
 }
 
 let {
@@ -44,6 +52,7 @@ let {
   idPrefix = 'field',
   hideRequired = false,
   creatable = true,
+  error,
 }: FieldInputProps = $props();
 
 const renderer = $derived(chooseRenderer(field, modelId));
@@ -58,11 +67,14 @@ const text = $derived(
       : String(value),
 );
 // An optional enum can be cleared again, as the native select it replaces could.
+// An enum that already lists '' (Invoice.collectionMethod) supplies that choice.
 const enumOptions = $derived([
-  ...(required ? [] : [{ value: '', label: '(none)' }]),
+  ...(required || (field.enum ?? []).includes('')
+    ? []
+    : [{ value: '', label: '(none)' }]),
   ...(field.enum ?? []).map((option) => ({
     value: option,
-    label: enumLabel(option),
+    label: option === '' ? '(none)' : enumLabel(option),
   })),
 ]);
 
@@ -84,7 +96,7 @@ function jsonFrom(raw: string): unknown {
 const dateOf = (stored: string): string => stored.slice(0, 10);
 </script>
 
-<div class="field">
+<div class="field" data-invalid={error ? '' : undefined}>
   {#if renderer === 'boolean'}
     <Switch
       checked={value === true}
@@ -146,6 +158,20 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
       value={typeof value === 'number' ? value : null}
       onchange={(cents) => onchange(cents)}
     />
+  {:else if renderer === 'percent'}
+    <!-- Typed as a percentage (5), stored as the fraction the model expects (0.05). -->
+    <div class="percent">
+      <NumberInput
+        name={id}
+        {label}
+        {required}
+        min={0}
+        step={0.01}
+        value={fractionToPercent(value)}
+        onchange={(percent) => onchange(percentToFraction(percent))}
+      />
+      <span class="percent-sign" aria-hidden="true">%</span>
+    </div>
   {:else if renderer === 'datetime'}
     <DateTimeInput
       name={id}
@@ -165,10 +191,7 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
       onchange={(edited) => onchange(fromAddressInput(edited, value))}
     />
   {:else}
-    <label for={id}>
-      {label}
-      {#if required}<span aria-hidden="true">*</span>{/if}
-    </label>
+    <FieldLabel for={id} {label} {required} />
     {#if renderer === 'currency'}
       <!-- ISO 4217 codes; the stored value is the code itself. -->
       <CurrencySelect
@@ -225,6 +248,9 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
       />
     {/if}
   {/if}
+  {#if error}
+    <p class="field-error" id={`${id}-error`} role="alert">{error}</p>
+  {/if}
   {#if help}
     <small>{help}</small>
   {/if}
@@ -236,8 +262,30 @@ const dateOf = (stored: string): string => stored.slice(0, 10);
     gap: var(--smrt-spacing-1);
   }
 
-  label {
-    font-weight: 500;
+  .percent {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--smrt-spacing-2);
+  }
+
+  .percent :global(.smrt-number) {
+    flex: 1;
+  }
+
+  .percent-sign {
+    padding-bottom: var(--smrt-spacing-2);
+    color: var(--smrt-color-on-surface-variant);
+  }
+
+  .field-error {
+    margin: 0;
+    color: var(--smrt-color-error);
+  }
+
+  .field[data-invalid] :global(input),
+  .field[data-invalid] :global(select),
+  .field[data-invalid] :global(textarea) {
+    border-color: var(--smrt-color-error);
   }
 
   small {

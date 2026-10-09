@@ -17,6 +17,7 @@ import {
   type ModelLookup,
   mappedValues,
   parseTarget,
+  scalar,
   startingValue,
   targetField,
   targetModelId,
@@ -140,6 +141,7 @@ export function planFieldMapSave(
   values: Readonly<Record<string, unknown>>,
   id?: string,
   rows: Readonly<Record<string, ModelRecord | undefined>> = {},
+  preset: Readonly<Record<string, unknown>> = {},
 ): RecordWrite[] {
   const { records, fields } = fieldMapParts(active);
   const context = contextFrom(fields, values);
@@ -147,7 +149,15 @@ export function planFieldMapSave(
   const written = new Set<string>();
   return records.map((record, index): RecordWrite => {
     const mapped = mappedValues(fields, record.as, values);
-    const createValues = toWriteValues(record.values, context);
+    // A page that lists a slice of rows (Ingredients) stamps new primary rows.
+    const createValues = {
+      ...toWriteValues(record.values, context),
+      ...(index === primary
+        ? Object.fromEntries(
+            Object.entries(preset).map(([key, v]) => [key, scalar(v)]),
+          )
+        : {}),
+    };
     const model = models(record.model);
     const existing = id !== undefined ? rows[record.as] : undefined;
     try {

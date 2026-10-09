@@ -4,6 +4,9 @@
  *
  * The registry is the one `.npmrc` maps the `@happyvertical` scope to (the
  * same one `pnpm install` uses); `SMRT_PLANNER_REGISTRY` overrides it.
+ *
+ * `CATALOG_SOURCE=<path to a smrt checkout>` reads that checkout's built
+ * `packages/*\/dist/manifest.json` instead, to preview unreleased manifests.
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -18,11 +21,14 @@ async function registryFromNpmrc(): Promise<string> {
   return (match?.[1] ?? DEFAULT_REGISTRY).replace(/\/+$/, '');
 }
 
-const registry =
-  process.env.SMRT_PLANNER_REGISTRY?.replace(/\/+$/, '') ??
-  (await registryFromNpmrc());
+const source = process.env.CATALOG_SOURCE || undefined;
+const registry = source
+  ? ''
+  : (process.env.SMRT_PLANNER_REGISTRY?.replace(/\/+$/, '') ??
+    (await registryFromNpmrc()));
 const catalog = await buildCatalog({
   registry,
+  source,
   log: (message) => console.error(message),
 });
 const out = fileURLToPath(new URL('src/lib/catalog/catalog.json', root));

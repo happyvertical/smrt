@@ -19,23 +19,31 @@ interface SectionIconsProps {
   current?: 'help' | 'options';
   /** A fragment on the Help page, e.g. the current model's fields. */
   helpAnchor?: string;
+  /** Compact icons for navigation rows (layout edit mode). */
+  compact?: boolean;
 }
 
-let { section, label, current, helpAnchor }: SectionIconsProps = $props();
+let {
+  section,
+  label,
+  current,
+  helpAnchor,
+  compact = false,
+}: SectionIconsProps = $props();
 
 const helpHref = $derived(
   `${appHref(`/recipes/${section}/help/`)}${helpAnchor ? `#${helpAnchor}` : ''}`,
 );
 </script>
 
-<div class="icons">
+<div class="icons" class:compact>
   <a
     href={helpHref}
     title={`${label} help`}
     aria-label={`${label} help`}
     aria-current={current === 'help' ? 'page' : undefined}
   >
-    <Icon path={HELP} size={22} />
+    <Icon path={HELP} size={compact ? 16 : 22} />
   </a>
   <a
     href={appHref(`/recipes/${section}/`)}
@@ -43,7 +51,7 @@ const helpHref = $derived(
     aria-label={`${label} options`}
     aria-current={current === 'options' ? 'page' : undefined}
   >
-    <Icon path={SETTINGS} size={22} />
+    <Icon path={SETTINGS} size={compact ? 16 : 22} />
   </a>
 </div>
 
@@ -76,5 +84,15 @@ const helpHref = $derived(
   a[aria-current='page'] {
     background: var(--smrt-color-secondary-container, rgb(0 0 0 / 12%));
     color: var(--smrt-color-primary);
+  }
+
+  .compact {
+    margin-inline-start: 0;
+    gap: 0;
+  }
+
+  .compact a {
+    width: 1.75rem;
+    height: 1.75rem;
   }
 </style>

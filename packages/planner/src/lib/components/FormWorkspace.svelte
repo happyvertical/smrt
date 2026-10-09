@@ -1,7 +1,8 @@
 <script lang="ts">
+import { page } from '$app/state';
 import type { CatalogModel } from '../catalog/types.ts';
 import { useDataSource } from '../data/context.ts';
-import { formatMoney } from '../data/format.ts';
+import { createNoun, formatMoney, recordCount } from '../data/format.ts';
 import type { ModelRecord } from '../data/source.ts';
 import {
   type ActiveForm,
@@ -17,6 +18,8 @@ import {
   stockByProduct,
   VARIANT,
 } from '../forms/stock.ts';
+import { takeCreate } from '../planner/create.ts';
+import { inScope, type RowScope } from '../recipes/scope.ts';
 import FieldMapForm from './FieldMapForm.svelte';
 import VariantGridForm from './VariantGridForm.svelte';
 
@@ -24,12 +27,24 @@ interface FormWorkspaceProps {
   model: CatalogModel;
   /** The forms of the added recipes for this model; New offers each. */
   forms: ActiveForm[];
+  /** The slice of rows this page lists (a filtered nav entry), if any. */
+  scope?: RowScope;
+  /** Values a new row carries so it stays in `scope`. */
+  preset?: Record<string, unknown>;
+  /** The list's heading; defaults to the model's plural name. */
+  title?: string;
+  /** What New creates on a filtered page, e.g. "ingredient". */
+  noun?: string;
 }
 
-let { model, forms }: FormWorkspaceProps = $props();
+let { model, forms, scope, preset, title, noun }: FormWorkspaceProps = $props();
 
 const source = useDataSource();
 const showStock = $derived(forms.some((f) => extendsWith(f, STOCK_LEVEL)));
+/** A filtered page adds plain products only; a grid of variants has no place there. */
+const offered = $derived(
+  scope?.equals !== undefined ? forms.filter(isFieldMap) : forms,
+);
 const gridForm = $derived(forms.find(isVariantGrid));
 const mapForm = $derived(forms.find(isFieldMap));
 
@@ -43,7 +58,7 @@ let editing = $state<{ form: ActiveForm; id?: string } | null>(null);
 let formKey = $state(0);
 
 async function load() {
-  rows = await source.list(model);
+  rows = (await source.list(model)).filter((row) => inScope(scope, row));
   // Rows with axes are Clothing even when its recipe is off.
   const variants = await source.list(catalogModels(VARIANT));
   withAxes = new Set(variants.map((v) => String(v.productId)));
@@ -60,10 +75,19 @@ $effect(() => {
   // Reload (and close any open form) when the model or the forms change.
   model.id;
   forms;
+  scope;
   editing = null;
   loaded = false;
-  void load();
+  void load().then(() => {
+    // A section page's "New ..." arrives with the form already open.
+    const first = offered[0];
+    if (takeCreate(page.url.pathname) && first) open(first);
+  });
 });
+
+// A reset (a cookbook applied, the app reset) swaps the rows underneath an
+// open page: read them again rather than keep showing the old ones.
+$effect(() => source.onReset?.(() => void load()));
 
 /** A row is Clothing when it has axes, Simple otherwise. */
 const kindOf = (row: ModelRecord): ActiveForm | undefined =>
@@ -93,11 +117,11 @@ async function remove(row: ModelRecord) {
 
 <section>
   <header>
-    <h2>{model.name === 'Product' ? 'Products' : model.name} <small>{rows.length} rows</small></h2>
+    <h2>{title ?? (model.name === 'Product' ? 'Products' : model.name)} {#if loaded}<small>{recordCount(rows.length)}</small>{/if}</h2>
     <div class="new">
-      {#each forms as active (active.form.id)}
+      {#each offered as active (active.form.id)}
         <button type="button" onclick={() => open(active)}>
-          New {active.form.label.toLowerCase()}
+          New {createNoun(active.form.label, noun, scope?.equals !== undefined || offered.length === 1)}
         </button>
       {/each}
     </div>
@@ -117,6 +141,8 @@ async function remove(row: ModelRecord) {
         <FieldMapForm
           active={current.form}
           id={current.id}
+          {preset}
+          noun={offered.length === 1 ? noun : undefined}
           onsaved={saved}
           oncancel={() => (editing = null)}
         />
@@ -127,7 +153,7 @@ async function remove(row: ModelRecord) {
   {#if !loaded}
     <p>Loading sample data...</p>
   {:else if rows.length === 0}
-    <p>No rows yet. Create one above.</p>
+    <p>No records yet. Create one above.</p>
   {:else}
     <div class="scroll">
       <table>

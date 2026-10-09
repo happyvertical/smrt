@@ -1,39 +1,39 @@
-import { getModelByQualifiedName } from '../catalog/index.ts';
+import { catalog, getModelByQualifiedName } from '../catalog/index.ts';
 import type { CatalogModel, CatalogPackage } from '../catalog/types.ts';
 import descriptionsFile from './help/descriptions.json';
-import { createRecipeHelp, type HelpModel } from './help.ts';
+import type { HelpModel } from './help.ts';
+import { mergeRecipes, type RecipeOverlay } from './merge.ts';
+import overlay from './overlay.json';
 import { type FieldPolicyRow, resolveFields } from './policy.ts';
-import raw from './recipes.json';
-import { buildSections, type RecipeSection } from './sections.ts';
-import type { Recipe, RecipeFile } from './types.ts';
+import {
+  buildSections,
+  entryDescription,
+  type RecipeSection,
+} from './sections.ts';
+import type { Recipe } from './types.ts';
 
 export type { RecipeSection } from './sections.ts';
-export { sectionId } from './sections.ts';
+export {
+  buildNavSections,
+  legacyNavSectionKeys,
+  navItemId,
+  navSectionOf,
+  sectionId,
+} from './sections.ts';
 export type * from './types.ts';
 
-// Local stand-ins for what happyvertical/smrt#3591 puts in the catalog: the
-// `help/<recipe id>.md` next to each recipe, and the `@field({ description })`
-// of the fields it shows. Both go away with `recipes.json`.
-const helpMarkdown = import.meta.glob<string>('./help/*.md', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-});
 const descriptions = descriptionsFile as Record<string, Record<string, string>>;
 
 /**
- * The recipes the planner offers, in declaration order (which is the order of
- * sub-switches on a card). This is the one seam to swap:
- * once recipes ship in the published packages' `smrt-knowledge.json`, read
- * them from the catalog here (help included) and delete `recipes.json` and
- * `help/`.
+ * The recipes the planner offers, in the overlay's order (which is the order
+ * of sub-switches on a card). They are the ones the smrt packages declare
+ * (carried in the catalog), plus the planner-local `forms` and `extends` of
+ * `overlay.json`; see `merge.ts`.
  */
-export const recipes: readonly Recipe[] = (
-  raw as unknown as RecipeFile
-).recipes.map((recipe): Recipe => {
-  const markdown = helpMarkdown[`./help/${recipe.id}.md`];
-  return markdown ? { ...recipe, help: createRecipeHelp(markdown) } : recipe;
-});
+export const recipes: readonly Recipe[] = mergeRecipes(
+  catalog.packages.flatMap((pkg) => pkg.recipes ?? []),
+  overlay as unknown as RecipeOverlay,
+);
 
 const byId = new Map(recipes.map((recipe) => [recipe.id, recipe]));
 
@@ -58,6 +58,16 @@ export function recipePackage(recipe: Recipe): CatalogPackage | undefined {
 
 export interface RecipeNavTarget {
   label: string;
+  /** Shell icon name; see `RecipeNavEntry.icon`. */
+  icon: string;
+  /** The recipe's own line; see `RecipeNavEntry.description`. */
+  description: string;
+  /** The entry's fixed id key, if the model appears twice in the nav. */
+  key?: string;
+  /** Explicit noun for the New button; see `RecipeNavEntry.noun`. */
+  noun?: string;
+  /** Row filter of a keyed entry; see `RecipeNavEntry.filter`. */
+  filter?: { field: string; value: string };
   model: CatalogModel;
   /** Catalog package id, for the `/m/<package>/<model>/` route. */
   packageId: string;
@@ -68,9 +78,32 @@ export function recipeNav(recipe: Recipe): RecipeNavTarget[] {
   return recipe.nav.flatMap((entry) => {
     const found = getModelByQualifiedName(entry.model);
     return found
-      ? [{ label: entry.label, model: found.model, packageId: found.pkg.id }]
+      ? [
+          {
+            label: entry.label,
+            icon: entry.icon,
+            description: entryDescription(entry.description, found.model),
+            ...(entry.key ? { key: entry.key } : {}),
+            ...(entry.noun ? { noun: entry.noun } : {}),
+            ...(entry.filter ? { filter: entry.filter } : {}),
+            model: found.model,
+            packageId: found.pkg.id,
+          },
+        ]
       : [];
   });
+}
+
+/**
+ * In-app path of a nav entry, without the app query: `/m/<pkg>/<Model>/`, and
+ * `/m/<pkg>/<Model>/<key>/` for a keyed entry (the same model shown twice).
+ */
+export function navPath(entry: {
+  packageId: string;
+  model: { name: string };
+  key?: string;
+}): string {
+  return `/m/${entry.packageId}/${entry.model.name}/${entry.key ? `${entry.key}/` : ''}`;
 }
 
 /** A recipe's models resolved to catalog models, in declared order. */

@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "registry": "https://npm.happyvertical.com",
+  "registry": "file:///Users/will/Work/_trees/smrt/recipes-upstream",
   "packages": [
     {
       "id": "ads",
       "packageName": "@happyvertical/smrt-ads",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Advertising delivery and tracking models for SMRT framework",
       "models": [
         {
@@ -256,6 +256,7 @@
           "id": "@happyvertical/smrt-ads:AdEvent",
           "name": "AdEvent",
           "collection": "adevents",
+          "description": "AdEvent tracks ad impressions, clicks, and conversions. Events are immutable (append-only, no update/delete).",
           "fields": [
             {
               "name": "created_at",
@@ -870,6 +871,7 @@
           "id": "@happyvertical/smrt-ads:AdGroup",
           "name": "AdGroup",
           "collection": "adgroups",
+          "description": "AdGroup organizes ad creatives with targeting and budget controls.",
           "display": {
             "label": "name"
           },
@@ -1444,6 +1446,7 @@
           "id": "@happyvertical/smrt-ads:AdVariation",
           "name": "AdVariation",
           "collection": "advariations",
+          "description": "AdVariation represents a creative asset within an ad group. Supports A/B testing via weighted selection.",
           "display": {
             "label": "name"
           },
@@ -1915,13 +1918,14 @@
     {
       "id": "analytics",
       "packageName": "@happyvertical/smrt-analytics",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Analytics integration models for SMRT framework",
       "models": [
         {
           "id": "@happyvertical/smrt-analytics:AnalyticsDataStream",
           "name": "AnalyticsDataStream",
           "collection": "analyticsdatastreams",
+          "description": "AnalyticsDataStream represents a data stream (web, iOS, Android) for an analytics property.",
           "fields": [
             {
               "name": "created_at",
@@ -2352,6 +2356,7 @@
           "id": "@happyvertical/smrt-analytics:AnalyticsEvent",
           "name": "AnalyticsEvent",
           "collection": "analyticsevents",
+          "description": "AnalyticsEvent represents a tracked analytics event (server-side tracking log).",
           "fields": [
             {
               "name": "created_at",
@@ -3002,6 +3007,7 @@
           "id": "@happyvertical/smrt-analytics:AnalyticsProperty",
           "name": "AnalyticsProperty",
           "collection": "analyticsproperties",
+          "description": "AnalyticsProperty represents an analytics property (GA4 property, Plausible site, or Matomo site).",
           "display": {
             "label": "name"
           },
@@ -3470,6 +3476,7 @@
           "id": "@happyvertical/smrt-analytics:AnalyticsReport",
           "name": "AnalyticsReport",
           "collection": "analyticsreports",
+          "description": "AnalyticsReport represents a saved report configuration with optional scheduling.",
           "display": {
             "label": "name"
           },
@@ -4049,7 +4056,7 @@
     {
       "id": "assets",
       "packageName": "@happyvertical/smrt-assets",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Asset management system with versioning, metadata, and AI-powered operations for SMRT framework",
       "models": [
         {
@@ -5835,7 +5842,7 @@
     {
       "id": "commerce",
       "packageName": "@happyvertical/smrt-commerce",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
       "models": [
         {
@@ -5843,6 +5850,7 @@
           "name": "Agreement",
           "collection": "contracts",
           "extends": "@happyvertical/smrt-commerce:Contract",
+          "description": "Service or maintenance agreement",
           "fields": [
             {
               "name": "created_at",
@@ -6173,6 +6181,7 @@
           "id": "@happyvertical/smrt-commerce:BillingAccount",
           "name": "BillingAccount",
           "collection": "billingaccounts",
+          "description": "One payer's account with one seller: the commerce Customer invoices are issued to, the provider customer they are pushed to, and the payer's billing terms.",
           "display": {
             "label": "name"
           },
@@ -6274,6 +6283,7 @@
           "id": "@happyvertical/smrt-commerce:BillingLineSource",
           "name": "BillingLineSource",
           "collection": "billinglinesources",
+          "description": "A claim that one billable source — a charge, an adjustment, or a window of a flat plan — is billed on exactly one period close.",
           "fields": [
             {
               "name": "sellerTenantId",
@@ -6373,6 +6383,7 @@
           "id": "@happyvertical/smrt-commerce:BillingPaymentAttempt",
           "name": "BillingPaymentAttempt",
           "collection": "billingpaymentattempts",
+          "description": "One payment attempt on a payment rail (#3138): a short-lived provider checkout (for example a BTCPay invoice) paying a credit purchase or an issued invoice.",
           "fields": [
             {
               "name": "sellerTenantId",
@@ -6618,6 +6629,7 @@
           "id": "@happyvertical/smrt-commerce:BillingPeriodClose",
           "name": "BillingPeriodClose",
           "collection": "billingperiodcloses",
+          "description": "The idempotency anchor for one payer's invoice in one currency for one period. Its id is derived from that identity, so a retried close always resumes the same row, invoice, and provider invoice.",
           "fields": [
             {
               "name": "sellerTenantId",
@@ -6766,6 +6778,7 @@
           "name": "Cart",
           "collection": "contracts",
           "extends": "@happyvertical/smrt-commerce:Contract",
+          "description": "Transient order-in-progress for a shopper.",
           "fields": [
             {
               "name": "created_at",
@@ -7096,6 +7109,7 @@
           "id": "@happyvertical/smrt-commerce:Contract",
           "name": "Contract",
           "collection": "contracts",
+          "description": "Contract is the base class for all commercial agreements.",
           "fields": [
             {
               "name": "created_at",
@@ -7605,6 +7619,7 @@
           "id": "@happyvertical/smrt-commerce:ContractLineItem",
           "name": "ContractLineItem",
           "collection": "contractlineitems",
+          "description": "ContractLineItem represents a single line item on a contract.",
           "fields": [
             {
               "name": "created_at",
@@ -7882,6 +7897,7 @@
           "id": "@happyvertical/smrt-commerce:Customer",
           "name": "Customer",
           "collection": "customers",
+          "description": "Customer represents the customer role for a Profile.",
           "fields": [
             {
               "name": "tenantId",
@@ -8208,6 +8224,7 @@
           "name": "Estimate",
           "collection": "contracts",
           "extends": "@happyvertical/smrt-commerce:Contract",
+          "description": "Quote or proposal for a customer",
           "fields": [
             {
               "name": "created_at",
@@ -8538,6 +8555,7 @@
           "id": "@happyvertical/smrt-commerce:Fulfillment",
           "name": "Fulfillment",
           "collection": "fulfillments",
+          "description": "Fulfillment tracks the delivery or completion of contract items.",
           "fields": [
             {
               "name": "tenantId",
@@ -8963,6 +8981,7 @@
           "id": "@happyvertical/smrt-commerce:FulfillmentLineItem",
           "name": "FulfillmentLineItem",
           "collection": "fulfillmentlineitems",
+          "description": "FulfillmentLineItem tracks which contract line items are included in a specific fulfillment and how much was fulfilled.",
           "fields": [
             {
               "name": "tenantId",
@@ -9192,6 +9211,7 @@
           "id": "@happyvertical/smrt-commerce:Invoice",
           "name": "Invoice",
           "collection": "invoices",
+          "description": "Invoice represents a bill sent to a customer for goods or services.",
           "fields": [
             {
               "name": "tenantId",
@@ -9975,6 +9995,7 @@
           "id": "@happyvertical/smrt-commerce:InvoiceLineItem",
           "name": "InvoiceLineItem",
           "collection": "invoicelineitems",
+          "description": "InvoiceLineItem represents a single line item on an invoice.",
           "fields": [
             {
               "name": "tenantId",
@@ -10491,6 +10512,7 @@
           "name": "Lease",
           "collection": "contracts",
           "extends": "@happyvertical/smrt-commerce:Contract",
+          "description": "Rental or lease agreement",
           "fields": [
             {
               "name": "created_at",
@@ -10822,6 +10844,7 @@
           "name": "LicenseSale",
           "collection": "contracts",
           "extends": "@happyvertical/smrt-commerce:Contract",
+          "description": "Industry-neutral licensing primitive.",
           "fields": [
             {
               "name": "created_at",
@@ -11191,6 +11214,7 @@
           "name": "Order",
           "collection": "contracts",
           "extends": "@happyvertical/smrt-commerce:Contract",
+          "description": "Customer purchase order",
           "fields": [
             {
               "name": "created_at",
@@ -11521,6 +11545,7 @@
           "id": "@happyvertical/smrt-commerce:Payment",
           "name": "Payment",
           "collection": "payments",
+          "description": "Payment represents a financial transaction against a contract.",
           "fields": [
             {
               "name": "tenantId",
@@ -12097,6 +12122,7 @@
           "id": "@happyvertical/smrt-commerce:PaymentAllocation",
           "name": "PaymentAllocation",
           "collection": "paymentallocations",
+          "description": "PaymentAllocation tracks how payments are applied to invoices.",
           "fields": [
             {
               "name": "tenantId",
@@ -12421,6 +12447,7 @@
           "id": "@happyvertical/smrt-commerce:PaymentInstrument",
           "name": "PaymentInstrument",
           "collection": "paymentinstruments",
+          "description": "PaymentInstrument stores a reusable payment method a customer has saved with a payment backend (e.g. a card vaulted by Stripe), so it can be charged later without the customer present.",
           "fields": [
             {
               "name": "tenantId",
@@ -13804,6 +13831,7 @@
           "name": "ProductionOrder",
           "collection": "contracts",
           "extends": "@happyvertical/smrt-commerce:Contract",
+          "description": "Instruction to commission goods from an internal or external factory.",
           "fields": [
             {
               "name": "created_at",
@@ -14135,6 +14163,7 @@
           "name": "PurchaseOrder",
           "collection": "contracts",
           "extends": "@happyvertical/smrt-commerce:Contract",
+          "description": "Order sent to vendor/supplier",
           "fields": [
             {
               "name": "created_at",
@@ -14465,6 +14494,7 @@
           "id": "@happyvertical/smrt-commerce:Vendor",
           "name": "Vendor",
           "collection": "vendors",
+          "description": "Vendor represents the vendor/supplier role for a Profile.",
           "fields": [
             {
               "name": "tenantId",
@@ -14831,6 +14861,7 @@
           "name": "WholesaleOrder",
           "collection": "contracts",
           "extends": "@happyvertical/smrt-commerce:Contract",
+          "description": "B2B order placed by a wholesale customer.",
           "fields": [
             {
               "name": "created_at",
@@ -15165,12 +15196,1055 @@
         "subscriptions",
         "users"
       ],
-      "surfaceSource": "knowledge"
+      "surfaceSource": "knowledge",
+      "recipes": [
+        {
+          "id": "commerce.agreements",
+          "label": "General agreements",
+          "summary": "Keep signed agreements with customers, and see every contract in one list.",
+          "synonyms": [
+            "contracts",
+            "terms",
+            "deals"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:Agreement",
+            "@happyvertical/smrt-commerce:Contract",
+            "@happyvertical/smrt-commerce:ContractLineItem"
+          ],
+          "nav": [
+            {
+              "label": "Agreements",
+              "model": "@happyvertical/smrt-commerce:Agreement",
+              "icon": "fileText",
+              "description": "Signed deals and terms with your customers, in one place."
+            },
+            {
+              "label": "All contracts",
+              "model": "@happyvertical/smrt-commerce:Contract",
+              "icon": "fileText",
+              "description": "Every contract you hold, whoever it is with."
+            }
+          ],
+          "requires": [
+            "commerce.customers"
+          ],
+          "group": {
+            "id": "agreements",
+            "label": "Agreements",
+            "summary": "Contracts with customers: general agreements, leases and licence sales."
+          },
+          "section": {
+            "id": "agreements",
+            "label": "Agreements",
+            "icon": "fileText",
+            "description": "Contracts, leases and licenses with customers."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:Agreement": {
+              "fields": {
+                "contractType": {
+                  "default": "agreement",
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "customerId": {
+                  "label": "Customer",
+                  "order": 1,
+                  "required": true
+                },
+                "vendorId": {
+                  "visibility": "hidden"
+                },
+                "subtotal": {
+                  "visibility": "hidden"
+                },
+                "taxAmount": {
+                  "visibility": "hidden"
+                },
+                "channelId": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:ContractLineItem": {
+              "fields": {
+                "sku": {
+                  "visibility": "hidden"
+                },
+                "startDate": {
+                  "visibility": "hidden"
+                },
+                "endDate": {
+                  "visibility": "hidden"
+                },
+                "billingPeriod": {
+                  "visibility": "hidden"
+                },
+                "sortOrder": {
+                  "visibility": "hidden"
+                },
+                "discount": {
+                  "visibility": "hidden"
+                },
+                "taxRate": {
+                  "help": "Type a percentage: 5 means 5%."
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:Contract": {
+              "fields": {
+                "channelId": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nAgreements are contracts you keep with customers. Turn on the kinds you use:\ngeneral agreements here, plus leases and licence sales from the same card.\n**All contracts** lists every kind together, including orders and quotes.\n\n## Tasks\n\n### Record an agreement\n\n1. Open **Agreements** and choose **New**.\n2. Pick the **{field:customerId}**.\n3. Set the **{field:issueDate}** and **{field:expiryDate}**.\n4. Put the conditions in **{field:terms}** and save.\n\n### Follow it\n\n1. Update **{field:status}** from draft to accepted to completed.\n2. Check **{field:expiryDate}** to spot agreements about to lapse.\n",
+            "fieldRefs": [
+              "customerId",
+              "expiryDate",
+              "issueDate",
+              "status",
+              "terms"
+            ]
+          }
+        },
+        {
+          "id": "commerce.customers",
+          "label": "Customers",
+          "summary": "Keep a list of the people and companies you sell to.",
+          "synonyms": [
+            "clients",
+            "buyers",
+            "accounts"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:Customer"
+          ],
+          "nav": [
+            {
+              "label": "Customers",
+              "model": "@happyvertical/smrt-commerce:Customer",
+              "icon": "users",
+              "description": "The people and companies you sell to, with how to reach them."
+            }
+          ],
+          "requires": [],
+          "section": {
+            "id": "sales",
+            "label": "Sales",
+            "icon": "shoppingBag",
+            "description": "Customers, orders and quotes: everything you sell."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:Customer": {
+              "fields": {
+                "profileId": {
+                  "label": "Name",
+                  "order": -1
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nCustomers is your address book for the people and businesses you sell to. Keep\none record for each customer so you can see who they are, how they like to pay\nand what you have agreed with them, then refer back to them whenever you take an\norder.\n\n## Tasks\n\n### Add a new customer\n\n1. Choose the **New** button above the list.\n2. Describe the customer with **{field:customerType}**: a direct shopper, a\n   wholesale buyer or a retail customer. Note in **{field:status}** whether you\n   are still dealing with them.\n3. Fill in the **{field:defaultShippingAddress}** and\n   **{field:defaultBillingAddress}** so you do not have to type them again on\n   every order.\n4. Add **{field:paymentTerms}**, for example \"Net 30\", if you give this\n   customer time to pay.\n5. Save. The customer is now on your list and ready to use on a sales order.\n\n### Keep track of what a customer can owe\n\n1. Open the customer from the list and choose Edit.\n2. Set **{field:creditLimit}** to the most you are comfortable letting them owe\n   you at one time.\n3. If you do not charge them sales tax, turn on **{field:taxExempt}**, and keep\n   their tax number on file.\n4. Use **{field:notes}** for anything the next person who deals with this\n   customer should know.\n\n### Find a customer\n\nScan the list for the customer you want, or open a record to see everything you\nhave on file. To stop dealing with someone without losing their history, change\ntheir **{field:status}** to inactive instead of deleting them.\n",
+            "fieldRefs": [
+              "creditLimit",
+              "customerType",
+              "defaultBillingAddress",
+              "defaultShippingAddress",
+              "notes",
+              "paymentTerms",
+              "status",
+              "taxExempt"
+            ]
+          }
+        },
+        {
+          "id": "commerce.estimates",
+          "label": "Estimates",
+          "summary": "Send customers a price quote before they commit.",
+          "synonyms": [
+            "quotes",
+            "quotations",
+            "proposals",
+            "bids"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:Estimate",
+            "@happyvertical/smrt-commerce:ContractLineItem"
+          ],
+          "nav": [
+            {
+              "label": "Estimates",
+              "model": "@happyvertical/smrt-commerce:Estimate",
+              "icon": "fileText",
+              "description": "Quotes you have sent, ready to turn into orders when accepted."
+            }
+          ],
+          "requires": [
+            "commerce.customers"
+          ],
+          "section": {
+            "id": "sales",
+            "label": "Sales",
+            "icon": "shoppingBag",
+            "description": "Customers, orders and quotes: everything you sell."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:Estimate": {
+              "fields": {
+                "contractType": {
+                  "default": "estimate",
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "vendorId": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "customerId": {
+                  "label": "Customer",
+                  "order": 1,
+                  "required": true
+                },
+                "channelId": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:ContractLineItem": {
+              "fields": {
+                "sku": {
+                  "visibility": "hidden"
+                },
+                "startDate": {
+                  "visibility": "hidden"
+                },
+                "endDate": {
+                  "visibility": "hidden"
+                },
+                "billingPeriod": {
+                  "visibility": "hidden"
+                },
+                "sortOrder": {
+                  "visibility": "hidden"
+                },
+                "discount": {
+                  "visibility": "hidden"
+                },
+                "taxRate": {
+                  "help": "Type a percentage: 5 means 5%."
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nEstimates are price quotes you send before a customer commits. Each one belongs\nto a customer, lists its line items and shows how long the price is good for.\n\n## Tasks\n\n### Write an estimate\n\n1. Choose **New** above the list.\n2. Pick the **{field:customerId}** the quote is for.\n3. Add the line items, then check the **{field:totalAmount}**.\n4. Set **{field:expiryDate}** to the last day the price is good for.\n5. Put your conditions in **{field:terms}** and save.\n\n### Follow it up\n\n1. Set **{field:status}** to sent once it goes out.\n2. Move it to accepted or declined when the customer answers.\n",
+            "fieldRefs": [
+              "customerId",
+              "expiryDate",
+              "status",
+              "terms",
+              "totalAmount"
+            ]
+          }
+        },
+        {
+          "id": "commerce.fulfillment",
+          "label": "Shipping",
+          "summary": "Pack, ship and deliver orders, with tracking.",
+          "synonyms": [
+            "fulfillment",
+            "delivery",
+            "shipments",
+            "tracking"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:Fulfillment",
+            "@happyvertical/smrt-commerce:FulfillmentLineItem"
+          ],
+          "nav": [
+            {
+              "label": "Shipments",
+              "model": "@happyvertical/smrt-commerce:Fulfillment",
+              "icon": "truck",
+              "description": "What has gone out the door and where it is now."
+            }
+          ],
+          "requires": [],
+          "requiresAny": [
+            [
+              "commerce.sales",
+              "commerce.wholesale"
+            ]
+          ],
+          "group": {
+            "id": "billing",
+            "label": "Billing & shipping",
+            "summary": "Invoice your customers, record what they pay and ship what they ordered."
+          },
+          "section": {
+            "id": "operations",
+            "label": "Operations",
+            "icon": "wrench",
+            "description": "Fulfillment and the day-to-day work behind an order."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:Fulfillment": {
+              "fields": {
+                "estimatedDelivery": {
+                  "visibility": "hidden"
+                },
+                "shippingAddress": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:FulfillmentLineItem": {
+              "fields": {
+                "notes": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nShipping tracks how an order gets to the customer. Each shipment belongs to an\norder and lists which line items are in it, so an order can go out in parts.\n\n## Tasks\n\n### Ship an order\n\n1. Open **Shipments** and choose **New**.\n2. Pick the order in **{field:contractId}** and choose the\n   **{field:fulfillmentType}**.\n3. Enter the **{field:carrier}** and **{field:trackingNumber}**.\n4. List the items and quantities in the shipment.\n5. Set **{field:status}** to shipped and record **{field:shippedAt}**.\n\n### Confirm delivery\n\n1. Open the shipment and set **{field:status}** to delivered.\n2. Record **{field:deliveredAt}**.\n",
+            "fieldRefs": [
+              "carrier",
+              "contractId",
+              "deliveredAt",
+              "fulfillmentType",
+              "shippedAt",
+              "status",
+              "trackingNumber"
+            ]
+          }
+        },
+        {
+          "id": "commerce.invoicing",
+          "label": "Invoicing",
+          "summary": "Bill customers and record the payments that come in.",
+          "synonyms": [
+            "invoices",
+            "billing",
+            "payments",
+            "receivables"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:Invoice",
+            "@happyvertical/smrt-commerce:InvoiceLineItem",
+            "@happyvertical/smrt-commerce:Payment",
+            "@happyvertical/smrt-commerce:PaymentAllocation"
+          ],
+          "nav": [
+            {
+              "label": "Invoices",
+              "model": "@happyvertical/smrt-commerce:Invoice",
+              "icon": "receipt",
+              "description": "Bills you have sent and which ones are still waiting to be paid."
+            },
+            {
+              "label": "Payments",
+              "model": "@happyvertical/smrt-commerce:Payment",
+              "icon": "creditCard",
+              "description": "Money received, matched to the invoices it paid."
+            }
+          ],
+          "requires": [
+            "commerce.customers"
+          ],
+          "group": {
+            "id": "billing",
+            "label": "Billing & shipping",
+            "summary": "Invoice your customers, record what they pay and ship what they ordered."
+          },
+          "section": {
+            "id": "billing",
+            "label": "Billing",
+            "icon": "receipt",
+            "description": "Invoices and the payments against them."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:Invoice": {
+              "fields": {
+                "providerTaxAmount": {
+                  "visibility": "hidden"
+                },
+                "arJournalId": {
+                  "visibility": "hidden"
+                },
+                "revenueJournalId": {
+                  "visibility": "hidden"
+                },
+                "externalId": {
+                  "visibility": "hidden"
+                },
+                "customerExternalId": {
+                  "visibility": "hidden"
+                },
+                "externalProvider": {
+                  "visibility": "hidden"
+                },
+                "syncedAt": {
+                  "visibility": "hidden"
+                },
+                "collectionMethod": {
+                  "visibility": "hidden"
+                },
+                "sentAt": {
+                  "visibility": "hidden"
+                },
+                "viewedAt": {
+                  "visibility": "hidden"
+                },
+                "remindersSent": {
+                  "visibility": "hidden"
+                },
+                "lastReminderAt": {
+                  "visibility": "hidden"
+                },
+                "reference": {
+                  "visibility": "hidden"
+                },
+                "customerId": {
+                  "required": true
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:InvoiceLineItem": {
+              "fields": {
+                "invoiceEditorStateJson": {
+                  "visibility": "hidden"
+                },
+                "sourceType": {
+                  "visibility": "hidden"
+                },
+                "sourceId": {
+                  "visibility": "hidden"
+                },
+                "periodStart": {
+                  "visibility": "hidden"
+                },
+                "periodEnd": {
+                  "visibility": "hidden"
+                },
+                "revenueAccountId": {
+                  "visibility": "hidden"
+                },
+                "sortOrder": {
+                  "visibility": "hidden"
+                },
+                "sku": {
+                  "visibility": "hidden"
+                },
+                "discount": {
+                  "visibility": "hidden"
+                },
+                "taxRate": {
+                  "help": "Type a percentage: 5 means 5%."
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:Payment": {
+              "fields": {
+                "journalId": {
+                  "visibility": "hidden"
+                },
+                "externalId": {
+                  "visibility": "hidden"
+                },
+                "externalProvider": {
+                  "visibility": "hidden"
+                },
+                "syncedAt": {
+                  "visibility": "hidden"
+                },
+                "backendId": {
+                  "visibility": "hidden"
+                },
+                "backendTxRef": {
+                  "visibility": "hidden"
+                },
+                "nativeAmount": {
+                  "visibility": "hidden"
+                },
+                "nativeCurrency": {
+                  "visibility": "hidden"
+                },
+                "usdAtQuote": {
+                  "visibility": "hidden"
+                },
+                "usdAtConfirmation": {
+                  "visibility": "hidden"
+                },
+                "transactionId": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:PaymentAllocation": {
+              "fields": {
+                "allocatedBy": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nInvoicing bills your customers and records what they pay. An invoice lists its\nline items; a payment can be spread across one or more invoices.\n\n## Tasks\n\n### Send an invoice\n\n1. Open **Invoices** and choose **New**.\n2. Pick the **{field:customerId}** and add the line items.\n3. Check the **{field:totalAmount}** and set the **{field:dueDate}**.\n4. Set **{field:status}** to sent once it goes out.\n\n### Record a payment\n\n1. Open **Payments** and choose **New**.\n2. Pick the **{field:customerId}**, then enter the **{field:Payment.amount}** and the\n   **{field:method}** used.\n3. Set **{field:Payment.status}** to completed once the money has arrived.\n4. Apply it to the invoices it settles; each one shows what is still owed.\n",
+            "fieldRefs": [
+              "Payment.amount",
+              "Payment.status",
+              "customerId",
+              "dueDate",
+              "method",
+              "status",
+              "totalAmount"
+            ]
+          }
+        },
+        {
+          "id": "commerce.leases",
+          "label": "Leases",
+          "summary": "Rent things out and track the term and the payments due.",
+          "synonyms": [
+            "rentals",
+            "renting",
+            "hire"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:Lease",
+            "@happyvertical/smrt-commerce:ContractLineItem"
+          ],
+          "nav": [
+            {
+              "label": "Leases",
+              "model": "@happyvertical/smrt-commerce:Lease",
+              "icon": "home",
+              "description": "Rentals you give or take, with terms and dates."
+            }
+          ],
+          "requires": [
+            "commerce.customers"
+          ],
+          "group": {
+            "id": "agreements",
+            "label": "Agreements",
+            "summary": "Contracts with customers: general agreements, leases and licence sales."
+          },
+          "section": {
+            "id": "agreements",
+            "label": "Agreements",
+            "icon": "fileText",
+            "description": "Contracts, leases and licenses with customers."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:Lease": {
+              "fields": {
+                "contractType": {
+                  "default": "lease",
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "customerId": {
+                  "label": "Customer",
+                  "order": 1,
+                  "required": true
+                },
+                "vendorId": {
+                  "visibility": "hidden"
+                },
+                "subtotal": {
+                  "visibility": "hidden"
+                },
+                "taxAmount": {
+                  "visibility": "hidden"
+                },
+                "channelId": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:ContractLineItem": {
+              "fields": {
+                "sku": {
+                  "visibility": "hidden"
+                },
+                "startDate": {
+                  "visibility": "hidden"
+                },
+                "endDate": {
+                  "visibility": "hidden"
+                },
+                "billingPeriod": {
+                  "visibility": "hidden"
+                },
+                "sortOrder": {
+                  "visibility": "hidden"
+                },
+                "discount": {
+                  "visibility": "hidden"
+                },
+                "taxRate": {
+                  "help": "Type a percentage: 5 means 5%."
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nLeases are agreements where a customer rents something from you for a period.\nEach lease keeps its own line items and dates.\n\n## Tasks\n\n### Record a lease\n\n1. Open **Leases** and choose **New**.\n2. Pick the **{field:customerId}** renting from you.\n3. Set the **{field:issueDate}** it starts and the **{field:expiryDate}** it ends.\n4. Add a line item for each thing rented, then save.\n\n### Keep an eye on it\n\n1. Update **{field:status}** as the lease goes from draft to accepted to\n   completed.\n2. Check **{field:expiryDate}** to see which leases end soon.\n",
+            "fieldRefs": [
+              "customerId",
+              "expiryDate",
+              "issueDate",
+              "status"
+            ]
+          }
+        },
+        {
+          "id": "commerce.licenses",
+          "label": "Licence sales",
+          "summary": "Sell licences to software, content or other rights.",
+          "synonyms": [
+            "licenses",
+            "licensing",
+            "subscriptions"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:LicenseSale",
+            "@happyvertical/smrt-commerce:ContractLineItem"
+          ],
+          "nav": [
+            {
+              "label": "Licence sales",
+              "model": "@happyvertical/smrt-commerce:LicenseSale",
+              "icon": "shoppingBag",
+              "description": "Licences you have sold and who holds them."
+            }
+          ],
+          "requires": [
+            "commerce.customers"
+          ],
+          "group": {
+            "id": "agreements",
+            "label": "Agreements",
+            "summary": "Contracts with customers: general agreements, leases and licence sales."
+          },
+          "section": {
+            "id": "agreements",
+            "label": "Agreements",
+            "icon": "fileText",
+            "description": "Contracts, leases and licenses with customers."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:LicenseSale": {
+              "fields": {
+                "contractType": {
+                  "default": "license_sale",
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "customerId": {
+                  "label": "Customer",
+                  "order": 1,
+                  "required": true
+                },
+                "vendorId": {
+                  "visibility": "hidden"
+                },
+                "subtotal": {
+                  "visibility": "hidden"
+                },
+                "taxAmount": {
+                  "visibility": "hidden"
+                },
+                "channelId": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:ContractLineItem": {
+              "fields": {
+                "sku": {
+                  "visibility": "hidden"
+                },
+                "startDate": {
+                  "visibility": "hidden"
+                },
+                "endDate": {
+                  "visibility": "hidden"
+                },
+                "billingPeriod": {
+                  "visibility": "hidden"
+                },
+                "sortOrder": {
+                  "visibility": "hidden"
+                },
+                "discount": {
+                  "visibility": "hidden"
+                },
+                "taxRate": {
+                  "help": "Type a percentage: 5 means 5%."
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nLicence sales record selling the right to use something, such as software or\ncontent, rather than a physical item.\n\n## Tasks\n\n### Record a licence sale\n\n1. Open **Licence sales** and choose **New**.\n2. Pick the **{field:customerId}** who bought the licence.\n3. Add a line item for what is licensed and check the **{field:totalAmount}**.\n4. Set the **{field:expiryDate}** if the licence runs out, then save.\n\n### Follow it\n\n1. Update **{field:status}** when the customer accepts or the sale completes.\n",
+            "fieldRefs": [
+              "customerId",
+              "expiryDate",
+              "status",
+              "totalAmount"
+            ]
+          }
+        },
+        {
+          "id": "commerce.purchases",
+          "label": "Purchases",
+          "summary": "Order from your vendors and track what you have bought.",
+          "synonyms": [
+            "purchase orders",
+            "buying",
+            "procurement"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:PurchaseOrder",
+            "@happyvertical/smrt-commerce:ContractLineItem"
+          ],
+          "nav": [
+            {
+              "label": "Purchase orders",
+              "model": "@happyvertical/smrt-commerce:PurchaseOrder",
+              "icon": "truck",
+              "description": "What you have ordered from your suppliers and when it arrives."
+            }
+          ],
+          "requires": [
+            "commerce.vendors"
+          ],
+          "section": {
+            "id": "purchasing",
+            "label": "Purchasing",
+            "icon": "truck",
+            "description": "Vendors and purchase orders: everything you buy."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:PurchaseOrder": {
+              "fields": {
+                "contractType": {
+                  "default": "purchase_order",
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "customerId": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "vendorId": {
+                  "label": "Vendor",
+                  "order": 1
+                },
+                "channelId": {
+                  "visibility": "hidden"
+                },
+                "expiryDate": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:ContractLineItem": {
+              "fields": {
+                "sku": {
+                  "visibility": "hidden"
+                },
+                "startDate": {
+                  "visibility": "hidden"
+                },
+                "endDate": {
+                  "visibility": "hidden"
+                },
+                "billingPeriod": {
+                  "visibility": "hidden"
+                },
+                "sortOrder": {
+                  "visibility": "hidden"
+                },
+                "discount": {
+                  "visibility": "hidden"
+                },
+                "taxRate": {
+                  "help": "Type a percentage: 5 means 5%."
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nPurchases is where you order from your vendors and keep track of what you have\nbought. Every purchase order belongs to one of your vendors and records the\namounts, the dates and where the order stands.\n\n## Tasks\n\n### Place a purchase order\n\n1. Choose the **New** button above the list.\n2. Enter the **{field:vendorId}** you are buying from. Add them under Vendors\n   first so they are on your list.\n3. Enter the **{field:subtotal}** and **{field:taxAmount}**, then the\n   **{field:totalAmount}** you expect to pay.\n4. Set the **{field:issueDate}**, and the **{field:dueDate}** for when the\n   goods or the payment are due.\n5. Add your own **{field:reference}**, such as the vendor's quote number, so\n   you can match it to their paperwork.\n6. Save.\n\n### Follow an order until it arrives\n\n1. Open the purchase order from the list and choose Edit.\n2. Update **{field:status}** as the order moves along, for example from draft to\n   sent, accepted and completed.\n3. Use **{field:notes}** to record what the vendor told you, such as delays or\n   partial shipments.\n\n### Record the agreement\n\n1. Open the purchase order and choose Edit.\n2. Write down the **{field:terms}** you agreed with the vendor, such as payment\n   or delivery conditions.\n3. Set **{field:expiryDate}** if the vendor's offer is only good until a certain\n   day.\n",
+            "fieldRefs": [
+              "dueDate",
+              "expiryDate",
+              "issueDate",
+              "notes",
+              "reference",
+              "status",
+              "subtotal",
+              "taxAmount",
+              "terms",
+              "totalAmount",
+              "vendorId"
+            ]
+          }
+        },
+        {
+          "id": "commerce.sales",
+          "label": "Sales",
+          "summary": "Take customer orders and track them.",
+          "synonyms": [
+            "sales orders",
+            "orders",
+            "customer orders"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:Order",
+            "@happyvertical/smrt-commerce:ContractLineItem"
+          ],
+          "nav": [
+            {
+              "label": "Sales orders",
+              "model": "@happyvertical/smrt-commerce:Order",
+              "icon": "shoppingBag",
+              "description": "Orders from your customers, from placed to delivered."
+            }
+          ],
+          "requires": [
+            "commerce.customers"
+          ],
+          "section": {
+            "id": "sales",
+            "label": "Sales",
+            "icon": "shoppingBag",
+            "description": "Customers, orders and quotes: everything you sell."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:Order": {
+              "fields": {
+                "contractType": {
+                  "default": "order",
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "vendorId": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "customerId": {
+                  "label": "Customer",
+                  "order": 1,
+                  "required": true
+                },
+                "channelId": {
+                  "visibility": "hidden"
+                },
+                "expiryDate": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:ContractLineItem": {
+              "fields": {
+                "sku": {
+                  "visibility": "hidden"
+                },
+                "startDate": {
+                  "visibility": "hidden"
+                },
+                "endDate": {
+                  "visibility": "hidden"
+                },
+                "billingPeriod": {
+                  "visibility": "hidden"
+                },
+                "sortOrder": {
+                  "visibility": "hidden"
+                },
+                "discount": {
+                  "visibility": "hidden"
+                },
+                "taxRate": {
+                  "help": "Type a percentage: 5 means 5%."
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nSales is where you take orders from your customers and see where each one\nstands. Every order belongs to one of your customers, carries its amounts and\ndates, and keeps a status so you always know what is still open.\n\n## Tasks\n\n### Take an order\n\n1. Choose the **New** button above the list.\n2. Enter the **{field:customerId}** the order is for. Add them under Customers\n   first so they are on your list.\n3. Enter the **{field:subtotal}** and **{field:taxAmount}**, then the\n   **{field:totalAmount}** the customer will pay.\n4. Set the **{field:issueDate}**, and the **{field:dueDate}** if you expect\n   payment by a certain day.\n5. Add your own **{field:reference}**, such as a purchase order number the\n   customer gave you, so you can find the order later.\n6. Save.\n\n### Follow an order through to the end\n\n1. Open the order from the list and choose Edit.\n2. Update **{field:status}** as the order moves along, for example from draft to\n   sent, accepted and completed.\n3. Check the **{field:dueDate}** against today to spot orders that are overdue.\n4. Use **{field:notes}** to record calls, changes and anything promised.\n\n### Make a quote with an expiry\n\n1. Create the order as usual and set its **{field:status}** to show it is still\n   a draft.\n2. Set **{field:expiryDate}** to the last day the price is good for.\n3. Put your conditions, such as deposits or delivery, in **{field:terms}**.\n",
+            "fieldRefs": [
+              "customerId",
+              "dueDate",
+              "expiryDate",
+              "issueDate",
+              "notes",
+              "reference",
+              "status",
+              "subtotal",
+              "taxAmount",
+              "terms",
+              "totalAmount"
+            ]
+          }
+        },
+        {
+          "id": "commerce.vendors",
+          "label": "Vendors",
+          "summary": "Keep a list of the suppliers you buy from.",
+          "synonyms": [
+            "suppliers",
+            "sellers"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:Vendor"
+          ],
+          "nav": [
+            {
+              "label": "Vendors",
+              "model": "@happyvertical/smrt-commerce:Vendor",
+              "icon": "briefcase",
+              "description": "The suppliers you buy from, with terms and contacts."
+            }
+          ],
+          "requires": [],
+          "section": {
+            "id": "purchasing",
+            "label": "Purchasing",
+            "icon": "truck",
+            "description": "Vendors and purchase orders: everything you buy."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:Vendor": {
+              "fields": {
+                "profileId": {
+                  "label": "Name",
+                  "order": -1
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nVendors is your list of the suppliers you buy from. Each record holds who they\nare, how to reach them and the terms you have agreed, so you can order from them\nquickly and keep track of what you have bought.\n\n## Tasks\n\n### Add a vendor\n\n1. Choose the **New** button above the list.\n2. Enter **{field:defaultContactEmail}** and **{field:defaultContactPhone}** for\n   the person you normally deal with.\n3. Set the **{field:currency}** they bill you in and your **{field:paymentTerms}**,\n   for example \"Net 30\".\n4. Save. The vendor is now on your list and ready to use on a purchase order.\n\n### Note how a vendor likes to work\n\n1. Open the vendor from the list and choose Edit.\n2. Enter **{field:leadTimeDays}**, the number of days they usually need between\n   your order and delivery, so you can plan ahead.\n3. Enter **{field:minimumOrderAmount}** if they will not accept small orders.\n4. Use **{field:notes}** for anything else worth remembering, such as the best\n   time to call.\n\n### Keep payment details in one place\n\n1. Open the vendor and choose Edit.\n2. Record where payments to this vendor should be sent, so it is all in one\n   place.\n3. Set **{field:status}** to show whether you still buy from them: active,\n   inactive or suspended.\n",
+            "fieldRefs": [
+              "currency",
+              "defaultContactEmail",
+              "defaultContactPhone",
+              "leadTimeDays",
+              "minimumOrderAmount",
+              "notes",
+              "paymentTerms",
+              "status"
+            ]
+          }
+        },
+        {
+          "id": "commerce.wholesale",
+          "label": "Wholesale orders",
+          "summary": "Take bulk orders from trade customers.",
+          "synonyms": [
+            "bulk orders",
+            "trade orders",
+            "b2b"
+          ],
+          "models": [
+            "@happyvertical/smrt-commerce:WholesaleOrder",
+            "@happyvertical/smrt-commerce:ContractLineItem"
+          ],
+          "nav": [
+            {
+              "label": "Wholesale orders",
+              "model": "@happyvertical/smrt-commerce:WholesaleOrder",
+              "icon": "shoppingBag",
+              "description": "Bulk orders from cafes, shops and other businesses."
+            }
+          ],
+          "requires": [
+            "commerce.customers"
+          ],
+          "section": {
+            "id": "sales",
+            "label": "Sales",
+            "icon": "shoppingBag",
+            "description": "Customers, orders and quotes: everything you sell."
+          },
+          "options": {
+            "@happyvertical/smrt-commerce:WholesaleOrder": {
+              "fields": {
+                "contractType": {
+                  "default": "wholesale_order",
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "vendorId": {
+                  "visibility": "hidden",
+                  "locked": true
+                },
+                "customerId": {
+                  "label": "Customer",
+                  "order": 1
+                },
+                "channelId": {
+                  "visibility": "hidden"
+                },
+                "expiryDate": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-commerce:ContractLineItem": {
+              "fields": {
+                "sku": {
+                  "visibility": "hidden"
+                },
+                "startDate": {
+                  "visibility": "hidden"
+                },
+                "endDate": {
+                  "visibility": "hidden"
+                },
+                "billingPeriod": {
+                  "visibility": "hidden"
+                },
+                "sortOrder": {
+                  "visibility": "hidden"
+                },
+                "discount": {
+                  "visibility": "hidden"
+                },
+                "taxRate": {
+                  "help": "Type a percentage: 5 means 5%."
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nWholesale orders are bulk orders from trade customers. They work like sales\norders, with a list of line items, but are kept in their own list so trade and\nretail sales stay apart.\n\n## Tasks\n\n### Take a wholesale order\n\n1. Choose **New** above the list.\n2. Pick the **{field:customerId}** placing the order.\n3. Add the line items and check the **{field:totalAmount}**.\n4. Set the **{field:dueDate}** for payment and save.\n\n### Track it\n\n1. Update **{field:status}** as the order moves from draft to completed.\n2. Use **{field:reference}** for the buyer's own order number.\n",
+            "fieldRefs": [
+              "customerId",
+              "dueDate",
+              "reference",
+              "status",
+              "totalAmount"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "content",
       "packageName": "@happyvertical/smrt-content",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Content processing module for SMRT framework - handles documents, web content, and media",
       "models": [
         {
@@ -15178,6 +16252,7 @@
           "name": "Article",
           "collection": "contents",
           "extends": "@happyvertical/smrt-content:Content",
+          "description": "Article content type",
           "display": {
             "label": "name"
           },
@@ -15916,6 +16991,7 @@
           "id": "@happyvertical/smrt-content:Content",
           "name": "Content",
           "collection": "contents",
+          "description": "Structured content object with metadata and body text",
           "display": {
             "label": "name"
           },
@@ -18789,6 +19865,7 @@
           "name": "ContentDocument",
           "collection": "contents",
           "extends": "@happyvertical/smrt-content:Content",
+          "description": "ContentDocument content type",
           "display": {
             "label": "name"
           },
@@ -21341,6 +22418,7 @@
           "id": "@happyvertical/smrt-content:Contents",
           "name": "Contents",
           "collection": "contents",
+          "description": "Collection for managing Content objects",
           "fields": [
             {
               "name": "contentDir",
@@ -21507,6 +22585,7 @@
           "name": "Mirror",
           "collection": "contents",
           "extends": "@happyvertical/smrt-content:Content",
+          "description": "Mirror content type",
           "display": {
             "label": "name"
           },
@@ -22292,7 +23371,7 @@
     {
       "id": "events",
       "packageName": "@happyvertical/smrt-events",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Hierarchical event management with participant tracking and SMRT framework support",
       "models": [
         {
@@ -24475,18 +25554,144 @@
         "places",
         "profiles"
       ],
-      "surfaceSource": "knowledge"
+      "surfaceSource": "knowledge",
+      "recipes": [
+        {
+          "id": "events.calendar",
+          "label": "Events",
+          "summary": "Schedule events, group them in series and track who takes part.",
+          "synonyms": [
+            "calendar",
+            "schedule",
+            "meetings",
+            "bookings",
+            "attendees"
+          ],
+          "models": [
+            "@happyvertical/smrt-events:Event",
+            "@happyvertical/smrt-events:EventType",
+            "@happyvertical/smrt-events:EventSeries",
+            "@happyvertical/smrt-events:EventParticipant"
+          ],
+          "nav": [
+            {
+              "label": "Events",
+              "model": "@happyvertical/smrt-events:Event",
+              "icon": "calendar",
+              "description": "Everything on your calendar, with who and when."
+            },
+            {
+              "label": "Event types",
+              "model": "@happyvertical/smrt-events:EventType",
+              "icon": "tag",
+              "description": "The kinds of events you run, with their usual length and price."
+            },
+            {
+              "label": "Event series",
+              "model": "@happyvertical/smrt-events:EventSeries",
+              "icon": "repeat",
+              "description": "Repeating schedules, like a class every Tuesday evening."
+            }
+          ],
+          "requires": [],
+          "section": {
+            "id": "calendar",
+            "label": "Calendar",
+            "icon": "calendar",
+            "description": "Events and what is scheduled when."
+          },
+          "options": {
+            "@happyvertical/smrt-events:Event": {
+              "fields": {
+                "parentId": {
+                  "visibility": "hidden"
+                },
+                "round": {
+                  "visibility": "hidden"
+                },
+                "metadata": {
+                  "visibility": "hidden"
+                },
+                "externalId": {
+                  "visibility": "hidden"
+                },
+                "source": {
+                  "visibility": "hidden"
+                },
+                "timeZone": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-events:EventType": {
+              "fields": {
+                "schema": {
+                  "visibility": "hidden"
+                },
+                "participantSchema": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-events:EventSeries": {
+              "fields": {
+                "metadata": {
+                  "visibility": "hidden"
+                },
+                "externalId": {
+                  "visibility": "hidden"
+                },
+                "source": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-events:EventParticipant": {
+              "fields": {
+                "groupId": {
+                  "visibility": "hidden"
+                },
+                "placement": {
+                  "visibility": "hidden"
+                },
+                "metadata": {
+                  "visibility": "hidden"
+                },
+                "externalId": {
+                  "visibility": "hidden"
+                },
+                "source": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nEvents is your calendar. Each event has a time and a type, can belong to a\nseries, and lists who takes part.\n\n## Tasks\n\n### Schedule an event\n\n1. Open **Events** and choose **New**.\n2. Enter the **{field:name}**, the **{field:startDate}** and the\n   **{field:endDate}**.\n3. Pick the **{field:typeId}**, and the **{field:seriesId}** if it repeats.\n4. Add the people taking part with their **{field:role}**.\n\n### Keep it current\n\n1. Update **{field:status}** as the event goes ahead, finishes or is postponed.\n",
+            "fieldRefs": [
+              "endDate",
+              "name",
+              "role",
+              "seriesId",
+              "startDate",
+              "status",
+              "typeId"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "expenses",
       "packageName": "@happyvertical/smrt-expenses",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Expense records for the SMRT framework - reviewed costs against a cost object, deduplicated receipts, and commitment drawdown",
       "models": [
         {
           "id": "@happyvertical/smrt-expenses:Expense",
           "name": "Expense",
           "collection": "expenses",
+          "description": "A cost someone incurred.",
           "fields": [
             {
               "name": "tenantId",
@@ -24741,6 +25946,7 @@
           "id": "@happyvertical/smrt-expenses:ExpenseReceipt",
           "name": "ExpenseReceipt",
           "collection": "expensereceipts",
+          "description": "A receipt file attached to an expense.",
           "fields": [
             {
               "name": "tenantId",
@@ -24897,7 +26103,7 @@
     {
       "id": "facts",
       "packageName": "@happyvertical/smrt-facts",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Distributed memory and knowledge management with provenance tracking for SMRT framework",
       "models": [
         {
@@ -27400,13 +28606,14 @@
     {
       "id": "human-resources",
       "packageName": "@happyvertical/smrt-human-resources",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "HR records for the SMRT framework: who works for an organization, as what, and with what standing — employment with dated terms, and qualifications with expiry",
       "models": [
         {
           "id": "@happyvertical/smrt-human-resources:Employment",
           "name": "Employment",
           "collection": "employments",
+          "description": "One person's employment with a tenant: the stable record applications and payroll key on. There is one per tenant and profile; a rehire adds an EmploymentTerm to the same row.",
           "fields": [
             {
               "name": "tenantId",
@@ -27487,6 +28694,7 @@
           "id": "@happyvertical/smrt-human-resources:EmploymentChange",
           "name": "EmploymentChange",
           "collection": "employmentchanges",
+          "description": "Append-only dated change to an employment, attributed to an actor.",
           "fields": [
             {
               "name": "tenantId",
@@ -27572,6 +28780,7 @@
           "id": "@happyvertical/smrt-human-resources:EmploymentTerm",
           "name": "EmploymentTerm",
           "collection": "employmentterms",
+          "description": "One continuous period of employment. endedOn is the last day employed (inclusive); null means the term is open. \"Employed on a date\" is answered from terms, never from Employment.status.",
           "fields": [
             {
               "name": "tenantId",
@@ -27629,6 +28838,7 @@
           "id": "@happyvertical/smrt-human-resources:HeldQualification",
           "name": "HeldQualification",
           "collection": "heldqualifications",
+          "description": "A person holds a qualification. employmentId is set when the definition's scope is employment; such a row is revoked when that employment ends.",
           "fields": [
             {
               "name": "tenantId",
@@ -27736,6 +28946,7 @@
           "id": "@happyvertical/smrt-human-resources:HeldQualificationChange",
           "name": "HeldQualificationChange",
           "collection": "heldqualificationchanges",
+          "description": "Append-only dated change to a held qualification, attributed to an actor.",
           "fields": [
             {
               "name": "tenantId",
@@ -27808,6 +29019,7 @@
           "id": "@happyvertical/smrt-human-resources:Qualification",
           "name": "Qualification",
           "collection": "qualifications",
+          "description": "A qualification definition: a managed list per tenant. Other packages gate work by referencing its id (@happyvertical/smrt-human-resources:Qualification).",
           "display": {
             "label": "name"
           },
@@ -27905,7 +29117,7 @@
     {
       "id": "images",
       "packageName": "@happyvertical/smrt-images",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
       "models": [
         {
@@ -28564,9 +29776,969 @@
       "surfaceSource": "knowledge"
     },
     {
+      "id": "ingestion",
+      "packageName": "@happyvertical/smrt-ingestion",
+      "version": "0.55.6",
+      "description": "Durable tenant-scoped intake and evidence foundations",
+      "models": [
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeAction",
+          "name": "IntakeAction",
+          "collection": "intakeactions",
+          "description": "Durable IntakeAction record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "actionKey",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "state",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "proposalRevision",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "reviewVersion",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "executionAttempt",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "fence",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "resultDigest",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeAnalysis",
+          "name": "IntakeAnalysis",
+          "collection": "intakeanalysises",
+          "description": "Durable IntakeAnalysis record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "revision",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "fence",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "attemptNumber",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "currentAttemptId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt"
+            },
+            {
+              "name": "state",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "inputDigest",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt",
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt",
+          "name": "IntakeAnalysisAttempt",
+          "collection": "intakeanalysisattempts",
+          "description": "Durable IntakeAnalysisAttempt record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "analysisId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeAnalysis"
+            },
+            {
+              "name": "attemptNumber",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "fence",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "state",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "leaseToken",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "leaseUntil",
+              "type": "datetime",
+              "required": false
+            },
+            {
+              "name": "outputDigest",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "safeError",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "confidence",
+              "type": "decimal",
+              "required": false
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeAnalysis",
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeDeletion",
+          "name": "IntakeDeletion",
+          "collection": "intakedeletions",
+          "description": "Durable IntakeDeletion record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "state",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeDispatch",
+          "name": "IntakeDispatch",
+          "collection": "intakedispatches",
+          "description": "Durable IntakeDispatch record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "stage",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "revision",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "state",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "jobId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "deliveries",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeEvidence",
+          "name": "IntakeEvidence",
+          "collection": "intakeevidences",
+          "description": "Durable IntakeEvidence record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "partId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "parentEvidenceId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-ingestion:IntakeEvidence"
+            },
+            {
+              "name": "assetId",
+              "type": "crossPackageRef",
+              "required": false,
+              "related": "@happyvertical/smrt-assets:Asset"
+            },
+            {
+              "name": "state",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "contentHash",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "byteLength",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "mediaType",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "sourceUri",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-assets:Asset",
+            "@happyvertical/smrt-ingestion:IntakeEvidence",
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeExecution",
+          "name": "IntakeExecution",
+          "collection": "intakeexecutions",
+          "description": "Durable IntakeExecution record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "actionId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeAction"
+            },
+            {
+              "name": "attemptNumber",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "fence",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "state",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "bindingHash",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "resultDigest",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "idempotencyKey",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeAction",
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeFeedback",
+          "name": "IntakeFeedback",
+          "collection": "intakefeedbacks",
+          "description": "Durable IntakeFeedback record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "requestKey",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "supersedesId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-ingestion:IntakeFeedback"
+            },
+            {
+              "name": "kind",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeFeedback",
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeItem",
+          "name": "IntakeItem",
+          "collection": "intakeitems",
+          "description": "Durable IntakeItem record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "sourceId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "sourceVersion",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "deliveryKey",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "payloadDigest",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "scopeDigest",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "receiptState",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "processingState",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "visibility",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "receiptVersion",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "analysisRevision",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "fence",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "leaseToken",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "leaseUntil",
+              "type": "datetime",
+              "required": false
+            },
+            {
+              "name": "expiresAt",
+              "type": "datetime",
+              "required": true
+            },
+            {
+              "name": "replayUntil",
+              "type": "datetime",
+              "required": true
+            },
+            {
+              "name": "cancelled",
+              "type": "boolean",
+              "required": true
+            },
+            {
+              "name": "traceId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakePlan",
+          "name": "IntakePlan",
+          "collection": "intakeplans",
+          "description": "Durable IntakePlan record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "planKey",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "revision",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "digest",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeProposal",
+          "name": "IntakeProposal",
+          "collection": "intakeproposals",
+          "description": "Durable IntakeProposal record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "actionId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeAction"
+            },
+            {
+              "name": "analysisId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeAnalysis"
+            },
+            {
+              "name": "analysisAttemptId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt"
+            },
+            {
+              "name": "revision",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "bindingHash",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeAction",
+            "@happyvertical/smrt-ingestion:IntakeAnalysis",
+            "@happyvertical/smrt-ingestion:IntakeAnalysisAttempt",
+            "@happyvertical/smrt-ingestion:IntakeItem"
+          ],
+          "exposed": false
+        },
+        {
+          "id": "@happyvertical/smrt-ingestion:IntakeReviewDecision",
+          "name": "IntakeReviewDecision",
+          "collection": "intakereviewdecisions",
+          "description": "Durable IntakeReviewDecision record; mutations belong to the server service.",
+          "fields": [
+            {
+              "name": "tenantId",
+              "type": "text",
+              "required": true,
+              "system": true
+            },
+            {
+              "name": "confidentialScopeId",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "itemId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeItem"
+            },
+            {
+              "name": "actionId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeAction"
+            },
+            {
+              "name": "proposalId",
+              "type": "foreignKey",
+              "required": true,
+              "related": "@happyvertical/smrt-ingestion:IntakeProposal"
+            },
+            {
+              "name": "reviewVersion",
+              "type": "integer",
+              "required": true
+            },
+            {
+              "name": "bindingHash",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "decision",
+              "type": "text",
+              "required": true
+            },
+            {
+              "name": "data",
+              "type": "json",
+              "required": true
+            }
+          ],
+          "rest": [],
+          "mcp": [],
+          "cli": [],
+          "methods": [
+            {
+              "name": "getData",
+              "async": false,
+              "parameters": [],
+              "returnType": "Record<string, unknown>",
+              "aiCallable": false
+            }
+          ],
+          "references": [
+            "@happyvertical/smrt-ingestion:IntakeAction",
+            "@happyvertical/smrt-ingestion:IntakeItem",
+            "@happyvertical/smrt-ingestion:IntakeProposal"
+          ],
+          "exposed": false
+        }
+      ],
+      "dependencies": [
+        "assets",
+        "content",
+        "users"
+      ],
+      "surfaceSource": "knowledge"
+    },
+    {
       "id": "inventory",
       "packageName": "@happyvertical/smrt-inventory",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Multi-location stock tracking for the SMRT framework — Sku, InventoryLocation, StockLevel, StockMovement, and a stock-mutation service",
       "models": [
         {
@@ -29184,12 +31356,107 @@
       "dependencies": [
         "profiles"
       ],
-      "surfaceSource": "knowledge"
+      "surfaceSource": "knowledge",
+      "recipes": [
+        {
+          "id": "inventory.stock",
+          "label": "Inventory",
+          "summary": "Keep count of how many of each product you have.",
+          "synonyms": [
+            "stock",
+            "quantity",
+            "on hand"
+          ],
+          "models": [
+            "@happyvertical/smrt-inventory:StockLevel",
+            "@happyvertical/smrt-inventory:InventoryLocation",
+            "@happyvertical/smrt-inventory:StockMovement"
+          ],
+          "nav": [
+            {
+              "label": "Stock levels",
+              "model": "@happyvertical/smrt-inventory:StockLevel",
+              "icon": "archive",
+              "description": "How much of each item you have on hand right now.",
+              "noun": "stock entry"
+            },
+            {
+              "label": "Locations",
+              "model": "@happyvertical/smrt-inventory:InventoryLocation",
+              "icon": "home",
+              "description": "The places you keep stock, like shelves, rooms or vans."
+            },
+            {
+              "label": "Stock movements",
+              "model": "@happyvertical/smrt-inventory:StockMovement",
+              "icon": "truck",
+              "description": "Every time stock came in, went out or moved."
+            }
+          ],
+          "requires": [],
+          "requiresAny": [
+            [
+              "products.simple",
+              "products.clothing"
+            ]
+          ],
+          "section": {
+            "id": "catalog",
+            "label": "Catalog",
+            "icon": "package",
+            "description": "Products, ingredients and the stock you hold."
+          },
+          "options": {
+            "@happyvertical/smrt-inventory:StockLevel": {
+              "fields": {
+                "reorderPoint": {
+                  "visibility": "hidden"
+                },
+                "reorderQuantity": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-inventory:InventoryLocation": {
+              "fields": {
+                "placeId": {
+                  "visibility": "hidden"
+                },
+                "active": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-inventory:StockMovement": {
+              "fields": {
+                "sourceType": {
+                  "visibility": "hidden"
+                },
+                "sourceId": {
+                  "visibility": "hidden"
+                },
+                "actorProfileId": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nInventory keeps count of how many of each product you have. Once it is on, the\nproduct forms ask for a quantity, and the product list shows what is in stock.\nStock is counted at your main warehouse until you add other places.\n\n## Tasks\n\n### Count what you have\n\n1. Open **Products** and choose New, or Edit on an existing product.\n2. Enter a quantity: one box for a simple product, or one in each box of the\n   grid for clothing, so each size and color has its own count.\n3. Save. The **Stock** column on the product list shows the total.\n\n### Correct a count\n\n1. Open **Stock levels** in the Inventory section of the menu.\n2. Find the item, then set **{field:qty}** to what you really have.\n\n### Keep stock in more than one place\n\n1. Open **Locations** in the Inventory section of the menu.\n2. Add a place with a **{field:code}** and a **{field:name}**, and say what\n   sort it is in **{field:kind}**.\n",
+            "fieldRefs": [
+              "code",
+              "kind",
+              "name",
+              "qty"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "ledgers",
       "packageName": "@happyvertical/smrt-ledgers",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Double-entry accounting ledger for the SMRT framework",
       "models": [
         {
@@ -30635,12 +32902,105 @@
         }
       ],
       "dependencies": [],
-      "surfaceSource": "knowledge"
+      "surfaceSource": "knowledge",
+      "recipes": [
+        {
+          "id": "ledgers.bookkeeping",
+          "label": "Bookkeeping",
+          "summary": "Keep your books: a chart of accounts and double-entry journals.",
+          "synonyms": [
+            "accounting",
+            "ledger",
+            "general ledger",
+            "journals",
+            "chart of accounts"
+          ],
+          "models": [
+            "@happyvertical/smrt-ledgers:Account",
+            "@happyvertical/smrt-ledgers:Journal",
+            "@happyvertical/smrt-ledgers:JournalEntry"
+          ],
+          "nav": [
+            {
+              "label": "Accounts",
+              "model": "@happyvertical/smrt-ledgers:Account",
+              "icon": "bank",
+              "description": "The accounts your books are kept in, like sales, rent and bank."
+            },
+            {
+              "label": "Journals",
+              "model": "@happyvertical/smrt-ledgers:Journal",
+              "icon": "book",
+              "description": "The entries behind your accounts, so every dollar has a trail."
+            }
+          ],
+          "requires": [],
+          "section": {
+            "id": "accounting",
+            "label": "Accounting",
+            "icon": "bank",
+            "description": "Your books: accounts, journals and balances."
+          },
+          "options": {
+            "@happyvertical/smrt-ledgers:Account": {
+              "fields": {
+                "metadata": {
+                  "visibility": "hidden"
+                },
+                "parentId": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-ledgers:Journal": {
+              "fields": {
+                "sourceModule": {
+                  "visibility": "hidden"
+                },
+                "sourceRef": {
+                  "visibility": "hidden"
+                },
+                "voidedAt": {
+                  "visibility": "hidden"
+                },
+                "voidReason": {
+                  "visibility": "hidden"
+                },
+                "metadata": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-ledgers:JournalEntry": {
+              "fields": {
+                "exchangeRate": {
+                  "visibility": "hidden"
+                },
+                "metadata": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nBookkeeping keeps your accounts. You list the accounts you use (your chart of\naccounts) and record each transaction as a journal whose entries debit and\ncredit those accounts.\n\n## Tasks\n\n### Set up your accounts\n\n1. Open **Accounts** and choose **New**.\n2. Give it a **{field:number}** and a **{field:name}**.\n3. Choose its **{field:type}**: asset, liability, equity, revenue or expense.\n\n### Record a transaction\n\n1. Open **Journals** and choose **New**, and add a **{field:description}**.\n2. Add entries: pick the account on each and enter a **{field:debit}** or a\n   **{field:credit}**. They must add up to the same total.\n3. Set the journal's **{field:status}** to posted when it is final. A posted\n   journal is voided, not edited.\n",
+            "fieldRefs": [
+              "credit",
+              "debit",
+              "description",
+              "name",
+              "number",
+              "status",
+              "type"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "manufacturing",
       "packageName": "@happyvertical/smrt-manufacturing",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Bills of materials, cost rollup, and production-order operations for the SMRT framework — strictly industry-neutral",
       "models": [
         {
@@ -31677,7 +34037,7 @@
     {
       "id": "marketing",
       "packageName": "@happyvertical/smrt-marketing",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Cross-channel campaign coordination, immutable performance evidence, budget pacing, and reusable Svelte marketing surfaces for SMRT",
       "models": [
         {
@@ -32406,7 +34766,7 @@
     {
       "id": "messages",
       "packageName": "@happyvertical/smrt-messages",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Unified multi-channel messaging with STI-based hierarchies",
       "models": [
         {
@@ -32491,6 +34851,14 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/accounts"
+            },
+            {
+              "method": "GET",
+              "path": "/accounts/[id]"
+            },
+            {
               "method": "POST",
               "path": "/accounts/getActive"
             },
@@ -32525,14 +34893,6 @@
             {
               "method": "POST",
               "path": "/accounts/findWithGlobals"
-            },
-            {
-              "method": "GET",
-              "path": "/accounts"
-            },
-            {
-              "method": "GET",
-              "path": "/accounts/[id]"
             }
           ],
           "mcp": [
@@ -32843,6 +35203,22 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/attachments"
+            },
+            {
+              "method": "GET",
+              "path": "/attachments/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/attachments"
+            },
+            {
+              "method": "DELETE",
+              "path": "/attachments/[id]"
+            },
+            {
               "method": "POST",
               "path": "/attachments/getByMessage"
             },
@@ -32905,22 +35281,6 @@
             {
               "method": "POST",
               "path": "/attachments/findWithGlobals"
-            },
-            {
-              "method": "GET",
-              "path": "/attachments"
-            },
-            {
-              "method": "GET",
-              "path": "/attachments/[id]"
-            },
-            {
-              "method": "POST",
-              "path": "/attachments"
-            },
-            {
-              "method": "DELETE",
-              "path": "/attachments/[id]"
             }
           ],
           "mcp": [
@@ -33320,6 +35680,7 @@
           "id": "@happyvertical/smrt-messages:Blacklist",
           "name": "Blacklist",
           "collection": "blacklists",
+          "description": "Block entries for email filtering",
           "fields": [
             {
               "name": "pattern",
@@ -33359,14 +35720,6 @@
           ],
           "rest": [
             {
-              "method": "POST",
-              "path": "/blacklists/isBlacklisted"
-            },
-            {
-              "method": "POST",
-              "path": "/blacklists/getMatchingEntry"
-            },
-            {
               "method": "GET",
               "path": "/blacklists"
             },
@@ -33385,6 +35738,14 @@
             {
               "method": "DELETE",
               "path": "/blacklists/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/blacklists/isBlacklisted"
+            },
+            {
+              "method": "POST",
+              "path": "/blacklists/getMatchingEntry"
             }
           ],
           "mcp": [
@@ -33742,6 +36103,26 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/messages"
+            },
+            {
+              "method": "GET",
+              "path": "/messages/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/messages"
+            },
+            {
+              "method": "PATCH",
+              "path": "/messages/[id]"
+            },
+            {
+              "method": "DELETE",
+              "path": "/messages/[id]"
+            },
+            {
               "method": "POST",
               "path": "/messages/search"
             },
@@ -33848,26 +36229,6 @@
             {
               "method": "POST",
               "path": "/messages/deleteByFolder"
-            },
-            {
-              "method": "GET",
-              "path": "/messages"
-            },
-            {
-              "method": "GET",
-              "path": "/messages/[id]"
-            },
-            {
-              "method": "POST",
-              "path": "/messages"
-            },
-            {
-              "method": "PATCH",
-              "path": "/messages/[id]"
-            },
-            {
-              "method": "DELETE",
-              "path": "/messages/[id]"
             }
           ],
           "mcp": [
@@ -34793,6 +37154,14 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/accounts"
+            },
+            {
+              "method": "GET",
+              "path": "/accounts/[id]"
+            },
+            {
               "method": "POST",
               "path": "/accounts/getActive"
             },
@@ -34855,14 +37224,6 @@
             {
               "method": "POST",
               "path": "/accounts/getEmailStats"
-            },
-            {
-              "method": "GET",
-              "path": "/accounts"
-            },
-            {
-              "method": "GET",
-              "path": "/accounts/[id]"
             }
           ],
           "mcp": [
@@ -35199,6 +37560,17 @@
               "aiCallable": false
             },
             {
+              "name": "readIntakeMessage",
+              "async": true,
+              "parameters": [
+                "locator: string",
+                "maxBytes: number",
+                "imapIdentity?: object"
+              ],
+              "returnType": "any",
+              "aiCallable": false
+            },
+            {
               "name": "search",
               "async": true,
               "parameters": [
@@ -35341,6 +37713,26 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/emailfolders"
+            },
+            {
+              "method": "GET",
+              "path": "/emailfolders/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/emailfolders"
+            },
+            {
+              "method": "PATCH",
+              "path": "/emailfolders/[id]"
+            },
+            {
+              "method": "DELETE",
+              "path": "/emailfolders/[id]"
+            },
+            {
               "method": "POST",
               "path": "/emailfolders/getByPath"
             },
@@ -35411,26 +37803,6 @@
             {
               "method": "POST",
               "path": "/emailfolders/findWithGlobals"
-            },
-            {
-              "method": "GET",
-              "path": "/emailfolders"
-            },
-            {
-              "method": "GET",
-              "path": "/emailfolders/[id]"
-            },
-            {
-              "method": "POST",
-              "path": "/emailfolders"
-            },
-            {
-              "method": "PATCH",
-              "path": "/emailfolders/[id]"
-            },
-            {
-              "method": "DELETE",
-              "path": "/emailfolders/[id]"
             }
           ],
           "mcp": [
@@ -36086,6 +38458,14 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/messages"
+            },
+            {
+              "method": "GET",
+              "path": "/messages/[id]"
+            },
+            {
               "method": "POST",
               "path": "/messages/search"
             },
@@ -36152,14 +38532,6 @@
             {
               "method": "POST",
               "path": "/messages/findWithGlobals"
-            },
-            {
-              "method": "GET",
-              "path": "/messages"
-            },
-            {
-              "method": "GET",
-              "path": "/messages/[id]"
             }
           ],
           "mcp": [
@@ -36873,16 +39245,16 @@
           ],
           "rest": [
             {
-              "method": "POST",
-              "path": "/personamessageroutes/forPersona"
-            },
-            {
               "method": "GET",
               "path": "/personamessageroutes"
             },
             {
               "method": "GET",
               "path": "/personamessageroutes/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/personamessageroutes/forPersona"
             }
           ],
           "mcp": [
@@ -38549,6 +40921,7 @@
           "id": "@happyvertical/smrt-messages:UserNotification",
           "name": "UserNotification",
           "collection": "usernotifications",
+          "description": "One in-app notification for one person, with its own read state.",
           "display": {
             "label": "title"
           },
@@ -38631,6 +41004,7 @@
           "id": "@happyvertical/smrt-messages:Whitelist",
           "name": "Whitelist",
           "collection": "whitelists",
+          "description": "Allow-only entries for email filtering",
           "fields": [
             {
               "name": "pattern",
@@ -38669,18 +41043,6 @@
           ],
           "rest": [
             {
-              "method": "POST",
-              "path": "/whitelists/isWhitelisted"
-            },
-            {
-              "method": "POST",
-              "path": "/whitelists/getMatchingEntry"
-            },
-            {
-              "method": "POST",
-              "path": "/whitelists/getByCategory"
-            },
-            {
               "method": "GET",
               "path": "/whitelists"
             },
@@ -38699,6 +41061,18 @@
             {
               "method": "DELETE",
               "path": "/whitelists/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/whitelists/isWhitelisted"
+            },
+            {
+              "method": "POST",
+              "path": "/whitelists/getMatchingEntry"
+            },
+            {
+              "method": "POST",
+              "path": "/whitelists/getByCategory"
             }
           ],
           "mcp": [
@@ -39016,7 +41390,7 @@
     {
       "id": "places",
       "packageName": "@happyvertical/smrt-places",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Hierarchical place management with geo integration and SMRT framework support",
       "models": [
         {
@@ -39985,13 +42359,14 @@
     {
       "id": "products",
       "packageName": "@happyvertical/smrt-products",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
       "models": [
         {
           "id": "@happyvertical/smrt-products:Category",
           "name": "Category",
           "collection": "categories",
+          "description": "Product knowledge base category for organizing product information.",
           "display": {
             "label": "name"
           },
@@ -40435,6 +42810,7 @@
           "id": "@happyvertical/smrt-products:Product",
           "name": "Product",
           "collection": "products",
+          "description": "Product information for knowledge base queries.",
           "display": {
             "label": "name"
           },
@@ -41264,12 +43640,261 @@
       "dependencies": [
         "assets"
       ],
-      "surfaceSource": "knowledge"
+      "surfaceSource": "knowledge",
+      "recipes": [
+        {
+          "id": "products.clothing",
+          "label": "Clothing",
+          "summary": "Products that come in sizes and colors, with a stock-keeping unit for each combination.",
+          "synonyms": [
+            "apparel",
+            "garments",
+            "sizes",
+            "variants"
+          ],
+          "models": [
+            "@happyvertical/smrt-products:Product",
+            "@happyvertical/smrt-products:ProductVariant",
+            "@happyvertical/smrt-products:Sku"
+          ],
+          "nav": [
+            {
+              "label": "Products",
+              "model": "@happyvertical/smrt-products:Product",
+              "icon": "package",
+              "description": "What you sell, with prices and details."
+            }
+          ],
+          "requires": [],
+          "group": {
+            "id": "products",
+            "label": "Products",
+            "summary": "Sell goods: simple items, or clothing that comes in sizes and colors."
+          },
+          "section": {
+            "id": "catalog",
+            "label": "Catalog",
+            "icon": "package",
+            "description": "Products, ingredients and the stock you hold."
+          },
+          "options": {
+            "@happyvertical/smrt-products:Product": {
+              "fields": {
+                "productType": {
+                  "visibility": "hidden"
+                },
+                "category": {
+                  "visibility": "hidden"
+                },
+                "manufacturer": {
+                  "visibility": "hidden"
+                },
+                "model": {
+                  "visibility": "hidden"
+                },
+                "inStock": {
+                  "visibility": "hidden"
+                },
+                "specifications": {
+                  "visibility": "hidden"
+                },
+                "tags": {
+                  "visibility": "hidden"
+                },
+                "description": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-products:ProductVariant": {
+              "fields": {
+                "label": {
+                  "visibility": "hidden"
+                },
+                "sortOrder": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-products:Sku": {
+              "fields": {
+                "barcode": {
+                  "visibility": "hidden"
+                },
+                "name": {
+                  "visibility": "hidden"
+                },
+                "weightGrams": {
+                  "visibility": "hidden"
+                },
+                "parentSkuId": {
+                  "visibility": "hidden"
+                },
+                "active": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nClothing is for products that come in sizes and colors. You describe the product\nonce, say which sizes and colors you offer, and the grid shows one item for each\ncombination, so a shirt in three sizes and two colors becomes six items you can\nsell and count separately.\n\n## Tasks\n\n### Add a clothing item\n\n1. In the menu, choose **Products**, then **New clothing item**.\n2. Give it a **{field:name}** and a **{field:price}**.\n3. Under Sizes, type each size and press Enter. XS to XL are filled in for you;\n   remove the ones you do not make.\n4. Under Colors, type each color and press Enter.\n5. Check the grid. Every box is one item you will sell. Save.\n\n### Add a size or a color later\n\n1. Open **Products** and choose Edit on the item.\n2. Type the new size or color in its list and press Enter. A new row or column\n   appears in the grid.\n3. Save. Items you already had keep their codes, and only the new ones are\n   added.\n\n### Stop selling a size\n\n1. Open the item and choose Edit.\n2. Remove the size from the Sizes list with its remove button or the Backspace\n   key.\n3. Save. The items for that size are removed from the product.\n",
+            "fieldRefs": [
+              "name",
+              "price"
+            ]
+          }
+        },
+        {
+          "id": "products.ingredients",
+          "label": "Ingredients",
+          "summary": "Things you buy in to make what you sell, kept as products of the material kind with their own list.",
+          "synonyms": [
+            "materials",
+            "raw materials",
+            "supplies",
+            "stock items"
+          ],
+          "models": [
+            "@happyvertical/smrt-products:Product"
+          ],
+          "nav": [
+            {
+              "label": "Ingredients",
+              "model": "@happyvertical/smrt-products:Product",
+              "icon": "package",
+              "description": "What you buy to make what you sell, with costs and units.",
+              "key": "ingredients",
+              "noun": "ingredient",
+              "filter": {
+                "field": "productType",
+                "value": "material"
+              }
+            }
+          ],
+          "requires": [
+            "products.simple"
+          ],
+          "group": {
+            "id": "products",
+            "label": "Products",
+            "summary": "Sell goods: simple items, or clothing that comes in sizes and colors."
+          },
+          "section": {
+            "id": "catalog",
+            "label": "Catalog",
+            "icon": "package",
+            "description": "Products, ingredients and the stock you hold."
+          },
+          "options": {
+            "@happyvertical/smrt-products:Product": {
+              "fields": {
+                "productType": {
+                  "visibility": "hidden"
+                },
+                "category": {
+                  "visibility": "hidden"
+                },
+                "manufacturer": {
+                  "visibility": "hidden"
+                },
+                "model": {
+                  "visibility": "hidden"
+                },
+                "inStock": {
+                  "visibility": "hidden"
+                },
+                "specifications": {
+                  "visibility": "hidden"
+                },
+                "tags": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nIngredients are the things you buy in to make what you sell: flour, butter,\nsteel, fabric. They are kept as products of the material kind, so they have the\nsame name, price and description as anything you sell, and they get their own\nlist, apart from the products you sell. Count them under Stock like any other\nitem.\n\n## Tasks\n\n### Add an ingredient\n\n1. In the menu, choose **Ingredients**, then **New ingredient**.\n2. Give it a **{field:name}** that includes the pack size, for example \"Bread flour, 25 kg\".\n3. Enter what you pay in the **{field:price}**, in dollars and cents.\n4. Add a **{field:description}** such as the brand or grade.\n5. Save. It appears on the Ingredients list, not in Products.\n\n### Update what you pay\n\n1. Open **Ingredients** and find the item.\n2. Choose Edit, change the **{field:price}** and save.\n",
+            "fieldRefs": [
+              "description",
+              "name",
+              "price"
+            ]
+          }
+        },
+        {
+          "id": "products.simple",
+          "label": "Simple products",
+          "summary": "Items with a name, a price and a description.",
+          "synonyms": [
+            "items",
+            "goods",
+            "catalog"
+          ],
+          "models": [
+            "@happyvertical/smrt-products:Product"
+          ],
+          "nav": [
+            {
+              "label": "Products",
+              "model": "@happyvertical/smrt-products:Product",
+              "icon": "package",
+              "description": "What you sell, with prices and details."
+            }
+          ],
+          "requires": [],
+          "group": {
+            "id": "products",
+            "label": "Products",
+            "summary": "Sell goods: simple items, or clothing that comes in sizes and colors."
+          },
+          "section": {
+            "id": "catalog",
+            "label": "Catalog",
+            "icon": "package",
+            "description": "Products, ingredients and the stock you hold."
+          },
+          "options": {
+            "@happyvertical/smrt-products:Product": {
+              "fields": {
+                "productType": {
+                  "visibility": "hidden"
+                },
+                "category": {
+                  "visibility": "hidden"
+                },
+                "manufacturer": {
+                  "visibility": "hidden"
+                },
+                "model": {
+                  "visibility": "hidden"
+                },
+                "inStock": {
+                  "visibility": "hidden"
+                },
+                "specifications": {
+                  "visibility": "hidden"
+                },
+                "tags": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nSimple products are things you sell that come in one form: one name, one price,\none description. Keep a record for each so you can see everything you offer in\none list, with the price next to it, and change it whenever it moves.\n\n## Tasks\n\n### Add a simple product\n\n1. In the menu, choose **Products**, then **New simple product**.\n2. Give it a **{field:name}**, for example \"Ceramic mug\".\n3. Enter the **{field:price}** in dollars and cents.\n4. Add a **{field:description}** so anyone reading the list knows what it is.\n5. Save. The product is now on your list, marked Simple.\n\n### Change a price\n\n1. Open **Products** and find the product.\n2. Choose Edit, change the **{field:price}** and save.\n",
+            "fieldRefs": [
+              "description",
+              "name",
+              "price"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "profiles",
       "packageName": "@happyvertical/smrt-profiles",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
       "models": [
         {
@@ -41758,6 +44383,7 @@
           "name": "Bot",
           "collection": "profiles",
           "extends": "@happyvertical/smrt-profiles:Profile",
+          "description": "Bot profile type",
           "display": {
             "label": "name"
           },
@@ -43443,6 +46069,7 @@
           "id": "@happyvertical/smrt-profiles:OidcProfileEmailReservation",
           "name": "OidcProfileEmailReservation",
           "collection": "oidcprofileemailreservations",
+          "description": "Private database arbiter for canonical OIDC email provisioning races.",
           "fields": [
             {
               "name": "profileId",
@@ -43470,6 +46097,7 @@
           "name": "Organization",
           "collection": "profiles",
           "extends": "@happyvertical/smrt-profiles:Profile",
+          "description": "Organization profile type",
           "display": {
             "label": "name"
           },
@@ -44176,6 +46804,7 @@
           "name": "Person",
           "collection": "profiles",
           "extends": "@happyvertical/smrt-profiles:Profile",
+          "description": "Person profile type",
           "display": {
             "label": "name"
           },
@@ -47060,13 +49689,14 @@
     {
       "id": "projects",
       "packageName": "@happyvertical/smrt-projects",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
       "models": [
         {
           "id": "@happyvertical/smrt-projects:AssistanceRequest",
           "name": "AssistanceRequest",
           "collection": "assistancerequests",
+          "description": "Lossless conversational intake before support/development classification.",
           "fields": [
             {
               "name": "tenantId",
@@ -47151,6 +49781,7 @@
           "id": "@happyvertical/smrt-projects:AssistanceRequestEvent",
           "name": "AssistanceRequestEvent",
           "collection": "assistancerequestevents",
+          "description": "Append-only explanation of Assistance Request routing decisions.",
           "fields": [
             {
               "name": "tenantId",
@@ -47599,6 +50230,7 @@
           "id": "@happyvertical/smrt-projects:DevelopmentRequestWorkLink",
           "name": "DevelopmentRequestWorkLink",
           "collection": "developmentrequestworklinks",
+          "description": "Provider-neutral connection from a Development Request to canonical work.",
           "fields": [
             {
               "name": "tenantId",
@@ -47681,8 +50313,14 @@
             {
               "name": "repositoryId",
               "type": "foreignKey",
-              "required": true,
+              "required": false,
               "related": "@happyvertical/smrt-projects:Repository"
+            },
+            {
+              "name": "projectId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-projects:Project"
             },
             {
               "name": "number",
@@ -47759,6 +50397,10 @@
             }
           ],
           "rest": [
+            {
+              "method": "POST",
+              "path": "/issues/findByProject"
+            },
             {
               "method": "POST",
               "path": "/issues/findByRepository"
@@ -47854,6 +50496,10 @@
               "name": "issuecollection_findbynumber"
             },
             {
+              "operation": "findByProject",
+              "name": "issuecollection_findbyproject"
+            },
+            {
               "operation": "findByRepository",
               "name": "issuecollection_findbyrepository"
             },
@@ -47922,6 +50568,10 @@
             {
               "operation": "findByNumber",
               "name": "issuecollection_findByNumber"
+            },
+            {
+              "operation": "findByProject",
+              "name": "issuecollection_findByProject"
             },
             {
               "operation": "findByRepository",
@@ -48044,6 +50694,15 @@
               "aiCallable": true
             },
             {
+              "name": "findByProject",
+              "async": true,
+              "parameters": [
+                "projectId: string"
+              ],
+              "returnType": "Promise<Issue[]>",
+              "aiCallable": true
+            },
+            {
               "name": "findByRepository",
               "async": true,
               "parameters": [
@@ -48133,6 +50792,13 @@
               "aiCallable": false
             },
             {
+              "name": "hasRepository",
+              "async": false,
+              "parameters": [],
+              "returnType": "boolean",
+              "aiCallable": false
+            },
+            {
               "name": "incorporateFeedback",
               "async": true,
               "parameters": [
@@ -48198,6 +50864,7 @@
             }
           ],
           "references": [
+            "@happyvertical/smrt-projects:Project",
             "@happyvertical/smrt-projects:Repository"
           ],
           "exposed": true
@@ -48215,6 +50882,12 @@
               "type": "foreignKey",
               "required": false,
               "related": "@happyvertical/smrt-projects:Repository"
+            },
+            {
+              "name": "projectId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-projects:Project"
             },
             {
               "name": "name",
@@ -48352,6 +51025,7 @@
             }
           ],
           "references": [
+            "@happyvertical/smrt-projects:Project",
             "@happyvertical/smrt-projects:Repository"
           ],
           "exposed": true
@@ -48360,6 +51034,7 @@
           "id": "@happyvertical/smrt-projects:PreviewApproval",
           "name": "PreviewApproval",
           "collection": "previewapprovals",
+          "description": "Client decision state for one preview produced during delivery.",
           "fields": [
             {
               "name": "tenantId",
@@ -48929,6 +51604,7 @@
           "id": "@happyvertical/smrt-projects:ProjectDeliveryEvent",
           "name": "ProjectDeliveryEvent",
           "collection": "projectdeliveryevents",
+          "description": "Ordered, idempotent delivery update emitted by the control plane.",
           "fields": [
             {
               "name": "tenantId",
@@ -49330,8 +52006,14 @@
             {
               "name": "repositoryId",
               "type": "foreignKey",
-              "required": true,
+              "required": false,
               "related": "@happyvertical/smrt-projects:Repository"
+            },
+            {
+              "name": "projectId",
+              "type": "foreignKey",
+              "required": false,
+              "related": "@happyvertical/smrt-projects:Project"
             },
             {
               "name": "number",
@@ -49885,6 +52567,13 @@
               "aiCallable": false
             },
             {
+              "name": "hasRepository",
+              "async": false,
+              "parameters": [],
+              "returnType": "boolean",
+              "aiCallable": false
+            },
+            {
               "name": "incorporateFeedback",
               "async": true,
               "parameters": [
@@ -49996,6 +52685,7 @@
             }
           ],
           "references": [
+            "@happyvertical/smrt-projects:Project",
             "@happyvertical/smrt-projects:Repository"
           ],
           "exposed": true
@@ -50403,12 +53093,144 @@
         "subscriptions",
         "timesheets"
       ],
-      "surfaceSource": "knowledge"
+      "surfaceSource": "knowledge",
+      "recipes": [
+        {
+          "id": "projects.tracker",
+          "label": "Projects",
+          "summary": "Track projects and the issues, labels and comments inside them.",
+          "synonyms": [
+            "issues",
+            "tasks",
+            "tickets",
+            "bugs",
+            "kanban"
+          ],
+          "models": [
+            "@happyvertical/smrt-projects:Project",
+            "@happyvertical/smrt-projects:Issue",
+            "@happyvertical/smrt-projects:Label",
+            "@happyvertical/smrt-projects:Comment"
+          ],
+          "nav": [
+            {
+              "label": "Projects",
+              "model": "@happyvertical/smrt-projects:Project",
+              "icon": "folder",
+              "description": "Bigger jobs broken into steps you can follow."
+            },
+            {
+              "label": "Issues",
+              "model": "@happyvertical/smrt-projects:Issue",
+              "icon": "wrench",
+              "description": "Problems and to-dos to track until they are done."
+            },
+            {
+              "label": "Labels",
+              "model": "@happyvertical/smrt-projects:Label",
+              "icon": "tag",
+              "description": "Tags to sort your projects and issues your way."
+            }
+          ],
+          "requires": [],
+          "section": {
+            "id": "projects",
+            "label": "Projects",
+            "icon": "briefcase",
+            "description": "Projects, tasks and the time spent on them."
+          },
+          "options": {
+            "@happyvertical/smrt-projects:Project": {
+              "fields": {
+                "projectId": {
+                  "visibility": "hidden"
+                },
+                "projectNumber": {
+                  "visibility": "hidden"
+                },
+                "providerType": {
+                  "visibility": "hidden"
+                },
+                "tokenConfigKey": {
+                  "visibility": "hidden"
+                },
+                "statuses": {
+                  "visibility": "hidden"
+                },
+                "fields": {
+                  "visibility": "hidden"
+                },
+                "statusFieldId": {
+                  "visibility": "hidden"
+                },
+                "statusOptions": {
+                  "visibility": "hidden"
+                },
+                "lastSyncedAt": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-projects:Issue": {
+              "fields": {
+                "nodeId": {
+                  "visibility": "hidden"
+                },
+                "originalBody": {
+                  "visibility": "hidden"
+                },
+                "synthesisCount": {
+                  "visibility": "hidden"
+                },
+                "lastSyncedAt": {
+                  "visibility": "hidden"
+                },
+                "commentsCount": {
+                  "visibility": "hidden"
+                },
+                "repositoryId": {
+                  "visibility": "hidden"
+                },
+                "number": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-projects:Comment": {
+              "fields": {
+                "commentId": {
+                  "visibility": "hidden"
+                },
+                "url": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-projects:Label": {
+              "fields": {
+                "repositoryId": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nProjects tracks the work you are planning: projects, the issues in them, and\nthe labels and comments that organise them.\n\n## Tasks\n\n### Start a project\n\n1. Open **Projects** and choose **New**.\n2. Give it a **{field:title}** and a **{field:description}**.\n\n### Log an issue\n\n1. Open **Issues**, choose **New** and pick the **{field:projectId}**.\n2. Write a **{field:title}** and a **{field:body}**.\n3. Close it by setting **{field:state}** to closed. Comments appear under the\n   issue.\n",
+            "fieldRefs": [
+              "body",
+              "description",
+              "projectId",
+              "state",
+              "title"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "properties",
       "packageName": "@happyvertical/smrt-properties",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Digital property and zone management models for SMRT framework",
       "models": [
         {
@@ -51470,7 +54292,7 @@
     {
       "id": "reports",
       "packageName": "@happyvertical/smrt-reports",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Materialized aggregate report models for SMRT",
       "models": [
         {
@@ -51478,6 +54300,7 @@
           "name": "SmrtPrincipalReportRefreshTask",
           "collection": "smrtprincipalreportrefreshtasks",
           "extends": "@happyvertical/smrt-reports:SmrtReportRefreshTask",
+          "description": "Worker target whose authority requirement cannot be downgraded by job args.",
           "fields": [
             {
               "name": "tenantId",
@@ -52002,7 +54825,7 @@
     {
       "id": "sales",
       "packageName": "@happyvertical/smrt-sales",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Modular sales for the SMRT framework: agreement execution, CRM, referral intake, neutral commissions, and reusable Svelte surfaces",
       "models": [
         {
@@ -53885,6 +56708,7 @@
           "id": "@happyvertical/smrt-sales:CommissionAdjustmentOperation",
           "name": "CommissionAdjustmentOperation",
           "collection": "commissionadjustmentoperations",
+          "description": "One globally unique adjustment operation UUID mapped to its adjustment.",
           "fields": [
             {
               "name": "tenantId",
@@ -55566,6 +58390,7 @@
           "id": "@happyvertical/smrt-sales:Lead",
           "name": "Lead",
           "collection": "leads",
+          "description": "Lead is an identified prospect: a person/organization that showed intent but has not yet been qualified into an Opportunity.",
           "display": {
             "label": "name"
           },
@@ -55943,6 +58768,7 @@
           "id": "@happyvertical/smrt-sales:Opportunity",
           "name": "Opportunity",
           "collection": "opportunities",
+          "description": "Opportunity is a qualified engagement: a deal with an expected value moving through the stages of a PipelineDefinition.",
           "display": {
             "label": "name"
           },
@@ -56234,6 +59060,7 @@
           "id": "@happyvertical/smrt-sales:OpportunityConversion",
           "name": "OpportunityConversion",
           "collection": "opportunityconversions",
+          "description": "OpportunityConversion records that a WON opportunity materialized into a downstream record — a client, project, contract, subscription, or any caller-defined kind.",
           "fields": [
             {
               "name": "tenantId",
@@ -56365,6 +59192,7 @@
           "id": "@happyvertical/smrt-sales:PipelineDefinition",
           "name": "PipelineDefinition",
           "collection": "pipelinedefinitions",
+          "description": "PipelineDefinition names an ordered set of stages that opportunities move through. Pipelines are configuration rows, not code: tenants can run several (e.g.",
           "display": {
             "label": "name"
           },
@@ -56582,6 +59410,7 @@
           "id": "@happyvertical/smrt-sales:PipelineStage",
           "name": "PipelineStage",
           "collection": "pipelinestages",
+          "description": "PipelineStage is a configurable step within a pipeline.",
           "display": {
             "label": "name"
           },
@@ -57453,6 +60282,7 @@
           "id": "@happyvertical/smrt-sales:ReferralClickOperation",
           "name": "ReferralClickOperation",
           "collection": "referralclickoperations",
+          "description": "One globally unique caller replay key mapped to its immutable click touch.",
           "fields": [
             {
               "name": "tenantId",
@@ -57528,6 +60358,7 @@
           "id": "@happyvertical/smrt-sales:ReferralLink",
           "name": "ReferralLink",
           "collection": "referrallinks",
+          "description": "A ReferralLink is the shareable artifact a Referrer distributes: a globally unique code (natural key ['code'] — codes resolve without knowing the tenant/program) plus an optional destination…",
           "display": {
             "label": "label"
           },
@@ -57779,6 +60610,7 @@
           "id": "@happyvertical/smrt-sales:ReferralProgram",
           "name": "ReferralProgram",
           "collection": "referralprograms",
+          "description": "A ReferralProgram anchors links, touches, referrals, agreements, and exceptions, and carries the program-level DEFAULTS:",
           "display": {
             "label": "name"
           },
@@ -58337,6 +61169,7 @@
           "id": "@happyvertical/smrt-sales:Referrer",
           "name": "Referrer",
           "collection": "referrers",
+          "description": "Referrer is a ROLE model: it links an identity (smrt-profiles Profile) to referral activity (ReferralLinks, ReferralTouches, and Referrals reference referrerId).",
           "fields": [
             {
               "name": "tenantId",
@@ -58559,6 +61392,7 @@
           "id": "@happyvertical/smrt-sales:SalesActivity",
           "name": "SalesActivity",
           "collection": "salesactivities",
+          "description": "SalesActivity is the shared trail for Leads and Opportunities: human touchpoints (note, call, email, meeting), next actions (task with dueAt/completedAt), and framework-written audit rows…",
           "fields": [
             {
               "name": "tenantId",
@@ -58715,6 +61549,7 @@
           "id": "@happyvertical/smrt-sales:SalesRepresentative",
           "name": "SalesRepresentative",
           "collection": "salesrepresentatives",
+          "description": "SalesRepresentative is a ROLE model: it links an identity (smrt-profiles Profile) to sales ownership (Leads/Opportunities reference ownerRepId).",
           "display": {
             "label": "title"
           },
@@ -58895,12 +61730,143 @@
         "commerce",
         "profiles"
       ],
-      "surfaceSource": "knowledge"
+      "surfaceSource": "knowledge",
+      "recipes": [
+        {
+          "id": "sales.pipeline",
+          "label": "Leads & pipeline",
+          "summary": "Capture leads and move them through your sales stages.",
+          "synonyms": [
+            "crm",
+            "prospects",
+            "opportunities",
+            "deals",
+            "funnel"
+          ],
+          "models": [
+            "@happyvertical/smrt-sales:Lead",
+            "@happyvertical/smrt-sales:Opportunity",
+            "@happyvertical/smrt-sales:PipelineDefinition",
+            "@happyvertical/smrt-sales:PipelineStage",
+            "@happyvertical/smrt-sales:SalesActivity"
+          ],
+          "nav": [
+            {
+              "label": "Leads",
+              "model": "@happyvertical/smrt-sales:Lead",
+              "icon": "users",
+              "description": "People who might become customers, and where each one stands."
+            },
+            {
+              "label": "Opportunities",
+              "model": "@happyvertical/smrt-sales:Opportunity",
+              "icon": "briefcase",
+              "description": "Deals in progress, with their value and next step."
+            },
+            {
+              "label": "Pipelines",
+              "model": "@happyvertical/smrt-sales:PipelineDefinition",
+              "icon": "layers",
+              "description": "The stages a deal moves through on its way to a sale."
+            }
+          ],
+          "requires": [],
+          "section": {
+            "id": "sales",
+            "label": "Sales",
+            "icon": "shoppingBag",
+            "description": "Customers, orders and quotes: everything you sell."
+          },
+          "options": {
+            "@happyvertical/smrt-sales:Lead": {
+              "fields": {
+                "profileId": {
+                  "visibility": "hidden"
+                },
+                "mergedIntoId": {
+                  "visibility": "hidden"
+                },
+                "sourceKind": {
+                  "visibility": "hidden"
+                },
+                "sourceId": {
+                  "visibility": "hidden"
+                },
+                "acquisitionContext": {
+                  "visibility": "hidden"
+                },
+                "intakeRef": {
+                  "visibility": "hidden"
+                },
+                "metadata": {
+                  "visibility": "hidden"
+                },
+                "qualifiedAt": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-sales:Opportunity": {
+              "fields": {
+                "sourceKind": {
+                  "visibility": "hidden"
+                },
+                "sourceId": {
+                  "visibility": "hidden"
+                },
+                "metadata": {
+                  "visibility": "hidden"
+                },
+                "outcomeReason": {
+                  "visibility": "hidden"
+                },
+                "wonAt": {
+                  "visibility": "hidden"
+                },
+                "lostAt": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-sales:PipelineStage": {
+              "fields": {
+                "metadata": {
+                  "visibility": "hidden"
+                }
+              }
+            },
+            "@happyvertical/smrt-sales:SalesActivity": {
+              "fields": {
+                "metadata": {
+                  "visibility": "hidden"
+                },
+                "actorProfileId": {
+                  "visibility": "hidden"
+                }
+              }
+            }
+          },
+          "help": {
+            "markdown": "## Overview\n\nLeads and pipeline is a light CRM. You capture leads, turn the promising ones\ninto opportunities, and move each through the stages of a pipeline. Activities\nrecord calls, notes and follow-ups.\n\n## Tasks\n\n### Capture a lead\n\n1. Open **Leads** and choose **New**.\n2. Enter the **{field:name}**, **{field:email}** and **{field:phone}**.\n3. Keep **{field:status}** up to date as you qualify them.\n\n### Work an opportunity\n\n1. Open **Pipelines** and add a pipeline, then its stages in order.\n2. Open **Opportunities**, choose **New** and pick the **{field:leadId}**.\n3. Choose the **{field:pipelineId}** and **{field:stageId}**, and enter the\n   **{field:expectedValueCents}** and **{field:expectedCloseAt}**.\n4. Move the **{field:stageId}** along as the deal progresses.\n",
+            "fieldRefs": [
+              "email",
+              "expectedCloseAt",
+              "expectedValueCents",
+              "leadId",
+              "name",
+              "phone",
+              "pipelineId",
+              "stageId",
+              "status"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "sites",
       "packageName": "@happyvertical/smrt-sites",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Site lifecycle management for multi-tenant SMRT networks",
       "models": [
         {
@@ -59439,13 +62405,14 @@
     {
       "id": "social",
       "packageName": "@happyvertical/smrt-social",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Social media account management for multi-platform publishing in the SMRT ecosystem",
       "models": [
         {
           "id": "@happyvertical/smrt-social:OAuthState",
           "name": "OAuthState",
           "collection": "oauthstates",
+          "description": "Temporary OAuth state for social account connection",
           "fields": [
             {
               "name": "created_at",
@@ -59658,6 +62625,7 @@
           "id": "@happyvertical/smrt-social:SocialAccount",
           "name": "SocialAccount",
           "collection": "socialaccounts",
+          "description": "Connected social media account for publishing",
           "display": {
             "label": "name"
           },
@@ -59971,6 +62939,7 @@
           "id": "@happyvertical/smrt-social:SocialPost",
           "name": "SocialPost",
           "collection": "socialposts",
+          "description": "Social media post for multi-platform publishing",
           "display": {
             "label": "title"
           },
@@ -60496,7 +63465,7 @@
     {
       "id": "subscriptions",
       "packageName": "@happyvertical/smrt-subscriptions",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT",
       "models": [
         {
@@ -60764,6 +63733,7 @@
           "id": "@happyvertical/smrt-subscriptions:CreditGrant",
           "name": "CreditGrant",
           "collection": "creditgrants",
+          "description": "An append-only credit on a prepaid (period: 'balance') spending policy. Positive amounts add credit; a negative amount reverses an earlier grant.",
           "fields": [
             {
               "name": "tenantId",
@@ -60855,6 +63825,7 @@
           "id": "@happyvertical/smrt-subscriptions:PriceBook",
           "name": "PriceBook",
           "collection": "pricebooks",
+          "description": "A named set of prices published by one seller tenant. Its prices are ordinary PricingRule rows that carry this book's id and the same tenant; one rule per currency gives a price in several currencies.",
           "display": {
             "label": "name"
           },
@@ -60905,6 +63876,7 @@
           "id": "@happyvertical/smrt-subscriptions:PriceBookAssignment",
           "name": "PriceBookAssignment",
           "collection": "pricebookassignments",
+          "description": "Which price books rate one child tenant's usage, keyed like the tenancy billing relationship it belongs to (one row per child).",
           "fields": [
             {
               "name": "childTenantId",
@@ -61155,6 +64127,7 @@
           "id": "@happyvertical/smrt-subscriptions:RetailCharge",
           "name": "RetailCharge",
           "collection": "retailcharges",
+          "description": "What a reseller charges one child for one usage event, priced from the reseller's retail book.",
           "fields": [
             {
               "name": "tenantId",
@@ -62422,7 +65395,7 @@
     {
       "id": "support",
       "packageName": "@happyvertical/smrt-support",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework",
       "models": [
         {
@@ -62430,6 +65403,7 @@
           "name": "ServiceTimeEntry",
           "collection": "servicetimeentries",
           "extends": "@happyvertical/smrt-support:ServiceTimeEntry",
+          "description": "Support subtype over the shared service_time_entries table: the shared entry plus caseId (a SupportCase) and specialistId (a SupportSpecialist).",
           "fields": [
             {
               "name": "tenantId",
@@ -65910,7 +68884,7 @@
     {
       "id": "tags",
       "packageName": "@happyvertical/smrt-tags",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Reusable tagging system with hierarchies, contexts, and multi-language support for SMRT framework",
       "models": [
         {
@@ -66755,13 +69729,14 @@
     {
       "id": "timesheets",
       "packageName": "@happyvertical/smrt-timesheets",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Shared time entries for the SMRT framework: who worked how long on what, approval and correction, with immutable charge and compensation snapshots",
       "models": [
         {
           "id": "@happyvertical/smrt-timesheets:AttendanceBreak",
           "name": "AttendanceBreak",
           "collection": "attendancebreaks",
+          "description": "A paid or unpaid break inside one attendance punch.",
           "fields": [
             {
               "name": "tenantId",
@@ -66845,6 +69820,7 @@
           "id": "@happyvertical/smrt-timesheets:AttendancePunch",
           "name": "AttendancePunch",
           "collection": "attendancepunches",
+          "description": "A tenant-scoped interval of attendance, independent of billable work.",
           "fields": [
             {
               "name": "tenantId",
@@ -66953,6 +69929,7 @@
           "id": "@happyvertical/smrt-timesheets:AttendanceReplay",
           "name": "AttendanceReplay",
           "collection": "attendancereplays",
+          "description": "Durable offline-tap outcome; never exposed through generated operations.",
           "fields": [
             {
               "name": "tenantId",
@@ -67011,6 +69988,7 @@
           "id": "@happyvertical/smrt-timesheets:PeriodTimecard",
           "name": "PeriodTimecard",
           "collection": "periodtimecards",
+          "description": "One person's immutable-on-confirmation period snapshot, in integer seconds.",
           "fields": [
             {
               "name": "tenantId",
@@ -67135,6 +70113,7 @@
           "id": "@happyvertical/smrt-timesheets:ServiceChargeSnapshot",
           "name": "ServiceChargeSnapshot",
           "collection": "servicechargesnapshots",
+          "description": "Immutable client-charge snapshot for one approved time entry. Money is integer minor units, consistent with smrt-commerce (#2401).",
           "fields": [
             {
               "name": "tenantId",
@@ -67241,6 +70220,7 @@
           "id": "@happyvertical/smrt-timesheets:ServiceCompensationSnapshot",
           "name": "ServiceCompensationSnapshot",
           "collection": "servicecompensationsnapshots",
+          "description": "Immutable provider-compensation snapshot for one approved time entry, kept separate from the client charge so the margin is charge - compensation.",
           "fields": [
             {
               "name": "tenantId",
@@ -67337,6 +70317,7 @@
           "id": "@happyvertical/smrt-timesheets:ServiceTimeEntry",
           "name": "ServiceTimeEntry",
           "collection": "servicetimeentries",
+          "description": "A person or agent worked this long on this thing, and someone approved it.",
           "fields": [
             {
               "name": "tenantId",
@@ -67627,6 +70608,7 @@
           "id": "@happyvertical/smrt-timesheets:TimecardAdjustment",
           "name": "TimecardAdjustment",
           "collection": "timecardadjustments",
+          "description": "Attributed append-only signed seconds; the confirmed base card never changes.",
           "fields": [
             {
               "name": "tenantId",
@@ -67709,13 +70691,14 @@
     {
       "id": "users",
       "packageName": "@happyvertical/smrt-users",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
       "models": [
         {
           "id": "@happyvertical/smrt-users:AccessRequest",
           "name": "AccessRequest",
           "collection": "accessrequests",
+          "description": "A prospective user's request for access, captured before they become a User.",
           "display": {
             "label": "name"
           },
@@ -67929,6 +70912,7 @@
           "id": "@happyvertical/smrt-users:Group",
           "name": "Group",
           "collection": "groups",
+          "description": "Group represents a team or department within a tenant.",
           "display": {
             "label": "name"
           },
@@ -67955,20 +70939,20 @@
           ],
           "rest": [
             {
-              "method": "POST",
-              "path": "/groups/findByTenant"
-            },
-            {
-              "method": "POST",
-              "path": "/groups/findBySlug"
-            },
-            {
               "method": "GET",
               "path": "/groups"
             },
             {
               "method": "GET",
               "path": "/groups/[id]"
+            },
+            {
+              "method": "POST",
+              "path": "/groups/findByTenant"
+            },
+            {
+              "method": "POST",
+              "path": "/groups/findBySlug"
             }
           ],
           "mcp": [
@@ -68049,6 +71033,7 @@
           "id": "@happyvertical/smrt-users:GroupMember",
           "name": "GroupMember",
           "collection": "groupmembers",
+          "description": "GroupMember is a join table linking Users to Groups.",
           "fields": [
             {
               "name": "groupId",
@@ -68064,6 +71049,14 @@
             }
           ],
           "rest": [
+            {
+              "method": "GET",
+              "path": "/groupmembers"
+            },
+            {
+              "method": "GET",
+              "path": "/groupmembers/[id]"
+            },
             {
               "method": "POST",
               "path": "/groupmembers/findByGroup"
@@ -68095,14 +71088,6 @@
             {
               "method": "POST",
               "path": "/groupmembers/getUserIds"
-            },
-            {
-              "method": "GET",
-              "path": "/groupmembers"
-            },
-            {
-              "method": "GET",
-              "path": "/groupmembers/[id]"
             }
           ],
           "mcp": [
@@ -68289,6 +71274,7 @@
           "id": "@happyvertical/smrt-users:GroupRole",
           "name": "GroupRole",
           "collection": "grouproles",
+          "description": "GroupRole is a join table linking Groups to Roles.",
           "fields": [
             {
               "name": "groupId",
@@ -68304,6 +71290,14 @@
             }
           ],
           "rest": [
+            {
+              "method": "GET",
+              "path": "/grouproles"
+            },
+            {
+              "method": "GET",
+              "path": "/grouproles/[id]"
+            },
             {
               "method": "POST",
               "path": "/grouproles/findByGroup"
@@ -68327,14 +71321,6 @@
             {
               "method": "POST",
               "path": "/grouproles/getRoleIds"
-            },
-            {
-              "method": "GET",
-              "path": "/grouproles"
-            },
-            {
-              "method": "GET",
-              "path": "/grouproles/[id]"
             }
           ],
           "mcp": [
@@ -68486,6 +71472,7 @@
           "id": "@happyvertical/smrt-users:Membership",
           "name": "Membership",
           "collection": "memberships",
+          "description": "Membership represents a user's membership in a tenant with an assigned role.",
           "fields": [
             {
               "name": "userId",
@@ -68514,6 +71501,14 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/memberships"
+            },
+            {
+              "method": "GET",
+              "path": "/memberships/[id]"
+            },
+            {
               "method": "POST",
               "path": "/memberships/findByUser"
             },
@@ -68540,14 +71535,6 @@
             {
               "method": "POST",
               "path": "/memberships/findByStatus"
-            },
-            {
-              "method": "GET",
-              "path": "/memberships"
-            },
-            {
-              "method": "GET",
-              "path": "/memberships/[id]"
             }
           ],
           "mcp": [
@@ -68737,6 +71724,7 @@
           "id": "@happyvertical/smrt-users:MembershipOverride",
           "name": "MembershipOverride",
           "collection": "membershipoverrides",
+          "description": "MembershipOverride allows granting or denying specific permissions to a user beyond what their role and groups provide.",
           "fields": [
             {
               "name": "membershipId",
@@ -68757,6 +71745,14 @@
             }
           ],
           "rest": [
+            {
+              "method": "GET",
+              "path": "/membershipoverrides"
+            },
+            {
+              "method": "GET",
+              "path": "/membershipoverrides/[id]"
+            },
             {
               "method": "POST",
               "path": "/membershipoverrides/findByMembership"
@@ -68792,14 +71788,6 @@
             {
               "method": "POST",
               "path": "/membershipoverrides/denyPermission"
-            },
-            {
-              "method": "GET",
-              "path": "/membershipoverrides"
-            },
-            {
-              "method": "GET",
-              "path": "/membershipoverrides/[id]"
             }
           ],
           "mcp": [
@@ -69026,6 +72014,7 @@
           "id": "@happyvertical/smrt-users:Permission",
           "name": "Permission",
           "collection": "permissions",
+          "description": "Permission represents a named capability in the system.",
           "display": {
             "label": "name"
           },
@@ -69051,6 +72040,14 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/permissions"
+            },
+            {
+              "method": "GET",
+              "path": "/permissions/[id]"
+            },
+            {
               "method": "POST",
               "path": "/permissions/findByCategory"
             },
@@ -69069,14 +72066,6 @@
             {
               "method": "POST",
               "path": "/permissions/findOrCreate"
-            },
-            {
-              "method": "GET",
-              "path": "/permissions"
-            },
-            {
-              "method": "GET",
-              "path": "/permissions/[id]"
             }
           ],
           "mcp": [
@@ -69248,6 +72237,7 @@
           "id": "@happyvertical/smrt-users:ResourceGrant",
           "name": "ResourceGrant",
           "collection": "resourcegrants",
+          "description": "An exact tenant/resource/user/permission decision. This deliberately does not replace tenant RBAC: ResourceGrantResolver only allows after the normal operation guard has allowed the same permission.",
           "fields": [
             {
               "name": "tenantId",
@@ -69400,6 +72390,7 @@
           "id": "@happyvertical/smrt-users:Role",
           "name": "Role",
           "collection": "roles",
+          "description": "Role represents a permission template that can be assigned to users.",
           "display": {
             "label": "name"
           },
@@ -69438,6 +72429,14 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/roles"
+            },
+            {
+              "method": "GET",
+              "path": "/roles/[id]"
+            },
+            {
               "method": "POST",
               "path": "/roles/findSystemRoles"
             },
@@ -69460,14 +72459,6 @@
             {
               "method": "POST",
               "path": "/roles/seedSystemRoles"
-            },
-            {
-              "method": "GET",
-              "path": "/roles"
-            },
-            {
-              "method": "GET",
-              "path": "/roles/[id]"
             }
           ],
           "mcp": [
@@ -69654,6 +72645,7 @@
           "id": "@happyvertical/smrt-users:RolePermission",
           "name": "RolePermission",
           "collection": "rolepermissions",
+          "description": "RolePermission is a join table linking Roles to Permissions.",
           "fields": [
             {
               "name": "roleId",
@@ -69669,6 +72661,14 @@
             }
           ],
           "rest": [
+            {
+              "method": "GET",
+              "path": "/rolepermissions"
+            },
+            {
+              "method": "GET",
+              "path": "/rolepermissions/[id]"
+            },
             {
               "method": "POST",
               "path": "/rolepermissions/findByRole"
@@ -69700,14 +72700,6 @@
             {
               "method": "POST",
               "path": "/rolepermissions/seedDefaultRolePersonalizationPermissions"
-            },
-            {
-              "method": "GET",
-              "path": "/rolepermissions"
-            },
-            {
-              "method": "GET",
-              "path": "/rolepermissions/[id]"
             }
           ],
           "mcp": [
@@ -69894,6 +72886,7 @@
           "id": "@happyvertical/smrt-users:Session",
           "name": "Session",
           "collection": "sessions",
+          "description": "Session represents an authenticated user session.",
           "fields": [
             {
               "name": "userId",
@@ -69953,6 +72946,14 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/sessions/[id]"
+            },
+            {
+              "method": "DELETE",
+              "path": "/sessions/[id]"
+            },
+            {
               "method": "POST",
               "path": "/sessions/createSession"
             },
@@ -70011,14 +73012,6 @@
             {
               "method": "POST",
               "path": "/sessions/getSessionData"
-            },
-            {
-              "method": "GET",
-              "path": "/sessions/[id]"
-            },
-            {
-              "method": "DELETE",
-              "path": "/sessions/[id]"
             }
           ],
           "mcp": [
@@ -70490,6 +73483,7 @@
           "id": "@happyvertical/smrt-users:Tenant",
           "name": "Tenant",
           "collection": "tenants",
+          "description": "Tenant represents an organizational boundary in the multi-tenant system.",
           "display": {
             "label": "name"
           },
@@ -70555,6 +73549,14 @@
             }
           ],
           "rest": [
+            {
+              "method": "GET",
+              "path": "/tenants"
+            },
+            {
+              "method": "GET",
+              "path": "/tenants/[id]"
+            },
             {
               "method": "POST",
               "path": "/tenants/findByStatus"
@@ -70622,14 +73624,6 @@
             {
               "method": "POST",
               "path": "/tenants/getTree"
-            },
-            {
-              "method": "GET",
-              "path": "/tenants"
-            },
-            {
-              "method": "GET",
-              "path": "/tenants/[id]"
             }
           ],
           "mcp": [
@@ -71088,6 +74082,14 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/tenantintegrations"
+            },
+            {
+              "method": "GET",
+              "path": "/tenantintegrations/[id]"
+            },
+            {
               "method": "POST",
               "path": "/tenantintegrations/listForTenant"
             },
@@ -71098,14 +74100,6 @@
             {
               "method": "POST",
               "path": "/tenantintegrations/findOrInit"
-            },
-            {
-              "method": "GET",
-              "path": "/tenantintegrations"
-            },
-            {
-              "method": "GET",
-              "path": "/tenantintegrations/[id]"
             }
           ],
           "mcp": [
@@ -71297,6 +74291,7 @@
           "id": "@happyvertical/smrt-users:TenantPermissionOverride",
           "name": "TenantPermissionOverride",
           "collection": "tenantpermissionoverrides",
+          "description": "TenantPermissionOverride allows setting explicit permission values at the tenant level.",
           "fields": [
             {
               "name": "tenantId",
@@ -71318,6 +74313,14 @@
             }
           ],
           "rest": [
+            {
+              "method": "GET",
+              "path": "/tenantpermissionoverrides"
+            },
+            {
+              "method": "GET",
+              "path": "/tenantpermissionoverrides/[id]"
+            },
             {
               "method": "POST",
               "path": "/tenantpermissionoverrides/findByTenant"
@@ -71381,14 +74384,6 @@
             {
               "method": "POST",
               "path": "/tenantpermissionoverrides/copyOverrides"
-            },
-            {
-              "method": "GET",
-              "path": "/tenantpermissionoverrides"
-            },
-            {
-              "method": "GET",
-              "path": "/tenantpermissionoverrides/[id]"
             }
           ],
           "mcp": [
@@ -71759,6 +74754,7 @@
           "id": "@happyvertical/smrt-users:User",
           "name": "User",
           "collection": "users",
+          "description": "User represents an authenticated identity in the system.",
           "fields": [
             {
               "name": "profileId",
@@ -71790,6 +74786,14 @@
           ],
           "rest": [
             {
+              "method": "GET",
+              "path": "/users"
+            },
+            {
+              "method": "GET",
+              "path": "/users/[id]"
+            },
+            {
               "method": "POST",
               "path": "/users/findByEmail"
             },
@@ -71816,14 +74820,6 @@
             {
               "method": "POST",
               "path": "/users/getOrCreateFromOidc"
-            },
-            {
-              "method": "GET",
-              "path": "/users"
-            },
-            {
-              "method": "GET",
-              "path": "/users/[id]"
             }
           ],
           "mcp": [
@@ -72050,6 +75046,7 @@
           "id": "@happyvertical/smrt-users:UsersCliAuthApproveLimit",
           "name": "UsersCliAuthApproveLimit",
           "collection": "userscliauthapprovelimits",
+          "description": "Private database arbiter shared by every terminal-auth process.",
           "fields": [
             {
               "name": "userId",
@@ -72278,6 +75275,7 @@
           "id": "@happyvertical/smrt-users:UsersLoginAttempt",
           "name": "UsersLoginAttempt",
           "collection": "usersloginattempts",
+          "description": "Private database arbiter shared by every process that authenticates.",
           "fields": [
             {
               "name": "limiterKey",
@@ -72802,13 +75800,14 @@
     {
       "id": "video",
       "packageName": "@happyvertical/smrt-video",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Video content management for AI-powered video production in the SMRT ecosystem",
       "models": [
         {
           "id": "@happyvertical/smrt-video:Character",
           "name": "Character",
           "collection": "characters",
+          "description": "Virtual character for AI-powered video production",
           "display": {
             "label": "name"
           },
@@ -73589,6 +76588,7 @@
           "id": "@happyvertical/smrt-video:CompositeJob",
           "name": "CompositeJob",
           "collection": "compositejobs",
+          "description": "Composite job for tracking virtual production compositing",
           "fields": [
             {
               "name": "created_at",
@@ -73734,6 +76734,7 @@
           "id": "@happyvertical/smrt-video:Performer",
           "name": "Performer",
           "collection": "performers",
+          "description": "The physical likeness/face DNA",
           "display": {
             "label": "name"
           },
@@ -74412,6 +77413,7 @@
           "id": "@happyvertical/smrt-video:Scene",
           "name": "Scene",
           "collection": "scenes",
+          "description": "Scene for virtual production compositing",
           "display": {
             "label": "name"
           },
@@ -75111,6 +78113,7 @@
           "id": "@happyvertical/smrt-video:VideoComposition",
           "name": "VideoComposition",
           "collection": "contents",
+          "description": "Publishable video composition",
           "display": {
             "label": "name"
           },
@@ -76643,6 +79646,7 @@
           "id": "@happyvertical/smrt-video:VideoSequence",
           "name": "VideoSequence",
           "collection": "contents",
+          "description": "Thematic section of a video composition",
           "display": {
             "label": "name"
           },
@@ -78170,6 +81174,7 @@
           "id": "@happyvertical/smrt-video:VideoShot",
           "name": "VideoShot",
           "collection": "contents",
+          "description": "Atomic video generation unit",
           "display": {
             "label": "name"
           },
@@ -79785,6 +82790,7 @@
           "id": "@happyvertical/smrt-video:VideoShotCharacter",
           "name": "VideoShotCharacter",
           "collection": "videoshotcharacters",
+          "description": "Join model linking a VideoShot to a Character",
           "fields": [
             {
               "name": "created_at",
@@ -79938,6 +82944,7 @@
           "id": "@happyvertical/smrt-video:VideoWorkflow",
           "name": "VideoWorkflow",
           "collection": "videoworkflows",
+          "description": "ComfyUI workflow template for video generation",
           "display": {
             "label": "name"
           },
@@ -80092,13 +83099,14 @@
     {
       "id": "voice",
       "packageName": "@happyvertical/smrt-voice",
-      "version": "0.55.3",
+      "version": "0.55.6",
       "description": "Voice profile management for AI-powered voice synthesis and cloning in the SMRT ecosystem",
       "models": [
         {
           "id": "@happyvertical/smrt-voice:VoiceOutput",
           "name": "VoiceOutput",
           "collection": "contents",
+          "description": "Generated audio output from text-to-speech synthesis",
           "display": {
             "label": "name"
           },
@@ -81204,6 +84212,7 @@
           "id": "@happyvertical/smrt-voice:VoiceProfile",
           "name": "VoiceProfile",
           "collection": "voiceprofiles",
+          "description": "Voice profile for AI-powered speech synthesis",
           "display": {
             "label": "name"
           },
@@ -81382,6 +84391,7 @@
           "id": "@happyvertical/smrt-voice:VoiceSample",
           "name": "VoiceSample",
           "collection": "voicesamples",
+          "description": "Audio sample for voice cloning",
           "fields": [
             {
               "name": "created_at",

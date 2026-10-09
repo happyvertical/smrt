@@ -1,17 +1,13 @@
 <script lang="ts">
-import { Switch } from '@happyvertical/smrt-ui/forms';
 import { exposedModels, getPackage } from '$lib/catalog/index.ts';
 import ConnectTools from '$lib/components/ConnectTools.svelte';
 import { humanize } from '$lib/data/format.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
-import { selection } from '$lib/planner/selection.svelte.ts';
 import type { PageProps } from './$types';
 
 let { data }: PageProps = $props();
 
 const pkg = $derived(getPackage(data.id));
-const selected = $derived(selection.has(data.id));
-const lockedBy = $derived(selection.requiredBy(data.id));
 </script>
 
 <svelte:head>
@@ -33,17 +29,6 @@ const lockedBy = $derived(selection.requiredBy(data.id));
           {/each}
         </p>
       {/if}
-      <Switch
-        checked={selected}
-        disabled={selected && lockedBy.length > 0}
-        onchange={() => selection.toggle(pkg.id)}
-        aria-label={`Include ${humanize(pkg.id)} in my app`}
-        label={selected && lockedBy.length > 0
-          ? `In your app (needed by ${lockedBy.map(humanize).join(', ')})`
-          : selected
-            ? 'In your app'
-            : 'Add to my app'}
-      />
     </header>
 
     <section>

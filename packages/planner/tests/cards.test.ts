@@ -63,8 +63,8 @@ describe('Planner card locks', () => {
       (c) => c.id === 'commerce.customers',
     );
     if (!customers) throw new Error('no Customers card');
-    expect(mainLockNote(customers, ['Sales Orders'])).toBe(
-      'Customers stays on while Sales Orders needs it.',
+    expect(mainLockNote(customers, ['Sales orders'])).toBe(
+      'Customers stays on while Sales orders needs it.',
     );
   });
 });
@@ -78,10 +78,19 @@ describe('recipe sections', () => {
       'commerce.vendors',
       'inventory.stock',
       'products',
+      'commerce.estimates',
+      'commerce.wholesale',
+      'billing',
+      'agreements',
+      'ledgers.bookkeeping',
+      'projects.tracker',
+      'events.calendar',
+      'sales.pipeline',
     ]);
     expect(getSection('products')?.recipes.map((r) => r.id)).toEqual([
       'products.simple',
       'products.clothing',
+      'products.ingredients',
     ]);
     expect(getSection('products.simple')).toBeUndefined();
     expect(sectionId(recipesById.get('products.clothing') ?? recipes[0])).toBe(

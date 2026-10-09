@@ -1,6 +1,7 @@
 import { isWebGPUAvailable, WebLLMProvider } from '@happyvertical/ai/local';
+import { getLibraryCookbook, libraryCookbooks } from '../library/index.ts';
 import type { Recipe } from '../recipes/types.ts';
-import type { RecipeStore } from './change.ts';
+import type { RecipeStore, SettingsStore, ThemeStore } from './change.ts';
 import {
   browserHost,
   type EngineHost,
@@ -9,12 +10,26 @@ import {
   loadModel,
 } from './engine.ts';
 import { getModel } from './models.ts';
+import { CookbookOffers } from './offers.svelte.ts';
 import { type AssistantPrefs, loadPrefs, savePrefs } from './prefs.ts';
+import { ThemeUndos } from './theme-undo.svelte.ts';
 import {
   type BrowserAssistantTransport,
   type ChatModel,
   createBrowserAssistantTransport,
 } from './transport.ts';
+
+/**
+ * Qwen3 reasons before it answers unless told not to; its `/no_think` switch
+ * skips that, which is slow and pointless for a short structured reply. The
+ * grammar-constrained JSON already keeps any thinking out of the output.
+ */
+export function withoutThinking(chat: ChatModel, modelId: string): ChatModel {
+  if (!/^qwen3/i.test(modelId)) return chat;
+  return {
+    message: (text, options) => chat.message(`${text} /no_think`, options),
+  };
+}
 
 export type SessionStatus =
   | 'unsupported'
@@ -26,10 +41,16 @@ export type SessionStatus =
 export interface SessionOptions {
   store: RecipeStore;
   recipes: readonly Recipe[];
+  /** The app settings the assistant may change; omit to leave them out. */
+  settings?: SettingsStore;
+  /** The app theme the assistant may change (with Undo); omit to leave it out. */
+  theme?: ThemeStore;
   storage: Storage | null;
   /** Defaults to the browser's WebGPU check. */
   webgpu?: () => boolean;
   host?: EngineHost;
+  /** Called with each reply the model produced, e.g. to read it aloud. */
+  onReply?: (text: string) => void;
 }
 
 /**
@@ -44,6 +65,10 @@ export class AssistantSession {
   error = $state('');
 
   readonly transport: BrowserAssistantTransport;
+  /** Cookbooks the assistant proposed, applied only by the person's click. */
+  readonly offers = new CookbookOffers(getLibraryCookbook);
+  /** Theme changes the assistant made, each undoable from the chat. */
+  readonly themeUndos: ThemeUndos | null;
   private loaded: LoadedModel | null = null;
   private chat: ChatModel | null = null;
   private abort: AbortController | null = null;
@@ -55,10 +80,17 @@ export class AssistantSession {
     this.status = (options.webgpu ?? isWebGPUAvailable)()
       ? 'idle'
       : 'unsupported';
+    this.themeUndos = options.theme ? new ThemeUndos(options.theme) : null;
     this.transport = createBrowserAssistantTransport({
       model: () => this.chat,
       store: options.store,
       recipes: options.recipes,
+      cookbooks: libraryCookbooks,
+      offers: this.offers,
+      settings: options.settings,
+      theme: options.theme,
+      themeUndos: this.themeUndos ?? undefined,
+      onReply: (text) => options.onReply?.(text),
     });
   }
 
@@ -100,11 +132,14 @@ export class AssistantSession {
         consented: [...new Set([...this.prefs.consented, modelId])],
       };
       savePrefs(this.options.storage, this.prefs);
-      this.chat = new WebLLMProvider({
-        type: 'webllm',
-        engine: loaded.engine,
-        model: modelId,
-      });
+      this.chat = withoutThinking(
+        new WebLLMProvider({
+          type: 'webllm',
+          engine: loaded.engine,
+          model: modelId,
+        }),
+        modelId,
+      );
       this.status = 'ready';
     } catch (error) {
       if (abort.signal.aborted) {

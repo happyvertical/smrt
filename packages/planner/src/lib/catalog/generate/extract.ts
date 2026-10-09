@@ -1,3 +1,4 @@
+import type { Recipe } from '../../recipes/types.ts';
 import type {
   CatalogField,
   CatalogFieldUI,
@@ -15,6 +16,8 @@ export interface RawManifest {
   packageName: string;
   smrtDependencies?: string[];
   objects: Record<string, RawObject>;
+  /** Recipes the package declares (`SmrtRecipe`, smrt#3590/#3604). */
+  recipes?: unknown;
 }
 
 interface RawParameter {
@@ -47,6 +50,8 @@ interface RawObject {
   collection: string;
   extends?: string;
   extendsTypeArg?: string;
+  /** The class's doc description (emitted by newer scanners only). */
+  description?: string;
   /** The own field that labels a record in pickers (smrt#3611). */
   displayLabelField?: string;
   fields: Record<string, RawField>;
@@ -57,6 +62,8 @@ interface RawObject {
 /** The subset of a `smrt-knowledge.json` the catalog reads. */
 export interface RawKnowledge {
   surfaces?: RawSurface[];
+  /** Recipes the package declares; also in the manifest. */
+  recipes?: unknown;
 }
 
 interface RawSurface {
@@ -237,9 +244,28 @@ function qualify(
   return models.has(local) ? local : related;
 }
 
+/**
+ * The recipes a package declares, in declaration order, from its knowledge
+ * artifact (else its manifest). Dropped when they are not an array of
+ * objects with a string `id`. `className` is a source detail, not catalog data.
+ */
+function extractRecipes(raw: RawPackage): Recipe[] {
+  const found = raw.knowledge?.recipes ?? raw.manifest.recipes;
+  if (!Array.isArray(found)) return [];
+  return found
+    .filter(
+      (r): r is Record<string, unknown> =>
+        !!r &&
+        typeof r === 'object' &&
+        typeof (r as { id?: unknown }).id === 'string',
+    )
+    .map(({ className: _className, ...recipe }) => recipe as unknown as Recipe);
+}
+
 /** Turn one package's raw manifest and knowledge into a catalog entry. */
 export function extractPackage(raw: RawPackage): CatalogPackage {
   const { manifest, knowledge, packageName } = raw;
+  const recipes = extractRecipes(raw);
   const objects = Object.values(manifest.objects);
   const rawModels = objects.filter(isModel);
   const modelMap = new Map(rawModels.map((m) => [m.qualifiedName, m]));
@@ -314,6 +340,9 @@ export function extractPackage(raw: RawPackage): CatalogPackage {
       ...(model.extends && modelMap.has(`${packageName}:${model.extends}`)
         ? { extends: `${packageName}:${model.extends}` }
         : {}),
+      ...(model.description?.trim()
+        ? { description: model.description.trim() }
+        : {}),
       ...(model.displayLabelField &&
       fields.some((f) => f.name === model.displayLabelField)
         ? { display: { label: model.displayLabelField } }
@@ -337,6 +366,7 @@ export function extractPackage(raw: RawPackage): CatalogPackage {
     models,
     dependencies: (manifest.smrtDependencies ?? []).map(packageId).sort(),
     surfaceSource: knowledgeSurfaces ? 'knowledge' : 'manifest',
+    ...(recipes.length > 0 ? { recipes } : {}),
   };
 }
 

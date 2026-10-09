@@ -51,8 +51,16 @@ Hosting under a sub-path (for example GitHub Pages)? Build with
 4. Recipes and options live in the URL (`?r=commerce.sales,...&o=...`); copy it
    to share the mock-up.
 
-The Assistant dock tool is a placeholder; the in-browser chat that picks
-packages for you is tracked in #3, and live s-m-r-t objects in #4.
+Short on time? The **Cookbooks** tab (where a first visit lands) offers ready-made
+starting points for a bakery, a mechanic, a welder and a yoga studio: pick one,
+read what it adds (recipes, menu, default payment terms, currency and tax), and
+use it to replace your recipes and menu. Your records stay.
+
+The Assistant runs a small model on your device. Three icons in the left
+sidebar footer show **Think** (the language model), **Hear** (voice typing) and
+**Speak** (read replies aloud); each opens the AI models page (`/ai/`), where you
+choose and download them. A first visit with nothing built starts there; "I don't
+need AI, let's just build" skips it for good. Live s-m-r-t objects are tracked in #4.
 
 ## How the catalog is generated
 

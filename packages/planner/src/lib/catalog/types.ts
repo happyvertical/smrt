@@ -6,6 +6,8 @@
  * Everything the browser needs is here, so the app never loads a package.
  */
 
+import type { Recipe } from '../recipes/types.ts';
+
 /** Field types as the s-m-r-t manifest names them. */
 export type CatalogFieldType =
   | 'text'
@@ -95,6 +97,8 @@ export interface CatalogModel {
   collection: string;
   /** Qualified name of the model this one extends, when it is an STI child. */
   extends?: string;
+  /** The class's description from the manifest, when the scanner emits one. */
+  description?: string;
   /**
    * The manifest's `displayLabelField` (happyvertical/smrt#3611): the own
    * field that labels a record in pickers. Undeclared means the first of `name`,
@@ -131,6 +135,12 @@ export interface CatalogPackage {
   dependencies: string[];
   /** Where the surfaces came from: the knowledge artifact or the manifest. */
   surfaceSource: 'knowledge' | 'manifest';
+  /**
+   * Recipes the package declares (smrt#3604), in declaration order. Absent
+   * when it declares none. The planner overlays its local-only parts
+   * (`forms`, `extends`) in `src/lib/recipes`.
+   */
+  recipes?: Recipe[];
 }
 
 export interface Catalog {

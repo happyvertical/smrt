@@ -3,6 +3,7 @@ import { humanize } from '$lib/data/format.ts';
 import { appHref } from '$lib/planner/app.svelte.ts';
 import {
   getRecipe,
+  navPath,
   recipeModels,
   recipeNav,
   recipePackage,
@@ -73,7 +74,7 @@ const requiredHref = (id: string) => {
       {#each recipeNav(recipe) as entry (entry.model.id)}
         <li>
           {#if added}
-            <a href={appHref(`/m/${entry.packageId}/${entry.model.name}/`)}>{entry.label}</a>
+            <a href={appHref(navPath(entry))}>{entry.label}</a>
           {:else}
             {entry.label}
           {/if}

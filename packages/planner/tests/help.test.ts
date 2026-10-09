@@ -310,15 +310,15 @@ describe('every recipe', () => {
         before.recipe.help as never,
         effective('commerce.sales').models,
       );
-    expect(render().glossary.map((g) => g.name)).toContain('expiryDate');
-    expect(lines(render().blocks).join('\n')).toContain('Expiry date');
+    expect(render().glossary.map((g) => g.name)).toContain('notes');
+    expect(lines(render().blocks).join('\n')).toContain('Notes');
 
     recipeState.save(
       '@happyvertical/smrt-commerce:Order',
       [
         {
           objectRef: '@happyvertical/smrt-commerce:Order',
-          fieldName: 'expiryDate',
+          fieldName: 'notes',
           scopeType: 'app',
           visibility: 'hidden',
         },
@@ -332,9 +332,9 @@ describe('every recipe', () => {
       [],
     );
     const after = render();
-    expect(after.glossary.map((g) => g.name)).not.toContain('expiryDate');
-    expect(lines(after.blocks).join('\n')).not.toContain('Expiry date');
-    expect(lines(after.blocks).join('\n')).toContain('Pick the Client');
+    expect(after.glossary.map((g) => g.name)).not.toContain('notes');
+    expect(lines(after.blocks).join('\n')).not.toContain('Notes');
+    expect(lines(after.blocks).join('\n')).toContain('Enter the Client');
     expect(after.glossary.find((g) => g.name === 'customerId')?.label).toBe(
       'Client',
     );

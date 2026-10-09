@@ -7,94 +7,170 @@ import {
 } from '@happyvertical/smrt-svelte/workspace';
 import { afterNavigate, replaceState } from '$app/navigation';
 import { page } from '$app/state';
-import { blueprintStore } from '$lib/blueprint/store.svelte.ts';
-import { exposedModels, getPackage } from '$lib/catalog/index.ts';
+import { aiState } from '$lib/ai/instance.ts';
+import smrtMark from '$lib/assets/smrt-mark.svg';
+import { catalog, exposedModels, getPackage } from '$lib/catalog/index.ts';
+import AiStatusIcons from '$lib/components/AiStatusIcons.svelte';
 import BrowserAssistant from '$lib/components/BrowserAssistant.svelte';
+import PlannerEditBridge from '$lib/components/PlannerEditBridge.svelte';
+import SectionActions from '$lib/components/SectionActions.svelte';
+import ThemeBridge from '$lib/components/ThemeBridge.svelte';
+import { browserStorage } from '$lib/cookbook/storage.ts';
+import {
+  cookbookStore,
+  SHELL_STORAGE_KEY,
+} from '$lib/cookbook/store.svelte.ts';
 import { provideDataSource } from '$lib/data/context.ts';
 import { humanize } from '$lib/data/format.ts';
 import { createMemoryDataSource } from '$lib/data/source.ts';
-import { PROFILE_TYPE, SAVED_BY_FORMS } from '$lib/forms/stock.ts';
+import { catalogModels } from '$lib/forms/shared.ts';
+import { PROFILE_TYPE, stockSamples, VARIANT } from '$lib/forms/stock.ts';
+import { libraryState } from '$lib/library/state.svelte.ts';
 import { appHref, appQuery } from '$lib/planner/app.svelte.ts';
-import { hasAppState } from '$lib/planner/query.ts';
+import { hasAppState, withTab } from '$lib/planner/query.ts';
 import { selection } from '$lib/planner/selection.svelte.ts';
-import { recipeNav, recipes, sectionId } from '$lib/recipes/index.ts';
+import { plannerTab } from '$lib/planner/tab.svelte.ts';
+import { FEATURE_SECTION, featureNavItems } from '$lib/recipes/features.ts';
+import {
+  buildNavSections,
+  navItemId,
+  navPath,
+  recipeNav,
+  recipes,
+  sectionId,
+} from '$lib/recipes/index.ts';
+import { childLinks } from '$lib/recipes/plumbing.ts';
 import { recipeState } from '$lib/recipes/state.svelte.ts';
-import type { Recipe } from '$lib/recipes/types.ts';
+import { sectionPath } from '$lib/sections/path.ts';
 import type { LayoutProps } from './$types';
 
 let { children }: LayoutProps = $props();
 
+// Sample data follows the cookbook last applied (nothing in the SSR render).
+libraryState.load();
+
 // The seam for live objects: swap this for a collection-backed DataSource.
 provideDataSource(
   createMemoryDataSource({
+    // Added, edited and deleted rows survive a reload; Reset clears them.
+    storage: browserStorage(),
     // Fields the views hide still carry their policy default, e.g. the
     // `contractType` that tells an Order from a PurchaseOrder.
     defaults: (model) => recipeState.apply(model).background,
-    // Rows that only make sense under a product a form creates start empty,
-    // as do Profile types: a form adds the one it needs.
-    empty: [...SAVED_BY_FORMS, PROFILE_TYPE],
+    // Variants only make sense under a product a form creates, so they start
+    // empty, as do Profile types: a form adds the one it needs. Locations, SKUs
+    // and stock are sampled together (one SKU per product).
+    empty: [VARIANT, PROFILE_TYPE],
+    samples: stockSamples(catalogModels),
+    // Every sample parent comes with line items: the same parent-to-children
+    // lookup the record view uses, so what it shows is what was seeded.
+    children: {
+      models: catalog.packages.flatMap((p) => p.models),
+      links: (id) => childLinks(catalog, recipes, id),
+    },
   }),
 );
 
-const nav: ShellNavItem[] = $derived([
-  { id: 'planner', href: appHref('/'), label: 'Planner' },
-  { id: 'blueprint', href: appHref('/blueprint/'), label: 'Blueprint' },
-]);
+// No Planner entry: the shell's Edit layout toggle goes to the Planner page.
+const nav: ShellNavItem[] = [];
 
-// Each added recipe (or group of recipes, such as Products) is a navigation
-// section with its `nav` entries, so the app shows Customers and Sales
-// Orders, not every model in smrt-commerce. Recipes of one group share their
-// entries, so Simple and Clothing give one Products link. Options and Help
-// are icons in each page's header, not entries here.
+// The sidebar lists only these sections (`navMode="sections"`); each opens its
+// own page (`/s/<section>/`) listing the entries. Navigation sections belong to the app: a recipe only suggests one
+// (`recipe.section`, else its group, else itself), and the user overrides it in
+// the Layout tab. Recipes suggesting the same section share it, entries
+// de-duplicated in recipe declaration order. Each recipe's main (first) item
+// carries the gear to ITS options page (keyed by `group`, not by section), shown
+// while that item is current. Help is an icon in page headers, not an entry.
 const recipeGroups: ShellNavGroup[] = $derived.by(() => {
-  const sections = new Map<
-    string,
-    { key: string; heading: string; added: Recipe[] }
-  >();
-  for (const id of recipeState.ids) {
+  const added = recipeState.ids.flatMap((id) => {
     const recipe = recipes.find((r) => r.id === id);
-    if (!recipe) continue;
-    const key = sectionId(recipe);
-    const section = sections.get(key) ?? {
-      key,
-      heading: recipe.group?.label ?? recipe.label,
-      added: [],
-    };
-    section.added.push(recipe);
-    sections.set(key, section);
-  }
-  return [...sections.values()].map(({ key, heading, added }) => {
+    return recipe ? [recipe] : [];
+  });
+  return buildNavSections(added).map((section) => {
     const seen = new Set<string>();
-    const entries = added.flatMap((recipe) =>
-      recipeNav(recipe).filter((entry) => {
-        const key = `${entry.model.id}:${entry.label}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }),
-    );
-    // Stable ids keep a saved layout valid when the selection query in the
-    // hrefs changes. The section's options gear sits on its main (first) item
-    // and shows only while that section is current.
+    const items: ShellNavItem[] = [];
+    for (const recipe of section.recipes) {
+      const optionsHref = appHref(`/recipes/${sectionId(recipe)}/`);
+      const optionsLabel = `${recipe.group?.label ?? recipe.label} options`;
+      let main = true;
+      for (const entry of recipeNav(recipe)) {
+        const id = navItemId(entry.packageId, entry.model.name, entry.key);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        // Stable ids keep a saved layout valid when the selection query in the
+        // hrefs changes.
+        items.push({
+          id,
+          href: appHref(navPath(entry)),
+          label: entry.label,
+          icon: entry.icon,
+          description: entry.description,
+          ...(main
+            ? {
+                action: {
+                  href: optionsHref,
+                  label: optionsLabel,
+                  visibility: 'active' as const,
+                },
+              }
+            : {}),
+        });
+        main = false;
+      }
+    }
+    const id = `section:${section.id}`;
     return {
-      id: `section:${key}`,
-      heading,
-      items: entries.map((entry, index) => ({
-        id: `section:${key}:${entry.packageId}:${entry.model.name}:${entry.label}`,
-        href: appHref(`/m/${entry.packageId}/${entry.model.name}/`),
-        label: entry.label,
-        ...(index === 0
-          ? {
-              action: {
-                href: appHref(`/recipes/${key}/`),
-                label: `${heading} options`,
-                visibility: 'active' as const,
-              },
-            }
-          : {}),
-      })),
+      id,
+      heading: section.label,
+      icon: section.icon,
+      href: appHref(sectionPath(id)),
+      items,
     };
   });
+});
+
+// Options/Help groups per navigation section, for the layout edit mode's
+// section actions (a nav section can hold several recipes' items).
+const sectionOptionGroups = $derived.by(() => {
+  const added = recipeState.ids.flatMap((id) => {
+    const recipe = recipes.find((r) => r.id === id);
+    return recipe ? [recipe] : [];
+  });
+  const map = new Map<string, { id: string; label: string }[]>();
+  for (const section of buildNavSections(added)) {
+    const groups: { id: string; label: string }[] = [];
+    for (const recipe of section.recipes) {
+      const id = sectionId(recipe);
+      if (!groups.some((g) => g.id === id)) {
+        groups.push({ id, label: recipe.group?.label ?? recipe.label });
+      }
+    }
+    map.set(`section:${section.id}`, groups);
+  }
+  return map;
+});
+
+// Added feature models share one suggested section after the recipes'; the
+// layout overrides it like any other. They have no per-recipe options page.
+const featureGroups: ShellNavGroup[] = $derived.by(() => {
+  const items = featureNavItems(recipeState.features).map((item) => ({
+    id: item.id,
+    href: appHref(`/m/${item.packageId}/${item.modelName}/`),
+    label: item.label,
+    icon: item.icon,
+    description: item.description,
+  }));
+  return items.length
+    ? [
+        {
+          id: `section:${FEATURE_SECTION.id}`,
+          heading: FEATURE_SECTION.label,
+          icon: FEATURE_SECTION.icon,
+          href: appHref(sectionPath(`section:${FEATURE_SECTION.id}`)),
+          items,
+        },
+      ]
+    : [];
 });
 
 const packageGroups: ShellNavGroup[] = $derived(
@@ -105,6 +181,8 @@ const packageGroups: ShellNavGroup[] = $derived(
       {
         id: `package:${pkg.id}`,
         heading: humanize(pkg.id),
+        icon: 'layers',
+        href: appHref(`/packages/${pkg.id}/`),
         items: [
           {
             id: `package:${pkg.id}:overview`,
@@ -124,32 +202,50 @@ const packageGroups: ShellNavGroup[] = $derived(
 
 const navGroups: ShellNavGroup[] = $derived([
   ...recipeGroups,
+  ...featureGroups,
   ...packageGroups,
 ]);
 
 // The URL carries the package selection so a mock-up can be shared; recipes,
-// options and layout are the blueprint, saved in localStorage. Pages are
+// options and layout are the cookbook, saved in localStorage. Pages are
 // prerendered, so both are only read in the browser, after navigation.
 let ready = false;
 let hydrated = false;
 
+const onPlanner = () => page.route.id === '/';
+
 function syncUrl() {
   // A legacy link that could not be saved keeps its URL: it is the only copy.
-  if (blueprintStore.keepLegacyUrl) return;
-  const wanted = appQuery();
+  if (cookbookStore.keepLegacyUrl) return;
+  // The tab belongs to the Planner page only; other pages drop it.
+  const wanted = onPlanner()
+    ? withTab(appQuery(), plannerTab.active)
+    : appQuery();
   if (location.search !== wanted) {
     replaceState(`${location.pathname}${wanted}${location.hash}`, page.state);
   }
 }
 
 afterNavigate((navigation) => {
-  // Read the saved blueprint once, and fold a legacy ?r= / ?o= link into it.
+  // Read the saved cookbook once, and fold a legacy ?r= / ?o= link into it.
   // syncUrl below then drops those parameters, as appQuery no longer has them.
   if (!hydrated) {
     hydrated = true;
-    blueprintStore.hydrate(location.search);
+    cookbookStore.hydrate(location.search);
+    // The AI state reads its saved choices and decides whether this is a first
+    // visit (nothing set up, nothing built, "no AI" not chosen).
+    aiState.hydrate(!!(recipeState.ids.length || recipeState.features.length));
   }
   if (hasAppState(location.search)) selection.fromSearch(location.search);
+  if (onPlanner()) {
+    // A visitor with nothing built yet lands on the Cookbooks tab.
+    plannerTab.fromSearch(
+      location.search,
+      recipeState.ids.length || recipeState.features.length
+        ? 'recipes'
+        : 'cookbooks',
+    );
+  }
   // SvelteKit runs the initial 'enter' callbacks before the router counts as
   // started, and replaceState throws until then, so wait one microtask.
   const sync = () => {
@@ -164,37 +260,60 @@ afterNavigate((navigation) => {
 $effect(() => {
   // appQuery reads every part of the shareable state, so this tracks them all.
   void appQuery();
-  void blueprintStore.keepLegacyUrl;
+  void cookbookStore.keepLegacyUrl;
+  void plannerTab.active;
+  void page.route.id;
   if (ready) syncUrl();
 });
 
-// Save the blueprint soon after any change; the store ignores this until the
+// Save the cookbook soon after any change; the store ignores this until the
 // saved one has been read, so loading never overwrites it with an empty one.
 $effect(() => {
   // Reading it all (layout is deep) subscribes the effect to every part.
-  void JSON.stringify(blueprintStore.snapshot());
-  blueprintStore.scheduleSave();
+  void JSON.stringify(cookbookStore.snapshot());
+  cookbookStore.scheduleSave();
 });
 
 function flushOnHide() {
-  if (document.visibilityState === 'hidden') blueprintStore.flush();
+  if (document.visibilityState === 'hidden') cookbookStore.flush();
 }
 </script>
 
-<svelte:window onpagehide={() => blueprintStore.flush()} />
+<svelte:window onpagehide={() => cookbookStore.flush()} />
 <svelte:document onvisibilitychange={flushOnHide} />
 
+{#snippet aiStatus()}
+  <AiStatusIcons />
+{/snippet}
+
 <AppShell
-  title="smrt planner"
-  subtitle="Add recipes, watch the app assemble"
+  storageKey={SHELL_STORAGE_KEY}
+  title="Planner"
+  logoSrc={smrtMark}
+  homeHref={appHref('/')}
   {nav}
   {navGroups}
   currentHref={page.url.pathname + appQuery()}
   environment="static demo"
-  layout={blueprintStore.layout ?? null}
-  onlayoutchange={(next) => blueprintStore.setLayout(next)}
-  dockToggles={[{ tool: 'assistant', label: 'Assistant' }]}
+  layout={cookbookStore.layout ?? null}
+  onlayoutchange={(next) => cookbookStore.setLayout(next)}
+  slotItems={[
+    {
+      id: 'ai-status',
+      label: 'AI status',
+      slot: 'leftSidebar.footer',
+      render: aiStatus,
+    },
+  ]}
+  dockToggles={[{ tool: 'assistant', label: 'Assistant', slot: 'header.end' }]}
+  config={{ right: { initial: 'collapsed', rail: false, presentation: 'overlay' } }}
+  layoutEditing={{ slot: 'header.start' }}
+  navMode="sections"
+  sectionHref={(id) => appHref(sectionPath(id))}
 >
+  {#snippet sectionActions({ sectionId: navSectionId, label })}
+    <SectionActions {label} groups={sectionOptionGroups.get(navSectionId) ?? []} />
+  {/snippet}
   {#snippet dock(registry)}
     <ShellDockTool id="assistant" label="Assistant">
       {#snippet render()}
@@ -202,14 +321,24 @@ function flushOnHide() {
       {/snippet}
     </ShellDockTool>
   {/snippet}
-  {#if blueprintStore.persist === 'memory'}
+  {#if cookbookStore.persist === 'memory'}
     <p class="storage-notice" role="status">
-      This browser is not saving your blueprint, so it is kept in memory only. Export it from Blueprint to keep a copy.
+      This browser is not saving your cookbook, so it is kept in memory only. Export it from the Planner's Export tab to keep a copy.
     </p>
   {/if}
-  {#if blueprintStore.loadNotice}
-    <p class="storage-notice" role="status">{blueprintStore.loadNotice}</p>
+  {#if cookbookStore.loadNotice}
+    <p class="storage-notice" role="status">{cookbookStore.loadNotice}</p>
   {/if}
+  {#if cookbookStore.unavailableNotice}
+    <p class="storage-notice" role="status">
+      {cookbookStore.unavailableNotice}
+      <button type="button" onclick={() => cookbookStore.removeUnavailable()}>
+        Remove them
+      </button>
+    </p>
+  {/if}
+  <PlannerEditBridge />
+  <ThemeBridge />
   {@render children()}
 </AppShell>
 

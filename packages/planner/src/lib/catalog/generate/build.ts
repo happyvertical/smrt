@@ -1,51 +1,81 @@
 import type { Catalog } from '../types.ts';
 import { EXCLUDED_PACKAGES } from './exclusions.ts';
-import { extractPackage, packageId, resolveDependencies } from './extract.ts';
+import {
+  extractPackage,
+  packageId,
+  type RawPackage,
+  resolveDependencies,
+} from './extract.ts';
+import { readLocalPackages } from './local.ts';
 import { discoverPackageNames, fetchPackage } from './registry.ts';
 
 export interface BuildOptions {
   registry: string;
+  /**
+   * Path to a smrt checkout: read its built `packages/*\/dist/manifest.json`
+   * instead of the registry, to preview unreleased manifests. Opt-in.
+   */
+  source?: string;
   log?: (message: string) => void;
 }
 
 /**
- * Build the catalog from the registry: discover every `smrt-*` package, drop
- * the documented exclusions and packages with no manifest or no models, and
- * extract the rest. Output order is sorted, with no timestamps, so a run
- * against the same published versions is byte-identical.
+ * Turn raw packages into the catalog: drop the documented exclusions and
+ * packages with no models, extract the rest, and sort. Output order is sorted,
+ * with no timestamps, so a run against the same inputs is byte-identical.
+ * Pure: no network or disk access.
+ */
+export function assembleCatalog(
+  raws: readonly RawPackage[],
+  registry: string,
+  log: (message: string) => void = () => {},
+): Catalog {
+  const extracted = [];
+  for (const raw of raws) {
+    const excluded = EXCLUDED_PACKAGES[packageId(raw.packageName)];
+    if (excluded) {
+      log(`exclude ${raw.packageName}: ${excluded}`);
+      continue;
+    }
+    const pkg = extractPackage(raw);
+    if (pkg.models.length === 0) {
+      log(`skip ${pkg.packageName}: no models`);
+      continue;
+    }
+    log(`include ${pkg.packageName}@${pkg.version}`);
+    extracted.push(pkg);
+  }
+  extracted.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return { schema: 1, registry, packages: resolveDependencies(extracted) };
+}
+
+/**
+ * Build the catalog from the registry (discover every `smrt-*` package), or,
+ * when `source` is set, from a local smrt checkout's built manifests.
  */
 export async function buildCatalog(options: BuildOptions): Promise<Catalog> {
   const log = options.log ?? (() => {});
+  if (options.source) {
+    const raws = await readLocalPackages(options.source);
+    return assembleCatalog(raws, `file://${options.source}`, log);
+  }
   const names = await discoverPackageNames(options.registry);
-  const candidates = names.filter((name) => {
+  const candidates = names.filter(
+    (name) => !EXCLUDED_PACKAGES[packageId(name)],
+  );
+  for (const name of names) {
     const excluded = EXCLUDED_PACKAGES[packageId(name)];
     if (excluded) log(`exclude ${name}: ${excluded}`);
-    return !excluded;
-  });
+  }
 
-  const extracted = [];
+  const raws: RawPackage[] = [];
   for (let i = 0; i < candidates.length; i += 6) {
     const batch = await Promise.all(
       candidates
         .slice(i, i + 6)
         .map((name) => fetchPackage(options.registry, name)),
     );
-    for (const raw of batch) {
-      if (!raw) continue;
-      const pkg = extractPackage(raw);
-      if (pkg.models.length === 0) {
-        log(`skip ${pkg.packageName}: no models`);
-        continue;
-      }
-      log(`include ${pkg.packageName}@${pkg.version}`);
-      extracted.push(pkg);
-    }
+    for (const raw of batch) if (raw) raws.push(raw);
   }
-  extracted.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
-  return {
-    schema: 1,
-    registry: options.registry,
-    packages: resolveDependencies(extracted),
-  };
+  return assembleCatalog(raws, options.registry, log);
 }

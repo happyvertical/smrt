@@ -1,5 +1,5 @@
 import type { CatalogField, CatalogModel } from '../catalog/types.ts';
-import { humanize } from '../data/format.ts';
+import { fieldLabel } from '../data/format.ts';
 import type {
   ExposureSurface,
   RecipeFieldHint,
@@ -62,6 +62,29 @@ export function policyFields(model: CatalogModel): CatalogField[] {
   return model.fields.filter((f) => !f.system);
 }
 
+const snakeCase = (name: string) =>
+  name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+
+/**
+ * The single-table-inheritance discriminator: an enumerated `...Type` field of
+ * a subclass that lists the model's own snake_case name, like `contractType`
+ * on a ProductionOrder. A root class's own enumeration (a Product's
+ * `productType`: product, material) is data, not a discriminator. It tells the classes of a shared table
+ * apart, so a form never offers it.
+ */
+export function isDiscriminatorField(
+  model: CatalogModel,
+  field: CatalogField,
+): boolean {
+  return (
+    /Type$/.test(field.name) &&
+    Array.isArray(field.enum) &&
+    field.enum.length > 0 &&
+    Boolean(model.extends) &&
+    field.enum.includes(snakeCase(model.name))
+  );
+}
+
 /** The cold-start rule: with no `ui.basic` marker anywhere, all fields are basic. */
 function hasBasicMarkers(fields: readonly CatalogField[]): boolean {
   return fields.some((f) => f.ui?.basic === true);
@@ -101,15 +124,27 @@ export function resolveFields(
 
   const resolved = fields.map((field, index): ResolvedField => {
     const hint: RecipeFieldHint = hints?.fields?.[field.name] ?? {};
+    const discriminator = isDiscriminatorField(model, field);
     let visibility: FieldPolicyVisibility =
       hint.visibility ??
-      (!markers || field.ui?.basic === true ? 'basic' : 'advanced');
-    let label = hint.label ?? humanize(field.name);
+      (discriminator
+        ? 'hidden'
+        : !markers || field.ui?.basic === true
+          ? 'basic'
+          : 'advanced');
+    let label = hint.label ?? fieldLabel(field);
     let help: string | null = hint.help ?? null;
     let order = hint.order ?? field.ui?.order ?? index;
-    let locked = hint.locked ?? field.ui?.locked ?? false;
-    let hasDefault = 'default' in hint || field.default !== undefined;
-    let value: unknown = 'default' in hint ? hint.default : field.default;
+    let locked = hint.locked ?? field.ui?.locked ?? discriminator;
+    const ownType = snakeCase(model.name);
+    const fallback: unknown =
+      field.default !== undefined
+        ? field.default
+        : discriminator && field.enum?.includes(ownType)
+          ? ownType
+          : undefined;
+    let hasDefault = 'default' in hint || fallback !== undefined;
+    let value: unknown = 'default' in hint ? hint.default : fallback;
 
     const row = own.get(field.name);
     if (row && (!locked || row.locked === false)) {
@@ -128,8 +163,9 @@ export function resolveFields(
     // The required-field invariant: a required field may only leave the basic
     // tier when a usable default fills it in.
     let visibilityForced: boolean | undefined;
+    const required = hint.required ?? field.required;
     if (
-      field.required &&
+      required &&
       visibility !== 'basic' &&
       !(hasDefault && usableRequiredDefault(value))
     ) {
@@ -145,7 +181,7 @@ export function resolveFields(
       order,
       group: field.ui?.group ?? null,
       locked,
-      required: field.required,
+      required,
       hasDefault,
       default: value,
       ...(visibilityForced ? { visibilityForced } : {}),
@@ -176,6 +212,7 @@ export function viewFields(resolved: readonly ResolvedField[]): ViewField[] {
       const fallback = r.hasDefault ? primitive(r.default) : undefined;
       return {
         ...rest,
+        required: r.required,
         ...(fallback !== undefined ? { default: fallback } : {}),
         label: r.label,
         ...(r.help ? { help: r.help } : {}),

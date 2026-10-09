@@ -21,7 +21,7 @@ export const labelKey = (modelId: string, id: unknown): string =>
  * short id when the record is gone.
  */
 export function formatValue(
-  field: CatalogField,
+  field: CatalogField & { showTime?: boolean },
   value: unknown,
   labels?: ReadonlyMap<string, string>,
 ): string {
@@ -30,11 +30,17 @@ export function formatValue(
     return formatMoney(value);
   }
   if (field.enum?.includes(String(value))) return enumLabel(String(value));
+  if (isFractionRate(field) && typeof value === 'number') {
+    return formatPercent(value);
+  }
   switch (field.type) {
     case 'boolean':
       return value ? 'Yes' : 'No';
     case 'datetime':
-      return String(value).slice(0, 10);
+      // A list of things that happen at a time (classes) shows it too.
+      return field.showTime
+        ? String(value).slice(0, 16).replace('T', ' ')
+        : String(value).slice(0, 10);
     case 'foreignKey':
     case 'crossPackageRef':
       return (
@@ -62,6 +68,71 @@ export function humanize(name: string): string {
     .toLowerCase();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
+
+/** English plural of a model's label: "Agreement" -> "Agreements". */
+export function pluralize(label: string): string {
+  if (/[^aeiou]y$/i.test(label)) return `${label.slice(0, -1)}ies`;
+  if (/(s|x|z|ch|sh)$/i.test(label)) return `${label}es`;
+  return `${label}s`;
+}
+
+/**
+ * Singular of a menu label's last word: "Sales Orders" -> "Sales Order",
+ * "Currencies" -> "Currency". A label that is not plural is left as it is.
+ */
+export function singularize(label: string): string {
+  if (/(series|species)$/i.test(label)) return label;
+  if (/[^aeiou]ies$/i.test(label)) return `${label.slice(0, -3)}y`;
+  if (/(ss|x|z|ch|sh)es$/i.test(label)) return label.slice(0, -2);
+  if (/[^s]s$/i.test(label)) return label.slice(0, -1);
+  return label;
+}
+
+/** What New creates for a menu entry: its declared noun, else the label's singular. */
+export function navNoun(label: string, noun?: string): string {
+  return (noun?.trim() || singularize(label)).toLowerCase();
+}
+
+/**
+ * What a New button or form heading names. A page with one way to create a
+ * record uses the menu entry's noun ("part", "member"); with several forms
+ * (Simple, Clothing) each keeps its own label.
+ */
+export function createNoun(
+  formLabel: string,
+  noun: string | undefined,
+  onlyForm: boolean,
+): string {
+  return onlyForm && noun?.trim() ? noun.trim() : formLabel.toLowerCase();
+}
+
+/** "1 record", "8 records". */
+export function recordCount(count: number): string {
+  return `${count} ${count === 1 ? 'record' : 'records'}`;
+}
+
+/**
+ * A field's label: its humanized name, except a relation, which names the
+ * record it points at ("Product", not "Product id").
+ */
+export function fieldLabel(field: CatalogField): string {
+  const isRelation =
+    field.type === 'foreignKey' || field.type === 'crossPackageRef';
+  const name =
+    isRelation && /[a-z]Id$/.test(field.name)
+      ? field.name.slice(0, -2)
+      : field.name;
+  return humanize(name);
+}
+
+/** A fraction as a percentage: `0.0825` -> `8.25%`. */
+export function formatPercent(fraction: number): string {
+  return `${Number((fraction * 100).toFixed(2))}%`;
+}
+
+/** Rates stored as fractions (0.05 is 5%); other `*Rate` fields are unknown. */
+export const isFractionRate = (field: CatalogField): boolean =>
+  field.type === 'decimal' && /^(tax|discount|vat)Rate$/.test(field.name);
 
 /**
  * Text for an enum value: `qc_hold` is "Qc hold", and a short code such as

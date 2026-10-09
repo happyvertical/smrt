@@ -78,5 +78,296 @@
     "code": "A short code for the place stock is kept, for example MAIN.",
     "name": "What you call the place, for example Main warehouse.",
     "kind": "What sort of place it is, for example a warehouse or a shop floor."
+  },
+  "@happyvertical/smrt-commerce:Estimate": {
+    "status": "Where the estimate stands, for example draft, sent, accepted or completed.",
+    "customerId": "The customer this estimate is for.",
+    "subtotal": "The estimate amount before tax.",
+    "taxAmount": "The tax charged on the estimate.",
+    "totalAmount": "What the customer pays in all, tax included.",
+    "currency": "The currency of the estimate's amounts.",
+    "issueDate": "The date the estimate was issued or starts.",
+    "dueDate": "The date payment is expected.",
+    "expiryDate": "The last day the estimate is good for, or the day it ends.",
+    "reference": "Your own number or note for finding this estimate later.",
+    "notes": "Anything worth remembering about this estimate.",
+    "terms": "The conditions agreed with the customer, such as deposits, delivery or payment conditions.",
+    "channelId": "Where the estimate came from, for example your shop or a marketplace."
+  },
+  "@happyvertical/smrt-commerce:WholesaleOrder": {
+    "status": "Where the wholesale order stands, for example draft, sent, accepted or completed.",
+    "customerId": "The customer this wholesale order is for.",
+    "subtotal": "The wholesale order amount before tax.",
+    "taxAmount": "The tax charged on the wholesale order.",
+    "totalAmount": "What the customer pays in all, tax included.",
+    "currency": "The currency of the wholesale order's amounts.",
+    "issueDate": "The date the wholesale order was issued or starts.",
+    "dueDate": "The date payment is expected.",
+    "expiryDate": "The last day the wholesale order is good for, or the day it ends.",
+    "reference": "Your own number or note for finding this wholesale order later.",
+    "notes": "Anything worth remembering about this wholesale order.",
+    "terms": "The conditions agreed with the customer, such as deposits, delivery or payment conditions.",
+    "channelId": "Where the wholesale order came from, for example your shop or a marketplace."
+  },
+  "@happyvertical/smrt-commerce:Agreement": {
+    "status": "Where the agreement stands, for example draft, sent, accepted or completed.",
+    "customerId": "The customer this agreement is for.",
+    "subtotal": "The agreement amount before tax.",
+    "taxAmount": "The tax charged on the agreement.",
+    "totalAmount": "What the customer pays in all, tax included.",
+    "currency": "The currency of the agreement's amounts.",
+    "issueDate": "The date the agreement was issued or starts.",
+    "dueDate": "The date payment is expected.",
+    "expiryDate": "The last day the agreement is good for, or the day it ends.",
+    "reference": "Your own number or note for finding this agreement later.",
+    "notes": "Anything worth remembering about this agreement.",
+    "terms": "The conditions agreed with the customer, such as deposits, delivery or payment conditions.",
+    "channelId": "Where the agreement came from, for example your shop or a marketplace."
+  },
+  "@happyvertical/smrt-commerce:Lease": {
+    "status": "Where the lease stands, for example draft, sent, accepted or completed.",
+    "customerId": "The customer this lease is for.",
+    "subtotal": "The lease amount before tax.",
+    "taxAmount": "The tax charged on the lease.",
+    "totalAmount": "What the customer pays in all, tax included.",
+    "currency": "The currency of the lease's amounts.",
+    "issueDate": "The date the lease was issued or starts.",
+    "dueDate": "The date payment is expected.",
+    "expiryDate": "The last day the lease is good for, or the day it ends.",
+    "reference": "Your own number or note for finding this lease later.",
+    "notes": "Anything worth remembering about this lease.",
+    "terms": "The conditions agreed with the customer, such as deposits, delivery or payment conditions.",
+    "channelId": "Where the lease came from, for example your shop or a marketplace."
+  },
+  "@happyvertical/smrt-commerce:LicenseSale": {
+    "status": "Where the licence sale stands, for example draft, sent, accepted or completed.",
+    "customerId": "The customer this licence sale is for.",
+    "subtotal": "The licence sale amount before tax.",
+    "taxAmount": "The tax charged on the licence sale.",
+    "totalAmount": "What the customer pays in all, tax included.",
+    "currency": "The currency of the licence sale's amounts.",
+    "issueDate": "The date the licence sale was issued or starts.",
+    "dueDate": "The date payment is expected.",
+    "expiryDate": "The last day the licence sale is good for, or the day it ends.",
+    "reference": "Your own number or note for finding this licence sale later.",
+    "notes": "Anything worth remembering about this licence sale.",
+    "terms": "The conditions agreed with the customer, such as deposits, delivery or payment conditions.",
+    "channelId": "Where the licence sale came from, for example your shop or a marketplace."
+  },
+  "@happyvertical/smrt-commerce:Contract": {
+    "status": "Where the contract stands, for example draft, sent, accepted or completed.",
+    "customerId": "The customer this contract is for.",
+    "subtotal": "The contract amount before tax.",
+    "taxAmount": "The tax charged on the contract.",
+    "totalAmount": "What the customer pays in all, tax included.",
+    "currency": "The currency of the contract's amounts.",
+    "issueDate": "The date the contract was issued or starts.",
+    "dueDate": "The date payment is expected.",
+    "expiryDate": "The last day the contract is good for, or the day it ends.",
+    "reference": "Your own number or note for finding this contract later.",
+    "notes": "Anything worth remembering about this contract.",
+    "terms": "The conditions agreed with the customer, such as deposits, delivery or payment conditions.",
+    "channelId": "Where the contract came from, for example your shop or a marketplace.",
+    "contractType": "The kind of contract: order, estimate, lease, agreement and so on.",
+    "vendorId": "The vendor on the other side, for contracts you buy."
+  },
+  "@happyvertical/smrt-commerce:ContractLineItem": {
+    "contractId": "The order, quote or agreement this line belongs to.",
+    "description": "What is being sold or bought on this line.",
+    "quantity": "How many.",
+    "unitPrice": "The price of one, before tax.",
+    "taxRate": "The tax rate for this line, as a percentage (5 means 5%).",
+    "amount": "The line total.",
+    "productId": "The product this line is for, if it is one you list."
+  },
+  "@happyvertical/smrt-inventory:StockMovement": {
+    "skuId": "The item that moved.",
+    "locationId": "The place it moved at.",
+    "fromState": "What it was before, for example available or damaged.",
+    "toState": "What it became.",
+    "qty": "How many moved.",
+    "reasonCode": "Why it moved, for example adjustment, sale or return.",
+    "note": "Anything worth remembering about this movement.",
+    "occurredAt": "When it happened."
+  },
+  "@happyvertical/smrt-commerce:Invoice": {
+    "customerId": "The customer being billed.",
+    "contractId": "The order or agreement this invoice bills for, if any.",
+    "invoiceNumber": "The number printed on the invoice.",
+    "issueDate": "The date the invoice was issued.",
+    "dueDate": "The date payment is expected.",
+    "paidDate": "The date it was paid in full.",
+    "subtotal": "The amount before tax.",
+    "taxAmount": "The tax charged.",
+    "totalAmount": "What the customer owes in all, tax included.",
+    "amountPaid": "How much of the total has been paid so far.",
+    "currency": "The currency of the invoice.",
+    "status": "Where the invoice stands: draft, sent, viewed, paid, overdue or cancelled.",
+    "notes": "Private notes, not shown to the customer.",
+    "customerNotes": "A message shown to the customer on the invoice.",
+    "terms": "The payment conditions, such as Net 30."
+  },
+  "@happyvertical/smrt-commerce:InvoiceLineItem": {
+    "invoiceId": "The invoice this line belongs to.",
+    "description": "What is being billed on this line.",
+    "quantity": "How many.",
+    "unitPrice": "The price of one, before tax.",
+    "taxRate": "The tax rate for this line, as a percentage (5 means 5%).",
+    "amount": "The line total."
+  },
+  "@happyvertical/smrt-commerce:Payment": {
+    "contractId": "The order or agreement this payment is for, if any.",
+    "customerId": "The customer who paid.",
+    "amount": "How much was paid.",
+    "currency": "The currency of the payment.",
+    "method": "How it was paid: cash, check, card, bank transfer or other.",
+    "status": "Whether the payment is pending, completed, failed or refunded.",
+    "reference": "Your own note, such as a check number.",
+    "paidAt": "When the money was received.",
+    "notes": "Anything worth remembering about this payment."
+  },
+  "@happyvertical/smrt-commerce:PaymentAllocation": {
+    "paymentId": "The payment being applied.",
+    "invoiceId": "The invoice it settles.",
+    "amount": "How much of the payment goes to this invoice.",
+    "allocatedAt": "When it was applied.",
+    "notes": "Anything worth remembering about this allocation."
+  },
+  "@happyvertical/smrt-commerce:Fulfillment": {
+    "contractId": "The order being fulfilled.",
+    "fulfillmentType": "How it gets to the customer: shipment, delivery, pickup, digital or service.",
+    "status": "Where it stands: pending, processing, shipped, delivered or cancelled.",
+    "trackingNumber": "The carrier's tracking number.",
+    "carrier": "The company carrying it.",
+    "shippedAt": "When it left you.",
+    "deliveredAt": "When it arrived.",
+    "notes": "Anything worth remembering about this shipment."
+  },
+  "@happyvertical/smrt-commerce:FulfillmentLineItem": {
+    "fulfillmentId": "The shipment this line belongs to.",
+    "contractLineItemId": "The order line being sent.",
+    "quantityFulfilled": "How many of that line are in this shipment."
+  },
+  "@happyvertical/smrt-ledgers:Account": {
+    "number": "The account number in your chart of accounts.",
+    "name": "What the account is called.",
+    "description": "What the account is used for.",
+    "type": "asset, liability, equity, revenue or expense.",
+    "active": "Turn this off to stop using the account without deleting it."
+  },
+  "@happyvertical/smrt-ledgers:Journal": {
+    "number": "The journal's reference number.",
+    "date": "The date of the transaction.",
+    "description": "What the transaction was.",
+    "status": "draft while you work on it, posted once final, or voided.",
+    "postedAt": "When it was posted."
+  },
+  "@happyvertical/smrt-ledgers:JournalEntry": {
+    "journalId": "The journal this entry belongs to.",
+    "accountId": "The account this entry changes.",
+    "debit": "The amount debited. Leave zero on a credit.",
+    "credit": "The amount credited. Leave zero on a debit.",
+    "currency": "The currency of the amounts.",
+    "memo": "A note on this entry."
+  },
+  "@happyvertical/smrt-projects:Project": {
+    "title": "The project's name.",
+    "description": "What the project is about.",
+    "owner": "Who owns or runs the project.",
+    "url": "A link to the project elsewhere."
+  },
+  "@happyvertical/smrt-projects:Issue": {
+    "projectId": "The project this issue belongs to.",
+    "title": "A short summary of the issue.",
+    "body": "The full description.",
+    "state": "open or closed.",
+    "author": "Who raised the issue.",
+    "labels": "The labels attached to the issue.",
+    "assignees": "The people working on it."
+  },
+  "@happyvertical/smrt-projects:Label": {
+    "projectId": "The project this label belongs to.",
+    "name": "The label's name, for example bug.",
+    "color": "The label's colour.",
+    "description": "What the label means."
+  },
+  "@happyvertical/smrt-projects:Comment": {
+    "issueId": "The issue this comment is on.",
+    "body": "The comment text.",
+    "author": "Who wrote it."
+  },
+  "@happyvertical/smrt-events:Event": {
+    "name": "What the event is called.",
+    "seriesId": "The series this event is part of, if any.",
+    "typeId": "The kind of event.",
+    "placeId": "Where it takes place.",
+    "description": "What the event is about.",
+    "startDate": "When it starts.",
+    "endDate": "When it ends.",
+    "allDay": "Turn this on for an event that lasts all day.",
+    "status": "scheduled, in progress, completed, cancelled or postponed."
+  },
+  "@happyvertical/smrt-events:EventType": {
+    "name": "What this kind of event is called, for example workshop.",
+    "description": "What this kind of event is for."
+  },
+  "@happyvertical/smrt-events:EventSeries": {
+    "name": "What the series is called.",
+    "typeId": "The kind of event in this series.",
+    "organizerId": "Who runs the series.",
+    "description": "What the series is about.",
+    "startDate": "When the series begins.",
+    "endDate": "When the series ends.",
+    "recurrence": "How often it repeats."
+  },
+  "@happyvertical/smrt-events:EventParticipant": {
+    "eventId": "The event the person takes part in.",
+    "profileId": "The person taking part.",
+    "role": "What they do there, for example speaker or attendee."
+  },
+  "@happyvertical/smrt-sales:Lead": {
+    "name": "What you call this lead.",
+    "contactName": "The person to talk to.",
+    "email": "Their email address.",
+    "phone": "Their phone number.",
+    "organizationName": "The company they are with.",
+    "ownerRepId": "The sales representative who owns this lead.",
+    "status": "Where the lead stands, for example new or qualified."
+  },
+  "@happyvertical/smrt-sales:Opportunity": {
+    "name": "What you call this deal.",
+    "leadId": "The lead it came from.",
+    "ownerRepId": "The sales representative who owns this deal.",
+    "pipelineId": "The pipeline it moves through.",
+    "stageId": "The stage it is at now.",
+    "expectedValueCents": "What you expect the deal to be worth, in cents.",
+    "currency": "The currency of that value.",
+    "probability": "How likely it is to close, as a decimal (0.5 is 50%).",
+    "expectedCloseAt": "When you expect it to close.",
+    "status": "open, won or lost."
+  },
+  "@happyvertical/smrt-sales:PipelineDefinition": {
+    "key": "A short code for the pipeline.",
+    "name": "What the pipeline is called.",
+    "isDefault": "Turn this on to use it for new deals.",
+    "status": "Whether the pipeline is in use.",
+    "metadata": "Extra details kept with the pipeline."
+  },
+  "@happyvertical/smrt-sales:PipelineStage": {
+    "pipelineId": "The pipeline this stage belongs to.",
+    "key": "A short code for the stage.",
+    "name": "What the stage is called.",
+    "sortOrder": "Where it comes in the pipeline.",
+    "probability": "How likely a deal at this stage is to close, as a decimal.",
+    "isWon": "Turn this on for the stage that means the deal is won.",
+    "isLost": "Turn this on for the stage that means the deal is lost."
+  },
+  "@happyvertical/smrt-sales:SalesActivity": {
+    "subjectKind": "What the activity is about: a lead or an opportunity.",
+    "subjectId": "The lead or opportunity it is about.",
+    "activityKind": "The kind of activity, for example call, note or email.",
+    "summary": "What happened or what needs doing.",
+    "dueAt": "When it is due.",
+    "completedAt": "When it was done."
   }
 }

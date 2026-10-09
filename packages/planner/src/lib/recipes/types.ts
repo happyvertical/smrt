@@ -2,8 +2,8 @@
  * The shape of a recipe as `SmrtRecipe` (happyvertical/smrt#3590) emits it into
  * `smrt-knowledge.json` under the top-level `recipes` key, and the only place
  * the planner depends on that shape. Until the generator reads recipes from the
- * published packages, `recipes.json` is a local file in this shape; then the
- * file goes away and `index.ts` reads the catalog instead.
+ * published packages. The catalog carries them; `overlay.json` adds the
+ * planner-local `forms` and `extends`.
  */
 
 import type { RecipeHelp } from './help.ts';
@@ -24,6 +24,8 @@ export interface RecipeFieldHint {
   order?: number;
   /** The planner may not change this field's policy. */
   locked?: boolean;
+  /** The form refuses to save without a value, whatever the catalog says. */
+  required?: boolean;
 }
 
 /** The `@smrt()` surfaces a recipe may narrow. It can never switch one on. */
@@ -38,8 +40,30 @@ export interface RecipeModelHints {
 
 export interface RecipeNavEntry {
   label: string;
+  /** LOCAL. A shell icon name (`users`, `calendar`...) drawn on the entry's row. */
+  icon: string;
+  /** LOCAL. One friendly line for a business owner, shown on the section card. */
+  description: string;
   /** Qualified model name, `@scope/pkg:Class`. */
   model: string;
+  /**
+   * Fixed key making this entry's layout id `item:<pkg>:<Model>:<key>`. Only
+   * for a model that appears twice in the nav; never derived from the label.
+   */
+  key?: string;
+  /**
+   * What New creates, when the label is not a countable noun ("Stock levels"
+   * -> "stock entry"). Without it, the label's singular is used.
+   */
+  noun?: string;
+  /**
+   * LOCAL. Narrows the entry to rows whose `field` equals `value` (an
+   * Ingredients entry over Products: `productType` = `material`). Needs a
+   * `key`, which puts the view at `/m/<pkg>/<Model>/<key>/`. New rows from
+   * the view carry the value; the model's plain entry stops listing them
+   * while the filtered entry's recipe is added.
+   */
+  filter?: { field: string; value: string };
 }
 
 /**
@@ -52,6 +76,28 @@ export interface RecipeGroup {
   id: string;
   label: string;
   summary?: string;
+}
+
+/**
+ * LOCAL, to upstream to `SmrtRecipe` (PR notes): the navigation section a
+ * recipe SUGGESTS its `nav` entries sit under, e.g. `{ id: 'sales', label:
+ * 'Sales' }`. Distinct from {@link RecipeGroup}, which is the Planner card and
+ * the Options/Help pages. The app owns the sections; the user may rename,
+ * add or reorder them in the Layout tab, so `id` must be stable (it keys a
+ * saved layout). Recipes naming the same `id` share one section. Absent: the
+ * recipe's `group`, else the recipe itself.
+ */
+export interface RecipeNavSection {
+  id: string;
+  label: string;
+  /**
+   * LOCAL: the section's icon, a shell icon name (`shoppingBag`, `receipt`...).
+   * The sidebar shows only sections, so every suggested section has one; the
+   * user can change it in edit mode.
+   */
+  icon?: string;
+  /** LOCAL: one line for the section's page, under its title. */
+  description?: string;
 }
 
 /** A value in a form record: a literal, a `{ref}` to another record's id, or a template. */
@@ -172,6 +218,8 @@ export interface Recipe {
   requiresAny?: string[][];
   /** LOCAL. Card this is a sub-switch of; see {@link RecipeGroup}. */
   group?: RecipeGroup;
+  /** LOCAL. Suggested navigation section; see {@link RecipeNavSection}. */
+  section?: RecipeNavSection;
   /** LOCAL. Forms that replace the generic one-model form for `nav` models. */
   forms?: RecipeForm[];
   /** LOCAL. Additions to other recipes' forms; see {@link RecipeFormExtension}. */
@@ -180,9 +228,4 @@ export interface Recipe {
   options?: Record<string, RecipeModelHints>;
   /** User-facing help (happyvertical/smrt#3591); see `help.ts`. */
   help?: RecipeHelp;
-}
-
-/** The slice of `smrt-knowledge.json` the planner reads. */
-export interface RecipeFile {
-  recipes: Recipe[];
 }

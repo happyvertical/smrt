@@ -16,7 +16,7 @@ import type {
   CustomerDisplayData,
   VendorDisplayData,
 } from '../upstream/partyTypes.ts';
-import { displayLabel } from './display.ts';
+import { displayLabel, partyField, recordName } from './display.ts';
 import { labelKey } from './format.ts';
 import type { DataSource, ModelRecord } from './source.ts';
 
@@ -53,18 +53,33 @@ async function profileOf(
     : undefined;
 }
 
+/** How many relations deep a label may reach (allocation > invoice > customer). */
+const LABEL_DEPTH = 3;
+
 /** The text that names one record. Never an empty string. */
 export async function recordLabel(
   source: DataSource,
   model: CatalogModel,
   record: ModelRecord,
+  depth = 0,
 ): Promise<string> {
   if (isProfileLabelled(model)) {
     const profile = await profileOf(source, record);
     const name = profile && displayLabel(modelNamed(PROFILE), profile);
     if (name) return name;
   }
-  return displayLabel(model, record) ?? shortId(record.id);
+  const party = partyField(model.fields, record);
+  const target = party?.related
+    ? getModelByQualifiedName(party.related)?.model
+    : undefined;
+  let partyLabel: string | undefined;
+  if (party && target && depth < LABEL_DEPTH) {
+    const found = await source.get(target, String(record[party.name]));
+    if (found) {
+      partyLabel = await recordLabel(source, target, found, depth + 1);
+    }
+  }
+  return recordName(model, record, () => partyLabel) ?? shortId(record.id);
 }
 
 /**

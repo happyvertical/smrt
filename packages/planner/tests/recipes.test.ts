@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { getModelByQualifiedName } from '../src/lib/catalog/index.ts';
 import type { CatalogField, CatalogModel } from '../src/lib/catalog/types.ts';
 import { appQuery } from '../src/lib/planner/app.svelte.ts';
-import { composeQuery, hasAppState } from '../src/lib/planner/query.ts';
+import {
+  composeQuery,
+  hasAppState,
+  withTab,
+} from '../src/lib/planner/query.ts';
 import { selection } from '../src/lib/planner/selection.svelte.ts';
 import {
   getRecipe,
@@ -75,7 +79,7 @@ const widget: CatalogModel = {
 };
 
 describe('recipes.json', () => {
-  it('has the seven recipes in declaration order, each resolving to catalog models', () => {
+  it('has the recipes in declaration order, each resolving to catalog models', () => {
     expect(recipes.map((r) => r.id)).toEqual([
       'commerce.customers',
       'commerce.purchases',
@@ -84,6 +88,18 @@ describe('recipes.json', () => {
       'inventory.stock',
       'products.simple',
       'products.clothing',
+      'products.ingredients',
+      'commerce.estimates',
+      'commerce.wholesale',
+      'commerce.invoicing',
+      'commerce.fulfillment',
+      'commerce.agreements',
+      'commerce.leases',
+      'commerce.licenses',
+      'ledgers.bookkeeping',
+      'projects.tracker',
+      'events.calendar',
+      'sales.pipeline',
     ]);
     for (const recipe of recipes) {
       expect(recipeModels(recipe)).toHaveLength(recipe.models.length);
@@ -106,7 +122,7 @@ describe('recipes.json', () => {
     expect(modelOf(ORDER).collection).toBe(modelOf(PURCHASE_ORDER).collection);
     expect(
       recipeNav(getRecipe('commerce.sales') ?? recipes[0]).map((n) => n.label),
-    ).toEqual(['Sales Orders']);
+    ).toEqual(['Sales orders']);
   });
 });
 
@@ -379,6 +395,9 @@ describe('url query', () => {
   it('carries only the package selection', () => {
     expect(composeQuery({ packages: [] })).toBe('');
     expect(composeQuery({ packages: ['b', 'a'] })).toBe('?p=a,b');
+    expect(withTab('?p=a,b', 'layout')).toBe('?p=a,b&tab=layout');
+    expect(withTab('?p=a&tab=export', 'recipes')).toBe('?p=a');
+    expect(withTab('', 'export')).toBe('?tab=export');
     expect(hasAppState('?p=a')).toBe(true);
     expect(hasAppState('?r=commerce.sales')).toBe(false);
   });
@@ -421,7 +440,7 @@ describe('recipe state', () => {
     expect(applied.model.cli).toEqual([]);
     expect(applied.model.rest.length).toBeGreaterThan(0);
 
-    // The URL carries only the package selection now; the blueprint keeps the rest.
+    // The URL carries only the package selection now; the cookbook keeps the rest.
     expect(appQuery()).toBe('');
     const saved = JSON.parse(JSON.stringify(recipeState.snapshot()));
 

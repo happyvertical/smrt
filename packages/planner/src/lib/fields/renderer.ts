@@ -8,6 +8,7 @@
  */
 import type { CatalogField } from '../catalog/types.ts';
 import { isMoneyField } from '../data/fakes.ts';
+import { isFractionRate } from '../data/format.ts';
 import { ADDRESS_FIELDS } from '../upstream/widgets.ts';
 
 export type FieldRenderer =
@@ -22,6 +23,7 @@ export type FieldRenderer =
   | 'address'
   | 'money'
   | 'datetime'
+  | 'percent'
   | 'integer'
   | 'decimal'
   | 'json'
@@ -55,6 +57,7 @@ export function chooseRenderer(
     return 'address';
   }
   if (isMoneyField(field)) return 'money';
+  if (isFractionRate(field)) return 'percent';
   switch (field.type) {
     case 'datetime':
       return 'datetime';

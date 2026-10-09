@@ -57,6 +57,9 @@ describe('parseChange', () => {
       reply: 'Sure',
       add: ['commerce.sales'],
       remove: ['commerce.vendors'],
+      cookbook: null,
+      settings: {},
+      theme: {},
     });
   });
 
@@ -65,12 +68,18 @@ describe('parseChange', () => {
       reply: 'hello there',
       add: [],
       remove: [],
+      cookbook: null,
+      settings: {},
+      theme: {},
     });
     expect(parseChange('[1]', recipes).add).toEqual([]);
     expect(parseChange('{"add":"commerce.sales"}', recipes)).toEqual({
       reply: '',
       add: [],
       remove: [],
+      cookbook: null,
+      settings: {},
+      theme: {},
     });
   });
 });
@@ -102,7 +111,7 @@ describe('applyChange', () => {
     });
     expect(applied.removed).toEqual([]);
     expect(applied.kept).toEqual(['commerce.customers']);
-    expect(describeChange(applied, recipes)).toContain('Kept Customers');
+    expect(describeChange(applied, recipes)).toBe('Kept Customers (needed).');
     expect(recipeState.has('commerce.customers')).toBe(true);
   });
 
@@ -167,7 +176,7 @@ describe('transport', () => {
     await send(transport, 'two');
     const history = message.mock.calls[1][1]?.history ?? [];
     expect(history.map((m) => m.role)).toEqual(['system', 'user', 'assistant']);
-    expect(await transport.loadMessages('planner')).toHaveLength(4);
+    expect(await transport.loadMessages('planner')).toHaveLength(5);
     expect(await transport.listThreads()).toHaveLength(1);
   });
 
