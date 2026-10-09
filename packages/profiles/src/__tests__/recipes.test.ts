@@ -11,3 +11,25 @@ it('offers authorized activity independently without advertising a generated aud
   expect(AuditLogRecipe.models).toEqual([AuditLog]);
   expect(AuditLogRecipe.nav).toEqual([]);
 });
+
+it('requires authorized audit data for the activity route and offers only presentation seed data', () => {
+  expect(AuditLogRecipe.surfaces).toEqual([
+    {
+      kind: 'route',
+      path: '/activity',
+      export: '@happyvertical/smrt-svelte#ActivityList',
+      label: 'Activity log',
+    },
+  ]);
+  expect(AuditLogRecipe.providers).toEqual([
+    {
+      id: 'audit-trail',
+      kind: 'activity',
+      options: ['audit-log'],
+      required: true,
+    },
+  ]);
+  expect(AuditLogRecipe.runtime).toBe('both');
+  expect(AuditLogRecipe.demoSeed.data.entries[0].href).toBeNull();
+  expect(AuditLogRecipe.demoSeed.data.entries[0]).not.toHaveProperty('changes');
+});

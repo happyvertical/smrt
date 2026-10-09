@@ -23,6 +23,8 @@ step.
 
 ## Preview status
 
-This recipe describes a preview workflow. It does not configure a source,
-provider, generic record route, or automatic action. Applications continue to
-use the scoped callbacks described in the ingestion review documentation.
+This recipe describes a preview workflow. The published evaluation did not meet
+quality gates and did not establish safety, so automation remains disabled. It
+does not configure a source, provider, generic record route, or automatic
+action. Applications continue to use the scoped callbacks described in the
+ingestion review documentation.

@@ -8,7 +8,7 @@
  */
 
 import type { DatabaseInterface, SchemasOption } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
+import { getDatabase } from './host.js';
 import {
   applyPostgresRuntimeTimeouts,
   type PostgresTimeoutConfig,

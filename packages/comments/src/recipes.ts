@@ -15,5 +15,16 @@ export class RecordCommentsRecipe extends SmrtRecipe {
   static models = [Comment];
   // Record discussions need an authorized parent record, not a global list.
   static nav = [];
+  static runtime = 'both' as const;
+  static surfaces = [
+    {
+      kind: 'playground',
+      export: '@happyvertical/smrt-comments/svelte#RecordCommentsPlayground',
+      label: 'Record discussion preview',
+    },
+  ] as const;
+  static demoSeed = {
+    export: '@happyvertical/smrt-comments/svelte#recordCommentsDemo',
+  } as const;
   static help = './comments.records.recipe.md';
 }

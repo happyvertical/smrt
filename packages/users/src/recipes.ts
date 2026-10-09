@@ -25,6 +25,21 @@ export class UsersSignInRecipe extends SmrtRecipe {
     'Access an account through an application-authorized sign-in flow.';
   static synonyms = ['log in', 'authentication', 'single sign-on'];
   static models = [User, Session];
+  static providers = [
+    {
+      id: 'oidc',
+      kind: 'oauth',
+      options: ['oidc'],
+      required: false,
+    },
+  ] as const;
+  static surfaces = [
+    {
+      kind: 'settings-panel',
+      export: '@happyvertical/smrt-users/svelte#AccountSecurityPanel',
+      label: 'Account security',
+    },
+  ] as const;
   static nav = [
     {
       label: 'Security sessions',

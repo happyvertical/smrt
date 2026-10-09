@@ -65,9 +65,10 @@ Validation commands are `pnpm test`, `pnpm test:postgres`, `pnpm test:providers`
 `pnpm build` (including built browser import inspection). The PostgreSQL lane
 requires the repository's configured database service and never silently skips.
 The provider lane exercises local SDK adapters and process isolation; it does not
-claim live remote recognition quality. Component, e2e and evaluation command names are reserved by the ADR and
-explicitly unavailable until their owning children deliver the corresponding
-capability. See the [behavior matrix](../../docs/test-matrix/3670-ingestion-foundation.md).
+claim live remote recognition quality. `pnpm test:components` and `pnpm test:e2e`
+cover the maintained review surface. `pnpm test:evaluation` checks repository
+evaluation tooling contracts; measured held-out quality requires a separately
+frozen protocol and an approved aggregate provider budget. See the [behavior matrix](../../docs/test-matrix/3670-ingestion-foundation.md).
 
 ## Authoritative review and execution
 
@@ -164,9 +165,18 @@ interpretation correctness; routing policy adoption is explicit and versioned.
 ## Recipe preview
 
 `ingestion.inbox` and `ingestion.review` declare the user-facing inbox and
-review workflows for app discovery. They are intentionally previews while the
-epic's reference-workflow and evaluation prerequisites remain unpublished: they
-do not configure a source or provider, expose generic CRUD routes, or enable
-automatic execution. Mount `IntakeInbox` and `IntakeReview` with an
+review workflows for app discovery. The reference workflow and measured
+evaluation are now published, but the evaluation did not meet supported-reference
+quality gates and did not establish safety. Automation remains disabled. The
+recipes do not configure a source or provider, expose generic CRUD routes, or
+enable automatic execution. Mount `IntakeInbox` and `IntakeReview` with an
 authenticated `IntakeReviewHost`; [REVIEW.md](REVIEW.md) remains the source of
-truth for its scoped callbacks and freshness checks.
+truth for its scoped callbacks and freshness checks. See the [adoption
+checklist](../../docs/evaluation/3677-adoption.md) and [measured
+report](../../docs/evaluation/3677-measured-evaluation.md) for the release
+limits.
+
+The recipe manifest registers those existing browser components as
+`/ingestion/inbox` and `/ingestion/review` routes for a host to mount. The route
+metadata does not supply a host, source, provider, or demo fixture, and it does
+not change the preview-only status.

@@ -164,7 +164,10 @@ export class Contract extends SmrtObject {
   /**
    * Currency code (ISO 4217)
    */
-  @field({ description: 'The currency of the amounts.' })
+  @field({
+    description: 'The currency of the amounts.',
+    ui: { widget: 'currency' },
+  })
   currency: string = 'USD';
 
   /**
@@ -197,7 +200,10 @@ export class Contract extends SmrtObject {
   /**
    * Internal notes
    */
-  @field({ description: 'Anything worth remembering about this.' })
+  @field({
+    description: 'Anything worth remembering about this.',
+    ui: { widget: 'textarea' },
+  })
   notes: string = '';
 
   /**
@@ -206,6 +212,7 @@ export class Contract extends SmrtObject {
   @field({
     description:
       'The conditions agreed, such as deposits, payment or delivery conditions.',
+    ui: { widget: 'textarea' },
   })
   terms: string = '';
 

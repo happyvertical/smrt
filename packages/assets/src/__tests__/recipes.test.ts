@@ -8,8 +8,12 @@ import { AssetMetafield } from '../asset-metafield.js';
 import { AssetStatus } from '../asset-status.js';
 import { AssetType } from '../asset-type.js';
 import { Folder } from '../folder.js';
+import playground, {
+  assetAttachmentMockAttachments,
+  assetGridMockAssets,
+} from '../playground.js';
 import { AssetAttachmentsRecipe, AssetLibraryRecipe } from '../recipes.js';
-import playground, { assetGridMockAssets } from '../svelte/playground.js';
+import { AssetManager, AttachmentPanel } from '../svelte/index.js';
 
 describe('assets feature recipes (#3725)', () => {
   const recipes = [AssetLibraryRecipe, AssetAttachmentsRecipe];
@@ -76,6 +80,23 @@ describe('assets feature recipes (#3725)', () => {
     expect(AssetAttachmentsRecipe.section).toEqual(AssetLibraryRecipe.section);
   });
 
+  it('declares host-contextual UI exports and browser-safe mock fixture seeds', () => {
+    expect(AssetManager).toBeDefined();
+    expect(AttachmentPanel).toBeDefined();
+    expect(playground.entries).toHaveLength(2);
+    expect(AssetLibraryRecipe.runtime).toBe('both');
+    expect(AssetLibraryRecipe.surfaces).toBeUndefined();
+    expect(AssetLibraryRecipe.demoSeed).toEqual({
+      export: '@happyvertical/smrt-assets/playground#assetGridMockAssets',
+    });
+    expect(AssetAttachmentsRecipe.runtime).toBe('both');
+    expect(AssetAttachmentsRecipe.surfaces).toBeUndefined();
+    expect(AssetAttachmentsRecipe.demoSeed).toEqual({
+      export:
+        '@happyvertical/smrt-assets/playground#assetAttachmentMockAttachments',
+    });
+  });
+
   it('only requires a recipe declared in this package', () => {
     const ids = new Set(recipes.map((recipe) => recipe.id));
     for (const recipe of recipes) {
@@ -93,6 +114,13 @@ describe('assets feature recipes (#3725)', () => {
     ]);
     expect(assetGridMockAssets).toHaveLength(3);
     expect(assetGridMockAssets[0].sourceUri).toMatch(/^data:image\/svg\+xml/);
+    expect(assetAttachmentMockAttachments).toEqual([
+      expect.objectContaining({
+        id: 'document-v2',
+        name: 'Supplier quote.pdf',
+        versions: [expect.objectContaining({ id: 'document-v1' })],
+      }),
+    ]);
   });
 
   describe('user-facing help', () => {

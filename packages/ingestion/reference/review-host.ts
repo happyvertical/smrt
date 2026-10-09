@@ -13,6 +13,7 @@ import {
 import { backgroundEligible } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { ReviewInput } from '../src/execution-dto.js';
+import type { ExtractionRequest } from '../src/extraction-types.js';
 import type { FeedbackConfiguration } from '../src/feedback-contracts.js';
 import * as models from '../src/models.js';
 import type { GenerationOutput } from '../src/proposal-dto.js';
@@ -23,7 +24,7 @@ import type {
   ItemReviewView,
   LogicalSplitInput,
 } from '../src/review-dto.js';
-import type { IngestionOptions } from '../src/server.js';
+import type { AnalysisLease, IngestionOptions } from '../src/server.js';
 import {
   createSDKExtractionAdapter,
   createSourceDeliveryHandler,
@@ -93,7 +94,23 @@ export class ReferenceReviewWorker extends SmrtObject {
       await host.process(scope, input.itemId, item.analysisRevision);
   }
 }
+/** Trusted fixture deployment options; never accepted from an HTTP/callback payload. */
 export interface ReferenceReviewHostOptions {
+  database?: Pick<
+    NonNullable<Parameters<typeof getTestDatabase>[0]>,
+    'type' | 'url' | 'db'
+  >;
+  proposals?: IngestionOptions['proposals'];
+  proposalPolicy?: {
+    version: string;
+    providers: string[];
+    maxBytes: number;
+    leaseMs: number;
+  };
+  extraction?: {
+    configuration: Pick<ExtractionRequest, 'limits' | 'configurationRevision'>;
+    run(service: IngestionService, lease: AnalysisLease): Promise<unknown>;
+  };
   feedback?: FeedbackConfiguration;
 }
 export class ReferenceReviewHost {
@@ -110,6 +127,7 @@ export class ReferenceReviewHost {
     const db = await getTestDatabase({
       type: 'sqlite',
       url: `file:${join(root, 'review.sqlite')}`,
+      ...options.database,
       classes,
     });
     await db.query(
@@ -219,22 +237,24 @@ export class ReferenceReviewHost {
           mutationBoundary: 'serialized',
           policy: [
             {
-              version: 'app1',
+              version: this.hostOptions.proposalPolicy?.version ?? 'app1',
               handlers: handlers.map((h) => h.id),
               operations,
-              providers: ['fixture'],
+              providers: this.hostOptions.proposalPolicy?.providers ?? [
+                'fixture',
+              ],
               reviewers: ['owner', 'reviewer'],
               access: ['private'],
               requireReview: true,
-              maxBytes: 100000,
-              leaseMs: 10000,
+              maxBytes: this.hostOptions.proposalPolicy?.maxBytes ?? 100000,
+              leaseMs: this.hostOptions.proposalPolicy?.leaseMs ?? 10000,
             },
             { version: 'tenant1' },
             { version: 'source1' },
           ],
         }),
       },
-      proposals: {
+      proposals: this.hostOptions.proposals ?? {
         version: 'review-fixture1',
         promptVersion: 'review-fixture1',
         limits: {
@@ -377,7 +397,10 @@ export class ReferenceReviewHost {
           itemId,
           {
             stage: 'extract',
-            extraction: { configurationRevision: 'review1', limits },
+            extraction: this.hostOptions.extraction?.configuration ?? {
+              configurationRevision: 'review1',
+              limits,
+            },
           },
           randomUUID(),
         );
@@ -392,21 +415,25 @@ export class ReferenceReviewHost {
       await service.generateProposals(lease);
       return;
     }
-    const adapter = createSDKExtractionAdapter({
-      nativeMemoryIsolation: 'host-enforced',
-      pdf: {
-        provider: 'unpdf',
-        identity: {
+    if (this.hostOptions.extraction) {
+      await this.hostOptions.extraction.run(service, lease);
+    } else {
+      const adapter = createSDKExtractionAdapter({
+        nativeMemoryIsolation: 'host-enforced',
+        pdf: {
           provider: 'unpdf',
-          model: 'embedded-text',
-          version: '0.65.9',
+          identity: {
+            provider: 'unpdf',
+            model: 'embedded-text',
+            version: '0.65.9',
+          },
         },
-      },
-    });
-    await extractAnalysis(service, lease, adapter, {
-      configurationRevision: 'review1',
-      limits,
-    });
+      });
+      await extractAnalysis(service, lease, adapter, {
+        configurationRevision: 'review1',
+        limits,
+      });
+    }
     const processing = await service.getItem(itemId);
     if (!['completed', 'partial'].includes(processing.processingState)) return;
     const source = await service.getCompletedAnalysis(itemId, lease.attemptId);

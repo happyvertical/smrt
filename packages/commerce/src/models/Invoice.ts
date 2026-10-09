@@ -290,7 +290,10 @@ export class Invoice extends SmrtObject {
   /**
    * Currency code (ISO 4217)
    */
-  @field({ description: 'The currency of the invoice.' })
+  @field({
+    description: 'The currency of the invoice.',
+    ui: { widget: 'currency' },
+  })
   currency: string = 'CAD';
 
   // ============================================================================
@@ -387,19 +390,28 @@ export class Invoice extends SmrtObject {
   /**
    * Internal notes (not shown to customer)
    */
-  @field({ description: 'Private notes, not shown to the customer.' })
+  @field({
+    description: 'Private notes, not shown to the customer.',
+    ui: { widget: 'textarea' },
+  })
   notes: string = '';
 
   /**
    * Notes shown to customer on invoice
    */
-  @field({ description: 'A message shown to the customer on the invoice.' })
+  @field({
+    description: 'A message shown to the customer on the invoice.',
+    ui: { widget: 'textarea' },
+  })
   customerNotes: string = '';
 
   /**
    * Payment terms text
    */
-  @field({ description: 'The payment conditions, such as Net 30.' })
+  @field({
+    description: 'The payment conditions, such as Net 30.',
+    ui: { widget: 'textarea' },
+  })
   terms: string = '';
 
   constructor(options: InvoiceOptions = {}) {

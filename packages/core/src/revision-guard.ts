@@ -57,7 +57,7 @@
  * whose exact equality already round-trips losslessly.
  */
 
-import { raw } from '@happyvertical/sql';
+import { raw } from './host.js';
 
 /** The SQL expression the PostgreSQL revision predicate compares against. */
 export const POSTGRES_REVISION_GUARD_EXPRESSION =

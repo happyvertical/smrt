@@ -13,7 +13,12 @@ relationships should use dedicated joins such as `content_assets`,
 folders, classifications, statuses, and metadata definitions.
 `assets.attachments` adds record attachment provenance and requires the library.
 They share the **Files and media** catalog card and the **Assets** navigation
-section, and both embed user-facing help in the generated manifest.
+section, and both embed user-facing help in the generated manifest. The recipes
+publish browser-safe mock fixture exports from `@happyvertical/smrt-assets/playground`.
+`AssetManager` needs host persistence callbacks and `AttachmentPanel` needs
+record-scoped authorized attachments, so neither is declared as a standalone
+placement. Storage providers remain application-owned, so the recipes declare
+no provider.
 
 The package playground is a Mock preview. Its asset grid uses in-memory props
 and data-URI thumbnails, and its attachment panel demonstrates supplied native

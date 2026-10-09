@@ -62,7 +62,10 @@ jobs:
               - 'packages/smrt-app-mcp/**'
               - 'packages/smrt-dev-mcp/**'
               - 'scripts/check-knowledge.ts'
+            # Core and config own the browser entry evaluated in this lane (#2838).
             workbench:
+              - 'packages/core/**'
+              - 'packages/config/**'
               - 'packages/ingestion/**'
               - 'packages/smrt-ui/**'
               - '.github/workflows/test-suite.yml'
@@ -461,6 +464,11 @@ jobs:
       - name: Run workbench browser test
         run: pnpm --dir packages/smrt-workbench/host test:e2e
 
+      # Loads core's built browser entry in Chromium, so a Node-only module
+      # reached from it (pg, Buffer, node: built-ins) fails here, not in a
+      # downstream page (#2838).
+      - name: Run core browser entry evaluation
+        run: pnpm --filter @happyvertical/smrt-core test:browser
       - name: Run authenticated ingestion review browser tests
         run: pnpm --filter @happyvertical/smrt-ingestion test:e2e
 

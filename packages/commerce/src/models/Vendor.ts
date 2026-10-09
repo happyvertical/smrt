@@ -81,7 +81,10 @@ export class Vendor extends SmrtObject {
   /**
    * Default currency for transactions with this vendor
    */
-  @field({ description: 'The currency this vendor bills you in.' })
+  @field({
+    description: 'The currency this vendor bills you in.',
+    ui: { widget: 'currency' },
+  })
   currency: string = 'USD';
 
   /**
@@ -89,6 +92,7 @@ export class Vendor extends SmrtObject {
    */
   @field({
     description: 'The email address you normally use to reach this vendor.',
+    ui: { widget: 'email' },
   })
   defaultContactEmail: string = '';
 
@@ -97,6 +101,7 @@ export class Vendor extends SmrtObject {
    */
   @field({
     description: 'The phone number you normally use to reach this vendor.',
+    ui: { widget: 'phone' },
   })
   defaultContactPhone: string = '';
 
@@ -112,7 +117,10 @@ export class Vendor extends SmrtObject {
   /**
    * Internal notes about this vendor
    */
-  @field({ description: 'Anything worth remembering about this vendor.' })
+  @field({
+    description: 'Anything worth remembering about this vendor.',
+    ui: { widget: 'textarea' },
+  })
   notes: string = '';
 
   /**

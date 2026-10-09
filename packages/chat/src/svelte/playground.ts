@@ -95,6 +95,15 @@ const sampleMessages = [
   },
 ];
 
+/**
+ * Browser-safe static fixture for hosts demonstrating the chat.rooms recipe.
+ * It is intentionally mock data and does not connect to ChatService.
+ */
+export const chatRoomsFixture = {
+  rooms: sampleRooms,
+  messages: sampleMessages,
+};
+
 const loadMessageInput = () =>
   import('./components/messages/MessageInput.svelte');
 const loadMessageList = () =>
@@ -115,7 +124,7 @@ export default {
       loadComponent: loadRoomList,
       order: 1,
       props: {
-        rooms: sampleRooms,
+        rooms: chatRoomsFixture.rooms,
         currentRoomId: 'room-editorial',
         onselectroom: noop,
         oncreateroom: noop,
@@ -136,7 +145,7 @@ export default {
       loadComponent: loadMessageList,
       order: 2,
       props: {
-        messages: sampleMessages,
+        messages: chatRoomsFixture.messages,
         currentProfileId: 'profile-taylor',
         onreply: noop,
         onreact: noop,

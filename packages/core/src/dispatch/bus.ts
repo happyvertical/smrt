@@ -26,7 +26,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
+import { getDatabase } from '../host.js';
 import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
 import { runSerializedAgainstSystemTableBootstrap } from '../system/bootstrap.js';
 import {

@@ -23,6 +23,7 @@ specific material and proposal that the reviewer saw.
 
 ## Preview status
 
-This recipe describes a preview workflow. It does not create a generic editing
-surface or enable automatic execution. A host rechecks the reviewer, scope, and
-current proposal before it accepts a decision.
+This recipe describes a preview workflow. The published evaluation did not meet
+quality gates and did not establish safety, so automation remains disabled. It
+does not create a generic editing surface or enable automatic execution. A host
+rechecks the reviewer, scope, and current proposal before it accepts a decision.

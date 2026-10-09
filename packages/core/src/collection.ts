@@ -1,5 +1,5 @@
 import { createLogger } from '@happyvertical/logger';
-import { buildWhere, type DatabaseInterface } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   type AuditContext,
   auditSnapshot,
@@ -32,6 +32,7 @@ import {
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
 import type { ClassEmbeddingConfig } from './embeddings/types';
+import { buildWhere } from './host.js';
 import {
   createInterceptorContext,
   GlobalInterceptors,

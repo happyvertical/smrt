@@ -1,9 +1,11 @@
 /**
  * Declared feature recipes for smrt-assets (#3725).
  *
- * The recipes describe the package's model-backed asset workflows. UI surface,
- * provider, runtime, and demo-seed declarations are intentionally deferred to
- * the recipe-surface contract in #3708.
+ * The recipes describe the package's model-backed asset workflows and their
+ * public UI metadata. Storage remains application-owned, so no provider is
+ * declared here. The package's UI components require host persistence or
+ * record authorization context, so neither recipe declares a standalone
+ * placement.
  */
 
 import { SmrtRecipe } from '@happyvertical/smrt-core';
@@ -35,6 +37,10 @@ export class AssetLibraryRecipe extends SmrtRecipe {
     description: 'Files, media and attachments for your work.',
   };
   static models = [Asset, Folder, AssetType, AssetStatus, AssetMetafield];
+  static runtime = 'both' as const;
+  static demoSeed = {
+    export: '@happyvertical/smrt-assets/playground#assetGridMockAssets',
+  } as const;
   static nav = [
     {
       label: 'Assets',
@@ -96,6 +102,11 @@ export class AssetAttachmentsRecipe extends SmrtRecipe {
     description: 'Files, media and attachments for your work.',
   };
   static models = [Asset, AssetAssociation];
+  static runtime = 'both' as const;
+  static demoSeed = {
+    export:
+      '@happyvertical/smrt-assets/playground#assetAttachmentMockAttachments',
+  } as const;
   static nav = [
     {
       label: 'Attachments',

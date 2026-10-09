@@ -43,7 +43,14 @@ intentionally has no global navigation or section: a discussion needs an
 already-authorized parent record, and a generic comment list would lose that
 context. Hosts embed it on a record detail page. Catalog help explains posting
 and mentions without promising a mention picker or delivery configuration.
-Surface/provider declarations await the shared recipe contract.
+The recipe declares `runtime: both`: the record component runs in the browser,
+while persistence and authorization run on the server. Its playground surface
+exports `RecordCommentsPlayground`, a standalone sample-record preview with
+local-only posting. `recordCommentsDemo` supplies the same sample projections
+through `demoSeed`; remounting resets the preview. No notifications are sent.
+There is no route, settings panel or shell widget: none can supply the authorized
+parent-record context. No provider is declared because the host's record access
+and mention policies are callbacks, not a selectable external provider.
 
 Validation: `pnpm --filter @happyvertical/smrt-comments test` covers SQLite and
 DuckDB. `pnpm --filter @happyvertical/smrt-comments test:postgres` adds PostgreSQL
