@@ -1,0 +1,24 @@
+{
+  "node": "26.10.0",
+  "pnpm": "11.25.0",
+  "nixpkgs": {
+    "__final": true,
+    "lastModified": 0,
+    "narHash": "sha256-7QYjT2vHLuX9Z1pdxHXDKCbh1CR3D/2rywB9Tx0MPRg=",
+    "path": "/nix/store/igrbwnqkyn9z88d3kvwhgfrwh6firl0w-source",
+    "type": "path"
+  },
+  "imageMagickExecutable": "/nix/store/1fj0wg21ba24hv612yg4kqwzxbnyappm-imagemagick-7.1.2-29/bin/magick",
+  "fontFile": "/nix/store/0lhf2h2fnjqvpzmk92s5axr2ybvs981s-dejavu-fonts-2.37/share/fonts/truetype/DejaVuSans.ttf",
+  "fontSha256": "58568c88a01b80dfc056daca3eeafd434a0380df1a48dda53f0de0d716109bbd",
+  "speechPackage": "espeak-ng",
+  "generatorCommand": "EVALUATION_FONT_FILE=<fontFile> MAGICK_THREAD_LIMIT=1 nix shell path:<nixpkgs.path>#espeak-ng --command fnm exec --using=26.10.0 node packages/ingestion/evaluation/generate-corpus.mjs <external-directory> <index-path>",
+  "reproduction": "Use this exact content-addressed Nix source/tool closure and font; manifest/source hashes must match. Different tool versions require a new unfrozen candidate, never silently replace frozen bytes.",
+  "publicReconstruction": {
+    "cache": "https://cache.nixos.org",
+    "verifiedDate": "2026-10-09",
+    "sourceCommand": "nix copy --from https://cache.nixos.org /nix/store/igrbwnqkyn9z88d3kvwhgfrwh6firl0w-source",
+    "toolClosureCommand": "nix copy --from https://cache.nixos.org /nix/store/1fj0wg21ba24hv612yg4kqwzxbnyappm-imagemagick-7.1.2-29 /nix/store/0lhf2h2fnjqvpzmk92s5axr2ybvs981s-dejavu-fonts-2.37 /nix/store/xkwmnf8hva8fhf0qqwfaiabzl3dmrfnm-espeak-ng-1.52.0.1-unstable-2025-09-09",
+    "note": "Source and all three tool closure cache entries verified; always verify frozen source hashes. Public cache retention is external; final report artifacts retain full manifest/media if cache disappears."
+  }
+}

@@ -58,7 +58,7 @@
     "test:providers": "vitest run src/extraction.providers.test.ts src/proposals.providers.test.ts",
     "test:components": "vitest run --config vitest.components.config.ts",
     "test:e2e": "playwright test -c e2e/review/playwright.config.ts",
-    "test:evaluation": "node scripts/unavailable-lane.mjs evaluation"
+    "test:evaluation": "vitest run --config evaluation/vitest.config.ts"
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
@@ -84,6 +84,8 @@
     "vite": "8.1.4",
     "vitest": "4.1.10",
     "@happyvertical/smrt-content": "workspace:*",
+    "@happyvertical/smrt-messages": "workspace:*",
+    "@happyvertical/email": "catalog:",
     "@happyvertical/smrt-users": "workspace:*",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

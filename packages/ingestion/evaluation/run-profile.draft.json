@@ -1,0 +1,126 @@
+{
+  "status": "not-approved-for-inference",
+  "corpusVersion": "synthetic-reference-v1",
+  "automationEligible": false,
+  "ledgerPath": "/home/will/Work/tmp/smrt-epic-3668/evaluation-budget.sqlite",
+  "aggregateCapNanoUSD": 5000000000,
+  "endpointClass": "OpenAI standard global api.openai.com/v1; no regional surcharge route",
+  "proposalAndVisionModel": "gpt-5.4-mini-2026-03-17",
+  "speechModel": "gpt-4o-mini-transcribe-2025-12-15",
+  "speechMetadataAccess": {
+    "date": "2026-10-09",
+    "status": 200,
+    "inference": false
+  },
+  "selectedPackages": {
+    "@happyvertical/ai": "0.102.4",
+    "@happyvertical/speech": "0.102.4",
+    "@happyvertical/ocr": "0.61.6",
+    "@happyvertical/pdf": "0.65.9",
+    "sharp": "0.35.5",
+    "@happyvertical/email": "0.102.4",
+    "@happyvertical/smrt-messages": "0.55.6"
+  },
+  "prices": {
+    "checkedDate": "2026-10-09",
+    "currency": "USD",
+    "uncachedNanoUSDPerToken": {
+      "proposalInput": 750,
+      "proposalOutput": 4500,
+      "speechInput": 1250,
+      "speechOutput": 5000
+    }
+  },
+  "speechBoundCandidate": {
+    "maximumInputTokens": 16000,
+    "maximumOutputTokens": 2000,
+    "maximumChargeNanoUSD": 30000000,
+    "status": "contingent single unchunked request under model limits; not an inference authorization"
+  },
+  "sdkControls": {
+    "speechRetry": false,
+    "speechResponseFormat": "json via snapshot JSON-only adaptation",
+    "directAIRetries": 0,
+    "continueOnLength": false,
+    "ocrFallbackProviders": [],
+    "ocrMaximumOutputTokens": 4096,
+    "publicExtractionHandshake": {
+      "reservation": "after live authority and before first child acknowledgement",
+      "ocrMaximumGates": 2,
+      "ocrHTTPCalls": 1,
+      "speechMaximumGates": 1,
+      "speechHTTPCalls": 1,
+      "localPdfMaximumGates": "2 + 2 * maxPages",
+      "localPdfPaidFallback": false,
+      "restart": "same paid call identity denied before acknowledgement",
+      "failure": "full reservation retained even when capability-only or zero HTTP"
+    }
+  },
+  "pendingBeforeSpending": [
+    "Frozen materialized source index, scorer, protocol and exact semantic adjudication record",
+    "Authenticated application catalog/policy/prompt versions and actual merged UI/feedback contracts",
+    "Measured full serialized proposal request bounds including provider framing; explicit output ceiling",
+    "Installed OCR transitive AI resolution and actual request-count/size/output contract proof",
+    "Single short audio file duration and no internal chunk expansion beyond published context/output ceiling",
+    "Host-enforced native memory limits and extraction process configuration",
+    "Conservative aggregate call schedule covering development/calibration/heldout/retry/probes/reruns",
+    "Root inspection of canonical empty ledger and explicit paid-run release"
+  ],
+  "sources": [
+    "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
+    "https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe",
+    "https://developers.openai.com/api/docs/pricing",
+    "https://developers.openai.com/api/docs/guides/images-vision"
+  ],
+  "scheduleCandidate": {
+    "status": "pre-run bound, awaiting complete wire and host proofs",
+    "paidCalibrationCalls": 0,
+    "paidRetries": 0,
+    "paidReruns": 0,
+    "optionalDecision": "disabled; no second AI decision call",
+    "heldoutCases": 300,
+    "deterministicFaultCases": 20,
+    "proposal": {
+      "calls": 280,
+      "maximumChargeNanoUSD": 11136000,
+      "totalNanoUSD": 3118080000,
+      "completeSerializedRequestBytes": 8192,
+      "framingTokenReserve": 512,
+      "maximumOutputTokens": 1024
+    },
+    "vision": {
+      "calls": 28,
+      "maximumChargeNanoUSD": 22810500,
+      "totalNanoUSD": 638694000,
+      "maximumImageDimensions": [1000, 1000],
+      "patchSize": 32,
+      "patchMultiplier": 1.2,
+      "imageTokenReserve": 1230,
+      "maximumTextEnvelopeBytes": 4096,
+      "framingTokenReserve": 512,
+      "maximumOutputTokens": 4096
+    },
+    "speech": {
+      "calls": 28,
+      "maximumChargeNanoUSD": 30000000,
+      "totalNanoUSD": 840000000
+    },
+    "heldoutMaximumNanoUSD": 4596774000,
+    "feedbackDemonstrationReservedNanoUSD": 400000000,
+    "unallocatedNanoUSD": 3226000,
+    "faultScoring": "Retained failures unless preregistered authoritative structural disposition is actually proven; not model abstention.",
+    "feedbackPlannedCalls": 11,
+    "feedbackPlannedMaximumNanoUSD": 122496000
+  },
+  "nativeIsolation": {
+    "scope": "whole evaluation host and inherited provider children",
+    "maximumBytes": 2147483648,
+    "swapBytes": 0,
+    "concurrency": 1,
+    "verification": "assertNativeScope before SDK construction/reservation; actual final process proof required",
+    "ledgerLifetime": "canonical persistent external path, survives process/scope termination"
+  },
+  "feedbackProtocolSha256": "5e3a904e1acbd2986ea8f338c6b6904b2cc04eb8c873f58c8b8295dcb0328f75",
+  "smrtVersion": "0.55.6",
+  "captureIdentity": "opaque SHA256 with evaluation-capture-v1 domain separation; internal provenance only"
+}
