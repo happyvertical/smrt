@@ -1178,4 +1178,69 @@ ${statics}
       expect(errors.length).toBeGreaterThan(0);
     });
   });
+
+  describe('cross-recipe consistency', () => {
+    const TWO = (a: string, b: string) => `
+import { SmrtRecipe } from '${CORE}';
+import { Order } from './models/Order.js';
+export class A extends SmrtRecipe {
+  static id = 'shop.a';
+  static label = 'A';
+  static summary = 'A.';
+  static models = [Order];
+${a}
+}
+export class B extends SmrtRecipe {
+  static id = 'shop.b';
+  static label = 'B';
+  static summary = 'B.';
+  static models = [Order];
+${b}
+}
+`;
+
+    it('rejects the same nav key over one model in two recipes', async () => {
+      const nav = `static nav = [{ label: 'Open', model: Order, key: 'open', filter: { field: 'status', value: 'open' } }];`;
+      write('src/recipes.ts', TWO(nav, nav));
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toContain(
+        'nav key `open` over Order is already used by recipe shop.a',
+      );
+    });
+
+    it('rejects one group id with two labels', async () => {
+      write(
+        'src/recipes.ts',
+        TWO(
+          `static group = { id: 'billing', label: 'Billing' };`,
+          `static group = { id: 'billing', label: 'Invoices' };`,
+        ),
+      );
+      const { results } = await scan();
+      expect(messages(results).join('\n')).toContain(
+        'group `billing` is labelled "Invoices" here but "Billing"',
+      );
+    });
+
+    it('rejects one section id with two labels but accepts matching ones', async () => {
+      write(
+        'src/recipes.ts',
+        TWO(
+          `static section = { id: 'sales', label: 'Sales' };`,
+          `static section = { id: 'sales', label: 'Selling' };`,
+        ),
+      );
+      expect(messages((await scan()).results).join('\n')).toContain(
+        'section `sales` is labelled',
+      );
+      write(
+        'src/recipes.ts',
+        TWO(
+          `static section = { id: 'sales', label: 'Sales' };`,
+          `static section = { id: 'sales', label: 'Sales' };`,
+        ),
+      );
+      expect((await scan()).results.errors).toEqual([]);
+    });
+  });
 });

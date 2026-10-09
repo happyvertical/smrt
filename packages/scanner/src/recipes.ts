@@ -1601,6 +1601,48 @@ export function resolveRecipes(
     });
   }
 
+  // Cross-recipe consistency within the package: a nav key names one layout id
+  // (`item:<pkg>:<Model>:<key>`), and a shared group or section id means one
+  // card or section, so its labels must agree.
+  const navKeys = new Map<string, string>();
+  const labelled = new Map<string, { label: string; recipe: string }>();
+  for (const recipe of recipes) {
+    const raw = ids.get(recipe.id);
+    const note = (message: string) =>
+      errors.push({
+        message: `Recipe ${recipe.className}: ${message}`,
+        filePath: raw?.filePath ?? '',
+        line: raw?.line,
+        severity: 'error',
+      });
+    for (const entry of recipe.nav) {
+      if (!entry.key) continue;
+      const slot = `${entry.model}:${entry.key}`;
+      const owner = navKeys.get(slot);
+      if (owner && owner !== recipe.id) {
+        note(
+          `nav key \`${entry.key}\` over ${entry.model} is already used by recipe ${owner}; layout ids must be unique`,
+        );
+      }
+      navKeys.set(slot, owner ?? recipe.id);
+    }
+    for (const [kind, value] of [
+      ['group', recipe.group],
+      ['section', recipe.section],
+    ] as const) {
+      if (!value) continue;
+      const slot = `${kind}:${value.id}`;
+      const first = labelled.get(slot);
+      if (first && first.label !== value.label) {
+        note(
+          `${kind} \`${value.id}\` is labelled "${value.label}" here but "${first.label}" in recipe ${first.recipe}`,
+        );
+      } else if (!first) {
+        labelled.set(slot, { label: value.label, recipe: recipe.id });
+      }
+    }
+  }
+
   // `requires` cycles among this package's own recipes.
   const byId = new Map(recipes.map((recipe) => [recipe.id, recipe]));
   const reported = new Set<string>();

@@ -48,6 +48,12 @@ artifact instead of importing runtime code. All are optional and additive:
 | `nav[].filter` | `{ field, value }` | Narrows the entry to rows where `field` equals `value` (Ingredients over Products: `productType` = `material`). Needs a `key`. |
 | `options.<Model>.fields.<f>.required` | boolean | The form refuses to save without a value. |
 
+Across recipes of one package the scanner also rejects a repeated nav `key`
+over the same model (it names one layout id) and one `group`/`section` id with
+two different labels. `packages/scanner/src/__tests__/workspace-recipes.test.ts`
+scans every recipe in the workspace and checks ids, `requires`/`requiresAny`
+targets (which a single package cannot see) and shared labels.
+
 Child models (line items) are simply listed in `models` without a `nav` entry.
 Validation: `group`/`section` take only their keys, slug ids, non-empty
 strings; `requiresAny` ids follow the recipe-id format and cannot name the
