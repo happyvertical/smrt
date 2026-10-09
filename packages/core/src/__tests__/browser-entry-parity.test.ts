@@ -157,6 +157,16 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Registry snapshot for the Node-side dev plane (smrt-dev-mcp); sanitizes filesystem paths with node:path, so it stays out of the browser entry (#2838)',
+    names: [
+      'BOOTED_PROVENANCE',
+      'assertPlainJson',
+      'sanitizeMessagePaths',
+      'snapshotRegistry',
+    ],
+  },
+  {
+    reason:
       'Test-database helper; belongs behind `@happyvertical/smrt-core/testing`',
     names: ['getTestDatabase'],
   },

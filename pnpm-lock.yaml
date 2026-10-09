@@ -1156,6 +1156,9 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.102.7
         version: 0.102.7
+      '@noble/hashes':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@oxc-project/runtime':
         specifier: ^0.150.0
         version: 0.150.0

@@ -28,6 +28,7 @@ import {
   evaluateRatchet,
   type Finding,
   formatOwned,
+  type ModelPackage,
 } from '../browser-gate/boundary.js';
 import { buildPackageForBrowser } from '../browser-gate/build.js';
 import { EXPECTED_BROWSER_FAILURES } from '../browser-gate/expected-failures.js';
@@ -112,5 +113,21 @@ describe('browser reachability of model package roots', () => {
       );
     }
     expect(problems, problems.join('\n')).toEqual([]);
+  });
+
+  it("keeps Node-only modules out of core's own browser entry (#2838)", async () => {
+    // The ratchet only compares which packages fail, so a core entry that is
+    // listed for another reason (missing exports, #3614) would hide a new
+    // pg/cosmiconfig/node: edge. Core's own module graph is held to zero.
+    const core = discoverModelPackages(workspaceRoot).find(
+      (p) => p.name === '@happyvertical/smrt-core',
+    );
+    expect(core, 'smrt-core is always gated').toBeDefined();
+    const findings = await buildPackageForBrowser(core as ModelPackage);
+    const reached = findings.filter((f) => f.kind === 'forbidden');
+    expect(
+      reached.map((f) => (f.kind === 'forbidden' ? f.module : '')),
+      "core's browser entry reaches Node-only modules; route them through packages/core/src/host.ts or a lazy host lookup",
+    ).toEqual([]);
   });
 });
