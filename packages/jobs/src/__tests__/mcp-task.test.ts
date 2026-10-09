@@ -10,6 +10,7 @@ import { backgroundEligible } from '../background-policy.js';
 import type { JobExecutionContext } from '../logger-extension.js';
 import { McpTaskStore } from '../mcp-task.js';
 import { isRunnerExecutionContext, TaskRunner } from '../runner.js';
+import { SmrtJobEventCollection } from '../smrt-job-event.js';
 
 @smrt()
 class McpTaskProbe extends SmrtObject {
@@ -185,6 +186,12 @@ describe('MCP Tasks durable jobs adapter', () => {
       created.taskId,
     );
     expect(rows.rows).toEqual([{ status: 'cancelled' }]);
+    const outcomes = await (
+      await SmrtJobEventCollection.create({ db })
+    ).listTerminalOutcomes({ tenantId: null });
+    expect(outcomes.outcomes).toMatchObject([
+      { status: 'cancelled', queue: 'mcp-tasks' },
+    ]);
   });
 
   it('accepts only outstanding task input keys and resumes the running job', async () => {

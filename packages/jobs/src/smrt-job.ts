@@ -18,6 +18,7 @@ import {
   clampRetries,
   DEFAULT_TENANT_JOB_CAP,
 } from './background-policy.js';
+import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
 
 /**
  * Job status type
@@ -278,10 +279,19 @@ export class SmrtJob extends SmrtObject {
       throw new Error(`Cannot cancel job with status: ${this.status}`);
     }
 
-    this.status = 'cancelled';
-    this.completedAt = new Date();
+    const snapshot = terminalSnapshot(this);
+    if (!snapshot) throw new Error('Cannot cancel an unpersisted job');
+    const completedAt = new Date();
+    const event = await transitionTerminalJob(this.db, {
+      job: snapshot,
+      status: 'cancelled',
+      completedAt,
+      expectedStatuses: ['pending', 'running', 'failed'],
+    });
+    if (!event) throw new Error('Job status changed before cancellation');
 
-    await this.save();
+    this.status = 'cancelled';
+    this.completedAt = completedAt;
   }
 
   /**

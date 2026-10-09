@@ -182,11 +182,15 @@ export {
 export {
   type JobEventCursor,
   type ListJobEventsOptions,
+  type ListTerminalOutcomesOptions,
   SmrtJobEvent,
   SmrtJobEventCollection,
   type SmrtJobEventData,
   type SmrtJobEventLevel,
   type SmrtJobEventType,
+  type SmrtJobTerminalOutcome,
+  type SmrtJobTerminalOutcomePage,
+  type SmrtJobTerminalStatus,
 } from './smrt-job-event.js';
 
 // Worker liveness lease model

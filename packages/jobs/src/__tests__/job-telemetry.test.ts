@@ -351,7 +351,7 @@ describe('job telemetry', () => {
     ).toBe(true);
   });
 
-  it('keeps running jobs when telemetry persistence is unavailable', async () => {
+  it('keeps running jobs when nonterminal telemetry persistence is unavailable', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const jobs = await SmrtJobCollection.create({ db });
 
@@ -364,7 +364,12 @@ describe('job telemetry', () => {
 
     const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
     await runner.initialize(db);
-    await db.query('DROP TABLE _smrt_job_events');
+    await db.query(`CREATE TRIGGER fail_nonterminal_telemetry
+      BEFORE INSERT ON _smrt_job_events
+      WHEN NEW.stage != 'completed'
+      BEGIN
+        SELECT RAISE(FAIL, 'nonterminal telemetry rejected');
+      END`);
 
     const telemetryErrors: Error[] = [];
     runner.on('runner:error', (error) => {

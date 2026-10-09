@@ -1,6 +1,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { type SmrtJob, SmrtJobCollection } from './smrt-job.js';
+import { terminalSnapshot, transitionTerminalJob } from './terminal-outcome.js';
 
 /** The MCP Tasks extension identifier implemented by this durable adapter. */
 export const MCP_TASKS_EXTENSION = 'io.modelcontextprotocol/tasks';
@@ -295,14 +296,15 @@ export class McpTaskStore {
       return;
     }
 
-    const now = new Date().toISOString();
-    await this.collection.query(
-      `UPDATE _smrt_jobs
-          SET status = 'cancelled', completed_at = ?, updated_at = ?
-        WHERE id = ? AND task_id = ? AND status IN ('pending', 'running')`,
-      [now, now, job.id, taskId],
-      { allowRawOnTenantScoped: true },
-    );
+    const snapshot = terminalSnapshot(job);
+    if (!snapshot) throw new McpTaskNotFoundError(taskId);
+    await transitionTerminalJob(this.collection.db, {
+      job: snapshot,
+      status: 'cancelled',
+      completedAt: new Date(),
+      expectedStatuses: ['pending', 'running'],
+      expectedTaskId: taskId,
+    });
   }
 
   private async findTaskJob(taskId: string): Promise<SmrtJob> {
