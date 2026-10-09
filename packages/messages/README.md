@@ -205,6 +205,6 @@ to a browser. Replace the provider when the user or tenant context changes. Opti
 `subscribe` connects a host-owned transport; the UI unsubscribes on disposal.
 
 The Messaging feature card offers mailbox and notification controls independently.
-Mailbox navigation includes a stable Drafts entry filtered by `sendStatus = draft`.
+Mailbox navigation includes a stable Failed sends entry filtered by `sendStatus = failed`.
 Notifications deliberately declare no generic model navigation: recipient-scoped
 provider access remains required.

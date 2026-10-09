@@ -12,21 +12,25 @@ describe('messaging recipe composition', () => {
     expect(NotificationsRecipe.nav).toEqual([]);
   });
 
-  it('gives all-mail and draft views distinct stable identities over the same email model', () => {
+  it('gives all-mail and failed-send views distinct stable identities over the same email model', () => {
     const keys = MailboxRecipe.nav.map((entry) => entry.key);
     expect(new Set(keys).size).toBe(keys.length);
     expect(MailboxRecipe.nav.every((entry) => entry.model === Email)).toBe(
       true,
     );
     const all = MailboxRecipe.nav.find((entry) => entry.key === 'mailbox');
-    const drafts = MailboxRecipe.nav.find((entry) => entry.key === 'drafts');
-    expect(all?.filter).toBeUndefined();
-    expect(drafts?.filter).toEqual({ field: 'sendStatus', value: 'draft' });
-    expect(new Email({ sendStatus: 'draft' }).sendStatus).toBe(
-      drafts?.filter?.value,
+    const failed = MailboxRecipe.nav.find(
+      (entry) => entry.key === 'failed-sends',
     );
+    expect(all?.filter).toBeUndefined();
+    expect(failed?.filter).toEqual({ field: 'sendStatus', value: 'failed' });
+    expect(new Email({ sendStatus: 'failed' }).sendStatus).toBe(
+      failed?.filter?.value,
+    );
+    // Received mail can retain the default draft sendStatus without being a draft.
+    expect(new Email().sendStatus).not.toBe(failed?.filter?.value);
     expect(new Email({ sendStatus: 'sent' }).sendStatus).not.toBe(
-      drafts?.filter?.value,
+      failed?.filter?.value,
     );
   });
 });

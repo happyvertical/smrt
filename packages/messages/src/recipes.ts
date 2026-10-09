@@ -31,13 +31,13 @@ export class MailboxRecipe extends SmrtRecipe {
       description: 'Read email from your connected accounts.',
     },
     {
-      label: 'Drafts',
+      label: 'Failed sends',
       model: Email,
-      key: 'drafts',
+      key: 'failed-sends',
       icon: 'fileText',
       noun: 'email',
-      description: 'Continue email that has not been sent.',
-      filter: { field: 'sendStatus', value: 'draft' },
+      description: 'Review email whose last send attempt failed.',
+      filter: { field: 'sendStatus', value: 'failed' },
     },
   ];
   static help = './help/mailbox.md';

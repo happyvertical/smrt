@@ -2,9 +2,9 @@
 Read messages, open a conversation, or compose an email using a connected account.
 Choose the sender account, add recipients, and check the subject and message before sending.
 
-## Drafts
-Use Drafts to continue email whose send status is draft. Returning to the mailbox shows all email again.
-Drafts are not proof of delivery; check the send result before assuming a message was sent.
+## Failed sends
+Use Failed sends to review email whose last send attempt failed. Returning to the mailbox shows all email again.
+Check the failure and sender connection before retrying through your application. This view does not resend email automatically.
 
 ## Preview
 The playground uses fictional messages. Sending and saving are mocked and never contact a mail server.
