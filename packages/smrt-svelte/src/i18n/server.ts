@@ -35,6 +35,7 @@ import './strings.forms.js';
 import './strings.board.js';
 import './strings.sortable.js';
 import './strings.audit.js';
+import './strings.import-export.js';
 import './strings.workspace.js';
 import '../mcp-apps/strings.js';
 

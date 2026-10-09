@@ -32,6 +32,50 @@ pipeline (`opportunity.stage`) without importing `@happyvertical/smrt-projects`.
 
 Svelte 5 component library for the s-m-r-t framework. Provides UI components, browser AI integration (STT/TTS/LLM with warm cache), a theme system, permission-aware rendering, and module UI registry for agent admin panels.
 
+## Import and export
+
+`@happyvertical/smrt-svelte/import-export` provides `ImportExport`, a CSV and
+TSV import/export panel for any collection. Spreadsheet users save as CSV;
+there is no `.xlsx` reader. Import is a guided flow: pick a file, map each
+column to a field (auto-detected from the field name, label, or alias),
+check a validation preview, then import. The preview is the dry run and writes
+nothing. Rows that fail validation are listed by file line with the offending
+value, and are downloadable as a CSV error report. Valid rows are created one
+request each, so a server rejection fails only that row. Export lets the user
+choose columns, delimiter, and header style; the default `name` headers
+re-import cleanly.
+
+The columns come from the same sources as the generated forms:
+`fieldsFromCollectionDefinition(definition, { policy })` reads the collection
+definition (the manifest) and a resolved field policy. A policy-`hidden` field
+is neither imported nor exported, a `locked` field is never overwritten, and a
+resolved default fills an empty or unmapped cell. `createCollectionImportExport`
+binds the panel to the generated CRUD fetchers, so import and export go through
+the same authorized REST routes as every other client.
+
+```svelte
+<script lang="ts">
+  import {
+    ImportExport,
+    createCollectionImportExport,
+  } from '@happyvertical/smrt-svelte/import-export';
+
+  const io = createCollectionImportExport({ definition, fetchers, fieldOptions: { policy } });
+</script>
+
+<ImportExport
+  fields={io.fields}
+  createRecord={io.createRecord}
+  loadRows={io.loadRows}
+  filename="products"
+/>
+```
+
+The CSV layer (`parseTable`, `validateRows`, `buildExportFile`, `runImport`)
+is pure and runs in Node. Exports neutralize spreadsheet formulas in text
+cells. See [agents/import-export.md](./agents/import-export.md) for the
+contract.
+
 ## Sortable and shell layout
 
 `@happyvertical/smrt-svelte/sortable` provides `Sortable`, an accessible
@@ -605,6 +649,7 @@ importable, even if it appears in `dist/`.
 |-------------|----------|
 | `@happyvertical/smrt-svelte` | `Provider`, hooks (`useAppState`, `useAuth`, `useLLM`, `useSocket`, `useSTT`, `useTheme`, `useTTS`), app state/context, `ModulePanel`, and the form components below |
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, DateTimeInput, Toggle, etc.) |
+| `@happyvertical/smrt-svelte/import-export` | `ImportExport` (CSV/TSV import with column mapping, validation preview and error report; export with column selection), `createCollectionImportExport`, `fieldsFromCollectionDefinition`, and the pure CSV layer |
 | `@happyvertical/smrt-svelte/settings` | Server-paged settings search, selection, and list/detail layout (`SettingsCatalog`, `paginateSettingsCatalog`) |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
 | `@happyvertical/smrt-svelte/app` | `AppShell` (Provider + themes + AdminShell + nav/dock slots, `dockToggles` buttons and host `slots` for the header/footer/sidebar regions), `OwnerSetupForm` (first-run owner setup), `ShellSettingsPage`, `RuntimeDiagnosticsWebMcp` |

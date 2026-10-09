@@ -33,6 +33,12 @@
       "import": "./dist/components/board/index.js",
       "default": "./dist/components/board/index.js"
     },
+    "./import-export": {
+      "types": "./dist/components/import-export/index.d.ts",
+      "svelte": "./dist/components/import-export/index.js",
+      "import": "./dist/components/import-export/index.js",
+      "default": "./dist/components/import-export/index.js"
+    },
     "./sortable": {
       "types": "./dist/components/sortable/index.d.ts",
       "svelte": "./dist/components/sortable/index.js",
