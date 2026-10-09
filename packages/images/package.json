@@ -50,7 +50,7 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
-    "@happyvertical/animation": "link:../../../animation-photo-cutout/packages/animation",
+    "@happyvertical/animation": "0.5.0",
     "@happyvertical/ai": "catalog:",
     "@happyvertical/images": "link:../../../sdk-helper-release/packages/images",
     "@happyvertical/smrt-assets": "workspace:*",

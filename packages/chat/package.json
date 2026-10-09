@@ -91,7 +91,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@happyvertical/animation": "link:../../../animation-photo-cutout/packages/animation",
+    "@happyvertical/animation": "0.5.0",
     "@happyvertical/ai": "link:../../../sdk-helper-release/packages/ai",
     "@happyvertical/speech": "link:../../../sdk-helper-release/packages/speech",
     "@happyvertical/smrt-images": "workspace:*",

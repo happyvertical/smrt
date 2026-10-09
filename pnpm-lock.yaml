@@ -710,8 +710,8 @@ importers:
         specifier: link:../../../sdk-helper-release/packages/ai
         version: link:../../../sdk-helper-release/packages/ai
       '@happyvertical/animation':
-        specifier: link:../../../animation-photo-cutout/packages/animation
-        version: link:../../../animation-photo-cutout/packages/animation
+        specifier: 0.5.0
+        version: 0.5.0(gsap@3.15.0)
       '@happyvertical/images':
         specifier: link:../../../sdk-helper-release/packages/images
         version: link:../../../sdk-helper-release/packages/images
@@ -1548,8 +1548,8 @@ importers:
         specifier: link:../../../sdk-helper-release/packages/ai
         version: link:../../../sdk-helper-release/packages/ai
       '@happyvertical/animation':
-        specifier: link:../../../animation-photo-cutout/packages/animation
-        version: link:../../../animation-photo-cutout/packages/animation
+        specifier: 0.5.0
+        version: 0.5.0(gsap@3.15.0)
       '@happyvertical/images':
         specifier: link:../../../sdk-helper-release/packages/images
         version: link:../../../sdk-helper-release/packages/images
@@ -4937,6 +4937,11 @@ packages:
   '@happyvertical/accounting@0.102.7':
     resolution: {integrity: sha512-HujEo4THp5vh7aLjY1A7LU4jXgR0xVQasdof708H/6u6rkgKnGRDjM7QkmIHLJTgzIAT3Emygzd8cDJhkVCpeA==}
     hasBin: true
+
+  '@happyvertical/animation@0.5.0':
+    resolution: {integrity: sha512-GyLXc7t3GClDTGSjiujQ9bBb0XNpmsYHCyq7ViXN/LR4ENSCivlu19Y6FgPPdAAaX0thUBbKsvyLo4OKMnqnxA==}
+    peerDependencies:
+      gsap: '>=3.13.0'
 
   '@happyvertical/cache@0.102.7':
     resolution: {integrity: sha512-4KTm2lljsKoao7DlmQhnE/CjnDMsluzITFD48VBgQRUKnE9Zbh3g1VjOcqc1bIQeiSgplcs4f0Ps2igscPRzQA==}
@@ -12240,6 +12245,10 @@ snapshots:
     transitivePeerDependencies:
       - debug
       - supports-color
+
+  '@happyvertical/animation@0.5.0(gsap@3.15.0)':
+    dependencies:
+      gsap: 3.15.0
 
   '@happyvertical/cache@0.102.7(@opentelemetry/api@1.9.1)':
     dependencies:
