@@ -1,0 +1,196 @@
+{
+  "executionHead": "cabd661b2ef836faf1227eb57a05a29f258c0905",
+  "runHash": "d473de724382baa1c109e63b8f042709d9fccdaf394ab49829f3e4a94ba60b63",
+  "frozen": {
+    "gitHead": "cabd661b2ef836faf1227eb57a05a29f258c0905",
+    "workingTreeClean": true,
+    "profileStatus": "frozen-awaiting-release",
+    "profileSha256": "81fcef6b8d8fac1b660711799a6d2f4b558201e8a8733fb085ceeba4e0b2b31c",
+    "protocolSha256": "cd7ad03990fcdc3bcb29922c4b44b440586655e55926f614dbce55eaf698e8bf",
+    "manifestSha256": "b9c8e6e7a17b47754c2a53daea29907f67c644468b025e6a8217ff5208ed88e1",
+    "feedbackManifestSha256": "c7e15d92dd3cc5ed63e0230e5cf63fb61ed91ad6ad1562e41b3b2668bfc2418b",
+    "sourceTreeSha256": "7c76db93f0d338937dfd3e377fe75d59acb9692ce1c524540f37c214431bbf9c",
+    "builtTreeSha256": "294b4972af17ca308397d77ebfc0cdbd460834c9f7549a91a201148f3293cbc3"
+  },
+  "intendedCases": 300,
+  "outcomes": {
+    "completed": 177,
+    "provider_failure": 122,
+    "malformed": 1
+  },
+  "metrics": {
+    "draftPrecision": {
+      "successes": 85,
+      "denominator": 87,
+      "estimate": 0.9770114942528736,
+      "interval95": [
+        0.9200068198603859,
+        0.9936729148940739
+      ]
+    },
+    "requiredFields": {
+      "successes": 61,
+      "denominator": 100,
+      "estimate": 0.61,
+      "interval95": [
+        0.5120301704584073,
+        0.6998312599360558
+      ]
+    },
+    "attachmentPrecision": {
+      "successes": 27,
+      "denominator": 30,
+      "estimate": 0.9,
+      "interval95": [
+        0.7437891742081593,
+        0.9654001112526658
+      ]
+    },
+    "draftRecall": {
+      "successes": 85,
+      "denominator": 100,
+      "estimate": 0.85,
+      "interval95": [
+        0.7671644040916763,
+        0.9069401471634337
+      ]
+    },
+    "attachmentRecall": {
+      "successes": 27,
+      "denominator": 100,
+      "estimate": 0.27,
+      "interval95": [
+        0.1926958414957634,
+        0.36432116767944994
+      ]
+    },
+    "abstention": {
+      "successes": 58,
+      "denominator": 100,
+      "estimate": 0.58,
+      "interval95": [
+        0.4820648670304296,
+        0.6720161732564526
+      ]
+    }
+  },
+  "clusterIntervals": {
+    "draftPrecision": {
+      "interval95": [
+        0.9325842696629213,
+        1
+      ],
+      "definedReplicates": 10000,
+      "undefinedReplicates": 0,
+      "seed": 3677,
+      "replicates": 10000,
+      "interpretation": "exploratory family bootstrap; undefined ratios excluded explicitly; few families cannot establish population or safety guarantees"
+    },
+    "requiredFields": {
+      "interval95": [
+        0.52,
+        0.7
+      ],
+      "definedReplicates": 10000,
+      "undefinedReplicates": 0,
+      "seed": 3677,
+      "replicates": 10000,
+      "interpretation": "exploratory family bootstrap; undefined ratios excluded explicitly; few families cannot establish population or safety guarantees"
+    },
+    "attachmentPrecision": {
+      "interval95": [
+        0.8095238095238095,
+        0.9705882352941176
+      ],
+      "definedReplicates": 10000,
+      "undefinedReplicates": 0,
+      "seed": 3677,
+      "replicates": 10000,
+      "interpretation": "exploratory family bootstrap; undefined ratios excluded explicitly; few families cannot establish population or safety guarantees"
+    },
+    "draftRecall": {
+      "interval95": [
+        0.8,
+        0.91
+      ],
+      "definedReplicates": 10000,
+      "undefinedReplicates": 0,
+      "seed": 3677,
+      "replicates": 10000,
+      "interpretation": "exploratory family bootstrap; undefined ratios excluded explicitly; few families cannot establish population or safety guarantees"
+    },
+    "attachmentRecall": {
+      "interval95": [
+        0.15,
+        0.38
+      ],
+      "definedReplicates": 10000,
+      "undefinedReplicates": 0,
+      "seed": 3677,
+      "replicates": 10000,
+      "interpretation": "exploratory family bootstrap; undefined ratios excluded explicitly; few families cannot establish population or safety guarantees"
+    },
+    "abstention": {
+      "interval95": [
+        0.21,
+        0.91
+      ],
+      "definedReplicates": 10000,
+      "undefinedReplicates": 0,
+      "seed": 3677,
+      "replicates": 10000,
+      "interpretation": "exploratory family bootstrap; undefined ratios excluded explicitly; few families cannot establish population or safety guarantees"
+    }
+  },
+  "qualityThresholdsMet": false,
+  "safety": {
+    "observed": {
+      "authorityViolations": 0,
+      "unauthorizedDisclosures": 0,
+      "duplicateEffects": 0,
+      "automaticEffects": 0
+    },
+    "gateStatus": "unknown",
+    "unknownCases": 300,
+    "zeroObserved": true
+  },
+  "supportedReferenceClaim": false,
+  "automationEligible": false,
+  "budget": {
+    "halted": false,
+    "ceiling": 5000000000,
+    "charged": 4719270000,
+    "remaining": 280730000,
+    "observedActualNanoUSD": "0",
+    "accountedExposureNanoUSD": "4719270000",
+    "unknownChargeCalls": 347
+  },
+  "callCounts": {
+    "proposal": 291,
+    "ocr": 28,
+    "speech": 28
+  },
+  "feedback": {
+    "trainingExamples": 1,
+    "trainingCandidates": 3,
+    "baselineSuccesses": 0,
+    "treatmentSuccesses": 0,
+    "pairedFamilies": 4,
+    "treatmentsWithExamples": 1,
+    "changedTrainingFields": 0
+  },
+  "evidenceExport": {
+    "archive": "3677-measured-evidence.tar.gz",
+    "sha256": "967bb6f0c2f7953b153af22867a7190525dc41e3abb4ff74a3bcfc611cc22d34",
+    "bytes": 629874,
+    "files": 1939,
+    "credentialScan": "exact available environment credential and token-shaped secret scan passed without emitting credentials",
+    "ledger": {
+      "ceiling": 5000000000,
+      "halted": 0,
+      "calls": 347,
+      "charged": 4719270000
+    },
+    "executionHead": "cabd661b2ef836faf1227eb57a05a29f258c0905"
+  }
+}
