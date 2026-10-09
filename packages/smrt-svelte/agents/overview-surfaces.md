@@ -43,7 +43,9 @@ against (absent means 1).
   returns to the defaults stores `null`.
 - **Ids are stable.** `nextWidgetId` yields `w<n>` and reserves the ids of
   removed defaults, so a new widget never takes a removed default's id (the
-  override would delete it).
+  override would delete it). It is total for any stored ids: numeric suffixes
+  beyond `Number.MAX_SAFE_INTEGER` are ignored when picking the next number
+  (they would stop incrementing), and an exhausted high end restarts at `w1`.
 - **Tiers.** `resolveOverview` merges one override. A host with tenant defaults
   and user overrides merges the tenant tier into the definition's `defaults`
   first (phase 3); the user override then applies to that.

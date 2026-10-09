@@ -327,15 +327,31 @@ export function diffOverview(
   return isEmptyOverride(override) ? null : override;
 }
 
-/** The next unused widget id (`w1`, `w2`, ...) given every reserved id. */
+/**
+ * The next unused widget id (`w1`, `w2`, ...) given every reserved id.
+ *
+ * Total for any reserved ids, including hostile stored ones such as
+ * `w9007199254740992`: only numeric suffixes that are safe integers below
+ * `Number.MAX_SAFE_INTEGER` raise the starting point (beyond it `n + 1` stops
+ * changing the number, which would loop forever), and when the high end is
+ * exhausted the scan restarts at `w1`. The reserved set is finite, so a free
+ * id is found within `size + 1` steps of the restart.
+ */
 export function nextWidgetId(reserved: Iterable<string>): string {
   const taken = new Set(reserved);
   let n = 1;
   for (const id of taken) {
     const match = /^w(\d+)$/.exec(id);
-    if (match) n = Math.max(n, Number(match[1]) + 1);
+    if (!match) continue;
+    const value = Number(match[1]);
+    if (Number.isSafeInteger(value) && value < Number.MAX_SAFE_INTEGER) {
+      n = Math.max(n, value + 1);
+    }
   }
-  while (taken.has(`w${n}`)) n += 1;
+  while (n < Number.MAX_SAFE_INTEGER && taken.has(`w${n}`)) n += 1;
+  if (!taken.has(`w${n}`)) return `w${n}`;
+  // The high end is exhausted: take the first free id counting up from 1.
+  for (n = 1; taken.has(`w${n}`); n += 1);
   return `w${n}`;
 }
 

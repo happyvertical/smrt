@@ -141,6 +141,31 @@ describe('nextWidgetId', () => {
     expect(nextWidgetId([])).toBe('w1');
     expect(nextWidgetId(['custom'])).toBe('w1');
   });
+
+  it('terminates on ids at or beyond the safe-integer range', () => {
+    // 2^53: Number() + 1 and `n += 1` leave it unchanged, so a naive
+    // collision loop never ends.
+    expect(nextWidgetId(['w9007199254740992'])).toBe('w1');
+    expect(nextWidgetId(['w1', 'w9007199254740992'])).toBe('w2');
+    expect(nextWidgetId(['w9007199254740993', 'w9007199254740994'])).toBe('w1');
+    expect(nextWidgetId([`w${'9'.repeat(400)}`, 'w3'])).toBe('w4');
+    expect(nextWidgetId(['w9007199254740991'])).toBe('w1');
+    expect(nextWidgetId(['w9007199254740990'])).toBe('w9007199254740991');
+    expect(
+      nextWidgetId(['w9007199254740990', 'w9007199254740991', 'w1', 'w2']),
+    ).toBe('w3');
+  });
+
+  it('keeps a document with a huge stored id addable end to end', () => {
+    const { document } = parseOverviewDocument({
+      widgets: [
+        { id: 'w9007199254740992', type: 'note', span: 1, options: {} },
+      ],
+    });
+    const id = nextWidgetId(document.widgets.map((widget) => widget.id));
+    expect(id).toBe('w1');
+    expect(document.widgets.some((widget) => widget.id === id)).toBe(false);
+  });
 });
 
 describe('sanitizeOverview', () => {
