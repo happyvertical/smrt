@@ -35,10 +35,10 @@ before you send a message.
 
 ## What the app owner sets up
 
-- A model. Hosted models need that provider's API key set as a secret in the
-  app (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`); only the
-  key for the model the app uses is needed. Models that run in the browser need
-  no key.
+- A model. Hosted models need the service key their provider issues, stored as
+  a secret in the app (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or
+  `GEMINI_API_KEY`); only the key for the model the app uses is needed. Models
+  that run in the browser need no key.
 - The tools the assistant may use. It is offered nothing unless the app lists
   it, so an empty list means conversation only.
 - Optionally, report tools. An app can let the assistant draft a report from a

@@ -67,7 +67,11 @@ and SKUs).
 
 User-facing field text for the recipes comes from `@field({ description })` on
 the models (the glossary seed), so a package that declares a recipe carries the
-descriptions of every field the recipe shows.
+descriptions of every field the recipe shows. A field the package does not
+declare itself (`parentId` from `SmrtHierarchical`) is described by the recipe's
+`options.<Model>.fields.<f>.help`, which wins over the description in the
+glossary. Write all of it in plain words: no API, JSON, REST, MCP, SQL or UUID
+outside help that is about connecting other tools.
 
 ## Non-model surfaces, providers, runtime, demo seed (#3708)
 
