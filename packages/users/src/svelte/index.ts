@@ -29,7 +29,9 @@ export type {
   AccountSession,
   OidcProviderButton,
   UsersAuthAdapter,
+  UsersAuthEndpointOptions,
 } from './auth.js';
+export { createUsersAuthAdapter } from './auth.js';
 // Export components
 export {
   AccountSecurityPanel,
