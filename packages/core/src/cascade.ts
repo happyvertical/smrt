@@ -66,7 +66,7 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
-import { buildWhere, type DatabaseInterface } from '@happyvertical/sql';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { classifyDatabaseError } from './db-errors.js';
 import {
   isEmbeddedDatabase,
@@ -75,6 +75,7 @@ import {
   withEmbeddedWriteTransaction,
 } from './embedded-write-queue.js';
 import { ConfigurationError, DatabaseError } from './errors.js';
+import { buildWhere } from './host.js';
 // Type-only: erased at runtime, so it cannot re-enter the
 // `registry → object → cascade` import cycle.
 import type { ObjectRegistry } from './registry.js';

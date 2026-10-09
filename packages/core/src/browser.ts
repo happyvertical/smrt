@@ -485,7 +485,7 @@ export * from './signals/index';
 // REST generator and the generated SvelteKit sync route
 export * from './sync/apply';
 // System tables and types (note-taking, migrations, registry, signals)
-export * from './system/index';
+export * from './system/browser';
 export type {
   DiscoveryStrategy,
   ForgetOptions,

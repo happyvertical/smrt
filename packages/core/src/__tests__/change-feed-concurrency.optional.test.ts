@@ -116,6 +116,7 @@ describe.skipIf(!pgUrl)(
         `CREATE UNIQUE INDEX IF NOT EXISTS ${TRANSACTION_WIDGETS_TABLE}_slug_context_idx
          ON ${TRANSACTION_WIDGETS_TABLE} (slug, context)`,
       );
+      await writerA.query('DELETE FROM _smrt_changes_pending');
       await writerA.query('DELETE FROM _smrt_changes');
       await writerA.query(`DELETE FROM ${TRANSACTION_WIDGETS_TABLE}`);
       registerChangeFeedWriter();
@@ -132,6 +133,7 @@ describe.skipIf(!pgUrl)(
         await writerA?.query(
           'DROP FUNCTION IF EXISTS issue_2026_assert_feed_failure()',
         );
+        await writerA?.query('DELETE FROM _smrt_changes_pending');
         await writerA?.query('DELETE FROM _smrt_changes');
         await writerA?.query(
           `DROP TABLE IF EXISTS ${TRANSACTION_WIDGETS_TABLE}`,
@@ -363,6 +365,7 @@ describe.skipIf(!pgUrl)(
       const TOTAL = PER_WRITER * 2;
       // Start from an empty log so a CI retry of this case is meaningful: the
       // feed is otherwise only cleared in beforeAll (#3062).
+      await writerA.query('DELETE FROM _smrt_changes_pending');
       await writerA.query('DELETE FROM _smrt_changes');
 
       const race = async (db: DatabaseInterface, label: string) => {
@@ -414,6 +417,7 @@ describe.skipIf(!pgUrl)(
         throw new Error('Expected PostgreSQL transaction support');
       }
 
+      await writerA.query('DELETE FROM _smrt_changes_pending');
       await writerA.query('DELETE FROM _smrt_changes');
       await writerA.query(`DELETE FROM ${TRANSACTION_WIDGETS_TABLE}`);
       await writerA.query(
@@ -540,6 +544,7 @@ describe.skipIf(!pgUrl)(
         throw new Error('Expected PostgreSQL transaction support');
       }
 
+      await writerA.query('DELETE FROM _smrt_changes_pending');
       await writerA.query('DELETE FROM _smrt_changes');
       await writerA.query(`DELETE FROM ${TRANSACTION_WIDGETS_TABLE}`);
 
@@ -623,6 +628,7 @@ describe.skipIf(!pgUrl)(
         throw new Error('Expected PostgreSQL transaction support');
       }
 
+      await writerA.query('DELETE FROM _smrt_changes_pending');
       await writerA.query('DELETE FROM _smrt_changes');
       await writerA.query(`DELETE FROM ${TRANSACTION_WIDGETS_TABLE}`);
       try {

@@ -33,9 +33,9 @@ export const EXPECTED_BROWSER_FAILURES: Record<string, ExpectedFailure> = {
       'node:crypto; documents/spider/files/images/ai SDK graph (crawlee, undici, googleapis, native addons); CJS parse error',
   },
   '@happyvertical/smrt-core': {
-    issue: '#2838, #3635',
+    issue: '#3635',
     reason:
-      'reaches pg, cosmiconfig, jiti, node:fs via sql/config/registry; model roots import server-only helpers (manifest loader, route helpers, startRestServer) from the core root',
+      "model roots import server-only helpers (manifest loader, route helpers, startRestServer) the browser entry deliberately omits; core's own graph reaches no Node-only module (#2838, held by the browser-boundary core-entry test)",
   },
   '@happyvertical/smrt-events': {
     issue: '#3624',
