@@ -3,8 +3,8 @@
 High risk: confidential example disclosure and learned authority expansion. Existing
 ledger only; schema migration N/A unless an explicit implementation need is found.
 No paid providers. The table defines required coverage. Checkpoint execution is
-recorded below; complete final release validation remains pending the tracked
-PostgreSQL fixture cleanup repair #3704.
+recorded below; final documented PostgreSQL validation passes with the tracked
+fixture cleanup repair #3704. Independent review and required PR gates remain.
 
 | Behavior/invariant | Reachable trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime/dialect | External edge | Level/command |
 |---|---|---|---|---|---|---|---|---|
@@ -100,7 +100,7 @@ or browser timeout settings.
 
 ## Integrated 0.55.6 checkpoint (review pending)
 
-The UI dependency is checkpoint `678310a2` on actual main `5722179`, including
+The UI dependency merged as `38fba41` (tree-equivalent to checkpoint `678310a2`), including
 current-target reload, pagination reauthorization and jobs terminal-outcome
 compatibility. Feedback rebased without a runtime edit: the exact inherited delta
 matches the parent, with only a canonical type-export ordering correction added.
@@ -115,7 +115,7 @@ The frozen feedback corpus and all feedback-only source files remain unchanged.
 | Integrated Chromium | 5 passed | Real upload, feedback/stale binding, correction/apply, scope denial, originals and split re-extraction; original timeouts |
 | Root build / typecheck | 73 / 143 tasks passed | Fresh aligned 0.55.6 tree |
 | Root lint, format, audit policy, AGENTS chain | Passed | Export-order correction is mechanical and preserves the server surface |
-| Complete integrated PostgreSQL | 230 passed, 1 failed | The sole failure is extraction fixture `afterEach` forced database drop, SQLSTATE 42501; this is not a green suite |
+| Complete integrated PostgreSQL | 236 passed | Fresh complete documented run on cleanup checkpoint `688e76b5`, using the unchanged ordinary role and timeouts |
 
 An earlier complete PostgreSQL command recorded 226 passes and one foundation
 fixture teardown failure with the same SQLSTATE. Its unchanged targeted diagnostic
@@ -123,8 +123,13 @@ passed, but the final complete run reproduced the cleanup defect in a different
 fixture. Both failures and backend-role observations are preserved. The dedicated
 runtime role remains non-superuser with no RLS bypass; no signal privilege or
 application timeout was changed. Supporting #3704 owns reuse of the existing
-bounded normal-DROP cleanup helper. A clean complete PostgreSQL terminal command
-is required after that repair before feedback review/publication.
+bounded normal-DROP cleanup helper. The first supporting checkpoint also needed
+the existing empty-schema test database convention for its maintenance-database
+connection; that integration run stopped normally before completion and is not a
+pass. After the owning correction, all five cleanup tests passed with the same
+ordinary role, followed by the complete clean PostgreSQL run above. Read-only
+backend monitoring and all prior failed/interrupted logs remain in the evidence.
+No production feedback code changed for either fixture repair.
 
 Broader root runtime results are carried only for unchanged dependency behavior,
 not reported as fresh tests. The jobs base change is explicitly excluded from

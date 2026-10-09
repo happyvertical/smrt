@@ -36,10 +36,11 @@ requests are replay/idempotency controls and are not counted as held-out example
 
 The held-out test passed through the actual ingestion retrieval/proposal service
 in the complete 268-case SQLite run and the integrated 25-case affected SQLite
-run. It also passed within the complete integrated PostgreSQL run (230 passing
-cases, one extraction fixture teardown failure). That command is not a green
-release gate: #3704 tracks the forced-DROP cleanup defect, and a complete clean
-PostgreSQL run remains required. No matcher, corpus or expected label was tuned
+run. It also passed within the final complete integrated PostgreSQL run (236
+passing cases), after #3704 repaired ordinary-role fixture cleanup and its
+maintenance-database setup. Earlier complete commands with 230/226 passes and
+one teardown failure remain recorded as failures, not green gates. No matcher,
+corpus or expected label was tuned
 after these results.
 
 ## Limits, drift and selection bias
