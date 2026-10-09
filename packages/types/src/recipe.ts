@@ -172,6 +172,40 @@ export type RecipeRuntime = 'browser' | 'server' | 'both';
 /** Demo fixture data: a fixture export, or small inline JSON. */
 export type RecipeDemoSeed = { export: RecipeExportRef } | { data: unknown };
 
+/**
+ * How far a feature runs in a browser-only demo (#3709):
+ * - `live`: the real browser data layer (PGlite), nothing faked.
+ * - `mock`: runs in the browser, but a provider (sending mail, OAuth) is faked.
+ * - `sample`: runs in the browser on fixture data (`demoSeed`) only, because
+ *   what it needs from outside cannot be reached from a browser.
+ * - `server`: needs a server; a browser-only host cannot offer it.
+ */
+export type RecipeDemoMode = 'live' | 'mock' | 'sample' | 'server';
+
+/** Derived demo classification of one recipe (#3709). Never authored. */
+export interface RecipeDemo {
+  mode: RecipeDemoMode;
+  /** Why, one plain sentence each, in the order the rules fired. */
+  reasons: string[];
+  /** Ids of the recipe's providers a demo fakes; omitted when none. */
+  mocked?: string[];
+}
+
+/**
+ * Whether a package's root entry builds for a browser, derived from the
+ * bundle-gate ratchet (#3621) and emitted into the manifest and knowledge
+ * artifact (#3709).
+ */
+export interface PackageBrowserCapability {
+  status: 'browser-safe' | 'server-only';
+  /** Tracking issues (`#3624`) that make it server-only; omitted when safe. */
+  issues?: string[];
+  /** What in the package itself blocks the browser; omitted when it is only inherited. */
+  reason?: string;
+  /** Workspace packages this one inherits `server-only` from; omitted when none. */
+  via?: string[];
+}
+
 /** A recipe as emitted into the manifest and the knowledge artifact. */
 export interface RecipeDefinition {
   /** Stable, dotted, lowercase id, e.g. `commerce.sales`. */
@@ -207,4 +241,11 @@ export interface RecipeDefinition {
   runtime?: RecipeRuntime;
   /** Demo fixture reference or inline data; omitted when none. */
   demoSeed?: RecipeDemoSeed;
+  /**
+   * Derived browser-demo classification (#3709), from the package's
+   * bundle-gate capability and the recipe's own `runtime`, `providers` and
+   * `demoSeed`. Omitted when nothing is known about the package and the recipe
+   * declares none of those.
+   */
+  demo?: RecipeDemo;
 }

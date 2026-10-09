@@ -205,6 +205,26 @@ describe('recipes in the domain-knowledge artifact', () => {
     expect(build([widgeted]).recipes).toEqual([widgeted]);
   });
 
+  it('carries the derived demo and the package browser capability (#3709)', () => {
+    const demo: RecipeDefinition = {
+      ...recipe,
+      demo: { mode: 'mock', reasons: ['Provider mail is faked in a demo.'] },
+    };
+    const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 1,
+      packageName: '@shop/pkg',
+      packageVersion: '1.0.0',
+      objects: {},
+      recipes: [demo],
+      browser: { status: 'server-only', issues: ['#3624'], via: ['@x/y'] },
+    };
+    const built = buildDomainKnowledgeManifest({ manifest, rootDir });
+    expect(built.recipes).toEqual([demo]);
+    expect(built.browser).toEqual(manifest.browser);
+    expect('browser' in build([recipe])).toBe(false);
+  });
+
   it('changes the manifest hash when a recipe changes', () => {
     const before = build([recipe]).sourceHashes.manifest;
     const after = build([{ ...recipe, label: 'Selling' }]).sourceHashes

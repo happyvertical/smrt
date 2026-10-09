@@ -124,7 +124,10 @@ export type {
   SmrtModuleMeta,
 } from './module.js';
 export type {
+  PackageBrowserCapability,
   RecipeDefinition,
+  RecipeDemo,
+  RecipeDemoMode,
   RecipeDemoSeed,
   RecipeExportRef,
   RecipeExposureNarrowing,
