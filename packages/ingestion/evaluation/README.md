@@ -241,3 +241,9 @@ package context as well as the source/dist receipts; the run hash includes that
 HEAD. Reports and receipts stay outside the worktree during execution. A later
 report-only commit references the frozen execution HEAD rather than trying to put
 its own self-referential commit identity in the profile.
+
+## Measured result
+
+The [2026-10-09 measured report](../../../docs/evaluation/3677-measured-evaluation.md) includes a portable hashed evidence export and offline score reproduction. Four accuracy gates failed; measured safety is unknown. Feedback was 0/4 baseline and 0/4 treatment. Supported-reference acceptance and automation remain disabled. Conservative exposure was $4.71927; actual charges are unknown. The completed run must not be repeated under its consumed release.
+
+The [adoption checklist](../../../docs/evaluation/3677-adoption.md) covers production migrations, trusted sources/providers, handler authoring, review, retention/recovery and explicit release limits.

@@ -1,14 +1,11 @@
 # #3677 evaluation behavior matrix
 
-Claim6076312903; initial stack e4cc75e. The current temporary dependency tree is
-1aab4cb3dc0912dd357810f4672055cfcd0abb20: feedback on actual UI merge38fba41,
-including supporting cleanup2876842 and admin-fixture correction688e76 (#3704),
-release0.55.6. The inherited delta
-from the prior feedback checkpoint is exactly the supporting cleanup patch;
-evaluator drafts remain byte-identical. Dependency review/merges, final validation
-and publication remain pending. No paid inference has occurred. Named high-risk
-triggers are the real aggregate spending boundary and authenticated review/effect
-composition. Independent tooling does not establish measured quality.
+Claim6076312903. Frozen execution cabd661b2ef836faf1227eb57a05a29f258c0905
+uses actual merged dependency0ae00817c6c8b84d663b7a3cd1e79180172e715f,
+release0.55.6. Complete source/build equivalence carries validated dependency
+integration. The paid run is complete; [measured results and portable evidence](../evaluation/3677-measured-evaluation.md)
+retain every intended row. Named high-risk triggers are aggregate spending and
+authenticated review/domain effects. Final independent review/publication remain pending.
 
 | Boundary | Positive and adverse evidence | Runtime / external edge | Owning evidence lane |
 | --- | --- | --- | --- |
@@ -24,7 +21,7 @@ composition. Independent tooling does not establish measured quality.
 | Watch-folder/email | Actual public adapters, durable receipt/replay, retained PDF bytes, unpdf, proposal, authenticated review, Content draft and tenant denial | Real SDK RFC822 parser/EmailAccount with mocked IMAP transport; no mail-server claim | source-composition tests on SQLite; PostgreSQL shared host/execution parity is represented by the complete correction/retrieval/SDK flow, not a claimed second email transport run |
 | Camera/audio | Original capture multipart paths preserved; synthetic image/audio media, no claim of human recording or real camera-photo collection | Maintained upload contract and browser consumer | Inherited browser file-selection/rendering only, no hardware capture. Actual WAV child→SDK proposal→authenticated review→Content effect/replay passed1case57s (`audio-composition-first.log`); PNG public camera-labelled multipart proof retained |
 | Feedback influence | Fixed training-only judgments, scripted correction preserved separately from raw offer; receiving examples dynamically authorized; paired baseline/treatment input bound | Shared retained app DB/storage, same executor grants; actual SDK examples wire | SQLite actual SDK causal wire passed1case38s (`feedback-wire-explicit-sockets.log`): corrected training args change later deterministic route,3requests≤8192bytes, automationfalse; PostgreSQL representative passed; final integrated repeat1case22.94s (`final-feedback-postgres.log`) |
-| Paid evaluation |300 heldout cases plus11 fixed feedback calls, no calibration/retry/rerun, one canonical ledger | Pinned OpenAI models, real inference | PENDING frozen release and measured artifacts |
+| Paid evaluation |300 heldout cases plus11 fixed feedback calls, no calibration/retry/rerun, one canonical ledger | Pinned OpenAI models, real inference | Completed300 heldout +11 feedback cases; report/export reproduce exact scores offline; measured gates fail and safety unknown |
 
 The paid PDF quality stratum uses embedded text; OCR uses synthetic raster PNGs;
 speech uses intelligible synthesized WAVs. Scanned/mixed PDFs and TIFF have
@@ -41,21 +38,22 @@ Root-authorized feature integration includes the evaluation Biome include, stric
 TS test coverage (`allowJs` supplies inferred MJS signatures, not checked JS bodies),
 `test:evaluation`, additive trusted reference-host deployment options, and dev-only
 messages/email dependencies for public transport composition. No new business
-registry/model/schema or production ingestion dependency is introduced. Final
-DAG/build/pack/registered integration and documented root gates are still required.
+registry/model/schema or production ingestion dependency is introduced. The
+DAG/build/pack/registered integration and documented relevant root gates passed;
+report-only changes use offline reproduction and fresh static/knowledge checks.
 
 Current evidence is external at `/home/will/Work/tmp/s3677/evidence`: integrated
 root build73/73, complete ingestion SQLite272/272 plus components32/32, evaluation
 contracts57/57, native child/composition6/6 and owning providers22/22 passed.
 Strict package TS/test-TS/Svelte, root types143/143, root lint, maintained browser5/5
 and all four packed consumer checks also passed. Complete PostgreSQL236/236 passed after the cleanup correction; registered integration58/58, lint/format, knowledge, audit, package DAG and agents
-checks passed. Accepted upstream feedback authorization fixes remain pending;
-this checkpoint is not a paid release or a completed quality report. The independent
+checks passed. Upstream feedback authorization fixes are merged; affected SDK correction composition
+passed again on SQLite/PostgreSQL with unchanged evaluator bytes. The independent
 baseline removes only the PDF media restriction and sends one forbidden HTTP
 request; the fixed blank/scanned PDF and text tests send none. The opaque metadata
 baseline, handshake, email transport and initial feedback allowance failures are
 retained separately. Exact source/dependency receipts classify fresh checks and
-unchanged inherited evidence. No independent #3677 review or paid run has occurred.
+unchanged inherited evidence. Paid run completed within the aggregate cap; no independent #3677 review has occurred yet.
 
 Pre-freeze feedback allowance correction: the initial1,500-byte owning feedback event cap rejected provenance-bearing events. Raised to8,192bytes for storage/retrieval, retaining independent8,192-byte complete outbound request cap and unchanged paid call bounds. Local multi-workflow HTTP fixture closes response sockets explicitly after a zero-retry stale keep-alive connection failure; production SDK/retry behavior is unchanged. Both failed logs are retained.
 
@@ -83,3 +81,5 @@ failed five setup cases with public-schema permission denial. The complete run w
 interrupted, preserving evidence. Owning #3704 corrected setup to the established
 public test-database admin convention; no grants, runtime behavior or timeouts
 changed. The fresh focused and full PostgreSQL lanes validate that correction.
+
+Measured acceptance: draft precision 97.70% and draft recall 85% passed; fields 61%, attachment precision 90%, attachment recall 27% and abstention 58% failed. All 300 measured safety observations remain unknown. 347 unknown-charge calls retain $4.71927 exposure, not a verified invoice. Feedback 0/4→0/4 establishes no paid benefit. No rescoring, exclusions, added inference or automation claim.
