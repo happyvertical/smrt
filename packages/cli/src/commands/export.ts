@@ -149,7 +149,9 @@ async function getExportableFields(
   if (fileConfig.include && fileConfig.include.length > 0) {
     return fileConfig.include.filter(
       (f) =>
-        fields.has(f) ||
+        // `exported: false` is never overridable, not even by a whitelist.
+        (fields.has(f) &&
+          (fields.get(f) as ExportFieldDef).exported !== false) ||
         (f === '_meta_type' && projection.includeMetaType) ||
         (f === '_meta_data' && projection.includeMetaData) ||
         (f === 'id' && projection.schemaColumns.has('id')) ||
@@ -465,17 +467,43 @@ export async function getCommonFields(
 }
 
 /**
- * Get the union of exportable fields across all types for an export file.
+ * Columns to select for an export file, plus the per-type exclusions that must
+ * still be enforced row by row.
+ */
+export interface ExportColumnPlan {
+  /** Output fields, in first-appearance order. */
+  fields: string[];
+  /**
+   * Union exports only: for each listed type, the fields that type has but does
+   * not export (`exported: false`, `exclude`, or `fieldExportDefault: false`)
+   * while another listed type does. The union column set contains these, so
+   * rows of the excluding type must have them blanked after the query.
+   * Types with nothing to blank are omitted.
+   */
+  excludedByType: Map<string, Set<string>>;
+}
+
+/**
+ * Get the union of exportable fields across all types for an export file, and
+ * the per-type exclusions the union would otherwise leak.
  *
  * Fields are ordered by first appearance. Rows of a type that lacks a column
  * come back NULL, so this is only appropriate for types that share one table.
+ * A column exportable for one type but excluded for another (`exported: false`)
+ * is in the union, so `excludedByType` names it for the excluding type and the
+ * caller blanks it per row via {@link applyTypeExclusions}.
  */
-export async function getUnionFields(
+export async function getUnionPlan(
   types: string[],
   fileConfig: ExportFileConfig,
   fieldExportDefault: boolean,
-): Promise<string[]> {
+): Promise<ExportColumnPlan> {
+  const { ObjectRegistry } = await import('@happyvertical/smrt-core');
   const union = new Set<string>();
+  const perType = new Map<
+    string,
+    { exportable: Set<string>; has: Set<string> }
+  >();
 
   for (const typeName of types) {
     const fields = await getExportableFields(
@@ -484,29 +512,87 @@ export async function getUnionFields(
       fieldExportDefault,
     );
     for (const field of fields) union.add(field);
+    const all = await ObjectRegistry.getAllFields(typeName);
+    perType.set(typeName, {
+      exportable: new Set(fields),
+      has: new Set(all.keys()),
+    });
   }
 
-  return [...union];
+  const excludedByType = new Map<string, Set<string>>();
+  for (const [typeName, { exportable, has }] of perType) {
+    const excluded = new Set<string>();
+    for (const field of union) {
+      // A column the type does not have is NULL on its rows already; only a
+      // column the type owns but withholds can carry data that must not leak.
+      if (!exportable.has(field) && has.has(field)) excluded.add(field);
+    }
+    if (excluded.size > 0) excludedByType.set(typeName, excluded);
+  }
+
+  if (excludedByType.size > 0) {
+    // Blanking is keyed on the row's type discriminator; without one the
+    // exclusions cannot be enforced, so refuse rather than publish the column.
+    for (const typeName of excludedByType.keys()) {
+      const projection = await getProjectionCapabilities(typeName);
+      if (!projection.includeMetaType) {
+        throw new Error(
+          `Export cannot enforce per-type field exclusions for "${typeName}": ` +
+            `its table has no _meta_type discriminator. ${describeExclusions(excludedByType)}`,
+        );
+      }
+    }
+  }
+
+  return { fields: [...union], excludedByType };
+}
+
+/** Human-readable `field (Type, Type)` list for error messages. */
+function describeExclusions(excludedByType: Map<string, Set<string>>): string {
+  const byField = new Map<string, string[]>();
+  for (const [typeName, fields] of excludedByType) {
+    for (const field of fields) {
+      byField.set(field, [...(byField.get(field) ?? []), typeName]);
+    }
+  }
+  const parts = [...byField].map(
+    ([field, typeNames]) => `"${field}" (excluded for ${typeNames.join(', ')})`,
+  );
+  return `Fields: ${parts.join('; ')}.`;
 }
 
 /**
- * Resolve the columns for an export file.
- *
- * Types that share one table (single-table inheritance) export the union of
- * their columns, so subtype columns reach the file; `fields: 'common'` opts
- * back into the intersection. Types spread over different tables always use
- * the intersection, because only one table is queried.
+ * Get the union of exportable fields across all types for an export file.
+ * See {@link getUnionPlan} for the per-type exclusions this set implies.
  */
-export async function resolveExportFields(
+export async function getUnionFields(
   types: string[],
   fileConfig: ExportFileConfig,
   fieldExportDefault: boolean,
 ): Promise<string[]> {
+  return (await getUnionPlan(types, fileConfig, fieldExportDefault)).fields;
+}
+
+/**
+ * Resolve the columns (and per-type exclusions) for an export file.
+ *
+ * Types that share one table (single-table inheritance) export the union of
+ * their columns, so subtype columns reach the file; `fields: 'common'` opts
+ * back into the intersection. Types spread over different tables always use
+ * the intersection, because only one table is queried. The intersection never
+ * contains a column excluded for any type, so only the union path needs
+ * per-row exclusions.
+ */
+export async function resolveExportPlan(
+  types: string[],
+  fileConfig: ExportFileConfig,
+  fieldExportDefault: boolean,
+): Promise<ExportColumnPlan> {
   if (types.length > 1 && fileConfig.fields !== 'common') {
     const { ObjectRegistry } = await import('@happyvertical/smrt-core');
     const tables = new Set(types.map((t) => ObjectRegistry.getTableName(t)));
     if (tables.size === 1 && !tables.has(undefined)) {
-      return getUnionFields(types, fileConfig, fieldExportDefault);
+      return getUnionPlan(types, fileConfig, fieldExportDefault);
     }
     if (fileConfig.fields === 'union') {
       throw new Error(
@@ -516,7 +602,65 @@ export async function resolveExportFields(
     }
   }
 
-  return getCommonFields(types, fileConfig, fieldExportDefault);
+  return {
+    fields: await getCommonFields(types, fileConfig, fieldExportDefault),
+    excludedByType: new Map(),
+  };
+}
+
+/** Resolve just the columns for an export file. See {@link resolveExportPlan}. */
+export async function resolveExportFields(
+  types: string[],
+  fileConfig: ExportFileConfig,
+  fieldExportDefault: boolean,
+): Promise<string[]> {
+  return (await resolveExportPlan(types, fileConfig, fieldExportDefault))
+    .fields;
+}
+
+/**
+ * Blank, in place of the stored value, every field a row's own type excludes.
+ *
+ * The row's type comes from its `_meta_type` discriminator (`scope:Class`).
+ * Excluded fields are set to `null` under both the field and column keys so
+ * output shape stays identical across rows. A row whose type cannot be matched
+ * to a listed type fails the export, naming the fields and types involved,
+ * instead of risking an excluded value reaching the file.
+ */
+export function applyTypeExclusions(
+  rows: ExportRow[],
+  excludedByType: Map<string, Set<string>>,
+  typeNames: string[],
+): ExportRow[] {
+  if (excludedByType.size === 0) return rows;
+
+  return rows.map((row) => {
+    const discriminator = row._meta_type;
+    const matched =
+      typeof discriminator === 'string'
+        ? typeNames.filter(
+            (t) => discriminator === t || discriminator.endsWith(`:${t}`),
+          )
+        : [];
+    if (matched.length === 0) {
+      throw new Error(
+        'Export cannot determine the type of a row ' +
+          `(_meta_type=${JSON.stringify(discriminator ?? null)}; expected one of ` +
+          `${typeNames.join(', ')}), so per-type field exclusions cannot be ` +
+          `enforced. ${describeExclusions(excludedByType)}`,
+      );
+    }
+
+    // If several listed types match, withhold what any of them withholds.
+    const redacted = { ...row };
+    for (const typeName of matched) {
+      for (const field of excludedByType.get(typeName) ?? []) {
+        redacted[field] = null;
+        redacted[toColumnName(field)] = null;
+      }
+    }
+    return redacted;
+  });
 }
 
 export const exportCommand: CLICommand = {
@@ -678,7 +822,7 @@ export const exportCommand: CLICommand = {
         }
 
         // Get fields to export (union for same-table types, else common)
-        const fields = await resolveExportFields(
+        const { fields, excludedByType } = await resolveExportPlan(
           types,
           fileConfig,
           fieldExportDefault,
@@ -706,14 +850,26 @@ export const exportCommand: CLICommand = {
         }
 
         // Query records
-        const records = await queryWithProjection(
+        // Per-type exclusions are enforced from the row's type discriminator,
+        // so select it even when the file does not output it.
+        const queryFields =
+          excludedByType.size > 0 && !fields.includes('_meta_type')
+            ? [...fields, '_meta_type']
+            : fields;
+        const queriedRecords = await queryWithProjection(
           db,
           tableName,
           types,
-          fields,
+          queryFields,
           filters,
           fileConfig.orderBy,
           fileConfig.limit,
+        );
+
+        const records = applyTypeExclusions(
+          queriedRecords,
+          excludedByType,
+          types,
         );
 
         // Format records (parse JSON fields, etc.)

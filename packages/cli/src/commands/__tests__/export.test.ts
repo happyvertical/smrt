@@ -1,6 +1,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  applyTypeExclusions,
   formatProjectedRecords,
   getCommonFields,
   queryWithProjection,
@@ -303,5 +304,74 @@ describe('export command helpers', () => {
       expect.not.stringContaining('_meta_type LIKE ?'),
     );
     expect(query.mock.calls[0]?.slice(1)).toEqual([]);
+  });
+
+  describe('applyTypeExclusions', () => {
+    const excluded = new Map([['Mirror', new Set(['internalNotes'])]]);
+
+    it('nulls excluded fields under field and column keys for the excluding type only', () => {
+      const rows = applyTypeExclusions(
+        [
+          {
+            _meta_type: 'a:Article',
+            internalNotes: 'keep',
+            internal_notes: 'keep',
+          },
+          {
+            _meta_type: 'a:Mirror',
+            internalNotes: 'SECRET',
+            internal_notes: 'SECRET',
+          },
+        ],
+        excluded,
+        ['Article', 'Mirror'],
+      );
+
+      expect(rows[0]).toMatchObject({ internal_notes: 'keep' });
+      expect(rows[1]).toMatchObject({
+        internalNotes: null,
+        internal_notes: null,
+      });
+      expect(JSON.stringify(rows[1])).not.toContain('SECRET');
+    });
+
+    it('does not mutate its input rows', () => {
+      const input = [{ _meta_type: 'a:Mirror', internal_notes: 'SECRET' }];
+      applyTypeExclusions(input, excluded, ['Article', 'Mirror']);
+      expect(input[0].internal_notes).toBe('SECRET');
+    });
+
+    it('is a no-op without exclusions, even for rows lacking a discriminator', () => {
+      const rows = [{ title: 'x' }];
+      expect(applyTypeExclusions(rows, new Map(), ['Article'])).toBe(rows);
+    });
+
+    it('throws naming the field and type when the row type is unknown', () => {
+      expect(() =>
+        applyTypeExclusions(
+          [{ _meta_type: 'a:Other', internal_notes: 'SECRET' }],
+          excluded,
+          ['Article', 'Mirror'],
+        ),
+      ).toThrow(/"internalNotes" \(excluded for Mirror\)/);
+      expect(() =>
+        applyTypeExclusions([{ internal_notes: 'SECRET' }], excluded, [
+          'Article',
+          'Mirror',
+        ]),
+      ).toThrow('cannot determine the type of a row');
+    });
+
+    it('applies the most restrictive exclusions when several listed types match', () => {
+      const rows = applyTypeExclusions(
+        [{ _meta_type: 'a:Mirror', internal_notes: 'SECRET' }],
+        new Map([
+          ['Mirror', new Set(['internalNotes'])],
+          ['a:Mirror', new Set(['body'])],
+        ]),
+        ['Mirror', 'a:Mirror'],
+      );
+      expect(rows[0]).toMatchObject({ internal_notes: null, body: null });
+    });
   });
 });
