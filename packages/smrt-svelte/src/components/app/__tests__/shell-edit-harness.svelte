@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { ShellLayout } from '../../workspace/admin-shell/layout.js';
 import type { ShellLayoutController } from '../../workspace/admin-shell/layout-controller.svelte.js';
+import ShellDockTool from '../../workspace/admin-shell/ShellDockTool.svelte';
 import type {
   ShellNavGroup,
   ShellPanelDefaults,
@@ -15,6 +16,7 @@ let {
   toggles = [{ tool: 'assistant', label: 'Assistant' }],
   config = { left: { initial: 'expanded' } },
   withActions = false,
+  withDock = false,
   edgeToggles = false,
   title = 'SMRT',
   onChange,
@@ -25,6 +27,7 @@ let {
   toggles?: DockToggle[];
   config?: ShellPanelDefaults;
   withActions?: boolean;
+  withDock?: boolean;
   edgeToggles?:
     | boolean
     | Partial<Record<'top' | 'left' | 'right' | 'bottom', boolean>>;
@@ -64,5 +67,12 @@ function change(next: ShellLayout) {
   layout={current}
   onlayoutchange={change}
 >
+  {#snippet dock()}
+    {#if withDock}
+      <ShellDockTool id="assistant" label="Assistant" render={assistantBody} />
+    {/if}
+  {/snippet}
   {#if onApi}<Probe {onApi} />{/if}
 </AppShell>
+
+{#snippet assistantBody()}<p>Assistant body</p>{/snippet}

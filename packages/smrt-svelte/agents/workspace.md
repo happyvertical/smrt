@@ -160,7 +160,11 @@ While `editing`:
 - `AdminShell` `layoutEdit` (`ShellLayoutEditSurface`, set by `AppShell`) renders
   every slot of a visible region as a dashed drop zone (entering edit mode
   expands a collapsed left/right sidebar so its header/footer zones exist, and
-  leaving restores it) (`data-smrt-edit-zone`)
+  leaving restores it; a railless `rail: false` edge is never revealed: it
+  stays as the user left it, and while editing a closed railless right edge
+  with focus/dock tools shows a slim "Open <tool>" indicator tab
+  (`data-edit-indicator`, z 21, no layout shift) that opens it and closes it
+  again on exit) (`data-smrt-edit-zone`)
   labelled "Header · Left", empty ones included, highlighted
   (`data-drop-target`) while a drag targets it. Movable items render exactly as
   on the site (inside an `inert` wrapper) with a grip; the toggle itself is

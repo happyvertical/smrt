@@ -7,6 +7,7 @@ import {
   within,
 } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ShellLayout } from '../../workspace/admin-shell/layout.js';
 import type { ShellLayoutController } from '../../workspace/admin-shell/layout-controller.svelte.js';
@@ -274,6 +275,76 @@ describe('right sidebar (dock)', () => {
         .querySelector('#smrt-admin-shell-right-panel')
         ?.getAttribute('data-state'),
     ).toBe('collapsed');
+  });
+});
+
+describe('railless edge in edit mode', () => {
+  const railless = {
+    left: { initial: 'expanded' },
+    right: { initial: 'collapsed', rail: false, presentation: 'overlay' },
+  } as const;
+  const rightState = () =>
+    document
+      .querySelector('#smrt-admin-shell-right-panel')
+      ?.getAttribute('data-state');
+  const indicator = () =>
+    document.querySelector<HTMLButtonElement>('[data-edit-indicator="right"]');
+
+  it('stays closed when edit mode starts and offers an indicator tab', async () => {
+    const user = userEvent.setup();
+    mount({ config: railless, withDock: true });
+    expect(indicator()).toBeNull();
+    await edit(user);
+    expect(rightState()).toBe('collapsed');
+    const tab = screen.getByRole('button', { name: 'Open Assistant' });
+    expect(tab).toBe(indicator());
+    expect(tab.getAttribute('aria-expanded')).toBe('false');
+    expect(tab.getAttribute('aria-controls')).toBe(
+      'smrt-admin-shell-right-panel',
+    );
+    await expectNoA11yViolations(document.body);
+  });
+
+  it('has no indicator without content, and none outside edit mode', async () => {
+    const user = userEvent.setup();
+    mount({ config: railless });
+    await edit(user);
+    expect(indicator()).toBeNull();
+  });
+
+  it('the indicator opens the edge and edit exit closes it again', async () => {
+    const user = userEvent.setup();
+    const handle = mount({ config: railless, withDock: true });
+    await edit(user);
+    await user.click(screen.getByRole('button', { name: 'Open Assistant' }));
+    expect(rightState()).toBe('expanded');
+    expect(indicator()).toBeNull();
+    // The overlay makes the page inert, so leave edit mode through the API.
+    const { api } = handle;
+    api().setEditing(false);
+    await tick();
+    await tick();
+    // An overlay slides out first (animationend never fires in jsdom).
+    expect(
+      document
+        .querySelector('#smrt-admin-shell-right-panel')
+        ?.hasAttribute('data-closing'),
+    ).toBe(true);
+  });
+
+  it('an already-open railless edge stays open through edit mode', async () => {
+    const user = userEvent.setup();
+    mount({
+      config: {
+        ...railless,
+        right: { ...railless.right, initial: 'expanded' },
+      },
+      withDock: true,
+    });
+    await edit(user);
+    expect(rightState()).toBe('expanded');
+    await edit(user);
+    expect(rightState()).toBe('expanded');
   });
 });
 

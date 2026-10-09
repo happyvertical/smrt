@@ -730,6 +730,37 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     );
   }
 
+  // While editing, a closed railless right edge that has focus tools gets a
+  // slim indicator tab so its content stays reachable; the host's header
+  // toggle covers normal use.
+  const editIndicator = $derived(
+    !!layoutEdit?.active &&
+      !isPhone &&
+      shell.config.panels.right.rail === false &&
+      shell.isEdgeShown('right') &&
+      panelState('right') === 'collapsed' &&
+      shell.focusTools.length > 0
+      ? shell.focusTools
+      : null,
+  );
+  let openedByIndicator = false;
+  function openFromIndicator(): void {
+    const tools = shell.focusTools;
+    if (tools.length === 0) return;
+    const tool = tools.find((candidate) => candidate.id === shell.activeFocusToolId) ?? tools[0];
+    shell.openFocusTool(tool.id);
+    openedByIndicator = true;
+  }
+  $effect(() => {
+    if (layoutEdit?.active) return;
+    untrack(() => {
+      if (openedByIndicator && shell.panels.right === 'expanded') {
+        shell.collapsePanel('right');
+      }
+      openedByIndicator = false;
+    });
+  });
+
   function panelMounted(edge: PanelEdge): boolean {
     return shownOpen(edge) || keepsContent(edge);
   }
@@ -1228,6 +1259,29 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     </aside>
   {/if}
 
+  {#if editIndicator}
+    <!-- raw-primitive-allow: shell chrome toggle, not a content button -->
+    <button
+      type="button"
+      class="smrt-admin-shell__edit-indicator"
+      data-edit-indicator="right"
+      aria-expanded="false"
+      aria-controls="smrt-admin-shell-right-panel"
+      aria-label={t(M['ui.admin_shell.open_panel'], {
+        label: editIndicator.map((tool) => tool.label).join(', '),
+      })}
+      onclick={openFromIndicator}
+    >
+      {#if editIndicator[0].icon}
+        {@const Icon = editIndicator[0].icon}
+        <Icon />
+      {/if}
+      <span class="smrt-admin-shell__edit-indicator-label">
+        {editIndicator.map((tool) => tool.label).join(', ')}
+      </span>
+    </button>
+  {/if}
+
   {@render regionStrip('footer')}
   {#if panelState('bottom') !== 'hidden'}
     <footer
@@ -1566,6 +1620,39 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     color: var(--smrt-color-primary);
     border-color: var(--smrt-color-primary);
     background: var(--smrt-color-surface-container-high);
+  }
+
+  /* Edit-mode tab for a closed railless right edge: pinned to the shell's
+     right edge, vertically centred, over the page without taking space. */
+  .smrt-admin-shell__edit-indicator {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: end;
+    align-self: center;
+    z-index: 21;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1, 0.25rem);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-2, 0.5rem);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-inline-end: 0;
+    border-start-start-radius: var(--smrt-radius-md, 8px);
+    border-end-start-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface-variant);
+    font: inherit;
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+    cursor: pointer;
+  }
+
+  .smrt-admin-shell__edit-indicator:hover {
+    color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+  }
+
+  .smrt-admin-shell__edit-indicator :global(svg) {
+    inline-size: 1rem;
+    block-size: 1rem;
   }
 
   .smrt-admin-shell__focus-tool-badge {

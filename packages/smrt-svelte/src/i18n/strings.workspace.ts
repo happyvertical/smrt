@@ -50,6 +50,7 @@ export const M = defineMessages({
   'ui.admin_shell.expand_panel': 'Expand {panel}',
   'ui.admin_shell.collapse_panel': 'Collapse {panel}',
   'ui.admin_shell.close_panel': 'Close {label}',
+  'ui.admin_shell.open_panel': 'Open {label}',
   'ui.admin_shell.resize_panel': 'Resize {label}',
   'ui.shell_nav_toggle.collapse': 'Collapse {label}',
   'ui.shell_nav_toggle.expand': 'Expand {label}',

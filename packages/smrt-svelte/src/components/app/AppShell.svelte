@@ -527,12 +527,15 @@ const visibleRegionCount = $derived(
 
 // Editing reveals every shown sidebar so its header/footer drop zones exist
 // (a collapsed one only has a rail); leaving restores what was collapsed.
+// A railless edge (`rail: false`) is left as the user has it: closed stays
+// closed (AdminShell offers an indicator tab to open it while editing).
 let revealedByEdit: ('left' | 'right')[] = [];
 $effect(() => {
   if (editing) {
     untrack(() => {
       if (shell.viewport === 'phone') return;
       for (const edge of ['left', 'right'] as const) {
+        if (shell.config.panels[edge].rail === false) continue;
         if (shell.isEdgeShown(edge) && shell.panels[edge] === 'collapsed') {
           shell.setPanelState(edge, 'expanded');
           revealedByEdit.push(edge);

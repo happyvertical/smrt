@@ -509,7 +509,9 @@ keys the shell renders exactly as before.
 - **Railless edges**: `rail: false` gives a side edge no rail (no tool buttons, open or closed); closed, it takes
   no space and renders nothing to see or tab to, and opens from elsewhere (a
   header dock toggle, `useShellDock()`). Pair it with `presentation: 'overlay'`
-  for a chat that slides over the page.
+  for a chat that slides over the page. Layout edit mode leaves a railless edge
+  as it is (closed stays closed) and, while editing, shows a small "Open
+  <tool>" tab on the shell's right edge when it has content.
 - **Kept panels**: `keepMounted: true` keeps a collapsed edge's panel content
   (`appPanel`, `tenantPanel`, the focus panel, `systemPanel`) mounted with the
   `hidden` attribute instead of unmounting it, so component state (a chat
