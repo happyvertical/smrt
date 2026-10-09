@@ -397,7 +397,8 @@ control panel), wired by `app/AppShell.svelte`.
   tinted circle, title, `ShellNavItem.description` (2 lines), then `meta` and
   `actions` at the bottom; one stretched link, actions stay separate controls;
   edit mode keeps grip/rename/hide in the grid. Unknown icon names draw the
-  default glyph (dev warning), never the name. Default `list`: A
+  default glyph (dev warning), never the name. `layout.items[id].description` (host/preset-set, not editable in the UI)
+  overrides an item's `description`. Default `list`: A
   `<ul>` of rows (icon, label link, host `meta`, host `actions`, chevron; the
   row is one stretched link, actions sit above it) in applied order with
   renames; hidden entries are omitted. While editing, the same rows become the

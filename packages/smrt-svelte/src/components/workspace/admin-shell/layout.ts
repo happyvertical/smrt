@@ -53,6 +53,11 @@ export interface ShellLayoutSection {
 export interface ShellLayoutItem {
   /** Replaces the item's label wherever the shell shows it. */
   label?: string;
+  /**
+   * Replaces the item's `description` (the line on a section card). Set by
+   * hosts or presets; the layout editor does not edit it.
+   */
+  description?: string;
 }
 
 /** A section the user created (its id starts with `custom:`). */
@@ -216,6 +221,8 @@ function readItem(raw: unknown): ShellLayoutItem | undefined {
   const item: ShellLayoutItem = {};
   const label = cleanLabel(raw.label);
   if (label) item.label = label;
+  const description = cleanLabel(raw.description);
+  if (description) item.description = description;
   return hasKeys(item) ? item : undefined;
 }
 
@@ -441,7 +448,12 @@ export function resolveShellNavModel(
         if (displayedIn(entry.id, native.id) !== section.id) continue;
         defaults.push({
           id: entry.id,
-          item: entry.item,
+          item: itemOverrides[entry.id]?.description
+            ? {
+                ...entry.item,
+                description: itemOverrides[entry.id]?.description,
+              }
+            : entry.item,
           nativeSectionId: native.id,
           sectionId: section.id,
           hidden: hidden.has(entry.id),
@@ -844,8 +856,13 @@ export function renameShellItem(
   if (!entry) return current;
   const clean = cleanLabel(label);
   const items = { ...(current.items ?? {}) };
-  if (!clean || clean === entry.defaultLabel) delete items[itemId];
-  else items[itemId] = { label: clean };
+  const kept = items[itemId]?.description;
+  const next: ShellLayoutItem = {
+    ...(clean && clean !== entry.defaultLabel ? { label: clean } : {}),
+    ...(kept ? { description: kept } : {}),
+  };
+  if (hasKeys(next)) items[itemId] = next;
+  else delete items[itemId];
   return compact({ ...current, items });
 }
 

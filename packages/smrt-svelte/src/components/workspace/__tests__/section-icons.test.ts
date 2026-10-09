@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyShellLayout,
   normalizeShellLayout,
+  renameShellItem,
   renameShellSection,
   resolveShellNavModel,
   setShellSectionIcon,
@@ -94,5 +95,31 @@ describe('section icons', () => {
       icon: 'bank',
       href: '/s/sales',
     });
+  });
+});
+
+describe('item description overrides', () => {
+  const nav: ShellNavGroup[] = [
+    {
+      id: 'g',
+      heading: 'G',
+      items: [{ id: 'a', href: '/a', label: 'A', description: 'Host line.' }],
+    },
+  ];
+  it('replaces the description and survives a rename round trip', () => {
+    const layout = normalizeShellLayout({
+      version: 1,
+      items: { a: { description: ' Yoga line. ' } },
+    });
+    expect(layout.items).toEqual({ a: { description: 'Yoga line.' } });
+    const item = resolveShellNavModel([], nav, layout)[1].items[0];
+    expect(item.item.description).toBe('Yoga line.');
+    const renamed = renameShellItem([], nav, layout, 'a', 'Classes');
+    expect(renamed.items?.a).toEqual({
+      label: 'Classes',
+      description: 'Yoga line.',
+    });
+    const reset = renameShellItem([], nav, renamed, 'a', null);
+    expect(reset.items?.a).toEqual({ description: 'Yoga line.' });
   });
 });
