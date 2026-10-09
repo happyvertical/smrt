@@ -145,11 +145,20 @@ export function createPhotoCutoutHelperStyle(
             type: payload.image.type || 'image/png',
           }),
       });
+      let mouthOpen = 0;
+      const setMouthOpen = (value: number) => {
+        mouthOpen = Math.max(0, Math.min(1, value));
+        handle.setMouthOpen(mouthOpen);
+      };
       return {
         destroy: () => handle.destroy(),
-        setMouthOpen: (value) =>
-          handle.setMouthOpen(Math.max(0, Math.min(1, value))),
-        setSpeaking: (speaking) => handle.setMouthOpen(speaking ? 0.35 : 0),
+        setMouthOpen,
+        // CharacterConversation supplies the raw playback envelope first, then
+        // this boolean state. Keep that amplitude; only an explicit stop closes
+        // the mouth so cleanup stays deterministic.
+        setSpeaking: (speaking) => {
+          if (!speaking) setMouthOpen(0);
+        },
       };
     },
   };

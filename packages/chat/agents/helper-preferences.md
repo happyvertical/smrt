@@ -25,6 +25,22 @@ locked baseline fields while selecting an offered replacement, the snapshot
 contains `recoveryDraft`. It is an edit candidate only: UI must submit it to
 `save()` and wait for the returned snapshot before applying it.
 
+## Browser DTO import
+
+Browser clients import the DTO, parser, and field list from
+`@happyvertical/smrt-chat/helper-preferences`. This public subpath deliberately
+contains no Profile/SQL adapter or `HelperPreferencesService`; authenticated
+servers import those server APIs from the package root.
+
+```ts
+import {
+  helperPreferenceFields,
+  parseHelperPreferences,
+  type HelperClient,
+  type HelperPreferences,
+} from '@happyvertical/smrt-chat/helper-preferences';
+```
+
 ## Svelte helper controls
 
 `HelperControlPanel` distinguishes a local draft from the applied server

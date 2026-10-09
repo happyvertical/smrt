@@ -12,6 +12,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./helper-preferences": {
+      "types": "./dist/helper-preferences.d.ts",
+      "import": "./dist/helper-preferences.js"
+    },
     "./client": {
       "types": "./dist/client.d.ts",
       "import": "./dist/client.js"
@@ -69,7 +73,7 @@
     "test:e2e": "playwright test -c playwright.config.ts",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/agent-reply-postgres.test.ts src/sveltekit.postgres.test.ts",
     "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node ../../scripts/verify-packed-chat-helper-preferences.mjs"
   },
   "keywords": [
     "smrt",
