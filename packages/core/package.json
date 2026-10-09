@@ -143,6 +143,11 @@
       "import": "./dist/ui-metadata.js",
       "default": "./dist/ui-metadata.js"
     },
+    "./recipe-demo": {
+      "types": "./dist/recipe-demo.d.ts",
+      "import": "./dist/recipe-demo.js",
+      "default": "./dist/recipe-demo.js"
+    },
     "./utils/database-url": {
       "types": "./dist/utils/database-url.d.ts",
       "import": "./dist/utils/database-url.js",

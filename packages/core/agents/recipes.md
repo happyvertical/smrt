@@ -232,6 +232,16 @@ wants the answer including what the recipe needs calls
 of its own mode and every `requires` (transitively), counting the best known
 alternative of each `requiresAny` list; unknown ids are ignored.
 
+**Importing it in a browser page.** Use the subpath
+`@happyvertical/smrt-core/recipe-demo` (`deriveRecipeDemo`,
+`effectiveRecipeDemo`, `RECIPE_DEMO_MODES` and the demo types). Its module graph
+is `src/recipe-demo.ts` alone, with type-only imports, so it carries no `node:`
+import. The root entry and `/browser` both also export these names, but both
+reach `manifest/manifest-loader.ts` through the registry, and that module calls
+`createRequire` from `node:module` as it loads, which a browser page cannot
+satisfy. `src/__tests__/recipe-demo-entry.test.ts` walks the module graph and
+fails if the subpath gains a `node:` or package import.
+
 The classification runs in `ManifestGenerator.applyGenerationPasses` (the one
 pass sequence the Vite plugin, `ManifestBuilder` and `generateManifest()` share)
 through `applyRecipeDemo` in `src/scanner/recipe-demo-pass.ts`, after the
