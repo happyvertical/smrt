@@ -157,3 +157,5 @@ authorized that destination for the current viewer. Unsafe schemes,
 protocol-relative URLs, callback errors, and malformed callback results fall
 back to plain default text. Label and value callback results are always rendered
 as text, never HTML. `AuditList` forwards these callbacks to `RecordHistory`.
+Set `showFilters={false}` when the consumer owns a separate authorized filter
+form; the built-in filters remain visible by default.

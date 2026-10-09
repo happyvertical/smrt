@@ -77,6 +77,24 @@ describe('audit views', () => {
     expect(container.querySelector('ol')).toHaveTextContent('bob · approved');
     await expectNoA11yViolations(container);
   });
+  it('shows built-in filters by default', () => {
+    render(AuditList, { entries });
+
+    expect(screen.getByLabelText('Person ID')).toBeInTheDocument();
+    expect(screen.getByLabelText('Record ID')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Apply filters' }),
+    ).toBeInTheDocument();
+  });
+  it('can hide built-in filters while retaining authorized entries', async () => {
+    const { container } = render(AuditList, { entries, showFilters: false });
+
+    expect(screen.queryByLabelText('Person ID')).toBeNull();
+    expect(screen.queryByLabelText('Record ID')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Apply filters' })).toBeNull();
+    expect(container.querySelectorAll('ol > li')).toHaveLength(entries.length);
+    await expectNoA11yViolations(container);
+  });
   it('passes server filters to the consumer and exposes loading/error/empty states', async () => {
     const user = userEvent.setup();
     const onfilter = vi.fn();
