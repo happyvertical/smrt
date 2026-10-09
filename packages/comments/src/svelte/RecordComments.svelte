@@ -6,15 +6,30 @@ export interface RecordCommentView {
   createdAtLabel?: string;
 }
 export interface Props {
+  contextKey: string;
   comments: readonly RecordCommentView[];
   onsubmit?: (body: string) => void | Promise<void>;
   heading?: string;
 }
-let { comments, onsubmit, heading = 'Comments' }: Props = $props();
+let { contextKey, comments, onsubmit, heading = 'Comments' }: Props = $props();
+const inputId = $props.id();
+let generation = 0;
+$effect(() => {
+  void contextKey;
+  generation += 1;
+  body = '';
+  pending = false;
+  error = '';
+  return () => {
+    generation += 1;
+  };
+});
 let body = $state('');
 let pending = $state(false);
 let error = $state('');
 async function submit() {
+  if (pending) return;
+  const submittedGeneration = generation;
   const value = body.trim();
   if (!value) {
     error = 'Write a comment before posting.';
@@ -25,11 +40,12 @@ async function submit() {
   error = '';
   try {
     await onsubmit(value);
-    body = '';
+    if (generation === submittedGeneration) body = '';
   } catch {
-    error = 'Could not post your comment. Try again.';
+    if (generation === submittedGeneration)
+      error = 'Could not post your comment. Try again.';
   } finally {
-    pending = false;
+    if (generation === submittedGeneration) pending = false;
   }
 }
 </script>
@@ -43,8 +59,8 @@ async function submit() {
   </ol>
   {#if onsubmit}
     <form onsubmit={(event) => { event.preventDefault(); void submit(); }}>
-      <label for="record-comment">Add a comment</label>
-      <textarea id="record-comment" bind:value={body} disabled={pending}></textarea>
+      <label for={inputId}>Add a comment</label>
+      <textarea id={inputId} bind:value={body} disabled={pending}></textarea>
       {#if error}<p role="alert">{error}</p>{/if}
       <button disabled={pending} type="submit">{pending ? 'Posting…' : 'Post comment'}</button>
     </form>

@@ -21,3 +21,15 @@ export interface CommentMention {
 export interface CommentMentionNotificationAdapter {
   notifyMention(mention: CommentMention): Promise<void>;
 }
+
+/** Trusted server context; never populate from the comment request body. */
+export interface CommentActorContext {
+  tenantId: string;
+  userId: string;
+}
+
+export interface CommentRecordAccess extends CommentActorContext {
+  recordType: string;
+  recordId: string;
+  action: 'read' | 'comment';
+}

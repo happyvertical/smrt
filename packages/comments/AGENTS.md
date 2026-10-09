@@ -9,6 +9,9 @@ The package must not depend on `smrt-messages`: hosts compose
 `CommentMentionNotificationAdapter` with `UserNotificationService` and retain
 their own notification delivery policy. The Svelte surface receives authorized
 comment projections and callbacks; it does not fetch or authorize records.
+`CommentService` requires a trusted actor and host record authorization callback.
+`RecordComments.contextKey` includes tenant, actor and record identity.
+See [test design](agents/test-design.md) for the behavior matrix.
 
-Run `pnpm --filter @happyvertical/smrt-comments test`, `typecheck`, and
+Run `pnpm --filter @happyvertical/smrt-comments test`, `test:postgres`, `typecheck`, `check`, and
 `npx --yes @biomejs/biome@2.5.2 check packages/comments` after changes.

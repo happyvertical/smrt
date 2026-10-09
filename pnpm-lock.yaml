@@ -868,6 +868,9 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
     devDependencies:
+      '@happyvertical/smrt-messages':
+        specifier: workspace:*
+        version: link:../messages
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
