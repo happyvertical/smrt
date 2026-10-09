@@ -1040,6 +1040,237 @@ export function executionSuite(
         expect(purge).toHaveBeenCalledWith({ tenantId: tenant, itemId });
         expect((await db.query('SELECT id FROM assets')).rows).toHaveLength(0);
       });
+    for (const failure of ['malformed', 'cas', 'policy', 'revoked'])
+      it(`preserves authorized future retention after ${failure} rollback`, async () => {
+        const input = await proposal();
+        await approve(input.review);
+        const start = clock.getTime();
+        const authorize = config.authorize;
+        let narrow = true;
+        config.authorize = async (request) => {
+          const access = await authorize(request);
+          if (narrow)
+            access.policy[1] = {
+              ...access.policy[1],
+              version:
+                failure === 'policy' ? 'changed' : access.policy[1].version,
+              retentionMs: 1000,
+            };
+          return access;
+        };
+        if (failure === 'revoked') {
+          const handler = handlers.find((entry) => entry.id === CREATE)!;
+          handler.validate = async () => {
+            allowed = false;
+            throw new Error('revoked during validation');
+          };
+        }
+        if (failure === 'policy')
+          await expect(service.applyAction(input.actionId)).rejects.toThrow();
+        else
+          await expect(
+            service.previewProposal({
+              ...input,
+              expectedRevision: failure === 'cas' ? 99 : input.review.revision,
+              requestId: `rejected-${failure}`,
+              handlerId: CREATE,
+              handlerVersion: '1',
+              args:
+                failure === 'malformed' ? {} : { title: 'New', body: 'Body' },
+            }),
+          ).rejects.toThrow();
+        expect(
+          new Date(
+            String(
+              (
+                await db.query(
+                  'SELECT expires_at FROM intake_items WHERE id=?',
+                  input.itemId,
+                )
+              ).rows[0].expires_at,
+            ),
+          ).getTime(),
+        ).toBe(start + 1000);
+        narrow = false;
+        allowed = true;
+        clock = new Date(start + 1001);
+        expect(await service.getAction(input.actionId)).toMatchObject({
+          state: 'expired',
+          display: {},
+        });
+        await expect(service.getEvidence(input.itemId)).rejects.toThrow();
+        await service.sweepRetention();
+        expect((await db.query('SELECT id FROM assets')).rows).toHaveLength(0);
+      });
+    it('preserves authorized future retention after domain savepoint rollback', async () => {
+      const input = await proposal();
+      await approve(input.review);
+      const start = clock.getTime();
+      const authorize = config.authorize;
+      let narrowed = false;
+      config.authorize = async (request) => {
+        const access = await authorize(request);
+        if (request.operation === 'read') {
+          access.policy[1] = { ...access.policy[1], retentionMs: 1000 };
+          narrowed = true;
+        }
+        return access;
+      };
+      const assertTarget = config.assertTarget;
+      config.assertTarget = async (request) => {
+        if (narrowed) throw new Error('result target denied');
+        return assertTarget(request);
+      };
+      expect(await service.applyAction(input.actionId)).toMatchObject({
+        state: 'failed',
+      });
+      expect(narrowed).toBe(true);
+      expect(
+        new Date(
+          String(
+            (
+              await db.query(
+                'SELECT expires_at FROM intake_items WHERE id=?',
+                input.itemId,
+              )
+            ).rows[0].expires_at,
+          ),
+        ).getTime(),
+      ).toBe(start + 1000);
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(0);
+      config.authorize = authorize;
+      clock = new Date(start + 1001);
+      expect(await service.getAction(input.actionId)).toMatchObject({
+        state: 'expired',
+        display: {},
+      });
+      await service.sweepRetention();
+      expect((await db.query('SELECT id FROM assets')).rows).toHaveLength(0);
+    });
+    for (const operation of ['preview', 'automatic'])
+      it(`rejects ${operation} publication after its callback crosses retention`, async () => {
+        const input = await proposal();
+        const authorize = config.authorize;
+        config.authorize = async (request) => {
+          const access = await authorize(request);
+          access.policy = access.policy.map((layer) => ({
+            ...layer,
+            retentionMs: 1000,
+            requireReview: false,
+            automation: { handlers: [CREATE], evaluationVersion: 'eval1' },
+          })) as typeof access.policy;
+          return access;
+        };
+        let release!: () => void;
+        let entered!: () => void;
+        const paused = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const resume = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        if (operation === 'preview') {
+          const handler = handlers.find((entry) => entry.id === CREATE)!;
+          const preview = handler.preview;
+          handler.preview = async (args, context) => {
+            const result = await preview(args, context);
+            entered();
+            await resume;
+            return result;
+          };
+        } else {
+          config.evaluateAutomatic = async () => {
+            entered();
+            await resume;
+            return { eligible: true, evaluationVersion: 'eval1', certainty: 1 };
+          };
+        }
+        const pending =
+          operation === 'preview'
+            ? service.previewProposal({
+                ...input,
+                expectedRevision: input.review.revision,
+                requestId: 'late-preview',
+                handlerId: CREATE,
+                handlerVersion: '1',
+                args: { title: 'New', body: 'Body' },
+              })
+            : service.authorizeAutomatic(input.actionId);
+        const rejected = expect(pending).rejects.toThrow('retention expired');
+        await paused;
+        clock = new Date(clock.getTime() + 1001);
+        release();
+        await rejected;
+        const proposals = (
+          await db.query(
+            'SELECT data FROM intake_proposals WHERE item_id=?',
+            input.itemId,
+          )
+        ).rows;
+        expect(proposals).toHaveLength(1);
+        expect(
+          typeof proposals[0].data === 'string'
+            ? JSON.parse(proposals[0].data)
+            : proposals[0].data,
+        ).toEqual({});
+        expect(
+          (
+            await db.query(
+              'SELECT id FROM intake_review_decisions WHERE item_id=?',
+              input.itemId,
+            )
+          ).rows,
+        ).toHaveLength(0);
+        expect(await service.getAction(input.actionId)).toMatchObject({
+          state: 'expired',
+          display: {},
+        });
+        await service.sweepRetention();
+        expect((await db.query('SELECT id FROM assets')).rows).toHaveLength(0);
+      });
+    it('redacts successful replay when target authorization crosses its deadline', async () => {
+      const { actionId, itemId, review } = await proposal();
+      await approve(review);
+      await service.applyAction(actionId);
+      const authorize = config.authorize;
+      config.authorize = async (request) => {
+        const access = await authorize(request);
+        access.policy[1] = { ...access.policy[1], retentionMs: 1000 };
+        return access;
+      };
+      const assertTarget = config.assertTarget;
+      let release!: () => void;
+      let entered!: () => void;
+      const paused = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const resume = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      config.assertTarget = async (request) => {
+        const result = await assertTarget(request);
+        entered();
+        await resume;
+        return result;
+      };
+      const replay = service.applyAction(actionId);
+      await paused;
+      clock = new Date(clock.getTime() + 1001);
+      release();
+      const result = await replay;
+      expect(result).toMatchObject({ state: 'succeeded', tombstone: true });
+      expect(result.result).toBeUndefined();
+      for (const row of (
+        await db.query(
+          'SELECT data FROM intake_executions WHERE item_id=?',
+          itemId,
+        )
+      ).rows)
+        expect(
+          typeof row.data === 'string' ? JSON.parse(row.data) : row.data,
+        ).toEqual({});
+      expect((await db.query('SELECT id FROM contents')).rows).toHaveLength(1);
+    });
     it('redacts completed replay when current policy narrows an active receipt deadline', async () => {
       const { actionId, itemId, review } = await proposal();
       await approve(review);

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { executeAsPrincipal } from '@happyvertical/smrt-agents';
 import {
@@ -106,6 +107,9 @@ interface Bound {
 }
 /** Server-only authoritative review/apply. Construct only from authenticated host options. */
 export class IntakeExecutionService {
+  private readonly retentionIntents = new AsyncLocalStorage<
+    Map<string, number>
+  >();
   private readonly db: DatabaseInterface;
   private readonly config: IntakeExecutionOptions;
   private readonly scope;
@@ -138,28 +142,51 @@ export class IntakeExecutionService {
     return this.options.now?.() ?? new Date();
   }
   private async tx<T>(work: (db: DatabaseInterface) => Promise<T>): Promise<T> {
-    // Database callbacks must have no external effects. Never transparently retry an effect.
+    // Authorized privacy ceilings survive business rollback, including savepoints.
+    // Keep intents local to this async transaction; concurrent calls cannot share them.
+    const intents = new Map<string, number>();
     try {
-      return await withEmbeddedWriteTransaction(
-        this.db,
-        isEmbeddedDatabase(this.db),
-        work,
+      return await this.retentionIntents.run(intents, () =>
+        withEmbeddedWriteTransaction(
+          this.db,
+          isEmbeddedDatabase(this.db),
+          work,
+        ),
       );
     } catch (error) {
-      // A denied late write rolls back its business transaction, but must not
-      // roll back the already-authorized privacy ceiling and payload erasure.
-      if (error instanceof RetentionExpired) {
+      if (intents.size)
         await withEmbeddedWriteTransaction(
           this.db,
           isEmbeddedDatabase(this.db),
           async (db) => {
-            const item = await this.item(db, error.itemId, true, true);
-            await this.narrowRetention(db, item, error.deadline);
+            for (const [itemId, deadline] of intents) {
+              await this.restoreRetention(db, itemId, deadline);
+            }
           },
         );
-      }
       throw error;
     }
+  }
+  private async restoreRetention(
+    db: DatabaseInterface,
+    itemId: string,
+    deadline: number,
+  ): Promise<Row> {
+    // This intent was already authorized. Do not acquire another content-read
+    // grant after rollback: a revoked actor must not undo a privacy maximum.
+    const expiry = new Date(deadline).toISOString();
+    const result = await db.query(
+      'UPDATE intake_items SET expires_at=CASE WHEN expires_at>? THEN ? ELSE expires_at END WHERE id=? AND tenant_id=? AND confidential_scope_id=? RETURNING id,expires_at,visibility',
+      expiry,
+      expiry,
+      itemId,
+      this.scope.tenantId,
+      this.scope.confidentialScopeId,
+    );
+    const item = result.rows[0];
+    if (!item) throw new Error('Intake unavailable');
+    if (!this.retained(item)) await this.redactExecution(db, item);
+    return item;
   }
   private async redactExecution(
     db: DatabaseInterface,
@@ -375,9 +402,14 @@ export class IntakeExecutionService {
       time(item.expires_at),
       time(item.created_at) + policy.retentionMs,
     );
-    if (db === this.db)
-      await this.tx((tx) => this.narrowRetention(tx, item, deadline));
-    else await this.narrowRetention(db, item, deadline);
+    const enforce = async (executor: DatabaseInterface) => {
+      const intents = this.retentionIntents.getStore();
+      const itemId = String(item.id);
+      intents?.set(itemId, Math.min(intents.get(itemId) ?? Infinity, deadline));
+      await this.narrowRetention(executor, item, deadline);
+    };
+    if (db === this.db) await this.tx(enforce);
+    else await enforce(db);
     if (
       !this.retained(item) &&
       operation !== 'read' &&
@@ -684,6 +716,8 @@ export class IntakeExecutionService {
     input: PreviewProposalInput,
     binding: Binding,
   ): Promise<ProposalReview> {
+    if (!this.retained(item))
+      throw new RetentionExpired(String(item.id), time(item.expires_at));
     id(input.requestId);
     const [action] = await this.rows(
       db,
@@ -1224,6 +1258,16 @@ export class IntakeExecutionService {
         id: result[field] as string,
       });
     }
+    // Target authorization may await across the deadline while we own the lock.
+    if (!this.retained(item)) {
+      await this.redactExecution(db, item);
+      return {
+        state: 'succeeded',
+        actionId: String(action.id),
+        resultDigest: String(action.result_digest),
+        tombstone: true,
+      };
+    }
     return {
       state: 'succeeded',
       actionId: String(action.id),
@@ -1419,6 +1463,18 @@ export class IntakeExecutionService {
             // writes. A competing worker cannot enter a rollback/accounting gap.
             await db.query('ROLLBACK TO SAVEPOINT ingestion_domain_effect');
             await db.query('RELEASE SAVEPOINT ingestion_domain_effect');
+            const deadline = this.retentionIntents
+              .getStore()
+              ?.get(String(bound.item.id));
+            if (deadline !== undefined)
+              Object.assign(
+                bound.item,
+                await this.restoreRetention(
+                  db,
+                  String(bound.item.id),
+                  deadline,
+                ),
+              );
             if (!this.retained(bound.item))
               await this.redactExecution(db, bound.item);
             await db.query(
@@ -1684,6 +1740,11 @@ export class IntakeExecutionService {
       )
         throw new Error('Automatic execution unavailable');
       await this.verifyEvidence(db, bound);
+      if (!this.retained(bound.item))
+        throw new RetentionExpired(
+          String(bound.item.id),
+          time(bound.item.expires_at),
+        );
       await this.insert(db, 'intake_review_decisions', {
         item_id: bound.item.id,
         action_id: actionId,

@@ -131,3 +131,19 @@ a delayed sweep; the sweep then removes actual original assets and invokes deriv
 cleanup. Previously successful replay and submission/reconciliation callbacks
 spanning a newly narrowed policy return tombstones without restoring payloads.
 All nine initial boundary cases failed on the integrated pre-fix tree.
+
+## Round 5 retention rollback and replay boundaries
+
+Both databases verify that an authorized future ceiling survives malformed preview,
+proposal CAS rejection, changed-policy apply rejection, domain savepoint rollback,
+and read-grant revocation during a failing validation callback.
+Stored expiry remains anchored to receipt creation; later unrestricted reads redact
+and the ordinary sweep removes original assets. Denied access still cannot narrow
+retention. A successful replay pauses its target authorization across the deadline,
+then returns only a tombstone and persists empty execution payloads. Transaction-local
+retention intents are isolated across concurrent calls and restored after rollback;
+successful paths do not add a post-result authorization callback.
+
+Paused proposal preview and automatic evaluator callbacks also cross the deadline.
+Publication rejects after those callbacks, creates no new proposal/decision, and
+preserves expiry/redaction through rollback; ordinary retention sweep removes assets.

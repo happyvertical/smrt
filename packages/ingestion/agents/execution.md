@@ -121,6 +121,12 @@ is introduced, and no blob I/O occurs in an execution transaction.
 At an observed expired deadline, execution reads/completions erase proposal,
 decision, execution, plan, action and feedback payloads under the item lock. Review
 reads return existing identity/hash fields with `state: 'expired'` and empty
-`display`; completed action replay returns its digest-only tombstone. Failed late
-writes cannot roll back an already-authorized retention ceiling/redaction. Unknown
+`display`; completed action replay returns its digest-only tombstone. Failed writes, including ordinary validation/CAS/policy rejection and domain
+savepoint rollback, cannot roll back an already-authorized retention ceiling or
+redaction. Restoring a recorded authorized maximum needs no new content-read grant;
+later revocation cannot undo it. Initial denied authorization records no intent.
+Completed replay checks the deadline again after target authorization
+callbacks before returning cached content. Proposal publication and automatic
+authorization also recheck after preview/evaluator callbacks, before publishing
+retained proposal or decision payloads. Unknown
 external outcomes remain unknown/reconcile-only, never eligible for blind resend.
