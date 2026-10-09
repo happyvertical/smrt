@@ -43,5 +43,5 @@ for (let index = 0; index < count; index++)
 </script>
 {#snippet systemBar()}<div class="bar"><Button variant="ghost" size="sm" aria-label="Toggle activity details" onclick={() => shell.togglePanel('bottom')}>Activities</Button><ActivityTicker activities={shell.activities} statuses={includeQueued ? ['queued', 'running'] : ['running']} label={includeQueued ? 'Active processes' : undefined} /></div>{/snippet}
 {#snippet systemPanel()}<ActivityList filter={{status: includeQueued ? ['queued', 'running', 'completed'] : 'running'}} emptyLabel="No active processes" />{/snippet}
-<AdminShell state={shell} title="Activity footer fixture" {systemBar} {systemPanel}><p>Workspace content</p></AdminShell>
+<AdminShell edgeToggles state={shell} title="Activity footer fixture" {systemBar} {systemPanel}><p>Workspace content</p></AdminShell>
 <style>:global(body) { margin:0; font-family:sans-serif; } .bar { display:flex; align-items:center; width:100%; min-width:0; gap:0.5rem; }</style>

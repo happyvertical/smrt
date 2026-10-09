@@ -24,7 +24,7 @@ test('mount, navigation, and unmount leave no duplicate live registrations', asy
   // A shell with a tenant toggle starts collapsed, so its links are not
   // rendered until the panel is expanded; a shell without one docks the panel
   // open. Expand it only when there is a toggle, then navigate within it.
-  const tenantToggle = ownerPage.getByRole('button', { name: /Tenant/ });
+  const tenantToggle = ownerPage.getByRole('button', { name: /Left sidebar|Tenant/ });
   if (await tenantToggle.count()) await tenantToggle.click();
   await expect(ownerPage.getByRole('link', { name: 'Settings' })).toBeVisible();
 

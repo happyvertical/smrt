@@ -640,6 +640,7 @@ function apiTabCount(
     data-hydrated={isHydrated ? 'true' : 'false'}
   >
     <AdminShell
+      edgeToggles
       title={title}
       subtitle={rootNavLabel}
       state={shellState}
