@@ -25,6 +25,15 @@ import type {
   PreviewProposalInput,
   ReviewInput,
 } from './execution-contracts.js';
+import type { FeedbackConfiguration } from './feedback-contracts.js';
+import type {
+  AdoptRuleInput,
+  ObserveFeedbackInput,
+  ReadRuleInput,
+  RecordFeedbackInput,
+  RetrieveFeedbackInput,
+  SuggestRuleInput,
+} from './feedback-dto.js';
 import type { ProposalConfiguration } from './proposal-contracts.js';
 import type {
   CompletedAnalysisSnapshot,
@@ -77,6 +86,8 @@ export interface AnalysisLease {
 export interface IngestionOptions {
   /** Optional server-owned interpretation configuration; independent of execution. */
   proposals?: ProposalConfiguration;
+  /** Explicit scoped learning; never inferred from analysis or execution success. */
+  feedback?: FeedbackConfiguration;
   /** Optional application-owned review/execution catalog and live authority. */
   execution?: IntakeExecutionOptions;
   db: DatabaseInterface;
@@ -267,6 +278,28 @@ export class IngestionService {
   }
   async previewGeneratedProposals(input: PreviewGeneratedInput) {
     return (await this.proposals()).preview(input);
+  }
+  private async feedback() {
+    const { IntakeFeedbackService } = await import('./feedback.js');
+    return new IntakeFeedbackService(this.options);
+  }
+  async recordFeedback(input: RecordFeedbackInput) {
+    return (await this.feedback()).record(input);
+  }
+  async observeFeedback(input: ObserveFeedbackInput) {
+    return (await this.feedback()).observe(input);
+  }
+  async retrieveFeedback(input: RetrieveFeedbackInput) {
+    return (await this.proposals()).retrieveFeedback(input);
+  }
+  async suggestRoutingRule(input: SuggestRuleInput) {
+    return (await this.feedback()).suggest(input);
+  }
+  async getRoutingRule(input: ReadRuleInput) {
+    return (await this.feedback()).readRule(input);
+  }
+  async adoptRoutingRule(input: AdoptRuleInput) {
+    return (await this.feedback()).adopt(input);
   }
   private now(): Date {
     return this.options.now?.() ?? new Date();
@@ -2065,4 +2098,5 @@ export class IngestionService {
 
 export * from './extraction.js';
 export { GenerationSnapshotStaleError } from './proposal-errors.js';
+export type * from './feedback-contracts.js';
 export * from './sources/index.js';

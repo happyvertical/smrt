@@ -70,7 +70,7 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
   const review = snapshot.reviews.actions[0].review;
   await expect(
     page.getByRole('button', { name: 'Correct', exact: true }),
-  ).toHaveCount(0);
+  ).toHaveCount(1);
   const other = await context.newPage();
   await other.goto(page.url());
   await expect(
@@ -132,6 +132,38 @@ test('real PDF upload, exact correction, stale tab refusal, reload and one actua
           itemId,
           actionId: review.actionId,
           judgment: 'correct',
+          requestId: randomUUID(),
+        },
+      })
+    ).status(),
+  ).toBe(409);
+  const feedbackReview = (
+    await (await page.request.get(`/api/load?itemId=${itemId}`)).json()
+  ).reviews.actions[0].review;
+  const feedbackResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/feedback') &&
+      response.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Incorrect', exact: true }).click();
+  const recorded = await feedbackResponse;
+  expect(recorded.status()).toBe(200);
+  expect(recorded.request().postDataJSON()).toMatchObject({
+    itemId,
+    actionId: feedbackReview.actionId,
+    expectedRevision: feedbackReview.revision,
+    expectedReviewVersion: feedbackReview.reviewVersion,
+    bindingHash: feedbackReview.bindingHash,
+    judgment: 'incorrect',
+  });
+  expect(await recorded.json()).toMatchObject({ kind: 'interpretation' });
+  expect(
+    (
+      await page.request.post('/api/feedback', {
+        headers: { 'x-review-csrf': await csrf(page) },
+        data: {
+          ...recorded.request().postDataJSON(),
+          expectedRevision: feedbackReview.revision + 1,
           requestId: randomUUID(),
         },
       })

@@ -32,6 +32,11 @@ import {
   discoveryTransaction,
   type TransactionRunner,
 } from './execution-internal.js';
+import {
+  type FeedbackActionContext,
+  feedbackActionTransaction,
+  feedbackDiscoveryContext,
+} from './feedback-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
 import type { ReviewAction, ReviewPage } from './review-dto.js';
 import type { IngestionOptions } from './server.js';
@@ -676,6 +681,165 @@ export class IntakeExecutionService {
       state: String(bound.action.state),
     };
   }
+  /** Same-executor current review/evidence/target gate for the owning feedback ledger. */
+  /** Join an existing owning transaction; its outer boundary restores retention after rollback. */
+  [feedbackDiscoveryContext]<T>(
+    db: DatabaseInterface,
+    itemId: string,
+    handlerId: string,
+    handlerVersion: string,
+    work: (context: HandlerContext) => Promise<T>,
+  ): Promise<T> {
+    return this.discoveryContext(db, itemId, handlerId, handlerVersion, work);
+  }
+  [feedbackActionTransaction]<T>(
+    actionId: string,
+    reviewer: boolean,
+    work: (value: FeedbackActionContext) => Promise<T>,
+    executor?: DatabaseInterface,
+  ): Promise<T> {
+    const operation = async (db: DatabaseInterface) => {
+      const load = async () => {
+        const bound = await this.bound(db, actionId, true);
+        const { context, permissions } = await this.access(
+          db,
+          bound.item,
+          bound.handler,
+          reviewer ? 'review' : 'read',
+        );
+        await this.verifyEvidence(db, bound);
+        for (const target of bound.binding.targetPreconditions)
+          await context.assertTarget(
+            target.model,
+            target.id,
+            bound.action.state === 'succeeded' ? undefined : target.revision,
+          );
+        if (bound.binding.plan) {
+          const plans = await this.rows(
+            db,
+            'intake_plans',
+            'item_id=? AND plan_key=?',
+            [bound.item.id, bound.binding.plan.key],
+          );
+          const plan = plans.sort(
+            (a, b) => Number(b.revision) - Number(a.revision),
+          )[0];
+          if (!plan || plan.digest !== bound.binding.plan.digest)
+            throw new Error('Plan superseded');
+          const data = object(plan.data);
+          await this.discoveryContext(
+            db,
+            String(bound.item.id),
+            String(data.handlerId),
+            String(data.handlerVersion),
+            async (parent) => {
+              for (const target of object(data.preview)
+                .targetPreconditions as Binding['targetPreconditions'])
+                await parent.assertTarget(
+                  target.model,
+                  target.id,
+                  bound.action.state === 'succeeded'
+                    ? undefined
+                    : target.revision,
+                );
+            },
+            reviewer,
+          );
+        }
+        const [analysis] = await this.rows(db, 'intake_analyses', 'id=?', [
+          bound.proposal.analysis_id,
+        ]);
+        const [attempt] = await this.rows(
+          db,
+          'intake_analysis_attempts',
+          'id=?',
+          [bound.proposal.analysis_attempt_id],
+        );
+        if (!analysis || !attempt || analysis.current_attempt_id !== attempt.id)
+          throw new Error('Stale feedback source');
+        const data = object(attempt.data);
+        const result = {
+          status: data.status,
+          provider: data.provider,
+          model: data.model,
+          version: data.version,
+          output: data.output,
+          usage: data.usage,
+          ...(Object.hasOwn(data, 'error') ? { error: data.error } : {}),
+          ...(Object.hasOwn(data, 'confidence')
+            ? { confidence: data.confidence }
+            : {}),
+        };
+        if (intakeBindingDigest(result) !== attempt.output_digest)
+          throw new Error('Analysis output integrity');
+        const input = object(analysis.data);
+        if (
+          intakeBindingDigest({
+            inputs: input.inputs,
+            configuration: input.configuration,
+          }) !== analysis.input_digest
+        )
+          throw new Error('Analysis input integrity');
+        if (!this.retained(bound.item)) throw new Error('Feedback unavailable');
+        return {
+          db,
+          context,
+          permissions,
+          review: this.review(bound),
+          itemId: String(bound.item.id),
+          attemptId: String(attempt.id),
+          args: structuredClone(bound.binding.args),
+          analysis: input,
+          result,
+          handlerId: bound.handler.id,
+          handlerVersion: bound.handler.version,
+        };
+      };
+      const before = await load();
+      const result = await work(before);
+      const after = await load();
+      if (
+        intakeBindingDigest(before.review) !== intakeBindingDigest(after.review)
+      )
+        throw new Error('Feedback binding changed');
+      if (
+        after.permissions.some(
+          (permission) => !before.permissions.includes(permission),
+        )
+      )
+        throw new Error('Feedback cannot widen permissions');
+      const prior = before.context.policy,
+        next = after.context.policy;
+      for (const key of [
+        'handlers',
+        'operations',
+        'reviewers',
+        'providers',
+        'access',
+        'automaticHandlers',
+      ] as const)
+        if (next[key].some((value) => !prior[key].includes(value)))
+          throw new Error('Feedback cannot widen policy');
+      for (const key of [
+        'maxAttempts',
+        'maxSteps',
+        'maxBytes',
+        'approvalMs',
+        'leaseMs',
+        'retentionMs',
+      ] as const)
+        if (next[key] > prior[key])
+          throw new Error('Feedback cannot widen policy');
+      if (
+        (prior.requireReview && !next.requireReview) ||
+        next.minimumCertainty < prior.minimumCertainty ||
+        (!prior.consequentialAutomation && next.consequentialAutomation)
+      )
+        throw new Error('Feedback cannot widen policy');
+      return result;
+    };
+    return executor ? operation(executor) : this.tx(operation);
+  }
   async getAction(actionId: string): Promise<ProposalReview> {
     return this.tx(async (db) => {
       const [action] = await this.rows(db, 'intake_actions', 'id=?', [
@@ -1197,6 +1361,83 @@ export class IntakeExecutionService {
       return this.publish(db, item, frozen, binding);
     });
   }
+  /** Capture owner facts in the same transaction; these are never correctness labels. */
+  private async feedbackEvent(
+    db: DatabaseInterface,
+    bound: Bound,
+    eventId: string,
+    kind: 'action_decision' | 'downstream_outcome',
+  ): Promise<void> {
+    if (!this.options.feedback || !this.retained(bound.item)) return;
+    if (
+      !(await this.options.feedback.authorize({
+        db,
+        scope: this.scope,
+        itemId: String(bound.item.id),
+        operation: 'capture',
+      }))
+    )
+      return;
+    const table =
+      kind === 'action_decision'
+        ? 'intake_review_decisions'
+        : 'intake_executions';
+    const [event] = await this.rows(db, table, 'id=? AND action_id=?', [
+      eventId,
+      bound.action.id,
+    ]);
+    if (!event) throw new Error('Feedback event unavailable');
+    const eventData = object(event.data),
+      signal = kind === 'action_decision' ? event.decision : event.state;
+    const key = `event:${kind}:${eventId}:${String(signal)}`;
+    const [replay] = await this.rows(
+      db,
+      'intake_feedback',
+      'item_id=? AND request_key=?',
+      [bound.item.id, key],
+    );
+    if (replay) return;
+    const [attempt] = await this.rows(db, 'intake_analysis_attempts', 'id=?', [
+      bound.proposal.analysis_attempt_id,
+    ]);
+    const provenance = object(attempt.data),
+      generation = object(object(provenance.output).proposals ?? {});
+    const body = {
+      version: 1,
+      eventId,
+      actionId: bound.action.id,
+      proposalId: bound.proposal.id,
+      revision: Number(bound.proposal.revision),
+      bindingHash: bound.proposal.binding_hash,
+      attemptId: attempt.id,
+      attemptDigest: attempt.output_digest,
+      evidence: bound.binding.evidence,
+      handlerId: bound.handler.id,
+      handlerVersion: bound.handler.version,
+      signal,
+      reviewer: kind === 'action_decision' ? eventData.reviewer : null,
+      observedBy: this.scope.actorId,
+      principalId: eventData.principalId ?? null,
+      reason: kind === 'action_decision' ? (eventData.reason ?? '') : '',
+      resultDigest: event.result_digest ?? null,
+      model: {
+        provider: provenance.provider,
+        model: provenance.model,
+        version: provenance.version,
+      },
+      generationProvenance: generation.provenance ?? null,
+    };
+    const data = { ...body, digest: intakeBindingDigest(body) };
+    if (Buffer.byteLength(canonical(data)) > this.options.feedback.maxBytes)
+      throw new Error('Feedback event limit');
+    await this.insert(db, 'intake_feedback', {
+      item_id: bound.item.id,
+      request_key: key,
+      supersedes_id: null,
+      kind,
+      data: canonical(data),
+    });
+  }
   async submitDecision(input: ReviewInput): Promise<ProposalReview> {
     const frozen = JSON.parse(canonical(input)) as ReviewInput;
     id(frozen.requestId);
@@ -1246,7 +1487,7 @@ export class IntakeExecutionService {
           this.now().getTime() + policy.approvalMs,
         ),
       ).toISOString();
-      await this.insert(db, 'intake_review_decisions', {
+      const decisionEvent = await this.insert(db, 'intake_review_decisions', {
         item_id: bound.item.id,
         action_id: bound.action.id,
         proposal_id: bound.proposal.id,
@@ -1264,6 +1505,12 @@ export class IntakeExecutionService {
           kind: 'human',
         }),
       });
+      await this.feedbackEvent(
+        db,
+        bound,
+        String(decisionEvent.id),
+        'action_decision',
+      );
       if (frozen.decision === 'correct') {
         if (bound.binding.plan)
           throw new Error('Plan correction requires re-expansion');
@@ -1714,6 +1961,12 @@ export class IntakeExecutionService {
       this.scope.tenantId,
       this.scope.confidentialScopeId,
     );
+    await this.feedbackEvent(
+      db,
+      bound,
+      String(execution.id),
+      'downstream_outcome',
+    );
     return {
       state: 'succeeded',
       actionId: String(bound.action.id),
@@ -1774,6 +2027,12 @@ export class IntakeExecutionService {
           execution.id,
           this.scope.tenantId,
           this.scope.confidentialScopeId,
+        );
+        await this.feedbackEvent(
+          db,
+          bound,
+          String(execution.id),
+          'downstream_outcome',
         );
         return { state: 'outcome_unknown', actionId };
       }
@@ -1876,6 +2135,12 @@ export class IntakeExecutionService {
               execution.id,
               this.scope.tenantId,
               this.scope.confidentialScopeId,
+            );
+            await this.feedbackEvent(
+              db,
+              bound,
+              String(execution.id),
+              'downstream_outcome',
             );
             await db.query(
               "UPDATE intake_actions SET state='failed' WHERE id=? AND tenant_id=? AND confidential_scope_id=?",
@@ -1985,6 +2250,12 @@ export class IntakeExecutionService {
           this.scope.tenantId,
           this.scope.confidentialScopeId,
         );
+        await this.feedbackEvent(
+          db,
+          { ...bound, item },
+          String(execution.id),
+          'downstream_outcome',
+        );
         return {
           state: 'outcome_unknown',
           actionId,
@@ -2076,6 +2347,12 @@ export class IntakeExecutionService {
         execution.id,
         this.scope.tenantId,
         this.scope.confidentialScopeId,
+      );
+      await this.feedbackEvent(
+        db,
+        { ...bound, item },
+        String(execution.id),
+        'downstream_outcome',
       );
       return {
         state,

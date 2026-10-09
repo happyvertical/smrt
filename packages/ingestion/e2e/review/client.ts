@@ -72,5 +72,6 @@ export const host: IntakeReviewHost = {
   assign: (input) => call('assign', input),
   split: (input) => call('split', input),
   editPlan: (input) => call('editPlan', input),
+  feedback: (input) => call('feedback', input),
   editAction: (input) => call('editAction', input),
 };

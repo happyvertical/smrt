@@ -13,6 +13,7 @@ import {
 import { backgroundEligible } from '@happyvertical/smrt-jobs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { ReviewInput } from '../src/execution-dto.js';
+import type { FeedbackConfiguration } from '../src/feedback-contracts.js';
 import * as models from '../src/models.js';
 import type { GenerationOutput } from '../src/proposal-dto.js';
 import type {
@@ -92,13 +93,20 @@ export class ReferenceReviewWorker extends SmrtObject {
       await host.process(scope, input.itemId, item.analysisRevision);
   }
 }
+export interface ReferenceReviewHostOptions {
+  feedback?: FeedbackConfiguration;
+}
 export class ReferenceReviewHost {
   constructor(
     readonly db: DatabaseInterface,
     private readonly root: string,
+    private readonly hostOptions: ReferenceReviewHostOptions = {},
   ) {}
   /** Fixture deployment migration, invoked explicitly before constructing the request handler. */
-  static async provision(root: string): Promise<ReferenceReviewHost> {
+  static async provision(
+    root: string,
+    options: ReferenceReviewHostOptions = {},
+  ): Promise<ReferenceReviewHost> {
     const db = await getTestDatabase({
       type: 'sqlite',
       url: `file:${join(root, 'review.sqlite')}`,
@@ -115,7 +123,7 @@ export class ReferenceReviewHost {
         'INSERT INTO review_grants(actor_id,enabled) VALUES(?,1) ON CONFLICT(actor_id) DO NOTHING',
         actor,
       );
-    const host = new ReferenceReviewHost(db, root);
+    const host = new ReferenceReviewHost(db, root, options);
     ReferenceReviewWorker.host = host;
     return host;
   }
@@ -182,6 +190,9 @@ export class ReferenceReviewHost {
         `${h.operation.model}:${h.operation.action}@${h.operation.version}`,
     );
     const options: IngestionOptions = {
+      ...(this.hostOptions.feedback
+        ? { feedback: this.hostOptions.feedback }
+        : {}),
       db: this.db,
       assets: await createAssetRuntime({
         db: this.db,

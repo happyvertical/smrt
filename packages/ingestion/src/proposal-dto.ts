@@ -81,6 +81,10 @@ export interface GenerationOutput {
     candidates: ProposalCandidate[];
   }>;
   provenance: {
+    feedback?: {
+      query: string;
+      selection: import('./feedback-dto.js').FeedbackReferences;
+    };
     configurationVersion: string;
     promptVersion: string;
     catalogDigest: string;

@@ -156,3 +156,7 @@ Mount the `/svelte` inbox and review components through an authenticated host us
 the browser-safe `IntakeReviewHost` DTO contract. See [REVIEW.md](REVIEW.md) for
 exact revision-bound callbacks, live evidence access, logical split corrections,
 assignment ownership, and the maintained upload-to-domain-result browser fixture.
+
+Optional explicit feedback and scoped example retrieval are documented in
+[FEEDBACK.md](FEEDBACK.md). Approval and execution outcomes remain separate from
+interpretation correctness; routing policy adoption is explicit and versioned.
