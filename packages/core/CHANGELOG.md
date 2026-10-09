@@ -1,5 +1,31 @@
 # @happyvertical/smrt-core
 
+## 0.55.5
+
+### Patch Changes
+
+- ### Features
+  
+  - preserve upload, email and watch-folder sources (#3698) (ingestion)
+  - enforce reviewed idempotent execution (#3692) (ingestion)
+  - allow hiding the assistant conversation list (#3691) (chat)
+  - add bounded evidence extraction with live authorization (#3689) (ingestion)
+  - add durable intake and processing foundations (#3687) (ingestion)
+  
+  ### Bug Fixes
+  
+  - extract retained JSON source evidence (#3699) (ingestion)
+  - await lazy WebMCP fixture registration (#3690) (svelte)
+  - enforce hardcoded strings through symlinked paths (#3664) (ci)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.102.4 (#3695) (deps)
+  - docs: define intake and execution contracts (#3678) (ingestion)
+- @happyvertical/smrt-config@0.55.5
+  - @happyvertical/smrt-scanner@0.55.5
+  - @happyvertical/smrt-types@0.55.5
+
 ## 0.55.4
 
 ### Patch Changes
