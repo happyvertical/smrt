@@ -8,6 +8,7 @@
  * Both are plain `PaletteProvider`s; an app is free to ignore them and
  * register its own.
  */
+import { unwrapListResult } from '@happyvertical/smrt-web';
 import type {
   ShellNavGroup,
   ShellNavItem,
@@ -342,7 +343,16 @@ async function defaultSearchRows(
     );
   }
   const body: unknown = await response.json();
-  return Array.isArray(body) ? (body as PaletteRecordRow[]) : [];
+  // The generated list routes answer `{ items, count, limit, offset }`; a
+  // bare array is accepted too. Any other shape is a model without results.
+  try {
+    return unwrapListResult(body, request.model.collection).filter(
+      (row): row is PaletteRecordRow =>
+        row !== null && typeof row === 'object' && !Array.isArray(row),
+    );
+  } catch {
+    return [];
+  }
 }
 
 /** Run `task` over `inputs` with at most `limit` in flight; keeps input order. */

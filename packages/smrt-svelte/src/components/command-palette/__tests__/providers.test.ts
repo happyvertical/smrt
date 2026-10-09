@@ -255,6 +255,74 @@ describe('model records provider', () => {
     });
   });
 
+  describe('default search response shapes', () => {
+    function respondWith(body: unknown) {
+      return vi.fn(
+        async () =>
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      );
+    }
+
+    async function titlesFor(body: unknown) {
+      const [, records] = createModelProviders({
+        manifest,
+        fetch: respondWith(body) as unknown as typeof fetch,
+        pagesBasePath: '/app',
+      });
+      return (await search(records, 'acme')).map((r) => r.title);
+    }
+
+    it('reads the generated list envelope { items, count, limit, offset }', async () => {
+      const envelope = (items: unknown[]) => ({
+        items,
+        count: items.length,
+        limit: 5,
+        offset: 0,
+      });
+      const [, records] = createModelProviders({
+        manifest,
+        fetch: vi.fn(async (url: RequestInfo | URL) => {
+          const collection = String(url)
+            .split('?')[0]
+            .split('/')
+            .pop() as string;
+          return new Response(
+            JSON.stringify(envelope(rows[collection] ?? [])),
+            {
+              status: 200,
+            },
+          );
+        }) as unknown as typeof fetch,
+        pagesBasePath: '/app',
+      });
+      const results = await search(records, 'in');
+      expect(results.map((r) => r.title)).toEqual([
+        'Acme Inc',
+        'INV-1',
+        'INV-2',
+        'INV-3',
+      ]);
+    });
+
+    it('treats an empty envelope as no results', async () => {
+      expect(
+        await titlesFor({ items: [], count: 0, limit: 5, offset: 0 }),
+      ).toEqual([]);
+    });
+
+    it('treats malformed bodies as no results instead of failing', async () => {
+      expect(await titlesFor({ items: 'nope' })).toEqual([]);
+      expect(await titlesFor({ count: 3 })).toEqual([]);
+      expect(await titlesFor({ error: 'boom' })).toEqual([]);
+      expect(await titlesFor('text')).toEqual([]);
+      expect(await titlesFor(null)).toEqual([]);
+      expect(await titlesFor({ items: [null, 4, 'x', ['y']] })).toEqual([]);
+    });
+  });
+
   it('treats forbidden and missing routes as no results', async () => {
     const [, records] = createModelProviders({
       manifest,

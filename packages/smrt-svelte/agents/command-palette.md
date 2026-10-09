@@ -58,7 +58,9 @@ limit? }`.
     text field each (first of `title`, `name`, `displayName`, ... that is a
     non-sensitive, non-enum text field; override with `searchFields`), capped by
     `maxModels` and `concurrency`, interleaved so one model cannot crowd out
-    the rest. 401/403/404 mean "no results" for that model; the search throws
+    the rest. The default fetch reads the generated list envelope
+    `{ items, count, limit, offset }` (a bare array also works; any other body
+    counts as no results). 401/403/404 mean "no results" for that model; the search throws
     only when **every** request fails.
   - Known limit: `LIKE` is case-insensitive on SQLite and case-sensitive on
     PostgreSQL (sdk#1192). Supply `searchRows` to use a server search endpoint
