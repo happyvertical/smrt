@@ -11,6 +11,8 @@ belongs under `/server`. Generated REST/CLI/MCP model mutation is disabled.
 See [README.md](README.md) for host integration and recovery/deletion operation.
 See [EXTRACTION.md](EXTRACTION.md) for extraction contracts, provider isolation
 requirements and corpus validation.
+See [PROPOSALS.md](PROPOSALS.md) for the optional server-only proposal stage,
+current catalog/candidate authority and immutable source pinning.
 
 All records require tenant and confidential scope. Hosts create service scopes
 from authenticated sessions; source metadata is never authority. Every read and

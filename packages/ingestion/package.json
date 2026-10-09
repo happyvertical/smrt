@@ -7,9 +7,11 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "agents",
     "AGENTS.md",
     "CLAUDE.md",
-    "EXTRACTION.md"
+    "EXTRACTION.md",
+    "PROPOSALS.md"
   ],
   "exports": {
     ".": {
@@ -33,6 +35,10 @@
     "./execution": {
       "types": "./dist/execution.d.ts",
       "import": "./dist/execution.js"
+    },
+    "./proposals": {
+      "types": "./dist/proposals.d.ts",
+      "import": "./dist/proposals.js"
     }
   },
   "scripts": {
@@ -41,7 +47,7 @@
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --config vitest.postgres.config.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "prepack": "node ../../scripts/prepack-package.js",
-    "test:providers": "vitest run src/extraction.providers.test.ts",
+    "test:providers": "vitest run src/extraction.providers.test.ts src/proposals.providers.test.ts",
     "test:components": "node scripts/unavailable-lane.mjs components",
     "test:e2e": "node scripts/unavailable-lane.mjs e2e",
     "test:evaluation": "node scripts/unavailable-lane.mjs evaluation"

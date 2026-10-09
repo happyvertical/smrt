@@ -27,6 +27,11 @@ import type {
   ResultReference,
   ReviewInput,
 } from './execution-contracts.js';
+import {
+  type DiscoveryGate,
+  discoveryTransaction,
+  type TransactionRunner,
+} from './execution-internal.js';
 import { intersect, resolveIntakePolicy } from './policy.js';
 import type { IngestionOptions } from './server.js';
 
@@ -142,17 +147,16 @@ export class IntakeExecutionService {
     return this.options.now?.() ?? new Date();
   }
   private async tx<T>(work: (db: DatabaseInterface) => Promise<T>): Promise<T> {
+    return this.withRetention(() =>
+      withEmbeddedWriteTransaction(this.db, isEmbeddedDatabase(this.db), work),
+    );
+  }
+  private async withRetention<T>(work: () => Promise<T>): Promise<T> {
     // Authorized privacy ceilings survive business rollback, including savepoints.
     // Keep intents local to this async transaction; concurrent calls cannot share them.
     const intents = new Map<string, number>();
     try {
-      return await this.retentionIntents.run(intents, () =>
-        withEmbeddedWriteTransaction(
-          this.db,
-          isEmbeddedDatabase(this.db),
-          work,
-        ),
-      );
+      return await this.retentionIntents.run(intents, work);
     } catch (error) {
       // Early expired apply has already authorized/locked the item, but has
       // not entered policy access. Its redaction must survive rollback too.
@@ -451,7 +455,7 @@ export class IntakeExecutionService {
     db: DatabaseInterface,
     item: Row,
     handler: OperationHandler,
-    operation: 'execute' | 'reconcile',
+    operation: 'execute' | 'reconcile' | 'preview',
     work: (context: HandlerContext) => Promise<T>,
   ): Promise<T> {
     const access = await this.access(db, item, handler, operation);
@@ -470,7 +474,8 @@ export class IntakeExecutionService {
         permissions: access.permissions,
         postgresRls: false,
         onBehalfOfUserId: this.scope.actorId,
-        action: 'ingestion.execute',
+        action:
+          operation === 'preview' ? 'ingestion.discovery' : 'ingestion.execute',
         auditMetadata: { itemId: item.id, handler: handler.id },
         audit: async () => {},
       },
@@ -485,6 +490,127 @@ export class IntakeExecutionService {
       },
     );
   }
+  /** Current discovery authority. Trusted callbacks use context.db for bounded reads. */
+  async withDiscoveryContext<T>(
+    itemId: string,
+    handlerId: string,
+    handlerVersion: string,
+    work: (context: HandlerContext) => Promise<T>,
+  ): Promise<T> {
+    return this.tx((db) =>
+      this.discoveryContext(db, itemId, handlerId, handlerVersion, work),
+    );
+  }
+  /** Keep retention restoration outside the supplied foundation transaction. */
+  [discoveryTransaction]<T>(
+    run: TransactionRunner<T>,
+    itemId: string,
+    work: (db: DatabaseInterface, authorize: DiscoveryGate) => Promise<T>,
+  ): Promise<T> {
+    return this.withRetention(() =>
+      run(async (db) => {
+        const authorize: DiscoveryGate = (
+          handlerId,
+          handlerVersion,
+          callback,
+        ) =>
+          this.discoveryContext(
+            db,
+            itemId,
+            handlerId,
+            handlerVersion,
+            callback,
+          );
+        const result = await work(db, authorize);
+        // A foundation retry must retain the narrowest authorized privacy ceiling.
+        for (const [
+          retainedItemId,
+          deadline,
+        ] of this.retentionIntents.getStore() ?? []) {
+          const item = await this.restoreRetention(
+            db,
+            retainedItemId,
+            deadline,
+          );
+          if (!this.retained(item))
+            throw new RetentionExpired(retainedItemId, deadline);
+        }
+        return result;
+      }),
+    );
+  }
+  private async discoveryContext<T>(
+    db: DatabaseInterface,
+    itemId: string,
+    handlerId: string,
+    handlerVersion: string,
+    work: (context: HandlerContext) => Promise<T>,
+  ): Promise<T> {
+    const authorize = async <R>(
+      callback: (context: HandlerContext) => Promise<R>,
+    ) => {
+      const item = await this.item(db, itemId, true);
+      const handler = this.handler(handlerId, handlerVersion);
+      if ('execution' in handler)
+        return this.principal(
+          db,
+          item,
+          this.operation(handler),
+          'preview',
+          callback,
+        );
+      const { context } = await this.access(db, item, handler, 'preview');
+      const resolved = await resolvePlaybook(handler.operation.playbookKey, {
+        db,
+        tenantId: this.scope.tenantId,
+        plane: 'server',
+        classifier: ({ model, action }) => {
+          const found = this.config.handlers.find(
+            (entry) =>
+              'execution' in entry &&
+              entry.operation.model === model &&
+              entry.operation.action === action,
+          );
+          return found && 'execution' in found ? found.capability : undefined;
+        },
+      });
+      if (
+        !resolved.ok ||
+        intakeBindingDigest(resolved.plan) !==
+          handler.operation.definitionHash ||
+        resolved.plan.steps.some(
+          (step) =>
+            step.step.kind !== 'operation' || !step.classificationDeclared,
+        )
+      )
+        throw new Error('Playbook unavailable');
+      for (const entry of resolved.plan.steps) {
+        const operation = entry.step;
+        if (operation.kind !== 'operation')
+          throw new Error('Playbook unavailable');
+        const found = this.config.handlers.find(
+          (candidate) =>
+            'execution' in candidate &&
+            candidate.operation.model === operation.model &&
+            candidate.operation.action === operation.action,
+        );
+        if (!found) throw new Error('Handler unavailable');
+        await this.principal(
+          db,
+          item,
+          this.operation(found),
+          'preview',
+          async () => {},
+        );
+      }
+      return callback(context);
+    };
+    const result = await authorize(work);
+    // A long database callback may cross retention or a current-grant boundary.
+    await authorize(async () => {});
+    return result;
+  }
+
   private async bound(
     db: DatabaseInterface,
     actionId: string,

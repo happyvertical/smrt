@@ -17,6 +17,7 @@ import type {
   IntakeLimits,
   ReceiptResult,
 } from './dto.js';
+import { generationSnapshotRead } from './execution-internal.js';
 import './models.js';
 import type {
   IntakeExecutionOptions,
@@ -24,6 +25,11 @@ import type {
   PreviewProposalInput,
   ReviewInput,
 } from './execution-contracts.js';
+import type { ProposalConfiguration } from './proposal-contracts.js';
+import type {
+  CompletedAnalysisSnapshot,
+  PreviewGeneratedInput,
+} from './proposal-dto.js';
 
 /** Authenticated host context. Never construct this from transport JSON. */
 export interface IngestionScope {
@@ -68,6 +74,8 @@ export interface AnalysisLease {
 }
 /** Trusted integration points; no provider or application-policy implementation. */
 export interface IngestionOptions {
+  /** Optional server-owned interpretation configuration; independent of execution. */
+  proposals?: ProposalConfiguration;
   /** Optional application-owned review/execution catalog and live authority. */
   execution?: IntakeExecutionOptions;
   db: DatabaseInterface;
@@ -221,6 +229,37 @@ export class IngestionService {
   }
   async applyPlan(planId: string) {
     return (await this.execution()).applyPlan(planId);
+  }
+  private async proposals() {
+    if (!this.options.proposals)
+      throw new Error('Intake proposals are not configured');
+    const { IngestionProposalService } = await import('./proposals.js');
+    return new IngestionProposalService(
+      this,
+      this.options,
+      this.options.proposals,
+    );
+  }
+  async listHandlers(itemId: string) {
+    return (await this.proposals()).listHandlers(itemId);
+  }
+  async findCandidates(input: {
+    itemId: string;
+    handlerId: string;
+    handlerVersion: string;
+    query: string;
+    limit?: number;
+  }) {
+    return (await this.proposals()).findCandidates(input);
+  }
+  async prepareGeneration(itemId: string, attemptId: string) {
+    return (await this.proposals()).prepareGeneration(itemId, attemptId);
+  }
+  async generateProposals(lease: AnalysisLease) {
+    return (await this.proposals()).generate(lease);
+  }
+  async previewGeneratedProposals(input: PreviewGeneratedInput) {
+    return (await this.proposals()).preview(input);
   }
   private now(): Date {
     return this.options.now?.() ?? new Date();
@@ -1065,6 +1104,191 @@ export class IngestionService {
         token,
       };
     });
+  }
+  private async completedAnalysisSnapshot(
+    db: DatabaseInterface,
+    itemId: string,
+    attemptId: string | undefined,
+    current: boolean,
+  ): Promise<CompletedAnalysisSnapshot> {
+    await this.lock(db, itemId);
+    const item = await this.item(itemId, 'process', db);
+    if (item.cancelled) throw new Error('Analysis unavailable');
+    if (attemptId === undefined) {
+      if (!current) throw new Error('Historical attempt required');
+      const [latest] = await this.rows(
+        db,
+        'intake_analyses',
+        'item_id=? AND revision=?',
+        [itemId, item.analysis_revision],
+      );
+      if (!latest?.current_attempt_id) throw new Error('Analysis unavailable');
+      attemptId = String(latest.current_attempt_id);
+    }
+
+    const [attempt] = await this.rows(
+      db,
+      'intake_analysis_attempts',
+      'item_id=? AND id=?',
+      [itemId, attemptId],
+    );
+    if (
+      !attempt ||
+      !['completed', 'partial'].includes(String(attempt.state)) ||
+      !attempt.output_digest
+    )
+      throw new Error('Analysis unavailable');
+    const [analysis] = await this.rows(
+      db,
+      'intake_analyses',
+      'item_id=? AND id=?',
+      [itemId, attempt.analysis_id],
+    );
+    if (
+      !analysis ||
+      analysis.current_attempt_id !== attemptId ||
+      (current && Number(item.analysis_revision) !== Number(analysis.revision))
+    )
+      throw new Error('Analysis unavailable');
+    const data = object(analysis.data);
+    const configuration = object(data.configuration);
+    if (
+      !Array.isArray(data.inputs) ||
+      !data.inputs.length ||
+      digest({ inputs: data.inputs, configuration }) !==
+        analysis.input_digest ||
+      digest(configuration) !== data.configDigest
+    )
+      throw new Error('Analysis input integrity');
+    const resultData = object(attempt.data);
+    const result = {
+      status: resultData.status,
+      provider: resultData.provider,
+      model: resultData.model,
+      version: resultData.version,
+      output: resultData.output,
+      usage: resultData.usage,
+      ...(Object.hasOwn(resultData, 'error')
+        ? { error: resultData.error }
+        : {}),
+      ...(Object.hasOwn(resultData, 'confidence')
+        ? { confidence: resultData.confidence }
+        : {}),
+    } as AnalysisOutput;
+    if (
+      result.status !== attempt.state ||
+      digest(result) !== attempt.output_digest
+    )
+      throw new Error('Analysis output integrity');
+    const evidence: IntakeEvidenceDTO[] = [];
+    for (const input of data.inputs) {
+      const frozen = object(input);
+      const [row] = await this.rows(
+        db,
+        'intake_evidence',
+        "item_id=? AND id=? AND state='durable'",
+        [itemId, frozen.id],
+      );
+      if (!row || row.content_hash !== frozen.hash)
+        throw new Error('Analysis input integrity');
+      evidence.push({
+        id: String(row.id),
+        partId: String(row.part_id),
+        parentEvidenceId: row.parent_evidence_id
+          ? String(row.parent_evidence_id)
+          : null,
+        mediaType: String(row.media_type),
+        contentHash: String(row.content_hash),
+        byteLength: Number(row.byte_length),
+      });
+    }
+    if (new Set(evidence.map((entry) => entry.id)).size !== evidence.length)
+      throw new Error('Analysis input integrity');
+    await this.item(itemId, 'process', db);
+    return structuredClone({
+      itemId,
+      attemptId,
+      revision: Number(analysis.revision),
+      inputDigest: String(analysis.input_digest),
+      outputDigest: String(attempt.output_digest),
+      evidenceDigest: digest(data.inputs),
+      configuration,
+      evidence,
+      result,
+    });
+  }
+  /** Detached successful current revision; always current-scope/process authorized. */
+  async getCompletedAnalysis(
+    itemId: string,
+    attemptId?: string,
+  ): Promise<CompletedAnalysisSnapshot> {
+    const snapshot = await this.tx((db) =>
+      this.completedAnalysisSnapshot(db, itemId, attemptId, true),
+    );
+    await this.point('analysis:snapshot-read');
+    const read = async (db: DatabaseInterface) => {
+      const current = await this.completedAnalysisSnapshot(
+        db,
+        itemId,
+        snapshot.attemptId,
+        true,
+      );
+      if (
+        current.inputDigest !== snapshot.inputDigest ||
+        current.outputDigest !== snapshot.outputDigest
+      )
+        throw new Error('Analysis changed');
+      return current;
+    };
+    if (snapshot.configuration.stage === 'interpret')
+      return (await this.proposals())[generationSnapshotRead](
+        itemId,
+        (work) => this.tx(work),
+        read,
+      );
+    return this.tx(read);
+  }
+  /** Historical source is readable only through its frozen pin on a live generation lease. */
+  async getGenerationInput(lease: AnalysisLease) {
+    const generation = await this.getAnalysisInput(lease);
+    const configuration = generation.configuration;
+    const pin = object(object(configuration.proposals).source);
+    if (
+      configuration.stage !== 'interpret' ||
+      typeof pin.attemptId !== 'string'
+    )
+      throw new Error('Invalid generation source');
+    const source = await this.tx((db) =>
+      this.completedAnalysisSnapshot(
+        db,
+        lease.itemId,
+        String(pin.attemptId),
+        false,
+      ),
+    );
+    for (const key of [
+      'attemptId',
+      'revision',
+      'inputDigest',
+      'outputDigest',
+      'evidenceDigest',
+    ] as const)
+      if (pin[key] !== source[key])
+        throw new Error('Generation source changed');
+    if (
+      source.result.provider !== 'smrt-ingestion-extraction' ||
+      source.configuration.stage === 'interpret' ||
+      source.revision !== generation.revision - 1 ||
+      digest(
+        generation.evidence.map((entry) => ({
+          id: entry.id,
+          hash: entry.contentHash,
+        })),
+      ) !== source.evidenceDigest
+    )
+      throw new Error('Generation evidence changed');
+    await this.getAnalysisInput(lease);
+    return { generation, source };
   }
   /** Reload immutable inputs only through the current live processing lease. */
   async getAnalysisInput(lease: AnalysisLease): Promise<{
