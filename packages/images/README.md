@@ -23,6 +23,12 @@ and reduced-motion all restore the neutral pose. The Canadian split's vertical
 travel is derived from the measured mouth-to-chin span and the canvas receives
 matching transparent bottom padding, so a larger opening never clips the PNG.
 
+The mouth split is derived locally from MediaPipe FaceLandmarker lip-corner and
+chin landmarks on the isolated browser image. The pinned model is integrity
+checked before CPU inference; one clear face is required, cancellation is
+honored between loading and detection, and no image bytes are sent to a vision
+provider for this stage.
+
 `PhotoCutoutProfileStore` is the persistence seam. A consuming server supplies
 its authenticated profile, tenant, `AssetRuntime`, profile resolver, and
 authorization callback; the store saves PNG bytes as an owner-bound canonical
@@ -183,4 +189,6 @@ and contributor guidance.
 
 `PhotoCutoutSetup` isolates hair and facial skin on the user's device through the optional SDK `@happyvertical/images/segmentation` entry point. Original RGB values are preserved in the transparent PNG; alpha derives from a semantic pixel mask rather than a model-authored polygon. The component accepts `segmentationAssets` for a same-origin prepared asset directory (default `/api/dev-image-segmentation`). Prepare pinned runtime/model assets with SDK images `prepare:segmentation`; the chat workbench has a dev-only allowlisted asset route. Hair/face policy and review/retry live in s-m-r-t, generic inference and PNG encoding in SDK. Photographs are not uploaded during isolation. Mouth analysis remains the separately requested next stage.
 
-The 256×256 model can soften fine strands and low-confidence boundaries. Users review the head before continuing; loading errors and cancellation retain the selected photo. Local development uses the explicitly authorized SDK #1370 sibling link, to be replaced by released family pins at coordinated delivery.
+The setup flow presents four explicit stages: choose a photo, isolate the head, set the mouth from local face landmarks, then save. Each stage exposes one next action; redo and saved-character loading remain secondary actions. On wide screens the isolated head and animated preview share a compact row, and they stack on narrow screens. Loading, cancellation, and failures preserve the recoverable prior stage.
+
+Saving adds the reviewed character to the authorized saved gallery. It does not select or activate a helper; the consuming surface handles that explicit follow-up. The 256×256 model can soften fine strands and low-confidence boundaries. Users review the head before continuing; loading errors and cancellation retain the selected photo. Local development uses the explicitly authorized SDK #1370 sibling link, to be replaced by released family pins at coordinated delivery.

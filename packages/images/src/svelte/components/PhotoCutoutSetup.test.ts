@@ -18,11 +18,15 @@ async function click(name: string) {
 
 const mocks = vi.hoisted(() => ({
   isolate: vi.fn(),
+  detectFaceLandmarks: vi.fn(),
   mouth: vi.fn(),
   expression: vi.fn(),
   destroy: vi.fn(),
 }));
 vi.mock('../head-isolation.ts', () => ({ isolatePhotoHead: mocks.isolate }));
+vi.mock('@happyvertical/images/segmentation', () => ({
+  detectFaceLandmarks: mocks.detectFaceLandmarks,
+}));
 vi.mock('@happyvertical/animation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@happyvertical/animation')>()),
   mountPhotoCutout: () => ({
@@ -57,19 +61,12 @@ beforeEach(() => {
       ],
     },
   });
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        landmarks: {
-          mouthLeft: { x: 340, y: 520 },
-          mouthRight: { x: 660, y: 520 },
-          chin: { x: 500, y: 880 },
-        },
-      }),
-    }),
-  );
+  mocks.detectFaceLandmarks.mockResolvedValue({
+    mouthLeft: { x: 340, y: 520 },
+    mouthRight: { x: 660, y: 520 },
+    chin: { x: 500, y: 880 },
+  });
+  vi.stubGlobal('fetch', vi.fn());
 });
 afterEach(async () => {
   if (component) await unmount(component);
@@ -119,7 +116,7 @@ describe('redo during speech', () => {
       expect.objectContaining({ jawTiltDegrees: 7 }),
     );
     mocks.isolate.mockImplementation(() => new Promise(() => {}));
-    vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+    mocks.detectFaceLandmarks.mockImplementation(() => new Promise(() => {}));
     await click(`Redo ${stage}`);
     await vi.waitFor(() => expect(active?.signal.aborted).toBe(true));
     expect(mocks.mouth).toHaveBeenLastCalledWith(0);
@@ -129,13 +126,97 @@ describe('redo during speech', () => {
     });
     await vi.waitFor(() =>
       expect(
-        stage === 'head isolation' ? mocks.isolate : fetch,
+        stage === 'head isolation' ? mocks.isolate : mocks.detectFaceLandmarks,
       ).toHaveBeenCalledTimes(2),
     );
     expect(button('Cancel')).toBeTruthy();
     expect(mocks.destroy).not.toHaveBeenCalled();
     active?.onLevel(1);
     expect(mocks.mouth).toHaveBeenLastCalledWith(0);
+  });
+});
+
+describe('local mouth landmarks', () => {
+  it('uses the isolated local image without fetching a vision endpoint', async () => {
+    component = mount(PhotoCutoutSetup, { target: document.body });
+    await tick();
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('Photo picker is missing');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['synthetic'], 'source.png', { type: 'image/png' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await click('Isolate head');
+    await click('Continue: segment mouth');
+    await vi.waitFor(() => expect(button('Open mouth')).toBeTruthy());
+    expect(mocks.detectFaceLandmarks).toHaveBeenCalledWith(
+      expect.any(Image),
+      expect.objectContaining({
+        assetBaseUrl: '/api/dev-image-segmentation',
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('setup workflow', () => {
+  it('shows one next step and explains that saving adds a gallery character', async () => {
+    component = mount(PhotoCutoutSetup, {
+      target: document.body,
+      props: { saveSetup: vi.fn() },
+    });
+    await tick();
+    expect(
+      document.querySelector('.primary-action button')?.textContent?.trim(),
+    ).toBe('Isolate head');
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('Photo picker is missing');
+    Object.defineProperty(input, 'files', {
+      value: [new File(['synthetic'], 'source.png', { type: 'image/png' })],
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await click('Isolate head');
+    await vi.waitFor(() =>
+      expect(button('Continue: segment mouth')).toBeTruthy(),
+    );
+    expect(
+      document.querySelector('.primary-action button')?.textContent?.trim(),
+    ).toBe('Continue: segment mouth');
+    await click('Continue: segment mouth');
+    await vi.waitFor(() => expect(button('Save character')).toBeTruthy());
+    expect(
+      document.querySelector('.primary-action button')?.textContent?.trim(),
+    ).toBe('Save character');
+    expect(document.body.textContent).toContain(
+      'Saving adds this character to your gallery.',
+    );
+  });
+
+  it('keeps save as the next action after loading a saved character', async () => {
+    component = mount(PhotoCutoutSetup, {
+      target: document.body,
+      props: {
+        saveSetup: vi.fn(),
+        loadSetup: vi.fn().mockResolvedValue({
+          pngDataUrl: 'data:image/png;base64,c3ludGhldGlj',
+          rig: {},
+          savedAt: '2026-10-08T15:00:00.000Z',
+        }),
+      },
+    });
+    await tick();
+    await click('Load saved character');
+    await vi.waitFor(() => expect(button('Save character')).toBeTruthy());
+    expect(
+      document.querySelector('.primary-action button')?.textContent?.trim(),
+    ).toBe('Save character');
+    expect(document.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
+    expect(
+      document.querySelector('[aria-current="step"]')?.textContent,
+    ).toContain('Save to gallery');
   });
 });
 

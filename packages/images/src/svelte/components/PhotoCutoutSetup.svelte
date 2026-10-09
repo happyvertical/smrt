@@ -4,6 +4,7 @@ import {
   type PhotoCutoutHandle,
   type PhotoCutoutRig,
 } from '@happyvertical/animation';
+import { detectFaceLandmarks } from '@happyvertical/images/segmentation';
 import { FilePicker, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
@@ -11,7 +12,6 @@ import { onMount } from 'svelte';
 import {
   assembleCanadianSplitRig,
   type FaceOutline,
-  parseMouthLandmarks,
 } from '../../photo-cutout-setup.js';
 
 import { isolatePhotoHead } from '../head-isolation.js';
@@ -25,6 +25,7 @@ interface PersistedSetup {
   savedAt: string;
 }
 interface Props {
+  /** @deprecated Mouth landmarks now run locally; retained for caller compatibility. */
   endpoint?: string;
   segmentationAssets?: string;
   speechPreview?: (
@@ -49,7 +50,6 @@ interface Head {
 }
 type Stage = 'outline' | 'mouth-landmarks';
 let {
-  endpoint = '/api/dev-character-setup',
   segmentationAssets = '/api/dev-image-segmentation',
   speechPreview,
   saveSetup,
@@ -178,26 +178,6 @@ function mountPreview(rig: PhotoCutoutRig, asset: File, token: number) {
   });
   ready = true;
 }
-async function post(
-  stage: Stage,
-  file: File,
-  width: number,
-  height: number,
-  signal: AbortSignal,
-) {
-  const dataUrl = await read(file);
-  signal.throwIfAborted();
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    signal,
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ stage, dataUrl, width, height }),
-  });
-  const result = await response.json();
-  if (!response.ok)
-    throw new Error(result.message ?? 'Photo processing failed.');
-  return result;
-}
 async function run(stage: Stage) {
   const selected = source;
   const isolated = head;
@@ -240,17 +220,23 @@ async function run(stage: Stage) {
       message =
         'Review the transparent head. Continue when the silhouette looks right.';
     } else if (isolated) {
-      const result = await post(
-        stage,
-        isolated.file,
-        isolated.width,
-        isolated.height,
-        controller.signal,
-      );
+      const image = await imageAt(isolated.url);
+      controller.signal.throwIfAborted();
+      const landmarks = await detectFaceLandmarks(image, {
+        assetBaseUrl: segmentationAssets,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (generation === token)
+            message =
+              progress === 'loading'
+                ? 'Loading local face landmarks…'
+                : 'Locating lips and chin on this device…';
+        },
+      });
       if (generation !== token) return;
       const rig = assembleCanadianSplitRig({
         outline: isolated.outline,
-        landmarks: parseMouthLandmarks(result.landmarks),
+        landmarks,
         width: isolated.width,
         height: isolated.height,
         assetId: 'source',
@@ -386,32 +372,61 @@ async function playSpeech() {
 
 <section class="setup" aria-busy={busy !== null} aria-labelledby="cutout-title">
   <h2 id="cutout-title">{t(M['images.photo_cutout_setup.title'])}</h2>
-  <p class:error={failed !== null} class:success={ready} aria-live="polite">{message}{#if busy} ({elapsed}s){/if}</p>
+  <ol class="steps" aria-label={t(M['images.photo_cutout_setup.steps_label'])}>
+    <li class:current={!source && !ready} class:complete={source !== null || ready} aria-current={!source && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_choose'])}</li>
+    <li class:current={source !== null && !head && !ready} class:complete={head !== null || ready} aria-current={source !== null && !head && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_isolate'])}</li>
+    <li class:current={head !== null && !ready} class:complete={ready} aria-current={head !== null && !ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_mouth'])}</li>
+    <li class:current={ready} aria-current={ready ? 'step' : undefined}>{t(M['images.photo_cutout_setup.step_save'])}</li>
+  </ol>
+  <p class:error={failed !== null} class:success={ready} role={failed ? 'alert' : undefined} aria-live={failed ? 'assertive' : 'polite'}>{message}{#if busy} ({elapsed}s){/if}</p>
   <FilePicker accept="image/png,image/jpeg,image/webp" label={t(M['images.photo_cutout_setup.choose_photo'])} description={t(M['images.photo_cutout_setup.photo_formats'])} aria-label={t(M['images.photo_cutout_setup.choose_photo'])} onchangefiles={select} disabled={persisting !== null} />
-  <div class="actions">
-    <Button onclick={() => run('outline')} disabled={!source || busy !== null}>{failed === 'outline' ? 'Retry head isolation' : head ? 'Redo head isolation' : 'Isolate head'}</Button>
-    {#if head}<Button onclick={() => run('mouth-landmarks')} disabled={busy !== null}>{failed === 'mouth-landmarks' ? 'Retry mouth segmentation' : ready ? 'Redo mouth segmentation' : 'Continue: segment mouth'}</Button>{/if}
-    {#if busy}<span class="spinner" aria-label={busy === 'outline' ? 'Isolating head' : 'Segmenting mouth'}></span><Button onclick={cancel}>Cancel</Button>{/if}
-    {#if ready}<Button onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>{/if}
-    {#if ready && saveSetup}<Button onclick={saveCharacter} disabled={persisting !== null}>{persisting === 'save' ? 'Saving…' : 'Save character'}</Button>{/if}
-    {#if loadSetup}<Button onclick={loadCharacter} disabled={busy !== null || persisting !== null}>{persisting === 'load' ? 'Loading…' : 'Load saved character'}</Button>{/if}
-    {#if ready && speechPreview}<label>{t(M['images.photo_cutout_setup.preview_speech'])} <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={() => stopSpeech()}>{t(M['images.photo_cutout_setup.stop_speech'])}</Button>{/if}{/if}
+  <div class="workflow-actions">
+    <div class="primary-action">
+      {#if ready && saveSetup}<Button onclick={saveCharacter} disabled={persisting !== null}>{persisting === 'save' ? 'Saving…' : 'Save character'}</Button>
+      {:else if ready}<Button onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>
+      {:else if !head}<Button onclick={() => run('outline')} disabled={!source || busy !== null}>{failed === 'outline' ? 'Retry head isolation' : 'Isolate head'}</Button>
+      {:else if !ready}<Button onclick={() => run('mouth-landmarks')} disabled={busy !== null}>{failed === 'mouth-landmarks' ? 'Retry mouth segmentation' : 'Continue: segment mouth'}</Button>
+      {/if}
+      {#if busy}<span class="spinner" aria-label={busy === 'outline' ? 'Isolating head' : 'Segmenting mouth'}></span><Button variant="secondary" onclick={cancel}>Cancel</Button>{/if}
+    </div>
+    {#if ready && saveSetup}<p class="save-hint">{t(M['images.photo_cutout_setup.save_hint'])}</p>{/if}
+    <div class="secondary-actions" aria-label={t(M['images.photo_cutout_setup.options_label'])}>
+      {#if head}<Button variant="secondary" onclick={() => run('outline')} disabled={busy !== null || persisting !== null}>{t(M['images.photo_cutout_setup.redo_head'])}</Button>{/if}
+      {#if head && ready}<Button variant="secondary" onclick={() => run('mouth-landmarks')} disabled={busy !== null || persisting !== null}>{t(M['images.photo_cutout_setup.redo_mouth'])}</Button>{/if}
+      {#if ready && saveSetup}<Button variant="secondary" onclick={toggleMouth}>{open ? 'Close mouth' : 'Open mouth'}</Button>{/if}
+      {#if loadSetup}<Button variant="secondary" onclick={loadCharacter} disabled={busy !== null || persisting !== null}>{persisting === 'load' ? 'Loading…' : 'Load saved character'}</Button>{/if}
+    </div>
   </div>
-  {#if head}<figure><figcaption>{t(M['images.photo_cutout_setup.transparent_head'])}</figcaption><img class="checkerboard" src={head.url} alt={t(M['images.photo_cutout_setup.isolated_head_alt'])} /></figure>
-  {:else if source}<img src={source.url} alt={t(M['images.photo_cutout_setup.source_alt'])} />{/if}
-  <div bind:this={target} class="preview checkerboard" aria-label={t(M['images.photo_cutout_setup.preview_label'])}></div>
+  {#if ready && speechPreview}<div class="speech"><label>{t(M['images.photo_cutout_setup.preview_speech'])} <Textarea bind:value={speechText} maxlength={500} disabled={speaking} /></label><Button onclick={playSpeech} disabled={speaking || !speechText.trim()}>{speaking ? speechStarted ? 'Speaking…' : 'Preparing…' : 'Play speech'}</Button>{#if speaking}<Button onclick={() => stopSpeech()}>{t(M['images.photo_cutout_setup.stop_speech'])}</Button>{/if}</div>{/if}
+  <div class="previews">
+    {#if head}<figure><figcaption>{t(M['images.photo_cutout_setup.transparent_head'])}</figcaption><img class="checkerboard" src={head.url} alt={t(M['images.photo_cutout_setup.isolated_head_alt'])} /></figure>
+    {:else if source}<figure><figcaption>{t(M['images.photo_cutout_setup.step_choose'])}</figcaption><img src={source.url} alt={t(M['images.photo_cutout_setup.source_alt'])} /></figure>{/if}
+    <div bind:this={target} class="preview-target" class:preview={ready} class:checkerboard={ready} aria-label={ready ? t(M['images.photo_cutout_setup.preview_label']) : undefined} aria-hidden={!ready}></div>
+  </div>
 </section>
 
 <style>
 .setup { max-width: 42rem; margin: var(--smrt-spacing-6, 1.5rem) auto; padding: var(--smrt-spacing-5, 1.25rem); border: 1px solid var(--smrt-color-outline-variant, #64748b); border-radius: var(--smrt-radius-xl, 12px); }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-3, .75rem); margin: var(--smrt-spacing-4, 1rem) 0; }
-figure { margin: var(--smrt-spacing-4, 1rem) 0; }
-.setup img, .preview :global(svg) { display: block; width: min(100%, 28rem); height: auto; max-height: 28rem; object-fit: contain; }
-.preview { width: fit-content; margin-top: var(--smrt-spacing-4, 1rem); }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--smrt-spacing-2, .5rem); padding: 0; margin: var(--smrt-spacing-4, 1rem) 0; list-style: none; color: var(--smrt-color-on-surface-variant, #475569); font-size: var(--smrt-typography-body-small-size, .875rem); }
+.steps li { padding-bottom: var(--smrt-spacing-1, .25rem); border-bottom: 2px solid var(--smrt-color-outline-variant, #64748b); }
+.steps .current { color: var(--smrt-color-primary, #1d4ed8); border-color: var(--smrt-color-primary, #1d4ed8); font-weight: var(--smrt-typography-weight-semibold, 600); }
+.steps .complete { color: var(--smrt-color-success, #166534); }
+.workflow-actions { margin: var(--smrt-spacing-4, 1rem) 0; }
+.primary-action, .secondary-actions, .speech { display: flex; flex-wrap: wrap; align-items: center; gap: var(--smrt-spacing-3, .75rem); }
+.secondary-actions { margin-top: var(--smrt-spacing-3, .75rem); }
+.save-hint { margin: var(--smrt-spacing-2, .5rem) 0 0; color: var(--smrt-color-on-surface-variant, #475569); font-size: var(--smrt-typography-body-small-size, .875rem); }
+.speech { margin-top: var(--smrt-spacing-4, 1rem); }
+.previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-4, 1rem); align-items: start; }
+figure { margin: 0; }
+figure figcaption { margin-bottom: var(--smrt-spacing-2, .5rem); font-size: var(--smrt-typography-body-small-size, .875rem); }
+.setup img, .preview :global(svg) { display: block; width: 100%; height: auto; max-height: 18rem; object-fit: contain; }
+.preview, .preview-target { min-width: 0; }
+.preview-target:not(.preview) { display: none; }
 .checkerboard { background-color: var(--smrt-color-surface, #fff); background-image: linear-gradient(45deg, var(--smrt-color-surface-container-highest, #ddd) 25%, transparent 25%), linear-gradient(-45deg, var(--smrt-color-surface-container-highest, #ddd) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--smrt-color-surface-container-highest, #ddd) 75%), linear-gradient(-45deg, transparent 75%, var(--smrt-color-surface-container-highest, #ddd) 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
 .error { color: var(--smrt-color-error, #b91c1c); font-weight: var(--smrt-typography-weight-semibold, 600); }
 .success { color: var(--smrt-color-success, #166534); }
 .spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--smrt-radius-full, 9999px); animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-right-color: currentColor; } }
+@media (max-width: 40rem) { .steps { grid-template-columns: repeat(2, 1fr); } .previews { grid-template-columns: 1fr; } }
 </style>
