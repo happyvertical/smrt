@@ -155,6 +155,20 @@ describe('analytics recipes (#3719)', () => {
       expect(emitted).not.toContain('providerMetadata');
     });
 
+    it('does not claim the stored credentials are encrypted or secured', () => {
+      const object =
+        built.manifest.objects[`${PACKAGE}:AnalyticsProperty`] ??
+        built.manifest.objects.AnalyticsProperty;
+      const fields = object.fields as Record<string, { description?: string }>;
+      for (const name of ['apiSecret', 'providerMetadata']) {
+        const text = fields[name].description ?? '';
+        expect(text, name).not.toMatch(/secur|encrypted\b(?<!not encrypted)/i);
+        expect(text, name).toMatch(/not encrypted/i);
+        expect(text, name).toMatch(/kept out of responses/i);
+      }
+      expect(helpOf(built.recipes[0]).markdown).toMatch(/not encrypted/i);
+    });
+
     it('describes every basic field in plain words', () => {
       const [recipe] = built.recipes;
       const jargon = /\b(json|api|rest|mcp|sql|uuid|schema|endpoint)\b/i;

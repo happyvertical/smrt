@@ -7,7 +7,8 @@ figures down by, and over which dates. The rows each run returns are stored
 with the report, and the assistant can read them back to you in plain words.
 
 Properties and reports are kept on your server. Provider secrets are stored on
-the property but never sent to the assistant or returned in responses.
+the property and never sent to the assistant or returned in responses, but they
+are not encrypted in the database.
 
 ## Tasks
 

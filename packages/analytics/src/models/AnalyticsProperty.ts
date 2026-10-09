@@ -120,7 +120,7 @@ export class AnalyticsProperty extends SmrtObject {
   @field({
     sensitive: true,
     description:
-      'The secret key your analytics service issues for this property, stored securely.',
+      'The secret key your analytics service issues for this property. It is kept out of responses and tool results, but it is not encrypted in the database.',
   })
   apiSecret: string = '';
 
@@ -180,7 +180,7 @@ export class AnalyticsProperty extends SmrtObject {
   @field({
     sensitive: true,
     description:
-      'Extra connection details from your analytics service, stored securely.',
+      'Extra connection details from your analytics service. They are kept out of responses and tool results, but they are not encrypted in the database.',
   })
   providerMetadata: string = '{}';
 
