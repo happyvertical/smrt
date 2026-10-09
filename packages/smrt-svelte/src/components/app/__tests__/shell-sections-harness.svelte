@@ -11,6 +11,7 @@ let {
   currentHref = '/s/content',
   menuSection = 'content',
   collapsed = false,
+  cards = false,
   onChange,
   onApi,
 }: {
@@ -18,6 +19,7 @@ let {
   currentHref?: string;
   menuSection?: string;
   collapsed?: boolean;
+  cards?: boolean;
   onChange?: (layout: ShellLayout) => void;
   onApi?: (api: ShellLayoutController) => void;
 } = $props();
@@ -29,7 +31,13 @@ const navGroups: ShellNavGroup[] = [
     icon: 'book',
     href: '/s/content',
     items: [
-      { id: 'posts', href: '/posts', label: 'Posts', icon: 'fileText' },
+      {
+        id: 'posts',
+        href: '/posts',
+        label: 'Posts',
+        icon: 'fileText',
+        description: 'Everything you publish.',
+      },
       { id: 'pages', href: '/pages', label: 'Pages' },
       { id: 'media', href: '/media', label: 'Media' },
     ],
@@ -64,5 +72,5 @@ function change(next: ShellLayout) {
   onlayoutchange={change}
 >
   {#if onApi}<Probe {onApi} />{/if}
-  <ShellSectionMenu sectionId={menuSection} {meta} {actions} />
+  <ShellSectionMenu sectionId={menuSection} {meta} {actions} layout={cards ? 'cards' : 'list'} />
 </AppShell>

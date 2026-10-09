@@ -21,7 +21,7 @@ import { useShellLayout } from './layout-context.js';
 import type { ShellLayoutController } from './layout-controller.svelte.js';
 import ShellIconButton from './ShellIconButton.svelte';
 import ShellSectionIcon from './ShellSectionIcon.svelte';
-import { SHELL_ICON_PATHS } from './shell-icons.js';
+import { SHELL_DEFAULT_SECTION_ICON, SHELL_ICON_PATHS } from './shell-icons.js';
 import type { ShellSectionMenuEntry } from './types.js';
 
 interface Props {
@@ -37,6 +37,12 @@ interface Props {
   meta?: Snippet<[ShellSectionMenuEntry]>;
   /** Trailing links or buttons, e.g. "New <noun>". Not shown while editing. */
   actions?: Snippet<[ShellSectionMenuEntry]>;
+  /**
+   * `list` (default): compact rows. `cards`: a responsive grid of cards, each
+   * with a large icon, the label, the item's `description`, then `meta` and
+   * `actions` along the bottom.
+   */
+  layout?: 'list' | 'cards';
   /** Called when the user follows a row link. */
   onNavigate?: () => void;
 }
@@ -48,6 +54,7 @@ let {
   iconComponent: IconComponent,
   meta,
   actions,
+  layout: layoutMode = 'list',
   onNavigate,
 }: Props = $props();
 
@@ -119,7 +126,12 @@ function onmove(move: SortableItemMove<SortableItem>): void {
 }
 </script>
 
-<div class="smrt-section-menu" bind:this={rootEl} data-editing={editing ? '' : undefined}>
+<div
+  class="smrt-section-menu"
+  class:smrt-section-menu--cards={layoutMode === 'cards'}
+  bind:this={rootEl}
+  data-editing={editing ? '' : undefined}
+>
   {#if editing}
     <Sortable
       {containers}
@@ -160,6 +172,9 @@ function onmove(move: SortableItemMove<SortableItem>): void {
               <strong title={entry.defaultLabel !== entry.label ? entry.defaultLabel : undefined}>{entry.label}</strong>
             {/if}
             {@render meta?.(entry)}
+            {#if layoutMode === 'cards' && entry.item.description}
+              <span class="smrt-section-menu__desc">{entry.item.description}</span>
+            {/if}
           </span>
           <ShellIconButton
             icon="edit"
@@ -185,6 +200,28 @@ function onmove(move: SortableItemMove<SortableItem>): void {
     </Sortable>
   {:else if entries.length === 0}
     <p class="smrt-section-menu__empty">{t(M['ui.section_menu.empty'])}</p>
+  {:else if layoutMode === 'cards'}
+    <ul class="smrt-section-menu__cards" aria-label={listLabel}>
+      {#each entries as entry (entry.id)}
+        <li class="smrt-section-menu__card">
+          <a class="smrt-section-menu__card-link" href={entry.href} onclick={onNavigate}>
+            <span class="smrt-section-menu__card-icon">
+              <ShellSectionIcon name={entry.icon ?? SHELL_DEFAULT_SECTION_ICON} size={32} iconComponent={IconComponent} />
+            </span>
+            <span class="smrt-section-menu__card-title">{entry.label}</span>
+            {#if entry.item.description}
+              <span class="smrt-section-menu__desc">{entry.item.description}</span>
+            {/if}
+          </a>
+          {#if meta || actions}
+            <div class="smrt-section-menu__card-foot">
+              {#if meta}<span class="smrt-section-menu__meta">{@render meta(entry)}</span>{/if}
+              {#if actions}<span class="smrt-section-menu__actions">{@render actions(entry)}</span>{/if}
+            </div>
+          {/if}
+        </li>
+      {/each}
+    </ul>
   {:else}
     <ul class="smrt-section-menu__list" aria-label={listLabel}>
       {#each entries as entry (entry.id)}
@@ -220,6 +257,21 @@ function onmove(move: SortableItemMove<SortableItem>): void {
   .smrt-section-menu__chevron { flex: 0 0 auto; color: var(--smrt-color-on-surface-variant); }
   /* Fixed icon column so labels align whatever the glyph (or a missing one). */
   .smrt-section-menu :global(.smrt-shell-section-icon) { inline-size: 20px; block-size: 20px; }
+  /* Cards: a responsive grid; the whole card is one stretched link. */
+  .smrt-section-menu__cards, .smrt-section-menu--cards :global(.smrt-sortable__items) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr)); gap: var(--smrt-spacing-3); margin: 0; padding: 0; list-style: none; }
+  .smrt-section-menu__card { position: relative; display: flex; flex-direction: column; gap: var(--smrt-spacing-3); min-inline-size: 0; padding: var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-large, var(--smrt-radius-medium)); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); transition: background-color 120ms, border-color 120ms, transform 120ms; }
+  .smrt-section-menu__card:hover { background: var(--smrt-color-surface-container-high); border-color: var(--smrt-color-outline); transform: translateY(-2px); }
+  .smrt-section-menu__card-link { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--smrt-spacing-2); color: inherit; text-decoration: none; }
+  .smrt-section-menu__card-link::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
+  .smrt-section-menu__card-link:focus-visible { outline: none; }
+  .smrt-section-menu__card-link:focus-visible::after { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  .smrt-section-menu__card-icon { display: inline-grid; place-items: center; inline-size: 56px; block-size: 56px; border-radius: 50%; background: var(--smrt-color-primary-container); color: var(--smrt-color-on-primary-container); }
+  .smrt-section-menu__card-title { font-size: var(--smrt-typography-title-medium-size, 1rem); font-weight: var(--smrt-typography-weight-medium, 500); overflow-wrap: anywhere; }
+  .smrt-section-menu__desc { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--smrt-color-on-surface-variant); font-size: var(--smrt-typography-body-medium-size, 0.875rem); }
+  .smrt-section-menu__card-foot { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--smrt-spacing-2); }
+  .smrt-section-menu--cards :global(.smrt-sortable__item) { align-items: flex-start; }
+  .smrt-section-menu--cards .smrt-section-menu__row { flex-wrap: wrap; }
+  .smrt-section-menu--cards .smrt-section-menu__row .smrt-section-menu__desc { flex: 1 1 100%; }
   .smrt-section-menu__empty { margin: 0; color: var(--smrt-color-on-surface-variant); }
 
   /* Edit mode: the generic Sortable reads as the same rows. */

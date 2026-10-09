@@ -392,7 +392,12 @@ control panel), wired by `app/AppShell.svelte`.
   popover grid ("Use <icon> icon", `aria-pressed` on the current one; Escape
   closes the grid before the toolbar). Entries are not in the sidebar.
 - **`ShellSectionMenu`** (`sectionId`, `controller?`, `meta(entry)`,
-  `actions(entry)`, `iconComponent`, `aria-label`): the section's page body. A
+  `actions(entry)`, `iconComponent`, `aria-label`, `layout`): the section's page body.
+  `layout="cards"` renders an auto-fill grid (min 16rem) of cards: 32px icon in a
+  tinted circle, title, `ShellNavItem.description` (2 lines), then `meta` and
+  `actions` at the bottom; one stretched link, actions stay separate controls;
+  edit mode keeps grip/rename/hide in the grid. Unknown icon names draw the
+  default glyph (dev warning), never the name. Default `list`: A
   `<ul>` of rows (icon, label link, host `meta`, host `actions`, chevron; the
   row is one stretched link, actions sit above it) in applied order with
   renames; hidden entries are omitted. While editing, the same rows become the

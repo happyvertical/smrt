@@ -39,6 +39,43 @@ const menu = () => screen.getByRole('list', { name: 'Content entries' });
 const edit = (user: ReturnType<typeof userEvent.setup>) =>
   user.click(screen.getByRole('button', { name: 'Edit layout' }));
 
+describe('section menu cards', () => {
+  it('renders a grid of single-link cards with description, meta and a separate action', async () => {
+    mount({ cards: true });
+    const cards = within(menu()).getAllByRole('listitem');
+    expect(cards).toHaveLength(3);
+    const first = cards[0];
+    const links = within(first).getAllByRole('link');
+    // The title link, plus the separate New action (never nested).
+    expect(links.map((l) => l.getAttribute('href'))).toEqual([
+      '/posts',
+      '/new',
+    ]);
+    expect(links[0].contains(links[1])).toBe(false);
+    expect(first.textContent).toContain('Everything you publish.');
+    expect(within(first).getByTestId('meta-posts')).toBeTruthy();
+    expect(
+      first.querySelector('.smrt-section-menu__card-icon svg'),
+    ).not.toBeNull();
+    await expectNoA11yViolations(menu());
+  });
+
+  it('keeps the edit chrome in cards mode', async () => {
+    const user = userEvent.setup();
+    mount({ cards: true });
+    await edit(user);
+    expect(
+      screen.getAllByRole('button', { name: /^Move /i }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole('button', { name: /Rename/i }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole('button', { name: /^Show /i }).length,
+    ).toBeGreaterThan(0);
+  });
+});
+
 describe('section menu row icons', () => {
   it('draws an entry icon on rows that have one, decoratively', () => {
     mount();

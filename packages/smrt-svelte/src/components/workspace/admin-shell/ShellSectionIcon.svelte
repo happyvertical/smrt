@@ -6,7 +6,13 @@
  * control.
  */
 import type { Component } from 'svelte';
-import { isShellIconName, SHELL_ICON_PATHS } from './shell-icons.js';
+import {
+  isShellIconName,
+  SHELL_DEFAULT_SECTION_ICON,
+  SHELL_ICON_PATHS,
+} from './shell-icons.js';
+
+const warned = new Set<string>();
 
 interface Props {
   /** Icon name: a built-in shell icon, else whatever `iconComponent` knows. */
@@ -18,6 +24,22 @@ interface Props {
 }
 
 let { name, size = 18, iconComponent: Host }: Props = $props();
+
+// An unknown name with no host renderer never prints as text: it falls back to
+// the default glyph, with one dev warning per name.
+const fallback = $derived(!isShellIconName(name) && !Host);
+$effect(() => {
+  if (
+    fallback &&
+    (import.meta as { env?: { DEV?: boolean } }).env?.DEV &&
+    !warned.has(name)
+  ) {
+    warned.add(name);
+    console.warn(
+      `[smrt-svelte] Unknown shell icon "${name}"; using "${SHELL_DEFAULT_SECTION_ICON}".`,
+    );
+  }
+});
 </script>
 
 <span class="smrt-shell-section-icon" aria-hidden="true">
@@ -26,7 +48,7 @@ let { name, size = 18, iconComponent: Host }: Props = $props();
   {:else if Host}
     <Host {name} {size} />
   {:else}
-    {name}
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" focusable="false"><path d={SHELL_ICON_PATHS[SHELL_DEFAULT_SECTION_ICON]} /></svg>
   {/if}
 </span>
 
