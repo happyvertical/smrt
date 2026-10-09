@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.55.6
+
+### Patch Changes
+
+- ### Features
+  
+  - persist safe terminal outcomes (#3700) (jobs)
+  - customize audit history presentation (#3694) (svelte)
+  - generate durable, permission-filtered proposals (#3702) (ingestion)
+- @happyvertical/smrt-config@0.55.6
+  - @happyvertical/smrt-scanner@0.55.6
+  - @happyvertical/smrt-types@0.55.6
+
 ## 0.55.5
 
 ### Patch Changes
