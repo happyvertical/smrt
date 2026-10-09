@@ -160,3 +160,13 @@ assignment ownership, and the maintained upload-to-domain-result browser fixture
 Optional explicit feedback and scoped example retrieval are documented in
 [FEEDBACK.md](FEEDBACK.md). Approval and execution outcomes remain separate from
 interpretation correctness; routing policy adoption is explicit and versioned.
+
+## Recipe preview
+
+`ingestion.inbox` and `ingestion.review` declare the user-facing inbox and
+review workflows for app discovery. They are intentionally previews while the
+epic's reference-workflow and evaluation prerequisites remain unpublished: they
+do not configure a source or provider, expose generic CRUD routes, or enable
+automatic execution. Mount `IntakeInbox` and `IntakeReview` with an
+authenticated `IntakeReviewHost`; [REVIEW.md](REVIEW.md) remains the source of
+truth for its scoped callbacks and freshness checks.
