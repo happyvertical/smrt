@@ -32,6 +32,8 @@ function fakeMicrophone(
       }
     }),
     cancel: vi.fn(),
+    suspend: vi.fn(),
+    resume: vi.fn(),
   } satisfies HandsFreeCapture;
   const factory = vi.fn((o: HandsFreeCaptureOptions) => {
     captured = o;
@@ -128,6 +130,79 @@ describe('Dictation hands-free', () => {
     mic.options.onLevel?.(7);
     expect(dictation.speaking).toBe(false);
     expect(dictation.level).toBe(1);
+    dictation.dispose();
+  });
+
+  it('suspend() pauses listening, drops what arrives, and resume() restores it', async () => {
+    const { dictation, mic, src } = setup();
+    await dictation.start();
+    mic.options.onSpeaking?.(true);
+    mic.options.onLevel?.(0.5);
+    dictation.suspend();
+    expect(dictation.suspended).toBe(true);
+    expect(dictation.speaking).toBe(false);
+    expect(dictation.level).toBe(0);
+    expect(mic.capture.suspend).toHaveBeenCalledTimes(1);
+    // Backstop: nothing that arrives while suspended is written down.
+    mic.say();
+    mic.options.onSpeaking?.(true);
+    expect(dictation.queued).toBe(0);
+    expect(dictation.speaking).toBe(false);
+    expect(src.transcribePcm).not.toHaveBeenCalled();
+    expect(dictation.state).toBe('listening');
+    dictation.resume();
+    expect(dictation.suspended).toBe(false);
+    expect(mic.capture.resume).toHaveBeenCalledTimes(1);
+    mic.say();
+    expect(dictation.queued).toBe(1);
+    dictation.dispose();
+  });
+
+  it('a suspend() requested before hands-free starts applies as it opens', async () => {
+    const { dictation, mic } = setup();
+    dictation.suspend();
+    expect(dictation.suspended).toBe(false);
+    await dictation.start();
+    expect(dictation.suspended).toBe(true);
+    expect(mic.capture.suspend).toHaveBeenCalledTimes(1);
+    dictation.resume();
+    expect(dictation.suspended).toBe(false);
+    dictation.dispose();
+  });
+
+  it('stopping clears the suspended state; ending hands-free is still one tap', async () => {
+    const { dictation } = setup();
+    await dictation.start();
+    dictation.suspend();
+    await dictation.stop();
+    expect(dictation.suspended).toBe(false);
+    expect(dictation.state).toBe('idle');
+    dictation.dispose();
+  });
+
+  it('shows a paused state on the button and in the live region while suspended', async () => {
+    const { dictation } = setup();
+    const view = render(DictationButton, { props: { dictation } });
+    render(DictationStatus, { props: { dictation } });
+    await dictation.start();
+    const button = screen.getByRole('button', { name: 'Stop listening' });
+    expect(button).not.toHaveAttribute('data-dictation-paused');
+    dictation.suspend();
+    await vi.waitFor(() =>
+      expect(button).toHaveAttribute('data-dictation-paused', 'true'),
+    );
+    expect(button).toHaveAttribute(
+      'title',
+      'Paused while the assistant speaks',
+    );
+    expect(screen.getAllByRole('status')[0]).toHaveTextContent(
+      'Paused while the assistant speaks',
+    );
+    await expectNoA11yViolations(view.container);
+    dictation.resume();
+    await vi.waitFor(() =>
+      expect(button).not.toHaveAttribute('data-dictation-paused'),
+    );
     dictation.dispose();
   });
 

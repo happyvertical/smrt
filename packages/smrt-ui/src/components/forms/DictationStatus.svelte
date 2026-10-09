@@ -6,7 +6,8 @@
  * Hands-free is announced, not shown: the line is visually hidden and says
  * "Listening", "Hearing you…" while someone is speaking and "Writing it down…"
  * while sentences are being written down (the long help text is the
- * microphone's tooltip). "Sending…" (`sending`) is the one short hands-free
+ * microphone's tooltip) and "Paused while the assistant speaks" while
+ * listening is suspended. "Sending…" (`sending`) is the one short hands-free
  * hint that stays visible, since a message is about to leave.
  * "Writing it down…" while a recording is turned into text, and
  * a plain explanation when it cannot listen: the browser cannot turn speech
@@ -80,7 +81,9 @@ function errorText(kind: DictationErrorKind | null): string {
     {:else if dictation.state === 'starting'}
       {t(M['ui.dictation.starting'])}
     {:else if dictation.handsFree && dictation.state === 'listening'}
-      {#if dictation.queued > 0}
+      {#if dictation.suspended}
+        {t(M['ui.dictation.paused_speaking'])}
+      {:else if dictation.queued > 0}
         {t(M['ui.dictation.transcribing'])}
       {:else if dictation.speaking}
         {t(M['ui.dictation.hearing'])}

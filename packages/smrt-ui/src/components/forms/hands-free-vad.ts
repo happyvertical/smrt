@@ -49,6 +49,8 @@ interface VadCaptureLike {
   on(type: 'level', listener: (event: { level: number }) => void): () => void;
   stop(): Promise<void>;
   cancel(): void;
+  suspend?(): void;
+  resume?(): void;
 }
 
 interface VadModule {
@@ -64,6 +66,8 @@ export const createHandsFreeCapture: HandsFreeCaptureFactory = (
   let vad: VadCaptureLike | null = null;
   let cancelled = false;
   let stopped = false;
+  // Wanted before the microphone finished opening.
+  let suspendWanted = false;
 
   return {
     async start() {
@@ -83,6 +87,7 @@ export const createHandsFreeCapture: HandsFreeCaptureFactory = (
         return;
       }
       vad = opened;
+      if (suspendWanted) opened.suspend?.();
       opened.on('speechstart', () => options.onSpeaking?.(true));
       opened.on('level', ({ level }) => options.onLevel?.(level));
       opened.on('speechend', (event) => {
@@ -94,6 +99,18 @@ export const createHandsFreeCapture: HandsFreeCaptureFactory = (
           reason: event.reason,
         });
       });
+    },
+
+    suspend() {
+      suspendWanted = true;
+      vad?.suspend?.();
+      // A discarded utterance never ends with a `speechend`.
+      options.onSpeaking?.(false);
+    },
+
+    resume() {
+      suspendWanted = false;
+      vad?.resume?.();
     },
 
     stop() {

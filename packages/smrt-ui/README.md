@@ -102,6 +102,15 @@ pnpm add @happyvertical/smrt-ui
   "Hearing you...", "Writing it down...") and shows errors. Its `sending` prop
   adds the one short visible hint, "Sending...". The chat composer's
   `sendOnPause` / `sendOnPauseMs` (default 1200) builds send-on-pause on it.
+  Half-duplex: browsers do not reliably cancel `speechSynthesis` from the
+  microphone, so call `dictation.suspend()` while the page reads a reply aloud
+  and `dictation.resume()` after (the chat composer/dock do this from their
+  `speaking` prop). The microphone stays open but nothing is heard (an
+  utterance in progress is discarded, a ~350 ms guard follows `resume()`);
+  `dictation.suspended` drives the dimmed, dashed-outline button and the
+  "Paused while the assistant speaks" tooltip/live region. A custom
+  `HandsFreeCapture` may implement optional `suspend()` / `resume()`;
+  `Dictation` ignores utterances that arrive while suspended either way.
 
 ### Link tabs
 

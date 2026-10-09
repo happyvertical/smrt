@@ -13,6 +13,8 @@ const vad = vi.hoisted(() => {
     created: [] as Array<Record<string, unknown>>,
     stop: undefined as undefined | (() => Promise<void>),
     cancel: undefined as undefined | (() => void),
+    suspend: vi.fn(),
+    resume: vi.fn(),
     present: true,
   };
   return state;
@@ -30,6 +32,8 @@ vi.mock('@happyvertical/speech/browser', () => ({
         },
         stop: vad.stop ?? (async () => {}),
         cancel: vad.cancel ?? (() => {}),
+        suspend: vad.suspend,
+        resume: vad.resume,
       };
     };
   },
@@ -47,6 +51,8 @@ beforeEach(() => {
   vad.present = true;
   vad.stop = undefined;
   vad.cancel = undefined;
+  vad.suspend.mockClear();
+  vad.resume.mockClear();
 });
 
 describe('createHandsFreeCapture', () => {
@@ -117,5 +123,29 @@ describe('createHandsFreeCapture', () => {
     await expect(capture.start()).rejects.toMatchObject({
       dictationKind: 'unsupported',
     });
+  });
+
+  it('suspend() and resume() drive the detector gate and clear the speaking state', async () => {
+    const onSpeaking = vi.fn();
+    const capture = createHandsFreeCapture({
+      onUtterance: () => {},
+      onSpeaking,
+    });
+    await capture.start();
+    capture.suspend?.();
+    expect(vad.suspend).toHaveBeenCalledTimes(1);
+    expect(onSpeaking).toHaveBeenLastCalledWith(false);
+    capture.resume?.();
+    expect(vad.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('a suspend() before the microphone has opened is applied once it opens', async () => {
+    const capture = createHandsFreeCapture({ onUtterance: () => {} });
+    const starting = capture.start();
+    capture.suspend?.();
+    await starting;
+    expect(vad.suspend).toHaveBeenCalledTimes(1);
+    capture.resume?.();
+    expect(vad.resume).toHaveBeenCalledTimes(1);
   });
 });

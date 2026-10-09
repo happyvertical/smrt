@@ -388,6 +388,13 @@ export class Dictation {
   handsFree = $state(false);
   /** Hands-free: someone is speaking right now (an utterance is open). */
   speaking = $state(false);
+  /**
+   * Hands-free: listening is paused (`suspend()`), for example while the page
+   * reads a reply aloud, so the microphone does not hear the assistant.
+   */
+  suspended = $state(false);
+  /** `suspend()` was called and not yet undone (it may precede the start). */
+  #suspendWanted = false;
   /** Hands-free: how loud the voice is, 0 to 1 (in steps of 0.05). */
   level = $state(0);
   /** Hands-free: utterances heard that are not written down yet. */
@@ -548,6 +555,28 @@ export class Dictation {
     } catch {
       if (session === this.#session) this.#idle();
     }
+  }
+
+  /**
+   * Hands-free half-duplex gate: stop hearing while the page plays audio
+   * (the microphone stays open). Safe to call before, during or after
+   * hands-free; it applies whenever hands-free is on. Idempotent.
+   */
+  suspend(): void {
+    this.#suspendWanted = true;
+    if (!this.handsFree || this.suspended) return;
+    this.#handsFreeCapture?.suspend?.();
+    this.suspended = true;
+    this.speaking = false;
+    this.level = 0;
+  }
+
+  /** Undo `suspend()`: hear again after a short guard against the echo's tail. */
+  resume(): void {
+    this.#suspendWanted = false;
+    if (!this.suspended) return;
+    this.#handsFreeCapture?.resume?.();
+    this.suspended = false;
   }
 
   /** Tap on the microphone: start, or stop while listening. */
@@ -804,10 +833,13 @@ export class Dictation {
     try {
       capture = factory({
         vad: this.#options.vad,
-        onUtterance: (utterance) =>
-          this.#enqueueUtterance(session, source, utterance),
+        onUtterance: (utterance) => {
+          // Backstop for captures without their own gate.
+          if (this.suspended) return;
+          this.#enqueueUtterance(session, source, utterance);
+        },
         onSpeaking: (speaking) => {
-          if (session === this.#session && this.handsFree) {
+          if (session === this.#session && this.handsFree && !this.suspended) {
             this.speaking = speaking;
           }
         },
@@ -825,6 +857,10 @@ export class Dictation {
       return;
     }
     this.#handsFreeCapture = capture;
+    if (this.#suspendWanted) {
+      capture.suspend?.();
+      this.suspended = true;
+    }
     try {
       await capture.start();
     } catch (error) {
@@ -887,6 +923,7 @@ export class Dictation {
     const capture = this.#handsFreeCapture;
     this.#handsFreeCapture = null;
     this.speaking = false;
+    this.suspended = false;
     this.level = 0;
     this.beepPending = false;
     // Hands over the utterance in progress, then releases the microphone.
@@ -908,6 +945,7 @@ export class Dictation {
 
   #resetHandsFree(): void {
     this.handsFree = false;
+    this.suspended = false;
     this.speaking = false;
     this.level = 0;
     this.queued = 0;

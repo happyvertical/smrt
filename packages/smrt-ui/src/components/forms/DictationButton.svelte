@@ -12,7 +12,9 @@
  * a halo that swells with the voice means someone is speaking, and a small
  * spinner means sentences are being written down. The ring is the
  * non-motion cue; the halo and spinner stop moving for people who ask for
- * reduced motion. Tapping ends it either way. The help text ("Just talk;
+ * reduced motion. While the page speaks a reply (`Dictation.suspend()`) the
+ * button dims with a dashed outline and its tooltip reads "Paused while the
+ * assistant speaks". Tapping ends it either way. The help text ("Just talk;
  * I write it down when you pause...") is the tooltip and the button's
  * `aria-describedby`, never a line of text in the form.
  */
@@ -49,7 +51,9 @@ let {
 const { t } = useI18n();
 const active = $derived(dictation.active);
 const handsFree = $derived(dictation.handsFree);
-const speaking = $derived(active && handsFree && dictation.speaking);
+// Paused while the assistant speaks (half-duplex): not hearing, still open.
+const paused = $derived(active && handsFree && dictation.suspended);
+const speaking = $derived(active && handsFree && dictation.speaking && !paused);
 const writing = $derived(handsFree && dictation.queued > 0);
 // While a recording is being written down, a tap would do nothing.
 const busy = $derived(dictation.state === 'transcribing');
@@ -63,7 +67,9 @@ const helpId = `smrt-dictation-help-${uid}`;
 const hint = $derived(
   active
     ? handsFree
-      ? t(M['ui.dictation.listening_hands_free'])
+      ? paused
+        ? t(M['ui.dictation.paused_speaking'])
+        : t(M['ui.dictation.listening_hands_free'])
       : name
     : (title ??
         t(
@@ -85,7 +91,7 @@ function handleClick() {
   type="button"
   variant="ghost"
   size="sm"
-  class={`smrt-dictation-button${active ? ' smrt-dictation-button--listening' : ''}${active && handsFree ? ' smrt-dictation-button--hands-free' : ''}${speaking ? ' smrt-dictation-button--speaking' : ''} ${className}`.trim()}
+  class={`smrt-dictation-button${active ? ' smrt-dictation-button--listening' : ''}${active && handsFree ? ' smrt-dictation-button--hands-free' : ''}${speaking ? ' smrt-dictation-button--speaking' : ''}${paused ? ' smrt-dictation-button--paused' : ''} ${className}`.trim()}
   aria-label={name}
   aria-pressed={active}
   aria-busy={busy || undefined}
@@ -96,6 +102,7 @@ function handleClick() {
   data-dictation-state={dictation.state}
   data-dictation-mode={handsFree ? 'hands-free' : undefined}
   data-dictation-speaking={speaking || undefined}
+  data-dictation-paused={paused || undefined}
   style={speaking ? `--smrt-dictation-level: ${dictation.level}` : undefined}
 >
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -168,6 +175,19 @@ function handleClick() {
         calc(4px + 10px * var(--smrt-dictation-level, 0))
         color-mix(in srgb, var(--smrt-color-error, #ba1a1a) 28%, transparent);
     transition: box-shadow 80ms linear;
+  }
+
+  /* Paused while the assistant speaks: a dashed, dimmed ring (not color alone). */
+  :global(.smrt-dictation-button--paused) {
+    opacity: 0.6;
+    box-shadow: none;
+    outline: 2px dashed var(--smrt-color-outline, #73777f);
+    outline-offset: -2px;
+  }
+
+  :global(.smrt-dictation-button--paused) .smrt-dictation-dot {
+    animation: none;
+    opacity: 0.4;
   }
 
   /* Sentences are being written down. */

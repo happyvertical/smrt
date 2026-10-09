@@ -58,6 +58,15 @@ export interface HandsFreeCapture {
   stop(): void;
   /** Releases the microphone and throws the audio away. */
   cancel(): void;
+  /**
+   * Half-duplex gate: stop hearing (the microphone stays open) while the page
+   * plays audio, so the assistant's voice is not transcribed. An utterance in
+   * progress is discarded. Optional; `Dictation` also ignores utterances that
+   * arrive while it is suspended.
+   */
+  suspend?(): void;
+  /** Hear again, after a short guard that ignores the playback's tail. */
+  resume?(): void;
 }
 
 export type HandsFreeCaptureFactory = (

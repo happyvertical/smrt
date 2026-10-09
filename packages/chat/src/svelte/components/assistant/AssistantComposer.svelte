@@ -24,7 +24,7 @@ import {
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { onDestroy } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
 import { M } from '../../i18n.js';
 import type { AssistantAttachmentRef } from './assistant-transport.js';
 
@@ -95,6 +95,16 @@ export interface Props {
   sendOnPause?: boolean;
   /** Quiet time before `sendOnPause` sends, in ms. Default 1200. */
   sendOnPauseMs?: number;
+  /**
+   * The assistant's reply is being played aloud (text to speech). While
+   * `true`, hands-free listening is suspended (half-duplex: the microphone
+   * stays open but nothing is heard, so the assistant is not transcribed into
+   * the box) and resumes after a short guard when it turns `false`. The
+   * microphone shows "Paused while the assistant speaks". A pending send on
+   * pause is unaffected; tapping the microphone still ends hands-free.
+   * Default `false`.
+   */
+  speaking?: boolean;
 }
 
 let {
@@ -110,6 +120,7 @@ let {
   handsFreeVad,
   sendOnPause = false,
   sendOnPauseMs = 1200,
+  speaking = false,
 }: Props = $props();
 const canDictate = $derived(Boolean(dictationSource || transcribe));
 let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
@@ -184,6 +195,12 @@ $effect.pre(() => {
 });
 
 onDestroy(() => dictation.dispose());
+
+// Half-duplex: do not listen while the assistant's reply is played aloud.
+$effect(() => {
+  const on = speaking;
+  untrack(() => (on ? dictation.suspend() : dictation.resume()));
+});
 
 // The grace period: quiet, nothing being written down, something to send.
 // Speech starting (or a sentence still queued) clears it; the next written

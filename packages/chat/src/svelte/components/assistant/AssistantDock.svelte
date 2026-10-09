@@ -192,6 +192,9 @@ export interface Props {
   sendOnPause?: boolean;
   /** Quiet time before `sendOnPause` sends, in ms (default 1200). */
   sendOnPauseMs?: number;
+  /** The reply is being read aloud: hands-free listening pauses meanwhile;
+   * see `AssistantComposer`. */
+  speaking?: boolean;
 }
 
 const {
@@ -223,6 +226,7 @@ const {
   handsFreeVad,
   sendOnPause = false,
   sendOnPauseMs,
+  speaking = false,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -922,6 +926,7 @@ async function handleConfirmAction(requestId: string) {
             {handsFreeVad}
             {sendOnPause}
             {sendOnPauseMs}
+            {speaking}
           />
         {/key}
       </div>
