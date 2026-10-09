@@ -207,11 +207,21 @@ function databaseEngine(
   const configured = db as DatabaseInterface & {
     config?: { type?: string; url?: string };
     type?: string;
+    client?: { constructor?: { name?: string }; connection?: unknown };
   };
-  return detectEngine(
+  const engine = detectEngine(
     db.url || configured.config?.url || '',
     configured.type || configured.config?.type,
   );
+  const clientName = configured.client?.constructor?.name?.toLowerCase() ?? '';
+  if (
+    engine === 'sqlite' &&
+    (clientName.includes('duckdb') ||
+      configured.client?.connection !== undefined)
+  ) {
+    return 'duckdb';
+  }
+  return engine;
 }
 
 function getQueryRows(result: unknown): Record<string, unknown>[] {
@@ -495,7 +505,7 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
       return "strftime('%Y-%m-%dT%H:%M:%fZ', created_at)";
     }
     if (engine === 'duckdb') {
-      return "strftime(created_at, '%Y-%m-%dT%H:%M:%fZ')";
+      return "strftime(created_at, '%Y-%m-%dT%H:%M:%S.%gZ')";
     }
 
     return 'created_at';

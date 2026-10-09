@@ -30,7 +30,7 @@ async function fixture() {
 }
 
 describe('atomic terminal job outcomes', () => {
-  it('lists terminal outcomes on DuckDB with its timestamp argument order', async () => {
+  it('orders and pages DuckDB outcomes across second boundaries', async () => {
     const tenantId = '11111111-1111-4111-8111-111111111111';
     const db = await getTestDatabase({
       type: 'duckdb',
@@ -39,27 +39,65 @@ describe('atomic terminal job outcomes', () => {
     });
     const jobs = await SmrtJobCollection.create({ db });
     const events = await SmrtJobEventCollection.create({ db });
-    const job = await jobs.create({
+    const completed = async (completedAt: string) => {
+      const job = await jobs.create({
+        tenantId,
+        queue: 'reports',
+        objectType: 'SmrtDataSurfaceActionTask',
+        method: 'run',
+      });
+      const snapshot = terminalSnapshot(job);
+      if (!snapshot) throw new Error('Expected persisted DuckDB job');
+      await transitionTerminalJob(db, {
+        job: snapshot,
+        status: 'completed',
+        completedAt: new Date(completedAt),
+        expectedStatuses: ['pending'],
+      });
+      return job.id;
+    };
+
+    const previousMinute = await completed('2026-10-09T05:00:59.900Z');
+    const nextMinuteEarly = await completed('2026-10-09T05:01:00.100Z');
+    const nextMinuteLate = await completed('2026-10-09T05:01:00.900Z');
+
+    const all = await events.listTerminalOutcomes({ tenantId });
+    expect(all.outcomes.map((outcome) => outcome.jobId)).toEqual([
+      nextMinuteLate,
+      nextMinuteEarly,
+      previousMinute,
+    ]);
+
+    const since = await events.listTerminalOutcomes({
       tenantId,
-      queue: 'reports',
-      objectType: 'SmrtDataSurfaceActionTask',
-      method: 'run',
+      since: '2026-10-09T05:01:00.100Z',
     });
-    const snapshot = terminalSnapshot(job);
-    if (!snapshot) throw new Error('Expected persisted DuckDB job');
+    expect(since.outcomes.map((outcome) => outcome.jobId)).toEqual([
+      nextMinuteLate,
+    ]);
 
-    await transitionTerminalJob(db, {
-      job: snapshot,
-      status: 'completed',
-      completedAt: new Date('2026-10-09T05:00:00.000Z'),
-      expectedStatuses: ['pending'],
+    const first = await events.listTerminalOutcomes({ tenantId, limit: 1 });
+    expect(first.outcomes.map((outcome) => outcome.jobId)).toEqual([
+      nextMinuteLate,
+    ]);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await events.listTerminalOutcomes({
+      tenantId,
+      limit: 1,
+      before: first.nextCursor ?? '',
     });
-
-    await expect(
-      events.listTerminalOutcomes({ tenantId }),
-    ).resolves.toMatchObject({
-      outcomes: [{ jobId: job.id, status: 'completed' }],
+    expect(second.outcomes.map((outcome) => outcome.jobId)).toEqual([
+      nextMinuteEarly,
+    ]);
+    expect(second.nextCursor).not.toBeNull();
+    const third = await events.listTerminalOutcomes({
+      tenantId,
+      limit: 1,
+      before: second.nextCursor ?? '',
     });
+    expect(third.outcomes.map((outcome) => outcome.jobId)).toEqual([
+      previousMinute,
+    ]);
   });
 
   it('commits the owned job state and one safe terminal projection together', async () => {
