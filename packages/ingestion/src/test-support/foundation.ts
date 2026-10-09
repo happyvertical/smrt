@@ -30,6 +30,7 @@ import {
   IngestionService,
   type ReceiveInput,
 } from '../server.js';
+import { dropExecutionDatabase } from './postgres-cleanup.js';
 
 const tenant = '11111111-1111-4111-8111-111111111111';
 const otherTenant = '22222222-2222-4222-8222-222222222222';
@@ -213,9 +214,7 @@ export function foundationSuite(
       await peer?.close?.();
       await db?.close?.();
       if (admin) {
-        await admin.query(
-          `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-        );
+        await dropExecutionDatabase(admin, databaseName);
         await admin.close?.();
         admin = undefined;
       }
