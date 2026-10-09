@@ -49,6 +49,23 @@ export class ChatRoomsRecipe extends SmrtRecipe {
       noun: 'chat room',
     },
   ];
+  static runtime = 'both' as const;
+  static surfaces = [
+    {
+      kind: 'route',
+      path: '/chat/rooms',
+      export: '@happyvertical/smrt-chat/svelte#ChatLayout',
+      label: 'Team chat',
+    },
+    {
+      kind: 'playground',
+      export: '@happyvertical/smrt-chat/playground#default',
+      label: 'Static chat fixtures',
+    },
+  ] as const;
+  static demoSeed = {
+    export: '@happyvertical/smrt-chat/playground#chatRoomsFixture',
+  } as const;
   static options = {
     ChatRoom: {
       fields: {

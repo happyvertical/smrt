@@ -35,6 +35,8 @@ trusting browser data or throwing raw transport errors.
 generated read-only room, message, membership, thread, and reaction views.
 It places the Chat Rooms entry in the Team section under the Team collaboration
 card, using the shell's `users` icon.
+Hosts can mount its exported `ChatLayout` at `/chat/rooms`; the recipe also
+points demo hosts at the browser-safe static chat fixture from `./playground`.
 Its [user help](src/chat-rooms.recipe.md) describes how to find rooms and
 follow conversations. The package playground previews use static mock fixtures;
 they do not connect to a live chat service.
