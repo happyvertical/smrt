@@ -15,14 +15,12 @@ const vad = vi.hoisted(() => {
     cancel: undefined as undefined | (() => void),
     suspend: vi.fn(),
     resume: vi.fn(),
-    present: true,
   };
   return state;
 });
 
 vi.mock('@happyvertical/speech/browser', () => ({
   get createVadCapture() {
-    if (!vad.present) return undefined;
     return async (options: Record<string, unknown>) => {
       vad.created.push(options);
       return {
@@ -39,7 +37,6 @@ vi.mock('@happyvertical/speech/browser', () => ({
   },
 }));
 
-import { DictationError } from '../audio-capture.js';
 import { createHandsFreeCapture } from '../hands-free-vad.js';
 
 const emit = (type: string, event?: unknown) =>
@@ -48,7 +45,6 @@ const emit = (type: string, event?: unknown) =>
 beforeEach(() => {
   vad.listeners.clear();
   vad.created.length = 0;
-  vad.present = true;
   vad.stop = undefined;
   vad.cancel = undefined;
   vad.suspend.mockClear();
@@ -114,15 +110,6 @@ describe('createHandsFreeCapture', () => {
     capture.stop();
     await starting;
     expect(cancel).toHaveBeenCalledTimes(1);
-  });
-
-  it('reports a speech package too old for hands-free as unsupported', async () => {
-    vad.present = false;
-    const capture = createHandsFreeCapture({ onUtterance: () => {} });
-    await expect(capture.start()).rejects.toBeInstanceOf(DictationError);
-    await expect(capture.start()).rejects.toMatchObject({
-      dictationKind: 'unsupported',
-    });
   });
 
   it('suspend() and resume() drive the detector gate and clear the speaking state', async () => {

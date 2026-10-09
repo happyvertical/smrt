@@ -18,8 +18,10 @@
  * new Dictation({ source, mode: 'hands-free', handsFreeCapture: createHandsFreeCapture, onText });
  * ```
  */
-import * as speechBrowser from '@happyvertical/speech/browser';
-import { DictationError } from './audio-capture.js';
+import {
+  createVadCapture,
+  type VadCapture,
+} from '@happyvertical/speech/browser';
 import type {
   HandsFreeCapture,
   HandsFreeCaptureFactory,
@@ -34,36 +36,11 @@ export type {
   HandsFreeVadOptions,
 } from './hands-free-capture.js';
 
-/** The part of `createVadCapture` this module uses (speech >= 0.102.4). */
-interface VadCaptureLike {
-  on(type: 'speechstart', listener: () => void): () => void;
-  on(
-    type: 'speechend',
-    listener: (event: {
-      samples: Float32Array;
-      sampleRate: number;
-      durationMs: number;
-      reason: 'silence' | 'max' | 'flush';
-    }) => void,
-  ): () => void;
-  on(type: 'level', listener: (event: { level: number }) => void): () => void;
-  stop(): Promise<void>;
-  cancel(): void;
-  suspend?(): void;
-  resume?(): void;
-}
-
-interface VadModule {
-  createVadCapture?: (
-    options: Record<string, unknown>,
-  ) => Promise<VadCaptureLike>;
-}
-
 /** Hands-free capture on the speech package's `createVadCapture`. */
 export const createHandsFreeCapture: HandsFreeCaptureFactory = (
   options: HandsFreeCaptureOptions,
 ): HandsFreeCapture => {
-  let vad: VadCaptureLike | null = null;
+  let vad: VadCapture | null = null;
   let cancelled = false;
   let stopped = false;
   // Wanted before the microphone finished opening.
@@ -71,14 +48,7 @@ export const createHandsFreeCapture: HandsFreeCaptureFactory = (
 
   return {
     async start() {
-      const create = (speechBrowser as VadModule).createVadCapture;
-      if (typeof create !== 'function') {
-        throw new DictationError(
-          'unsupported',
-          'Hands-free dictation needs @happyvertical/speech 0.102.4 or newer.',
-        );
-      }
-      const opened = await create({
+      const opened = await createVadCapture({
         ...options.vad,
         ...(options.constraints ? { constraints: options.constraints } : {}),
       });
@@ -87,7 +57,7 @@ export const createHandsFreeCapture: HandsFreeCaptureFactory = (
         return;
       }
       vad = opened;
-      if (suspendWanted) opened.suspend?.();
+      if (suspendWanted) opened.suspend();
       opened.on('speechstart', () => options.onSpeaking?.(true));
       opened.on('level', ({ level }) => options.onLevel?.(level));
       opened.on('speechend', (event) => {
@@ -103,14 +73,14 @@ export const createHandsFreeCapture: HandsFreeCaptureFactory = (
 
     suspend() {
       suspendWanted = true;
-      vad?.suspend?.();
+      vad?.suspend();
       // A discarded utterance never ends with a `speechend`.
       options.onSpeaking?.(false);
     },
 
     resume() {
       suspendWanted = false;
-      vad?.resume?.();
+      vad?.resume();
     },
 
     stop() {

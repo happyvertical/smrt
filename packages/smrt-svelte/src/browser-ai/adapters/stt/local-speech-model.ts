@@ -171,7 +171,7 @@ interface SpeechProgressEvent {
 
 interface SpeechTranscriber {
   preload(model?: string, signal?: AbortSignal): Promise<void>;
-  isCached?(model?: string): Promise<boolean>;
+  isCached(model?: string): Promise<boolean>;
   transcribe(request: {
     audio: { data: Uint8Array; mimeType: string };
     model?: string;
@@ -264,7 +264,7 @@ class WorkerBackend implements Backend {
 
   async isCached(model: string) {
     const client = await this.ensure();
-    return client.isCached ? client.isCached(model) : false;
+    return client.isCached(model);
   }
 
   async preload(model: string, signal?: AbortSignal) {
@@ -337,7 +337,7 @@ class InPageBackend implements Backend {
 
   async isCached(model: string) {
     const transcriber = await this.ensure();
-    return transcriber.isCached ? transcriber.isCached(model) : false;
+    return transcriber.isCached(model);
   }
 
   async preload(model: string, signal?: AbortSignal) {
