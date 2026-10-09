@@ -139,6 +139,28 @@ export const COMMERCE_UI_SLOTS: Record<string, ModuleUISlot> = {
     order: 6,
     propsInterface: 'VendorFormProps',
   },
+  'customer-select': {
+    id: 'customer-select',
+    label: 'Customer Select',
+    description:
+      'Searchable customer picker for relation fields; the caller supplies the lookup',
+    icon: 'users',
+    category: 'form',
+    order: 10,
+    propsInterface: 'CustomerSelectProps',
+    selects: '@happyvertical/smrt-commerce:Customer',
+  },
+  'vendor-select': {
+    id: 'vendor-select',
+    label: 'Vendor Select',
+    description:
+      'Searchable vendor picker for relation fields; the caller supplies the lookup',
+    icon: 'building',
+    category: 'form',
+    order: 11,
+    propsInterface: 'VendorSelectProps',
+    selects: '@happyvertical/smrt-commerce:Vendor',
+  },
   'party-contact-fields': {
     id: 'party-contact-fields',
     label: 'Party Contact Fields',

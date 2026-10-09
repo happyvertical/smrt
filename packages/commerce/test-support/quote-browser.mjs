@@ -13,7 +13,8 @@ const repositoryRoot = process.cwd();
 const root = resolve(repositoryRoot, 'packages/commerce');
 const evidence = process.env.QUOTE_EVIDENCE_DIR ?? resolve(process.env.CI_TEST_TMPDIR ?? '.artifacts', 'quote-browser');
 await mkdir(evidence, {recursive:true});
-const vite = await createServer({configFile:false,root,plugins:[svelte()],server:{middlewareMode:true},appType:'custom'});
+const server = httpServer();
+const vite = await createServer({configFile:false,root,plugins:[svelte()],server:{middlewareMode:true,hmr:{server}},appType:'custom'});
 const { render } = await vite.ssrLoadModule('svelte/server');
 const { default: Editor } = await vite.ssrLoadModule('/src/svelte/components/QuoteEditor.svelte');
 let css='';
@@ -25,7 +26,7 @@ const initial={counterpartyId:'vendor-1',reference:'Q-104',date:'2026-10-03',val
 const extension=process.env.QUOTE_BROWSER_EXTENSION ? await import(pathToFileURL(resolve(process.env.QUOTE_BROWSER_EXTENSION)).href) : null;
 const requests=[];
 let sequence=1;
-const server=httpServer(async(req,res)=>{
+server.on('request',async(req,res)=>{
  try {
  if(await extension?.handleRequest?.(req,res,{vite,render,css,requests}))return;
  if(req.url==='/native' || req.url==='/post') {
