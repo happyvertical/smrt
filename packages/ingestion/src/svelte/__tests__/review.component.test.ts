@@ -4,8 +4,10 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   EvidenceView,
@@ -111,7 +113,144 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+function reviewPage(
+  start: number,
+  end: number,
+  cursor?: string,
+): ItemReviewView {
+  const view = page();
+  const original = view.reviews.actions[0];
+  view.reviews.actions = Array.from({ length: end - start }, (_, offset) => {
+    const index = start + offset;
+    return {
+      ...structuredClone(original),
+      handlerId: `effect-${index}`,
+      review: { ...original.review, actionId: `action-${index}` },
+      ...(index >= 19
+        ? {
+            plan: {
+              id: 'cross-page-plan',
+              key: 'plan',
+              revision: 7,
+              stepIndex: index - 19,
+              args: { title: 'Parent plan' },
+              handlerId: 'plan-handler',
+              handlerVersion: '1',
+              attemptId: 'attempt',
+            },
+          }
+        : {}),
+    };
+  });
+  if (cursor) view.reviews.nextCursor = cursor;
+  return view;
+}
 describe('intake review host boundary', () => {
+  it('pagination freshly reloads all 21 actions with dynamic cursors, dedupes cross-page plan steps and preserves exact mutation bindings', async () => {
+    const callbacks = host();
+    callbacks.editPlan = vi.fn(async () => {});
+    let firstReads = 0;
+    callbacks.load = vi.fn(async (_item, cursor) => {
+      if (!cursor) {
+        const view = reviewPage(
+          0,
+          20,
+          ++firstReads === 1 ? 'old-cursor' : 'fresh-cursor',
+        );
+        view.reviews.actions[0].review.revision = firstReads === 1 ? 2 : 3;
+        return view;
+      }
+      return reviewPage(19, 21);
+    });
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Load more' }),
+    );
+    await screen.findByRole('heading', { name: 'effect-20' });
+    expect(screen.getAllByRole('button', { name: 'Approve' })).toHaveLength(21);
+    expect(screen.getAllByRole('heading', { name: 'effect-19' })).toHaveLength(
+      1,
+    );
+    expect(
+      screen.getAllByRole('button', {
+        name: 'Edit the plan and review its new steps',
+      }),
+    ).toHaveLength(1);
+    expect(vi.mocked(callbacks.load).mock.calls.slice(0, 3)).toEqual([
+      ['item', undefined],
+      ['item', undefined],
+      ['item', 'fresh-cursor'],
+    ]);
+    const first = screen
+      .getByRole('heading', { name: 'effect-0' })
+      .closest('article')!;
+    await fireEvent.click(
+      within(first).getByRole('button', { name: 'Approve' }),
+    );
+    await waitFor(() =>
+      expect(callbacks.decide).toHaveBeenCalledWith(
+        expect.objectContaining({ actionId: 'action-0', expectedRevision: 3 }),
+      ),
+    );
+    await screen.findByRole('heading', { name: 'effect-20' });
+    expect(screen.getAllByRole('button', { name: 'Approve' })).toHaveLength(21);
+  });
+  it.each([
+    'first',
+    'later',
+  ])('pagination clears every displayed page on fresh %s-page revocation', async (deniedPage) => {
+    const callbacks = host();
+    let reads = 0;
+    callbacks.load = vi.fn(async (_item, cursor) => {
+      if (++reads > 1 && (deniedPage === 'first' ? !cursor : !!cursor))
+        throw new Error('private revoked detail');
+      return cursor ? reviewPage(20, 21) : reviewPage(0, 20, 'next');
+    });
+    render(IntakeReview, { host: callbacks, itemId: 'item' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Load more' }),
+    );
+    await screen.findByRole('alert');
+    expect(screen.queryByText('Private invoice')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'effect-0' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'effect-20' })).toBeNull();
+    expect(screen.queryByText(/private revoked detail/)).toBeNull();
+  });
+  it('pagination fences late page completions after authenticated context changes', async () => {
+    const callbacks = host();
+    const late = deferred<ItemReviewView>();
+    let changed = false;
+    callbacks.load = vi.fn(async (_item, cursor) => {
+      if (cursor) return late.promise;
+      const result = changed ? reviewPage(30, 31) : reviewPage(0, 20, 'next');
+      if (changed) result.entry.label = 'Current context';
+      return result;
+    });
+    const component = render(IntakeReview, {
+      host: callbacks,
+      itemId: 'item',
+      contextKey: 'old',
+    });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Load more' }),
+    );
+    await waitFor(() =>
+      expect(callbacks.load).toHaveBeenCalledWith('item', 'next'),
+    );
+    changed = true;
+    await component.rerender({
+      host: callbacks,
+      itemId: 'item',
+      contextKey: 'new',
+    });
+    await screen.findByText('Current context');
+    late.resolve(reviewPage(20, 21));
+    await late.promise;
+    await tick();
+    expect(screen.queryByRole('heading', { name: 'effect-20' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'effect-0' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'effect-30' })).toBeTruthy();
+  });
   it('submits the exact displayed binding through keyboard approval, never implicit apply or feedback', async () => {
     const callbacks = host();
     render(IntakeReview, { host: callbacks, itemId: 'item' });

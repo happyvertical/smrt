@@ -88,3 +88,32 @@ hashes and narrower final-helper scope separately. Owning TS/Svelte/build, maint
 browser, server-only error packed export/import and static gates cover the final
 tree. Unchanged component presentation, provider adapters and unrelated root suites
 carry prior exact committed evidence explicitly.
+
+## Merged-base jobs terminal outcome interaction
+
+Reconciliation onto main `5975461d` preserves all reviewed UI/runtime files. Jobs
+now commits terminal state and its safe event atomically. The shared foundation
+TaskRunner test on SQLite and PostgreSQL therefore waits for actual intake
+completion AND a tenant-bound public terminal outcome whose public job row is
+completed. Complete foundation suites cover receipt recovery, dispatch repair,
+retention and migration parity against the rebuilt jobs dependency. Focused jobs
+terminal/runner/tenant suites cover the changed owning behavior; fresh maintained
+browser and packed consumers cover composition. Unchanged execution/proposal
+coverage carries explicitly: those paths do not run TaskRunner or read terminal
+events, and their source and public job context type are unchanged. The unrelated
+smrt-svelte audit presentation is not imported by ingestion's smrt-ui components.
+
+## Accepted round-four pagination boundaries
+
+The prior page-only inbox classifier mislabelled 20 completed actions followed by
+a waiting action as completed. Both-dialect fixtures reproduce that result and
+the missing off-page target denial, then verify whole-item classification through
+public per-page authorization. The 22-row fixture is anchored by a real completed
+action/result and one real waiting attachment; test-only cloned rows isolate the
+page boundary without repeating domain effects or increasing test timeouts.
+
+The component baseline loses earlier plan steps on Load more and misses revocation
+on a reloaded earlier page. Fixed coverage refreshes every displayed page, preserves
+21 deduplicated actions/cross-page plans and exact refreshed mutation revisions,
+clears all payload on first/later page denial, and fences late completions after
+context changes. The public host/DTO contract is unchanged.

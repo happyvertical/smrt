@@ -21,7 +21,8 @@ let view = $state<ItemReviewView>(),
   splits = $state<Record<string, string>>({}),
   invalid = $state(false);
 let alive = true,
-  epoch = 0;
+  epoch = 0,
+  loadedPages = 1;
 onDestroy(() => {
   alive = false;
   epoch++;
@@ -33,7 +34,7 @@ function deny() {
   error = true;
   pending = false;
 }
-async function load(cursor?: string) {
+async function load(pageCount = loadedPages) {
   const ticket = ++epoch;
   view = undefined;
   splits = {};
@@ -41,8 +42,45 @@ async function load(cursor?: string) {
   error = false;
   invalid = false;
   try {
-    const result = await host.load(itemId, cursor);
-    if (!alive || ticket !== epoch) return;
+    let cursor: string | undefined;
+    let result: ItemReviewView | undefined;
+    const actions: ItemReviewView['reviews']['actions'] = [];
+    const actionIds = new Set<string>();
+    const cursors = new Set<string>();
+    let refreshedPages = 0;
+    for (let index = 0; index < pageCount; index++) {
+      const page = await host.load(itemId, cursor);
+      if (!alive || ticket !== epoch) return;
+      if (page.availability !== 'available') {
+        result = page;
+        break;
+      }
+      if (
+        result &&
+        page.entry.item.analysisRevision !== result.entry.item.analysisRevision
+      )
+        throw new Error('Review changed during pagination');
+      result ??= page;
+      for (const action of page.reviews.actions) {
+        if (!actionIds.has(action.review.actionId)) {
+          actionIds.add(action.review.actionId);
+          actions.push(action);
+        }
+      }
+      refreshedPages++;
+      cursor = page.reviews.nextCursor;
+      if (!cursor) break;
+      if (cursors.has(cursor)) throw new Error('Repeated review cursor');
+      cursors.add(cursor);
+    }
+    if (!result) throw new Error('Missing review page');
+    if (result.availability === 'available') {
+      result = {
+        ...result,
+        reviews: { ...result.reviews, actions, nextCursor: cursor },
+      };
+      loadedPages = refreshedPages;
+    }
     // A host denial must not leave any original, candidate, or argument in the DOM.
     view =
       result.availability === 'available'
@@ -196,7 +234,7 @@ onMount(() => {
 {#each view.reviews.actions as action (`${action.review.actionId}:${action.review.revision}:${action.review.reviewVersion}`)}
 <ActionReview {host} {itemId} {action} {run} {deny} currentAttemptId={action.stalePlan && view.reviews.actions.find((entry) => entry.stalePlan?.id === action.stalePlan?.id) === action ? action.attemptId : undefined} catalog={view.generation?.offered.find((entry) => entry.handler.id === action.handlerId && entry.handler.version === action.handlerVersion)?.handler} />
 {/each}
-{#if view.reviews.nextCursor}{@const cursor = view.reviews.nextCursor}<Button onclick={() => load(cursor)}>{t(M['ingestion.more'])}</Button>{/if}
+{#if view.reviews.nextCursor}<Button onclick={() => load(loadedPages + 1)}>{t(M['ingestion.more'])}</Button>{/if}
 </div></div>
 {/if}{/if}
 </section>

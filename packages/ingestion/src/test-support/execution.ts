@@ -23,6 +23,7 @@ import {
   DOCUMENT,
   referenceHandlers,
 } from '../../reference/handlers.js';
+import { loadReviewSummary } from '../../reference/review-summary.js';
 import { continueIntakeReview, intakeBindingDigest } from '../execution.js';
 import type {
   IntakeExecutionOptions,
@@ -309,6 +310,118 @@ export function executionSuite(
         decision: 'approve',
       });
     }
+    it.each([
+      'state',
+      'off-page denial',
+    ] as const)('summarizes all review pages: %s', async (mode) => {
+      const input = await proposal();
+      await approve(input.review);
+      expect((await service.applyAction(input.actionId)).state).toBe(
+        'succeeded',
+      );
+      const target = await (await Contents.create({ db })).create({
+        _meta_type: DOCUMENT,
+        tenantId: tenant,
+        context: 'private',
+        title: 'Later target',
+        body: 'Body',
+        status: 'draft',
+      });
+      const waitingId = await service.createAction(
+        input.itemId,
+        'later-attachment',
+        {},
+      );
+      await service.previewProposal({
+        ...input,
+        actionId: waitingId,
+        expectedRevision: 0,
+        requestId: 'later-preview',
+        handlerId: ATTACH,
+        handlerVersion: '1',
+        args: { contentId: target.id!, evidenceId: input.evidenceId },
+      });
+      // Pagination-only fixture: clone a real completed action/result with valid
+      // scoped proposal/execution links. No duplicate domain effects are needed.
+      const templates = await Promise.all(
+        ['intake_actions', 'intake_proposals', 'intake_executions'].map(
+          async (table) => ({
+            table,
+            row: (
+              await db.query(
+                `SELECT * FROM ${table} WHERE ${table === 'intake_actions' ? 'id' : 'action_id'}=?`,
+                input.actionId,
+              )
+            ).rows[0] as Record<string, unknown>,
+          }),
+        ),
+      );
+      await db.transaction!(async (tx) => {
+        for (let index = 0; index < 20; index++) {
+          const actionId = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
+          for (const { table, row } of templates) {
+            const copy = {
+              ...row,
+              id: table === 'intake_actions' ? actionId : randomUUID(),
+              slug: randomUUID(),
+            };
+            if (table === 'intake_actions')
+              Object.assign(copy, { action_key: `page-fixture-${index}` });
+            else Object.assign(copy, { action_id: actionId });
+            if (table === 'intake_executions')
+              Object.assign(copy, {
+                idempotency_key: `page-execution-${index}`,
+              });
+            const columns = Object.keys(copy);
+            await tx.query(
+              `INSERT INTO ${table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`,
+              ...columns.map((key) => {
+                const value = (copy as Record<string, unknown>)[key];
+                return value instanceof Date
+                  ? value.toISOString()
+                  : value && typeof value === 'object'
+                    ? JSON.stringify(value)
+                    : value;
+              }),
+            );
+          }
+        }
+      });
+      expect(
+        Number(
+          (
+            await db.query(
+              'SELECT COUNT(*) AS n FROM intake_actions WHERE item_id=?',
+              input.itemId,
+            )
+          ).rows[0].n,
+        ),
+      ).toBe(22);
+      const first = await service.listReviews(input.itemId);
+      expect(first.actions).toHaveLength(20);
+      expect(
+        first.actions.every((action) => action.review.state === 'succeeded'),
+      ).toBe(true);
+      expect(first.nextCursor).toBeTruthy();
+      const item = await service.getItem(input.itemId);
+      if (mode === 'off-page denial') {
+        target.context = 'revoked';
+        await target.save();
+        await expect(loadReviewSummary(service, item)).rejects.toThrow();
+      } else {
+        const summary = await loadReviewSummary(service, item);
+        expect(summary.state).toBe('partially_completed');
+        expect(summary.reviews.actions).toHaveLength(20);
+        const later = await loadReviewSummary(service, item, first.nextCursor);
+        expect(later.state).toBe('partially_completed');
+        expect(later.reviews.actions).toHaveLength(2);
+        expect(
+          later.reviews.actions.find(
+            (action) => action.review.actionId === waitingId,
+          )?.review.state,
+        ).toBe('waiting_review');
+      }
+    });
     async function configurePlan(
       onStepFailure: 'abort' | 'continue' = 'abort',
     ) {

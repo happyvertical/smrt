@@ -37,6 +37,7 @@ import {
   referenceHandlers,
 } from './handlers.js';
 import { loadReviewAnalysis } from './review-analysis.js';
+import { loadReviewSummary } from './review-summary.js';
 
 export const REVIEW_TENANT = '11111111-1111-4111-8111-111111111111';
 const principalId = '33333333-3333-4333-8333-333333333333';
@@ -496,28 +497,13 @@ export class ReferenceReviewHost {
     const { service } = await this.service(scope);
     const item = await service.getItem(itemId);
     const initialReviews = await service.listReviews(itemId, { cursor });
-    const { reviews, analysis } = await loadReviewAnalysis(
+    const { analysis } = await loadReviewAnalysis(
       service,
       item,
       initialReviews,
       cursor,
     );
-    const states = reviews.actions.map((action) => action.review.state);
-    const state: InboxState = states.length
-      ? states.every((s) => s === 'succeeded')
-        ? 'completed'
-        : states.some((s) => s === 'succeeded')
-          ? 'partially_completed'
-          : states.some((s) => s === 'deferred')
-            ? 'deferred'
-            : states.some((s) => ['failed', 'outcome_unknown'].includes(s))
-              ? 'failed'
-              : 'waiting'
-      : ['queued', 'running'].includes(item.processingState)
-        ? 'processing'
-        : item.processingState === 'needs_attention'
-          ? 'failed'
-          : 'unresolved';
+    const { reviews, state } = await loadReviewSummary(service, item, cursor);
     const evidence = await service.getEvidence(itemId);
     const views = [];
     for (const part of evidence) {

@@ -6,6 +6,7 @@
       "packages/smrt-svelte/e2e/**/*.{js,ts,svelte}",
       "packages/ingestion/e2e/**/*.{js,ts,svelte}",
       "packages/ingestion/reference/review-host.ts",
+      "packages/ingestion/reference/review-summary.ts",
       "!packages/*/src/lib/server/smrt-register.ts",
       "packages/*/bin/**/*.js",
       "packages/*/playground/src/**/*.{js,ts,tsx,jsx,svelte}",

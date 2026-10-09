@@ -125,3 +125,12 @@ The evaluation lane remains explicitly unavailable until #3677.
 The existing CI browser job includes ingestion changes and shared UI primitive
 changes in affected mode, and runs the ingestion browser suite in full mode. Its
 normal dependency build precedes the suite and failed runs upload browser evidence.
+
+The maintained host derives inbox state by traversing bounded public review pages,
+authorizing every action/parent/target before classification. It retains only
+scalar totals and the requested page; an off-page denial denies the whole view.
+The component's Load more and subsequent refresh/mutation reload every displayed
+page using fresh cursors, then publish the combined authorized set together. Old
+page payloads are cleared while loading; any unavailable page clears all payloads.
+This keeps plan controls and earlier steps visible across page boundaries without
+reusing a prior authorization decision.
