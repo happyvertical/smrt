@@ -306,7 +306,7 @@ says which you have (`'works' | 'missing' | 'unreliable'`) without a network
 call or a microphone prompt. For the last two, offer a one-time model download
 and dictate with a speech model running in the browser (WebGPU where available,
 single-thread WASM otherwise; no cross-origin isolation needed). The engine is
-`@happyvertical/speech/local` (an optional peer, `>=0.102.4`, as is
+`@happyvertical/speech/local` (an optional peer, `>=0.102.5`, as is
 `@huggingface/transformers`).
 
 | `model` | Size | Notes |

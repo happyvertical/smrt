@@ -182,7 +182,7 @@
     "esm-env": "^1.2.2"
   },
   "peerDependencies": {
-    "@happyvertical/speech": ">=0.102.4",
+    "@happyvertical/speech": ">=0.102.5",
     "@huggingface/transformers": ">=4.3.0",
     "@mlc-ai/web-llm": ">=0.2.85",
     "@remotion/whisper-web": ">=4.0.526",

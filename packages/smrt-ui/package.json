@@ -160,7 +160,7 @@
     "esm-env": "^1.2.2"
   },
   "peerDependencies": {
-    "@happyvertical/speech": ">=0.102.4",
+    "@happyvertical/speech": ">=0.102.5",
     "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {

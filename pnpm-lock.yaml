@@ -41,7 +41,7 @@ overrides:
   '@happyvertical/repos': ^0.102.4
   '@happyvertical/secrets': ^0.102.4
   '@happyvertical/signatures': ^0.102.4
-  '@happyvertical/speech': ^0.102.4
+  '@happyvertical/speech': ^0.102.5
   '@happyvertical/spider': ^1.1.13
   '@happyvertical/sql': ^0.102.4
   '@happyvertical/utils': ^0.102.4
@@ -1615,8 +1615,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/speech':
-        specifier: ^0.102.4
-        version: 0.102.4(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.102.5
+        version: 0.102.5(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/sql':
         specifier: ^0.102.4
         version: 0.102.4(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
@@ -3013,8 +3013,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/speech':
-        specifier: ^0.102.4
-        version: 0.102.4(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.102.5
+        version: 0.102.5(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -3062,8 +3062,8 @@ importers:
         version: 1.2.2
     devDependencies:
       '@happyvertical/speech':
-        specifier: ^0.102.4
-        version: 0.102.4(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.102.5
+        version: 0.102.5(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.57.1)(typescript@6.0.3)
@@ -3794,8 +3794,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/speech':
-        specifier: ^0.102.4
-        version: 0.102.4(@huggingface/transformers@4.3.0(@types/node@24.13.2))
+        specifier: ^0.102.5
+        version: 0.102.5(@huggingface/transformers@4.3.0(@types/node@24.13.2))
       '@happyvertical/utils':
         specifier: ^0.102.4
         version: 0.102.4
@@ -5026,8 +5026,8 @@ packages:
   '@happyvertical/signatures@0.102.4':
     resolution: {integrity: sha512-Xx/b2LVSQ2Fvvn+GM9uLIapFiYGukP4D8R24VuJ+1Ja0myj9sC3n8kf07pwzRyIH3NzxHT0qjNctRDlNALKaFw==}
 
-  '@happyvertical/speech@0.102.4':
-    resolution: {integrity: sha512-4kxxDl0zNNCsgiJ3I1BeSlGaEIWRq1MFkshJR811Jv585gP9Oy8yLBOY1wUmcdFQNOYU1xarsgdtqwVHGzpBUw==}
+  '@happyvertical/speech@0.102.5':
+    resolution: {integrity: sha512-oplMTEMyV8MGlBUkMhbAgAnJvGKZEywLozIsBYA3GzZY1ToYvFq2dJnq/lHSWzlH5+LygkS+0Fa0Yp+C7HSAPw==}
     peerDependencies:
       '@huggingface/transformers': '>=4.0.0'
     peerDependenciesMeta:
@@ -12742,7 +12742,7 @@ snapshots:
 
   '@happyvertical/signatures@0.102.4': {}
 
-  '@happyvertical/speech@0.102.4(@huggingface/transformers@4.3.0(@types/node@24.13.2))':
+  '@happyvertical/speech@0.102.5(@huggingface/transformers@4.3.0(@types/node@24.13.2))':
     optionalDependencies:
       '@huggingface/transformers': 4.3.0(@types/node@24.13.2)
 

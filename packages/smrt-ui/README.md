@@ -86,7 +86,7 @@ pnpm add @happyvertical/smrt-ui
   sentence down when the speaker pauses; one tap on the microphone ends it.
   `createHandsFreeCapture` comes from `@happyvertical/smrt-ui/forms/hands-free`,
   the one entry that imports the optional peer `@happyvertical/speech`
-  (>= 0.102.4: on-device voice activity detection with an adaptive noise
+  (>= 0.102.5: on-device voice activity detection with an adaptive noise
   floor, pre-roll and a 30 s split; no audio leaves the page). It needs a
   speech source with `transcribePcm` (smrt-svelte's on-device `whisper-local`
   and `moonshine`); with any of the three missing it is plain press-to-talk.
